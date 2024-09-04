@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 pest = "2.5"
 pest_derive = "2.5"
+clap = { version = "4.3", features = ["derive"] }
