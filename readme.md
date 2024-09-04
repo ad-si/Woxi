@@ -1,7 +1,67 @@
+<img src="./images/logo.png" alt="Wordmark of Woxi">
+
 # Woxi
+
+A Rust-based interpreter for a subset of the Wolfram Language.
+
+
+## Features
+
+- Parse and evaluate basic arithmetic expressions
+- Support for addition and subtraction operations
+- Handling of integer and floating-point numbers
+- Error handling for invalid inputs
+- CLI for easy interaction
+
+
+## Installation
+
+To use this Wolfram Language interpreter, you need to have Rust installed on your system.
+If you don't have Rust installed yet, you can get it from
+[rust-lang.org](https://www.rust-lang.org/tools/install).
+
+Clone the repository and build the project:
+
+```bash
+git clone https://github.com/ad-si/Woxi
+cd Woxi
+cargo build --release
+```
+
+
+## Usage
+
+You can use the interpreter directly from the command line:
+
+```bash
+cargo run -- "1 + 2"
+```
+
+This will output: `3`
+
+
+## Contributing
+
+Contributions are welcome!
+Please feel free to submit a Pull Request.
+
+
+### Testing
+
+To run the test suite:
+
+```sh
+cargo test
+```
+
 
 ## Related
 
-- https://github.com/WolframResearch/codeparser
-- https://github.com/oovm/wolfram-parser/tree/master/projects/wolfram-pest
-- https://github.com/mrtwistor/mmaclone
+- [Wolfram Research Code Parser]
+- [Pest Wolfram Parser]
+- [MMA Clone]
+
+[Wolfram Research Code Parser]: https://github.com/WolframResearch/codeparser
+[Pest Wolfram Parser]:
+  https://github.com/oovm/wolfram-parser/tree/master/projects/wolfram-pest
+[MMA Clone]: https://github.com/mrtwistor/mmaclone
