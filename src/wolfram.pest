@@ -1,9 +1,9 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
-Real = @{ ("-")? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ ("-")? ~ ASCII_DIGIT+)? }
+Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 Constant = { ("-")? ~ "Pi" }
-NumericValue = _{ Integer | Real | Constant }
+NumericValue = { Real | Integer | Constant }
 
 Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
@@ -11,7 +11,6 @@ String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 // Special functions
 SpecialFunction = { "Sin" | "Cos" | "Tan" | "Plot" }
 FunctionCall = { (Identifier | SpecialFunction) ~ "[" ~ (Expression ~ ("," ~ (Expression | List))*)? ~ "]" }
-
 
 Operator = { "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
 
