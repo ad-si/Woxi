@@ -1,0 +1,28 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+Integer = @{ ("-")? ~ ASCII_DIGIT+ }
+Real = @{ ("-")? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ ("-")? ~ ASCII_DIGIT+)? }
+Constant = { ("-")? ~ "Pi" }
+NumericValue = _{ Integer | Real | Constant }
+
+Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+// Special functions
+SpecialFunction = { "Sin" | "Cos" | "Tan" | "Plot" }
+FunctionCall = { (Identifier | SpecialFunction) ~ "[" ~ (Expression ~ ("," ~ (Expression | List))*)? ~ "]" }
+
+
+Operator = { "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
+
+Expression = { Term ~ (Operator ~ Term)* }
+Term = _{ NumericValue | String | List | FunctionCall | Identifier | "(" ~ Expression ~ ")" }
+
+List = { "{" ~ (Expression ~ ("," ~ Expression)*)? ~ "}" }
+Pattern = { Identifier ~ "_" }
+
+FunctionDefinition = { Identifier ~ "[" ~ Pattern ~ "]" ~ ":=" ~ Expression }
+
+Statement = _{ FunctionDefinition | Expression }
+
+Program = { SOI ~ Statement+ ~ EOI }
