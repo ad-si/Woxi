@@ -31,7 +31,14 @@ mod high_level_functions_tests {
     }
   }
 
-  mod prime_tests {
+  // #[test]
+  // fn test_first_function() {
+  //   assert_eq!(interpret("First[{1, 2, 3}]").unwrap(), "1");
+  //   assert_eq!(interpret("First[{a, b, c}]").unwrap(), "a");
+  //   assert_eq!(interpret("First[{True, False, False}]").unwrap(), "True");
+  // }
+
+  mod prime_function {
     use super::*;
 
     #[test]
@@ -41,15 +48,23 @@ mod high_level_functions_tests {
       assert_eq!(interpret("Prime[3]").unwrap(), "5");
       assert_eq!(interpret("Prime[4]").unwrap(), "7");
       assert_eq!(interpret("Prime[5]").unwrap(), "11");
+      assert_eq!(interpret("Prime[100]").unwrap(), "541");
+    }
+
+    #[test]
+    fn test_prime_function_invalid_input() {
+      assert!(interpret("Prime[0]").is_err());
+      assert!(interpret("Prime[-1]").is_err());
+      assert!(interpret("Prime[1.5]").is_err());
     }
   }
 
-  mod group_by_tests {
-    #[test]
-    #[ignore]
-    fn test_group_by_function() {
-      // let result = interpret("GroupBy[{1, 2, 3, 4, 5}, EvenQ]").unwrap();
-      // assert_eq!(result, "<|False -> {1, 3, 5}, True -> {2, 4}|>");
-    }
-  }
+  // mod group_by_tests {
+  //   #[test]
+  //   #[ignore]
+  //   fn test_group_by_function() {
+  //     // let result = interpret("GroupBy[{1, 2, 3, 4, 5}, EvenQ]").unwrap();
+  //     // assert_eq!(result, "<|False -> {1, 3, 5}, True -> {2, 4}|>");
+  //   }
+  // }
 }
