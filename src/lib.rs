@@ -61,7 +61,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       evaluate_expression(expr).map(format_result)
     }
     Rule::FunctionCall => evaluate_function_call(expr),
-    Rule::Identifier => Ok(expr.as_str().to_string()),
+    Rule::Identifier => match expr.as_str() {
+      "True" => Ok("True".to_string()),
+      "False" => Ok("False".to_string()),
+      _ => Err(InterpreterError::EvaluationError(format!(
+        "Unknown identifier: {}",
+        expr.as_str()
+      ))),
+    },
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule: {:?}",
       expr.as_rule()
@@ -172,7 +179,13 @@ fn evaluate_term(
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
       }
     }),
-    Rule::List => Ok(0.0), // Placeholder for list evaluation
+    Rule::List => {
+      let items: Vec<String> = term
+        .into_inner()
+        .map(|item| interpret(item.as_str()))
+        .collect::<Result<_, _>>()?;
+      Ok(format!("{{{}}}", items.join(", ")))
+    }
     Rule::Identifier => match term.as_str() {
       "True" => Ok(1.0),
       "False" => Ok(0.0),
