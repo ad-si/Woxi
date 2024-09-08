@@ -153,11 +153,11 @@ fn evaluate_term(
         term.as_str()
       ))),
     },
-    Rule::Integer => term.as_str().parse::<f64>().map_err(|_| {
+    Rule::Integer => term.as_str().parse::<i64>().map(|n| n as f64).map_err(|_| {
       InterpreterError::EvaluationError("invalid integer literal".to_string())
     }),
     Rule::Real => term.as_str().parse::<f64>().map_err(|_| {
-      InterpreterError::EvaluationError("invalid real literal".to_string())
+      InterpreterError::EvaluationError("invalid float literal".to_string())
     }),
     Rule::Expression => evaluate_expression(term),
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
