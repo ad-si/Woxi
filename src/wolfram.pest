@@ -9,13 +9,13 @@ Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 // Special functions
-SpecialFunction = { "Sin" | "Cos" | "Tan" | "Plot" }
+SpecialFunction = { "Sin" | "Cos" | "Tan" | "Plot" | "Prime" | "GroupBy" }
 FunctionCall = { (Identifier | SpecialFunction) ~ "[" ~ (Expression ~ ("," ~ (Expression | List))*)? ~ "]" }
 
 Operator = { "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
 
 Expression = { Term ~ (Operator ~ Term)* }
-Term = _{ NumericValue | String | List | FunctionCall | Identifier | "(" ~ Expression ~ ")" }
+Term = _{ NumericValue | Constant | String | List | FunctionCall | Identifier | "(" ~ Expression ~ ")" }
 
 List = { "{" ~ (Expression ~ ("," ~ Expression)*)? ~ "}" }
 Pattern = { Identifier ~ "_" }
