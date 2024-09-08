@@ -1,28 +1,39 @@
 use pest::Parser;
 use pest_derive::Parser;
+use thiserror::Error;
 
 #[derive(Parser)]
 #[grammar = "wolfram.pest"]
 pub struct WolframParser;
 
+#[derive(Error, Debug)]
+pub enum InterpreterError {
+    #[error("Parse error: {0}")]
+    ParseError(#[from] pest::error::Error<Rule>),
+    #[error("Empty input")]
+    EmptyInput,
+    #[error("Evaluation error: {0}")]
+    EvaluationError(String),
+}
+
 impl WolframParser {
-  pub fn parse_wolfram(
-    input: &str,
-  ) -> Result<pest::iterators::Pairs<Rule>, pest::error::Error<Rule>> {
-    Self::parse(Rule::Program, input)
-  }
+    pub fn parse_wolfram(
+        input: &str,
+    ) -> Result<pest::iterators::Pairs<Rule>, pest::error::Error<Rule>> {
+        Self::parse(Rule::Program, input)
+    }
 }
 
 pub fn parse(
-  input: &str,
+    input: &str,
 ) -> Result<pest::iterators::Pairs<Rule>, pest::error::Error<Rule>> {
-  WolframParser::parse_wolfram(input)
+    WolframParser::parse_wolfram(input)
 }
 
-pub fn interpret(input: &str) -> Result<f64, String> {
-  let pairs = parse(input).map_err(|e| e.to_string())?;
-  let expr = pairs.into_iter().next().ok_or("Empty input")?;
-  evaluate_expression(expr)
+pub fn interpret(input: &str) -> Result<f64, InterpreterError> {
+    let pairs = parse(input)?;
+    let expr = pairs.into_iter().next().ok_or(InterpreterError::EmptyInput)?;
+    evaluate_expression(expr).map_err(InterpreterError::EvaluationError)
 }
 
 fn evaluate_expression(
@@ -31,18 +42,27 @@ fn evaluate_expression(
   match expr.as_rule() {
     Rule::Expression => {
       let mut result = 0.0;
-      let mut op = '+';
+      let mut current_term = 1.0;
+      let mut current_op = '+';
+
       for pair in expr.into_inner() {
         match pair.as_rule() {
           Rule::Term | Rule::NumericValue => {
             let value = evaluate_term(pair)?;
-            match op {
-              '+' => result += value,
-              '-' => result -= value,
-              _ => return Err(format!("Unexpected operator: {}", op)),
+            match current_op {
+              '+' => {
+                result += current_term;
+                current_term = value;
+              }
+              '-' => {
+                result += current_term;
+                current_term = -value;
+              }
+              '*' => current_term *= value,
+              _ => return Err(format!("Unexpected operator: {}", current_op)),
             }
           }
-          Rule::Operator => op = pair.as_str().chars().next().unwrap(),
+          Rule::Operator => current_op = pair.as_str().chars().next().unwrap(),
           _ => {
             return Err(format!(
               "Unexpected rule in Expression: {:?}",
@@ -51,6 +71,8 @@ fn evaluate_expression(
           }
         }
       }
+      
+      result += current_term;
       Ok(result)
     }
     Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
