@@ -36,48 +36,34 @@ pub fn interpret(input: &str) -> Result<f64, InterpreterError> {
     evaluate_expression(expr).map_err(InterpreterError::EvaluationError)
 }
 
-fn evaluate_expression(
-  expr: pest::iterators::Pair<Rule>,
-) -> Result<f64, String> {
-  match expr.as_rule() {
-    Rule::Expression => {
-      let mut result = 0.0;
-      let mut current_term = 1.0;
-      let mut current_op = '+';
+fn evaluate_expression(expr: pest::iterators::Pair<Rule>) -> Result<f64, String> {
+    match expr.as_rule() {
+        Rule::Expression => {
+            let mut terms = expr.into_inner().peekable();
+            let mut result = evaluate_term(terms.next().unwrap())?;
 
-      for pair in expr.into_inner() {
-        match pair.as_rule() {
-          Rule::Term | Rule::NumericValue => {
-            let value = evaluate_term(pair)?;
-            match current_op {
-              '+' => {
-                result += current_term;
-                current_term = value;
-              }
-              '-' => {
-                result += current_term;
-                current_term = -value;
-              }
-              '*' => current_term *= value,
-              _ => return Err(format!("Unexpected operator: {}", current_op)),
+            while let Some(op) = terms.next() {
+                let next_term = terms.next().unwrap();
+                match op.as_str() {
+                    "+" => result += evaluate_term(next_term)?,
+                    "-" => result -= evaluate_term(next_term)?,
+                    "*" => result *= evaluate_term(next_term)?,
+                    "/" => {
+                        let divisor = evaluate_term(next_term)?;
+                        if divisor == 0.0 {
+                            return Err("Division by zero".to_string());
+                        }
+                        result /= divisor;
+                    }
+                    _ => return Err(format!("Unexpected operator: {}", op.as_str())),
+                }
             }
-          }
-          Rule::Operator => current_op = pair.as_str().chars().next().unwrap(),
-          _ => {
-            return Err(format!(
-              "Unexpected rule in Expression: {:?}",
-              pair.as_rule()
-            ))
-          }
+
+            Ok(result)
         }
-      }
-      
-      result += current_term;
-      Ok(result)
+        Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
+        _ => Err(format!("Unexpected rule: {:?}", expr.as_rule())),
     }
-    Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
-    _ => Err(format!("Unexpected rule: {:?}", expr.as_rule())),
-  }
 }
 
 fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, String> {
