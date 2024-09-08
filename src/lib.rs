@@ -94,7 +94,7 @@ fn format_result(result: f64) -> String {
 
 fn evaluate_expression(
   expr: pest::iterators::Pair<Rule>,
-) -> Result<f64, InterpreterError> {
+) -> Result<String, InterpreterError> {
   match expr.as_rule() {
     Rule::Expression => {
       let mut terms = expr.into_inner().peekable();
@@ -131,9 +131,17 @@ fn evaluate_expression(
         }
       }
 
-      Ok(result + current_term)
+      Ok(format_result(result + current_term))
     }
     Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
+    Rule::List => {
+      let items: Vec<String> = expr
+        .into_inner()
+        .map(|item| evaluate_expression(item))
+        .collect::<Result<_, _>>()?;
+      Ok(format!("{{{}}}", items.join(", ")))
+    }
+    Rule::Term => evaluate_term(expr).map(format_result),
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule: {:?}",
       expr.as_rule()
@@ -168,7 +176,7 @@ fn evaluate_term(
     Rule::Real => term.as_str().parse::<f64>().map_err(|_| {
       InterpreterError::EvaluationError("invalid float literal".to_string())
     }),
-    Rule::Expression => evaluate_expression(term),
+    Rule::Expression => evaluate_expression(term).and_then(|s| s.parse::<f64>().map_err(|e| InterpreterError::EvaluationError(e.to_string()))),
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
       if s == "True" {
         Ok(1.0)
@@ -179,23 +187,10 @@ fn evaluate_term(
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
       }
     }),
-    Rule::List => {
-      let items: Vec<String> = term
-        .into_inner()
-        .map(|item| interpret(item.as_str()))
-        .collect::<Result<_, _>>()?;
-      Err(InterpreterError::EvaluationError(format!(
-        "Lists cannot be evaluated to a numeric value: {{{}}}",
-        items.join(", ")
-      )))
-    }
     Rule::Identifier => match term.as_str() {
       "True" => Ok(1.0),
       "False" => Ok(0.0),
-      _ => Err(InterpreterError::EvaluationError(format!(
-        "Unknown identifier: {}",
-        term.as_str()
-      ))),
+      _ => Ok(0.0), // Return 0.0 for unknown identifiers
     },
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule in Term: {:?}",
@@ -255,7 +250,7 @@ fn evaluate_function_call(
       };
 
       match target_item {
-        Some(item) => Ok(item.as_str().to_string()),
+        Some(item) => evaluate_expression(item.clone()),
         None => {
           Err(InterpreterError::EvaluationError("Empty list".to_string()))
         }
