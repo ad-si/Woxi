@@ -61,14 +61,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       evaluate_expression(expr).map(format_result)
     }
     Rule::FunctionCall => evaluate_function_call(expr),
-    Rule::Identifier => match expr.as_str() {
-      "True" => Ok("True".to_string()),
-      "False" => Ok("False".to_string()),
-      _ => Err(InterpreterError::EvaluationError(format!(
-        "Unknown identifier: {}",
-        expr.as_str()
-      ))),
-    },
+    Rule::Identifier => {
+      let identifier = expr.as_str();
+      if identifier == "True" || identifier == "False" {
+        Ok(identifier.to_string())
+      } else {
+        Ok(identifier.to_string()) // Assume identifiers are valid and return as is
+      }
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule: {:?}",
       expr.as_rule()
@@ -247,9 +247,9 @@ fn evaluate_function_call(
           func_name
         )));
       }
-      let mut items = list.into_inner();
+      let items: Vec<_> = list.into_inner().collect();
       let target_item = if func_name == "First" {
-        items.next()
+        items.first()
       } else {
         items.last()
       };
