@@ -173,6 +173,9 @@ fn evaluate_term(
       "False" => Ok(0.0),
       _ => Ok(0.0), // Return 0.0 for unknown identifiers
     },
+    Rule::List => Err(InterpreterError::EvaluationError(
+      "Cannot evaluate a list as a numeric value".to_string(),
+    )),
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule in Term: {:?}",
       term.as_rule()
