@@ -57,7 +57,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         .collect::<Result<_, _>>()?;
       Ok(format!("{{{}}}", items.join(", ")))
     }
-    Rule::Expression | Rule::Term => evaluate_expression(expr).map(format_result),
+    Rule::Expression | Rule::Term => {
+      evaluate_expression(expr).map(format_result)
+    }
     Rule::FunctionCall => evaluate_function_call(expr),
     Rule::Identifier => Ok(expr.as_str().to_string()),
     _ => Err(InterpreterError::EvaluationError(format!(
@@ -107,22 +109,34 @@ fn evaluate_expression(
           "/" => {
             let divisor = evaluate_term(next_term)?;
             if divisor == 0.0 {
-              return Err(InterpreterError::EvaluationError("Division by zero".to_string()));
+              return Err(InterpreterError::EvaluationError(
+                "Division by zero".to_string(),
+              ));
             }
             current_term /= divisor;
           }
-          _ => return Err(InterpreterError::EvaluationError(format!("Unexpected operator: {}", op.as_str()))),
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unexpected operator: {}",
+              op.as_str()
+            )))
+          }
         }
       }
 
       Ok(result + current_term)
     }
     Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
-    _ => Err(InterpreterError::EvaluationError(format!("Unexpected rule: {:?}", expr.as_rule()))),
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "Unexpected rule: {:?}",
+      expr.as_rule()
+    ))),
   }
 }
 
-fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, InterpreterError> {
+fn evaluate_term(
+  term: pest::iterators::Pair<Rule>,
+) -> Result<f64, InterpreterError> {
   match term.as_rule() {
     Rule::Term => {
       let inner = term.into_inner().next().unwrap();
@@ -134,20 +148,30 @@ fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, InterpreterEr
     }
     Rule::Constant => match term.as_str() {
       "Pi" => Ok(std::f64::consts::PI),
-      _ => Err(InterpreterError::EvaluationError(format!("Unknown constant: {}", term.as_str()))),
+      _ => Err(InterpreterError::EvaluationError(format!(
+        "Unknown constant: {}",
+        term.as_str()
+      ))),
     },
-    Rule::Integer | Rule::Real => {
-      term.as_str().parse::<f64>().map_err(|e| InterpreterError::EvaluationError(e.to_string()))
-    }
+    Rule::Integer | Rule::Real => term
+      .as_str()
+      .parse::<f64>()
+      .map_err(|e| InterpreterError::EvaluationError(e.to_string())),
     Rule::Expression => evaluate_expression(term),
-    Rule::FunctionCall => evaluate_function_call(term).and_then(|s| s.parse::<f64>().map_err(|e| InterpreterError::EvaluationError(e.to_string()))),
+    Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
+      s.parse::<f64>()
+        .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+    }),
     Rule::List => Ok(0.0), // Placeholder for list evaluation
     Rule::Identifier => match term.as_str() {
       "True" => Ok(1.0),
       "False" => Ok(0.0),
       _ => Ok(0.0), // Return 0.0 for other identifiers
     },
-    _ => Err(InterpreterError::EvaluationError(format!("Unexpected rule in Term: {:?}", term.as_rule()))),
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "Unexpected rule in Term: {:?}",
+      term.as_rule()
+    ))),
   }
 }
 
