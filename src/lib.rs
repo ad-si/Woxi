@@ -193,17 +193,14 @@ fn evaluate_function_call(
       }
       Ok(nth_prime(n as usize).to_string())
     }
-    "EvenQ" => {
-      let n = evaluate_term(args.next().unwrap())?;
-      Ok(if n.fract() == 0.0 && (n as i64) % 2 == 0 {
-        "True".to_string()
-      } else {
-        "False".to_string()
-      })
-    }
-    "OddQ" => {
-      let n = evaluate_term(args.next().unwrap())?;
-      Ok(if n.fract() == 0.0 && (n as i64) % 2 != 0 {
+    "EvenQ" | "OddQ" => {
+      let arg = args.next().unwrap();
+      let n = match arg.as_rule() {
+        Rule::Integer => arg.as_str().parse::<i64>().map_err(|e| InterpreterError::EvaluationError(e.to_string()))?,
+        _ => evaluate_term(arg)? as i64,
+      };
+      let is_even = n % 2 == 0;
+      Ok(if (func_name == "EvenQ" && is_even) || (func_name == "OddQ" && !is_even) {
         "True".to_string()
       } else {
         "False".to_string()
