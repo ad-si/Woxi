@@ -85,7 +85,7 @@ fn format_result(result: f64) -> String {
 
 fn evaluate_expression(
   expr: pest::iterators::Pair<Rule>,
-) -> Result<f64, String> {
+) -> Result<f64, InterpreterError> {
   match expr.as_rule() {
     Rule::Expression => {
       let mut terms = expr.into_inner().peekable();
@@ -107,22 +107,22 @@ fn evaluate_expression(
           "/" => {
             let divisor = evaluate_term(next_term)?;
             if divisor == 0.0 {
-              return Err("Division by zero".to_string());
+              return Err(InterpreterError::EvaluationError("Division by zero".to_string()));
             }
             current_term /= divisor;
           }
-          _ => return Err(format!("Unexpected operator: {}", op.as_str())),
+          _ => return Err(InterpreterError::EvaluationError(format!("Unexpected operator: {}", op.as_str()))),
         }
       }
 
       Ok(result + current_term)
     }
     Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
-    _ => Err(format!("Unexpected rule: {:?}", expr.as_rule())),
+    _ => Err(InterpreterError::EvaluationError(format!("Unexpected rule: {:?}", expr.as_rule()))),
   }
 }
 
-fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, String> {
+fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, InterpreterError> {
   match term.as_rule() {
     Rule::Term => {
       let inner = term.into_inner().next().unwrap();
@@ -134,20 +134,20 @@ fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, String> {
     }
     Rule::Constant => match term.as_str() {
       "Pi" => Ok(std::f64::consts::PI),
-      _ => Err(format!("Unknown constant: {}", term.as_str())),
+      _ => Err(InterpreterError::EvaluationError(format!("Unknown constant: {}", term.as_str()))),
     },
     Rule::Integer | Rule::Real => {
-      term.as_str().parse::<f64>().map_err(|e| e.to_string())
+      term.as_str().parse::<f64>().map_err(|e| InterpreterError::EvaluationError(e.to_string()))
     }
     Rule::Expression => evaluate_expression(term),
-    Rule::FunctionCall => evaluate_function_call(term),
+    Rule::FunctionCall => evaluate_function_call(term).and_then(|s| s.parse::<f64>().map_err(|e| InterpreterError::EvaluationError(e.to_string()))),
     Rule::List => Ok(0.0), // Placeholder for list evaluation
     Rule::Identifier => match term.as_str() {
       "True" => Ok(1.0),
       "False" => Ok(0.0),
       _ => Ok(0.0), // Return 0.0 for other identifiers
     },
-    _ => Err(format!("Unexpected rule in Term: {:?}", term.as_rule())),
+    _ => Err(InterpreterError::EvaluationError(format!("Unexpected rule in Term: {:?}", term.as_rule()))),
   }
 }
 
