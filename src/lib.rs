@@ -163,8 +163,14 @@ fn evaluate_term(
     }),
     Rule::Expression => evaluate_expression(term),
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
-      s.parse::<f64>()
-        .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      if s == "True" {
+        Ok(1.0)
+      } else if s == "False" {
+        Ok(0.0)
+      } else {
+        s.parse::<f64>()
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      }
     }),
     Rule::List => Ok(0.0), // Placeholder for list evaluation
     Rule::Identifier => match term.as_str() {
