@@ -109,4 +109,25 @@ mod interpreter_tests {
       }
     }
   }
+
+  mod prime_function {
+    use super::*;
+
+    #[test]
+    fn test_prime_function() {
+      assert_eq!(interpret("Prime[1]").unwrap(), 2.0);
+      assert_eq!(interpret("Prime[2]").unwrap(), 3.0);
+      assert_eq!(interpret("Prime[3]").unwrap(), 5.0);
+      assert_eq!(interpret("Prime[4]").unwrap(), 7.0);
+      assert_eq!(interpret("Prime[5]").unwrap(), 11.0);
+      assert_eq!(interpret("Prime[100]").unwrap(), 541.0);
+    }
+
+    #[test]
+    fn test_prime_function_invalid_input() {
+      assert!(interpret("Prime[0]").is_err());
+      assert!(interpret("Prime[-1]").is_err());
+      assert!(interpret("Prime[1.5]").is_err());
+    }
+  }
 }
