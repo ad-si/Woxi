@@ -204,7 +204,9 @@ fn evaluate_function_call(
 
       match target_item {
         Some(item) => interpret(item.as_str()),
-        None => Err(InterpreterError::EvaluationError("Empty list".to_string())),
+        None => {
+          Err(InterpreterError::EvaluationError("Empty list".to_string()))
+        }
       }
     }
     "GroupBy" => {
