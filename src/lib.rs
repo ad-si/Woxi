@@ -195,8 +195,11 @@ fn evaluate_function_call(
     }
     "EvenQ" | "OddQ" => {
       let arg = args.next().unwrap();
-      let n = evaluate_term(arg)? as i64;
-      let is_even = n % 2 == 0;
+      let n = evaluate_term(arg)?;
+      if n.fract() != 0.0 {
+        return Ok("False".to_string());
+      }
+      let is_even = (n as i64) % 2 == 0;
       Ok(
         if (func_name == "EvenQ" && is_even)
           || (func_name == "OddQ" && !is_even)
