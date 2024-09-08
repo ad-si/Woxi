@@ -60,9 +60,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     Rule::Expression | Rule::Term => evaluate_expression(expr)
       .map(format_result)
       .map_err(InterpreterError::EvaluationError),
-    Rule::FunctionCall => evaluate_function_call(expr)
-      .map(format_result)
-      .map_err(InterpreterError::EvaluationError),
+    Rule::FunctionCall => evaluate_function_call(expr),
     Rule::Identifier => Ok(expr.as_str().to_string()),
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule: {:?}",
@@ -157,7 +155,7 @@ fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, String> {
 
 fn evaluate_function_call(
   func_call: pest::iterators::Pair<Rule>,
-) -> Result<f64, String> {
+) -> Result<String, InterpreterError> {
   let mut inner = func_call.into_inner();
   let func_name = inner.next().unwrap().as_str();
   let mut args = inner.next().unwrap().into_inner();
@@ -166,33 +164,36 @@ fn evaluate_function_call(
     "Prime" => {
       let n = evaluate_term(args.next().unwrap())?;
       if n.fract() != 0.0 || n < 1.0 {
-        return Err(
+        return Err(InterpreterError::EvaluationError(
           "Prime function argument must be a positive integer greater than 0"
             .to_string(),
-        );
+        ));
       }
-      Ok(nth_prime(n as usize) as f64)
+      Ok(nth_prime(n as usize).to_string())
     }
     "EvenQ" => {
       let n = evaluate_term(args.next().unwrap())?;
-      if n.fract() == 0.0 && (n as i64) % 2 == 0 {
-        Ok(1.0) // Representing "True"
+      Ok(if n.fract() == 0.0 && (n as i64) % 2 == 0 {
+        "True".to_string()
       } else {
-        Ok(0.0) // Representing "False"
-      }
+        "False".to_string()
+      })
     }
     "OddQ" => {
       let n = evaluate_term(args.next().unwrap())?;
-      if n.fract() == 0.0 && (n as i64) % 2 != 0 {
-        Ok(1.0) // Representing "True"
+      Ok(if n.fract() == 0.0 && (n as i64) % 2 != 0 {
+        "True".to_string()
       } else {
-        Ok(0.0) // Representing "False"
-      }
+        "False".to_string()
+      })
     }
     "First" | "Last" => {
       let list = args.next().unwrap();
       if list.as_rule() != Rule::List {
-        return Err(format!("{} function argument must be a list", func_name));
+        return Err(InterpreterError::EvaluationError(format!(
+          "{} function argument must be a list",
+          func_name
+        )));
       }
       let mut items = list.into_inner();
       let target_item = if func_name == "First" {
@@ -202,25 +203,20 @@ fn evaluate_function_call(
       };
 
       match target_item {
-        Some(item) => match item.as_rule() {
-          Rule::Integer => {
-            item.as_str().parse::<f64>().map_err(|e| e.to_string())
-          }
-          Rule::Identifier => Ok(match item.as_str() {
-            "True" => 1.0,
-            "False" => 0.0,
-            _ => 0.0,
-          }),
-          _ => evaluate_expression(item),
-        },
-        None => Err("Empty list".to_string()),
+        Some(item) => interpret(item.as_str()),
+        None => Err(InterpreterError::EvaluationError("Empty list".to_string())),
       }
     }
     "GroupBy" => {
       // Placeholder implementation
-      Err("GroupBy function not yet implemented".to_string())
+      Err(InterpreterError::EvaluationError(
+        "GroupBy function not yet implemented".to_string(),
+      ))
     }
-    _ => Err(format!("Unknown function: {}", func_name)),
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "Unknown function: {}",
+      func_name
+    ))),
   }
 }
 
