@@ -40,6 +40,15 @@ cargo run -- "1 + 2"
 This will output: `3`
 
 
+## CLI Comparison With Wolframscript
+
+Woxi | Wolframscript
+--- | ---
+`woxi eval "1 + 2"` | `wolframscript -code "1 + 2"`
+`woxi run script.wls` | `wolframscript script.wls`
+`woxi repl` | `wolframscript`
+
+
 ## Contributing
 
 Contributions are welcome!
