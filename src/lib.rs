@@ -49,31 +49,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     .next()
     .ok_or(InterpreterError::EmptyInput)?;
 
-  match expr.as_rule() {
-    Rule::List => {
-      let items: Vec<String> = expr
-        .into_inner()
-        .map(|item| interpret(item.as_str()))
-        .collect::<Result<_, _>>()?;
-      Ok(format!("{{{}}}", items.join(", ")))
-    }
-    Rule::Expression | Rule::Term => {
-      evaluate_expression(expr).map(format_result)
-    }
-    Rule::FunctionCall => evaluate_function_call(expr),
-    Rule::Identifier => {
-      let identifier = expr.as_str();
-      if identifier == "True" || identifier == "False" {
-        Ok(identifier.to_string())
-      } else {
-        Ok(identifier.to_string())
-      }
-    }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "Unexpected rule: {:?}",
-      expr.as_rule()
-    ))),
-  }
+  evaluate_expression(expr)
 }
 
 fn format_result(result: f64) -> String {
@@ -142,6 +118,8 @@ fn evaluate_expression(
       Ok(format!("{{{}}}", items.join(", ")))
     }
     Rule::Term => evaluate_term(expr).map(format_result),
+    Rule::FunctionCall => evaluate_function_call(expr),
+    Rule::Identifier => Ok(expr.as_str().to_string()),
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule: {:?}",
       expr.as_rule()
