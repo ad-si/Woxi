@@ -195,13 +195,7 @@ fn evaluate_function_call(
     }
     "EvenQ" | "OddQ" => {
       let arg = args.next().unwrap();
-      let n = match arg.as_rule() {
-        Rule::Integer => arg
-          .as_str()
-          .parse::<i64>()
-          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))?,
-        _ => evaluate_term(arg)? as i64,
-      };
+      let n = evaluate_term(arg)? as i64;
       let is_even = n % 2 == 0;
       Ok(
         if (func_name == "EvenQ" && is_even)
