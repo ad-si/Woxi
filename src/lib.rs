@@ -153,10 +153,17 @@ fn evaluate_term(
         term.as_str()
       ))),
     },
-    Rule::Integer | Rule::Real => term
+    Rule::Integer => term
       .as_str()
       .parse::<f64>()
       .map_err(|e| InterpreterError::EvaluationError(e.to_string())),
+    Rule::Real => {
+      if let Ok(value) = term.as_str().parse::<f64>() {
+        Ok(value)
+      } else {
+        Err(InterpreterError::EvaluationError("invalid float literal".to_string()))
+      }
+    }
     Rule::Expression => evaluate_expression(term),
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
       s.parse::<f64>()
