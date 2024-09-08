@@ -57,9 +57,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         .collect::<Result<_, _>>()?;
       Ok(format!("{{{}}}", items.join(", ")))
     }
-    Rule::Expression | Rule::Term => evaluate_expression(expr)
-      .map(format_result)
-      .map_err(InterpreterError::EvaluationError),
+    Rule::Expression | Rule::Term => evaluate_expression(expr).map(format_result),
     Rule::FunctionCall => evaluate_function_call(expr),
     Rule::Identifier => Ok(expr.as_str().to_string()),
     _ => Err(InterpreterError::EvaluationError(format!(
