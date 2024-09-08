@@ -40,26 +40,33 @@ fn evaluate_expression(expr: pest::iterators::Pair<Rule>) -> Result<f64, String>
     match expr.as_rule() {
         Rule::Expression => {
             let mut terms = expr.into_inner().peekable();
-            let mut result = evaluate_term(terms.next().unwrap())?;
+            let mut result = 0.0;
+            let mut current_term = evaluate_term(terms.next().unwrap())?;
 
             while let Some(op) = terms.next() {
                 let next_term = terms.next().unwrap();
                 match op.as_str() {
-                    "+" => result += evaluate_term(next_term)?,
-                    "-" => result -= evaluate_term(next_term)?,
-                    "*" => result *= evaluate_term(next_term)?,
+                    "+" => {
+                        result += current_term;
+                        current_term = evaluate_term(next_term)?;
+                    }
+                    "-" => {
+                        result += current_term;
+                        current_term = -evaluate_term(next_term)?;
+                    }
+                    "*" => current_term *= evaluate_term(next_term)?,
                     "/" => {
                         let divisor = evaluate_term(next_term)?;
                         if divisor == 0.0 {
                             return Err("Division by zero".to_string());
                         }
-                        result /= divisor;
+                        current_term /= divisor;
                     }
                     _ => return Err(format!("Unexpected operator: {}", op.as_str())),
                 }
             }
 
-            Ok(result)
+            Ok(result + current_term)
         }
         Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
         _ => Err(format!("Unexpected rule: {:?}", expr.as_rule())),
