@@ -74,21 +74,15 @@ fn evaluate_expression(
   match expr.as_rule() {
     Rule::Expression => {
       let mut terms = expr.into_inner().peekable();
-      let mut result = 0.0;
-      let mut current_term = evaluate_term(terms.next().unwrap())?;
+      let first_term = terms.next().unwrap();
+      let mut result = evaluate_term(first_term)?;
 
       while let Some(op) = terms.next() {
         let next_term = terms.next().unwrap();
         match op.as_str() {
-          "+" => {
-            result += current_term;
-            current_term = evaluate_term(next_term)?;
-          }
-          "-" => {
-            result += current_term;
-            current_term = -evaluate_term(next_term)?;
-          }
-          "*" => current_term *= evaluate_term(next_term)?,
+          "+" => result += evaluate_term(next_term)?,
+          "-" => result -= evaluate_term(next_term)?,
+          "*" => result *= evaluate_term(next_term)?,
           "/" => {
             let divisor = evaluate_term(next_term)?;
             if divisor == 0.0 {
@@ -96,7 +90,7 @@ fn evaluate_expression(
                 "Division by zero".to_string(),
               ));
             }
-            current_term /= divisor;
+            result /= divisor;
           }
           _ => {
             return Err(InterpreterError::EvaluationError(format!(
@@ -107,7 +101,7 @@ fn evaluate_expression(
         }
       }
 
-      Ok(format_result(result + current_term))
+      Ok(format_result(result))
     }
     Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
     Rule::List => {
