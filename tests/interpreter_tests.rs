@@ -1,4 +1,4 @@
-use wolfram_parser::interpret;
+use woxi::interpret;
 
 #[test]
 fn test_addition() {
