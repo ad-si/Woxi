@@ -8,3 +8,4 @@ license = "AGPL-3.0-or-later"
 pest = "2.5"
 pest_derive = "2.5"
 clap = { version = "4.3", features = ["derive"] }
+thiserror = "1.0.63"

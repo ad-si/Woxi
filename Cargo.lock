@@ -402,4 +402,5 @@ dependencies = [
  "clap",
  "pest",
  "pest_derive",
+ "thiserror",
 ]
