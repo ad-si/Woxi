@@ -30,13 +30,26 @@ pub fn parse(
   WolframParser::parse_wolfram(input)
 }
 
-pub fn interpret(input: &str) -> Result<f64, InterpreterError> {
+pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   let pairs = parse(input)?;
   let expr = pairs
     .into_iter()
     .next()
     .ok_or(InterpreterError::EmptyInput)?;
-  evaluate_expression(expr).map_err(InterpreterError::EvaluationError)
+  evaluate_expression(expr)
+    .map(|result| {
+      if result == 1.0 {
+        "True".to_string()
+      } else if result == 0.0 {
+        "False".to_string()
+      } else {
+        format!("{:.10}", result)
+          .trim_end_matches('0')
+          .trim_end_matches('.')
+          .to_string()
+      }
+    })
+    .map_err(InterpreterError::EvaluationError)
 }
 
 fn evaluate_expression(
@@ -118,6 +131,22 @@ fn evaluate_function_call(
         );
       }
       Ok(nth_prime(n as usize) as f64)
+    }
+    "EvenQ" => {
+      let n = evaluate_term(args.next().unwrap())?;
+      if n.fract() == 0.0 && (n as i64) % 2 == 0 {
+        Ok(1.0) // Representing "True"
+      } else {
+        Ok(0.0) // Representing "False"
+      }
+    }
+    "OddQ" => {
+      let n = evaluate_term(args.next().unwrap())?;
+      if n.fract() == 0.0 && (n as i64) % 2 != 0 {
+        Ok(1.0) // Representing "True"
+      } else {
+        Ok(0.0) // Representing "False"
+      }
     }
     "GroupBy" => {
       // Placeholder implementation

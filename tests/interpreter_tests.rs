@@ -11,48 +11,48 @@ mod interpreter_tests {
 
       #[test]
       fn addition() {
-        assert_eq!(interpret("1 + 2").unwrap(), 3.0);
+        assert_eq!(interpret("1 + 2").unwrap(), "3");
       }
 
       #[test]
       fn subtraction() {
-        assert_eq!(interpret("3 - 1").unwrap(), 2.0);
+        assert_eq!(interpret("3 - 1").unwrap(), "2");
       }
 
       #[test]
       fn multiple_operations() {
-        assert_eq!(interpret("1 + 2 - 3 + 4").unwrap(), 4.0);
+        assert_eq!(interpret("1 + 2 - 3 + 4").unwrap(), "4");
       }
 
       #[test]
       fn negative_numbers() {
-        assert_eq!(interpret("-1 + 3").unwrap(), 2.0);
+        assert_eq!(interpret("-1 + 3").unwrap(), "2");
       }
 
       #[test]
       fn multiplication() {
-        assert_eq!(interpret("3 * 4").unwrap(), 12.0);
+        assert_eq!(interpret("3 * 4").unwrap(), "12");
       }
 
       #[test]
       fn complex_multiplication() {
-        assert_eq!(interpret("2 * 3 + 4 * 5").unwrap(), 26.0);
+        assert_eq!(interpret("2 * 3 + 4 * 5").unwrap(), "26");
       }
 
       #[test]
       fn division() {
-        assert_eq!(interpret("10 / 2").unwrap(), 5.0);
+        assert_eq!(interpret("10 / 2").unwrap(), "5");
       }
 
       #[test]
       fn division_repeating_decimal() {
         // TODO: Should be kept as the fraction 10/3
-        assert_eq!(interpret("10 / 3").unwrap(), 3.3333333333333334);
+        assert_eq!(interpret("10 / 3").unwrap(), "3.3333333333");
       }
 
       #[test]
       fn complex_division() {
-        assert_eq!(interpret("10 / 2 + 3 / 3").unwrap(), 6.0);
+        assert_eq!(interpret("10 / 2 + 3 / 3").unwrap(), "6");
       }
     }
 
@@ -61,39 +61,39 @@ mod interpreter_tests {
 
       #[test]
       fn addition() {
-        assert_eq!(interpret("1.5 + 2.7").unwrap(), 4.2);
+        assert_eq!(interpret("1.5 + 2.7").unwrap(), "4.2");
       }
 
       #[test]
       fn subtraction() {
-        assert_eq!(interpret("3.5 - 1.2").unwrap(), 2.3);
+        assert_eq!(interpret("3.5 - 1.2").unwrap(), "2.3");
       }
 
       #[test]
       fn multiple_operations() {
-        assert_eq!(interpret("1.1 + 2.2 - 3.3 + 4.4").unwrap(), 4.4);
+        assert_eq!(interpret("1.1 + 2.2 - 3.3 + 4.4").unwrap(), "4.4");
       }
 
       #[test]
       fn multiplication() {
-        assert_eq!(interpret("1.5 * 2.5").unwrap(), 3.75);
+        assert_eq!(interpret("1.5 * 2.5").unwrap(), "3.75");
       }
 
       #[test]
       fn complex_multiplication() {
-        assert_eq!(interpret("1.5 * 2.0 + 3.0 * 1.5").unwrap(), 7.5);
+        assert_eq!(interpret("1.5 * 2.0 + 3.0 * 1.5").unwrap(), "7.5");
       }
 
       #[test]
       fn division() {
         // TODO: Should be 3.2
-        assert_eq!(interpret("9.6 / 3").unwrap(), 3.1999999999999997);
+        assert_eq!(interpret("9.6 / 3").unwrap(), "3.2");
       }
 
       #[test]
       fn complex_division() {
         // TODO: Should be 4.2
-        assert_eq!(interpret("9.6 / 3 + 3.0 / 3").unwrap(), 4.199999999999999);
+        assert_eq!(interpret("9.6 / 3 + 3.0 / 3").unwrap(), "4.2");
       }
     }
   }
@@ -115,12 +115,12 @@ mod interpreter_tests {
 
     #[test]
     fn test_prime_function() {
-      assert_eq!(interpret("Prime[1]").unwrap(), 2.0);
-      assert_eq!(interpret("Prime[2]").unwrap(), 3.0);
-      assert_eq!(interpret("Prime[3]").unwrap(), 5.0);
-      assert_eq!(interpret("Prime[4]").unwrap(), 7.0);
-      assert_eq!(interpret("Prime[5]").unwrap(), 11.0);
-      assert_eq!(interpret("Prime[100]").unwrap(), 541.0);
+      assert_eq!(interpret("Prime[1]").unwrap(), "2");
+      assert_eq!(interpret("Prime[2]").unwrap(), "3");
+      assert_eq!(interpret("Prime[3]").unwrap(), "5");
+      assert_eq!(interpret("Prime[4]").unwrap(), "7");
+      assert_eq!(interpret("Prime[5]").unwrap(), "11");
+      assert_eq!(interpret("Prime[100]").unwrap(), "541");
     }
 
     #[test]
