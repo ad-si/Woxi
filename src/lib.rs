@@ -184,7 +184,10 @@ fn evaluate_term(
         .into_inner()
         .map(|item| interpret(item.as_str()))
         .collect::<Result<_, _>>()?;
-      Ok(format!("{{{}}}", items.join(", ")))
+      Err(InterpreterError::EvaluationError(format!(
+        "Lists cannot be evaluated to a numeric value: {{{}}}",
+        items.join(", ")
+      )))
     }
     Rule::Identifier => match term.as_str() {
       "True" => Ok(1.0),
