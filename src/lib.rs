@@ -66,7 +66,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       if identifier == "True" || identifier == "False" {
         Ok(identifier.to_string())
       } else {
-        Ok(identifier.to_string()) // Assume identifiers are valid and return as is
+        Err(InterpreterError::EvaluationError(format!(
+          "Unknown identifier: {}",
+          identifier
+        )))
       }
     }
     _ => Err(InterpreterError::EvaluationError(format!(
