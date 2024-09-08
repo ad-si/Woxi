@@ -32,24 +32,59 @@ pub fn parse(
 
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   let pairs = parse(input)?;
-  let expr = pairs
+  let program = pairs
     .into_iter()
     .next()
     .ok_or(InterpreterError::EmptyInput)?;
-  evaluate_expression(expr)
-    .map(|result| {
-      if result == 1.0 {
-        "True".to_string()
-      } else if result == 0.0 {
-        "False".to_string()
-      } else {
-        format!("{:.10}", result)
-          .trim_end_matches('0')
-          .trim_end_matches('.')
-          .to_string()
-      }
-    })
-    .map_err(InterpreterError::EvaluationError)
+
+  if program.as_rule() != Rule::Program {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Expected Program, got {:?}",
+      program.as_rule()
+    )));
+  }
+
+  let expr = program
+    .into_inner()
+    .next()
+    .ok_or(InterpreterError::EmptyInput)?;
+
+  match expr.as_rule() {
+    Rule::List => {
+      let items: Vec<String> = expr
+        .into_inner()
+        .map(|item| interpret(item.as_str()))
+        .collect::<Result<_, _>>()?;
+      Ok(format!("{{{}}}", items.join(", ")))
+    }
+    Rule::Expression | Rule::Term => evaluate_expression(expr)
+      .map(format_result)
+      .map_err(InterpreterError::EvaluationError),
+    Rule::FunctionCall => evaluate_function_call(expr)
+      .map(format_result)
+      .map_err(InterpreterError::EvaluationError),
+    Rule::Identifier => Ok(expr.as_str().to_string()),
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "Unexpected rule: {:?}",
+      expr.as_rule()
+    ))),
+  }
+}
+
+fn format_result(result: f64) -> String {
+  if result.fract() == 0.0 {
+    let int_result = result as i64;
+    match int_result {
+      1 => "True".to_string(),
+      0 => "False".to_string(),
+      _ => int_result.to_string(),
+    }
+  } else {
+    format!("{:.10}", result)
+      .trim_end_matches('0')
+      .trim_end_matches('.')
+      .to_string()
+  }
 }
 
 fn evaluate_expression(
@@ -110,6 +145,12 @@ fn evaluate_term(term: pest::iterators::Pair<Rule>) -> Result<f64, String> {
     }
     Rule::Expression => evaluate_expression(term),
     Rule::FunctionCall => evaluate_function_call(term),
+    Rule::List => Ok(0.0), // Placeholder for list evaluation
+    Rule::Identifier => match term.as_str() {
+      "True" => Ok(1.0),
+      "False" => Ok(0.0),
+      _ => Ok(0.0), // Return 0.0 for other identifiers
+    },
     _ => Err(format!("Unexpected rule in Term: {:?}", term.as_rule())),
   }
 }
@@ -148,9 +189,36 @@ fn evaluate_function_call(
         Ok(0.0) // Representing "False"
       }
     }
+    "First" | "Last" => {
+      let list = args.next().unwrap();
+      if list.as_rule() != Rule::List {
+        return Err(format!("{} function argument must be a list", func_name));
+      }
+      let mut items = list.into_inner();
+      let target_item = if func_name == "First" {
+        items.next()
+      } else {
+        items.last()
+      };
+
+      match target_item {
+        Some(item) => match item.as_rule() {
+          Rule::Integer => {
+            item.as_str().parse::<f64>().map_err(|e| e.to_string())
+          }
+          Rule::Identifier => Ok(match item.as_str() {
+            "True" => 1.0,
+            "False" => 0.0,
+            _ => 0.0,
+          }),
+          _ => evaluate_expression(item),
+        },
+        None => Err("Empty list".to_string()),
+      }
+    }
     "GroupBy" => {
       // Placeholder implementation
-      Ok(0.0)
+      Err("GroupBy function not yet implemented".to_string())
     }
     _ => Err(format!("Unknown function: {}", func_name)),
   }
