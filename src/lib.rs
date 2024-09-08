@@ -176,7 +176,10 @@ fn evaluate_term(
     Rule::Real => term.as_str().parse::<f64>().map_err(|_| {
       InterpreterError::EvaluationError("invalid float literal".to_string())
     }),
-    Rule::Expression => evaluate_expression(term).and_then(|s| s.parse::<f64>().map_err(|e| InterpreterError::EvaluationError(e.to_string()))),
+    Rule::Expression => evaluate_expression(term).and_then(|s| {
+      s.parse::<f64>()
+        .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+    }),
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
       if s == "True" {
         Ok(1.0)
