@@ -153,23 +153,22 @@ fn evaluate_term(
         term.as_str()
       ))),
     },
-    Rule::Integer | Rule::Real => term
-        .as_str()
-        .parse::<f64>()
-        .map_err(|_| InterpreterError::EvaluationError("invalid float literal".to_string())),
+    Rule::Integer | Rule::Real => term.as_str().parse::<f64>().map_err(|_| {
+      InterpreterError::EvaluationError("invalid float literal".to_string())
+    }),
     Rule::Expression => evaluate_expression(term),
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
-        s.parse::<f64>()
-            .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      s.parse::<f64>()
+        .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
     }),
     Rule::List => Ok(0.0), // Placeholder for list evaluation
     Rule::Identifier => match term.as_str() {
-        "True" => Ok(1.0),
-        "False" => Ok(0.0),
-        _ => Err(InterpreterError::EvaluationError(format!(
-            "Unknown identifier: {}",
-            term.as_str()
-        ))),
+      "True" => Ok(1.0),
+      "False" => Ok(0.0),
+      _ => Err(InterpreterError::EvaluationError(format!(
+        "Unknown identifier: {}",
+        term.as_str()
+      ))),
     },
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule in Term: {:?}",
