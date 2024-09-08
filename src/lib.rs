@@ -161,7 +161,9 @@ fn evaluate_term(
       if let Ok(value) = term.as_str().parse::<f64>() {
         Ok(value)
       } else {
-        Err(InterpreterError::EvaluationError("invalid float literal".to_string()))
+        Err(InterpreterError::EvaluationError(
+          "invalid float literal".to_string(),
+        ))
       }
     }
     Rule::Expression => evaluate_expression(term),
