@@ -9,7 +9,7 @@ Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 // Special functions
-SpecialFunction = { "Sin" | "Cos" | "Tan" | "Plot" | "Prime" | "GroupBy" }
+SpecialFunction = { "Sin" | "Cos" | "Tan" | "Plot" | "Prime" | "GroupBy" | "Print" }
 FunctionCall = { (Identifier | SpecialFunction) ~ "[" ~ (Expression ~ ("," ~ (Expression | List))*)? ~ "]" }
 
 Operator = { "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
