@@ -9,7 +9,7 @@ test-unit:
 
 
 .PHONY: test-cli
-test-cli:
+test-cli: install
 	shelltest --color cli.test
 
 

@@ -68,6 +68,7 @@ fn evaluate_expression(
   expr: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   match expr.as_rule() {
+    Rule::String => Ok(expr.as_str().trim_matches('"').to_string()),
     Rule::Expression => {
       let mut inner = expr.into_inner();
       let first = inner.next().unwrap();
@@ -79,14 +80,7 @@ fn evaluate_expression(
           } else if first.as_rule() == Rule::FunctionCall {
               return evaluate_function_call(first);
           } else if first.as_rule() == Rule::Term {
-              let mut sub_inner = first.clone().into_inner();
-              if let Some(child) = sub_inner.next() {
-                  if child.as_rule() == Rule::List {
-                      return evaluate_expression(child);
-                  } else if child.as_rule() == Rule::Identifier {
-                      return Ok(child.as_str().to_string());
-                  }
-              }
+              return evaluate_expression(first.into_inner().next().unwrap());
           }
       }
       let mut values: Vec<f64> = vec![evaluate_term(first)?];
@@ -278,6 +272,11 @@ fn evaluate_function_call(
       Err(InterpreterError::EvaluationError(
         "GroupBy function not yet implemented".to_string(),
       ))
+    }
+    "Print" => {
+      let arg = evaluate_expression(args.next().unwrap())?;
+      println!("{}", arg);
+      Ok("Null".to_string())
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unknown function: {}",
