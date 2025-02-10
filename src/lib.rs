@@ -55,11 +55,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
 fn format_result(result: f64) -> String {
   if result.fract() == 0.0 {
     let int_result = result as i64;
-    match int_result {
-      1 => "True".to_string(),
-      0 => "False".to_string(),
-      _ => int_result.to_string(),
-    }
+    int_result.to_string()
   } else {
     format!("{:.10}", result)
       .trim_end_matches('0')
@@ -73,45 +69,88 @@ fn evaluate_expression(
 ) -> Result<String, InterpreterError> {
   match expr.as_rule() {
     Rule::Expression => {
-      let mut terms = expr.into_inner().peekable();
-      let first_term = terms.next().unwrap();
-      let mut result = evaluate_term(first_term)?;
-
-      while let Some(op) = terms.next() {
-        let next_term = terms.next().unwrap();
-        match op.as_str() {
-          "+" => result += evaluate_term(next_term)?,
-          "-" => result -= evaluate_term(next_term)?,
-          "*" => result *= evaluate_term(next_term)?,
-          "/" => {
-            let divisor = evaluate_term(next_term)?;
-            if divisor == 0.0 {
-              return Err(InterpreterError::EvaluationError(
-                "Division by zero".to_string(),
-              ));
-            }
-            result /= divisor;
+      let mut inner = expr.into_inner();
+      let first = inner.next().unwrap();
+      if inner.clone().next().is_none() {
+          if first.as_rule() == Rule::List {
+              return evaluate_expression(first);
+          } else if first.as_rule() == Rule::Identifier {
+              return Ok(first.as_str().to_string());
+          } else if first.as_rule() == Rule::FunctionCall {
+              return evaluate_function_call(first);
+          } else if first.as_rule() == Rule::Term {
+              let mut sub_inner = first.clone().into_inner();
+              if let Some(child) = sub_inner.next() {
+                  if child.as_rule() == Rule::List {
+                      return evaluate_expression(child);
+                  } else if child.as_rule() == Rule::Identifier {
+                      return Ok(child.as_str().to_string());
+                  }
+              }
           }
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Unexpected operator: {}",
-              op.as_str()
-            )))
-          }
-        }
       }
-
+      let mut values: Vec<f64> = vec![evaluate_term(first)?];
+      let mut ops: Vec<&str> = vec![];
+      while let Some(op_pair) = inner.next() {
+          let op = op_pair.as_str();
+          let term = inner.next().unwrap();
+          ops.push(op);
+          values.push(evaluate_term(term)?);
+      }
+      // First pass: handle multiplication and division
+      let mut i = 0;
+      while i < ops.len() {
+          if ops[i] == "*" {
+              values[i] = values[i] * values[i+1];
+              values.remove(i+1);
+              ops.remove(i);
+          } else if ops[i] == "/" {
+              if values[i+1] == 0.0 {
+                  return Err(InterpreterError::EvaluationError("Division by zero".to_string()));
+              }
+              values[i] = values[i] / values[i+1];
+              values.remove(i+1);
+              ops.remove(i);
+          } else {
+              i += 1;
+          }
+      }
+      // Second pass: handle addition and subtraction
+      let mut result = values[0];
+      for (op, &val) in ops.iter().zip(values.iter().skip(1)) {
+          if *op == "+" {
+              result += val;
+          } else if *op == "-" {
+              result -= val;
+          } else {
+              return Err(InterpreterError::EvaluationError(format!(
+                  "Unexpected operator: {}",
+                  op
+              )));
+          }
+      }
       Ok(format_result(result))
     }
     Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
     Rule::List => {
       let items: Vec<String> = expr
         .into_inner()
+        .filter(|item| item.as_str() != ",")
         .map(|item| evaluate_expression(item))
         .collect::<Result<_, _>>()?;
       Ok(format!("{{{}}}", items.join(", ")))
     }
-    Rule::Term => evaluate_term(expr).map(format_result),
+    Rule::Term => {
+        let mut inner = expr.clone().into_inner();
+        if let Some(first) = inner.next() {
+            if first.as_rule() == Rule::FunctionCall {
+                return evaluate_function_call(first);
+            } else if first.as_rule() == Rule::List {
+                return evaluate_expression(first);
+            }
+        }
+        evaluate_term(expr).map(format_result)
+    },
     Rule::FunctionCall => evaluate_function_call(expr),
     Rule::Identifier => Ok(expr.as_str().to_string()),
     _ => Err(InterpreterError::EvaluationError(format!(
@@ -220,7 +259,7 @@ fn evaluate_function_call(
           func_name
         )));
       }
-      let items: Vec<_> = list.into_inner().collect();
+      let items: Vec<_> = list.into_inner().filter(|item| item.as_str() != ",").collect();
       let target_item = if func_name == "First" {
         items.first()
       } else {
