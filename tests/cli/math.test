@@ -1,0 +1,19 @@
+# Basic Math Tests
+
+$ wo '1+2'
+3
+
+$ wo 'Sign[5]'
+1
+
+$ wo 'Sign[0]'
+0
+
+$ wo 'Sign[-7]'
+-1
+
+$ wo 'Prime[5]'
+11
+
+$ wo '#^2 &[{1, 2, 3}]'
+{1, 4, 9}
