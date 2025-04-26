@@ -4,6 +4,14 @@
 $ wo 'Length[{7, 2, 4}]'
 3
 
+# `First`: Returns the first element of a list.
+$ wo 'First[{7, 2, 4}]'
+7
+
+# `Last`: Returns the last element of a list.
+$ wo 'Last[{7, 2, 4}]'
+4
+
 # # `Select`: Picks elements of a list that satisfy a criterion.
 # $ wo 'Select[{1, 2, 3, 4}, EvenQ]'
 # {2, 4}
