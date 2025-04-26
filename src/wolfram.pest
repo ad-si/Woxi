@@ -10,12 +10,16 @@ String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 // Special functions
 SpecialFunction = { "Sin" | "Cos" | "Tan" | "Plot" | "Prime" | "GroupBy" | "Print" }
-FunctionCall = { (Identifier | SpecialFunction) ~ "[" ~ (Expression ~ ("," ~ (Expression | List))*)? ~ "]" }
+FunctionCall = { (Identifier | SpecialFunction | AnonymousFunction) ~ "[" ~ (Expression ~ ("," ~ (Expression | List))*)? ~ "]" }
+
+// Anonymous function syntax
+Slot = @{ "#" ~ ASCII_DIGIT* }
+AnonymousFunction = { Slot ~ Operator ~ Term ~ "&" }
 
 Operator = { "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
 
 Expression = { Term ~ (Operator ~ Term)* }
-Term = _{ NumericValue | Constant | String | List | FunctionCall | Identifier | "(" ~ Expression ~ ")" }
+Term = _{ NumericValue | Constant | String | List | FunctionCall | Identifier | Slot | "(" ~ Expression ~ ")" }
 
 List = { "{" ~ (Expression ~ ("," ~ Expression)*)? ~ "}" }
 Pattern = { Identifier ~ "_" }
