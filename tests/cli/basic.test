@@ -1,0 +1,14 @@
+# Basic tests
+
+$ wo '1+2'
+3
+
+$ wo 'Prime[5]'
+11
+
+$ wo 'Print["Hello World!"]'
+Hello World!
+Null
+
+$ wo '#^2 &[{1, 2, 3}]'
+{1, 4, 9}
