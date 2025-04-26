@@ -200,6 +200,11 @@ fn evaluate_term(
       "False" => Ok(0.0),
       _ => Ok(0.0), // Return 0.0 for unknown identifiers
     },
+    Rule::Slot => {
+      // For slot (#), we'll return 1.0 as a default value when evaluated as a term
+      // It will be replaced with the actual value in the anonymous function evaluation
+      Ok(1.0)
+    },
     Rule::List => Err(InterpreterError::EvaluationError(
       "Cannot evaluate a list as a numeric value".to_string(),
     )),
@@ -214,7 +219,69 @@ fn evaluate_function_call(
   func_call: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   let mut inner = func_call.into_inner();
-  let func_name = inner.next().unwrap().as_str();
+  let func_name_pair = inner.next().unwrap();
+  
+  // Handle anonymous function case
+  if func_name_pair.as_rule() == Rule::AnonymousFunction {
+    let mut func_parts = func_name_pair.into_inner();
+    let _slot = func_parts.next().unwrap();
+    let operator = func_parts.next().unwrap().as_str();
+    let operand = func_parts.next().unwrap();
+    
+    // Get argument - for Wolfram syntax '#^2 &[{1, 2, 3}]'
+    let args = inner.next();
+    if args.is_none() {
+      return Err(InterpreterError::EvaluationError("Expected arguments for anonymous function".to_string()));
+    }
+    
+    let arg = args.unwrap();
+    // Extract list from the argument
+    let list = match arg.as_rule() {
+      Rule::List => arg,
+      Rule::Expression => {
+        let mut inner_expr = arg.into_inner();
+        if let Some(first) = inner_expr.next() {
+          if first.as_rule() == Rule::List {
+            first
+          } else {
+            return Err(InterpreterError::EvaluationError("Anonymous function must be applied to a list".to_string()));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError("Empty expression in anonymous function arguments".to_string()));
+        }
+      }
+      _ => return Err(InterpreterError::EvaluationError(format!("Anonymous function must be applied to a list, got {:?}", arg.as_rule()))),
+    };
+    
+    let items: Vec<_> = list.into_inner().filter(|item| item.as_str() != ",").collect();
+    let mut results = Vec::new();
+    
+    for item in items {
+      let item_value = evaluate_term(item.clone())?;
+      
+      let result = match operator {
+        "+" => item_value + evaluate_term(operand.clone())?,
+        "-" => item_value - evaluate_term(operand.clone())?,
+        "*" => item_value * evaluate_term(operand.clone())?,
+        "/" => {
+          let denominator = evaluate_term(operand.clone())?;
+          if denominator == 0.0 {
+            return Err(InterpreterError::EvaluationError("Division by zero".to_string()));
+          }
+          item_value / denominator
+        },
+        "^" => item_value.powf(evaluate_term(operand.clone())?),
+        _ => return Err(InterpreterError::EvaluationError(format!("Unsupported operator in anonymous function: {}", operator))),
+      };
+      
+      results.push(format_result(result));
+    }
+    
+    return Ok(format!("{{{}}}", results.join(", ")));
+  }
+  
+  // Handle regular function case
+  let func_name = func_name_pair.as_str();
   let mut args = inner.next().unwrap().into_inner();
 
   match func_name {
