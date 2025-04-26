@@ -334,6 +334,17 @@ fn evaluate_function_call(
         }
       }
     }
+    "Length" => {
+      let list = args.next().unwrap();
+      if list.as_rule() != Rule::List {
+        return Err(InterpreterError::EvaluationError(format!(
+          "{} function argument must be a list",
+          func_name
+        )));
+      }
+      let items: Vec<_> = list.into_inner().filter(|item| item.as_str() != ",").collect();
+      Ok(items.len().to_string())
+    }
     "GroupBy" => {
       // Placeholder implementation
       Err(InterpreterError::EvaluationError(
