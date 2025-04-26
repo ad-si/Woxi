@@ -1,0 +1,26 @@
+# Map, Apply, Fold, FoldList, Nest, NestList tests
+
+# # Map (/@): Applies a function to each element of a list.
+# $ wo 'f /@ {1, 2, 3}'
+# {f[1], f[2], f[3]}
+
+# # Apply (@@): Replaces the head of an expression with a function.
+# $ wo 'f @@ {1, 2, 3}'
+# f[1, 2, 3]
+
+# # Fold (Fold): Applies a function cumulatively to elements of a list,
+# # starting with an initial value.
+# $ wo 'Fold[Plus, 0, {1, 2, 3}]'
+# 6
+
+# # FoldList (FoldList): Like Fold, but returns a list of intermediate results.
+# $ wo 'FoldList[Plus, 0, {1, 2, 3}]'
+# {0, 1, 3, 6}
+
+# # Nest (Nest): Applies a function repeatedly to an expression.
+# $ wo 'Nest[f, x, 3]'
+# f[f[f[x]]]
+
+# # NestList (NestList): Like Nest, but returns a list of intermediate results.
+# $ wo 'NestList[f, x, 3]'
+# {x, f[x], f[f[x]], f[f[f[x]]]}

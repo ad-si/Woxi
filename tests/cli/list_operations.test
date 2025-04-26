@@ -1,0 +1,51 @@
+# List operations tests
+
+# # Select (Select): Picks elements of a list that satisfy a criterion.
+# $ wo 'Select[{1, 2, 3, 4}, EvenQ]'
+# {2, 4}
+
+# # Cases (Cases): Extracts elements from an expression that match a pattern.
+# $ wo 'Cases[{a, b, a}, a]'
+# {a, a}
+
+# # DeleteCases (DeleteCases):
+# # Removes elements from an expression that match a pattern.
+# $ wo 'DeleteCases[{a, b, a}, a]'
+# {b}
+
+# # MapThread (MapThread):
+# # Applies a function to corresponding elements in several lists.
+# $ wo 'MapThread[Plus, {{1, 2}, {3, 4}}]'
+# {4, 6}
+
+# # Flatten (Flatten): Flattens nested lists.
+# $ wo 'Flatten[{{1}, {2, 3}}]'
+# {1, 2, 3}
+
+# # Partition (Partition): Breaks a list into smaller sublists.
+# $ wo 'Partition[{1, 2, 3, 4}, 2]'
+# {{1, 2}, {3, 4}}
+
+# # SortBy (SortBy): Sorts elements of a list according to a function.
+# $ wo 'SortBy[{3, 1, 2}, # &]'
+# {1, 2, 3}
+
+# # First: Returns the first element of a list.
+# $ wo 'First[{1, 2, 3}]'
+# 1
+
+# # GroupBy (GroupBy): Groups elements of a list according to a function.
+# $  wo 'GroupBy[{{a, b}, {a, c}, {b, c}}, First]'
+# > /<|a -> {{a, b}, {a, c}}, b -> {{b, c}}|>/
+
+# # Total (Total): Sums the elements of a list.
+# $ wo 'Total[{1, 2, 3}]'
+# 6
+
+# # Accumulate (Accumulate): Returns the cumulative sums of a list.
+# $ wo 'Accumulate[{1, 2, 3}]'
+# {1, 3, 6}
+
+# # Array (Array): Constructs an array using a function to generate elements.
+# $ wo 'Array[#^2 &, 3]'
+# {1, 4, 9}

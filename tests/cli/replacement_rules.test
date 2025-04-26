@@ -1,0 +1,13 @@
+# Replacement rules tests
+
+# # ReplaceAll (/.): Replaces parts of an expression according to rules.
+# $ wo '{a, b} /. a -> x'
+# {x, b}
+
+# # ReplaceRepeated (//.):
+# # Repeatedly applies transformation rules until no more changes occur.
+# $ wo 'ReplaceRepeated[f[2] -> 2][f[f[f[f[2]]]]]'
+# 2
+
+# $ wo 'f[f[f[f[2]]]] //. f[2] -> 2'
+# 2
