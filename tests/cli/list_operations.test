@@ -12,6 +12,10 @@ $ wo 'First[{7, 2, 4}]'
 $ wo 'Last[{7, 2, 4}]'
 4
 
+# `Map`: Applies a function to each element of a list.
+$ wo 'Map[Sign, {-6, 0, 2, 5}]'
+{-1, 0, 1, 1}
+
 # # `Select`: Picks elements of a list that satisfy a criterion.
 # $ wo 'Select[{1, 2, 3, 4}, EvenQ]'
 # {2, 4}

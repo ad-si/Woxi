@@ -37,7 +37,8 @@ fn main() {
     Commands::Run { file } => {
       let absolute_path = if file.is_absolute() {
         file.clone()
-      } else {
+      }
+      else {
         env::current_dir()
           .unwrap_or_else(|_| PathBuf::from("."))
           .join(&file)
