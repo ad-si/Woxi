@@ -66,11 +66,12 @@ cargo test
 
 ## Related
 
-- [Wolfram Research Code Parser]
-- [Pest Wolfram Parser]
-- [MMA Clone]
+- [CodeParser] - Parse Wolfram Language as AST or CST.
+- [MMA Clone] - Simple Wolfram Language clone in Haskell.
+- [TS Wolfram] - Toy Wolfram language interpreter in TypeScript.
+- [Wolfram Parser] - Wolfram parser in Rust.
 
-[Wolfram Research Code Parser]: https://github.com/WolframResearch/codeparser
-[Pest Wolfram Parser]:
-  https://github.com/oovm/wolfram-parser/tree/master/projects/wolfram-pest
+[CodeParser]: https://github.com/WolframResearch/codeparser
 [MMA Clone]: https://github.com/mrtwistor/mmaclone
+[TS Wolfram]: https://github.com/coffeemug/ts-wolfram
+[Wolfram Parser]: https://github.com/oovm/wolfram-parser
