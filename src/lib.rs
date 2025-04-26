@@ -295,6 +295,16 @@ fn evaluate_function_call(
       }
       Ok(nth_prime(n as usize).to_string())
     }
+    "Sign" => {
+      let n = evaluate_term(args.next().unwrap())?;
+      if n > 0.0 {
+        Ok("1".to_string())
+      } else if n < 0.0 {
+        Ok("-1".to_string())
+      } else {
+        Ok("0".to_string())
+      }
+    }
     "EvenQ" | "OddQ" => {
       let arg = args.next().unwrap();
       let n = evaluate_term(arg)?;
