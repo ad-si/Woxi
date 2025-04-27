@@ -28,6 +28,18 @@ $ wo 'Take[{7, 2, 4}, 2]'
 $ wo 'Part[{7, 6, 4}, 2]'
 6
 
+# `Drop`: Returns the list without its first n elements.
+$ wo 'Drop[{7, 2, 4}, 2]'
+{4}
+
+# `Append`: Adds an element to the end of a list.
+$ wo 'Append[{7, 2, 4}, 5]'
+{7, 2, 4, 5}
+
+# `Prepend`: Adds an element to the beginning of a list.
+$ wo 'Prepend[{7, 2, 4}, 5]'
+{5, 7, 2, 4}
+
 # `Map`: Applies a function to each element of a list.
 $ wo 'Map[Sign, {-6, 0, 2, 5}]'
 {-1, 0, 1, 1}
