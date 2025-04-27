@@ -22,3 +22,9 @@ $ wo 'Abs[5]'
 5
 $ wo 'Abs[0]'
 0
+
+# `Sqrt` (Square Root): Returns the square root of a number.
+$ wo 'Sqrt[16]'
+4
+$ wo 'Sqrt[0]'
+0

@@ -433,6 +433,23 @@ fn evaluate_function_call(
         .to_string(),
       )
     }
+    "Sqrt" => {
+      // ---- arity check ----------------------------------------------------
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Sqrt expects exactly 1 argument".into(),
+        ));
+      }
+      // ---- evaluate & validate argument -----------------------------------
+      let n = evaluate_term(args_pairs[0].clone())?;
+      if n < 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Sqrt function argument must be non-negative".into(),
+        ));
+      }
+      // ---- return √n, formatted like all other numeric outputs ------------
+      return Ok(format_result(n.sqrt()));
+    }
 
     // ── string functions ────────────────────────────────────────────────
     "StringLength" => {
