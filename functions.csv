@@ -12,10 +12,12 @@ Length,Returns the number of elements in a list,🚧
 Map,Applies a function to each element of a list,🚧
 Most,Returns the list without its last element,🚧
 Part,Returns the nth element of a list,🚧
+Plus,Adds numbers together,🚧
 Prepend,Adds an element to the beginning of a list,🚧
 Print,Outputs a string to the console,🚧
 Rest,Returns the list without its first element,🚧
 Select,Picks elements of a list that satisfy a criterion,🚧
+Sqrt,Returns the square root of a number,🚧
 StringDrop,Removes a substring from a string,🚧
 StringJoin,Concatenates strings,🚧
 StringLength,Returns the length of a string,🚧
@@ -4481,7 +4483,6 @@ PlotRegion,,
 PlotStyle,,
 PlotTheme,,
 Pluralize,,
-Plus,,
 PlusMinus,,
 Pochhammer,,
 PodStates,,
@@ -5382,7 +5383,6 @@ Split,,
 SplitBy,,
 SpokenString,,
 SpotLight,,
-Sqrt,,
 SqrtBox,,
 SqrtBoxOptions,,
 Square,,
