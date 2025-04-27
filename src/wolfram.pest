@@ -14,7 +14,7 @@ FunctionCall = { (Identifier | SpecialFunction | AnonymousFunction) ~ "[" ~ (Exp
 
 // Anonymous function syntax
 Slot = @{ "#" ~ ASCII_DIGIT* }
-AnonymousFunction = { Slot ~ Operator ~ Term ~ "&" }
+AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 
 Operator = { "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
 
