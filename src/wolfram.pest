@@ -19,7 +19,8 @@ AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 Operator = { "/@" | "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
 
 Expression = { Term ~ (Operator ~ Term)* }
-Term = _{ NumericValue | Constant | String | List | FunctionCall | Identifier | Slot | "(" ~ Expression ~ ")" }
+Term = _{ NumericValue | Constant | String | List | FunctionCall
+        | Identifier | AnonymousFunction | Slot | "(" ~ Expression ~ ")" }
 
 List = { "{" ~ (Expression ~ ("," ~ Expression)*)? ~ "}" }
 Pattern = { Identifier ~ "_" }
