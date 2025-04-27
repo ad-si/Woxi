@@ -819,6 +819,138 @@ fn evaluate_function_call(
       };
       Ok(list_items.len().to_string())
     }
+    "Select" => {
+      // ----- arity ---------------------------------------------------------
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Select expects exactly 2 arguments".into(),
+        ));
+      }
+
+      // ----- extract list --------------------------------------------------
+      let list_pair = &args_pairs[0];
+      let list_rule = list_pair.as_rule();
+      let elems: Vec<_> = if list_rule == Rule::List {
+        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
+      } else if list_rule == Rule::Expression {
+        let mut expr_inner = list_pair.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if first.as_rule() == Rule::List {
+            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "First argument of Select must be a list".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "First argument of Select must be a list".into(),
+          ));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of Select must be a list".into(),
+        ));
+      };
+
+      // ----- identify predicate -------------------------------------------
+      let pred_pair = &args_pairs[1];
+      let pred_name = pred_pair.as_str();
+
+      // ----- filter --------------------------------------------------------
+      let mut kept = Vec::new();
+      for elem in elems {
+        let passes = match pred_name {
+          "EvenQ" | "OddQ" => {
+            let n = evaluate_term(elem.clone())?;
+            if n.fract() != 0.0 {
+              false
+            } else {
+              let is_even = (n as i64) % 2 == 0;
+              if pred_name == "EvenQ" { is_even } else { !is_even }
+            }
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unknown predicate function: {}",
+              pred_name
+            )));
+          }
+        };
+        if passes {
+          kept.push(evaluate_expression(elem.clone())?);
+        }
+      }
+      return Ok(format!("{{{}}}", kept.join(", ")));
+    }
+    "Flatten" => {
+      // ----- arity ---------------------------------------------------------
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Flatten expects exactly 1 argument".into(),
+        ));
+      }
+
+      // ----- obtain the list ----------------------------------------------
+      let list_pair = &args_pairs[0];
+      let list_rule = list_pair.as_rule();
+      let items: Vec<_> = if list_rule == Rule::List {
+        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
+      } else if list_rule == Rule::Expression {
+        let mut expr_inner = list_pair.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if first.as_rule() == Rule::List {
+            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "Flatten argument must be a list".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Flatten argument must be a list".into(),
+          ));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Flatten argument must be a list".into(),
+        ));
+      };
+
+      // ----- recursive flattener ------------------------------------------
+      fn collect_flat<'a>(pair: pest::iterators::Pair<'a, Rule>,
+                      acc: &mut Vec<pest::iterators::Pair<'a, Rule>>) {
+        match pair.as_rule() {
+          Rule::List => {
+            for sub in pair.into_inner().filter(|p| p.as_str() != ",") {
+              collect_flat(sub, acc);
+            }
+          }
+          Rule::Expression => {
+            let mut inner = pair.clone().into_inner();
+            if let Some(first) = inner.next() {
+              if first.as_rule() == Rule::List && inner.next().is_none() {
+                collect_flat(first, acc);
+                return;
+              }
+            }
+            acc.push(pair);
+          }
+          _ => acc.push(pair),
+        }
+      }
+
+      // ----- flatten -------------------------------------------------------
+      let mut flat_pairs = Vec::new();
+      for it in items {
+        collect_flat(it, &mut flat_pairs);
+      }
+
+      // ----- evaluate & format --------------------------------------------
+      let evaluated: Result<Vec<_>, _> =
+        flat_pairs.into_iter().map(|p| evaluate_expression(p)).collect();
+      return Ok(format!("{{{}}}", evaluated?.join(", ")));
+    }
     "GroupBy" => Err(InterpreterError::EvaluationError(
       "GroupBy function not yet implemented".into(),
     )),
