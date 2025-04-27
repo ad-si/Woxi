@@ -1,5 +1,14 @@
 # Basic Math Tests
 
+# `Plus`: Add numbers.
+$ wo 'Plus[1, 2]'
+3
+$ wo 'Plus[1, 2, 3]'
+6
+$ wo 'Plus[-1, -2]'
+-3
+
+# `+` (Plus): Add numbers.
 $ wo '1+2'
 3
 

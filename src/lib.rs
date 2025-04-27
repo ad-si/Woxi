@@ -401,6 +401,23 @@ fn evaluate_function_call(
       }
       Ok(nth_prime(n as usize).to_string())
     }
+    "Plus" => {
+      // ── arity check ──────────────────────────────────────────────────────
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Plus expects at least 1 argument".into(),
+        ));
+      }
+
+      // ── sum all numeric arguments ────────────────────────────────────────
+      let mut sum = 0.0;
+      for ap in &args_pairs {
+        sum += evaluate_term(ap.clone())?;
+      }
+
+      // ── return formatted result ──────────────────────────────────────────
+      return Ok(format_result(sum));
+    }
     "Abs" => {
       // ── arity check ────────────────────────────────────────────────────────
       if args_pairs.len() != 1 {
