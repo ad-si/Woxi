@@ -1274,6 +1274,31 @@ fn evaluate_function_call(
       }
       return Ok(format_result(sum));
     }
+    "Divide" => {
+      // ── arity check ──────────────────────────────────────────────────────
+      if args_pairs.len() != 2 {
+        use std::io::{self, Write};
+        println!(
+          "Divide::argx: Divide called with {} arguments; 2 arguments are expected.",
+          args_pairs.len()
+        );
+        io::stdout().flush().ok();
+        return Ok(String::new());     // nothing further printed by CLI
+      }
+
+      // ── evaluate arguments ───────────────────────────────────────────────
+      let numerator   = evaluate_term(args_pairs[0].clone())?;
+      let denominator = evaluate_term(args_pairs[1].clone())?;
+
+      if denominator == 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Division by zero".into(),
+        ));
+      }
+
+      // ── return formatted result ──────────────────────────────────────────
+      return Ok(format_result(numerator / denominator));
+    }
     // ----- boolean equality helpers ----------------------------------------
     "Equal" => {
       if args_pairs.len() < 2 {

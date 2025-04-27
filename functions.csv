@@ -15,6 +15,7 @@ Unequal,Checks if two values are not equal,✅
 Xor,Checks if exactly one condition is true,✅
 
 Append,Adds an element to the end of a list,🚧
+Divide,Divide numbers,🚧
 Drop,Returns the list without its first n elements,🚧
 First,Returns the first element of a list,🚧
 Flatten,Flattens nested lists,🚧
@@ -1798,7 +1799,6 @@ DistributionParameterAssumptions,,
 DistributionParameterQ,,
 Dithering,,
 Div,,
-Divide,,
 DivideBy,,
 Dividers,,
 DivideSides,,
