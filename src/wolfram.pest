@@ -16,7 +16,7 @@ FunctionCall = { (Identifier | SpecialFunction | AnonymousFunction) ~ "[" ~ (Exp
 Slot = @{ "#" ~ ASCII_DIGIT* }
 AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 
-Operator = { "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
+Operator = { "/@" | "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
 
 Expression = { Term ~ (Operator ~ Term)* }
 Term = _{ NumericValue | Constant | String | List | FunctionCall | Identifier | Slot | "(" ~ Expression ~ ")" }

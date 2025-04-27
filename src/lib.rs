@@ -71,6 +71,15 @@ fn evaluate_expression(
   match expr.as_rule() {
     Rule::String => Ok(expr.as_str().trim_matches('"').to_string()),
     Rule::Expression => {
+      // --- special case: Map operator ----------------------------------
+      {
+        let items: Vec<_> = expr.clone().into_inner().collect();
+        if items.len() == 3
+            && items[1].as_rule() == Rule::Operator
+            && items[1].as_str() == "/@" {
+          return apply_map_operator(items[0].clone(), items[2].clone());
+        }
+      }
       let mut inner = expr.into_inner();
       let first = inner.next().unwrap();
       if inner.clone().next().is_none() {
@@ -1046,6 +1055,57 @@ fn evaluate_function_call(
       "Unknown function: {}",
       func_name
     ))),
+  }
+}
+
+fn apply_map_operator(
+    func: pest::iterators::Pair<Rule>,
+    list: pest::iterators::Pair<Rule>,
+) -> Result<String, InterpreterError> {
+  // ----- obtain list items (same extraction logic used in Map) -----
+  let list_rule = list.as_rule();
+  let elements: Vec<_> = if list_rule == Rule::List {
+    list.into_inner().filter(|p| p.as_str() != ",").collect()
+  } else if list_rule == Rule::Expression {
+    let mut inner = list.into_inner();
+    if let Some(first) = inner.next() {
+      if first.as_rule() == Rule::List {
+        first.into_inner().filter(|p| p.as_str() != ",").collect()
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Second operand of /@ must be a list".into()));
+      }
+    } else {
+      return Err(InterpreterError::EvaluationError(
+        "Second operand of /@ must be a list".into()));
+    }
+  } else {
+    return Err(InterpreterError::EvaluationError(
+      "Second operand of /@ must be a list".into()));
+  };
+
+  // ----- identify mapped function ----------------------------------
+  match func.as_rule() {
+    Rule::Identifier => {
+      let name = func.as_str();
+      match name {
+        "Sign" => {
+          let mut mapped = Vec::new();
+          for el in elements {
+            let v = evaluate_term(el.clone())?;
+            let s = if v > 0.0 {  1.0 }
+                    else if v < 0.0 { -1.0 }
+                    else { 0.0 };
+            mapped.push(format_result(s));
+          }
+          Ok(format!("{{{}}}", mapped.join(", ")))
+        }
+        _ => Err(InterpreterError::EvaluationError(
+              format!("Unknown mapping function: {}", name))),
+      }
+    }
+    _ => Err(InterpreterError::EvaluationError(
+          "Left operand of /@ must be a function".into())),
   }
 }
 
