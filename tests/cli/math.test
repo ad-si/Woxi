@@ -36,9 +36,9 @@ $ wo 'Times[-2, 3]'
 $ wo 'Divide[6, 2]'
 3
 $ wo 'Divide[6, 2, 3]'
-Divide::argx: Divide called with 3 arguments; 2 arguments are expected.
 
->=
+Divide::argrx: Divide called with 3 arguments; 2 arguments are expected.
+Divide[6, 2, 3]
 
 # `*` (Times): Multiply numbers.
 $ wo '2*3'
@@ -63,6 +63,57 @@ $ wo 'Abs[5]'
 5
 $ wo 'Abs[0]'
 0
+
+# `Floor`: Rounds down to the nearest integer.
+$ wo 'Floor[3.7]'
+3
+$ wo 'Floor[-3.7]'
+-4
+$ wo 'Floor[3.2]'
+3
+$ wo 'Floor[0]'
+0
+$ wo 'Floor[-0]'
+0
+$ wo 'Floor[0.5]'
+0
+$ wo 'Floor[-0.5]'
+-1
+
+# `Ceiling`: Rounds up to the nearest integer.
+$ wo 'Ceiling[3.2]'
+4
+$ wo 'Ceiling[-3.2]'
+-3
+$ wo 'Ceiling[3.7]'
+4
+$ wo 'Ceiling[0]'
+0
+$ wo 'Ceiling[-0]'
+0
+$ wo 'Ceiling[0.5]'
+1
+$ wo 'Ceiling[-0.5]'
+0
+
+# `Round`: Rounds to the nearest integer.
+$ wo 'Round[3.5]'
+4
+$ wo 'Round[3.4]'
+3
+$ wo 'Round[-3.5]'
+-4
+$ wo 'Round[-3.4]'
+-3
+$ wo 'Round[0.5]'
+0
+$ wo 'Round[-0.5]'
+0
+$ wo 'Round[0]'
+0
+$ wo 'Round[-0]'
+0
+
 
 # `Sqrt` (Square Root): Returns the square root of a number.
 $ wo 'Sqrt[16]'

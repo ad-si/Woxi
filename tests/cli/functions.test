@@ -8,6 +8,10 @@ $ wo '#&[1]'
 $ wo '#^2 &[{1, 2, 3}]'
 {1, 4, 9}
 
+# Nested function application
+$ wo 'Plus[Divide[6, 2], Abs[-5]]'
+8
+
 # `/@` (Map): Apply a function to each element of a list.
 $ wo 'Sign /@ {7, -2, 0, -5}'
 {1, -1, 0, -1}

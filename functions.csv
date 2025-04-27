@@ -15,10 +15,12 @@ Unequal,Checks if two values are not equal,✅
 Xor,Checks if exactly one condition is true,✅
 
 Append,Adds an element to the end of a list,🚧
+Ceiling,Returns the smallest integer greater than or equal to a number,🚧
 Divide,Divide numbers,🚧
 Drop,Returns the list without its first n elements,🚧
 First,Returns the first element of a list,🚧
 Flatten,Flattens nested lists,🚧
+Floor,Returns the largest integer less than or equal to a number,🚧
 Last,Returns the last element of a list,🚧
 Length,Returns the number of elements in a list,🚧
 Map,Applies a function to each element of a list,🚧
@@ -29,6 +31,7 @@ Plus,Adds numbers together,🚧
 Prepend,Adds an element to the beginning of a list,🚧
 Print,Outputs a string to the console,🚧
 Rest,Returns the list without its first element,🚧
+Round,Returns the nearest integer to a number,🚧
 Select,Picks elements of a list that satisfy a criterion,🚧
 Sqrt,Returns the square root of a number,🚧
 StringDrop,Removes a substring from a string,🚧
@@ -39,6 +42,7 @@ StringTake,Returns a substring of a string,🚧
 Take,Returns the first n elements of a list,🚧
 Times,Multiply numbers,🚧
 Total,Sums the elements of a list,🚧
+
 
 $Aborted,,
 $ActivationKey,,

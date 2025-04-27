@@ -480,11 +480,17 @@ fn evaluate_function_call(
       if args_pairs.len() != 1 {
         use std::io::{self, Write};
         println!(
-          "Not::argx: Not called with {} arguments; 1 argument is expected.",
+          "\nNot::argx: Not called with {} arguments; 1 argument is expected.",
           args_pairs.len()
         );
         io::stdout().flush().ok();
-        return Ok(String::new()); // nothing is printed by the CLI
+
+        // rebuild unevaluated expression
+        let mut parts = Vec::new();
+        for ap in &args_pairs {
+          parts.push(evaluate_expression(ap.clone())?);
+        }
+        return Ok(format!("Not[{}]", parts.join(", ")));
       }
       let v =
         as_bool(&evaluate_expression(args_pairs[0].clone())?).unwrap_or(false);
@@ -654,6 +660,52 @@ fn evaluate_function_call(
     }
 
     // ── string functions ────────────────────────────────────────────────
+    "Floor" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Floor expects exactly 1 argument".into(),
+        ));
+      }
+      let n = evaluate_term(args_pairs[0].clone())?;
+      let mut r = n.floor();
+      if r == -0.0 { r = 0.0; }
+      return Ok(format_result(r));
+    }
+
+    "Ceiling" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Ceiling expects exactly 1 argument".into(),
+        ));
+      }
+      let n = evaluate_term(args_pairs[0].clone())?;
+      let mut r = n.ceil();
+      if r == -0.0 { r = 0.0; }
+      return Ok(format_result(r));
+    }
+
+    "Round" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Round expects exactly 1 argument".into(),
+        ));
+      }
+      let n = evaluate_term(args_pairs[0].clone())?;
+
+      // banker’s rounding (half-to-even)
+      let base  = n.trunc();
+      let frac  = n - base;
+      let mut r = if frac.abs() == 0.5 {
+        if (base as i64) % 2 == 0 { base }               // already even
+        else if n.is_sign_positive() { base + 1.0 }      // away from zero
+        else { base - 1.0 }
+      } else {
+        n.round()
+      };
+      if r == -0.0 { r = 0.0; }
+      return Ok(format_result(r));
+    }
+
     "StringLength" => {
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -1279,11 +1331,17 @@ fn evaluate_function_call(
       if args_pairs.len() != 2 {
         use std::io::{self, Write};
         println!(
-          "Divide::argx: Divide called with {} arguments; 2 arguments are expected.",
+          "\nDivide::argrx: Divide called with {} arguments; 2 arguments are expected.",
           args_pairs.len()
         );
         io::stdout().flush().ok();
-        return Ok(String::new());     // nothing further printed by CLI
+
+        // unevaluated expression
+        let mut parts = Vec::new();
+        for ap in &args_pairs {
+          parts.push(evaluate_expression(ap.clone())?);
+        }
+        return Ok(format!("Divide[{}]", parts.join(", ")));
       }
 
       // ── evaluate arguments ───────────────────────────────────────────────
