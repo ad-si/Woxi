@@ -274,8 +274,19 @@ fn extract_string(pair: Pair<Rule>) -> Result<String, InterpreterError> {
 fn evaluate_function_call(
   func_call: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
+  // 2. Store the full textual form of the call for later error messages
+  let call_text = func_call.as_str().to_string(); // keep original text
   let mut inner = func_call.into_inner();
   let func_name_pair = inner.next().unwrap();
+
+  // Helper for boolean conversion
+  fn as_bool(s: &str) -> Option<bool> {
+    match s {
+      "True" => Some(true),
+      "False" => Some(false),
+      _ => None,
+    }
+  }
 
   // ----- anonymous function -------------------------------------------------
   if func_name_pair.as_rule() == Rule::AnonymousFunction {
@@ -385,6 +396,130 @@ fn evaluate_function_call(
     inner.filter(|p| p.as_str() != ",").collect();
 
   match func_name {
+    // ─────────────────── relational (inclusive) comparisons ──────────────────
+    "GreaterEqual" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "GreaterEqual expects at least 2 arguments".into(),
+        ));
+      }
+      let mut prev = evaluate_term(args_pairs[0].clone())?;
+      for ap in args_pairs.iter().skip(1) {
+        let cur = evaluate_term(ap.clone())?;
+        if prev < cur {
+          return Ok("False".to_string());
+        }
+        prev = cur;
+      }
+      return Ok("True".to_string());
+    }
+
+    "LessEqual" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "LessEqual expects at least 2 arguments".into(),
+        ));
+      }
+      let mut prev = evaluate_term(args_pairs[0].clone())?;
+      for ap in args_pairs.iter().skip(1) {
+        let cur = evaluate_term(ap.clone())?;
+        if prev > cur {
+          return Ok("False".to_string());
+        }
+        prev = cur;
+      }
+      return Ok("True".to_string());
+    }
+
+    // ───────────────────────────── boolean logic ─────────────────────────────
+    "And" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "And expects at least 2 arguments".into(),
+        ));
+      }
+      for ap in &args_pairs {
+        if as_bool(&evaluate_expression(ap.clone())?).unwrap_or(false) == false
+        {
+          return Ok("False".to_string());
+        }
+      }
+      return Ok("True".to_string());
+    }
+
+    "Or" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Or expects at least 2 arguments".into(),
+        ));
+      }
+      for ap in &args_pairs {
+        if as_bool(&evaluate_expression(ap.clone())?).unwrap_or(false) {
+          return Ok("True".to_string());
+        }
+      }
+      return Ok("False".to_string());
+    }
+
+    "Xor" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Xor expects at least 2 arguments".into(),
+        ));
+      }
+      let mut true_cnt = 0;
+      for ap in &args_pairs {
+        if as_bool(&evaluate_expression(ap.clone())?).unwrap_or(false) {
+          true_cnt += 1;
+        }
+      }
+      return Ok(if true_cnt % 2 == 1 { "True" } else { "False" }.to_string());
+    }
+
+    "Not" => {
+      if args_pairs.len() != 1 {
+        use std::io::{self, Write};
+        println!(
+          "Not::argx: Not called with {} arguments; 1 argument is expected.",
+          args_pairs.len()
+        );
+        io::stdout().flush().ok();
+        return Ok(String::new()); // nothing is printed by the CLI
+      }
+      let v =
+        as_bool(&evaluate_expression(args_pairs[0].clone())?).unwrap_or(false);
+      return Ok(if v { "False" } else { "True" }.to_string());
+    }
+
+    // ──────────────────────────────── If ──────────────────────────────────────
+    "If" => {
+      // arity 2‥4
+      if !(2..=4).contains(&args_pairs.len()) {
+        use std::io::{self, Write};
+        println!(
+          "\nIf::argb: If called with {} arguments; between 2 and 4 arguments are expected.",
+          args_pairs.len()
+        );
+        io::stdout().flush().ok();
+        return Ok(call_text); // return unevaluated expression
+      }
+
+      // evaluate test
+      let test_str = evaluate_expression(args_pairs[0].clone())?;
+      let test_val = as_bool(&test_str);
+
+      match (test_val, args_pairs.len()) {
+        (Some(true), _) => return evaluate_expression(args_pairs[1].clone()),
+        (Some(false), 2) => return Ok("Null".to_string()),
+        (Some(false), 3) => return evaluate_expression(args_pairs[2].clone()),
+        (Some(false), 4) => return evaluate_expression(args_pairs[2].clone()),
+        (None, 2) => return Ok("Null".to_string()),
+        (None, 3) => return Ok("Null".to_string()),
+        (None, 4) => return evaluate_expression(args_pairs[3].clone()),
+        _ => unreachable!(),
+      }
+    }
+
     // ----- numeric helpers --------------------------------------------------
     "Prime" => {
       if args_pairs.len() != 1 {
@@ -1138,6 +1273,72 @@ fn evaluate_function_call(
         sum += evaluate_term(item.clone())?;
       }
       return Ok(format_result(sum));
+    }
+    // ----- boolean equality helpers ----------------------------------------
+    "Equal" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Equal expects at least 2 arguments".into(),
+        ));
+      }
+      let first_val = evaluate_term(args_pairs[0].clone())?;
+      for ap in args_pairs.iter().skip(1) {
+        if evaluate_term(ap.clone())? != first_val {
+          return Ok("False".to_string());
+        }
+      }
+      return Ok("True".to_string());
+    }
+    "Unequal" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Unequal expects at least 2 arguments".into(),
+        ));
+      }
+      let mut seen = Vec::<f64>::new();
+      for ap in &args_pairs {
+        let v = evaluate_term(ap.clone())?;
+        if seen.contains(&v) {
+          return Ok("False".to_string()); // duplicate found
+        }
+        seen.push(v);
+      }
+      return Ok("True".to_string()); // all pair-wise different
+    }
+
+    // ----- relational comparison helpers -----------------------------------
+    "Greater" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Greater expects at least 2 arguments".into(),
+        ));
+      }
+      let mut prev = evaluate_term(args_pairs[0].clone())?;
+      for ap in args_pairs.iter().skip(1) {
+        let current = evaluate_term(ap.clone())?;
+        if !(prev > current) {
+          return Ok("False".to_string());
+        }
+        prev = current;
+      }
+      return Ok("True".to_string());
+    }
+
+    "Less" => {
+      if args_pairs.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Less expects at least 2 arguments".into(),
+        ));
+      }
+      let mut prev = evaluate_term(args_pairs[0].clone())?;
+      for ap in args_pairs.iter().skip(1) {
+        let current = evaluate_term(ap.clone())?;
+        if !(prev < current) {
+          return Ok("False".to_string());
+        }
+        prev = current;
+      }
+      return Ok("True".to_string());
     }
     "Select" => {
       // ----- arity ---------------------------------------------------------

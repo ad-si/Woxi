@@ -1,7 +1,18 @@
 name,description,implementation status
 Abs,Returns the absolute value of a number,✅
+And,Checks if all conditions are true,✅
+Equal,Checks if two values are equal,✅
+Greater,Checks if one value is greater than another,✅
+GreaterEqual,Checks if one value is greater than or equal to another,✅
+If,Checks if a condition is true and returns one of two values,✅
+Less,Checks if one value is less than another,✅
+LessEqual,Checks if one value is less than or equal to another,✅
+Not,Checks if a condition is false,✅
+Or,Checks if at least one condition is true,✅
 Prime,Returns the nth prime number,✅
 Sign,Returns the sign of a number,✅
+Unequal,Checks if two values are not equal,✅
+Xor,Checks if exactly one condition is true,✅
 
 Append,Adds an element to the end of a list,🚧
 Drop,Returns the list without its first n elements,🚧
@@ -376,7 +387,6 @@ AnatomyPlot3D,,
 AnatomySkinStyle,,
 AnatomyStyling,,
 AnchoredSearch,,
-And,,
 AndersonDarlingTest,,
 AngerJ,,
 AngleBisector,,
@@ -1990,7 +2000,6 @@ EntropyFilter,,
 Environment,,
 Epilog,,
 EpilogFunction,,
-Equal,,
 EqualTilde,,
 EqualTo,,
 Equilibrium,,
@@ -2694,8 +2703,6 @@ GraphTriangleCount,,
 GraphUnion,,
 Gray,,
 GrayLevel,,
-Greater,,
-GreaterEqual,,
 GreaterEqualLess,,
 GreaterEqualThan,,
 GreaterFullEqual,,
@@ -2882,7 +2889,6 @@ IconRules,,
 Icosahedron,,
 Identity,,
 IdentityMatrix,,
-If,,
 IfCompiled,,
 IgnoreCase,,
 IgnoreDiacritics,,
@@ -3383,8 +3389,6 @@ LegendreP,,
 LegendreQ,,
 LengthWhile,,
 LerchPhi,,
-Less,,
-LessEqual,,
 LessEqualGreater,,
 LessEqualThan,,
 LessFullEqual,,
@@ -4049,7 +4053,6 @@ NormalizedSquaredEuclideanDistance,,
 NormalMatrixQ,,
 NormalsFunction,,
 NormFunction,,
-Not,,
 NotCongruent,,
 NotCupCap,,
 NotDoubleVerticalBar,,
@@ -4216,7 +4219,6 @@ OptionalElement,,
 Options,,
 OptionsPattern,,
 OptionValue,,
-Or,,
 Orange,,
 Order,,
 OrderDistribution,,
@@ -6030,7 +6032,6 @@ UndirectedGraph,,
 UndirectedGraphQ,,
 UndoOptions,,
 UndoTrackedVariables,,
-Unequal,,
 UnequalTo,,
 Unevaluated,,
 UniformDistribution,,
@@ -6404,7 +6405,6 @@ XMLElement,,
 XMLObject,,
 XMLTemplate,,
 Xnor,,
-Xor,,
 XYZColor,,
 Yellow,,
 Yesterday,,

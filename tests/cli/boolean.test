@@ -1,0 +1,134 @@
+# Boolean Logic
+
+# `Equal`: Compare values for equality.
+$ wo 'Equal[1, 1]'
+True
+$ wo 'Equal[1, 2]'
+False
+$ wo 'Equal[1, 1, 1]'
+True
+
+# `Unequal`: Compare values for inequality.
+$ wo 'Unequal[1, 1]'
+False
+$ wo 'Unequal[1, 2]'
+True
+$ wo 'Unequal[1, 1, 1]'
+False
+
+# `Greater`: Check if values are greater than each other.
+$ wo 'Greater[2, 1]'
+True
+$ wo 'Greater[1, 2]'
+False
+$ wo 'Greater[1, 1]'
+False
+$ wo 'Greater[1, 2, 3]'
+False
+$ wo 'Greater[3, 2, 1]'
+True
+
+# `Less`: Check if values are less than each other.
+$ wo 'Less[1, 2]'
+True
+$ wo 'Less[2, 1]'
+False
+$ wo 'Less[1, 1]'
+False
+$ wo 'Less[1, 2, 3]'
+True
+$ wo 'Less[3, 2, 1]'
+False
+
+# `GreaterEqual`: Check if values are greater than or equal to each other.
+$ wo 'GreaterEqual[2, 1]'
+True
+$ wo 'GreaterEqual[1, 2]'
+False
+$ wo 'GreaterEqual[1, 1]'
+True
+$ wo 'GreaterEqual[1, 2, 3]'
+False
+$ wo 'GreaterEqual[3, 2, 1]'
+True
+
+
+# `LessEqual`: Check if values are less than or equal to each other.
+$ wo 'LessEqual[1, 2]'
+True
+$ wo 'LessEqual[2, 1]'
+False
+$ wo 'LessEqual[1, 1]'
+True
+$ wo 'LessEqual[1, 2, 3]'
+True
+$ wo 'LessEqual[3, 2, 1]'
+False
+
+# `And`: Logical AND operation.
+$ wo 'And[True, True]'
+True
+$ wo 'And[True, False]'
+False
+$ wo 'And[False, True]'
+False
+$ wo 'And[False, False]'
+False
+$ wo 'And[True, True, True]'
+True
+$ wo 'And[True, False, True]'
+False
+
+# `Or`: Logical OR operation.
+$ wo 'Or[True, True]'
+True
+$ wo 'Or[True, False]'
+True
+$ wo 'Or[False, True]'
+True
+$ wo 'Or[False, False]'
+False
+$ wo 'Or[True, True, True]'
+True
+$ wo 'Or[True, False, True]'
+True
+
+# `Not`: Logical NOT operation.
+$ wo 'Not[True]'
+False
+$ wo 'Not[False]'
+True
+$ wo 'Not[True, True]'
+Not::argx: Not called with 2 arguments; 1 argument is expected.
+
+>=
+
+# `Xor`: Logical XOR operation.
+$ wo 'Xor[True, True]'
+False
+$ wo 'Xor[True, False]'
+True
+$ wo 'Xor[False, True]'
+True
+$ wo 'Xor[False, False]'
+False
+$ wo 'Xor[True, True, True]'
+True
+$ wo 'Xor[True, True, False]'
+False
+
+# `If`: Conditional operation.
+$ wo 'If[True, 1]'
+1
+$ wo 'If[False, 1]'
+Null
+$ wo 'If[True, 1, 0]'
+1
+$ wo 'If[False, 1, 0]'
+0
+$ wo 'If["x", 1, 0, 2]'
+2
+$ wo 'If[True, 1, 0, 2, 3]'
+
+If::argb: If called with 5 arguments; between 2 and 4 arguments are expected.
+If[True, 1, 0, 2, 3]
