@@ -58,7 +58,7 @@ Woxi | Wolframscript
 
 ## Contributing
 
-Contributions are welcome!
+Contributions are very welcome!
 Please feel free to submit a Pull Request.
 
 
@@ -67,7 +67,7 @@ Please feel free to submit a Pull Request.
 To run the test suite:
 
 ```sh
-cargo test
+make test
 ```
 
 
@@ -75,10 +75,12 @@ cargo test
 
 - [CodeParser] - Parse Wolfram Language as AST or CST.
 - [MMA Clone] - Simple Wolfram Language clone in Haskell.
-- [TS Wolfram] - Toy Wolfram language interpreter in TypeScript.
-- [Wolfram Parser] - Wolfram parser in Rust.
+- [TS Wolfram] - Toy Wolfram Language interpreter in TypeScript.
+- [Wolfram JS Frontend] - Open-source notebook interface for Wolfram Language.
+- [Wolfram Parser] - Wolfram Language parser in Rust.
 
 [CodeParser]: https://github.com/WolframResearch/codeparser
 [MMA Clone]: https://github.com/mrtwistor/mmaclone
 [TS Wolfram]: https://github.com/coffeemug/ts-wolfram
+[Wolfram JS Frontend]: https://github.com/JerryI/wolfram-js-frontend
 [Wolfram Parser]: https://github.com/oovm/wolfram-parser
