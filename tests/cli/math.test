@@ -13,14 +13,14 @@ $ wo '1+2'
 3
 
 # `Minus`: Subtract numbers.
+$ wo 'Minus[5]'
+-5
 $ wo 'Minus[5, 2]'
-3
-$ wo 'Minus[5, 2, 1]'
-2
-$ wo 'Minus[2, 5]'
--3
 
-# `-` (Minus): Subtract numbers.
+Minus::argx: Minus called with 2 arguments; 1 argument is expected.
+5 − 2
+
+# `-`: Subtract numbers.
 $ wo '5-2'
 3
 

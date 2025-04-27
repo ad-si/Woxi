@@ -443,19 +443,30 @@ fn evaluate_function_call(
         ));
       }
 
-      // ---- evaluate first argument ----------------------------------------
-      let mut result = evaluate_term(args_pairs[0].clone())?;
-
-      // ---- unary Minus -----------------------------------------------------
+      // ---- unary / argument-count handling ----------------------------------
       if args_pairs.len() == 1 {
-        return Ok(format_result(-result));
+        // unary Minus
+        let v = evaluate_term(args_pairs[0].clone())?;
+        return Ok(format_result(-v));
       }
 
-      // ---- n-ary subtraction ----------------------------------------------
-      for ap in args_pairs.iter().skip(1) {
-        result -= evaluate_term(ap.clone())?;
+      // ---- wrong number of arguments  ---------------------------------------
+      // Print *with* a trailing newline to match shelltest's expected output,
+      // and flush stdout to ensure the order is correct for shelltest.
+      use std::io::{self, Write};
+      println!(
+          "\nMinus::argx: Minus called with {} arguments; 1 argument is expected.",
+          args_pairs.len()
+      );
+      io::stdout().flush().ok();
+
+      // build the pretty printing of the unevaluated expression:  "5 − 2"
+      let mut pieces = Vec::new();
+      for ap in &args_pairs {
+        pieces.push(evaluate_expression(ap.clone())?); // keeps formatting (e.g. 5, 2, 3.1…)
       }
-      return Ok(format_result(result));
+      let expr = pieces.join(" − "); // note U+2212 (minus sign) surrounded by spaces
+      return Ok(expr);
     }
     "Abs" => {
       // ── arity check ────────────────────────────────────────────────────────
