@@ -25,6 +25,7 @@ StringLength,Returns the length of a string,🚧
 StringSplit,Splits a string into a list of substrings,🚧
 StringTake,Returns a substring of a string,🚧
 Take,Returns the first n elements of a list,🚧
+Times,Multiply numbers,🚧
 Total,Sums the elements of a list,🚧
 
 $Aborted,,
@@ -5800,7 +5801,6 @@ TimelinePlot,,
 TimeObject,,
 TimeObjectQ,,
 TimeRemaining,,
-Times,,
 TimesBy,,
 TimeSeries,,
 TimeSeriesAggregate,,
