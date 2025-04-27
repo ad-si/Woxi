@@ -32,6 +32,14 @@ $ wo 'Times[2, 3, 4]'
 $ wo 'Times[-2, 3]'
 -6
 
+# `Divide`: Divide numbers.
+$ wo 'Divide[6, 2]'
+3
+$ wo 'Divide[6, 2, 3]'
+Divide::argx: Divide called with 3 arguments; 2 arguments are expected.
+
+>=
+
 # `*` (Times): Multiply numbers.
 $ wo '2*3'
 6
