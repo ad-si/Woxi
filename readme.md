@@ -13,6 +13,9 @@ A Rust-based interpreter for a subset of the Wolfram Language.
 - Error handling for invalid inputs
 - CLI for easy interaction
 
+Check out the [functions.csv](./functions.csv) file
+for a list of all Wolfram Language functions and their implementation status.
+
 
 ## Installation
 
