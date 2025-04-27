@@ -12,6 +12,22 @@ $ wo 'First[{7, 2, 4}]'
 $ wo 'Last[{7, 2, 4}]'
 4
 
+# `Rest`: Returns the list without its first element.
+$ wo 'Rest[{7, 2, 4}]'
+{2, 4}
+
+# `Most`: Returns the list without its last element.
+$ wo 'Most[{7, 2, 4}]'
+{7, 2}
+
+# `Take`: Returns the first n elements of a list.
+$ wo 'Take[{7, 2, 4}, 2]'
+{7, 2}
+
+# `Part`: Returns the nth element of a list.
+$ wo 'Part[{7, 6, 4}, 2]'
+6
+
 # `Map`: Applies a function to each element of a list.
 $ wo 'Map[Sign, {-6, 0, 2, 5}]'
 {-1, 0, 1, 1}
