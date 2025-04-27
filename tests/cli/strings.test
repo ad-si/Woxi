@@ -3,3 +3,18 @@
 $ wo 'Print["Hello World!"]'
 Hello World!
 Null
+
+$ wo 'StringLength["Hello World!"]'
+12
+
+$ wo 'StringTake["Hello World!", 5]'
+Hello
+
+$ wo 'StringDrop["Hello World!", 6]'
+World!
+
+$ wo 'StringJoin["Hello", " ", "World!"]'
+Hello World!
+
+$ wo 'StringSplit["Hello World!", " "]'
+{Hello, World!}
