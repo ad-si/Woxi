@@ -5,7 +5,7 @@ help: makefile
 
 .PHONY: test-unit
 test-unit:
-	cargo test
+	cargo test --quiet
 
 
 # Alias the CLI command to test before running the tests.
@@ -16,7 +16,10 @@ test-unit:
 # wolframscript -c "$*"
 .PHONY: test-cli
 test-cli: install
-	shelltest --color tests/cli/*.test
+	shelltest \
+		--hide-successes \
+		--color \
+		tests/cli/*.test
 
 
 .PHONY: test

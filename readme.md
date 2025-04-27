@@ -13,6 +13,10 @@ A Rust-based interpreter for a subset of the Wolfram Language.
 - Error handling for invalid inputs
 - CLI for easy interaction
 
+Check out the [CLI tests](./tests/cli) directory
+to see all currently supported commands and their expected output.
+All tests must pass with Woxi and Wolframscript.
+
 Check out the [functions.csv](./functions.csv) file
 for a list of all Wolfram Language functions and their implementation status.
 
