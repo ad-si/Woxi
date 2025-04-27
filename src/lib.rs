@@ -625,6 +625,101 @@ fn evaluate_function_call(
       return Ok(format!("{{{}}}", evaluated?.join(", ")));
     }
 
+    "Drop" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Drop expects exactly 2 arguments".into(),
+        ));
+      }
+      // ----- get list items (same extraction code used in Take) -----
+      let list_pair = &args_pairs[0];
+      let list_rule = list_pair.as_rule();
+      let items: Vec<_> = if list_rule == Rule::List {
+        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
+      } else if list_rule == Rule::Expression {
+        let mut expr_inner = list_pair.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if first.as_rule() == Rule::List {
+            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "First argument of Drop must be a list".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "First argument of Drop must be a list".into(),
+          ));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of Drop must be a list".into(),
+        ));
+      };
+
+      // ----- get n ----------------------------------------------------
+      let n = evaluate_term(args_pairs[1].clone())?;
+      if n.fract() != 0.0 || n < 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Second argument of Drop must be a non-negative integer".into(),
+        ));
+      }
+      let start = std::cmp::min(n as usize, items.len());
+      let slice = items[start..].to_vec();
+      let evaluated: Result<Vec<_>, _> =
+        slice.into_iter().map(|p| evaluate_expression(p)).collect();
+      return Ok(format!("{{{}}}", evaluated?.join(", ")));
+    }
+
+    "Append" | "Prepend" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(format!(
+          "{} expects exactly 2 arguments", func_name
+        )));
+      }
+      // extract list items (same helper as above)
+      let list_pair = &args_pairs[0];
+      let list_rule = list_pair.as_rule();
+      let items: Vec<_> = if list_rule == Rule::List {
+        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
+      } else if list_rule == Rule::Expression {
+        let mut expr_inner = list_pair.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if first.as_rule() == Rule::List {
+            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          } else {
+            return Err(InterpreterError::EvaluationError(format!(
+              "First argument of {} must be a list", func_name
+            )));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(format!(
+            "First argument of {} must be a list", func_name
+          )));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(format!(
+          "First argument of {} must be a list", func_name
+        )));
+      };
+
+      // evaluate existing list
+      let mut evaluated: Vec<String> = items
+        .into_iter()
+        .map(|p| evaluate_expression(p))
+        .collect::<Result<_, _>>()?;
+
+      // evaluate new element
+      let new_elem = evaluate_expression(args_pairs[1].clone())?;
+
+      if func_name == "Append" {
+        evaluated.push(new_elem);
+      } else {           // Prepend
+        evaluated.insert(0, new_elem);
+      }
+      return Ok(format!("{{{}}}", evaluated.join(", ")));
+    }
+
     "Part" => {
       if args_pairs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
