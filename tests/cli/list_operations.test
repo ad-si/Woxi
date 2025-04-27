@@ -44,9 +44,13 @@ $ wo 'Prepend[{7, 2, 4}, 5]'
 $ wo 'Map[Sign, {-6, 0, 2, 5}]'
 {-1, 0, 1, 1}
 
-# # `Select`: Picks elements of a list that satisfy a criterion.
-# $ wo 'Select[{1, 2, 3, 4}, EvenQ]'
-# {2, 4}
+# `Select`: Picks elements of a list that satisfy a criterion.
+$ wo 'Select[{1, 2, 3, 4}, EvenQ]'
+{2, 4}
+
+# `Flatten`: Flattens nested lists.
+$ wo 'Flatten[{{1}, {2, 3}}]'
+{1, 2, 3}
 
 # # `Cases`: Extracts elements from an expression that match a pattern.
 # $ wo 'Cases[{a, b, a}, a]'
@@ -61,10 +65,6 @@ $ wo 'Map[Sign, {-6, 0, 2, 5}]'
 # # Applies a function to corresponding elements in several lists.
 # $ wo 'MapThread[Plus, {{1, 2}, {3, 4}}]'
 # {4, 6}
-
-# # `Flatten`: Flattens nested lists.
-# $ wo 'Flatten[{{1}, {2, 3}}]'
-# {1, 2, 3}
 
 # # `Partition`: Breaks a list into smaller sublists.
 # $ wo 'Partition[{1, 2, 3, 4}, 2]'
