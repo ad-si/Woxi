@@ -52,6 +52,10 @@ $ wo 'Select[{1, 2, 3, 4}, EvenQ]'
 $ wo 'Flatten[{{1}, {2, 3}}]'
 {1, 2, 3}
 
+# `Total`: Sums the elements of a list.
+$ wo 'Total[{1, 2, 3}]'
+6
+
 # # `Cases`: Extracts elements from an expression that match a pattern.
 # $ wo 'Cases[{a, b, a}, a]'
 # {a, a}
@@ -74,17 +78,9 @@ $ wo 'Flatten[{{1}, {2, 3}}]'
 # $ wo 'SortBy[{3, 1, 2}, # &]'
 # {1, 2, 3}
 
-# # First: Returns the first element of a list.
-# $ wo 'First[{1, 2, 3}]'
-# 1
-
 # # `GroupBy`: Groups elements of a list according to a function.
 # $  wo 'GroupBy[{{a, b}, {a, c}, {b, c}}, First]'
 # > /<|a -> {{a, b}, {a, c}}, b -> {{b, c}}|>/
-
-# # `Total`: Sums the elements of a list.
-# $ wo 'Total[{1, 2, 3}]'
-# 6
 
 # # `Accumulate`: Returns the cumulative sums of a list.
 # $ wo 'Accumulate[{1, 2, 3}]'

@@ -819,6 +819,48 @@ fn evaluate_function_call(
       };
       Ok(list_items.len().to_string())
     }
+    // ----- aggregation -----------------------------------------------------
+    "Total" => {
+      // arity
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Total expects exactly 1 argument".into(),
+        ));
+      }
+
+      // extract list items (identical logic used in Length)
+      let list_pair = &args_pairs[0];
+      let list_rule = list_pair.as_rule();
+      let items: Vec<_> = if list_rule == Rule::List {
+        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
+      } else if list_rule == Rule::Expression {
+        let mut expr_inner = list_pair.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if first.as_rule() == Rule::List {
+            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "Total function argument must be a list".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Total function argument must be a list".into(),
+          ));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Total function argument must be a list".into(),
+        ));
+      };
+
+      // sum numeric values
+      let mut sum = 0.0;
+      for item in items {
+        sum += evaluate_term(item.clone())?;
+      }
+      return Ok(format_result(sum));
+    }
     "Select" => {
       // ----- arity ---------------------------------------------------------
       if args_pairs.len() != 2 {
