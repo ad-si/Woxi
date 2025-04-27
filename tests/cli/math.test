@@ -12,6 +12,18 @@ $ wo 'Plus[-1, -2]'
 $ wo '1+2'
 3
 
+# `Minus`: Subtract numbers.
+$ wo 'Minus[5, 2]'
+3
+$ wo 'Minus[5, 2, 1]'
+2
+$ wo 'Minus[2, 5]'
+-3
+
+# `-` (Minus): Subtract numbers.
+$ wo '5-2'
+3
+
 $ wo 'Sign[5]'
 1
 
