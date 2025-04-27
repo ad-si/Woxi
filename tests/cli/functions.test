@@ -1,5 +1,13 @@
 # Map, Apply, Fold, FoldList, Nest, NestList tests
 
+# Anonymous identity function
+$ wo '#&[1]'
+1
+
+# Function application
+$ wo '#^2 &[{1, 2, 3}]'
+{1, 4, 9}
+
 # # Map (/@): Applies a function to each element of a list.
 # $ wo 'f /@ {1, 2, 3}'
 # {f[1], f[2], f[3]}
