@@ -14,3 +14,11 @@ $ wo 'Sign[-7]'
 
 $ wo 'Prime[5]'
 11
+
+# `Abs` (Absolute Value): Returns the absolute value of a number.
+$ wo 'Abs[-5]'
+5
+$ wo 'Abs[5]'
+5
+$ wo 'Abs[0]'
+0

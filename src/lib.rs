@@ -365,6 +365,18 @@ fn evaluate_function_call(
       }
       Ok(nth_prime(n as usize).to_string())
     }
+    "Abs" => {
+      // ── arity check ────────────────────────────────────────────────────────
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Abs expects exactly 1 argument".into(),
+        ));
+      }
+      // ── evaluate argument ──────────────────────────────────────────────────
+      let n = evaluate_term(args_pairs[0].clone())?;
+      // ── return absolute value, formatted like other numeric outputs ───────
+      return Ok(format_result(n.abs()));
+    }
     "Sign" => {
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
