@@ -1,3 +1,4 @@
+use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
 use thiserror::Error;
@@ -70,13 +71,38 @@ fn evaluate_expression(
 ) -> Result<String, InterpreterError> {
   match expr.as_rule() {
     Rule::String => Ok(expr.as_str().trim_matches('"').to_string()),
+    Rule::Term => {
+      let mut inner = expr.clone().into_inner();
+      if let Some(first) = inner.next() {
+        if first.as_rule() == Rule::FunctionCall {
+          return evaluate_function_call(first);
+        }
+        else if first.as_rule() == Rule::List {
+          return evaluate_expression(first);
+        }
+        else if first.as_rule() == Rule::String {
+          return Ok(first.as_str().trim_matches('"').to_string());
+        }
+        else if first.as_rule() == Rule::Integer
+          || first.as_rule() == Rule::Real
+          || first.as_rule() == Rule::Constant
+          || first.as_rule() == Rule::NumericValue
+          || first.as_rule() == Rule::Identifier
+          || first.as_rule() == Rule::Slot
+        {
+          return evaluate_term(first).map(format_result);
+        }
+      }
+      evaluate_term(expr).map(format_result)
+    }
     Rule::Expression => {
       // --- special case: Map operator ----------------------------------
       {
         let items: Vec<_> = expr.clone().into_inner().collect();
         if items.len() == 3
-            && items[1].as_rule() == Rule::Operator
-            && items[1].as_str() == "/@" {
+          && items[1].as_rule() == Rule::Operator
+          && items[1].as_str() == "/@"
+        {
           return apply_map_operator(items[0].clone(), items[2].clone());
         }
       }
@@ -153,18 +179,6 @@ fn evaluate_expression(
         .collect::<Result<_, _>>()?;
       Ok(format!("{{{}}}", items.join(", ")))
     }
-    Rule::Term => {
-      let mut inner = expr.clone().into_inner();
-      if let Some(first) = inner.next() {
-        if first.as_rule() == Rule::FunctionCall {
-          return evaluate_function_call(first);
-        }
-        else if first.as_rule() == Rule::List {
-          return evaluate_expression(first);
-        }
-      }
-      evaluate_term(expr).map(format_result)
-    }
     Rule::FunctionCall => evaluate_function_call(expr),
     Rule::Identifier => Ok(expr.as_str().to_string()),
     _ => Err(InterpreterError::EvaluationError(format!(
@@ -201,6 +215,10 @@ fn evaluate_term(
     Rule::Real => term.as_str().parse::<f64>().map_err(|_| {
       InterpreterError::EvaluationError("invalid float literal".to_string())
     }),
+    Rule::String => {
+      // For string arguments in string functions, just return 0.0 (never used as a number)
+      Ok(0.0)
+    }
     Rule::Expression => evaluate_expression(term).and_then(|s| {
       s.parse::<f64>()
         .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
@@ -237,6 +255,22 @@ fn evaluate_term(
   }
 }
 
+fn extract_string(pair: Pair<Rule>) -> Result<String, InterpreterError> {
+  match pair.as_rule() {
+    Rule::String => Ok(pair.as_str().trim_matches('"').to_string()),
+    Rule::Expression | Rule::Term => {
+      let mut inner = pair.clone().into_inner();
+      if let Some(first) = inner.next() {
+        return extract_string(first);
+      }
+      Err(InterpreterError::EvaluationError(
+        "Expected string argument".into(),
+      ))
+    }
+    _ => evaluate_expression(pair), // fall-back, keeps behaviour for exotic cases
+  }
+}
+
 fn evaluate_function_call(
   func_call: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
@@ -245,101 +279,103 @@ fn evaluate_function_call(
 
   // ----- anonymous function -------------------------------------------------
   if func_name_pair.as_rule() == Rule::AnonymousFunction {
-      // inspect the parts that form the anonymous function
-      let parts: Vec<_> = func_name_pair.clone().into_inner().collect();
+    // inspect the parts that form the anonymous function
+    let parts: Vec<_> = func_name_pair.clone().into_inner().collect();
 
-      // fetch the argument list / single argument of the call  →  #&[arg]
-      let arg = inner.next().ok_or_else(|| InterpreterError::EvaluationError(
-          "Expected arguments for anonymous function".to_string(),
-      ))?;
+    // fetch the argument list / single argument of the call  →  #&[arg]
+    let arg = inner.next().ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Expected arguments for anonymous function".to_string(),
+      )
+    })?;
 
-      // ----------------------------------------------------------------------
-      // simple identity function  (#&)
-      // ----------------------------------------------------------------------
-      if parts.len() == 1 {
-          // just return the evaluated argument unchanged
-          return evaluate_expression(arg);
-      }
+    // ----------------------------------------------------------------------
+    // simple identity function  (#&)
+    // ----------------------------------------------------------------------
+    if parts.len() == 1 {
+      // just return the evaluated argument unchanged
+      return evaluate_expression(arg);
+    }
 
-      // ----------------------------------------------------------------------
-      // operator form  (# op term &)
-      // (old behaviour, preserved)
-      // ----------------------------------------------------------------------
-      let operator = parts[1].as_str();
-      let operand  = parts[2].clone();
+    // ----------------------------------------------------------------------
+    // operator form  (# op term &)
+    // (old behaviour, preserved)
+    // ----------------------------------------------------------------------
+    let operator = parts[1].as_str();
+    let operand = parts[2].clone();
 
-      // the existing code that:
-      //  • expects `arg` to be a list,
-      //  • iterates over its elements,
-      //  • applies the operator to each element,
-      //  • collects the results and returns them,
-      // stays exactly as it was – just use the
-      // `operator`, `operand`, and `arg` variables defined above.
+    // the existing code that:
+    //  • expects `arg` to be a list,
+    //  • iterates over its elements,
+    //  • applies the operator to each element,
+    //  • collects the results and returns them,
+    // stays exactly as it was – just use the
+    // `operator`, `operand`, and `arg` variables defined above.
 
-      // Extract list from the argument
-      let list = match arg.as_rule() {
-        Rule::List => arg,
-        Rule::Expression => {
-          let mut inner_expr = arg.into_inner();
-          if let Some(first) = inner_expr.next() {
-            if first.as_rule() == Rule::List {
-              first
-            }
-            else {
-              return Err(InterpreterError::EvaluationError(
-                "Anonymous function must be applied to a list".to_string(),
-              ));
-            }
+    // Extract list from the argument
+    let list = match arg.as_rule() {
+      Rule::List => arg,
+      Rule::Expression => {
+        let mut inner_expr = arg.into_inner();
+        if let Some(first) = inner_expr.next() {
+          if first.as_rule() == Rule::List {
+            first
           }
           else {
             return Err(InterpreterError::EvaluationError(
-              "Empty expression in anonymous function arguments".to_string(),
+              "Anonymous function must be applied to a list".to_string(),
             ));
           }
         }
+        else {
+          return Err(InterpreterError::EvaluationError(
+            "Empty expression in anonymous function arguments".to_string(),
+          ));
+        }
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Anonymous function must be applied to a list, got {:?}",
+          arg.as_rule()
+        )))
+      }
+    };
+
+    let items: Vec<_> = list
+      .into_inner()
+      .filter(|item| item.as_str() != ",")
+      .collect();
+    let mut results = Vec::new();
+
+    for item in items {
+      let item_value = evaluate_term(item.clone())?;
+
+      let result = match operator {
+        "+" => item_value + evaluate_term(operand.clone())?,
+        "-" => item_value - evaluate_term(operand.clone())?,
+        "*" => item_value * evaluate_term(operand.clone())?,
+        "/" => {
+          let denominator = evaluate_term(operand.clone())?;
+          if denominator == 0.0 {
+            return Err(InterpreterError::EvaluationError(
+              "Division by zero".to_string(),
+            ));
+          }
+          item_value / denominator
+        }
+        "^" => item_value.powf(evaluate_term(operand.clone())?),
         _ => {
           return Err(InterpreterError::EvaluationError(format!(
-            "Anonymous function must be applied to a list, got {:?}",
-            arg.as_rule()
+            "Unsupported operator in anonymous function: {}",
+            operator
           )))
         }
       };
 
-      let items: Vec<_> = list
-        .into_inner()
-        .filter(|item| item.as_str() != ",")
-        .collect();
-      let mut results = Vec::new();
+      results.push(format_result(result));
+    }
 
-      for item in items {
-        let item_value = evaluate_term(item.clone())?;
-
-        let result = match operator {
-          "+" => item_value + evaluate_term(operand.clone())?,
-          "-" => item_value - evaluate_term(operand.clone())?,
-          "*" => item_value * evaluate_term(operand.clone())?,
-          "/" => {
-            let denominator = evaluate_term(operand.clone())?;
-            if denominator == 0.0 {
-              return Err(InterpreterError::EvaluationError(
-                "Division by zero".to_string(),
-              ));
-            }
-            item_value / denominator
-          }
-          "^" => item_value.powf(evaluate_term(operand.clone())?),
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Unsupported operator in anonymous function: {}",
-              operator
-            )))
-          }
-        };
-
-        results.push(format_result(result));
-      }
-
-      return Ok(format!("{{{}}}", results.join(", ")));
+    return Ok(format!("{{{}}}", results.join(", ")));
   }
 
   // Handle regular function case
@@ -396,6 +432,83 @@ fn evaluate_function_call(
         }
         .to_string(),
       )
+    }
+
+    // ── string functions ────────────────────────────────────────────────
+    "StringLength" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "StringLength expects exactly 1 argument".into(),
+        ));
+      }
+      let s = extract_string(args_pairs[0].clone())?;
+      return Ok(s.chars().count().to_string());
+    }
+
+    "StringTake" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "StringTake expects exactly 2 arguments".into(),
+        ));
+      }
+      let s = extract_string(args_pairs[0].clone())?;
+      let n = evaluate_term(args_pairs[1].clone())?;
+      if n.fract() != 0.0 || n < 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Second argument of StringTake must be a non-negative integer".into(),
+        ));
+      }
+      let k = n as usize;
+      let taken: String = s.chars().take(k).collect();
+      return Ok(taken);
+    }
+
+    "StringDrop" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "StringDrop expects exactly 2 arguments".into(),
+        ));
+      }
+      let s = extract_string(args_pairs[0].clone())?;
+      let n = evaluate_term(args_pairs[1].clone())?;
+      if n.fract() != 0.0 || n < 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Second argument of StringDrop must be a non-negative integer".into(),
+        ));
+      }
+      let k = n as usize;
+      let dropped: String = s.chars().skip(k).collect();
+      return Ok(dropped);
+    }
+
+    "StringJoin" => {
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "StringJoin expects at least 1 argument".into(),
+        ));
+      }
+      let mut joined = String::new();
+      for ap in &args_pairs {
+        joined.push_str(&extract_string(ap.clone())?);
+      }
+      return Ok(joined);
+    }
+
+    "StringSplit" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "StringSplit expects exactly 2 arguments".into(),
+        ));
+      }
+      let s = extract_string(args_pairs[0].clone())?;
+      let delim = extract_string(args_pairs[1].clone())?;
+      let parts: Vec<String> = if delim.is_empty() {
+        s.chars().map(|c| c.to_string()).collect()
+      }
+      else {
+        s.split(&delim).map(|p| p.to_string()).collect()
+      };
+      return Ok(format!("{{{}}}", parts.join(", ")));
     }
 
     // ----- list helpers ------------------------------------------------------
@@ -559,7 +672,8 @@ fn evaluate_function_call(
     "Rest" | "Most" => {
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(format!(
-          "{} expects exactly 1 argument", func_name
+          "{} expects exactly 1 argument",
+          func_name
         )));
       }
       // extract list items exactly like the First/Last implementation
@@ -599,9 +713,21 @@ fn evaluate_function_call(
         )));
       };
       let slice: Vec<_> = if func_name == "Rest" {
-        if items.len() <= 1 { vec![] } else { items[1..].to_vec() }
-      } else {                       // Most
-        if items.len() <= 1 { vec![] } else { items[..items.len() - 1].to_vec() }
+        if items.len() <= 1 {
+          vec![]
+        }
+        else {
+          items[1..].to_vec()
+        }
+      }
+      else {
+        // Most
+        if items.len() <= 1 {
+          vec![]
+        }
+        else {
+          items[..items.len() - 1].to_vec()
+        }
       };
       let evaluated: Result<Vec<_>, _> =
         slice.into_iter().map(|p| evaluate_expression(p)).collect();
@@ -673,23 +799,31 @@ fn evaluate_function_call(
       let list_pair = &args_pairs[0];
       let list_rule = list_pair.as_rule();
       let items: Vec<_> = if list_rule == Rule::List {
-        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
-      } else if list_rule == Rule::Expression {
+        list_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect()
+      }
+      else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          } else {
+          }
+          else {
             return Err(InterpreterError::EvaluationError(
               "First argument of Drop must be a list".into(),
             ));
           }
-        } else {
+        }
+        else {
           return Err(InterpreterError::EvaluationError(
             "First argument of Drop must be a list".into(),
           ));
         }
-      } else {
+      }
+      else {
         return Err(InterpreterError::EvaluationError(
           "First argument of Drop must be a list".into(),
         ));
@@ -712,32 +846,44 @@ fn evaluate_function_call(
     "Append" | "Prepend" => {
       if args_pairs.len() != 2 {
         return Err(InterpreterError::EvaluationError(format!(
-          "{} expects exactly 2 arguments", func_name
+          "{} expects exactly 2 arguments",
+          func_name
         )));
       }
       // extract list items (same helper as above)
       let list_pair = &args_pairs[0];
       let list_rule = list_pair.as_rule();
       let items: Vec<_> = if list_rule == Rule::List {
-        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
-      } else if list_rule == Rule::Expression {
+        list_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect()
+      }
+      else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          } else {
+          }
+          else {
             return Err(InterpreterError::EvaluationError(format!(
-              "First argument of {} must be a list", func_name
+              "First argument of {} must be a list",
+              func_name
             )));
           }
-        } else {
+        }
+        else {
           return Err(InterpreterError::EvaluationError(format!(
-            "First argument of {} must be a list", func_name
+            "First argument of {} must be a list",
+            func_name
           )));
         }
-      } else {
+      }
+      else {
         return Err(InterpreterError::EvaluationError(format!(
-          "First argument of {} must be a list", func_name
+          "First argument of {} must be a list",
+          func_name
         )));
       };
 
@@ -752,7 +898,9 @@ fn evaluate_function_call(
 
       if func_name == "Append" {
         evaluated.push(new_elem);
-      } else {           // Prepend
+      }
+      else {
+        // Prepend
         evaluated.insert(0, new_elem);
       }
       return Ok(format!("{{{}}}", evaluated.join(", ")));
@@ -870,23 +1018,31 @@ fn evaluate_function_call(
       let list_pair = &args_pairs[0];
       let list_rule = list_pair.as_rule();
       let items: Vec<_> = if list_rule == Rule::List {
-        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
-      } else if list_rule == Rule::Expression {
+        list_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect()
+      }
+      else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          } else {
+          }
+          else {
             return Err(InterpreterError::EvaluationError(
               "Total function argument must be a list".into(),
             ));
           }
-        } else {
+        }
+        else {
           return Err(InterpreterError::EvaluationError(
             "Total function argument must be a list".into(),
           ));
         }
-      } else {
+      }
+      else {
         return Err(InterpreterError::EvaluationError(
           "Total function argument must be a list".into(),
         ));
@@ -911,23 +1067,31 @@ fn evaluate_function_call(
       let list_pair = &args_pairs[0];
       let list_rule = list_pair.as_rule();
       let elems: Vec<_> = if list_rule == Rule::List {
-        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
-      } else if list_rule == Rule::Expression {
+        list_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect()
+      }
+      else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          } else {
+          }
+          else {
             return Err(InterpreterError::EvaluationError(
               "First argument of Select must be a list".into(),
             ));
           }
-        } else {
+        }
+        else {
           return Err(InterpreterError::EvaluationError(
             "First argument of Select must be a list".into(),
           ));
         }
-      } else {
+      }
+      else {
         return Err(InterpreterError::EvaluationError(
           "First argument of Select must be a list".into(),
         ));
@@ -945,9 +1109,15 @@ fn evaluate_function_call(
             let n = evaluate_term(elem.clone())?;
             if n.fract() != 0.0 {
               false
-            } else {
+            }
+            else {
               let is_even = (n as i64) % 2 == 0;
-              if pred_name == "EvenQ" { is_even } else { !is_even }
+              if pred_name == "EvenQ" {
+                is_even
+              }
+              else {
+                !is_even
+              }
             }
           }
           _ => {
@@ -975,31 +1145,41 @@ fn evaluate_function_call(
       let list_pair = &args_pairs[0];
       let list_rule = list_pair.as_rule();
       let items: Vec<_> = if list_rule == Rule::List {
-        list_pair.clone().into_inner().filter(|p| p.as_str() != ",").collect()
-      } else if list_rule == Rule::Expression {
+        list_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect()
+      }
+      else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          } else {
+          }
+          else {
             return Err(InterpreterError::EvaluationError(
               "Flatten argument must be a list".into(),
             ));
           }
-        } else {
+        }
+        else {
           return Err(InterpreterError::EvaluationError(
             "Flatten argument must be a list".into(),
           ));
         }
-      } else {
+      }
+      else {
         return Err(InterpreterError::EvaluationError(
           "Flatten argument must be a list".into(),
         ));
       };
 
       // ----- recursive flattener ------------------------------------------
-      fn collect_flat<'a>(pair: pest::iterators::Pair<'a, Rule>,
-                      acc: &mut Vec<pest::iterators::Pair<'a, Rule>>) {
+      fn collect_flat<'a>(
+        pair: pest::iterators::Pair<'a, Rule>,
+        acc: &mut Vec<pest::iterators::Pair<'a, Rule>>,
+      ) {
         match pair.as_rule() {
           Rule::List => {
             for sub in pair.into_inner().filter(|p| p.as_str() != ",") {
@@ -1027,8 +1207,10 @@ fn evaluate_function_call(
       }
 
       // ----- evaluate & format --------------------------------------------
-      let evaluated: Result<Vec<_>, _> =
-        flat_pairs.into_iter().map(|p| evaluate_expression(p)).collect();
+      let evaluated: Result<Vec<_>, _> = flat_pairs
+        .into_iter()
+        .map(|p| evaluate_expression(p))
+        .collect();
       return Ok(format!("{{{}}}", evaluated?.join(", ")));
     }
     "GroupBy" => Err(InterpreterError::EvaluationError(
@@ -1071,13 +1253,14 @@ fn evaluate_function_call(
 }
 
 fn apply_map_operator(
-    func: pest::iterators::Pair<Rule>,
-    list: pest::iterators::Pair<Rule>,
+  func: pest::iterators::Pair<Rule>,
+  list: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   // right after the function’s opening brace
   let func_core = if func.as_rule() == Rule::Term {
     func.clone().into_inner().next().unwrap()
-  } else {
+  }
+  else {
     func.clone()
   };
 
@@ -1085,22 +1268,29 @@ fn apply_map_operator(
   let list_rule = list.as_rule();
   let elements: Vec<_> = if list_rule == Rule::List {
     list.into_inner().filter(|p| p.as_str() != ",").collect()
-  } else if list_rule == Rule::Expression {
+  }
+  else if list_rule == Rule::Expression {
     let mut inner = list.into_inner();
     if let Some(first) = inner.next() {
       if first.as_rule() == Rule::List {
         first.into_inner().filter(|p| p.as_str() != ",").collect()
-      } else {
-        return Err(InterpreterError::EvaluationError(
-          "Second operand of /@ must be a list".into()));
       }
-    } else {
-      return Err(InterpreterError::EvaluationError(
-        "Second operand of /@ must be a list".into()));
+      else {
+        return Err(InterpreterError::EvaluationError(
+          "Second operand of /@ must be a list".into(),
+        ));
+      }
     }
-  } else {
+    else {
+      return Err(InterpreterError::EvaluationError(
+        "Second operand of /@ must be a list".into(),
+      ));
+    }
+  }
+  else {
     return Err(InterpreterError::EvaluationError(
-      "Second operand of /@ must be a list".into()));
+      "Second operand of /@ must be a list".into(),
+    ));
   };
 
   // ----- identify mapped function ----------------------------------
@@ -1112,15 +1302,23 @@ fn apply_map_operator(
           let mut mapped = Vec::new();
           for el in elements {
             let v = evaluate_term(el.clone())?;
-            let s = if v > 0.0 {  1.0 }
-                    else if v < 0.0 { -1.0 }
-                    else { 0.0 };
+            let s = if v > 0.0 {
+              1.0
+            }
+            else if v < 0.0 {
+              -1.0
+            }
+            else {
+              0.0
+            };
             mapped.push(format_result(s));
           }
           Ok(format!("{{{}}}", mapped.join(", ")))
         }
-        _ => Err(InterpreterError::EvaluationError(
-              format!("Unknown mapping function: {}", name))),
+        _ => Err(InterpreterError::EvaluationError(format!(
+          "Unknown mapping function: {}",
+          name
+        ))),
       }
     }
     Rule::AnonymousFunction => {
@@ -1136,8 +1334,8 @@ fn apply_map_operator(
       }
 
       let operator = parts[1].as_str();
-      let operand  = parts[2].clone();
-      let mut out  = Vec::new();
+      let operand = parts[2].clone();
+      let mut out = Vec::new();
 
       for el in elements {
         let v = evaluate_term(el.clone())?;
@@ -1148,20 +1346,27 @@ fn apply_map_operator(
           "/" => {
             let d = evaluate_term(operand.clone())?;
             if d == 0.0 {
-              return Err(InterpreterError::EvaluationError("Division by zero".into()));
+              return Err(InterpreterError::EvaluationError(
+                "Division by zero".into(),
+              ));
             }
             v / d
           }
           "^" => v.powf(evaluate_term(operand.clone())?),
-          _   => return Err(InterpreterError::EvaluationError(
-                  format!("Unsupported operator in anonymous function: {}", operator))),
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unsupported operator in anonymous function: {}",
+              operator
+            )))
+          }
         };
         out.push(format_result(res));
       }
       return Ok(format!("{{{}}}", out.join(", ")));
     }
     _ => Err(InterpreterError::EvaluationError(
-          "Left operand of /@ must be a function".into())),
+      "Left operand of /@ must be a function".into(),
+    )),
   }
 }
 
