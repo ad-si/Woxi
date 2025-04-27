@@ -418,6 +418,23 @@ fn evaluate_function_call(
       // ── return formatted result ──────────────────────────────────────────
       return Ok(format_result(sum));
     }
+    "Times" => {
+      // ----- arity check ---------------------------------------------------
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Times expects at least 1 argument".into(),
+        ));
+      }
+
+      // ----- multiply all numeric arguments --------------------------------
+      let mut product = 1.0;
+      for ap in &args_pairs {
+        product *= evaluate_term(ap.clone())?;
+      }
+
+      // ----- return formatted result ---------------------------------------
+      return Ok(format_result(product));
+    }
     "Minus" => {
       // ---- arity check ----------------------------------------------------
       if args_pairs.is_empty() {

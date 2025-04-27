@@ -24,15 +24,27 @@ $ wo 'Minus[2, 5]'
 $ wo '5-2'
 3
 
+# `Times`: Multiply numbers.
+$ wo 'Times[2, 3]'
+6
+$ wo 'Times[2, 3, 4]'
+24
+$ wo 'Times[-2, 3]'
+-6
+
+# `*` (Times): Multiply numbers.
+$ wo '2*3'
+6
+
+# `Sign`: Returns the sign of a number.
 $ wo 'Sign[5]'
 1
-
 $ wo 'Sign[0]'
 0
-
 $ wo 'Sign[-7]'
 -1
 
+# `Prime`: Returns the nth prime number.
 $ wo 'Prime[5]'
 11
 
