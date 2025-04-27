@@ -99,9 +99,9 @@ False
 $ wo 'Not[False]'
 True
 $ wo 'Not[True, True]'
-Not::argx: Not called with 2 arguments; 1 argument is expected.
 
->=
+Not::argx: Not called with 2 arguments; 1 argument is expected.
+Not[True, True]
 
 # `Xor`: Logical XOR operation.
 $ wo 'Xor[True, True]'

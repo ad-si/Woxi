@@ -22,6 +22,15 @@ test-cli: install
 		tests/cli/*.test
 
 
+.PHONY: test-cli-wolframscript
+test-cli-wolframscript: install
+	WOXI_USE_WOLFRAM=true \
+	shelltest \
+		--precise \
+		--color \
+		tests/cli/*.test
+
+
 .PHONY: test
 test: test-unit test-cli
 
