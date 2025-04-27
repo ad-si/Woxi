@@ -418,6 +418,28 @@ fn evaluate_function_call(
       // ── return formatted result ──────────────────────────────────────────
       return Ok(format_result(sum));
     }
+    "Minus" => {
+      // ---- arity check ----------------------------------------------------
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Minus expects at least 1 argument".into(),
+        ));
+      }
+
+      // ---- evaluate first argument ----------------------------------------
+      let mut result = evaluate_term(args_pairs[0].clone())?;
+
+      // ---- unary Minus -----------------------------------------------------
+      if args_pairs.len() == 1 {
+        return Ok(format_result(-result));
+      }
+
+      // ---- n-ary subtraction ----------------------------------------------
+      for ap in args_pairs.iter().skip(1) {
+        result -= evaluate_term(ap.clone())?;
+      }
+      return Ok(format_result(result));
+    }
     "Abs" => {
       // ── arity check ────────────────────────────────────────────────────────
       if args_pairs.len() != 1 {

@@ -10,6 +10,7 @@ Flatten,Flattens nested lists,🚧
 Last,Returns the last element of a list,🚧
 Length,Returns the number of elements in a list,🚧
 Map,Applies a function to each element of a list,🚧
+Minus,Subtracts numbers,🚧
 Most,Returns the list without its last element,🚧
 Part,Returns the nth element of a list,🚧
 Plus,Adds numbers together,🚧
@@ -267,7 +268,6 @@ Abort,,
 AbortKernels,,
 AbortProtect,,
 Above,,
-Abs,,
 AbsArg,,
 AbsArgPlot,,
 AbsoluteCorrelation,,
@@ -3816,7 +3816,6 @@ MinorPlanetData,,
 Minors,,
 MinPointSeparation,,
 MinStableDistribution,,
-Minus,,
 MinusPlus,,
 MinValue,,
 Missing,,
