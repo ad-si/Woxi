@@ -1074,6 +1074,13 @@ fn apply_map_operator(
     func: pest::iterators::Pair<Rule>,
     list: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
+  // right after the function’s opening brace
+  let func_core = if func.as_rule() == Rule::Term {
+    func.clone().into_inner().next().unwrap()
+  } else {
+    func.clone()
+  };
+
   // ----- obtain list items (same extraction logic used in Map) -----
   let list_rule = list.as_rule();
   let elements: Vec<_> = if list_rule == Rule::List {
@@ -1097,9 +1104,9 @@ fn apply_map_operator(
   };
 
   // ----- identify mapped function ----------------------------------
-  match func.as_rule() {
+  match func_core.as_rule() {
     Rule::Identifier => {
-      let name = func.as_str();
+      let name = func_core.as_str();
       match name {
         "Sign" => {
           let mut mapped = Vec::new();
@@ -1115,6 +1122,43 @@ fn apply_map_operator(
         _ => Err(InterpreterError::EvaluationError(
               format!("Unknown mapping function: {}", name))),
       }
+    }
+    Rule::AnonymousFunction => {
+      let parts: Vec<_> = func_core.clone().into_inner().collect();
+
+      // identity function  (#&)
+      if parts.len() == 1 {
+        let mut out = Vec::new();
+        for el in &elements {
+          out.push(evaluate_expression(el.clone())?);
+        }
+        return Ok(format!("{{{}}}", out.join(", ")));
+      }
+
+      let operator = parts[1].as_str();
+      let operand  = parts[2].clone();
+      let mut out  = Vec::new();
+
+      for el in elements {
+        let v = evaluate_term(el.clone())?;
+        let res = match operator {
+          "+" => v + evaluate_term(operand.clone())?,
+          "-" => v - evaluate_term(operand.clone())?,
+          "*" => v * evaluate_term(operand.clone())?,
+          "/" => {
+            let d = evaluate_term(operand.clone())?;
+            if d == 0.0 {
+              return Err(InterpreterError::EvaluationError("Division by zero".into()));
+            }
+            v / d
+          }
+          "^" => v.powf(evaluate_term(operand.clone())?),
+          _   => return Err(InterpreterError::EvaluationError(
+                  format!("Unsupported operator in anonymous function: {}", operator))),
+        };
+        out.push(format_result(res));
+      }
+      return Ok(format!("{{{}}}", out.join(", ")));
     }
     _ => Err(InterpreterError::EvaluationError(
           "Left operand of /@ must be a function".into())),
