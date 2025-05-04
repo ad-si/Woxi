@@ -1,0 +1,7 @@
+# Basics
+
+# Comments
+$ wo '(* This comment is ignored *) 5'
+5
+$ wo '5 (* This comment is ignored *)'
+5
