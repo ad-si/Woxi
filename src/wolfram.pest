@@ -1,5 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
+PartExtract = { Identifier ~ "[[" ~ Expression ~ "]]" }
+
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 Constant = { ("-")? ~ "Pi" }
@@ -16,17 +18,31 @@ FunctionCall = { (Identifier | SpecialFunction | AnonymousFunction) ~ "[" ~ (Exp
 Slot = @{ "#" ~ ASCII_DIGIT* }
 AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 
-Operator = { "/@" | "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" }
+Operator = { "/@" | "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" | "=" }
 
 Expression = { Term ~ (Operator ~ Term)* }
-Term = _{ NumericValue | Constant | String | List | FunctionCall
-        | Identifier | AnonymousFunction | Slot | "(" ~ Expression ~ ")" }
+Term = _{
+    PartExtract
+  | NumericValue
+  | Constant
+  | String
+  | List
+  | FunctionCall
+  | Identifier
+  | AnonymousFunction
+  | Slot
+  | Association
+  | "(" ~ Expression ~ ")"
+}
 
 List = { "{" ~ (Expression ~ ("," ~ Expression)*)? ~ "}" }
 Pattern = { Identifier ~ "_" }
+
+AssociationItem = { Expression ~ "->" ~ Expression }
+Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
 
 FunctionDefinition = { Identifier ~ "[" ~ Pattern ~ "]" ~ ":=" ~ Expression }
 
 Statement = _{ FunctionDefinition | Expression }
 
-Program = { SOI ~ Statement+ ~ EOI }
+Program = { SOI ~ Statement ~ (";" ~ Statement)* ~ EOI }

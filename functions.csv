@@ -42,6 +42,9 @@ StringTake,Returns a substring of a string,🚧
 Take,Returns the first n elements of a list,🚧
 Times,Multiply numbers,🚧
 Total,Sums the elements of a list,🚧
+KeyDropFrom,Removes a key-value pair from an association,🚧
+Keys,Returns the keys of an association,🚧
+Values,Returns the values of an association,🚧
 
 
 $Aborted,,
@@ -3269,7 +3272,6 @@ Key,,
 KeyCollisionFunction,,
 KeyComplement,,
 KeyDrop,,
-KeyDropFrom,,
 KeyExistsQ,,
 KeyframeActions,,
 KeyFreeQ,,
@@ -3277,7 +3279,6 @@ KeyIntersection,,
 KeyMap,,
 KeyMemberQ,,
 KeypointStrength,,
-Keys,,
 KeySelect,,
 KeySort,,
 KeySortBy,,
@@ -6125,7 +6126,6 @@ ValidationSet,,
 ValueDimensions,,
 ValuePreprocessingFunction,,
 ValueQ,,
-Values,,
 VandermondeMatrix,,
 Variables,,
 Variance,,

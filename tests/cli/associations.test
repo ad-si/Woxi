@@ -1,0 +1,24 @@
+# Associations
+# (Uses $$$ syntax to avoid reading `<` as input)
+
+$$$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>'
+<|Green -> 2, Red -> 1|>
+
+# Access values in associations
+$$$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Green"]]'
+2
+
+$$$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Green"]] := 5'
+Null
+
+$$$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Puce"]] := 3.5'
+Null
+
+$$$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; KeyDropFrom[myHash, "Green"]'
+<|Red -> 1|>
+
+$$$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; Keys[myHash]'
+{Green, Red}
+
+$$$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; Values[myHash]'
+{2, 1}
