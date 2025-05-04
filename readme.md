@@ -74,13 +74,23 @@ make test
 ## Related
 
 - [CodeParser] - Parse Wolfram Language as AST or CST.
+- [Mastika] - Rust-based implementation of Wolfram Mathematica.
 - [MMA Clone] - Simple Wolfram Language clone in Haskell.
 - [TS Wolfram] - Toy Wolfram Language interpreter in TypeScript.
 - [Wolfram JS Frontend] - Open-source notebook interface for Wolfram Language.
 - [Wolfram Parser] - Wolfram Language parser in Rust.
+- [wolfram-ast] - A Wolfram Language parser written in pure Rust.
+- [wolfram-exchange] - Wolfram exchange format with Rust.
+- [wolfram-expr] - Representing Wolfram Language expressions in Rust.
+- [Wolfram-Language-Parser] - Wolfram Language parser in Java.
 
 [CodeParser]: https://github.com/WolframResearch/codeparser
+[Mastika]: https://crates.io/crates/mastika
 [MMA Clone]: https://github.com/mrtwistor/mmaclone
 [TS Wolfram]: https://github.com/coffeemug/ts-wolfram
 [Wolfram JS Frontend]: https://github.com/JerryI/wolfram-js-frontend
 [Wolfram Parser]: https://github.com/oovm/wolfram-parser
+[wolfram-ast]: https://crates.io/crates/wolfram-ast
+[wolfram-exchange]: https://github.com/oovm/wolfram-exchange
+[wolfram-expr]: https://github.com/WolframResearch/wolfram-expr-rs
+[Wolfram-Language-Parser]: https://github.com/halirutan/Wolfram-Language-Parser
