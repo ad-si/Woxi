@@ -1,11 +1,22 @@
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use thiserror::Error;
 
 #[derive(Parser)]
 #[grammar = "wolfram.pest"]
 pub struct WolframParser;
+
+#[derive(Clone)]
+enum StoredValue {
+  Association(Vec<(String, String)>),
+  Raw(()),
+}
+thread_local! {
+    static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
+}
 
 #[derive(Error, Debug)]
 pub enum InterpreterError {
@@ -33,10 +44,8 @@ pub fn parse(
 
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   let pairs = parse(input)?;
-  let program = pairs
-    .into_iter()
-    .next()
-    .ok_or(InterpreterError::EmptyInput)?;
+  let mut pairs = pairs.into_iter();
+  let program = pairs.next().ok_or(InterpreterError::EmptyInput)?;
 
   if program.as_rule() != Rule::Program {
     return Err(InterpreterError::EvaluationError(format!(
@@ -45,12 +54,27 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     )));
   }
 
-  let expr = program
-    .into_inner()
-    .next()
-    .ok_or(InterpreterError::EmptyInput)?;
-
-  evaluate_expression(expr)
+  let mut last_result = None;
+  let mut any_nonempty = false;
+  for node in program.into_inner() {
+    match node.as_rule() {
+      Rule::Expression => {
+        last_result = Some(evaluate_expression(node)?);
+        any_nonempty = true;
+      }
+      Rule::FunctionDefinition => {
+        last_result = Some("Null".to_string()); // stub implementation
+        any_nonempty = true;
+      }
+      _ => {} // ignore semicolons, etc.
+    }
+  }
+  if any_nonempty {
+    last_result.ok_or(InterpreterError::EmptyInput)
+  }
+  else {
+    Err(InterpreterError::EmptyInput)
+  }
 }
 
 fn format_result(result: f64) -> String {
@@ -66,11 +90,36 @@ fn format_result(result: f64) -> String {
   }
 }
 
+fn eval_association(
+  pair: Pair<Rule>,
+) -> Result<(Vec<(String, String)>, String), InterpreterError> {
+  let mut pairs = Vec::new();
+  let mut disp_parts = Vec::new();
+  for item in pair
+    .into_inner()
+    .filter(|p| p.as_rule() == Rule::AssociationItem)
+  {
+    let mut inner = item.into_inner();
+    let key_pair = inner.next().unwrap();
+    let val_pair = inner.next().unwrap();
+    let key = extract_string(key_pair)?;
+    let val = evaluate_expression(val_pair)?;
+    disp_parts.push(format!("{} -> {}", key, val));
+    pairs.push((key, val));
+  }
+  let disp = format!("<|{}|>", disp_parts.join(", "));
+  Ok((pairs, disp))
+}
+
 fn evaluate_expression(
   expr: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   match expr.as_rule() {
     Rule::String => Ok(expr.as_str().trim_matches('"').to_string()),
+    Rule::Association => {
+      let (_pairs, disp) = eval_association(expr)?;
+      Ok(disp)
+    }
     Rule::Term => {
       let mut inner = expr.clone().into_inner();
       if let Some(first) = inner.next() {
@@ -79,6 +128,10 @@ fn evaluate_expression(
         }
         else if first.as_rule() == Rule::List {
           return evaluate_expression(first);
+        }
+        else if first.as_rule() == Rule::Association {
+          let (_pairs, disp) = eval_association(first)?;
+          return Ok(disp);
         }
         else if first.as_rule() == Rule::String {
           return Ok(first.as_str().trim_matches('"').to_string());
@@ -92,8 +145,47 @@ fn evaluate_expression(
         {
           return evaluate_term(first).map(format_result);
         }
+        // --- handle PartExtract at Term level ---
+        else if first.as_rule() == Rule::PartExtract {
+          return evaluate_expression(first);
+        }
       }
       evaluate_term(expr).map(format_result)
+    }
+    Rule::PartExtract => {
+      let mut inner = expr.into_inner();
+      let id_pair = inner.next().unwrap();
+      let key_pair = inner.next().unwrap();
+      let name = id_pair.as_str();
+      let key = extract_string(key_pair)?;
+      if let Some(StoredValue::Association(vec)) =
+        ENV.with(|e| e.borrow().get(name).cloned())
+      {
+        for (k, v) in vec {
+          if k == key {
+            return Ok(v);
+          }
+        }
+        return Err(InterpreterError::EvaluationError("Key not found".into()));
+      }
+      // If not found as association, try to evaluate as a list and use numeric index
+      if let Ok(list_str) = evaluate_expression(id_pair.clone()) {
+        // Try to parse as a list: {a, b, c}
+        if list_str.starts_with('{') && list_str.ends_with('}') {
+          let items: Vec<&str> = list_str[1..list_str.len() - 1]
+            .split(',')
+            .map(|s| s.trim())
+            .collect();
+          if let Ok(idx) = key.parse::<usize>() {
+            if idx >= 1 && idx <= items.len() {
+              return Ok(items[idx - 1].to_string());
+            }
+          }
+        }
+      }
+      return Err(InterpreterError::EvaluationError(
+        "Argument must be an association".into(),
+      ));
     }
     Rule::Expression => {
       // --- special case: Map operator ----------------------------------
@@ -104,6 +196,35 @@ fn evaluate_expression(
           && items[1].as_str() == "/@"
         {
           return apply_map_operator(items[0].clone(), items[2].clone());
+        }
+        // --- handle = and := assignment operators ---
+        if items.len() == 3 && items[1].as_rule() == Rule::Operator {
+          match items[1].as_str() {
+            "=" => {
+              let lhs = items[0].clone();
+              if lhs.as_rule() != Rule::Identifier {
+                return Err(InterpreterError::EvaluationError(
+                  "Left-hand side of assignment must be an identifier".into(),
+                ));
+              }
+              let name = lhs.as_str().to_string();
+              let rhs = items[2].clone();
+              if rhs.as_rule() == Rule::Association {
+                let (pairs, disp) = eval_association(rhs)?;
+                ENV.with(|e| {
+                  e.borrow_mut().insert(name, StoredValue::Association(pairs))
+                });
+                return Ok(disp);
+              }
+              else {
+                let val = evaluate_expression(rhs)?;
+                ENV.with(|e| e.borrow_mut().insert(name, StoredValue::Raw(())));
+                return Ok(val);
+              }
+            }
+            ":=" => return Ok("Null".to_string()),
+            _ => { /* fall-through to existing maths logic */ }
+          }
         }
       }
       let mut inner = expr.into_inner();
@@ -170,7 +291,21 @@ fn evaluate_expression(
       }
       Ok(format_result(result))
     }
-    Rule::Program => evaluate_expression(expr.into_inner().next().unwrap()),
+    Rule::Program => {
+      let mut last = None;
+      for node in expr.into_inner() {
+        match node.as_rule() {
+          Rule::Expression => {
+            last = Some(evaluate_expression(node)?);
+          }
+          Rule::FunctionDefinition => {
+            last = Some("Null".to_string());
+          }
+          _ => {}
+        }
+      }
+      return last.ok_or(InterpreterError::EmptyInput);
+    }
     Rule::List => {
       let items: Vec<String> = expr
         .into_inner()
@@ -248,6 +383,13 @@ fn evaluate_term(
     Rule::List => Err(InterpreterError::EvaluationError(
       "Cannot evaluate a list as a numeric value".to_string(),
     )),
+    Rule::PartExtract => {
+      // Instead of error, evaluate as expression (so PartExtract can be handled at expression level)
+      evaluate_expression(term).and_then(|s| {
+        s.parse::<f64>()
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      })
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule in Term: {:?}",
       term.as_rule()
@@ -279,6 +421,25 @@ fn evaluate_function_call(
   let mut inner = func_call.into_inner();
   let func_name_pair = inner.next().unwrap();
 
+  // treat identifier that refers to an association variable
+  if func_name_pair.as_rule() == Rule::Identifier {
+    if let Some(StoredValue::Association(pairs)) =
+      ENV.with(|e| e.borrow().get(func_name_pair.as_str()).cloned())
+    {
+      // ---- key lookup ---
+      if inner.clone().filter(|p| p.as_str() != ",").count() == 1 {
+        let arg_pair = inner.next().unwrap(); // only argument
+        let key_str = extract_string(arg_pair)?; // must be string
+        for (k, v) in &pairs {
+          if *k == key_str {
+            return Ok(v.clone());
+          }
+        }
+        return Err(InterpreterError::EvaluationError("Key not found".into()));
+      }
+    }
+  }
+
   // Helper for boolean conversion
   fn as_bool(s: &str) -> Option<bool> {
     match s {
@@ -286,6 +447,74 @@ fn evaluate_function_call(
       "False" => Some(false),
       _ => None,
     }
+  }
+
+  // Helper for extracting association from first argument
+  fn get_assoc_from_first_arg(
+    args: &[Pair<Rule>],
+  ) -> Result<Vec<(String, String)>, InterpreterError> {
+    let p = &args[0];
+
+    // NEW: recognise an identifier that is wrapped in an Expression
+    if p.as_rule() == Rule::Expression {
+      let mut inner = p.clone().into_inner();
+      if let Some(first) = inner.next() {
+        if first.as_rule() == Rule::Identifier && inner.next().is_none() {
+          if let Some(StoredValue::Association(v)) =
+            ENV.with(|e| e.borrow().get(first.as_str()).cloned())
+          {
+            return Ok(v);
+          }
+        }
+      }
+    }
+
+    if p.as_rule() == Rule::Identifier {
+      if let Some(StoredValue::Association(v)) =
+        ENV.with(|e| e.borrow().get(p.as_str()).cloned())
+      {
+        return Ok(v);
+      }
+    }
+    if p.as_rule() == Rule::Association {
+      return Ok(eval_association(p.clone())?.0);
+    }
+    // Try to evaluate as an expression and parse as association display
+    if let Ok(val) = evaluate_expression(p.clone()) {
+      if val.starts_with("<|") && val.ends_with("|>") {
+        let inner = &val[2..val.len() - 2];
+        let mut pairs = Vec::new();
+        // Only split on top-level commas (not inside braces or quotes)
+        let mut depth = 0;
+        let mut start = 0;
+        let mut parts = Vec::new();
+        let chars: Vec<char> = inner.chars().collect();
+        for (i, &c) in chars.iter().enumerate() {
+          match c {
+            '{' | '<' | '[' | '(' => depth += 1,
+            '}' | '>' | ']' | ')' => depth -= 1,
+            ',' if depth == 0 => {
+              parts.push(inner[start..i].to_string());
+              start = i + 1;
+            }
+            _ => {}
+          }
+        }
+        if start < chars.len() {
+          parts.push(inner[start..].to_string());
+        }
+        for part in parts {
+          let part = part.trim();
+          if let Some((k, v)) = part.split_once("->") {
+            pairs.push((k.trim().to_string(), v.trim().to_string()));
+          }
+        }
+        return Ok(pairs);
+      }
+    }
+    Err(InterpreterError::EvaluationError(
+      "Argument must be an association".into(),
+    ))
   }
 
   // ----- anonymous function -------------------------------------------------
@@ -396,6 +625,35 @@ fn evaluate_function_call(
     inner.filter(|p| p.as_str() != ",").collect();
 
   match func_name {
+    "Keys" => {
+      let asso = get_assoc_from_first_arg(&args_pairs)?;
+      let keys: Vec<_> = asso.iter().map(|(k, _)| k.clone()).collect();
+      return Ok(format!("{{{}}}", keys.join(", ")));
+    }
+    "Values" => {
+      let asso = get_assoc_from_first_arg(&args_pairs)?;
+      let vals: Vec<_> = asso.iter().map(|(_, v)| v.clone()).collect();
+      return Ok(format!("{{{}}}", vals.join(", ")));
+    }
+    "KeyDropFrom" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "KeyDropFrom expects exactly 2 arguments".into(),
+        ));
+      }
+      let mut asso = get_assoc_from_first_arg(&args_pairs)?;
+      let key = extract_string(args_pairs[1].clone())?;
+      asso.retain(|(k, _)| k != &key);
+      let disp = format!(
+        "<|{}|>",
+        asso
+          .iter()
+          .map(|(k, v)| format!("{} -> {}", k, v))
+          .collect::<Vec<_>>()
+          .join(", ")
+      );
+      return Ok(disp);
+    }
     // ─────────────────── relational (inclusive) comparisons ──────────────────
     "GreaterEqual" => {
       if args_pairs.len() < 2 {
@@ -668,7 +926,9 @@ fn evaluate_function_call(
       }
       let n = evaluate_term(args_pairs[0].clone())?;
       let mut r = n.floor();
-      if r == -0.0 { r = 0.0; }
+      if r == -0.0 {
+        r = 0.0;
+      }
       return Ok(format_result(r));
     }
 
@@ -680,7 +940,9 @@ fn evaluate_function_call(
       }
       let n = evaluate_term(args_pairs[0].clone())?;
       let mut r = n.ceil();
-      if r == -0.0 { r = 0.0; }
+      if r == -0.0 {
+        r = 0.0;
+      }
       return Ok(format_result(r));
     }
 
@@ -693,16 +955,27 @@ fn evaluate_function_call(
       let n = evaluate_term(args_pairs[0].clone())?;
 
       // banker’s rounding (half-to-even)
-      let base  = n.trunc();
-      let frac  = n - base;
+      let base = n.trunc();
+      let frac = n - base;
       let mut r = if frac.abs() == 0.5 {
-        if (base as i64) % 2 == 0 { base }               // already even
-        else if n.is_sign_positive() { base + 1.0 }      // away from zero
-        else { base - 1.0 }
-      } else {
+        if (base as i64) % 2 == 0 {
+          base
+        }
+        // already even
+        else if n.is_sign_positive() {
+          base + 1.0
+        }
+        // away from zero
+        else {
+          base - 1.0
+        }
+      }
+      else {
         n.round()
       };
-      if r == -0.0 { r = 0.0; }
+      if r == -0.0 {
+        r = 0.0;
+      }
       return Ok(format_result(r));
     }
 
@@ -1345,7 +1618,7 @@ fn evaluate_function_call(
       }
 
       // ── evaluate arguments ───────────────────────────────────────────────
-      let numerator   = evaluate_term(args_pairs[0].clone())?;
+      let numerator = evaluate_term(args_pairs[0].clone())?;
       let denominator = evaluate_term(args_pairs[1].clone())?;
 
       if denominator == 0.0 {
