@@ -11,6 +11,8 @@ $ wo 'Plus[-1, -2]'
 # `+` (Plus): Add numbers.
 $ wo '1+2'
 3
+$ wo '8 + (-5)'
+3
 
 # `Minus`: Subtract numbers.
 $ wo 'Minus[5]'
@@ -31,6 +33,10 @@ $ wo 'Times[2, 3, 4]'
 24
 $ wo 'Times[-2, 3]'
 -6
+$ wo '2*2'
+4
+$ wo '2 * (-2)'
+-4
 
 # `Divide`: Divide numbers.
 $ wo 'Divide[6, 2]'
@@ -114,9 +120,12 @@ $ wo 'Round[0]'
 $ wo 'Round[-0]'
 0
 
-
 # `Sqrt` (Square Root): Returns the square root of a number.
 $ wo 'Sqrt[16]'
 4
 $ wo 'Sqrt[0]'
 0
+
+# `Sin`: Returns the sine of an angle in radians.
+$ wo 'Sin[Pi/2]'
+1

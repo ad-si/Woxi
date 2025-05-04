@@ -18,6 +18,12 @@ $ wo 'Sign /@ {7, -2, 0, -5}'
 $ wo '#^2& /@ {1, 2, 3}'
 {1, 4, 9}
 
+$ wo 'Sin@(Pi/2)'
+1
+
+$ wo '(Pi/2) // Sin'
+1
+
 # # Apply (@@): Replaces the head of an expression with a function.
 # $ wo 'f @@ {1, 2, 3}'
 # f[1, 2, 3]
