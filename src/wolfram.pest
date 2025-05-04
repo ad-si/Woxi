@@ -1,4 +1,5 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
 PartExtract = { Identifier ~ "[[" ~ Expression ~ "]]" }
 
@@ -18,9 +19,10 @@ FunctionCall = { (Identifier | SpecialFunction | AnonymousFunction) ~ "[" ~ (Exp
 Slot = @{ "#" ~ ASCII_DIGIT* }
 AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 
-Operator = { "/@" | "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" | "=" }
+Operator = { "/@" | "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" | "=" | "@" }
 
-Expression = { Term ~ (Operator ~ Term)* }
+PostfixApplication = { Term ~ "//" ~ Identifier }
+Expression = { PostfixApplication | Term ~ (Operator ~ Term)* }
 Term = _{
     PartExtract
   | NumericValue

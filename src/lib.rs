@@ -119,6 +119,35 @@ fn evaluate_expression(
     Rule::Association => {
       let (_pairs, disp) = eval_association(expr)?;
       Ok(disp)
+    },
+    Rule::PostfixApplication => {
+      let mut inner = expr.into_inner();
+      let arg = inner.next().unwrap();
+      let func = inner.next().unwrap();
+      
+      if func.as_rule() == Rule::Identifier {
+        let func_name = func.as_str();
+        // Evaluate the argument
+        let arg_value = evaluate_expression(arg)?;
+        // Apply the function
+        match func_name {
+          "Sin" => {
+            let n = arg_value.parse::<f64>().map_err(|_| {
+              InterpreterError::EvaluationError("Invalid argument for Sin".into())
+            })?;
+            Ok(format_result(n.sin()))
+          },
+          _ => Err(InterpreterError::EvaluationError(format!(
+            "Unknown function for // operator: {}",
+            func_name
+          ))),
+        }
+      }
+      else {
+        Err(InterpreterError::EvaluationError(
+          "Right operand of // must be a function".into(),
+        ))
+      }
     }
     Rule::Term => {
       let mut inner = expr.clone().into_inner();
@@ -191,6 +220,68 @@ fn evaluate_expression(
       // --- special case: Map operator ----------------------------------
       {
         let items: Vec<_> = expr.clone().into_inner().collect();
+        
+        // Handle operators for function application
+        if items.len() == 3 && items[1].as_rule() == Rule::Operator {
+          // Handle @ operator (prefix notation)
+          if items[1].as_str() == "@" {
+            let func = items[0].clone();
+            let arg = items[2].clone();
+            
+            if func.as_rule() == Rule::Identifier {
+              let func_name = func.as_str();
+              // Directly call the function with the argument value
+              let arg_value = evaluate_expression(arg)?;
+              // Create args_pairs similar to a normal function call
+              return match func_name {
+                "Sin" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError("Invalid argument for Sin".into())
+                  })?;
+                  Ok(format_result(n.sin()))
+                },
+                _ => Err(InterpreterError::EvaluationError(format!(
+                  "Unknown function for @ operator: {}",
+                  func_name
+                ))),
+              };
+            }
+            else {
+              return Err(InterpreterError::EvaluationError(
+                "Left operand of @ must be a function".into(),
+              ));
+            }
+          }
+          // Handle // operator (postfix notation)
+          else if items[1].as_str() == "//" {
+            let arg = items[0].clone();
+            let func = items[2].clone();
+            
+            if func.as_rule() == Rule::Identifier {
+              let func_name = func.as_str();
+              // Directly call the function with the argument value
+              let arg_value = evaluate_expression(arg)?;
+              return match func_name {
+                "Sin" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError("Invalid argument for Sin".into())
+                  })?;
+                  Ok(format_result(n.sin()))
+                },
+                _ => Err(InterpreterError::EvaluationError(format!(
+                  "Unknown function for // operator: {}",
+                  func_name
+                ))),
+              };
+            }
+            else {
+              return Err(InterpreterError::EvaluationError(
+                "Right operand of // must be a function".into(),
+              ));
+            }
+          }
+        }
+        
         if items.len() == 3
           && items[1].as_rule() == Rule::Operator
           && items[1].as_str() == "/@"
@@ -385,6 +476,13 @@ fn evaluate_term(
     )),
     Rule::PartExtract => {
       // Instead of error, evaluate as expression (so PartExtract can be handled at expression level)
+      evaluate_expression(term).and_then(|s| {
+        s.parse::<f64>()
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      })
+    }
+    Rule::PostfixApplication => {
+      // Evaluate as expression and convert to number
       evaluate_expression(term).and_then(|s| {
         s.parse::<f64>()
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
@@ -785,6 +883,15 @@ fn evaluate_function_call(
     }
 
     // ----- numeric helpers --------------------------------------------------
+    "Sin" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Sin expects exactly 1 argument".into(),
+        ));
+      }
+      let n = evaluate_term(args_pairs[0].clone())?;
+      Ok(format_result(n.sin()))
+    },
     "Prime" => {
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
