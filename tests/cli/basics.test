@@ -5,3 +5,15 @@ $ wo '(* This comment is ignored *) 5'
 5
 $ wo '5 (* This comment is ignored *)'
 5
+
+# Semicolon
+$ wo 'x = 2; x'
+2
+$ wo 'x = 2; x = x + 5'
+7
+
+# `Set`: Assigns a value to a variable
+$ wo 'Set[x, 5]'
+5
+$ wo 'Set[x, 5]; x + 3'
+8

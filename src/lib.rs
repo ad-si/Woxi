@@ -12,7 +12,7 @@ pub struct WolframParser;
 #[derive(Clone)]
 enum StoredValue {
   Association(Vec<(String, String)>),
-  Raw(()),
+  Raw(String), // keep evaluated textual value
 }
 thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
@@ -71,8 +71,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
   if any_nonempty {
     last_result.ok_or(InterpreterError::EmptyInput)
-  }
-  else {
+  } else {
     Err(InterpreterError::EmptyInput)
   }
 }
@@ -81,8 +80,7 @@ fn format_result(result: f64) -> String {
   if result.fract() == 0.0 {
     let int_result = result as i64;
     int_result.to_string()
-  }
-  else {
+  } else {
     format!("{:.10}", result)
       .trim_end_matches('0')
       .trim_end_matches('.')
@@ -119,12 +117,12 @@ fn evaluate_expression(
     Rule::Association => {
       let (_pairs, disp) = eval_association(expr)?;
       Ok(disp)
-    },
+    }
     Rule::PostfixApplication => {
       let mut inner = expr.into_inner();
       let arg = inner.next().unwrap();
       let func = inner.next().unwrap();
-      
+
       if func.as_rule() == Rule::Identifier {
         let func_name = func.as_str();
         // Evaluate the argument
@@ -133,39 +131,40 @@ fn evaluate_expression(
         match func_name {
           "Sin" => {
             let n = arg_value.parse::<f64>().map_err(|_| {
-              InterpreterError::EvaluationError("Invalid argument for Sin".into())
+              InterpreterError::EvaluationError(
+                "Invalid argument for Sin".into(),
+              )
             })?;
             Ok(format_result(n.sin()))
-          },
+          }
           _ => Err(InterpreterError::EvaluationError(format!(
             "Unknown function for // operator: {}",
             func_name
           ))),
         }
-      }
-      else {
+      } else {
         Err(InterpreterError::EvaluationError(
           "Right operand of // must be a function".into(),
         ))
       }
+    }
+    Rule::NumericValue => {
+      // numeric literal directly inside an expression (e.g. x == 2)
+      return evaluate_term(expr).map(format_result);
     }
     Rule::Term => {
       let mut inner = expr.clone().into_inner();
       if let Some(first) = inner.next() {
         if first.as_rule() == Rule::FunctionCall {
           return evaluate_function_call(first);
-        }
-        else if first.as_rule() == Rule::List {
+        } else if first.as_rule() == Rule::List {
           return evaluate_expression(first);
-        }
-        else if first.as_rule() == Rule::Association {
+        } else if first.as_rule() == Rule::Association {
           let (_pairs, disp) = eval_association(first)?;
           return Ok(disp);
-        }
-        else if first.as_rule() == Rule::String {
+        } else if first.as_rule() == Rule::String {
           return Ok(first.as_str().trim_matches('"').to_string());
-        }
-        else if first.as_rule() == Rule::Integer
+        } else if first.as_rule() == Rule::Integer
           || first.as_rule() == Rule::Real
           || first.as_rule() == Rule::Constant
           || first.as_rule() == Rule::NumericValue
@@ -220,14 +219,14 @@ fn evaluate_expression(
       // --- special case: Map operator ----------------------------------
       {
         let items: Vec<_> = expr.clone().into_inner().collect();
-        
+
         // Handle operators for function application
         if items.len() == 3 && items[1].as_rule() == Rule::Operator {
           // Handle @ operator (prefix notation)
           if items[1].as_str() == "@" {
             let func = items[0].clone();
             let arg = items[2].clone();
-            
+
             if func.as_rule() == Rule::Identifier {
               let func_name = func.as_str();
               // Directly call the function with the argument value
@@ -236,17 +235,18 @@ fn evaluate_expression(
               return match func_name {
                 "Sin" => {
                   let n = arg_value.parse::<f64>().map_err(|_| {
-                    InterpreterError::EvaluationError("Invalid argument for Sin".into())
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Sin".into(),
+                    )
                   })?;
                   Ok(format_result(n.sin()))
-                },
+                }
                 _ => Err(InterpreterError::EvaluationError(format!(
                   "Unknown function for @ operator: {}",
                   func_name
                 ))),
               };
-            }
-            else {
+            } else {
               return Err(InterpreterError::EvaluationError(
                 "Left operand of @ must be a function".into(),
               ));
@@ -256,7 +256,7 @@ fn evaluate_expression(
           else if items[1].as_str() == "//" {
             let arg = items[0].clone();
             let func = items[2].clone();
-            
+
             if func.as_rule() == Rule::Identifier {
               let func_name = func.as_str();
               // Directly call the function with the argument value
@@ -264,34 +264,37 @@ fn evaluate_expression(
               return match func_name {
                 "Sin" => {
                   let n = arg_value.parse::<f64>().map_err(|_| {
-                    InterpreterError::EvaluationError("Invalid argument for Sin".into())
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Sin".into(),
+                    )
                   })?;
                   Ok(format_result(n.sin()))
-                },
+                }
                 _ => Err(InterpreterError::EvaluationError(format!(
                   "Unknown function for // operator: {}",
                   func_name
                 ))),
               };
-            }
-            else {
+            } else {
               return Err(InterpreterError::EvaluationError(
                 "Right operand of // must be a function".into(),
               ));
             }
           }
         }
-        
+
         if items.len() == 3
           && items[1].as_rule() == Rule::Operator
           && items[1].as_str() == "/@"
         {
           return apply_map_operator(items[0].clone(), items[2].clone());
         }
+
         // --- handle = and := assignment operators ---
-        if items.len() == 3 && items[1].as_rule() == Rule::Operator {
+        if items.len() >= 3 && items[1].as_rule() == Rule::Operator {
           match items[1].as_str() {
             "=" => {
+              // LHS must be an identifier
               let lhs = items[0].clone();
               if lhs.as_rule() != Rule::Identifier {
                 return Err(InterpreterError::EvaluationError(
@@ -299,22 +302,90 @@ fn evaluate_expression(
                 ));
               }
               let name = lhs.as_str().to_string();
-              let rhs = items[2].clone();
-              if rhs.as_rule() == Rule::Association {
-                let (pairs, disp) = eval_association(rhs)?;
+
+              // --- association assignment  (x = <| … |>) -------------------------
+              if items.len() == 3 && items[2].as_rule() == Rule::Association {
+                let (pairs, disp) = eval_association(items[2].clone())?;
                 ENV.with(|e| {
                   e.borrow_mut().insert(name, StoredValue::Association(pairs))
                 });
                 return Ok(disp);
               }
-              else {
-                let val = evaluate_expression(rhs)?;
-                ENV.with(|e| e.borrow_mut().insert(name, StoredValue::Raw(())));
-                return Ok(val);
+
+              // --- generic RHS: may be any (possibly complex) expression ----------
+              // evaluate everything that comes after the first ‘=’
+              let full_txt = expr.as_str();
+              // Find the first '=' that is not part of an operator like '==' or '!='
+              // This is a simple approach: split on the first '=' that is not preceded or followed by '='
+              // (Assumes no whitespace between '='s in '==', '!=' etc.)
+              let mut eq_index = None;
+              let chars: Vec<char> = full_txt.chars().collect();
+              for i in 0..chars.len() {
+                if chars[i] == '=' {
+                  let prev = if i > 0 { chars[i - 1] } else { '\0' };
+                  let next = if i + 1 < chars.len() {
+                    chars[i + 1]
+                  } else {
+                    '\0'
+                  };
+                  if prev != '=' && next != '=' {
+                    eq_index = Some(i);
+                    break;
+                  }
+                }
               }
+              let rhs_txt = if let Some(idx) = eq_index {
+                &full_txt[idx + 1..]
+              } else {
+                ""
+              };
+              let rhs_txt = rhs_txt.trim();
+
+              let val = interpret(rhs_txt)?; // recursive evaluation
+              ENV.with(|e| {
+                e.borrow_mut().insert(name, StoredValue::Raw(val.clone()))
+              });
+              return Ok(val);
             }
             ":=" => return Ok("Null".to_string()),
-            _ => { /* fall-through to existing maths logic */ }
+            _ => { /* fall-through to the maths/other logic below */ }
+          }
+        }
+
+        // --- relational operators '==' and '!=' ---------------------------------
+        if items.len() >= 3 && items.len() % 2 == 1 {
+          let all_eq = items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == "==");
+          let all_neq = items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == "!=");
+
+          if all_eq {
+            // Evaluate all sub-expressions and compare as strings
+            let ref_val = evaluate_expression(items[0].clone())?;
+            for idx in (2..items.len()).step_by(2) {
+              let cmp_val = evaluate_expression(items[idx].clone())?;
+              if cmp_val != ref_val {
+                return Ok("False".to_string());
+              }
+            }
+            return Ok("True".to_string());
+          }
+          if all_neq {
+            use std::collections::HashSet;
+            let mut seen = HashSet::new();
+            for idx in (0..items.len()).step_by(2) {
+              let v = evaluate_expression(items[idx].clone())?;
+              if !seen.insert(v) {
+                return Ok("False".to_string());
+              }
+            }
+            return Ok("True".to_string());
           }
         }
       }
@@ -323,15 +394,30 @@ fn evaluate_expression(
       if inner.clone().next().is_none() {
         if first.as_rule() == Rule::List {
           return evaluate_expression(first);
-        }
-        else if first.as_rule() == Rule::Identifier {
-          return Ok(first.as_str().to_string());
-        }
-        else if first.as_rule() == Rule::FunctionCall {
+        } else if first.as_rule() == Rule::Identifier {
+          // Evaluate identifier as in the main Rule::Identifier arm
+          let id = first.as_str();
+          if let Some(stored) = ENV.with(|e| e.borrow().get(id).cloned()) {
+            return Ok(match stored {
+              StoredValue::Association(pairs) => format!(
+                "<|{}|>",
+                pairs
+                  .iter()
+                  .map(|(k, v)| format!("{} -> {}", k, v))
+                  .collect::<Vec<_>>()
+                  .join(", ")
+              ),
+              StoredValue::Raw(val) => val,
+            });
+          }
+          return Ok(id.to_string());
+        } else if first.as_rule() == Rule::FunctionCall {
           return evaluate_function_call(first);
-        }
-        else if first.as_rule() == Rule::Term {
+        } else if first.as_rule() == Rule::Term {
           return evaluate_expression(first.into_inner().next().unwrap());
+        } else if first.as_rule() == Rule::NumericValue {
+          // Evaluate the numeric value as a number and format as string
+          return evaluate_term(first).map(format_result);
         }
       }
       let mut values: Vec<f64> = vec![evaluate_term(first)?];
@@ -349,8 +435,7 @@ fn evaluate_expression(
           values[i] = values[i] * values[i + 1];
           values.remove(i + 1);
           ops.remove(i);
-        }
-        else if ops[i] == "/" {
+        } else if ops[i] == "/" {
           if values[i + 1] == 0.0 {
             return Err(InterpreterError::EvaluationError(
               "Division by zero".to_string(),
@@ -359,8 +444,7 @@ fn evaluate_expression(
           values[i] = values[i] / values[i + 1];
           values.remove(i + 1);
           ops.remove(i);
-        }
-        else {
+        } else {
           i += 1;
         }
       }
@@ -369,11 +453,9 @@ fn evaluate_expression(
       for (op, &val) in ops.iter().zip(values.iter().skip(1)) {
         if *op == "+" {
           result += val;
-        }
-        else if *op == "-" {
+        } else if *op == "-" {
           result -= val;
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(format!(
             "Unexpected operator: {}",
             op
@@ -406,7 +488,23 @@ fn evaluate_expression(
       Ok(format!("{{{}}}", items.join(", ")))
     }
     Rule::FunctionCall => evaluate_function_call(expr),
-    Rule::Identifier => Ok(expr.as_str().to_string()),
+    Rule::Identifier => {
+      let id = expr.as_str();
+      if let Some(stored) = ENV.with(|e| e.borrow().get(id).cloned()) {
+        return Ok(match stored {
+          StoredValue::Association(pairs) => format!(
+            "<|{}|>",
+            pairs
+              .iter()
+              .map(|(k, v)| format!("{} -> {}", k, v))
+              .collect::<Vec<_>>()
+              .join(", ")
+          ),
+          StoredValue::Raw(val) => val,
+        });
+      }
+      Ok(id.to_string())
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule: {:?}",
       expr.as_rule()
@@ -452,20 +550,29 @@ fn evaluate_term(
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
       if s == "True" {
         Ok(1.0)
-      }
-      else if s == "False" {
+      } else if s == "False" {
         Ok(0.0)
-      }
-      else {
+      } else {
         s.parse::<f64>()
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
       }
     }),
-    Rule::Identifier => match term.as_str() {
-      "True" => Ok(1.0),
-      "False" => Ok(0.0),
-      _ => Ok(0.0), // Return 0.0 for unknown identifiers
-    },
+    Rule::Identifier => {
+      match term.as_str() {
+        "True" => Ok(1.0),
+        "False" => Ok(0.0),
+        id => {
+          if let Some(StoredValue::Raw(val)) =
+            ENV.with(|e| e.borrow().get(id).cloned())
+          {
+            return val
+              .parse::<f64>()
+              .map_err(|e| InterpreterError::EvaluationError(e.to_string()));
+          }
+          Ok(0.0) // unknown / non-numeric identifier
+        }
+      }
+    }
     Rule::Slot => {
       // For slot (#), we'll return 1.0 as a default value when evaluated as a term
       // It will be replaced with the actual value in the anonymous function evaluation
@@ -658,14 +765,12 @@ fn evaluate_function_call(
         if let Some(first) = inner_expr.next() {
           if first.as_rule() == Rule::List {
             first
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "Anonymous function must be applied to a list".to_string(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "Empty expression in anonymous function arguments".to_string(),
           ));
@@ -751,6 +856,59 @@ fn evaluate_function_call(
           .join(", ")
       );
       return Ok(disp);
+    }
+    "Set" => {
+      // --- arity -----------------------------------------------------------
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Set expects exactly 2 arguments".into(),
+        ));
+      }
+
+      // --- extract variable name (first arg must be an identifier) ---------
+      let var_pair = &args_pairs[0];
+      let var_name = match var_pair.as_rule() {
+        Rule::Identifier => var_pair.as_str().to_string(),
+        Rule::Expression => {
+          let mut inner = var_pair.clone().into_inner();
+          if let Some(first) = inner.next() {
+            if first.as_rule() == Rule::Identifier && inner.next().is_none() {
+              first.as_str().to_string()
+            } else {
+              return Err(InterpreterError::EvaluationError(
+                "First argument of Set must be an identifier".into(),
+              ));
+            }
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "First argument of Set must be an identifier".into(),
+            ));
+          }
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "First argument of Set must be an identifier".into(),
+          ))
+        }
+      };
+
+      // --- evaluate & store RHS -------------------------------------------
+      let rhs_pair = &args_pairs[1];
+      if rhs_pair.as_rule() == Rule::Association {
+        let (pairs, disp) = eval_association(rhs_pair.clone())?;
+        ENV.with(|e| {
+          e.borrow_mut()
+            .insert(var_name, StoredValue::Association(pairs))
+        });
+        return Ok(disp);
+      } else {
+        let val = evaluate_expression(rhs_pair.clone())?;
+        ENV.with(|e| {
+          e.borrow_mut()
+            .insert(var_name, StoredValue::Raw(val.clone()))
+        });
+        return Ok(val);
+      }
     }
     // ─────────────────── relational (inclusive) comparisons ──────────────────
     "GreaterEqual" => {
@@ -891,7 +1049,7 @@ fn evaluate_function_call(
       }
       let n = evaluate_term(args_pairs[0].clone())?;
       Ok(format_result(n.sin()))
-    },
+    }
     "Prime" => {
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -996,11 +1154,9 @@ fn evaluate_function_call(
       Ok(
         if n > 0.0 {
           "1"
-        }
-        else if n < 0.0 {
+        } else if n < 0.0 {
           "-1"
-        }
-        else {
+        } else {
           "0"
         }
         .to_string(),
@@ -1076,8 +1232,7 @@ fn evaluate_function_call(
         else {
           base - 1.0
         }
-      }
-      else {
+      } else {
         n.round()
       };
       if r == -0.0 {
@@ -1155,8 +1310,7 @@ fn evaluate_function_call(
       let delim = extract_string(args_pairs[1].clone())?;
       let parts: Vec<String> = if delim.is_empty() {
         s.chars().map(|c| c.to_string()).collect()
-      }
-      else {
+      } else {
         s.split(&delim).map(|p| p.to_string()).collect()
       };
       return Ok(format!("{{{}}}", parts.join(", ")));
@@ -1180,26 +1334,22 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "Second argument of Map must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "Second argument of Map must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "Second argument of Map must be a list".into(),
         ));
@@ -1220,11 +1370,9 @@ fn evaluate_function_call(
           "Sign" => {
             let sign = if num > 0.0 {
               1.0
-            }
-            else if num < 0.0 {
+            } else if num < 0.0 {
               -1.0
-            }
-            else {
+            } else {
               0.0
             };
             format_result(sign)
@@ -1257,8 +1405,7 @@ fn evaluate_function_call(
           || (func_name == "OddQ" && !is_even)
         {
           "True"
-        }
-        else {
+        } else {
           "False"
         }
         .to_string(),
@@ -1280,28 +1427,24 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(format!(
               "{} function argument must be a list",
               func_name
             )));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(format!(
             "{} function argument must be a list",
             func_name
           )));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(format!(
           "{} function argument must be a list",
           func_name
@@ -1309,8 +1452,7 @@ fn evaluate_function_call(
       };
       let target = if func_name == "First" {
         items.first()
-      }
-      else {
+      } else {
         items.last()
       };
       match target {
@@ -1336,28 +1478,24 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(format!(
               "{} function argument must be a list",
               func_name
             )));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(format!(
             "{} function argument must be a list",
             func_name
           )));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(format!(
           "{} function argument must be a list",
           func_name
@@ -1366,17 +1504,14 @@ fn evaluate_function_call(
       let slice: Vec<_> = if func_name == "Rest" {
         if items.len() <= 1 {
           vec![]
-        }
-        else {
+        } else {
           items[1..].to_vec()
         }
-      }
-      else {
+      } else {
         // Most
         if items.len() <= 1 {
           vec![]
-        }
-        else {
+        } else {
           items[..items.len() - 1].to_vec()
         }
       };
@@ -1400,26 +1535,22 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "Take function argument must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "Take function argument must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "Take function argument must be a list".into(),
         ));
@@ -1455,26 +1586,22 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "First argument of Drop must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "First argument of Drop must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "First argument of Drop must be a list".into(),
         ));
@@ -1510,28 +1637,24 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(format!(
               "First argument of {} must be a list",
               func_name
             )));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(format!(
             "First argument of {} must be a list",
             func_name
           )));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(format!(
           "First argument of {} must be a list",
           func_name
@@ -1549,8 +1672,7 @@ fn evaluate_function_call(
 
       if func_name == "Append" {
         evaluated.push(new_elem);
-      }
-      else {
+      } else {
         // Prepend
         evaluated.insert(0, new_elem);
       }
@@ -1571,26 +1693,22 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "Part function argument must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "Part function argument must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "Part function argument must be a list".into(),
         ));
@@ -1627,8 +1745,7 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect::<Vec<_>>()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
@@ -1636,20 +1753,17 @@ fn evaluate_function_call(
               .into_inner()
               .filter(|p| p.as_str() != ",")
               .collect::<Vec<_>>()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "Length function argument must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "Length function argument must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "Length function argument must be a list".into(),
         ));
@@ -1674,26 +1788,22 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "Total function argument must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "Total function argument must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "Total function argument must be a list".into(),
         ));
@@ -1820,26 +1930,22 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "First argument of Select must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "First argument of Select must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "First argument of Select must be a list".into(),
         ));
@@ -1857,13 +1963,11 @@ fn evaluate_function_call(
             let n = evaluate_term(elem.clone())?;
             if n.fract() != 0.0 {
               false
-            }
-            else {
+            } else {
               let is_even = (n as i64) % 2 == 0;
               if pred_name == "EvenQ" {
                 is_even
-              }
-              else {
+              } else {
                 !is_even
               }
             }
@@ -1898,26 +2002,22 @@ fn evaluate_function_call(
           .into_inner()
           .filter(|p| p.as_str() != ",")
           .collect()
-      }
-      else if list_rule == Rule::Expression {
+      } else if list_rule == Rule::Expression {
         let mut expr_inner = list_pair.clone().into_inner();
         if let Some(first) = expr_inner.next() {
           if first.as_rule() == Rule::List {
             first.into_inner().filter(|p| p.as_str() != ",").collect()
-          }
-          else {
+          } else {
             return Err(InterpreterError::EvaluationError(
               "Flatten argument must be a list".into(),
             ));
           }
-        }
-        else {
+        } else {
           return Err(InterpreterError::EvaluationError(
             "Flatten argument must be a list".into(),
           ));
         }
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "Flatten argument must be a list".into(),
         ));
@@ -1979,12 +2079,10 @@ fn evaluate_function_call(
           if let Some(first) = expr_inner.next() {
             if first.as_rule() == Rule::String {
               first.as_str().trim_matches('"').to_string()
-            }
-            else {
+            } else {
               evaluate_expression(arg_pair.clone())?
             }
-          }
-          else {
+          } else {
             evaluate_expression(arg_pair.clone())?
           }
         }
@@ -2007,8 +2105,7 @@ fn apply_map_operator(
   // right after the function’s opening brace
   let func_core = if func.as_rule() == Rule::Term {
     func.clone().into_inner().next().unwrap()
-  }
-  else {
+  } else {
     func.clone()
   };
 
@@ -2016,26 +2113,22 @@ fn apply_map_operator(
   let list_rule = list.as_rule();
   let elements: Vec<_> = if list_rule == Rule::List {
     list.into_inner().filter(|p| p.as_str() != ",").collect()
-  }
-  else if list_rule == Rule::Expression {
+  } else if list_rule == Rule::Expression {
     let mut inner = list.into_inner();
     if let Some(first) = inner.next() {
       if first.as_rule() == Rule::List {
         first.into_inner().filter(|p| p.as_str() != ",").collect()
-      }
-      else {
+      } else {
         return Err(InterpreterError::EvaluationError(
           "Second operand of /@ must be a list".into(),
         ));
       }
-    }
-    else {
+    } else {
       return Err(InterpreterError::EvaluationError(
         "Second operand of /@ must be a list".into(),
       ));
     }
-  }
-  else {
+  } else {
     return Err(InterpreterError::EvaluationError(
       "Second operand of /@ must be a list".into(),
     ));
@@ -2052,11 +2145,9 @@ fn apply_map_operator(
             let v = evaluate_term(el.clone())?;
             let s = if v > 0.0 {
               1.0
-            }
-            else if v < 0.0 {
+            } else if v < 0.0 {
               -1.0
-            }
-            else {
+            } else {
               0.0
             };
             mapped.push(format_result(s));

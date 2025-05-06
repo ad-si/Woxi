@@ -132,3 +132,6 @@ $ wo 'If[True, 1, 0, 2, 3]'
 
 If::argb: If called with 5 arguments; between 2 and 4 arguments are expected.
 If[True, 1, 0, 2, 3]
+
+$ wo 'x = 2; x == 2'
+True

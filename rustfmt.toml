@@ -1,3 +1,5 @@
-control_brace_style = "ClosingNextLine"
 max_width = 80
 tab_spaces = 2
+
+# TODO: Re-activate once it's stable
+# control_brace_style = "ClosingNextLine"

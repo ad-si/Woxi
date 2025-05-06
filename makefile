@@ -35,6 +35,11 @@ test-cli-wolframscript: install
 test: test-unit test-cli
 
 
+.PHONY: format
+format:
+	cargo fmt
+
+
 .PHONY: install
 install:
 	cargo install --path .
