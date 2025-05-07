@@ -460,71 +460,89 @@ fn evaluate_expression(
             return Ok("True".to_string());
           }
 
-          let all_gt  = items.iter().skip(1).step_by(2)
-              .all(|p| p.as_rule()==Rule::Operator && p.as_str()==">");
-          let all_lt  = items.iter().skip(1).step_by(2)
-              .all(|p| p.as_rule()==Rule::Operator && p.as_str()=="<");
-          let all_ge  = items.iter().skip(1).step_by(2)
-              .all(|p| p.as_rule()==Rule::Operator && p.as_str()==">=");
-          let all_le  = items.iter().skip(1).step_by(2)
-              .all(|p| p.as_rule()==Rule::Operator && p.as_str()=="<=");
-
-          if all_gt {
-              let mut prev = evaluate_term(items[0].clone())?;
-              for idx in (2..items.len()).step_by(2) {
-                  let cur = evaluate_term(items[idx].clone())?;
-                  if !(prev > cur) { return Ok("False".to_string()); }
-                  prev = cur;
-              }
-              return Ok("True".to_string());
-          }
-          if all_lt {
-              let mut prev = evaluate_term(items[0].clone())?;
-              for idx in (2..items.len()).step_by(2) {
-                  let cur = evaluate_term(items[idx].clone())?;
-                  if !(prev < cur) { return Ok("False".to_string()); }
-                  prev = cur;
-              }
-              return Ok("True".to_string());
-          }
-          if all_ge {
-              let mut prev = evaluate_term(items[0].clone())?;
-              for idx in (2..items.len()).step_by(2) {
-                  let cur = evaluate_term(items[idx].clone())?;
-                  if prev < cur { return Ok("False".to_string()); }
-                  prev = cur;
-              }
-              return Ok("True".to_string());
-          }
-          if all_le {
-              let mut prev = evaluate_term(items[0].clone())?;
-              for idx in (2..items.len()).step_by(2) {
-                  let cur = evaluate_term(items[idx].clone())?;
-                  if prev > cur { return Ok("False".to_string()); }
-                  prev = cur;
-              }
-              return Ok("True".to_string());
-          }
-          // --- mixed <  >  <=  >= comparisons -----------------------------
-          let all_ineq = items
+          let all_gt = items
             .iter()
             .skip(1)
             .step_by(2)
-            .all(|p| p.as_rule() == Rule::Operator
-              && matches!(p.as_str(), ">" | "<" | ">=" | "<="));
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == ">");
+          let all_lt = items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == "<");
+          let all_ge = items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == ">=");
+          let all_le = items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == "<=");
+
+          if all_gt {
+            let mut prev = evaluate_term(items[0].clone())?;
+            for idx in (2..items.len()).step_by(2) {
+              let cur = evaluate_term(items[idx].clone())?;
+              if !(prev > cur) {
+                return Ok("False".to_string());
+              }
+              prev = cur;
+            }
+            return Ok("True".to_string());
+          }
+          if all_lt {
+            let mut prev = evaluate_term(items[0].clone())?;
+            for idx in (2..items.len()).step_by(2) {
+              let cur = evaluate_term(items[idx].clone())?;
+              if !(prev < cur) {
+                return Ok("False".to_string());
+              }
+              prev = cur;
+            }
+            return Ok("True".to_string());
+          }
+          if all_ge {
+            let mut prev = evaluate_term(items[0].clone())?;
+            for idx in (2..items.len()).step_by(2) {
+              let cur = evaluate_term(items[idx].clone())?;
+              if prev < cur {
+                return Ok("False".to_string());
+              }
+              prev = cur;
+            }
+            return Ok("True".to_string());
+          }
+          if all_le {
+            let mut prev = evaluate_term(items[0].clone())?;
+            for idx in (2..items.len()).step_by(2) {
+              let cur = evaluate_term(items[idx].clone())?;
+              if prev > cur {
+                return Ok("False".to_string());
+              }
+              prev = cur;
+            }
+            return Ok("True".to_string());
+          }
+          // --- mixed <  >  <=  >= comparisons -----------------------------
+          let all_ineq = items.iter().skip(1).step_by(2).all(|p| {
+            p.as_rule() == Rule::Operator
+              && matches!(p.as_str(), ">" | "<" | ">=" | "<=")
+          });
 
           if all_ineq {
             let mut prev = evaluate_term(items[0].clone())?;
             for idx in (1..items.len()).step_by(2) {
-              let op  = items[idx].as_str();
+              let op = items[idx].as_str();
               let cur = evaluate_term(items[idx + 1].clone())?;
 
               let ok = match op {
-                ">"  => prev >  cur,
-                "<"  => prev <  cur,
+                ">" => prev > cur,
+                "<" => prev < cur,
                 ">=" => prev >= cur,
                 "<=" => prev <= cur,
-                _    => unreachable!(),
+                _ => unreachable!(),
               };
               if !ok {
                 return Ok("False".to_string());
@@ -2233,30 +2251,43 @@ fn evaluate_function_call(
 
       // ----- identify predicate -------------------------------------------
       let pred_pair = &args_pairs[1];
-      let pred_name = pred_pair.as_str();
+      let pred_src = pred_pair.as_str();
+      let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
+        || (pred_src.contains('#') && pred_src.ends_with('&'));
 
       // ----- filter --------------------------------------------------------
       let mut kept = Vec::new();
       for elem in elems {
-        let passes = match pred_name {
-          "EvenQ" | "OddQ" => {
-            let n = evaluate_term(elem.clone())?;
-            if n.fract() != 0.0 {
-              false
-            } else {
-              let is_even = (n as i64) % 2 == 0;
-              if pred_name == "EvenQ" {
-                is_even
+        let passes = if is_slot_pred {
+          // build expression by substituting the Slot (#) with the element’s
+          // evaluated value and dropping the trailing ‘&’
+          let mut expr = pred_src.trim_end_matches('&').to_string();
+          let elem_str = evaluate_expression(elem.clone())?;
+          expr = expr.replace('#', &elem_str);
+          // evaluate the resulting Wolfram-expression
+          let res = interpret(&expr)?;
+          as_bool(&res).unwrap_or(false)
+        } else {
+          match pred_src {
+            "EvenQ" | "OddQ" => {
+              let n = evaluate_term(elem.clone())?;
+              if n.fract() != 0.0 {
+                false
               } else {
-                !is_even
+                let even = (n as i64) % 2 == 0;
+                if pred_src == "EvenQ" {
+                  even
+                } else {
+                  !even
+                }
               }
             }
-          }
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Unknown predicate function: {}",
-              pred_name
-            )));
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "Unknown predicate function: {}",
+                pred_src
+              )))
+            }
           }
         };
         if passes {
@@ -2305,38 +2336,49 @@ fn evaluate_function_call(
 
       // ---------- identify predicate --------------------------------------
       let pred_pair = &args_pairs[1];
-      let pred_name = pred_pair.as_str();
+      let pred_src = pred_pair.as_str();
+      let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
+        || (pred_src.contains('#') && pred_src.ends_with('&'));
 
       // ---------- test every element --------------------------------------
-      let mut all_pass = true;
       for elem in elems {
-        let passes = match pred_name {
-          "EvenQ" | "OddQ" => {
-            let n = evaluate_term(elem.clone())?;
-            if n.fract() != 0.0 {
-              false
-            } else {
-              let is_even = (n as i64) % 2 == 0;
-              if pred_name == "EvenQ" {
-                is_even
+        let passes = if is_slot_pred {
+          // build expression by substituting the Slot (#) with the element’s
+          // evaluated value and dropping the trailing ‘&’
+          let mut expr = pred_src.trim_end_matches('&').to_string();
+          let elem_str = evaluate_expression(elem.clone())?;
+          expr = expr.replace('#', &elem_str);
+          // evaluate the resulting Wolfram-expression
+          let res = interpret(&expr)?;
+          as_bool(&res).unwrap_or(false)
+        } else {
+          match pred_src {
+            "EvenQ" | "OddQ" => {
+              let n = evaluate_term(elem.clone())?;
+              if n.fract() != 0.0 {
+                false
               } else {
-                !is_even
+                let even = (n as i64) % 2 == 0;
+                if pred_src == "EvenQ" {
+                  even
+                } else {
+                  !even
+                }
               }
             }
-          }
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Unknown predicate function: {}",
-              pred_name
-            )));
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "Unknown predicate function: {}",
+                pred_src
+              )))
+            }
           }
         };
         if !passes {
-          all_pass = false;
-          break;
+          return Ok("False".to_string());
         }
       }
-      return Ok(if all_pass { "True" } else { "False" }.to_string());
+      return Ok("True".to_string());
     }
     "Flatten" => {
       // ----- arity ---------------------------------------------------------

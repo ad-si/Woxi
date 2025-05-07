@@ -182,3 +182,5 @@ $ wo 'AllTrue[{2, 4, 6}, EvenQ]'
 True
 $ wo 'AllTrue[{2, 3, 4}, EvenQ]'
 False
+$ wo 'AllTrue[{1, 3, 6}, 1 <= # <= 6 &]'
+True
