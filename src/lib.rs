@@ -459,6 +459,80 @@ fn evaluate_expression(
             }
             return Ok("True".to_string());
           }
+
+          let all_gt  = items.iter().skip(1).step_by(2)
+              .all(|p| p.as_rule()==Rule::Operator && p.as_str()==">");
+          let all_lt  = items.iter().skip(1).step_by(2)
+              .all(|p| p.as_rule()==Rule::Operator && p.as_str()=="<");
+          let all_ge  = items.iter().skip(1).step_by(2)
+              .all(|p| p.as_rule()==Rule::Operator && p.as_str()==">=");
+          let all_le  = items.iter().skip(1).step_by(2)
+              .all(|p| p.as_rule()==Rule::Operator && p.as_str()=="<=");
+
+          if all_gt {
+              let mut prev = evaluate_term(items[0].clone())?;
+              for idx in (2..items.len()).step_by(2) {
+                  let cur = evaluate_term(items[idx].clone())?;
+                  if !(prev > cur) { return Ok("False".to_string()); }
+                  prev = cur;
+              }
+              return Ok("True".to_string());
+          }
+          if all_lt {
+              let mut prev = evaluate_term(items[0].clone())?;
+              for idx in (2..items.len()).step_by(2) {
+                  let cur = evaluate_term(items[idx].clone())?;
+                  if !(prev < cur) { return Ok("False".to_string()); }
+                  prev = cur;
+              }
+              return Ok("True".to_string());
+          }
+          if all_ge {
+              let mut prev = evaluate_term(items[0].clone())?;
+              for idx in (2..items.len()).step_by(2) {
+                  let cur = evaluate_term(items[idx].clone())?;
+                  if prev < cur { return Ok("False".to_string()); }
+                  prev = cur;
+              }
+              return Ok("True".to_string());
+          }
+          if all_le {
+              let mut prev = evaluate_term(items[0].clone())?;
+              for idx in (2..items.len()).step_by(2) {
+                  let cur = evaluate_term(items[idx].clone())?;
+                  if prev > cur { return Ok("False".to_string()); }
+                  prev = cur;
+              }
+              return Ok("True".to_string());
+          }
+          // --- mixed <  >  <=  >= comparisons -----------------------------
+          let all_ineq = items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator
+              && matches!(p.as_str(), ">" | "<" | ">=" | "<="));
+
+          if all_ineq {
+            let mut prev = evaluate_term(items[0].clone())?;
+            for idx in (1..items.len()).step_by(2) {
+              let op  = items[idx].as_str();
+              let cur = evaluate_term(items[idx + 1].clone())?;
+
+              let ok = match op {
+                ">"  => prev >  cur,
+                "<"  => prev <  cur,
+                ">=" => prev >= cur,
+                "<=" => prev <= cur,
+                _    => unreachable!(),
+              };
+              if !ok {
+                return Ok("False".to_string());
+              }
+              prev = cur;
+            }
+            return Ok("True".to_string());
+          }
         }
       }
       let mut inner = expr.into_inner();
