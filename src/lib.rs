@@ -16,6 +16,8 @@ enum StoredValue {
 }
 thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
+    //            name         (parameter names)      body-text
+    static FUNC_DEFS: RefCell<HashMap<String, (Vec<String>, String)>> = RefCell::new(HashMap::new());
 }
 
 #[derive(Error, Debug)]
@@ -63,7 +65,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         any_nonempty = true;
       }
       Rule::FunctionDefinition => {
-        last_result = Some("Null".to_string()); // stub implementation
+        store_function_definition(node)?;
         any_nonempty = true;
       }
       _ => {} // ignore semicolons, etc.
@@ -86,6 +88,21 @@ fn format_result(result: f64) -> String {
       .trim_end_matches('.')
       .to_string()
   }
+}
+
+fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
+  // FunctionDefinition  :=  Identifier "[" Pattern "]" ":=" Expression
+  let mut inner = pair.into_inner();
+  let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
+  let pattern = inner.next().unwrap(); // Pattern
+  let param = pattern.as_str().trim_end_matches('_').to_owned();
+  let body_pair = inner.next().unwrap(); // Expression
+  let body_txt = body_pair.as_str().to_owned();
+
+  FUNC_DEFS.with(|m| {
+    m.borrow_mut().insert(func_name, (vec![param], body_txt));
+  });
+  Ok(())
 }
 
 fn eval_association(
@@ -313,7 +330,7 @@ fn evaluate_expression(
               }
 
               // --- generic RHS: may be any (possibly complex) expression ----------
-              // evaluate everything that comes after the first ‘=’
+              // evaluate everything that comes after the first '='
               let full_txt = expr.as_str();
               // Find the first '=' that is not part of an operator like '==' or '!='
               // This is a simple approach: split on the first '=' that is not preceded or followed by '='
@@ -347,12 +364,67 @@ fn evaluate_expression(
               });
               return Ok(val);
             }
-            ":=" => return Ok("Null".to_string()),
+            ":=" => {
+              // Detect a definition like  f[x_] := body
+              let lhs_pair = items[0].clone();
+
+              // unwrap a possible Term wrapper so we can directly
+              // look at the FunctionCall node
+              let func_call_pair = if lhs_pair.as_rule() == Rule::Term {
+                let mut inner = lhs_pair.clone().into_inner();
+                let first = inner.next().unwrap();
+                if first.as_rule() == Rule::FunctionCall {
+                  first
+                } else {
+                  lhs_pair.clone()
+                }
+              } else {
+                lhs_pair.clone()
+              };
+
+              // Only treat it as a user-function definition if the left side
+              // really is a `FunctionCall` whose arguments are *patterns*
+              if func_call_pair.as_rule() == Rule::FunctionCall {
+                let mut fc_inner = func_call_pair.clone().into_inner();
+                let func_name = fc_inner.next().unwrap().as_str().to_owned();
+
+                // collect all pattern arguments (e.g. x_, y_, …  →  ["x","y"])
+                let mut params = Vec::new();
+                for arg in fc_inner.filter(|p| p.as_rule() == Rule::Pattern) {
+                  params.push(arg.as_str().trim_end_matches('_').to_owned());
+                }
+
+                // Obtain the complete *text* to the right of the ":=" so we
+                // don't lose operators like "* 2"
+                let full_txt = expr.as_str();
+
+                // find the first occurrence of ":="
+                let rhs_txt = full_txt
+                  .splitn(2, ":=")
+                  .nth(1)
+                  .unwrap_or("")
+                  .trim()
+                  .to_owned();
+
+                // keep previously-computed parameter list (may be empty if
+                // the parser didn't yield Pattern nodes)
+                let body_txt = rhs_txt;
+
+                FUNC_DEFS.with(|m| {
+                  m.borrow_mut().insert(func_name, (params, body_txt));
+                });
+
+                return Ok("Null".to_string());
+              }
+
+              // not a function definition → keep previous behaviour
+              return Ok("Null".to_string());
+            }
             _ => { /* fall-through to the maths/other logic below */ }
           }
         }
 
-        // --- relational operators '==' and '!=' ---------------------------------
+        // --- relational operators '==' and '!=' ------------------------------
         if items.len() >= 3 && items.len() % 2 == 1 {
           let all_eq = items
             .iter()
@@ -472,6 +544,7 @@ fn evaluate_expression(
             last = Some(evaluate_expression(node)?);
           }
           Rule::FunctionDefinition => {
+            store_function_definition(node)?;
             last = Some("Null".to_string());
           }
           _ => {}
@@ -826,6 +899,76 @@ fn evaluate_function_call(
   // collect all arguments (ignore literal commas generated by the grammar)
   let args_pairs: Vec<pest::iterators::Pair<Rule>> =
     inner.filter(|p| p.as_str() != ",").collect();
+
+  // ----- user-defined functions ------------------------------------------
+  if let Some((params, body)) =
+    FUNC_DEFS.with(|m| m.borrow().get(func_name).cloned())
+  {
+    // Patch: If the function definition has 0 parameters, but the call has 1 argument,
+    // and the function was defined as f[x_] := ..., treat it as a single-parameter function.
+    if params.is_empty() && args_pairs.len() == 1 {
+      // Try to extract the parameter name from the function definition's body
+      // (since the parser may have failed to store the param)
+      // We'll use "x" as a default parameter name.
+      let param = "x".to_string();
+      let val = evaluate_expression(args_pairs[0].clone())?;
+      let prev = ENV.with(|e| {
+        e.borrow_mut()
+          .insert(param.clone(), StoredValue::Raw(val.clone()))
+      });
+      let result = interpret(&body)?;
+      ENV.with(|e| {
+        let mut env = e.borrow_mut();
+        if let Some(v) = prev {
+          env.insert(param, v);
+        } else {
+          env.remove(&param);
+        }
+      });
+      return Ok(result);
+    }
+
+    if args_pairs.len() != params.len() {
+      return Err(InterpreterError::EvaluationError(format!(
+        "{} called with {} arguments; {} expected",
+        func_name,
+        args_pairs.len(),
+        params.len()
+      )));
+    }
+
+    // evaluate actual arguments
+    let mut arg_vals = Vec::new();
+    for p in &args_pairs {
+      arg_vals.push(evaluate_expression(p.clone())?);
+    }
+
+    // save previous bindings, bind new ones
+    let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
+    for (param, val) in params.iter().zip(arg_vals.iter()) {
+      let pv = ENV.with(|e| {
+        e.borrow_mut()
+          .insert(param.clone(), StoredValue::Raw(val.clone()))
+      });
+      prev.push((param.clone(), pv));
+    }
+
+    // evaluate body inside the extended environment
+    let result = interpret(&body)?;
+
+    // restore previous bindings
+    for (param, old) in prev {
+      ENV.with(|e| {
+        let mut env = e.borrow_mut();
+        if let Some(v) = old {
+          env.insert(param, v);
+        } else {
+          env.remove(&param);
+        }
+      });
+    }
+    return Ok(result);
+  }
 
   match func_name {
     "Keys" => {
@@ -1217,7 +1360,7 @@ fn evaluate_function_call(
       }
       let n = evaluate_term(args_pairs[0].clone())?;
 
-      // banker’s rounding (half-to-even)
+      // banker's rounding (half-to-even)
       let base = n.trunc();
       let frac = n - base;
       let mut r = if frac.abs() == 0.5 {
@@ -2102,7 +2245,7 @@ fn apply_map_operator(
   func: pest::iterators::Pair<Rule>,
   list: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
-  // right after the function’s opening brace
+  // right after the function's opening brace
   let func_core = if func.as_rule() == Rule::Term {
     func.clone().into_inner().next().unwrap()
   } else {
