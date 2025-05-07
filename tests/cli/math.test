@@ -129,3 +129,7 @@ $ wo 'Sqrt[0]'
 # `Sin`: Returns the sine of an angle in radians.
 $ wo 'Sin[Pi/2]'
 1
+
+# `NumberQ`: Returns the sine of an angle in radians.
+$ wo 'NumberQ[2]'
+True

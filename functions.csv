@@ -21,11 +21,14 @@ Drop,Returns the list without its first n elements,🚧
 First,Returns the first element of a list,🚧
 Flatten,Flattens nested lists,🚧
 Floor,Returns the largest integer less than or equal to a number,🚧
+KeyDropFrom,Removes a key-value pair from an association,🚧
+Keys,Returns the keys of an association,🚧
 Last,Returns the last element of a list,🚧
 Length,Returns the number of elements in a list,🚧
 Map,Applies a function to each element of a list,🚧
 Minus,Subtracts numbers,🚧
 Most,Returns the list without its last element,🚧
+NumberQ,Checks if a value is a number,🚧
 Part,Returns the nth element of a list,🚧
 Plus,Adds numbers together,🚧
 Prepend,Adds an element to the beginning of a list,🚧
@@ -42,8 +45,6 @@ StringTake,Returns a substring of a string,🚧
 Take,Returns the first n elements of a list,🚧
 Times,Multiply numbers,🚧
 Total,Sums the elements of a list,🚧
-KeyDropFrom,Removes a key-value pair from an association,🚧
-Keys,Returns the keys of an association,🚧
 Values,Returns the values of an association,🚧
 
 
@@ -4175,7 +4176,6 @@ NumberMarks,,
 NumberMultiplier,,
 NumberPadding,,
 NumberPoint,,
-NumberQ,,
 NumberSeparator,,
 NumberSigns,,
 NumberString,,
