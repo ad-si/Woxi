@@ -1,6 +1,7 @@
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
+use rand::Rng;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -88,6 +89,37 @@ fn format_result(result: f64) -> String {
       .trim_end_matches('.')
       .to_string()
   }
+}
+
+// Parse display-form strings like "{1, 2, 3}" into top-level comma-separated
+// element strings.  Returns None if `s` is not a braced list.
+fn parse_list_string(s: &str) -> Option<Vec<String>> {
+  if !(s.starts_with('{') && s.ends_with('}')) {
+    return None;
+  }
+  let inner = &s[1..s.len() - 1];
+  let mut parts = Vec::new();
+  let mut depth = 0usize;
+  let mut start = 0usize;
+  for (i, c) in inner.char_indices() {
+    match c {
+      '{' | '[' | '(' | '<' => depth += 1,
+      '}' | ']' | ')' | '>' => {
+        if depth > 0 {
+          depth -= 1;
+        }
+      }
+      ',' if depth == 0 => {
+        parts.push(inner[start..i].trim().to_string());
+        start = i + 1;
+      }
+      _ => {}
+    }
+  }
+  if start < inner.len() {
+    parts.push(inner[start..].trim().to_string());
+  }
+  Some(parts)
 }
 
 fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
@@ -2304,34 +2336,51 @@ fn evaluate_function_call(
         ));
       }
 
-      // ---------- obtain list items (same code as in Select/Length) --------
+      // ---------- obtain list items (accept real list OR a value that
+      // ---------- evaluates to a displayed list string) ---------------
       let list_pair = &args_pairs[0];
-      let list_rule = list_pair.as_rule();
-      let elems: Vec<_> = if list_rule == Rule::List {
-        list_pair
+      let elements: Vec<String> = match list_pair.as_rule() {
+        // syntactic list
+        Rule::List => list_pair
           .clone()
           .into_inner()
           .filter(|p| p.as_str() != ",")
-          .collect()
-      } else if list_rule == Rule::Expression {
-        let mut expr_inner = list_pair.clone().into_inner();
-        if let Some(first) = expr_inner.next() {
-          if first.as_rule() == Rule::List {
-            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          .map(|p| evaluate_expression(p))
+          .collect::<Result<_, _>>()?,
+        // expression that syntactically contains a list
+        Rule::Expression => {
+          let mut expr_inner = list_pair.clone().into_inner();
+          if let Some(first) = expr_inner.next() {
+            if first.as_rule() == Rule::List && expr_inner.next().is_none() {
+              first
+                .into_inner()
+                .filter(|p| p.as_str() != ",")
+                .map(|p| evaluate_expression(p))
+                .collect::<Result<_, _>>()?
+            } else {
+              // fall back to runtime evaluation
+              let val = evaluate_expression(list_pair.clone())?;
+              parse_list_string(&val).ok_or_else(|| {
+                InterpreterError::EvaluationError(
+                  "First argument of AllTrue must be a list".into(),
+                )
+              })?
+            }
           } else {
             return Err(InterpreterError::EvaluationError(
               "First argument of AllTrue must be a list".into(),
             ));
           }
-        } else {
-          return Err(InterpreterError::EvaluationError(
-            "First argument of AllTrue must be a list".into(),
-          ));
         }
-      } else {
-        return Err(InterpreterError::EvaluationError(
-          "First argument of AllTrue must be a list".into(),
-        ));
+        // any other form – evaluate, then try to parse "{…}"
+        _ => {
+          let val = evaluate_expression(list_pair.clone())?;
+          parse_list_string(&val).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "First argument of AllTrue must be a list".into(),
+            )
+          })?
+        }
       };
 
       // ---------- identify predicate --------------------------------------
@@ -2341,30 +2390,19 @@ fn evaluate_function_call(
         || (pred_src.contains('#') && pred_src.ends_with('&'));
 
       // ---------- test every element --------------------------------------
-      for elem in elems {
+      for elem_str in elements {
         let passes = if is_slot_pred {
-          // build expression by substituting the Slot (#) with the element’s
-          // evaluated value and dropping the trailing ‘&’
+          // substitute # and evaluate
           let mut expr = pred_src.trim_end_matches('&').to_string();
-          let elem_str = evaluate_expression(elem.clone())?;
           expr = expr.replace('#', &elem_str);
-          // evaluate the resulting Wolfram-expression
           let res = interpret(&expr)?;
           as_bool(&res).unwrap_or(false)
         } else {
           match pred_src {
             "EvenQ" | "OddQ" => {
-              let n = evaluate_term(elem.clone())?;
-              if n.fract() != 0.0 {
-                false
-              } else {
-                let even = (n as i64) % 2 == 0;
-                if pred_src == "EvenQ" {
-                  even
-                } else {
-                  !even
-                }
-              }
+              let expr = format!("{}[{}]", pred_src, elem_str);
+              let res = interpret(&expr)?;
+              as_bool(&res).unwrap_or(false)
             }
             _ => {
               return Err(InterpreterError::EvaluationError(format!(
@@ -2485,6 +2523,78 @@ fn evaluate_function_call(
       };
       println!("{}", arg_str);
       Ok("Null".to_string())
+    }
+    "RandomInteger" => {
+      // 0 args  ──────────────────────────────  → {0,1}
+      if args_pairs.is_empty() {
+        // Return a random integer 0 or 1 as a string (not empty string!)
+        let v: i64 = rand::thread_rng().gen_range(0..=1);
+        return Ok(v.to_string());
+      }
+
+      // 1 or 2 args: first must be a list {min,max}
+      if !(args_pairs.len() == 1 || args_pairs.len() == 2) {
+        return Err(InterpreterError::EvaluationError(
+          "RandomInteger called with wrong number of arguments".into(),
+        ));
+      }
+
+      // ---- extract range -------------------------------------------------
+      let range_pair = &args_pairs[0];
+      // accept plain List or Expression-wrapped List
+      let list_items: Vec<_> = match range_pair.as_rule() {
+        Rule::List => range_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect(),
+        Rule::Expression => {
+          let mut inner = range_pair.clone().into_inner();
+          if let Some(first) = inner.next() {
+            if first.as_rule() == Rule::List {
+              first.into_inner().filter(|p| p.as_str() != ",").collect()
+            } else {
+              vec![]
+            }
+          } else {
+            vec![]
+          }
+        }
+        _ => vec![],
+      };
+      if list_items.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "RandomInteger range must be a list with two elements".into(),
+        ));
+      }
+      let min = evaluate_term(list_items[0].clone())?;
+      let max = evaluate_term(list_items[1].clone())?;
+      if min.fract() != 0.0 || max.fract() != 0.0 || min > max {
+        return Err(InterpreterError::EvaluationError(
+          "RandomInteger range must be two integers in ascending order".into(),
+        ));
+      }
+      let (min_i, max_i) = (min as i64, max as i64);
+
+      // ---- single value --------------------------------------------------
+      if args_pairs.len() == 1 {
+        let v = rand::thread_rng().gen_range(min_i..=max_i);
+        return Ok(v.to_string());
+      }
+
+      // ---- list of n values ---------------------------------------------
+      let n = evaluate_term(args_pairs[1].clone())?;
+      if n.fract() != 0.0 || n < 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "RandomInteger list length must be a non-negative integer".into(),
+        ));
+      }
+      let n_usize = n as usize;
+      let mut rng = rand::thread_rng();
+      let values: Vec<String> = (0..n_usize)
+        .map(|_| rng.gen_range(min_i..=max_i).to_string())
+        .collect();
+      return Ok(format!("{{{}}}", values.join(", ")));
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unknown function: {}",

@@ -36,6 +36,7 @@ Part,Returns the nth element of a list,🚧
 Plus,Adds numbers together,🚧
 Prepend,Adds an element to the beginning of a list,🚧
 Print,Outputs a string to the console,🚧
+RandomInteger,Generate random integers,🚧
 Rest,Returns the list without its first element,🚧
 Round,Returns the nearest integer to a number,🚧
 Select,Picks elements of a list that satisfy a criterion,🚧
@@ -4727,7 +4728,6 @@ RandomGeoPosition,,
 RandomGraph,,
 RandomImage,,
 RandomInstance,,
-RandomInteger,,
 RandomPermutation,,
 RandomPoint,,
 RandomPointConfiguration,,
