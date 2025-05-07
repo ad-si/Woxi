@@ -1750,6 +1750,56 @@ fn evaluate_function_call(
       return Ok(format!("{{{}}}", evaluated?.join(", ")));
     }
 
+    "MemberQ" => {
+      // ---------- arity ----------------------------------------------------
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "MemberQ expects exactly 2 arguments".into(),
+        ));
+      }
+
+      // ---------- obtain list items (same logic as in Length/Take/etc.) ----
+      let list_pair = &args_pairs[0];
+      let list_rule = list_pair.as_rule();
+      let items: Vec<_> = if list_rule == Rule::List {
+        list_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect()
+      } else if list_rule == Rule::Expression {
+        let mut expr_inner = list_pair.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if first.as_rule() == Rule::List {
+            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "First argument of MemberQ must be a list".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "First argument of MemberQ must be a list".into(),
+          ));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of MemberQ must be a list".into(),
+        ));
+      };
+
+      // ---------- evaluate element to look for -----------------------------
+      let target = evaluate_expression(args_pairs[1].clone())?;
+
+      // ---------- search ----------------------------------------------------
+      for it in items {
+        if evaluate_expression(it.clone())? == target {
+          return Ok("True".to_string());
+        }
+      }
+      return Ok("False".to_string());
+    }
+
     "Take" => {
       if args_pairs.len() != 2 {
         return Err(InterpreterError::EvaluationError(
