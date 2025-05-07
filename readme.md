@@ -7,11 +7,16 @@ A Rust-based interpreter for a subset of the Wolfram Language.
 
 ## Features
 
-- Parse and evaluate basic arithmetic expressions
-- Support for addition and subtraction operations
-- Handling of integer and floating-point numbers
-- Error handling for invalid inputs
-- CLI for easy interaction
+The initial focus is to implement a subset of the Wolfram Language
+so that it can be used for CLI scripting.
+For example:
+
+```wolfram
+#!/usr/bin/env woxi
+
+(* Print 5 random integers between 1 and 6 *)
+Print[RandomInteger[{1, 6}, 5]]
+```
 
 Check out the [CLI tests](./tests/cli) directory
 to see all currently supported commands and their expected output.
