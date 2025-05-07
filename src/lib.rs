@@ -1605,6 +1605,19 @@ fn evaluate_function_call(
       }
       Ok(format!("{{{}}}", mapped.join(", ")))
     }
+    "NumberQ" => {
+      // ----- arity check --------------------------------------------------
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "NumberQ expects exactly 1 argument".into(),
+        ));
+      }
+
+      // Evaluate argument to string and try to parse it as f64
+      let arg_str = evaluate_expression(args_pairs[0].clone())?;
+      let is_number = arg_str.parse::<f64>().is_ok();
+      return Ok(if is_number { "True" } else { "False" }.to_string());
+    }
     "EvenQ" | "OddQ" => {
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(format!(
