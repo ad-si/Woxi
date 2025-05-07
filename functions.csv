@@ -26,6 +26,7 @@ Keys,Returns the keys of an association,🚧
 Last,Returns the last element of a list,🚧
 Length,Returns the number of elements in a list,🚧
 Map,Applies a function to each element of a list,🚧
+MemberQ,Checks if a list contains a value,🚧
 Minus,Subtracts numbers,🚧
 Most,Returns the list without its last element,🚧
 NumberQ,Checks if a value is a number,🚧
@@ -3757,7 +3758,6 @@ MeijerGReduce,,
 MeixnerDistribution,,
 MellinConvolve,,
 MellinTransform,,
-MemberQ,,
 MemoryAvailable,,
 MemoryConstrained,,
 MemoryConstraint,,

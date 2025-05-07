@@ -133,3 +133,9 @@ $ wo 'Sin[Pi/2]'
 # `NumberQ`: Returns the sine of an angle in radians.
 $ wo 'NumberQ[2]'
 True
+
+# `MemberQ`: Checks if an element is in a list.
+$ wo 'MemberQ[{1, 2}, 2]'
+True
+$ wo 'MemberQ[{1, 2}, 3]'
+False
