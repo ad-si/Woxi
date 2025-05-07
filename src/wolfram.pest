@@ -19,7 +19,15 @@ FunctionCall = { (Identifier | SpecialFunction | AnonymousFunction) ~ "[" ~ (Exp
 Slot = @{ "#" ~ ASCII_DIGIT* }
 AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 
-Operator = { "/@" | "+" | "-" | "*" | "/" | "^" | "==" | "!=" | "<" | ">" | "<=" | ">=" | ":=" | "=" | "@" }
+Operator = {
+    "/@"     // keep first
+  | "==" | "!="
+  | "<=" | ">="
+  | ":="
+  | "+" | "-" | "*" | "/" | "^"
+  | "<" | ">"
+  | "=" | "@"
+}
 
 PostfixApplication = { Term ~ "//" ~ Identifier }
 Expression = { PostfixApplication | Term ~ (Operator ~ Term)* }

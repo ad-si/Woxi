@@ -28,6 +28,44 @@ False
 $ wo 'Greater[3, 2, 1]'
 True
 
+# `>`: Check if values are greater than each other.
+$ wo '2 > 1'
+True
+$ wo '1 > 2'
+False
+
+# `>=`: Check if values are greater than or equal to each other.
+$ wo '2 >= 1'
+True
+$ wo '1 >= 2'
+False
+
+# `==`: Check if values are equal to each other.
+$ wo '2 == 2'
+True
+$ wo 'x = 2; x == 2'
+True
+$ wo '2 == 3'
+False
+
+# `!=`: Check if values are not equal to each other.
+$ wo '2 != 2'
+False
+$ wo 'x = 2; x != 2'
+False
+$ wo '2 != 3'
+True
+
+# Multiple comparisons
+$ wo 'x = 1; 0 <= x <= 2'
+True
+$ wo 'x = 1; 0 < x < 2'
+True
+$ wo 'x = 1; 0 > x < 2'
+False
+$ wo 'x = 1; 0 < x > 2'
+False
+
 # `Less`: Check if values are less than each other.
 $ wo 'Less[1, 2]'
 True
@@ -132,6 +170,3 @@ $ wo 'If[True, 1, 0, 2, 3]'
 
 If::argb: If called with 5 arguments; between 2 and 4 arguments are expected.
 If[True, 1, 0, 2, 3]
-
-$ wo 'x = 2; x == 2'
-True
