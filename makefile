@@ -31,8 +31,13 @@ test-cli-wolframscript: install
 		tests/cli/*.test
 
 
+.PHONY: test-shebang
+test-shebang: install
+	test "$$(./tests/cli/hello_world.wls)" == 'Hello World!'
+
+
 .PHONY: test
-test: test-unit test-cli
+test: test-unit test-cli test-shebang
 
 
 .PHONY: format
