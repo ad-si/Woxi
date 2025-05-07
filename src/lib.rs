@@ -2265,6 +2265,79 @@ fn evaluate_function_call(
       }
       return Ok(format!("{{{}}}", kept.join(", ")));
     }
+    "AllTrue" => {
+      // ---------- arity ----------------------------------------------------
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "AllTrue expects exactly 2 arguments".into(),
+        ));
+      }
+
+      // ---------- obtain list items (same code as in Select/Length) --------
+      let list_pair = &args_pairs[0];
+      let list_rule = list_pair.as_rule();
+      let elems: Vec<_> = if list_rule == Rule::List {
+        list_pair
+          .clone()
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .collect()
+      } else if list_rule == Rule::Expression {
+        let mut expr_inner = list_pair.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if first.as_rule() == Rule::List {
+            first.into_inner().filter(|p| p.as_str() != ",").collect()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "First argument of AllTrue must be a list".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "First argument of AllTrue must be a list".into(),
+          ));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of AllTrue must be a list".into(),
+        ));
+      };
+
+      // ---------- identify predicate --------------------------------------
+      let pred_pair = &args_pairs[1];
+      let pred_name = pred_pair.as_str();
+
+      // ---------- test every element --------------------------------------
+      let mut all_pass = true;
+      for elem in elems {
+        let passes = match pred_name {
+          "EvenQ" | "OddQ" => {
+            let n = evaluate_term(elem.clone())?;
+            if n.fract() != 0.0 {
+              false
+            } else {
+              let is_even = (n as i64) % 2 == 0;
+              if pred_name == "EvenQ" {
+                is_even
+              } else {
+                !is_even
+              }
+            }
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unknown predicate function: {}",
+              pred_name
+            )));
+          }
+        };
+        if !passes {
+          all_pass = false;
+          break;
+        }
+      }
+      return Ok(if all_pass { "True" } else { "False" }.to_string());
+    }
     "Flatten" => {
       // ----- arity ---------------------------------------------------------
       if args_pairs.len() != 1 {

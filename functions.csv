@@ -14,10 +14,12 @@ Sign,Returns the sign of a number,✅
 Unequal,Checks if two values are not equal,✅
 Xor,Checks if exactly one condition is true,✅
 
+AllTrue,Checks if all elements in a list are true,🚧
 Append,Adds an element to the end of a list,🚧
 Ceiling,Returns the smallest integer greater than or equal to a number,🚧
 Divide,Divide numbers,🚧
 Drop,Returns the list without its first n elements,🚧
+EvenQ,Checks if a number is even,🚧
 First,Returns the first element of a list,🚧
 Flatten,Flattens nested lists,🚧
 Floor,Returns the largest integer less than or equal to a number,🚧
@@ -379,7 +381,6 @@ AllowLooseGrammar,,
 AllowReverseGroupClose,,
 AllowVersionUpdate,,
 AllSameBy,,
-AllTrue,,
 Alphabet,,
 AlphabeticOrder,,
 AlphabeticSort,,
@@ -2053,7 +2054,6 @@ EvaluationObject,,
 EvaluationPrivileges,,
 Evaluator,,
 EvaluatorNames,,
-EvenQ,,
 EventData,,
 EventHandler,,
 EventLabels,,

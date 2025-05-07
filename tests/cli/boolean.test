@@ -170,3 +170,15 @@ $ wo 'If[True, 1, 0, 2, 3]'
 
 If::argb: If called with 5 arguments; between 2 and 4 arguments are expected.
 If[True, 1, 0, 2, 3]
+
+# `EvenQ`: Check if a number is even.
+$ wo 'EvenQ[2]'
+True
+$ wo 'EvenQ[3]'
+False
+
+# `AllTrue`: Check if all elements in a list satisfy a condition.
+$ wo 'AllTrue[{2, 4, 6}, EvenQ]'
+True
+$ wo 'AllTrue[{2, 3, 4}, EvenQ]'
+False
