@@ -24,6 +24,16 @@ $ wo 'Sin@(Pi/2)'
 $ wo '(Pi/2) // Sin'
 1
 
+# Define and use a function
+$ wo 'Double[x_] := x * 2; Double[5]'
+10
+# $ wo 'Double[x_] := x * 2; Double[Sin[Pi/2]]'
+# 2
+# $ wo 'Double[x_] := x * 2; Double @ Sin @ (Pi/2)'
+# 2
+# $ wo 'Double[x_] := x * 2; (Pi/2) // Sin // Double'
+# 2
+
 # # Apply (@@): Replaces the head of an expression with a function.
 # $ wo 'f @@ {1, 2, 3}'
 # f[1, 2, 3]
