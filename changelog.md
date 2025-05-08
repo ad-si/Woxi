@@ -1,0 +1,41 @@
+# Changelog
+
+# 2025-05-08 - 0.1.0
+
+- Implement `DateString` and `Now`
+- Implement `StringStartsQ` and `StringEndsQ`
+- Support executing Woxi as a shebang script
+- Implement `RandomInteger` function
+- Implement `AllTrue` function
+- Add support for anonymous functions
+- Implement `AllTrue` function
+- Implement `MemberQ` function
+- Implement `NumberQ` function
+- Add support for all comparison operators
+- Add support for function declarations
+- Add support for semicolon separated expressions, implement `Set`
+- Add support for comments, implement `Sin`, `@`, and `//`
+- Add support for associations
+- Implement `Floor`, `Ceiling`, and `Round` functions
+- Implement `Divide` function
+- Implement several boolean functions
+- Implement `Times` function
+- Implement `Minus` function
+- Implement `Plus` function
+- Implement `Sqrt` function
+- Implement several string functions
+- Add support for `#^2& /@ …`
+- Implement `Abs` function
+- Implement `/@` (Map operator)
+- Implement `Total` function
+- Implement `Select` and `Flatten`
+- Implement `Drop`, `Append`, and `Prepend`
+- Implement `Rest`, `Most`, `Take`, and `Part`
+- Implement `Map` function
+- Implement `Sign` function
+- Implement `Length` function
+- Implement `Print` function
+- Implement `EvenQ` and `OddQ` functions
+- Implement `Prime` function
+- Add CLI subcommands `run`
+- Add subcommand `eval` for evaluating Wolfram Language expressions
