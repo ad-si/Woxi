@@ -17,6 +17,7 @@ Xor,Checks if exactly one condition is true,✅
 AllTrue,Checks if all elements in a list are true,🚧
 Append,Adds an element to the end of a list,🚧
 Ceiling,Returns the smallest integer greater than or equal to a number,🚧
+DateString,Returns a string representing the current local date and time,🚧
 Divide,Divide numbers,🚧
 Drop,Returns the list without its first n elements,🚧
 EvenQ,Checks if a number is even,🚧
@@ -31,6 +32,7 @@ Map,Applies a function to each element of a list,🚧
 MemberQ,Checks if a list contains a value,🚧
 Minus,Subtracts numbers,🚧
 Most,Returns the list without its last element,🚧
+Now,Returns the current date and time,🚧
 NumberQ,Checks if a value is a number,🚧
 Part,Returns the nth element of a list,🚧
 Plus,Adds numbers together,🚧
@@ -1554,7 +1556,6 @@ DateRange,,
 DateReduction,,
 DateScale,,
 DateSelect,,
-DateString,,
 DateTicksFormat,,
 DateValue,,
 DateWithinQ,,
@@ -4143,7 +4144,6 @@ NotTildeEqual,,
 NotTildeFullEqual,,
 NotTildeTilde,,
 NotVerticalBar,,
-Now,,
 NoWhitespace,,
 NProbability,,
 NProduct,,

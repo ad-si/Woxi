@@ -54,3 +54,6 @@ $ wo 'Double[x_] := x * 2; Double[5]'
 # # NestList (NestList): Like Nest, but returns a list of intermediate results.
 # $ wo 'NestList[f, x, 3]'
 # {x, f[x], f[f[x]], f[f[f[x]]]}
+
+$ wo 'StringStartsQ[DateString[Now, "ISODateTime"], "2025-"]'
+True

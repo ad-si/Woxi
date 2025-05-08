@@ -1,3 +1,4 @@
+use chrono::Local;
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
@@ -593,6 +594,9 @@ fn evaluate_expression(
         } else if first.as_rule() == Rule::Identifier {
           // Evaluate identifier as in the main Rule::Identifier arm
           let id = first.as_str();
+          if id == "Now" {
+            return Ok("CURRENT_TIME_MARKER".to_string());
+          }
           if let Some(stored) = ENV.with(|e| e.borrow().get(id).cloned()) {
             return Ok(match stored {
               StoredValue::Association(pairs) => format!(
@@ -687,6 +691,9 @@ fn evaluate_expression(
     Rule::FunctionCall => evaluate_function_call(expr),
     Rule::Identifier => {
       let id = expr.as_str();
+      if id == "Now" {
+        return Ok("CURRENT_TIME_MARKER".to_string());
+      }
       if let Some(stored) = ENV.with(|e| e.borrow().get(id).cloned()) {
         return Ok(match stored {
           StoredValue::Association(pairs) => format!(
@@ -758,6 +765,10 @@ fn evaluate_term(
       match term.as_str() {
         "True" => Ok(1.0),
         "False" => Ok(0.0),
+        "Now" => Err(InterpreterError::EvaluationError(
+          "Identifier 'Now' cannot be directly used as a numeric value."
+            .to_string(),
+        )),
         id => {
           if let Some(StoredValue::Raw(val)) =
             ENV.with(|e| e.borrow().get(id).cloned())
@@ -805,7 +816,15 @@ fn extract_string(pair: Pair<Rule>) -> Result<String, InterpreterError> {
     Rule::Expression | Rule::Term => {
       let mut inner = pair.clone().into_inner();
       if let Some(first) = inner.next() {
-        return extract_string(first);
+        // If the inner part is a string, extract it.
+        // Otherwise, evaluate the expression and hope it's a string.
+        if first.as_rule() == Rule::String {
+          return Ok(first.as_str().trim_matches('"').to_string());
+        }
+        // Fallback to evaluate_expression if not directly a string.
+        // This handles cases like `DateString[Now, "ISO" <> "DateTime"]` if StringJoin was more general
+        // or if the argument is a variable that holds a string.
+        return evaluate_expression(pair);
       }
       Err(InterpreterError::EvaluationError(
         "Expected string argument".into(),
@@ -884,31 +903,31 @@ fn evaluate_function_call(
     // Try to evaluate as an expression and parse as association display
     if let Ok(val) = evaluate_expression(p.clone()) {
       if val.starts_with("<|") && val.ends_with("|>") {
-        let inner = &val[2..val.len() - 2];
+        let inner_val = &val[2..val.len() - 2];
         let mut pairs = Vec::new();
         // Only split on top-level commas (not inside braces or quotes)
         let mut depth = 0;
         let mut start = 0;
         let mut parts = Vec::new();
-        let chars: Vec<char> = inner.chars().collect();
+        let chars: Vec<char> = inner_val.chars().collect();
         for (i, &c) in chars.iter().enumerate() {
           match c {
             '{' | '<' | '[' | '(' => depth += 1,
             '}' | '>' | ']' | ')' => depth -= 1,
             ',' if depth == 0 => {
-              parts.push(inner[start..i].to_string());
+              parts.push(inner_val[start..i].to_string());
               start = i + 1;
             }
             _ => {}
           }
         }
         if start < chars.len() {
-          parts.push(inner[start..].to_string());
+          parts.push(inner_val[start..].to_string());
         }
         for part in parts {
-          let part = part.trim();
-          if let Some((k, v)) = part.split_once("->") {
-            pairs.push((k.trim().to_string(), v.trim().to_string()));
+          let part_trimmed = part.trim();
+          if let Some((k, v_str)) = part_trimmed.split_once("->") {
+            pairs.push((k.trim().to_string(), v_str.trim().to_string()));
           }
         }
         return Ok(pairs);
@@ -1095,6 +1114,48 @@ fn evaluate_function_call(
   }
 
   match func_name {
+    "DateString" => {
+      let current_time = Local::now();
+      let default_format = "%a, %d %b %Y %H:%M:%S"; // e.g., Mon, 29 Jul 2024 10:30:00
+
+      match args_pairs.len() {
+        0 => { // DateString[]
+          Ok(current_time.format(default_format).to_string())
+        }
+        1 => { // DateString[Now] or DateString["format"]
+          let arg1_eval_result = evaluate_expression(args_pairs[0].clone());
+          match arg1_eval_result {
+            Ok(arg1_val) if arg1_val == "CURRENT_TIME_MARKER" => { // DateString[Now]
+              Ok(current_time.format(default_format).to_string())
+            }
+            _ => { // DateString["format_string"] - evaluate_expression might fail if not a string
+              let format_str = extract_string(args_pairs[0].clone())?;
+              match format_str.as_str() {
+                "ISODateTime" => Ok(current_time.format("%Y-%m-%dT%H:%M:%S").to_string()),
+                _ => Ok(current_time.format(&format_str).to_string()), // Attempt direct chrono format
+              }
+            }
+          }
+        }
+        2 => { // DateString[date_spec, "format_string"]
+          let date_spec_eval = evaluate_expression(args_pairs[0].clone())?;
+          if date_spec_eval != "CURRENT_TIME_MARKER" {
+            return Err(InterpreterError::EvaluationError(
+              "DateString: First argument currently must be Now.".into(),
+            ));
+          }
+          // It's DateString[Now, "format_string"]
+          let format_str = extract_string(args_pairs[1].clone())?;
+          match format_str.as_str() {
+            "ISODateTime" => Ok(current_time.format("%Y-%m-%dT%H:%M:%S").to_string()),
+            _ => Ok(current_time.format(&format_str).to_string()), // Attempt direct chrono format
+          }
+        }
+        _ => Err(InterpreterError::EvaluationError(
+          "DateString: Called with invalid number of arguments. Expected 0, 1, or 2.".into(),
+        )),
+      }
+    }
     "Keys" => {
       let asso = get_assoc_from_first_arg(&args_pairs)?;
       let keys: Vec<_> = asso.iter().map(|(k, _)| k.clone()).collect();
@@ -1590,9 +1651,16 @@ fn evaluate_function_call(
           "StringStartsQ expects exactly 2 arguments".into(),
         ));
       }
-      let s      = extract_string(args_pairs[0].clone())?;
+      let s = extract_string(args_pairs[0].clone())?;
       let prefix = extract_string(args_pairs[1].clone())?;
-      return Ok(if s.starts_with(&prefix) { "True" } else { "False" }.to_string());
+      return Ok(
+        if s.starts_with(&prefix) {
+          "True"
+        } else {
+          "False"
+        }
+        .to_string(),
+      );
     }
 
     "StringEndsQ" => {
@@ -1602,9 +1670,16 @@ fn evaluate_function_call(
           "StringEndsQ expects exactly 2 arguments".into(),
         ));
       }
-      let s      = extract_string(args_pairs[0].clone())?;
+      let s = extract_string(args_pairs[0].clone())?;
       let suffix = extract_string(args_pairs[1].clone())?;
-      return Ok(if s.ends_with(&suffix) { "True" } else { "False" }.to_string());
+      return Ok(
+        if s.ends_with(&suffix) {
+          "True"
+        } else {
+          "False"
+        }
+        .to_string(),
+      );
     }
 
     // ----- list helpers ------------------------------------------------------

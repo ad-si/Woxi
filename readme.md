@@ -20,10 +20,13 @@ Print[RandomInteger[{1, 6}, 5]]
 
 Check out the [CLI tests](./tests/cli) directory
 to see all currently supported commands and their expected output.
-All tests must pass with Woxi and Wolframscript.
+All tests must pass with Woxi and WolframScript.
 
 Check out the [functions.csv](./functions.csv) file
 for a list of all Wolfram Language functions and their implementation status.
+
+Woxi runs faster than WolframScript as there is no overhead of starting a kernel
+and verifying its license.
 
 
 ## Installation
@@ -52,9 +55,9 @@ cargo run -- "1 + 2"
 This will output: `3`
 
 
-## CLI Comparison With Wolframscript
+## CLI Comparison With WolframScript
 
-Woxi | Wolframscript
+Woxi | WolframScript
 --- | ---
 `woxi eval "1 + 2"` | `wolframscript -code "1 + 2"`
 `woxi run script.wls` | `wolframscript script.wls`
