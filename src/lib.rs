@@ -1583,6 +1583,30 @@ fn evaluate_function_call(
       return Ok(format!("{{{}}}", parts.join(", ")));
     }
 
+    "StringStartsQ" => {
+      // expects exactly 2 string arguments
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "StringStartsQ expects exactly 2 arguments".into(),
+        ));
+      }
+      let s      = extract_string(args_pairs[0].clone())?;
+      let prefix = extract_string(args_pairs[1].clone())?;
+      return Ok(if s.starts_with(&prefix) { "True" } else { "False" }.to_string());
+    }
+
+    "StringEndsQ" => {
+      // expects exactly 2 string arguments
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "StringEndsQ expects exactly 2 arguments".into(),
+        ));
+      }
+      let s      = extract_string(args_pairs[0].clone())?;
+      let suffix = extract_string(args_pairs[1].clone())?;
+      return Ok(if s.ends_with(&suffix) { "True" } else { "False" }.to_string());
+    }
+
     // ----- list helpers ------------------------------------------------------
     "Map" => {
       if args_pairs.len() != 2 {
