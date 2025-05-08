@@ -31,16 +31,24 @@ and verifying its license.
 
 ## Installation
 
-To use this Wolfram Language interpreter, you need to have Rust installed on your system.
-If you don't have Rust installed yet, you can get it from
-[rust-lang.org](https://www.rust-lang.org/tools/install).
+To use Woxi, you need to have [Rust's cargo](https://doc.rust-lang.org/cargo/)
+installed on your system.
 
-Clone the repository and build the project:
+```sh
+cargo install woxi
+```
 
-```bash
+### From Source
+
+If you want to build Woxi from source, you need to have Rust installed.
+You can get it from [rust-lang.org](https://www.rust-lang.org/tools/install).
+
+Clone the repository, build the project, and install it:
+
+```sh
 git clone https://github.com/ad-si/Woxi
 cd Woxi
-cargo build --release
+make install
 ```
 
 
@@ -48,14 +56,26 @@ cargo build --release
 
 You can use the interpreter directly from the command line:
 
-```bash
-cargo run -- "1 + 2"
+```sh
+woxi eval "1 + 2"
+# 3
 ```
 
-This will output: `3`
+```sh
+woxi eval 'StringJoin["Hello", " ", "World!"]'
+# Hello World!
+```
+
+Or you can run a script:
+
+```sh
+woxi run tests/cli/hello_world.wls
+```
 
 
-## CLI Comparison With WolframScript
+## CLI Comparison With [WolframScript]
+
+[WolframScript]: https://www.wolfram.com/wolframscript/index.php.en
 
 Woxi | WolframScript
 --- | ---
