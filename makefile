@@ -48,3 +48,27 @@ format:
 .PHONY: install
 install:
 	cargo install --path .
+
+
+.PHONY: release
+release:
+	@echo '1. `cai changelog <first-commit-hash>`'
+	@echo '2. `git add ./changelog.md && git commit -m "Update changelog"`'
+	@echo '3. `cargo release major / minor / patch`'
+	@echo '4. Create a new GitHub release at https://github.com/ad-si/Woxi/releases/new'
+	@echo "5. Announce release on \n" \
+		"   - https://x.com \n" \
+		"   - https://bsky.app \n" \
+		"   - https://this-week-in-rust.org \n" \
+		"   - https://news.ycombinator.com \n" \
+		"   - https://lobste.rs \n" \
+		"   - Reddit \n" \
+		"     - https://reddit.com/r/rust \n" \
+		"     - https://reddit.com/r/Mathematica/ \n" \
+		"     - https://reddit.com/r/math \n" \
+		"     - https://reddit.com/r/Physics \n" \
+		"     - https://reddit.com/r/ElectricalEngineering \n" \
+		"     - https://reddit.com/r/matlab \n" \
+		"     - https://reddit.com/r/sympy/ \n" \
+		"     - https://reddit.com/r/Julia/ \n" \
+		"     - https://reddit.com/r/octave/ \n"

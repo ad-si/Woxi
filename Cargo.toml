@@ -1,8 +1,11 @@
 [package]
 name = "woxi"
+description = "Interpreter for a subset of the Wolfram Language"
+keywords = ["wolfram", "wolfram-language", "mathematica", "cas", "math"]
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
+repository = "https://github.com/ad-si/Woxi"
 
 [dependencies]
 pest = "2.5"
