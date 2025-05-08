@@ -18,3 +18,13 @@ Hello World!
 
 $ wo 'StringSplit["Hello World!", " "]'
 {Hello, World!}
+
+$ wo 'StringStartsQ["Hello World!", "Hello"]'
+True
+$ wo 'StringStartsQ["Hello World!", "Bye"]'
+False
+
+$ wo 'StringEndsQ["Hello World!", "World!"]'
+True
+$ wo 'StringEndsQ["Hello World!", "Moon!"]'
+False

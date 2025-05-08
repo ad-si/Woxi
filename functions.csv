@@ -42,9 +42,11 @@ Round,Returns the nearest integer to a number,🚧
 Select,Picks elements of a list that satisfy a criterion,🚧
 Sqrt,Returns the square root of a number,🚧
 StringDrop,Removes a substring from a string,🚧
+StringEndsQ,Checks if a string ends with a specific substring,🚧
 StringJoin,Concatenates strings,🚧
 StringLength,Returns the length of a string,🚧
 StringSplit,Splits a string into a list of substrings,🚧
+StringStartsQ,Checks if a string starts with a specific substring,🚧
 StringTake,Returns a substring of a string,🚧
 Take,Returns the first n elements of a list,🚧
 Times,Multiply numbers,🚧
@@ -5477,7 +5479,6 @@ StringContainsQ,,
 StringCount,,
 StringDelete,,
 StringDrop,,
-StringEndsQ,,
 StringExpression,,
 StringExtract,,
 StringForm,,
@@ -5504,7 +5505,6 @@ StringRotateLeft,,
 StringRotateRight,,
 StringSkeleton,,
 StringSplit,,
-StringStartsQ,,
 StringTake,,
 StringTakeDrop,,
 StringTemplate,,
