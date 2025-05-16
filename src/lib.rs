@@ -2651,9 +2651,16 @@ fn evaluate_function_call(
       "GroupBy function not yet implemented".into(),
     )),
     "Print" => {
+      // 0 args → just output a newline and return Null
+      if args_pairs.is_empty() {
+        println!(); // visible newline for CLI tests
+        capture_stdout(""); // keep Jupyter stdout behaviour
+        return Ok("Null".to_string());
+      }
+      // 1 arg accepted, anything else is still an error
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
-          "Print expects exactly 1 argument".into(),
+          "Print expects at most 1 argument".into(),
         ));
       }
       // Accept string, or expression wrapping a string, or any printable value

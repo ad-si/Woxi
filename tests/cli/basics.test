@@ -19,6 +19,9 @@ $ wo 'Set[x, 5]; x + 3'
 8
 
 # `Print`: Prints a value to the console
+$ wo 'Print[]'
+
+Null
 $ wo 'Print[5]'
 5
 Null
