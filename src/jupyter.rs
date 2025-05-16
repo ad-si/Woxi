@@ -15,6 +15,9 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
   let session_id = Uuid::new_v4().to_string();
   println!("Starting kernel with session ID: {}", session_id);
 
+  // Create execution counter
+  let mut execution_count: usize = 0;
+
   // If connection file is provided, load it
   let connection_info = if let Some(file_path) = connection_file {
     println!("Loading connection info from: {}", file_path.display());
@@ -118,7 +121,9 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
                 Ok(request) => {
                     match &request.content {
                         JupyterMessageContent::ExecuteRequest(execute_request) => {
-                            handle_execute_request(&mut shell_socket, &mut iopub_socket, &request, execute_request).await?;
+                            // Increment the execution count for each new request
+                            execution_count += 1;
+                            handle_execute_request(&mut shell_socket, &mut iopub_socket, &request, execute_request, execution_count).await?;
                         },
                         JupyterMessageContent::KernelInfoRequest(_) => {
                             // Send busy status before handling kernel info
@@ -337,8 +342,12 @@ async fn handle_execute_request(
   iopub_socket: &mut runtimelib::KernelIoPubConnection,
   request: &JupyterMessage,
   execute_request: &jupyter_protocol::ExecuteRequest,
+  execution_count: usize,
 ) -> anyhow::Result<()> {
-  println!("Executing: {}", execute_request.code);
+  println!(
+    "Executing: {} (cell {})",
+    execute_request.code, execution_count
+  );
 
   // 1. Send status: busy
   let busy_status = Status::busy();
@@ -348,7 +357,7 @@ async fn handle_execute_request(
   // 2. Send execute_input
   let execute_input = jupyter_protocol::ExecuteInput {
     code: execute_request.code.clone(),
-    execution_count: ExecutionCount(1),
+    execution_count: ExecutionCount(execution_count),
   };
   let input_msg = create_message(&execute_input, Some(&request.header), vec![]);
   iopub_socket.send(input_msg).await?;
@@ -396,7 +405,7 @@ async fn handle_execute_request(
       .push(jupyter_protocol::MediaType::Plain(execution_result));
 
     let execute_result = ExecuteResult {
-      execution_count: ExecutionCount(1),
+      execution_count: ExecutionCount(execution_count),
       data: media,
       metadata: Default::default(),
       transient: None,
@@ -415,7 +424,7 @@ async fn handle_execute_request(
   // 6. Send execute_reply
   let execute_reply = jupyter_protocol::ExecuteReply {
     status: jupyter_protocol::ReplyStatus::Ok,
-    execution_count: ExecutionCount(1),
+    execution_count: ExecutionCount(execution_count),
     payload: vec![],
     user_expressions: Default::default(),
     error: None,
