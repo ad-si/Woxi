@@ -480,10 +480,12 @@ async fn handle_kernel_info_request(
   let language_info = jupyter_protocol::LanguageInfo {
     name: "woxi".to_string(),
     version: "0.1.0".to_string(),
-    mimetype: "text/plain".to_string(),
+    mimetype: "text/x-mathematica".to_string(),
     file_extension: ".wls".to_string(),
-    pygments_lexer: "text".to_string(),
-    codemirror_mode: jupyter_protocol::CodeMirrorMode::python(),
+    pygments_lexer: "mathematica".to_string(),
+    codemirror_mode: jupyter_protocol::CodeMirrorMode::Simple(
+      "mathematica".to_string(),
+    ),
     nbconvert_exporter: "text".to_string(),
   };
 
