@@ -32,6 +32,13 @@ pub enum InterpreterError {
   EvaluationError(String),
 }
 
+/// Extended result type that includes both stdout and the result
+#[derive(Debug, Clone)]
+pub struct InterpretResult {
+  pub stdout: String,
+  pub result: String,
+}
+
 impl WolframParser {
   pub fn parse_wolfram(
     input: &str,
@@ -46,7 +53,36 @@ pub fn parse(
   WolframParser::parse_wolfram(input)
 }
 
+// Captured output from Print statements
+thread_local! {
+    static CAPTURED_STDOUT: RefCell<String> = RefCell::new(String::new());
+}
+
+/// Clears the captured stdout buffer
+fn clear_captured_stdout() {
+  CAPTURED_STDOUT.with(|buffer| {
+    buffer.borrow_mut().clear();
+  });
+}
+
+/// Appends to the captured stdout buffer
+fn capture_stdout(text: &str) {
+  CAPTURED_STDOUT.with(|buffer| {
+    buffer.borrow_mut().push_str(text);
+    buffer.borrow_mut().push('\n');
+  });
+}
+
+/// Gets the captured stdout content
+fn get_captured_stdout() -> String {
+  CAPTURED_STDOUT.with(|buffer| buffer.borrow().clone())
+}
+
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
+  // Clear the stdout capture buffer
+  clear_captured_stdout();
+
+  // Regular interpretation
   let pairs = parse(input)?;
   let mut pairs = pairs.into_iter();
   let program = pairs.next().ok_or(InterpreterError::EmptyInput)?;
@@ -73,11 +109,29 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       _ => {} // ignore semicolons, etc.
     }
   }
+
   if any_nonempty {
     last_result.ok_or(InterpreterError::EmptyInput)
   } else {
     Err(InterpreterError::EmptyInput)
   }
+}
+
+/// New interpret function that returns both stdout and the result
+pub fn interpret_with_stdout(
+  input: &str,
+) -> Result<InterpretResult, InterpreterError> {
+  // Clear the stdout capture buffer
+  clear_captured_stdout();
+
+  // Perform the standard interpretation
+  let result = interpret(input)?;
+
+  // Get the captured stdout
+  let stdout = get_captured_stdout();
+
+  // Return both stdout and the result
+  Ok(InterpretResult { stdout, result })
 }
 
 fn format_result(result: f64) -> String {
@@ -2605,12 +2659,28 @@ fn evaluate_function_call(
       // Accept string, or expression wrapping a string, or any printable value
       let arg_pair = &args_pairs[0];
       let arg_str = match arg_pair.as_rule() {
-        Rule::String => arg_pair.as_str().trim_matches('"').to_string(),
+        Rule::String => {
+          // Get the raw string with quotes
+          let raw_str = arg_pair.as_str();
+          // Unescape the string content properly
+          if let Ok(unescaped) = snailquote::unescape(raw_str) {
+            unescaped
+          } else {
+            // Fall back to trimming quotes if unescaping fails
+            raw_str.trim_matches('"').to_string()
+          }
+        }
         Rule::Expression => {
           let mut expr_inner = arg_pair.clone().into_inner();
           if let Some(first) = expr_inner.next() {
             if first.as_rule() == Rule::String {
-              first.as_str().trim_matches('"').to_string()
+              // Same unescaping for string inside expression
+              let raw_str = first.as_str();
+              if let Ok(unescaped) = snailquote::unescape(raw_str) {
+                unescaped
+              } else {
+                raw_str.trim_matches('"').to_string()
+              }
             } else {
               evaluate_expression(arg_pair.clone())?
             }
@@ -2620,7 +2690,10 @@ fn evaluate_function_call(
         }
         _ => evaluate_expression(arg_pair.clone())?,
       };
+      // Print to stdout for normal display
       println!("{}", arg_str);
+      // Also capture for Jupyter
+      capture_stdout(&arg_str);
       Ok("Null".to_string())
     }
     "RandomInteger" => {
