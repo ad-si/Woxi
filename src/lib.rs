@@ -55,7 +55,7 @@ pub fn parse(
 
 // Captured output from Print statements
 thread_local! {
-    static CAPTURED_STDOUT: RefCell<String> = RefCell::new(String::new());
+    static CAPTURED_STDOUT: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
 /// Clears the captured stdout buffer
@@ -160,9 +160,7 @@ fn parse_list_string(s: &str) -> Option<Vec<String>> {
     match c {
       '{' | '[' | '(' | '<' => depth += 1,
       '}' | ']' | ')' | '>' => {
-        if depth > 0 {
-          depth -= 1;
-        }
+        depth = depth.saturating_sub(1);
       }
       ',' if depth == 0 => {
         parts.push(inner[start..i].trim().to_string());
@@ -254,7 +252,7 @@ fn evaluate_expression(
     }
     Rule::NumericValue => {
       // numeric literal directly inside an expression (e.g. x == 2)
-      return evaluate_term(expr).map(format_result);
+      evaluate_term(expr).map(format_result)
     }
     Rule::Term => {
       let mut inner = expr.clone().into_inner();
@@ -315,9 +313,9 @@ fn evaluate_expression(
           }
         }
       }
-      return Err(InterpreterError::EvaluationError(
+      Err(InterpreterError::EvaluationError(
         "Argument must be an association".into(),
-      ));
+      ))
     }
     Rule::Expression => {
       // --- special case: Map operator ----------------------------------
@@ -487,8 +485,8 @@ fn evaluate_expression(
 
                 // find the first occurrence of ":="
                 let rhs_txt = full_txt
-                  .splitn(2, ":=")
-                  .nth(1)
+                  .split_once(":=")
+                  .map(|x| x.1)
                   .unwrap_or("")
                   .trim()
                   .to_owned();
@@ -686,7 +684,7 @@ fn evaluate_expression(
       let mut i = 0;
       while i < ops.len() {
         if ops[i] == "*" {
-          values[i] = values[i] * values[i + 1];
+          values[i] *= values[i + 1];
           values.remove(i + 1);
           ops.remove(i);
         } else if ops[i] == "/" {
@@ -695,7 +693,7 @@ fn evaluate_expression(
               "Division by zero".to_string(),
             ));
           }
-          values[i] = values[i] / values[i + 1];
+          values[i] /= values[i + 1];
           values.remove(i + 1);
           ops.remove(i);
         } else {
@@ -732,7 +730,7 @@ fn evaluate_expression(
           _ => {}
         }
       }
-      return last.ok_or(InterpreterError::EmptyInput);
+      last.ok_or(InterpreterError::EmptyInput)
     }
     Rule::List => {
       let items: Vec<String> = expr
@@ -1213,12 +1211,12 @@ fn evaluate_function_call(
     "Keys" => {
       let asso = get_assoc_from_first_arg(&args_pairs)?;
       let keys: Vec<_> = asso.iter().map(|(k, _)| k.clone()).collect();
-      return Ok(format!("{{{}}}", keys.join(", ")));
+      Ok(format!("{{{}}}", keys.join(", ")))
     }
     "Values" => {
       let asso = get_assoc_from_first_arg(&args_pairs)?;
       let vals: Vec<_> = asso.iter().map(|(_, v)| v.clone()).collect();
-      return Ok(format!("{{{}}}", vals.join(", ")));
+      Ok(format!("{{{}}}", vals.join(", ")))
     }
     "KeyDropFrom" => {
       if args_pairs.len() != 2 {
@@ -1237,7 +1235,7 @@ fn evaluate_function_call(
           .collect::<Vec<_>>()
           .join(", ")
       );
-      return Ok(disp);
+      Ok(disp)
     }
     "Set" => {
       // --- arity -----------------------------------------------------------
@@ -1282,14 +1280,14 @@ fn evaluate_function_call(
           e.borrow_mut()
             .insert(var_name, StoredValue::Association(pairs))
         });
-        return Ok(disp);
+        Ok(disp)
       } else {
         let val = evaluate_expression(rhs_pair.clone())?;
         ENV.with(|e| {
           e.borrow_mut()
             .insert(var_name, StoredValue::Raw(val.clone()))
         });
-        return Ok(val);
+        Ok(val)
       }
     }
     // ─────────────────── relational (inclusive) comparisons ──────────────────
@@ -1307,7 +1305,7 @@ fn evaluate_function_call(
         }
         prev = cur;
       }
-      return Ok("True".to_string());
+      Ok("True".to_string())
     }
 
     "LessEqual" => {
@@ -1324,7 +1322,7 @@ fn evaluate_function_call(
         }
         prev = cur;
       }
-      return Ok("True".to_string());
+      Ok("True".to_string())
     }
 
     // ───────────────────────────── boolean logic ─────────────────────────────
@@ -1335,12 +1333,11 @@ fn evaluate_function_call(
         ));
       }
       for ap in &args_pairs {
-        if as_bool(&evaluate_expression(ap.clone())?).unwrap_or(false) == false
-        {
+        if !as_bool(&evaluate_expression(ap.clone())?).unwrap_or(false) {
           return Ok("False".to_string());
         }
       }
-      return Ok("True".to_string());
+      Ok("True".to_string())
     }
 
     "Or" => {
@@ -1354,7 +1351,7 @@ fn evaluate_function_call(
           return Ok("True".to_string());
         }
       }
-      return Ok("False".to_string());
+      Ok("False".to_string())
     }
 
     "Xor" => {
@@ -1369,7 +1366,7 @@ fn evaluate_function_call(
           true_cnt += 1;
         }
       }
-      return Ok(if true_cnt % 2 == 1 { "True" } else { "False" }.to_string());
+      Ok(if true_cnt % 2 == 1 { "True" } else { "False" }.to_string())
     }
 
     "Not" => {
@@ -1390,7 +1387,7 @@ fn evaluate_function_call(
       }
       let v =
         as_bool(&evaluate_expression(args_pairs[0].clone())?).unwrap_or(false);
-      return Ok(if v { "False" } else { "True" }.to_string());
+      Ok(if v { "False" } else { "True" }.to_string())
     }
 
     // ──────────────────────────────── If ──────────────────────────────────────
@@ -1411,13 +1408,13 @@ fn evaluate_function_call(
       let test_val = as_bool(&test_str);
 
       match (test_val, args_pairs.len()) {
-        (Some(true), _) => return evaluate_expression(args_pairs[1].clone()),
-        (Some(false), 2) => return Ok("Null".to_string()),
-        (Some(false), 3) => return evaluate_expression(args_pairs[2].clone()),
-        (Some(false), 4) => return evaluate_expression(args_pairs[2].clone()),
-        (None, 2) => return Ok("Null".to_string()),
-        (None, 3) => return Ok("Null".to_string()),
-        (None, 4) => return evaluate_expression(args_pairs[3].clone()),
+        (Some(true), _) => evaluate_expression(args_pairs[1].clone()),
+        (Some(false), 2) => Ok("Null".to_string()),
+        (Some(false), 3) => evaluate_expression(args_pairs[2].clone()),
+        (Some(false), 4) => evaluate_expression(args_pairs[2].clone()),
+        (None, 2) => Ok("Null".to_string()),
+        (None, 3) => Ok("Null".to_string()),
+        (None, 4) => evaluate_expression(args_pairs[3].clone()),
         _ => unreachable!(),
       }
     }
@@ -1462,7 +1459,7 @@ fn evaluate_function_call(
       }
 
       // ── return formatted result ──────────────────────────────────────────
-      return Ok(format_result(sum));
+      Ok(format_result(sum))
     }
     "Times" => {
       // ----- arity check ---------------------------------------------------
@@ -1479,7 +1476,7 @@ fn evaluate_function_call(
       }
 
       // ----- return formatted result ---------------------------------------
-      return Ok(format_result(product));
+      Ok(format_result(product))
     }
     "Minus" => {
       // ---- arity check ----------------------------------------------------
@@ -1512,7 +1509,7 @@ fn evaluate_function_call(
         pieces.push(evaluate_expression(ap.clone())?); // keeps formatting (e.g. 5, 2, 3.1…)
       }
       let expr = pieces.join(" − "); // note U+2212 (minus sign) surrounded by spaces
-      return Ok(expr);
+      Ok(expr)
     }
     "Abs" => {
       // ── arity check ────────────────────────────────────────────────────────
@@ -1524,7 +1521,7 @@ fn evaluate_function_call(
       // ── evaluate argument ──────────────────────────────────────────────────
       let n = evaluate_term(args_pairs[0].clone())?;
       // ── return absolute value, formatted like other numeric outputs ───────
-      return Ok(format_result(n.abs()));
+      Ok(format_result(n.abs()))
     }
     "Sign" => {
       if args_pairs.len() != 1 {
@@ -1559,7 +1556,7 @@ fn evaluate_function_call(
         ));
       }
       // ---- return √n, formatted like all other numeric outputs ------------
-      return Ok(format_result(n.sqrt()));
+      Ok(format_result(n.sqrt()))
     }
 
     // ── string functions ────────────────────────────────────────────────
@@ -1574,7 +1571,7 @@ fn evaluate_function_call(
       if r == -0.0 {
         r = 0.0;
       }
-      return Ok(format_result(r));
+      Ok(format_result(r))
     }
 
     "Ceiling" => {
@@ -1588,7 +1585,7 @@ fn evaluate_function_call(
       if r == -0.0 {
         r = 0.0;
       }
-      return Ok(format_result(r));
+      Ok(format_result(r))
     }
 
     "Round" => {
@@ -1620,7 +1617,7 @@ fn evaluate_function_call(
       if r == -0.0 {
         r = 0.0;
       }
-      return Ok(format_result(r));
+      Ok(format_result(r))
     }
 
     "StringLength" => {
@@ -1630,7 +1627,7 @@ fn evaluate_function_call(
         ));
       }
       let s = extract_string(args_pairs[0].clone())?;
-      return Ok(s.chars().count().to_string());
+      Ok(s.chars().count().to_string())
     }
 
     "StringTake" => {
@@ -1648,7 +1645,7 @@ fn evaluate_function_call(
       }
       let k = n as usize;
       let taken: String = s.chars().take(k).collect();
-      return Ok(taken);
+      Ok(taken)
     }
 
     "StringDrop" => {
@@ -1666,7 +1663,7 @@ fn evaluate_function_call(
       }
       let k = n as usize;
       let dropped: String = s.chars().skip(k).collect();
-      return Ok(dropped);
+      Ok(dropped)
     }
 
     "StringJoin" => {
@@ -1679,7 +1676,7 @@ fn evaluate_function_call(
       for ap in &args_pairs {
         joined.push_str(&extract_string(ap.clone())?);
       }
-      return Ok(joined);
+      Ok(joined)
     }
 
     "StringSplit" => {
@@ -1695,7 +1692,7 @@ fn evaluate_function_call(
       } else {
         s.split(&delim).map(|p| p.to_string()).collect()
       };
-      return Ok(format!("{{{}}}", parts.join(", ")));
+      Ok(format!("{{{}}}", parts.join(", ")))
     }
 
     "StringStartsQ" => {
@@ -1707,14 +1704,14 @@ fn evaluate_function_call(
       }
       let s = extract_string(args_pairs[0].clone())?;
       let prefix = extract_string(args_pairs[1].clone())?;
-      return Ok(
+      Ok(
         if s.starts_with(&prefix) {
           "True"
         } else {
           "False"
         }
         .to_string(),
-      );
+      )
     }
 
     "StringEndsQ" => {
@@ -1726,14 +1723,14 @@ fn evaluate_function_call(
       }
       let s = extract_string(args_pairs[0].clone())?;
       let suffix = extract_string(args_pairs[1].clone())?;
-      return Ok(
+      Ok(
         if s.ends_with(&suffix) {
           "True"
         } else {
           "False"
         }
         .to_string(),
-      );
+      )
     }
 
     // ----- list helpers ------------------------------------------------------
@@ -1819,7 +1816,7 @@ fn evaluate_function_call(
       // Evaluate argument to string and try to parse it as f64
       let arg_str = evaluate_expression(args_pairs[0].clone())?;
       let is_number = arg_str.parse::<f64>().is_ok();
-      return Ok(if is_number { "True" } else { "False" }.to_string());
+      Ok(if is_number { "True" } else { "False" }.to_string())
     }
     "EvenQ" | "OddQ" => {
       if args_pairs.len() != 1 {
@@ -1950,7 +1947,7 @@ fn evaluate_function_call(
       };
       let evaluated: Result<Vec<_>, _> =
         slice.into_iter().map(|p| evaluate_expression(p)).collect();
-      return Ok(format!("{{{}}}", evaluated?.join(", ")));
+      Ok(format!("{{{}}}", evaluated?.join(", ")))
     }
 
     "MemberQ" => {
@@ -2000,7 +1997,7 @@ fn evaluate_function_call(
           return Ok("True".to_string());
         }
       }
-      return Ok("False".to_string());
+      Ok("False".to_string())
     }
 
     "Take" => {
@@ -2051,7 +2048,7 @@ fn evaluate_function_call(
         .cloned()
         .map(|p| evaluate_expression(p))
         .collect();
-      return Ok(format!("{{{}}}", evaluated?.join(", ")));
+      Ok(format!("{{{}}}", evaluated?.join(", ")))
     }
 
     "Drop" => {
@@ -2101,7 +2098,7 @@ fn evaluate_function_call(
       let slice = items[start..].to_vec();
       let evaluated: Result<Vec<_>, _> =
         slice.into_iter().map(|p| evaluate_expression(p)).collect();
-      return Ok(format!("{{{}}}", evaluated?.join(", ")));
+      Ok(format!("{{{}}}", evaluated?.join(", ")))
     }
 
     "Append" | "Prepend" => {
@@ -2159,7 +2156,7 @@ fn evaluate_function_call(
         // Prepend
         evaluated.insert(0, new_elem);
       }
-      return Ok(format!("{{{}}}", evaluated.join(", ")));
+      Ok(format!("{{{}}}", evaluated.join(", ")))
     }
 
     "Part" => {
@@ -2210,7 +2207,7 @@ fn evaluate_function_call(
           "Index out of bounds in Part".into(),
         ));
       }
-      return evaluate_expression(items[idx].clone());
+      evaluate_expression(items[idx].clone())
     }
 
     "Length" => {
@@ -2297,7 +2294,7 @@ fn evaluate_function_call(
       for item in items {
         sum += evaluate_term(item.clone())?;
       }
-      return Ok(format_result(sum));
+      Ok(format_result(sum))
     }
     "Divide" => {
       // ── arity check ──────────────────────────────────────────────────────
@@ -2328,7 +2325,7 @@ fn evaluate_function_call(
       }
 
       // ── return formatted result ──────────────────────────────────────────
-      return Ok(format_result(numerator / denominator));
+      Ok(format_result(numerator / denominator))
     }
     // ----- boolean equality helpers ----------------------------------------
     "Equal" => {
@@ -2343,7 +2340,7 @@ fn evaluate_function_call(
           return Ok("False".to_string());
         }
       }
-      return Ok("True".to_string());
+      Ok("True".to_string())
     }
     "Unequal" => {
       if args_pairs.len() < 2 {
@@ -2359,7 +2356,7 @@ fn evaluate_function_call(
         }
         seen.push(v);
       }
-      return Ok("True".to_string()); // all pair-wise different
+      Ok("True".to_string()) // all pair-wise different
     }
 
     // ----- relational comparison helpers -----------------------------------
@@ -2377,7 +2374,7 @@ fn evaluate_function_call(
         }
         prev = current;
       }
-      return Ok("True".to_string());
+      Ok("True".to_string())
     }
 
     "Less" => {
@@ -2394,7 +2391,7 @@ fn evaluate_function_call(
         }
         prev = current;
       }
-      return Ok("True".to_string());
+      Ok("True".to_string())
     }
     "Select" => {
       // ----- arity ---------------------------------------------------------
@@ -2479,7 +2476,7 @@ fn evaluate_function_call(
           kept.push(evaluate_expression(elem.clone())?);
         }
       }
-      return Ok(format!("{{{}}}", kept.join(", ")));
+      Ok(format!("{{{}}}", kept.join(", ")))
     }
     "AllTrue" => {
       // ---------- arity ----------------------------------------------------
@@ -2569,7 +2566,7 @@ fn evaluate_function_call(
           return Ok("False".to_string());
         }
       }
-      return Ok("True".to_string());
+      Ok("True".to_string())
     }
     "Flatten" => {
       // ----- arity ---------------------------------------------------------
@@ -2645,7 +2642,7 @@ fn evaluate_function_call(
         .into_iter()
         .map(|p| evaluate_expression(p))
         .collect();
-      return Ok(format!("{{{}}}", evaluated?.join(", ")));
+      Ok(format!("{{{}}}", evaluated?.join(", ")))
     }
     "GroupBy" => Err(InterpreterError::EvaluationError(
       "GroupBy function not yet implemented".into(),
@@ -2773,7 +2770,7 @@ fn evaluate_function_call(
       let values: Vec<String> = (0..n_usize)
         .map(|_| rng.gen_range(min_i..=max_i).to_string())
         .collect();
-      return Ok(format!("{{{}}}", values.join(", ")));
+      Ok(format!("{{{}}}", values.join(", ")))
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unknown function: {}",
@@ -2885,7 +2882,7 @@ fn apply_map_operator(
         };
         out.push(format_result(res));
       }
-      return Ok(format!("{{{}}}", out.join(", ")));
+      Ok(format!("{{{}}}", out.join(", ")))
     }
     _ => Err(InterpreterError::EvaluationError(
       "Left operand of /@ must be a function".into(),

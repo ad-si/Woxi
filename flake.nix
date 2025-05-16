@@ -20,6 +20,7 @@
           buildInputs = with pkgs; [
             bash
             cargo
+            clippy
             coreutils # cat
             gnumake
             gnused
