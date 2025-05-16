@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "woxi",
+    "jupyter",
+    "{connection_file}"
+  ],
+  "display_name": "Woxi",
+  "language": "wolfram-language"
+}

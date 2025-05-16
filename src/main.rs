@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+mod jupyter;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -24,6 +25,22 @@ enum Commands {
     #[arg(value_name = "FILE")]
     file: PathBuf,
   },
+  /// Start a simple Jupyter kernel that always returns "hello world"
+  Jupyter {
+    /// Path to the Jupyter connection file (JSON) provided by the
+    /// notebook frontend. Can be omitted.
+    #[arg(value_name = "CONN_FILE")]
+    connection_file: Option<PathBuf>,
+  },
+  /// Install Woxi as a Jupyter kernel
+  InstallKernel {
+    /// Install for the current user only (default)
+    #[arg(long)]
+    user: bool,
+    /// Install system-wide (requires admin privileges)
+    #[arg(long)]
+    system: bool,
+  },
   #[command(external_subcommand)]
   Script(Vec<String>), // invoked by a shebang:  woxi <file> [...]
 }
@@ -35,6 +52,41 @@ fn without_shebang(src: &str) -> String {
     src.lines().skip(1).collect::<Vec<_>>().join("\n")
   } else {
     src.to_owned()
+  }
+}
+
+fn install_kernel(user: bool, system: bool) -> std::io::Result<()> {
+  let user_flag = if user {
+    "--user"
+  } else if system {
+    "--system"
+  } else {
+    "--user"
+  };
+
+  // Get the path to the kernelspec directory
+  let kernelspec_dir = env::current_dir()?.join("kernelspec/woxi");
+
+  // Use jupyter kernelspec to install the kernel
+  let status = std::process::Command::new("jupyter")
+    .args([
+      "kernelspec",
+      "install",
+      "--replace",
+      user_flag,
+      kernelspec_dir.to_str().unwrap(),
+    ])
+    .status()?;
+
+  if status.success() {
+    println!("Woxi kernel installed successfully!");
+    println!("You can now use it in Jupyter Lab or Notebook by selecting 'Woxi' from the kernel list.");
+    Ok(())
+  } else {
+    Err(std::io::Error::new(
+      std::io::ErrorKind::Other,
+      format!("Failed to install kernel. Exit code: {}", status),
+    ))
   }
 }
 
@@ -68,6 +120,16 @@ fn main() {
           }
         }
         Err(e) => eprintln!("Error reading file: {}", e),
+      }
+    }
+    Commands::Jupyter { connection_file } => {
+      if let Err(e) = jupyter::run(connection_file.as_deref()) {
+        eprintln!("Error starting Jupyter kernel: {e}");
+      }
+    }
+    Commands::InstallKernel { user, system } => {
+      if let Err(e) = install_kernel(user, system) {
+        eprintln!("Error installing kernel: {e}");
       }
     }
     //  shebang / direct script execution  ---------------------------------
