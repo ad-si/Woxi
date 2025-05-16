@@ -4,7 +4,6 @@ use jupyter_protocol::{
 };
 use std::path::Path;
 use uuid::Uuid;
-use woxi;
 
 pub fn run(connection_file: Option<&std::path::Path>) -> anyhow::Result<()> {
   tokio::runtime::Runtime::new()?

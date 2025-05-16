@@ -42,6 +42,7 @@ test: test-unit test-cli test-shebang
 
 .PHONY: format
 format:
+	cargo clippy --fix --allow-dirty > /dev/null 2>&1
 	cargo fmt
 	nix fmt
 
