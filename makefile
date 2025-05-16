@@ -43,6 +43,7 @@ test: test-unit test-cli test-shebang
 .PHONY: format
 format:
 	cargo fmt
+	nix fmt
 
 
 .PHONY: install
