@@ -17,6 +17,7 @@ pest_derive =    "2.5"
 rand = "0.8"
 runtimelib = { git = "https://github.com/runtimed/runtimed", features = ["tokio-runtime"] }
 serde_json = "1.0"
+snailquote = "0.3.1"
 thiserror = "1.0.63"
 tokio = { version = "1.45.0", features = ["full"] }
 uuid = { version = "1.16.0", features = ["v4"] }

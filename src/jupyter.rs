@@ -4,6 +4,7 @@ use jupyter_protocol::{
 };
 use std::path::Path;
 use uuid::Uuid;
+use woxi;
 
 pub fn run(connection_file: Option<&std::path::Path>) -> anyhow::Result<()> {
   tokio::runtime::Runtime::new()?
@@ -352,31 +353,59 @@ async fn handle_execute_request(
   let input_msg = create_message(&execute_input, Some(&request.header), vec![]);
   iopub_socket.send(input_msg).await?;
 
-  // 3. Send stream message with "hello world"
-  let stream_content = jupyter_protocol::StreamContent {
-    name: jupyter_protocol::Stdio::Stdout,
-    text: "hello world\n".to_string(),
-  };
-  let stream_msg =
-    create_message(&stream_content, Some(&request.header), vec![]);
-  iopub_socket.send(stream_msg).await?;
+  // 3. Execute the code using woxi interpreter with the new stdout capture mode
 
-  // 4. Send execute_result with "hello world"
-  let mut media = jupyter_protocol::media::Media::default();
-  media.content.push(jupyter_protocol::MediaType::Plain(
-    "hello world".to_string(),
-  ));
+  // Use the new interpret_with_stdout function to get both stdout and the result
+  let execution_result =
+    match woxi::interpret_with_stdout(&execute_request.code) {
+      Ok(result) => {
+        // Send captured stdout if there's any content
+        if !result.stdout.is_empty() {
+          let stream_content = jupyter_protocol::StreamContent {
+            name: jupyter_protocol::Stdio::Stdout,
+            text: result.stdout,
+          };
+          let stream_msg =
+            create_message(&stream_content, Some(&request.header), vec![]);
+          iopub_socket.send(stream_msg).await?;
+        }
 
-  let execute_result = ExecuteResult {
-    execution_count: ExecutionCount(1),
-    data: media,
-    metadata: Default::default(),
-    transient: None,
-  };
+        // Return the result
+        result.result
+      }
+      Err(e) => {
+        // Send stderr stream message with error
+        let error_content = jupyter_protocol::StreamContent {
+          name: jupyter_protocol::Stdio::Stderr,
+          text: format!("Error: {0}\n", e),
+        };
+        let error_msg =
+          create_message(&error_content, Some(&request.header), vec![]);
+        iopub_socket.send(error_msg).await?;
 
-  let result_msg =
-    create_message(&execute_result, Some(&request.header), vec![]);
-  iopub_socket.send(result_msg).await?;
+        // Return error text for execute_result
+        format!("Error: {0}", e)
+      }
+    };
+
+  // 4. Send execute_result only if it's not "Null" (from Print statements)
+  if execution_result != "Null" {
+    let mut media = jupyter_protocol::media::Media::default();
+    media
+      .content
+      .push(jupyter_protocol::MediaType::Plain(execution_result));
+
+    let execute_result = ExecuteResult {
+      execution_count: ExecutionCount(1),
+      data: media,
+      metadata: Default::default(),
+      transient: None,
+    };
+
+    let result_msg =
+      create_message(&execute_result, Some(&request.header), vec![]);
+    iopub_socket.send(result_msg).await?;
+  }
 
   // 5. Send status: idle
   let idle_status = Status::idle();
@@ -454,7 +483,7 @@ async fn handle_kernel_info_request(
     implementation: "woxi".to_string(),
     implementation_version: "0.1.0".to_string(),
     language_info,
-    banner: "Woxi Jupyter Kernel - Always returns 'hello world'".to_string(),
+    banner: "Woxi Jupyter Kernel - Wolfram Language Interpreter".to_string(),
     help_links: vec![jupyter_protocol::HelpLink {
       text: "Woxi Documentation".to_string(),
       url: "https://github.com/ad-si/Woxi".to_string(),
