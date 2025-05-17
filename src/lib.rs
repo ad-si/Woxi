@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 pub mod evaluator;
+pub mod functions;
 
 #[derive(Parser)]
 #[grammar = "wolfram.pest"]
