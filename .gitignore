@@ -1,4 +1,5 @@
 .aider*
 .direnv
 .env
+*-checkpoint.ipynb
 target
