@@ -8,7 +8,7 @@ A Rust-based interpreter for a subset of the Wolfram Language.
 ## Features
 
 The initial focus is to implement a subset of the Wolfram Language
-so that it can be used for CLI scripting.
+so that it can be used for CLI scripting and Jupyter notebooks.
 For example:
 
 ```wolfram
@@ -17,6 +17,8 @@ For example:
 (* Print 5 random integers between 1 and 6 *)
 Print[RandomInteger[{1, 6}, 5]]
 ```
+
+![Screenshot of Jupyter Notebook](images/2025-05-18t1620_jupyter.png)
 
 Check out the [CLI tests](./tests/cli) directory
 to see all currently supported commands and their expected output.
@@ -70,6 +72,22 @@ Or you can run a script:
 
 ```sh
 woxi run tests/cli/hello_world.wls
+```
+
+
+### Jupyter Notebook
+
+You can also use Woxi in Jupyter notebooks.
+Install the kernel with:
+
+```sh
+woxi install-kernel
+```
+
+Then start the Jupyter server:
+
+```sh
+cd examples && jupyter lab
 ```
 
 
