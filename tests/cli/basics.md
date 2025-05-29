@@ -1,27 +1,58 @@
 # Basics
 
-# Comments
+## Comments
+
+```scrut
 $ wo '(* This comment is ignored *) 5'
 5
+```
+
+```scrut
 $ wo '5 (* This comment is ignored *)'
 5
+```
 
-# Semicolon
+
+## Semicolon
+
+```scrut
 $ wo 'x = 2; x'
 2
+```
+
+```scrut
 $ wo 'x = 2; x = x + 5'
 7
+```
 
-# `Set`: Assigns a value to a variable
+
+## `Set`
+
+Assign a value to a variable.
+
+```scrut
 $ wo 'Set[x, 5]'
 5
+```
+
+```scrut
 $ wo 'Set[x, 5]; x + 3'
 8
+```
 
-# `Print`: Prints a value to the console
+
+## `Print`
+
+Print values to the console.
+
+```scrut
 $ wo 'Print[]'
 
 Null
+```
+
+```scrut
 $ wo 'Print[5]'
 5
 Null
+```

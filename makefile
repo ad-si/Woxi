@@ -16,24 +16,24 @@ test-unit:
 # wolframscript -c "$*"
 .PHONY: test-cli
 test-cli: install
-	shelltest \
-		--hide-successes \
-		--color \
-		tests/cli/*.test
+	@if ! command -v scrut &> /dev/null; \
+		then cargo install scrut; \
+		fi
+	scrut test tests/cli
 
 
 .PHONY: test-cli-wolframscript
 test-cli-wolframscript: install
+	@if ! command -v scrut &> /dev/null; \
+		then cargo install scrut; \
+		fi
 	WOXI_USE_WOLFRAM=true \
-	shelltest \
-		--precise \
-		--color \
-		tests/cli/*.test
+		scrut test tests/cli
 
 
 .PHONY: test-shebang
 test-shebang: install
-	test "$$(./tests/cli/hello_world.wls)" == 'Hello World!'
+	test "$$(./tests/scripts/hello_world.wls)" == 'Hello World!'
 
 
 .PHONY: test
@@ -49,7 +49,8 @@ format:
 
 .PHONY: install
 install:
-	cargo install --path .
+	cargo install --offline --path .
+
 
 
 .PHONY: release
