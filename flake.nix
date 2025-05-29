@@ -25,6 +25,7 @@
             gnumake
             gnused
             haskellPackages.shelltestrunner
+            mdbook
             rustc
             rustfmt
           ];

@@ -1,0 +1,5 @@
+[book]
+title = "Woxi"
+language = "en"
+authors = ["Adrian Sieber"]
+src = "cli"
