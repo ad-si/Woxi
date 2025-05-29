@@ -52,6 +52,15 @@ install:
 	cargo install --offline --path .
 
 
+.PHONY: docs/serve
+docs/serve:
+	mdbook serve ./tests
+
+
+.PHONY: docs/build
+docs/build:
+	mdbook build ./tests
+
 
 .PHONY: release
 release:

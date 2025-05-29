@@ -3,3 +3,4 @@
 .env
 *-checkpoint.ipynb
 target
+tests/book
