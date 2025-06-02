@@ -489,7 +489,18 @@ pub fn evaluate_expression(
         ops.push(op);
         values.push(evaluate_term(term)?);
       }
-      // First pass: handle multiplication and division
+      // First pass: handle exponentiation (highest precedence)
+      let mut i = 0;
+      while i < ops.len() {
+        if ops[i] == "^" {
+          values[i] = values[i].powf(values[i + 1]);
+          values.remove(i + 1);
+          ops.remove(i);
+        } else {
+          i += 1;
+        }
+      }
+      // Second pass: handle multiplication and division
       let mut i = 0;
       while i < ops.len() {
         if ops[i] == "*" {
@@ -509,7 +520,7 @@ pub fn evaluate_expression(
           i += 1;
         }
       }
-      // Second pass: handle addition and subtraction
+      // Third pass: handle addition and subtraction
       let mut result = values[0];
       for (op, &val) in ops.iter().zip(values.iter().skip(1)) {
         if *op == "+" {
