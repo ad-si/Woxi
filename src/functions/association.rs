@@ -106,3 +106,23 @@ pub fn key_drop_from(
   );
   Ok(disp)
 }
+
+/// Handle KeyExistsQ[assoc, key] – returns True if key is present
+pub fn key_exists_q(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "KeyExistsQ expects exactly 2 arguments".into(),
+    ));
+  }
+  let asso = get_assoc_from_first_arg(args_pairs)?;
+  let key = extract_string(args_pairs[1].clone())?;
+  for (k, _) in &asso {
+    // Accept both string and unquoted key (for compatibility with test expectations)
+    if k == &key || k == &format!("\"{}\"", key) {
+      return Ok("True".to_string());
+    }
+  }
+  Ok("False".to_string())
+}

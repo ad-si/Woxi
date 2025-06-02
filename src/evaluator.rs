@@ -878,6 +878,7 @@ fn evaluate_function_call(
     "Keys" => functions::association::keys(&args_pairs),
     "Values" => functions::association::values(&args_pairs),
     "KeyDropFrom" => functions::association::key_drop_from(&args_pairs),
+    "KeyExistsQ" => functions::association::key_exists_q(&args_pairs),
     "Set" => {
       // --- arity -----------------------------------------------------------
       if args_pairs.len() != 2 {

@@ -25,6 +25,7 @@ First,Returns the first element of a list,🚧
 Flatten,Flattens nested lists,🚧
 Floor,Returns the largest integer less than or equal to a number,🚧
 KeyDropFrom,Removes a key-value pair from an association,🚧
+KeyExistsQ,Checks if a key exists in an association,🚧
 Keys,Returns the keys of an association,🚧
 Last,Returns the last element of a list,🚧
 Length,Returns the number of elements in a list,🚧
@@ -3278,7 +3279,6 @@ Key,,
 KeyCollisionFunction,,
 KeyComplement,,
 KeyDrop,,
-KeyExistsQ,,
 KeyframeActions,,
 KeyFreeQ,,
 KeyIntersection,,
