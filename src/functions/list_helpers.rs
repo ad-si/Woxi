@@ -13,34 +13,88 @@ pub fn map_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
   let func_pair = &args_pairs[0];
-  let list_pair = &args_pairs[1];
+  let target_pair = &args_pairs[1];
 
-  // Accept both List and Expression wrapping a List for the second argument
-  let list_rule = list_pair.as_rule();
+  // Check if the second argument is an association
+  if let Ok(assoc) = crate::functions::association::get_assoc_from_first_arg(&[target_pair.clone()]) {
+    // Map over association values
+    let func_src = func_pair.as_str();
+    let mut mapped_pairs = Vec::new();
+
+    for (key, value) in assoc {
+      let mapped_val = if func_pair.as_rule() == Rule::AnonymousFunction 
+        || (func_src.contains('#') && func_src.ends_with('&')) {
+        // Handle anonymous functions like #^2&
+        let mut expr = func_src.trim_end_matches('&').to_string();
+        expr = expr.replace('#', &value);
+        interpret(&expr)?
+      } else {
+        // Handle named functions
+        match func_src {
+          "Sign" => {
+            let num = value.parse::<f64>().map_err(|_| {
+              InterpreterError::EvaluationError(
+                "Map currently supports only numeric values".into(),
+              )
+            })?;
+            let sign = if num > 0.0 {
+              1.0
+            } else if num < 0.0 {
+              -1.0
+            } else {
+              0.0
+            };
+            format_result(sign)
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unknown mapping function: {}",
+              func_src
+            )))
+          }
+        }
+      };
+      mapped_pairs.push((key, mapped_val));
+    }
+
+    // Format as association
+    let disp = format!(
+      "<|{}|>",
+      mapped_pairs
+        .iter()
+        .map(|(k, v)| format!("{} -> {}", k, v))
+        .collect::<Vec<_>>()
+        .join(", ")
+    );
+    return Ok(disp);
+  }
+
+  // Original list handling
+  let list_rule = target_pair.as_rule();
   let elements: Vec<_> = if list_rule == Rule::List {
-    list_pair
+    target_pair
       .clone()
       .into_inner()
       .filter(|p| p.as_str() != ",")
       .collect()
   } else if list_rule == Rule::Expression {
-    let mut expr_inner = list_pair.clone().into_inner();
+    let mut expr_inner = target_pair.clone().into_inner();
     if let Some(first) = expr_inner.next() {
       if first.as_rule() == Rule::List {
         first.into_inner().filter(|p| p.as_str() != ",").collect()
       } else {
         return Err(InterpreterError::EvaluationError(
-          "Second argument of Map must be a list".into(),
+          "Second argument of Map must be a list or association".into(),
         ));
       }
     } else {
       return Err(InterpreterError::EvaluationError(
-        "Second argument of Map must be a list".into(),
+        "Second argument of Map must be a list or association".into(),
       ));
     }
   } else {
     return Err(InterpreterError::EvaluationError(
-      "Second argument of Map must be a list".into(),
+      "Second argument of Map must be a list or association".into(),
     ));
   };
 
