@@ -119,6 +119,7 @@ make test
 
 ## Related
 
+- [cas3] - Minimal implementation of a Mathematica kernel in Rust.
 - [CodeParser] - Parse Wolfram Language as AST or CST.
 - [Mastika] - Rust-based implementation of Wolfram Mathematica.
 - [MMA Clone] - Simple Wolfram Language clone in Haskell.
@@ -130,6 +131,7 @@ make test
 - [wolfram-expr] - Representing Wolfram Language expressions in Rust.
 - [Wolfram-Language-Parser] - Wolfram Language parser in Java.
 
+[cas3]: https://github.com/anandijain/cas3.rs
 [CodeParser]: https://github.com/WolframResearch/codeparser
 [Mastika]: https://crates.io/crates/mastika
 [MMA Clone]: https://github.com/mrtwistor/mmaclone
