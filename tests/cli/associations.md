@@ -1,6 +1,6 @@
 # Associations
 
-```todo
+```scrut
 $ wo '<|"Green" -> 2, "Red" -> 1|>'
 <|Green -> 2, Red -> 1|>
 ```
@@ -18,12 +18,12 @@ $ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Green"]]'
 2
 ```
 
-```todo
+```scrut
 $ wo 'myHash = <|1 -> "Red", 2 -> "Green"|>; myHash[[1]]'
 Red
 ```
 
-```todo
+```scrut
 $ wo 'assoc = <|"a" -> True, "b" -> False|>; assoc[["b"]]'
 False
 ```
