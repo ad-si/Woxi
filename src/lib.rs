@@ -207,7 +207,15 @@ fn eval_association(
     let key_pair = inner.next().unwrap();
     let val_pair = inner.next().unwrap();
     let key = extract_string(key_pair)?;
-    let val = evaluate_expression(val_pair)?;
+    let raw = val_pair.as_str().trim();
+    let val = if raw.starts_with('"') && raw.ends_with('"') {
+        raw.trim_matches('"').to_string()
+    } else if raw.starts_with("<|") && raw.ends_with("|>") {
+        let (_nested, nested_disp) = eval_association(val_pair.clone())?;
+        nested_disp
+    } else {
+        raw.to_string()
+    };
     disp_parts.push(format!("{} -> {}", key, val));
     pairs.push((key, val));
   }

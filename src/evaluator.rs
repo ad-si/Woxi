@@ -80,7 +80,12 @@ pub fn evaluate_expression(
       let id_pair = inner.next().unwrap();
       let key_pair = inner.next().unwrap();
       let name = id_pair.as_str();
-      let key = extract_string(key_pair)?;
+      let raw = key_pair.as_str().trim();
+      let key = if raw.starts_with('"') && raw.ends_with('"') {
+        raw.trim_matches('"').to_string()
+      } else {
+        raw.to_string()
+      };
       if let Some(StoredValue::Association(vec)) =
         ENV.with(|e| e.borrow().get(name).cloned())
       {
@@ -111,10 +116,21 @@ pub fn evaluate_expression(
       ))
     }
     Rule::Expression => {
+      {
+        let mut expr_inner = expr.clone().into_inner();
+        if let Some(first) = expr_inner.next() {
+          if expr_inner.next().is_none() && first.as_rule() == Rule::PartExtract {
+            return evaluate_expression(first);
+          }
+        }
+      }
       // --- special case: Map operator ----------------------------------
       {
         let items: Vec<_> = expr.clone().into_inner().collect();
-
+        if items.len() == 1 && items[0].as_rule() == Rule::Association {
+          let (_pairs, disp) = eval_association(items[0].clone())?;
+          return Ok(disp);
+        }
         // Handle operators for function application
         if items.len() == 3 && items[1].as_rule() == Rule::Operator {
           // Handle @ operator (prefix notation)
