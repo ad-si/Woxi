@@ -7,6 +7,7 @@ use thiserror::Error;
 
 pub mod evaluator;
 pub mod functions;
+pub mod syntax;
 
 #[derive(Parser)]
 #[grammar = "wolfram.pest"]
@@ -209,12 +210,12 @@ fn eval_association(
     let key = extract_string(key_pair)?;
     let raw = val_pair.as_str().trim();
     let val = if raw.starts_with('"') && raw.ends_with('"') {
-        raw.trim_matches('"').to_string()
+      raw.trim_matches('"').to_string()
     } else if raw.starts_with("<|") && raw.ends_with("|>") {
-        let (_nested, nested_disp) = eval_association(val_pair.clone())?;
-        nested_disp
+      let (_nested, nested_disp) = eval_association(val_pair.clone())?;
+      nested_disp
     } else {
-        raw.to_string()
+      raw.to_string()
     };
     disp_parts.push(format!("{} -> {}", key, val));
     pairs.push((key, val));

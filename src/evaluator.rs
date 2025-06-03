@@ -1,3 +1,4 @@
+use crate::syntax::{str_to_wonum, wonum_to_number_str, WoNum, AST};
 use crate::{
   apply_map_operator, eval_association, extract_string, format_result,
   functions, interpret, store_function_definition, InterpreterError, Rule,
@@ -5,6 +6,39 @@ use crate::{
 };
 
 pub fn evaluate_expression(
+  expr: pest::iterators::Pair<Rule>,
+) -> Result<String, InterpreterError> {
+  let mut inner = expr.clone().into_inner();
+  if inner.len() == 3 {
+    if let (Some(a), Some(b), Some(c)) =
+      (inner.next(), inner.next(), inner.next())
+    {
+      if a.as_rule() == Rule::NumericValue
+        && b.as_rule() == Rule::Operator
+        && c.as_rule() == Rule::NumericValue
+        && b.as_span().as_str() == "+"
+      {
+        return evaluate_ast(AST::Plus(vec![
+          str_to_wonum(a.as_span().as_str()),
+          str_to_wonum(c.as_span().as_str()),
+        ]));
+      }
+    }
+  }
+  evaluate_pairs(expr)
+}
+
+pub fn evaluate_ast(ast: AST) -> Result<String, InterpreterError> {
+  Ok(wonum_to_number_str(match ast {
+    AST::Plus(nums) => nums.into_iter().sum(),
+
+    AST::Times(wo_nums) => wo_nums
+      .into_iter()
+      .fold(WoNum::Float(1.0), |acc, wo_num| acc * wo_num),
+  }))
+}
+
+pub fn evaluate_pairs(
   expr: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   match expr.as_rule() {
@@ -119,7 +153,8 @@ pub fn evaluate_expression(
       {
         let mut expr_inner = expr.clone().into_inner();
         if let Some(first) = expr_inner.next() {
-          if expr_inner.next().is_none() && first.as_rule() == Rule::PartExtract {
+          if expr_inner.next().is_none() && first.as_rule() == Rule::PartExtract
+          {
             return evaluate_expression(first);
           }
         }
