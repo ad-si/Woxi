@@ -12,11 +12,16 @@ mod interpreter_tests {
       #[test]
       fn addition() {
         assert_eq!(interpret("1 + 2").unwrap(), "3");
+        assert_eq!(interpret("1 + 2 + 3").unwrap(), "6");
+        assert_eq!(interpret("(1 + 2) + 3").unwrap(), "6");
+        assert_eq!(interpret("1 + (2 + 3)").unwrap(), "6");
+        assert_eq!(interpret("(1 + 2 + 3)").unwrap(), "6");
       }
 
       #[test]
       fn subtraction() {
         assert_eq!(interpret("3 - 1").unwrap(), "2");
+        assert_eq!(interpret("7 - 3 - 1").unwrap(), "3");
       }
 
       #[test]

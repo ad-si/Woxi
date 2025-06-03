@@ -16,14 +16,17 @@ pub fn map_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   let target_pair = &args_pairs[1];
 
   // Check if the second argument is an association
-  if let Ok(assoc) = crate::functions::association::get_assoc_from_first_arg(&[target_pair.clone()]) {
+  if let Ok(assoc) = crate::functions::association::get_assoc_from_first_arg(&[
+    target_pair.clone(),
+  ]) {
     // Map over association values
     let func_src = func_pair.as_str();
     let mut mapped_pairs = Vec::new();
 
     for (key, value) in assoc {
-      let mapped_val = if func_pair.as_rule() == Rule::AnonymousFunction 
-        || (func_src.contains('#') && func_src.ends_with('&')) {
+      let mapped_val = if func_pair.as_rule() == Rule::AnonymousFunction
+        || (func_src.contains('#') && func_src.ends_with('&'))
+      {
         // Handle anonymous functions like #^2&
         let mut expr = func_src.trim_end_matches('&').to_string();
         expr = expr.replace('#', &value);
