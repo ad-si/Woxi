@@ -17,6 +17,7 @@ Xor,Checks if exactly one condition is true,✅
 AllTrue,Checks if all elements in a list are true,🚧
 Append,Adds an element to the end of a list,🚧
 Ceiling,Returns the smallest integer greater than or equal to a number,🚧
+CreateFile, Creates a file with a name or a random file in the default area for temporary files,🚧
 DateString,Returns a string representing the current local date and time,🚧
 Divide,Divide numbers,🚧
 Drop,Returns the list without its first n elements,🚧
@@ -1451,7 +1452,6 @@ CreateDataSystemModel,,
 CreateDialog,,
 CreateDirectory,,
 CreateDocument,,
-CreateFile,,
 CreateForeignCallback,,
 CreateIntermediateDirectories,,
 CreateLicenseEntitlement,,

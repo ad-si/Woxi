@@ -1,4 +1,5 @@
 use crate::syntax::{str_to_wonum, wonum_to_number_str, WoNum, AST};
+use crate::utils::create_file;
 use crate::{
   apply_map_operator, eval_association, extract_string, format_result,
   functions, interpret, store_function_definition, InterpreterError, Rule,
@@ -9,6 +10,24 @@ pub fn evaluate_expression(
   expr: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   let mut inner = expr.clone().into_inner();
+
+  if let Some(fun_call) = inner.next() {
+    if fun_call.as_rule() == Rule::FunctionCall {
+      let mut idents = fun_call.clone().into_inner();
+      if let Some(ident) = idents.next() {
+        if ident.as_span().as_str() == "CreateFile" {
+          let filename_opt = idents
+            .next()
+            .map(|pair| pair.as_span().as_str().replace("\"", ""));
+          return match create_file(filename_opt) {
+            Ok(path) => Ok(path.to_string_lossy().into_owned()),
+            Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
+          };
+        }
+      }
+    }
+  };
+
   if inner.len() == 3 {
     if let (Some(a), Some(b), Some(c)) =
       (inner.next(), inner.next(), inner.next())
@@ -29,13 +48,20 @@ pub fn evaluate_expression(
 }
 
 pub fn evaluate_ast(ast: AST) -> Result<String, InterpreterError> {
-  Ok(wonum_to_number_str(match ast {
-    AST::Plus(nums) => nums.into_iter().sum(),
+  Ok(match ast {
+    AST::Plus(nums) => wonum_to_number_str(nums.into_iter().sum()),
 
-    AST::Times(wo_nums) => wo_nums
-      .into_iter()
-      .fold(WoNum::Float(1.0), |acc, wo_num| acc * wo_num),
-  }))
+    AST::Times(wo_nums) => wonum_to_number_str(
+      wo_nums
+        .into_iter()
+        .fold(WoNum::Float(1.0), |acc, wo_num| acc * wo_num),
+    ),
+
+    AST::CreateFile(filename_opt) => match create_file(filename_opt) {
+      Ok(filename) => filename.to_string_lossy().into_owned(),
+      Err(err_msg) => err_msg.to_string(),
+    },
+  })
 }
 
 pub fn evaluate_pairs(

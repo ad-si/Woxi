@@ -82,4 +82,5 @@ pub fn str_to_wonum(num_str: &str) -> WoNum {
 pub enum AST {
   Plus(Vec<WoNum>),
   Times(Vec<WoNum>),
+  CreateFile(Option<String>),
 }

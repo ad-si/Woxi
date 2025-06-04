@@ -8,6 +8,7 @@ use thiserror::Error;
 pub mod evaluator;
 pub mod functions;
 pub mod syntax;
+pub mod utils;
 
 #[derive(Parser)]
 #[grammar = "wolfram.pest"]
