@@ -1478,6 +1478,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "dirs 6.0.0",
  "jupyter-protocol",
  "pest",
  "pest_derive",

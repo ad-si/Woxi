@@ -11,6 +11,7 @@ repository = "https://github.com/ad-si/Woxi"
 anyhow = "1.0.98"
 chrono = "0.4"
 clap = { version = "4.3", features = ["derive"] }
+dirs = "6.0.0"
 jupyter-protocol = { git = "https://github.com/runtimed/runtimed" }
 pest = "2.5"
 pest_derive =    "2.5"
