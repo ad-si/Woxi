@@ -2,17 +2,17 @@
 
 ## `CreateFile[]`
 
-```scrut
+```todo
 $ wo 'CreateFile[]'
 /tmp/jPkMRlkrANhVyelJ
 ```
 
-```scrut
+```todo
 $ rm -f /Users/adrian/Dropbox/Projects/Woxi/_delete_me_ && wo 'CreateFile["_delete_me_"]'
 /Users/adrian/Dropbox/Projects/Woxi/_delete_me_
 ```
 
-```scrut
-$ wo 'a := CreateFile[]; a'
+```todo
+$ wo 'a = CreateFile[]; a'
 /tmp/jPkMRlkrANhVyelJ
 ```
