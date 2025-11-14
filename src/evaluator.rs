@@ -266,11 +266,56 @@ pub fn evaluate_pairs(
         if items.len() >= 3 && items[1].as_rule() == Rule::Operator {
           match items[1].as_str() {
             "=" => {
-              // LHS must be an identifier
               let lhs = items[0].clone();
+
+              // Handle association update: myHash[["key"]] = value
+              if lhs.as_rule() == Rule::PartExtract {
+                let mut lhs_inner = lhs.into_inner();
+                let ident = lhs_inner.next().unwrap();
+                let key_expr = lhs_inner.next().unwrap();
+                let var_name = ident.as_str().to_string();
+                let key = extract_string(key_expr)?;
+
+                // Evaluate RHS
+                let rhs_value = evaluate_pairs(items[2].clone())?;
+
+                // Update or add the key in the association
+                ENV.with(|e| {
+                  let mut env = e.borrow_mut();
+                  if let Some(StoredValue::Association(ref mut pairs)) = env.get_mut(&var_name) {
+                    // Update existing key or add new key
+                    if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
+                      pair.1 = rhs_value.clone();
+                    } else {
+                      pairs.push((key.clone(), rhs_value.clone()));
+                    }
+                  } else {
+                    return Err(InterpreterError::EvaluationError(
+                      format!("{} is not an association", var_name)
+                    ));
+                  }
+                  Ok(())
+                })?;
+
+                // Return the updated association
+                return ENV.with(|e| {
+                  let env = e.borrow();
+                  if let Some(StoredValue::Association(pairs)) = env.get(&var_name) {
+                    let disp_parts: Vec<String> = pairs
+                      .iter()
+                      .map(|(k, v)| format!("{} -> {}", k, v))
+                      .collect();
+                    Ok(format!("<|{}|>", disp_parts.join(", ")))
+                  } else {
+                    Err(InterpreterError::EvaluationError("Variable not found".into()))
+                  }
+                });
+              }
+
+              // LHS must be an identifier for regular assignment
               if lhs.as_rule() != Rule::Identifier {
                 return Err(InterpreterError::EvaluationError(
-                  "Left-hand side of assignment must be an identifier".into(),
+                  "Left-hand side of assignment must be an identifier or part extract".into(),
                 ));
               }
               let name = lhs.as_str().to_string();
