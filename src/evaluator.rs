@@ -35,12 +35,45 @@ pub fn evaluate_expression(
       if a.as_rule() == Rule::NumericValue
         && b.as_rule() == Rule::Operator
         && c.as_rule() == Rule::NumericValue
-        && b.as_span().as_str() == "+"
       {
-        return evaluate_ast(AST::Plus(vec![
-          str_to_wonum(a.as_span().as_str()),
-          str_to_wonum(c.as_span().as_str()),
-        ]));
+        let op = b.as_span().as_str();
+        match op {
+          "+" => {
+            return evaluate_ast(AST::Plus(vec![
+              str_to_wonum(a.as_span().as_str()),
+              str_to_wonum(c.as_span().as_str()),
+            ]));
+          }
+          "*" => {
+            return evaluate_ast(AST::Times(vec![
+              str_to_wonum(a.as_span().as_str()),
+              str_to_wonum(c.as_span().as_str()),
+            ]));
+          }
+          "-" => {
+            return evaluate_ast(AST::Plus(vec![
+              str_to_wonum(a.as_span().as_str()),
+              -str_to_wonum(c.as_span().as_str()),
+            ]));
+          }
+          "/" => {
+            let divisor = str_to_wonum(c.as_span().as_str());
+            let is_zero = match divisor {
+              WoNum::Int(i) => i == 0,
+              WoNum::Float(f) => f == 0.0,
+            };
+            if is_zero {
+              return Err(InterpreterError::EvaluationError(
+                "Division by zero".into(),
+              ));
+            }
+            return evaluate_ast(AST::Divide(vec![
+              str_to_wonum(a.as_span().as_str()),
+              divisor,
+            ]));
+          }
+          _ => {}
+        }
       }
     }
   }
@@ -56,6 +89,56 @@ pub fn evaluate_ast(ast: AST) -> Result<String, InterpreterError> {
         .into_iter()
         .fold(WoNum::Float(1.0), |acc, wo_num| acc * wo_num),
     ),
+
+    AST::Minus(wo_nums) => {
+      if wo_nums.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Minus expects at least 1 argument".into(),
+        ));
+      }
+      if wo_nums.len() == 1 {
+        // Unary minus
+        wonum_to_number_str(-wo_nums.into_iter().next().unwrap())
+      } else {
+        // Multiple arguments - wrong arity, follow old behavior
+        use std::io::{self, Write};
+        println!(
+          "\nMinus::argx: Minus called with {} arguments; 1 argument is expected.",
+          wo_nums.len()
+        );
+        io::stdout().flush().ok();
+        // Return the expression with minus signs
+        let parts: Vec<String> = wo_nums.iter().map(|w| wonum_to_number_str(w.clone())).collect();
+        parts.join(" − ")
+      }
+    }
+
+    AST::Divide(wo_nums) => {
+      if wo_nums.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Divide expects exactly 2 arguments".into(),
+        ));
+      }
+      let mut iter = wo_nums.into_iter();
+      let a = iter.next().unwrap();
+      let b = iter.next().unwrap();
+      wonum_to_number_str(a / b)
+    }
+
+    AST::Abs(wo_num) => wonum_to_number_str(wo_num.abs()),
+
+    AST::Sign(wo_num) => wo_num.sign().to_string(),
+
+    AST::Sqrt(wo_num) => match wo_num.sqrt() {
+      Ok(result) => wonum_to_number_str(result),
+      Err(msg) => return Err(InterpreterError::EvaluationError(msg)),
+    },
+
+    AST::Floor(wo_num) => wonum_to_number_str(wo_num.floor()),
+
+    AST::Ceiling(wo_num) => wonum_to_number_str(wo_num.ceiling()),
+
+    AST::Round(wo_num) => wonum_to_number_str(wo_num.round()),
 
     AST::CreateFile(filename_opt) => match create_file(filename_opt) {
       Ok(filename) => filename.to_string_lossy().into_owned(),
@@ -694,6 +777,19 @@ pub fn evaluate_pairs(
   }
 }
 
+/// Convert function arguments to WoNum for AST construction
+pub fn args_to_wonums(
+  args_pairs: &[pest::iterators::Pair<Rule>],
+) -> Result<Vec<WoNum>, InterpreterError> {
+  args_pairs
+    .iter()
+    .map(|pair| {
+      let value = evaluate_expression(pair.clone())?;
+      Ok(str_to_wonum(&value))
+    })
+    .collect()
+}
+
 pub fn evaluate_term(
   term: pest::iterators::Pair<Rule>,
 ) -> Result<f64, InterpreterError> {
@@ -1060,15 +1156,87 @@ fn evaluate_function_call(
     // Numeric Functions
     "Sin" => functions::numeric::sin(&args_pairs),
     "Prime" => functions::numeric::prime(&args_pairs),
-    "Plus" => functions::numeric::plus(&args_pairs),
-    "Times" => functions::numeric::times(&args_pairs),
-    "Minus" => functions::numeric::minus(&args_pairs),
-    "Abs" => functions::numeric::abs(&args_pairs),
-    "Sign" => functions::numeric::sign(&args_pairs),
-    "Sqrt" => functions::numeric::sqrt(&args_pairs),
-    "Floor" => functions::numeric::floor(&args_pairs),
-    "Ceiling" => functions::numeric::ceiling(&args_pairs),
-    "Round" => functions::numeric::round(&args_pairs),
+    "Plus" => {
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Plus expects at least 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Plus(wonums))
+    }
+    "Times" => {
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Times expects at least 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Times(wonums))
+    }
+    "Minus" => {
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Minus expects at least 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Minus(wonums))
+    }
+    "Abs" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Abs expects exactly 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Abs(wonums.into_iter().next().unwrap()))
+    }
+    "Sign" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Sign expects exactly 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Sign(wonums.into_iter().next().unwrap()))
+    }
+    "Sqrt" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Sqrt expects exactly 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Sqrt(wonums.into_iter().next().unwrap()))
+    }
+    "Floor" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Floor expects exactly 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Floor(wonums.into_iter().next().unwrap()))
+    }
+    "Ceiling" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Ceiling expects exactly 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Ceiling(wonums.into_iter().next().unwrap()))
+    }
+    "Round" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Round expects exactly 1 argument".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      evaluate_ast(AST::Round(wonums.into_iter().next().unwrap()))
+    }
 
     "Equal" => functions::math::equal(&args_pairs),
     "Unequal" => functions::math::unequal(&args_pairs),
@@ -1110,7 +1278,28 @@ fn evaluate_function_call(
 
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),
-    "Divide" => functions::math::divide(&args_pairs, &call_text),
+    "Divide" => {
+      if args_pairs.len() != 2 {
+        use std::io::{self, Write};
+        println!(
+          "\nDivide::argrx: Divide called with {} arguments; 2 arguments are expected.",
+          args_pairs.len()
+        );
+        io::stdout().flush().ok();
+        return Ok(call_text.to_string()); // return unevaluated expression
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      // Check for division by zero
+      let divisor = &wonums[1];
+      let is_zero = match divisor {
+        WoNum::Int(i) => *i == 0,
+        WoNum::Float(f) => *f == 0.0,
+      };
+      if is_zero {
+        return Err(InterpreterError::EvaluationError("Division by zero".into()));
+      }
+      evaluate_ast(AST::Divide(wonums))
+    }
 
     // Basic Functions
     "Select" => functions::list_helpers::select(&args_pairs),
