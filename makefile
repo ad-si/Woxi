@@ -54,7 +54,7 @@ install:
 
 .PHONY: docs/serve
 docs/serve:
-	mdbook serve ./tests
+	mdbook serve --port 5501 ./tests
 
 
 .PHONY: docs/build

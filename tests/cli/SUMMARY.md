@@ -14,3 +14,5 @@
   - [Symbolic](symbolic.md)
   - [Replacement Rules](replacement_rules.md)
 - [Jupyter](jupyter.md)
+- [Resources](resources.md)
+- [Related](related.md)
