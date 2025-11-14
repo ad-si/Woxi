@@ -29,16 +29,19 @@ False
 ```
 
 
-## Set Values
+## Update Values
 
 ```scrut
-$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Green"]] := 5'
-Null
+$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Green"]] = 5; myHash'
+<|Green -> 5, Red -> 1|>
 ```
 
+
+## Add Values
+
 ```scrut
-$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Puce"]] := 3.5'
-Null
+$ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Puce"]] = 3.5; myHash'
+<|Green -> 2, Red -> 1, Puce -> 3.5|>
 ```
 
 
