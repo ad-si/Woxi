@@ -44,12 +44,12 @@ test: test-unit test-cli test-shebang
 format:
 	cargo clippy --fix --allow-dirty > /dev/null 2>&1
 	cargo fmt
-	nix fmt
+	# nix fmt
 
 
 .PHONY: install
 install:
-	cargo install --offline --path .
+	cargo install --path .
 
 
 .PHONY: docs/serve
