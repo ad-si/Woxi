@@ -218,3 +218,47 @@ pub fn round(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   }
   Ok(format_result(r))
 }
+
+/// Handle Max[x1, x2, ...] or Max[{x1, x2, ...}] - returns the maximum value
+pub fn max(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  // ── arity check ──────────────────────────────────────────────────────
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Max expects at least 1 argument".into(),
+    ));
+  }
+
+  // ── collect values to compare ────────────────────────────────────────
+  let values: Vec<f64> = if args_pairs.len() == 1 {
+    // Check if the single argument is a list
+    let first_pair = &args_pairs[0];
+    if let Ok(items) = crate::functions::list::get_list_items(first_pair) {
+      // It's a list - evaluate all items
+      if items.is_empty() {
+        // Max[{}] returns -Infinity
+        return Ok("-Infinity".to_string());
+      }
+      items
+        .iter()
+        .map(|item| evaluate_term(item.clone()))
+        .collect::<Result<Vec<_>, _>>()?
+    } else {
+      // Not a list - just a single value
+      vec![evaluate_term(first_pair.clone())?]
+    }
+  } else {
+    // Multiple arguments - evaluate each one
+    args_pairs
+      .iter()
+      .map(|ap| evaluate_term(ap.clone()))
+      .collect::<Result<Vec<_>, _>>()?
+  };
+
+  // ── find maximum ─────────────────────────────────────────────────────
+  let max_val = values
+    .iter()
+    .fold(f64::NEG_INFINITY, |acc, &x| acc.max(x));
+
+  // ── return formatted result ──────────────────────────────────────────
+  Ok(format_result(max_val))
+}

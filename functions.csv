@@ -3707,7 +3707,7 @@ MatrixQ,,
 MatrixRank,,
 MatrixSymbol,,
 MatrixTDistribution,,
-Max,,
+Max,Returns the maximum value from a set of arguments or a list,✅
 MaxCellMeasure,,
 MaxColorDistance,,
 MaxDate,,
