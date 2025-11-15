@@ -517,6 +517,47 @@ pub fn differences(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError
   Ok(format!("{{{}}}", result.join(", ")))
 }
 
+/// Handle Median[list] - Returns the median value of a list
+pub fn median(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Median expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Median of an empty list is undefined".into(),
+    ));
+  }
+
+  // Evaluate all items to numbers
+  let mut values: Vec<f64> = Vec::new();
+  for item in items {
+    let val = evaluate_term(item.clone())?;
+    values.push(val);
+  }
+
+  // Sort the values
+  values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+  // Calculate median
+  let len = values.len();
+  let median_val = if len % 2 == 1 {
+    // Odd length: return middle element
+    values[len / 2]
+  } else {
+    // Even length: return average of two middle elements
+    (values[len / 2 - 1] + values[len / 2]) / 2.0
+  };
+
+  Ok(format_result(median_val))
+}
+
 /// Handle First[list] - Return the first element of a list
 /// Handle Last[list] - Return the last element of a list
 pub fn first_or_last(
