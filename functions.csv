@@ -3752,7 +3752,7 @@ MeanPointDensity,,
 MeanShift,,
 MeanShiftFilter,,
 MeanSquaredLossLayer,,
-Median,,
+Median,Returns the median value of a list,✅
 MedianDeviation,,
 MedianFilter,,
 MedicalTestData,,

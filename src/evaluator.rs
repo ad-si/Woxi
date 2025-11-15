@@ -1285,6 +1285,7 @@ fn evaluate_function_call(
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),
     "Mean" => functions::list_helpers::mean(&args_pairs),
+    "Median" => functions::list_helpers::median(&args_pairs),
     "Product" => functions::list_helpers::product(&args_pairs),
     "Accumulate" => functions::list_helpers::accumulate(&args_pairs),
     "Differences" => functions::list_helpers::differences(&args_pairs),
