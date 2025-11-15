@@ -1284,6 +1284,7 @@ fn evaluate_function_call(
 
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),
+    "Mean" => functions::list_helpers::mean(&args_pairs),
     "Divide" => {
       if args_pairs.len() != 2 {
         use std::io::{self, Write};

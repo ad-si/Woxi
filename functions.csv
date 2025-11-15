@@ -3739,7 +3739,7 @@ MaxValue,,
 MaxwellDistribution,,
 MaxWordGap,,
 McLaughlinGroupMcL,,
-Mean,,
+Mean,Calculates the arithmetic mean (average) of a list,✅
 MeanAbsoluteLossLayer,,
 MeanAround,,
 MeanClusteringCoefficient,,
