@@ -1248,6 +1248,7 @@ fn evaluate_function_call(
     "LessEqual" => functions::math::less_equal(&args_pairs),
 
     "NumberQ" => functions::predicate::number_q(&args_pairs),
+    "IntegerQ" => functions::predicate::integer_q(&args_pairs),
     "EvenQ" => functions::predicate::even_odd_q(&args_pairs, "EvenQ"),
     "OddQ" => functions::predicate::even_odd_q(&args_pairs, "OddQ"),
 

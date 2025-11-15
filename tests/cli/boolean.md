@@ -448,6 +448,56 @@ If[True, 1, 0, 2, 3]
 ```
 
 
+## `IntegerQ`
+
+Check if a value is an integer.
+
+```scrut
+$ wo 'IntegerQ[5]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[0]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[-7]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[3.0]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[3.5]'
+False
+```
+
+```scrut
+$ wo 'IntegerQ[1.2]'
+False
+```
+
+```scrut
+$ wo 'IntegerQ[-0.5]'
+False
+```
+
+```scrut
+$ wo 'IntegerQ[0.0]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[a]'
+False
+```
+
+
 ## `EvenQ`
 
 Check if a number is even.
