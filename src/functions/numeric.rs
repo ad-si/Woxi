@@ -328,3 +328,39 @@ pub fn modulo(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   let result = m - n * (m / n).floor();
   Ok(format_result(result))
 }
+
+/// Handle Power[x, y] - Returns x raised to the power y
+pub fn power(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Power expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let base = evaluate_term(args_pairs[0].clone())?;
+  let exponent = evaluate_term(args_pairs[1].clone())?;
+
+  // Handle special cases
+  if base == 0.0 && exponent < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Power: division by zero (0^negative)".into(),
+    ));
+  }
+
+  let result = base.powf(exponent);
+
+  // Check for NaN or infinity results
+  if result.is_nan() {
+    return Err(InterpreterError::EvaluationError(
+      "Power: result is undefined (possibly negative base with fractional exponent)".into(),
+    ));
+  }
+
+  if result.is_infinite() {
+    return Err(InterpreterError::EvaluationError(
+      "Power: result is infinite".into(),
+    ));
+  }
+
+  Ok(format_result(result))
+}

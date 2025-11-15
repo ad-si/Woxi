@@ -583,3 +583,95 @@ Randomly gives 50 numbers between 1 and 6.
 $ wo 'AllTrue[RandomInteger[{1, 6}, 50], 1 <= # <= 6 &]'
 True
 ```
+
+
+## `Power`
+
+### `Power[2, 3]`
+
+2 raised to the power of 3 equals 8.
+
+```scrut
+$ wo 'Power[2, 3]'
+8
+```
+
+
+### `Power[5, 0]`
+
+Any number raised to the power of 0 equals 1.
+
+```scrut
+$ wo 'Power[5, 0]'
+1
+```
+
+
+### `Power[2, -1]`
+
+2 raised to the power of -1 equals 0.5 (1/2).
+
+```scrut
+$ wo 'Power[2, -1]'
+0.5
+```
+
+
+### `Power[4, 0.5]`
+
+4 raised to the power of 0.5 equals 2 (square root).
+
+```scrut
+$ wo 'Power[4, 0.5]'
+2
+```
+
+
+### `Power[10, 2]`
+
+10 raised to the power of 2 equals 100.
+
+```scrut
+$ wo 'Power[10, 2]'
+100
+```
+
+
+### `Power[-2, 3]`
+
+-2 raised to the power of 3 equals -8.
+
+```scrut
+$ wo 'Power[-2, 3]'
+-8
+```
+
+
+### `Power[-2, 2]`
+
+-2 raised to the power of 2 equals 4.
+
+```scrut
+$ wo 'Power[-2, 2]'
+4
+```
+
+
+### `Power[27, 1/3]`
+
+27 raised to the power of 1/3 equals approximately 3 (cube root).
+
+```scrut
+$ wo 'Power[27, 1/3]'
+2.9999999997
+```
+
+
+### `Power[1.5, 2.5]`
+
+1.5 raised to the power of 2.5 equals approximately 2.756.
+
+```scrut
+$ wo 'Power[1.5, 2.5]'
+2.7556759606
+```
