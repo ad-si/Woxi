@@ -430,6 +430,32 @@ pub fn mean(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok(format_result(mean_val))
 }
 
+/// Handle Product[list] - Multiply all elements in a list
+pub fn product(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Product expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    // Product of empty list is 1 (multiplicative identity)
+    return Ok("1".to_string());
+  }
+
+  let mut product = 1.0;
+  for item in items {
+    let val = evaluate_term(item.clone())?;
+    product *= val;
+  }
+
+  Ok(format_result(product))
+}
+
 /// Handle First[list] - Return the first element of a list
 /// Handle Last[list] - Return the last element of a list
 pub fn first_or_last(
