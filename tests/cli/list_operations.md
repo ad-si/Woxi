@@ -262,6 +262,51 @@ $ wo 'Join[{1, 2}, {3.14, 2.71}]'
 ```
 
 
+## `Sort`
+
+Sorts a list in ascending order.
+
+```scrut
+$ wo 'Sort[{3, 1, 4, 1, 5, 9, 2, 6}]'
+{1, 1, 2, 3, 4, 5, 6, 9}
+```
+
+```scrut
+$ wo 'Sort[{5, 2, 8, 1, 9}]'
+{1, 2, 5, 8, 9}
+```
+
+```scrut
+$ wo 'Sort[{1}]'
+{1}
+```
+
+```scrut
+$ wo 'Sort[{}]'
+{}
+```
+
+```scrut
+$ wo 'Sort[{-5, 3, 0, -2, 7}]'
+{-5, -2, 0, 3, 7}
+```
+
+```scrut
+$ wo 'Sort[{3.14, 2.71, 1.41, 2.23}]'
+{1.41, 2.23, 2.71, 3.14}
+```
+
+```scrut
+$ wo 'Sort[{10, 5, 15, 5, 20}]'
+{5, 5, 10, 15, 20}
+```
+
+```scrut
+$ wo 'Sort[{-10, -5, -15, -20}]'
+{-20, -15, -10, -5}
+```
+
+
 ## `Map`
 
 Applies a function to each element of a list.

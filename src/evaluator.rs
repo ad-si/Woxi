@@ -1280,6 +1280,7 @@ fn evaluate_function_call(
     "Reverse" => functions::list::reverse(&args_pairs),
     "Range" => functions::list::range(&args_pairs),
     "Join" => functions::list::join(&args_pairs),
+    "Sort" => functions::list::sort(&args_pairs),
 
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),

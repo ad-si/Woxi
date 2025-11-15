@@ -5307,7 +5307,7 @@ SolidRegionQ,,
 Solve,,
 SolveAlways,,
 SolveValues,,
-Sort,,
+Sort,Sorts a list in ascending order,✅
 SortBy,,
 SortedBy,,
 SortedEntityClass,,

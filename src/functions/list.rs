@@ -430,3 +430,38 @@ pub fn join(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format!("{{{}}}", all_elements.join(", ")))
 }
+
+/// Handle Sort[list] - sorts a list in ascending order
+pub fn sort(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Sort expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = get_list_items(list_pair)?;
+
+  // Evaluate all items and try to parse as numbers
+  let mut values: Vec<(f64, String)> = Vec::new();
+  for item in items {
+    let evaluated = evaluate_expression(item)?;
+    // Try to parse as number
+    if let Ok(num) = evaluated.parse::<f64>() {
+      values.push((num, evaluated));
+    } else {
+      // If not a number, return error (matching Wolfram behavior for non-numeric sorts)
+      return Err(InterpreterError::EvaluationError(
+        "Sort expects numeric values".into(),
+      ));
+    }
+  }
+
+  // Sort by numeric value
+  values.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+  // Extract the formatted strings
+  let sorted: Vec<String> = values.into_iter().map(|(_, s)| s).collect();
+
+  Ok(format!("{{{}}}", sorted.join(", ")))
+}
