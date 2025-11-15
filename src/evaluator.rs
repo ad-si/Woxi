@@ -1278,6 +1278,7 @@ fn evaluate_function_call(
     "Part" => functions::list::part(&args_pairs),
     "Length" => functions::list::length(&args_pairs),
     "Reverse" => functions::list::reverse(&args_pairs),
+    "Range" => functions::list::range(&args_pairs),
 
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),
