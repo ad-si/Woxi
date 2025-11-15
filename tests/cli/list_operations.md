@@ -392,6 +392,61 @@ $ wo 'Mean[{-10, -5, 0, 5, 10}]'
 ```
 
 
+## `Product`
+
+Multiplies all the elements of a list together.
+
+```scrut
+$ wo 'Product[{1, 2, 3}]'
+6
+```
+
+```scrut
+$ wo 'Product[{2, 3, 4}]'
+24
+```
+
+```scrut
+$ wo 'Product[{1, 2, 3, 4, 5}]'
+120
+```
+
+```scrut
+$ wo 'Product[{5}]'
+5
+```
+
+```scrut
+$ wo 'Product[{}]'
+1
+```
+
+```scrut
+$ wo 'Product[{-2, 3}]'
+-6
+```
+
+```scrut
+$ wo 'Product[{-2, -3}]'
+6
+```
+
+```scrut
+$ wo 'Product[{2, 0, 5}]'
+0
+```
+
+```scrut
+$ wo 'Product[{1.5, 2}]'
+3
+```
+
+```scrut
+$ wo 'Product[{2, 2.5}]'
+5
+```
+
+
 ## `Cases`
 
 Extracts elements from an expression that match a pattern.
