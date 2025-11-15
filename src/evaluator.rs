@@ -1239,6 +1239,7 @@ fn evaluate_function_call(
     }
     "Max" => functions::numeric::max(&args_pairs),
     "Min" => functions::numeric::min(&args_pairs),
+    "Mod" => functions::numeric::modulo(&args_pairs),
 
     "Equal" => functions::math::equal(&args_pairs),
     "Unequal" => functions::math::unequal(&args_pairs),
