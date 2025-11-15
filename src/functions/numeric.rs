@@ -306,3 +306,25 @@ pub fn min(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   // ── return formatted result ──────────────────────────────────────────
   Ok(format_result(min_val))
 }
+
+/// Handle Mod[m, n] - Returns the remainder when m is divided by n
+pub fn modulo(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Mod expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let m = evaluate_term(args_pairs[0].clone())?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n == 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Mod: division by zero".into(),
+    ));
+  }
+
+  // Wolfram's Mod function uses the formula: m - n * Floor[m/n]
+  let result = m - n * (m / n).floor();
+  Ok(format_result(result))
+}
