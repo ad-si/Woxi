@@ -16,7 +16,7 @@ Xor,Checks if exactly one condition is true,✅
 
 AllTrue,Checks if all elements in a list are true,🚧
 Append,Adds an element to the end of a list,🚧
-Ceiling,Returns the smallest integer greater than or equal to a number,🚧
+Ceiling,Returns the smallest integer greater than or equal to a number,✅
 CreateFile, Creates a file with a name or a random file in the default area for temporary files,🚧
 DateString,Returns a string representing the current local date and time,🚧
 Divide,Divide numbers,🚧
@@ -24,7 +24,7 @@ Drop,Returns the list without its first n elements,🚧
 EvenQ,Checks if a number is even,✅
 First,Returns the first element of a list,🚧
 Flatten,Flattens nested lists,🚧
-Floor,Returns the largest integer less than or equal to a number,🚧
+Floor,Returns the largest integer less than or equal to a number,✅
 KeyDropFrom,Removes a key-value pair from an association,🚧
 KeyExistsQ,Checks if a key exists in an association,🚧
 Keys,Returns the keys of an association,🚧
