@@ -3811,7 +3811,7 @@ MexicanHatWavelet,,
 MeyerWavelet,,
 Midpoint,,
 MIMETypeToFormatList,,
-Min,,
+Min,Returns the minimum value from a set of arguments or a list,✅
 MinColorDistance,,
 MinDate,,
 MinDetect,,
