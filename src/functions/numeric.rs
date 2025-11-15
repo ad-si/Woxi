@@ -364,3 +364,45 @@ pub fn power(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format_result(result))
 }
+
+/// Handle Factorial[n] - Returns the factorial of n (n!)
+pub fn factorial(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Factorial expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+
+  // Check if n is a non-negative integer
+  if n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Factorial: argument must be non-negative".into(),
+    ));
+  }
+
+  if n.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Factorial: argument must be an integer".into(),
+    ));
+  }
+
+  let n_int = n as u64;
+
+  // Calculate factorial
+  // For large values, we'll use f64 to avoid overflow but this means precision loss
+  let mut result = 1.0_f64;
+  for i in 2..=n_int {
+    result *= i as f64;
+
+    // Check for overflow to infinity
+    if result.is_infinite() {
+      return Err(InterpreterError::EvaluationError(
+        "Factorial: result is too large".into(),
+      ));
+    }
+  }
+
+  Ok(format_result(result))
+}

@@ -1241,6 +1241,7 @@ fn evaluate_function_call(
     "Min" => functions::numeric::min(&args_pairs),
     "Mod" => functions::numeric::modulo(&args_pairs),
     "Power" => functions::numeric::power(&args_pairs),
+    "Factorial" => functions::numeric::factorial(&args_pairs),
 
     "Equal" => functions::math::equal(&args_pairs),
     "Unequal" => functions::math::unequal(&args_pairs),
