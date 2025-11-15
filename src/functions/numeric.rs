@@ -406,3 +406,45 @@ pub fn factorial(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> 
 
   Ok(format_result(result))
 }
+
+/// Handle GCD[a, b, ...] - Returns the greatest common divisor
+pub fn gcd(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "GCD expects at least 1 argument".into(),
+    ));
+  }
+
+  // Helper function to compute GCD of two numbers using Euclidean algorithm
+  fn gcd_two(a: i64, b: i64) -> i64 {
+    let mut a = a.abs();
+    let mut b = b.abs();
+
+    while b != 0 {
+      let temp = b;
+      b = a % b;
+      a = temp;
+    }
+
+    a
+  }
+
+  // Evaluate all arguments and check they are integers
+  let mut values = Vec::new();
+  for arg in args_pairs {
+    let val = evaluate_term(arg.clone())?;
+
+    if val.fract() != 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "GCD: all arguments must be integers".into(),
+      ));
+    }
+
+    values.push(val as i64);
+  }
+
+  // Compute GCD of all values
+  let result = values.into_iter().reduce(gcd_two).unwrap();
+
+  Ok(format_result(result as f64))
+}

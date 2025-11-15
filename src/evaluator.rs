@@ -1242,6 +1242,7 @@ fn evaluate_function_call(
     "Mod" => functions::numeric::modulo(&args_pairs),
     "Power" => functions::numeric::power(&args_pairs),
     "Factorial" => functions::numeric::factorial(&args_pairs),
+    "GCD" => functions::numeric::gcd(&args_pairs),
 
     "Equal" => functions::math::equal(&args_pairs),
     "Unequal" => functions::math::unequal(&args_pairs),
