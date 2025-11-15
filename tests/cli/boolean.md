@@ -462,6 +462,71 @@ $ wo 'EvenQ[3]'
 False
 ```
 
+```scrut
+$ wo 'EvenQ[0]'
+True
+```
+
+```scrut
+$ wo 'EvenQ[-4]'
+False
+```
+
+```scrut
+$ wo 'EvenQ[-2]'
+False
+```
+
+```scrut
+$ wo 'EvenQ[100]'
+True
+```
+
+```scrut
+$ wo 'EvenQ[1.5]'
+False
+```
+
+
+## `OddQ`
+
+Check if a number is odd.
+
+```scrut
+$ wo 'OddQ[3]'
+True
+```
+
+```scrut
+$ wo 'OddQ[2]'
+False
+```
+
+```scrut
+$ wo 'OddQ[0]'
+False
+```
+
+```scrut
+$ wo 'OddQ[-3]'
+True
+```
+
+```scrut
+$ wo 'OddQ[-4]'
+True
+```
+
+```scrut
+$ wo 'OddQ[101]'
+True
+```
+
+```scrut
+$ wo 'OddQ[2.5]'
+False
+```
+
 
 ## `AllTrue`
 

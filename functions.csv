@@ -21,7 +21,7 @@ CreateFile, Creates a file with a name or a random file in the default area for 
 DateString,Returns a string representing the current local date and time,🚧
 Divide,Divide numbers,🚧
 Drop,Returns the list without its first n elements,🚧
-EvenQ,Checks if a number is even,🚧
+EvenQ,Checks if a number is even,✅
 First,Returns the first element of a list,🚧
 Flatten,Flattens nested lists,🚧
 Floor,Returns the largest integer less than or equal to a number,🚧
@@ -4200,7 +4200,7 @@ ObservableDecomposition,,
 ObservableModelQ,,
 OceanData,,
 Octahedron,,
-OddQ,,
+OddQ,Checks if a number is odd,✅
 Off,,
 Offset,,
 On,,
