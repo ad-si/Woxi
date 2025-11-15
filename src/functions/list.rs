@@ -317,3 +317,25 @@ pub fn length(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(items.len().to_string())
 }
+
+/// Handle Reverse[list] - returns a list with elements in reverse order
+pub fn reverse(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Reverse expects exactly 1 argument".into(),
+    ));
+  }
+  let list_pair = &args_pairs[0];
+  let items = get_list_items(list_pair)?;
+
+  // Reverse the items and evaluate each one
+  let mut reversed_items: Vec<_> = items.into_iter().collect();
+  reversed_items.reverse();
+
+  let evaluated: Result<Vec<_>, _> = reversed_items
+    .into_iter()
+    .map(|p| evaluate_expression(p))
+    .collect();
+
+  Ok(format!("{{{}}}", evaluated?.join(", ")))
+}

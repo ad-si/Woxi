@@ -1277,6 +1277,7 @@ fn evaluate_function_call(
     "Prepend" => functions::list::prepend(&args_pairs),
     "Part" => functions::list::part(&args_pairs),
     "Length" => functions::list::length(&args_pairs),
+    "Reverse" => functions::list::reverse(&args_pairs),
 
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),
