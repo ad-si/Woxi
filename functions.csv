@@ -52,7 +52,7 @@ StringLength,Returns the length of a string,🚧
 StringSplit,Splits a string into a list of substrings,🚧
 StringStartsQ,Checks if a string starts with a specific substring,🚧
 StringTake,Returns a substring of a string,🚧
-Take,Returns the first n elements of a list,🚧
+Take,Returns the first n elements of a list,✅
 Times,Multiply numbers,🚧
 Total,Sums the elements of a list,🚧
 Values,Returns the values of an association,🚧
