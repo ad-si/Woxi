@@ -262,3 +262,47 @@ pub fn max(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   // ── return formatted result ──────────────────────────────────────────
   Ok(format_result(max_val))
 }
+
+/// Handle Min[x1, x2, ...] or Min[{x1, x2, ...}] - returns the minimum value
+pub fn min(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  // ── arity check ──────────────────────────────────────────────────────
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Min expects at least 1 argument".into(),
+    ));
+  }
+
+  // ── collect values to compare ────────────────────────────────────────
+  let values: Vec<f64> = if args_pairs.len() == 1 {
+    // Check if the single argument is a list
+    let first_pair = &args_pairs[0];
+    if let Ok(items) = crate::functions::list::get_list_items(first_pair) {
+      // It's a list - evaluate all items
+      if items.is_empty() {
+        // Min[{}] returns Infinity
+        return Ok("Infinity".to_string());
+      }
+      items
+        .iter()
+        .map(|item| evaluate_term(item.clone()))
+        .collect::<Result<Vec<_>, _>>()?
+    } else {
+      // Not a list - just a single value
+      vec![evaluate_term(first_pair.clone())?]
+    }
+  } else {
+    // Multiple arguments - evaluate each one
+    args_pairs
+      .iter()
+      .map(|ap| evaluate_term(ap.clone()))
+      .collect::<Result<Vec<_>, _>>()?
+  };
+
+  // ── find minimum ─────────────────────────────────────────────────────
+  let min_val = values
+    .iter()
+    .fold(f64::INFINITY, |acc, &x| acc.min(x));
+
+  // ── return formatted result ──────────────────────────────────────────
+  Ok(format_result(min_val))
+}
