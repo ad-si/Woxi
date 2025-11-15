@@ -485,6 +485,38 @@ pub fn accumulate(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError>
   Ok(format!("{{{}}}", result.join(", ")))
 }
 
+/// Handle Differences[list] - Returns successive differences between elements
+pub fn differences(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Differences expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.len() <= 1 {
+    // Differences of empty list or single element is empty list
+    return Ok("{}".to_string());
+  }
+
+  let mut values: Vec<f64> = Vec::new();
+  for item in items {
+    let val = evaluate_term(item.clone())?;
+    values.push(val);
+  }
+
+  let mut result = Vec::new();
+  for i in 1..values.len() {
+    let diff = values[i] - values[i - 1];
+    result.push(format_result(diff));
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
 /// Handle First[list] - Return the first element of a list
 /// Handle Last[list] - Return the last element of a list
 pub fn first_or_last(
