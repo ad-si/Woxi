@@ -3112,7 +3112,7 @@ IntegerLength,,
 IntegerName,,
 IntegerPart,,
 IntegerPartitions,,
-IntegerQ,,
+IntegerQ,Tests if the expression evaluates to an integer,✅
 IntegerReverse,,
 Integers,,
 IntegerString,,

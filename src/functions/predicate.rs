@@ -42,3 +42,22 @@ pub fn even_odd_q(
     .to_string(),
   )
 }
+
+/// Handle IntegerQ[expr] - Tests if the expression evaluates to an integer
+pub fn integer_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Try to evaluate as a term (number)
+  let value = match evaluate_term(args_pairs[0].clone()) {
+    Ok(v) => v,
+    Err(_) => return Ok("False".to_string()), // Not a number, so not an integer
+  };
+
+  // Check if the value has no fractional part
+  let is_integer = value.fract() == 0.0 && value.is_finite();
+  Ok(if is_integer { "True" } else { "False" }.to_string())
+}
