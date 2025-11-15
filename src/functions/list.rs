@@ -408,3 +408,25 @@ pub fn range(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format!("{{{}}}", result.join(", ")))
 }
+
+/// Handle Join[list1, list2, ...] - concatenates multiple lists
+pub fn join(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Join expects at least 1 argument".into(),
+    ));
+  }
+
+  // Collect all elements from all lists
+  let mut all_elements = Vec::new();
+
+  for arg_pair in args_pairs {
+    let items = get_list_items(arg_pair)?;
+    for item in items {
+      let evaluated = evaluate_expression(item)?;
+      all_elements.push(evaluated);
+    }
+  }
+
+  Ok(format!("{{{}}}", all_elements.join(", ")))
+}

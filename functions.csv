@@ -3237,7 +3237,7 @@ JankoGroupJ3,,
 JankoGroupJ4,,
 JarqueBeraALMTest,,
 JohnsonDistribution,,
-Join,,
+Join,Concatenates multiple lists together,✅
 JoinAcross,,
 Joined,,
 JoinedCurve,,
