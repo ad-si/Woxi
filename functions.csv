@@ -4944,7 +4944,7 @@ ReturnExpressionPacket,,
 ReturnPacket,,
 ReturnReceiptFunction,,
 ReturnTextPacket,,
-Reverse,,
+Reverse,Returns a list with elements in reverse order,✅
 ReverseApplied,,
 ReverseBiorthogonalSplineWavelet,,
 ReverseElement,,
