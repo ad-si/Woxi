@@ -1707,7 +1707,7 @@ DifferenceDelta,,
 DifferenceQuotient,,
 DifferenceRoot,,
 DifferenceRootReduce,,
-Differences,,
+Differences,Returns successive differences between consecutive elements,✅
 DifferentialD,,
 DifferentialRoot,,
 DifferentialRootReduce,,
