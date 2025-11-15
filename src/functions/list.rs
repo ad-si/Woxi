@@ -339,3 +339,72 @@ pub fn reverse(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format!("{{{}}}", evaluated?.join(", ")))
 }
+
+/// Handle Range[n], Range[min, max], or Range[min, max, step] - generates a sequence of numbers
+pub fn range(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Range expects 1, 2, or 3 arguments".into(),
+    ));
+  }
+
+  let (start, end, step) = match args_pairs.len() {
+    1 => {
+      // Range[n] - generates {1, 2, ..., n}
+      let n = evaluate_term(args_pairs[0].clone())?;
+      if n.fract() != 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range argument must be an integer".into(),
+        ));
+      }
+      (1.0, n, 1.0)
+    }
+    2 => {
+      // Range[min, max] - generates {min, min+1, ..., max}
+      let min = evaluate_term(args_pairs[0].clone())?;
+      let max = evaluate_term(args_pairs[1].clone())?;
+      if min.fract() != 0.0 || max.fract() != 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range arguments must be integers".into(),
+        ));
+      }
+      (min, max, 1.0)
+    }
+    3 => {
+      // Range[min, max, step] - generates {min, min+step, ..., max}
+      let min = evaluate_term(args_pairs[0].clone())?;
+      let max = evaluate_term(args_pairs[1].clone())?;
+      let step = evaluate_term(args_pairs[2].clone())?;
+      if min.fract() != 0.0 || max.fract() != 0.0 || step.fract() != 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range arguments must be integers".into(),
+        ));
+      }
+      if step == 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range step cannot be zero".into(),
+        ));
+      }
+      (min, max, step)
+    }
+    _ => unreachable!(),
+  };
+
+  // Generate the sequence
+  let mut result = Vec::new();
+  if step > 0.0 {
+    let mut current = start;
+    while current <= end {
+      result.push(format_result(current));
+      current += step;
+    }
+  } else {
+    let mut current = start;
+    while current >= end {
+      result.push(format_result(current));
+      current += step;
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}

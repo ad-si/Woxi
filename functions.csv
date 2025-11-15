@@ -4744,7 +4744,7 @@ RandomTree,,
 RandomVariate,,
 RandomWalkProcess,,
 RandomWord,,
-Range,,
+Range,"Generates a sequence of numbers with optional start, end, and step",✅
 RangeFilter,,
 RankedMax,,
 RankedMin,,
