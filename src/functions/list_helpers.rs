@@ -402,6 +402,162 @@ pub fn total(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok(format_result(sum))
 }
 
+/// Handle Mean[list] - Calculate the arithmetic mean (average) of a list
+pub fn mean(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Mean expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Mean of an empty list is undefined".into(),
+    ));
+  }
+
+  let mut sum = 0.0;
+  for item in &items {
+    let val = evaluate_term(item.clone())?;
+    sum += val;
+  }
+
+  let mean_val = sum / items.len() as f64;
+  Ok(format_result(mean_val))
+}
+
+/// Handle Product[list] - Multiply all elements in a list
+pub fn product(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Product expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    // Product of empty list is 1 (multiplicative identity)
+    return Ok("1".to_string());
+  }
+
+  let mut product = 1.0;
+  for item in items {
+    let val = evaluate_term(item.clone())?;
+    product *= val;
+  }
+
+  Ok(format_result(product))
+}
+
+/// Handle Accumulate[list] - Returns cumulative sums of a list
+pub fn accumulate(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Accumulate expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    // Accumulate of empty list is empty list
+    return Ok("{}".to_string());
+  }
+
+  let mut cumulative_sum = 0.0;
+  let mut result = Vec::new();
+
+  for item in items {
+    let val = evaluate_term(item.clone())?;
+    cumulative_sum += val;
+    result.push(format_result(cumulative_sum));
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Differences[list] - Returns successive differences between elements
+pub fn differences(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Differences expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.len() <= 1 {
+    // Differences of empty list or single element is empty list
+    return Ok("{}".to_string());
+  }
+
+  let mut values: Vec<f64> = Vec::new();
+  for item in items {
+    let val = evaluate_term(item.clone())?;
+    values.push(val);
+  }
+
+  let mut result = Vec::new();
+  for i in 1..values.len() {
+    let diff = values[i] - values[i - 1];
+    result.push(format_result(diff));
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Median[list] - Returns the median value of a list
+pub fn median(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Median expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Get the list from the argument
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Median of an empty list is undefined".into(),
+    ));
+  }
+
+  // Evaluate all items to numbers
+  let mut values: Vec<f64> = Vec::new();
+  for item in items {
+    let val = evaluate_term(item.clone())?;
+    values.push(val);
+  }
+
+  // Sort the values
+  values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+  // Calculate median
+  let len = values.len();
+  let median_val = if len % 2 == 1 {
+    // Odd length: return middle element
+    values[len / 2]
+  } else {
+    // Even length: return average of two middle elements
+    (values[len / 2 - 1] + values[len / 2]) / 2.0
+  };
+
+  Ok(format_result(median_val))
+}
+
 /// Handle First[list] - Return the first element of a list
 /// Handle Last[list] - Return the last element of a list
 pub fn first_or_last(

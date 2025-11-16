@@ -1237,6 +1237,12 @@ fn evaluate_function_call(
       let wonums = args_to_wonums(&args_pairs)?;
       evaluate_ast(AST::Round(wonums.into_iter().next().unwrap()))
     }
+    "Max" => functions::numeric::max(&args_pairs),
+    "Min" => functions::numeric::min(&args_pairs),
+    "Mod" => functions::numeric::modulo(&args_pairs),
+    "Power" => functions::numeric::power(&args_pairs),
+    "Factorial" => functions::numeric::factorial(&args_pairs),
+    "GCD" => functions::numeric::gcd(&args_pairs),
 
     "Equal" => functions::math::equal(&args_pairs),
     "Unequal" => functions::math::unequal(&args_pairs),
@@ -1246,6 +1252,7 @@ fn evaluate_function_call(
     "LessEqual" => functions::math::less_equal(&args_pairs),
 
     "NumberQ" => functions::predicate::number_q(&args_pairs),
+    "IntegerQ" => functions::predicate::integer_q(&args_pairs),
     "EvenQ" => functions::predicate::even_odd_q(&args_pairs, "EvenQ"),
     "OddQ" => functions::predicate::even_odd_q(&args_pairs, "OddQ"),
 
@@ -1275,9 +1282,18 @@ fn evaluate_function_call(
     "Prepend" => functions::list::prepend(&args_pairs),
     "Part" => functions::list::part(&args_pairs),
     "Length" => functions::list::length(&args_pairs),
+    "Reverse" => functions::list::reverse(&args_pairs),
+    "Range" => functions::list::range(&args_pairs),
+    "Join" => functions::list::join(&args_pairs),
+    "Sort" => functions::list::sort(&args_pairs),
 
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),
+    "Mean" => functions::list_helpers::mean(&args_pairs),
+    "Median" => functions::list_helpers::median(&args_pairs),
+    "Product" => functions::list_helpers::product(&args_pairs),
+    "Accumulate" => functions::list_helpers::accumulate(&args_pairs),
+    "Differences" => functions::list_helpers::differences(&args_pairs),
     "Divide" => {
       if args_pairs.len() != 2 {
         use std::io::{self, Write};
