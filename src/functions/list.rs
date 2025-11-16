@@ -317,3 +317,151 @@ pub fn length(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(items.len().to_string())
 }
+
+/// Handle Reverse[list] - returns a list with elements in reverse order
+pub fn reverse(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Reverse expects exactly 1 argument".into(),
+    ));
+  }
+  let list_pair = &args_pairs[0];
+  let items = get_list_items(list_pair)?;
+
+  // Reverse the items and evaluate each one
+  let mut reversed_items: Vec<_> = items.into_iter().collect();
+  reversed_items.reverse();
+
+  let evaluated: Result<Vec<_>, _> = reversed_items
+    .into_iter()
+    .map(|p| evaluate_expression(p))
+    .collect();
+
+  Ok(format!("{{{}}}", evaluated?.join(", ")))
+}
+
+/// Handle Range[n], Range[min, max], or Range[min, max, step] - generates a sequence of numbers
+pub fn range(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Range expects 1, 2, or 3 arguments".into(),
+    ));
+  }
+
+  let (start, end, step) = match args_pairs.len() {
+    1 => {
+      // Range[n] - generates {1, 2, ..., n}
+      let n = evaluate_term(args_pairs[0].clone())?;
+      if n.fract() != 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range argument must be an integer".into(),
+        ));
+      }
+      (1.0, n, 1.0)
+    }
+    2 => {
+      // Range[min, max] - generates {min, min+1, ..., max}
+      let min = evaluate_term(args_pairs[0].clone())?;
+      let max = evaluate_term(args_pairs[1].clone())?;
+      if min.fract() != 0.0 || max.fract() != 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range arguments must be integers".into(),
+        ));
+      }
+      (min, max, 1.0)
+    }
+    3 => {
+      // Range[min, max, step] - generates {min, min+step, ..., max}
+      let min = evaluate_term(args_pairs[0].clone())?;
+      let max = evaluate_term(args_pairs[1].clone())?;
+      let step = evaluate_term(args_pairs[2].clone())?;
+      if min.fract() != 0.0 || max.fract() != 0.0 || step.fract() != 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range arguments must be integers".into(),
+        ));
+      }
+      if step == 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Range step cannot be zero".into(),
+        ));
+      }
+      (min, max, step)
+    }
+    _ => unreachable!(),
+  };
+
+  // Generate the sequence
+  let mut result = Vec::new();
+  if step > 0.0 {
+    let mut current = start;
+    while current <= end {
+      result.push(format_result(current));
+      current += step;
+    }
+  } else {
+    let mut current = start;
+    while current >= end {
+      result.push(format_result(current));
+      current += step;
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Join[list1, list2, ...] - concatenates multiple lists
+pub fn join(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Join expects at least 1 argument".into(),
+    ));
+  }
+
+  // Collect all elements from all lists
+  let mut all_elements = Vec::new();
+
+  for arg_pair in args_pairs {
+    let items = get_list_items(arg_pair)?;
+    for item in items {
+      let evaluated = evaluate_expression(item)?;
+      all_elements.push(evaluated);
+    }
+  }
+
+  Ok(format!("{{{}}}", all_elements.join(", ")))
+}
+
+/// Handle Sort[list] - sorts a list in ascending order
+pub fn sort(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Sort expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = get_list_items(list_pair)?;
+
+  // Evaluate all items and try to parse as numbers
+  let mut values: Vec<(f64, String)> = Vec::new();
+  for item in items {
+    let evaluated = evaluate_expression(item)?;
+    // Try to parse as number
+    if let Ok(num) = evaluated.parse::<f64>() {
+      values.push((num, evaluated));
+    } else {
+      // If not a number, return error (matching Wolfram behavior for non-numeric sorts)
+      return Err(InterpreterError::EvaluationError(
+        "Sort expects numeric values".into(),
+      ));
+    }
+  }
+
+  // Sort by numeric value
+  values.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+  // Extract the formatted strings
+  let sorted: Vec<String> = values.into_iter().map(|(_, s)| s).collect();
+
+  Ok(format!("{{{}}}", sorted.join(", ")))
+}

@@ -448,6 +448,56 @@ If[True, 1, 0, 2, 3]
 ```
 
 
+## `IntegerQ`
+
+Check if a value is an integer.
+
+```scrut
+$ wo 'IntegerQ[5]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[0]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[-7]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[3.0]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[3.5]'
+False
+```
+
+```scrut
+$ wo 'IntegerQ[1.2]'
+False
+```
+
+```scrut
+$ wo 'IntegerQ[-0.5]'
+False
+```
+
+```scrut
+$ wo 'IntegerQ[0.0]'
+True
+```
+
+```scrut
+$ wo 'IntegerQ[a]'
+False
+```
+
+
 ## `EvenQ`
 
 Check if a number is even.
@@ -459,6 +509,71 @@ True
 
 ```scrut
 $ wo 'EvenQ[3]'
+False
+```
+
+```scrut
+$ wo 'EvenQ[0]'
+True
+```
+
+```scrut
+$ wo 'EvenQ[-4]'
+False
+```
+
+```scrut
+$ wo 'EvenQ[-2]'
+False
+```
+
+```scrut
+$ wo 'EvenQ[100]'
+True
+```
+
+```scrut
+$ wo 'EvenQ[1.5]'
+False
+```
+
+
+## `OddQ`
+
+Check if a number is odd.
+
+```scrut
+$ wo 'OddQ[3]'
+True
+```
+
+```scrut
+$ wo 'OddQ[2]'
+False
+```
+
+```scrut
+$ wo 'OddQ[0]'
+False
+```
+
+```scrut
+$ wo 'OddQ[-3]'
+True
+```
+
+```scrut
+$ wo 'OddQ[-4]'
+True
+```
+
+```scrut
+$ wo 'OddQ[101]'
+True
+```
+
+```scrut
+$ wo 'OddQ[2.5]'
 False
 ```
 

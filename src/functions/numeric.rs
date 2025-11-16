@@ -218,3 +218,233 @@ pub fn round(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   }
   Ok(format_result(r))
 }
+
+/// Handle Max[x1, x2, ...] or Max[{x1, x2, ...}] - returns the maximum value
+pub fn max(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  // ── arity check ──────────────────────────────────────────────────────
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Max expects at least 1 argument".into(),
+    ));
+  }
+
+  // ── collect values to compare ────────────────────────────────────────
+  let values: Vec<f64> = if args_pairs.len() == 1 {
+    // Check if the single argument is a list
+    let first_pair = &args_pairs[0];
+    if let Ok(items) = crate::functions::list::get_list_items(first_pair) {
+      // It's a list - evaluate all items
+      if items.is_empty() {
+        // Max[{}] returns -Infinity
+        return Ok("-Infinity".to_string());
+      }
+      items
+        .iter()
+        .map(|item| evaluate_term(item.clone()))
+        .collect::<Result<Vec<_>, _>>()?
+    } else {
+      // Not a list - just a single value
+      vec![evaluate_term(first_pair.clone())?]
+    }
+  } else {
+    // Multiple arguments - evaluate each one
+    args_pairs
+      .iter()
+      .map(|ap| evaluate_term(ap.clone()))
+      .collect::<Result<Vec<_>, _>>()?
+  };
+
+  // ── find maximum ─────────────────────────────────────────────────────
+  let max_val = values
+    .iter()
+    .fold(f64::NEG_INFINITY, |acc, &x| acc.max(x));
+
+  // ── return formatted result ──────────────────────────────────────────
+  Ok(format_result(max_val))
+}
+
+/// Handle Min[x1, x2, ...] or Min[{x1, x2, ...}] - returns the minimum value
+pub fn min(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  // ── arity check ──────────────────────────────────────────────────────
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Min expects at least 1 argument".into(),
+    ));
+  }
+
+  // ── collect values to compare ────────────────────────────────────────
+  let values: Vec<f64> = if args_pairs.len() == 1 {
+    // Check if the single argument is a list
+    let first_pair = &args_pairs[0];
+    if let Ok(items) = crate::functions::list::get_list_items(first_pair) {
+      // It's a list - evaluate all items
+      if items.is_empty() {
+        // Min[{}] returns Infinity
+        return Ok("Infinity".to_string());
+      }
+      items
+        .iter()
+        .map(|item| evaluate_term(item.clone()))
+        .collect::<Result<Vec<_>, _>>()?
+    } else {
+      // Not a list - just a single value
+      vec![evaluate_term(first_pair.clone())?]
+    }
+  } else {
+    // Multiple arguments - evaluate each one
+    args_pairs
+      .iter()
+      .map(|ap| evaluate_term(ap.clone()))
+      .collect::<Result<Vec<_>, _>>()?
+  };
+
+  // ── find minimum ─────────────────────────────────────────────────────
+  let min_val = values
+    .iter()
+    .fold(f64::INFINITY, |acc, &x| acc.min(x));
+
+  // ── return formatted result ──────────────────────────────────────────
+  Ok(format_result(min_val))
+}
+
+/// Handle Mod[m, n] - Returns the remainder when m is divided by n
+pub fn modulo(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Mod expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let m = evaluate_term(args_pairs[0].clone())?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n == 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Mod: division by zero".into(),
+    ));
+  }
+
+  // Wolfram's Mod function uses the formula: m - n * Floor[m/n]
+  let result = m - n * (m / n).floor();
+  Ok(format_result(result))
+}
+
+/// Handle Power[x, y] - Returns x raised to the power y
+pub fn power(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Power expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let base = evaluate_term(args_pairs[0].clone())?;
+  let exponent = evaluate_term(args_pairs[1].clone())?;
+
+  // Handle special cases
+  if base == 0.0 && exponent < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Power: division by zero (0^negative)".into(),
+    ));
+  }
+
+  let result = base.powf(exponent);
+
+  // Check for NaN or infinity results
+  if result.is_nan() {
+    return Err(InterpreterError::EvaluationError(
+      "Power: result is undefined (possibly negative base with fractional exponent)".into(),
+    ));
+  }
+
+  if result.is_infinite() {
+    return Err(InterpreterError::EvaluationError(
+      "Power: result is infinite".into(),
+    ));
+  }
+
+  Ok(format_result(result))
+}
+
+/// Handle Factorial[n] - Returns the factorial of n (n!)
+pub fn factorial(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Factorial expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+
+  // Check if n is a non-negative integer
+  if n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Factorial: argument must be non-negative".into(),
+    ));
+  }
+
+  if n.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Factorial: argument must be an integer".into(),
+    ));
+  }
+
+  let n_int = n as u64;
+
+  // Calculate factorial
+  // For large values, we'll use f64 to avoid overflow but this means precision loss
+  let mut result = 1.0_f64;
+  for i in 2..=n_int {
+    result *= i as f64;
+
+    // Check for overflow to infinity
+    if result.is_infinite() {
+      return Err(InterpreterError::EvaluationError(
+        "Factorial: result is too large".into(),
+      ));
+    }
+  }
+
+  Ok(format_result(result))
+}
+
+/// Handle GCD[a, b, ...] - Returns the greatest common divisor
+pub fn gcd(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "GCD expects at least 1 argument".into(),
+    ));
+  }
+
+  // Helper function to compute GCD of two numbers using Euclidean algorithm
+  fn gcd_two(a: i64, b: i64) -> i64 {
+    let mut a = a.abs();
+    let mut b = b.abs();
+
+    while b != 0 {
+      let temp = b;
+      b = a % b;
+      a = temp;
+    }
+
+    a
+  }
+
+  // Evaluate all arguments and check they are integers
+  let mut values = Vec::new();
+  for arg in args_pairs {
+    let val = evaluate_term(arg.clone())?;
+
+    if val.fract() != 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "GCD: all arguments must be integers".into(),
+      ));
+    }
+
+    values.push(val as i64);
+  }
+
+  // Compute GCD of all values
+  let result = values.into_iter().reduce(gcd_two).unwrap();
+
+  Ok(format_result(result as f64))
+}

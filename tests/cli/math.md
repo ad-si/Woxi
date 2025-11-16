@@ -308,6 +308,216 @@ $ wo 'Sqrt[0]'
 ```
 
 
+## `Mod`
+
+Returns the remainder when dividing the first argument by the second.
+
+```scrut
+$ wo 'Mod[10, 3]'
+1
+```
+
+```scrut
+$ wo 'Mod[7, 4]'
+3
+```
+
+```scrut
+$ wo 'Mod[15, 5]'
+0
+```
+
+```scrut
+$ wo 'Mod[8, 3]'
+2
+```
+
+```scrut
+$ wo 'Mod[-1, 3]'
+2
+```
+
+```scrut
+$ wo 'Mod[-5, 3]'
+1
+```
+
+```scrut
+$ wo 'Mod[10, -3]'
+-2
+```
+
+```scrut
+$ wo 'Mod[7.5, 2]'
+1.5
+```
+
+```scrut
+$ wo 'Mod[0, 5]'
+0
+```
+
+
+## `Max`
+
+Returns the maximum value from a set of arguments or a list.
+
+### Multiple arguments
+
+```scrut
+$ wo 'Max[1, 5, 3]'
+5
+```
+
+```scrut
+$ wo 'Max[1, 2]'
+2
+```
+
+```scrut
+$ wo 'Max[-5, -2, -8]'
+-2
+```
+
+```scrut
+$ wo 'Max[3.14, 2.71, 3.5]'
+3.5
+```
+
+```scrut
+$ wo 'Max[1, 2.5, 3]'
+3
+```
+
+### Single list argument
+
+```scrut
+$ wo 'Max[{1, 5, 3}]'
+5
+```
+
+```scrut
+$ wo 'Max[{-10, -5, -20}]'
+-5
+```
+
+```scrut
+$ wo 'Max[{3.14, 2.71, 3.5}]'
+3.5
+```
+
+### Single value
+
+```scrut
+$ wo 'Max[42]'
+42
+```
+
+```scrut
+$ wo 'Max[-7]'
+-7
+```
+
+### Empty list
+
+```scrut
+$ wo 'Max[{}]'
+-Infinity
+```
+
+### With expressions
+
+```scrut
+$ wo 'Max[2 + 3, 4 * 2, 10 - 1]'
+9
+```
+
+```scrut
+$ wo 'Max[{1 + 1, 2 * 2, 3 - 1}]'
+4
+```
+
+
+## `Min`
+
+Returns the minimum value from a set of arguments or a list.
+
+### Multiple arguments
+
+```scrut
+$ wo 'Min[1, 5, 3]'
+1
+```
+
+```scrut
+$ wo 'Min[1, 2]'
+1
+```
+
+```scrut
+$ wo 'Min[-5, -2, -8]'
+-8
+```
+
+```scrut
+$ wo 'Min[3.14, 2.71, 3.5]'
+2.71
+```
+
+```scrut
+$ wo 'Min[1, 2.5, 3]'
+1
+```
+
+### Single list argument
+
+```scrut
+$ wo 'Min[{1, 5, 3}]'
+1
+```
+
+```scrut
+$ wo 'Min[{-10, -5, -20}]'
+-20
+```
+
+```scrut
+$ wo 'Min[{3.14, 2.71, 3.5}]'
+2.71
+```
+
+### Single value
+
+```scrut
+$ wo 'Min[42]'
+42
+```
+
+```scrut
+$ wo 'Min[-7]'
+-7
+```
+
+### Empty list
+
+```scrut
+$ wo 'Min[{}]'
+Infinity
+```
+
+### With expressions
+
+```scrut
+$ wo 'Min[2 + 3, 4 * 2, 10 - 1]'
+5
+```
+
+```scrut
+$ wo 'Min[{1 + 1, 2 * 2, 3 - 1}]'
+2
+```
+
+
 ## `Sin`
 
 Returns the sine of an angle in radians.
@@ -372,4 +582,280 @@ Randomly gives 50 numbers between 1 and 6.
 ```scrut
 $ wo 'AllTrue[RandomInteger[{1, 6}, 50], 1 <= # <= 6 &]'
 True
+```
+
+
+## `Power`
+
+### `Power[2, 3]`
+
+2 raised to the power of 3 equals 8.
+
+```scrut
+$ wo 'Power[2, 3]'
+8
+```
+
+
+### `Power[5, 0]`
+
+Any number raised to the power of 0 equals 1.
+
+```scrut
+$ wo 'Power[5, 0]'
+1
+```
+
+
+### `Power[2, -1]`
+
+2 raised to the power of -1 equals 0.5 (1/2).
+
+```scrut
+$ wo 'Power[2, -1]'
+0.5
+```
+
+
+### `Power[4, 0.5]`
+
+4 raised to the power of 0.5 equals 2 (square root).
+
+```scrut
+$ wo 'Power[4, 0.5]'
+2
+```
+
+
+### `Power[10, 2]`
+
+10 raised to the power of 2 equals 100.
+
+```scrut
+$ wo 'Power[10, 2]'
+100
+```
+
+
+### `Power[-2, 3]`
+
+-2 raised to the power of 3 equals -8.
+
+```scrut
+$ wo 'Power[-2, 3]'
+-8
+```
+
+
+### `Power[-2, 2]`
+
+-2 raised to the power of 2 equals 4.
+
+```scrut
+$ wo 'Power[-2, 2]'
+4
+```
+
+
+### `Power[27, 1/3]`
+
+27 raised to the power of 1/3 equals approximately 3 (cube root).
+
+```scrut
+$ wo 'Power[27, 1/3]'
+2.9999999997
+```
+
+
+### `Power[1.5, 2.5]`
+
+1.5 raised to the power of 2.5 equals approximately 2.756.
+
+```scrut
+$ wo 'Power[1.5, 2.5]'
+2.7556759606
+```
+
+
+## `Factorial`
+
+### `Factorial[0]`
+
+The factorial of 0 is 1 by definition.
+
+```scrut
+$ wo 'Factorial[0]'
+1
+```
+
+
+### `Factorial[1]`
+
+The factorial of 1 is 1.
+
+```scrut
+$ wo 'Factorial[1]'
+1
+```
+
+
+### `Factorial[5]`
+
+The factorial of 5 is 120 (5! = 5 × 4 × 3 × 2 × 1).
+
+```scrut
+$ wo 'Factorial[5]'
+120
+```
+
+
+### `Factorial[10]`
+
+The factorial of 10 is 3628800.
+
+```scrut
+$ wo 'Factorial[10]'
+3628800
+```
+
+
+### `Factorial[3]`
+
+The factorial of 3 is 6 (3! = 3 × 2 × 1).
+
+```scrut
+$ wo 'Factorial[3]'
+6
+```
+
+
+### `Factorial[7]`
+
+The factorial of 7 is 5040.
+
+```scrut
+$ wo 'Factorial[7]'
+5040
+```
+
+
+### `Factorial[12]`
+
+The factorial of 12 is 479001600.
+
+```scrut
+$ wo 'Factorial[12]'
+479001600
+```
+
+
+### `Factorial[2]`
+
+The factorial of 2 is 2.
+
+```scrut
+$ wo 'Factorial[2]'
+2
+```
+
+
+### `Factorial[4]`
+
+The factorial of 4 is 24 (4! = 4 × 3 × 2 × 1).
+
+```scrut
+$ wo 'Factorial[4]'
+24
+```
+
+
+## `GCD`
+
+### `GCD[12, 8]`
+
+The GCD of 12 and 8 is 4.
+
+```scrut
+$ wo 'GCD[12, 8]'
+4
+```
+
+
+### `GCD[48, 18]`
+
+The GCD of 48 and 18 is 6.
+
+```scrut
+$ wo 'GCD[48, 18]'
+6
+```
+
+
+### `GCD[100, 50]`
+
+The GCD of 100 and 50 is 50.
+
+```scrut
+$ wo 'GCD[100, 50]'
+50
+```
+
+
+### `GCD[17, 19]`
+
+The GCD of 17 and 19 is 1 (coprime numbers).
+
+```scrut
+$ wo 'GCD[17, 19]'
+1
+```
+
+
+### `GCD[0, 5]`
+
+The GCD of 0 and any number n is |n|.
+
+```scrut
+$ wo 'GCD[0, 5]'
+5
+```
+
+
+### `GCD[15, 25, 35]`
+
+The GCD of 15, 25, and 35 is 5.
+
+```scrut
+$ wo 'GCD[15, 25, 35]'
+5
+```
+
+
+### `GCD[24, 36, 60]`
+
+The GCD of 24, 36, and 60 is 12.
+
+```scrut
+$ wo 'GCD[24, 36, 60]'
+12
+```
+
+
+### `GCD[-12, 8]`
+
+The GCD works with negative numbers (GCD of -12 and 8 is 4).
+
+```scrut
+$ wo 'GCD[-12, 8]'
+4
+```
+
+
+### `GCD[21, 14]`
+
+The GCD of 21 and 14 is 7.
+
+```scrut
+$ wo 'GCD[21, 14]'
+7
 ```
