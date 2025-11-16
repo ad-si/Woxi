@@ -1412,7 +1412,7 @@ Correlation,,
 CorrelationDistance,,
 CorrelationFunction,,
 CorrelationTest,,
-Cos,,
+Cos,Returns the cosine of an angle in radians,✅
 CosDegrees,,
 Cosh,,
 CoshIntegral,,

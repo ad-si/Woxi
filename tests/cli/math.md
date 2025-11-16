@@ -528,6 +528,36 @@ $ wo 'Sin[Pi/2]'
 ```
 
 
+## `Cos`
+
+Returns the cosine of an angle in radians.
+
+```scrut
+$ wo 'Cos[0]'
+1
+```
+
+```scrut
+$ wo 'Cos[Pi]'
+-1
+```
+
+```scrut
+$ wo 'Cos[Pi/2]'
+-0
+```
+
+```scrut
+$ wo 'Cos[Pi/3]'
+0.5
+```
+
+```scrut
+$ wo 'Cos[2*Pi]'
+1
+```
+
+
 ## `NumberQ`
 
 Returns `True` if expr is a number, and `False` otherwise.

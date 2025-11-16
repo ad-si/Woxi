@@ -175,6 +175,14 @@ pub fn evaluate_pairs(
             })?;
             Ok(format_result(n.sin()))
           }
+          "Cos" => {
+            let n = arg_value.parse::<f64>().map_err(|_| {
+              InterpreterError::EvaluationError(
+                "Invalid argument for Cos".into(),
+              )
+            })?;
+            Ok(format_result(n.cos()))
+          }
           _ => Err(InterpreterError::EvaluationError(format!(
             "Unknown function for // operator: {}",
             func_name
@@ -296,6 +304,14 @@ pub fn evaluate_pairs(
                   })?;
                   Ok(format_result(n.sin()))
                 }
+                "Cos" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Cos".into(),
+                    )
+                  })?;
+                  Ok(format_result(n.cos()))
+                }
                 _ => Err(InterpreterError::EvaluationError(format!(
                   "Unknown function for @ operator: {}",
                   func_name
@@ -324,6 +340,14 @@ pub fn evaluate_pairs(
                     )
                   })?;
                   Ok(format_result(n.sin()))
+                }
+                "Cos" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Cos".into(),
+                    )
+                  })?;
+                  Ok(format_result(n.cos()))
                 }
                 _ => Err(InterpreterError::EvaluationError(format!(
                   "Unknown function for // operator: {}",
@@ -1155,6 +1179,7 @@ fn evaluate_function_call(
 
     // Numeric Functions
     "Sin" => functions::numeric::sin(&args_pairs),
+    "Cos" => functions::numeric::cos(&args_pairs),
     "Prime" => functions::numeric::prime(&args_pairs),
     "Plus" => {
       if args_pairs.is_empty() {

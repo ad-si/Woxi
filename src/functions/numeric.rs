@@ -13,6 +13,17 @@ pub fn sin(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok(format_result(n.sin()))
 }
 
+/// Handle Cos[x] - returns the cosine of the argument
+pub fn cos(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Cos expects exactly 1 argument".into(),
+    ));
+  }
+  let n = evaluate_term(args_pairs[0].clone())?;
+  Ok(format_result(n.cos()))
+}
+
 /// Handle Prime[n] - returns the nth prime number
 pub fn prime(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {
