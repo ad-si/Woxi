@@ -5,7 +5,7 @@ PartExtract = { Identifier ~ "[[" ~ Expression ~ "]]" }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
-Constant = { ("-")? ~ "Pi" }
+Constant = @{ ("-")? ~ ("Pi" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 NumericValue = { Real | Integer | Constant }
 
 Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }

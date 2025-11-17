@@ -558,6 +558,81 @@ $ wo 'Cos[2*Pi]'
 ```
 
 
+## `Tan`
+
+Returns the tangent of an angle in radians.
+
+```scrut
+$ wo 'Tan[0]'
+0
+```
+
+```scrut
+$ wo 'Tan[Pi/4]'
+1
+```
+
+```scrut
+$ wo 'Tan[Pi]'
+0
+```
+
+```scrut
+$ wo 'Tan[0-Pi/4]'
+-1
+```
+
+
+## `Exp`
+
+Returns e raised to the power of the argument.
+
+```scrut
+$ wo 'Exp[0]'
+1
+```
+
+```scrut
+$ wo 'Exp[1]'
+2.7182818285
+```
+
+```scrut
+$ wo 'Exp[2]'
+7.3890560989
+```
+
+```scrut
+$ wo 'Exp[-1]'
+0.3678794412
+```
+
+
+## `Log`
+
+Returns the natural logarithm of the argument.
+
+```scrut
+$ wo 'Log[1]'
+0
+```
+
+```scrut
+$ wo 'Log[E]'
+1
+```
+
+```scrut
+$ wo 'Log[10]'
+2.302585093
+```
+
+```scrut
+$ wo 'Log[100]'
+4.605170186
+```
+
+
 ## `NumberQ`
 
 Returns `True` if expr is a number, and `False` otherwise.

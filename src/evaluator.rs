@@ -183,6 +183,35 @@ pub fn evaluate_pairs(
             })?;
             Ok(format_result(n.cos()))
           }
+          "Tan" => {
+            let n = arg_value.parse::<f64>().map_err(|_| {
+              InterpreterError::EvaluationError(
+                "Invalid argument for Tan".into(),
+              )
+            })?;
+            Ok(format_result(n.tan()))
+          }
+          "Exp" => {
+            let n = arg_value.parse::<f64>().map_err(|_| {
+              InterpreterError::EvaluationError(
+                "Invalid argument for Exp".into(),
+              )
+            })?;
+            Ok(format_result(n.exp()))
+          }
+          "Log" => {
+            let n = arg_value.parse::<f64>().map_err(|_| {
+              InterpreterError::EvaluationError(
+                "Invalid argument for Log".into(),
+              )
+            })?;
+            if n <= 0.0 {
+              return Err(InterpreterError::EvaluationError(
+                "Log: argument must be positive".into(),
+              ));
+            }
+            Ok(format_result(n.ln()))
+          }
           _ => Err(InterpreterError::EvaluationError(format!(
             "Unknown function for // operator: {}",
             func_name
@@ -312,6 +341,35 @@ pub fn evaluate_pairs(
                   })?;
                   Ok(format_result(n.cos()))
                 }
+                "Tan" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Tan".into(),
+                    )
+                  })?;
+                  Ok(format_result(n.tan()))
+                }
+                "Exp" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Exp".into(),
+                    )
+                  })?;
+                  Ok(format_result(n.exp()))
+                }
+                "Log" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Log".into(),
+                    )
+                  })?;
+                  if n <= 0.0 {
+                    return Err(InterpreterError::EvaluationError(
+                      "Log: argument must be positive".into(),
+                    ));
+                  }
+                  Ok(format_result(n.ln()))
+                }
                 _ => Err(InterpreterError::EvaluationError(format!(
                   "Unknown function for @ operator: {}",
                   func_name
@@ -348,6 +406,35 @@ pub fn evaluate_pairs(
                     )
                   })?;
                   Ok(format_result(n.cos()))
+                }
+                "Tan" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Tan".into(),
+                    )
+                  })?;
+                  Ok(format_result(n.tan()))
+                }
+                "Exp" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Exp".into(),
+                    )
+                  })?;
+                  Ok(format_result(n.exp()))
+                }
+                "Log" => {
+                  let n = arg_value.parse::<f64>().map_err(|_| {
+                    InterpreterError::EvaluationError(
+                      "Invalid argument for Log".into(),
+                    )
+                  })?;
+                  if n <= 0.0 {
+                    return Err(InterpreterError::EvaluationError(
+                      "Log: argument must be positive".into(),
+                    ));
+                  }
+                  Ok(format_result(n.ln()))
                 }
                 _ => Err(InterpreterError::EvaluationError(format!(
                   "Unknown function for // operator: {}",
@@ -828,6 +915,7 @@ pub fn evaluate_term(
     }
     Rule::Constant => match term.as_str() {
       "Pi" => Ok(std::f64::consts::PI),
+      "E" => Ok(std::f64::consts::E),
       _ => Err(InterpreterError::EvaluationError(format!(
         "Unknown constant: {}",
         term.as_str()
@@ -1180,6 +1268,9 @@ fn evaluate_function_call(
     // Numeric Functions
     "Sin" => functions::numeric::sin(&args_pairs),
     "Cos" => functions::numeric::cos(&args_pairs),
+    "Tan" => functions::numeric::tan(&args_pairs),
+    "Exp" => functions::numeric::exp(&args_pairs),
+    "Log" => functions::numeric::log(&args_pairs),
     "Prime" => functions::numeric::prime(&args_pairs),
     "Plus" => {
       if args_pairs.is_empty() {

@@ -24,6 +24,44 @@ pub fn cos(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok(format_result(n.cos()))
 }
 
+/// Handle Tan[x] - returns the tangent of the argument
+pub fn tan(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Tan expects exactly 1 argument".into(),
+    ));
+  }
+  let n = evaluate_term(args_pairs[0].clone())?;
+  Ok(format_result(n.tan()))
+}
+
+/// Handle Exp[x] - returns e raised to the power of x
+pub fn exp(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Exp expects exactly 1 argument".into(),
+    ));
+  }
+  let n = evaluate_term(args_pairs[0].clone())?;
+  Ok(format_result(n.exp()))
+}
+
+/// Handle Log[x] - returns the natural logarithm of x
+pub fn log(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Log expects exactly 1 argument".into(),
+    ));
+  }
+  let n = evaluate_term(args_pairs[0].clone())?;
+  if n <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Log: argument must be positive".into(),
+    ));
+  }
+  Ok(format_result(n.ln()))
+}
+
 /// Handle Prime[n] - returns the nth prime number
 pub fn prime(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {

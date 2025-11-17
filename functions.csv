@@ -19,7 +19,7 @@ Append,Adds an element to the end of a list,🚧
 Ceiling,Returns the smallest integer greater than or equal to a number,✅
 CreateFile, Creates a file with a name or a random file in the default area for temporary files,🚧
 DateString,Returns a string representing the current local date and time,🚧
-Divide,Divide numbers,🚧
+Divide,Divide numbers,✅
 Drop,Returns the list without its first n elements,🚧
 EvenQ,Checks if a number is even,✅
 First,Returns the first element of a list,🚧
@@ -32,19 +32,19 @@ Last,Returns the last element of a list,🚧
 Length,Returns the number of elements in a list,🚧
 Map,Applies a function to each element of a list,🚧
 MemberQ,Checks if a list contains a value,🚧
-Minus,Subtracts numbers,🚧
+Minus,Subtracts numbers,✅
 Most,Returns the list without its last element,🚧
 Now,Returns the current date and time,🚧
 NumberQ,Checks if a value is a number,🚧
 Part,Returns the nth element of a list,🚧
-Plus,Adds numbers together,🚧
+Plus,Adds numbers together,✅
 Prepend,Adds an element to the beginning of a list,🚧
 Print,Outputs a string to the console,🚧
 RandomInteger,Generate random integers,🚧
 Rest,Returns the list without its first element,✅
 Round,Returns the nearest integer to a number,🚧
 Select,Picks elements of a list that satisfy a criterion,🚧
-Sqrt,Returns the square root of a number,🚧
+Sqrt,Returns the square root of a number,✅
 StringDrop,Removes a substring from a string,🚧
 StringEndsQ,Checks if a string ends with a specific substring,🚧
 StringJoin,Concatenates strings,🚧
@@ -53,8 +53,8 @@ StringSplit,Splits a string into a list of substrings,🚧
 StringStartsQ,Checks if a string starts with a specific substring,🚧
 StringTake,Returns a substring of a string,🚧
 Take,Returns the first n elements of a list,✅
-Times,Multiply numbers,🚧
-Total,Sums the elements of a list,🚧
+Times,Multiply numbers,✅
+Total,Sums the elements of a list,✅
 Values,Returns the values of an association,🚧
 
 
@@ -2077,7 +2077,7 @@ ExclusionsStyle,,
 Exists,,
 Exit,,
 ExoplanetData,,
-Exp,,
+Exp,Returns e raised to the power of the argument,✅
 Expand,,
 ExpandAll,,
 ExpandDenominator,,
@@ -3564,7 +3564,7 @@ LocatorAutoCreate,,
 LocatorPane,,
 LocatorRegion,,
 Locked,,
-Log,,
+Log,Returns the natural logarithm of the argument,✅
 Log10,,
 Log2,,
 LogBarnesG,,
@@ -5690,7 +5690,7 @@ TakeSmallest,,
 TakeSmallestBy,,
 TakeWhile,,
 Tally,,
-Tan,,
+Tan,Returns the tangent of an angle in radians,✅
 TanDegrees,,
 Tanh,,
 TargetDevice,,
