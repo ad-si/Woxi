@@ -7,7 +7,7 @@ mod high_level_functions_tests {
     use super::*;
     #[test]
     fn test_for_negative() {
-      assert_eq!(interpret("EvenQ[-2]").unwrap(), "False",);
+      assert_eq!(interpret("EvenQ[-2]").unwrap(), "True",);
       assert_eq!(interpret("EvenQ[-1]").unwrap(), "False",);
     }
     #[test]

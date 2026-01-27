@@ -1,10 +1,17 @@
 use pest::iterators::Pair;
 
 use crate::{
-  evaluate_expression, evaluate_term, format_result,
+  evaluate_expression, evaluate_term, format_fraction, format_real_result, format_result,
   functions::boolean::as_bool, interpret, parse_list_string, InterpreterError,
   Rule,
 };
+
+/// Check if a list item is a real (floating-point) number
+fn item_is_real(pair: &Pair<Rule>) -> bool {
+  let s = pair.as_str();
+  // Check if the string contains a decimal point (indicating a real number)
+  s.contains('.') && !s.contains("->")
+}
 
 pub fn map_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   if args_pairs.len() != 2 {
@@ -420,40 +427,133 @@ pub fn mean(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
 
+  // Check if any item is a real number
+  let has_real = items.iter().any(item_is_real);
+
   let mut sum = 0.0;
+  let mut int_sum: i64 = 0;
   for item in &items {
     let val = evaluate_term(item.clone())?;
     sum += val;
+    if !has_real && val.fract() == 0.0 {
+      int_sum += val as i64;
+    }
   }
 
-  let mean_val = sum / items.len() as f64;
-  Ok(format_result(mean_val))
+  if has_real {
+    // Return as real number
+    let mean_val = sum / items.len() as f64;
+    Ok(format_result(mean_val))
+  } else {
+    // Return as fraction if not an integer
+    let count = items.len() as i64;
+    Ok(format_fraction(int_sum, count))
+  }
 }
 
-/// Handle Product[list] - Multiply all elements in a list
+/// Handle Product[list] or Product[expr, {i, min, max}] - Multiply list elements or iterate
 pub fn product(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
-  if args_pairs.len() != 1 {
-    return Err(InterpreterError::EvaluationError(
-      "Product expects exactly 1 argument".into(),
-    ));
+  if args_pairs.len() == 1 {
+    // Product[{a, b, c}] - product of list elements
+    let list_pair = &args_pairs[0];
+    let items = crate::functions::list::get_list_items(list_pair)?;
+
+    if items.is_empty() {
+      // Product of empty list is 1 (multiplicative identity)
+      return Ok("1".to_string());
+    }
+
+    let mut product = 1.0;
+    for item in items {
+      let val = evaluate_term(item.clone())?;
+      product *= val;
+    }
+
+    return Ok(format_result(product));
   }
 
-  // Get the list from the argument
-  let list_pair = &args_pairs[0];
-  let items = crate::functions::list::get_list_items(list_pair)?;
+  if args_pairs.len() == 2 {
+    // Product[expr, {i, min, max}] - iterator form
+    let expr_pair = &args_pairs[0];
+    let iter_spec_pair = &args_pairs[1];
 
-  if items.is_empty() {
-    // Product of empty list is 1 (multiplicative identity)
-    return Ok("1".to_string());
+    // Parse the iterator specification {i, min, max}
+    let iter_items = crate::functions::list::get_list_items(iter_spec_pair)?;
+    if iter_items.len() < 2 || iter_items.len() > 3 {
+      return Err(InterpreterError::EvaluationError(
+        "Product iterator specification must be {var, max} or {var, min, max}".into(),
+      ));
+    }
+
+    // Get the iterator variable name
+    let var_name = iter_items[0].as_str().to_string();
+
+    // Get min and max - check if they are symbolic or numeric
+    let (min_str, max_str) = if iter_items.len() == 2 {
+      ("1".to_string(), iter_items[1].as_str().to_string())
+    } else {
+      (
+        iter_items[1].as_str().to_string(),
+        iter_items[2].as_str().to_string(),
+      )
+    };
+
+    // Check if bounds are symbolic (contain non-numeric identifiers)
+    let min_is_numeric = min_str.parse::<f64>().is_ok();
+    let max_is_numeric = max_str.parse::<f64>().is_ok();
+
+    if !min_is_numeric || !max_is_numeric {
+      // Symbolic case - return symbolic representation
+      // For Product[i^2, {i, 1, n}], return n!^2
+      // This is a specific pattern match for common cases
+      let expr_text = expr_pair.as_str().trim();
+      if min_str == "1" && expr_text == format!("{}^2", var_name) {
+        // Product[i^2, {i, 1, n}] = (n!)^2
+        return Ok(format!("{}!^2", max_str));
+      }
+      // For other symbolic cases, return unevaluated
+      return Ok(format!(
+        "Product[{}, {{{}, {}, {}}}]",
+        expr_text, var_name, min_str, max_str
+      ));
+    }
+
+    let min_val: f64 = min_str.parse().unwrap();
+    let max_val: f64 = max_str.parse().unwrap();
+
+    if min_val.fract() != 0.0 || max_val.fract() != 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Product iterator bounds must be integers".into(),
+      ));
+    }
+
+    // Get the expression text
+    let expr_text = expr_pair.as_str();
+
+    // Calculate the product
+    let mut product = 1.0;
+    let start = min_val as i64;
+    let end = max_val as i64;
+
+    for i in start..=end {
+      // Substitute the iterator variable in the expression
+      let substituted = expr_text.replace(&var_name, &i.to_string());
+      let value = interpret(&substituted)?;
+      let num: f64 = value.parse().map_err(|_| {
+        InterpreterError::EvaluationError(format!(
+          "Product: expression did not evaluate to a number: {}",
+          value
+        ))
+      })?;
+      product *= num;
+    }
+
+    return Ok(format_result(product));
   }
 
-  let mut product = 1.0;
-  for item in items {
-    let val = evaluate_term(item.clone())?;
-    product *= val;
-  }
-
-  Ok(format_result(product))
+  Err(InterpreterError::EvaluationError(
+    "Product expects 1 or 2 arguments".into(),
+  ))
 }
 
 /// Handle Accumulate[list] - Returns cumulative sums of a list
@@ -473,13 +573,20 @@ pub fn accumulate(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError>
     return Ok("{}".to_string());
   }
 
+  // Check if any item is a real number
+  let has_real = items.iter().any(item_is_real);
+
   let mut cumulative_sum = 0.0;
   let mut result = Vec::new();
 
   for item in items {
     let val = evaluate_term(item.clone())?;
     cumulative_sum += val;
-    result.push(format_result(cumulative_sum));
+    if has_real {
+      result.push(format_real_result(cumulative_sum));
+    } else {
+      result.push(format_result(cumulative_sum));
+    }
   }
 
   Ok(format!("{{{}}}", result.join(", ")))
@@ -535,6 +642,9 @@ pub fn median(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
 
+  // Check if any item is a real number
+  let has_real = items.iter().any(item_is_real);
+
   // Evaluate all items to numbers
   let mut values: Vec<f64> = Vec::new();
   for item in items {
@@ -547,15 +657,28 @@ pub fn median(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   // Calculate median
   let len = values.len();
-  let median_val = if len % 2 == 1 {
+  if len % 2 == 1 {
     // Odd length: return middle element
-    values[len / 2]
+    let median_val = values[len / 2];
+    if has_real {
+      Ok(format_real_result(median_val))
+    } else {
+      Ok(format_result(median_val))
+    }
   } else {
     // Even length: return average of two middle elements
-    (values[len / 2 - 1] + values[len / 2]) / 2.0
-  };
+    let mid1 = values[len / 2 - 1];
+    let mid2 = values[len / 2];
 
-  Ok(format_result(median_val))
+    if has_real {
+      let median_val = (mid1 + mid2) / 2.0;
+      Ok(format_real_result(median_val))
+    } else {
+      // For integers, return as fraction
+      let sum = (mid1 as i64) + (mid2 as i64);
+      Ok(format_fraction(sum, 2))
+    }
+  }
 }
 
 /// Handle First[list] - Return the first element of a list

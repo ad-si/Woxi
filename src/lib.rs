@@ -152,6 +152,48 @@ fn format_result(result: f64) -> String {
   }
 }
 
+/// Format a result as a real number (with trailing dot for whole numbers)
+pub fn format_real_result(result: f64) -> String {
+  if result.fract() == 0.0 {
+    format!("{}.", result as i64)
+  } else {
+    format!("{:.10}", result)
+      .trim_end_matches('0')
+      .to_string()
+  }
+}
+
+/// GCD helper function for fraction simplification
+fn gcd_i64(a: i64, b: i64) -> i64 {
+  let mut a = a.abs();
+  let mut b = b.abs();
+  while b != 0 {
+    let temp = b;
+    b = a % b;
+    a = temp;
+  }
+  a
+}
+
+/// Format a rational number as a fraction (numerator/denominator)
+pub fn format_fraction(numerator: i64, denominator: i64) -> String {
+  if denominator == 0 {
+    return "ComplexInfinity".to_string();
+  }
+  let g = gcd_i64(numerator, denominator);
+  let num = numerator / g;
+  let den = denominator / g;
+
+  // Handle sign
+  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+
+  if den == 1 {
+    num.to_string()
+  } else {
+    format!("{}/{}", num, den)
+  }
+}
+
 // Parse display-form strings like "{1, 2, 3}" into top-level comma-separated
 // element strings.  Returns None if `s` is not a braced list.
 fn parse_list_string(s: &str) -> Option<Vec<String>> {

@@ -32,7 +32,7 @@ pub fn even_odd_q(
   if n.fract() != 0.0 {
     return Ok("False".to_string());
   }
-  let is_even = n >= 0.0 && (n as i64) % 2 == 0;
+  let is_even = (n as i64) % 2 == 0;
   Ok(
     if (func_name == "EvenQ" && is_even) || (func_name == "OddQ" && !is_even) {
       "True"
@@ -44,6 +44,8 @@ pub fn even_odd_q(
 }
 
 /// Handle IntegerQ[expr] - Tests if the expression evaluates to an integer
+/// In Wolfram Language, IntegerQ returns True only for actual integer representations,
+/// not for real numbers that happen to have no fractional part (e.g., 3.0 returns False)
 pub fn integer_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -51,13 +53,43 @@ pub fn integer_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> 
     ));
   }
 
-  // Try to evaluate as a term (number)
-  let value = match evaluate_term(args_pairs[0].clone()) {
-    Ok(v) => v,
-    Err(_) => return Ok("False".to_string()), // Not a number, so not an integer
-  };
+  // Check if the argument is syntactically an integer (not a real number like 3.0)
+  fn is_integer_literal(pair: &Pair<Rule>) -> bool {
+    match pair.as_rule() {
+      Rule::Integer => true,
+      Rule::Real => false, // Real numbers like 3.0 are not integers
+      Rule::NumericValue => {
+        // Check inner value
+        if let Some(inner) = pair.clone().into_inner().next() {
+          is_integer_literal(&inner)
+        } else {
+          false
+        }
+      }
+      Rule::Expression | Rule::Term => {
+        // Check if it's just wrapping a single numeric value
+        let inner: Vec<_> = pair.clone().into_inner().collect();
+        if inner.len() == 1 {
+          is_integer_literal(&inner[0])
+        } else {
+          false
+        }
+      }
+      Rule::FunctionCall => {
+        // For function calls, evaluate and check the result format
+        if let Ok(result) = evaluate_expression(pair.clone()) {
+          // If the result contains a decimal point, it's not an integer
+          !result.contains('.')
+            && result.parse::<i64>().is_ok()
+        } else {
+          false
+        }
+      }
+      _ => false,
+    }
+  }
 
-  // Check if the value has no fractional part
-  let is_integer = value.fract() == 0.0 && value.is_finite();
-  Ok(if is_integer { "True" } else { "False" }.to_string())
+  let arg = &args_pairs[0];
+  let is_int = is_integer_literal(arg);
+  Ok(if is_int { "True" } else { "False" }.to_string())
 }
