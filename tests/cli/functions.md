@@ -126,6 +126,6 @@ $ wo 'NestList[f, x, 3]'
 ## `DateString`
 
 ```scrut
-$ wo 'StringStartsQ[DateString[Now, "ISODateTime"], "2025-"]'
+$ wo 'StringStartsQ[DateString[Now, "ISODateTime"], "2026-"]'
 True
 ```

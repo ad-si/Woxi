@@ -469,7 +469,7 @@ True
 
 ```scrut
 $ wo 'IntegerQ[3.0]'
-True
+False
 ```
 
 ```scrut
@@ -489,7 +489,7 @@ False
 
 ```scrut
 $ wo 'IntegerQ[0.0]'
-True
+False
 ```
 
 ```scrut
@@ -519,12 +519,12 @@ True
 
 ```scrut
 $ wo 'EvenQ[-4]'
-False
+True
 ```
 
 ```scrut
 $ wo 'EvenQ[-2]'
-False
+True
 ```
 
 ```scrut
@@ -564,7 +564,7 @@ True
 
 ```scrut
 $ wo 'OddQ[-4]'
-True
+False
 ```
 
 ```scrut

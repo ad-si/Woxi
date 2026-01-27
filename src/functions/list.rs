@@ -199,8 +199,23 @@ pub fn take(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
       "Second argument of Take must be a positive integer".into(),
     ));
   }
-  let k = std::cmp::min(n as usize, items.len());
-  let evaluated: Result<Vec<_>, _> = items[..k]
+  let n_int = n as usize;
+
+  // Check if n is larger than the list size
+  if n_int > items.len() {
+    // Format the list for the error message
+    let list_str = evaluate_expression(list_pair.clone())?;
+    use std::io::{self, Write};
+    println!(
+      "\nTake::take: Cannot take positions 1 through {} in {}.",
+      n_int, list_str
+    );
+    io::stdout().flush().ok();
+    // Return the unevaluated expression
+    return Ok(format!("Take[{}, {}]", list_str, n_int));
+  }
+
+  let evaluated: Result<Vec<_>, _> = items[..n_int]
     .iter()
     .cloned()
     .map(|p| evaluate_expression(p))

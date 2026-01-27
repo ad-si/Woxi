@@ -151,7 +151,9 @@ $ wo 'Take[{1, 2, 3, 4, 5}, 1]'
 
 ```scrut
 $ wo 'Take[{1, 2, 3}, 5]'
-{1, 2, 3}
+
+Take::take: Cannot take positions 1 through 5 in {1, 2, 3}.
+Take[{1, 2, 3}, 5]
 ```
 
 ```scrut
@@ -458,7 +460,7 @@ $ wo 'Mean[{1.5, 2.5, 3.5}]'
 
 ```scrut
 $ wo 'Mean[{0, 0, 0, 10}]'
-2.5
+5/2
 ```
 
 ```scrut
@@ -478,7 +480,7 @@ $ wo 'Median[{1, 2, 3, 4, 5}]'
 
 ```scrut
 $ wo 'Median[{1, 2, 3, 4}]'
-2.5
+5/2
 ```
 
 ```scrut
@@ -493,7 +495,7 @@ $ wo 'Median[{10}]'
 
 ```scrut
 $ wo 'Median[{1, 10}]'
-5.5
+11/2
 ```
 
 ```scrut
@@ -508,7 +510,7 @@ $ wo 'Median[{-5, 0, 5}]'
 
 ```scrut
 $ wo 'Median[{1.5, 2.5, 3.5, 4.5}]'
-3
+3.
 ```
 
 ```scrut
@@ -519,56 +521,16 @@ $ wo 'Median[{100, 1, 50}]'
 
 ## `Product`
 
-Multiplies all the elements of a list together.
+Evaluates the product.
 
 ```scrut
-$ wo 'Product[{1, 2, 3}]'
-6
+$ wo 'Product[i^2, {i, 1, 6}]'
+518400
 ```
 
 ```scrut
-$ wo 'Product[{2, 3, 4}]'
-24
-```
-
-```scrut
-$ wo 'Product[{1, 2, 3, 4, 5}]'
-120
-```
-
-```scrut
-$ wo 'Product[{5}]'
-5
-```
-
-```scrut
-$ wo 'Product[{}]'
-1
-```
-
-```scrut
-$ wo 'Product[{-2, 3}]'
--6
-```
-
-```scrut
-$ wo 'Product[{-2, -3}]'
-6
-```
-
-```scrut
-$ wo 'Product[{2, 0, 5}]'
-0
-```
-
-```scrut
-$ wo 'Product[{1.5, 2}]'
-3
-```
-
-```scrut
-$ wo 'Product[{2, 2.5}]'
-5
+$ wo 'Product[i^2, {i, 1, n}]'
+n!^2
 ```
 
 
@@ -608,7 +570,7 @@ $ wo 'Accumulate[{10, -5, 3}]'
 
 ```scrut
 $ wo 'Accumulate[{1.5, 2.5}]'
-{1.5, 4}
+{1.5, 4.}
 ```
 
 ```scrut

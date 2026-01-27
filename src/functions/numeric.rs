@@ -2,6 +2,19 @@ use pest::iterators::Pair;
 
 use crate::{evaluate_term, format_result, nth_prime, InterpreterError, Rule};
 
+/// Check if a pair contains a Real (floating-point) number literal
+fn contains_real(pair: &Pair<Rule>) -> bool {
+  match pair.as_rule() {
+    Rule::Real => true,
+    Rule::Integer => false,
+    _ => {
+      // Check the string representation for a decimal point
+      let s = pair.as_str();
+      s.contains('.') && !s.contains("->")
+    }
+  }
+}
+
 /// Handle Sin[x] - returns the sine of the argument
 pub fn sin(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {
@@ -329,6 +342,22 @@ pub fn modulo(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok(format_result(result))
 }
 
+/// Try to parse an expression as a simple fraction a/b where a and b are integers
+fn try_parse_fraction(pair: &Pair<Rule>) -> Option<(i64, i64)> {
+  let s = pair.as_str().trim();
+  // Check if it's in the form "a/b"
+  if let Some(pos) = s.find('/') {
+    let num_str = s[..pos].trim();
+    let den_str = s[pos + 1..].trim();
+    if let (Ok(num), Ok(den)) = (num_str.parse::<i64>(), den_str.parse::<i64>()) {
+      if den != 0 {
+        return Some((num, den));
+      }
+    }
+  }
+  None
+}
+
 /// Handle Power[x, y] - Returns x raised to the power y
 pub fn power(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   if args_pairs.len() != 2 {
@@ -339,6 +368,14 @@ pub fn power(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   let base = evaluate_term(args_pairs[0].clone())?;
   let exponent = evaluate_term(args_pairs[1].clone())?;
+
+  // Check if either argument contains a real (floating-point) number
+  let base_is_real = contains_real(&args_pairs[0]);
+  let exp_is_real = contains_real(&args_pairs[1]);
+  let input_has_real = base_is_real || exp_is_real;
+
+  // Check if exponent is a rational fraction like 1/3
+  let exp_fraction = try_parse_fraction(&args_pairs[1]);
 
   // Handle special cases
   if base == 0.0 && exponent < 0.0 {
@@ -362,7 +399,63 @@ pub fn power(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
 
-  Ok(format_result(result))
+  // Check if exponent is a rational fraction and the result is close to an integer
+  if let Some((num, den)) = exp_fraction {
+    // For fractional exponents like 1/3, check if result is very close to an integer
+    let rounded = result.round();
+    if (result - rounded).abs() < 1e-6 {
+      // Verify this is an exact root by computing rounded^(den/num) and comparing to base
+      // For Power[27, 1/3]: rounded=3, we check 3^3 = 27
+      let base_int = base as i64;
+      let rounded_int = rounded as i64;
+      if num == 1 && rounded_int > 0 {
+        // Check if rounded_int^den equals base
+        let check = rounded_int.pow(den as u32);
+        if check == base_int {
+          return Ok(format_result(rounded));
+        }
+      }
+    }
+  }
+
+  // Handle output formatting based on input types
+  if input_has_real {
+    // If input contains reals, output should be a real number
+    // Use trailing dot for whole numbers (e.g., 2.)
+    if result.fract() == 0.0 {
+      Ok(format!("{}.", result as i64))
+    } else {
+      // Full precision for non-integer results
+      let formatted = format!("{:.16}", result);
+      // Trim trailing zeros but keep at least one decimal place
+      let trimmed = formatted.trim_end_matches('0');
+      if trimmed.ends_with('.') {
+        Ok(format!("{}0", trimmed))
+      } else {
+        Ok(trimmed.to_string())
+      }
+    }
+  } else {
+    // Both base and exponent are integers or simple fractions
+    let base_int = base as i64;
+
+    // Check if exponent is a negative integer
+    if exponent.fract() == 0.0 && exponent < 0.0 {
+      let exp_int = exponent as i64;
+      // Negative integer exponent: result should be a fraction
+      // Power[base, -n] = 1 / base^n
+      let denominator = base_int.pow((-exp_int) as u32);
+      return Ok(crate::format_fraction(1, denominator));
+    }
+
+    // Check if exponent is a positive integer
+    if exponent.fract() == 0.0 && exponent >= 0.0 {
+      return Ok(format_result(result));
+    }
+
+    // For fractional exponents without explicit real literals, return formatted result
+    Ok(format_result(result))
+  }
 }
 
 /// Handle Factorial[n] - Returns the factorial of n (n!)
