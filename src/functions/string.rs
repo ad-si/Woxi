@@ -365,3 +365,98 @@ fn wildcard_match(s: &str, pattern: &str) -> bool {
 
   match_helper(&s_chars, &p_chars)
 }
+
+/// Handle StringReverse[s] - returns the string with characters in reverse order
+pub fn string_reverse(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "StringReverse expects exactly 1 argument".into(),
+    ));
+  }
+  let s = extract_string(args_pairs[0].clone())?;
+  let reversed: String = s.chars().rev().collect();
+  Ok(reversed)
+}
+
+/// Handle StringRepeat[s, n] - returns the string repeated n times
+pub fn string_repeat(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringRepeat expects exactly 2 arguments".into(),
+    ));
+  }
+  let s = extract_string(args_pairs[0].clone())?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument of StringRepeat must be a non-negative integer".into(),
+    ));
+  }
+  let repeated = s.repeat(n as usize);
+  Ok(repeated)
+}
+
+/// Handle StringTrim[s] - removes leading and trailing whitespace
+/// StringTrim[s, patt] - removes leading and trailing occurrences of patt
+pub fn string_trim(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringTrim expects 1 or 2 arguments".into(),
+    ));
+  }
+  let s = extract_string(args_pairs[0].clone())?;
+
+  if args_pairs.len() == 1 {
+    // Trim whitespace
+    Ok(s.trim().to_string())
+  } else {
+    // Trim specific pattern
+    let patt = extract_string(args_pairs[1].clone())?;
+    let trimmed = s.trim_start_matches(&patt).trim_end_matches(&patt);
+    Ok(trimmed.to_string())
+  }
+}
+
+/// Handle StringCases[s, patt] - finds all substrings matching pattern
+pub fn string_cases(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringCases expects exactly 2 arguments".into(),
+    ));
+  }
+  let s = extract_string(args_pairs[0].clone())?;
+  let patt = extract_string(args_pairs[1].clone())?;
+
+  // Simple substring matching (not regex)
+  let mut matches = Vec::new();
+  let mut start = 0;
+  while let Some(pos) = s[start..].find(&patt) {
+    matches.push(patt.clone());
+    start = start + pos + patt.len();
+  }
+
+  Ok(format!("{{{}}}", matches.join(", ")))
+}
+
+/// Handle ToString[expr] - converts expression to string form
+pub fn to_string(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ToString expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expr = crate::evaluate_expression(args_pairs[0].clone())?;
+  // The result is already a string representation
+  Ok(expr)
+}

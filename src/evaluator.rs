@@ -1844,6 +1844,11 @@ fn evaluate_function_call(
     "StringRiffle" => functions::string::string_riffle(&args_pairs),
     "StringPosition" => functions::string::string_position(&args_pairs),
     "StringMatchQ" => functions::string::string_match_q(&args_pairs),
+    "StringReverse" => functions::string::string_reverse(&args_pairs),
+    "StringRepeat" => functions::string::string_repeat(&args_pairs),
+    "StringTrim" => functions::string::string_trim(&args_pairs),
+    "StringCases" => functions::string::string_cases(&args_pairs),
+    "ToString" => functions::string::to_string(&args_pairs),
 
     // List Functions
     "Map" => functions::list_helpers::map_list(&args_pairs),
