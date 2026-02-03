@@ -268,3 +268,105 @@ True
 $ wo 'StringMatchQ["a1b2c3", "@"]'
 True
 ```
+
+
+## `StringReverse`
+
+Reverses the characters in a string.
+
+```scrut
+$ wo 'StringReverse["Hello"]'
+olleH
+```
+
+```scrut
+$ wo 'StringReverse["abcde"]'
+edcba
+```
+
+```scrut
+$ wo 'StringReverse[""]'
+
+```
+
+
+## `StringRepeat`
+
+Repeats a string n times.
+
+```scrut
+$ wo 'StringRepeat["ab", 3]'
+ababab
+```
+
+```scrut
+$ wo 'StringRepeat["x", 5]'
+xxxxx
+```
+
+```scrut
+$ wo 'StringRepeat["hello", 0]'
+
+```
+
+
+## `StringTrim`
+
+Removes leading and trailing whitespace.
+
+```scrut
+$ wo 'StringTrim["  hello  "]'
+hello
+```
+
+```scrut
+$ wo 'StringTrim["  hello world  "]'
+hello world
+```
+
+With a pattern, removes leading and trailing occurrences:
+
+```scrut
+$ wo 'StringTrim["xxhelloxx", "xx"]'
+hello
+```
+
+
+## `StringCases`
+
+Finds all occurrences of a substring.
+
+```scrut
+$ wo 'StringCases["abcabc", "bc"]'
+{bc, bc}
+```
+
+```scrut
+$ wo 'StringCases["hello", "l"]'
+{l, l}
+```
+
+```scrut
+$ wo 'StringCases["hello", "x"]'
+{}
+```
+
+
+## `ToString`
+
+Converts an expression to a string.
+
+```scrut
+$ wo 'ToString[123]'
+123
+```
+
+```scrut
+$ wo 'ToString[{1, 2, 3}]'
+{1, 2, 3}
+```
+
+```scrut
+$ wo 'ToString[1 + 2]'
+3
+```
