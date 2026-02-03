@@ -80,13 +80,15 @@ fn install_kernel(user: bool, system: bool) -> std::io::Result<()> {
 
   if status.success() {
     println!("Woxi kernel installed successfully!");
-    println!("You can now use it in Jupyter Lab or Notebook by selecting 'Woxi' from the kernel list.");
+    println!(
+      "You can now use it in Jupyter Lab or Notebook by selecting 'Woxi' from the kernel list."
+    );
     Ok(())
   } else {
-    Err(std::io::Error::new(
-      std::io::ErrorKind::Other,
-      format!("Failed to install kernel. Exit code: {}", status),
-    ))
+    Err(std::io::Error::other(format!(
+      "Failed to install kernel. Exit code: {}",
+      status
+    )))
   }
 }
 

@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{evaluate_term, format_result, nth_prime, InterpreterError, Rule};
+use crate::{InterpreterError, Rule, evaluate_term, format_result, nth_prime};
 
 /// Check if a pair contains a Real (floating-point) number literal
 fn contains_real(pair: &Pair<Rule>) -> bool {
@@ -268,9 +268,7 @@ pub fn max(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   };
 
   // ── find maximum ─────────────────────────────────────────────────────
-  let max_val = values
-    .iter()
-    .fold(f64::NEG_INFINITY, |acc, &x| acc.max(x));
+  let max_val = values.iter().fold(f64::NEG_INFINITY, |acc, &x| acc.max(x));
 
   // ── return formatted result ──────────────────────────────────────────
   Ok(format_result(max_val))
@@ -312,9 +310,7 @@ pub fn min(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   };
 
   // ── find minimum ─────────────────────────────────────────────────────
-  let min_val = values
-    .iter()
-    .fold(f64::INFINITY, |acc, &x| acc.min(x));
+  let min_val = values.iter().fold(f64::INFINITY, |acc, &x| acc.min(x));
 
   // ── return formatted result ──────────────────────────────────────────
   Ok(format_result(min_val))
@@ -349,10 +345,10 @@ fn try_parse_fraction(pair: &Pair<Rule>) -> Option<(i64, i64)> {
   if let Some(pos) = s.find('/') {
     let num_str = s[..pos].trim();
     let den_str = s[pos + 1..].trim();
-    if let (Ok(num), Ok(den)) = (num_str.parse::<i64>(), den_str.parse::<i64>()) {
-      if den != 0 {
-        return Some((num, den));
-      }
+    if let (Ok(num), Ok(den)) = (num_str.parse::<i64>(), den_str.parse::<i64>())
+      && den != 0
+    {
+      return Some((num, den));
     }
   }
   None
@@ -459,7 +455,9 @@ pub fn power(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 }
 
 /// Handle Factorial[n] - Returns the factorial of n (n!)
-pub fn factorial(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn factorial(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Factorial expects exactly 1 argument".into(),

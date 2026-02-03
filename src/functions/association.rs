@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{extract_string, InterpreterError, Rule};
+use crate::{InterpreterError, Rule, extract_string};
 
 /// Helper for extracting association from first argument
 pub fn get_assoc_from_first_arg(
@@ -11,59 +11,58 @@ pub fn get_assoc_from_first_arg(
   // NEW: recognise an identifier that is wrapped in an Expression
   if p.as_rule() == Rule::Expression {
     let mut inner = p.clone().into_inner();
-    if let Some(first) = inner.next() {
-      if first.as_rule() == Rule::Identifier && inner.next().is_none() {
-        if let Some(crate::StoredValue::Association(v)) =
-          crate::ENV.with(|e| e.borrow().get(first.as_str()).cloned())
-        {
-          return Ok(v);
-        }
-      }
-    }
-  }
-
-  if p.as_rule() == Rule::Identifier {
-    if let Some(crate::StoredValue::Association(v)) =
-      crate::ENV.with(|e| e.borrow().get(p.as_str()).cloned())
+    if let Some(first) = inner.next()
+      && first.as_rule() == Rule::Identifier
+      && inner.next().is_none()
+      && let Some(crate::StoredValue::Association(v)) =
+        crate::ENV.with(|e| e.borrow().get(first.as_str()).cloned())
     {
       return Ok(v);
     }
+  }
+
+  if p.as_rule() == Rule::Identifier
+    && let Some(crate::StoredValue::Association(v)) =
+      crate::ENV.with(|e| e.borrow().get(p.as_str()).cloned())
+  {
+    return Ok(v);
   }
   if p.as_rule() == Rule::Association {
     return Ok(crate::eval_association(p.clone())?.0);
   }
   // Try to evaluate as an expression and parse as association display
-  if let Ok(val) = crate::evaluate_expression(p.clone()) {
-    if val.starts_with("<|") && val.ends_with("|>") {
-      let inner_val = &val[2..val.len() - 2];
-      let mut pairs = Vec::new();
-      // Only split on top-level commas (not inside braces or quotes)
-      let mut depth = 0;
-      let mut start = 0;
-      let mut parts = Vec::new();
-      let chars: Vec<char> = inner_val.chars().collect();
-      for (i, &c) in chars.iter().enumerate() {
-        match c {
-          '{' | '<' | '[' | '(' => depth += 1,
-          '}' | '>' | ']' | ')' => depth -= 1,
-          ',' if depth == 0 => {
-            parts.push(inner_val[start..i].to_string());
-            start = i + 1;
-          }
-          _ => {}
+  if let Ok(val) = crate::evaluate_expression(p.clone())
+    && val.starts_with("<|")
+    && val.ends_with("|>")
+  {
+    let inner_val = &val[2..val.len() - 2];
+    let mut pairs = Vec::new();
+    // Only split on top-level commas (not inside braces or quotes)
+    let mut depth = 0;
+    let mut start = 0;
+    let mut parts = Vec::new();
+    let chars: Vec<char> = inner_val.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+      match c {
+        '{' | '<' | '[' | '(' => depth += 1,
+        '}' | '>' | ']' | ')' => depth -= 1,
+        ',' if depth == 0 => {
+          parts.push(inner_val[start..i].to_string());
+          start = i + 1;
         }
+        _ => {}
       }
-      if start < chars.len() {
-        parts.push(inner_val[start..].to_string());
-      }
-      for part in parts {
-        let part_trimmed = part.trim();
-        if let Some((k, v_str)) = part_trimmed.split_once("->") {
-          pairs.push((k.trim().to_string(), v_str.trim().to_string()));
-        }
-      }
-      return Ok(pairs);
     }
+    if start < chars.len() {
+      parts.push(inner_val[start..].to_string());
+    }
+    for part in parts {
+      let part_trimmed = part.trim();
+      if let Some((k, v_str)) = part_trimmed.split_once("->") {
+        pairs.push((k.trim().to_string(), v_str.trim().to_string()));
+      }
+    }
+    return Ok(pairs);
   }
   Err(InterpreterError::EvaluationError(
     "Argument must be an association".into(),

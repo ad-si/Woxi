@@ -1,7 +1,7 @@
 use chrono::Local;
 use pest::iterators::Pair;
 
-use crate::{evaluate_expression, extract_string, InterpreterError, Rule};
+use crate::{InterpreterError, Rule, evaluate_expression, extract_string};
 
 /// Handle DateString[]/DateString[Now]/DateString["format"] - returns a formatted date string
 pub fn date_string(

@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{capture_stdout, evaluate_expression, InterpreterError, Rule};
+use crate::{InterpreterError, Rule, capture_stdout, evaluate_expression};
 
 pub fn print(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   // 0 args → just output a newline and return Null

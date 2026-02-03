@@ -1,5 +1,5 @@
-use pest::iterators::Pair;
 use pest::Parser;
+use pest::iterators::Pair;
 use pest_derive::Parser;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -45,7 +45,8 @@ pub struct InterpretResult {
 impl WolframParser {
   pub fn parse_wolfram(
     input: &str,
-  ) -> Result<pest::iterators::Pairs<'_, Rule>, Box<pest::error::Error<Rule>>> {
+  ) -> Result<pest::iterators::Pairs<'_, Rule>, Box<pest::error::Error<Rule>>>
+  {
     Self::parse(Rule::Program, input).map_err(Box::new)
   }
 }
@@ -157,9 +158,7 @@ pub fn format_real_result(result: f64) -> String {
   if result.fract() == 0.0 {
     format!("{}.", result as i64)
   } else {
-    format!("{:.10}", result)
-      .trim_end_matches('0')
-      .to_string()
+    format!("{:.10}", result).trim_end_matches('0').to_string()
   }
 }
 
@@ -251,7 +250,9 @@ fn eval_association(
         if inner.as_rule() == Rule::Association {
           found = Some(inner);
           break;
-        } else if inner.as_rule() == Rule::Term || inner.as_rule() == Rule::Expression {
+        } else if inner.as_rule() == Rule::Term
+          || inner.as_rule() == Rule::Expression
+        {
           // Recurse into nested Term/Expression
           for deeper in inner.clone().into_inner() {
             if deeper.as_rule() == Rule::Association {
@@ -269,7 +270,7 @@ fn eval_association(
       return Err(InterpreterError::EvaluationError(format!(
         "Expected Association, got {:?}",
         pair.as_rule()
-      )))
+      )));
     }
   };
 
@@ -421,7 +422,7 @@ fn apply_map_operator(
             return Err(InterpreterError::EvaluationError(format!(
               "Unsupported operator in anonymous function: {}",
               operator
-            )))
+            )));
           }
         };
         out.push(format_result(res));
@@ -456,12 +457,12 @@ fn is_prime(n: usize) -> bool {
   if n == 2 {
     return true;
   }
-  if n % 2 == 0 {
+  if n.is_multiple_of(2) {
     return false;
   }
   let sqrt_n = (n as f64).sqrt() as usize;
   for i in (3..=sqrt_n).step_by(2) {
-    if n % i == 0 {
+    if n.is_multiple_of(i) {
       return false;
     }
   }

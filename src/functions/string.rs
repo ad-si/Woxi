@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{evaluate_term, extract_string, InterpreterError, Rule};
+use crate::{InterpreterError, Rule, evaluate_term, extract_string};
 
 /// Handle StringLength[s] - returns the length of a string
 pub fn string_length(

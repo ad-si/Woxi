@@ -179,7 +179,7 @@ fn parse_to_sym(pair: Pair<Rule>) -> Result<SymExpr, InterpreterError> {
             return Err(InterpreterError::EvaluationError(format!(
               "Unexpected operator: {}",
               op
-            )))
+            )));
           }
         };
       }
@@ -273,10 +273,7 @@ fn differentiate(expr: &SymExpr, var: &str) -> SymExpr {
     SymExpr::Sin(a) => {
       // d/dx[sin(f(x))] = cos(f(x)) * f'(x)
       let da = differentiate(a, var);
-      SymExpr::Mul(
-        Box::new(SymExpr::Cos(a.clone())),
-        Box::new(da),
-      )
+      SymExpr::Mul(Box::new(SymExpr::Cos(a.clone())), Box::new(da))
     }
     SymExpr::Cos(a) => {
       // d/dx[cos(f(x))] = -sin(f(x)) * f'(x)
@@ -344,10 +341,7 @@ fn simplify(expr: SymExpr) -> SymExpr {
       }
       // 0 - x = -x (represented as -1 * x)
       if a.is_const(0) {
-        return simplify(SymExpr::Mul(
-          Box::new(SymExpr::Num(-1)),
-          Box::new(b),
-        ));
+        return simplify(SymExpr::Mul(Box::new(SymExpr::Num(-1)), Box::new(b)));
       }
       // n - m = n-m
       if let (SymExpr::Num(n), SymExpr::Num(m)) = (&a, &b) {
@@ -551,12 +545,17 @@ fn format_sym_factor(expr: &SymExpr) -> String {
 fn needs_parens_exp(expr: &SymExpr) -> bool {
   matches!(
     expr,
-    SymExpr::Add(_, _) | SymExpr::Sub(_, _) | SymExpr::Mul(_, _) | SymExpr::Div(_, _)
+    SymExpr::Add(_, _)
+      | SymExpr::Sub(_, _)
+      | SymExpr::Mul(_, _)
+      | SymExpr::Div(_, _)
   )
 }
 
 /// Handle D[expr, var] - symbolic differentiation
-pub fn derivative(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn derivative(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "D expects exactly 2 arguments".into(),
@@ -586,7 +585,7 @@ pub fn derivative(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError>
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Second argument of D must be a symbol".into(),
-      ))
+      ));
     }
   };
 
@@ -646,38 +645,39 @@ fn integrate(expr: &SymExpr, var: &str) -> Option<SymExpr> {
     // Handle x^n where n is constant
     SymExpr::Pow(base, exp) => {
       // Only handle simple case: x^n where base is the variable and exp is constant
-      if let SymExpr::Var(v) = base.as_ref() {
-        if v == var && exp.is_constant_wrt(var) {
-          // ∫ x^n dx = x^(n+1)/(n+1)
-          let new_exp = SymExpr::Add(exp.clone(), Box::new(SymExpr::Num(1)));
-          return Some(SymExpr::Div(
-            Box::new(SymExpr::Pow(base.clone(), Box::new(new_exp.clone()))),
-            Box::new(new_exp),
-          ));
-        }
+      if let SymExpr::Var(v) = base.as_ref()
+        && v == var
+        && exp.is_constant_wrt(var)
+      {
+        // ∫ x^n dx = x^(n+1)/(n+1)
+        let new_exp = SymExpr::Add(exp.clone(), Box::new(SymExpr::Num(1)));
+        return Some(SymExpr::Div(
+          Box::new(SymExpr::Pow(base.clone(), Box::new(new_exp.clone()))),
+          Box::new(new_exp),
+        ));
       }
       None // Cannot integrate more complex power expressions
     }
     // ∫ sin(x) dx = -cos(x)
     SymExpr::Sin(a) => {
       // Only handle simple case: sin(x) where a is just the variable
-      if let SymExpr::Var(v) = a.as_ref() {
-        if v == var {
-          return Some(SymExpr::Mul(
-            Box::new(SymExpr::Num(-1)),
-            Box::new(SymExpr::Cos(a.clone())),
-          ));
-        }
+      if let SymExpr::Var(v) = a.as_ref()
+        && v == var
+      {
+        return Some(SymExpr::Mul(
+          Box::new(SymExpr::Num(-1)),
+          Box::new(SymExpr::Cos(a.clone())),
+        ));
       }
       None // Cannot integrate sin(f(x)) for complex f(x)
     }
     // ∫ cos(x) dx = sin(x)
     SymExpr::Cos(a) => {
       // Only handle simple case: cos(x) where a is just the variable
-      if let SymExpr::Var(v) = a.as_ref() {
-        if v == var {
-          return Some(SymExpr::Sin(a.clone()));
-        }
+      if let SymExpr::Var(v) = a.as_ref()
+        && v == var
+      {
+        return Some(SymExpr::Sin(a.clone()));
       }
       None // Cannot integrate cos(f(x)) for complex f(x)
     }
@@ -741,7 +741,7 @@ pub fn integral(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Second argument of Integrate must be a symbol".into(),
-      ))
+      ));
     }
   };
 
@@ -759,7 +759,11 @@ pub fn integral(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     }
     None => {
       // Return unevaluated for expressions we can't integrate
-      Ok(format!("Integrate[{}, {}]", format_sym(&sym_expr), var_name))
+      Ok(format!(
+        "Integrate[{}, {}]",
+        format_sym(&sym_expr),
+        var_name
+      ))
     }
   }
 }
