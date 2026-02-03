@@ -1877,6 +1877,28 @@ fn evaluate_function_call(
     "FoldList" => functions::list_helpers::fold_list(&args_pairs),
     "Nest" => functions::list_helpers::nest(&args_pairs),
     "NestList" => functions::list_helpers::nest_list(&args_pairs),
+    "Table" => functions::list_helpers::table(&args_pairs),
+    "Position" => functions::list_helpers::position(&args_pairs),
+    "Count" => functions::list_helpers::count(&args_pairs),
+    "DeleteDuplicates" => {
+      functions::list_helpers::delete_duplicates(&args_pairs)
+    }
+    "Union" => functions::list_helpers::union(&args_pairs),
+    "Intersection" => functions::list_helpers::intersection(&args_pairs),
+    "Complement" => functions::list_helpers::complement(&args_pairs),
+    "ConstantArray" => functions::list_helpers::constant_array(&args_pairs),
+    "Tally" => functions::list_helpers::tally(&args_pairs),
+    "ReplacePart" => functions::list_helpers::replace_part(&args_pairs),
+    "MinMax" => functions::list_helpers::min_max(&args_pairs),
+    "PadLeft" => functions::list_helpers::pad_left(&args_pairs),
+    "PadRight" => functions::list_helpers::pad_right(&args_pairs),
+    "RotateLeft" => functions::list_helpers::rotate_left(&args_pairs),
+    "RotateRight" => functions::list_helpers::rotate_right(&args_pairs),
+    "Riffle" => functions::list_helpers::riffle(&args_pairs),
+    "AnyTrue" => functions::list_helpers::any_true(&args_pairs),
+    "NoneTrue" => functions::list_helpers::none_true(&args_pairs),
+    "Transpose" => functions::list_helpers::transpose(&args_pairs),
+    "Thread" => functions::list_helpers::thread(&args_pairs),
     "Print" => functions::io::print(&args_pairs),
 
     // Replacement functions

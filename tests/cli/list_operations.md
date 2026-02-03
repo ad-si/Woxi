@@ -713,3 +713,514 @@ Constructs an array using a function to generate elements.
 $ wo 'Array[#^2 &, 3]'
 {1, 4, 9}
 ```
+
+
+## `Table`
+
+Generates a list by evaluating an expression for different values of a variable.
+
+### Table[expr, n]
+
+Generates a list of n copies of expr.
+
+```scrut
+$ wo 'Table[x, 3]'
+{x, x, x}
+```
+
+```scrut
+$ wo 'Table[1, 5]'
+{1, 1, 1, 1, 1}
+```
+
+### Table[expr, {i, max}]
+
+Generates a list where i goes from 1 to max.
+
+```scrut
+$ wo 'Table[i^2, {i, 5}]'
+{1, 4, 9, 16, 25}
+```
+
+```scrut
+$ wo 'Table[i, {i, 4}]'
+{1, 2, 3, 4}
+```
+
+```scrut
+$ wo 'Table[2*i, {i, 3}]'
+{2, 4, 6}
+```
+
+### Table[expr, {i, min, max}]
+
+Generates a list where i goes from min to max.
+
+```scrut
+$ wo 'Table[i, {i, 3, 7}]'
+{3, 4, 5, 6, 7}
+```
+
+```scrut
+$ wo 'Table[i^2, {i, 0, 4}]'
+{0, 1, 4, 9, 16}
+```
+
+```scrut
+$ wo 'Table[i, {i, -2, 2}]'
+{-2, -1, 0, 1, 2}
+```
+
+### Table[expr, {i, min, max, step}]
+
+Generates a list where i goes from min to max in steps.
+
+```scrut
+$ wo 'Table[i, {i, 1, 10, 2}]'
+{1, 3, 5, 7, 9}
+```
+
+```scrut
+$ wo 'Table[i, {i, 10, 1, -2}]'
+{10, 8, 6, 4, 2}
+```
+
+
+## `Position`
+
+Finds all positions of a pattern in a list.
+
+```scrut
+$ wo 'Position[{a, b, a, c, a}, a]'
+{{1}, {3}, {5}}
+```
+
+```scrut
+$ wo 'Position[{1, 2, 3, 2, 1}, 2]'
+{{2}, {4}}
+```
+
+```scrut
+$ wo 'Position[{1, 2, 3}, 4]'
+{}
+```
+
+```scrut
+$ wo 'Position[{x, y, x, z}, x]'
+{{1}, {3}}
+```
+
+
+## `Count`
+
+Counts the number of occurrences of a pattern in a list.
+
+```scrut
+$ wo 'Count[{a, b, a, c, a}, a]'
+3
+```
+
+```scrut
+$ wo 'Count[{1, 2, 3, 2, 1}, 2]'
+2
+```
+
+```scrut
+$ wo 'Count[{1, 2, 3}, 4]'
+0
+```
+
+```scrut
+$ wo 'Count[{x, x, x, y}, x]'
+3
+```
+
+
+## `DeleteDuplicates`
+
+Removes duplicate elements from a list.
+
+```scrut
+$ wo 'DeleteDuplicates[{a, b, a, c, b}]'
+{a, b, c}
+```
+
+```scrut
+$ wo 'DeleteDuplicates[{1, 2, 1, 3, 2}]'
+{1, 2, 3}
+```
+
+```scrut
+$ wo 'DeleteDuplicates[{1, 1, 1}]'
+{1}
+```
+
+```scrut
+$ wo 'DeleteDuplicates[{a}]'
+{a}
+```
+
+```scrut
+$ wo 'DeleteDuplicates[{}]'
+{}
+```
+
+
+## `Union`
+
+Returns the sorted union of lists (removes duplicates).
+
+```scrut
+$ wo 'Union[{1, 2, 3}, {2, 3, 4}]'
+{1, 2, 3, 4}
+```
+
+```scrut
+$ wo 'Union[{a, b}, {b, c}]'
+{a, b, c}
+```
+
+```scrut
+$ wo 'Union[{3, 1, 2}]'
+{1, 2, 3}
+```
+
+```scrut
+$ wo 'Union[{1, 1, 2, 2}]'
+{1, 2}
+```
+
+```scrut
+$ wo 'Union[{1, 2}, {3, 4}, {5, 6}]'
+{1, 2, 3, 4, 5, 6}
+```
+
+
+## `Intersection`
+
+Returns the sorted intersection of lists.
+
+```scrut
+$ wo 'Intersection[{1, 2, 3, 4}, {2, 4, 6}]'
+{2, 4}
+```
+
+```scrut
+$ wo 'Intersection[{a, b, c}, {b, c, d}]'
+{b, c}
+```
+
+```scrut
+$ wo 'Intersection[{1, 2, 3}, {4, 5, 6}]'
+{}
+```
+
+```scrut
+$ wo 'Intersection[{1, 2, 3}, {1, 2, 3}]'
+{1, 2, 3}
+```
+
+```scrut
+$ wo 'Intersection[{1, 2, 3}, {2, 3}, {3}]'
+{3}
+```
+
+
+## `Complement`
+
+Returns elements in the first list but not in any of the other lists.
+
+```scrut
+$ wo 'Complement[{1, 2, 3, 4, 5}, {2, 4}]'
+{1, 3, 5}
+```
+
+```scrut
+$ wo 'Complement[{a, b, c, d}, {b, d}]'
+{a, c}
+```
+
+```scrut
+$ wo 'Complement[{1, 2, 3}, {1, 2, 3}]'
+{}
+```
+
+```scrut
+$ wo 'Complement[{1, 2, 3, 4}, {2}, {4}]'
+{1, 3}
+```
+
+
+## `ConstantArray`
+
+Creates an array of repeated elements.
+
+```scrut
+$ wo 'ConstantArray[x, 3]'
+{x, x, x}
+```
+
+```scrut
+$ wo 'ConstantArray[0, 5]'
+{0, 0, 0, 0, 0}
+```
+
+```scrut
+$ wo 'ConstantArray[1, 0]'
+{}
+```
+
+```scrut
+$ wo 'ConstantArray[a, {2, 3}]'
+{{a, a, a}, {a, a, a}}
+```
+
+
+## `Tally`
+
+Counts occurrences of each distinct element.
+
+```scrut
+$ wo 'Tally[{a, b, a, c, b, a}]'
+{{a, 3}, {b, 2}, {c, 1}}
+```
+
+```scrut
+$ wo 'Tally[{1, 2, 1, 3}]'
+{{1, 2}, {2, 1}, {3, 1}}
+```
+
+```scrut
+$ wo 'Tally[{x, x, x}]'
+{{x, 3}}
+```
+
+```scrut
+$ wo 'Tally[{}]'
+{}
+```
+
+
+## `ReplacePart`
+
+Replaces element at a specific position.
+
+```scrut
+$ wo 'ReplacePart[{a, b, c}, 2 -> x]'
+{a, x, c}
+```
+
+```scrut
+$ wo 'ReplacePart[{1, 2, 3, 4}, 1 -> 0]'
+{0, 2, 3, 4}
+```
+
+```scrut
+$ wo 'ReplacePart[{a, b, c}, -1 -> z]'
+{a, b, z}
+```
+
+
+## `MinMax`
+
+Returns the minimum and maximum of a list.
+
+```scrut
+$ wo 'MinMax[{3, 1, 4, 1, 5, 9}]'
+{1, 9}
+```
+
+```scrut
+$ wo 'MinMax[{-5, 0, 5}]'
+{-5, 5}
+```
+
+```scrut
+$ wo 'MinMax[{42}]'
+{42, 42}
+```
+
+
+## `PadLeft`
+
+Pads a list on the left to a specified length.
+
+```scrut
+$ wo 'PadLeft[{1, 2, 3}, 5]'
+{0, 0, 1, 2, 3}
+```
+
+```scrut
+$ wo 'PadLeft[{a, b}, 4, x]'
+{x, x, a, b}
+```
+
+```scrut
+$ wo 'PadLeft[{1, 2, 3, 4, 5}, 3]'
+{3, 4, 5}
+```
+
+
+## `PadRight`
+
+Pads a list on the right to a specified length.
+
+```scrut
+$ wo 'PadRight[{1, 2, 3}, 5]'
+{1, 2, 3, 0, 0}
+```
+
+```scrut
+$ wo 'PadRight[{a, b}, 4, x]'
+{a, b, x, x}
+```
+
+```scrut
+$ wo 'PadRight[{1, 2, 3, 4, 5}, 3]'
+{1, 2, 3}
+```
+
+
+## `RotateLeft`
+
+Rotates list elements to the left.
+
+```scrut
+$ wo 'RotateLeft[{1, 2, 3, 4, 5}]'
+{2, 3, 4, 5, 1}
+```
+
+```scrut
+$ wo 'RotateLeft[{a, b, c, d}, 2]'
+{c, d, a, b}
+```
+
+```scrut
+$ wo 'RotateLeft[{1, 2, 3}, 0]'
+{1, 2, 3}
+```
+
+
+## `RotateRight`
+
+Rotates list elements to the right.
+
+```scrut
+$ wo 'RotateRight[{1, 2, 3, 4, 5}]'
+{5, 1, 2, 3, 4}
+```
+
+```scrut
+$ wo 'RotateRight[{a, b, c, d}, 2]'
+{c, d, a, b}
+```
+
+```scrut
+$ wo 'RotateRight[{1, 2, 3}, 0]'
+{1, 2, 3}
+```
+
+
+## `Riffle`
+
+Inserts an element between each pair of elements.
+
+```scrut
+$ wo 'Riffle[{a, b, c}, x]'
+{a, x, b, x, c}
+```
+
+```scrut
+$ wo 'Riffle[{1, 2, 3, 4}, 0]'
+{1, 0, 2, 0, 3, 0, 4}
+```
+
+```scrut
+$ wo 'Riffle[{a}, x]'
+{a}
+```
+
+```scrut
+$ wo 'Riffle[{}, x]'
+{}
+```
+
+
+## `AnyTrue`
+
+Checks if any element satisfies a predicate.
+
+```scrut
+$ wo 'AnyTrue[{1, 2, 3, 4}, EvenQ]'
+True
+```
+
+```scrut
+$ wo 'AnyTrue[{1, 3, 5}, EvenQ]'
+False
+```
+
+```scrut
+$ wo 'AnyTrue[{1, 2, 3}, # > 2 &]'
+True
+```
+
+
+## `NoneTrue`
+
+Checks if no element satisfies a predicate.
+
+```scrut
+$ wo 'NoneTrue[{1, 3, 5}, EvenQ]'
+True
+```
+
+```scrut
+$ wo 'NoneTrue[{1, 2, 3}, EvenQ]'
+False
+```
+
+```scrut
+$ wo 'NoneTrue[{1, 2, 3}, # > 5 &]'
+True
+```
+
+
+## `Transpose`
+
+Transposes a matrix (list of lists).
+
+```scrut
+$ wo 'Transpose[{{1, 2}, {3, 4}}]'
+{{1, 3}, {2, 4}}
+```
+
+```scrut
+$ wo 'Transpose[{{a, b, c}, {d, e, f}}]'
+{{a, d}, {b, e}, {c, f}}
+```
+
+```scrut
+$ wo 'Transpose[{{1, 2, 3}}]'
+{{1}, {2}, {3}}
+```
+
+
+## `Thread`
+
+Threads a function over corresponding list elements.
+
+```scrut
+$ wo 'Thread[f[{a, b}, {x, y}]]'
+{f[a, x], f[b, y]}
+```
+
+```scrut
+$ wo 'Thread[Plus[{1, 2}, {3, 4}]]'
+{Plus[1, 3], Plus[2, 4]}
+```
+
+```scrut
+$ wo 'Thread[g[{a, b, c}, {1, 2, 3}]]'
+{g[a, 1], g[b, 2], g[c, 3]}
+```
