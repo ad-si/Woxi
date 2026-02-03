@@ -21,10 +21,7 @@ pub fn create_file(
       let home_dir = env::current_dir().unwrap();
       home_dir.join(filename)
     }
-    None => {
-      // TODO: Use crate to get default directory for each platform
-      PathBuf::from("/tmp/").join(rand_str(16))
-    }
+    None => env::temp_dir().join(rand_str(16)),
   };
 
   fs::OpenOptions::new()
