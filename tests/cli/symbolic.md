@@ -20,7 +20,7 @@ $ wo 'D[x^n, x]'
 n*x^(-1 + n)
 ```
 
-```todo
+```scrut
 $ wo 'Integrate[x^2 + Sin[x], x]'
 x^3/3 - Cos[x]
 ```
