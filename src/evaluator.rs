@@ -6,6 +6,98 @@ use crate::{
   StoredValue, ENV, FUNC_DEFS,
 };
 
+/// Represents either a numeric value or a symbolic term in an expression
+#[derive(Debug, Clone)]
+enum SymbolicTerm {
+  Numeric(f64),
+  Symbol(String),
+}
+
+/// Try to evaluate a term, returning either a numeric value or a symbolic term
+fn try_evaluate_term(
+  term: pest::iterators::Pair<Rule>,
+) -> Result<SymbolicTerm, InterpreterError> {
+  match term.as_rule() {
+    Rule::Term => {
+      let inner = term.into_inner().next().unwrap();
+      try_evaluate_term(inner)
+    }
+    Rule::NumericValue => {
+      let inner = term.into_inner().next().unwrap();
+      try_evaluate_term(inner)
+    }
+    Rule::Constant => match term.as_str() {
+      "Pi" => Ok(SymbolicTerm::Numeric(std::f64::consts::PI)),
+      _ => Err(InterpreterError::EvaluationError(format!(
+        "Unknown constant: {}",
+        term.as_str()
+      ))),
+    },
+    Rule::Integer => {
+      let val = term.as_str().parse::<i64>().map_err(|_| {
+        InterpreterError::EvaluationError("invalid integer literal".to_string())
+      })?;
+      Ok(SymbolicTerm::Numeric(val as f64))
+    }
+    Rule::Real => {
+      let val = term.as_str().parse::<f64>().map_err(|_| {
+        InterpreterError::EvaluationError("invalid float literal".to_string())
+      })?;
+      Ok(SymbolicTerm::Numeric(val))
+    }
+    Rule::Expression => {
+      let result = evaluate_expression(term)?;
+      // Try to parse as numeric, otherwise keep as symbolic
+      if let Ok(val) = result.parse::<f64>() {
+        Ok(SymbolicTerm::Numeric(val))
+      } else {
+        Ok(SymbolicTerm::Symbol(result))
+      }
+    }
+    Rule::FunctionCall => {
+      let result = evaluate_function_call(term)?;
+      if result == "True" {
+        Ok(SymbolicTerm::Numeric(1.0))
+      } else if result == "False" {
+        Ok(SymbolicTerm::Numeric(0.0))
+      } else if let Ok(val) = result.parse::<f64>() {
+        Ok(SymbolicTerm::Numeric(val))
+      } else {
+        Ok(SymbolicTerm::Symbol(result))
+      }
+    }
+    Rule::Identifier => {
+      let id = term.as_str();
+      match id {
+        "True" => Ok(SymbolicTerm::Numeric(1.0)),
+        "False" => Ok(SymbolicTerm::Numeric(0.0)),
+        "Now" => Err(InterpreterError::EvaluationError(
+          "Identifier 'Now' cannot be directly used as a numeric value."
+            .to_string(),
+        )),
+        _ => {
+          // Check if the identifier has a stored value
+          if let Some(StoredValue::Raw(val)) =
+            ENV.with(|e| e.borrow().get(id).cloned())
+          {
+            if let Ok(num) = val.parse::<f64>() {
+              return Ok(SymbolicTerm::Numeric(num));
+            }
+            return Ok(SymbolicTerm::Symbol(val));
+          }
+          // Unknown identifier - keep as symbolic
+          Ok(SymbolicTerm::Symbol(id.to_string()))
+        }
+      }
+    }
+    _ => {
+      // Fall back to numeric evaluation for other cases
+      let val = evaluate_term(term)?;
+      Ok(SymbolicTerm::Numeric(val))
+    }
+  }
+}
+
 pub fn evaluate_expression(
   expr: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
@@ -108,7 +200,7 @@ pub fn evaluate_ast(ast: AST) -> Result<String, InterpreterError> {
         );
         io::stdout().flush().ok();
         // Return the expression with minus signs
-        let parts: Vec<String> = wo_nums.iter().map(|w| wonum_to_number_str(w.clone())).collect();
+        let parts: Vec<String> = wo_nums.iter().map(|w| wonum_to_number_str(*w)).collect();
         parts.join(" − ")
       }
     }
@@ -568,7 +660,7 @@ pub fn evaluate_pairs(
             let mut prev = evaluate_term(items[0].clone())?;
             for idx in (2..items.len()).step_by(2) {
               let cur = evaluate_term(items[idx].clone())?;
-              if !(prev > cur) {
+              if prev.partial_cmp(&cur) != Some(std::cmp::Ordering::Greater) {
                 return Ok("False".to_string());
               }
               prev = cur;
@@ -579,7 +671,7 @@ pub fn evaluate_pairs(
             let mut prev = evaluate_term(items[0].clone())?;
             for idx in (2..items.len()).step_by(2) {
               let cur = evaluate_term(items[idx].clone())?;
-              if !(prev < cur) {
+              if prev.partial_cmp(&cur) != Some(std::cmp::Ordering::Less) {
                 return Ok("False".to_string());
               }
               prev = cur;
@@ -670,14 +762,151 @@ pub fn evaluate_pairs(
           return evaluate_term(first).map(format_result);
         }
       }
-      let mut values: Vec<f64> = vec![evaluate_term(first)?];
+      // Collect all terms and operators using symbolic evaluation
+      let mut terms: Vec<SymbolicTerm> = vec![try_evaluate_term(first)?];
       let mut ops: Vec<&str> = vec![];
       while let Some(op_pair) = inner.next() {
         let op = op_pair.as_str();
         let term = inner.next().unwrap();
         ops.push(op);
-        values.push(evaluate_term(term)?);
+        terms.push(try_evaluate_term(term)?);
       }
+
+      // Check if all terms are numeric - if so, use pure numeric evaluation
+      let all_numeric = terms
+        .iter()
+        .all(|t| matches!(t, SymbolicTerm::Numeric(_)));
+
+      if all_numeric {
+        // Pure numeric path - extract f64 values
+        let mut values: Vec<f64> = terms
+          .iter()
+          .map(|t| match t {
+            SymbolicTerm::Numeric(v) => *v,
+            _ => unreachable!(),
+          })
+          .collect();
+
+        // First pass: handle exponentiation (highest precedence)
+        let mut i = 0;
+        while i < ops.len() {
+          if ops[i] == "^" {
+            values[i] = values[i].powf(values[i + 1]);
+            values.remove(i + 1);
+            ops.remove(i);
+          } else {
+            i += 1;
+          }
+        }
+        // Second pass: handle multiplication and division
+        let mut i = 0;
+        while i < ops.len() {
+          if ops[i] == "*" {
+            values[i] *= values[i + 1];
+            values.remove(i + 1);
+            ops.remove(i);
+          } else if ops[i] == "/" {
+            if values[i + 1] == 0.0 {
+              return Err(InterpreterError::EvaluationError(
+                "Division by zero".to_string(),
+              ));
+            }
+            values[i] /= values[i + 1];
+            values.remove(i + 1);
+            ops.remove(i);
+          } else {
+            i += 1;
+          }
+        }
+        // Third pass: handle addition and subtraction
+        let mut result = values[0];
+        for (op, &val) in ops.iter().zip(values.iter().skip(1)) {
+          if *op == "+" {
+            result += val;
+          } else if *op == "-" {
+            result -= val;
+          } else {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unexpected operator: {}",
+              op
+            )));
+          }
+        }
+        return Ok(format_result(result));
+      }
+
+      // Symbolic path - handle mixed numeric and symbolic terms
+      // For now, only handle addition and subtraction with symbols
+      // Check if we only have + and - operators (symbolic-safe)
+      let only_add_sub = ops.iter().all(|op| *op == "+" || *op == "-");
+
+      if only_add_sub {
+        // Collect numeric sum and symbolic terms with their signs
+        let mut numeric_sum: f64 = 0.0;
+        let mut symbolic_terms: Vec<(i8, String)> = vec![]; // (sign, symbol)
+
+        // Process first term
+        match &terms[0] {
+          SymbolicTerm::Numeric(v) => numeric_sum += v,
+          SymbolicTerm::Symbol(s) => symbolic_terms.push((1, s.clone())),
+        }
+
+        // Process remaining terms with their operators
+        for (i, op) in ops.iter().enumerate() {
+          let sign: i8 = if *op == "+" { 1 } else { -1 };
+          match &terms[i + 1] {
+            SymbolicTerm::Numeric(v) => {
+              if sign == 1 {
+                numeric_sum += v;
+              } else {
+                numeric_sum -= v;
+              }
+            }
+            SymbolicTerm::Symbol(s) => {
+              symbolic_terms.push((sign, s.clone()));
+            }
+          }
+        }
+
+        // Format the result: numeric part + symbolic terms
+        let mut parts: Vec<String> = vec![];
+
+        // Add numeric part if non-zero or if there are no symbolic terms
+        if numeric_sum != 0.0 || symbolic_terms.is_empty() {
+          parts.push(format_result(numeric_sum));
+        }
+
+        // Add symbolic terms
+        for (sign, sym) in symbolic_terms {
+          if parts.is_empty() {
+            // First term
+            if sign == -1 {
+              parts.push(format!("-{}", sym));
+            } else {
+              parts.push(sym);
+            }
+          } else {
+            // Subsequent terms
+            if sign == -1 {
+              parts.push(format!("- {}", sym));
+            } else {
+              parts.push(format!("+ {}", sym));
+            }
+          }
+        }
+
+        return Ok(parts.join(" "));
+      }
+
+      // Fall back to numeric evaluation for complex expressions with *, /, ^
+      let mut values: Vec<f64> = terms
+        .iter()
+        .map(|t| match t {
+          SymbolicTerm::Numeric(v) => *v,
+          SymbolicTerm::Symbol(_) => 0.0, // Treat unknown symbols as 0 for complex ops
+        })
+        .collect();
+
       // First pass: handle exponentiation (highest precedence)
       let mut i = 0;
       while i < ops.len() {

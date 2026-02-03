@@ -28,7 +28,7 @@ thread_local! {
 #[derive(Error, Debug)]
 pub enum InterpreterError {
   #[error("Parse error: {0}")]
-  ParseError(#[from] pest::error::Error<Rule>),
+  ParseError(#[from] Box<pest::error::Error<Rule>>),
   #[error("Empty input")]
   EmptyInput,
   #[error("Evaluation error: {0}")]
@@ -45,14 +45,14 @@ pub struct InterpretResult {
 impl WolframParser {
   pub fn parse_wolfram(
     input: &str,
-  ) -> Result<pest::iterators::Pairs<Rule>, pest::error::Error<Rule>> {
-    Self::parse(Rule::Program, input)
+  ) -> Result<pest::iterators::Pairs<Rule>, Box<pest::error::Error<Rule>>> {
+    Self::parse(Rule::Program, input).map_err(Box::new)
   }
 }
 
 pub fn parse(
   input: &str,
-) -> Result<pest::iterators::Pairs<Rule>, pest::error::Error<Rule>> {
+) -> Result<pest::iterators::Pairs<Rule>, Box<pest::error::Error<Rule>>> {
   WolframParser::parse_wolfram(input)
 }
 

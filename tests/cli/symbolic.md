@@ -1,26 +1,26 @@
 # Symbolic Computing
 
-```todo
+```scrut
 $ wo 'cow + 5'
 5 + cow
 ```
 
-```todo
+```scrut
 $ wo 'cow + 5 + 10'
 15 + cow
 ```
 
 ```todo
-$ wo '%'
-15 + cow
-```
-
-```todo
-$ wo '% - cow'
-15
-```
-
-```todo
 $ wo 'moo = cow + 5'
-cow + 5
+5 + cow
+```
+
+```todo
+$ wo 'D[x^n, x]'
+n*x^(-1 + n)
+```
+
+```todo
+$ wo 'Integrate[x^2 + Sin[x], x]'
+x^3/3 - Cos[x]
 ```
