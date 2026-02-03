@@ -1217,7 +1217,7 @@ $ wo 'Thread[f[{a, b}, {x, y}]]'
 
 ```scrut
 $ wo 'Thread[Plus[{1, 2}, {3, 4}]]'
-{Plus[1, 3], Plus[2, 4]}
+{4, 6}
 ```
 
 ```scrut

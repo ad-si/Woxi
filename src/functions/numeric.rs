@@ -539,3 +539,257 @@ pub fn gcd(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format_result(result as f64))
 }
+
+/// Handle LCM[a, b, ...] - Returns the least common multiple
+pub fn lcm(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "LCM expects at least 1 argument".into(),
+    ));
+  }
+
+  // Helper function to compute GCD of two numbers using Euclidean algorithm
+  fn gcd_two(a: i64, b: i64) -> i64 {
+    let mut a = a.abs();
+    let mut b = b.abs();
+
+    while b != 0 {
+      let temp = b;
+      b = a % b;
+      a = temp;
+    }
+
+    a
+  }
+
+  // Helper function to compute LCM of two numbers
+  fn lcm_two(a: i64, b: i64) -> i64 {
+    if a == 0 || b == 0 {
+      0
+    } else {
+      (a.abs() / gcd_two(a, b)) * b.abs()
+    }
+  }
+
+  // Evaluate all arguments and check they are integers
+  let mut values = Vec::new();
+  for arg in args_pairs {
+    let val = evaluate_term(arg.clone())?;
+
+    if val.fract() != 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "LCM: all arguments must be integers".into(),
+      ));
+    }
+
+    values.push(val as i64);
+  }
+
+  // Compute LCM of all values
+  let result = values.into_iter().reduce(lcm_two).unwrap();
+
+  Ok(format_result(result as f64))
+}
+
+/// Handle Exp[x] - Returns e^x (the exponential function)
+pub fn exp(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Exp expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  Ok(format_result(x.exp()))
+}
+
+/// Handle Log[x] or Log[b, x] - Returns the natural logarithm or logarithm with base b
+pub fn log(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  match args_pairs.len() {
+    1 => {
+      // Natural logarithm
+      let x = evaluate_term(args_pairs[0].clone())?;
+      if x <= 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Log: argument must be positive".into(),
+        ));
+      }
+      Ok(format_result(x.ln()))
+    }
+    2 => {
+      // Logarithm with base b: Log[b, x]
+      let b = evaluate_term(args_pairs[0].clone())?;
+      let x = evaluate_term(args_pairs[1].clone())?;
+      if b <= 0.0 || b == 1.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Log: base must be positive and not equal to 1".into(),
+        ));
+      }
+      if x <= 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Log: argument must be positive".into(),
+        ));
+      }
+      Ok(format_result(x.ln() / b.ln()))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Log expects 1 or 2 arguments".into(),
+    )),
+  }
+}
+
+/// Handle Log10[x] - Returns the base-10 logarithm
+pub fn log10(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Log10 expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  if x <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Log10: argument must be positive".into(),
+    ));
+  }
+  Ok(format_result(x.log10()))
+}
+
+/// Handle Log2[x] - Returns the base-2 logarithm
+pub fn log2(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Log2 expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  if x <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Log2: argument must be positive".into(),
+    ));
+  }
+  Ok(format_result(x.log2()))
+}
+
+/// Handle Cos[x] - Returns the cosine of the argument
+pub fn cos(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Cos expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  Ok(format_result(x.cos()))
+}
+
+/// Handle Tan[x] - Returns the tangent of the argument
+pub fn tan(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Tan expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  Ok(format_result(x.tan()))
+}
+
+/// Handle ArcSin[x] - Returns the arc sine of the argument
+pub fn arcsin(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcSin expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  if !(-1.0..=1.0).contains(&x) {
+    return Err(InterpreterError::EvaluationError(
+      "ArcSin: argument must be in the range [-1, 1]".into(),
+    ));
+  }
+  Ok(format_result(x.asin()))
+}
+
+/// Handle ArcCos[x] - Returns the arc cosine of the argument
+pub fn arccos(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCos expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  if !(-1.0..=1.0).contains(&x) {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCos: argument must be in the range [-1, 1]".into(),
+    ));
+  }
+  Ok(format_result(x.acos()))
+}
+
+/// Handle ArcTan[x] - Returns the arc tangent of the argument
+pub fn arctan(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcTan expects exactly 1 argument".into(),
+    ));
+  }
+  let x = evaluate_term(args_pairs[0].clone())?;
+  Ok(format_result(x.atan()))
+}
+
+/// Handle Quotient[m, n] - Returns the integer quotient of m divided by n
+pub fn quotient(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Quotient expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let m = evaluate_term(args_pairs[0].clone())?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n == 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Quotient: division by zero".into(),
+    ));
+  }
+
+  // Wolfram's Quotient is Floor[m/n]
+  let result = (m / n).floor();
+  Ok(format_result(result))
+}
+
+/// Handle N[expr] - Forces numeric evaluation of an expression
+pub fn numeric_eval(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "N expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // Evaluate the expression
+  let result = crate::evaluate_expression(args_pairs[0].clone())?;
+
+  // Try to parse as a number and return with decimal point
+  if let Ok(val) = result.parse::<f64>() {
+    // If a precision is specified, use it
+    if args_pairs.len() == 2 {
+      let precision = evaluate_term(args_pairs[1].clone())?;
+      if precision < 1.0 {
+        return Err(InterpreterError::EvaluationError(
+          "N: precision must be at least 1".into(),
+        ));
+      }
+      let prec = precision as usize;
+      return Ok(format!("{:.1$}", val, prec));
+    }
+    // Default: return as float with enough precision
+    if val.fract() == 0.0 {
+      Ok(format!("{}.", val as i64))
+    } else {
+      Ok(format!("{}", val))
+    }
+  } else {
+    // Can't evaluate numerically, return as-is
+    Ok(result)
+  }
+}
