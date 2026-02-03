@@ -123,6 +123,106 @@ $ wo 'NestList[f, x, 3]'
 ```
 
 
+## `NestWhile`
+
+Applies a function repeatedly while a test returns True.
+
+```scrut
+$ wo 'NestWhile[# + 1 &, 0, # < 5 &]'
+5
+```
+
+```scrut
+$ wo 'NestWhile[# / 2 &, 64, EvenQ]'
+1
+```
+
+
+## `NestWhileList`
+
+Like NestWhile, but returns a list of all intermediate results.
+
+```scrut
+$ wo 'NestWhileList[# + 1 &, 0, # < 5 &]'
+{0, 1, 2, 3, 4, 5}
+```
+
+```scrut
+$ wo 'NestWhileList[# / 2 &, 64, EvenQ]'
+{64, 32, 16, 8, 4, 2, 1}
+```
+
+
+## `Through`
+
+Applies a list of functions to an argument.
+
+```scrut
+$ wo 'Through[{Sin, Cos}, 0]'
+{Sin, Cos}
+```
+
+```scrut
+$ wo 'Through[{Abs, Sign}, -5]'
+{Abs, Sign}
+```
+
+
+## `TakeLargest`
+
+Returns the n largest elements from a list.
+
+```scrut
+$ wo 'TakeLargest[{3, 1, 4, 1, 5, 9, 2, 6}, 3]'
+{9, 6, 5}
+```
+
+```scrut
+$ wo 'TakeLargest[{5, 2, 8, 1}, 2]'
+{8, 5}
+```
+
+
+## `TakeSmallest`
+
+Returns the n smallest elements from a list.
+
+```scrut
+$ wo 'TakeSmallest[{3, 1, 4, 1, 5, 9, 2, 6}, 3]'
+{1, 1, 2}
+```
+
+```scrut
+$ wo 'TakeSmallest[{5, 2, 8, 1}, 2]'
+{1, 2}
+```
+
+
+## `ArrayDepth`
+
+Returns the depth of a nested list.
+
+```scrut
+$ wo 'ArrayDepth[{1, 2, 3}]'
+1
+```
+
+```scrut
+$ wo 'ArrayDepth[{{1, 2}, {3, 4}}]'
+2
+```
+
+```scrut
+$ wo 'ArrayDepth[{{{1}}}]'
+3
+```
+
+```scrut
+$ wo 'ArrayDepth[5]'
+0
+```
+
+
 ## `DateString`
 
 ```scrut
