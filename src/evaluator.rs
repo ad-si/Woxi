@@ -1503,6 +1503,19 @@ fn evaluate_function_call(
       let wonums = args_to_wonums(&args_pairs)?;
       evaluate_ast(AST::Minus(wonums))
     }
+    "Subtract" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Subtract expects exactly 2 arguments".into(),
+        ));
+      }
+      let wonums = args_to_wonums(&args_pairs)?;
+      let mut iter = wonums.into_iter();
+      let a = iter.next().unwrap();
+      let b = iter.next().unwrap();
+      // Subtract[a, b] = a - b = a + (-b)
+      evaluate_ast(AST::Plus(vec![a, -b]))
+    }
     "Abs" => {
       if args_pairs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
