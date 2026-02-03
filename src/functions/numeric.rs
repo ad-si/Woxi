@@ -793,3 +793,164 @@ pub fn numeric_eval(
     Ok(result)
   }
 }
+
+/// Handle IntegerDigits[n] or IntegerDigits[n, base] - Returns list of digits
+pub fn integer_digits(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerDigits expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+  if n.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerDigits: first argument must be an integer".into(),
+    ));
+  }
+
+  let n_int = n.abs() as u64;
+
+  let base = if args_pairs.len() == 2 {
+    let b = evaluate_term(args_pairs[1].clone())?;
+    if b.fract() != 0.0 || b < 2.0 {
+      return Err(InterpreterError::EvaluationError(
+        "IntegerDigits: base must be an integer >= 2".into(),
+      ));
+    }
+    b as u64
+  } else {
+    10
+  };
+
+  if n_int == 0 {
+    return Ok("{0}".to_string());
+  }
+
+  let mut digits = Vec::new();
+  let mut num = n_int;
+
+  while num > 0 {
+    digits.push((num % base).to_string());
+    num /= base;
+  }
+
+  digits.reverse();
+  Ok(format!("{{{}}}", digits.join(", ")))
+}
+
+/// Handle FromDigits[list] or FromDigits[list, base] - Constructs integer from digits
+pub fn from_digits(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FromDigits expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let base: u64 = if args_pairs.len() == 2 {
+    let b = evaluate_term(args_pairs[1].clone())?;
+    if b.fract() != 0.0 || b < 2.0 {
+      return Err(InterpreterError::EvaluationError(
+        "FromDigits: base must be an integer >= 2".into(),
+      ));
+    }
+    b as u64
+  } else {
+    10
+  };
+
+  let items = crate::functions::list::get_list_items(&args_pairs[0])?;
+  let mut result: u64 = 0;
+
+  for item in items {
+    let digit = evaluate_term(item.clone())?;
+    if digit.fract() != 0.0 || digit < 0.0 || digit >= base as f64 {
+      return Err(InterpreterError::EvaluationError(format!(
+        "FromDigits: invalid digit {} for base {}",
+        digit, base
+      )));
+    }
+    result = result * base + digit as u64;
+  }
+
+  Ok(format_result(result as f64))
+}
+
+/// Handle FactorInteger[n] - Returns the prime factorization of n
+/// Returns a list of {prime, exponent} pairs
+pub fn factor_integer(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorInteger expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+  if n.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorInteger: argument must be an integer".into(),
+    ));
+  }
+
+  let n_int = n.abs() as u64;
+
+  if n_int == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorInteger: argument cannot be zero".into(),
+    ));
+  }
+
+  if n_int == 1 {
+    return Ok("{}".to_string());
+  }
+
+  let mut factors: Vec<(u64, u32)> = Vec::new();
+  let mut num = n_int;
+
+  // Handle factor of 2
+  let mut count = 0;
+  while num.is_multiple_of(2) {
+    count += 1;
+    num /= 2;
+  }
+  if count > 0 {
+    factors.push((2, count));
+  }
+
+  // Handle odd factors
+  let mut i = 3;
+  while i * i <= num {
+    let mut count = 0;
+    while num.is_multiple_of(i) {
+      count += 1;
+      num /= i;
+    }
+    if count > 0 {
+      factors.push((i, count));
+    }
+    i += 2;
+  }
+
+  // If there's a remaining prime factor > sqrt(n)
+  if num > 1 {
+    factors.push((num, 1));
+  }
+
+  // Handle negative numbers by prepending {-1, 1}
+  let mut result_parts: Vec<String> = Vec::new();
+  if n < 0.0 {
+    result_parts.push("{-1, 1}".to_string());
+  }
+
+  for (prime, exp) in factors {
+    result_parts.push(format!("{{{}, {}}}", prime, exp));
+  }
+
+  Ok(format!("{{{}}}", result_parts.join(", ")))
+}
