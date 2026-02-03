@@ -1800,6 +1800,10 @@ fn evaluate_function_call(
     "IntegerDigits" => functions::numeric::integer_digits(&args_pairs),
     "FromDigits" => functions::numeric::from_digits(&args_pairs),
     "FactorInteger" => functions::numeric::factor_integer(&args_pairs),
+    "Re" => functions::numeric::re(&args_pairs),
+    "Im" => functions::numeric::im(&args_pairs),
+    "Conjugate" => functions::numeric::conjugate(&args_pairs),
+    "Rationalize" => functions::numeric::rationalize(&args_pairs),
 
     // Calculus Functions
     "D" => functions::calculus::derivative(&args_pairs),
