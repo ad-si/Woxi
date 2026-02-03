@@ -798,3 +798,295 @@ pub fn rest_or_most(
     slice.into_iter().map(|p| evaluate_expression(p)).collect();
   Ok(format!("{{{}}}", evaluated?.join(", ")))
 }
+
+/// Handle Cases[list, pattern] - Extract elements matching a pattern
+pub fn cases(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Cases expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let pattern_pair = &args_pairs[1];
+  let pattern = evaluate_expression(pattern_pair.clone())?;
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let mut result = Vec::new();
+
+  for item in items {
+    let item_str = evaluate_expression(item.clone())?;
+    if item_str == pattern {
+      result.push(item_str);
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle DeleteCases[list, pattern] - Remove elements matching a pattern
+pub fn delete_cases(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "DeleteCases expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let pattern_pair = &args_pairs[1];
+  let pattern = evaluate_expression(pattern_pair.clone())?;
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let mut result = Vec::new();
+
+  for item in items {
+    let item_str = evaluate_expression(item.clone())?;
+    if item_str != pattern {
+      result.push(item_str);
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle MapThread[f, {list1, list2, ...}] - Apply function to corresponding elements
+pub fn map_thread(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MapThread expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let lists_pair = &args_pairs[1];
+  let func_name = func_pair.as_str();
+
+  // Get the outer list containing the sublists
+  let outer_items = crate::functions::list::get_list_items(lists_pair)?;
+  if outer_items.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  // Get each sublist
+  let mut sublists: Vec<Vec<String>> = Vec::new();
+  for item in outer_items {
+    let sublist_items = crate::functions::list::get_list_items(&item)?;
+    let evaluated: Result<Vec<_>, _> = sublist_items
+      .into_iter()
+      .map(|p| evaluate_expression(p))
+      .collect();
+    sublists.push(evaluated?);
+  }
+
+  // Check all sublists have the same length
+  if sublists.is_empty() {
+    return Ok("{}".to_string());
+  }
+  let len = sublists[0].len();
+  for sublist in &sublists {
+    if sublist.len() != len {
+      return Err(InterpreterError::EvaluationError(
+        "MapThread: all lists must have the same length".into(),
+      ));
+    }
+  }
+
+  // Apply function to corresponding elements
+  let mut result = Vec::new();
+  for i in 0..len {
+    let args: Vec<String> = sublists.iter().map(|sl| sl[i].clone()).collect();
+    let expr = format!("{}[{}]", func_name, args.join(", "));
+    let val = interpret(&expr)?;
+    result.push(val);
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Partition[list, n] - Break list into sublists of length n
+pub fn partition(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Partition expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n.fract() != 0.0 || n <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument of Partition must be a positive integer".into(),
+    ));
+  }
+  let n_int = n as usize;
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let evaluated: Result<Vec<_>, _> = items
+    .into_iter()
+    .map(|p| evaluate_expression(p))
+    .collect();
+  let evaluated = evaluated?;
+
+  // Partition into chunks of size n, discarding incomplete final chunk
+  let mut result = Vec::new();
+  for chunk in evaluated.chunks(n_int) {
+    if chunk.len() == n_int {
+      result.push(format!("{{{}}}", chunk.join(", ")));
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle SortBy[list, f] - Sort list elements by applying function f
+pub fn sort_by(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SortBy expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let func_pair = &args_pairs[1];
+  let func_src = func_pair.as_str();
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let evaluated: Result<Vec<_>, _> = items
+    .into_iter()
+    .map(|p| evaluate_expression(p))
+    .collect();
+  let evaluated = evaluated?;
+
+  // Check if it's an identity function (# &)
+  let is_identity = func_src.trim() == "# &" || func_src.trim() == "#&";
+
+  // Compute sort keys for each element
+  let mut keyed: Vec<(String, f64)> = Vec::new();
+  for elem in evaluated {
+    let key_val = if is_identity {
+      // Identity function: use the element itself as the key
+      elem.parse::<f64>().map_err(|_| {
+        InterpreterError::EvaluationError(
+          "SortBy: element must be numeric when using identity function".into(),
+        )
+      })?
+    } else if func_src.contains('#') && func_src.ends_with('&') {
+      // Anonymous function
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem);
+      let res = interpret(&expr)?;
+      res.parse::<f64>().map_err(|_| {
+        InterpreterError::EvaluationError(
+          "SortBy: function must return a numeric value".into(),
+        )
+      })?
+    } else {
+      // Named function
+      let expr = format!("{}[{}]", func_src, elem);
+      let res = interpret(&expr)?;
+      res.parse::<f64>().map_err(|_| {
+        InterpreterError::EvaluationError(
+          "SortBy: function must return a numeric value".into(),
+        )
+      })?
+    };
+    keyed.push((elem, key_val));
+  }
+
+  // Sort by key
+  keyed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  let sorted: Vec<String> = keyed.into_iter().map(|(e, _)| e).collect();
+  Ok(format!("{{{}}}", sorted.join(", ")))
+}
+
+/// Handle GroupBy[list, f] - Group elements by applying function f
+pub fn group_by(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "GroupBy expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let func_pair = &args_pairs[1];
+  let func_src = func_pair.as_str();
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let evaluated: Result<Vec<_>, _> = items
+    .into_iter()
+    .map(|p| evaluate_expression(p))
+    .collect();
+  let evaluated = evaluated?;
+
+  // Group elements by key
+  let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+
+  for elem in evaluated {
+    // Compute the key
+    let key = if func_src.contains('#') && func_src.ends_with('&') {
+      // Anonymous function
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem);
+      interpret(&expr)?
+    } else {
+      // Named function
+      let expr = format!("{}[{}]", func_src, elem);
+      interpret(&expr)?
+    };
+
+    // Find or create group
+    if let Some(group) = groups.iter_mut().find(|(k, _)| *k == key) {
+      group.1.push(elem);
+    } else {
+      groups.push((key, vec![elem]));
+    }
+  }
+
+  // Format as association
+  let parts: Vec<String> = groups
+    .into_iter()
+    .map(|(k, v)| format!("{} -> {{{}}}", k, v.join(", ")))
+    .collect();
+
+  Ok(format!("<|{}|>", parts.join(", ")))
+}
+
+/// Handle Array[f, n] - Construct array by applying function to indices 1 through n
+pub fn array(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Array expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n.fract() != 0.0 || n <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument of Array must be a positive integer".into(),
+    ));
+  }
+  let n_int = n as usize;
+
+  let func_src = func_pair.as_str();
+  let mut result = Vec::new();
+
+  for i in 1..=n_int {
+    let val = if func_src.contains('#') && func_src.ends_with('&') {
+      // Anonymous function
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &i.to_string());
+      interpret(&expr)?
+    } else {
+      // Named function
+      let expr = format!("{}[{}]", func_src, i);
+      interpret(&expr)?
+    };
+    result.push(val);
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}

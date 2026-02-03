@@ -1780,9 +1780,13 @@ fn evaluate_function_call(
     "Select" => functions::list_helpers::select(&args_pairs),
     "AllTrue" => functions::list_helpers::all_true(&args_pairs),
     "Flatten" => functions::list_helpers::flatten(&args_pairs),
-    "GroupBy" => Err(InterpreterError::EvaluationError(
-      "GroupBy function not yet implemented".into(),
-    )),
+    "Cases" => functions::list_helpers::cases(&args_pairs),
+    "DeleteCases" => functions::list_helpers::delete_cases(&args_pairs),
+    "MapThread" => functions::list_helpers::map_thread(&args_pairs),
+    "Partition" => functions::list_helpers::partition(&args_pairs),
+    "SortBy" => functions::list_helpers::sort_by(&args_pairs),
+    "GroupBy" => functions::list_helpers::group_by(&args_pairs),
+    "Array" => functions::list_helpers::array(&args_pairs),
     "Print" => functions::io::print(&args_pairs),
 
     // Replacement functions
