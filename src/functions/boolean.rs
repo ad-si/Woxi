@@ -113,3 +113,165 @@ pub fn if_condition(
     _ => unreachable!(),
   }
 }
+
+/// Handle Which[test1, value1, test2, value2, ...] - multi-way conditional
+pub fn which(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  // Must have an even number of arguments (test-value pairs)
+  if args_pairs.len() < 2 || !args_pairs.len().is_multiple_of(2) {
+    return Err(InterpreterError::EvaluationError(
+      "Which expects an even number of arguments (test-value pairs)".into(),
+    ));
+  }
+
+  // Process test-value pairs
+  for i in (0..args_pairs.len()).step_by(2) {
+    let test_str = evaluate_expression(args_pairs[i].clone())?;
+    if let Some(true) = as_bool(&test_str) {
+      return evaluate_expression(args_pairs[i + 1].clone());
+    }
+  }
+
+  // No condition was true
+  Ok("Null".to_string())
+}
+
+/// Handle Do[expr, {i, n}] or Do[expr, {i, min, max}] or Do[expr, n] - iteration with side effects
+pub fn do_loop(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Do expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let body = &args_pairs[0];
+  let iter_spec = &args_pairs[1];
+
+  // Parse iteration specification
+  let iter_spec_str = iter_spec.as_str().trim();
+
+  // Check if it's a simple number (Do[expr, n])
+  if let Ok(n) = iter_spec_str.parse::<f64>() {
+    if n.fract() != 0.0 || n < 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Do: iteration count must be a non-negative integer".into(),
+      ));
+    }
+    let count = n as usize;
+    for _ in 0..count {
+      evaluate_expression(body.clone())?;
+    }
+    return Ok("Null".to_string());
+  }
+
+  // Check if it's a list specification {i, max} or {i, min, max}
+  if iter_spec_str.starts_with('{') && iter_spec_str.ends_with('}') {
+    let inner = &iter_spec_str[1..iter_spec_str.len() - 1];
+    let parts: Vec<&str> = inner.split(',').map(|s| s.trim()).collect();
+
+    match parts.len() {
+      2 => {
+        // {i, max} - iterate from 1 to max
+        let var_name = parts[0].to_string();
+        let max: i64 = parts[1].parse().map_err(|_| {
+          InterpreterError::EvaluationError("Do: invalid iteration spec".into())
+        })?;
+
+        for i in 1..=max {
+          // Set the loop variable
+          crate::ENV.with(|e| {
+            e.borrow_mut()
+              .insert(var_name.clone(), crate::StoredValue::Raw(i.to_string()))
+          });
+          evaluate_expression(body.clone())?;
+        }
+
+        // Clean up loop variable
+        crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+      }
+      3 => {
+        // {i, min, max} - iterate from min to max
+        let var_name = parts[0].to_string();
+        let min: i64 = parts[1].parse().map_err(|_| {
+          InterpreterError::EvaluationError("Do: invalid iteration spec".into())
+        })?;
+        let max: i64 = parts[2].parse().map_err(|_| {
+          InterpreterError::EvaluationError("Do: invalid iteration spec".into())
+        })?;
+
+        for i in min..=max {
+          crate::ENV.with(|e| {
+            e.borrow_mut()
+              .insert(var_name.clone(), crate::StoredValue::Raw(i.to_string()))
+          });
+          evaluate_expression(body.clone())?;
+        }
+
+        crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Do: invalid iteration specification".into(),
+        ));
+      }
+    }
+  } else {
+    // Try to evaluate the spec as a number
+    let n = crate::evaluate_term(iter_spec.clone())?;
+    if n.fract() != 0.0 || n < 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Do: iteration count must be a non-negative integer".into(),
+      ));
+    }
+    let count = n as usize;
+    for _ in 0..count {
+      evaluate_expression(body.clone())?;
+    }
+  }
+
+  Ok("Null".to_string())
+}
+
+/// Handle While[test, body] - while loop
+pub fn while_loop(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "While expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let test = &args_pairs[0];
+  let body = &args_pairs[1];
+
+  // Maximum iterations to prevent infinite loops
+  const MAX_ITERATIONS: usize = 100000;
+  let mut iterations = 0;
+
+  loop {
+    // Evaluate the test condition
+    let test_str = evaluate_expression(test.clone())?;
+    let test_val = as_bool(&test_str);
+
+    match test_val {
+      Some(true) => {
+        // Execute body
+        evaluate_expression(body.clone())?;
+        iterations += 1;
+        if iterations >= MAX_ITERATIONS {
+          return Err(InterpreterError::EvaluationError(
+            "While: maximum iterations exceeded".into(),
+          ));
+        }
+      }
+      Some(false) => break,
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "While: test must evaluate to True or False".into(),
+        ));
+      }
+    }
+  }
+
+  Ok("Null".to_string())
+}

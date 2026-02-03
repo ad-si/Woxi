@@ -481,3 +481,66 @@ pub fn sort(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format!("{{{}}}", sorted.join(", ")))
 }
+
+/// Handle Insert[list, elem, n] - inserts an element at position n
+pub fn insert(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Insert expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = get_list_items(list_pair)?;
+
+  // Evaluate all existing elements
+  let mut evaluated: Vec<String> = items
+    .into_iter()
+    .map(|p| evaluate_expression(p))
+    .collect::<Result<_, _>>()?;
+
+  // Evaluate the element to insert
+  let new_elem = evaluate_expression(args_pairs[1].clone())?;
+
+  // Get the position
+  let n = evaluate_term(args_pairs[2].clone())?;
+  if n.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Third argument of Insert must be an integer".into(),
+    ));
+  }
+
+  let n_int = n as i64;
+  let len = evaluated.len() as i64;
+
+  // Handle positive and negative indices
+  // Positive: 1-indexed from start, negative: indexed from end
+  let insert_pos = if n_int > 0 {
+    // Position 1 means insert at beginning, position len+1 means append
+    let pos = (n_int - 1) as usize;
+    if pos > evaluated.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Insert: position out of bounds".into(),
+      ));
+    }
+    pos
+  } else if n_int < 0 {
+    // -1 means insert at the end (after last element)
+    // -2 means insert before last element, etc.
+    let pos = (len + 1 + n_int) as usize;
+    if n_int < -(len + 1) {
+      return Err(InterpreterError::EvaluationError(
+        "Insert: position out of bounds".into(),
+      ));
+    }
+    pos
+  } else {
+    return Err(InterpreterError::EvaluationError(
+      "Insert: position cannot be 0".into(),
+    ));
+  };
+
+  evaluated.insert(insert_pos, new_elem);
+
+  Ok(format!("{{{}}}", evaluated.join(", ")))
+}

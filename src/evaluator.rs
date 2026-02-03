@@ -1678,6 +1678,9 @@ fn evaluate_function_call(
     "Xor" => functions::boolean::xor(&args_pairs),
     "Not" => functions::boolean::not(&args_pairs, &call_text),
     "If" => functions::boolean::if_condition(&args_pairs, &call_text),
+    "Which" => functions::boolean::which(&args_pairs),
+    "Do" => functions::boolean::do_loop(&args_pairs),
+    "While" => functions::boolean::while_loop(&args_pairs),
 
     // Numeric Functions
     "Sin" => functions::numeric::sin(&args_pairs),
@@ -1782,6 +1785,18 @@ fn evaluate_function_call(
     "Power" => functions::numeric::power(&args_pairs),
     "Factorial" => functions::numeric::factorial(&args_pairs),
     "GCD" => functions::numeric::gcd(&args_pairs),
+    "LCM" => functions::numeric::lcm(&args_pairs),
+    "Exp" => functions::numeric::exp(&args_pairs),
+    "Log" => functions::numeric::log(&args_pairs),
+    "Log10" => functions::numeric::log10(&args_pairs),
+    "Log2" => functions::numeric::log2(&args_pairs),
+    "Cos" => functions::numeric::cos(&args_pairs),
+    "Tan" => functions::numeric::tan(&args_pairs),
+    "ArcSin" => functions::numeric::arcsin(&args_pairs),
+    "ArcCos" => functions::numeric::arccos(&args_pairs),
+    "ArcTan" => functions::numeric::arctan(&args_pairs),
+    "Quotient" => functions::numeric::quotient(&args_pairs),
+    "N" => functions::numeric::numeric_eval(&args_pairs),
 
     // Calculus Functions
     "D" => functions::calculus::derivative(&args_pairs),
@@ -1798,6 +1813,10 @@ fn evaluate_function_call(
     "IntegerQ" => functions::predicate::integer_q(&args_pairs),
     "EvenQ" => functions::predicate::even_odd_q(&args_pairs, "EvenQ"),
     "OddQ" => functions::predicate::even_odd_q(&args_pairs, "OddQ"),
+    "ListQ" => functions::predicate::list_q(&args_pairs),
+    "StringQ" => functions::predicate::string_q(&args_pairs),
+    "AtomQ" => functions::predicate::atom_q(&args_pairs),
+    "PrimeQ" => functions::predicate::prime_q(&args_pairs),
 
     "RandomInteger" => functions::math::random_integer(&args_pairs),
 
@@ -1809,6 +1828,12 @@ fn evaluate_function_call(
     "StringSplit" => functions::string::string_split(&args_pairs),
     "StringStartsQ" => functions::string::string_starts_q(&args_pairs),
     "StringEndsQ" => functions::string::string_ends_q(&args_pairs),
+    "StringReplace" => functions::string::string_replace(&args_pairs),
+    "ToUpperCase" => functions::string::to_upper_case(&args_pairs),
+    "ToLowerCase" => functions::string::to_lower_case(&args_pairs),
+    "StringContainsQ" => functions::string::string_contains_q(&args_pairs),
+    "Characters" => functions::string::characters(&args_pairs),
+    "StringRiffle" => functions::string::string_riffle(&args_pairs),
 
     // List Functions
     "Map" => functions::list_helpers::map_list(&args_pairs),
@@ -1829,6 +1854,7 @@ fn evaluate_function_call(
     "Range" => functions::list::range(&args_pairs),
     "Join" => functions::list::join(&args_pairs),
     "Sort" => functions::list::sort(&args_pairs),
+    "Insert" => functions::list::insert(&args_pairs),
 
     // Aggregation Functions
     "Total" => functions::list_helpers::total(&args_pairs),
@@ -1899,6 +1925,10 @@ fn evaluate_function_call(
     "NoneTrue" => functions::list_helpers::none_true(&args_pairs),
     "Transpose" => functions::list_helpers::transpose(&args_pairs),
     "Thread" => functions::list_helpers::thread(&args_pairs),
+    "MapIndexed" => functions::list_helpers::map_indexed(&args_pairs),
+    "FixedPoint" => functions::list_helpers::fixed_point(&args_pairs),
+    "FixedPointList" => functions::list_helpers::fixed_point_list(&args_pairs),
+    "Scan" => functions::list_helpers::scan(&args_pairs),
     "Print" => functions::io::print(&args_pairs),
 
     // Replacement functions

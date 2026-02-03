@@ -2373,11 +2373,14 @@ pub fn thread(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
       }
     }
 
-    // Thread the function over the lists
+    // Thread the function over the lists and try to evaluate each result
     let mut thread_result = Vec::new();
     for i in 0..len {
       let args: Vec<String> = lists.iter().map(|l| l[i].clone()).collect();
-      thread_result.push(format!("{}[{}]", func_name, args.join(", ")));
+      let expr = format!("{}[{}]", func_name, args.join(", "));
+      // Try to evaluate; if it fails, keep the unevaluated expression
+      let val = interpret(&expr).unwrap_or(expr);
+      thread_result.push(val);
     }
 
     Ok(format!("{{{}}}", thread_result.join(", ")))
@@ -2386,4 +2389,269 @@ pub fn thread(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
       "Thread expects a function call as argument".into(),
     ))
   }
+}
+
+/// Handle MapIndexed[f, list] - applies f to each element along with its position
+pub fn map_indexed(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MapIndexed expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let list_pair = &args_pairs[1];
+
+  // Get the list elements
+  let elements: Vec<String> = match list_pair.as_rule() {
+    Rule::List => list_pair
+      .clone()
+      .into_inner()
+      .filter(|p| p.as_str() != ",")
+      .map(|p| evaluate_expression(p))
+      .collect::<Result<_, _>>()?,
+    Rule::Expression => {
+      let mut expr_inner = list_pair.clone().into_inner();
+      if let Some(first) = expr_inner.next() {
+        if first.as_rule() == Rule::List && expr_inner.next().is_none() {
+          first
+            .into_inner()
+            .filter(|p| p.as_str() != ",")
+            .map(|p| evaluate_expression(p))
+            .collect::<Result<_, _>>()?
+        } else {
+          let val = evaluate_expression(list_pair.clone())?;
+          parse_list_string(&val).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Second argument of MapIndexed must be a list".into(),
+            )
+          })?
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Second argument of MapIndexed must be a list".into(),
+        ));
+      }
+    }
+    _ => {
+      let val = evaluate_expression(list_pair.clone())?;
+      parse_list_string(&val).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Second argument of MapIndexed must be a list".into(),
+        )
+      })?
+    }
+  };
+
+  let func_src = func_pair.as_str();
+  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
+    || (func_src.contains('#') && func_src.ends_with('&'));
+
+  let mut mapped = Vec::new();
+
+  for (i, elem) in elements.iter().enumerate() {
+    let pos = i + 1; // 1-indexed
+    let mapped_val = if is_slot_func {
+      // Anonymous function: replace #1 with element, #2 with position {pos}
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace("#1", elem);
+      expr = expr.replace("#2", &format!("{{{}}}", pos));
+      // Also handle just # as #1
+      expr = expr.replace('#', elem);
+      interpret(&expr)?
+    } else {
+      // Named function: call as f[elem, {pos}]
+      let expr = format!("{}[{}, {{{}}}]", func_src, elem, pos);
+      match interpret(&expr) {
+        Ok(result) => result,
+        Err(InterpreterError::EvaluationError(e))
+          if e.starts_with("Unknown function:") =>
+        {
+          // Return symbolic form
+          expr
+        }
+        Err(e) => return Err(e),
+      }
+    };
+    mapped.push(mapped_val);
+  }
+
+  Ok(format!("{{{}}}", mapped.join(", ")))
+}
+
+/// Handle FixedPoint[f, expr] or FixedPoint[f, expr, n] - applies f repeatedly until convergence
+pub fn fixed_point(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "FixedPoint expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let func_src = func_pair.as_str();
+  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
+    || (func_src.contains('#') && func_src.ends_with('&'));
+
+  // Get initial value
+  let mut current = evaluate_expression(args_pairs[1].clone())?;
+
+  // Maximum iterations (default or specified)
+  let max_iters: usize = if args_pairs.len() == 3 {
+    let n = crate::evaluate_term(args_pairs[2].clone())?;
+    if n.fract() != 0.0 || n < 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "FixedPoint: iteration limit must be a non-negative integer".into(),
+      ));
+    }
+    n as usize
+  } else {
+    10000 // default max iterations
+  };
+
+  for _ in 0..max_iters {
+    let next = if is_slot_func {
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &current);
+      interpret(&expr)?
+    } else {
+      let expr = format!("{}[{}]", func_src, current);
+      interpret(&expr)?
+    };
+
+    if next == current {
+      return Ok(current);
+    }
+    current = next;
+  }
+
+  // Reached max iterations without convergence
+  Ok(current)
+}
+
+/// Handle FixedPointList[f, expr] or FixedPointList[f, expr, n] - like FixedPoint but returns all values
+pub fn fixed_point_list(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "FixedPointList expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let func_src = func_pair.as_str();
+  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
+    || (func_src.contains('#') && func_src.ends_with('&'));
+
+  // Get initial value
+  let mut current = evaluate_expression(args_pairs[1].clone())?;
+  let mut results = vec![current.clone()];
+
+  // Maximum iterations (default or specified)
+  let max_iters: usize = if args_pairs.len() == 3 {
+    let n = crate::evaluate_term(args_pairs[2].clone())?;
+    if n.fract() != 0.0 || n < 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "FixedPointList: iteration limit must be a non-negative integer".into(),
+      ));
+    }
+    n as usize
+  } else {
+    10000 // default max iterations
+  };
+
+  for _ in 0..max_iters {
+    let next = if is_slot_func {
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &current);
+      interpret(&expr)?
+    } else {
+      let expr = format!("{}[{}]", func_src, current);
+      interpret(&expr)?
+    };
+
+    results.push(next.clone());
+
+    if next == current {
+      break;
+    }
+    current = next;
+  }
+
+  Ok(format!("{{{}}}", results.join(", ")))
+}
+
+/// Handle Scan[f, list] - applies f to each element for side effects, returns Null
+pub fn scan(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Scan expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let list_pair = &args_pairs[1];
+
+  // Get the list elements
+  let elements: Vec<String> = match list_pair.as_rule() {
+    Rule::List => list_pair
+      .clone()
+      .into_inner()
+      .filter(|p| p.as_str() != ",")
+      .map(|p| evaluate_expression(p))
+      .collect::<Result<_, _>>()?,
+    Rule::Expression => {
+      let mut expr_inner = list_pair.clone().into_inner();
+      if let Some(first) = expr_inner.next() {
+        if first.as_rule() == Rule::List && expr_inner.next().is_none() {
+          first
+            .into_inner()
+            .filter(|p| p.as_str() != ",")
+            .map(|p| evaluate_expression(p))
+            .collect::<Result<_, _>>()?
+        } else {
+          let val = evaluate_expression(list_pair.clone())?;
+          parse_list_string(&val).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Second argument of Scan must be a list".into(),
+            )
+          })?
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Second argument of Scan must be a list".into(),
+        ));
+      }
+    }
+    _ => {
+      let val = evaluate_expression(list_pair.clone())?;
+      parse_list_string(&val).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Second argument of Scan must be a list".into(),
+        )
+      })?
+    }
+  };
+
+  let func_src = func_pair.as_str();
+  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
+    || (func_src.contains('#') && func_src.ends_with('&'));
+
+  // Apply function to each element (for side effects)
+  for elem in elements {
+    if is_slot_func {
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem);
+      interpret(&expr)?;
+    } else {
+      let expr = format!("{}[{}]", func_src, elem);
+      interpret(&expr)?;
+    }
+  }
+
+  Ok("Null".to_string())
 }

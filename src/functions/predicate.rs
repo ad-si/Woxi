@@ -94,3 +94,149 @@ pub fn integer_q(
   let is_int = is_integer_literal(arg);
   Ok(if is_int { "True" } else { "False" }.to_string())
 }
+
+/// Handle ListQ[expr] - Tests if the expression is a list
+pub fn list_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ListQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  let arg = &args_pairs[0];
+
+  // Check if it's syntactically a list
+  let is_list = match arg.as_rule() {
+    Rule::List => true,
+    Rule::Expression => {
+      let inner: Vec<_> = arg.clone().into_inner().collect();
+      if inner.len() == 1 && inner[0].as_rule() == Rule::List {
+        true
+      } else {
+        // Try evaluating and checking if result looks like a list
+        if let Ok(result) = evaluate_expression(arg.clone()) {
+          result.starts_with('{') && result.ends_with('}')
+        } else {
+          false
+        }
+      }
+    }
+    _ => {
+      // Try evaluating and checking if result looks like a list
+      if let Ok(result) = evaluate_expression(arg.clone()) {
+        result.starts_with('{') && result.ends_with('}')
+      } else {
+        false
+      }
+    }
+  };
+
+  Ok(if is_list { "True" } else { "False" }.to_string())
+}
+
+/// Handle StringQ[expr] - Tests if the expression is a string
+pub fn string_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "StringQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  let arg = &args_pairs[0];
+
+  // Check if it's syntactically a string
+  let is_string = match arg.as_rule() {
+    Rule::String => true,
+    Rule::Expression | Rule::Term => {
+      let inner: Vec<_> = arg.clone().into_inner().collect();
+      if inner.len() == 1 && inner[0].as_rule() == Rule::String {
+        true
+      } else {
+        // Check if the raw text is a quoted string
+        let text = arg.as_str().trim();
+        text.starts_with('"') && text.ends_with('"')
+      }
+    }
+    _ => {
+      let text = arg.as_str().trim();
+      text.starts_with('"') && text.ends_with('"')
+    }
+  };
+
+  Ok(if is_string { "True" } else { "False" }.to_string())
+}
+
+/// Handle AtomQ[expr] - Tests if the expression is an atomic expression (not a compound expression)
+pub fn atom_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "AtomQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  let arg = &args_pairs[0];
+
+  // Atoms are: numbers, strings, and symbols (identifiers)
+  // Not atoms: lists, associations, function calls with arguments
+  let is_atom = match arg.as_rule() {
+    Rule::Integer | Rule::Real | Rule::String | Rule::Constant => true,
+    Rule::Identifier => true,
+    Rule::NumericValue => true,
+    Rule::List | Rule::Association => false,
+    Rule::FunctionCall => false,
+    Rule::Expression | Rule::Term => {
+      let inner: Vec<_> = arg.clone().into_inner().collect();
+      if inner.len() == 1 {
+        matches!(
+          inner[0].as_rule(),
+          Rule::Integer
+            | Rule::Real
+            | Rule::String
+            | Rule::Constant
+            | Rule::Identifier
+            | Rule::NumericValue
+        )
+      } else {
+        false
+      }
+    }
+    _ => false,
+  };
+
+  Ok(if is_atom { "True" } else { "False" }.to_string())
+}
+
+/// Handle PrimeQ[n] - Tests if n is a prime number
+pub fn prime_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PrimeQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+
+  // Must be a positive integer greater than 1
+  if n.fract() != 0.0 || n < 2.0 {
+    return Ok("False".to_string());
+  }
+
+  let n = n as u64;
+
+  // Simple primality test
+  if n == 2 {
+    return Ok("True".to_string());
+  }
+  if n.is_multiple_of(2) {
+    return Ok("False".to_string());
+  }
+
+  let sqrt_n = (n as f64).sqrt() as u64;
+  for i in (3..=sqrt_n).step_by(2) {
+    if n.is_multiple_of(i) {
+      return Ok("False".to_string());
+    }
+  }
+
+  Ok("True".to_string())
+}
