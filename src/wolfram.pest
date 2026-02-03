@@ -40,6 +40,9 @@ ReplacementRule = { Term ~ "->" ~ Term }
 ReplaceAllExpr = { Term ~ "/." ~ ReplacementRule }
 ReplaceRepeatedExpr = { Term ~ "//." ~ ReplacementRule }
 
+// ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
+ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
+
 Expression = { ReplaceRepeatedExpr | ReplaceAllExpr | PostfixApplication | Term ~ (Operator ~ Term)* }
 Term = _{
     PartExtract
@@ -48,10 +51,20 @@ Term = _{
   | String
   | List
   | FunctionCall
+  | ImplicitTimes
   | Identifier
   | AnonymousFunction
   | Slot
   | Association
+  | "(" ~ Expression ~ ")"
+}
+
+// SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
+SimpleTerm = _{
+    NumericValue
+  | Constant
+  | FunctionCall
+  | Identifier
   | "(" ~ Expression ~ ")"
 }
 
