@@ -282,6 +282,40 @@ pub fn evaluate_pairs(
       // numeric literal directly inside an expression (e.g. x == 2)
       evaluate_term(expr).map(format_result)
     }
+    Rule::ReplaceAllExpr => {
+      // expr /. pattern -> replacement
+      let mut inner = expr.into_inner();
+      let expr_term = inner.next().unwrap();
+      let rule_pair = inner.next().unwrap(); // ReplacementRule
+
+      // Get the expression to transform (try to evaluate, but use as-is if it fails)
+      let expr_str = evaluate_expression(expr_term.clone())
+        .unwrap_or_else(|_| expr_term.as_str().to_string());
+
+      // Extract pattern and replacement from the rule
+      let mut rule_inner = rule_pair.into_inner();
+      let pattern = rule_inner.next().unwrap().as_str().trim().to_string();
+      let replacement = rule_inner.next().unwrap().as_str().trim().to_string();
+
+      apply_replace_all_direct(&expr_str, &pattern, &replacement)
+    }
+    Rule::ReplaceRepeatedExpr => {
+      // expr //. pattern -> replacement
+      let mut inner = expr.into_inner();
+      let expr_term = inner.next().unwrap();
+      let rule_pair = inner.next().unwrap(); // ReplacementRule
+
+      // Get the expression to transform (try to evaluate, but use as-is if it fails)
+      let expr_str = evaluate_expression(expr_term.clone())
+        .unwrap_or_else(|_| expr_term.as_str().to_string());
+
+      // Extract pattern and replacement from the rule
+      let mut rule_inner = rule_pair.into_inner();
+      let pattern = rule_inner.next().unwrap().as_str().trim().to_string();
+      let replacement = rule_inner.next().unwrap().as_str().trim().to_string();
+
+      apply_replace_repeated_direct(&expr_str, &pattern, &replacement)
+    }
     Rule::Term => {
       let mut inner = expr.clone().into_inner();
       if let Some(first) = inner.next() {
@@ -354,9 +388,14 @@ pub fn evaluate_pairs(
       {
         let mut expr_inner = expr.clone().into_inner();
         if let Some(first) = expr_inner.next() {
-          if expr_inner.next().is_none() && first.as_rule() == Rule::PartExtract
-          {
-            return evaluate_expression(first);
+          if expr_inner.next().is_none() {
+            // Single child expression - delegate to appropriate handler
+            match first.as_rule() {
+              Rule::PartExtract => return evaluate_expression(first),
+              Rule::ReplaceAllExpr => return evaluate_pairs(first),
+              Rule::ReplaceRepeatedExpr => return evaluate_pairs(first),
+              _ => {}
+            }
           }
         }
       }
@@ -1118,8 +1157,91 @@ fn evaluate_function_call(
 ) -> Result<String, InterpreterError> {
   // 2. Store the full textual form of the call for later error messages
   let call_text = func_call.as_str().to_string(); // keep original text
+
+  let func_call_str = func_call.as_str();
+
+  // Count bracket groups in the source string
+  let mut depth = 0;
+  let mut bracket_count = 0;
+  for c in func_call_str.chars() {
+    match c {
+      '[' => {
+        if depth == 0 {
+          bracket_count += 1;
+        }
+        depth += 1;
+      }
+      ']' => {
+        depth -= 1;
+      }
+      _ => {}
+    }
+  }
+
+  let is_chained = bracket_count > 1;
+
   let mut inner = func_call.into_inner();
   let func_name_pair = inner.next().unwrap();
+
+  // Handle chained function calls like ReplaceRepeated[rule][expr]
+  if is_chained && func_name_pair.as_rule() == Rule::Identifier {
+    let func_name = func_name_pair.as_str();
+
+    // For ReplaceRepeated, we need to handle the curried form specially
+    if func_name == "ReplaceRepeated" {
+      // Parse the argument groups from the source text
+      // ReplaceRepeated[rule][expr] -> extract rule and expr
+      let mut depth = 0;
+      let mut groups: Vec<String> = Vec::new();
+      let mut current = String::new();
+      let mut in_args = false;
+
+      // Skip the function name
+      let after_name = &func_call_str[func_name.len()..];
+
+      for c in after_name.chars() {
+        match c {
+          '[' => {
+            if depth == 0 {
+              in_args = true;
+              current.clear();
+            } else {
+              current.push(c);
+            }
+            depth += 1;
+          }
+          ']' => {
+            depth -= 1;
+            if depth == 0 && in_args {
+              groups.push(current.clone());
+              in_args = false;
+            } else {
+              current.push(c);
+            }
+          }
+          _ => {
+            if in_args {
+              current.push(c);
+            }
+          }
+        }
+      }
+
+      if groups.len() >= 2 {
+        let rule_str = groups[0].trim();
+        let expr_str = groups[1].trim();
+
+        // Parse the rule (pattern -> replacement)
+        if let Some(arrow_idx) = rule_str.find("->") {
+          let pattern = rule_str[..arrow_idx].trim().to_string();
+          let replacement = rule_str[arrow_idx + 2..].trim().to_string();
+
+          // The expr_str may contain an undefined function, use as-is
+          return apply_replace_repeated_direct(expr_str, &pattern, &replacement);
+        }
+      }
+    }
+  }
 
   // treat identifier that refers to an association variable
   if func_name_pair.as_rule() == Rule::Identifier {
@@ -1663,9 +1785,150 @@ fn evaluate_function_call(
     )),
     "Print" => functions::io::print(&args_pairs),
 
+    // Replacement functions
+    "ReplaceAll" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "ReplaceAll expects exactly 2 arguments".into(),
+        ));
+      }
+      let expr_str = evaluate_expression(args_pairs[0].clone())
+        .unwrap_or_else(|_| args_pairs[0].as_str().to_string());
+      let rule = args_pairs[1].clone();
+      // Extract pattern and replacement from the rule (ReplacementRule)
+      let mut rule_inner = rule.into_inner();
+      let pattern = rule_inner.next().map(|p| p.as_str().trim().to_string())
+        .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
+      let replacement = rule_inner.next().map(|p| p.as_str().trim().to_string())
+        .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
+      apply_replace_all_direct(&expr_str, &pattern, &replacement)
+    }
+
+    "ReplaceRepeated" => {
+      // ReplaceRepeated can be called as ReplaceRepeated[rule][expr]
+      // or ReplaceRepeated[expr, rule]
+      if args_pairs.len() == 1 {
+        // Curried form: ReplaceRepeated[rule] returns a function
+        // that will be applied via the next function call
+        let rule_str = args_pairs[0].as_str().to_string();
+        return Ok(format!("ReplaceRepeated[{}]", rule_str));
+      } else if args_pairs.len() == 2 {
+        let expr_str = evaluate_expression(args_pairs[0].clone())
+          .unwrap_or_else(|_| args_pairs[0].as_str().to_string());
+        let rule = args_pairs[1].clone();
+        // Extract pattern and replacement from the rule (ReplacementRule)
+        let mut rule_inner = rule.into_inner();
+        let pattern = rule_inner.next().map(|p| p.as_str().trim().to_string())
+          .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
+        let replacement = rule_inner.next().map(|p| p.as_str().trim().to_string())
+          .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
+        apply_replace_repeated_direct(&expr_str, &pattern, &replacement)
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "ReplaceRepeated expects 1 or 2 arguments".into(),
+        ))
+      }
+    }
+
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unknown function: {}",
       func_name
     ))),
   }
+}
+
+/// Replace pattern with replacement in an expression string
+/// This handles symbolic replacement (e.g., replacing 'a' with 'x' in '{a, b}')
+fn replace_in_expr(expr: &str, pattern: &str, replacement: &str) -> String {
+  // For function call patterns like f[2], we need more sophisticated matching
+  if pattern.contains('[') && pattern.contains(']') {
+    // Function call pattern - do literal replacement
+    expr.replace(pattern, replacement)
+  } else {
+    // Symbol replacement - need to be careful not to replace partial matches
+    // Use word boundary-aware replacement
+    let mut result = String::new();
+    let mut chars = expr.chars().peekable();
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+
+    while let Some(c) = chars.next() {
+      // Check if we're at the start of a potential match
+      let mut potential_match = vec![c];
+      let mut iter_clone = chars.clone();
+
+      // Build up potential match
+      while potential_match.len() < pattern_chars.len() {
+        if let Some(nc) = iter_clone.next() {
+          potential_match.push(nc);
+        } else {
+          break;
+        }
+      }
+
+      if potential_match == pattern_chars {
+        // Check if this is a whole word match (not part of identifier)
+        let prev_char = result.chars().last();
+        let next_char = iter_clone.next();
+
+        let prev_ok = prev_char.map_or(true, |c| !c.is_alphanumeric() && c != '_');
+        let next_ok = next_char.map_or(true, |c| !c.is_alphanumeric() && c != '_');
+
+        if prev_ok && next_ok {
+          // It's a whole word match, do the replacement
+          result.push_str(replacement);
+          // Consume the matched characters
+          for _ in 1..pattern_chars.len() {
+            chars.next();
+          }
+          continue;
+        }
+      }
+
+      result.push(c);
+    }
+
+    result
+  }
+}
+
+/// Apply ReplaceAll with direct pattern and replacement strings
+fn apply_replace_all_direct(
+  expr: &str,
+  pattern: &str,
+  replacement: &str,
+) -> Result<String, InterpreterError> {
+  // Perform replacement on the expression string
+  let result = replace_in_expr(expr, pattern, replacement);
+
+  // Re-evaluate the result to simplify if possible
+  if result != *expr {
+    // Try to interpret the result, but if it fails, return as-is
+    interpret(&result).or(Ok(result))
+  } else {
+    Ok(result)
+  }
+}
+
+/// Apply ReplaceRepeated with direct pattern and replacement strings
+fn apply_replace_repeated_direct(
+  expr: &str,
+  pattern: &str,
+  replacement: &str,
+) -> Result<String, InterpreterError> {
+  let mut current = expr.to_string();
+  let max_iterations = 1000; // Prevent infinite loops
+
+  for _ in 0..max_iterations {
+    let next = replace_in_expr(&current, pattern, replacement);
+
+    if next == current {
+      // No more changes, we're done
+      break;
+    }
+
+    // Re-evaluate to simplify
+    current = interpret(&next).unwrap_or(next);
+  }
+
+  Ok(current)
 }

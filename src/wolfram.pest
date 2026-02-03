@@ -11,8 +11,10 @@ NumericValue = { Real | Integer | Constant }
 Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-// Function calls
-FunctionCall = { (Identifier | AnonymousFunction) ~ "[" ~ (Expression ~ ("," ~ (Expression | List))*)? ~ "]" }
+// Function calls (supports chained calls like f[x][y])
+// Arguments can be Expressions or ReplacementRules (for ReplaceAll, ReplaceRepeated)
+FunctionArg = _{ ReplacementRule | Expression }
+FunctionCall = { (Identifier | AnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ (FunctionArg | List))*)? ~ "]")+ }
 
 // Anonymous function syntax
 Slot = @{ "#" ~ ASCII_DIGIT* }
@@ -29,7 +31,15 @@ Operator = {
 }
 
 PostfixApplication = { Term ~ "//" ~ Identifier }
-Expression = { PostfixApplication | Term ~ (Operator ~ Term)* }
+
+// Replacement rule: pattern -> replacement
+ReplacementRule = { Term ~ "->" ~ Term }
+
+// Replacement expressions: expr /. rule or expr //. rule
+ReplaceAllExpr = { Term ~ "/." ~ ReplacementRule }
+ReplaceRepeatedExpr = { Term ~ "//." ~ ReplacementRule }
+
+Expression = { ReplaceRepeatedExpr | ReplaceAllExpr | PostfixApplication | Term ~ (Operator ~ Term)* }
 Term = _{
     PartExtract
   | NumericValue

@@ -4,7 +4,7 @@
 
 Replaces parts of an expression according to rules.
 
-```todo
+```scrut
 $ wo '{a, b} /. a -> x'
 {x, b}
 ```
@@ -14,12 +14,12 @@ $ wo '{a, b} /. a -> x'
 
 Repeatedly applies transformation rules until no more changes occur.
 
-```todo
+```scrut
 $ wo 'ReplaceRepeated[f[2] -> 2][f[f[f[f[2]]]]]'
 2
 ```
 
-```todo
+```scrut
 $ wo 'f[f[f[f[2]]]] //. f[2] -> 2'
 2
 ```
