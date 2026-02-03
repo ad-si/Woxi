@@ -79,7 +79,7 @@ $ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; Values[myHash]'
 
 ## Nested access
 
-```todo
+```scrut
 $ wo 'assoc = <|"outer" -> <|"inner" -> 8|>|>; assoc["outer", "inner"]'
 8
 ```

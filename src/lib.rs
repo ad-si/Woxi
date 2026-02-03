@@ -241,9 +241,41 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
 fn eval_association(
   pair: Pair<Rule>,
 ) -> Result<(Vec<(String, String)>, String), InterpreterError> {
+  // Navigate to the actual Association node if needed
+  let assoc_pair = match pair.as_rule() {
+    Rule::Association => pair,
+    Rule::Expression | Rule::Term => {
+      // Find the Association inside the Expression/Term
+      let mut found = None;
+      for inner in pair.clone().into_inner() {
+        if inner.as_rule() == Rule::Association {
+          found = Some(inner);
+          break;
+        } else if inner.as_rule() == Rule::Term || inner.as_rule() == Rule::Expression {
+          // Recurse into nested Term/Expression
+          for deeper in inner.clone().into_inner() {
+            if deeper.as_rule() == Rule::Association {
+              found = Some(deeper);
+              break;
+            }
+          }
+        }
+      }
+      found.ok_or_else(|| {
+        InterpreterError::EvaluationError("Expected association".into())
+      })?
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "Expected Association, got {:?}",
+        pair.as_rule()
+      )))
+    }
+  };
+
   let mut pairs = Vec::new();
   let mut disp_parts = Vec::new();
-  for item in pair
+  for item in assoc_pair
     .into_inner()
     .filter(|p| p.as_rule() == Rule::AssociationItem)
   {
