@@ -638,7 +638,7 @@ $ wo 'Differences[{100, 90, 80}]'
 
 Extracts elements from an expression that match a pattern.
 
-```todo
+```scrut
 $ wo 'Cases[{a, b, a}, a]'
 {a, a}
 ```
@@ -648,7 +648,7 @@ $ wo 'Cases[{a, b, a}, a]'
 
 Removes elements from an expression that match a pattern.
 
-```todo
+```scrut
 $ wo 'DeleteCases[{a, b, a}, a]'
 {b}
 ```
@@ -658,7 +658,7 @@ $ wo 'DeleteCases[{a, b, a}, a]'
 
 Applies a function to corresponding elements in several lists.
 
-```todo
+```scrut
 $ wo 'MapThread[Plus, {{1, 2}, {3, 4}}]'
 {4, 6}
 ```
@@ -669,7 +669,7 @@ $ wo 'MapThread[Plus, {{1, 2}, {3, 4}}]'
 
 Breaks a list into smaller sublists.
 
-```todo
+```scrut
 $ wo 'Partition[{1, 2, 3, 4}, 2]'
 {{1, 2}, {3, 4}}
 ```
@@ -679,7 +679,7 @@ $ wo 'Partition[{1, 2, 3, 4}, 2]'
 
 Sorts elements of a list according to a function.
 
-```todo
+```scrut
 $ wo 'SortBy[{3, 1, 2}, # &]'
 {1, 2, 3}
 ```
@@ -689,9 +689,9 @@ $ wo 'SortBy[{3, 1, 2}, # &]'
 
 Groups elements of a list according to a function.
 
-```todo
+```scrut
 $ wo 'GroupBy[{{a, b}, {a, c}, {b, c}}, First]'
-> /<|a -> {{a, b}, {a, c}}, b -> {{b, c}}|>/
+<|a -> {{a, b}, {a, c}}, b -> {{b, c}}|>
 ```
 
 
@@ -699,7 +699,7 @@ $ wo 'GroupBy[{{a, b}, {a, c}, {b, c}}, First]'
 
 Returns the cumulative sums of a list.
 
-```todo
+```scrut
 $ wo 'Accumulate[{1, 2, 3}]'
 {1, 3, 6}
 ```
@@ -709,7 +709,7 @@ $ wo 'Accumulate[{1, 2, 3}]'
 
 Constructs an array using a function to generate elements.
 
-```todo
+```scrut
 $ wo 'Array[#^2 &, 3]'
 {1, 4, 9}
 ```
