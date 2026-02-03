@@ -1,6 +1,6 @@
 use jupyter_protocol::{
-  connection_info::Transport, ConnectionInfo, ExecuteResult, ExecutionCount,
-  JupyterMessage, JupyterMessageContent, Status,
+  ConnectionInfo, ExecuteResult, ExecutionCount, JupyterMessage,
+  JupyterMessageContent, Status, connection_info::Transport,
 };
 use std::path::Path;
 use uuid::Uuid;

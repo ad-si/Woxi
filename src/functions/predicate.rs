@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{evaluate_expression, evaluate_term, InterpreterError, Rule};
+use crate::{InterpreterError, Rule, evaluate_expression, evaluate_term};
 
 /// Handle NumberQ[expr] - Tests if the expression evaluates to a number
 pub fn number_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
@@ -46,7 +46,9 @@ pub fn even_odd_q(
 /// Handle IntegerQ[expr] - Tests if the expression evaluates to an integer
 /// In Wolfram Language, IntegerQ returns True only for actual integer representations,
 /// not for real numbers that happen to have no fractional part (e.g., 3.0 returns False)
-pub fn integer_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn integer_q(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "IntegerQ expects exactly 1 argument".into(),
@@ -79,8 +81,7 @@ pub fn integer_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> 
         // For function calls, evaluate and check the result format
         if let Ok(result) = evaluate_expression(pair.clone()) {
           // If the result contains a decimal point, it's not an integer
-          !result.contains('.')
-            && result.parse::<i64>().is_ok()
+          !result.contains('.') && result.parse::<i64>().is_ok()
         } else {
           false
         }

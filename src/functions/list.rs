@@ -1,7 +1,7 @@
 use pest::iterators::Pair;
 
 use crate::{
-  evaluate_expression, evaluate_term, format_result, InterpreterError, Rule,
+  InterpreterError, Rule, evaluate_expression, evaluate_term, format_result,
 };
 
 /// Handle List[expr1, expr2, ...] - creates a list from elements
@@ -78,7 +78,7 @@ pub fn map(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
         return Err(InterpreterError::EvaluationError(format!(
           "Unknown mapping function: {}",
           func_name_inner
-        )))
+        )));
       }
     };
     mapped.push(mapped_val);
@@ -473,7 +473,8 @@ pub fn sort(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   }
 
   // Sort by numeric value
-  values.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+  values
+    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
   // Extract the formatted strings
   let sorted: Vec<String> = values.into_iter().map(|(_, s)| s).collect();

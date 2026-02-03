@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{evaluate_expression, InterpreterError, Rule};
+use crate::{InterpreterError, Rule, evaluate_expression};
 
 /// Helper function for boolean conversion
 pub fn as_bool(s: &str) -> Option<bool> {
@@ -91,9 +91,9 @@ pub fn if_condition(
   if !(2..=4).contains(&args_pairs.len()) {
     use std::io::{self, Write};
     println!(
-            "\nIf::argb: If called with {} arguments; between 2 and 4 arguments are expected.",
-            args_pairs.len()
-        );
+      "\nIf::argb: If called with {} arguments; between 2 and 4 arguments are expected.",
+      args_pairs.len()
+    );
     io::stdout().flush().ok();
     return Ok(call_text.to_string()); // return unevaluated expression
   }

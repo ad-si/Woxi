@@ -2,7 +2,7 @@ use pest::iterators::Pair;
 use rand::Rng;
 
 use crate::{
-  evaluate_expression, evaluate_term, format_result, InterpreterError, Rule,
+  InterpreterError, Rule, evaluate_expression, evaluate_term, format_result,
 };
 
 /// Handle GreaterEqual[a, b, ...] - checks if each value is greater than or equal to the next
@@ -127,9 +127,9 @@ pub fn divide(
   if args_pairs.len() != 2 {
     use std::io::{self, Write};
     println!(
-            "\nDivide::argrx: Divide called with {} arguments; 2 arguments are expected.",
-            args_pairs.len()
-        );
+      "\nDivide::argrx: Divide called with {} arguments; 2 arguments are expected.",
+      args_pairs.len()
+    );
     io::stdout().flush().ok();
 
     return Ok(call_text.to_string()); // return unevaluated expression

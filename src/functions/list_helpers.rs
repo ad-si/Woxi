@@ -1,9 +1,9 @@
 use pest::iterators::Pair;
 
 use crate::{
-  evaluate_expression, evaluate_term, format_fraction, format_real_result, format_result,
-  functions::boolean::as_bool, interpret, parse_list_string, InterpreterError,
-  Rule,
+  InterpreterError, Rule, evaluate_expression, evaluate_term, format_fraction,
+  format_real_result, format_result, functions::boolean::as_bool, interpret,
+  parse_list_string,
 };
 
 /// Check if a list item is a real (floating-point) number
@@ -60,7 +60,7 @@ pub fn map_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
             return Err(InterpreterError::EvaluationError(format!(
               "Unknown mapping function: {}",
               func_src
-            )))
+            )));
           }
         }
       };
@@ -134,7 +134,7 @@ pub fn map_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
         return Err(InterpreterError::EvaluationError(format!(
           "Unknown mapping function: {}",
           func_name_inner
-        )))
+        )));
       }
     };
     mapped.push(mapped_val);
@@ -223,7 +223,7 @@ pub fn all_true(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
           return Err(InterpreterError::EvaluationError(format!(
             "Unknown predicate function: {}",
             pred_src
-          )))
+          )));
         }
       }
     };
@@ -299,18 +299,14 @@ pub fn select(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
             false
           } else {
             let even = (n as i64) % 2 == 0;
-            if pred_src == "EvenQ" {
-              even
-            } else {
-              !even
-            }
+            if pred_src == "EvenQ" { even } else { !even }
           }
         }
         _ => {
           return Err(InterpreterError::EvaluationError(format!(
             "Unknown predicate function: {}",
             pred_src
-          )))
+          )));
         }
       }
     };
@@ -481,7 +477,8 @@ pub fn product(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     let iter_items = crate::functions::list::get_list_items(iter_spec_pair)?;
     if iter_items.len() < 2 || iter_items.len() > 3 {
       return Err(InterpreterError::EvaluationError(
-        "Product iterator specification must be {var, max} or {var, min, max}".into(),
+        "Product iterator specification must be {var, max} or {var, min, max}"
+          .into(),
       ));
     }
 
@@ -557,7 +554,9 @@ pub fn product(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 }
 
 /// Handle Accumulate[list] - Returns cumulative sums of a list
-pub fn accumulate(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn accumulate(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Accumulate expects exactly 1 argument".into(),
@@ -593,7 +592,9 @@ pub fn accumulate(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError>
 }
 
 /// Handle Differences[list] - Returns successive differences between elements
-pub fn differences(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn differences(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Differences expects exactly 1 argument".into(),
@@ -825,7 +826,9 @@ pub fn cases(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 }
 
 /// Handle DeleteCases[list, pattern] - Remove elements matching a pattern
-pub fn delete_cases(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn delete_cases(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "DeleteCases expects exactly 2 arguments".into(),
@@ -850,7 +853,9 @@ pub fn delete_cases(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterErro
 }
 
 /// Handle MapThread[f, {list1, list2, ...}] - Apply function to corresponding elements
-pub fn map_thread(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn map_thread(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "MapThread expects exactly 2 arguments".into(),
@@ -904,7 +909,9 @@ pub fn map_thread(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError>
 }
 
 /// Handle Partition[list, n] - Break list into sublists of length n
-pub fn partition(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn partition(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "Partition expects exactly 2 arguments".into(),
@@ -922,10 +929,8 @@ pub fn partition(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> 
   let n_int = n as usize;
 
   let items = crate::functions::list::get_list_items(list_pair)?;
-  let evaluated: Result<Vec<_>, _> = items
-    .into_iter()
-    .map(|p| evaluate_expression(p))
-    .collect();
+  let evaluated: Result<Vec<_>, _> =
+    items.into_iter().map(|p| evaluate_expression(p)).collect();
   let evaluated = evaluated?;
 
   // Partition into chunks of size n, discarding incomplete final chunk
@@ -952,10 +957,8 @@ pub fn sort_by(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   let func_src = func_pair.as_str();
 
   let items = crate::functions::list::get_list_items(list_pair)?;
-  let evaluated: Result<Vec<_>, _> = items
-    .into_iter()
-    .map(|p| evaluate_expression(p))
-    .collect();
+  let evaluated: Result<Vec<_>, _> =
+    items.into_iter().map(|p| evaluate_expression(p)).collect();
   let evaluated = evaluated?;
 
   // Check if it's an identity function (# &)
@@ -995,7 +998,8 @@ pub fn sort_by(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   }
 
   // Sort by key
-  keyed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+  keyed
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
   let sorted: Vec<String> = keyed.into_iter().map(|(e, _)| e).collect();
   Ok(format!("{{{}}}", sorted.join(", ")))
@@ -1014,10 +1018,8 @@ pub fn group_by(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   let func_src = func_pair.as_str();
 
   let items = crate::functions::list::get_list_items(list_pair)?;
-  let evaluated: Result<Vec<_>, _> = items
-    .into_iter()
-    .map(|p| evaluate_expression(p))
-    .collect();
+  let evaluated: Result<Vec<_>, _> =
+    items.into_iter().map(|p| evaluate_expression(p)).collect();
   let evaluated = evaluated?;
 
   // Group elements by key
@@ -1121,7 +1123,9 @@ pub fn fold(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
 /// Handle FoldList[f, init, list] - Like Fold but returns list of intermediate results
 /// FoldList[f, x, {a, b, c}] -> {x, f[x, a], f[f[x, a], b], f[f[f[x, a], b], c]}
-pub fn fold_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn fold_list(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "FoldList expects exactly 3 arguments".into(),
@@ -1181,7 +1185,9 @@ pub fn nest(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
 /// Handle NestList[f, expr, n] - Like Nest but returns list of intermediate results
 /// NestList[f, x, 3] -> {x, f[x], f[f[x]], f[f[f[x]]]}
-pub fn nest_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+pub fn nest_list(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
   if args_pairs.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "NestList expects exactly 3 arguments".into(),
@@ -1212,7 +1218,9 @@ pub fn nest_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> 
 }
 
 /// Helper function to get list elements from a pair
-fn get_list_elements(list_pair: &Pair<Rule>) -> Result<Vec<String>, InterpreterError> {
+fn get_list_elements(
+  list_pair: &Pair<Rule>,
+) -> Result<Vec<String>, InterpreterError> {
   let list_rule = list_pair.as_rule();
 
   if list_rule == Rule::List {
@@ -1232,14 +1240,10 @@ fn get_list_elements(list_pair: &Pair<Rule>) -> Result<Vec<String>, InterpreterE
           .map(|p| evaluate_expression(p))
           .collect()
       } else {
-        Err(InterpreterError::EvaluationError(
-          "Expected a list".into(),
-        ))
+        Err(InterpreterError::EvaluationError("Expected a list".into()))
       }
     } else {
-      Err(InterpreterError::EvaluationError(
-        "Expected a list".into(),
-      ))
+      Err(InterpreterError::EvaluationError("Expected a list".into()))
     }
   } else {
     // Try to evaluate and parse the result as a list
@@ -1249,9 +1253,7 @@ fn get_list_elements(list_pair: &Pair<Rule>) -> Result<Vec<String>, InterpreterE
       // Simple parsing for comma-separated values
       Ok(parse_list_elements(inner))
     } else {
-      Err(InterpreterError::EvaluationError(
-        "Expected a list".into(),
-      ))
+      Err(InterpreterError::EvaluationError("Expected a list".into()))
     }
   }
 }
@@ -1292,7 +1294,11 @@ fn parse_list_elements(s: &str) -> Vec<String> {
 }
 
 /// Apply a binary function f[a, b]
-fn apply_binary_function(func_src: &str, a: &str, b: &str) -> Result<String, InterpreterError> {
+fn apply_binary_function(
+  func_src: &str,
+  a: &str,
+  b: &str,
+) -> Result<String, InterpreterError> {
   if func_src.contains('#') && func_src.ends_with('&') {
     // Anonymous function with slots
     let mut expr = func_src.trim_end_matches('&').to_string();
@@ -1308,7 +1314,10 @@ fn apply_binary_function(func_src: &str, a: &str, b: &str) -> Result<String, Int
 }
 
 /// Apply a unary function f[x]
-fn apply_unary_function(func_src: &str, x: &str) -> Result<String, InterpreterError> {
+fn apply_unary_function(
+  func_src: &str,
+  x: &str,
+) -> Result<String, InterpreterError> {
   if func_src.contains('#') && func_src.ends_with('&') {
     // Anonymous function
     let mut expr = func_src.trim_end_matches('&').to_string();
@@ -1319,7 +1328,9 @@ fn apply_unary_function(func_src: &str, x: &str) -> Result<String, InterpreterEr
     let expr = format!("{}[{}]", func_src, x);
     match interpret(&expr) {
       Ok(result) => Ok(result),
-      Err(InterpreterError::EvaluationError(e)) if e.starts_with("Unknown function:") => {
+      Err(InterpreterError::EvaluationError(e))
+        if e.starts_with("Unknown function:") =>
+      {
         // Return the symbolic unevaluated form
         Ok(expr)
       }

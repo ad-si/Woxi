@@ -1,9 +1,9 @@
-use crate::syntax::{str_to_wonum, wonum_to_number_str, WoNum, AST};
+use crate::syntax::{AST, WoNum, str_to_wonum, wonum_to_number_str};
 use crate::utils::create_file;
 use crate::{
-  apply_map_operator, eval_association, extract_string, format_result,
-  functions, interpret, store_function_definition, InterpreterError, Rule,
-  StoredValue, ENV, FUNC_DEFS,
+  ENV, FUNC_DEFS, InterpreterError, Rule, StoredValue, apply_map_operator,
+  eval_association, extract_string, format_result, functions, interpret,
+  store_function_definition,
 };
 
 /// Represents either a numeric value or a symbolic term in an expression
@@ -103,70 +103,67 @@ pub fn evaluate_expression(
 ) -> Result<String, InterpreterError> {
   let mut inner = expr.clone().into_inner();
 
-  if let Some(fun_call) = inner.next() {
-    if fun_call.as_rule() == Rule::FunctionCall {
-      let mut idents = fun_call.clone().into_inner();
-      if let Some(ident) = idents.next() {
-        if ident.as_span().as_str() == "CreateFile" {
-          let filename_opt = idents
-            .next()
-            .map(|pair| pair.as_span().as_str().replace("\"", ""));
-          return match create_file(filename_opt) {
-            Ok(path) => Ok(path.to_string_lossy().into_owned()),
-            Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
-          };
-        }
-      }
+  if let Some(fun_call) = inner.next()
+    && fun_call.as_rule() == Rule::FunctionCall
+  {
+    let mut idents = fun_call.clone().into_inner();
+    if let Some(ident) = idents.next()
+      && ident.as_span().as_str() == "CreateFile"
+    {
+      let filename_opt = idents
+        .next()
+        .map(|pair| pair.as_span().as_str().replace("\"", ""));
+      return match create_file(filename_opt) {
+        Ok(path) => Ok(path.to_string_lossy().into_owned()),
+        Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
+      };
     }
   };
 
-  if inner.len() == 3 {
-    if let (Some(a), Some(b), Some(c)) =
+  if inner.len() == 3
+    && let (Some(a), Some(b), Some(c)) =
       (inner.next(), inner.next(), inner.next())
-    {
-      if a.as_rule() == Rule::NumericValue
-        && b.as_rule() == Rule::Operator
-        && c.as_rule() == Rule::NumericValue
-      {
-        let op = b.as_span().as_str();
-        match op {
-          "+" => {
-            return evaluate_ast(AST::Plus(vec![
-              str_to_wonum(a.as_span().as_str()),
-              str_to_wonum(c.as_span().as_str()),
-            ]));
-          }
-          "*" => {
-            return evaluate_ast(AST::Times(vec![
-              str_to_wonum(a.as_span().as_str()),
-              str_to_wonum(c.as_span().as_str()),
-            ]));
-          }
-          "-" => {
-            return evaluate_ast(AST::Plus(vec![
-              str_to_wonum(a.as_span().as_str()),
-              -str_to_wonum(c.as_span().as_str()),
-            ]));
-          }
-          "/" => {
-            let divisor = str_to_wonum(c.as_span().as_str());
-            let is_zero = match divisor {
-              WoNum::Int(i) => i == 0,
-              WoNum::Float(f) => f == 0.0,
-            };
-            if is_zero {
-              return Err(InterpreterError::EvaluationError(
-                "Division by zero".into(),
-              ));
-            }
-            return evaluate_ast(AST::Divide(vec![
-              str_to_wonum(a.as_span().as_str()),
-              divisor,
-            ]));
-          }
-          _ => {}
-        }
+    && a.as_rule() == Rule::NumericValue
+    && b.as_rule() == Rule::Operator
+    && c.as_rule() == Rule::NumericValue
+  {
+    let op = b.as_span().as_str();
+    match op {
+      "+" => {
+        return evaluate_ast(AST::Plus(vec![
+          str_to_wonum(a.as_span().as_str()),
+          str_to_wonum(c.as_span().as_str()),
+        ]));
       }
+      "*" => {
+        return evaluate_ast(AST::Times(vec![
+          str_to_wonum(a.as_span().as_str()),
+          str_to_wonum(c.as_span().as_str()),
+        ]));
+      }
+      "-" => {
+        return evaluate_ast(AST::Plus(vec![
+          str_to_wonum(a.as_span().as_str()),
+          -str_to_wonum(c.as_span().as_str()),
+        ]));
+      }
+      "/" => {
+        let divisor = str_to_wonum(c.as_span().as_str());
+        let is_zero = match divisor {
+          WoNum::Int(i) => i == 0,
+          WoNum::Float(f) => f == 0.0,
+        };
+        if is_zero {
+          return Err(InterpreterError::EvaluationError(
+            "Division by zero".into(),
+          ));
+        }
+        return evaluate_ast(AST::Divide(vec![
+          str_to_wonum(a.as_span().as_str()),
+          divisor,
+        ]));
+      }
+      _ => {}
     }
   }
   evaluate_pairs(expr)
@@ -200,7 +197,8 @@ pub fn evaluate_ast(ast: AST) -> Result<String, InterpreterError> {
         );
         io::stdout().flush().ok();
         // Return the expression with minus signs
-        let parts: Vec<String> = wo_nums.iter().map(|w| wonum_to_number_str(*w)).collect();
+        let parts: Vec<String> =
+          wo_nums.iter().map(|w| wonum_to_number_str(*w)).collect();
         parts.join(" − ")
       }
     }
@@ -364,10 +362,11 @@ pub fn evaluate_pairs(
             .split(',')
             .map(|s| s.trim())
             .collect();
-          if let Ok(idx) = key.parse::<usize>() {
-            if idx >= 1 && idx <= items.len() {
-              return Ok(items[idx - 1].to_string());
-            }
+          if let Ok(idx) = key.parse::<usize>()
+            && idx >= 1
+            && idx <= items.len()
+          {
+            return Ok(items[idx - 1].to_string());
           }
         }
       }
@@ -378,15 +377,15 @@ pub fn evaluate_pairs(
     Rule::Expression => {
       {
         let mut expr_inner = expr.clone().into_inner();
-        if let Some(first) = expr_inner.next() {
-          if expr_inner.next().is_none() {
-            // Single child expression - delegate to appropriate handler
-            match first.as_rule() {
-              Rule::PartExtract => return evaluate_expression(first),
-              Rule::ReplaceAllExpr => return evaluate_pairs(first),
-              Rule::ReplaceRepeatedExpr => return evaluate_pairs(first),
-              _ => {}
-            }
+        if let Some(first) = expr_inner.next()
+          && expr_inner.next().is_none()
+        {
+          // Single child expression - delegate to appropriate handler
+          match first.as_rule() {
+            Rule::PartExtract => return evaluate_expression(first),
+            Rule::ReplaceAllExpr => return evaluate_pairs(first),
+            Rule::ReplaceRepeatedExpr => return evaluate_pairs(first),
+            _ => {}
           }
         }
       }
@@ -401,9 +400,11 @@ pub fn evaluate_pairs(
         // Check if all odd-indexed items are @ operators
         let all_at = items.len() >= 3
           && items.len() % 2 == 1
-          && items.iter().skip(1).step_by(2).all(|p|
-            p.as_rule() == Rule::Operator && p.as_str() == "@"
-          );
+          && items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == "@");
 
         if all_at {
           // Process right-to-left: f @ g @ h @ x -> f[g[h[x]]]
@@ -430,9 +431,11 @@ pub fn evaluate_pairs(
         // Handle chained // operators (left-associative): x // f // g -> g[f[x]]
         let all_postfix = items.len() >= 3
           && items.len() % 2 == 1
-          && items.iter().skip(1).step_by(2).all(|p|
-            p.as_rule() == Rule::Operator && p.as_str() == "//"
-          );
+          && items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == "//");
 
         if all_postfix {
           // Process left-to-right: x // f // g -> g[f[x]]
@@ -487,7 +490,9 @@ pub fn evaluate_pairs(
             // Try to evaluate; if function is unknown, return the symbolic form
             match interpret(&expr) {
               Ok(result) => return Ok(result),
-              Err(InterpreterError::EvaluationError(e)) if e.starts_with("Unknown function:") => {
+              Err(InterpreterError::EvaluationError(e))
+                if e.starts_with("Unknown function:") =>
+              {
                 return Ok(expr);
               }
               Err(e) => return Err(e),
@@ -519,17 +524,22 @@ pub fn evaluate_pairs(
                 // Update or add the key in the association
                 ENV.with(|e| {
                   let mut env = e.borrow_mut();
-                  if let Some(StoredValue::Association(ref mut pairs)) = env.get_mut(&var_name) {
+                  if let Some(StoredValue::Association(pairs)) =
+                    env.get_mut(&var_name)
+                  {
                     // Update existing key or add new key
-                    if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
+                    if let Some(pair) =
+                      pairs.iter_mut().find(|(k, _)| k == &key)
+                    {
                       pair.1 = rhs_value.clone();
                     } else {
                       pairs.push((key.clone(), rhs_value.clone()));
                     }
                   } else {
-                    return Err(InterpreterError::EvaluationError(
-                      format!("{} is not an association", var_name)
-                    ));
+                    return Err(InterpreterError::EvaluationError(format!(
+                      "{} is not an association",
+                      var_name
+                    )));
                   }
                   Ok(())
                 })?;
@@ -537,14 +547,18 @@ pub fn evaluate_pairs(
                 // Return the updated association
                 return ENV.with(|e| {
                   let env = e.borrow();
-                  if let Some(StoredValue::Association(pairs)) = env.get(&var_name) {
+                  if let Some(StoredValue::Association(pairs)) =
+                    env.get(&var_name)
+                  {
                     let disp_parts: Vec<String> = pairs
                       .iter()
                       .map(|(k, v)| format!("{} -> {}", k, v))
                       .collect();
                     Ok(format!("<|{}|>", disp_parts.join(", ")))
                   } else {
-                    Err(InterpreterError::EvaluationError("Variable not found".into()))
+                    Err(InterpreterError::EvaluationError(
+                      "Variable not found".into(),
+                    ))
                   }
                 });
               }
@@ -835,9 +849,8 @@ pub fn evaluate_pairs(
       }
 
       // Check if all terms are numeric - if so, use pure numeric evaluation
-      let all_numeric = terms
-        .iter()
-        .all(|t| matches!(t, SymbolicTerm::Numeric(_)));
+      let all_numeric =
+        terms.iter().all(|t| matches!(t, SymbolicTerm::Numeric(_)));
 
       if all_numeric {
         // Pure numeric path - extract f64 values
@@ -1260,119 +1273,126 @@ fn evaluate_function_call(
           let replacement = rule_str[arrow_idx + 2..].trim().to_string();
 
           // The expr_str may contain an undefined function, use as-is
-          return apply_replace_repeated_direct(expr_str, &pattern, &replacement);
+          return apply_replace_repeated_direct(
+            expr_str,
+            &pattern,
+            &replacement,
+          );
         }
       }
     }
   }
 
   // treat identifier that refers to an association variable
-  if func_name_pair.as_rule() == Rule::Identifier {
-    if let Some(StoredValue::Association(pairs)) =
+  if func_name_pair.as_rule() == Rule::Identifier
+    && let Some(StoredValue::Association(pairs)) =
       ENV.with(|e| e.borrow().get(func_name_pair.as_str()).cloned())
-    {
-      let args: Vec<_> = inner.clone().filter(|p| p.as_str() != ",").collect();
+  {
+    let args: Vec<_> = inner.clone().filter(|p| p.as_str() != ",").collect();
 
-      // ---- single key lookup ---
-      if args.len() == 1 {
-        let arg_pair = args.into_iter().next().unwrap();
-        let key_str = extract_string(arg_pair)?; // must be string
-        for (k, v) in &pairs {
-          if *k == key_str {
-            return Ok(v.clone());
-          }
+    // ---- single key lookup ---
+    if args.len() == 1 {
+      let arg_pair = args.into_iter().next().unwrap();
+      let key_str = extract_string(arg_pair)?; // must be string
+      for (k, v) in &pairs {
+        if *k == key_str {
+          return Ok(v.clone());
         }
-        return Err(InterpreterError::EvaluationError("Key not found".into()));
+      }
+      return Err(InterpreterError::EvaluationError("Key not found".into()));
+    }
+
+    // ---- nested key lookup (multiple keys) ---
+    if args.len() > 1 {
+      // Get the first key
+      let first_key = extract_string(args[0].clone())?;
+      let mut current_value: Option<String> = None;
+
+      // Find the value for the first key
+      for (k, v) in &pairs {
+        if *k == first_key {
+          current_value = Some(v.clone());
+          break;
+        }
       }
 
-      // ---- nested key lookup (multiple keys) ---
-      if args.len() > 1 {
-        // Get the first key
-        let first_key = extract_string(args[0].clone())?;
-        let mut current_value: Option<String> = None;
+      let mut current_value = current_value.ok_or_else(|| {
+        InterpreterError::EvaluationError("Key not found".into())
+      })?;
 
-        // Find the value for the first key
-        for (k, v) in &pairs {
-          if *k == first_key {
-            current_value = Some(v.clone());
-            break;
-          }
+      // Iterate through remaining keys
+      for arg in args.iter().skip(1) {
+        let key_str = extract_string(arg.clone())?;
+
+        // Parse the current value as an association
+        // Association format: <|key1 -> val1, key2 -> val2|>
+        if !current_value.starts_with("<|") || !current_value.ends_with("|>") {
+          return Err(InterpreterError::EvaluationError(
+            "Nested access requires association value".into(),
+          ));
         }
 
-        let mut current_value = current_value
-          .ok_or_else(|| InterpreterError::EvaluationError("Key not found".into()))?;
+        // Parse the inner association - clone to avoid borrow issues
+        let inner_content =
+          current_value[2..current_value.len() - 2].to_string();
+        let mut found = false;
+        let mut next_value = String::new();
 
-        // Iterate through remaining keys
-        for arg in args.iter().skip(1) {
-          let key_str = extract_string(arg.clone())?;
+        // Split by ", " but be careful about nested associations
+        let mut depth = 0;
+        let mut start = 0;
+        let chars: Vec<char> = inner_content.chars().collect();
+        let mut i = 0;
 
-          // Parse the current value as an association
-          // Association format: <|key1 -> val1, key2 -> val2|>
-          if !current_value.starts_with("<|") || !current_value.ends_with("|>") {
-            return Err(InterpreterError::EvaluationError(
-              "Nested access requires association value".into(),
-            ));
-          }
-
-          // Parse the inner association - clone to avoid borrow issues
-          let inner_content = current_value[2..current_value.len() - 2].to_string();
-          let mut found = false;
-          let mut next_value = String::new();
-
-          // Split by ", " but be careful about nested associations
-          let mut depth = 0;
-          let mut start = 0;
-          let chars: Vec<char> = inner_content.chars().collect();
-          let mut i = 0;
-
-          while i < chars.len() {
-            match chars[i] {
-              '<' if i + 1 < chars.len() && chars[i + 1] == '|' => {
-                depth += 1;
-                i += 2;
-                continue;
-              }
-              '|' if i + 1 < chars.len() && chars[i + 1] == '>' => {
-                depth -= 1;
-                i += 2;
-                continue;
-              }
-              ',' if depth == 0 => {
-                let item = inner_content[start..i].trim();
-                if let Some((k, v)) = item.split_once(" -> ") {
-                  if k.trim() == key_str {
-                    next_value = v.trim().to_string();
-                    found = true;
-                    break;
-                  }
-                }
-                start = i + 1;
-              }
-              _ => {}
+        while i < chars.len() {
+          match chars[i] {
+            '<' if i + 1 < chars.len() && chars[i + 1] == '|' => {
+              depth += 1;
+              i += 2;
+              continue;
             }
-            i += 1;
-          }
-
-          // Check the last item if not found yet
-          if !found {
-            let item = inner_content[start..].trim();
-            if let Some((k, v)) = item.split_once(" -> ") {
-              if k.trim() == key_str {
+            '|' if i + 1 < chars.len() && chars[i + 1] == '>' => {
+              depth -= 1;
+              i += 2;
+              continue;
+            }
+            ',' if depth == 0 => {
+              let item = inner_content[start..i].trim();
+              if let Some((k, v)) = item.split_once(" -> ")
+                && k.trim() == key_str
+              {
                 next_value = v.trim().to_string();
                 found = true;
+                break;
               }
+              start = i + 1;
             }
+            _ => {}
           }
-
-          if !found {
-            return Err(InterpreterError::EvaluationError("Key not found".into()));
-          }
-
-          current_value = next_value;
+          i += 1;
         }
 
-        return Ok(current_value);
+        // Check the last item if not found yet
+        if !found {
+          let item = inner_content[start..].trim();
+          if let Some((k, v)) = item.split_once(" -> ")
+            && k.trim() == key_str
+          {
+            next_value = v.trim().to_string();
+            found = true;
+          }
+        }
+
+        if !found {
+          return Err(InterpreterError::EvaluationError(
+            "Key not found".into(),
+          ));
+        }
+
+        current_value = next_value;
       }
+
+      return Ok(current_value);
     }
   }
 
@@ -1434,7 +1454,7 @@ fn evaluate_function_call(
         return Err(InterpreterError::EvaluationError(format!(
           "Anonymous function must be applied to a list, got {:?}",
           arg.as_rule()
-        )))
+        )));
       }
     };
 
@@ -1465,7 +1485,7 @@ fn evaluate_function_call(
           return Err(InterpreterError::EvaluationError(format!(
             "Unsupported operator in anonymous function: {}",
             operator
-          )))
+          )));
         }
       };
 
@@ -1588,7 +1608,7 @@ fn evaluate_function_call(
         _ => {
           return Err(InterpreterError::EvaluationError(
             "First argument of Set must be an identifier".into(),
-          ))
+          ));
         }
       };
 
@@ -1794,7 +1814,9 @@ fn evaluate_function_call(
         WoNum::Float(f) => *f == 0.0,
       };
       if is_zero {
-        return Err(InterpreterError::EvaluationError("Division by zero".into()));
+        return Err(InterpreterError::EvaluationError(
+          "Division by zero".into(),
+        ));
       }
       evaluate_ast(AST::Divide(wonums))
     }
@@ -1828,10 +1850,18 @@ fn evaluate_function_call(
       let rule = args_pairs[1].clone();
       // Extract pattern and replacement from the rule (ReplacementRule)
       let mut rule_inner = rule.into_inner();
-      let pattern = rule_inner.next().map(|p| p.as_str().trim().to_string())
-        .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
-      let replacement = rule_inner.next().map(|p| p.as_str().trim().to_string())
-        .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
+      let pattern = rule_inner
+        .next()
+        .map(|p| p.as_str().trim().to_string())
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError("Invalid rule format".into())
+        })?;
+      let replacement = rule_inner
+        .next()
+        .map(|p| p.as_str().trim().to_string())
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError("Invalid rule format".into())
+        })?;
       apply_replace_all_direct(&expr_str, &pattern, &replacement)
     }
 
@@ -1842,17 +1872,25 @@ fn evaluate_function_call(
         // Curried form: ReplaceRepeated[rule] returns a function
         // that will be applied via the next function call
         let rule_str = args_pairs[0].as_str().to_string();
-        return Ok(format!("ReplaceRepeated[{}]", rule_str));
+        Ok(format!("ReplaceRepeated[{}]", rule_str))
       } else if args_pairs.len() == 2 {
         let expr_str = evaluate_expression(args_pairs[0].clone())
           .unwrap_or_else(|_| args_pairs[0].as_str().to_string());
         let rule = args_pairs[1].clone();
         // Extract pattern and replacement from the rule (ReplacementRule)
         let mut rule_inner = rule.into_inner();
-        let pattern = rule_inner.next().map(|p| p.as_str().trim().to_string())
-          .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
-        let replacement = rule_inner.next().map(|p| p.as_str().trim().to_string())
-          .ok_or_else(|| InterpreterError::EvaluationError("Invalid rule format".into()))?;
+        let pattern = rule_inner
+          .next()
+          .map(|p| p.as_str().trim().to_string())
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError("Invalid rule format".into())
+          })?;
+        let replacement = rule_inner
+          .next()
+          .map(|p| p.as_str().trim().to_string())
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError("Invalid rule format".into())
+          })?;
         apply_replace_repeated_direct(&expr_str, &pattern, &replacement)
       } else {
         Err(InterpreterError::EvaluationError(
@@ -1901,8 +1939,10 @@ fn replace_in_expr(expr: &str, pattern: &str, replacement: &str) -> String {
         let prev_char = result.chars().last();
         let next_char = iter_clone.next();
 
-        let prev_ok = prev_char.map_or(true, |c| !c.is_alphanumeric() && c != '_');
-        let next_ok = next_char.map_or(true, |c| !c.is_alphanumeric() && c != '_');
+        let prev_ok =
+          prev_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        let next_ok =
+          next_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
 
         if prev_ok && next_ok {
           // It's a whole word match, do the replacement
