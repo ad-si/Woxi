@@ -249,34 +249,25 @@ pub fn evaluate_pairs(
       Ok(disp)
     }
     Rule::PostfixApplication => {
-      let mut inner = expr.into_inner();
-      let arg = inner.next().unwrap();
-      let func = inner.next().unwrap();
+      // Chained postfix: x // f // g -> g[f[x]]
+      let inner: Vec<_> = expr.into_inner().collect();
+      // First item is the argument, rest are function identifiers
+      let arg = inner[0].clone();
+      let mut result = evaluate_expression(arg)?;
 
-      if func.as_rule() == Rule::Identifier {
-        let func_name = func.as_str();
-        // Evaluate the argument
-        let arg_value = evaluate_expression(arg)?;
-        // Apply the function
-        match func_name {
-          "Sin" => {
-            let n = arg_value.parse::<f64>().map_err(|_| {
-              InterpreterError::EvaluationError(
-                "Invalid argument for Sin".into(),
-              )
-            })?;
-            Ok(format_result(n.sin()))
-          }
-          _ => Err(InterpreterError::EvaluationError(format!(
-            "Unknown function for // operator: {}",
-            func_name
-          ))),
+      // Apply functions left-to-right
+      for func in inner.iter().skip(1) {
+        if func.as_rule() == Rule::Identifier {
+          let func_name = func.as_str();
+          let expr_str = format!("{}[{}]", func_name, result);
+          result = interpret(&expr_str)?;
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Right operand of // must be a function".into(),
+          ));
         }
-      } else {
-        Err(InterpreterError::EvaluationError(
-          "Right operand of // must be a function".into(),
-        ))
       }
+      Ok(result)
     }
     Rule::NumericValue => {
       // numeric literal directly inside an expression (e.g. x == 2)
@@ -406,67 +397,62 @@ pub fn evaluate_pairs(
           let (_pairs, disp) = eval_association(items[0].clone())?;
           return Ok(disp);
         }
-        // Handle operators for function application
-        if items.len() == 3 && items[1].as_rule() == Rule::Operator {
-          // Handle @ operator (prefix notation)
-          if items[1].as_str() == "@" {
-            let func = items[0].clone();
-            let arg = items[2].clone();
+        // Handle chained @ operators (right-associative): f @ g @ x -> f[g[x]]
+        // Check if all odd-indexed items are @ operators
+        let all_at = items.len() >= 3
+          && items.len() % 2 == 1
+          && items.iter().skip(1).step_by(2).all(|p|
+            p.as_rule() == Rule::Operator && p.as_str() == "@"
+          );
 
+        if all_at {
+          // Process right-to-left: f @ g @ h @ x -> f[g[h[x]]]
+          // Start with the rightmost term and work backwards
+          let terms: Vec<_> = items.iter().step_by(2).cloned().collect();
+          // Evaluate the rightmost term first
+          let mut result = evaluate_expression(terms[terms.len() - 1].clone())?;
+          // Apply functions from right to left
+          for i in (0..terms.len() - 1).rev() {
+            let func = &terms[i];
             if func.as_rule() == Rule::Identifier {
               let func_name = func.as_str();
-              // Directly call the function with the argument value
-              let arg_value = evaluate_expression(arg)?;
-              // Create args_pairs similar to a normal function call
-              return match func_name {
-                "Sin" => {
-                  let n = arg_value.parse::<f64>().map_err(|_| {
-                    InterpreterError::EvaluationError(
-                      "Invalid argument for Sin".into(),
-                    )
-                  })?;
-                  Ok(format_result(n.sin()))
-                }
-                _ => Err(InterpreterError::EvaluationError(format!(
-                  "Unknown function for @ operator: {}",
-                  func_name
-                ))),
-              };
+              let expr = format!("{}[{}]", func_name, result);
+              result = interpret(&expr)?;
             } else {
               return Err(InterpreterError::EvaluationError(
                 "Left operand of @ must be a function".into(),
               ));
             }
           }
-          // Handle // operator (postfix notation)
-          else if items[1].as_str() == "//" {
-            let arg = items[0].clone();
-            let func = items[2].clone();
+          return Ok(result);
+        }
 
+        // Handle chained // operators (left-associative): x // f // g -> g[f[x]]
+        let all_postfix = items.len() >= 3
+          && items.len() % 2 == 1
+          && items.iter().skip(1).step_by(2).all(|p|
+            p.as_rule() == Rule::Operator && p.as_str() == "//"
+          );
+
+        if all_postfix {
+          // Process left-to-right: x // f // g -> g[f[x]]
+          let terms: Vec<_> = items.iter().step_by(2).cloned().collect();
+          // Evaluate the leftmost term first (the argument)
+          let mut result = evaluate_expression(terms[0].clone())?;
+          // Apply functions from left to right
+          for i in 1..terms.len() {
+            let func = &terms[i];
             if func.as_rule() == Rule::Identifier {
               let func_name = func.as_str();
-              // Directly call the function with the argument value
-              let arg_value = evaluate_expression(arg)?;
-              return match func_name {
-                "Sin" => {
-                  let n = arg_value.parse::<f64>().map_err(|_| {
-                    InterpreterError::EvaluationError(
-                      "Invalid argument for Sin".into(),
-                    )
-                  })?;
-                  Ok(format_result(n.sin()))
-                }
-                _ => Err(InterpreterError::EvaluationError(format!(
-                  "Unknown function for // operator: {}",
-                  func_name
-                ))),
-              };
+              let expr = format!("{}[{}]", func_name, result);
+              result = interpret(&expr)?;
             } else {
               return Err(InterpreterError::EvaluationError(
                 "Right operand of // must be a function".into(),
               ));
             }
           }
+          return Ok(result);
         }
 
         if items.len() == 3
@@ -474,6 +460,43 @@ pub fn evaluate_pairs(
           && items[1].as_str() == "/@"
         {
           return apply_map_operator(items[0].clone(), items[2].clone());
+        }
+
+        // Handle @@ (Apply) operator: f @@ {a, b, c} -> f[a, b, c]
+        if items.len() == 3
+          && items[1].as_rule() == Rule::Operator
+          && items[1].as_str() == "@@"
+        {
+          let func = items[0].clone();
+          let list = items[2].clone();
+
+          let func_name = if func.as_rule() == Rule::Identifier {
+            func.as_str().to_string()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "Left operand of @@ must be a function".into(),
+            ));
+          };
+
+          // Evaluate the list and extract its items
+          let list_str = evaluate_expression(list)?;
+          // Parse the evaluated list to extract elements
+          if list_str.starts_with('{') && list_str.ends_with('}') {
+            let inner = &list_str[1..list_str.len() - 1];
+            let expr = format!("{}[{}]", func_name, inner);
+            // Try to evaluate; if function is unknown, return the symbolic form
+            match interpret(&expr) {
+              Ok(result) => return Ok(result),
+              Err(InterpreterError::EvaluationError(e)) if e.starts_with("Unknown function:") => {
+                return Ok(expr);
+              }
+              Err(e) => return Err(e),
+            }
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "Right operand of @@ must be a list".into(),
+            ));
+          }
         }
 
         // --- handle = and := assignment operators ---
@@ -1787,6 +1810,10 @@ fn evaluate_function_call(
     "SortBy" => functions::list_helpers::sort_by(&args_pairs),
     "GroupBy" => functions::list_helpers::group_by(&args_pairs),
     "Array" => functions::list_helpers::array(&args_pairs),
+    "Fold" => functions::list_helpers::fold(&args_pairs),
+    "FoldList" => functions::list_helpers::fold_list(&args_pairs),
+    "Nest" => functions::list_helpers::nest(&args_pairs),
+    "NestList" => functions::list_helpers::nest_list(&args_pairs),
     "Print" => functions::io::print(&args_pairs),
 
     // Replacement functions

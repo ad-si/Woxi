@@ -1090,3 +1090,240 @@ pub fn array(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format!("{{{}}}", result.join(", ")))
 }
+
+/// Handle Fold[f, init, list] - Apply function cumulatively to list elements
+/// Fold[f, x, {a, b, c}] -> f[f[f[x, a], b], c]
+pub fn fold(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Fold expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let init = evaluate_expression(args_pairs[1].clone())?;
+  let list_pair = &args_pairs[2];
+
+  // Get list elements
+  let elements = get_list_elements(list_pair)?;
+
+  let func_src = func_pair.as_str();
+  let mut accumulator = init;
+
+  for elem_str in elements {
+    // Apply function: f[accumulator, element]
+    let result = apply_binary_function(func_src, &accumulator, &elem_str)?;
+    accumulator = result;
+  }
+
+  Ok(accumulator)
+}
+
+/// Handle FoldList[f, init, list] - Like Fold but returns list of intermediate results
+/// FoldList[f, x, {a, b, c}] -> {x, f[x, a], f[f[x, a], b], f[f[f[x, a], b], c]}
+pub fn fold_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "FoldList expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let init = evaluate_expression(args_pairs[1].clone())?;
+  let list_pair = &args_pairs[2];
+
+  // Get list elements
+  let elements = get_list_elements(list_pair)?;
+
+  let func_src = func_pair.as_str();
+  let mut results = vec![init.clone()];
+  let mut accumulator = init;
+
+  for elem_str in elements {
+    // Apply function: f[accumulator, element]
+    let result = apply_binary_function(func_src, &accumulator, &elem_str)?;
+    results.push(result.clone());
+    accumulator = result;
+  }
+
+  Ok(format!("{{{}}}", results.join(", ")))
+}
+
+/// Handle Nest[f, expr, n] - Apply function n times
+/// Nest[f, x, 3] -> f[f[f[x]]]
+pub fn nest(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Nest expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let init = evaluate_expression(args_pairs[1].clone())?;
+  let n = evaluate_term(args_pairs[2].clone())?;
+
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Third argument of Nest must be a non-negative integer".into(),
+    ));
+  }
+  let n_int = n as usize;
+
+  let func_src = func_pair.as_str();
+  let mut result = init;
+
+  for _ in 0..n_int {
+    result = apply_unary_function(func_src, &result)?;
+  }
+
+  Ok(result)
+}
+
+/// Handle NestList[f, expr, n] - Like Nest but returns list of intermediate results
+/// NestList[f, x, 3] -> {x, f[x], f[f[x]], f[f[f[x]]]}
+pub fn nest_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "NestList expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let init = evaluate_expression(args_pairs[1].clone())?;
+  let n = evaluate_term(args_pairs[2].clone())?;
+
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Third argument of NestList must be a non-negative integer".into(),
+    ));
+  }
+  let n_int = n as usize;
+
+  let func_src = func_pair.as_str();
+  let mut results = vec![init.clone()];
+  let mut current = init;
+
+  for _ in 0..n_int {
+    current = apply_unary_function(func_src, &current)?;
+    results.push(current.clone());
+  }
+
+  Ok(format!("{{{}}}", results.join(", ")))
+}
+
+/// Helper function to get list elements from a pair
+fn get_list_elements(list_pair: &Pair<Rule>) -> Result<Vec<String>, InterpreterError> {
+  let list_rule = list_pair.as_rule();
+
+  if list_rule == Rule::List {
+    list_pair
+      .clone()
+      .into_inner()
+      .filter(|p| p.as_str() != ",")
+      .map(|p| evaluate_expression(p))
+      .collect()
+  } else if list_rule == Rule::Expression {
+    let mut expr_inner = list_pair.clone().into_inner();
+    if let Some(first) = expr_inner.next() {
+      if first.as_rule() == Rule::List {
+        first
+          .into_inner()
+          .filter(|p| p.as_str() != ",")
+          .map(|p| evaluate_expression(p))
+          .collect()
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "Expected a list".into(),
+        ))
+      }
+    } else {
+      Err(InterpreterError::EvaluationError(
+        "Expected a list".into(),
+      ))
+    }
+  } else {
+    // Try to evaluate and parse the result as a list
+    let list_str = evaluate_expression(list_pair.clone())?;
+    if list_str.starts_with('{') && list_str.ends_with('}') {
+      let inner = &list_str[1..list_str.len() - 1];
+      // Simple parsing for comma-separated values
+      Ok(parse_list_elements(inner))
+    } else {
+      Err(InterpreterError::EvaluationError(
+        "Expected a list".into(),
+      ))
+    }
+  }
+}
+
+/// Parse comma-separated list elements (handling nested structures)
+fn parse_list_elements(s: &str) -> Vec<String> {
+  let mut elements = Vec::new();
+  let mut current = String::new();
+  let mut depth = 0;
+
+  for c in s.chars() {
+    match c {
+      '{' | '[' | '(' => {
+        depth += 1;
+        current.push(c);
+      }
+      '}' | ']' | ')' => {
+        depth -= 1;
+        current.push(c);
+      }
+      ',' if depth == 0 => {
+        let trimmed = current.trim().to_string();
+        if !trimmed.is_empty() {
+          elements.push(trimmed);
+        }
+        current.clear();
+      }
+      _ => current.push(c),
+    }
+  }
+
+  let trimmed = current.trim().to_string();
+  if !trimmed.is_empty() {
+    elements.push(trimmed);
+  }
+
+  elements
+}
+
+/// Apply a binary function f[a, b]
+fn apply_binary_function(func_src: &str, a: &str, b: &str) -> Result<String, InterpreterError> {
+  if func_src.contains('#') && func_src.ends_with('&') {
+    // Anonymous function with slots
+    let mut expr = func_src.trim_end_matches('&').to_string();
+    expr = expr.replace("#1", a).replace("#2", b);
+    // If there's still a plain # without number, replace with first arg
+    expr = expr.replace('#', a);
+    interpret(&expr)
+  } else {
+    // Named function
+    let expr = format!("{}[{}, {}]", func_src, a, b);
+    interpret(&expr)
+  }
+}
+
+/// Apply a unary function f[x]
+fn apply_unary_function(func_src: &str, x: &str) -> Result<String, InterpreterError> {
+  if func_src.contains('#') && func_src.ends_with('&') {
+    // Anonymous function
+    let mut expr = func_src.trim_end_matches('&').to_string();
+    expr = expr.replace('#', x);
+    interpret(&expr)
+  } else {
+    // Named function - return symbolic form if function is unknown
+    let expr = format!("{}[{}]", func_src, x);
+    match interpret(&expr) {
+      Ok(result) => Ok(result),
+      Err(InterpreterError::EvaluationError(e)) if e.starts_with("Unknown function:") => {
+        // Return the symbolic unevaluated form
+        Ok(expr)
+      }
+      Err(e) => Err(e),
+    }
+  }
+}

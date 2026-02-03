@@ -22,6 +22,7 @@ AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 
 Operator = {
     "/@"     // keep first
+  | "@@"     // Apply operator (must be before single @)
   | "==" | "!="
   | "<=" | ">="
   | ":="
@@ -30,7 +31,7 @@ Operator = {
   | "=" | "@"
 }
 
-PostfixApplication = { Term ~ "//" ~ Identifier }
+PostfixApplication = { Term ~ ("//" ~ Identifier)+ }
 
 // Replacement rule: pattern -> replacement
 ReplacementRule = { Term ~ "->" ~ Term }
