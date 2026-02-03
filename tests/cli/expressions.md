@@ -13,71 +13,71 @@ Output is always in [FullForm].
 
 ## `FullForm` - Prints the full form of the expression with no special syntax
 
-```todo
+```scrut
 $ wo 'FullForm[x+y+z]'
 Plus[x, y, z]
 ```
 
-```todo
+```scrut
 $ wo 'FullForm[x y z]'
 Times[x, y, z]
 ```
 
-```todo
+```scrut
 $ wo 'FullForm[x^n]'
 Power[x, n]
 ```
 
-```todo
+```scrut
 $ wo 'FullForm[{a,b,c}]'
 List[a, b, c]
 ```
 
-```todo
+```scrut
 $ wo 'FullForm[a->b]'
 Rule[a, b]
 ```
 
 <!-- TODO: Why is this not Set[a, b] -->
-```todo
+```scrut
 $ wo 'FullForm[a=b]'
 b
 ```
 
-```todo
+```scrut
 $ wo 'FullForm[a b + c]'
 Plus[Times[a, b], c]
 ```
 
-```todo
+```scrut
 $ wo 'FullForm[a (b + c)]'
-Plus[Times[a, b], Times[a, c]]
+Times[a, Plus[b, c]]
 ```
 
 
 ## `Head` - Returns the head of an expression
 
-```todo
+```scrut
 $ wo 'Head[f[x, y]]'
 f
 ```
 
-```todo
+```scrut
 $ wo 'Head[a + b + c]'
 Plus
 ```
 
-```todo
+```scrut
 $ wo 'Head[{a, b, c}]'
 List
 ```
 
-```todo
+```scrut
 $ wo 'Head[23432]'
 Integer
 ```
 
-```todo
+```scrut
 $ wo 'Head[345.6]'
 Real
 ```
@@ -87,21 +87,21 @@ Real
 
 Apply a function to an argument:
 
-```todo
+```scrut
 $ wo 'Construct[f, x]'
 f[x]
 ```
 
 Apply a function to several arguments:
 
-```todo
+```scrut
 $ wo 'Construct[f, x, y, z]'
 f[x, y, z]
 ```
 
 Build a curried function:
 
-```todo
+```scrut
 $ wo 'Fold[Construct, f, {a, b, c}]'
 f[a][b][c]
 ```

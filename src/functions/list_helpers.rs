@@ -1307,9 +1307,18 @@ fn apply_binary_function(
     expr = expr.replace('#', a);
     interpret(&expr)
   } else {
-    // Named function
+    // Named function - return symbolic form if function is unknown
     let expr = format!("{}[{}, {}]", func_src, a, b);
-    interpret(&expr)
+    match interpret(&expr) {
+      Ok(result) => Ok(result),
+      Err(InterpreterError::EvaluationError(e))
+        if e.starts_with("Unknown function:") =>
+      {
+        // Return the symbolic unevaluated form
+        Ok(expr)
+      }
+      Err(e) => Err(e),
+    }
   }
 }
 

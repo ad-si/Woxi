@@ -330,8 +330,41 @@ pub fn evaluate_pairs(
         else if first.as_rule() == Rule::PartExtract {
           return evaluate_expression(first);
         }
+        // --- handle ImplicitTimes (implicit multiplication) ---
+        else if first.as_rule() == Rule::ImplicitTimes {
+          return evaluate_expression(first);
+        }
       }
       evaluate_term(expr).map(format_result)
+    }
+    Rule::ImplicitTimes => {
+      // Implicit multiplication: x y z -> Times[x, y, z]
+      let factors: Vec<_> = expr.into_inner().collect();
+      let mut product = 1.0;
+      let mut symbolic_factors: Vec<String> = Vec::new();
+      let mut all_numeric = true;
+
+      for factor in factors {
+        match try_evaluate_term(factor.clone())? {
+          SymbolicTerm::Numeric(v) => product *= v,
+          SymbolicTerm::Symbol(s) => {
+            all_numeric = false;
+            symbolic_factors.push(s);
+          }
+        }
+      }
+
+      if all_numeric {
+        Ok(format_result(product))
+      } else {
+        // Return as symbolic Times expression
+        let mut parts: Vec<String> = Vec::new();
+        if product != 1.0 {
+          parts.push(format_result(product));
+        }
+        parts.extend(symbolic_factors);
+        Ok(parts.join(" "))
+      }
     }
     Rule::PartExtract => {
       let mut inner = expr.into_inner();
@@ -1174,6 +1207,13 @@ pub fn evaluate_term(
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
       })
     }
+    Rule::ImplicitTimes => {
+      // Implicit multiplication - evaluate and convert to number
+      evaluate_pairs(term).and_then(|s| {
+        s.parse::<f64>()
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      })
+    }
     Rule::PostfixApplication => {
       // Evaluate as expression and convert to number
       evaluate_expression(term).and_then(|s| {
@@ -1899,6 +1939,96 @@ fn evaluate_function_call(
       }
     }
 
+    // FullForm - returns the full form representation of an expression
+    "FullForm" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "FullForm expects exactly 1 argument".into(),
+        ));
+      }
+      // Get the raw expression and convert to full form
+      let arg = &args_pairs[0];
+      expr_to_full_form(arg.clone())
+    }
+
+    // Head - returns the head of an expression
+    "Head" => {
+      if args_pairs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Head expects exactly 1 argument".into(),
+        ));
+      }
+      let arg = &args_pairs[0];
+      get_head(arg.clone())
+    }
+
+    // Construct - constructs an expression from head and arguments
+    "Construct" => {
+      if args_pairs.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "Construct expects at least 1 argument".into(),
+        ));
+      }
+      // First argument is the head - try to evaluate, but use raw string if evaluation fails
+      let head = match evaluate_expression(args_pairs[0].clone()) {
+        Ok(result) => result,
+        Err(InterpreterError::EvaluationError(e))
+          if e.starts_with("Unknown function:") =>
+        {
+          // For unknown functions, use the raw string representation
+          args_pairs[0].as_str().to_string()
+        }
+        Err(e) => return Err(e),
+      };
+      // Rest of the arguments
+      let args: Vec<String> = args_pairs[1..]
+        .iter()
+        .map(|p| {
+          match evaluate_expression(p.clone()) {
+            Ok(result) => Ok(result),
+            Err(InterpreterError::EvaluationError(e))
+              if e.starts_with("Unknown function:") =>
+            {
+              // For unknown functions, use the raw string representation
+              Ok(p.as_str().to_string())
+            }
+            Err(e) => Err(e),
+          }
+        })
+        .collect::<Result<_, _>>()?;
+      Ok(format!("{}[{}]", head, args.join(", ")))
+    }
+
+    // Apply - replaces the head of an expression (used internally for @@)
+    "Apply" => {
+      if args_pairs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Apply expects exactly 2 arguments".into(),
+        ));
+      }
+      let func_name = evaluate_expression(args_pairs[0].clone())?;
+      let list_str = evaluate_expression(args_pairs[1].clone())?;
+      // Parse the list to extract elements
+      if list_str.starts_with('{') && list_str.ends_with('}') {
+        let inner = &list_str[1..list_str.len() - 1];
+        let expr = format!("{}[{}]", func_name, inner);
+        // Try to evaluate; if function is unknown, return the symbolic form
+        match interpret(&expr) {
+          Ok(result) => Ok(result),
+          Err(InterpreterError::EvaluationError(e))
+            if e.starts_with("Unknown function:") =>
+          {
+            Ok(expr)
+          }
+          Err(e) => Err(e),
+        }
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "Second argument of Apply must be a list".into(),
+        ))
+      }
+    }
+
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unknown function: {}",
       func_name
@@ -2002,4 +2132,223 @@ fn apply_replace_repeated_direct(
   }
 
   Ok(current)
+}
+
+/// Convert an expression to its full form representation
+fn expr_to_full_form(
+  expr: pest::iterators::Pair<Rule>,
+) -> Result<String, InterpreterError> {
+  match expr.as_rule() {
+    Rule::Expression => {
+      let items: Vec<_> = expr.clone().into_inner().collect();
+
+      // Single element expression - recurse
+      if items.len() == 1 {
+        return expr_to_full_form(items[0].clone());
+      }
+
+      // Check for operators
+      if items.len() >= 3 {
+        // Collect terms and operators
+        let terms: Vec<_> = items.iter().step_by(2).cloned().collect();
+        let ops: Vec<&str> = items
+          .iter()
+          .skip(1)
+          .step_by(2)
+          .map(|p| p.as_str())
+          .collect();
+
+        // Check if all operators are the same
+        if !ops.is_empty() && ops.iter().all(|&o| o == ops[0]) {
+          let op = ops[0];
+          let head = match op {
+            "+" => "Plus",
+            "*" | "" => "Times", // empty string for implicit multiplication
+            "-" => "Plus",       // Subtraction is Plus with negation
+            "/" => "Times",      // Division is Times with Power[-1]
+            "^" => "Power",
+            "->" => "Rule",
+            "==" => "Equal",
+            "!=" => "Unequal",
+            "<" => "Less",
+            ">" => "Greater",
+            "<=" => "LessEqual",
+            ">=" => "GreaterEqual",
+            "=" => {
+              // Assignment - evaluate and return the result
+              // This matches Wolfram's behavior where FullForm[a=b] returns b
+              return evaluate_expression(expr);
+            }
+            ":=" => "SetDelayed",
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "Unknown operator: {}",
+                op
+              )));
+            }
+          };
+
+          // Handle subtraction specially (convert to Plus with negation)
+          if op == "-" {
+            let mut args = Vec::new();
+            for (i, term) in terms.iter().enumerate() {
+              let term_str = expr_to_full_form(term.clone())?;
+              if i == 0 {
+                args.push(term_str);
+              } else {
+                // Negate subsequent terms
+                args.push(format!("Times[-1, {}]", term_str));
+              }
+            }
+            return Ok(format!("{}[{}]", head, args.join(", ")));
+          }
+
+          // Handle binary operators like Power
+          if op == "^" && terms.len() == 2 {
+            let base = expr_to_full_form(terms[0].clone())?;
+            let exp = expr_to_full_form(terms[1].clone())?;
+            return Ok(format!("Power[{}, {}]", base, exp));
+          }
+
+          // Handle Rule operator
+          if op == "->" && terms.len() == 2 {
+            let lhs = expr_to_full_form(terms[0].clone())?;
+            let rhs = expr_to_full_form(terms[1].clone())?;
+            return Ok(format!("Rule[{}, {}]", lhs, rhs));
+          }
+
+          // For n-ary operators like Plus and Times
+          let args: Vec<String> = terms
+            .into_iter()
+            .map(|t| expr_to_full_form(t))
+            .collect::<Result<_, _>>()?;
+          return Ok(format!("{}[{}]", head, args.join(", ")));
+        }
+      }
+
+      // Default: evaluate the expression
+      evaluate_expression(expr)
+    }
+    Rule::Term => {
+      let inner = expr.into_inner().next().unwrap();
+      expr_to_full_form(inner)
+    }
+    Rule::FunctionCall => {
+      let mut inner = expr.into_inner();
+      let func_name = inner.next().unwrap().as_str();
+      let args: Vec<String> = inner
+        .filter(|p| p.as_str() != ",")
+        .map(|p| expr_to_full_form(p))
+        .collect::<Result<_, _>>()?;
+      Ok(format!("{}[{}]", func_name, args.join(", ")))
+    }
+    Rule::List => {
+      let items: Vec<String> = expr
+        .into_inner()
+        .filter(|p| p.as_str() != ",")
+        .map(|p| expr_to_full_form(p))
+        .collect::<Result<_, _>>()?;
+      Ok(format!("List[{}]", items.join(", ")))
+    }
+    Rule::Identifier => Ok(expr.as_str().to_string()),
+    Rule::Integer => Ok(expr.as_str().to_string()),
+    Rule::Real => Ok(expr.as_str().to_string()),
+    Rule::NumericValue => {
+      let inner = expr.into_inner().next().unwrap();
+      expr_to_full_form(inner)
+    }
+    Rule::ReplacementRule => {
+      let mut inner = expr.into_inner();
+      let lhs = inner.next().unwrap();
+      let rhs = inner.next().unwrap();
+      let lhs_str = expr_to_full_form(lhs)?;
+      let rhs_str = expr_to_full_form(rhs)?;
+      Ok(format!("Rule[{}, {}]", lhs_str, rhs_str))
+    }
+    Rule::ImplicitTimes => {
+      // Implicit multiplication: x y z -> Times[x, y, z]
+      let factors: Vec<String> = expr
+        .into_inner()
+        .map(|p| expr_to_full_form(p))
+        .collect::<Result<_, _>>()?;
+      Ok(format!("Times[{}]", factors.join(", ")))
+    }
+    _ => {
+      // Default: just return the string representation
+      Ok(expr.as_str().to_string())
+    }
+  }
+}
+
+/// Get the head of an expression
+fn get_head(
+  expr: pest::iterators::Pair<Rule>,
+) -> Result<String, InterpreterError> {
+  match expr.as_rule() {
+    Rule::Expression => {
+      let items: Vec<_> = expr.clone().into_inner().collect();
+
+      // Single element expression - recurse
+      if items.len() == 1 {
+        return get_head(items[0].clone());
+      }
+
+      // Check for operators
+      if items.len() >= 3 {
+        // Look at the first operator
+        let op = items[1].as_str();
+        return Ok(
+          match op {
+            "+" => "Plus",
+            "*" => "Times",
+            "-" => "Plus", // Subtraction is treated as Plus with negation
+            "/" => "Times",
+            "^" => "Power",
+            "->" => "Rule",
+            "==" => "Equal",
+            "!=" => "Unequal",
+            "<" => "Less",
+            ">" => "Greater",
+            "<=" => "LessEqual",
+            ">=" => "GreaterEqual",
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "Unknown operator: {}",
+                op
+              )));
+            }
+          }
+          .to_string(),
+        );
+      }
+
+      // Default: evaluate and return Symbol head
+      Ok("Symbol".to_string())
+    }
+    Rule::Term => {
+      let inner = expr.into_inner().next().unwrap();
+      get_head(inner)
+    }
+    Rule::FunctionCall => {
+      let mut inner = expr.into_inner();
+      let func_name = inner.next().unwrap().as_str();
+      Ok(func_name.to_string())
+    }
+    Rule::List => Ok("List".to_string()),
+    Rule::Identifier => Ok("Symbol".to_string()),
+    Rule::Integer => Ok("Integer".to_string()),
+    Rule::Real => Ok("Real".to_string()),
+    Rule::NumericValue => {
+      let inner = expr.into_inner().next().unwrap();
+      get_head(inner)
+    }
+    Rule::String => Ok("String".to_string()),
+    Rule::Association => Ok("Association".to_string()),
+    Rule::ReplacementRule => Ok("Rule".to_string()),
+    Rule::ImplicitTimes => Ok("Times".to_string()),
+    _ => {
+      // Default: return the rule name as head
+      Ok(format!("{:?}", expr.as_rule()))
+    }
+  }
 }
