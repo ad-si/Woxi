@@ -1612,6 +1612,7 @@ fn evaluate_function_call(
   }
 
   match func_name {
+    "Module" => functions::scoping::module(&args_pairs),
     "DateString" => functions::date::date_string(&args_pairs),
     "Keys" => functions::association::keys(&args_pairs),
     "Values" => functions::association::values(&args_pairs),

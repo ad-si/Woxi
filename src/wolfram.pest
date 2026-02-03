@@ -8,12 +8,15 @@ Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 Constant = { ("-")? ~ "Pi" }
 NumericValue = { Real | Integer | Constant }
 
+// PatternName is an identifier that will be followed by _ in a Pattern
+// It must start with a letter and can contain letters, digits, but NOT trailing underscores
+PatternName = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
 Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 // Function calls (supports chained calls like f[x][y])
-// Arguments can be Expressions or ReplacementRules (for ReplaceAll, ReplaceRepeated)
-FunctionArg = _{ ReplacementRule | Expression }
+// Arguments can be Patterns (for function definitions), CompoundExpressions, Expressions, or ReplacementRules
+FunctionArg = _{ Pattern | ReplacementRule | CompoundExpression | Expression }
 FunctionCall = { (Identifier | AnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ (FunctionArg | List))*)? ~ "]")+ }
 
 // Anonymous function syntax
@@ -44,6 +47,10 @@ ReplaceRepeatedExpr = { Term ~ "//." ~ ReplacementRule }
 ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
 
 Expression = { ReplaceRepeatedExpr | ReplaceAllExpr | PostfixApplication | Term ~ (Operator ~ Term)* }
+
+// CompoundExpression: multiple expressions separated by ;
+// The result is the value of the last expression (like Wolfram's CompoundExpression)
+CompoundExpression = { Expression ~ (";" ~ Expression)+ }
 Term = _{
     PartExtract
   | NumericValue
@@ -69,7 +76,7 @@ SimpleTerm = _{
 }
 
 List = { "{" ~ (Expression ~ ("," ~ Expression)*)? ~ "}" }
-Pattern = { Identifier ~ "_" }
+Pattern = { PatternName ~ "_" }
 
 AssociationItem = { Expression ~ "->" ~ Expression }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }

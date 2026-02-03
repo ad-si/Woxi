@@ -1,6 +1,6 @@
 use pest::iterators::Pair;
 
-use crate::{InterpreterError, Rule};
+use crate::{ENV, InterpreterError, Rule, StoredValue, WolframParser};
 
 /// Represents a symbolic expression for differentiation and integration
 #[derive(Debug, Clone)]
@@ -54,7 +54,30 @@ fn parse_to_sym(pair: Pair<Rule>) -> Result<SymExpr, InterpreterError> {
       // For symbolic computation, we'll treat reals as symbols for now
       Ok(SymExpr::Var(pair.as_str().to_string()))
     }
-    Rule::Identifier => Ok(SymExpr::Var(pair.as_str().to_string())),
+    Rule::Identifier => {
+      let name = pair.as_str().to_string();
+      // Check if this identifier is bound to an expression in the environment
+      // If so, parse that expression instead
+      if let Some(stored) = ENV.with(|e| e.borrow().get(&name).cloned())
+        && let StoredValue::Raw(val) = stored
+      {
+        // Try to parse the stored value as an expression
+        if let Ok(parsed) = WolframParser::parse_wolfram(&val) {
+          for p in parsed {
+            if p.as_rule() == Rule::Program {
+              for inner in p.into_inner() {
+                if inner.as_rule() == Rule::Expression {
+                  // Recursively parse the stored expression
+                  return parse_to_sym(inner);
+                }
+              }
+            }
+          }
+        }
+      }
+      // If not found or not parseable, treat as a symbolic variable
+      Ok(SymExpr::Var(name))
+    }
     Rule::NumericValue => {
       let inner = pair.into_inner().next().unwrap();
       parse_to_sym(inner)
