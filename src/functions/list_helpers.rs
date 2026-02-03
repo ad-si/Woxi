@@ -234,6 +234,156 @@ pub fn all_true(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok("True".to_string())
 }
 
+/// Handle AnyTrue[list, pred] - Check if predicate is true for any element in list
+pub fn any_true(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "AnyTrue expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let elements: Vec<String> = match list_pair.as_rule() {
+    Rule::List => list_pair
+      .clone()
+      .into_inner()
+      .filter(|p| p.as_str() != ",")
+      .map(|p| evaluate_expression(p))
+      .collect::<Result<_, _>>()?,
+    Rule::Expression => {
+      let mut expr_inner = list_pair.clone().into_inner();
+      if let Some(first) = expr_inner.next() {
+        if first.as_rule() == Rule::List && expr_inner.next().is_none() {
+          first
+            .into_inner()
+            .filter(|p| p.as_str() != ",")
+            .map(|p| evaluate_expression(p))
+            .collect::<Result<_, _>>()?
+        } else {
+          let val = evaluate_expression(list_pair.clone())?;
+          parse_list_string(&val).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "First argument of AnyTrue must be a list".into(),
+            )
+          })?
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of AnyTrue must be a list".into(),
+        ));
+      }
+    }
+    _ => {
+      let val = evaluate_expression(list_pair.clone())?;
+      parse_list_string(&val).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "First argument of AnyTrue must be a list".into(),
+        )
+      })?
+    }
+  };
+
+  let pred_pair = &args_pairs[1];
+  let pred_src = pred_pair.as_str();
+  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
+    || (pred_src.contains('#') && pred_src.ends_with('&'));
+
+  for elem_str in elements {
+    let passes = if is_slot_pred {
+      let mut expr = pred_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem_str);
+      let res = interpret(&expr)?;
+      as_bool(&res).unwrap_or(false)
+    } else {
+      let expr = format!("{}[{}]", pred_src, elem_str);
+      match interpret(&expr) {
+        Ok(res) => as_bool(&res).unwrap_or(false),
+        Err(_) => false,
+      }
+    };
+    if passes {
+      return Ok("True".to_string());
+    }
+  }
+  Ok("False".to_string())
+}
+
+/// Handle NoneTrue[list, pred] - Check if predicate is false for all elements in list
+pub fn none_true(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NoneTrue expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let elements: Vec<String> = match list_pair.as_rule() {
+    Rule::List => list_pair
+      .clone()
+      .into_inner()
+      .filter(|p| p.as_str() != ",")
+      .map(|p| evaluate_expression(p))
+      .collect::<Result<_, _>>()?,
+    Rule::Expression => {
+      let mut expr_inner = list_pair.clone().into_inner();
+      if let Some(first) = expr_inner.next() {
+        if first.as_rule() == Rule::List && expr_inner.next().is_none() {
+          first
+            .into_inner()
+            .filter(|p| p.as_str() != ",")
+            .map(|p| evaluate_expression(p))
+            .collect::<Result<_, _>>()?
+        } else {
+          let val = evaluate_expression(list_pair.clone())?;
+          parse_list_string(&val).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "First argument of NoneTrue must be a list".into(),
+            )
+          })?
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of NoneTrue must be a list".into(),
+        ));
+      }
+    }
+    _ => {
+      let val = evaluate_expression(list_pair.clone())?;
+      parse_list_string(&val).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "First argument of NoneTrue must be a list".into(),
+        )
+      })?
+    }
+  };
+
+  let pred_pair = &args_pairs[1];
+  let pred_src = pred_pair.as_str();
+  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
+    || (pred_src.contains('#') && pred_src.ends_with('&'));
+
+  for elem_str in elements {
+    let passes = if is_slot_pred {
+      let mut expr = pred_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem_str);
+      let res = interpret(&expr)?;
+      as_bool(&res).unwrap_or(false)
+    } else {
+      let expr = format!("{}[{}]", pred_src, elem_str);
+      match interpret(&expr) {
+        Ok(res) => as_bool(&res).unwrap_or(false),
+        Err(_) => false,
+      }
+    };
+    if passes {
+      return Ok("False".to_string());
+    }
+  }
+  Ok("True".to_string())
+}
+
 /// Handle Select[list, pred] - Return elements in list for which predicate is true
 pub fn select(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   // ----- arity ---------------------------------------------------------
@@ -1345,5 +1495,895 @@ fn apply_unary_function(
       }
       Err(e) => Err(e),
     }
+  }
+}
+
+/// Handle Table[expr, {i, min, max}] or Table[expr, {i, max}] or Table[expr, n]
+/// Generates a list by evaluating expr for different values of i
+pub fn table(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Table expects at least 2 arguments".into(),
+    ));
+  }
+
+  let expr_str = args_pairs[0].as_str().to_string();
+  let spec_pair = &args_pairs[1];
+
+  // Check if second argument is a simple number (Table[expr, n])
+  if let Ok(n) = evaluate_term(spec_pair.clone())
+    && n.fract() == 0.0
+    && n >= 0.0
+  {
+    let count = n as usize;
+    let mut results = Vec::new();
+    for _ in 0..count {
+      let result = interpret(&expr_str)?;
+      results.push(result);
+    }
+    return Ok(format!("{{{}}}", results.join(", ")));
+  }
+
+  // Parse the iterator specification {i, min, max} or {i, max}
+  let spec_items = crate::functions::list::get_list_items(spec_pair)?;
+
+  if spec_items.is_empty() || spec_items.len() > 4 {
+    return Err(InterpreterError::EvaluationError(
+      "Table iterator must be {i, max}, {i, min, max}, or {i, min, max, step}"
+        .into(),
+    ));
+  }
+
+  // Get the iterator variable name
+  let var_name = spec_items[0].as_str().trim().to_string();
+
+  let (min, max, step) = match spec_items.len() {
+    2 => {
+      // {i, max} - iterate from 1 to max
+      let max = evaluate_term(spec_items[1].clone())?;
+      (1.0, max, 1.0)
+    }
+    3 => {
+      // {i, min, max} - iterate from min to max
+      let min = evaluate_term(spec_items[1].clone())?;
+      let max = evaluate_term(spec_items[2].clone())?;
+      (min, max, 1.0)
+    }
+    4 => {
+      // {i, min, max, step} - iterate from min to max with step
+      let min = evaluate_term(spec_items[1].clone())?;
+      let max = evaluate_term(spec_items[2].clone())?;
+      let step = evaluate_term(spec_items[3].clone())?;
+      if step == 0.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Table step cannot be zero".into(),
+        ));
+      }
+      (min, max, step)
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Invalid Table iterator specification".into(),
+      ));
+    }
+  };
+
+  // Generate the list
+  let mut results = Vec::new();
+
+  if step > 0.0 {
+    let mut current = min;
+    while current <= max {
+      // Substitute the variable value in the expression
+      let substituted = substitute_variable(&expr_str, &var_name, current);
+      let result = interpret(&substituted)?;
+      results.push(result);
+      current += step;
+    }
+  } else {
+    let mut current = min;
+    while current >= max {
+      let substituted = substitute_variable(&expr_str, &var_name, current);
+      let result = interpret(&substituted)?;
+      results.push(result);
+      current += step;
+    }
+  }
+
+  Ok(format!("{{{}}}", results.join(", ")))
+}
+
+/// Substitute a variable in an expression with a numeric value
+fn substitute_variable(expr: &str, var: &str, value: f64) -> String {
+  // Use word-boundary aware replacement to avoid partial matches
+  let mut result = String::new();
+  let mut chars = expr.chars().peekable();
+  let var_chars: Vec<char> = var.chars().collect();
+
+  while let Some(c) = chars.next() {
+    let mut potential_match = vec![c];
+    let mut iter_clone = chars.clone();
+
+    // Build up potential match
+    while potential_match.len() < var_chars.len() {
+      if let Some(nc) = iter_clone.next() {
+        potential_match.push(nc);
+      } else {
+        break;
+      }
+    }
+
+    if potential_match == var_chars {
+      let prev_char = result.chars().last();
+      let next_char = iter_clone.next();
+
+      let prev_ok = prev_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+      let next_ok = next_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+
+      if prev_ok && next_ok {
+        // It's a whole word match, do the replacement
+        result.push_str(&format_result(value));
+        // Consume the matched characters
+        for _ in 1..var_chars.len() {
+          chars.next();
+        }
+        continue;
+      }
+    }
+
+    result.push(c);
+  }
+
+  result
+}
+
+/// Handle Position[list, pattern] - finds all positions of pattern in list
+pub fn position(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Position expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  // Evaluate the pattern we're looking for
+  let pattern = evaluate_expression(args_pairs[1].clone())?;
+
+  let mut positions = Vec::new();
+  for (i, item) in items.iter().enumerate() {
+    let item_val = evaluate_expression(item.clone())?;
+    if item_val == pattern {
+      // Wolfram uses 1-based indexing
+      positions.push(format!("{{{}}}", i + 1));
+    }
+  }
+
+  Ok(format!("{{{}}}", positions.join(", ")))
+}
+
+/// Handle Count[list, pattern] - counts occurrences of pattern in list
+pub fn count(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Count expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  // Evaluate the pattern we're counting
+  let pattern = evaluate_expression(args_pairs[1].clone())?;
+
+  let mut count = 0;
+  for item in items {
+    let item_val = evaluate_expression(item.clone())?;
+    if item_val == pattern {
+      count += 1;
+    }
+  }
+
+  Ok(count.to_string())
+}
+
+/// Handle DeleteDuplicates[list] - removes duplicate elements
+pub fn delete_duplicates(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DeleteDuplicates expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  let mut seen = Vec::new();
+  let mut unique = Vec::new();
+
+  for item in items {
+    let item_val = evaluate_expression(item.clone())?;
+    if !seen.contains(&item_val) {
+      seen.push(item_val.clone());
+      unique.push(item_val);
+    }
+  }
+
+  Ok(format!("{{{}}}", unique.join(", ")))
+}
+
+/// Handle Union[list1, list2, ...] - returns sorted union of lists
+pub fn union(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Union expects at least 1 argument".into(),
+    ));
+  }
+
+  let mut all_elements = Vec::new();
+
+  for arg_pair in args_pairs {
+    let items = crate::functions::list::get_list_items(arg_pair)?;
+    for item in items {
+      let item_val = evaluate_expression(item)?;
+      if !all_elements.contains(&item_val) {
+        all_elements.push(item_val);
+      }
+    }
+  }
+
+  // Sort the result (by numeric value if possible)
+  all_elements.sort_by(|a, b| {
+    match (a.parse::<f64>(), b.parse::<f64>()) {
+      (Ok(na), Ok(nb)) => {
+        na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+      }
+      _ => a.cmp(b), // Fall back to string comparison
+    }
+  });
+
+  Ok(format!("{{{}}}", all_elements.join(", ")))
+}
+
+/// Handle Intersection[list1, list2, ...] - returns sorted intersection of lists
+pub fn intersection(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Intersection expects at least 1 argument".into(),
+    ));
+  }
+
+  // Start with elements from the first list
+  let first_items = crate::functions::list::get_list_items(&args_pairs[0])?;
+  let mut result: Vec<String> = first_items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Remove duplicates from first list
+  let mut seen = Vec::new();
+  result.retain(|x| {
+    if seen.contains(x) {
+      false
+    } else {
+      seen.push(x.clone());
+      true
+    }
+  });
+
+  // Intersect with each subsequent list
+  for arg_pair in args_pairs.iter().skip(1) {
+    let items = crate::functions::list::get_list_items(arg_pair)?;
+    let other_set: Vec<String> = items
+      .into_iter()
+      .map(|item| evaluate_expression(item))
+      .collect::<Result<_, _>>()?;
+
+    result.retain(|x| other_set.contains(x));
+  }
+
+  // Sort the result
+  result.sort_by(|a, b| match (a.parse::<f64>(), b.parse::<f64>()) {
+    (Ok(na), Ok(nb)) => {
+      na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+    }
+    _ => a.cmp(b),
+  });
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Complement[universal, list1, list2, ...] - returns elements in universal but not in any other list
+pub fn complement(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Complement expects at least 2 arguments".into(),
+    ));
+  }
+
+  // Get the universal set (first argument)
+  let universal_items = crate::functions::list::get_list_items(&args_pairs[0])?;
+  let mut result: Vec<String> = universal_items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Remove duplicates
+  let mut seen = Vec::new();
+  result.retain(|x| {
+    if seen.contains(x) {
+      false
+    } else {
+      seen.push(x.clone());
+      true
+    }
+  });
+
+  // Remove elements that appear in any of the other lists
+  for arg_pair in args_pairs.iter().skip(1) {
+    let items = crate::functions::list::get_list_items(arg_pair)?;
+    let exclude_set: Vec<String> = items
+      .into_iter()
+      .map(|item| evaluate_expression(item))
+      .collect::<Result<_, _>>()?;
+
+    result.retain(|x| !exclude_set.contains(x));
+  }
+
+  // Sort the result
+  result.sort_by(|a, b| match (a.parse::<f64>(), b.parse::<f64>()) {
+    (Ok(na), Ok(nb)) => {
+      na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+    }
+    _ => a.cmp(b),
+  });
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle ConstantArray[c, n] - creates an array of n copies of c
+/// Handle ConstantArray[c, {n1, n2, ...}] - creates a nested array
+pub fn constant_array(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ConstantArray expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let value = evaluate_expression(args_pairs[0].clone())?;
+
+  // Check if second argument is a list (for nested arrays) or a single number
+  if let Ok(items) = crate::functions::list::get_list_items(&args_pairs[1]) {
+    // Nested array case
+    let dims: Vec<usize> = items
+      .into_iter()
+      .map(|item| {
+        let n = evaluate_term(item)?;
+        if n.fract() != 0.0 || n < 0.0 {
+          return Err(InterpreterError::EvaluationError(
+            "ConstantArray dimensions must be non-negative integers".into(),
+          ));
+        }
+        Ok(n as usize)
+      })
+      .collect::<Result<_, _>>()?;
+
+    Ok(build_nested_constant_array(&value, &dims))
+  } else {
+    // Simple array case
+    let n = evaluate_term(args_pairs[1].clone())?;
+    if n.fract() != 0.0 || n < 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "ConstantArray count must be a non-negative integer".into(),
+      ));
+    }
+    let count = n as usize;
+    let result: Vec<String> = vec![value; count];
+    Ok(format!("{{{}}}", result.join(", ")))
+  }
+}
+
+/// Helper to build nested constant arrays
+fn build_nested_constant_array(value: &str, dims: &[usize]) -> String {
+  if dims.is_empty() {
+    return value.to_string();
+  }
+
+  if dims.len() == 1 {
+    let result: Vec<String> = vec![value.to_string(); dims[0]];
+    return format!("{{{}}}", result.join(", "));
+  }
+
+  let inner = build_nested_constant_array(value, &dims[1..]);
+  let result: Vec<String> = vec![inner; dims[0]];
+  format!("{{{}}}", result.join(", "))
+}
+
+/// Handle Tally[list] - counts occurrences of each distinct element
+pub fn tally(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Tally expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  // Count occurrences maintaining order of first appearance
+  let mut counts: Vec<(String, usize)> = Vec::new();
+
+  for item in items {
+    let item_val = evaluate_expression(item.clone())?;
+    if let Some(entry) = counts.iter_mut().find(|(v, _)| v == &item_val) {
+      entry.1 += 1;
+    } else {
+      counts.push((item_val, 1));
+    }
+  }
+
+  let result: Vec<String> = counts
+    .into_iter()
+    .map(|(val, count)| format!("{{{}, {}}}", val, count))
+    .collect();
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle ReplacePart[list, pos -> val] - replaces element at position
+pub fn replace_part(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ReplacePart expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  // Evaluate all items first
+  let mut result: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Parse the replacement rule (pos -> val)
+  let rule_pair = &args_pairs[1];
+  let rule_str = rule_pair.as_str();
+
+  // Handle simple case: n -> val
+  if let Some(arrow_pos) = rule_str.find("->") {
+    let pos_str = rule_str[..arrow_pos].trim();
+    let val_str = rule_str[arrow_pos + 2..].trim();
+
+    let pos = pos_str.parse::<i64>().map_err(|_| {
+      InterpreterError::EvaluationError("Position must be an integer".into())
+    })?;
+
+    let new_val = interpret(val_str)?;
+
+    // Handle negative indices (Wolfram uses -1 for last element)
+    let idx = if pos > 0 {
+      (pos - 1) as usize
+    } else if pos < 0 {
+      let abs_pos = (-pos) as usize;
+      if abs_pos > result.len() {
+        return Err(InterpreterError::EvaluationError(
+          "Position out of bounds".into(),
+        ));
+      }
+      result.len() - abs_pos
+    } else {
+      return Err(InterpreterError::EvaluationError(
+        "Position cannot be zero".into(),
+      ));
+    };
+
+    if idx >= result.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Position out of bounds".into(),
+      ));
+    }
+
+    result[idx] = new_val;
+  } else {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument must be a replacement rule (pos -> val)".into(),
+    ));
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle MinMax[list] - returns {min, max} of a list
+pub fn min_max(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "MinMax expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "MinMax of an empty list is undefined".into(),
+    ));
+  }
+
+  let mut values: Vec<(f64, String)> = Vec::new();
+  for item in items {
+    let item_str = evaluate_expression(item.clone())?;
+    let val = item_str.parse::<f64>().map_err(|_| {
+      InterpreterError::EvaluationError("MinMax expects numeric values".into())
+    })?;
+    values.push((val, item_str));
+  }
+
+  let min = values
+    .iter()
+    .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+    .unwrap();
+  let max = values
+    .iter()
+    .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+    .unwrap();
+
+  Ok(format!("{{{}, {}}}", min.1, max.1))
+}
+
+/// Handle PadLeft[list, n] - pads list to length n with zeros on the left
+pub fn pad_left(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "PadLeft expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  let n = evaluate_term(args_pairs[1].clone())?;
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "PadLeft length must be a non-negative integer".into(),
+    ));
+  }
+  let target_len = n as usize;
+
+  // Get padding element (default is 0)
+  let pad_elem = if args_pairs.len() == 3 {
+    evaluate_expression(args_pairs[2].clone())?
+  } else {
+    "0".to_string()
+  };
+
+  let mut result: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Pad on the left
+  while result.len() < target_len {
+    result.insert(0, pad_elem.clone());
+  }
+
+  // Truncate from the left if too long
+  if result.len() > target_len {
+    result = result[result.len() - target_len..].to_vec();
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle PadRight[list, n] - pads list to length n with zeros on the right
+pub fn pad_right(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "PadRight expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  let n = evaluate_term(args_pairs[1].clone())?;
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "PadRight length must be a non-negative integer".into(),
+    ));
+  }
+  let target_len = n as usize;
+
+  // Get padding element (default is 0)
+  let pad_elem = if args_pairs.len() == 3 {
+    evaluate_expression(args_pairs[2].clone())?
+  } else {
+    "0".to_string()
+  };
+
+  let mut result: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Pad on the right
+  while result.len() < target_len {
+    result.push(pad_elem.clone());
+  }
+
+  // Truncate from the right if too long
+  if result.len() > target_len {
+    result.truncate(target_len);
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle RotateLeft[list] or RotateLeft[list, n] - rotates elements to the left
+pub fn rotate_left(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RotateLeft expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  let n = if args_pairs.len() == 2 {
+    let n_val = evaluate_term(args_pairs[1].clone())?;
+    n_val as i64
+  } else {
+    1
+  };
+
+  let mut result: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  let len = result.len() as i64;
+  let effective_n = ((n % len) + len) % len; // Handle negative rotation
+
+  result.rotate_left(effective_n as usize);
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle RotateRight[list] or RotateRight[list, n] - rotates elements to the right
+pub fn rotate_right(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RotateRight expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  let n = if args_pairs.len() == 2 {
+    let n_val = evaluate_term(args_pairs[1].clone())?;
+    n_val as i64
+  } else {
+    1
+  };
+
+  let mut result: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  let len = result.len() as i64;
+  let effective_n = ((n % len) + len) % len;
+
+  result.rotate_right(effective_n as usize);
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Riffle[list, x] - inserts x between each element
+pub fn riffle(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Riffle expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  let separator = evaluate_expression(args_pairs[1].clone())?;
+
+  let evaluated: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  if evaluated.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  let mut result = Vec::new();
+  for (i, item) in evaluated.iter().enumerate() {
+    result.push(item.clone());
+    if i < evaluated.len() - 1 {
+      result.push(separator.clone());
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Transpose[matrix] - transposes a matrix (list of lists)
+pub fn transpose(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Transpose expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let outer_items = crate::functions::list::get_list_items(list_pair)?;
+
+  if outer_items.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  // Parse each inner list
+  let mut matrix: Vec<Vec<String>> = Vec::new();
+  for item in outer_items {
+    let evaluated = evaluate_expression(item.clone())?;
+    // Parse the inner list
+    if let Some(inner) = parse_list_string(&evaluated) {
+      matrix.push(inner);
+    } else {
+      return Err(InterpreterError::EvaluationError(
+        "Transpose expects a matrix (list of lists)".into(),
+      ));
+    }
+  }
+
+  if matrix.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  // Check all rows have the same length
+  let num_cols = matrix[0].len();
+  for row in &matrix {
+    if row.len() != num_cols {
+      return Err(InterpreterError::EvaluationError(
+        "Transpose requires all rows to have the same length".into(),
+      ));
+    }
+  }
+
+  let num_rows = matrix.len();
+
+  // Transpose
+  let mut transposed_result = Vec::new();
+  for j in 0..num_cols {
+    let mut col = Vec::new();
+    for row in matrix.iter().take(num_rows) {
+      col.push(row[j].clone());
+    }
+    transposed_result.push(format!("{{{}}}", col.join(", ")));
+  }
+
+  Ok(format!("{{{}}}", transposed_result.join(", ")))
+}
+
+/// Handle Thread[f[{a1, a2}, {b1, b2}]] - threads f over corresponding elements
+pub fn thread(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Thread expects exactly 1 argument".into(),
+    ));
+  }
+
+  // The argument should be a function call like f[{a1, a2}, {b1, b2}]
+  let arg_str = args_pairs[0].as_str();
+
+  // Find the function name and its arguments
+  if let Some(bracket_pos) = arg_str.find('[') {
+    let func_name = &arg_str[..bracket_pos];
+    let args_part = &arg_str[bracket_pos + 1..arg_str.len() - 1];
+
+    // Parse the arguments (which should be lists)
+    let mut lists: Vec<Vec<String>> = Vec::new();
+    let mut depth = 0;
+    let mut current_arg = String::new();
+
+    for c in args_part.chars() {
+      match c {
+        '{' | '[' => {
+          depth += 1;
+          current_arg.push(c);
+        }
+        '}' | ']' => {
+          depth -= 1;
+          current_arg.push(c);
+        }
+        ',' if depth == 0 => {
+          let trimmed = current_arg.trim();
+          if let Some(list) = parse_list_string(trimmed) {
+            lists.push(list);
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "Thread expects list arguments".into(),
+            ));
+          }
+          current_arg.clear();
+        }
+        _ => current_arg.push(c),
+      }
+    }
+
+    // Don't forget the last argument
+    let trimmed = current_arg.trim();
+    if !trimmed.is_empty() {
+      if let Some(list) = parse_list_string(trimmed) {
+        lists.push(list);
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Thread expects list arguments".into(),
+        ));
+      }
+    }
+
+    if lists.is_empty() {
+      return Ok(format!("{}[]", func_name));
+    }
+
+    // All lists must have the same length
+    let len = lists[0].len();
+    for list in &lists {
+      if list.len() != len {
+        return Err(InterpreterError::EvaluationError(
+          "Thread requires all lists to have the same length".into(),
+        ));
+      }
+    }
+
+    // Thread the function over the lists
+    let mut thread_result = Vec::new();
+    for i in 0..len {
+      let args: Vec<String> = lists.iter().map(|l| l[i].clone()).collect();
+      thread_result.push(format!("{}[{}]", func_name, args.join(", ")));
+    }
+
+    Ok(format!("{{{}}}", thread_result.join(", ")))
+  } else {
+    Err(InterpreterError::EvaluationError(
+      "Thread expects a function call as argument".into(),
+    ))
   }
 }
