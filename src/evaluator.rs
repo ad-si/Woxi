@@ -1475,6 +1475,7 @@ fn evaluate_function_call(
 
     // Calculus Functions
     "D" => functions::calculus::derivative(&args_pairs),
+    "Integrate" => functions::calculus::integral(&args_pairs),
 
     "Equal" => functions::math::equal(&args_pairs),
     "Unequal" => functions::math::unequal(&args_pairs),

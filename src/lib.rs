@@ -45,14 +45,14 @@ pub struct InterpretResult {
 impl WolframParser {
   pub fn parse_wolfram(
     input: &str,
-  ) -> Result<pest::iterators::Pairs<Rule>, Box<pest::error::Error<Rule>>> {
+  ) -> Result<pest::iterators::Pairs<'_, Rule>, Box<pest::error::Error<Rule>>> {
     Self::parse(Rule::Program, input).map_err(Box::new)
   }
 }
 
 pub fn parse(
   input: &str,
-) -> Result<pest::iterators::Pairs<Rule>, Box<pest::error::Error<Rule>>> {
+) -> Result<pest::iterators::Pairs<'_, Rule>, Box<pest::error::Error<Rule>>> {
   WolframParser::parse_wolfram(input)
 }
 
