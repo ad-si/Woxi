@@ -54,7 +54,7 @@ Minus::argx: Minus called with 2 arguments; 1 argument is expected.
 
 Subtract numbers.
 
-```todo
+```scrut
 $ wo 'Subtract[5, 2]'
 3
 ```
