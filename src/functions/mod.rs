@@ -9,6 +9,7 @@ pub mod list_helpers;
 pub mod math;
 pub mod numeric;
 pub mod predicate;
+pub mod scoping;
 pub mod string;
 
 // Re-export all function implementations
@@ -22,4 +23,5 @@ pub use list_helpers::*;
 pub use math::*;
 pub use numeric::*;
 pub use predicate::*;
+pub use scoping::*;
 pub use string::*;
