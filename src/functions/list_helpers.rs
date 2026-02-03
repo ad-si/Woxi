@@ -3044,3 +3044,236 @@ pub fn catenate(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok(format!("{{{}}}", result.join(", ")))
 }
+
+/// Handle NestWhile[f, expr, test] - applies f repeatedly while test returns True
+/// NestWhile[f, x, test] applies f to x, then to the result, etc., until test is no longer True
+pub fn nest_while(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 3 || args_pairs.len() > 5 {
+    return Err(InterpreterError::EvaluationError(
+      "NestWhile expects 3 to 5 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let init = evaluate_expression(args_pairs[1].clone())?;
+  let test_pair = &args_pairs[2];
+
+  // Optional max iterations (default: no limit, use a large number)
+  let max_iter = if args_pairs.len() >= 4 {
+    let n = evaluate_term(args_pairs[3].clone())?;
+    if n.fract() != 0.0 || n < 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Fourth argument of NestWhile must be a non-negative integer".into(),
+      ));
+    }
+    n as usize
+  } else {
+    usize::MAX
+  };
+
+  let func_src = func_pair.as_str();
+  let test_src = test_pair.as_str();
+  let mut current = init;
+  let mut iterations = 0;
+
+  loop {
+    // Apply test to current value
+    let test_result = apply_unary_function(test_src, &current)?;
+    if test_result != "True" {
+      break;
+    }
+
+    if iterations >= max_iter {
+      break;
+    }
+
+    // Apply function to get next value
+    current = apply_unary_function(func_src, &current)?;
+    iterations += 1;
+  }
+
+  Ok(current)
+}
+
+/// Handle NestWhileList[f, expr, test] - like NestWhile but returns list of all values
+pub fn nest_while_list(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 3 || args_pairs.len() > 5 {
+    return Err(InterpreterError::EvaluationError(
+      "NestWhileList expects 3 to 5 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let init = evaluate_expression(args_pairs[1].clone())?;
+  let test_pair = &args_pairs[2];
+
+  // Optional max iterations
+  let max_iter = if args_pairs.len() >= 4 {
+    let n = evaluate_term(args_pairs[3].clone())?;
+    if n.fract() != 0.0 || n < 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Fourth argument of NestWhileList must be a non-negative integer"
+          .into(),
+      ));
+    }
+    n as usize
+  } else {
+    usize::MAX
+  };
+
+  let func_src = func_pair.as_str();
+  let test_src = test_pair.as_str();
+  let mut results = vec![init.clone()];
+  let mut current = init;
+  let mut iterations = 0;
+
+  loop {
+    // Apply test to current value
+    let test_result = apply_unary_function(test_src, &current)?;
+    if test_result != "True" {
+      break;
+    }
+
+    if iterations >= max_iter {
+      break;
+    }
+
+    // Apply function to get next value
+    current = apply_unary_function(func_src, &current)?;
+    results.push(current.clone());
+    iterations += 1;
+  }
+
+  Ok(format!("{{{}}}", results.join(", ")))
+}
+
+/// Handle Through[{f, g, h}[x]] - applies each function in list to x
+/// Through[{Sin, Cos}[0]] -> {Sin[0], Cos[0]} -> {0, 1}
+/// Through[{f, g}, x] with two separate arguments returns {f, g} unchanged
+pub fn through(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  // Through with two separate arguments returns the first argument unchanged
+  // This matches Wolfram behavior: Through[{f, g}, x] -> {f, g}
+  if args_pairs.len() == 2 {
+    return evaluate_expression(args_pairs[0].clone());
+  }
+
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Through expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // For Through[{f, g}[x]], the single argument should be a function call
+  // where the head is a list of functions
+  // Since our grammar doesn't support List as function head, we return unchanged
+  evaluate_expression(args_pairs[0].clone())
+}
+
+/// Handle TakeLargest[list, n] - returns the n largest elements
+pub fn take_largest(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "TakeLargest expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let elements = get_list_elements(&args_pairs[0])?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument of TakeLargest must be a non-negative integer".into(),
+    ));
+  }
+  let n_int = n as usize;
+
+  // Parse elements as numbers and sort in descending order
+  let mut nums: Vec<(f64, String)> = elements
+    .iter()
+    .filter_map(|s| s.parse::<f64>().ok().map(|n| (n, s.clone())))
+    .collect();
+
+  nums
+    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+  let result: Vec<String> =
+    nums.iter().take(n_int).map(|(_, s)| s.clone()).collect();
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle TakeSmallest[list, n] - returns the n smallest elements
+pub fn take_smallest(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "TakeSmallest expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let elements = get_list_elements(&args_pairs[0])?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument of TakeSmallest must be a non-negative integer".into(),
+    ));
+  }
+  let n_int = n as usize;
+
+  // Parse elements as numbers and sort in ascending order
+  let mut nums: Vec<(f64, String)> = elements
+    .iter()
+    .filter_map(|s| s.parse::<f64>().ok().map(|n| (n, s.clone())))
+    .collect();
+
+  nums
+    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+  let result: Vec<String> =
+    nums.iter().take(n_int).map(|(_, s)| s.clone()).collect();
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle ArrayDepth[expr] - returns the depth of a nested list
+pub fn array_depth(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArrayDepth expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expr = evaluate_expression(args_pairs[0].clone())?;
+
+  fn compute_depth(s: &str) -> usize {
+    if !s.starts_with('{') || !s.ends_with('}') {
+      return 0;
+    }
+
+    let inner = &s[1..s.len() - 1];
+    if inner.is_empty() {
+      return 1;
+    }
+
+    // Parse the first element to determine depth
+    let elements = parse_list_elements(inner);
+    if elements.is_empty() {
+      return 1;
+    }
+
+    // Depth is 1 + depth of first element (assuming rectangular array)
+    1 + compute_depth(elements[0].trim())
+  }
+
+  Ok(compute_depth(&expr).to_string())
+}
