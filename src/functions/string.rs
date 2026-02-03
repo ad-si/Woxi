@@ -255,3 +255,113 @@ pub fn string_riffle(
 
   Ok(elements.join(&sep))
 }
+
+/// Handle StringPosition[s, sub] - Find all positions of substring in string
+/// Returns a list of {start, end} pairs (1-indexed, inclusive)
+pub fn string_position(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringPosition expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let s = extract_string(args_pairs[0].clone())?;
+  let sub = extract_string(args_pairs[1].clone())?;
+
+  if sub.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  let mut positions = Vec::new();
+  let s_chars: Vec<char> = s.chars().collect();
+  let sub_chars: Vec<char> = sub.chars().collect();
+
+  // Find all occurrences
+  for i in 0..=s_chars.len().saturating_sub(sub_chars.len()) {
+    let mut matched = true;
+    for (j, &sub_char) in sub_chars.iter().enumerate() {
+      if s_chars[i + j] != sub_char {
+        matched = false;
+        break;
+      }
+    }
+    if matched {
+      // Wolfram uses 1-based indexing
+      let start = i + 1;
+      let end = i + sub_chars.len();
+      positions.push(format!("{{{}, {}}}", start, end));
+    }
+  }
+
+  Ok(format!("{{{}}}", positions.join(", ")))
+}
+
+/// Handle StringMatchQ[s, pattern] - Test if string matches a pattern
+/// Supports wildcards: * matches any sequence, @ matches one or more non-uppercase chars
+pub fn string_match_q(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringMatchQ expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let s = extract_string(args_pairs[0].clone())?;
+  let pattern = extract_string(args_pairs[1].clone())?;
+
+  // Convert Wolfram pattern to regex-like matching
+  // * matches any sequence of characters (including empty)
+  // @ matches one or more characters, excluding uppercase letters
+  let matches = wildcard_match(&s, &pattern);
+
+  Ok(if matches { "True" } else { "False" }.to_string())
+}
+
+/// Simple wildcard matching function
+/// * matches any sequence (including empty)
+/// @ matches one or more characters, excluding uppercase letters
+fn wildcard_match(s: &str, pattern: &str) -> bool {
+  let s_chars: Vec<char> = s.chars().collect();
+  let p_chars: Vec<char> = pattern.chars().collect();
+
+  fn is_non_uppercase(c: char) -> bool {
+    !c.is_ascii_uppercase()
+  }
+
+  fn match_helper(s: &[char], p: &[char]) -> bool {
+    match (s.is_empty(), p.is_empty()) {
+      (true, true) => true,
+      (_, true) => false,
+      (true, false) => {
+        // Check if remaining pattern is all *
+        p.iter().all(|&c| c == '*')
+      }
+      (false, false) => {
+        match p[0] {
+          '*' => {
+            // * matches zero or more characters
+            match_helper(s, &p[1..]) || match_helper(&s[1..], p)
+          }
+          '@' => {
+            // @ matches one or more non-uppercase characters
+            // Must match at least one character
+            if !is_non_uppercase(s[0]) {
+              return false;
+            }
+            // Try matching 1 char and continue, or match more with @
+            match_helper(&s[1..], &p[1..]) || match_helper(&s[1..], p)
+          }
+          c => {
+            // Regular character must match exactly
+            s[0] == c && match_helper(&s[1..], &p[1..])
+          }
+        }
+      }
+    }
+  }
+
+  match_helper(&s_chars, &p_chars)
+}

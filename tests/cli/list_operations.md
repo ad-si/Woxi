@@ -1224,3 +1224,103 @@ $ wo 'Thread[Plus[{1, 2}, {3, 4}]]'
 $ wo 'Thread[g[{a, b, c}, {1, 2, 3}]]'
 {g[a, 1], g[b, 2], g[c, 3]}
 ```
+
+
+## `Gather`
+
+Groups identical elements together, maintaining order of first appearance.
+
+```scrut
+$ wo 'Gather[{1, 1, 2, 2, 1}]'
+{{1, 1, 1}, {2, 2}}
+```
+
+```scrut
+$ wo 'Gather[{a, b, a, c, b}]'
+{{a, a}, {b, b}, {c}}
+```
+
+
+## `GatherBy`
+
+Groups elements by applying a function, maintaining order of first appearance.
+
+```scrut
+$ wo 'GatherBy[{1, 2, 3, 4, 5}, EvenQ]'
+{{1, 3, 5}, {2, 4}}
+```
+
+```scrut
+$ wo 'GatherBy[{-2, -1, 0, 1, 2}, Sign]'
+{{-2, -1}, {0}, {1, 2}}
+```
+
+
+## `Split`
+
+Splits list at boundaries where consecutive elements differ.
+
+```scrut
+$ wo 'Split[{1, 1, 2, 2, 3}]'
+{{1, 1}, {2, 2}, {3}}
+```
+
+```scrut
+$ wo 'Split[{a, a, b, c, c, c}]'
+{{a, a}, {b}, {c, c, c}}
+```
+
+
+## `SplitBy`
+
+Splits list at boundaries where a function changes value.
+
+```scrut
+$ wo 'SplitBy[{1, 2, 3, 4, 5}, EvenQ]'
+{{1}, {2}, {3}, {4}, {5}}
+```
+
+
+## `FreeQ`
+
+Tests if expression is free of a specified form.
+
+```scrut
+$ wo 'FreeQ[{1, 2, 3}, 4]'
+True
+```
+
+```scrut
+$ wo 'FreeQ[{1, 2, 3}, 2]'
+False
+```
+
+
+## `Extract`
+
+Extracts parts at specified positions.
+
+```scrut
+$ wo 'Extract[{a, b, c, d}, 2]'
+b
+```
+
+```scrut
+$ wo 'Extract[{a, b, c, d}, {1, 3}]'
+{a, c}
+```
+
+
+## `Catenate`
+
+Flattens one level of lists.
+
+```scrut
+$ wo 'Catenate[{{1, 2}, {3, 4}}]'
+{1, 2, 3, 4}
+```
+
+```scrut
+$ wo 'Catenate[{{a, b}, {c}, {d, e, f}}]'
+{a, b, c, d, e, f}
+```

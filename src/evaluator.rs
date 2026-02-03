@@ -1797,6 +1797,9 @@ fn evaluate_function_call(
     "ArcTan" => functions::numeric::arctan(&args_pairs),
     "Quotient" => functions::numeric::quotient(&args_pairs),
     "N" => functions::numeric::numeric_eval(&args_pairs),
+    "IntegerDigits" => functions::numeric::integer_digits(&args_pairs),
+    "FromDigits" => functions::numeric::from_digits(&args_pairs),
+    "FactorInteger" => functions::numeric::factor_integer(&args_pairs),
 
     // Calculus Functions
     "D" => functions::calculus::derivative(&args_pairs),
@@ -1817,6 +1820,7 @@ fn evaluate_function_call(
     "StringQ" => functions::predicate::string_q(&args_pairs),
     "AtomQ" => functions::predicate::atom_q(&args_pairs),
     "PrimeQ" => functions::predicate::prime_q(&args_pairs),
+    "NumericQ" => functions::predicate::numeric_q(&args_pairs),
 
     "RandomInteger" => functions::math::random_integer(&args_pairs),
 
@@ -1834,6 +1838,8 @@ fn evaluate_function_call(
     "StringContainsQ" => functions::string::string_contains_q(&args_pairs),
     "Characters" => functions::string::characters(&args_pairs),
     "StringRiffle" => functions::string::string_riffle(&args_pairs),
+    "StringPosition" => functions::string::string_position(&args_pairs),
+    "StringMatchQ" => functions::string::string_match_q(&args_pairs),
 
     // List Functions
     "Map" => functions::list_helpers::map_list(&args_pairs),
@@ -1929,6 +1935,13 @@ fn evaluate_function_call(
     "FixedPoint" => functions::list_helpers::fixed_point(&args_pairs),
     "FixedPointList" => functions::list_helpers::fixed_point_list(&args_pairs),
     "Scan" => functions::list_helpers::scan(&args_pairs),
+    "Gather" => functions::list_helpers::gather(&args_pairs),
+    "GatherBy" => functions::list_helpers::gather_by(&args_pairs),
+    "Split" => functions::list_helpers::split(&args_pairs),
+    "SplitBy" => functions::list_helpers::split_by(&args_pairs),
+    "FreeQ" => functions::list_helpers::free_q(&args_pairs),
+    "Extract" => functions::list_helpers::extract(&args_pairs),
+    "Catenate" => functions::list_helpers::catenate(&args_pairs),
     "Print" => functions::io::print(&args_pairs),
 
     // Replacement functions

@@ -240,3 +240,59 @@ pub fn prime_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok("True".to_string())
 }
+
+/// Handle NumericQ[expr] - Tests if the expression has a numeric value
+/// NumericQ returns True for numbers and expressions that evaluate to numbers
+pub fn numeric_q(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "NumericQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  let arg = &args_pairs[0];
+
+  // Check if it's syntactically a string (strings are not numeric)
+  match arg.as_rule() {
+    Rule::String => return Ok("False".to_string()),
+    Rule::Expression | Rule::Term => {
+      let inner: Vec<_> = arg.clone().into_inner().collect();
+      if inner.len() == 1 && inner[0].as_rule() == Rule::String {
+        return Ok("False".to_string());
+      }
+      // Check if the raw text is a quoted string
+      let text = arg.as_str().trim();
+      if text.starts_with('"') && text.ends_with('"') {
+        return Ok("False".to_string());
+      }
+    }
+    _ => {
+      let text = arg.as_str().trim();
+      if text.starts_with('"') && text.ends_with('"') {
+        return Ok("False".to_string());
+      }
+    }
+  }
+
+  // Check if it's syntactically a list (lists are not numeric)
+  match arg.as_rule() {
+    Rule::List => return Ok("False".to_string()),
+    Rule::Expression => {
+      let inner: Vec<_> = arg.clone().into_inner().collect();
+      if inner.len() == 1 && inner[0].as_rule() == Rule::List {
+        return Ok("False".to_string());
+      }
+    }
+    _ => {}
+  }
+
+  // Evaluate the argument and check if it's a number
+  let result = evaluate_expression(arg.clone())?;
+
+  // Try to parse as a number (integer or real)
+  let is_numeric = result.parse::<f64>().is_ok();
+
+  Ok(if is_numeric { "True" } else { "False" }.to_string())
+}

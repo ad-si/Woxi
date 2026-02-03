@@ -859,3 +859,77 @@ The GCD of 21 and 14 is 7.
 $ wo 'GCD[21, 14]'
 7
 ```
+
+
+## `IntegerDigits`
+
+Returns the list of digits of an integer.
+
+```scrut
+$ wo 'IntegerDigits[12345]'
+{1, 2, 3, 4, 5}
+```
+
+With base 2 (binary):
+
+```scrut
+$ wo 'IntegerDigits[255, 2]'
+{1, 1, 1, 1, 1, 1, 1, 1}
+```
+
+
+## `FromDigits`
+
+Constructs an integer from its digits.
+
+```scrut
+$ wo 'FromDigits[{1, 2, 3, 4, 5}]'
+12345
+```
+
+With base 2 (binary):
+
+```scrut
+$ wo 'FromDigits[{1, 1, 1, 1, 1, 1, 1, 1}, 2]'
+255
+```
+
+
+## `FactorInteger`
+
+Returns the prime factorization as {prime, exponent} pairs.
+
+```scrut
+$ wo 'FactorInteger[60]'
+{{2, 2}, {3, 1}, {5, 1}}
+```
+
+```scrut
+$ wo 'FactorInteger[100]'
+{{2, 2}, {5, 2}}
+```
+
+```scrut
+$ wo 'FactorInteger[17]'
+{{17, 1}}
+```
+
+
+## `NumericQ`
+
+Tests if an expression has a numeric value.
+
+```scrut
+$ wo 'NumericQ[42]'
+True
+```
+
+```scrut
+$ wo 'NumericQ["hello"]'
+False
+```
+
+```scrut
+$ wo 'NumericQ[3.14]'
+True
+```

@@ -2655,3 +2655,392 @@ pub fn scan(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   Ok("Null".to_string())
 }
+
+/// Handle Gather[list] - Group identical consecutive elements together
+/// Gather[{a, a, b, b, a}] -> {{a, a}, {b, b}, {a}}
+pub fn gather(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Gather expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  // Evaluate all items
+  let evaluated: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Group identical elements (maintaining order of first appearance)
+  let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+
+  for elem in evaluated {
+    if let Some(group) = groups.iter_mut().find(|(key, _)| *key == elem) {
+      group.1.push(elem);
+    } else {
+      groups.push((elem.clone(), vec![elem]));
+    }
+  }
+
+  // Format result
+  let result: Vec<String> = groups
+    .into_iter()
+    .map(|(_, elems)| format!("{{{}}}", elems.join(", ")))
+    .collect();
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle GatherBy[list, f] - Group elements by applying function f
+/// GatherBy[{1, 2, 3, 4}, EvenQ] -> {{1, 3}, {2, 4}}
+pub fn gather_by(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "GatherBy expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let func_pair = &args_pairs[1];
+  let func_src = func_pair.as_str();
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let evaluated: Result<Vec<_>, _> =
+    items.into_iter().map(|p| evaluate_expression(p)).collect();
+  let evaluated = evaluated?;
+
+  // Group elements by key (maintaining order of first appearance)
+  let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+
+  for elem in evaluated {
+    // Compute the key
+    let key = if func_src.contains('#') && func_src.ends_with('&') {
+      // Anonymous function
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem);
+      interpret(&expr)?
+    } else {
+      // Named function
+      let expr = format!("{}[{}]", func_src, elem);
+      interpret(&expr)?
+    };
+
+    // Find or create group
+    if let Some(group) = groups.iter_mut().find(|(k, _)| *k == key) {
+      group.1.push(elem);
+    } else {
+      groups.push((key, vec![elem]));
+    }
+  }
+
+  // Format as list of lists (not association like GroupBy)
+  let result: Vec<String> = groups
+    .into_iter()
+    .map(|(_, elems)| format!("{{{}}}", elems.join(", ")))
+    .collect();
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Split[list] - Split list at boundaries where consecutive elements differ
+/// Split[{a, a, b, b, b, a}] -> {{a, a}, {b, b, b}, {a}}
+pub fn split(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Split expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  // Evaluate all items
+  let evaluated: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Split by consecutive equal elements (default) or by test function
+  let mut groups: Vec<Vec<String>> = Vec::new();
+  let mut current_group: Vec<String> = vec![evaluated[0].clone()];
+
+  if args_pairs.len() == 2 {
+    // Split with test function: Split[list, test]
+    // Elements are grouped while test[elem1, elem2] returns True
+    let test_pair = &args_pairs[1];
+    let test_src = test_pair.as_str();
+
+    for i in 1..evaluated.len() {
+      let prev = &evaluated[i - 1];
+      let curr = &evaluated[i];
+
+      let same_group = if test_src.contains('#') && test_src.ends_with('&') {
+        // Anonymous function - substitute #1 and #2
+        let mut expr = test_src.trim_end_matches('&').to_string();
+        expr = expr.replace("#1", prev);
+        expr = expr.replace("#2", curr);
+        // For simple # cases, try both
+        if expr.contains('#') {
+          expr = expr.replacen('#', prev, 1);
+          expr = expr.replacen('#', curr, 1);
+        }
+        let res = interpret(&expr)?;
+        res == "True"
+      } else {
+        // Named function
+        let expr = format!("{}[{}, {}]", test_src, prev, curr);
+        let res = interpret(&expr)?;
+        res == "True"
+      };
+
+      if same_group {
+        current_group.push(curr.clone());
+      } else {
+        groups.push(current_group);
+        current_group = vec![curr.clone()];
+      }
+    }
+  } else {
+    // Default: split by equality
+    for i in 1..evaluated.len() {
+      if evaluated[i] == evaluated[i - 1] {
+        current_group.push(evaluated[i].clone());
+      } else {
+        groups.push(current_group);
+        current_group = vec![evaluated[i].clone()];
+      }
+    }
+  }
+
+  // Don't forget the last group
+  if !current_group.is_empty() {
+    groups.push(current_group);
+  }
+
+  // Format result
+  let result: Vec<String> = groups
+    .into_iter()
+    .map(|group| format!("{{{}}}", group.join(", ")))
+    .collect();
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle SplitBy[list, f] - Split list at boundaries where f changes value
+/// SplitBy[{1, 2, 3, 4, 5}, EvenQ] -> {{1}, {2}, {3}, {4}, {5}} (splits when EvenQ changes)
+pub fn split_by(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SplitBy expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let func_pair = &args_pairs[1];
+  let func_src = func_pair.as_str();
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+
+  if items.is_empty() {
+    return Ok("{}".to_string());
+  }
+
+  // Evaluate all items
+  let evaluated: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Compute key for first element
+  let compute_key = |elem: &str| -> Result<String, InterpreterError> {
+    if func_src.contains('#') && func_src.ends_with('&') {
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', elem);
+      interpret(&expr)
+    } else {
+      let expr = format!("{}[{}]", func_src, elem);
+      interpret(&expr)
+    }
+  };
+
+  let mut groups: Vec<Vec<String>> = Vec::new();
+  let mut current_group: Vec<String> = vec![evaluated[0].clone()];
+  let mut current_key = compute_key(&evaluated[0])?;
+
+  for i in 1..evaluated.len() {
+    let new_key = compute_key(&evaluated[i])?;
+
+    if new_key == current_key {
+      current_group.push(evaluated[i].clone());
+    } else {
+      groups.push(current_group);
+      current_group = vec![evaluated[i].clone()];
+      current_key = new_key;
+    }
+  }
+
+  // Don't forget the last group
+  if !current_group.is_empty() {
+    groups.push(current_group);
+  }
+
+  // Format result
+  let result: Vec<String> = groups
+    .into_iter()
+    .map(|group| format!("{{{}}}", group.join(", ")))
+    .collect();
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle FreeQ[expr, form] - Test if expression is free of the specified form
+pub fn free_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FreeQ expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let expr_str = evaluate_expression(args_pairs[0].clone())?;
+  let pattern = evaluate_expression(args_pairs[1].clone())?;
+
+  // Simple pattern matching: check if pattern appears anywhere in expression
+  let is_free = !expr_str.contains(&pattern);
+
+  Ok(if is_free { "True" } else { "False" }.to_string())
+}
+
+/// Handle Extract[list, positions] - Extract parts at specified positions
+/// Extract[{a, b, c, d}, {1, 3}] -> {a, c}
+pub fn extract(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Extract expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let pos_pair = &args_pairs[1];
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let evaluated: Vec<String> = items
+    .into_iter()
+    .map(|item| evaluate_expression(item))
+    .collect::<Result<_, _>>()?;
+
+  // Check if second argument is a single position or list of positions
+  let pos_str = pos_pair.as_str().trim();
+
+  // Try to parse as a single integer first
+  if let Ok(idx) = pos_str.parse::<i64>() {
+    // Single position extraction
+    let actual_idx = if idx > 0 {
+      (idx - 1) as usize
+    } else if idx < 0 {
+      let len = evaluated.len() as i64;
+      if -idx > len {
+        return Err(InterpreterError::EvaluationError(
+          "Extract: index out of bounds".into(),
+        ));
+      }
+      (len + idx) as usize
+    } else {
+      return Err(InterpreterError::EvaluationError(
+        "Extract: position 0 is invalid".into(),
+      ));
+    };
+
+    if actual_idx >= evaluated.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Extract: index out of bounds".into(),
+      ));
+    }
+
+    return Ok(evaluated[actual_idx].clone());
+  }
+
+  // Try to parse as list of positions
+  let pos_items = crate::functions::list::get_list_items(pos_pair)?;
+  let mut result = Vec::new();
+
+  for pos_item in pos_items {
+    let pos_val = evaluate_term(pos_item.clone())?;
+    if pos_val.fract() != 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Extract: positions must be integers".into(),
+      ));
+    }
+
+    let idx = pos_val as i64;
+    let actual_idx = if idx > 0 {
+      (idx - 1) as usize
+    } else if idx < 0 {
+      let len = evaluated.len() as i64;
+      if -idx > len {
+        return Err(InterpreterError::EvaluationError(
+          "Extract: index out of bounds".into(),
+        ));
+      }
+      (len + idx) as usize
+    } else {
+      return Err(InterpreterError::EvaluationError(
+        "Extract: position 0 is invalid".into(),
+      ));
+    };
+
+    if actual_idx >= evaluated.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Extract: index out of bounds".into(),
+      ));
+    }
+
+    result.push(evaluated[actual_idx].clone());
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Catenate[{list1, list2, ...}] - Flatten one level of lists
+/// Catenate[{{a, b}, {c, d}}] -> {a, b, c, d}
+pub fn catenate(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Catenate expects exactly 1 argument".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let outer_items = crate::functions::list::get_list_items(list_pair)?;
+
+  let mut result = Vec::new();
+
+  for item in outer_items {
+    // Try to parse each item as a list
+    if let Ok(inner_items) = crate::functions::list::get_list_items(&item) {
+      // It's a list - add its elements
+      for inner_item in inner_items {
+        let evaluated = evaluate_expression(inner_item)?;
+        result.push(evaluated);
+      }
+    } else {
+      // Not a list - just add the element itself
+      let evaluated = evaluate_expression(item)?;
+      result.push(evaluated);
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
