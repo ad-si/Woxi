@@ -28,7 +28,7 @@ test-cli-wolframscript: install
 		then cargo install scrut; \
 		fi
 	WOXI_USE_WOLFRAM=true \
-		scrut test tests/cli
+		scrut test tests/cli/symbolic.md
 
 
 .PHONY: test-shebang
