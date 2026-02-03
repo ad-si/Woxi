@@ -954,3 +954,199 @@ pub fn factor_integer(
 
   Ok(format!("{{{}}}", result_parts.join(", ")))
 }
+
+/// Handle Re[z] - returns the real part of a complex number
+/// For real numbers, returns the number itself
+/// For Complex[a, b], returns a
+pub fn re(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Re expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expr = crate::evaluate_expression(args_pairs[0].clone())?;
+
+  // Check if it's a Complex expression
+  if expr.starts_with("Complex[") && expr.ends_with(']') {
+    let inner = &expr[8..expr.len() - 1];
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() == 2 {
+      return Ok(parts[0].trim().to_string());
+    }
+  }
+
+  // For real numbers, just return the number itself
+  if expr.parse::<f64>().is_ok() {
+    return Ok(expr);
+  }
+
+  // Return symbolic form for other expressions
+  Ok(format!("Re[{}]", expr))
+}
+
+/// Handle Im[z] - returns the imaginary part of a complex number
+/// For real numbers, returns 0
+/// For Complex[a, b], returns b
+pub fn im(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Im expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expr = crate::evaluate_expression(args_pairs[0].clone())?;
+
+  // Check if it's a Complex expression
+  if expr.starts_with("Complex[") && expr.ends_with(']') {
+    let inner = &expr[8..expr.len() - 1];
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() == 2 {
+      return Ok(parts[1].trim().to_string());
+    }
+  }
+
+  // For real numbers, imaginary part is 0
+  if expr.parse::<f64>().is_ok() {
+    return Ok("0".to_string());
+  }
+
+  // Return symbolic form for other expressions
+  Ok(format!("Im[{}]", expr))
+}
+
+/// Handle Conjugate[z] - returns the complex conjugate
+/// For real numbers, returns the number itself
+/// For Complex[a, b], returns Complex[a, -b]
+pub fn conjugate(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Conjugate expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expr = crate::evaluate_expression(args_pairs[0].clone())?;
+
+  // Check if it's a Complex expression
+  if expr.starts_with("Complex[") && expr.ends_with(']') {
+    let inner = &expr[8..expr.len() - 1];
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() == 2 {
+      let real = parts[0].trim();
+      let imag = parts[1].trim();
+      // Negate the imaginary part
+      if let Ok(imag_val) = imag.parse::<f64>() {
+        let neg_imag = -imag_val;
+        return Ok(format!("Complex[{}, {}]", real, format_result(neg_imag)));
+      }
+      return Ok(format!("Complex[{}, -{}]", real, imag));
+    }
+  }
+
+  // For real numbers, conjugate is the number itself
+  if expr.parse::<f64>().is_ok() {
+    return Ok(expr);
+  }
+
+  // Return symbolic form for other expressions
+  Ok(format!("Conjugate[{}]", expr))
+}
+
+/// Handle Rationalize[x] - converts a real number to a nearby rational
+/// Rationalize[x, dx] - finds rational within dx of x
+pub fn rationalize(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Rationalize expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let x = evaluate_term(args_pairs[0].clone())?;
+
+  // Default tolerance: use machine epsilon for single-arg case
+  // (only rationalize exact representations)
+  let tolerance = if args_pairs.len() == 2 {
+    evaluate_term(args_pairs[1].clone())?
+  } else {
+    f64::EPSILON // very tight tolerance for exact representations only
+  };
+
+  // Handle integers
+  if x.fract() == 0.0 {
+    return Ok(format_result(x));
+  }
+
+  // Maximum denominator for single-argument case (matches Wolfram behavior)
+  let max_denom: i64 = if args_pairs.len() == 1 {
+    100000
+  } else {
+    i64::MAX
+  };
+
+  // Use continued fraction algorithm to find best rational approximation
+  let (num, denom) = find_rational(x, tolerance, max_denom);
+
+  // Verify the approximation is within tolerance
+  let approx = num as f64 / denom as f64;
+  if (approx - x).abs() >= tolerance {
+    // No valid rational found within tolerance, return original number
+    return Ok(format_result(x));
+  }
+
+  if denom == 1 {
+    Ok(num.to_string())
+  } else {
+    // Return as a fraction using Times and Power for division
+    Ok(format!("{}/{}", num, denom))
+  }
+}
+
+/// Find best rational approximation using continued fractions
+fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
+  if x == 0.0 {
+    return (0, 1);
+  }
+
+  let sign = if x < 0.0 { -1 } else { 1 };
+  let x = x.abs();
+
+  let mut p0: i64 = 0;
+  let mut q0: i64 = 1;
+  let mut p1: i64 = 1;
+  let mut q1: i64 = 0;
+
+  let mut xi = x;
+
+  for _ in 0..50 {
+    // Prevent infinite loops
+    let ai = xi.floor() as i64;
+    let p2 = ai * p1 + p0;
+    let q2 = ai * q1 + q0;
+
+    if q2 == 0 || q2 > max_denom {
+      break;
+    }
+
+    let approx = p2 as f64 / q2 as f64;
+    if (approx - x).abs() < tolerance {
+      return (sign * p2, q2);
+    }
+
+    let frac = xi - ai as f64;
+    if frac.abs() < 1e-15 {
+      break;
+    }
+    xi = 1.0 / frac;
+
+    p0 = p1;
+    q0 = q1;
+    p1 = p2;
+    q1 = q2;
+  }
+
+  (sign * p1, q1)
+}
