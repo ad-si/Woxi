@@ -10,12 +10,12 @@ $ wo 'cow + 5 + 10'
 15 + cow
 ```
 
-```todo
+```scrut
 $ wo 'moo = cow + 5'
 5 + cow
 ```
 
-```todo
+```scrut
 $ wo 'D[x^n, x]'
 n*x^(-1 + n)
 ```

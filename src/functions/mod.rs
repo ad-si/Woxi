@@ -1,6 +1,7 @@
 // Functions are organized by categories
 pub mod association;
 pub mod boolean;
+pub mod calculus;
 pub mod date;
 pub mod io;
 pub mod list;
@@ -13,6 +14,7 @@ pub mod string;
 // Re-export all function implementations
 pub use association::*;
 pub use boolean::*;
+pub use calculus::*;
 pub use date::*;
 pub use io::*;
 pub use list::*;

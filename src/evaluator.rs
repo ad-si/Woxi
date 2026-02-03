@@ -1473,6 +1473,9 @@ fn evaluate_function_call(
     "Factorial" => functions::numeric::factorial(&args_pairs),
     "GCD" => functions::numeric::gcd(&args_pairs),
 
+    // Calculus Functions
+    "D" => functions::calculus::derivative(&args_pairs),
+
     "Equal" => functions::math::equal(&args_pairs),
     "Unequal" => functions::math::unequal(&args_pairs),
     "Greater" => functions::math::greater(&args_pairs),
