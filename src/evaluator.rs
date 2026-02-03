@@ -1126,9 +1126,11 @@ fn evaluate_function_call(
     if let Some(StoredValue::Association(pairs)) =
       ENV.with(|e| e.borrow().get(func_name_pair.as_str()).cloned())
     {
-      // ---- key lookup ---
-      if inner.clone().filter(|p| p.as_str() != ",").count() == 1 {
-        let arg_pair = inner.next().unwrap(); // only argument
+      let args: Vec<_> = inner.clone().filter(|p| p.as_str() != ",").collect();
+
+      // ---- single key lookup ---
+      if args.len() == 1 {
+        let arg_pair = args.into_iter().next().unwrap();
         let key_str = extract_string(arg_pair)?; // must be string
         for (k, v) in &pairs {
           if *k == key_str {
@@ -1136,6 +1138,95 @@ fn evaluate_function_call(
           }
         }
         return Err(InterpreterError::EvaluationError("Key not found".into()));
+      }
+
+      // ---- nested key lookup (multiple keys) ---
+      if args.len() > 1 {
+        // Get the first key
+        let first_key = extract_string(args[0].clone())?;
+        let mut current_value: Option<String> = None;
+
+        // Find the value for the first key
+        for (k, v) in &pairs {
+          if *k == first_key {
+            current_value = Some(v.clone());
+            break;
+          }
+        }
+
+        let mut current_value = current_value
+          .ok_or_else(|| InterpreterError::EvaluationError("Key not found".into()))?;
+
+        // Iterate through remaining keys
+        for arg in args.iter().skip(1) {
+          let key_str = extract_string(arg.clone())?;
+
+          // Parse the current value as an association
+          // Association format: <|key1 -> val1, key2 -> val2|>
+          if !current_value.starts_with("<|") || !current_value.ends_with("|>") {
+            return Err(InterpreterError::EvaluationError(
+              "Nested access requires association value".into(),
+            ));
+          }
+
+          // Parse the inner association - clone to avoid borrow issues
+          let inner_content = current_value[2..current_value.len() - 2].to_string();
+          let mut found = false;
+          let mut next_value = String::new();
+
+          // Split by ", " but be careful about nested associations
+          let mut depth = 0;
+          let mut start = 0;
+          let chars: Vec<char> = inner_content.chars().collect();
+          let mut i = 0;
+
+          while i < chars.len() {
+            match chars[i] {
+              '<' if i + 1 < chars.len() && chars[i + 1] == '|' => {
+                depth += 1;
+                i += 2;
+                continue;
+              }
+              '|' if i + 1 < chars.len() && chars[i + 1] == '>' => {
+                depth -= 1;
+                i += 2;
+                continue;
+              }
+              ',' if depth == 0 => {
+                let item = inner_content[start..i].trim();
+                if let Some((k, v)) = item.split_once(" -> ") {
+                  if k.trim() == key_str {
+                    next_value = v.trim().to_string();
+                    found = true;
+                    break;
+                  }
+                }
+                start = i + 1;
+              }
+              _ => {}
+            }
+            i += 1;
+          }
+
+          // Check the last item if not found yet
+          if !found {
+            let item = inner_content[start..].trim();
+            if let Some((k, v)) = item.split_once(" -> ") {
+              if k.trim() == key_str {
+                next_value = v.trim().to_string();
+                found = true;
+              }
+            }
+          }
+
+          if !found {
+            return Err(InterpreterError::EvaluationError("Key not found".into()));
+          }
+
+          current_value = next_value;
+        }
+
+        return Ok(current_value);
       }
     }
   }
