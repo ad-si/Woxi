@@ -46,6 +46,10 @@ fn try_evaluate_term(
       })?;
       Ok(SymbolicTerm::Numeric(val))
     }
+    Rule::String => {
+      // Keep strings as symbols (with quotes preserved for SameQ comparison)
+      Ok(SymbolicTerm::Symbol(term.as_str().to_string()))
+    }
     Rule::Expression => {
       let result = evaluate_expression(term)?;
       // Try to parse as numeric, otherwise keep as symbolic
@@ -57,10 +61,8 @@ fn try_evaluate_term(
     }
     Rule::FunctionCall => {
       let result = evaluate_function_call(term)?;
-      if result == "True" {
-        Ok(SymbolicTerm::Numeric(1.0))
-      } else if result == "False" {
-        Ok(SymbolicTerm::Numeric(0.0))
+      if result == "True" || result == "False" {
+        Ok(SymbolicTerm::Symbol(result))
       } else if let Ok(val) = result.parse::<f64>() {
         Ok(SymbolicTerm::Numeric(val))
       } else {
@@ -70,8 +72,7 @@ fn try_evaluate_term(
     Rule::Identifier => {
       let id = term.as_str();
       match id {
-        "True" => Ok(SymbolicTerm::Numeric(1.0)),
-        "False" => Ok(SymbolicTerm::Numeric(0.0)),
+        "True" | "False" => Ok(SymbolicTerm::Symbol(id.to_string())),
         "Now" => Err(InterpreterError::EvaluationError(
           "Identifier 'Now' cannot be directly used as a numeric value."
             .to_string(),
@@ -344,6 +345,12 @@ pub fn evaluate_pairs(
         else if first.as_rule() == Rule::ImplicitTimes {
           return evaluate_expression(first);
         }
+        // --- handle anonymous functions (return as-is when not applied) ---
+        else if first.as_rule() == Rule::SimpleAnonymousFunction
+          || first.as_rule() == Rule::FunctionAnonymousFunction
+        {
+          return Ok(first.as_str().to_string());
+        }
       }
       evaluate_term(expr).map(format_result)
     }
@@ -382,6 +389,7 @@ pub fn evaluate_pairs(
       }
     }
     Rule::PartExtract => {
+      let original_expr = expr.as_str().to_string();
       let mut inner = expr.into_inner();
       let first_pair = inner.next().unwrap();
       let key_pair = inner.next().unwrap();
@@ -392,16 +400,28 @@ pub fn evaluate_pairs(
         raw.to_string()
       };
 
+      // Helper to print Part warning in Mathematica style
+      // Returns "\0" as a sentinel value to signal that main should not print anything
+      let print_part_warning = |idx: &str,
+                                list_repr: &str,
+                                expr_repr: &str|
+       -> String {
+        println!();
+        println!("Part::partw: Part {} of {} does not exist.", idx, list_repr);
+        println!("{}", expr_repr);
+        "\0".to_string() // sentinel value to suppress main's output
+      };
+
       // If first_pair is a List, use get_list_items for proper nested handling
       if first_pair.as_rule() == Rule::List {
+        let list_repr = first_pair.as_str().to_string();
         if let Ok(idx) = key.parse::<usize>() {
           let items = functions::list::get_list_items(&first_pair)?;
           if idx >= 1 && idx <= items.len() {
             return evaluate_expression(items[idx - 1].clone());
           }
-          return Err(InterpreterError::EvaluationError(
-            "Index out of bounds in Part".into(),
-          ));
+          // Index out of bounds - print warning and return sentinel to suppress main's output
+          return Ok(print_part_warning(&key, &list_repr, &original_expr));
         }
         return Err(InterpreterError::EvaluationError(
           "Index must be a positive integer".into(),
@@ -428,16 +448,22 @@ pub fn evaluate_pairs(
             .split(',')
             .map(|s| s.trim())
             .collect();
-          if let Ok(idx) = key.parse::<usize>()
-            && idx >= 1
-            && idx <= items.len()
-          {
-            return Ok(items[idx - 1].to_string());
+          if let Ok(idx) = key.parse::<usize>() {
+            if idx >= 1 && idx <= items.len() {
+              return Ok(items[idx - 1].to_string());
+            }
+            // Index out of bounds - print warning and return sentinel to suppress main's output
+            // For variable access like x[[10]], show the evaluated list in the expression
+            let expr_repr = format!("{}[[{}]]", list_str, key);
+            return Ok(print_part_warning(&key, &list_str, &expr_repr));
           }
+          return Err(InterpreterError::EvaluationError(
+            "Index must be a positive integer".into(),
+          ));
         }
       }
       Err(InterpreterError::EvaluationError(
-        "Argument must be an association".into(),
+        "Argument must be an association or list".into(),
       ))
     }
     Rule::Expression => {
@@ -447,10 +473,46 @@ pub fn evaluate_pairs(
           && expr_inner.next().is_none()
         {
           // Single child expression - delegate to appropriate handler
+          // IMPORTANT: FunctionCall is checked here for performance, to avoid
+          // unnecessary operator pattern matching for nested function calls
           match first.as_rule() {
+            Rule::FunctionCall => return evaluate_function_call(first),
             Rule::PartExtract => return evaluate_expression(first),
             Rule::ReplaceAllExpr => return evaluate_pairs(first),
             Rule::ReplaceRepeatedExpr => return evaluate_pairs(first),
+            Rule::List => return evaluate_expression(first),
+            Rule::Identifier => {
+              let id = first.as_str();
+              if id == "Now" {
+                return Ok("CURRENT_TIME_MARKER".to_string());
+              }
+              if let Some(stored) = ENV.with(|e| e.borrow().get(id).cloned()) {
+                return Ok(match stored {
+                  StoredValue::Association(pairs) => format!(
+                    "<|{}|>",
+                    pairs
+                      .iter()
+                      .map(|(k, v)| format!("{} -> {}", k, v))
+                      .collect::<Vec<_>>()
+                      .join(", ")
+                  ),
+                  StoredValue::Raw(val) => val,
+                });
+              }
+              return Ok(id.to_string());
+            }
+            Rule::NumericValue | Rule::Integer | Rule::Real => {
+              return evaluate_term(first).map(format_result);
+            }
+            Rule::String => {
+              return Ok(first.as_str().to_string());
+            }
+            Rule::Term => {
+              // Unwrap term and evaluate its content
+              if let Some(inner) = first.into_inner().next() {
+                return evaluate_expression(inner);
+              }
+            }
             _ => {}
           }
         }
@@ -944,6 +1006,73 @@ pub fn evaluate_pairs(
         terms.push(try_evaluate_term(term)?);
       }
 
+      // Check for logical/comparison operators that need special handling
+      let has_logical_ops = ops.iter().any(|op| {
+        matches!(
+          *op,
+          "&&" | "||" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">="
+        )
+      });
+
+      if has_logical_ops {
+        // Convert to function call form and evaluate
+        // For expressions like "a && b && c", convert to "And[a, b, c]"
+        // For "a == b", convert to "Equal[a, b]"
+
+        // Get string representations of terms
+        let term_strs: Vec<String> = terms
+          .iter()
+          .map(|t| match t {
+            SymbolicTerm::Numeric(v) => format_result(*v),
+            SymbolicTerm::Symbol(s) => s.clone(),
+            SymbolicTerm::List(items) => format!("{{{}}}", items.join(", ")),
+          })
+          .collect();
+
+        // Check if all operators are the same
+        if ops.iter().all(|&o| o == ops[0]) {
+          // Use string-based helpers directly to avoid re-parsing
+          let result = match ops[0] {
+            "&&" => functions::boolean::and_strs(&term_strs),
+            "||" => functions::boolean::or_strs(&term_strs),
+            "===" => functions::boolean::same_q_strs(&term_strs),
+            "==" => functions::math::equal_strs(&term_strs),
+            "!=" => functions::math::unequal_strs(&term_strs),
+            "<" => functions::math::less_strs(&term_strs),
+            ">" => functions::math::greater_strs(&term_strs),
+            "<=" => functions::math::less_equal_strs(&term_strs),
+            ">=" => functions::math::greater_equal_strs(&term_strs),
+            _ => unreachable!(),
+          };
+          return Ok(result);
+        }
+
+        // Mixed operators - evaluate left to right
+        let mut result = term_strs[0].clone();
+        for (i, &op) in ops.iter().enumerate() {
+          // Use string-based helpers directly to avoid re-parsing
+          let pair = vec![result.clone(), term_strs[i + 1].clone()];
+          result = match op {
+            "&&" => functions::boolean::and_strs(&pair),
+            "||" => functions::boolean::or_strs(&pair),
+            "===" => functions::boolean::same_q_strs(&pair),
+            "==" => functions::math::equal_strs(&pair),
+            "!=" => functions::math::unequal_strs(&pair),
+            "<" => functions::math::less_strs(&pair),
+            ">" => functions::math::greater_strs(&pair),
+            "<=" => functions::math::less_equal_strs(&pair),
+            ">=" => functions::math::greater_equal_strs(&pair),
+            _ => {
+              return Err(InterpreterError::EvaluationError(format!(
+                "Unexpected operator: {}",
+                op
+              )));
+            }
+          };
+        }
+        return Ok(result);
+      }
+
       // Check if any term is a list - if so, thread the operation
       let has_list = terms.iter().any(|t| matches!(t, SymbolicTerm::List(_)));
 
@@ -1237,14 +1366,80 @@ pub fn evaluate_pairs(
 }
 
 /// Convert function arguments to WoNum for AST construction
+/// Fast evaluation of a pair to f64 - avoids expression overhead for simple cases
+fn fast_eval_to_f64(
+  pair: pest::iterators::Pair<Rule>,
+) -> Result<f64, InterpreterError> {
+  match pair.as_rule() {
+    Rule::Integer => {
+      pair.as_str().parse::<i64>().map(|n| n as f64).map_err(|_| {
+        InterpreterError::EvaluationError("invalid integer".into())
+      })
+    }
+    Rule::Real => pair
+      .as_str()
+      .parse::<f64>()
+      .map_err(|_| InterpreterError::EvaluationError("invalid real".into())),
+    Rule::NumericValue => {
+      let inner = pair.into_inner().next().unwrap();
+      fast_eval_to_f64(inner)
+    }
+    Rule::FunctionCall => {
+      let result = evaluate_function_call(pair)?;
+      result
+        .parse::<f64>()
+        .map_err(|_| InterpreterError::EvaluationError("not a number".into()))
+    }
+    Rule::Identifier => {
+      let id = pair.as_str();
+      if let Some(StoredValue::Raw(val)) =
+        ENV.with(|e| e.borrow().get(id).cloned())
+      {
+        return val.parse::<f64>().map_err(|_| {
+          InterpreterError::EvaluationError("not a number".into())
+        });
+      }
+      Err(InterpreterError::EvaluationError(format!(
+        "undefined variable: {}",
+        id
+      )))
+    }
+    Rule::Expression => {
+      let mut inner = pair.clone().into_inner();
+      if let Some(first) = inner.next()
+        && inner.next().is_none()
+      {
+        // Single child - try fast path
+        return fast_eval_to_f64(first);
+      }
+      // Multi-child expression - fall back to full evaluation
+      let value = evaluate_expression(pair)?;
+      value
+        .parse::<f64>()
+        .map_err(|_| InterpreterError::EvaluationError("not a number".into()))
+    }
+    _ => {
+      let value = evaluate_expression(pair)?;
+      value
+        .parse::<f64>()
+        .map_err(|_| InterpreterError::EvaluationError("not a number".into()))
+    }
+  }
+}
+
 pub fn args_to_wonums(
   args_pairs: &[pest::iterators::Pair<Rule>],
 ) -> Result<Vec<WoNum>, InterpreterError> {
   args_pairs
     .iter()
     .map(|pair| {
-      let value = evaluate_expression(pair.clone())?;
-      Ok(str_to_wonum(&value))
+      let value = fast_eval_to_f64(pair.clone())?;
+      // Check if it's an integer
+      if value.fract() == 0.0 && value.abs() < (i64::MAX as f64) {
+        Ok(WoNum::Int(value as i128))
+      } else {
+        Ok(WoNum::Float(value))
+      }
     })
     .collect()
 }
@@ -1343,6 +1538,11 @@ pub fn evaluate_term(
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
       })
     }
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction => {
+      // Anonymous functions when evaluated as a term (not applied) should error
+      // or return 0.0 as a placeholder
+      Ok(0.0)
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule in Term: {:?}",
       term.as_rule()
@@ -1350,7 +1550,7 @@ pub fn evaluate_term(
   }
 }
 
-fn evaluate_function_call(
+pub fn evaluate_function_call(
   func_call: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   // 2. Store the full textual form of the call for later error messages
@@ -1559,7 +1759,7 @@ fn evaluate_function_call(
   }
 
   // ----- anonymous function -------------------------------------------------
-  if func_name_pair.as_rule() == Rule::AnonymousFunction {
+  if func_name_pair.as_rule() == Rule::SimpleAnonymousFunction {
     // inspect the parts that form the anonymous function
     let parts: Vec<_> = func_name_pair.clone().into_inner().collect();
 
@@ -1799,6 +1999,7 @@ fn evaluate_function_call(
     "Or" => functions::boolean::or(&args_pairs),
     "Xor" => functions::boolean::xor(&args_pairs),
     "Not" => functions::boolean::not(&args_pairs, &call_text),
+    "SameQ" => functions::boolean::same_q(&args_pairs),
     "If" => functions::boolean::if_condition(&args_pairs, &call_text),
     "Which" => functions::boolean::which(&args_pairs),
     "Do" => functions::boolean::do_loop(&args_pairs),
@@ -2361,11 +2562,14 @@ fn expr_to_full_form(
             "^" => "Power",
             "->" => "Rule",
             "==" => "Equal",
+            "===" => "SameQ",
             "!=" => "Unequal",
             "<" => "Less",
             ">" => "Greater",
             "<=" => "LessEqual",
             ">=" => "GreaterEqual",
+            "&&" => "And",
+            "||" => "Or",
             "=" => {
               // Assignment - evaluate and return the result
               // This matches Wolfram's behavior where FullForm[a=b] returns b
@@ -2498,11 +2702,14 @@ fn get_head(
             "^" => "Power",
             "->" => "Rule",
             "==" => "Equal",
+            "===" => "SameQ",
             "!=" => "Unequal",
             "<" => "Less",
             ">" => "Greater",
             "<=" => "LessEqual",
             ">=" => "GreaterEqual",
+            "&&" => "And",
+            "||" => "Or",
             _ => {
               return Err(InterpreterError::EvaluationError(format!(
                 "Unknown operator: {}",
