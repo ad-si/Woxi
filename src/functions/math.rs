@@ -5,6 +5,113 @@ use crate::{
   InterpreterError, Rule, evaluate_expression, evaluate_term, format_result,
 };
 
+// ============================================================================
+// String-based comparison helpers (for use when values are already evaluated)
+// These avoid re-parsing and are much faster than calling interpret()
+// ============================================================================
+
+/// Parse a string value as f64, returning None if it's not numeric
+fn parse_numeric(s: &str) -> Option<f64> {
+  s.trim().parse::<f64>().ok()
+}
+
+/// Equal comparison for already-evaluated string values
+pub fn equal_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "True".to_string();
+  }
+  let first = &values[0];
+  for v in values.iter().skip(1) {
+    if v != first {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
+}
+
+/// Unequal comparison for already-evaluated string values
+pub fn unequal_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "True".to_string();
+  }
+  use std::collections::HashSet;
+  let mut seen = HashSet::new();
+  for v in values {
+    if !seen.insert(v) {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
+}
+
+/// Less comparison for already-evaluated string values
+pub fn less_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "True".to_string();
+  }
+  let nums: Vec<f64> = match values.iter().map(|s| parse_numeric(s)).collect() {
+    Some(v) => v,
+    None => return "False".to_string(), // Non-numeric values
+  };
+  for i in 0..nums.len() - 1 {
+    if nums[i] >= nums[i + 1] {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
+}
+
+/// Greater comparison for already-evaluated string values
+pub fn greater_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "True".to_string();
+  }
+  let nums: Vec<f64> = match values.iter().map(|s| parse_numeric(s)).collect() {
+    Some(v) => v,
+    None => return "False".to_string(), // Non-numeric values
+  };
+  for i in 0..nums.len() - 1 {
+    if nums[i] <= nums[i + 1] {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
+}
+
+/// LessEqual comparison for already-evaluated string values
+pub fn less_equal_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "True".to_string();
+  }
+  let nums: Vec<f64> = match values.iter().map(|s| parse_numeric(s)).collect() {
+    Some(v) => v,
+    None => return "False".to_string(), // Non-numeric values
+  };
+  for i in 0..nums.len() - 1 {
+    if nums[i] > nums[i + 1] {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
+}
+
+/// GreaterEqual comparison for already-evaluated string values
+pub fn greater_equal_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "True".to_string();
+  }
+  let nums: Vec<f64> = match values.iter().map(|s| parse_numeric(s)).collect() {
+    Some(v) => v,
+    None => return "False".to_string(), // Non-numeric values
+  };
+  for i in 0..nums.len() - 1 {
+    if nums[i] < nums[i + 1] {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
+}
+
 /// Handle GreaterEqual[a, b, ...] - checks if each value is greater than or equal to the next
 pub fn greater_equal(
   args_pairs: &[Pair<Rule>],

@@ -1,6 +1,53 @@
 use pest::iterators::Pair;
 
-use crate::{InterpreterError, Rule, evaluate_expression};
+use crate::{
+  InterpreterError, Rule, evaluate_expression,
+  evaluator::evaluate_function_call,
+};
+
+/// Fast evaluation for function arguments - avoids expression overhead for simple cases
+fn eval_arg(arg: Pair<Rule>) -> Result<String, InterpreterError> {
+  match arg.as_rule() {
+    Rule::Expression => {
+      let mut inner = arg.clone().into_inner();
+      if let Some(first) = inner.next()
+        && inner.next().is_none()
+      {
+        // Single child - check for fast paths
+        match first.as_rule() {
+          Rule::FunctionCall => return evaluate_function_call(first),
+          Rule::Identifier => {
+            let id = first.as_str();
+            if let Some(crate::StoredValue::Raw(val)) =
+              crate::ENV.with(|e| e.borrow().get(id).cloned())
+            {
+              return Ok(val);
+            }
+            return Ok(id.to_string());
+          }
+          Rule::Integer | Rule::Real | Rule::NumericValue => {
+            return crate::evaluate_term(first).map(crate::format_result);
+          }
+          Rule::String => {
+            return Ok(first.as_str().to_string());
+          }
+          Rule::Term => {
+            // Term wraps other rules - unwrap and recurse
+            if let Some(inner_term) = first.clone().into_inner().next()
+              && inner_term.as_rule() == Rule::FunctionCall
+            {
+              return evaluate_function_call(inner_term);
+            }
+          }
+          _ => {}
+        }
+      }
+      evaluate_expression(arg)
+    }
+    Rule::FunctionCall => evaluate_function_call(arg),
+    _ => evaluate_expression(arg),
+  }
+}
 
 /// Helper function for boolean conversion
 pub fn as_bool(s: &str) -> Option<bool> {
@@ -9,6 +56,45 @@ pub fn as_bool(s: &str) -> Option<bool> {
     "False" => Some(false),
     _ => None,
   }
+}
+
+// ============================================================================
+// String-based boolean helpers (for use when values are already evaluated)
+// These avoid re-parsing and are much faster than calling interpret()
+// ============================================================================
+
+/// And for already-evaluated string values
+pub fn and_strs(values: &[String]) -> String {
+  for v in values {
+    if !as_bool(v).unwrap_or(false) {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
+}
+
+/// Or for already-evaluated string values
+pub fn or_strs(values: &[String]) -> String {
+  for v in values {
+    if as_bool(v).unwrap_or(false) {
+      return "True".to_string();
+    }
+  }
+  "False".to_string()
+}
+
+/// SameQ for already-evaluated string values
+pub fn same_q_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "True".to_string();
+  }
+  let first = &values[0];
+  for v in values.iter().skip(1) {
+    if v != first {
+      return "False".to_string();
+    }
+  }
+  "True".to_string()
 }
 
 /// Handle And[expr1, expr2, ...] - logical AND of expressions
@@ -57,6 +143,23 @@ pub fn xor(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok(if true_cnt % 2 == 1 { "True" } else { "False" }.to_string())
 }
 
+/// Handle SameQ[expr1, expr2] - tests whether expressions are identical
+pub fn same_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SameQ expects at least 2 arguments".into(),
+    ));
+  }
+  let first = evaluate_expression(args_pairs[0].clone())?;
+  for ap in args_pairs.iter().skip(1) {
+    let val = evaluate_expression(ap.clone())?;
+    if val != first {
+      return Ok("False".to_string());
+    }
+  }
+  Ok("True".to_string())
+}
+
 /// Handle Not[expr] - logical negation
 pub fn not(
   args_pairs: &[Pair<Rule>],
@@ -98,18 +201,18 @@ pub fn if_condition(
     return Ok(call_text.to_string()); // return unevaluated expression
   }
 
-  // evaluate test
-  let test_str = evaluate_expression(args_pairs[0].clone())?;
+  // evaluate test using fast path
+  let test_str = eval_arg(args_pairs[0].clone())?;
   let test_val = as_bool(&test_str);
 
   match (test_val, args_pairs.len()) {
-    (Some(true), _) => evaluate_expression(args_pairs[1].clone()),
+    (Some(true), _) => eval_arg(args_pairs[1].clone()),
     (Some(false), 2) => Ok("Null".to_string()),
-    (Some(false), 3) => evaluate_expression(args_pairs[2].clone()),
-    (Some(false), 4) => evaluate_expression(args_pairs[2].clone()),
+    (Some(false), 3) => eval_arg(args_pairs[2].clone()),
+    (Some(false), 4) => eval_arg(args_pairs[2].clone()),
     (_, 2) => Ok("Null".to_string()),
     (_, 3) => Ok("Null".to_string()),
-    (_, 4) => evaluate_expression(args_pairs[3].clone()),
+    (_, 4) => eval_arg(args_pairs[3].clone()),
     _ => unreachable!(),
   }
 }
@@ -123,11 +226,11 @@ pub fn which(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
 
-  // Process test-value pairs
+  // Process test-value pairs using fast path
   for i in (0..args_pairs.len()).step_by(2) {
-    let test_str = evaluate_expression(args_pairs[i].clone())?;
+    let test_str = eval_arg(args_pairs[i].clone())?;
     if let Some(true) = as_bool(&test_str) {
-      return evaluate_expression(args_pairs[i + 1].clone());
+      return eval_arg(args_pairs[i + 1].clone());
     }
   }
 
@@ -158,7 +261,7 @@ pub fn do_loop(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     }
     let count = n as usize;
     for _ in 0..count {
-      evaluate_expression(body.clone())?;
+      eval_arg(body.clone())?;
     }
     return Ok("Null".to_string());
   }
@@ -182,7 +285,7 @@ pub fn do_loop(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
             e.borrow_mut()
               .insert(var_name.clone(), crate::StoredValue::Raw(i.to_string()))
           });
-          evaluate_expression(body.clone())?;
+          eval_arg(body.clone())?;
         }
 
         // Clean up loop variable
@@ -203,7 +306,7 @@ pub fn do_loop(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
             e.borrow_mut()
               .insert(var_name.clone(), crate::StoredValue::Raw(i.to_string()))
           });
-          evaluate_expression(body.clone())?;
+          eval_arg(body.clone())?;
         }
 
         crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
@@ -224,7 +327,7 @@ pub fn do_loop(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     }
     let count = n as usize;
     for _ in 0..count {
-      evaluate_expression(body.clone())?;
+      eval_arg(body.clone())?;
     }
   }
 
