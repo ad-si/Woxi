@@ -26,6 +26,7 @@ AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
 Operator = {
     "/@"     // keep first
   | "@@"     // Apply operator (must be before single @)
+  | "<>"     // StringJoin operator (must be before < and >)
   | "==" | "!="
   | "<=" | ">="
   | ":="
@@ -85,4 +86,7 @@ FunctionDefinition = { Identifier ~ "[" ~ Pattern ~ "]" ~ ":=" ~ Expression }
 
 Statement = _{ FunctionDefinition | Expression }
 
-Program = { SOI ~ Statement ~ (";" ~ Statement)* ~ EOI }
+// StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
+StatementSeparator = _{ ";"? }
+
+Program = { SOI ~ Statement ~ (StatementSeparator ~ Statement)* ~ EOI }
