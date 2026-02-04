@@ -41,8 +41,9 @@ test-scripts: install
 	@echo "Testing scripts with woxi …"
 	@for script in tests/scripts/[!_]*.wls; do \
 		echo "Running $$script …"; \
-		woxi "$$script" > /dev/null || exit 1; \
+		woxi run "$$script" > /dev/null || exit 1; \
 	done
+	woxi run ./tests/scripts/_cli_args.wls -- 5 > /dev/null || exit 1
 	@echo "All scripts executed successfully with woxi."
 
 
@@ -57,7 +58,7 @@ test-scripts-wolframscript: install
 
 
 .PHONY: test
-test: test-unit test-cli test-shebang
+test: test-unit test-cli test-shebang test-scripts
 
 
 .PHONY: format
