@@ -100,7 +100,12 @@ fn main() {
 
   match cli.command {
     Commands::Eval { expression } => match interpret(&expression) {
-      Ok(result) => println!("{result}"),
+      Ok(result) => {
+        // "\0" is a sentinel value indicating output was already printed (e.g., Part error)
+        if result != "\0" {
+          println!("{result}");
+        }
+      }
       Err(e) => eprintln!("Error: {}", e),
     },
     Commands::Run { file, args } => {
