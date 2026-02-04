@@ -14,20 +14,24 @@ PatternName = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
 Identifier = @{ (ASCII_ALPHA | "_" | "$") ~ (ASCII_ALPHANUMERIC | "_")* }
 String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-// Function calls (supports chained calls like f[x][y])
-// Arguments can be Patterns (for function definitions), CompoundExpressions, Expressions, or ReplacementRules
-FunctionArg = _{ Pattern | ReplacementRule | CompoundExpression | Expression }
-FunctionCall = { (Identifier | AnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ (FunctionArg | List))*)? ~ "]")+ }
-
-// Anonymous function syntax
+// Anonymous function syntax: body & where body contains # slots
 Slot = @{ "#" ~ ASCII_DIGIT* }
-AnonymousFunction = { Slot ~ (Operator ~ Term)? ~ "&" }
+// SimpleAnonymousFunction is # or # op term followed by & (not &&)
+SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
+// SlotTerm is what can follow an operator in a simple anonymous function
+SlotTerm = _{ NumericValue | Constant | String | Identifier | Slot | "(" ~ Expression ~ ")" }
+// FunctionAnonymousFunction is a function call (like If[...]) followed by & (not &&)
+FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" }
+// BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
+BaseFunctionCall = { Identifier ~ ("[" ~ (FunctionArg ~ ("," ~ (FunctionArg | List))*)? ~ "]")+ }
 
 Operator = {
     "/@"     // keep first
   | "@@"     // Apply operator (must be before single @)
   | "<>"     // StringJoin operator (must be before < and >)
-  | "==" | "!="
+  | "&&"     // And operator (must be before single &)
+  | "||"     // Or operator
+  | "===" | "==" | "!="  // SameQ (must be before ==), Equal, Unequal
   | "<=" | ">="
   | ":="
   | "+" | "-" | "*" | "/" | "^"
@@ -36,13 +40,6 @@ Operator = {
 }
 
 PostfixApplication = { Term ~ ("//" ~ Identifier)+ }
-
-// Replacement rule: pattern -> replacement
-ReplacementRule = { Term ~ "->" ~ Term }
-
-// Replacement expressions: expr /. rule or expr //. rule
-ReplaceAllExpr = { Term ~ "/." ~ ReplacementRule }
-ReplaceRepeatedExpr = { Term ~ "//." ~ ReplacementRule }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
@@ -58,10 +55,11 @@ Term = _{
   | Constant
   | String
   | List
+  | FunctionAnonymousFunction
   | FunctionCall
+  | SimpleAnonymousFunction
   | ImplicitTimes
   | Identifier
-  | AnonymousFunction
   | Slot
   | Association
   | "(" ~ Expression ~ ")"
@@ -76,13 +74,34 @@ SimpleTerm = _{
   | "(" ~ Expression ~ ")"
 }
 
-List = { "{" ~ (Expression ~ ("," ~ Expression)*)? ~ "}" }
-Pattern = { PatternName ~ "_" }
+// Pattern: x_ or x_?test or x_ /; condition
+PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
+PatternCondition = { PatternName ~ "_" ~ "/;" ~ Expression }
+PatternSimple = { PatternName ~ "_" }
+Pattern = { PatternCondition | PatternTest | PatternSimple }
+
+// Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
+// PatternExpr can be a pattern or a term (for replacement rules)
+ReplacementRule = { (PatternCondition | PatternTest | PatternSimple | Term) ~ ("->" | ":>") ~ Term }
+
+// Replacement expressions: expr /. rule or expr //. rule
+ReplaceAllExpr = { Term ~ "/." ~ (List | ReplacementRule) }
+ReplaceRepeatedExpr = { Term ~ "//." ~ (List | ReplacementRule) }
+
+List = { "{" ~ (ListItem ~ ("," ~ ListItem)*)? ~ "}" }
+ListItem = _{ ReplacementRule | Expression }
 
 AssociationItem = { Expression ~ "->" ~ Expression }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
 
-FunctionDefinition = { Identifier ~ "[" ~ Pattern ~ "]" ~ ":=" ~ Expression }
+// Function calls (supports chained calls like f[x][y])
+// Arguments can be Patterns (for function definitions), CompoundExpressions, Expressions, or ReplacementRules
+FunctionArg = _{ PatternCondition | PatternTest | PatternSimple | ReplacementRule | CompoundExpression | Expression }
+FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ (FunctionArg | List))*)? ~ "]")+ }
+
+// FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
+FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternSimple }
+FunctionDefinition = { Identifier ~ "[" ~ (FunctionDefinitionPattern ~ ("," ~ FunctionDefinitionPattern)*)? ~ "]" ~ ":=" ~ Expression }
 
 Statement = _{ FunctionDefinition | Expression }
 
