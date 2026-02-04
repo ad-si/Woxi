@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-PartExtract = { Identifier ~ "[[" ~ Expression ~ "]]" }
+PartExtract = { (List | Identifier) ~ "[[" ~ Expression ~ "]]" }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }

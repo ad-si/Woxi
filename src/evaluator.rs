@@ -383,15 +383,33 @@ pub fn evaluate_pairs(
     }
     Rule::PartExtract => {
       let mut inner = expr.into_inner();
-      let id_pair = inner.next().unwrap();
+      let first_pair = inner.next().unwrap();
       let key_pair = inner.next().unwrap();
-      let name = id_pair.as_str();
       let raw = key_pair.as_str().trim();
       let key = if raw.starts_with('"') && raw.ends_with('"') {
         raw.trim_matches('"').to_string()
       } else {
         raw.to_string()
       };
+
+      // If first_pair is a List, use get_list_items for proper nested handling
+      if first_pair.as_rule() == Rule::List {
+        if let Ok(idx) = key.parse::<usize>() {
+          let items = functions::list::get_list_items(&first_pair)?;
+          if idx >= 1 && idx <= items.len() {
+            return evaluate_expression(items[idx - 1].clone());
+          }
+          return Err(InterpreterError::EvaluationError(
+            "Index out of bounds in Part".into(),
+          ));
+        }
+        return Err(InterpreterError::EvaluationError(
+          "Index must be a positive integer".into(),
+        ));
+      }
+
+      // For identifiers, check if it's an association first
+      let name = first_pair.as_str();
       if let Some(StoredValue::Association(vec)) =
         ENV.with(|e| e.borrow().get(name).cloned())
       {
@@ -403,7 +421,7 @@ pub fn evaluate_pairs(
         return Err(InterpreterError::EvaluationError("Key not found".into()));
       }
       // If not found as association, try to evaluate as a list and use numeric index
-      if let Ok(list_str) = evaluate_expression(id_pair.clone()) {
+      if let Ok(list_str) = evaluate_expression(first_pair.clone()) {
         // Try to parse as a list: {a, b, c}
         if list_str.starts_with('{') && list_str.ends_with('}') {
           let items: Vec<&str> = list_str[1..list_str.len() - 1]
