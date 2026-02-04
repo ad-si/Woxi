@@ -370,3 +370,53 @@ $ wo 'ToString[{1, 2, 3}]'
 $ wo 'ToString[1 + 2]'
 3
 ```
+
+
+## `ToExpression`
+
+Converts a string to an evaluated expression.
+
+```scrut
+$ wo 'ToExpression["1 + 2"]'
+3
+```
+
+```scrut
+$ wo 'ToExpression["Plus[3, 4]"]'
+7
+```
+
+
+## `StringPadLeft`
+
+Pads a string on the left to a specified length.
+
+```scrut
+$ wo 'StringPadLeft["hi", 5]'
+   hi
+```
+
+```scrut
+$ wo 'StringPadLeft["hi", 5, "0"]'
+000hi
+```
+
+```scrut
+$ wo 'StringPadLeft["hello", 3]'
+llo
+```
+
+
+## `StringPadRight`
+
+Pads a string on the right to a specified length.
+
+```scrut
+$ wo 'StringPadRight["hi", 5, "0"]'
+hi000
+```
+
+```scrut
+$ wo 'StringPadRight["hello", 3]'
+hel
+```

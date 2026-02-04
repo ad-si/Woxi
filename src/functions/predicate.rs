@@ -296,3 +296,55 @@ pub fn numeric_q(
 
   Ok(if is_numeric { "True" } else { "False" }.to_string())
 }
+
+/// Handle Positive[x] - Tests if x is a positive number (x > 0)
+pub fn positive(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Positive expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+  Ok(if n > 0.0 { "True" } else { "False" }.to_string())
+}
+
+/// Handle Negative[x] - Tests if x is a negative number (x < 0)
+pub fn negative(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Negative expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+  Ok(if n < 0.0 { "True" } else { "False" }.to_string())
+}
+
+/// Handle NonPositive[x] - Tests if x is non-positive (x ≤ 0)
+pub fn non_positive(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "NonPositive expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+  Ok(if n <= 0.0 { "True" } else { "False" }.to_string())
+}
+
+/// Handle NonNegative[x] - Tests if x is non-negative (x ≥ 0)
+pub fn non_negative(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "NonNegative expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+  Ok(if n >= 0.0 { "True" } else { "False" }.to_string())
+}

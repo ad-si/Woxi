@@ -1896,6 +1896,12 @@ fn evaluate_function_call(
     "Im" => functions::numeric::im(&args_pairs),
     "Conjugate" => functions::numeric::conjugate(&args_pairs),
     "Rationalize" => functions::numeric::rationalize(&args_pairs),
+    "Arg" => functions::numeric::arg(&args_pairs),
+    "Divisors" => functions::numeric::divisors(&args_pairs),
+    "DivisorSigma" => functions::numeric::divisor_sigma(&args_pairs),
+    "MoebiusMu" => functions::numeric::moebius_mu(&args_pairs),
+    "EulerPhi" => functions::numeric::euler_phi(&args_pairs),
+    "CoprimeQ" => functions::numeric::coprime_q(&args_pairs),
 
     // Calculus Functions
     "D" => functions::calculus::derivative(&args_pairs),
@@ -1917,6 +1923,10 @@ fn evaluate_function_call(
     "AtomQ" => functions::predicate::atom_q(&args_pairs),
     "PrimeQ" => functions::predicate::prime_q(&args_pairs),
     "NumericQ" => functions::predicate::numeric_q(&args_pairs),
+    "Positive" => functions::predicate::positive(&args_pairs),
+    "Negative" => functions::predicate::negative(&args_pairs),
+    "NonPositive" => functions::predicate::non_positive(&args_pairs),
+    "NonNegative" => functions::predicate::non_negative(&args_pairs),
 
     "RandomInteger" => functions::math::random_integer(&args_pairs),
 
@@ -1941,6 +1951,9 @@ fn evaluate_function_call(
     "StringTrim" => functions::string::string_trim(&args_pairs),
     "StringCases" => functions::string::string_cases(&args_pairs),
     "ToString" => functions::string::to_string(&args_pairs),
+    "ToExpression" => functions::string::to_expression(&args_pairs),
+    "StringPadLeft" => functions::string::string_pad_left(&args_pairs),
+    "StringPadRight" => functions::string::string_pad_right(&args_pairs),
 
     // List Functions
     "Map" => functions::list_helpers::map_list(&args_pairs),
@@ -2049,6 +2062,12 @@ fn evaluate_function_call(
     "FreeQ" => functions::list_helpers::free_q(&args_pairs),
     "Extract" => functions::list_helpers::extract(&args_pairs),
     "Catenate" => functions::list_helpers::catenate(&args_pairs),
+    "TakeWhile" => functions::list_helpers::take_while(&args_pairs),
+    "Apply" => functions::list_helpers::apply(&args_pairs),
+    "Composition" => functions::list_helpers::composition(&args_pairs),
+    "Identity" => functions::list_helpers::identity(&args_pairs),
+    "Outer" => functions::list_helpers::outer(&args_pairs),
+    "Inner" => functions::list_helpers::inner(&args_pairs),
     "Print" => functions::io::print(&args_pairs),
 
     // Replacement functions
@@ -2170,36 +2189,6 @@ fn evaluate_function_call(
         })
         .collect::<Result<_, _>>()?;
       Ok(format!("{}[{}]", head, args.join(", ")))
-    }
-
-    // Apply - replaces the head of an expression (used internally for @@)
-    "Apply" => {
-      if args_pairs.len() != 2 {
-        return Err(InterpreterError::EvaluationError(
-          "Apply expects exactly 2 arguments".into(),
-        ));
-      }
-      let func_name = evaluate_expression(args_pairs[0].clone())?;
-      let list_str = evaluate_expression(args_pairs[1].clone())?;
-      // Parse the list to extract elements
-      if list_str.starts_with('{') && list_str.ends_with('}') {
-        let inner = &list_str[1..list_str.len() - 1];
-        let expr = format!("{}[{}]", func_name, inner);
-        // Try to evaluate; if function is unknown, return the symbolic form
-        match interpret(&expr) {
-          Ok(result) => Ok(result),
-          Err(InterpreterError::EvaluationError(e))
-            if e.starts_with("Unknown function:") =>
-          {
-            Ok(expr)
-          }
-          Err(e) => Err(e),
-        }
-      } else {
-        Err(InterpreterError::EvaluationError(
-          "Second argument of Apply must be a list".into(),
-        ))
-      }
     }
 
     _ => Err(InterpreterError::EvaluationError(format!(

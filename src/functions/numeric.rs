@@ -1150,3 +1150,277 @@ fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
 
   (sign * p1, q1)
 }
+
+/// Handle Arg[z] - returns the argument (phase angle) of a complex number
+/// For real positive numbers, returns 0
+/// For real negative numbers, returns Pi
+/// For Complex[a, b], returns ArcTan[a, b]
+pub fn arg(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Arg expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expr = crate::evaluate_expression(args_pairs[0].clone())?;
+
+  // Check if it's a Complex expression
+  if expr.starts_with("Complex[") && expr.ends_with(']') {
+    let inner = &expr[8..expr.len() - 1];
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() == 2
+      && let (Ok(re), Ok(im)) = (
+        parts[0].trim().parse::<f64>(),
+        parts[1].trim().parse::<f64>(),
+      )
+    {
+      let angle = im.atan2(re);
+      return Ok(format_result(angle));
+    }
+  }
+
+  // For real numbers
+  if let Ok(val) = expr.parse::<f64>() {
+    if val > 0.0 {
+      return Ok("0".to_string());
+    } else if val < 0.0 {
+      return Ok("Pi".to_string());
+    } else {
+      // Arg[0] is undefined, but Wolfram returns 0
+      return Ok("0".to_string());
+    }
+  }
+
+  // Return symbolic form for other expressions
+  Ok(format!("Arg[{}]", expr))
+}
+
+/// Handle Divisors[n] - returns a sorted list of all divisors of n
+pub fn divisors(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Divisors expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+
+  if n.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Divisors: argument must be an integer".into(),
+    ));
+  }
+
+  let n_int = n.abs() as u64;
+
+  if n_int == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Divisors: argument cannot be zero".into(),
+    ));
+  }
+
+  let mut divs = Vec::new();
+  let sqrt_n = (n_int as f64).sqrt() as u64;
+
+  for i in 1..=sqrt_n {
+    if n_int.is_multiple_of(i) {
+      divs.push(i);
+      if i != n_int / i {
+        divs.push(n_int / i);
+      }
+    }
+  }
+
+  divs.sort();
+
+  let result: Vec<String> = divs.iter().map(|d| d.to_string()).collect();
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle DivisorSigma[k, n] - returns the sum of the k-th powers of divisors of n
+/// DivisorSigma[0, n] counts divisors, DivisorSigma[1, n] sums divisors
+pub fn divisor_sigma(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "DivisorSigma expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let k = evaluate_term(args_pairs[0].clone())?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if k.fract() != 0.0 || k < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "DivisorSigma: first argument must be a non-negative integer".into(),
+    ));
+  }
+
+  if n.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "DivisorSigma: second argument must be an integer".into(),
+    ));
+  }
+
+  let k_int = k as u32;
+  let n_int = n.abs() as u64;
+
+  if n_int == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "DivisorSigma: second argument cannot be zero".into(),
+    ));
+  }
+
+  // Find all divisors and sum their k-th powers
+  let sqrt_n = (n_int as f64).sqrt() as u64;
+  let mut sum: u64 = 0;
+
+  for i in 1..=sqrt_n {
+    if n_int.is_multiple_of(i) {
+      sum += i.pow(k_int);
+      if i != n_int / i {
+        sum += (n_int / i).pow(k_int);
+      }
+    }
+  }
+
+  Ok(format_result(sum as f64))
+}
+
+/// Handle MoebiusMu[n] - returns the Möbius function value
+/// MoebiusMu[n] = 1 if n is square-free with even number of prime factors
+/// MoebiusMu[n] = -1 if n is square-free with odd number of prime factors
+/// MoebiusMu[n] = 0 if n has a squared prime factor
+pub fn moebius_mu(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "MoebiusMu expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+
+  if n.fract() != 0.0 || n < 1.0 {
+    return Err(InterpreterError::EvaluationError(
+      "MoebiusMu: argument must be a positive integer".into(),
+    ));
+  }
+
+  let mut num = n as u64;
+
+  if num == 1 {
+    return Ok("1".to_string());
+  }
+
+  let mut prime_count = 0;
+
+  // Check for factor 2
+  if num.is_multiple_of(2) {
+    prime_count += 1;
+    num /= 2;
+    if num.is_multiple_of(2) {
+      return Ok("0".to_string()); // Has squared factor
+    }
+  }
+
+  // Check odd factors
+  let mut i = 3u64;
+  while i * i <= num {
+    if num.is_multiple_of(i) {
+      prime_count += 1;
+      num /= i;
+      if num.is_multiple_of(i) {
+        return Ok("0".to_string()); // Has squared factor
+      }
+    }
+    i += 2;
+  }
+
+  // If there's a remaining prime factor
+  if num > 1 {
+    prime_count += 1;
+  }
+
+  if prime_count % 2 == 0 {
+    Ok("1".to_string())
+  } else {
+    Ok("-1".to_string())
+  }
+}
+
+/// Handle EulerPhi[n] - returns Euler's totient function (count of coprimes ≤ n)
+pub fn euler_phi(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "EulerPhi expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+
+  if n.fract() != 0.0 || n < 1.0 {
+    return Err(InterpreterError::EvaluationError(
+      "EulerPhi: argument must be a positive integer".into(),
+    ));
+  }
+
+  let mut num = n as u64;
+  let mut result = num;
+
+  // Euler's product formula: φ(n) = n * ∏(1 - 1/p) for all prime factors p
+  let mut p = 2u64;
+  while p * p <= num {
+    if num.is_multiple_of(p) {
+      // Remove all factors of p
+      while num.is_multiple_of(p) {
+        num /= p;
+      }
+      result -= result / p;
+    }
+    p += 1;
+  }
+
+  // If there's a remaining prime factor
+  if num > 1 {
+    result -= result / num;
+  }
+
+  Ok(format_result(result as f64))
+}
+
+/// Handle CoprimeQ[a, b] - tests if two integers are coprime (GCD = 1)
+pub fn coprime_q(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "CoprimeQ expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let a = evaluate_term(args_pairs[0].clone())?;
+  let b = evaluate_term(args_pairs[1].clone())?;
+
+  if a.fract() != 0.0 || b.fract() != 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "CoprimeQ: arguments must be integers".into(),
+    ));
+  }
+
+  let mut a_int = (a.abs() as u64).max(1);
+  let mut b_int = (b.abs() as u64).max(1);
+
+  // Calculate GCD using Euclidean algorithm
+  while b_int != 0 {
+    let temp = b_int;
+    b_int = a_int % b_int;
+    a_int = temp;
+  }
+
+  Ok(if a_int == 1 { "True" } else { "False" }.to_string())
+}

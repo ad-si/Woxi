@@ -1060,3 +1060,138 @@ Numbers with up to 5 decimal places are rationalized:
 $ wo 'Rationalize[0.33333]'
 33333/100000
 ```
+
+
+## `Arg`
+
+Returns the argument (phase angle) of a complex number in radians.
+
+```scrut
+$ wo 'Arg[1]'
+0
+```
+
+```scrut
+$ wo 'Arg[-1]'
+Pi
+```
+
+```scrut
+$ wo 'Arg[0]'
+0
+```
+
+
+## `Divisors`
+
+Returns all divisors of an integer.
+
+```scrut
+$ wo 'Divisors[12]'
+{1, 2, 3, 4, 6, 12}
+```
+
+```scrut
+$ wo 'Divisors[1]'
+{1}
+```
+
+```scrut
+$ wo 'Divisors[17]'
+{1, 17}
+```
+
+
+## `DivisorSigma`
+
+Returns the sum of the k-th powers of divisors.
+
+```scrut
+$ wo 'DivisorSigma[0, 12]'
+6
+```
+
+```scrut
+$ wo 'DivisorSigma[1, 12]'
+28
+```
+
+```scrut
+$ wo 'DivisorSigma[1, 6]'
+12
+```
+
+
+## `MoebiusMu`
+
+Returns the Möbius function value.
+
+```scrut
+$ wo 'MoebiusMu[1]'
+1
+```
+
+```scrut
+$ wo 'MoebiusMu[2]'
+-1
+```
+
+```scrut
+$ wo 'MoebiusMu[6]'
+1
+```
+
+```scrut
+$ wo 'MoebiusMu[4]'
+0
+```
+
+```scrut
+$ wo 'MoebiusMu[30]'
+-1
+```
+
+
+## `EulerPhi`
+
+Returns Euler's totient function (count of integers up to n that are coprime to n).
+
+```scrut
+$ wo 'EulerPhi[1]'
+1
+```
+
+```scrut
+$ wo 'EulerPhi[10]'
+4
+```
+
+```scrut
+$ wo 'EulerPhi[12]'
+4
+```
+
+```scrut
+$ wo 'EulerPhi[7]'
+6
+```
+
+
+## `CoprimeQ`
+
+Tests if two integers are coprime.
+
+```scrut
+$ wo 'CoprimeQ[3, 5]'
+True
+```
+
+```scrut
+$ wo 'CoprimeQ[6, 9]'
+False
+```
+
+```scrut
+$ wo 'CoprimeQ[14, 15]'
+True
+```

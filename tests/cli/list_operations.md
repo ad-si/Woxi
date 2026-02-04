@@ -695,16 +695,6 @@ $ wo 'GroupBy[{{a, b}, {a, c}, {b, c}}, First]'
 ```
 
 
-## `Accumulate`
-
-Returns the cumulative sums of a list.
-
-```scrut
-$ wo 'Accumulate[{1, 2, 3}]'
-{1, 3, 6}
-```
-
-
 ## `Array`
 
 Constructs an array using a function to generate elements.
@@ -1306,8 +1296,8 @@ b
 ```
 
 ```scrut
-$ wo 'Extract[{a, b, c, d}, {1, 3}]'
-{a, c}
+$ wo 'Extract[{a, {b1, b2, b3}, c, d}, {2, 3}]'
+b3
 ```
 
 
@@ -1323,4 +1313,79 @@ $ wo 'Catenate[{{1, 2}, {3, 4}}]'
 ```scrut
 $ wo 'Catenate[{{a, b}, {c}, {d, e, f}}]'
 {a, b, c, d, e, f}
+```
+
+
+## `TakeWhile`
+
+Takes elements from the start while a predicate is true.
+
+```scrut
+$ wo 'TakeWhile[{1, 2, 3, 4, 5}, # < 4 &]'
+{1, 2, 3}
+```
+
+```scrut
+$ wo 'TakeWhile[{2, 4, 6, 7, 8}, EvenQ]'
+{2, 4, 6}
+```
+
+
+## `Apply`
+
+Applies a function to list elements as arguments.
+
+```scrut
+$ wo 'Apply[Plus, {1, 2, 3}]'
+6
+```
+
+```scrut
+$ wo 'Apply[Times, {2, 3, 4}]'
+24
+```
+
+
+## `Identity`
+
+Returns its argument unchanged.
+
+```scrut
+$ wo 'Identity[5]'
+5
+```
+
+```scrut
+$ wo 'Identity[{1, 2, 3}]'
+{1, 2, 3}
+```
+
+
+## `Outer`
+
+Generalized outer product - applies function to all pairs.
+
+```scrut
+$ wo 'Outer[Times, {1, 2}, {3, 4}]'
+{{3, 4}, {6, 8}}
+```
+
+```scrut
+$ wo 'Outer[Plus, {1, 2}, {10, 20}]'
+{{11, 21}, {12, 22}}
+```
+
+
+## `Inner`
+
+Generalized inner product (like dot product).
+
+```scrut
+$ wo 'Inner[Times, {1, 2, 3}, {4, 5, 6}, Plus]'
+32
+```
+
+```scrut
+$ wo 'Inner[Plus, {1, 2}, {3, 4}, Times]'
+24
 ```

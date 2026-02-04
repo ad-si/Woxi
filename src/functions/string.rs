@@ -460,3 +460,102 @@ pub fn to_string(
   // The result is already a string representation
   Ok(expr)
 }
+
+/// Handle ToExpression[s] - converts string to evaluated expression
+pub fn to_expression(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ToExpression expects exactly 1 argument".into(),
+    ));
+  }
+
+  let s = extract_string(args_pairs[0].clone())?;
+  // Interpret the string as Wolfram code
+  crate::interpret(&s)
+}
+
+/// Handle StringPadLeft[s, n] or StringPadLeft[s, n, pad] - Pad string on left
+pub fn string_pad_left(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "StringPadLeft expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  let s = extract_string(args_pairs[0].clone())?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument of StringPadLeft must be a non-negative integer".into(),
+    ));
+  }
+
+  let target_len = n as usize;
+  let pad_char = if args_pairs.len() == 3 {
+    let pad_str = extract_string(args_pairs[2].clone())?;
+    if pad_str.is_empty() {
+      ' '
+    } else {
+      pad_str.chars().next().unwrap()
+    }
+  } else {
+    ' '
+  };
+
+  let char_count = s.chars().count();
+  if char_count >= target_len {
+    // Truncate from the left, keeping rightmost characters
+    Ok(s.chars().skip(char_count - target_len).collect())
+  } else {
+    let padding: String =
+      std::iter::repeat_n(pad_char, target_len - char_count).collect();
+    Ok(format!("{}{}", padding, s))
+  }
+}
+
+/// Handle StringPadRight[s, n] or StringPadRight[s, n, pad] - Pad string on right
+pub fn string_pad_right(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 || args_pairs.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "StringPadRight expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  let s = extract_string(args_pairs[0].clone())?;
+  let n = evaluate_term(args_pairs[1].clone())?;
+
+  if n.fract() != 0.0 || n < 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Second argument of StringPadRight must be a non-negative integer".into(),
+    ));
+  }
+
+  let target_len = n as usize;
+  let pad_char = if args_pairs.len() == 3 {
+    let pad_str = extract_string(args_pairs[2].clone())?;
+    if pad_str.is_empty() {
+      ' '
+    } else {
+      pad_str.chars().next().unwrap()
+    }
+  } else {
+    ' '
+  };
+
+  let char_count = s.chars().count();
+  if char_count >= target_len {
+    // Truncate from the right, keeping leftmost characters
+    Ok(s.chars().take(target_len).collect())
+  } else {
+    let padding: String =
+      std::iter::repeat_n(pad_char, target_len - char_count).collect();
+    Ok(format!("{}{}", s, padding))
+  }
+}

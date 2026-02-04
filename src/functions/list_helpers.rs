@@ -2935,47 +2935,23 @@ pub fn extract(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   let list_pair = &args_pairs[0];
   let pos_pair = &args_pairs[1];
 
-  let items = crate::functions::list::get_list_items(list_pair)?;
-  let evaluated: Vec<String> = items
-    .into_iter()
-    .map(|item| evaluate_expression(item))
-    .collect::<Result<_, _>>()?;
+  // Evaluate the list/expression first
+  let current = evaluate_expression(list_pair.clone())?;
 
-  // Check if second argument is a single position or list of positions
+  // Check if second argument is a single position or a path (list of positions)
   let pos_str = pos_pair.as_str().trim();
 
   // Try to parse as a single integer first
   if let Ok(idx) = pos_str.parse::<i64>() {
     // Single position extraction
-    let actual_idx = if idx > 0 {
-      (idx - 1) as usize
-    } else if idx < 0 {
-      let len = evaluated.len() as i64;
-      if -idx > len {
-        return Err(InterpreterError::EvaluationError(
-          "Extract: index out of bounds".into(),
-        ));
-      }
-      (len + idx) as usize
-    } else {
-      return Err(InterpreterError::EvaluationError(
-        "Extract: position 0 is invalid".into(),
-      ));
-    };
-
-    if actual_idx >= evaluated.len() {
-      return Err(InterpreterError::EvaluationError(
-        "Extract: index out of bounds".into(),
-      ));
-    }
-
-    return Ok(evaluated[actual_idx].clone());
+    return extract_at_position(&current, idx);
   }
 
-  // Try to parse as list of positions
+  // Try to parse as list of positions (path into nested structure)
   let pos_items = crate::functions::list::get_list_items(pos_pair)?;
-  let mut result = Vec::new();
 
+  // Collect the path indices
+  let mut path = Vec::new();
   for pos_item in pos_items {
     let pos_val = evaluate_term(pos_item.clone())?;
     if pos_val.fract() != 0.0 {
@@ -2983,34 +2959,57 @@ pub fn extract(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
         "Extract: positions must be integers".into(),
       ));
     }
+    path.push(pos_val as i64);
+  }
 
-    let idx = pos_val as i64;
-    let actual_idx = if idx > 0 {
-      (idx - 1) as usize
-    } else if idx < 0 {
-      let len = evaluated.len() as i64;
-      if -idx > len {
-        return Err(InterpreterError::EvaluationError(
-          "Extract: index out of bounds".into(),
-        ));
-      }
-      (len + idx) as usize
-    } else {
-      return Err(InterpreterError::EvaluationError(
-        "Extract: position 0 is invalid".into(),
-      ));
-    };
+  // Follow the path into nested structure
+  let mut current = current;
+  for idx in path {
+    current = extract_at_position(&current, idx)?;
+  }
 
-    if actual_idx >= evaluated.len() {
+  Ok(current)
+}
+
+/// Helper function to extract element at a given position from a list string
+fn extract_at_position(
+  list_str: &str,
+  idx: i64,
+) -> Result<String, InterpreterError> {
+  // Parse the list string to get elements
+  let trimmed = list_str.trim();
+  if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+    return Err(InterpreterError::EvaluationError(
+      "Extract: cannot extract from non-list".into(),
+    ));
+  }
+
+  let inner = &trimmed[1..trimmed.len() - 1];
+  let elements = parse_list_elements(inner);
+
+  let actual_idx = if idx > 0 {
+    (idx - 1) as usize
+  } else if idx < 0 {
+    let len = elements.len() as i64;
+    if -idx > len {
       return Err(InterpreterError::EvaluationError(
         "Extract: index out of bounds".into(),
       ));
     }
+    (len + idx) as usize
+  } else {
+    return Err(InterpreterError::EvaluationError(
+      "Extract: position 0 is invalid".into(),
+    ));
+  };
 
-    result.push(evaluated[actual_idx].clone());
+  if actual_idx >= elements.len() {
+    return Err(InterpreterError::EvaluationError(
+      "Extract: index out of bounds".into(),
+    ));
   }
 
-  Ok(format!("{{{}}}", result.join(", ")))
+  Ok(elements[actual_idx].trim().to_string())
 }
 
 /// Handle Catenate[{list1, list2, ...}] - Flatten one level of lists
@@ -3276,4 +3275,178 @@ pub fn array_depth(
   }
 
   Ok(compute_depth(&expr).to_string())
+}
+
+/// Handle TakeWhile[list, pred] - Take elements from start while predicate is true
+pub fn take_while(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "TakeWhile expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let list_pair = &args_pairs[0];
+  let pred_pair = &args_pairs[1];
+
+  let items = crate::functions::list::get_list_items(list_pair)?;
+  let pred_src = pred_pair.as_str();
+  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
+    || (pred_src.contains('#') && pred_src.ends_with('&'));
+
+  let mut result = Vec::new();
+
+  for item in items {
+    let elem_str = evaluate_expression(item.clone())?;
+
+    let passes = if is_slot_pred {
+      let mut expr = pred_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem_str);
+      let res = interpret(&expr)?;
+      crate::functions::boolean::as_bool(&res).unwrap_or(false)
+    } else {
+      let expr = format!("{}[{}]", pred_src, elem_str);
+      match interpret(&expr) {
+        Ok(res) => crate::functions::boolean::as_bool(&res).unwrap_or(false),
+        Err(_) => false,
+      }
+    };
+
+    if passes {
+      result.push(elem_str);
+    } else {
+      break;
+    }
+  }
+
+  Ok(format!("{{{}}}", result.join(", ")))
+}
+
+/// Handle Apply[f, list] - Apply function to list elements as arguments
+/// Apply[f, {a, b, c}] -> f[a, b, c]
+pub fn apply(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Apply expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let list_pair = &args_pairs[1];
+
+  let func_src = func_pair.as_str();
+  let elements = get_list_elements(list_pair)?;
+
+  // Apply function to all elements as arguments
+  let expr = format!("{}[{}]", func_src, elements.join(", "));
+  interpret(&expr)
+}
+
+/// Handle Composition[f, g, h, ...][x] - Compose functions
+/// Composition[f, g][x] -> f[g[x]]
+pub fn composition(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Composition expects at least 1 argument".into(),
+    ));
+  }
+
+  // Collect function names/expressions
+  let funcs: Vec<String> =
+    args_pairs.iter().map(|p| p.as_str().to_string()).collect();
+
+  // Return a symbolic composition representation
+  Ok(format!("Composition[{}]", funcs.join(", ")))
+}
+
+/// Handle Identity[x] - Returns x unchanged
+pub fn identity(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Identity expects exactly 1 argument".into(),
+    ));
+  }
+
+  evaluate_expression(args_pairs[0].clone())
+}
+
+/// Handle Outer[f, list1, list2, ...] - Generalized outer product
+/// Outer[f, {a, b}, {x, y}] -> {{f[a, x], f[a, y]}, {f[b, x], f[b, y]}}
+pub fn outer(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Outer expects at least 3 arguments".into(),
+    ));
+  }
+
+  let func_pair = &args_pairs[0];
+  let func_src = func_pair.as_str();
+
+  // Get the first list
+  let list1 = get_list_elements(&args_pairs[1])?;
+
+  // Get the second list
+  let list2 = get_list_elements(&args_pairs[2])?;
+
+  // For two lists, compute outer product
+  let mut outer_result = Vec::new();
+
+  for elem1 in &list1 {
+    let mut row = Vec::new();
+    for elem2 in &list2 {
+      // Apply function
+      let val = apply_binary_function(func_src, elem1, elem2)?;
+      row.push(val);
+    }
+    outer_result.push(format!("{{{}}}", row.join(", ")));
+  }
+
+  Ok(format!("{{{}}}", outer_result.join(", ")))
+}
+
+/// Handle Inner[f, list1, list2, g] - Generalized inner product
+/// Inner[f, {a, b}, {x, y}, g] -> g[f[a, x], f[b, y]]
+/// Inner[Times, {a, b, c}, {x, y, z}, Plus] -> a*x + b*y + c*z (dot product)
+pub fn inner(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 4 {
+    return Err(InterpreterError::EvaluationError(
+      "Inner expects exactly 4 arguments".into(),
+    ));
+  }
+
+  let f_src = args_pairs[0].as_str();
+  let list1 = get_list_elements(&args_pairs[1])?;
+  let list2 = get_list_elements(&args_pairs[2])?;
+  let g_src = args_pairs[3].as_str();
+
+  if list1.len() != list2.len() {
+    return Err(InterpreterError::EvaluationError(
+      "Inner: lists must have the same length".into(),
+    ));
+  }
+
+  // Compute f[list1[i], list2[i]] for each i
+  let mut products = Vec::new();
+  for (e1, e2) in list1.iter().zip(list2.iter()) {
+    let val = apply_binary_function(f_src, e1, e2)?;
+    products.push(val);
+  }
+
+  // Apply g to all products
+  if products.is_empty() {
+    // Return appropriate identity for g
+    if g_src == "Plus" {
+      return Ok("0".to_string());
+    } else if g_src == "Times" {
+      return Ok("1".to_string());
+    }
+    return Ok(format!("{}[]", g_src));
+  }
+
+  // For Plus and Times, apply directly
+  let expr = format!("{}[{}]", g_src, products.join(", "));
+  interpret(&expr)
 }
