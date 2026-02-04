@@ -245,16 +245,39 @@ fn parse_list_string(s: &str) -> Option<Vec<String>> {
 }
 
 fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
-  // FunctionDefinition  :=  Identifier "[" Pattern "]" ":=" Expression
+  // FunctionDefinition  :=  Identifier "[" (Pattern ("," Pattern)*)? "]" ":=" Expression
   let mut inner = pair.into_inner();
   let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
-  let pattern = inner.next().unwrap(); // Pattern
-  let param = pattern.as_str().trim_end_matches('_').to_owned();
-  let body_pair = inner.next().unwrap(); // Expression
-  let body_txt = body_pair.as_str().to_owned();
+
+  // Collect all pattern parameters
+  let mut params = Vec::new();
+  let mut body_pair = None;
+
+  for item in inner {
+    match item.as_rule() {
+      Rule::PatternSimple | Rule::PatternTest | Rule::PatternCondition => {
+        // Extract parameter name from pattern (e.g., "x_" -> "x")
+        let param = item.as_str().trim_end_matches('_').to_owned();
+        // Handle PatternTest and PatternCondition by taking just the name part
+        let param = param.split('_').next().unwrap_or(&param).to_owned();
+        params.push(param);
+      }
+      Rule::Expression => {
+        body_pair = Some(item);
+      }
+      _ => {}
+    }
+  }
+
+  let body_txt = body_pair
+    .ok_or_else(|| {
+      InterpreterError::EvaluationError("Missing function body".into())
+    })?
+    .as_str()
+    .to_owned();
 
   FUNC_DEFS.with(|m| {
-    m.borrow_mut().insert(func_name, (vec![param], body_txt));
+    m.borrow_mut().insert(func_name, (params, body_txt));
   });
   Ok(())
 }
@@ -420,10 +443,11 @@ fn apply_map_operator(
       }
       Ok(format!("{{{}}}", out.join(", ")))
     }
-    Rule::AnonymousFunction => {
-      // Anonymous function like #^2& or #+1&
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction => {
+      // Anonymous function like #^2& or #+1& or If[#>0,#,0]&
       // Replace # with each element and evaluate
-      let body = func_src.trim_end_matches('&');
+      // Note: trim() first to remove any trailing whitespace that pest may include
+      let body = func_src.trim().trim_end_matches('&');
       for el in &elements_strings {
         let expr = body.replace('#', el);
         out.push(interpret(&expr)?);
