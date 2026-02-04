@@ -31,8 +31,11 @@ pub fn map_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     let mut mapped_pairs = Vec::new();
 
     for (key, value) in assoc {
-      let mapped_val = if func_pair.as_rule() == Rule::AnonymousFunction
-        || (func_src.contains('#') && func_src.ends_with('&'))
+      let mapped_val = if matches!(
+        func_pair.as_rule(),
+        Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+      ) || (func_src.contains('#')
+        && func_src.ends_with('&'))
       {
         // Handle anonymous functions like #^2&
         let mut expr = func_src.trim_end_matches('&').to_string();
@@ -201,8 +204,10 @@ pub fn all_true(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   // ---------- identify predicate --------------------------------------
   let pred_pair = &args_pairs[1];
   let pred_src = pred_pair.as_str();
-  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
-    || (pred_src.contains('#') && pred_src.ends_with('&'));
+  let is_slot_pred = matches!(
+    pred_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (pred_src.contains('#') && pred_src.ends_with('&'));
 
   // ---------- test every element --------------------------------------
   for elem_str in elements {
@@ -285,8 +290,10 @@ pub fn any_true(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   let pred_pair = &args_pairs[1];
   let pred_src = pred_pair.as_str();
-  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
-    || (pred_src.contains('#') && pred_src.ends_with('&'));
+  let is_slot_pred = matches!(
+    pred_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (pred_src.contains('#') && pred_src.ends_with('&'));
 
   for elem_str in elements {
     let passes = if is_slot_pred {
@@ -361,8 +368,10 @@ pub fn none_true(
 
   let pred_pair = &args_pairs[1];
   let pred_src = pred_pair.as_str();
-  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
-    || (pred_src.contains('#') && pred_src.ends_with('&'));
+  let is_slot_pred = matches!(
+    pred_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (pred_src.contains('#') && pred_src.ends_with('&'));
 
   for elem_str in elements {
     let passes = if is_slot_pred {
@@ -426,8 +435,10 @@ pub fn select(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   // ----- identify predicate -------------------------------------------
   let pred_pair = &args_pairs[1];
   let pred_src = pred_pair.as_str();
-  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
-    || (pred_src.contains('#') && pred_src.ends_with('&'));
+  let is_slot_pred = matches!(
+    pred_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (pred_src.contains('#') && pred_src.ends_with('&'));
 
   // ----- filter --------------------------------------------------------
   let mut kept = Vec::new();
@@ -2446,8 +2457,10 @@ pub fn map_indexed(
   };
 
   let func_src = func_pair.as_str();
-  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
-    || (func_src.contains('#') && func_src.ends_with('&'));
+  let is_slot_func = matches!(
+    func_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (func_src.contains('#') && func_src.ends_with('&'));
 
   let mut mapped = Vec::new();
 
@@ -2493,8 +2506,10 @@ pub fn fixed_point(
 
   let func_pair = &args_pairs[0];
   let func_src = func_pair.as_str();
-  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
-    || (func_src.contains('#') && func_src.ends_with('&'));
+  let is_slot_func = matches!(
+    func_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (func_src.contains('#') && func_src.ends_with('&'));
 
   // Get initial value
   let mut current = evaluate_expression(args_pairs[1].clone())?;
@@ -2544,8 +2559,10 @@ pub fn fixed_point_list(
 
   let func_pair = &args_pairs[0];
   let func_src = func_pair.as_str();
-  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
-    || (func_src.contains('#') && func_src.ends_with('&'));
+  let is_slot_func = matches!(
+    func_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (func_src.contains('#') && func_src.ends_with('&'));
 
   // Get initial value
   let mut current = evaluate_expression(args_pairs[1].clone())?;
@@ -2638,8 +2655,10 @@ pub fn scan(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   };
 
   let func_src = func_pair.as_str();
-  let is_slot_func = func_pair.as_rule() == Rule::AnonymousFunction
-    || (func_src.contains('#') && func_src.ends_with('&'));
+  let is_slot_func = matches!(
+    func_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (func_src.contains('#') && func_src.ends_with('&'));
 
   // Apply function to each element (for side effects)
   for elem in elements {
@@ -3292,8 +3311,10 @@ pub fn take_while(
 
   let items = crate::functions::list::get_list_items(list_pair)?;
   let pred_src = pred_pair.as_str();
-  let is_slot_pred = pred_pair.as_rule() == Rule::AnonymousFunction
-    || (pred_src.contains('#') && pred_src.ends_with('&'));
+  let is_slot_pred = matches!(
+    pred_pair.as_rule(),
+    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+  ) || (pred_src.contains('#') && pred_src.ends_with('&'));
 
   let mut result = Vec::new();
 
