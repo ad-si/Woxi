@@ -11,6 +11,7 @@ use crate::{
 enum SymbolicTerm {
   Numeric(f64),
   Symbol(String),
+  List(Vec<String>), // For threading arithmetic over lists
 }
 
 /// Try to evaluate a term, returning either a numeric value or a symbolic term
@@ -89,6 +90,15 @@ fn try_evaluate_term(
           Ok(SymbolicTerm::Symbol(id.to_string()))
         }
       }
+    }
+    Rule::List => {
+      // Parse list and return as SymbolicTerm::List for threading
+      let items: Vec<String> = term
+        .into_inner()
+        .filter(|item| item.as_str() != ",")
+        .map(|item| evaluate_expression(item))
+        .collect::<Result<_, _>>()?;
+      Ok(SymbolicTerm::List(items))
     }
     _ => {
       // Fall back to numeric evaluation for other cases
@@ -350,6 +360,11 @@ pub fn evaluate_pairs(
           SymbolicTerm::Symbol(s) => {
             all_numeric = false;
             symbolic_factors.push(s);
+          }
+          SymbolicTerm::List(items) => {
+            // Format list as a symbol for symbolic multiplication
+            all_numeric = false;
+            symbolic_factors.push(format!("{{{}}}", items.join(", ")));
           }
         }
       }
@@ -881,6 +896,62 @@ pub fn evaluate_pairs(
         terms.push(try_evaluate_term(term)?);
       }
 
+      // Check if any term is a list - if so, thread the operation
+      let has_list = terms.iter().any(|t| matches!(t, SymbolicTerm::List(_)));
+
+      if has_list {
+        // Thread arithmetic operations over lists
+        // Find the list length (all lists must have the same length)
+        let mut list_len: Option<usize> = None;
+        for term in &terms {
+          if let SymbolicTerm::List(items) = term {
+            match list_len {
+              None => list_len = Some(items.len()),
+              Some(len) if len != items.len() => {
+                return Err(InterpreterError::EvaluationError(
+                  "Lists have incompatible shapes".into(),
+                ));
+              }
+              _ => {}
+            }
+          }
+        }
+
+        let len = list_len.unwrap();
+        let mut results = Vec::with_capacity(len);
+
+        for i in 0..len {
+          // Build expression for this index
+          let mut expr_parts: Vec<String> = Vec::new();
+
+          // First term
+          let first_val = match &terms[0] {
+            SymbolicTerm::Numeric(v) => format_result(*v),
+            SymbolicTerm::Symbol(s) => s.clone(),
+            SymbolicTerm::List(items) => items[i].clone(),
+          };
+          expr_parts.push(first_val);
+
+          // Remaining terms with operators
+          for (j, op) in ops.iter().enumerate() {
+            let val = match &terms[j + 1] {
+              SymbolicTerm::Numeric(v) => format_result(*v),
+              SymbolicTerm::Symbol(s) => s.clone(),
+              SymbolicTerm::List(items) => items[i].clone(),
+            };
+            expr_parts.push((*op).to_string());
+            expr_parts.push(val);
+          }
+
+          // Evaluate the expression for this index
+          let sub_expr = expr_parts.join(" ");
+          let result = interpret(&sub_expr)?;
+          results.push(result);
+        }
+
+        return Ok(format!("{{{}}}", results.join(", ")));
+      }
+
       // Check if all terms are numeric - if so, use pure numeric evaluation
       let all_numeric =
         terms.iter().all(|t| matches!(t, SymbolicTerm::Numeric(_)));
@@ -957,6 +1028,7 @@ pub fn evaluate_pairs(
         match &terms[0] {
           SymbolicTerm::Numeric(v) => numeric_sum += v,
           SymbolicTerm::Symbol(s) => symbolic_terms.push((1, s.clone())),
+          SymbolicTerm::List(_) => unreachable!(), // Lists are handled above
         }
 
         // Process remaining terms with their operators
@@ -973,6 +1045,7 @@ pub fn evaluate_pairs(
             SymbolicTerm::Symbol(s) => {
               symbolic_terms.push((sign, s.clone()));
             }
+            SymbolicTerm::List(_) => unreachable!(), // Lists are handled above
           }
         }
 
@@ -1012,6 +1085,7 @@ pub fn evaluate_pairs(
         .map(|t| match t {
           SymbolicTerm::Numeric(v) => *v,
           SymbolicTerm::Symbol(_) => 0.0, // Treat unknown symbols as 0 for complex ops
+          SymbolicTerm::List(_) => unreachable!(), // Lists are handled above
         })
         .collect();
 
