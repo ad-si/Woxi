@@ -33,7 +33,16 @@ test-cli-wolframscript: install
 
 .PHONY: test-shebang
 test-shebang: install
-	test "$$(./tests/scripts/hello_world.wls)" == 'Hello World!'
+	test "$$(./tests/woxi/hello_world.wls)" == 'Hello World!'
+
+
+.PHONY: test-scripts
+test-scripts: install
+	@for script in tests/scripts/[!_]*.wls; do \
+		echo "Running $$script..."; \
+		woxi "$$script" > /dev/null || exit 1; \
+	done
+	@echo "All scripts executed successfully."
 
 
 .PHONY: test
