@@ -57,7 +57,7 @@ pub fn string_drop(
   Ok(dropped)
 }
 
-/// Handle StringJoin[s1, s2, ...] - concatenates multiple strings
+/// Handle StringJoin[s1, s2, ...] or StringJoin[{s1, s2, ...}] - concatenates multiple strings
 pub fn string_join(
   args_pairs: &[Pair<Rule>],
 ) -> Result<String, InterpreterError> {
@@ -66,11 +66,84 @@ pub fn string_join(
       "StringJoin expects at least 1 argument".into(),
     ));
   }
+
   let mut joined = String::new();
+
+  // Check if the single argument is a list
+  if args_pairs.len() == 1 {
+    let arg = &args_pairs[0];
+    // Check if it's syntactically a list
+    if arg.as_rule() == Rule::List {
+      // It's a list - join its elements
+      for item in arg.clone().into_inner() {
+        joined.push_str(&extract_string(item)?);
+      }
+      return Ok(joined);
+    }
+    // Check if it's an Expression wrapping a list
+    if arg.as_rule() == Rule::Expression {
+      let inner: Vec<_> = arg.clone().into_inner().collect();
+      if inner.len() == 1 && inner[0].as_rule() == Rule::List {
+        for item in inner[0].clone().into_inner() {
+          joined.push_str(&extract_string(item)?);
+        }
+        return Ok(joined);
+      }
+    }
+    // It might evaluate to a list - try evaluating it
+    let result = crate::evaluate_expression(arg.clone())?;
+    if result.starts_with('{') && result.ends_with('}') {
+      // Parse the list elements from the string representation
+      let inner = &result[1..result.len() - 1];
+      if inner.is_empty() {
+        return Ok(String::new());
+      }
+      // Parse list elements, handling quoted strings
+      let elements = parse_list_elements(inner);
+      for elem in elements {
+        let elem = elem.trim();
+        // Remove quotes from string elements
+        if elem.starts_with('"') && elem.ends_with('"') && elem.len() >= 2 {
+          joined.push_str(&elem[1..elem.len() - 1]);
+        } else {
+          joined.push_str(elem);
+        }
+      }
+      return Ok(joined);
+    }
+  }
+
+  // Multiple arguments - join them all
   for ap in args_pairs {
     joined.push_str(&extract_string(ap.clone())?);
   }
   Ok(joined)
+}
+
+/// Parse list elements from a string, handling nested structures and quoted strings
+fn parse_list_elements(s: &str) -> Vec<&str> {
+  let mut elements = Vec::new();
+  let mut depth = 0;
+  let mut in_string = false;
+  let mut start = 0;
+
+  for (i, c) in s.char_indices() {
+    match c {
+      '"' if depth == 0 => in_string = !in_string,
+      '{' | '<' if !in_string => depth += 1,
+      '}' | '>' if !in_string => depth -= 1,
+      ',' if depth == 0 && !in_string => {
+        elements.push(&s[start..i]);
+        start = i + 1;
+      }
+      _ => {}
+    }
+  }
+  // Add the last element
+  if start < s.len() {
+    elements.push(&s[start..]);
+  }
+  elements
 }
 
 /// Handle StringSplit[s, delim] - splits a string by a delimiter

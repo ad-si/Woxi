@@ -135,10 +135,7 @@ mod interpreter_tests {
     #[test]
     fn postfix_with_function_call() {
       // x // Map[f] is equivalent to Map[f][x] which is Map[f, x]
-      assert_eq!(
-        interpret("{1, 4, 9} // Map[Sqrt]").unwrap(),
-        "{1, 2, 3}"
-      );
+      assert_eq!(interpret("{1, 4, 9} // Map[Sqrt]").unwrap(), "{1, 2, 3}");
     }
 
     #[test]
@@ -167,7 +164,10 @@ mod interpreter_tests {
       fn simple_blank_matches_any() {
         // x_ matches any expression
         assert_eq!(interpret("5 /. x_ :> 10").unwrap(), "10");
-        assert_eq!(interpret("\"hello\" /. x_ :> \"world\"").unwrap(), "\"world\"");
+        assert_eq!(
+          interpret("\"hello\" /. x_ :> \"world\"").unwrap(),
+          "\"world\""
+        );
       }
 
       #[test]
@@ -234,10 +234,7 @@ mod interpreter_tests {
 
       #[test]
       fn pattern_test_matches() {
-        assert_eq!(
-          interpret("4 /. x_?EvenQ :> \"even\"").unwrap(),
-          "\"even\""
-        );
+        assert_eq!(interpret("4 /. x_?EvenQ :> \"even\"").unwrap(), "\"even\"");
       }
 
       #[test]
@@ -269,7 +266,10 @@ mod interpreter_tests {
       fn list_of_rules_applied_in_order() {
         // First matching rule wins
         assert_eq!(
-          interpret("{1, 2, 3} /. {x_ /; x == 1 :> \"one\", x_ /; x == 2 :> \"two\"}").unwrap(),
+          interpret(
+            "{1, 2, 3} /. {x_ /; x == 1 :> \"one\", x_ /; x == 2 :> \"two\"}"
+          )
+          .unwrap(),
           "{\"one\", \"two\", 3}"
         );
       }
@@ -294,6 +294,189 @@ mod interpreter_tests {
           "7"
         );
       }
+    }
+  }
+
+  mod divisible {
+    use super::*;
+
+    #[test]
+    fn divisible_true() {
+      assert_eq!(interpret("Divisible[10, 2]").unwrap(), "True");
+      assert_eq!(interpret("Divisible[15, 3]").unwrap(), "True");
+      assert_eq!(interpret("Divisible[15, 5]").unwrap(), "True");
+      assert_eq!(interpret("Divisible[100, 10]").unwrap(), "True");
+    }
+
+    #[test]
+    fn divisible_false() {
+      assert_eq!(interpret("Divisible[10, 3]").unwrap(), "False");
+      assert_eq!(interpret("Divisible[7, 2]").unwrap(), "False");
+      assert_eq!(interpret("Divisible[11, 5]").unwrap(), "False");
+    }
+
+    #[test]
+    fn divisible_by_one() {
+      assert_eq!(interpret("Divisible[5, 1]").unwrap(), "True");
+      assert_eq!(interpret("Divisible[0, 1]").unwrap(), "True");
+    }
+
+    #[test]
+    fn divisible_zero() {
+      assert_eq!(interpret("Divisible[0, 5]").unwrap(), "True");
+    }
+
+    #[test]
+    fn divisible_non_integer() {
+      assert_eq!(interpret("Divisible[5.5, 2]").unwrap(), "False");
+      assert_eq!(interpret("Divisible[10, 2.5]").unwrap(), "False");
+    }
+
+    #[test]
+    fn divisible_division_by_zero() {
+      assert!(interpret("Divisible[5, 0]").is_err());
+    }
+  }
+
+  mod paren_anonymous_function {
+    use super::*;
+
+    #[test]
+    fn paren_anonymous_with_comparison() {
+      // (# === "")& is an anonymous function testing for empty string
+      // Uses postfix @ operator since direct call syntax is not supported
+      assert_eq!(interpret("(# === \"\")& @ \"hello\"").unwrap(), "False");
+      assert_eq!(interpret("(# === \"\")& @ \"\"").unwrap(), "True");
+    }
+
+    #[test]
+    fn paren_anonymous_with_arithmetic() {
+      assert_eq!(interpret("(# + 1)& @ 5").unwrap(), "6");
+      assert_eq!(interpret("(# * 2 + 3)& @ 4").unwrap(), "11");
+    }
+
+    #[test]
+    fn paren_anonymous_in_map() {
+      assert_eq!(interpret("Map[(# + 1)&, {1, 2, 3}]").unwrap(), "{2, 3, 4}");
+    }
+
+    #[test]
+    fn paren_anonymous_with_if() {
+      assert_eq!(interpret("(If[# > 0, #, 0])& @ 5").unwrap(), "5");
+      assert_eq!(interpret("(If[# > 0, #, 0])& @ -3").unwrap(), "0");
+    }
+
+    #[test]
+    fn paren_anonymous_in_postfix() {
+      // If[# === "", i, #]& @ "hello" should return "hello"
+      assert_eq!(
+        interpret("(If[# === \"\", \"empty\", #])& @ \"hello\"").unwrap(),
+        "\"hello\""
+      );
+      assert_eq!(
+        interpret("(If[# === \"\", \"empty\", #])& @ \"\"").unwrap(),
+        "\"empty\""
+      );
+    }
+  }
+
+  mod table_with_list_iterator {
+    use super::*;
+
+    #[test]
+    fn table_iterate_over_list() {
+      // Table[expr, {x, {a, b, c}}] iterates x over the list elements
+      assert_eq!(
+        interpret("Table[x^2, {x, {1, 2, 3}}]").unwrap(),
+        "{1, 4, 9}"
+      );
+    }
+
+    #[test]
+    fn table_iterate_over_nested_list() {
+      // Iterate over list of pairs
+      assert_eq!(
+        interpret("Table[First[pair], {pair, {{1, 2}, {3, 4}, {5, 6}}}]")
+          .unwrap(),
+        "{1, 3, 5}"
+      );
+    }
+
+    #[test]
+    fn table_iterate_over_strings() {
+      assert_eq!(
+        interpret("Table[StringLength[s], {s, {\"a\", \"bb\", \"ccc\"}}]")
+          .unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+  }
+
+  mod string_join_with_list {
+    use super::*;
+
+    #[test]
+    fn string_join_list_of_strings() {
+      assert_eq!(
+        interpret("StringJoin[{\"a\", \"b\", \"c\"}]").unwrap(),
+        "abc"
+      );
+    }
+
+    #[test]
+    fn string_join_empty_list() {
+      assert_eq!(interpret("StringJoin[{}]").unwrap(), "");
+    }
+
+    #[test]
+    fn string_join_multiple_args() {
+      assert_eq!(
+        interpret("StringJoin[\"hello\", \" \", \"world\"]").unwrap(),
+        "hello world"
+      );
+    }
+
+    #[test]
+    fn string_join_with_table_result() {
+      // StringJoin with a Table that returns strings
+      assert_eq!(
+        interpret("StringJoin[Table[\"x\", {i, 3}]]").unwrap(),
+        "xxx"
+      );
+    }
+  }
+
+  mod postfix_with_anonymous_function {
+    use super::*;
+
+    #[test]
+    fn postfix_at_with_simple_anonymous() {
+      assert_eq!(interpret("#^2& @ 3").unwrap(), "9");
+      assert_eq!(interpret("#+1& @ 5").unwrap(), "6");
+    }
+
+    #[test]
+    fn postfix_at_with_function_anonymous() {
+      assert_eq!(interpret("Sqrt[#]& @ 16").unwrap(), "4");
+    }
+
+    #[test]
+    fn postfix_at_with_string_result() {
+      // Anonymous function that returns a string
+      assert_eq!(
+        interpret("If[# > 0, \"positive\", \"non-positive\"]& @ 5").unwrap(),
+        "\"positive\""
+      );
+      assert_eq!(
+        interpret("If[# > 0, \"positive\", \"non-positive\"]& @ -3").unwrap(),
+        "\"non-positive\""
+      );
+    }
+
+    #[test]
+    fn postfix_at_preserves_string_arg() {
+      // When the argument is a string, it should be preserved
+      assert_eq!(interpret("StringLength[#]& @ \"hello\"").unwrap(), "5");
     }
   }
 }
