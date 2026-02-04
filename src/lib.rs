@@ -336,96 +336,78 @@ fn apply_map_operator(
   };
 
   // ----- obtain list items (same extraction logic used in Map) -----
+  // First, try to get the list directly from the parse tree
   let list_rule = list.as_rule();
-  let elements: Vec<_> = if list_rule == Rule::List {
-    list.into_inner().filter(|p| p.as_str() != ",").collect()
+  let direct_elements: Option<Vec<_>> = if list_rule == Rule::List {
+    Some(
+      list
+        .clone()
+        .into_inner()
+        .filter(|p| p.as_str() != ",")
+        .collect(),
+    )
   } else if list_rule == Rule::Expression {
-    let mut inner = list.into_inner();
+    let mut inner = list.clone().into_inner();
     if let Some(first) = inner.next() {
       if first.as_rule() == Rule::List {
-        first.into_inner().filter(|p| p.as_str() != ",").collect()
+        Some(first.into_inner().filter(|p| p.as_str() != ",").collect())
       } else {
-        return Err(InterpreterError::EvaluationError(
-          "Second operand of /@ must be a list".into(),
-        ));
+        None
       }
+    } else {
+      None
+    }
+  } else {
+    None
+  };
+
+  // If we couldn't get elements directly, evaluate the expression and parse the result
+  let elements_strings: Vec<String> = if let Some(elems) = direct_elements {
+    elems.iter().map(|p| p.as_str().to_string()).collect()
+  } else {
+    // Evaluate the right operand (e.g., Range[99,1,-1]) to get a list string
+    let list_str = evaluate_expression(list)?;
+    if list_str.starts_with('{') && list_str.ends_with('}') {
+      parse_list_string(&list_str).ok_or_else(|| {
+        InterpreterError::EvaluationError("Failed to parse list".into())
+      })?
     } else {
       return Err(InterpreterError::EvaluationError(
         "Second operand of /@ must be a list".into(),
       ));
     }
-  } else {
-    return Err(InterpreterError::EvaluationError(
-      "Second operand of /@ must be a list".into(),
-    ));
   };
 
   // ----- identify mapped function ----------------------------------
+  let func_src = func_core.as_str();
+  let mut out = Vec::new();
+
   match func_core.as_rule() {
     Rule::Identifier => {
-      let name = func_core.as_str();
-      match name {
-        "Sign" => {
-          let mut mapped = Vec::new();
-          for el in elements {
-            let v = evaluate_term(el.clone())?;
-            let s = if v > 0.0 {
-              1.0
-            } else if v < 0.0 {
-              -1.0
-            } else {
-              0.0
-            };
-            mapped.push(format_result(s));
-          }
-          Ok(format!("{{{}}}", mapped.join(", ")))
-        }
-        _ => Err(InterpreterError::EvaluationError(format!(
-          "Unknown mapping function: {}",
-          name
-        ))),
+      // Named function: apply f[elem] for each element
+      let name = func_src;
+      for el in &elements_strings {
+        let expr = format!("{}[{}]", name, el);
+        out.push(interpret(&expr)?);
       }
+      Ok(format!("{{{}}}", out.join(", ")))
     }
     Rule::AnonymousFunction => {
-      let parts: Vec<_> = func_core.clone().into_inner().collect();
-
-      // identity function  (#&)
-      if parts.len() == 1 {
-        let mut out = Vec::new();
-        for el in &elements {
-          out.push(evaluate_expression(el.clone())?);
-        }
-        return Ok(format!("{{{}}}", out.join(", ")));
+      // Anonymous function like #^2& or #+1&
+      // Replace # with each element and evaluate
+      let body = func_src.trim_end_matches('&');
+      for el in &elements_strings {
+        let expr = body.replace('#', el);
+        out.push(interpret(&expr)?);
       }
-
-      let operator = parts[1].as_str();
-      let operand = parts[2].clone();
-      let mut out = Vec::new();
-
-      for el in elements {
-        let v = evaluate_term(el.clone())?;
-        let res = match operator {
-          "+" => v + evaluate_term(operand.clone())?,
-          "-" => v - evaluate_term(operand.clone())?,
-          "*" => v * evaluate_term(operand.clone())?,
-          "/" => {
-            let d = evaluate_term(operand.clone())?;
-            if d == 0.0 {
-              return Err(InterpreterError::EvaluationError(
-                "Division by zero".into(),
-              ));
-            }
-            v / d
-          }
-          "^" => v.powf(evaluate_term(operand.clone())?),
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Unsupported operator in anonymous function: {}",
-              operator
-            )));
-          }
-        };
-        out.push(format_result(res));
+      Ok(format!("{{{}}}", out.join(", ")))
+    }
+    Rule::FunctionCall => {
+      // Function call being used as a mapping function
+      // Apply f[elem] for each element
+      for el in &elements_strings {
+        let expr = format!("{}[{}]", func_src, el);
+        out.push(interpret(&expr)?);
       }
       Ok(format!("{{{}}}", out.join(", ")))
     }

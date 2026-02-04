@@ -524,6 +524,33 @@ pub fn evaluate_pairs(
           return Ok(result);
         }
 
+        // Handle <> (StringJoin) operator: s1 <> s2 <> s3 -> StringJoin[s1, s2, s3]
+        let all_string_join = items.len() >= 3
+          && items.len() % 2 == 1
+          && items
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|p| p.as_rule() == Rule::Operator && p.as_str() == "<>");
+
+        if all_string_join {
+          // Collect all terms (skip the operators)
+          let terms: Vec<_> = items.iter().step_by(2).cloned().collect();
+          // Evaluate each term and build a StringJoin call
+          let mut args: Vec<String> = Vec::new();
+          for term in terms {
+            let evaluated = evaluate_expression(term)?;
+            // Preserve quotes for string arguments
+            if evaluated.starts_with('"') && evaluated.ends_with('"') {
+              args.push(evaluated);
+            } else {
+              args.push(format!("\"{}\"", evaluated));
+            }
+          }
+          let expr = format!("StringJoin[{}]", args.join(", "));
+          return interpret(&expr);
+        }
+
         if items.len() == 3
           && items[1].as_rule() == Rule::Operator
           && items[1].as_str() == "/@"
