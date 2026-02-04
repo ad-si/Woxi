@@ -39,12 +39,19 @@ Operator = {
   | "=" | "@"
 }
 
-PostfixApplication = { Term ~ ("//" ~ Identifier)+ }
+// PostfixFunction: function used in postfix application (x // f or x // Map[f])
+// Uses BaseFunctionCall to avoid circular reference with FunctionCall -> FunctionArg -> Expression -> PostfixApplication
+PostfixFunction = { BaseFunctionCall | Identifier }
+
+// PostfixApplication: term // f or (expr /. ...) // f
+// PostfixBase is what can appear before //
+PostfixBase = { ReplaceRepeatedExpr | ReplaceAllExpr | Term }
+PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
 
-Expression = { ReplaceRepeatedExpr | ReplaceAllExpr | PostfixApplication | Term ~ (Operator ~ Term)* }
+Expression = { PostfixApplication | ReplaceRepeatedExpr | ReplaceAllExpr | Term ~ (Operator ~ Term)* }
 
 // CompoundExpression: multiple expressions separated by ;
 // The result is the value of the last expression (like Wolfram's CompoundExpression)

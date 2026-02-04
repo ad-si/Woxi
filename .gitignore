@@ -1,6 +1,6 @@
-.aider*
-.direnv
-.env
-*-checkpoint.ipynb
-target
-tests/book
+/.direnv
+/.env
+/*-checkpoint.ipynb
+/target
+/tests/book
+/tests/scripts/_*
