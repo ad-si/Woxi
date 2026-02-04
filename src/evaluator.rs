@@ -260,44 +260,78 @@ pub fn evaluate_pairs(
     Rule::PostfixApplication => {
       // Chained postfix: x // f // g -> g[f[x]]
       let inner: Vec<_> = expr.into_inner().collect();
-      // First item is the argument, rest are function identifiers
-      let arg = inner[0].clone();
-      let mut result = evaluate_expression(arg)?;
+      // First item is PostfixBase, rest are PostfixFunction (Identifier or BaseFunctionCall)
+      let base_expr = inner[0].clone();
+      let mut result = evaluate_pairs(base_expr)?;
 
       // Apply functions left-to-right
-      for func in inner.iter().skip(1) {
-        if func.as_rule() == Rule::Identifier {
-          let func_name = func.as_str();
-          let expr_str = format!("{}[{}]", func_name, result);
-          result = interpret(&expr_str)?;
-        } else {
-          return Err(InterpreterError::EvaluationError(
-            "Right operand of // must be a function".into(),
-          ));
+      for postfix_func in inner.iter().skip(1) {
+        // PostfixFunction contains either Identifier or BaseFunctionCall
+        let func = postfix_func.clone().into_inner().next().unwrap();
+        match func.as_rule() {
+          Rule::Identifier => {
+            let func_name = func.as_str();
+            let expr_str = format!("{}[{}]", func_name, result);
+            result = interpret(&expr_str)?;
+          }
+          Rule::BaseFunctionCall => {
+            // For BaseFunctionCall like Map[Print], we need to apply it to the result
+            // e.g., x // Map[Print] becomes Map[Print][x]
+            let func_str = func.as_str();
+            let expr_str = format!("{}[{}]", func_str, result);
+            result = interpret(&expr_str)?;
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(
+              "Right operand of // must be a function".into(),
+            ));
+          }
         }
       }
       Ok(result)
+    }
+    Rule::PostfixBase => {
+      // PostfixBase wraps ReplaceRepeatedExpr, ReplaceAllExpr, or Term
+      let inner = expr.into_inner().next().unwrap();
+      evaluate_expression(inner)
     }
     Rule::NumericValue => {
       // numeric literal directly inside an expression (e.g. x == 2)
       evaluate_term(expr).map(format_result)
     }
     Rule::ReplaceAllExpr => {
-      // expr /. pattern -> replacement
+      // expr /. pattern -> replacement OR expr /. {rule1, rule2, ...}
       let mut inner = expr.into_inner();
       let expr_term = inner.next().unwrap();
-      let rule_pair = inner.next().unwrap(); // ReplacementRule
+      let rule_pair = inner.next().unwrap(); // ReplacementRule or List
 
       // Get the expression to transform (try to evaluate, but use as-is if it fails)
       let expr_str = evaluate_expression(expr_term.clone())
         .unwrap_or_else(|_| expr_term.as_str().to_string());
 
-      // Extract pattern and replacement from the rule
-      let mut rule_inner = rule_pair.into_inner();
-      let pattern = rule_inner.next().unwrap().as_str().trim().to_string();
-      let replacement = rule_inner.next().unwrap().as_str().trim().to_string();
-
-      apply_replace_all_direct(&expr_str, &pattern, &replacement)
+      // Check if we have a list of rules or a single rule
+      if rule_pair.as_rule() == Rule::List {
+        // Multiple replacement rules - apply them in order
+        let mut result = expr_str;
+        for item in rule_pair.into_inner() {
+          if item.as_rule() == Rule::ReplacementRule {
+            let mut rule_inner = item.into_inner();
+            let pattern =
+              rule_inner.next().unwrap().as_str().trim().to_string();
+            let replacement =
+              rule_inner.next().unwrap().as_str().trim().to_string();
+            result = apply_replace_all_direct(&result, &pattern, &replacement)?;
+          }
+        }
+        Ok(result)
+      } else {
+        // Single replacement rule
+        let mut rule_inner = rule_pair.into_inner();
+        let pattern = rule_inner.next().unwrap().as_str().trim().to_string();
+        let replacement =
+          rule_inner.next().unwrap().as_str().trim().to_string();
+        apply_replace_all_direct(&expr_str, &pattern, &replacement)
+      }
     }
     Rule::ReplaceRepeatedExpr => {
       // expr //. pattern -> replacement
@@ -480,6 +514,8 @@ pub fn evaluate_pairs(
             Rule::PartExtract => return evaluate_expression(first),
             Rule::ReplaceAllExpr => return evaluate_pairs(first),
             Rule::ReplaceRepeatedExpr => return evaluate_pairs(first),
+            Rule::PostfixApplication => return evaluate_pairs(first),
+            Rule::PostfixBase => return evaluate_pairs(first),
             Rule::List => return evaluate_expression(first),
             Rule::Identifier => {
               let id = first.as_str();
@@ -1531,7 +1567,7 @@ pub fn evaluate_term(
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
       })
     }
-    Rule::PostfixApplication => {
+    Rule::PostfixApplication | Rule::PostfixBase => {
       // Evaluate as expression and convert to number
       evaluate_expression(term).and_then(|s| {
         s.parse::<f64>()
@@ -1581,9 +1617,58 @@ pub fn evaluate_function_call(
   let mut inner = func_call.into_inner();
   let func_name_pair = inner.next().unwrap();
 
-  // Handle chained function calls like ReplaceRepeated[rule][expr]
+  // Handle chained function calls like ReplaceRepeated[rule][expr] or Map[f][list]
   if is_chained && func_name_pair.as_rule() == Rule::Identifier {
     let func_name = func_name_pair.as_str();
+
+    // For Map, handle the curried form: Map[f][list] -> Map[f, list]
+    if func_name == "Map" {
+      // Parse the argument groups from the source text
+      let mut depth = 0;
+      let mut groups: Vec<String> = Vec::new();
+      let mut current = String::new();
+      let mut in_args = false;
+
+      // Skip the function name
+      let after_name = &func_call_str[func_name.len()..];
+
+      for c in after_name.chars() {
+        match c {
+          '[' => {
+            if depth == 0 {
+              in_args = true;
+              current.clear();
+            } else {
+              current.push(c);
+            }
+            depth += 1;
+          }
+          ']' => {
+            depth -= 1;
+            if depth == 0 && in_args {
+              groups.push(current.clone());
+              in_args = false;
+            } else {
+              current.push(c);
+            }
+          }
+          _ => {
+            if in_args {
+              current.push(c);
+            }
+          }
+        }
+      }
+
+      if groups.len() >= 2 {
+        let func_arg = groups[0].trim();
+        let list_arg = groups[1].trim();
+
+        // Build the standard Map[f, list] call
+        let map_call = format!("Map[{}, {}]", func_arg, list_arg);
+        return interpret(&map_call);
+      }
+    }
 
     // For ReplaceRepeated, we need to handle the curried form specially
     if func_name == "ReplaceRepeated" {
@@ -2485,13 +2570,211 @@ fn replace_in_expr(expr: &str, pattern: &str, replacement: &str) -> String {
   }
 }
 
+/// Check if a pattern is a Wolfram blank pattern (x_, x_?test, x_ /; cond)
+fn parse_wolfram_pattern(pattern: &str) -> Option<WolframPattern> {
+  let pattern = pattern.trim();
+
+  // Check for conditional pattern: x_ /; condition
+  if let Some(cond_idx) = pattern.find(" /; ") {
+    let before_cond = &pattern[..cond_idx];
+    let condition = &pattern[cond_idx + 4..];
+
+    // The part before /; should be a simple blank pattern (x_)
+    if let Some(underscore_idx) = before_cond.find('_') {
+      let var_name = before_cond[..underscore_idx].trim().to_string();
+      if !var_name.is_empty()
+        && var_name.chars().all(|c| c.is_alphanumeric() || c == '$')
+      {
+        return Some(WolframPattern::Conditional {
+          var_name,
+          condition: condition.trim().to_string(),
+        });
+      }
+    }
+  }
+
+  // Check for pattern test: x_?test
+  if let Some(underscore_idx) = pattern.find('_') {
+    let after_underscore = &pattern[underscore_idx + 1..];
+    if after_underscore.starts_with('?') {
+      let var_name = pattern[..underscore_idx].trim().to_string();
+      let test_func = after_underscore[1..].trim().to_string();
+      if !var_name.is_empty()
+        && var_name.chars().all(|c| c.is_alphanumeric() || c == '$')
+        && !test_func.is_empty()
+      {
+        return Some(WolframPattern::Test {
+          var_name,
+          test_func,
+        });
+      }
+    }
+  }
+
+  // Check for simple blank pattern: x_
+  if pattern.ends_with('_') && !pattern.contains(' ') {
+    let var_name = pattern[..pattern.len() - 1].trim().to_string();
+    if !var_name.is_empty()
+      && var_name.chars().all(|c| c.is_alphanumeric() || c == '$')
+    {
+      return Some(WolframPattern::Blank { var_name });
+    }
+  }
+
+  None
+}
+
+/// Wolfram pattern types
+enum WolframPattern {
+  /// x_ - matches any single expression
+  Blank { var_name: String },
+  /// x_?test - matches if test[x] is True
+  Test { var_name: String, test_func: String },
+  /// x_ /; condition - matches if condition (with x substituted) is True
+  Conditional { var_name: String, condition: String },
+}
+
+/// Replace a variable name with a value, respecting word boundaries
+/// This avoids replacing 'i' inside strings like "Fizz"
+fn replace_var_with_value(text: &str, var_name: &str, value: &str) -> String {
+  let mut result = String::new();
+  let var_chars: Vec<char> = var_name.chars().collect();
+  let chars: Vec<char> = text.chars().collect();
+  let mut i = 0;
+
+  while i < chars.len() {
+    // Check if we're inside a string literal
+    if chars[i] == '"' {
+      result.push(chars[i]);
+      i += 1;
+      // Copy everything until the closing quote
+      while i < chars.len() && chars[i] != '"' {
+        result.push(chars[i]);
+        i += 1;
+      }
+      if i < chars.len() {
+        result.push(chars[i]); // closing quote
+        i += 1;
+      }
+      continue;
+    }
+
+    // Check if we're at the start of the variable name
+    if i + var_chars.len() <= chars.len() {
+      let potential_match: Vec<char> = chars[i..i + var_chars.len()].to_vec();
+      if potential_match == var_chars {
+        // Check word boundaries
+        let prev_ok = i == 0 || {
+          let prev = chars[i - 1];
+          !prev.is_alphanumeric() && prev != '_' && prev != '$'
+        };
+        let next_ok = i + var_chars.len() >= chars.len() || {
+          let next = chars[i + var_chars.len()];
+          !next.is_alphanumeric() && next != '_' && next != '$'
+        };
+
+        if prev_ok && next_ok {
+          result.push_str(value);
+          i += var_chars.len();
+          continue;
+        }
+      }
+    }
+
+    result.push(chars[i]);
+    i += 1;
+  }
+
+  result
+}
+
+/// Apply a Wolfram pattern replacement to an expression
+fn apply_wolfram_pattern(
+  expr: &str,
+  pattern: &WolframPattern,
+  replacement: &str,
+) -> Result<Option<String>, InterpreterError> {
+  match pattern {
+    WolframPattern::Blank { var_name } => {
+      // x_ matches any expression - substitute var_name with expr in replacement
+      let result = replace_var_with_value(replacement, var_name, expr);
+      Ok(Some(result))
+    }
+    WolframPattern::Test {
+      var_name,
+      test_func,
+    } => {
+      // x_?test - check if test[expr] is True
+      let test_expr = format!("{}[{}]", test_func, expr);
+      match interpret(&test_expr) {
+        Ok(result) if result == "True" => {
+          let replaced = replace_var_with_value(replacement, var_name, expr);
+          Ok(Some(replaced))
+        }
+        _ => Ok(None), // Test failed, no match
+      }
+    }
+    WolframPattern::Conditional {
+      var_name,
+      condition,
+    } => {
+      // x_ /; condition - check if condition (with var substituted) is True
+      let substituted_condition =
+        replace_var_with_value(condition, var_name, expr);
+      match interpret(&substituted_condition) {
+        Ok(result) if result == "True" => {
+          let replaced = replace_var_with_value(replacement, var_name, expr);
+          Ok(Some(replaced))
+        }
+        _ => Ok(None), // Condition failed, no match
+      }
+    }
+  }
+}
+
 /// Apply ReplaceAll with direct pattern and replacement strings
 fn apply_replace_all_direct(
   expr: &str,
   pattern: &str,
   replacement: &str,
 ) -> Result<String, InterpreterError> {
-  // Perform replacement on the expression string
+  // Check if the pattern is a Wolfram pattern (x_, x_?test, x_ /; cond)
+  if let Some(wolfram_pattern) = parse_wolfram_pattern(pattern) {
+    // For list expressions, apply pattern to each element
+    if expr.starts_with('{') && expr.ends_with('}') {
+      let inner = &expr[1..expr.len() - 1];
+      // Split by comma, being careful about nested structures
+      let elements = split_list_elements(inner);
+      let mut results = Vec::new();
+
+      for elem in elements {
+        let elem = elem.trim();
+        if let Some(replaced) =
+          apply_wolfram_pattern(elem, &wolfram_pattern, replacement)?
+        {
+          // Try to evaluate the replacement
+          let evaluated = interpret(&replaced).unwrap_or(replaced);
+          results.push(evaluated);
+        } else {
+          // No match, keep original
+          results.push(elem.to_string());
+        }
+      }
+
+      return Ok(format!("{{{}}}", results.join(", ")));
+    } else {
+      // Single expression - apply pattern directly
+      if let Some(replaced) =
+        apply_wolfram_pattern(expr, &wolfram_pattern, replacement)?
+      {
+        let evaluated = interpret(&replaced).unwrap_or(replaced);
+        return Ok(evaluated);
+      }
+      return Ok(expr.to_string());
+    }
+  }
+
+  // Fall back to literal string replacement for non-pattern cases
   let result = replace_in_expr(expr, pattern, replacement);
 
   // Re-evaluate the result to simplify if possible
@@ -2501,6 +2784,39 @@ fn apply_replace_all_direct(
   } else {
     Ok(result)
   }
+}
+
+/// Split a list's inner content by commas, respecting nested structures
+fn split_list_elements(inner: &str) -> Vec<String> {
+  let mut elements = Vec::new();
+  let mut current = String::new();
+  let mut depth = 0;
+
+  for c in inner.chars() {
+    match c {
+      '{' | '[' | '(' | '<' => {
+        depth += 1;
+        current.push(c);
+      }
+      '}' | ']' | ')' | '>' => {
+        depth -= 1;
+        current.push(c);
+      }
+      ',' if depth == 0 => {
+        elements.push(current.trim().to_string());
+        current.clear();
+      }
+      _ => {
+        current.push(c);
+      }
+    }
+  }
+
+  if !current.is_empty() {
+    elements.push(current.trim().to_string());
+  }
+
+  elements
 }
 
 /// Apply ReplaceRepeated with direct pattern and replacement strings

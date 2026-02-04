@@ -114,4 +114,186 @@ mod interpreter_tests {
       }
     }
   }
+
+  mod postfix_application {
+    use super::*;
+
+    #[test]
+    fn postfix_with_identifier() {
+      // x // f is equivalent to f[x]
+      assert_eq!(interpret("4 // Sqrt").unwrap(), "2");
+      assert_eq!(interpret("16 // Sqrt").unwrap(), "4");
+    }
+
+    #[test]
+    fn postfix_with_list() {
+      assert_eq!(interpret("{1, 2, 3} // Length").unwrap(), "3");
+      assert_eq!(interpret("{1, 2, 3} // First").unwrap(), "1");
+      assert_eq!(interpret("{1, 2, 3} // Last").unwrap(), "3");
+    }
+
+    #[test]
+    fn postfix_with_function_call() {
+      // x // Map[f] is equivalent to Map[f][x] which is Map[f, x]
+      assert_eq!(
+        interpret("{1, 4, 9} // Map[Sqrt]").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn chained_postfix() {
+      // x // f // g is equivalent to g[f[x]]
+      assert_eq!(interpret("16 // Sqrt // Sqrt").unwrap(), "2");
+    }
+
+    #[test]
+    fn postfix_after_replace_all() {
+      // (expr /. rules) // f
+      assert_eq!(
+        interpret("{1, 2, 3} /. x_ /; x > 1 :> 0 // Length").unwrap(),
+        "3"
+      );
+    }
+  }
+
+  mod pattern_matching {
+    use super::*;
+
+    mod blank_pattern {
+      use super::*;
+
+      #[test]
+      fn simple_blank_matches_any() {
+        // x_ matches any expression
+        assert_eq!(interpret("5 /. x_ :> 10").unwrap(), "10");
+        assert_eq!(interpret("\"hello\" /. x_ :> \"world\"").unwrap(), "\"world\"");
+      }
+
+      #[test]
+      fn blank_with_replacement_using_variable() {
+        // The matched value can be used in replacement
+        // Note: expressions in replacement need parentheses
+        assert_eq!(interpret("5 /. x_ :> (x + 1)").unwrap(), "6");
+        assert_eq!(interpret("3 /. n_ :> (n * 2)").unwrap(), "6");
+      }
+
+      #[test]
+      fn blank_on_list_elements() {
+        // Pattern applies to each element in a list
+        // Note: expressions in replacement need parentheses
+        assert_eq!(
+          interpret("{1, 2, 3} /. x_ :> (x + 10)").unwrap(),
+          "{11, 12, 13}"
+        );
+      }
+    }
+
+    mod conditional_pattern {
+      use super::*;
+
+      #[test]
+      fn condition_true_matches() {
+        assert_eq!(
+          interpret("6 /. x_ /; Mod[x, 2] == 0 :> \"even\"").unwrap(),
+          "\"even\""
+        );
+      }
+
+      #[test]
+      fn condition_false_no_match() {
+        assert_eq!(
+          interpret("5 /. x_ /; Mod[x, 2] == 0 :> \"even\"").unwrap(),
+          "5"
+        );
+      }
+
+      #[test]
+      fn conditional_with_function_call() {
+        assert_eq!(
+          interpret("3 /. i_ /; Mod[i, 3] == 0 :> \"Fizz\"").unwrap(),
+          "\"Fizz\""
+        );
+        assert_eq!(
+          interpret("5 /. i_ /; Mod[i, 5] == 0 :> \"Buzz\"").unwrap(),
+          "\"Buzz\""
+        );
+      }
+
+      #[test]
+      fn conditional_on_list() {
+        assert_eq!(
+          interpret("{1, 2, 3, 4} /. x_ /; x > 2 :> 0").unwrap(),
+          "{1, 2, 0, 0}"
+        );
+      }
+    }
+
+    mod pattern_test {
+      use super::*;
+
+      #[test]
+      fn pattern_test_matches() {
+        assert_eq!(
+          interpret("4 /. x_?EvenQ :> \"even\"").unwrap(),
+          "\"even\""
+        );
+      }
+
+      #[test]
+      fn pattern_test_no_match() {
+        assert_eq!(interpret("3 /. x_?EvenQ :> \"even\"").unwrap(), "3");
+      }
+
+      #[test]
+      fn pattern_test_on_list() {
+        assert_eq!(
+          interpret("{1, 2, 3, 4} /. x_?EvenQ :> 0").unwrap(),
+          "{1, 0, 3, 0}"
+        );
+      }
+
+      #[test]
+      fn pattern_test_with_oddq() {
+        assert_eq!(
+          interpret("{1, 2, 3, 4} /. x_?OddQ :> 0").unwrap(),
+          "{0, 2, 0, 4}"
+        );
+      }
+    }
+
+    mod multiple_rules {
+      use super::*;
+
+      #[test]
+      fn list_of_rules_applied_in_order() {
+        // First matching rule wins
+        assert_eq!(
+          interpret("{1, 2, 3} /. {x_ /; x == 1 :> \"one\", x_ /; x == 2 :> \"two\"}").unwrap(),
+          "{\"one\", \"two\", 3}"
+        );
+      }
+
+      #[test]
+      fn fizzbuzz_style_rules() {
+        // Test the FizzBuzz pattern
+        assert_eq!(
+          interpret("15 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "\"FizzBuzz\""
+        );
+        assert_eq!(
+          interpret("9 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "\"Fizz\""
+        );
+        assert_eq!(
+          interpret("10 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "\"Buzz\""
+        );
+        assert_eq!(
+          interpret("7 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "7"
+        );
+      }
+    }
+  }
 }

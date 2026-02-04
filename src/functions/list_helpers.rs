@@ -82,63 +82,51 @@ pub fn map_list(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     return Ok(disp);
   }
 
-  // Original list handling
-  let list_rule = target_pair.as_rule();
-  let elements: Vec<_> = if list_rule == Rule::List {
-    target_pair
-      .clone()
-      .into_inner()
-      .filter(|p| p.as_str() != ",")
-      .collect()
-  } else if list_rule == Rule::Expression {
-    let mut expr_inner = target_pair.clone().into_inner();
-    if let Some(first) = expr_inner.next() {
-      if first.as_rule() == Rule::List {
-        first.into_inner().filter(|p| p.as_str() != ",").collect()
-      } else {
-        return Err(InterpreterError::EvaluationError(
-          "Second argument of Map must be a list or association".into(),
-        ));
+  // Original list handling - extract the list from potentially nested expressions
+  fn extract_list_elements(pair: Pair<Rule>) -> Option<Vec<Pair<Rule>>> {
+    match pair.as_rule() {
+      Rule::List => {
+        Some(pair.into_inner().filter(|p| p.as_str() != ",").collect())
       }
-    } else {
-      return Err(InterpreterError::EvaluationError(
-        "Second argument of Map must be a list or association".into(),
-      ));
+      Rule::Expression | Rule::PostfixBase => {
+        let mut inner = pair.into_inner();
+        if let Some(first) = inner.next() {
+          extract_list_elements(first)
+        } else {
+          None
+        }
+      }
+      _ => None,
     }
-  } else {
-    return Err(InterpreterError::EvaluationError(
-      "Second argument of Map must be a list or association".into(),
-    ));
-  };
+  }
 
-  let func_name_inner = func_pair.as_str();
+  let elements =
+    extract_list_elements(target_pair.clone()).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Second argument of Map must be a list or association".into(),
+      )
+    })?;
+
+  let func_src = func_pair.as_str();
+  let is_slot_func = func_src.contains('#') && func_src.ends_with('&');
   let mut mapped = Vec::new();
 
   for elem in elements {
     let elem_val_str = evaluate_expression(elem.clone())?;
-    let num = elem_val_str.parse::<f64>().map_err(|_| {
-      InterpreterError::EvaluationError(
-        "Map currently supports only numeric list elements".into(),
-      )
-    })?;
 
-    let mapped_val = match func_name_inner {
-      "Sign" => {
-        let sign = if num > 0.0 {
-          1.0
-        } else if num < 0.0 {
-          -1.0
-        } else {
-          0.0
-        };
-        format_result(sign)
-      }
-      _ => {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Unknown mapping function: {}",
-          func_name_inner
-        )));
-      }
+    let mapped_val = if is_slot_func
+      || matches!(
+        func_pair.as_rule(),
+        Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction
+      ) {
+      // Anonymous function: replace # with the element value
+      let mut expr = func_src.trim_end_matches('&').to_string();
+      expr = expr.replace('#', &elem_val_str);
+      interpret(&expr)?
+    } else {
+      // Named function: call as f[elem]
+      let expr = format!("{}[{}]", func_src, elem_val_str);
+      interpret(&expr)?
     };
     mapped.push(mapped_val);
   }
