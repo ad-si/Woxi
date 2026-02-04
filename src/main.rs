@@ -3,7 +3,7 @@ mod jupyter;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use woxi::interpret;
+use woxi::{interpret, set_script_command_line};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -24,6 +24,9 @@ enum Commands {
     /// The path to the Wolfram Language file to execute
     #[arg(value_name = "FILE")]
     file: PathBuf,
+    /// Additional arguments passed to the script (accessible via $ScriptCommandLine)
+    #[arg(trailing_var_arg = true)]
+    args: Vec<String>,
   },
   /// Start a simple Jupyter kernel that always returns "hello world"
   Jupyter {
@@ -100,7 +103,7 @@ fn main() {
       Ok(result) => println!("{result}"),
       Err(e) => eprintln!("Error: {}", e),
     },
-    Commands::Run { file } => {
+    Commands::Run { file, args } => {
       let absolute_path = if file.is_absolute() {
         file.clone()
       } else {
@@ -108,6 +111,11 @@ fn main() {
           .unwrap_or_else(|_| PathBuf::from("."))
           .join(&file)
       };
+
+      // Set $ScriptCommandLine: first element is the script path, rest are args
+      let mut cmd_line = vec![absolute_path.to_string_lossy().to_string()];
+      cmd_line.extend(args);
+      set_script_command_line(&cmd_line);
 
       match fs::read_to_string(&absolute_path) {
         Ok(content) => {
@@ -148,6 +156,11 @@ fn main() {
           .unwrap_or_else(|_| PathBuf::from("."))
           .join(&file)
       };
+
+      // Set $ScriptCommandLine with absolute path and all args
+      let mut cmd_line = vec![absolute_path.to_string_lossy().to_string()];
+      cmd_line.extend(args.into_iter().skip(1));
+      set_script_command_line(&cmd_line);
 
       match fs::read_to_string(&absolute_path) {
         Ok(content) => {

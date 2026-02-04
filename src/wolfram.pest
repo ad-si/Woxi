@@ -11,7 +11,7 @@ NumericValue = { Real | Integer | Constant }
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
 PatternName = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
-Identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+Identifier = @{ (ASCII_ALPHA | "_" | "$") ~ (ASCII_ALPHANUMERIC | "_")* }
 String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 // Function calls (supports chained calls like f[x][y])

@@ -85,6 +85,28 @@ fn get_captured_stdout() -> String {
 // Re-export evaluate_expression and evaluate_term from evaluator module
 pub use evaluator::{evaluate_expression, evaluate_term};
 
+/// Set a system variable (like $ScriptCommandLine) in the environment
+pub fn set_system_variable(name: &str, value: &str) {
+  ENV.with(|e| {
+    e.borrow_mut()
+      .insert(name.to_string(), StoredValue::Raw(value.to_string()));
+  });
+}
+
+/// Set the $ScriptCommandLine variable from command-line arguments
+pub fn set_script_command_line(args: &[String]) {
+  // Format as a Wolfram list: {"script.wls", "arg1", "arg2", ...}
+  let list_str = format!(
+    "{{{}}}",
+    args
+      .iter()
+      .map(|s| format!("\"{}\"", s))
+      .collect::<Vec<_>>()
+      .join(", ")
+  );
+  set_system_variable("$ScriptCommandLine", &list_str);
+}
+
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   // Clear the stdout capture buffer
   clear_captured_stdout();
@@ -314,13 +336,19 @@ fn extract_string(pair: Pair<Rule>) -> Result<String, InterpreterError> {
         // Fallback to evaluate_expression if not directly a string.
         // This handles cases like `DateString[Now, "ISO" <> "DateTime"]` if StringJoin was more general
         // or if the argument is a variable that holds a string.
-        return evaluate_expression(pair);
+        let result = evaluate_expression(pair)?;
+        // Strip quotes if the result is a quoted string
+        return Ok(result.trim_matches('"').to_string());
       }
       Err(InterpreterError::EvaluationError(
         "Expected string argument".into(),
       ))
     }
-    _ => evaluate_expression(pair), // fall-back, keeps behaviour for exotic cases
+    _ => {
+      // fall-back, keeps behaviour for exotic cases
+      let result = evaluate_expression(pair)?;
+      Ok(result.trim_matches('"').to_string())
+    }
   }
 }
 
