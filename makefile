@@ -41,7 +41,7 @@ test-scripts: install
 	@echo "Testing scripts with woxi …"
 	@for script in tests/scripts/[!_]*.wls; do \
 		echo "Running $$script …"; \
-		woxi run "$$script" > /dev/null || exit 1; \
+		timeout 20 woxi run "$$script" > /dev/null || exit 1; \
 	done
 	woxi run ./tests/scripts/_cli_args.wls -- 5 > /dev/null || exit 1
 	@echo "All scripts executed successfully with woxi."
@@ -52,7 +52,7 @@ test-scripts-wolframscript: install
 	@echo "Testing scripts with wolframscript …"
 	@for script in tests/scripts/[!_]*.wls; do \
 		echo "Running $$script …"; \
-		wolframscript -file "$$script" > /dev/null || exit 1; \
+		timeout 20 wolframscript -file "$$script" > /dev/null || exit 1; \
 	done
 	@echo "All scripts executed successfully with wolframscript."
 
