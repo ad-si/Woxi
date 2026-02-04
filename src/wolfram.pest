@@ -22,8 +22,10 @@ SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
 SlotTerm = _{ NumericValue | Constant | String | Identifier | Slot | "(" ~ Expression ~ ")" }
 // FunctionAnonymousFunction is a function call (like If[...]) followed by & (not &&)
 FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" }
+// ParenAnonymousFunction handles (Expression)& - for expressions like (# === "")&
+ParenAnonymousFunction = { "(" ~ Expression ~ ")" ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
-BaseFunctionCall = { Identifier ~ ("[" ~ (FunctionArg ~ ("," ~ (FunctionArg | List))*)? ~ "]")+ }
+BaseFunctionCall = { Identifier ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 Operator = {
     "/@"     // keep first
@@ -43,15 +45,25 @@ Operator = {
 // Uses BaseFunctionCall to avoid circular reference with FunctionCall -> FunctionArg -> Expression -> PostfixApplication
 PostfixFunction = { BaseFunctionCall | Identifier }
 
-// PostfixApplication: term // f or (expr /. ...) // f
-// PostfixBase is what can appear before //
-PostfixBase = { ReplaceRepeatedExpr | ReplaceAllExpr | Term }
-PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
-
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
 
-Expression = { PostfixApplication | ReplaceRepeatedExpr | ReplaceAllExpr | Term ~ (Operator ~ Term)* }
+// Unified Expression: parses a base term/operators, then looks for optional postfix/replace operators
+// This avoids redundant parsing by checking for special operators after the main parse
+// Note: /. and //. can be followed by // for postfix application
+Expression = {
+    Term ~ (
+        // Check for operators in order of specificity
+        ("//" ~ PostfixFunction)+ |   // Postfix application: x // f
+        ("//." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |  // ReplaceRepeated: x //. rule // f
+        ("/." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |   // ReplaceAll: x /. rule // f
+        (Operator ~ Term)*   // Regular operators: x + y, etc.
+    )
+}
+
+// Legacy rules kept for backward compatibility in evaluation code
+PostfixBase = { ReplaceRepeatedExpr | ReplaceAllExpr | Term }
+PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 
 // CompoundExpression: multiple expressions separated by ;
 // The result is the value of the last expression (like Wolfram's CompoundExpression)
@@ -63,6 +75,7 @@ Term = _{
   | String
   | List
   | FunctionAnonymousFunction
+  | ParenAnonymousFunction
   | FunctionCall
   | SimpleAnonymousFunction
   | ImplicitTimes
@@ -96,15 +109,18 @@ ReplaceAllExpr = { Term ~ "/." ~ (List | ReplacementRule) }
 ReplaceRepeatedExpr = { Term ~ "//." ~ (List | ReplacementRule) }
 
 List = { "{" ~ (ListItem ~ ("," ~ ListItem)*)? ~ "}" }
+// ListItem can be a ReplacementRule (for rule lists) or an Expression
+// ReplacementRule must be tried first because x_ -> y looks like Expression x_ followed by -> operator
 ListItem = _{ ReplacementRule | Expression }
 
 AssociationItem = { Expression ~ "->" ~ Expression }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
 
 // Function calls (supports chained calls like f[x][y])
-// Arguments can be Patterns (for function definitions), CompoundExpressions, Expressions, or ReplacementRules
-FunctionArg = _{ PatternCondition | PatternTest | PatternSimple | ReplacementRule | CompoundExpression | Expression }
-FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ (FunctionArg | List))*)? ~ "]")+ }
+// Simplified: Just use Expression for most args - patterns and compound expressions via Expression's Term
+// FunctionArg can be a ReplacementRule, CompoundExpression, or Expression
+FunctionArg = _{ ReplacementRule | CompoundExpression | Expression }
+FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
 FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternSimple }

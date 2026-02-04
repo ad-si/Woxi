@@ -348,3 +348,33 @@ pub fn non_negative(
   let n = evaluate_term(args_pairs[0].clone())?;
   Ok(if n >= 0.0 { "True" } else { "False" }.to_string())
 }
+
+/// Handle Divisible[n, m] - Tests if n is divisible by m
+pub fn divisible(
+  args_pairs: &[Pair<Rule>],
+) -> Result<String, InterpreterError> {
+  if args_pairs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Divisible expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = evaluate_term(args_pairs[0].clone())?;
+  let m = evaluate_term(args_pairs[1].clone())?;
+
+  // Both must be integers
+  if n.fract() != 0.0 || m.fract() != 0.0 {
+    return Ok("False".to_string());
+  }
+
+  // Division by zero is undefined
+  if m == 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Divisible: division by zero".into(),
+    ));
+  }
+
+  let n = n as i64;
+  let m = m as i64;
+  Ok(if n % m == 0 { "True" } else { "False" }.to_string())
+}

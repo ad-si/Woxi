@@ -6,6 +6,40 @@ use crate::{
   store_function_definition,
 };
 
+/// Check if a result value needs to be quoted when substituted into an expression.
+/// Returns true for string values that would not parse correctly without quotes.
+fn needs_string_quotes(s: &str) -> bool {
+  // Already quoted - no need to add more quotes
+  if s.starts_with('"') && s.ends_with('"') {
+    return false;
+  }
+  // Lists don't need quoting
+  if s.starts_with('{') && s.ends_with('}') {
+    return false;
+  }
+  // Associations don't need quoting
+  if s.starts_with("<|") && s.ends_with("|>") {
+    return false;
+  }
+  // Numbers don't need quoting
+  if s.parse::<f64>().is_ok() {
+    return false;
+  }
+  // Valid identifiers don't need quoting (unless they're meant to be strings)
+  // But we can't distinguish easily, so we use a conservative approach:
+  // If it looks like a valid identifier (letters/digits/_), don't quote it
+  // since it might be a symbolic result
+  if !s.is_empty()
+    && s
+      .chars()
+      .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+  {
+    return false;
+  }
+  // Everything else (empty strings, strings with spaces/special chars) needs quoting
+  true
+}
+
 /// Represents either a numeric value or a symbolic term in an expression
 #[derive(Debug, Clone)]
 enum SymbolicTerm {
@@ -575,13 +609,43 @@ pub fn evaluate_pairs(
           // Start with the rightmost term and work backwards
           let terms: Vec<_> = items.iter().step_by(2).cloned().collect();
           // Evaluate the rightmost term first
-          let mut result = evaluate_expression(terms[terms.len() - 1].clone())?;
+          // For strings, preserve the Wolfram representation (with quotes)
+          let rightmost = terms[terms.len() - 1].clone();
+          let mut result = if rightmost.as_rule() == Rule::String {
+            rightmost.as_str().to_string() // Keep quotes
+          } else {
+            evaluate_expression(rightmost)?
+          };
           // Apply functions from right to left
           for i in (0..terms.len() - 1).rev() {
             let func = &terms[i];
             if func.as_rule() == Rule::Identifier {
               let func_name = func.as_str();
               let expr = format!("{}[{}]", func_name, result);
+              result = interpret(&expr)?;
+            } else if matches!(
+              func.as_rule(),
+              Rule::SimpleAnonymousFunction
+                | Rule::FunctionAnonymousFunction
+                | Rule::ParenAnonymousFunction
+            ) {
+              // Anonymous function: substitute # with the argument
+              let mut body =
+                func.as_str().trim().trim_end_matches('&').to_string();
+              // For ParenAnonymousFunction, remove the outer parens
+              if func.as_rule() == Rule::ParenAnonymousFunction {
+                body = body
+                  .trim_start_matches('(')
+                  .trim_end_matches(')')
+                  .to_string();
+              }
+              // Quote the result if it's a string value that needs quoting for expression parsing
+              let substitution = if needs_string_quotes(&result) {
+                format!("\"{}\"", result)
+              } else {
+                result.clone()
+              };
+              let expr = body.replace('#', &substitution);
               result = interpret(&expr)?;
             } else {
               return Err(InterpreterError::EvaluationError(
@@ -995,6 +1059,7 @@ pub fn evaluate_pairs(
           }
         }
       }
+      let expr_str = expr.as_str();
       let mut inner = expr.into_inner();
       let first = inner.next().unwrap();
       if inner.clone().next().is_none() {
@@ -1032,11 +1097,125 @@ pub fn evaluate_pairs(
           return Ok(first.as_str().to_string());
         }
       }
+
+      // Check for special operators: //, /., //.
+      // These are handled inline in the new grammar structure
+      // The grammar produces PostfixFunction for //, and List/ReplacementRule for /. and //.
+      let items: Vec<_> = inner.clone().collect();
+      if !items.is_empty() {
+        let first_rule = items[0].as_rule();
+
+        // Handle postfix application: term // func // func2 ...
+        // The grammar produces PostfixFunction items directly (// is consumed)
+        if first_rule == Rule::PostfixFunction
+          || first_rule == Rule::BaseFunctionCall
+          || (first_rule == Rule::Identifier
+            && items.iter().all(|i| {
+              matches!(
+                i.as_rule(),
+                Rule::PostfixFunction
+                  | Rule::BaseFunctionCall
+                  | Rule::Identifier
+              )
+            }))
+        {
+          // Check if all items are PostfixFunction/BaseFunctionCall/Identifier
+          let all_postfix = items.iter().all(|i| {
+            matches!(
+              i.as_rule(),
+              Rule::PostfixFunction | Rule::BaseFunctionCall | Rule::Identifier
+            )
+          });
+          if all_postfix {
+            let mut result = evaluate_expression(first.clone())?;
+            for func in &items {
+              // Apply each function to the result
+              let func_name = func.as_str();
+              let expr = format!("{}[{}]", func_name, result);
+              result = interpret(&expr)?;
+            }
+            return Ok(result);
+          }
+        }
+
+        // Handle ReplaceRepeated: term //. rule
+        // and ReplaceAll: term /. rule
+        // The grammar produces List or ReplacementRule items directly
+        if first_rule == Rule::List || first_rule == Rule::ReplacementRule {
+          // Get the base expression value
+          let base_result = evaluate_expression(first.clone())
+            .unwrap_or_else(|_| first.as_str().to_string());
+
+          // Determine if this is /. or //. based on the original expression
+          let is_replace_repeated =
+            expr_str.contains("//.") && !expr_str.contains("///.");
+
+          let rule_pair = &items[0];
+
+          let mut result = if is_replace_repeated {
+            // ReplaceRepeated: apply rule repeatedly until no change
+            let mut rule_inner = rule_pair.clone().into_inner();
+            let pattern =
+              rule_inner.next().unwrap().as_str().trim().to_string();
+            let replacement =
+              rule_inner.next().unwrap().as_str().trim().to_string();
+            apply_replace_repeated_direct(&base_result, &pattern, &replacement)?
+          } else {
+            // ReplaceAll: apply rule once
+            if rule_pair.as_rule() == Rule::List {
+              // Multiple replacement rules - apply them in order
+              let mut r = base_result;
+              for item in rule_pair.clone().into_inner() {
+                if item.as_rule() == Rule::ReplacementRule {
+                  let mut rule_inner = item.into_inner();
+                  let pattern =
+                    rule_inner.next().unwrap().as_str().trim().to_string();
+                  let replacement =
+                    rule_inner.next().unwrap().as_str().trim().to_string();
+                  r = apply_replace_all_direct(&r, &pattern, &replacement)?;
+                }
+              }
+              r
+            } else {
+              // Single replacement rule
+              let mut rule_inner = rule_pair.clone().into_inner();
+              let pattern =
+                rule_inner.next().unwrap().as_str().trim().to_string();
+              let replacement =
+                rule_inner.next().unwrap().as_str().trim().to_string();
+              apply_replace_all_direct(&base_result, &pattern, &replacement)?
+            }
+          };
+
+          // Check for postfix functions after the replacement (items[1:] are PostfixFunction)
+          for func in items.iter().skip(1) {
+            if matches!(
+              func.as_rule(),
+              Rule::PostfixFunction | Rule::BaseFunctionCall | Rule::Identifier
+            ) {
+              let func_name = func.as_str();
+              let expr = format!("{}[{}]", func_name, result);
+              result = interpret(&expr)?;
+            }
+          }
+
+          return Ok(result);
+        }
+      }
+
       // Collect all terms and operators using symbolic evaluation
       let mut terms: Vec<SymbolicTerm> = vec![try_evaluate_term(first)?];
       let mut ops: Vec<&str> = vec![];
       while let Some(op_pair) = inner.next() {
         let op = op_pair.as_str();
+        // For special operators, the next item might not be a Term
+        if op == "//" || op == "/." || op == "//." {
+          // These should have been handled above
+          return Err(InterpreterError::EvaluationError(format!(
+            "Unexpected operator {} in expression",
+            op
+          )));
+        }
         let term = inner.next().unwrap();
         ops.push(op);
         terms.push(try_evaluate_term(term)?);
@@ -1574,7 +1753,9 @@ pub fn evaluate_term(
           .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
       })
     }
-    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction => {
+    Rule::SimpleAnonymousFunction
+    | Rule::FunctionAnonymousFunction
+    | Rule::ParenAnonymousFunction => {
       // Anonymous functions when evaluated as a term (not applied) should error
       // or return 0.0 as a placeholder
       Ok(0.0)
@@ -2243,6 +2424,7 @@ pub fn evaluate_function_call(
     "Negative" => functions::predicate::negative(&args_pairs),
     "NonPositive" => functions::predicate::non_positive(&args_pairs),
     "NonNegative" => functions::predicate::non_negative(&args_pairs),
+    "Divisible" => functions::predicate::divisible(&args_pairs),
 
     "RandomInteger" => functions::math::random_integer(&args_pairs),
 

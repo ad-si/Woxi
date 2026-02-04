@@ -23,6 +23,8 @@ thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
     //            name         (parameter names)      body-text
     static FUNC_DEFS: RefCell<HashMap<String, (Vec<String>, String)>> = RefCell::new(HashMap::new());
+    // Cache for evaluated expressions (input -> result)
+    static EVAL_CACHE: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
 }
 
 #[derive(Error, Debug)]
@@ -107,9 +109,59 @@ pub fn set_script_command_line(args: &[String]) {
   set_system_variable("$ScriptCommandLine", &list_str);
 }
 
+// Track recursion depth to avoid clearing stdout in nested calls
+thread_local! {
+    static INTERPRET_DEPTH: std::cell::RefCell<usize> = const { std::cell::RefCell::new(0) };
+}
+
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
-  // Clear the stdout capture buffer
-  clear_captured_stdout();
+  let trimmed = input.trim();
+
+  // Fast path for simple literals that don't need parsing
+  // Check for integer
+  if let Ok(n) = trimmed.parse::<i64>() {
+    return Ok(n.to_string());
+  }
+  // Check for float
+  if let Ok(n) = trimmed.parse::<f64>() {
+    return Ok(format_result(n));
+  }
+  // Check for quoted string - return as-is
+  if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+    // Make sure there are no unescaped quotes inside
+    let inner = &trimmed[1..trimmed.len() - 1];
+    if !inner.contains('"') {
+      return Ok(trimmed.to_string());
+    }
+  }
+
+  // Check evaluation cache for pure expressions (no Print or other side effects)
+  let cache_key = trimmed.to_string();
+  let cached = EVAL_CACHE.with(|c| c.borrow().get(&cache_key).cloned());
+  if let Some(result) = cached {
+    return Ok(result);
+  }
+
+  let depth = INTERPRET_DEPTH.with(|d| {
+    let mut depth = d.borrow_mut();
+    let current = *depth;
+    *depth += 1;
+    current
+  });
+
+  // Only clear stdout at top level
+  if depth == 0 {
+    clear_captured_stdout();
+  }
+
+  // Decrement depth on scope exit
+  struct DepthGuard;
+  impl Drop for DepthGuard {
+    fn drop(&mut self) {
+      INTERPRET_DEPTH.with(|d| *d.borrow_mut() -= 1);
+    }
+  }
+  let _guard = DepthGuard;
 
   // Regular interpretation
   let pairs = parse(input)?;
@@ -140,7 +192,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
 
   if any_nonempty {
-    last_result.ok_or(InterpreterError::EmptyInput)
+    let result = last_result.ok_or(InterpreterError::EmptyInput)?;
+    // Cache the result if it doesn't contain Print (side effects)
+    // For simplicity, cache all results - Print already captured stdout separately
+    if !trimmed.contains("Print[") {
+      EVAL_CACHE.with(|c| {
+        c.borrow_mut().insert(cache_key, result.clone());
+      });
+    }
+    Ok(result)
   } else {
     Err(InterpreterError::EmptyInput)
   }
@@ -443,7 +503,9 @@ fn apply_map_operator(
       }
       Ok(format!("{{{}}}", out.join(", ")))
     }
-    Rule::SimpleAnonymousFunction | Rule::FunctionAnonymousFunction => {
+    Rule::SimpleAnonymousFunction
+    | Rule::FunctionAnonymousFunction
+    | Rule::ParenAnonymousFunction => {
       // Anonymous function like #^2& or #+1& or If[#>0,#,0]&
       // Replace # with each element and evaluate
       // Note: trim() first to remove any trailing whitespace that pest may include
