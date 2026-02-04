@@ -596,3 +596,83 @@ False
 $ wo 'AllTrue[{1, 3, 6}, 1 <= # <= 6 &]'
 True
 ```
+
+
+## `Positive`
+
+Tests if a number is positive.
+
+```scrut
+$ wo 'Positive[5]'
+True
+```
+
+```scrut
+$ wo 'Positive[-3]'
+False
+```
+
+```scrut
+$ wo 'Positive[0]'
+False
+```
+
+
+## `Negative`
+
+Tests if a number is negative.
+
+```scrut
+$ wo 'Negative[-5]'
+True
+```
+
+```scrut
+$ wo 'Negative[3]'
+False
+```
+
+```scrut
+$ wo 'Negative[0]'
+False
+```
+
+
+## `NonPositive`
+
+Tests if a number is non-positive (zero or negative).
+
+```scrut
+$ wo 'NonPositive[-5]'
+True
+```
+
+```scrut
+$ wo 'NonPositive[0]'
+True
+```
+
+```scrut
+$ wo 'NonPositive[3]'
+False
+```
+
+
+## `NonNegative`
+
+Tests if a number is non-negative (zero or positive).
+
+```scrut
+$ wo 'NonNegative[5]'
+True
+```
+
+```scrut
+$ wo 'NonNegative[0]'
+True
+```
+
+```scrut
+$ wo 'NonNegative[-3]'
+False
+```
