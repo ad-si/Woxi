@@ -38,11 +38,22 @@ test-shebang: install
 
 .PHONY: test-scripts
 test-scripts: install
+	@echo "Testing scripts with woxi …"
 	@for script in tests/scripts/[!_]*.wls; do \
-		echo "Running $$script..."; \
+		echo "Running $$script …"; \
 		woxi "$$script" > /dev/null || exit 1; \
 	done
-	@echo "All scripts executed successfully."
+	@echo "All scripts executed successfully with woxi."
+
+
+.PHONY: test-scripts-wolframscript
+test-scripts-wolframscript: install
+	@echo "Testing scripts with wolframscript …"
+	@for script in tests/scripts/[!_]*.wls; do \
+		echo "Running $$script …"; \
+		wolframscript -file "$$script" > /dev/null || exit 1; \
+	done
+	@echo "All scripts executed successfully with wolframscript."
 
 
 .PHONY: test

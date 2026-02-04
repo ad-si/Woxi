@@ -929,6 +929,9 @@ pub fn evaluate_pairs(
         } else if first.as_rule() == Rule::NumericValue {
           // Evaluate the numeric value as a number and format as string
           return evaluate_term(first).map(format_result);
+        } else if first.as_rule() == Rule::String {
+          // Return string with quotes preserved
+          return Ok(first.as_str().to_string());
         }
       }
       // Collect all terms and operators using symbolic evaluation
