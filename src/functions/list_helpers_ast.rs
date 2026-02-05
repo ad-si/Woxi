@@ -2301,3 +2301,117 @@ pub fn min_max_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(vec![f64_to_expr(min_val), f64_to_expr(max_val)]))
 }
+
+/// Part[list, i] or list[[i]] - Extract element at position i (1-indexed)
+pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Part".to_string(),
+        args: vec![list.clone(), index.clone()],
+      });
+    }
+  };
+
+  match index {
+    Expr::Integer(i) => {
+      if *i < 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Part: index must be a positive integer".into(),
+        ));
+      }
+      let idx = (*i as usize) - 1;
+      if idx >= items.len() {
+        return Err(InterpreterError::EvaluationError(
+          "Part: index out of bounds".into(),
+        ));
+      }
+      Ok(items[idx].clone())
+    }
+    Expr::List(indices) => {
+      // Multiple indices: Part[list, {i1, i2, ...}]
+      let mut results = Vec::new();
+      for idx_expr in indices {
+        if let Expr::Integer(i) = idx_expr {
+          if *i < 1 {
+            return Err(InterpreterError::EvaluationError(
+              "Part: index must be a positive integer".into(),
+            ));
+          }
+          let idx = (*i as usize) - 1;
+          if idx >= items.len() {
+            return Err(InterpreterError::EvaluationError(
+              "Part: index out of bounds".into(),
+            ));
+          }
+          results.push(items[idx].clone());
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Part: indices must be integers".into(),
+          ));
+        }
+      }
+      Ok(Expr::List(results))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Part".to_string(),
+      args: vec![list.clone(), index.clone()],
+    }),
+  }
+}
+
+/// Insert[list, elem, n] - Insert element at position n (1-indexed)
+pub fn insert_ast(
+  list: &Expr,
+  elem: &Expr,
+  pos: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Insert".to_string(),
+        args: vec![list.clone(), elem.clone(), pos.clone()],
+      });
+    }
+  };
+
+  let n = match pos {
+    Expr::Integer(n) => *n,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Insert: position must be an integer".into(),
+      ));
+    }
+  };
+
+  let len = items.len() as i128;
+
+  // Handle positive and negative indices
+  let insert_pos = if n > 0 {
+    let pos = (n - 1) as usize;
+    if pos > items.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Insert: position out of bounds".into(),
+      ));
+    }
+    pos
+  } else if n < 0 {
+    let pos = (len + 1 + n) as usize;
+    if n < -(len + 1) {
+      return Err(InterpreterError::EvaluationError(
+        "Insert: position out of bounds".into(),
+      ));
+    }
+    pos
+  } else {
+    return Err(InterpreterError::EvaluationError(
+      "Insert: position cannot be 0".into(),
+    ));
+  };
+
+  let mut result = items;
+  result.insert(insert_pos, elem.clone());
+  Ok(Expr::List(result))
+}
