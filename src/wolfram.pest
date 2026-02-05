@@ -24,16 +24,19 @@ SlotTerm = _{ NumericValue | Constant | String | Identifier | Slot | "(" ~ Expre
 FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" }
 // ParenAnonymousFunction handles (Expression)& - for expressions like (# === "")&
 ParenAnonymousFunction = { "(" ~ Expression ~ ")" ~ "&" ~ !"&" }
+// ListAnonymousFunction handles {expr1, expr2, ...}& - for expressions like {#1, #2}&
+ListAnonymousFunction = { List ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
 BaseFunctionCall = { Identifier ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 Operator = {
     "/@"     // keep first
+  | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
   | "<>"     // StringJoin operator (must be before < and >)
   | "&&"     // And operator (must be before single &)
   | "||"     // Or operator
-  | "===" | "==" | "!="  // SameQ (must be before ==), Equal, Unequal
+  | "===" | "=!=" | "==" | "!="  // SameQ, UnsameQ (must be before == and !=), Equal, Unequal
   | "<=" | ">="
   | ":="
   | "+" | "-" | "*" | "/" | "^"
@@ -73,6 +76,7 @@ Term = _{
   | NumericValue
   | Constant
   | String
+  | ListAnonymousFunction
   | List
   | FunctionAnonymousFunction
   | ParenAnonymousFunction
@@ -82,7 +86,7 @@ Term = _{
   | Identifier
   | Slot
   | Association
-  | "(" ~ Expression ~ ")"
+  | "(" ~ (CompoundExpression | Expression) ~ ")"
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
@@ -94,15 +98,45 @@ SimpleTerm = _{
   | "(" ~ Expression ~ ")"
 }
 
-// Pattern: x_ or x_?test or x_ /; condition
+// TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
+// to prevent greedy matching across statement boundaries
+TermNoImplicit = _{
+    PartExtract
+  | NumericValue
+  | Constant
+  | String
+  | ListAnonymousFunction
+  | List
+  | FunctionAnonymousFunction
+  | ParenAnonymousFunction
+  | FunctionCall
+  | SimpleAnonymousFunction
+  | Identifier
+  | Slot
+  | Association
+  | "(" ~ (CompoundExpression | Expression) ~ ")"
+}
+
+// ExpressionNoImplicit is like Expression but uses TermNoImplicit
+ExpressionNoImplicit = {
+    TermNoImplicit ~ (
+        ("//" ~ PostfixFunction)+ |
+        ("//." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |
+        ("/." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |
+        (Operator ~ TermNoImplicit)*
+    )
+}
+
+// Pattern: x_ or x_Head or x_?test or x_ /; condition
 PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
 PatternCondition = { PatternName ~ "_" ~ "/;" ~ Expression }
+PatternWithHead = { PatternName ~ "_" ~ Identifier }
 PatternSimple = { PatternName ~ "_" }
-Pattern = { PatternCondition | PatternTest | PatternSimple }
+Pattern = { PatternCondition | PatternTest | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
 // PatternExpr can be a pattern or a term (for replacement rules)
-ReplacementRule = { (PatternCondition | PatternTest | PatternSimple | Term) ~ ("->" | ":>") ~ Term }
+ReplacementRule = { (PatternCondition | PatternTest | PatternWithHead | PatternSimple | Term) ~ ("->" | ":>") ~ Term }
 
 // Replacement expressions: expr /. rule or expr //. rule
 ReplaceAllExpr = { Term ~ "/." ~ (List | ReplacementRule) }
@@ -123,8 +157,11 @@ FunctionArg = _{ ReplacementRule | CompoundExpression | Expression }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
-FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternSimple }
-FunctionDefinition = { Identifier ~ "[" ~ (FunctionDefinitionPattern ~ ("," ~ FunctionDefinitionPattern)*)? ~ "]" ~ ":=" ~ Expression }
+FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternWithHead | PatternSimple }
+// Body is a simple ExpressionNoImplicit (we removed CompoundExpression option to prevent
+// greedy parsing of subsequent statements as part of the function body)
+// Compound expressions in function bodies should use explicit parentheses: f[x_] := (a; b)
+FunctionDefinition = { Identifier ~ "[" ~ (FunctionDefinitionPattern ~ ("," ~ FunctionDefinitionPattern)*)? ~ "]" ~ ":=" ~ ExpressionNoImplicit }
 
 Statement = _{ FunctionDefinition | Expression }
 

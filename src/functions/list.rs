@@ -2,6 +2,7 @@ use pest::iterators::Pair;
 
 use crate::{
   InterpreterError, Rule, evaluate_expression, evaluate_term, format_result,
+  parse_list_string,
 };
 
 /// Handle List[expr1, expr2, ...] - creates a list from elements
@@ -255,13 +256,27 @@ pub fn append(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
   let list_pair = &args_pairs[0];
-  let items = get_list_items(list_pair)?;
 
-  // evaluate existing list
-  let mut evaluated: Vec<String> = items
-    .into_iter()
-    .map(|p| evaluate_expression(p))
-    .collect::<Result<_, _>>()?;
+  // Try to get items directly from the pair, or evaluate and parse
+  let mut evaluated = match get_list_items(list_pair) {
+    Ok(items) => {
+      let res: Result<Vec<_>, _> =
+        items.into_iter().map(|p| evaluate_expression(p)).collect();
+      res?
+    }
+    Err(_) => {
+      // List is the result of a function call or variable - evaluate and parse
+      let list_str = evaluate_expression(list_pair.clone())?;
+      if list_str.starts_with('{') && list_str.ends_with('}') {
+        let inner = &list_str[1..list_str.len() - 1];
+        crate::functions::list_helpers::parse_list_elements(inner)
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of Append must be a list".into(),
+        ));
+      }
+    }
+  };
 
   // evaluate new element
   let new_elem = evaluate_expression(args_pairs[1].clone())?;
@@ -328,9 +343,22 @@ pub fn length(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
   let list_pair = &args_pairs[0];
-  let items = get_list_items(list_pair)?;
 
-  Ok(items.len().to_string())
+  // Try to get items directly from the pair, or evaluate and parse
+  match get_list_items(list_pair) {
+    Ok(items) => Ok(items.len().to_string()),
+    Err(_) => {
+      // List is the result of a function call or variable - evaluate and parse
+      let list_str = evaluate_expression(list_pair.clone())?;
+      if let Some(items) = parse_list_string(&list_str) {
+        Ok(items.len().to_string())
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "Length argument must be a list".into(),
+        ))
+      }
+    }
+  }
 }
 
 /// Handle Reverse[list] - returns a list with elements in reverse order

@@ -108,7 +108,7 @@ pub fn list_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   // Check if it's syntactically a list
   let is_list = match arg.as_rule() {
     Rule::List => true,
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let inner: Vec<_> = arg.clone().into_inner().collect();
       if inner.len() == 1 && inner[0].as_rule() == Rule::List {
         true
@@ -279,7 +279,7 @@ pub fn numeric_q(
   // Check if it's syntactically a list (lists are not numeric)
   match arg.as_rule() {
     Rule::List => return Ok("False".to_string()),
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let inner: Vec<_> = arg.clone().into_inner().collect();
       if inner.len() == 1 && inner[0].as_rule() == Rule::List {
         return Ok("False".to_string());

@@ -8,7 +8,7 @@ use crate::{
 /// Fast evaluation for function arguments - avoids expression overhead for simple cases
 fn eval_arg(arg: Pair<Rule>) -> Result<String, InterpreterError> {
   match arg.as_rule() {
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut inner = arg.clone().into_inner();
       if let Some(first) = inner.next()
         && inner.next().is_none()
@@ -97,6 +97,20 @@ pub fn same_q_strs(values: &[String]) -> String {
   "True".to_string()
 }
 
+/// UnsameQ for already-evaluated string values
+pub fn unsame_q_strs(values: &[String]) -> String {
+  if values.len() < 2 {
+    return "False".to_string();
+  }
+  let first = &values[0];
+  for v in values.iter().skip(1) {
+    if v != first {
+      return "True".to_string();
+    }
+  }
+  "False".to_string()
+}
+
 /// Handle And[expr1, expr2, ...] - logical AND of expressions
 pub fn and(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   if args_pairs.len() < 2 {
@@ -158,6 +172,23 @@ pub fn same_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     }
   }
   Ok("True".to_string())
+}
+
+/// Handle UnsameQ[expr1, expr2] - tests whether expressions are not identical
+pub fn unsame_q(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
+  if args_pairs.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "UnsameQ expects at least 2 arguments".into(),
+    ));
+  }
+  let first = evaluate_expression(args_pairs[0].clone())?;
+  for ap in args_pairs.iter().skip(1) {
+    let val = evaluate_expression(ap.clone())?;
+    if val != first {
+      return Ok("True".to_string());
+    }
+  }
+  Ok("False".to_string())
 }
 
 /// Handle Not[expr] - logical negation

@@ -21,10 +21,8 @@ enum StoredValue {
 }
 thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
-    //            name         (parameter names)      body-text
-    static FUNC_DEFS: RefCell<HashMap<String, (Vec<String>, String)>> = RefCell::new(HashMap::new());
-    // Cache for evaluated expressions (input -> result)
-    static EVAL_CACHE: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    //            name         Vec of (parameter names, body-AST) for multi-arity support
+    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, syntax::Expr)>>> = RefCell::new(HashMap::new());
 }
 
 #[derive(Error, Debug)]
@@ -135,11 +133,48 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     }
   }
 
-  // Check evaluation cache for pure expressions (no Print or other side effects)
-  let cache_key = trimmed.to_string();
-  let cached = EVAL_CACHE.with(|c| c.borrow().get(&cache_key).cloned());
-  if let Some(result) = cached {
-    return Ok(result);
+  // Fast path for simple list literals like {a, b, c}
+  // This handles many cases where we're just passing data around
+  if trimmed.starts_with('{') && trimmed.ends_with('}') {
+    // Check if it's a simple list (no operators that need evaluation)
+    if !trimmed.contains("->")
+      && !trimmed.contains(":>")
+      && !trimmed.contains("/.")
+      && !trimmed.contains("//")
+      && !trimmed.contains("/@")
+      && !trimmed.contains("@@")
+      && !trimmed.contains(" + ")
+      && !trimmed.contains(" - ")
+      && !trimmed.contains(" * ")
+      && !trimmed.contains(" / ")
+      && !trimmed.contains('[')
+    {
+      // Simple list with no function calls or operators - return as-is
+      return Ok(trimmed.to_string());
+    }
+  }
+
+  // Fast path for simple identifiers (variable lookup)
+  if trimmed
+    .chars()
+    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    && !trimmed.is_empty()
+    && trimmed.chars().next().unwrap().is_ascii_alphabetic()
+  {
+    // This is a simple identifier
+    if let Some(StoredValue::Raw(val)) =
+      ENV.with(|e| e.borrow().get(trimmed).cloned())
+    {
+      return Ok(val);
+    }
+    // Return identifier as-is if not found
+    return Ok(trimmed.to_string());
+  }
+
+  // Fast path for simple function calls like MemberQ[{a, b}, x]
+  // This handles the common case in Select predicates
+  if let Some(result) = try_fast_function_call(trimmed) {
+    return result;
   }
 
   let depth = INTERPRET_DEPTH.with(|d| {
@@ -192,18 +227,202 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
 
   if any_nonempty {
-    let result = last_result.ok_or(InterpreterError::EmptyInput)?;
-    // Cache the result if it doesn't contain Print (side effects)
-    // For simplicity, cache all results - Print already captured stdout separately
-    if !trimmed.contains("Print[") {
-      EVAL_CACHE.with(|c| {
-        c.borrow_mut().insert(cache_key, result.clone());
-      });
-    }
-    Ok(result)
+    Ok(last_result.ok_or(InterpreterError::EmptyInput)?)
   } else {
     Err(InterpreterError::EmptyInput)
   }
+}
+
+/// Try to evaluate a simple function call without full parsing.
+/// Returns Some(result) if successfully handled, None if needs full parsing.
+fn try_fast_function_call(
+  input: &str,
+) -> Option<Result<String, InterpreterError>> {
+  // Pattern: FunctionName[arg1, arg2, ...]
+  // Must start with a letter and have exactly one balanced [...] pair at the end
+
+  let open_bracket = input.find('[')?;
+  if !input.ends_with(']') {
+    return None;
+  }
+
+  let func_name = &input[..open_bracket];
+  // Validate function name is a simple identifier
+  if func_name.is_empty()
+    || !func_name
+      .chars()
+      .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    || !func_name.chars().next().unwrap().is_ascii_alphabetic()
+  {
+    return None;
+  }
+
+  let args_str = &input[open_bracket + 1..input.len() - 1];
+
+  // Check for nested brackets (indicates complex expression)
+  let mut depth = 0;
+  for c in args_str.chars() {
+    match c {
+      '[' => depth += 1,
+      ']' => depth -= 1,
+      _ => {}
+    }
+    if depth < 0 {
+      return None; // Unbalanced
+    }
+  }
+  // After processing, we should be at depth 0 for well-formed args
+
+  // Split arguments by comma (respecting nested structures)
+  let args = split_args(args_str);
+
+  // Handle specific functions that are commonly called
+  match func_name {
+    "MemberQ" => {
+      if args.len() != 2 {
+        return None;
+      }
+      // First arg should be a list, second is the element to find
+      let list_str = args[0].trim();
+      let elem_expr = args[1].trim();
+
+      // Evaluate the element expression
+      let target = match interpret(elem_expr) {
+        Ok(v) => v,
+        Err(_) => return None,
+      };
+
+      // Parse the list
+      if !list_str.starts_with('{') || !list_str.ends_with('}') {
+        return None; // Not a literal list, need full parsing
+      }
+
+      let inner = &list_str[1..list_str.len() - 1];
+      let list_elems = split_args(inner);
+
+      // Check if target is in the list
+      for elem in list_elems {
+        let elem = elem.trim();
+        // Try to evaluate the list element if needed
+        let elem_val = if elem.contains('[') {
+          match interpret(elem) {
+            Ok(v) => v,
+            Err(_) => elem.to_string(),
+          }
+        } else {
+          elem.to_string()
+        };
+        if elem_val == target {
+          return Some(Ok("True".to_string()));
+        }
+      }
+      Some(Ok("False".to_string()))
+    }
+    "First" => {
+      if args.len() != 1 {
+        return None;
+      }
+      let arg = args[0].trim();
+      // If the argument is a variable, look it up
+      let list_str = if arg
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+        && !arg.is_empty()
+        && arg.chars().next().unwrap().is_ascii_alphabetic()
+      {
+        // It's an identifier, look it up
+        match ENV.with(|e| e.borrow().get(arg).cloned()) {
+          Some(StoredValue::Raw(val)) => val,
+          _ => return None,
+        }
+      } else if arg.starts_with('{') && arg.ends_with('}') {
+        arg.to_string()
+      } else {
+        return None;
+      };
+
+      // Parse the list
+      if !list_str.starts_with('{') || !list_str.ends_with('}') {
+        return None;
+      }
+      let inner = &list_str[1..list_str.len() - 1];
+      let elems = split_args(inner);
+      if elems.is_empty() {
+        return Some(Err(InterpreterError::EvaluationError(
+          "First called on empty list".into(),
+        )));
+      }
+      Some(Ok(elems[0].trim().to_string()))
+    }
+    "Rest" => {
+      if args.len() != 1 {
+        return None;
+      }
+      let arg = args[0].trim();
+      // If the argument is a variable, look it up
+      let list_str = if arg
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+        && !arg.is_empty()
+        && arg.chars().next().unwrap().is_ascii_alphabetic()
+      {
+        match ENV.with(|e| e.borrow().get(arg).cloned()) {
+          Some(StoredValue::Raw(val)) => val,
+          _ => return None,
+        }
+      } else if arg.starts_with('{') && arg.ends_with('}') {
+        arg.to_string()
+      } else {
+        return None;
+      };
+
+      // Parse the list
+      if !list_str.starts_with('{') || !list_str.ends_with('}') {
+        return None;
+      }
+      let inner = &list_str[1..list_str.len() - 1];
+      let elems = split_args(inner);
+      if elems.is_empty() {
+        return Some(Err(InterpreterError::EvaluationError(
+          "Rest called on empty list".into(),
+        )));
+      }
+      let rest: Vec<_> = elems.iter().skip(1).map(|s| s.trim()).collect();
+      Some(Ok(format!("{{{}}}", rest.join(", "))))
+    }
+    _ => None,
+  }
+}
+
+/// Split a comma-separated argument list, respecting nested structures
+fn split_args(s: &str) -> Vec<String> {
+  let mut args = Vec::new();
+  let mut current = String::new();
+  let mut depth = 0;
+
+  for c in s.chars() {
+    match c {
+      '{' | '[' | '(' => {
+        depth += 1;
+        current.push(c);
+      }
+      '}' | ']' | ')' => {
+        depth -= 1;
+        current.push(c);
+      }
+      ',' if depth == 0 => {
+        args.push(current.trim().to_string());
+        current.clear();
+      }
+      _ => {
+        current.push(c);
+      }
+    }
+  }
+  if !current.is_empty() {
+    args.push(current.trim().to_string());
+  }
+  args
 }
 
 /// New interpret function that returns both stdout and the result
@@ -277,7 +496,7 @@ pub fn format_fraction(numerator: i64, denominator: i64) -> String {
 
 // Parse display-form strings like "{1, 2, 3}" into top-level comma-separated
 // element strings.  Returns None if `s` is not a braced list.
-fn parse_list_string(s: &str) -> Option<Vec<String>> {
+pub fn parse_list_string(s: &str) -> Option<Vec<String>> {
   if !(s.starts_with('{') && s.ends_with('}')) {
     return None;
   }
@@ -315,29 +534,38 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
 
   for item in inner {
     match item.as_rule() {
-      Rule::PatternSimple | Rule::PatternTest | Rule::PatternCondition => {
-        // Extract parameter name from pattern (e.g., "x_" -> "x")
+      Rule::PatternSimple
+      | Rule::PatternTest
+      | Rule::PatternCondition
+      | Rule::PatternWithHead => {
+        // Extract parameter name from pattern (e.g., "x_" -> "x", "x_List" -> "x")
         let param = item.as_str().trim_end_matches('_').to_owned();
-        // Handle PatternTest and PatternCondition by taking just the name part
+        // Handle patterns by taking just the name part before the _
         let param = param.split('_').next().unwrap_or(&param).to_owned();
         params.push(param);
       }
-      Rule::Expression => {
+      Rule::Expression
+      | Rule::ExpressionNoImplicit
+      | Rule::CompoundExpression => {
         body_pair = Some(item);
       }
       _ => {}
     }
   }
 
-  let body_txt = body_pair
-    .ok_or_else(|| {
-      InterpreterError::EvaluationError("Missing function body".into())
-    })?
-    .as_str()
-    .to_owned();
+  // Convert body to AST instead of storing as string
+  let body_expr = syntax::pair_to_expr(body_pair.ok_or_else(|| {
+    InterpreterError::EvaluationError("Missing function body".into())
+  })?);
 
   FUNC_DEFS.with(|m| {
-    m.borrow_mut().insert(func_name, (params, body_txt));
+    let mut defs = m.borrow_mut();
+    let entry = defs.entry(func_name).or_insert_with(Vec::new);
+    // Remove any existing definition with the same arity
+    let arity = params.len();
+    entry.retain(|(p, _)| p.len() != arity);
+    // Add the new definition with parsed AST
+    entry.push((params, body_expr));
   });
   Ok(())
 }
@@ -505,8 +733,9 @@ fn apply_map_operator(
     }
     Rule::SimpleAnonymousFunction
     | Rule::FunctionAnonymousFunction
-    | Rule::ParenAnonymousFunction => {
-      // Anonymous function like #^2& or #+1& or If[#>0,#,0]&
+    | Rule::ParenAnonymousFunction
+    | Rule::ListAnonymousFunction => {
+      // Anonymous function like #^2& or #+1& or If[#>0,#,0]& or {#, #^2}&
       // Replace # with each element and evaluate
       // Note: trim() first to remove any trailing whitespace that pest may include
       let body = func_src.trim().trim_end_matches('&');

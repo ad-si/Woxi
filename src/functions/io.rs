@@ -32,7 +32,7 @@ pub fn print(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
         raw_str.trim_matches('"').to_string()
       }
     }
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut expr_inner = arg_pair.clone().into_inner();
       if let Some(first) = expr_inner.next() {
         // Check if it's a single-child expression (no more children)
