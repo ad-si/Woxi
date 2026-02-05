@@ -567,4 +567,167 @@ mod interpreter_tests {
       );
     }
   }
+
+  mod full_form {
+    use super::*;
+
+    #[test]
+    fn full_form_plus() {
+      assert_eq!(interpret("FullForm[x + y + z]").unwrap(), "Plus[x, y, z]");
+    }
+
+    #[test]
+    fn full_form_times() {
+      assert_eq!(interpret("FullForm[x y z]").unwrap(), "Times[x, y, z]");
+    }
+
+    #[test]
+    fn full_form_list() {
+      assert_eq!(interpret("FullForm[{1, 2, 3}]").unwrap(), "List[1, 2, 3]");
+    }
+
+    #[test]
+    fn full_form_power() {
+      assert_eq!(interpret("FullForm[x^2]").unwrap(), "Power[x, 2]");
+    }
+
+    #[test]
+    fn full_form_complex() {
+      assert_eq!(
+        interpret("FullForm[a b + c]").unwrap(),
+        "Plus[Times[a, b], c]"
+      );
+    }
+  }
+
+  mod construct {
+    use super::*;
+
+    #[test]
+    fn construct_basic() {
+      assert_eq!(interpret("Construct[f, a, b, c]").unwrap(), "f[a, b, c]");
+    }
+
+    #[test]
+    fn construct_single_arg() {
+      assert_eq!(interpret("Construct[f, a]").unwrap(), "f[a]");
+    }
+
+    #[test]
+    fn construct_with_fold() {
+      assert_eq!(
+        interpret("Fold[Construct, f, {a, b, c}]").unwrap(),
+        "f[a][b][c]"
+      );
+    }
+  }
+
+  mod association_ast {
+    use super::*;
+
+    #[test]
+    fn keys_basic() {
+      assert_eq!(
+        interpret("Keys[<|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
+        "{a, b}"
+      );
+    }
+
+    #[test]
+    fn values_basic() {
+      assert_eq!(
+        interpret("Values[<|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
+        "{1, 2}"
+      );
+    }
+
+    #[test]
+    fn keys_with_variable() {
+      assert_eq!(
+        interpret("h = <|\"x\" -> 10, \"y\" -> 20|>; Keys[h]").unwrap(),
+        "{x, y}"
+      );
+    }
+
+    #[test]
+    fn values_with_variable() {
+      assert_eq!(
+        interpret("h = <|\"x\" -> 10, \"y\" -> 20|>; Values[h]").unwrap(),
+        "{10, 20}"
+      );
+    }
+
+    #[test]
+    fn key_exists_q_true() {
+      assert_eq!(
+        interpret("h = <|\"a\" -> 1|>; KeyExistsQ[h, \"a\"]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn key_exists_q_false() {
+      assert_eq!(
+        interpret("h = <|\"a\" -> 1|>; KeyExistsQ[h, \"b\"]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn key_drop_from() {
+      assert_eq!(
+        interpret("KeyDropFrom[<|\"a\" -> 1, \"b\" -> 2|>, \"a\"]").unwrap(),
+        "<|b -> 2|>"
+      );
+    }
+
+    #[test]
+    fn part_extraction() {
+      assert_eq!(
+        interpret("h = <|\"Green\" -> 2, \"Red\" -> 1|>; h[[\"Green\"]]")
+          .unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn map_over_association() {
+      assert_eq!(
+        interpret("Map[#^2&, <|\"a\" -> 2, \"b\" -> 3|>]").unwrap(),
+        "<|a -> 4, b -> 9|>"
+      );
+    }
+  }
+
+  mod list_threading {
+    use super::*;
+
+    #[test]
+    fn list_plus_scalar() {
+      assert_eq!(interpret("{1, 2, 3} + 10").unwrap(), "{11, 12, 13}");
+    }
+
+    #[test]
+    fn scalar_plus_list() {
+      assert_eq!(interpret("10 + {1, 2, 3}").unwrap(), "{11, 12, 13}");
+    }
+
+    #[test]
+    fn list_plus_list() {
+      assert_eq!(
+        interpret("{1, 2, 3} + {10, 20, 30}").unwrap(),
+        "{11, 22, 33}"
+      );
+    }
+
+    #[test]
+    fn list_times_scalar() {
+      assert_eq!(interpret("{1, 2, 3} * 2").unwrap(), "{2, 4, 6}");
+    }
+
+    #[test]
+    fn list_power_scalar() {
+      assert_eq!(interpret("{1, 2, 3}^2").unwrap(), "{1, 4, 9}");
+    }
+  }
 }
