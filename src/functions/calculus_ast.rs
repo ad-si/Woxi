@@ -409,11 +409,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             && name == var
             && is_constant_wrt(right, var)
           {
-            let new_exp = Expr::BinaryOp {
+            let new_exp = simplify(Expr::BinaryOp {
               op: Plus,
               left: right.clone(),
               right: Box::new(Expr::Integer(1)),
-            };
+            });
             return Some(Expr::BinaryOp {
               op: Divide,
               left: Box::new(Expr::BinaryOp {
@@ -433,6 +433,15 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
     // Function calls
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
+        "Plus" if args.len() >= 2 => {
+          // ∫ (a + b + ...) dx = ∫ a dx + ∫ b dx + ...
+          let integrals: Option<Vec<Expr>> =
+            args.iter().map(|arg| integrate(arg, var)).collect();
+          integrals.map(|ints| Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: ints,
+          })
+        }
         "Sin" if args.len() == 1 => {
           // ∫ sin(x) dx = -cos(x)
           if let Expr::Identifier(n) = &args[0]

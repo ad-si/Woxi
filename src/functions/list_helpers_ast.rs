@@ -625,6 +625,18 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Union sorts its result in Mathematica
+  result.sort_by(|a, b| {
+    let ka = crate::syntax::expr_to_string(a);
+    let kb = crate::syntax::expr_to_string(b);
+    // Try numeric comparison first
+    if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
+      na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+    } else {
+      ka.cmp(&kb)
+    }
+  });
+
   Ok(Expr::List(result))
 }
 
@@ -778,7 +790,7 @@ pub fn table_ast(
           }
         }
       } else if items.len() >= 3 {
-        // {i, min, max} form
+        // {i, min, max} or {i, min, max, step} form
         let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
         let min_val = expr_to_i128(&min_expr).ok_or_else(|| {
@@ -792,15 +804,49 @@ pub fn table_ast(
           )
         })?;
 
+        // Get step (default is 1)
+        let step_val = if items.len() >= 4 {
+          let step_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
+          expr_to_i128(&step_expr).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Table: step must be an integer".into(),
+            )
+          })?
+        } else {
+          1
+        };
+
+        if step_val == 0 {
+          return Err(InterpreterError::EvaluationError(
+            "Table: step cannot be zero".into(),
+          ));
+        }
+
         let mut results = Vec::new();
-        for i in min_val..=max_val {
-          let substituted = crate::syntax::substitute_variable(
-            body,
-            &var_name,
-            &Expr::Integer(i),
-          );
-          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-          results.push(val);
+        let mut i = min_val;
+        if step_val > 0 {
+          while i <= max_val {
+            let substituted = crate::syntax::substitute_variable(
+              body,
+              &var_name,
+              &Expr::Integer(i),
+            );
+            let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+            results.push(val);
+            i += step_val;
+          }
+        } else {
+          // Negative step
+          while i >= max_val {
+            let substituted = crate::syntax::substitute_variable(
+              body,
+              &var_name,
+              &Expr::Integer(i),
+            );
+            let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+            results.push(val);
+            i += step_val;
+          }
         }
         return Ok(Expr::List(results));
       }
@@ -1258,12 +1304,19 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Check if any element is Real - result should preserve Real type
+  let has_real = items.iter().any(|item| matches!(item, Expr::Real(_)));
+
   let mut sum = 0.0;
   let mut results = Vec::new();
   for item in items {
     if let Some(n) = expr_to_f64(item) {
       sum += n;
-      results.push(f64_to_expr(sum));
+      if has_real {
+        results.push(Expr::Real(sum));
+      } else {
+        results.push(f64_to_expr(sum));
+      }
     } else {
       return Ok(Expr::FunctionCall {
         name: "Accumulate".to_string(),

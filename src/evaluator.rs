@@ -516,16 +516,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
 
       match op {
         BinaryOperator::Plus => {
-          if let (Some(l), Some(r)) = (left_num, right_num) {
-            Ok(num_to_expr(l + r))
-          } else {
-            // Symbolic
-            Ok(Expr::BinaryOp {
-              op: *op,
-              left: Box::new(left_val),
-              right: Box::new(right_val),
-            })
-          }
+          // Use plus_ast for proper symbolic handling and canonical ordering
+          crate::functions::math_ast::plus_ast(&[left_val, right_val])
         }
         BinaryOperator::Minus => {
           if let (Some(l), Some(r)) = (left_num, right_num) {
@@ -556,7 +548,15 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
                 "Division by zero".into(),
               ));
             }
-            Ok(Expr::Real(l / r))
+            // Keep as Real only if either operand was Real
+            let has_real = matches!(left_val, Expr::Real(_))
+              || matches!(right_val, Expr::Real(_));
+            let result = l / r;
+            if has_real {
+              Ok(Expr::Real(result))
+            } else {
+              Ok(num_to_expr(result))
+            }
           } else {
             Ok(Expr::BinaryOp {
               op: *op,
@@ -566,15 +566,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
         }
         BinaryOperator::Power => {
-          if let (Some(l), Some(r)) = (left_num, right_num) {
-            Ok(Expr::Real(l.powf(r)))
-          } else {
-            Ok(Expr::BinaryOp {
-              op: *op,
-              left: Box::new(left_val),
-              right: Box::new(right_val),
-            })
-          }
+          // Delegate to power_ast for proper handling of Rational, Real, etc.
+          crate::functions::math_ast::power_ast(&[left_val, right_val])
         }
         BinaryOperator::And => {
           let l = matches!(&left_val, Expr::Identifier(s) if s == "True");
@@ -1637,8 +1630,11 @@ pub fn evaluate_function_call_ast(
       return crate::functions::boolean_ast::nor_ast(args);
     }
 
-    // Note: D and Integrate use Pair-based implementation for correct formatting
-    // The AST versions are available in calculus_ast.rs but need formatting work
+    // Use AST-native Integrate for better handling of Plus expressions
+    "Integrate" if args.len() == 2 => {
+      return crate::functions::calculus_ast::integrate_ast(args);
+    }
+
     _ => {}
   }
 
