@@ -167,23 +167,40 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Note: Minus with 2 arguments is not valid in Wolfram Language
 /// (use Subtract for that)
 pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    // Return unevaluated for wrong number of arguments - fallback to Pair-based
-    // which handles the error message properly
-    return Ok(Expr::FunctionCall {
-      name: "Minus".to_string(),
-      args: args.to_vec(),
-    });
-  }
-
-  // Unary minus
-  if let Some(n) = expr_to_num(&args[0]) {
-    Ok(num_to_expr(-n))
+  if args.len() == 1 {
+    // Unary minus
+    if let Some(n) = expr_to_num(&args[0]) {
+      Ok(num_to_expr(-n))
+    } else {
+      Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(args[0].clone()),
+      })
+    }
   } else {
-    Ok(Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
-      operand: Box::new(args[0].clone()),
-    })
+    // Wrong arity - print message and return unevaluated expression
+    use std::io::{self, Write};
+    println!(
+      "\nMinus::argx: Minus called with {} arguments; 1 argument is expected.",
+      args.len()
+    );
+    io::stdout().flush().ok();
+    // Return as a BinaryOp chain with Minus operator
+    if args.is_empty() {
+      return Err(InterpreterError::EvaluationError(
+        "Minus expects at least 1 argument".into(),
+      ));
+    }
+    // Build chain of Minus operators: a - b - c - ...
+    let mut result = args[0].clone();
+    for arg in &args[1..] {
+      result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(result),
+        right: Box::new(arg.clone()),
+      };
+    }
+    Ok(result)
   }
 }
 
@@ -265,18 +282,11 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Check if either operand is Real - result should be Real
-  let has_real = matches!(base, Expr::Real(_)) || matches!(exp, Expr::Real(_));
-
   match (expr_to_num(base), expr_to_num(exp)) {
     (Some(a), Some(b)) => {
       let result = a.powf(b);
-      if has_real {
-        // Keep as Real if any input was Real
-        Ok(Expr::Real(result))
-      } else {
-        Ok(num_to_expr(result))
-      }
+      // Always use num_to_expr to get Integer when result is whole number
+      Ok(num_to_expr(result))
     }
     _ => Ok(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -734,24 +744,73 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Mean: empty list".into(),
         ));
       }
-      let mut sum = 0.0;
+      // Try to compute exact integer sum first
+      let mut int_sum: Option<i128> = Some(0);
+      let mut has_real = false;
       for item in items {
-        if let Some(n) = expr_to_num(item) {
-          sum += n;
-        } else {
-          return Ok(Expr::FunctionCall {
-            name: "Mean".to_string(),
-            args: args.to_vec(),
-          });
+        match item {
+          Expr::Integer(n) => {
+            if let Some(s) = int_sum {
+              int_sum = s.checked_add(*n);
+            }
+          }
+          Expr::Real(_) => {
+            has_real = true;
+            int_sum = None;
+          }
+          _ => {
+            int_sum = None;
+          }
         }
       }
-      Ok(num_to_expr(sum / items.len() as f64))
+
+      if let Some(sum) = int_sum {
+        // All integers - return exact rational or integer
+        let count = items.len() as i128;
+        if sum % count == 0 {
+          Ok(Expr::Integer(sum / count))
+        } else {
+          // Return as Rational
+          let g = gcd_helper(sum.abs(), count);
+          let num = sum / g;
+          let denom = count / g;
+          Ok(Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(num), Expr::Integer(denom)],
+          })
+        }
+      } else if has_real {
+        // Has real numbers - compute float
+        let mut sum = 0.0;
+        for item in items {
+          if let Some(n) = expr_to_num(item) {
+            sum += n;
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Mean".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        Ok(num_to_expr(sum / items.len() as f64))
+      } else {
+        // Non-numeric elements
+        Ok(Expr::FunctionCall {
+          name: "Mean".to_string(),
+          args: args.to_vec(),
+        })
+      }
     }
     _ => Ok(Expr::FunctionCall {
       name: "Mean".to_string(),
       args: args.to_vec(),
     }),
   }
+}
+
+/// Helper function to compute GCD
+fn gcd_helper(a: i128, b: i128) -> i128 {
+  if b == 0 { a } else { gcd_helper(b, a % b) }
 }
 
 /// Factorial[n] or n!
@@ -924,7 +983,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(n) = expr_to_num(&args[0]) {
-    Ok(Expr::Real(n.sin()))
+    Ok(num_to_expr(n.sin()))
   } else {
     Ok(Expr::FunctionCall {
       name: "Sin".to_string(),
@@ -940,7 +999,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(n) = expr_to_num(&args[0]) {
-    Ok(Expr::Real(n.cos()))
+    Ok(num_to_expr(n.cos()))
   } else {
     Ok(Expr::FunctionCall {
       name: "Cos".to_string(),
@@ -956,7 +1015,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(n) = expr_to_num(&args[0]) {
-    Ok(Expr::Real(n.tan()))
+    Ok(num_to_expr(n.tan()))
   } else {
     Ok(Expr::FunctionCall {
       name: "Tan".to_string(),
@@ -972,7 +1031,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(n) = expr_to_num(&args[0]) {
-    Ok(Expr::Real(n.exp()))
+    Ok(num_to_expr(n.exp()))
   } else {
     Ok(Expr::FunctionCall {
       name: "Exp".to_string(),
