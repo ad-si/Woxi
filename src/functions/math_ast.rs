@@ -10,6 +10,18 @@ fn expr_to_num(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
+    // Handle Rational[numer, denom]
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Some(numer), Some(denom)) =
+        (expr_to_num(&args[0]), expr_to_num(&args[1]))
+        && denom != 0.0
+      {
+        return Some(numer / denom);
+      }
+      None
+    }
     _ => None,
   }
 }
@@ -20,6 +32,49 @@ fn num_to_expr(n: f64) -> Expr {
     Expr::Integer(n as i128)
   } else {
     Expr::Real(n)
+  }
+}
+
+/// Compute GCD of two integers using Euclidean algorithm
+fn gcd(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let temp = b;
+    b = a % b;
+    a = temp;
+  }
+  a
+}
+
+/// Create a rational or integer result from numerator/denominator
+/// Simplifies the fraction and returns Integer if denominator is 1
+fn make_rational(numer: i128, denom: i128) -> Expr {
+  if denom == 0 {
+    // Division by zero - shouldn't reach here but be safe
+    return Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(numer), Expr::Integer(denom)],
+    };
+  }
+
+  // Handle sign: put sign in numerator
+  let (numer, denom) = if denom < 0 {
+    (-numer, -denom)
+  } else {
+    (numer, denom)
+  };
+
+  // Simplify by GCD
+  let g = gcd(numer, denom);
+  let (numer, denom) = (numer / g, denom / g);
+
+  if denom == 1 {
+    Expr::Integer(numer)
+  } else {
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(numer), Expr::Integer(denom)],
+    }
   }
 }
 
@@ -215,36 +270,35 @@ pub fn divide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check for list threading
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
-    return thread_binary_over_lists(args, |a, b| {
-      match (expr_to_num(a), expr_to_num(b)) {
-        (Some(x), Some(y)) => {
-          if y == 0.0 {
-            Err(InterpreterError::EvaluationError("Division by zero".into()))
-          } else {
-            Ok(num_to_expr(x / y))
-          }
-        }
-        _ => Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        }),
-      }
-    });
+    return thread_binary_over_lists(args, divide_two);
   }
 
-  match (expr_to_num(&args[0]), expr_to_num(&args[1])) {
-    (Some(a), Some(b)) => {
-      if b == 0.0 {
+  divide_two(&args[0], &args[1])
+}
+
+/// Helper for division of two arguments
+fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  // For two integers, keep as Rational (fraction)
+  if let (Expr::Integer(numer), Expr::Integer(denom)) = (a, b) {
+    if *denom == 0 {
+      return Err(InterpreterError::EvaluationError("Division by zero".into()));
+    }
+    return Ok(make_rational(*numer, *denom));
+  }
+
+  // For reals, perform floating-point division
+  match (expr_to_num(a), expr_to_num(b)) {
+    (Some(x), Some(y)) => {
+      if y == 0.0 {
         Err(InterpreterError::EvaluationError("Division by zero".into()))
       } else {
-        Ok(num_to_expr(a / b))
+        Ok(Expr::Real(x / y))
       }
     }
     _ => Ok(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
-      left: Box::new(args[0].clone()),
-      right: Box::new(args[1].clone()),
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
     }),
   }
 }
@@ -282,11 +336,18 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // If either operand is Real, result is Real (even if whole number)
+  let has_real = matches!(base, Expr::Real(_)) || matches!(exp, Expr::Real(_));
+
   match (expr_to_num(base), expr_to_num(exp)) {
     (Some(a), Some(b)) => {
       let result = a.powf(b);
-      // Always use num_to_expr to get Integer when result is whole number
-      Ok(num_to_expr(result))
+      if has_real {
+        Ok(Expr::Real(result))
+      } else {
+        // Both were integers - use num_to_expr to get Integer when result is whole
+        Ok(num_to_expr(result))
+      }
     }
     _ => Ok(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,

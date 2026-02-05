@@ -334,6 +334,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Divisible[n, m] - Tests if n is divisible by m
+/// Returns unevaluated if arguments are not exact numbers (non-integer Reals)
 pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -341,16 +342,42 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Check if first argument is a non-exact number (Real with fractional part)
   let n = match &args[0] {
     Expr::Integer(n) => *n,
     Expr::Real(f) if f.fract() == 0.0 => *f as i128,
-    _ => return Ok(bool_expr(false)),
+    Expr::Real(_) => {
+      // Non-exact number - return unevaluated
+      return Ok(Expr::FunctionCall {
+        name: "Divisible".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Divisible".to_string(),
+        args: args.to_vec(),
+      });
+    }
   };
 
+  // Check if second argument is a non-exact number
   let m = match &args[1] {
     Expr::Integer(m) => *m,
     Expr::Real(f) if f.fract() == 0.0 => *f as i128,
-    _ => return Ok(bool_expr(false)),
+    Expr::Real(_) => {
+      // Non-exact number - return unevaluated
+      return Ok(Expr::FunctionCall {
+        name: "Divisible".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Divisible".to_string(),
+        args: args.to_vec(),
+      });
+    }
   };
 
   if m == 0 {
