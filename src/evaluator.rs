@@ -1059,6 +1059,203 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::complement_ast(args);
     }
 
+    // Additional AST-native list functions
+    "Table" if args.len() == 2 => {
+      return list_helpers_ast::table_ast(&args[0], &args[1]);
+    }
+    "MapThread" if args.len() == 2 => {
+      return list_helpers_ast::map_thread_ast(&args[0], &args[1]);
+    }
+    "Partition" if args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        return list_helpers_ast::partition_ast(&args[0], *n);
+      }
+    }
+    "First" if args.len() == 1 => {
+      return list_helpers_ast::first_ast(&args[0]);
+    }
+    "Last" if args.len() == 1 => {
+      return list_helpers_ast::last_ast(&args[0]);
+    }
+    "Rest" if args.len() == 1 => {
+      return list_helpers_ast::rest_ast(&args[0]);
+    }
+    "Most" if args.len() == 1 => {
+      return list_helpers_ast::most_ast(&args[0]);
+    }
+    "Take" if args.len() == 2 => {
+      return list_helpers_ast::take_ast(&args[0], &args[1]);
+    }
+    "Drop" if args.len() == 2 => {
+      return list_helpers_ast::drop_ast(&args[0], &args[1]);
+    }
+    "Flatten" if args.len() == 1 => {
+      return list_helpers_ast::flatten_ast(&args[0]);
+    }
+    "Reverse" if args.len() == 1 => {
+      return list_helpers_ast::reverse_ast(&args[0]);
+    }
+    "Sort" if args.len() == 1 => {
+      return list_helpers_ast::sort_ast(&args[0]);
+    }
+    "Range" => {
+      return list_helpers_ast::range_ast(args);
+    }
+    "Accumulate" if args.len() == 1 => {
+      return list_helpers_ast::accumulate_ast(&args[0]);
+    }
+    "Differences" if args.len() == 1 => {
+      return list_helpers_ast::differences_ast(&args[0]);
+    }
+    "Scan" if args.len() == 2 => {
+      return list_helpers_ast::scan_ast(&args[0], &args[1]);
+    }
+    "FoldList" if args.len() == 3 => {
+      return list_helpers_ast::fold_list_ast(&args[0], &args[1], &args[2]);
+    }
+    "FixedPointList" if args.len() >= 2 => {
+      let max_iter = if args.len() == 3 {
+        if let Expr::Integer(n) = &args[2] {
+          Some(*n)
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+      return list_helpers_ast::fixed_point_list_ast(
+        &args[0], &args[1], max_iter,
+      );
+    }
+    "Transpose" if args.len() == 1 => {
+      return list_helpers_ast::transpose_ast(&args[0]);
+    }
+    "Riffle" if args.len() == 2 => {
+      return list_helpers_ast::riffle_ast(&args[0], &args[1]);
+    }
+    "RotateLeft" if args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        return list_helpers_ast::rotate_left_ast(&args[0], *n);
+      }
+    }
+    "RotateLeft" if args.len() == 1 => {
+      return list_helpers_ast::rotate_left_ast(&args[0], 1);
+    }
+    "RotateRight" if args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        return list_helpers_ast::rotate_right_ast(&args[0], *n);
+      }
+    }
+    "RotateRight" if args.len() == 1 => {
+      return list_helpers_ast::rotate_right_ast(&args[0], 1);
+    }
+    "PadLeft" if args.len() >= 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        let pad = if args.len() == 3 {
+          args[2].clone()
+        } else {
+          Expr::Integer(0)
+        };
+        return list_helpers_ast::pad_left_ast(&args[0], *n, &pad);
+      }
+    }
+    "PadRight" if args.len() >= 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        let pad = if args.len() == 3 {
+          args[2].clone()
+        } else {
+          Expr::Integer(0)
+        };
+        return list_helpers_ast::pad_right_ast(&args[0], *n, &pad);
+      }
+    }
+    "Join" => {
+      return list_helpers_ast::join_ast(args);
+    }
+    "Append" if args.len() == 2 => {
+      return list_helpers_ast::append_ast(&args[0], &args[1]);
+    }
+    "Prepend" if args.len() == 2 => {
+      return list_helpers_ast::prepend_ast(&args[0], &args[1]);
+    }
+    "DeleteDuplicatesBy" if args.len() == 2 => {
+      return list_helpers_ast::delete_duplicates_by_ast(&args[0], &args[1]);
+    }
+    "Median" if args.len() == 1 => {
+      return list_helpers_ast::median_ast(&args[0]);
+    }
+    "Count" if args.len() == 2 => {
+      return list_helpers_ast::count_ast(&args[0], &args[1]);
+    }
+    "ConstantArray" if args.len() == 2 => {
+      return list_helpers_ast::constant_array_ast(&args[0], &args[1]);
+    }
+    "NestWhile" if args.len() >= 3 => {
+      let max_iter = if args.len() == 4 {
+        if let Expr::Integer(n) = &args[3] {
+          Some(*n)
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+      return list_helpers_ast::nest_while_ast(
+        &args[0], &args[1], &args[2], max_iter,
+      );
+    }
+    "NestWhileList" if args.len() >= 3 => {
+      let max_iter = if args.len() == 4 {
+        if let Expr::Integer(n) = &args[3] {
+          Some(*n)
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+      return list_helpers_ast::nest_while_list_ast(
+        &args[0], &args[1], &args[2], max_iter,
+      );
+    }
+    "Product" => {
+      return list_helpers_ast::product_ast(args);
+    }
+    "Sum" => {
+      return list_helpers_ast::sum_ast(args);
+    }
+    "Thread" if args.len() == 1 => {
+      return list_helpers_ast::thread_ast(&args[0]);
+    }
+    "Through" if args.len() == 1 => {
+      return list_helpers_ast::through_ast(&args[0]);
+    }
+    "TakeLargest" if args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        return list_helpers_ast::take_largest_ast(&args[0], *n);
+      }
+    }
+    "TakeSmallest" if args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        return list_helpers_ast::take_smallest_ast(&args[0], *n);
+      }
+    }
+    "ArrayDepth" if args.len() == 1 => {
+      return list_helpers_ast::array_depth_ast(&args[0]);
+    }
+    "TakeWhile" if args.len() == 2 => {
+      return list_helpers_ast::take_while_ast(&args[0], &args[1]);
+    }
+    "Do" if args.len() == 2 => {
+      return list_helpers_ast::do_ast(&args[0], &args[1]);
+    }
+    "DeleteCases" if args.len() == 2 => {
+      return list_helpers_ast::delete_cases_ast(&args[0], &args[1]);
+    }
+    "MinMax" if args.len() == 1 => {
+      return list_helpers_ast::min_max_ast(&args[0]);
+    }
+
     // AST-native string functions
     "StringLength" if args.len() == 1 => {
       return crate::functions::string_ast::string_length_ast(args);
@@ -1236,7 +1433,7 @@ pub fn evaluate_function_call_ast(
     "Times" => {
       return crate::functions::math_ast::times_ast(args);
     }
-    "Minus" => {
+    "Minus" if args.len() == 1 => {
       return crate::functions::math_ast::minus_ast(args);
     }
     "Subtract" if args.len() == 2 => {

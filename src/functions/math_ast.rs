@@ -110,48 +110,27 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Minus[a] or Minus[a, b] - Negation or subtraction
+/// Minus[a] - Unary negation only
+/// Note: Minus with 2 arguments is not valid in Wolfram Language
+/// (use Subtract for that)
 pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  match args.len() {
-    1 => {
-      // Unary minus
-      if let Some(n) = expr_to_num(&args[0]) {
-        Ok(num_to_expr(-n))
-      } else {
-        Ok(Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
-          operand: Box::new(args[0].clone()),
-        })
-      }
-    }
-    2 => {
-      // Binary subtraction with list threading
-      let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
-      if has_list {
-        return thread_binary_over_lists(args, |a, b| {
-          match (expr_to_num(a), expr_to_num(b)) {
-            (Some(x), Some(y)) => Ok(num_to_expr(x - y)),
-            _ => Ok(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Minus,
-              left: Box::new(a.clone()),
-              right: Box::new(b.clone()),
-            }),
-          }
-        });
-      }
+  if args.len() != 1 {
+    // Return unevaluated for wrong number of arguments - fallback to Pair-based
+    // which handles the error message properly
+    return Ok(Expr::FunctionCall {
+      name: "Minus".to_string(),
+      args: args.to_vec(),
+    });
+  }
 
-      match (expr_to_num(&args[0]), expr_to_num(&args[1])) {
-        (Some(a), Some(b)) => Ok(num_to_expr(a - b)),
-        _ => Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Minus,
-          left: Box::new(args[0].clone()),
-          right: Box::new(args[1].clone()),
-        }),
-      }
-    }
-    _ => Err(InterpreterError::EvaluationError(
-      "Minus expects 1 or 2 arguments".into(),
-    )),
+  // Unary minus
+  if let Some(n) = expr_to_num(&args[0]) {
+    Ok(num_to_expr(-n))
+  } else {
+    Ok(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(args[0].clone()),
+    })
   }
 }
 
@@ -461,7 +440,7 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Round[x] - Round to nearest integer
+/// Round[x] - Round to nearest integer using banker's rounding (round half to even)
 pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -469,7 +448,18 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(n) = expr_to_num(&args[0]) {
-    Ok(Expr::Integer(n.round() as i128))
+    // Banker's rounding: round half to even
+    let rounded = if n.fract().abs() == 0.5 {
+      let floor = n.floor();
+      if floor as i128 % 2 == 0 {
+        floor
+      } else {
+        n.ceil()
+      }
+    } else {
+      n.round()
+    };
+    Ok(Expr::Integer(rounded as i128))
   } else {
     Ok(Expr::FunctionCall {
       name: "Round".to_string(),
@@ -765,8 +755,50 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "RandomInteger: invalid argument".into(),
       )),
     },
+    2 => {
+      // RandomInteger[range, n] - generate n random integers
+      let n = match &args[1] {
+        Expr::Integer(n) if *n > 0 => *n as usize,
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "RandomInteger: second argument must be a positive integer".into(),
+          ));
+        }
+      };
+
+      let (min, max) = match &args[0] {
+        Expr::Integer(m) => (0i128, *m),
+        Expr::List(items) if items.len() == 2 => {
+          if let (Expr::Integer(min), Expr::Integer(max)) =
+            (&items[0], &items[1])
+          {
+            (*min, *max)
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "RandomInteger: range must be integers".into(),
+            ));
+          }
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "RandomInteger: invalid range".into(),
+          ));
+        }
+      };
+
+      if min > max {
+        return Err(InterpreterError::EvaluationError(
+          "RandomInteger: min must be <= max".into(),
+        ));
+      }
+
+      let results: Vec<Expr> = (0..n)
+        .map(|_| Expr::Integer(rng.gen_range(min..=max)))
+        .collect();
+      Ok(Expr::List(results))
+    }
     _ => Err(InterpreterError::EvaluationError(
-      "RandomInteger expects 0 or 1 argument".into(),
+      "RandomInteger expects 0, 1, or 2 arguments".into(),
     )),
   }
 }
