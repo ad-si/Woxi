@@ -29,10 +29,24 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // Flatten nested Plus arguments
+  let mut flat_args: Vec<Expr> = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::FunctionCall {
+        name,
+        args: inner_args,
+      } if name == "Plus" => {
+        flat_args.extend(inner_args.clone());
+      }
+      _ => flat_args.push(arg.clone()),
+    }
+  }
+
   // Check for list threading
-  let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
+  let has_list = flat_args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
-    return thread_binary_over_lists(args, |a, b| {
+    return thread_binary_over_lists(&flat_args, |a, b| {
       match (expr_to_num(a), expr_to_num(b)) {
         (Some(x), Some(y)) => Ok(num_to_expr(x + y)),
         _ => Ok(Expr::BinaryOp {
@@ -47,7 +61,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Simple numeric sum
   let mut sum = 0.0;
   let mut all_numeric = true;
-  for arg in args {
+  for arg in &flat_args {
     if let Some(n) = expr_to_num(arg) {
       sum += n;
     } else {
@@ -59,11 +73,50 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if all_numeric {
     Ok(num_to_expr(sum))
   } else {
-    // Return symbolic Plus
-    Ok(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: args.to_vec(),
-    })
+    // Separate numeric and symbolic terms
+    let mut numeric_sum = 0.0;
+    let mut has_numeric = false;
+    let mut has_real = false;
+    let mut symbolic_args: Vec<Expr> = Vec::new();
+
+    for arg in &flat_args {
+      if let Some(n) = expr_to_num(arg) {
+        numeric_sum += n;
+        has_numeric = true;
+        if matches!(arg, Expr::Real(_)) {
+          has_real = true;
+        }
+      } else {
+        symbolic_args.push(arg.clone());
+      }
+    }
+
+    // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
+    let mut final_args: Vec<Expr> = Vec::new();
+    if has_numeric && numeric_sum != 0.0 {
+      if has_real {
+        final_args.push(Expr::Real(numeric_sum));
+      } else {
+        final_args.push(num_to_expr(numeric_sum));
+      }
+    }
+
+    // Sort symbolic terms alphabetically
+    symbolic_args.sort_by(|a, b| {
+      crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+    });
+    final_args.extend(symbolic_args);
+
+    if final_args.is_empty() {
+      Ok(Expr::Integer(0))
+    } else if final_args.len() == 1 {
+      Ok(final_args.remove(0))
+    } else {
+      Ok(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: final_args,
+      })
+    }
   }
 }
 
@@ -190,24 +243,45 @@ pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Check for list threading
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
-    return thread_binary_over_lists(args, |a, b| {
-      match (expr_to_num(a), expr_to_num(b)) {
-        (Some(x), Some(y)) => Ok(num_to_expr(x.powf(y))),
-        _ => Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
-          left: Box::new(a.clone()),
-          right: Box::new(b.clone()),
-        }),
-      }
-    });
+    return thread_binary_over_lists(args, power_two);
   }
 
-  match (expr_to_num(&args[0]), expr_to_num(&args[1])) {
-    (Some(a), Some(b)) => Ok(num_to_expr(a.powf(b))),
+  power_two(&args[0], &args[1])
+}
+
+/// Helper for Power of two arguments
+fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // Special case: integer base with negative integer exponent -> Rational
+  if let (Expr::Integer(b), Expr::Integer(e)) = (base, exp)
+    && *e < 0
+  {
+    // b^(-n) = 1 / b^n = Rational[1, b^n]
+    let pos_exp = (-*e) as u32;
+    if let Some(denom) = b.checked_pow(pos_exp) {
+      return Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(denom)],
+      });
+    }
+  }
+
+  // Check if either operand is Real - result should be Real
+  let has_real = matches!(base, Expr::Real(_)) || matches!(exp, Expr::Real(_));
+
+  match (expr_to_num(base), expr_to_num(exp)) {
+    (Some(a), Some(b)) => {
+      let result = a.powf(b);
+      if has_real {
+        // Keep as Real if any input was Real
+        Ok(Expr::Real(result))
+      } else {
+        Ok(num_to_expr(result))
+      }
+    }
     _ => Ok(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
-      left: Box::new(args[0].clone()),
-      right: Box::new(args[1].clone()),
+      left: Box::new(base.clone()),
+      right: Box::new(exp.clone()),
     }),
   }
 }
@@ -257,9 +331,17 @@ where
   }
 }
 
-/// Subtract[a, b] - Alias for Minus
+/// Subtract[a, b] - Returns a - b
 pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  minus_ast(args)
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "Subtract".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  // Subtract[a, b] = a + (-1 * b)
+  let negated_b = times_ast(&[Expr::Integer(-1), args[1].clone()])?;
+  plus_ast(&[args[0].clone(), negated_b])
 }
 
 /// Max[args...] or Max[list] - Maximum value

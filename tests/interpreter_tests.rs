@@ -730,4 +730,178 @@ mod interpreter_tests {
       assert_eq!(interpret("{1, 2, 3}^2").unwrap(), "{1, 4, 9}");
     }
   }
+
+  mod table_with_step {
+    use super::*;
+
+    #[test]
+    fn table_positive_step() {
+      assert_eq!(
+        interpret("Table[i, {i, 1, 10, 2}]").unwrap(),
+        "{1, 3, 5, 7, 9}"
+      );
+    }
+
+    #[test]
+    fn table_negative_step() {
+      assert_eq!(
+        interpret("Table[i, {i, 10, 1, -2}]").unwrap(),
+        "{10, 8, 6, 4, 2}"
+      );
+    }
+
+    #[test]
+    fn table_step_of_three() {
+      assert_eq!(interpret("Table[i, {i, 0, 9, 3}]").unwrap(), "{0, 3, 6, 9}");
+    }
+  }
+
+  mod union_sorting {
+    use super::*;
+
+    #[test]
+    fn union_sorts_elements() {
+      assert_eq!(interpret("Union[{3, 1, 2}]").unwrap(), "{1, 2, 3}");
+    }
+
+    #[test]
+    fn union_removes_duplicates_and_sorts() {
+      assert_eq!(interpret("Union[{3, 1, 2, 1, 3}]").unwrap(), "{1, 2, 3}");
+    }
+  }
+
+  mod subtract_function {
+    use super::*;
+
+    #[test]
+    fn subtract_basic() {
+      assert_eq!(interpret("Subtract[5, 2]").unwrap(), "3");
+    }
+
+    #[test]
+    fn subtract_negative_result() {
+      assert_eq!(interpret("Subtract[2, 5]").unwrap(), "-3");
+    }
+  }
+
+  mod power_with_negative_exponent {
+    use super::*;
+
+    #[test]
+    fn power_negative_one_exponent() {
+      assert_eq!(interpret("Power[2, -1]").unwrap(), "1/2");
+    }
+
+    #[test]
+    fn power_negative_two_exponent() {
+      assert_eq!(interpret("Power[3, -2]").unwrap(), "1/9");
+    }
+  }
+
+  mod real_number_formatting {
+    use super::*;
+
+    #[test]
+    fn power_with_decimal_exponent() {
+      assert_eq!(interpret("Power[4, 0.5]").unwrap(), "2.");
+    }
+
+    #[test]
+    fn accumulate_preserves_real() {
+      assert_eq!(interpret("Accumulate[{1.5, 2.5}]").unwrap(), "{1.5, 4.}");
+    }
+
+    #[test]
+    fn division_preserves_real_type() {
+      assert_eq!(interpret("10.0 / 2").unwrap(), "5.");
+    }
+
+    #[test]
+    fn integer_division_stays_integer() {
+      assert_eq!(interpret("10 / 2").unwrap(), "5");
+    }
+  }
+
+  mod replace_repeated {
+    use super::*;
+
+    #[test]
+    fn replace_repeated_applies_multiple_times() {
+      assert_eq!(interpret("f[f[f[f[2]]]] //. f[2] -> 2").unwrap(), "2");
+    }
+
+    #[test]
+    fn replace_repeated_simple() {
+      assert_eq!(interpret("f[f[2]] //. f[2] -> 2").unwrap(), "2");
+    }
+  }
+
+  mod symbolic_ordering {
+    use super::*;
+
+    #[test]
+    fn numbers_before_symbols() {
+      assert_eq!(interpret("cow + 5").unwrap(), "5 + cow");
+    }
+
+    #[test]
+    fn numeric_terms_combined() {
+      assert_eq!(interpret("cow + 5 + 10").unwrap(), "15 + cow");
+    }
+
+    #[test]
+    fn multiple_symbolic_terms_sorted() {
+      assert_eq!(interpret("z + a + 3").unwrap(), "3 + a + z");
+    }
+  }
+
+  mod power_formatting {
+    use super::*;
+
+    #[test]
+    fn power_exponent_with_plus_gets_parens() {
+      // D[x^n, x] = n*x^(-1 + n)
+      assert_eq!(interpret("D[x^n, x]").unwrap(), "n*x^(-1 + n)");
+    }
+  }
+
+  mod integrate_with_sum {
+    use super::*;
+
+    #[test]
+    fn integrate_polynomial() {
+      assert_eq!(interpret("Integrate[x^2, x]").unwrap(), "x^3/3");
+    }
+
+    #[test]
+    fn integrate_sin() {
+      assert_eq!(interpret("Integrate[Sin[x], x]").unwrap(), "-Cos[x]");
+    }
+
+    #[test]
+    fn integrate_sum_of_terms() {
+      // The ordering may differ from Mathematica but the result is correct
+      let result = interpret("Integrate[x^2 + Sin[x], x]").unwrap();
+      // Accept either ordering
+      assert!(
+        result == "x^3/3 - Cos[x]" || result == "-Cos[x] + x^3/3",
+        "Got: {}",
+        result
+      );
+    }
+  }
+
+  mod multiplication_formatting {
+    use super::*;
+
+    #[test]
+    fn times_no_spaces() {
+      assert_eq!(interpret("Times[2, x]").unwrap(), "2*x");
+    }
+
+    #[test]
+    fn power_no_spaces() {
+      assert_eq!(interpret("Power[x, 2]").unwrap(), "x^2");
+    }
+  }
 }

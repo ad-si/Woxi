@@ -562,6 +562,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
 
 /// Parse an expression with operators into an Expr
 fn parse_expression(pair: Pair<Rule>) -> Expr {
+  let pair_str = pair.as_str().to_string();
   let mut inner: Vec<Pair<Rule>> = pair.into_inner().collect();
 
   if inner.is_empty() {
@@ -579,12 +580,22 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   if inner.len() >= 2 {
     let second_rule = inner[1].as_rule();
     if second_rule == Rule::List || second_rule == Rule::ReplacementRule {
-      // Check if this is ReplaceAll or ReplaceRepeated by looking at remaining structure
+      // Determine if this is ReplaceRepeated by checking if original expression had "//.
+      let is_replace_repeated =
+        pair_str.contains("//.") && !pair_str.contains("///.");
+
       let expr = pair_to_expr(inner.remove(0));
       let rules = pair_to_expr(inner.remove(0));
-      let mut result = Expr::ReplaceAll {
-        expr: Box::new(expr),
-        rules: Box::new(rules),
+      let mut result = if is_replace_repeated {
+        Expr::ReplaceRepeated {
+          expr: Box::new(expr),
+          rules: Box::new(rules),
+        }
+      } else {
+        Expr::ReplaceAll {
+          expr: Box::new(expr),
+          rules: Box::new(rules),
+        }
       };
       // Apply any remaining postfix functions
       while !inner.is_empty() {
@@ -875,14 +886,11 @@ fn parse_anonymous_body(s: &str) -> Expr {
 /// Format a real number for output (matches Wolfram Language format)
 fn format_real(f: f64) -> String {
   if f.fract() == 0.0 {
-    // Whole number - format without decimal point
-    (f as i64).to_string()
+    // Whole number - format with decimal point to indicate it's a Real
+    format!("{}.", f as i64)
   } else {
     // Format with up to 10 decimal places, trim trailing zeros
-    format!("{:.10}", f)
-      .trim_end_matches('0')
-      .trim_end_matches('.')
-      .to_string()
+    format!("{:.10}", f).trim_end_matches('0').to_string()
   }
 }
 
@@ -905,26 +913,63 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Special case: Rational[num, denom] displays as num/denom
+      if name == "Rational" && args.len() == 2 {
+        return format!(
+          "{}/{}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
       let parts: Vec<String> = args.iter().map(expr_to_string).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
     Expr::BinaryOp { op, left, right } => {
-      let op_str = match op {
-        BinaryOperator::Plus => "+",
-        BinaryOperator::Minus => "-",
-        BinaryOperator::Times => "*",
-        BinaryOperator::Divide => "/",
-        BinaryOperator::Power => "^",
-        BinaryOperator::And => "&&",
-        BinaryOperator::Or => "||",
-        BinaryOperator::StringJoin => "<>",
+      // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||
+      let (op_str, needs_space) = match op {
+        BinaryOperator::Plus => ("+", true),
+        BinaryOperator::Minus => ("-", true),
+        BinaryOperator::Times => ("*", false),
+        BinaryOperator::Divide => ("/", false),
+        BinaryOperator::Power => ("^", false),
+        BinaryOperator::And => ("&&", true),
+        BinaryOperator::Or => ("||", true),
+        BinaryOperator::StringJoin => ("<>", false),
       };
-      format!(
-        "{} {} {}",
-        expr_to_string(left),
-        op_str,
-        expr_to_string(right)
-      )
+
+      // Helper to check if expr needs parentheses based on precedence
+      let needs_parens = |e: &Expr, for_power_exp: bool| -> bool {
+        match e {
+          // For Power exponent, Plus needs parens
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          } if for_power_exp => true,
+          Expr::FunctionCall { name, .. }
+            if name == "Plus" && for_power_exp =>
+          {
+            true
+          }
+          _ => false,
+        }
+      };
+
+      let left_str = expr_to_string(left);
+      let right_str = expr_to_string(right);
+
+      // Wrap right operand in parens if needed (for Power with Plus/Minus exponent)
+      let is_power = matches!(op, BinaryOperator::Power);
+      let right_formatted = if is_power && needs_parens(right, true) {
+        format!("({})", right_str)
+      } else {
+        right_str
+      };
+
+      if needs_space {
+        format!("{} {} {}", left_str, op_str, right_formatted)
+      } else {
+        format!("{}{}{}", left_str, op_str, right_formatted)
+      }
     }
     Expr::UnaryOp { op, operand } => {
       let op_str = match op {
@@ -1040,6 +1085,65 @@ pub fn expr_to_output(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Special case: Rational[num, denom] displays as num/denom
+      if name == "Rational" && args.len() == 2 {
+        return format!(
+          "{}/{}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
+      // Special case: Plus displays as infix with +
+      if name == "Plus" && args.len() >= 2 {
+        return args
+          .iter()
+          .map(expr_to_output)
+          .collect::<Vec<_>>()
+          .join(" + ");
+      }
+      // Special case: Times displays as infix with * (no spaces)
+      if name == "Times" && args.len() >= 2 {
+        return args
+          .iter()
+          .map(|a| {
+            // Wrap lower-precedence operations in parens
+            let s = expr_to_output(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus | BinaryOperator::Minus,
+                  ..
+                }
+              )
+            {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect::<Vec<_>>()
+          .join("*");
+      }
+      // Special case: Power displays as infix with ^ (no spaces)
+      if name == "Power" && args.len() == 2 {
+        let base = expr_to_output(&args[0]);
+        let exp_str = expr_to_output(&args[1]);
+        // Wrap exponent in parens if it's a Plus (lower precedence)
+        let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            &args[1],
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          ) {
+          format!("({})", exp_str)
+        } else {
+          exp_str
+        };
+        return format!("{}^{}", base, exp);
+      }
       let parts: Vec<String> = args.iter().map(expr_to_output).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
