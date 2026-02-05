@@ -1255,6 +1255,12 @@ pub fn evaluate_function_call_ast(
     "MinMax" if args.len() == 1 => {
       return list_helpers_ast::min_max_ast(&args[0]);
     }
+    "Part" if args.len() == 2 => {
+      return list_helpers_ast::part_ast(&args[0], &args[1]);
+    }
+    "Insert" if args.len() == 3 => {
+      return list_helpers_ast::insert_ast(&args[0], &args[1], &args[2]);
+    }
 
     // AST-native string functions
     "StringLength" if args.len() == 1 => {
@@ -1514,7 +1520,125 @@ pub fn evaluate_function_call_ast(
     "Log" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::log_ast(args);
     }
+    "Log10" if args.len() == 1 => {
+      return crate::functions::math_ast::log10_ast(args);
+    }
+    "Log2" if args.len() == 1 => {
+      return crate::functions::math_ast::log2_ast(args);
+    }
+    "ArcSin" if args.len() == 1 => {
+      return crate::functions::math_ast::arcsin_ast(args);
+    }
+    "ArcCos" if args.len() == 1 => {
+      return crate::functions::math_ast::arccos_ast(args);
+    }
+    "ArcTan" if args.len() == 1 => {
+      return crate::functions::math_ast::arctan_ast(args);
+    }
+    "Prime" if args.len() == 1 => {
+      return crate::functions::math_ast::prime_ast(args);
+    }
+    "IntegerDigits" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::integer_digits_ast(args);
+    }
+    "FromDigits" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::from_digits_ast(args);
+    }
+    "FactorInteger" if args.len() == 1 => {
+      return crate::functions::math_ast::factor_integer_ast(args);
+    }
+    "Divisors" if args.len() == 1 => {
+      return crate::functions::math_ast::divisors_ast(args);
+    }
+    "DivisorSigma" if args.len() == 2 => {
+      return crate::functions::math_ast::divisor_sigma_ast(args);
+    }
+    "MoebiusMu" if args.len() == 1 => {
+      return crate::functions::math_ast::moebius_mu_ast(args);
+    }
+    "EulerPhi" if args.len() == 1 => {
+      return crate::functions::math_ast::euler_phi_ast(args);
+    }
+    "CoprimeQ" if args.len() == 2 => {
+      return crate::functions::math_ast::coprime_q_ast(args);
+    }
+    "Re" if args.len() == 1 => {
+      return crate::functions::math_ast::re_ast(args);
+    }
+    "Im" if args.len() == 1 => {
+      return crate::functions::math_ast::im_ast(args);
+    }
+    "Conjugate" if args.len() == 1 => {
+      return crate::functions::math_ast::conjugate_ast(args);
+    }
+    "Arg" if args.len() == 1 => {
+      return crate::functions::math_ast::arg_ast(args);
+    }
+    "Rationalize" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::rationalize_ast(args);
+    }
 
+    // AST-native boolean functions
+    "And" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::and_ast(args);
+    }
+    "Or" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::or_ast(args);
+    }
+    "Not" if args.len() == 1 => {
+      return crate::functions::boolean_ast::not_ast(args);
+    }
+    "Xor" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::xor_ast(args);
+    }
+    "SameQ" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::same_q_ast(args);
+    }
+    "UnsameQ" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::unsame_q_ast(args);
+    }
+    "Which" if args.len() >= 2 && args.len().is_multiple_of(2) => {
+      return crate::functions::boolean_ast::which_ast(args);
+    }
+    "While" if args.len() == 2 => {
+      return crate::functions::boolean_ast::while_ast(args);
+    }
+    "Equal" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::equal_ast(args);
+    }
+    "Unequal" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::unequal_ast(args);
+    }
+    "Less" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::less_ast(args);
+    }
+    "Greater" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::greater_ast(args);
+    }
+    "LessEqual" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::less_equal_ast(args);
+    }
+    "GreaterEqual" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::greater_equal_ast(args);
+    }
+    "Boole" if args.len() == 1 => {
+      return crate::functions::boolean_ast::boole_ast(args);
+    }
+    "TrueQ" if args.len() == 1 => {
+      return crate::functions::boolean_ast::true_q_ast(args);
+    }
+    "Implies" if args.len() == 2 => {
+      return crate::functions::boolean_ast::implies_ast(args);
+    }
+    "Nand" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::nand_ast(args);
+    }
+    "Nor" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::nor_ast(args);
+    }
+
+    // Note: D and Integrate use Pair-based implementation for correct formatting
+    // The AST versions are available in calculus_ast.rs but need formatting work
     _ => {}
   }
 

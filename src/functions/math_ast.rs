@@ -941,3 +941,746 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )),
   }
 }
+
+/// Log10[x] - Base-10 logarithm
+pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Log10 expects exactly 1 argument".into(),
+    ));
+  }
+  if let Some(n) = expr_to_num(&args[0]) {
+    if n > 0.0 {
+      Ok(Expr::Real(n.log10()))
+    } else {
+      Err(InterpreterError::EvaluationError(
+        "Log10: argument must be positive".into(),
+      ))
+    }
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Log10".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// Log2[x] - Base-2 logarithm
+pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Log2 expects exactly 1 argument".into(),
+    ));
+  }
+  if let Some(n) = expr_to_num(&args[0]) {
+    if n > 0.0 {
+      Ok(Expr::Real(n.log2()))
+    } else {
+      Err(InterpreterError::EvaluationError(
+        "Log2: argument must be positive".into(),
+      ))
+    }
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Log2".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// ArcSin[x] - Inverse sine
+pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcSin expects exactly 1 argument".into(),
+    ));
+  }
+  if let Some(n) = expr_to_num(&args[0]) {
+    if (-1.0..=1.0).contains(&n) {
+      Ok(Expr::Real(n.asin()))
+    } else {
+      Err(InterpreterError::EvaluationError(
+        "ArcSin: argument must be in the range [-1, 1]".into(),
+      ))
+    }
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "ArcSin".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// ArcCos[x] - Inverse cosine
+pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCos expects exactly 1 argument".into(),
+    ));
+  }
+  if let Some(n) = expr_to_num(&args[0]) {
+    if (-1.0..=1.0).contains(&n) {
+      Ok(Expr::Real(n.acos()))
+    } else {
+      Err(InterpreterError::EvaluationError(
+        "ArcCos: argument must be in the range [-1, 1]".into(),
+      ))
+    }
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "ArcCos".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// ArcTan[x] - Inverse tangent
+pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcTan expects exactly 1 argument".into(),
+    ));
+  }
+  if let Some(n) = expr_to_num(&args[0]) {
+    Ok(Expr::Real(n.atan()))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "ArcTan".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// Prime[n] - Returns the nth prime number
+pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Prime expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n < 1 {
+        return Err(InterpreterError::EvaluationError(
+          "Prime function argument must be a positive integer greater than 0"
+            .into(),
+        ));
+      }
+      Ok(Expr::Integer(crate::nth_prime(*n as usize) as i128))
+    }
+    Expr::Real(f) => {
+      if f.fract() != 0.0 || *f < 1.0 {
+        return Err(InterpreterError::EvaluationError(
+          "Prime function argument must be a positive integer greater than 0"
+            .into(),
+        ));
+      }
+      Ok(Expr::Integer(crate::nth_prime(*f as usize) as i128))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Prime".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// IntegerDigits[n] or IntegerDigits[n, base] - Returns list of digits
+pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerDigits expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) => n.unsigned_abs(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "IntegerDigits".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let base: u128 = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(b) if *b >= 2 => *b as u128,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "IntegerDigits: base must be an integer >= 2".into(),
+        ));
+      }
+    }
+  } else {
+    10
+  };
+
+  if n == 0 {
+    return Ok(Expr::List(vec![Expr::Integer(0)]));
+  }
+
+  let mut digits = Vec::new();
+  let mut num = n;
+  while num > 0 {
+    digits.push(Expr::Integer((num % base) as i128));
+    num /= base;
+  }
+  digits.reverse();
+  Ok(Expr::List(digits))
+}
+
+/// FromDigits[list] or FromDigits[list, base] - Constructs integer from digits
+pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FromDigits expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let base: i128 = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(b) if *b >= 2 => *b,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "FromDigits: base must be an integer >= 2".into(),
+        ));
+      }
+    }
+  } else {
+    10
+  };
+
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FromDigits".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut result: i128 = 0;
+  for item in items {
+    if let Expr::Integer(d) = item {
+      if *d < 0 || *d >= base {
+        return Err(InterpreterError::EvaluationError(format!(
+          "FromDigits: invalid digit {} for base {}",
+          d, base
+        )));
+      }
+      result = result * base + *d;
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "FromDigits".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  }
+  Ok(Expr::Integer(result))
+}
+
+/// FactorInteger[n] - Returns the prime factorization of n
+pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorInteger expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FactorInteger".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if n == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorInteger: argument cannot be zero".into(),
+    ));
+  }
+
+  let mut factors: Vec<Expr> = Vec::new();
+  let mut num = n.unsigned_abs();
+
+  if n < 0 {
+    factors.push(Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)]));
+  }
+
+  if num == 1 {
+    return Ok(Expr::List(factors));
+  }
+
+  // Handle factor of 2
+  let mut count = 0i128;
+  while num % 2 == 0 {
+    count += 1;
+    num /= 2;
+  }
+  if count > 0 {
+    factors.push(Expr::List(vec![Expr::Integer(2), Expr::Integer(count)]));
+  }
+
+  // Handle odd factors
+  let mut i: u128 = 3;
+  while i * i <= num {
+    let mut count = 0i128;
+    while num % i == 0 {
+      count += 1;
+      num /= i;
+    }
+    if count > 0 {
+      factors.push(Expr::List(vec![
+        Expr::Integer(i as i128),
+        Expr::Integer(count),
+      ]));
+    }
+    i += 2;
+  }
+
+  if num > 1 {
+    factors.push(Expr::List(vec![
+      Expr::Integer(num as i128),
+      Expr::Integer(1),
+    ]));
+  }
+
+  Ok(Expr::List(factors))
+}
+
+/// Divisors[n] - Returns a sorted list of all divisors of n
+pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Divisors expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n != 0 => n.unsigned_abs(),
+    Expr::Integer(_) => {
+      return Err(InterpreterError::EvaluationError(
+        "Divisors: argument cannot be zero".into(),
+      ));
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Divisors".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut divs = Vec::new();
+  let sqrt_n = (n as f64).sqrt() as u128;
+
+  for i in 1..=sqrt_n {
+    if n % i == 0 {
+      divs.push(i);
+      if i != n / i {
+        divs.push(n / i);
+      }
+    }
+  }
+
+  divs.sort();
+  Ok(Expr::List(
+    divs.into_iter().map(|d| Expr::Integer(d as i128)).collect(),
+  ))
+}
+
+/// DivisorSigma[k, n] - Returns the sum of the k-th powers of divisors of n
+pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "DivisorSigma expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let k = match &args[0] {
+    Expr::Integer(k) if *k >= 0 => *k as u32,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "DivisorSigma: first argument must be a non-negative integer".into(),
+      ));
+    }
+  };
+
+  let n = match &args[1] {
+    Expr::Integer(n) if *n != 0 => n.unsigned_abs(),
+    Expr::Integer(_) => {
+      return Err(InterpreterError::EvaluationError(
+        "DivisorSigma: second argument cannot be zero".into(),
+      ));
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DivisorSigma".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let sqrt_n = (n as f64).sqrt() as u128;
+  let mut sum: u128 = 0;
+
+  for i in 1..=sqrt_n {
+    if n % i == 0 {
+      sum += i.pow(k);
+      if i != n / i {
+        sum += (n / i).pow(k);
+      }
+    }
+  }
+
+  Ok(Expr::Integer(sum as i128))
+}
+
+/// MoebiusMu[n] - Returns the Möbius function value
+pub fn moebius_mu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "MoebiusMu expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 1 => *n as u128,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "MoebiusMu: argument must be a positive integer".into(),
+      ));
+    }
+  };
+
+  if n == 1 {
+    return Ok(Expr::Integer(1));
+  }
+
+  let mut num = n;
+  let mut prime_count = 0;
+
+  // Check for factor 2
+  if num % 2 == 0 {
+    prime_count += 1;
+    num /= 2;
+    if num % 2 == 0 {
+      return Ok(Expr::Integer(0)); // Has squared factor
+    }
+  }
+
+  // Check odd factors
+  let mut i: u128 = 3;
+  while i * i <= num {
+    if num % i == 0 {
+      prime_count += 1;
+      num /= i;
+      if num % i == 0 {
+        return Ok(Expr::Integer(0)); // Has squared factor
+      }
+    }
+    i += 2;
+  }
+
+  if num > 1 {
+    prime_count += 1;
+  }
+
+  Ok(Expr::Integer(if prime_count % 2 == 0 { 1 } else { -1 }))
+}
+
+/// EulerPhi[n] - Returns Euler's totient function
+pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "EulerPhi expects exactly 1 argument".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 1 => *n as u128,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "EulerPhi: argument must be a positive integer".into(),
+      ));
+    }
+  };
+
+  let mut num = n;
+  let mut result = n;
+
+  let mut p: u128 = 2;
+  while p * p <= num {
+    if num % p == 0 {
+      while num % p == 0 {
+        num /= p;
+      }
+      result -= result / p;
+    }
+    p += 1;
+  }
+
+  if num > 1 {
+    result -= result / num;
+  }
+
+  Ok(Expr::Integer(result as i128))
+}
+
+/// CoprimeQ[a, b] - Tests if two integers are coprime
+pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "CoprimeQ expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let (a, b) = match (&args[0], &args[1]) {
+    (Expr::Integer(a), Expr::Integer(b)) => {
+      (a.unsigned_abs(), b.unsigned_abs())
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CoprimeQ".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // GCD using Euclidean algorithm
+  let (mut a, mut b) = (a.max(1), b.max(1));
+  while b != 0 {
+    let temp = b;
+    b = a % b;
+    a = temp;
+  }
+
+  Ok(Expr::Identifier(
+    if a == 1 { "True" } else { "False" }.to_string(),
+  ))
+}
+
+/// Re[z] - Real part of a complex number (for real numbers, returns the number itself)
+pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Re expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(_) | Expr::Real(_) => Ok(args[0].clone()),
+    Expr::FunctionCall { name, args: inner }
+      if name == "Complex" && inner.len() == 2 =>
+    {
+      Ok(inner[0].clone())
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Re".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Im[z] - Imaginary part of a complex number (for real numbers, returns 0)
+pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Im expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(_) | Expr::Real(_) => Ok(Expr::Integer(0)),
+    Expr::FunctionCall { name, args: inner }
+      if name == "Complex" && inner.len() == 2 =>
+    {
+      Ok(inner[1].clone())
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Im".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Conjugate[z] - Complex conjugate (for real numbers, returns the number itself)
+pub fn conjugate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Conjugate expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(_) | Expr::Real(_) => Ok(args[0].clone()),
+    Expr::FunctionCall { name, args: inner }
+      if name == "Complex" && inner.len() == 2 =>
+    {
+      // Negate the imaginary part
+      let neg_imag = match &inner[1] {
+        Expr::Integer(n) => Expr::Integer(-*n),
+        Expr::Real(f) => Expr::Real(-*f),
+        other => Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(other.clone()),
+        },
+      };
+      Ok(Expr::FunctionCall {
+        name: "Complex".to_string(),
+        args: vec![inner[0].clone(), neg_imag],
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Conjugate".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Arg[z] - Argument (phase angle) of a complex number
+pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Arg expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n > 0 {
+        Ok(Expr::Integer(0))
+      } else if *n < 0 {
+        Ok(Expr::Identifier("Pi".to_string()))
+      } else {
+        Ok(Expr::Integer(0))
+      }
+    }
+    Expr::Real(f) => {
+      if *f > 0.0 {
+        Ok(Expr::Integer(0))
+      } else if *f < 0.0 {
+        Ok(Expr::Identifier("Pi".to_string()))
+      } else {
+        Ok(Expr::Integer(0))
+      }
+    }
+    Expr::FunctionCall { name, args: inner }
+      if name == "Complex" && inner.len() == 2 =>
+    {
+      if let (Some(re), Some(im)) =
+        (expr_to_num(&inner[0]), expr_to_num(&inner[1]))
+      {
+        Ok(Expr::Real(im.atan2(re)))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Arg".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Arg".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Rationalize[x] or Rationalize[x, dx] - Converts real to rational approximation
+pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Rationalize expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let x = match expr_to_num(&args[0]) {
+    Some(x) => x,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "Rationalize".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // For integers, just return the integer
+  if x.fract() == 0.0 {
+    return Ok(Expr::Integer(x as i128));
+  }
+
+  let tolerance = if args.len() == 2 {
+    expr_to_num(&args[1]).unwrap_or(f64::EPSILON)
+  } else {
+    f64::EPSILON
+  };
+
+  let max_denom: i64 = if args.len() == 1 { 100000 } else { i64::MAX };
+
+  let (num, denom) = find_rational(x, tolerance, max_denom);
+
+  // Verify the approximation is within tolerance
+  let approx = num as f64 / denom as f64;
+  if (approx - x).abs() >= tolerance {
+    return Ok(num_to_expr(x));
+  }
+
+  if denom == 1 {
+    Ok(Expr::Integer(num as i128))
+  } else {
+    // Return as a fraction using Rational or as BinaryOp Divide
+    Ok(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(num as i128), Expr::Integer(denom as i128)],
+    })
+  }
+}
+
+/// Find best rational approximation using continued fractions
+fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
+  if x == 0.0 {
+    return (0, 1);
+  }
+
+  let sign = if x < 0.0 { -1 } else { 1 };
+  let x = x.abs();
+
+  let mut p0: i64 = 0;
+  let mut q0: i64 = 1;
+  let mut p1: i64 = 1;
+  let mut q1: i64 = 0;
+
+  let mut xi = x;
+
+  for _ in 0..50 {
+    let ai = xi.floor() as i64;
+    let p2 = ai * p1 + p0;
+    let q2 = ai * q1 + q0;
+
+    if q2 == 0 || q2 > max_denom {
+      break;
+    }
+
+    let approx = p2 as f64 / q2 as f64;
+    if (approx - x).abs() < tolerance {
+      return (sign * p2, q2);
+    }
+
+    let frac = xi - ai as f64;
+    if frac.abs() < 1e-15 {
+      break;
+    }
+    xi = 1.0 / frac;
+
+    p0 = p1;
+    q0 = q1;
+    p1 = p2;
+    q1 = q2;
+  }
+
+  (sign * p1, q1)
+}
