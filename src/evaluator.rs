@@ -103,11 +103,13 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           return Ok(format!("If[{}]", args_str.join(", ")));
         }
       }
-      // Evaluate arguments and call the function
-      let args_str: Vec<String> =
-        args.iter().map(evaluate_expr).collect::<Result<_, _>>()?;
-      let call_str = format!("{}[{}]", name, args_str.join(", "));
-      interpret(&call_str)
+      // Evaluate using AST path to avoid interpret() recursion
+      let evaluated_args: Vec<Expr> = args
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<_, _>>()?;
+      let result = evaluate_function_call_ast(name, &evaluated_args)?;
+      Ok(expr_to_string(&result))
     }
     Expr::BinaryOp { op, left, right } => {
       let left_val = evaluate_expr(left)?;
@@ -316,34 +318,49 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       Ok(format!("{} :> {}", p, r))
     }
     Expr::ReplaceAll { expr: e, rules } => {
-      let expr_str = evaluate_expr(e)?;
-      let rules_str = evaluate_expr(rules)?;
-      interpret(&format!("{} /. {}", expr_str, rules_str))
+      // Use AST-based evaluation to avoid interpret() recursion
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      let evaluated_rules = evaluate_expr_to_expr(rules)?;
+      let result = apply_replace_all_ast(&evaluated_expr, &evaluated_rules)?;
+      Ok(expr_to_string(&result))
     }
     Expr::ReplaceRepeated { expr: e, rules } => {
-      let expr_str = evaluate_expr(e)?;
-      let rules_str = evaluate_expr(rules)?;
-      interpret(&format!("{} //. {}", expr_str, rules_str))
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      let evaluated_rules = evaluate_expr_to_expr(rules)?;
+      let result =
+        apply_replace_repeated_ast(&evaluated_expr, &evaluated_rules)?;
+      Ok(expr_to_string(&result))
     }
     Expr::Map { func, list } => {
-      let func_str = expr_to_string(func);
-      let list_str = evaluate_expr(list)?;
-      interpret(&format!("{} /@ {}", func_str, list_str))
+      let evaluated_list = evaluate_expr_to_expr(list)?;
+      let result = apply_map_ast(func, &evaluated_list)?;
+      Ok(expr_to_string(&result))
     }
     Expr::Apply { func, list } => {
-      let func_str = expr_to_string(func);
-      let list_str = evaluate_expr(list)?;
-      interpret(&format!("{} @@ {}", func_str, list_str))
+      let evaluated_list = evaluate_expr_to_expr(list)?;
+      let result = apply_apply_ast(func, &evaluated_list)?;
+      Ok(expr_to_string(&result))
+    }
+    Expr::MapApply { func, list } => {
+      let evaluated_list = evaluate_expr_to_expr(list)?;
+      let result = apply_map_apply_ast(func, &evaluated_list)?;
+      Ok(expr_to_string(&result))
+    }
+    Expr::PrefixApply { func, arg } => {
+      let evaluated_arg = evaluate_expr_to_expr(arg)?;
+      let result = apply_function_to_arg(func, &evaluated_arg)?;
+      Ok(expr_to_string(&result))
     }
     Expr::Postfix { expr: e, func } => {
-      let expr_str = evaluate_expr(e)?;
-      let func_str = expr_to_string(func);
-      interpret(&format!("{} // {}", expr_str, func_str))
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      let result = apply_postfix_ast(&evaluated_expr, func)?;
+      Ok(expr_to_string(&result))
     }
     Expr::Part { expr: e, index } => {
-      let expr_str = evaluate_expr(e)?;
-      let idx_str = evaluate_expr(index)?;
-      interpret(&format!("{}[[{}]]", expr_str, idx_str))
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      let evaluated_idx = evaluate_expr_to_expr(index)?;
+      let result = extract_part_ast(&evaluated_expr, &evaluated_idx)?;
+      Ok(expr_to_string(&result))
     }
     Expr::Function { body } => {
       // Return anonymous function as-is (with & appended)
@@ -357,8 +374,1079 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       }
     }
     Expr::Raw(s) => {
-      // Fallback: interpret the raw string
-      interpret(s)
+      // Fallback: parse to AST and evaluate to avoid interpret() recursion
+      let parsed = string_to_expr(s)?;
+      let result = evaluate_expr_to_expr(&parsed)?;
+      Ok(expr_to_string(&result))
+    }
+  }
+}
+
+/// Evaluate an Expr AST and return a new Expr (not a string).
+/// This is the core function for AST-based evaluation without string round-trips.
+pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::Integer(n) => Ok(Expr::Integer(*n)),
+    Expr::Real(f) => Ok(Expr::Real(*f)),
+    Expr::String(s) => Ok(Expr::String(s.clone())),
+    Expr::Identifier(name) => {
+      // Look up in environment
+      if let Some(StoredValue::Raw(val)) =
+        ENV.with(|e| e.borrow().get(name).cloned())
+      {
+        // Parse the stored value back to Expr
+        string_to_expr(&val)
+      } else {
+        // Return as symbolic identifier
+        Ok(Expr::Identifier(name.clone()))
+      }
+    }
+    Expr::Slot(n) => {
+      // Slots should be replaced before evaluation
+      Ok(Expr::Slot(*n))
+    }
+    Expr::Constant(name) => match name.as_str() {
+      "Pi" => Ok(Expr::Real(std::f64::consts::PI)),
+      "-Pi" => Ok(Expr::Real(-std::f64::consts::PI)),
+      "E" => Ok(Expr::Real(std::f64::consts::E)),
+      _ => Ok(Expr::Constant(name.clone())),
+    },
+    Expr::List(items) => {
+      let evaluated: Result<Vec<Expr>, _> =
+        items.iter().map(evaluate_expr_to_expr).collect();
+      Ok(Expr::List(evaluated?))
+    }
+    Expr::FunctionCall { name, args } => {
+      // Special handling for If - lazy evaluation of branches
+      if name == "If" && (args.len() == 2 || args.len() == 3) {
+        let cond = evaluate_expr_to_expr(&args[0])?;
+        if matches!(&cond, Expr::Identifier(s) if s == "True") {
+          return evaluate_expr_to_expr(&args[1]);
+        } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
+          if args.len() == 3 {
+            return evaluate_expr_to_expr(&args[2]);
+          } else {
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+        } else {
+          // Condition didn't evaluate to True/False - return unevaluated
+          let mut new_args = vec![cond];
+          for arg in args.iter().skip(1) {
+            new_args.push(arg.clone());
+          }
+          return Ok(Expr::FunctionCall {
+            name: name.clone(),
+            args: new_args,
+          });
+        }
+      }
+      // Special handling for Module - don't evaluate args (body needs local bindings first)
+      if name == "Module" {
+        return module_ast(args);
+      }
+      // Special handling for Set - first arg must be identifier, second gets evaluated
+      if name == "Set" && args.len() == 2 {
+        if let Expr::Identifier(var_name) = &args[0] {
+          let value = evaluate_expr_to_expr(&args[1])?;
+          let value_str = expr_to_string(&value);
+          crate::ENV.with(|e| {
+            e.borrow_mut().insert(
+              var_name.clone(),
+              crate::StoredValue::Raw(value_str.clone()),
+            )
+          });
+          return Ok(value);
+        }
+        return Err(InterpreterError::EvaluationError(
+          "First argument of Set must be an identifier".into(),
+        ));
+      }
+      // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
+      // These functions take unevaluated expressions as first argument
+      if name == "Table" || name == "Do" || name == "With" {
+        // Pass unevaluated args to the function dispatcher
+        return evaluate_function_call_ast(name, args);
+      }
+      // Evaluate arguments
+      let evaluated_args: Vec<Expr> = args
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<_, _>>()?;
+      // Dispatch to function implementation
+      evaluate_function_call_ast(name, &evaluated_args)
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let left_val = evaluate_expr_to_expr(left)?;
+      let right_val = evaluate_expr_to_expr(right)?;
+
+      // Try numeric evaluation
+      let left_num = expr_to_number(&left_val);
+      let right_num = expr_to_number(&right_val);
+
+      match op {
+        BinaryOperator::Plus => {
+          if let (Some(l), Some(r)) = (left_num, right_num) {
+            Ok(num_to_expr(l + r))
+          } else {
+            // Symbolic
+            Ok(Expr::BinaryOp {
+              op: *op,
+              left: Box::new(left_val),
+              right: Box::new(right_val),
+            })
+          }
+        }
+        BinaryOperator::Minus => {
+          if let (Some(l), Some(r)) = (left_num, right_num) {
+            Ok(num_to_expr(l - r))
+          } else {
+            Ok(Expr::BinaryOp {
+              op: *op,
+              left: Box::new(left_val),
+              right: Box::new(right_val),
+            })
+          }
+        }
+        BinaryOperator::Times => {
+          if let (Some(l), Some(r)) = (left_num, right_num) {
+            Ok(num_to_expr(l * r))
+          } else {
+            Ok(Expr::BinaryOp {
+              op: *op,
+              left: Box::new(left_val),
+              right: Box::new(right_val),
+            })
+          }
+        }
+        BinaryOperator::Divide => {
+          if let (Some(l), Some(r)) = (left_num, right_num) {
+            if r == 0.0 {
+              return Err(InterpreterError::EvaluationError(
+                "Division by zero".into(),
+              ));
+            }
+            Ok(Expr::Real(l / r))
+          } else {
+            Ok(Expr::BinaryOp {
+              op: *op,
+              left: Box::new(left_val),
+              right: Box::new(right_val),
+            })
+          }
+        }
+        BinaryOperator::Power => {
+          if let (Some(l), Some(r)) = (left_num, right_num) {
+            Ok(Expr::Real(l.powf(r)))
+          } else {
+            Ok(Expr::BinaryOp {
+              op: *op,
+              left: Box::new(left_val),
+              right: Box::new(right_val),
+            })
+          }
+        }
+        BinaryOperator::And => {
+          let l = matches!(&left_val, Expr::Identifier(s) if s == "True");
+          let r = matches!(&right_val, Expr::Identifier(s) if s == "True");
+          Ok(Expr::Identifier(
+            if l && r { "True" } else { "False" }.to_string(),
+          ))
+        }
+        BinaryOperator::Or => {
+          let l = matches!(&left_val, Expr::Identifier(s) if s == "True");
+          let r = matches!(&right_val, Expr::Identifier(s) if s == "True");
+          Ok(Expr::Identifier(
+            if l || r { "True" } else { "False" }.to_string(),
+          ))
+        }
+        BinaryOperator::StringJoin => {
+          let l = expr_to_raw_string(&left_val);
+          let r = expr_to_raw_string(&right_val);
+          Ok(Expr::String(format!("{}{}", l, r)))
+        }
+      }
+    }
+    Expr::UnaryOp { op, operand } => {
+      let val = evaluate_expr_to_expr(operand)?;
+      match op {
+        UnaryOperator::Minus => {
+          if let Some(n) = expr_to_number(&val) {
+            Ok(num_to_expr(-n))
+          } else {
+            Ok(Expr::UnaryOp {
+              op: *op,
+              operand: Box::new(val),
+            })
+          }
+        }
+        UnaryOperator::Not => {
+          if matches!(&val, Expr::Identifier(s) if s == "True") {
+            Ok(Expr::Identifier("False".to_string()))
+          } else if matches!(&val, Expr::Identifier(s) if s == "False") {
+            Ok(Expr::Identifier("True".to_string()))
+          } else {
+            Ok(Expr::UnaryOp {
+              op: *op,
+              operand: Box::new(val),
+            })
+          }
+        }
+      }
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      if operands.len() < 2 || operators.is_empty() {
+        return Ok(Expr::Identifier("True".to_string()));
+      }
+
+      let values: Vec<Expr> = operands
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<_, _>>()?;
+
+      // Evaluate comparison chain
+      for i in 0..operators.len() {
+        let left = &values[i];
+        let right = &values[i + 1];
+        let op = &operators[i];
+
+        let result = match op {
+          ComparisonOp::Equal | ComparisonOp::SameQ => {
+            if let (Some(l), Some(r)) =
+              (expr_to_number(left), expr_to_number(right))
+            {
+              l == r
+            } else {
+              expr_to_string(left) == expr_to_string(right)
+            }
+          }
+          ComparisonOp::NotEqual | ComparisonOp::UnsameQ => {
+            if let (Some(l), Some(r)) =
+              (expr_to_number(left), expr_to_number(right))
+            {
+              l != r
+            } else {
+              expr_to_string(left) != expr_to_string(right)
+            }
+          }
+          ComparisonOp::Less => {
+            if let (Some(l), Some(r)) =
+              (expr_to_number(left), expr_to_number(right))
+            {
+              l < r
+            } else {
+              // Return unevaluated comparison
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
+            }
+          }
+          ComparisonOp::LessEqual => {
+            if let (Some(l), Some(r)) =
+              (expr_to_number(left), expr_to_number(right))
+            {
+              l <= r
+            } else {
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
+            }
+          }
+          ComparisonOp::Greater => {
+            if let (Some(l), Some(r)) =
+              (expr_to_number(left), expr_to_number(right))
+            {
+              l > r
+            } else {
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
+            }
+          }
+          ComparisonOp::GreaterEqual => {
+            if let (Some(l), Some(r)) =
+              (expr_to_number(left), expr_to_number(right))
+            {
+              l >= r
+            } else {
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
+            }
+          }
+        };
+
+        if !result {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+      }
+      Ok(Expr::Identifier("True".to_string()))
+    }
+    Expr::CompoundExpr(exprs) => {
+      let mut result = Expr::Identifier("Null".to_string());
+      for e in exprs {
+        result = evaluate_expr_to_expr(e)?;
+      }
+      Ok(result)
+    }
+    Expr::Association(items) => {
+      let evaluated: Result<Vec<(Expr, Expr)>, InterpreterError> = items
+        .iter()
+        .map(|(k, v)| {
+          let key = evaluate_expr_to_expr(k)?;
+          let val = evaluate_expr_to_expr(v)?;
+          Ok((key, val))
+        })
+        .collect();
+      Ok(Expr::Association(evaluated?))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let r = evaluate_expr_to_expr(replacement)?;
+      Ok(Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(r),
+      })
+    }
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      // Delayed rules don't evaluate the replacement
+      Ok(Expr::RuleDelayed {
+        pattern: pattern.clone(),
+        replacement: replacement.clone(),
+      })
+    }
+    Expr::ReplaceAll { expr: e, rules } => {
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      let evaluated_rules = evaluate_expr_to_expr(rules)?;
+      apply_replace_all_ast(&evaluated_expr, &evaluated_rules)
+    }
+    Expr::ReplaceRepeated { expr: e, rules } => {
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      let evaluated_rules = evaluate_expr_to_expr(rules)?;
+      apply_replace_repeated_ast(&evaluated_expr, &evaluated_rules)
+    }
+    Expr::Map { func, list } => {
+      let evaluated_list = evaluate_expr_to_expr(list)?;
+      apply_map_ast(func, &evaluated_list)
+    }
+    Expr::Apply { func, list } => {
+      let evaluated_list = evaluate_expr_to_expr(list)?;
+      apply_apply_ast(func, &evaluated_list)
+    }
+    Expr::MapApply { func, list } => {
+      let evaluated_list = evaluate_expr_to_expr(list)?;
+      apply_map_apply_ast(func, &evaluated_list)
+    }
+    Expr::PrefixApply { func, arg } => {
+      // f @ x is equivalent to f[x]
+      let evaluated_arg = evaluate_expr_to_expr(arg)?;
+      apply_function_to_arg(func, &evaluated_arg)
+    }
+    Expr::Postfix { expr: e, func } => {
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      apply_postfix_ast(&evaluated_expr, func)
+    }
+    Expr::Part { expr: e, index } => {
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
+      let evaluated_idx = evaluate_expr_to_expr(index)?;
+      extract_part_ast(&evaluated_expr, &evaluated_idx)
+    }
+    Expr::Function { body } => {
+      // Return anonymous function as-is
+      Ok(Expr::Function { body: body.clone() })
+    }
+    Expr::Pattern { name, head } => Ok(Expr::Pattern {
+      name: name.clone(),
+      head: head.clone(),
+    }),
+    Expr::Raw(s) => {
+      // Fallback: parse and evaluate the raw string
+      let parsed = string_to_expr(s)?;
+      evaluate_expr_to_expr(&parsed)
+    }
+  }
+}
+
+/// Convert an Expr to a number if possible
+fn expr_to_number(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  }
+}
+
+/// Convert a number to an appropriate Expr (Integer if whole, Real otherwise)
+fn num_to_expr(n: f64) -> Expr {
+  if n.fract() == 0.0 && n.abs() < i128::MAX as f64 {
+    Expr::Integer(n as i128)
+  } else {
+    Expr::Real(n)
+  }
+}
+
+/// Extract raw string content from an Expr (without quotes for strings)
+fn expr_to_raw_string(expr: &Expr) -> String {
+  match expr {
+    Expr::String(s) => s.clone(),
+    _ => expr_to_string(expr),
+  }
+}
+
+/// Parse a string to Expr (wrapper for syntax::string_to_expr)
+fn string_to_expr(s: &str) -> Result<Expr, InterpreterError> {
+  crate::syntax::string_to_expr(s)
+}
+
+/// Dispatch function call to built-in implementations (AST version).
+/// This is the AST equivalent of the string-based function dispatch.
+/// IMPORTANT: This function must NOT call interpret() to avoid infinite recursion.
+pub fn evaluate_function_call_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Handle functions that would call interpret() if dispatched through evaluate_expression
+  // These must be handled natively to avoid infinite recursion
+  match name {
+    "Module" => return module_ast(args),
+    "If" => {
+      if args.len() >= 2 && args.len() <= 3 {
+        let cond = evaluate_expr_to_expr(&args[0])?;
+        if matches!(&cond, Expr::Identifier(s) if s == "True") {
+          return evaluate_expr_to_expr(&args[1]);
+        } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
+          if args.len() == 3 {
+            return evaluate_expr_to_expr(&args[2]);
+          } else {
+            return Ok(Expr::Identifier("Null".to_string()));
+          }
+        }
+      }
+    }
+    _ => {}
+  }
+
+  // Convert args to strings and construct a function call string
+  let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
+  let call_str = format!("{}[{}]", name, args_str.join(", "));
+
+  // Parse the call string to get a Pair, then call evaluate_expression directly
+  // This bypasses the interpret() -> evaluate_expr_to_expr path to avoid infinite recursion
+  let pairs = crate::parse(&call_str)?;
+  let program = pairs
+    .into_iter()
+    .next()
+    .ok_or(InterpreterError::EmptyInput)?;
+
+  for node in program.into_inner() {
+    if node.as_rule() == crate::Rule::Expression {
+      match evaluate_expression(node) {
+        Ok(result_str) => {
+          // Check if result is a quoted string - return as String directly
+          // to avoid re-parsing issues (e.g., "hello world" being parsed as ImplicitTimes)
+          if result_str.starts_with('"')
+            && result_str.ends_with('"')
+            && result_str.len() >= 2
+          {
+            let inner = &result_str[1..result_str.len() - 1];
+            return Ok(Expr::String(inner.to_string()));
+          }
+          return string_to_expr(&result_str);
+        }
+        Err(InterpreterError::EvaluationError(e))
+          if e.starts_with("Unknown function:") =>
+        {
+          // Unknown function - return as symbolic function call
+          return Ok(Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec(),
+          });
+        }
+        Err(e) => return Err(e),
+      }
+    }
+  }
+
+  // Fallback: return as symbolic function call
+  Ok(Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// AST-based Module implementation to avoid interpret() recursion
+fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Module expects 2 arguments; {} given",
+      args.len()
+    )));
+  }
+
+  let vars_expr = &args[0];
+  let body_expr = &args[1];
+
+  // Parse variable declarations from the first argument (should be a List)
+  let local_vars = match vars_expr {
+    Expr::List(items) => {
+      let mut vars = Vec::new();
+      for item in items {
+        match item {
+          // x = value (assignment via Rule syntax internally or via Set)
+          Expr::FunctionCall {
+            name,
+            args: set_args,
+          } if name == "Set" && set_args.len() == 2 => {
+            if let Expr::Identifier(var_name) = &set_args[0] {
+              vars.push((var_name.clone(), Some(set_args[1].clone())));
+            }
+          }
+          // x = value (parsed as Rule or identifier = expr)
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
+            if let Expr::Identifier(var_name) = pattern.as_ref() {
+              vars.push((var_name.clone(), Some(replacement.as_ref().clone())));
+            }
+          }
+          // Just a variable name without initialization
+          Expr::Identifier(var_name) => {
+            vars.push((var_name.clone(), None));
+          }
+          // Try to extract from raw text (for cases like "x = 5")
+          Expr::Raw(s) => {
+            if let Some((name, init)) = s.split_once('=') {
+              let name = name.trim();
+              let init = init.trim();
+              if !name.is_empty() {
+                let init_expr = string_to_expr(init)?;
+                vars.push((name.to_string(), Some(init_expr)));
+              }
+            } else {
+              vars.push((s.trim().to_string(), None));
+            }
+          }
+          // BinaryOp with some assignment-like pattern (less common)
+          _ => {
+            // Try to convert to string and parse
+            let s = expr_to_string(item);
+            if let Some((name, init)) = s.split_once('=') {
+              let name = name.trim();
+              let init = init.trim();
+              if !name.is_empty() && !name.contains(' ') {
+                let init_expr = string_to_expr(init)?;
+                vars.push((name.to_string(), Some(init_expr)));
+              }
+            }
+          }
+        }
+      }
+      vars
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Module expects a list of variable declarations as first argument"
+          .into(),
+      ));
+    }
+  };
+
+  // Save previous bindings and set up new ones
+  let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
+
+  for (var_name, init_expr) in &local_vars {
+    let val = if let Some(expr) = init_expr {
+      // Evaluate the initialization expression
+      let evaluated = evaluate_expr_to_expr(expr)?;
+      expr_to_string(&evaluated)
+    } else {
+      // Uninitialized variable - generate a unique symbol
+      crate::functions::scoping::unique_symbol(var_name)
+    };
+
+    // Save current binding and set new one
+    let pv = ENV.with(|e| {
+      e.borrow_mut()
+        .insert(var_name.clone(), StoredValue::Raw(val))
+    });
+    prev.push((var_name.clone(), pv));
+  }
+
+  // Evaluate the body expression using AST evaluation
+  let result = evaluate_expr_to_expr(body_expr)?;
+
+  // Restore previous bindings
+  for (var_name, old) in prev {
+    ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      if let Some(v) = old {
+        env.insert(var_name, v);
+      } else {
+        env.remove(&var_name);
+      }
+    });
+  }
+
+  Ok(result)
+}
+
+/// Apply ReplaceAll operation on AST (expr /. rules)
+/// Routes to string-based implementation for correct pattern matching support
+fn apply_replace_all_ast(
+  expr: &Expr,
+  rules: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Extract pattern and replacement from rules
+  let (pattern_str, replacement_str) = match rules {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (expr_to_string(pattern), expr_to_string(replacement)),
+    Expr::List(items) if !items.is_empty() => {
+      // Multiple rules - apply each rule in order to the expression
+      // Each rule is applied to the result of the previous rule
+      let mut current = expr_to_string(expr);
+      for rule in items {
+        let (pat, repl) = match rule {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => (expr_to_string(pattern), expr_to_string(replacement)),
+          _ => continue,
+        };
+        // Apply this rule to the current expression
+        current = apply_replace_all_direct(&current, &pat, &repl)?;
+      }
+      return string_to_expr(&current);
+    }
+    _ => return Ok(expr.clone()),
+  };
+
+  // Use the string-based function which handles all pattern types correctly
+  let expr_str = expr_to_string(expr);
+  let result =
+    apply_replace_all_direct(&expr_str, &pattern_str, &replacement_str)?;
+  string_to_expr(&result)
+}
+
+/// Apply ReplaceRepeated operation on AST (expr //. rules)
+/// Routes to string-based implementation for correct pattern matching support
+fn apply_replace_repeated_ast(
+  expr: &Expr,
+  rules: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Extract pattern and replacement from rules
+  let (pattern_str, replacement_str) = match rules {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (expr_to_string(pattern), expr_to_string(replacement)),
+    _ => return Ok(expr.clone()),
+  };
+
+  // Use the string-based function which handles all pattern types correctly
+  let expr_str = expr_to_string(expr);
+  let result =
+    apply_replace_repeated_direct(&expr_str, &pattern_str, &replacement_str)?;
+  string_to_expr(&result)
+}
+
+/// Check if two Expr values are structurally equal
+#[allow(dead_code)]
+fn expr_equal(a: &Expr, b: &Expr) -> bool {
+  match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => x == y,
+    (Expr::Real(x), Expr::Real(y)) => x == y,
+    (Expr::String(x), Expr::String(y)) => x == y,
+    (Expr::Identifier(x), Expr::Identifier(y)) => x == y,
+    (Expr::Slot(x), Expr::Slot(y)) => x == y,
+    (Expr::Constant(x), Expr::Constant(y)) => x == y,
+    (Expr::List(xs), Expr::List(ys)) => {
+      xs.len() == ys.len()
+        && xs.iter().zip(ys.iter()).all(|(x, y)| expr_equal(x, y))
+    }
+    (
+      Expr::FunctionCall { name: n1, args: a1 },
+      Expr::FunctionCall { name: n2, args: a2 },
+    ) => {
+      n1 == n2
+        && a1.len() == a2.len()
+        && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
+    }
+    _ => expr_to_string(a) == expr_to_string(b),
+  }
+}
+
+/// Apply a list of rules once to an expression
+#[allow(dead_code)]
+fn apply_rules_once(
+  expr: &Expr,
+  rules: &[(&Expr, &Expr)],
+) -> Result<Expr, InterpreterError> {
+  // Try to match each rule against the expression
+  for (pattern, replacement) in rules {
+    if let Some(bindings) = match_pattern(expr, pattern) {
+      return apply_bindings(replacement, &bindings);
+    }
+  }
+
+  // No rule matched at the top level, try to apply rules to subexpressions
+  match expr {
+    Expr::List(items) => {
+      let new_items: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| apply_rules_once(item, rules))
+        .collect();
+      Ok(Expr::List(new_items?))
+    }
+    Expr::FunctionCall { name, args } => {
+      let new_args: Result<Vec<Expr>, _> = args
+        .iter()
+        .map(|arg| apply_rules_once(arg, rules))
+        .collect();
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args?,
+      })
+    }
+    Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
+      op: *op,
+      left: Box::new(apply_rules_once(left, rules)?),
+      right: Box::new(apply_rules_once(right, rules)?),
+    }),
+    _ => Ok(expr.clone()),
+  }
+}
+
+/// Match a pattern against an expression, returning bindings if successful
+#[allow(dead_code)]
+fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
+  match pattern {
+    Expr::Pattern { name, head } => {
+      // Check head constraint if present
+      if let Some(h) = head {
+        let expr_head = get_expr_head(expr);
+        if expr_head != *h {
+          return None;
+        }
+      }
+      Some(vec![(name.clone(), expr.clone())])
+    }
+    Expr::Identifier(name) if name.ends_with('_') => {
+      // Blank pattern like x_
+      let var_name = name.trim_end_matches('_');
+      Some(vec![(var_name.to_string(), expr.clone())])
+    }
+    Expr::Integer(n) => {
+      if matches!(expr, Expr::Integer(m) if m == n) {
+        Some(vec![])
+      } else {
+        None
+      }
+    }
+    Expr::Real(f) => {
+      if matches!(expr, Expr::Real(g) if (f - g).abs() < f64::EPSILON) {
+        Some(vec![])
+      } else {
+        None
+      }
+    }
+    Expr::Identifier(name) => {
+      if matches!(expr, Expr::Identifier(n) if n == name) {
+        Some(vec![])
+      } else {
+        None
+      }
+    }
+    Expr::String(s) => {
+      if matches!(expr, Expr::String(t) if t == s) {
+        Some(vec![])
+      } else {
+        None
+      }
+    }
+    Expr::List(pat_items) => {
+      if let Expr::List(expr_items) = expr {
+        if pat_items.len() != expr_items.len() {
+          return None;
+        }
+        let mut bindings = Vec::new();
+        for (p, e) in pat_items.iter().zip(expr_items.iter()) {
+          if let Some(b) = match_pattern(e, p) {
+            bindings.extend(b);
+          } else {
+            return None;
+          }
+        }
+        Some(bindings)
+      } else {
+        None
+      }
+    }
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } => {
+      if let Expr::FunctionCall {
+        name: expr_name,
+        args: expr_args,
+      } = expr
+      {
+        if pat_name != expr_name || pat_args.len() != expr_args.len() {
+          return None;
+        }
+        let mut bindings = Vec::new();
+        for (p, e) in pat_args.iter().zip(expr_args.iter()) {
+          if let Some(b) = match_pattern(e, p) {
+            bindings.extend(b);
+          } else {
+            return None;
+          }
+        }
+        Some(bindings)
+      } else {
+        None
+      }
+    }
+    _ => {
+      // For other patterns, check structural equality
+      if expr_equal(expr, pattern) {
+        Some(vec![])
+      } else {
+        None
+      }
+    }
+  }
+}
+
+/// Get the head of an expression (for pattern matching with head constraints)
+#[allow(dead_code)]
+fn get_expr_head(expr: &Expr) -> String {
+  match expr {
+    Expr::Integer(_) => "Integer".to_string(),
+    Expr::Real(_) => "Real".to_string(),
+    Expr::String(_) => "String".to_string(),
+    Expr::List(_) => "List".to_string(),
+    Expr::FunctionCall { name, .. } => name.clone(),
+    Expr::Association(_) => "Association".to_string(),
+    _ => "Symbol".to_string(),
+  }
+}
+
+/// Apply bindings to a replacement expression
+#[allow(dead_code)]
+fn apply_bindings(
+  replacement: &Expr,
+  bindings: &[(String, Expr)],
+) -> Result<Expr, InterpreterError> {
+  let mut result = replacement.clone();
+  for (name, value) in bindings {
+    result = crate::syntax::substitute_variable(&result, name, value);
+  }
+  // Evaluate the result after substitution
+  evaluate_expr_to_expr(&result)
+}
+
+/// Apply Map operation on AST (func /@ list)
+fn apply_map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      // Not a list, return unevaluated
+      return Ok(Expr::Map {
+        func: Box::new(func.clone()),
+        list: Box::new(list.clone()),
+      });
+    }
+  };
+
+  let results: Result<Vec<Expr>, _> = items
+    .iter()
+    .map(|item| apply_function_to_arg(func, item))
+    .collect();
+
+  Ok(Expr::List(results?))
+}
+
+/// Apply Apply operation on AST (func @@ list)
+fn apply_apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      // Not a list, return unevaluated
+      return Ok(Expr::Apply {
+        func: Box::new(func.clone()),
+        list: Box::new(list.clone()),
+      });
+    }
+  };
+
+  // Apply converts List[a, b, c] to func[a, b, c]
+  match func {
+    Expr::Identifier(func_name) => {
+      evaluate_function_call_ast(func_name, &items)
+    }
+    Expr::FunctionCall {
+      name: func_name, ..
+    } => evaluate_function_call_ast(func_name, &items),
+    Expr::Function { body } => {
+      // Anonymous function applied to a list
+      // For single-arg anonymous functions, apply to first element
+      if items.len() == 1 {
+        apply_function_to_arg(func, &items[0])
+      } else {
+        // Multiple args - substitute each slot
+        let substituted = crate::syntax::substitute_slots(body, &items);
+        evaluate_expr_to_expr(&substituted)
+      }
+    }
+    _ => Ok(Expr::Apply {
+      func: Box::new(func.clone()),
+      list: Box::new(list.clone()),
+    }),
+  }
+}
+
+/// Apply MapApply operation on AST (f @@@ {{a, b}, {c, d}} -> {f[a, b], f[c, d]})
+fn apply_map_apply_ast(
+  func: &Expr,
+  list: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      // Not a list, return unevaluated
+      return Ok(Expr::MapApply {
+        func: Box::new(func.clone()),
+        list: Box::new(list.clone()),
+      });
+    }
+  };
+
+  // MapApply applies func to each sublist
+  let results: Result<Vec<Expr>, InterpreterError> = items
+    .iter()
+    .map(|item| apply_apply_ast(func, item))
+    .collect();
+
+  Ok(Expr::List(results?))
+}
+
+/// Apply Postfix operation on AST (expr // func)
+fn apply_postfix_ast(
+  expr: &Expr,
+  func: &Expr,
+) -> Result<Expr, InterpreterError> {
+  apply_function_to_arg(func, expr)
+}
+
+/// Extract part from expression on AST (expr[[index]])
+fn extract_part_ast(
+  expr: &Expr,
+  index: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let idx = match index {
+    Expr::Integer(n) => *n as i64,
+    Expr::Real(f) => *f as i64,
+    _ => {
+      return Ok(Expr::Part {
+        expr: Box::new(expr.clone()),
+        index: Box::new(index.clone()),
+      });
+    }
+  };
+
+  match expr {
+    Expr::List(items) => {
+      let len = items.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(items[actual_idx as usize].clone())
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
+          "Part index {} out of range for list of length {}",
+          idx, len
+        )))
+      }
+    }
+    Expr::String(s) => {
+      let chars: Vec<char> = s.chars().collect();
+      let len = chars.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(Expr::String(chars[actual_idx as usize].to_string()))
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
+          "Part index {} out of range for string of length {}",
+          idx, len
+        )))
+      }
+    }
+    _ => Ok(Expr::Part {
+      expr: Box::new(expr.clone()),
+      index: Box::new(index.clone()),
+    }),
+  }
+}
+
+/// Apply a function to an argument (helper for Map, Postfix, etc.)
+fn apply_function_to_arg(
+  func: &Expr,
+  arg: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match func {
+    Expr::Identifier(name) => {
+      // Simple function name: f applied to arg
+      evaluate_function_call_ast(name, &[arg.clone()])
+    }
+    Expr::Function { body } => {
+      // Anonymous function: substitute # with arg and evaluate
+      let substituted = crate::syntax::substitute_slots(body, &[arg.clone()]);
+      evaluate_expr_to_expr(&substituted)
+    }
+    Expr::FunctionCall { name, args } => {
+      // Curried function: f[a] applied to b becomes f[a, b]
+      let mut new_args = args.clone();
+      new_args.push(arg.clone());
+      evaluate_function_call_ast(name, &new_args)
+    }
+    _ => {
+      // Fallback: create a function call expression
+      let func_str = expr_to_string(func);
+      if let Some(name) = func_str.strip_suffix('&') {
+        // It's an anonymous function like "#^2&"
+        let body = string_to_expr(name)?;
+        let substituted =
+          crate::syntax::substitute_slots(&body, &[arg.clone()]);
+        evaluate_expr_to_expr(&substituted)
+      } else {
+        // Treat as a function name
+        evaluate_function_call_ast(&func_str, &[arg.clone()])
+      }
     }
   }
 }
@@ -2567,8 +3655,9 @@ pub fn evaluate_function_call(
           e.borrow_mut()
             .insert(param.clone(), StoredValue::Raw(val.clone()))
         });
-        // Evaluate the AST directly instead of re-parsing
-        let result = evaluate_expr(body)?;
+        // Evaluate the AST directly using evaluate_expr_to_expr to avoid recursion
+        let result_expr = evaluate_expr_to_expr(body)?;
+        let result = expr_to_string(&result_expr);
         ENV.with(|e| {
           let mut env = e.borrow_mut();
           if let Some(v) = prev {
@@ -2596,8 +3685,9 @@ pub fn evaluate_function_call(
         prev.push((param.clone(), pv));
       }
 
-      // Evaluate the AST directly instead of re-parsing (the core optimization)
-      let result = evaluate_expr(body)?;
+      // Evaluate the AST directly using evaluate_expr_to_expr to avoid recursion
+      let result_expr = evaluate_expr_to_expr(body)?;
+      let result = expr_to_string(&result_expr);
 
       // restore previous bindings
       for (param, old) in prev {

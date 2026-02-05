@@ -227,10 +227,64 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
 
   if any_nonempty {
-    Ok(last_result.ok_or(InterpreterError::EmptyInput)?)
+    let result = last_result.ok_or(InterpreterError::EmptyInput)?;
+    // Strip quotes from string results for display (Wolfram doesn't show quotes)
+    Ok(strip_display_quotes(&result))
   } else {
     Err(InterpreterError::EmptyInput)
   }
+}
+
+/// Strip quotes from strings in the output for display.
+/// In Wolfram Language, strings are displayed without quotes at output.
+fn strip_display_quotes(s: &str) -> String {
+  // Simple case: entire string is a quoted string
+  if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+    return s[1..s.len() - 1].to_string();
+  }
+
+  // Handle lists and other compound structures with quoted strings
+  // e.g., {"one", "two", 3} -> {one, two, 3}
+  let mut result = String::with_capacity(s.len());
+  let mut chars = s.chars().peekable();
+
+  while let Some(c) = chars.next() {
+    if c == '"' {
+      // Start of a quoted string - collect until closing quote
+      let mut string_content = String::new();
+      while let Some(&next) = chars.peek() {
+        if next == '"' {
+          chars.next(); // consume the closing quote
+          break;
+        } else if next == '\\' {
+          // Handle escape sequences
+          chars.next();
+          if let Some(&escaped) = chars.peek() {
+            chars.next();
+            match escaped {
+              'n' => string_content.push('\n'),
+              't' => string_content.push('\t'),
+              'r' => string_content.push('\r'),
+              '"' => string_content.push('"'),
+              '\\' => string_content.push('\\'),
+              _ => {
+                string_content.push('\\');
+                string_content.push(escaped);
+              }
+            }
+          }
+        } else {
+          string_content.push(next);
+          chars.next();
+        }
+      }
+      result.push_str(&string_content);
+    } else {
+      result.push(c);
+    }
+  }
+
+  result
 }
 
 /// Try to evaluate a simple function call without full parsing.

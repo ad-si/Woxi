@@ -164,10 +164,8 @@ mod interpreter_tests {
       fn simple_blank_matches_any() {
         // x_ matches any expression
         assert_eq!(interpret("5 /. x_ :> 10").unwrap(), "10");
-        assert_eq!(
-          interpret("\"hello\" /. x_ :> \"world\"").unwrap(),
-          "\"world\""
-        );
+        // Strings are displayed without quotes at top level (Wolfram behavior)
+        assert_eq!(interpret("\"hello\" /. x_ :> \"world\"").unwrap(), "world");
       }
 
       #[test]
@@ -196,7 +194,7 @@ mod interpreter_tests {
       fn condition_true_matches() {
         assert_eq!(
           interpret("6 /. x_ /; Mod[x, 2] == 0 :> \"even\"").unwrap(),
-          "\"even\""
+          "even"
         );
       }
 
@@ -212,11 +210,11 @@ mod interpreter_tests {
       fn conditional_with_function_call() {
         assert_eq!(
           interpret("3 /. i_ /; Mod[i, 3] == 0 :> \"Fizz\"").unwrap(),
-          "\"Fizz\""
+          "Fizz"
         );
         assert_eq!(
           interpret("5 /. i_ /; Mod[i, 5] == 0 :> \"Buzz\"").unwrap(),
-          "\"Buzz\""
+          "Buzz"
         );
       }
 
@@ -234,7 +232,7 @@ mod interpreter_tests {
 
       #[test]
       fn pattern_test_matches() {
-        assert_eq!(interpret("4 /. x_?EvenQ :> \"even\"").unwrap(), "\"even\"");
+        assert_eq!(interpret("4 /. x_?EvenQ :> \"even\"").unwrap(), "even");
       }
 
       #[test]
@@ -265,12 +263,13 @@ mod interpreter_tests {
       #[test]
       fn list_of_rules_applied_in_order() {
         // First matching rule wins
+        // Note: strings inside lists still show quotes (only top-level strings are unquoted)
         assert_eq!(
           interpret(
             "{1, 2, 3} /. {x_ /; x == 1 :> \"one\", x_ /; x == 2 :> \"two\"}"
           )
           .unwrap(),
-          "{\"one\", \"two\", 3}"
+          "{one, two, 3}"
         );
       }
 
@@ -279,15 +278,15 @@ mod interpreter_tests {
         // Test the FizzBuzz pattern
         assert_eq!(
           interpret("15 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
-          "\"FizzBuzz\""
+          "FizzBuzz"
         );
         assert_eq!(
           interpret("9 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
-          "\"Fizz\""
+          "Fizz"
         );
         assert_eq!(
           interpret("10 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
-          "\"Buzz\""
+          "Buzz"
         );
         assert_eq!(
           interpret("7 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
@@ -368,14 +367,14 @@ mod interpreter_tests {
 
     #[test]
     fn paren_anonymous_in_postfix() {
-      // If[# === "", i, #]& @ "hello" should return "hello"
+      // If[# === "", i, #]& @ "hello" should return "hello" (strings displayed without quotes)
       assert_eq!(
         interpret("(If[# === \"\", \"empty\", #])& @ \"hello\"").unwrap(),
-        "\"hello\""
+        "hello"
       );
       assert_eq!(
         interpret("(If[# === \"\", \"empty\", #])& @ \"\"").unwrap(),
-        "\"empty\""
+        "empty"
       );
     }
   }
@@ -462,14 +461,14 @@ mod interpreter_tests {
 
     #[test]
     fn postfix_at_with_string_result() {
-      // Anonymous function that returns a string
+      // Anonymous function that returns a string (strings displayed without quotes)
       assert_eq!(
         interpret("If[# > 0, \"positive\", \"non-positive\"]& @ 5").unwrap(),
-        "\"positive\""
+        "positive"
       );
       assert_eq!(
         interpret("If[# > 0, \"positive\", \"non-positive\"]& @ -3").unwrap(),
-        "\"non-positive\""
+        "non-positive"
       );
     }
 

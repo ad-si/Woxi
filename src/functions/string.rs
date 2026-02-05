@@ -33,7 +33,8 @@ pub fn string_take(
   }
   let k = n as usize;
   let taken: String = s.chars().take(k).collect();
-  Ok(taken)
+  // Return as quoted string for proper parsing in AST path
+  Ok(format!("\"{}\"", taken))
 }
 
 /// Handle StringDrop[s, n] - returns the string with the first n characters removed
@@ -54,7 +55,8 @@ pub fn string_drop(
   }
   let k = n as usize;
   let dropped: String = s.chars().skip(k).collect();
-  Ok(dropped)
+  // Return as quoted string for proper parsing in AST path
+  Ok(format!("\"{}\"", dropped))
 }
 
 /// Handle StringJoin[s1, s2, ...] or StringJoin[{s1, s2, ...}] - concatenates multiple strings
@@ -78,7 +80,8 @@ pub fn string_join(
       for item in arg.clone().into_inner() {
         joined.push_str(&extract_string(item)?);
       }
-      return Ok(joined);
+      // Return as quoted string so it's properly identified as a string value
+      return Ok(format!("\"{}\"", joined));
     }
     // Check if it's an Expression wrapping a list
     if arg.as_rule() == Rule::Expression {
@@ -87,7 +90,8 @@ pub fn string_join(
         for item in inner[0].clone().into_inner() {
           joined.push_str(&extract_string(item)?);
         }
-        return Ok(joined);
+        // Return as quoted string so it's properly identified as a string value
+        return Ok(format!("\"{}\"", joined));
       }
     }
     // It might evaluate to a list - try evaluating it
@@ -96,7 +100,7 @@ pub fn string_join(
       // Parse the list elements from the string representation
       let inner = &result[1..result.len() - 1];
       if inner.is_empty() {
-        return Ok(String::new());
+        return Ok("\"\"".to_string());
       }
       // Parse list elements, handling quoted strings
       let elements = parse_list_elements(inner);
@@ -109,15 +113,18 @@ pub fn string_join(
           joined.push_str(elem);
         }
       }
-      return Ok(joined);
+      // Return as quoted string so it's properly identified as a string value
+      return Ok(format!("\"{}\"", joined));
     }
   }
 
   // Multiple arguments - join them all
   for ap in args_pairs {
-    joined.push_str(&extract_string(ap.clone())?);
+    let extracted = extract_string(ap.clone())?;
+    joined.push_str(&extracted);
   }
-  Ok(joined)
+  // Return as quoted string so it's properly identified as a string value
+  Ok(format!("\"{}\"", joined))
 }
 
 /// Parse list elements from a string, handling nested structures and quoted strings
@@ -234,7 +241,8 @@ pub fn string_replace(
     let pattern = pattern.trim_matches('"');
     let replacement = replacement.trim_matches('"');
 
-    Ok(s.replace(pattern, replacement))
+    // Return as quoted string for proper parsing in AST path
+    Ok(format!("\"{}\"", s.replace(pattern, replacement)))
   } else {
     Err(InterpreterError::EvaluationError(
       "StringReplace: second argument must be a rule (pattern -> replacement)"
@@ -253,7 +261,8 @@ pub fn to_upper_case(
     ));
   }
   let s = extract_string(args_pairs[0].clone())?;
-  Ok(s.to_uppercase())
+  // Return as quoted string for proper parsing in AST path
+  Ok(format!("\"{}\"", s.to_uppercase()))
 }
 
 /// Handle ToLowerCase[s] - converts a string to lowercase
@@ -266,7 +275,8 @@ pub fn to_lower_case(
     ));
   }
   let s = extract_string(args_pairs[0].clone())?;
-  Ok(s.to_lowercase())
+  // Return as quoted string for proper parsing in AST path
+  Ok(format!("\"{}\"", s.to_lowercase()))
 }
 
 /// Handle StringContainsQ[s, sub] - checks if a string contains a substring
@@ -326,7 +336,8 @@ pub fn string_riffle(
     " ".to_string()
   };
 
-  Ok(elements.join(&sep))
+  // Return as quoted string for proper parsing in AST path
+  Ok(format!("\"{}\"", elements.join(&sep)))
 }
 
 /// Handle StringPosition[s, sub] - Find all positions of substring in string

@@ -294,6 +294,10 @@ pub enum Expr {
   Map { func: Box<Expr>, list: Box<Expr> },
   /// Apply: f @@ list
   Apply { func: Box<Expr>, list: Box<Expr> },
+  /// MapApply: f @@@ list (applies f to each sublist)
+  MapApply { func: Box<Expr>, list: Box<Expr> },
+  /// Prefix application: f @ x (equivalent to f[x])
+  PrefixApply { func: Box<Expr>, arg: Box<Expr> },
   /// Postfix application: expr // f
   Postfix { expr: Box<Expr>, func: Box<Expr> },
   /// Part extraction: expr[[index]]
@@ -467,10 +471,9 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::Pattern { name, head }
     }
     Rule::PatternTest | Rule::PatternCondition => {
-      // For now, just store as pattern with name
-      let s = pair.as_str();
-      let name = s.split('_').next().unwrap_or(s).to_string();
-      Expr::Pattern { name, head: None }
+      // Store the full pattern string as Raw to preserve test/condition info
+      // The string-based pattern matching in apply_replace_all_direct handles these
+      Expr::Raw(pair.as_str().to_string())
     }
     Rule::SimpleAnonymousFunction
     | Rule::FunctionAnonymousFunction
@@ -570,27 +573,9 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     return pair_to_expr(inner.remove(0));
   }
 
-  // Check for postfix application pattern: Term (// PostfixFunction)+
-  // The grammar puts PostfixFunction after Term when // is used
-  let mut i = 1;
-  while i < inner.len() {
-    if inner[i].as_rule() == Rule::PostfixFunction {
-      // This is a postfix chain
-      let mut result = pair_to_expr(inner.remove(0));
-      while !inner.is_empty() && inner[0].as_rule() == Rule::PostfixFunction {
-        let func = pair_to_expr(inner.remove(0));
-        result = Expr::Postfix {
-          expr: Box::new(result),
-          func: Box::new(func),
-        };
-      }
-      return result;
-    }
-    i += 1;
-  }
-
-  // Check for ReplaceAll/ReplaceRepeated patterns
+  // Check for ReplaceAll/ReplaceRepeated patterns FIRST
   // These show up as: Term (List|ReplacementRule) (PostfixFunction)*
+  // Must check this before simple postfix to handle cases like: expr /. rule // f
   if inner.len() >= 2 {
     let second_rule = inner[1].as_rule();
     if second_rule == Rule::List || second_rule == Rule::ReplacementRule {
@@ -611,6 +596,25 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       }
       return result;
     }
+  }
+
+  // Check for simple postfix application pattern: Term (// PostfixFunction)+
+  // Only reaches here if there's no ReplaceAll/ReplaceRepeated before the postfix
+  let mut i = 1;
+  while i < inner.len() {
+    if inner[i].as_rule() == Rule::PostfixFunction {
+      // This is a postfix chain
+      let mut result = pair_to_expr(inner.remove(0));
+      while !inner.is_empty() && inner[0].as_rule() == Rule::PostfixFunction {
+        let func = pair_to_expr(inner.remove(0));
+        result = Expr::Postfix {
+          expr: Box::new(result),
+          func: Box::new(func),
+        };
+      }
+      return result;
+    }
+    i += 1;
   }
 
   // Parse operators: Term (Operator Term)*
@@ -669,90 +673,174 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   build_binary_tree(terms, operators)
 }
 
-/// Build a binary operation tree from terms and operators
-fn build_binary_tree(mut terms: Vec<Expr>, operators: Vec<String>) -> Expr {
+/// Get precedence of an operator (higher = binds tighter)
+fn operator_precedence(op: &str) -> u8 {
+  match op {
+    "||" => 1,
+    "&&" => 2,
+    "->" | ":>" => 3,
+    "/@" | "@@" | "@" => 4,
+    "+" | "-" => 5,
+    "*" | "/" => 6,
+    "^" => 7,
+    "<>" => 5, // Same as + for string concatenation
+    _ => 0,
+  }
+}
+
+/// Build a binary operation tree from terms and operators with correct precedence
+fn build_binary_tree(terms: Vec<Expr>, operators: Vec<String>) -> Expr {
   if terms.len() == 1 {
-    return terms.remove(0);
+    return terms.into_iter().next().unwrap();
+  }
+  if terms.is_empty() {
+    return Expr::Raw(String::new());
   }
 
-  let mut result = terms.remove(0);
-  for op_str in operators.into_iter() {
-    if terms.is_empty() {
+  // Use a precedence climbing algorithm
+  build_expr_with_precedence(&terms, &operators, 0, 0)
+}
+
+/// Build expression with precedence climbing
+fn build_expr_with_precedence(
+  terms: &[Expr],
+  operators: &[String],
+  term_start: usize,
+  min_prec: u8,
+) -> Expr {
+  if term_start >= terms.len() {
+    return Expr::Raw(String::new());
+  }
+
+  let mut result = terms[term_start].clone();
+  let mut op_idx = term_start; // operators[i] is between terms[i] and terms[i+1]
+
+  while op_idx < operators.len() {
+    let op_str = &operators[op_idx];
+    let prec = operator_precedence(op_str);
+
+    if prec < min_prec {
       break;
     }
-    let right = terms.remove(0);
 
-    let op = match op_str.as_str() {
-      "+" => Some(BinaryOperator::Plus),
-      "-" => Some(BinaryOperator::Minus),
-      "*" => Some(BinaryOperator::Times),
-      "/" => Some(BinaryOperator::Divide),
-      "^" => Some(BinaryOperator::Power),
-      "&&" => Some(BinaryOperator::And),
-      "||" => Some(BinaryOperator::Or),
-      "<>" => Some(BinaryOperator::StringJoin),
-      "/@" => {
-        result = Expr::Map {
-          func: Box::new(result),
-          list: Box::new(right),
-        };
-        continue;
-      }
-      "@@" => {
-        result = Expr::Apply {
-          func: Box::new(result),
-          list: Box::new(right),
-        };
-        continue;
-      }
-      "->" => {
-        result = Expr::Rule {
-          pattern: Box::new(result),
-          replacement: Box::new(right),
-        };
-        continue;
-      }
-      ":>" => {
-        result = Expr::RuleDelayed {
-          pattern: Box::new(result),
-          replacement: Box::new(right),
-        };
-        continue;
-      }
-      _ => None,
-    };
+    // For right-associative operators (like ^), use prec, otherwise use prec + 1
+    let next_min_prec = if op_str == "^" { prec } else { prec + 1 };
 
-    if let Some(binary_op) = op {
-      result = Expr::BinaryOp {
-        op: binary_op,
-        left: Box::new(result),
-        right: Box::new(right),
-      };
-    } else {
-      // Unknown operator, wrap as raw
-      result = Expr::Raw(format!(
-        "{} {} {}",
-        expr_to_string(&result),
-        op_str,
-        expr_to_string(&right)
-      ));
+    // Build the right side with higher precedence
+    let right =
+      build_expr_with_precedence(terms, operators, op_idx + 1, next_min_prec);
+
+    // Create the binary operation
+    result = make_binary_op(&result, op_str, &right);
+
+    // Count how many terms were consumed on the right
+    let mut right_terms = 1;
+    let mut i = op_idx + 1;
+    while i < operators.len()
+      && operator_precedence(&operators[i]) >= next_min_prec
+    {
+      right_terms += 1;
+      i += 1;
     }
+    op_idx += right_terms;
   }
 
   result
 }
 
-/// Parse the body of an anonymous function
+/// Create a binary operation from two expressions and an operator string
+fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
+  match op_str {
+    "+" => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "-" => Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "*" => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "/" => Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "^" => Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "&&" => Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "||" => Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "<>" => Expr::BinaryOp {
+      op: BinaryOperator::StringJoin,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
+    "/@" => Expr::Map {
+      func: Box::new(left.clone()),
+      list: Box::new(right.clone()),
+    },
+    "@@@" => Expr::MapApply {
+      func: Box::new(left.clone()),
+      list: Box::new(right.clone()),
+    },
+    "@@" => Expr::Apply {
+      func: Box::new(left.clone()),
+      list: Box::new(right.clone()),
+    },
+    "@" => Expr::PrefixApply {
+      func: Box::new(left.clone()),
+      arg: Box::new(right.clone()),
+    },
+    "->" => Expr::Rule {
+      pattern: Box::new(left.clone()),
+      replacement: Box::new(right.clone()),
+    },
+    ":>" => Expr::RuleDelayed {
+      pattern: Box::new(left.clone()),
+      replacement: Box::new(right.clone()),
+    },
+    "=" => Expr::FunctionCall {
+      name: "Set".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    ":=" => Expr::FunctionCall {
+      name: "SetDelayed".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    _ => Expr::Raw(format!(
+      "{} {} {}",
+      expr_to_string(left),
+      op_str,
+      expr_to_string(right)
+    )),
+  }
+}
+
+/// Parse the body of an anonymous function using the pest parser
 fn parse_anonymous_body(s: &str) -> Expr {
-  // This is a simplified parser for anonymous function bodies
-  // It handles common cases like #, #^2, #+1, etc.
   let s = s.trim();
 
   if s.is_empty() {
     return Expr::Slot(1);
   }
 
-  // Check for slot
+  // Check for simple slot (fast path)
   if s == "#" {
     return Expr::Slot(1);
   }
@@ -764,15 +852,45 @@ fn parse_anonymous_body(s: &str) -> Expr {
     return Expr::Slot(num);
   }
 
-  // For more complex bodies, store as raw
-  Expr::Raw(s.to_string())
+  // Use the pest parser to properly parse complex expressions
+  match crate::parse(s) {
+    Ok(pairs) => {
+      for pair in pairs {
+        for node in pair.into_inner() {
+          if matches!(node.as_rule(), Rule::Expression) {
+            return pair_to_expr(node);
+          }
+        }
+      }
+      // Fallback if parsing succeeded but no expression found
+      Expr::Raw(s.to_string())
+    }
+    Err(_) => {
+      // If parsing fails, fall back to Raw
+      Expr::Raw(s.to_string())
+    }
+  }
+}
+
+/// Format a real number for output (matches Wolfram Language format)
+fn format_real(f: f64) -> String {
+  if f.fract() == 0.0 {
+    // Whole number - format without decimal point
+    (f as i64).to_string()
+  } else {
+    // Format with up to 10 decimal places, trim trailing zeros
+    format!("{:.10}", f)
+      .trim_end_matches('0')
+      .trim_end_matches('.')
+      .to_string()
+  }
 }
 
 /// Convert an Expr back to a string representation
 pub fn expr_to_string(expr: &Expr) -> String {
   match expr {
     Expr::Integer(n) => n.to_string(),
-    Expr::Real(f) => f.to_string(),
+    Expr::Real(f) => format_real(*f),
     Expr::String(s) => format!("\"{}\"", s),
     Expr::Identifier(s) => s.clone(),
     Expr::Slot(n) => {
@@ -885,6 +1003,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
     Expr::Apply { func, list } => {
       format!("{} @@ {}", expr_to_string(func), expr_to_string(list))
     }
+    Expr::MapApply { func, list } => {
+      format!("{} @@@ {}", expr_to_string(func), expr_to_string(list))
+    }
+    Expr::PrefixApply { func, arg } => {
+      format!("{} @ {}", expr_to_string(func), expr_to_string(arg))
+    }
     Expr::Postfix { expr, func } => {
       format!("{} // {}", expr_to_string(expr), expr_to_string(func))
     }
@@ -903,5 +1027,329 @@ pub fn expr_to_string(expr: &Expr) -> String {
     }
     Expr::Constant(s) => s.clone(),
     Expr::Raw(s) => s.clone(),
+  }
+}
+
+/// Render Expr for display output - strings are shown without quotes.
+/// This is used for the final output in interpret(), not for round-tripping.
+pub fn expr_to_output(expr: &Expr) -> String {
+  match expr {
+    Expr::String(s) => s.clone(), // No quotes for display
+    Expr::List(items) => {
+      let parts: Vec<String> = items.iter().map(expr_to_output).collect();
+      format!("{{{}}}", parts.join(", "))
+    }
+    Expr::FunctionCall { name, args } => {
+      let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+      format!("{}[{}]", name, parts.join(", "))
+    }
+    Expr::Association(items) => {
+      let parts: Vec<String> = items
+        .iter()
+        .map(|(k, v)| format!("{} -> {}", expr_to_output(k), expr_to_output(v)))
+        .collect();
+      format!("<|{}|>", parts.join(", "))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      format!(
+        "{} -> {}",
+        expr_to_output(pattern),
+        expr_to_output(replacement)
+      )
+    }
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      format!(
+        "{} :> {}",
+        expr_to_output(pattern),
+        expr_to_output(replacement)
+      )
+    }
+    // For all other cases, delegate to expr_to_string
+    _ => expr_to_string(expr),
+  }
+}
+
+/// Parse a string into an Expr AST.
+/// This is used when we need to convert external string input to AST form.
+pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
+  let trimmed = s.trim();
+
+  // Handle empty string - return as empty quoted string literal
+  if trimmed.is_empty() {
+    return Ok(Expr::Raw(String::new()));
+  }
+
+  // Fast path for simple literals
+  if let Ok(n) = trimmed.parse::<i128>() {
+    return Ok(Expr::Integer(n));
+  }
+  if let Ok(f) = trimmed.parse::<f64>() {
+    return Ok(Expr::Real(f));
+  }
+
+  // Check for quoted string
+  if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+    let inner = &trimmed[1..trimmed.len() - 1];
+    return Ok(Expr::String(inner.to_string()));
+  }
+
+  // Check for simple identifier
+  if !trimmed.is_empty()
+    && trimmed
+      .chars()
+      .next()
+      .map(|c| c.is_ascii_alphabetic() || c == '$')
+      .unwrap_or(false)
+    && trimmed
+      .chars()
+      .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+  {
+    return Ok(Expr::Identifier(trimmed.to_string()));
+  }
+
+  // Check for slot
+  if trimmed == "#" {
+    return Ok(Expr::Slot(1));
+  }
+  if trimmed.starts_with('#')
+    && trimmed.len() > 1
+    && let Ok(n) = trimmed[1..].parse::<usize>()
+  {
+    return Ok(Expr::Slot(n));
+  }
+
+  // Parse using pest
+  let pairs = crate::parse(trimmed)?;
+  let mut pairs_iter = pairs.into_iter();
+  let program = pairs_iter
+    .next()
+    .ok_or(crate::InterpreterError::EmptyInput)?;
+
+  for node in program.into_inner() {
+    match node.as_rule() {
+      Rule::Expression => {
+        return Ok(pair_to_expr(node));
+      }
+      _ => continue,
+    }
+  }
+
+  // Fallback to Raw
+  Ok(Expr::Raw(trimmed.to_string()))
+}
+
+/// Substitute slots (#, #1, #2, etc.) in an expression with values.
+/// values[0] replaces #1 (or #), values[1] replaces #2, etc.
+pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
+  match expr {
+    Expr::Slot(n) => {
+      let index = if *n == 0 { 0 } else { n - 1 };
+      if index < values.len() {
+        values[index].clone()
+      } else {
+        expr.clone()
+      }
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|e| substitute_slots(e, values)).collect())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(|e| substitute_slots(e, values)).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_slots(left, values)),
+      right: Box::new(substitute_slots(right, values)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_slots(operand, values)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|e| substitute_slots(e, values))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::CompoundExpr(exprs) => Expr::CompoundExpr(
+      exprs.iter().map(|e| substitute_slots(e, values)).collect(),
+    ),
+    Expr::Association(items) => Expr::Association(
+      items
+        .iter()
+        .map(|(k, v)| {
+          (substitute_slots(k, values), substitute_slots(v, values))
+        })
+        .collect(),
+    ),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(substitute_slots(pattern, values)),
+      replacement: Box::new(substitute_slots(replacement, values)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(substitute_slots(pattern, values)),
+      replacement: Box::new(substitute_slots(replacement, values)),
+    },
+    Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
+      expr: Box::new(substitute_slots(e, values)),
+      rules: Box::new(substitute_slots(rules, values)),
+    },
+    Expr::ReplaceRepeated { expr: e, rules } => Expr::ReplaceRepeated {
+      expr: Box::new(substitute_slots(e, values)),
+      rules: Box::new(substitute_slots(rules, values)),
+    },
+    Expr::Map { func, list } => Expr::Map {
+      func: Box::new(substitute_slots(func, values)),
+      list: Box::new(substitute_slots(list, values)),
+    },
+    Expr::Apply { func, list } => Expr::Apply {
+      func: Box::new(substitute_slots(func, values)),
+      list: Box::new(substitute_slots(list, values)),
+    },
+    Expr::MapApply { func, list } => Expr::MapApply {
+      func: Box::new(substitute_slots(func, values)),
+      list: Box::new(substitute_slots(list, values)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(substitute_slots(func, values)),
+      arg: Box::new(substitute_slots(arg, values)),
+    },
+    Expr::Postfix { expr: e, func } => Expr::Postfix {
+      expr: Box::new(substitute_slots(e, values)),
+      func: Box::new(substitute_slots(func, values)),
+    },
+    Expr::Part { expr: e, index } => Expr::Part {
+      expr: Box::new(substitute_slots(e, values)),
+      index: Box::new(substitute_slots(index, values)),
+    },
+    Expr::Function { body } => Expr::Function {
+      body: Box::new(substitute_slots(body, values)),
+    },
+    // Atoms that don't contain slots
+    _ => expr.clone(),
+  }
+}
+
+/// Substitute a variable name with a value in an expression.
+pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
+  match expr {
+    Expr::Identifier(name) if name == var_name => value.clone(),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_variable(e, var_name, value))
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| substitute_variable(e, var_name, value))
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_variable(left, var_name, value)),
+      right: Box::new(substitute_variable(right, var_name, value)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_variable(operand, var_name, value)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|e| substitute_variable(e, var_name, value))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::CompoundExpr(exprs) => Expr::CompoundExpr(
+      exprs
+        .iter()
+        .map(|e| substitute_variable(e, var_name, value))
+        .collect(),
+    ),
+    Expr::Association(items) => Expr::Association(
+      items
+        .iter()
+        .map(|(k, v)| {
+          (
+            substitute_variable(k, var_name, value),
+            substitute_variable(v, var_name, value),
+          )
+        })
+        .collect(),
+    ),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(substitute_variable(pattern, var_name, value)),
+      replacement: Box::new(substitute_variable(replacement, var_name, value)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(substitute_variable(pattern, var_name, value)),
+      replacement: Box::new(substitute_variable(replacement, var_name, value)),
+    },
+    Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
+      expr: Box::new(substitute_variable(e, var_name, value)),
+      rules: Box::new(substitute_variable(rules, var_name, value)),
+    },
+    Expr::ReplaceRepeated { expr: e, rules } => Expr::ReplaceRepeated {
+      expr: Box::new(substitute_variable(e, var_name, value)),
+      rules: Box::new(substitute_variable(rules, var_name, value)),
+    },
+    Expr::Map { func, list } => Expr::Map {
+      func: Box::new(substitute_variable(func, var_name, value)),
+      list: Box::new(substitute_variable(list, var_name, value)),
+    },
+    Expr::Apply { func, list } => Expr::Apply {
+      func: Box::new(substitute_variable(func, var_name, value)),
+      list: Box::new(substitute_variable(list, var_name, value)),
+    },
+    Expr::MapApply { func, list } => Expr::MapApply {
+      func: Box::new(substitute_variable(func, var_name, value)),
+      list: Box::new(substitute_variable(list, var_name, value)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(substitute_variable(func, var_name, value)),
+      arg: Box::new(substitute_variable(arg, var_name, value)),
+    },
+    Expr::Postfix { expr: e, func } => Expr::Postfix {
+      expr: Box::new(substitute_variable(e, var_name, value)),
+      func: Box::new(substitute_variable(func, var_name, value)),
+    },
+    Expr::Part { expr: e, index } => Expr::Part {
+      expr: Box::new(substitute_variable(e, var_name, value)),
+      index: Box::new(substitute_variable(index, var_name, value)),
+    },
+    Expr::Function { body } => Expr::Function {
+      body: Box::new(substitute_variable(body, var_name, value)),
+    },
+    // Atoms that don't contain the variable
+    _ => expr.clone(),
   }
 }

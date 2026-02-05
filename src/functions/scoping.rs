@@ -7,7 +7,7 @@ use crate::{ENV, InterpreterError, Rule, StoredValue, interpret};
 static SYMBOL_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// Generate a unique symbol name like "x$1", "x$2", etc.
-fn unique_symbol(base_name: &str) -> String {
+pub fn unique_symbol(base_name: &str) -> String {
   let n = SYMBOL_COUNTER.fetch_add(1, Ordering::SeqCst);
   format!("{}${}", base_name, n)
 }
