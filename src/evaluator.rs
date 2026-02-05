@@ -1313,6 +1313,67 @@ pub fn evaluate_function_call_ast(
       return crate::functions::string_ast::string_free_q_ast(args);
     }
 
+    // AST-native file and date functions
+    "CreateFile" => {
+      let filename_opt = if args.is_empty() {
+        None
+      } else if let Expr::String(s) = &args[0] {
+        Some(s.clone())
+      } else {
+        let s = expr_to_raw_string(&args[0]);
+        Some(s)
+      };
+      return match crate::utils::create_file(filename_opt) {
+        Ok(path) => Ok(Expr::String(path.to_string_lossy().into_owned())),
+        Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
+      };
+    }
+    "DateString" => {
+      use chrono::Local;
+      let current_time = Local::now();
+      let default_format = "%a, %d %b %Y %H:%M:%S";
+
+      return match args.len() {
+        0 => Ok(Expr::String(current_time.format(default_format).to_string())),
+        1 => {
+          // DateString[Now] or DateString["format"]
+          if matches!(&args[0], Expr::Identifier(s) if s == "Now") {
+            Ok(Expr::String(current_time.format(default_format).to_string()))
+          } else if let Expr::String(format_str) = &args[0] {
+            let fmt = match format_str.as_str() {
+              "ISODateTime" => "%Y-%m-%dT%H:%M:%S",
+              _ => format_str.as_str(),
+            };
+            Ok(Expr::String(current_time.format(fmt).to_string()))
+          } else {
+            Ok(Expr::String(current_time.format(default_format).to_string()))
+          }
+        }
+        2 => {
+          // DateString[Now, "format"]
+          if !matches!(&args[0], Expr::Identifier(s) if s == "Now") {
+            return Err(InterpreterError::EvaluationError(
+              "DateString: First argument currently must be Now.".into(),
+            ));
+          }
+          if let Expr::String(format_str) = &args[1] {
+            let fmt = match format_str.as_str() {
+              "ISODateTime" => "%Y-%m-%dT%H:%M:%S",
+              _ => format_str.as_str(),
+            };
+            Ok(Expr::String(current_time.format(fmt).to_string()))
+          } else {
+            Err(InterpreterError::EvaluationError(
+              "DateString: Second argument must be a format string.".into(),
+            ))
+          }
+        }
+        _ => Err(InterpreterError::EvaluationError(
+          "DateString: Called with invalid number of arguments. Expected 0, 1, or 2.".into(),
+        )),
+      };
+    }
+
     // AST-native predicate functions
     "NumberQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::number_q_ast(args);

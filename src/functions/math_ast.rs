@@ -156,9 +156,58 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // Sort symbolic terms alphabetically
+    // Sort symbolic terms: polynomial-like terms first, then transcendental functions
+    // This gives Mathematica-like ordering where x^2 comes before Sin[x]
     symbolic_args.sort_by(|a, b| {
-      crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+      // Priority: lower number = appears earlier
+      // 0 = polynomial-like (variables, products, powers, divisions)
+      // 1 = transcendental functions (Sin, Cos, Exp, Log, etc.)
+      fn term_priority(e: &Expr) -> i32 {
+        match e {
+          // Pure identifiers (variables) are polynomial-like
+          Expr::Identifier(_) => 0,
+          // Powers are polynomial-like
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            ..
+          } => 0,
+          // Division is polynomial-like
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            ..
+          } => 0,
+          // Times is polynomial-like
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            ..
+          } => 0,
+          // FunctionCall: Times is polynomial-like, transcendental functions come later
+          Expr::FunctionCall { name, .. } => {
+            match name.as_str() {
+              "Times" | "Power" | "Plus" | "Rational" => 0,
+              // Transcendental functions come after polynomial terms
+              "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh"
+              | "Cosh" | "Tanh" | "Coth" | "Sech" | "Csch" | "ArcSin"
+              | "ArcCos" | "ArcTan" | "ArcCot" | "ArcSec" | "ArcCsc"
+              | "Exp" | "Log" | "Factorial" => 1,
+              // Other functions are polynomial-like (could be user-defined)
+              _ => 0,
+            }
+          }
+          // Unary minus: use inner priority
+          Expr::UnaryOp { operand, .. } => term_priority(operand),
+          // Everything else is polynomial-like
+          _ => 0,
+        }
+      }
+      let pa = term_priority(a);
+      let pb = term_priority(b);
+      if pa != pb {
+        pa.cmp(&pb)
+      } else {
+        // Same priority - sort alphabetically
+        crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+      }
     });
     final_args.extend(symbolic_args);
 

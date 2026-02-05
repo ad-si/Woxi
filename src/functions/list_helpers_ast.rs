@@ -1965,26 +1965,75 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
 
-        let (min, max) = if items.len() == 2 {
-          let max_val = expr_to_i128(&items[1]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Product: iterator bounds must be integers".into(),
-            )
-          })?;
-          (1i128, max_val)
+        // Check if bounds are numeric
+        let bounds = if items.len() == 2 {
+          expr_to_i128(&items[1]).map(|max| (1i128, max))
         } else {
-          let min_val = expr_to_i128(&items[1]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Product: iterator bounds must be integers".into(),
-            )
-          })?;
-          let max_val = expr_to_i128(&items[2]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Product: iterator bounds must be integers".into(),
-            )
-          })?;
-          (min_val, max_val)
+          match (expr_to_i128(&items[1]), expr_to_i128(&items[2])) {
+            (Some(min), Some(max)) => Some((min, max)),
+            _ => None,
+          }
         };
+
+        // If bounds are symbolic, try to compute symbolic product
+        if bounds.is_none() {
+          // Check for special case: Product[i^k, {i, 1, n}] = n!^k
+          // where k is a constant and n is symbolic
+          let min_is_one = if items.len() == 2 {
+            true // {i, n} implies min = 1
+          } else {
+            matches!(&items[1], Expr::Integer(1))
+          };
+
+          if min_is_one {
+            let n_expr = if items.len() == 2 {
+              &items[1]
+            } else {
+              &items[2]
+            };
+
+            // Check if body is i^k where i is the variable and k is a constant
+            match body {
+              Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left,
+                right,
+              } => {
+                if matches!(left.as_ref(), Expr::Identifier(name) if name == &var_name)
+                {
+                  // Product[i^k, {i, 1, n}] = n!^k
+                  if let Some(k) = expr_to_i128(right) {
+                    // Return n!^k
+                    return Ok(Expr::BinaryOp {
+                      op: crate::syntax::BinaryOperator::Power,
+                      left: Box::new(Expr::FunctionCall {
+                        name: "Factorial".to_string(),
+                        args: vec![n_expr.clone()],
+                      }),
+                      right: Box::new(Expr::Integer(k)),
+                    });
+                  }
+                }
+              }
+              Expr::Identifier(name) if name == &var_name => {
+                // Product[i, {i, 1, n}] = n!
+                return Ok(Expr::FunctionCall {
+                  name: "Factorial".to_string(),
+                  args: vec![n_expr.clone()],
+                });
+              }
+              _ => {}
+            }
+          }
+
+          // For other symbolic cases, return unevaluated
+          return Ok(Expr::FunctionCall {
+            name: "Product".to_string(),
+            args: args.to_vec(),
+          });
+        }
+
+        let (min, max) = bounds.unwrap();
 
         let mut product = 1.0;
         for i in min..=max {

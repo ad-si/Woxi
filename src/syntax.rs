@@ -928,10 +928,26 @@ pub fn expr_to_string(expr: &Expr) -> String {
           expr_to_string(&args[1])
         );
       }
+      // Special case: Factorial[n] displays as n!
+      if name == "Factorial" && args.len() == 1 {
+        return format!("{}!", expr_to_string(&args[0]));
+      }
       let parts: Vec<String> = args.iter().map(expr_to_string).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
     Expr::BinaryOp { op, left, right } => {
+      // Special case: a + (-b) should display as a - b
+      if matches!(op, BinaryOperator::Plus)
+        && let Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } = right.as_ref()
+      {
+        let left_str = expr_to_string(left);
+        let operand_str = expr_to_string(operand);
+        return format!("{} - {}", left_str, operand_str);
+      }
+
       // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||
       let (op_str, needs_space) = match op {
         BinaryOperator::Plus => ("+", true),
@@ -1100,13 +1116,28 @@ pub fn expr_to_output(expr: &Expr) -> String {
           expr_to_output(&args[1])
         );
       }
-      // Special case: Plus displays as infix with +
+      // Special case: Factorial[n] displays as n!
+      if name == "Factorial" && args.len() == 1 {
+        return format!("{}!", expr_to_output(&args[0]));
+      }
+      // Special case: Plus displays as infix with + (handling - for negative terms)
       if name == "Plus" && args.len() >= 2 {
-        return args
-          .iter()
-          .map(expr_to_output)
-          .collect::<Vec<_>>()
-          .join(" + ");
+        let mut result = expr_to_output(&args[0]);
+        for arg in args.iter().skip(1) {
+          // Check if this term is a UnaryOp minus - if so, use " - " instead of " + "
+          if let Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } = arg
+          {
+            result.push_str(" - ");
+            result.push_str(&expr_to_output(operand));
+          } else {
+            result.push_str(" + ");
+            result.push_str(&expr_to_output(arg));
+          }
+        }
+        return result;
       }
       // Special case: Times displays as infix with * (no spaces)
       if name == "Times" && args.len() >= 2 {
