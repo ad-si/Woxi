@@ -1090,4 +1090,116 @@ mod interpreter_tests {
       assert_eq!(interpret("1.5 + 2.7").unwrap(), "4.2");
     }
   }
+
+  mod date_string {
+    use super::*;
+
+    #[test]
+    fn date_string_returns_string() {
+      // DateString should return a string (not cause parse error)
+      let result = interpret("StringQ[DateString[]]").unwrap();
+      assert_eq!(result, "True");
+    }
+
+    #[test]
+    fn date_string_with_now() {
+      let result = interpret("StringQ[DateString[Now]]").unwrap();
+      assert_eq!(result, "True");
+    }
+
+    #[test]
+    fn date_string_iso_format() {
+      // ISODateTime format should contain T separator
+      let result =
+        interpret("StringContainsQ[DateString[Now, \"ISODateTime\"], \"T\"]")
+          .unwrap();
+      assert_eq!(result, "True");
+    }
+  }
+
+  mod create_file {
+    use super::*;
+
+    #[test]
+    fn create_file_returns_string() {
+      // CreateFile should return a string path (not cause parse error)
+      let result = interpret("StringQ[CreateFile[]]").unwrap();
+      assert_eq!(result, "True");
+    }
+
+    #[test]
+    fn create_file_path_exists() {
+      // The returned path should be a non-empty string
+      let result = interpret("StringLength[CreateFile[]] > 0").unwrap();
+      assert_eq!(result, "True");
+    }
+  }
+
+  mod symbolic_product {
+    use super::*;
+
+    #[test]
+    fn product_i_squared_symbolic() {
+      // Product[i^2, {i, 1, n}] = n!^2
+      assert_eq!(interpret("Product[i^2, {i, 1, n}]").unwrap(), "n!^2");
+    }
+
+    #[test]
+    fn product_i_symbolic() {
+      // Product[i, {i, 1, n}] = n!
+      assert_eq!(interpret("Product[i, {i, 1, n}]").unwrap(), "n!");
+    }
+
+    #[test]
+    fn product_numeric() {
+      // Numeric bounds should still work
+      assert_eq!(interpret("Product[i^2, {i, 1, 6}]").unwrap(), "518400");
+    }
+
+    #[test]
+    fn factorial_formatting() {
+      // Factorial[n] should display as n!
+      assert_eq!(interpret("Factorial[n]").unwrap(), "n!");
+      assert_eq!(interpret("Factorial[5]").unwrap(), "120");
+    }
+  }
+
+  mod plus_formatting {
+    use super::*;
+
+    #[test]
+    fn plus_with_negative_term() {
+      // a + (-b) should format as a - b
+      let result = interpret("Integrate[Sin[x], x]").unwrap();
+      assert_eq!(result, "-Cos[x]");
+    }
+
+    #[test]
+    fn integrate_sum_formatting() {
+      // Integrate[x^2 + Sin[x], x] should format nicely
+      let result = interpret("Integrate[x^2 + Sin[x], x]").unwrap();
+      assert_eq!(result, "x^3/3 - Cos[x]");
+    }
+
+    #[test]
+    fn plus_term_ordering_polynomial_first() {
+      // Polynomial terms should come before transcendental functions
+      let result = interpret("x^2 + Sin[x]").unwrap();
+      assert_eq!(result, "x^2 + Sin[x]");
+    }
+
+    #[test]
+    fn plus_term_ordering_alphabetical() {
+      // Same priority terms should be alphabetical
+      let result = interpret("c + a + b").unwrap();
+      assert_eq!(result, "a + b + c");
+    }
+
+    #[test]
+    fn plus_times_before_identifier() {
+      // Times[a, b] should come before c alphabetically (a < c)
+      let result = interpret("FullForm[a b + c]").unwrap();
+      assert_eq!(result, "Plus[Times[a, b], c]");
+    }
+  }
 }
