@@ -391,11 +391,25 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::String(s) => Ok(Expr::String(s.clone())),
     Expr::Identifier(name) => {
       // Look up in environment
-      if let Some(StoredValue::Raw(val)) =
-        ENV.with(|e| e.borrow().get(name).cloned())
-      {
-        // Parse the stored value back to Expr
-        string_to_expr(&val)
+      if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
+        match stored {
+          StoredValue::Raw(val) => {
+            // Parse the stored value back to Expr
+            string_to_expr(&val)
+          }
+          StoredValue::Association(items) => {
+            // Convert stored association back to Expr::Association
+            let expr_items: Vec<(Expr, Expr)> = items
+              .into_iter()
+              .map(|(k, v)| {
+                let key_expr = string_to_expr(&k).unwrap_or(Expr::String(k));
+                let val_expr = string_to_expr(&v).unwrap_or(Expr::String(v));
+                (key_expr, val_expr)
+              })
+              .collect();
+            Ok(Expr::Association(expr_items))
+          }
+        }
       } else {
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
@@ -478,6 +492,23 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let left_val = evaluate_expr_to_expr(left)?;
       let right_val = evaluate_expr_to_expr(right)?;
+
+      // Check for list threading (arithmetic operations thread over lists)
+      let has_list = matches!(&left_val, Expr::List(_))
+        || matches!(&right_val, Expr::List(_));
+
+      if has_list
+        && matches!(
+          op,
+          BinaryOperator::Plus
+            | BinaryOperator::Minus
+            | BinaryOperator::Times
+            | BinaryOperator::Divide
+            | BinaryOperator::Power
+        )
+      {
+        return thread_binary_op(&left_val, &right_val, *op);
+      }
 
       // Try numeric evaluation
       let left_num = expr_to_number(&left_val);
@@ -796,6 +827,123 @@ fn num_to_expr(n: f64) -> Expr {
   }
 }
 
+/// Thread a binary operation over lists (e.g., {1,2,3} + 2 -> {3,4,5})
+fn thread_binary_op(
+  left: &Expr,
+  right: &Expr,
+  op: BinaryOperator,
+) -> Result<Expr, InterpreterError> {
+  // Helper to apply the binary operation to two evaluated expressions
+  fn apply_op(
+    l: &Expr,
+    r: &Expr,
+    op: BinaryOperator,
+  ) -> Result<Expr, InterpreterError> {
+    let ln = expr_to_number(l);
+    let rn = expr_to_number(r);
+    match op {
+      BinaryOperator::Plus => {
+        if let (Some(a), Some(b)) = (ln, rn) {
+          Ok(num_to_expr(a + b))
+        } else {
+          Ok(Expr::BinaryOp {
+            op,
+            left: Box::new(l.clone()),
+            right: Box::new(r.clone()),
+          })
+        }
+      }
+      BinaryOperator::Minus => {
+        if let (Some(a), Some(b)) = (ln, rn) {
+          Ok(num_to_expr(a - b))
+        } else {
+          Ok(Expr::BinaryOp {
+            op,
+            left: Box::new(l.clone()),
+            right: Box::new(r.clone()),
+          })
+        }
+      }
+      BinaryOperator::Times => {
+        if let (Some(a), Some(b)) = (ln, rn) {
+          Ok(num_to_expr(a * b))
+        } else {
+          Ok(Expr::BinaryOp {
+            op,
+            left: Box::new(l.clone()),
+            right: Box::new(r.clone()),
+          })
+        }
+      }
+      BinaryOperator::Divide => {
+        if let (Some(a), Some(b)) = (ln, rn) {
+          if b == 0.0 {
+            Err(InterpreterError::EvaluationError("Division by zero".into()))
+          } else {
+            Ok(num_to_expr(a / b))
+          }
+        } else {
+          Ok(Expr::BinaryOp {
+            op,
+            left: Box::new(l.clone()),
+            right: Box::new(r.clone()),
+          })
+        }
+      }
+      BinaryOperator::Power => {
+        if let (Some(a), Some(b)) = (ln, rn) {
+          Ok(num_to_expr(a.powf(b)))
+        } else {
+          Ok(Expr::BinaryOp {
+            op,
+            left: Box::new(l.clone()),
+            right: Box::new(r.clone()),
+          })
+        }
+      }
+      _ => Ok(Expr::BinaryOp {
+        op,
+        left: Box::new(l.clone()),
+        right: Box::new(r.clone()),
+      }),
+    }
+  }
+
+  match (left, right) {
+    (Expr::List(left_items), Expr::List(right_items)) => {
+      // Both lists - element-wise operation
+      if left_items.len() != right_items.len() {
+        return Err(InterpreterError::EvaluationError(
+          "Lists must have the same length for element-wise operations".into(),
+        ));
+      }
+      let results: Result<Vec<Expr>, _> = left_items
+        .iter()
+        .zip(right_items.iter())
+        .map(|(l, r)| apply_op(l, r, op))
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    (Expr::List(items), scalar) => {
+      // List op scalar - broadcast scalar
+      let results: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| apply_op(item, scalar, op))
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    (scalar, Expr::List(items)) => {
+      // Scalar op list - broadcast scalar
+      let results: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| apply_op(scalar, item, op))
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    _ => apply_op(left, right, op),
+  }
+}
+
 /// Extract raw string content from an Expr (without quotes for strings)
 fn expr_to_raw_string(expr: &Expr) -> String {
   match expr {
@@ -816,6 +964,8 @@ pub fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  use crate::functions::list_helpers_ast;
+
   // Handle functions that would call interpret() if dispatched through evaluate_expression
   // These must be handled natively to avoid infinite recursion
   match name {
@@ -834,10 +984,344 @@ pub fn evaluate_function_call_ast(
         }
       }
     }
+    // AST-native list functions - these avoid string round-trips
+    "Map" if args.len() == 2 => {
+      return list_helpers_ast::map_ast(&args[0], &args[1]);
+    }
+    "Select" if args.len() == 2 => {
+      return list_helpers_ast::select_ast(&args[0], &args[1]);
+    }
+    "AllTrue" if args.len() == 2 => {
+      return list_helpers_ast::all_true_ast(&args[0], &args[1]);
+    }
+    "AnyTrue" if args.len() == 2 => {
+      return list_helpers_ast::any_true_ast(&args[0], &args[1]);
+    }
+    "NoneTrue" if args.len() == 2 => {
+      return list_helpers_ast::none_true_ast(&args[0], &args[1]);
+    }
+    "Fold" if args.len() == 3 => {
+      return list_helpers_ast::fold_ast(&args[0], &args[1], &args[2]);
+    }
+    "CountBy" if args.len() == 2 => {
+      return list_helpers_ast::count_by_ast(&args[0], &args[1]);
+    }
+    "GroupBy" if args.len() == 2 => {
+      return list_helpers_ast::group_by_ast(&args[0], &args[1]);
+    }
+    "SortBy" if args.len() == 2 => {
+      return list_helpers_ast::sort_by_ast(&args[0], &args[1]);
+    }
+    "Nest" if args.len() == 3 => {
+      if let Expr::Integer(n) = &args[2] {
+        return list_helpers_ast::nest_ast(&args[0], &args[1], *n);
+      }
+    }
+    "NestList" if args.len() == 3 => {
+      if let Expr::Integer(n) = &args[2] {
+        return list_helpers_ast::nest_list_ast(&args[0], &args[1], *n);
+      }
+    }
+    "FixedPoint" if args.len() >= 2 => {
+      let max_iter = if args.len() == 3 {
+        if let Expr::Integer(n) = &args[2] {
+          Some(*n)
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+      return list_helpers_ast::fixed_point_ast(&args[0], &args[1], max_iter);
+    }
+    "Cases" if args.len() == 2 => {
+      return list_helpers_ast::cases_ast(&args[0], &args[1]);
+    }
+    "Position" if args.len() == 2 => {
+      return list_helpers_ast::position_ast(&args[0], &args[1]);
+    }
+    "MapIndexed" if args.len() == 2 => {
+      return list_helpers_ast::map_indexed_ast(&args[0], &args[1]);
+    }
+    "Tally" if args.len() == 1 => {
+      return list_helpers_ast::tally_ast(&args[0]);
+    }
+    "DeleteDuplicates" if args.len() == 1 => {
+      return list_helpers_ast::delete_duplicates_ast(&args[0]);
+    }
+    "Union" => {
+      return list_helpers_ast::union_ast(args);
+    }
+    "Intersection" => {
+      return list_helpers_ast::intersection_ast(args);
+    }
+    "Complement" => {
+      return list_helpers_ast::complement_ast(args);
+    }
+
+    // AST-native string functions
+    "StringLength" if args.len() == 1 => {
+      return crate::functions::string_ast::string_length_ast(args);
+    }
+    "StringTake" if args.len() == 2 => {
+      return crate::functions::string_ast::string_take_ast(args);
+    }
+    "StringDrop" if args.len() == 2 => {
+      return crate::functions::string_ast::string_drop_ast(args);
+    }
+    "StringJoin" => {
+      return crate::functions::string_ast::string_join_ast(args);
+    }
+    "StringSplit" if args.len() == 2 => {
+      return crate::functions::string_ast::string_split_ast(args);
+    }
+    "StringStartsQ" if args.len() == 2 => {
+      return crate::functions::string_ast::string_starts_q_ast(args);
+    }
+    "StringEndsQ" if args.len() == 2 => {
+      return crate::functions::string_ast::string_ends_q_ast(args);
+    }
+    "StringContainsQ" if args.len() == 2 => {
+      return crate::functions::string_ast::string_contains_q_ast(args);
+    }
+    "StringReplace" if args.len() == 2 => {
+      return crate::functions::string_ast::string_replace_ast(args);
+    }
+    "ToUpperCase" if args.len() == 1 => {
+      return crate::functions::string_ast::to_upper_case_ast(args);
+    }
+    "ToLowerCase" if args.len() == 1 => {
+      return crate::functions::string_ast::to_lower_case_ast(args);
+    }
+    "Characters" if args.len() == 1 => {
+      return crate::functions::string_ast::characters_ast(args);
+    }
+    "StringRiffle" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::string_ast::string_riffle_ast(args);
+    }
+    "StringPosition" if args.len() == 2 => {
+      return crate::functions::string_ast::string_position_ast(args);
+    }
+    "StringMatchQ" if args.len() == 2 => {
+      return crate::functions::string_ast::string_match_q_ast(args);
+    }
+    "StringReverse" if args.len() == 1 => {
+      return crate::functions::string_ast::string_reverse_ast(args);
+    }
+    "StringRepeat" if args.len() == 2 => {
+      return crate::functions::string_ast::string_repeat_ast(args);
+    }
+    "StringTrim" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::string_ast::string_trim_ast(args);
+    }
+    "StringCases" if args.len() == 2 => {
+      return crate::functions::string_ast::string_cases_ast(args);
+    }
+    "ToString" if args.len() == 1 => {
+      return crate::functions::string_ast::to_string_ast(args);
+    }
+    "ToExpression" if args.len() == 1 => {
+      return crate::functions::string_ast::to_expression_ast(args);
+    }
+    "StringPadLeft" if args.len() >= 2 && args.len() <= 3 => {
+      return crate::functions::string_ast::string_pad_left_ast(args);
+    }
+    "StringPadRight" if args.len() >= 2 && args.len() <= 3 => {
+      return crate::functions::string_ast::string_pad_right_ast(args);
+    }
+    "StringCount" if args.len() == 2 => {
+      return crate::functions::string_ast::string_count_ast(args);
+    }
+    "StringFreeQ" if args.len() == 2 => {
+      return crate::functions::string_ast::string_free_q_ast(args);
+    }
+
+    // AST-native predicate functions
+    "NumberQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::number_q_ast(args);
+    }
+    "IntegerQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::integer_q_ast(args);
+    }
+    "EvenQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::even_q_ast(args);
+    }
+    "OddQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::odd_q_ast(args);
+    }
+    "ListQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::list_q_ast(args);
+    }
+    "StringQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::string_q_ast(args);
+    }
+    "AtomQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::atom_q_ast(args);
+    }
+    "NumericQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::numeric_q_ast(args);
+    }
+    "PositiveQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::positive_q_ast(args);
+    }
+    "NegativeQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::negative_q_ast(args);
+    }
+    "NonPositiveQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::non_positive_q_ast(args);
+    }
+    "NonNegativeQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::non_negative_q_ast(args);
+    }
+    "PrimeQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::prime_q_ast(args);
+    }
+    "CompositeQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::composite_q_ast(args);
+    }
+    "AssociationQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::association_q_ast(args);
+    }
+
+    // AST-native association functions
+    "Keys" if args.len() == 1 => {
+      return crate::functions::association_ast::keys_ast(args);
+    }
+    "Values" if args.len() == 1 => {
+      return crate::functions::association_ast::values_ast(args);
+    }
+    "KeyDropFrom" if args.len() == 2 => {
+      return crate::functions::association_ast::key_drop_from_ast(args);
+    }
+    "KeyExistsQ" if args.len() == 2 => {
+      return crate::functions::association_ast::key_exists_q_ast(args);
+    }
+    "Lookup" if args.len() >= 2 => {
+      return crate::functions::association_ast::lookup_ast(args);
+    }
+
+    "MemberQ" if args.len() == 2 => {
+      return crate::functions::predicate_ast::member_q_ast(args);
+    }
+    "FreeQ" if args.len() == 2 => {
+      return crate::functions::predicate_ast::free_q_ast(args);
+    }
+    "Divisible" if args.len() == 2 => {
+      return crate::functions::predicate_ast::divisible_ast(args);
+    }
+    "Head" if args.len() == 1 => {
+      return crate::functions::predicate_ast::head_ast(args);
+    }
+    "Length" if args.len() == 1 => {
+      return crate::functions::predicate_ast::length_ast(args);
+    }
+    "Depth" if args.len() == 1 => {
+      return crate::functions::predicate_ast::depth_ast(args);
+    }
+
+    // FullForm - returns full form representation (unevaluated)
+    "FullForm" if args.len() == 1 => {
+      return crate::functions::predicate_ast::full_form_ast(&args[0]);
+    }
+
+    // Construct - creates function call f[a][b] etc.
+    "Construct" if !args.is_empty() => {
+      return crate::functions::predicate_ast::construct_ast(args);
+    }
+
+    // AST-native math functions
+    "Plus" => {
+      return crate::functions::math_ast::plus_ast(args);
+    }
+    "Times" => {
+      return crate::functions::math_ast::times_ast(args);
+    }
+    "Minus" => {
+      return crate::functions::math_ast::minus_ast(args);
+    }
+    "Subtract" if args.len() == 2 => {
+      return crate::functions::math_ast::subtract_ast(args);
+    }
+    "Divide" if args.len() == 2 => {
+      return crate::functions::math_ast::divide_ast(args);
+    }
+    "Power" if args.len() == 2 => {
+      return crate::functions::math_ast::power_ast(args);
+    }
+    "Max" => {
+      return crate::functions::math_ast::max_ast(args);
+    }
+    "Min" => {
+      return crate::functions::math_ast::min_ast(args);
+    }
+    "Abs" if args.len() == 1 => {
+      return crate::functions::math_ast::abs_ast(args);
+    }
+    "Sign" if args.len() == 1 => {
+      return crate::functions::math_ast::sign_ast(args);
+    }
+    "Sqrt" if args.len() == 1 => {
+      return crate::functions::math_ast::sqrt_ast(args);
+    }
+    "Floor" if args.len() == 1 => {
+      return crate::functions::math_ast::floor_ast(args);
+    }
+    "Ceiling" if args.len() == 1 => {
+      return crate::functions::math_ast::ceiling_ast(args);
+    }
+    "Round" if args.len() == 1 => {
+      return crate::functions::math_ast::round_ast(args);
+    }
+    "Mod" if args.len() == 2 => {
+      return crate::functions::math_ast::mod_ast(args);
+    }
+    "Quotient" if args.len() == 2 => {
+      return crate::functions::math_ast::quotient_ast(args);
+    }
+    "GCD" => {
+      return crate::functions::math_ast::gcd_ast(args);
+    }
+    "LCM" => {
+      return crate::functions::math_ast::lcm_ast(args);
+    }
+    "Total" if args.len() == 1 => {
+      return crate::functions::math_ast::total_ast(args);
+    }
+    "Mean" if args.len() == 1 => {
+      return crate::functions::math_ast::mean_ast(args);
+    }
+    "Factorial" if args.len() == 1 => {
+      return crate::functions::math_ast::factorial_ast(args);
+    }
+    "N" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::n_ast(args);
+    }
+    "RandomInteger" => {
+      return crate::functions::math_ast::random_integer_ast(args);
+    }
+    "RandomReal" => {
+      return crate::functions::math_ast::random_real_ast(args);
+    }
+    "Sin" if args.len() == 1 => {
+      return crate::functions::math_ast::sin_ast(args);
+    }
+    "Cos" if args.len() == 1 => {
+      return crate::functions::math_ast::cos_ast(args);
+    }
+    "Tan" if args.len() == 1 => {
+      return crate::functions::math_ast::tan_ast(args);
+    }
+    "Exp" if args.len() == 1 => {
+      return crate::functions::math_ast::exp_ast(args);
+    }
+    "Log" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::log_ast(args);
+    }
+
     _ => {}
   }
 
-  // Convert args to strings and construct a function call string
+  // Fallback: Convert args to strings and dispatch through Pair-based evaluation
   let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
   let call_str = format!("{}[{}]", name, args_str.join(", "));
 
@@ -1273,23 +1757,33 @@ fn apply_bindings(
 
 /// Apply Map operation on AST (func /@ list)
 fn apply_map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  match list {
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| apply_function_to_arg(func, item))
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    Expr::Association(items) => {
+      // Map over association applies function to values only
+      let results: Result<Vec<(Expr, Expr)>, InterpreterError> = items
+        .iter()
+        .map(|(key, val)| {
+          let new_val = apply_function_to_arg(func, val)?;
+          Ok((key.clone(), new_val))
+        })
+        .collect();
+      Ok(Expr::Association(results?))
+    }
     _ => {
-      // Not a list, return unevaluated
-      return Ok(Expr::Map {
+      // Not a list or association, return unevaluated
+      Ok(Expr::Map {
         func: Box::new(func.clone()),
         list: Box::new(list.clone()),
-      });
+      })
     }
-  };
-
-  let results: Result<Vec<Expr>, _> = items
-    .iter()
-    .map(|item| apply_function_to_arg(func, item))
-    .collect();
-
-  Ok(Expr::List(results?))
+  }
 }
 
 /// Apply Apply operation on AST (func @@ list)
@@ -1369,6 +1863,26 @@ fn extract_part_ast(
   expr: &Expr,
   index: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // For associations, handle key-based lookup (can be any Expr)
+  if let Expr::Association(items) = expr {
+    // Try to find a matching key
+    let index_str = crate::syntax::expr_to_string(index);
+    for (key, val) in items {
+      let key_str = crate::syntax::expr_to_string(key);
+      // Compare keys (strip quotes from strings for comparison)
+      let key_cmp = key_str.trim_matches('"');
+      let index_cmp = index_str.trim_matches('"');
+      if key_cmp == index_cmp {
+        return Ok(val.clone());
+      }
+    }
+    // Key not found - return unevaluated Part
+    return Ok(Expr::Part {
+      expr: Box::new(expr.clone()),
+      index: Box::new(index.clone()),
+    });
+  }
+
   let idx = match index {
     Expr::Integer(n) => *n as i64,
     Expr::Real(f) => *f as i64,
@@ -1414,7 +1928,7 @@ fn extract_part_ast(
 }
 
 /// Apply a function to an argument (helper for Map, Postfix, etc.)
-fn apply_function_to_arg(
+pub fn apply_function_to_arg(
   func: &Expr,
   arg: &Expr,
 ) -> Result<Expr, InterpreterError> {
