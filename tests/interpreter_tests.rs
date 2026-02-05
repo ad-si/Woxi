@@ -51,9 +51,8 @@ mod interpreter_tests {
 
       #[test]
       fn division_repeating_decimal() {
-        // TODO: Should be kept as the fraction 10/3
-        // Full precision is shown for values that don't round cleanly
-        assert_eq!(interpret("10 / 3").unwrap(), "3.3333333333333335");
+        // Wolfram keeps this as a fraction 10/3
+        assert_eq!(interpret("10 / 3").unwrap(), "10/3");
       }
 
       #[test]
@@ -92,13 +91,13 @@ mod interpreter_tests {
 
       #[test]
       fn division() {
-        // TODO: Should be 3.2
+        // ToString[9.6 / 3] in Wolfram returns 3.2
         assert_eq!(interpret("9.6 / 3").unwrap(), "3.2");
       }
 
       #[test]
       fn complex_division() {
-        // TODO: Should be 4.2
+        // ToString[9.6 / 3 + 3.0 / 3] in Wolfram returns 4.2
         assert_eq!(interpret("9.6 / 3 + 3.0 / 3").unwrap(), "4.2");
       }
     }
@@ -328,8 +327,12 @@ mod interpreter_tests {
 
     #[test]
     fn divisible_non_integer() {
-      assert_eq!(interpret("Divisible[5.5, 2]").unwrap(), "False");
-      assert_eq!(interpret("Divisible[10, 2.5]").unwrap(), "False");
+      // Wolfram returns unevaluated for non-exact numbers
+      assert_eq!(interpret("Divisible[5.5, 2]").unwrap(), "Divisible[5.5, 2]");
+      assert_eq!(
+        interpret("Divisible[10, 2.5]").unwrap(),
+        "Divisible[10, 2.5]"
+      );
     }
 
     #[test]
@@ -804,9 +807,8 @@ mod interpreter_tests {
 
     #[test]
     fn power_with_decimal_exponent() {
-      // Note: In Wolfram, 0.5 is Real so result would be Real (2.)
-      // In Woxi, we return Integer when result is whole number
-      assert_eq!(interpret("Power[4, 0.5]").unwrap(), "2");
+      // In Wolfram, 0.5 is Real so result is Real (2.)
+      assert_eq!(interpret("Power[4, 0.5]").unwrap(), "2.");
     }
 
     #[test]

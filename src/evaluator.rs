@@ -540,28 +540,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
         }
         BinaryOperator::Divide => {
-          if let (Some(l), Some(r)) = (left_num, right_num) {
-            if r == 0.0 {
-              return Err(InterpreterError::EvaluationError(
-                "Division by zero".into(),
-              ));
-            }
-            // Keep as Real only if either operand was Real
-            let has_real = matches!(left_val, Expr::Real(_))
-              || matches!(right_val, Expr::Real(_));
-            let result = l / r;
-            if has_real {
-              Ok(Expr::Real(result))
-            } else {
-              Ok(num_to_expr(result))
-            }
-          } else {
-            Ok(Expr::BinaryOp {
-              op: *op,
-              left: Box::new(left_val),
-              right: Box::new(right_val),
-            })
-          }
+          // Delegate to divide_ast for proper handling of Rational, Real, etc.
+          crate::functions::math_ast::divide_ast(&[left_val, right_val])
         }
         BinaryOperator::Power => {
           // Delegate to power_ast for proper handling of Rational, Real, etc.
