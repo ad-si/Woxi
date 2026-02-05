@@ -889,8 +889,15 @@ fn format_real(f: f64) -> String {
     // Whole number - format with decimal point to indicate it's a Real
     format!("{}.", f as i64)
   } else {
-    // Format with up to 10 decimal places, trim trailing zeros
-    format!("{:.10}", f).trim_end_matches('0').to_string()
+    // Check if a shorter representation (10 digits) rounds to the same value
+    let short = format!("{:.10}", f).trim_end_matches('0').to_string();
+    if let Ok(parsed) = short.parse::<f64>()
+      && (parsed - f).abs() < 1e-14
+    {
+      return short;
+    }
+    // Otherwise use full precision (16 digits), trim trailing zeros
+    format!("{:.16}", f).trim_end_matches('0').to_string()
   }
 }
 
@@ -928,7 +935,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||
       let (op_str, needs_space) = match op {
         BinaryOperator::Plus => ("+", true),
-        BinaryOperator::Minus => ("-", true),
+        BinaryOperator::Minus => ("−", true),
         BinaryOperator::Times => ("*", false),
         BinaryOperator::Divide => ("/", false),
         BinaryOperator::Power => ("^", false),

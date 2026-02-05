@@ -458,22 +458,9 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "Module" {
         return module_ast(args);
       }
-      // Special handling for Set - first arg must be identifier, second gets evaluated
+      // Special handling for Set - first arg must be identifier or Part, second gets evaluated
       if name == "Set" && args.len() == 2 {
-        if let Expr::Identifier(var_name) = &args[0] {
-          let value = evaluate_expr_to_expr(&args[1])?;
-          let value_str = expr_to_string(&value);
-          crate::ENV.with(|e| {
-            e.borrow_mut().insert(
-              var_name.clone(),
-              crate::StoredValue::Raw(value_str.clone()),
-            )
-          });
-          return Ok(value);
-        }
-        return Err(InterpreterError::EvaluationError(
-          "First argument of Set must be an identifier".into(),
-        ));
+        return set_ast(&args[0], &args[1]);
       }
       // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
       // These functions take unevaluated expressions as first argument
@@ -481,6 +468,17 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         // Pass unevaluated args to the function dispatcher
         return evaluate_function_call_ast(name, args);
       }
+      // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
+      let assoc_val = ENV.with(|e| e.borrow().get(name).cloned());
+      if let Some(StoredValue::Association(_)) = assoc_val {
+        // Evaluate arguments and perform nested access
+        let evaluated_args: Vec<Expr> = args
+          .iter()
+          .map(evaluate_expr_to_expr)
+          .collect::<Result<_, _>>()?;
+        return association_nested_access(name, &evaluated_args);
+      }
+
       // Evaluate arguments
       let evaluated_args: Vec<Expr> = args
         .iter()
@@ -963,6 +961,9 @@ pub fn evaluate_function_call_ast(
   // These must be handled natively to avoid infinite recursion
   match name {
     "Module" => return module_ast(args),
+    "Set" if args.len() == 2 => {
+      return set_ast(&args[0], &args[1]);
+    }
     "If" => {
       if args.len() >= 2 && args.len() <= 3 {
         let cond = evaluate_expr_to_expr(&args[0])?;
@@ -1432,7 +1433,7 @@ pub fn evaluate_function_call_ast(
     "Times" => {
       return crate::functions::math_ast::times_ast(args);
     }
-    "Minus" if args.len() == 1 => {
+    "Minus" => {
       return crate::functions::math_ast::minus_ast(args);
     }
     "Subtract" if args.len() == 2 => {
@@ -1801,6 +1802,260 @@ fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(result)
+}
+
+/// AST-based Set implementation to handle Part assignment on associations
+fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
+  // Handle Part assignment: myHash[["key"]] = value
+  if let Expr::Part { expr, index } = lhs
+    && let Expr::Identifier(var_name) = expr.as_ref()
+  {
+    // Evaluate the RHS
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+
+    // Get the key - extract string from String or use identifier name
+    let key = match index.as_ref() {
+      Expr::String(s) => s.clone(),
+      Expr::Identifier(s) => s.clone(),
+      other => expr_to_string(other),
+    };
+
+    // Update or add the key in the association
+    ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      if let Some(StoredValue::Association(pairs)) = env.get_mut(var_name) {
+        // Update existing key or add new key
+        if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
+          pair.1 = expr_to_string(&rhs_value);
+        } else {
+          pairs.push((key, expr_to_string(&rhs_value)));
+        }
+        Ok(())
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
+          "{} is not an association",
+          var_name
+        )))
+      }
+    })?;
+
+    // Return the updated association as Expr
+    return ENV.with(|e| {
+      let env = e.borrow();
+      if let Some(StoredValue::Association(pairs)) = env.get(var_name) {
+        let items: Vec<(Expr, Expr)> = pairs
+          .iter()
+          .map(|(k, v)| {
+            let key_expr = Expr::Identifier(k.clone());
+            let val_expr = string_to_expr(v).unwrap_or(Expr::Raw(v.clone()));
+            (key_expr, val_expr)
+          })
+          .collect();
+        Ok(Expr::Association(items))
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "Variable not found".into(),
+        ))
+      }
+    });
+  }
+
+  // Handle simple identifier assignment: x = value
+  if let Expr::Identifier(var_name) = lhs {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+
+    // Check if RHS is an association
+    if let Expr::Association(items) = &rhs_value {
+      let pairs: Vec<(String, String)> = items
+        .iter()
+        .map(|(k, v)| {
+          // Extract key without quotes for consistent storage
+          let key_str = match k {
+            Expr::String(s) => s.clone(),
+            Expr::Identifier(s) => s.clone(),
+            other => expr_to_string(other),
+          };
+          (key_str, expr_to_string(v))
+        })
+        .collect();
+      ENV.with(|e| {
+        e.borrow_mut()
+          .insert(var_name.clone(), StoredValue::Association(pairs))
+      });
+    } else {
+      ENV.with(|e| {
+        e.borrow_mut().insert(
+          var_name.clone(),
+          StoredValue::Raw(expr_to_string(&rhs_value)),
+        )
+      });
+    }
+
+    return Ok(rhs_value);
+  }
+
+  Err(InterpreterError::EvaluationError(
+    "First argument of Set must be an identifier or part extract".into(),
+  ))
+}
+
+/// Perform nested access on an association: assoc["a", "b"] -> assoc["a"]["b"]
+fn association_nested_access(
+  var_name: &str,
+  keys: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if keys.is_empty() {
+    // Return the association itself
+    return ENV.with(|e| {
+      if let Some(StoredValue::Association(pairs)) = e.borrow().get(var_name) {
+        let items: Vec<(Expr, Expr)> = pairs
+          .iter()
+          .map(|(k, v)| {
+            (
+              Expr::Identifier(k.clone()),
+              string_to_expr(v).unwrap_or(Expr::Raw(v.clone())),
+            )
+          })
+          .collect();
+        Ok(Expr::Association(items))
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
+          "{} is not an association",
+          var_name
+        )))
+      }
+    });
+  }
+
+  // Get the association
+  let assoc = ENV.with(|e| e.borrow().get(var_name).cloned());
+  match assoc {
+    Some(StoredValue::Association(pairs)) => {
+      // Perform nested access
+      let mut current_val: Option<String> = None;
+      let mut current_pairs = pairs;
+
+      for key in keys {
+        let key_str = match key {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          other => expr_to_string(other),
+        };
+
+        // Look up key in current association
+        if let Some((_, val)) =
+          current_pairs.iter().find(|(k, _)| k == &key_str)
+        {
+          // Check if val is a nested association
+          if val.starts_with("<|") && val.ends_with("|>") {
+            // Parse the nested association
+            match crate::interpret(&format!("Keys[{}]", val)) {
+              Ok(_) => {
+                // It's an association - we need to continue drilling down
+                // Parse the association into pairs
+                match parse_association_string(val) {
+                  Ok(nested_pairs) => {
+                    current_pairs = nested_pairs;
+                    current_val = None;
+                  }
+                  Err(_) => {
+                    current_val = Some(val.clone());
+                  }
+                }
+              }
+              Err(_) => {
+                current_val = Some(val.clone());
+              }
+            }
+          } else {
+            current_val = Some(val.clone());
+          }
+        } else {
+          // Key not found
+          return Ok(Expr::FunctionCall {
+            name: var_name.to_string(),
+            args: keys.to_vec(),
+          });
+        }
+      }
+
+      // Return the final value
+      if let Some(val) = current_val {
+        string_to_expr(&val).or(Ok(Expr::Raw(val)))
+      } else {
+        // Return remaining association
+        let items: Vec<(Expr, Expr)> = current_pairs
+          .iter()
+          .map(|(k, v)| {
+            (
+              Expr::Identifier(k.clone()),
+              string_to_expr(v).unwrap_or(Expr::Raw(v.clone())),
+            )
+          })
+          .collect();
+        Ok(Expr::Association(items))
+      }
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "{} is not an association",
+      var_name
+    ))),
+  }
+}
+
+/// Parse an association string like "<|a -> 1, b -> 2|>" into pairs
+fn parse_association_string(
+  s: &str,
+) -> Result<Vec<(String, String)>, InterpreterError> {
+  if !s.starts_with("<|") || !s.ends_with("|>") {
+    return Err(InterpreterError::EvaluationError(
+      "Not an association".into(),
+    ));
+  }
+  let inner = &s[2..s.len() - 2]; // Strip <| and |>
+  let mut pairs = Vec::new();
+
+  // Simple parsing - split by ", " and then by " -> "
+  for item in split_association_items(inner) {
+    if let Some(arrow_pos) = item.find(" -> ") {
+      let key_raw = item[..arrow_pos].trim();
+      // Strip quotes from key if present
+      let key = key_raw.trim_matches('"').to_string();
+      let val = item[arrow_pos + 4..].trim().to_string();
+      pairs.push((key, val));
+    }
+  }
+
+  Ok(pairs)
+}
+
+/// Split association items handling nested associations
+fn split_association_items(s: &str) -> Vec<String> {
+  let mut items = Vec::new();
+  let mut current = String::new();
+  let mut depth = 0;
+
+  for c in s.chars() {
+    match c {
+      '<' => {
+        depth += 1;
+        current.push(c);
+      }
+      '>' => {
+        depth -= 1;
+        current.push(c);
+      }
+      ',' if depth == 0 => {
+        items.push(current.trim().to_string());
+        current = String::new();
+      }
+      _ => current.push(c),
+    }
+  }
+  if !current.trim().is_empty() {
+    items.push(current.trim().to_string());
+  }
+  items
 }
 
 /// Apply ReplaceAll operation on AST (expr /. rules)
@@ -2218,10 +2473,18 @@ fn extract_part_ast(
       if actual_idx >= 0 && actual_idx < len {
         Ok(items[actual_idx as usize].clone())
       } else {
-        Err(InterpreterError::EvaluationError(format!(
-          "Part index {} out of range for list of length {}",
-          idx, len
-        )))
+        // Print warning and return unevaluated Part expression
+        use std::io::{self, Write};
+        let expr_str = crate::syntax::expr_to_string(expr);
+        println!(
+          "\nPart::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        );
+        io::stdout().flush().ok();
+        Ok(Expr::Part {
+          expr: Box::new(expr.clone()),
+          index: Box::new(index.clone()),
+        })
       }
     }
     Expr::String(s) => {
@@ -2231,10 +2494,14 @@ fn extract_part_ast(
       if actual_idx >= 0 && actual_idx < len {
         Ok(Expr::String(chars[actual_idx as usize].to_string()))
       } else {
-        Err(InterpreterError::EvaluationError(format!(
-          "Part index {} out of range for string of length {}",
-          idx, len
-        )))
+        // Print warning and return unevaluated Part expression
+        use std::io::{self, Write};
+        println!("\nPart::partw: Part {} of \"{}\" does not exist.", idx, s);
+        io::stdout().flush().ok();
+        Ok(Expr::Part {
+          expr: Box::new(expr.clone()),
+          index: Box::new(index.clone()),
+        })
       }
     }
     _ => Ok(Expr::Part {
@@ -4941,19 +5208,31 @@ pub fn evaluate_function_call(
     }
 
     "ReplaceRepeated" => {
-      // ReplaceRepeated can be called as ReplaceRepeated[rule][expr]
-      // or ReplaceRepeated[expr, rule]
+      // ReplaceRepeated can be called as ReplaceRepeated[rule][expr] (operator form)
+      // or ReplaceRepeated[expr, rule] (standard form)
       if args_pairs.len() == 1 {
         // Curried form: ReplaceRepeated[rule] returns a function
         // that will be applied via the next function call
         let rule_str = args_pairs[0].as_str().to_string();
         Ok(format!("ReplaceRepeated[{}]", rule_str))
       } else if args_pairs.len() == 2 {
-        let expr_str = evaluate_expression(args_pairs[0].clone())
-          .unwrap_or_else(|_| args_pairs[0].as_str().to_string());
-        let rule = args_pairs[1].clone();
+        // Detect which argument is the rule by checking for ReplacementRule
+        // In operator form: ReplaceRepeated[rule][expr] -> args = [rule, expr]
+        // In standard form: ReplaceRepeated[expr, rule] -> args = [expr, rule]
+        let (expr_pair, rule_pair) =
+          if args_pairs[0].as_rule() == Rule::ReplacementRule {
+            // Operator form: first arg is rule, second is expr
+            (args_pairs[1].clone(), args_pairs[0].clone())
+          } else {
+            // Standard form: first arg is expr, second is rule
+            (args_pairs[0].clone(), args_pairs[1].clone())
+          };
+
+        let expr_str = evaluate_expression(expr_pair.clone())
+          .unwrap_or_else(|_| expr_pair.as_str().to_string());
+
         // Extract pattern and replacement from the rule (ReplacementRule)
-        let mut rule_inner = rule.into_inner();
+        let mut rule_inner = rule_pair.into_inner();
         let pattern = rule_inner
           .next()
           .map(|p| p.as_str().trim().to_string())

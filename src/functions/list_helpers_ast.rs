@@ -1082,7 +1082,14 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   let len = items.len() as i128;
   if count >= 0 {
     if count > len {
-      // Return unevaluated to let fallback handle the error message
+      // Print warning and return unevaluated
+      use std::io::{self, Write};
+      let list_str = crate::syntax::expr_to_string(list);
+      println!(
+        "\nTake::take: Cannot take positions 1 through {} in {}.",
+        count, list_str
+      );
+      io::stdout().flush().ok();
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
         args: vec![list.clone(), n.clone()],
@@ -1091,7 +1098,14 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     Ok(Expr::List(items[..count as usize].to_vec()))
   } else {
     if -count > len {
-      // Return unevaluated to let fallback handle the error message
+      // Print warning and return unevaluated
+      use std::io::{self, Write};
+      let list_str = crate::syntax::expr_to_string(list);
+      println!(
+        "\nTake::take: Cannot take positions {} through -1 in {}.",
+        count, list_str
+      );
+      io::stdout().flush().ok();
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
         args: vec![list.clone(), n.clone()],
@@ -1723,26 +1737,78 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Extract numeric values
-  let mut values: Vec<f64> = Vec::new();
-  for item in items {
-    if let Some(n) = expr_to_f64(item) {
-      values.push(n);
+  // Check if all items are integers
+  let all_integers = items.iter().all(|i| matches!(i, Expr::Integer(_)));
+
+  if all_integers {
+    // Sort integer values
+    let mut int_values: Vec<i128> = items
+      .iter()
+      .filter_map(|i| {
+        if let Expr::Integer(n) = i {
+          Some(*n)
+        } else {
+          None
+        }
+      })
+      .collect();
+    int_values.sort();
+
+    let len = int_values.len();
+    if len % 2 == 1 {
+      Ok(Expr::Integer(int_values[len / 2]))
     } else {
-      return Ok(Expr::FunctionCall {
-        name: "Median".to_string(),
-        args: vec![list.clone()],
-      });
+      // Average of two middle values
+      let a = int_values[len / 2 - 1];
+      let b = int_values[len / 2];
+      let sum = a + b;
+      if sum % 2 == 0 {
+        Ok(Expr::Integer(sum / 2))
+      } else {
+        // Return as Rational
+        fn gcd(a: i128, b: i128) -> i128 {
+          if b == 0 { a } else { gcd(b, a % b) }
+        }
+        let g = gcd(sum.abs(), 2);
+        Ok(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(sum / g), Expr::Integer(2 / g)],
+        })
+      }
     }
-  }
-
-  values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-  let len = values.len();
-  if len % 2 == 1 {
-    Ok(f64_to_expr(values[len / 2]))
   } else {
-    Ok(f64_to_expr((values[len / 2 - 1] + values[len / 2]) / 2.0))
+    // Check if any Real inputs - preserve Real type
+    let has_real = items.iter().any(|i| matches!(i, Expr::Real(_)));
+
+    // Extract numeric values as f64
+    let mut values: Vec<f64> = Vec::new();
+    for item in items {
+      if let Some(n) = expr_to_f64(item) {
+        values.push(n);
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Median".to_string(),
+          args: vec![list.clone()],
+        });
+      }
+    }
+
+    values
+      .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let len = values.len();
+    let result = if len % 2 == 1 {
+      values[len / 2]
+    } else {
+      (values[len / 2 - 1] + values[len / 2]) / 2.0
+    };
+
+    // Preserve Real type if inputs had Real
+    if has_real {
+      Ok(Expr::Real(result))
+    } else {
+      Ok(f64_to_expr(result))
+    }
   }
 }
 
