@@ -129,7 +129,20 @@ ExpressionNoImplicit = {
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition
 PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
-PatternCondition = { PatternName ~ "_" ~ "/;" ~ Expression }
+// ConditionExpr is like Expression but stops before -> and :> (rule operators)
+// This prevents the condition from consuming the replacement part of a rule
+ConditionExpr = {
+    Term ~ (ConditionOp ~ Term)*
+}
+// Operators allowed in conditions - excludes -> and :> which mark rule boundaries
+ConditionOp = {
+    "===" | "=!=" | "==" | "!="  // Comparison
+  | "<=" | ">=" | "<" | ">"       // Order comparison
+  | "+" | "-" | "*" | "/" | "^"   // Arithmetic
+  | "&&" | "||"                   // Logical
+  | "/@" | "@@"                   // Map/Apply
+}
+PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
 PatternWithHead = { PatternName ~ "_" ~ Identifier }
 PatternSimple = { PatternName ~ "_" }
 Pattern = { PatternCondition | PatternTest | PatternWithHead | PatternSimple }
