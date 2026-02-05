@@ -702,3 +702,1602 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(result))
 }
+
+/// AST-based Table: generate a table of values.
+/// Table[expr, {i, min, max}] -> {expr with i=min, ..., expr with i=max}
+/// Table[expr, {i, max}] -> {expr with i=1, ..., expr with i=max}
+/// Table[expr, {i, {list}}] -> {expr with i=elem1, expr with i=elem2, ...}
+/// Table[expr, n] -> {expr, expr, ..., expr} (n times)
+pub fn table_ast(
+  body: &Expr,
+  iter_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match iter_spec {
+    Expr::Integer(n) => {
+      // Simple form: Table[expr, n]
+      if *n < 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Table: count must be non-negative".into(),
+        ));
+      }
+      let mut results = Vec::new();
+      for _ in 0..*n {
+        let val = crate::evaluator::evaluate_expr_to_expr(body)?;
+        results.push(val);
+      }
+      Ok(Expr::List(results))
+    }
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Ok(Expr::List(vec![]));
+      }
+
+      // Extract iterator variable
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Table: iterator variable must be an identifier".into(),
+          ));
+        }
+      };
+
+      if items.len() == 2 {
+        // Check if second element is a list (iterate over list)
+        let second = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        match second {
+          Expr::List(list_items) => {
+            // {i, {a, b, c}} form - iterate over list elements
+            let mut results = Vec::new();
+            for item in list_items {
+              let substituted =
+                crate::syntax::substitute_variable(body, &var_name, &item);
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              results.push(val);
+            }
+            return Ok(Expr::List(results));
+          }
+          _ => {
+            // {i, max} form - iterate from 1 to max
+            let max_val = expr_to_i128(&second).ok_or_else(|| {
+              InterpreterError::EvaluationError(
+                "Table: iterator bound must be an integer".into(),
+              )
+            })?;
+            let mut results = Vec::new();
+            for i in 1..=max_val {
+              let substituted = crate::syntax::substitute_variable(
+                body,
+                &var_name,
+                &Expr::Integer(i),
+              );
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              results.push(val);
+            }
+            return Ok(Expr::List(results));
+          }
+        }
+      } else if items.len() >= 3 {
+        // {i, min, max} form
+        let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
+        let min_val = expr_to_i128(&min_expr).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Table: iterator bound must be an integer".into(),
+          )
+        })?;
+        let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Table: iterator bound must be an integer".into(),
+          )
+        })?;
+
+        let mut results = Vec::new();
+        for i in min_val..=max_val {
+          let substituted = crate::syntax::substitute_variable(
+            body,
+            &var_name,
+            &Expr::Integer(i),
+          );
+          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+          results.push(val);
+        }
+        return Ok(Expr::List(results));
+      }
+
+      Err(InterpreterError::EvaluationError(
+        "Table: invalid iterator specification".into(),
+      ))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Table: invalid iterator specification".into(),
+    )),
+  }
+}
+
+/// Helper to extract i128 from Expr
+fn expr_to_i128(expr: &Expr) -> Option<i128> {
+  match expr {
+    Expr::Integer(n) => Some(*n),
+    Expr::Real(f) if f.fract() == 0.0 => Some(*f as i128),
+    _ => None,
+  }
+}
+
+/// AST-based MapThread: apply function to corresponding elements.
+/// MapThread[f, {{a, b}, {c, d}}] -> {f[a, c], f[b, d]}
+pub fn map_thread_ast(
+  func: &Expr,
+  lists: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let outer_items = match lists {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MapThread".to_string(),
+        args: vec![func.clone(), lists.clone()],
+      });
+    }
+  };
+
+  if outer_items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Get each sublist
+  let mut sublists: Vec<Vec<Expr>> = Vec::new();
+  for item in outer_items {
+    match item {
+      Expr::List(items) => sublists.push(items.clone()),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "MapThread: second argument must be a list of lists".into(),
+        ));
+      }
+    }
+  }
+
+  // Check all sublists have the same length
+  let len = sublists[0].len();
+  for sublist in &sublists {
+    if sublist.len() != len {
+      return Err(InterpreterError::EvaluationError(
+        "MapThread: all lists must have the same length".into(),
+      ));
+    }
+  }
+
+  // Apply function to corresponding elements
+  let mut results = Vec::new();
+  for i in 0..len {
+    let args: Vec<Expr> = sublists.iter().map(|sl| sl[i].clone()).collect();
+    let result = apply_func_to_n_args(func, &args)?;
+    results.push(result);
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// Apply a function to n arguments.
+fn apply_func_to_n_args(
+  func: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  match func {
+    Expr::Identifier(name) => {
+      crate::evaluator::evaluate_function_call_ast(name, args)
+    }
+    Expr::Function { body } => {
+      let substituted = crate::syntax::substitute_slots(body, args);
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    Expr::FunctionCall { name, args: fa } => {
+      let mut new_args = fa.clone();
+      new_args.extend(args.iter().cloned());
+      crate::evaluator::evaluate_function_call_ast(name, &new_args)
+    }
+    _ => {
+      let func_str = crate::syntax::expr_to_string(func);
+      crate::evaluator::evaluate_function_call_ast(&func_str, args)
+    }
+  }
+}
+
+/// AST-based Partition: break list into sublists of length n.
+/// Partition[{a, b, c, d, e}, 2] -> {{a, b}, {c, d}}
+pub fn partition_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Partition".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  };
+
+  if n <= 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Partition: size must be positive".into(),
+    ));
+  }
+
+  let n_usize = n as usize;
+  let mut results = Vec::new();
+  for chunk in items.chunks(n_usize) {
+    if chunk.len() == n_usize {
+      results.push(Expr::List(chunk.to_vec()));
+    }
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// AST-based First: return first element of list.
+pub fn first_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      if items.is_empty() {
+        Err(InterpreterError::EvaluationError(
+          "First: list is empty".into(),
+        ))
+      } else {
+        Ok(items[0].clone())
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "First".to_string(),
+      args: vec![list.clone()],
+    }),
+  }
+}
+
+/// AST-based Last: return last element of list.
+pub fn last_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      if items.is_empty() {
+        Err(InterpreterError::EvaluationError(
+          "Last: list is empty".into(),
+        ))
+      } else {
+        Ok(items[items.len() - 1].clone())
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Last".to_string(),
+      args: vec![list.clone()],
+    }),
+  }
+}
+
+/// AST-based Rest: return all but first element.
+pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      if items.is_empty() {
+        Err(InterpreterError::EvaluationError(
+          "Rest: list is empty".into(),
+        ))
+      } else {
+        Ok(Expr::List(items[1..].to_vec()))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Rest".to_string(),
+      args: vec![list.clone()],
+    }),
+  }
+}
+
+/// AST-based Most: return all but last element.
+pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      if items.is_empty() {
+        Err(InterpreterError::EvaluationError(
+          "Most: list is empty".into(),
+        ))
+      } else {
+        Ok(Expr::List(items[..items.len() - 1].to_vec()))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Most".to_string(),
+      args: vec![list.clone()],
+    }),
+  }
+}
+
+/// AST-based Take: take first n elements.
+/// Returns unevaluated if n exceeds list length (to let fallback handle error).
+pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Take".to_string(),
+        args: vec![list.clone(), n.clone()],
+      });
+    }
+  };
+
+  let count = match n {
+    Expr::Integer(i) => *i,
+    Expr::Real(f) if f.fract() == 0.0 => *f as i128,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Take".to_string(),
+        args: vec![list.clone(), n.clone()],
+      });
+    }
+  };
+
+  let len = items.len() as i128;
+  if count >= 0 {
+    if count > len {
+      // Return unevaluated to let fallback handle the error message
+      return Ok(Expr::FunctionCall {
+        name: "Take".to_string(),
+        args: vec![list.clone(), n.clone()],
+      });
+    }
+    Ok(Expr::List(items[..count as usize].to_vec()))
+  } else {
+    if -count > len {
+      // Return unevaluated to let fallback handle the error message
+      return Ok(Expr::FunctionCall {
+        name: "Take".to_string(),
+        args: vec![list.clone(), n.clone()],
+      });
+    }
+    Ok(Expr::List(
+      items[items.len() - (-count) as usize..].to_vec(),
+    ))
+  }
+}
+
+/// AST-based Drop: drop first n elements.
+pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Drop".to_string(),
+        args: vec![list.clone(), n.clone()],
+      });
+    }
+  };
+
+  let count = match n {
+    Expr::Integer(i) => *i,
+    Expr::Real(f) if f.fract() == 0.0 => *f as i128,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Drop".to_string(),
+        args: vec![list.clone(), n.clone()],
+      });
+    }
+  };
+
+  let len = items.len() as i128;
+  if count >= 0 {
+    let drop = count.min(len) as usize;
+    Ok(Expr::List(items[drop..].to_vec()))
+  } else {
+    let keep = (len + count).max(0) as usize;
+    Ok(Expr::List(items[..keep].to_vec()))
+  }
+}
+
+/// AST-based Flatten: flatten nested lists.
+pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  fn flatten_recursive(expr: &Expr, result: &mut Vec<Expr>) {
+    match expr {
+      Expr::List(items) => {
+        for item in items {
+          flatten_recursive(item, result);
+        }
+      }
+      _ => result.push(expr.clone()),
+    }
+  }
+
+  match list {
+    Expr::List(_) => {
+      let mut result = Vec::new();
+      flatten_recursive(list, &mut result);
+      Ok(Expr::List(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Flatten".to_string(),
+      args: vec![list.clone()],
+    }),
+  }
+}
+
+/// AST-based Reverse: reverse a list.
+pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      let mut reversed = items.clone();
+      reversed.reverse();
+      Ok(Expr::List(reversed))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Reverse".to_string(),
+      args: vec![list.clone()],
+    }),
+  }
+}
+
+/// AST-based Sort: sort a list.
+pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      let mut sorted = items.clone();
+      sorted.sort_by(|a, b| {
+        let ka = crate::syntax::expr_to_string(a);
+        let kb = crate::syntax::expr_to_string(b);
+        // Try numeric comparison first
+        if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
+          na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+        } else {
+          ka.cmp(&kb)
+        }
+      });
+      Ok(Expr::List(sorted))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Sort".to_string(),
+      args: vec![list.clone()],
+    }),
+  }
+}
+
+/// AST-based Range: generate a range of numbers.
+/// Range[n] -> {1, 2, ..., n}
+/// Range[min, max] -> {min, ..., max}
+/// Range[min, max, step] -> {min, min+step, ..., max}
+pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Ok(Expr::FunctionCall {
+      name: "Range".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let (min, max, step) = if args.len() == 1 {
+    let max_val = expr_to_f64(&args[0]).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Range: argument must be numeric".into(),
+      )
+    })?;
+    (1.0, max_val, 1.0)
+  } else if args.len() == 2 {
+    let min_val = expr_to_f64(&args[0]).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Range: argument must be numeric".into(),
+      )
+    })?;
+    let max_val = expr_to_f64(&args[1]).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Range: argument must be numeric".into(),
+      )
+    })?;
+    (min_val, max_val, 1.0)
+  } else {
+    let min_val = expr_to_f64(&args[0]).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Range: argument must be numeric".into(),
+      )
+    })?;
+    let max_val = expr_to_f64(&args[1]).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Range: argument must be numeric".into(),
+      )
+    })?;
+    let step_val = expr_to_f64(&args[2]).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Range: argument must be numeric".into(),
+      )
+    })?;
+    (min_val, max_val, step_val)
+  };
+
+  if step == 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "Range: step cannot be zero".into(),
+    ));
+  }
+
+  let mut results = Vec::new();
+  let mut val = min;
+  if step > 0.0 {
+    while val <= max + f64::EPSILON {
+      results.push(f64_to_expr(val));
+      val += step;
+    }
+  } else {
+    while val >= max - f64::EPSILON {
+      results.push(f64_to_expr(val));
+      val += step;
+    }
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// Helper to extract f64 from Expr
+fn expr_to_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  }
+}
+
+/// Helper to convert f64 to appropriate Expr
+fn f64_to_expr(n: f64) -> Expr {
+  if n.fract() == 0.0 && n.abs() < i128::MAX as f64 {
+    Expr::Integer(n as i128)
+  } else {
+    Expr::Real(n)
+  }
+}
+
+/// AST-based Accumulate: cumulative sums.
+pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Accumulate".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+
+  let mut sum = 0.0;
+  let mut results = Vec::new();
+  for item in items {
+    if let Some(n) = expr_to_f64(item) {
+      sum += n;
+      results.push(f64_to_expr(sum));
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "Accumulate".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// AST-based Differences: successive differences.
+pub fn differences_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Differences".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+
+  if items.len() <= 1 {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let mut results = Vec::new();
+  for i in 1..items.len() {
+    if let (Some(a), Some(b)) =
+      (expr_to_f64(&items[i - 1]), expr_to_f64(&items[i]))
+    {
+      results.push(f64_to_expr(b - a));
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "Differences".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// AST-based Scan: apply function to each element for side effects.
+/// Returns Null but evaluates function on each element.
+pub fn scan_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Scan".to_string(),
+        args: vec![func.clone(), list.clone()],
+      });
+    }
+  };
+
+  for item in items {
+    apply_func_ast(func, item)?;
+  }
+
+  Ok(Expr::Identifier("Null".to_string()))
+}
+
+/// AST-based FoldList: fold showing intermediate values.
+/// FoldList[f, x, {a, b, c}] -> {x, f[x, a], f[f[x, a], b], ...}
+pub fn fold_list_ast(
+  func: &Expr,
+  init: &Expr,
+  list: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FoldList".to_string(),
+        args: vec![func.clone(), init.clone(), list.clone()],
+      });
+    }
+  };
+
+  let mut results = vec![init.clone()];
+  let mut acc = init.clone();
+  for item in items {
+    acc = apply_func_to_two_args(func, &acc, item)?;
+    results.push(acc.clone());
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// AST-based FixedPointList: list of values until fixed point.
+pub fn fixed_point_list_ast(
+  func: &Expr,
+  init: &Expr,
+  max_iterations: Option<i128>,
+) -> Result<Expr, InterpreterError> {
+  let max = max_iterations.unwrap_or(10000);
+  let mut results = vec![init.clone()];
+  let mut current = init.clone();
+
+  for _ in 0..max {
+    let next = apply_func_ast(func, &current)?;
+    let current_str = crate::syntax::expr_to_string(&current);
+    let next_str = crate::syntax::expr_to_string(&next);
+    results.push(next.clone());
+    if current_str == next_str {
+      break;
+    }
+    current = next;
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// AST-based Transpose: transpose a matrix (list of lists).
+pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let rows = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Transpose".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+
+  if rows.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Get dimensions
+  let num_rows = rows.len();
+  let num_cols = match &rows[0] {
+    Expr::List(items) => items.len(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Transpose: argument must be a matrix".into(),
+      ));
+    }
+  };
+
+  // Verify all rows have the same length
+  for row in rows {
+    if let Expr::List(items) = row {
+      if items.len() != num_cols {
+        return Err(InterpreterError::EvaluationError(
+          "Transpose: all rows must have the same length".into(),
+        ));
+      }
+    } else {
+      return Err(InterpreterError::EvaluationError(
+        "Transpose: argument must be a matrix".into(),
+      ));
+    }
+  }
+
+  // Build transposed matrix
+  let mut result = Vec::new();
+  for j in 0..num_cols {
+    let mut new_row = Vec::new();
+    for i in 0..num_rows {
+      if let Expr::List(items) = &rows[i] {
+        new_row.push(items[j].clone());
+      }
+    }
+    result.push(Expr::List(new_row));
+  }
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based Riffle: interleave elements with separator.
+/// Riffle[{a, b, c}, x] -> {a, x, b, x, c}
+pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Riffle".to_string(),
+        args: vec![list.clone(), sep.clone()],
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let mut result = Vec::new();
+  for (i, item) in items.iter().enumerate() {
+    result.push(item.clone());
+    if i < items.len() - 1 {
+      result.push(sep.clone());
+    }
+  }
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based RotateLeft: rotate list left by n positions.
+pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "RotateLeft".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let len = items.len() as i128;
+  let shift = ((n % len) + len) % len;
+  let shift_usize = shift as usize;
+
+  let mut result = items[shift_usize..].to_vec();
+  result.extend_from_slice(&items[..shift_usize]);
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based RotateRight: rotate list right by n positions.
+pub fn rotate_right_ast(
+  list: &Expr,
+  n: i128,
+) -> Result<Expr, InterpreterError> {
+  rotate_left_ast(list, -n)
+}
+
+/// AST-based PadLeft: pad list on the left to length n.
+/// If n < len, truncates from the left.
+pub fn pad_left_ast(
+  list: &Expr,
+  n: i128,
+  pad: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PadLeft".to_string(),
+        args: vec![list.clone(), Expr::Integer(n), pad.clone()],
+      });
+    }
+  };
+
+  let len = items.len() as i128;
+  if n <= 0 {
+    return Ok(Expr::List(vec![]));
+  }
+
+  if n < len {
+    // Truncate from the left
+    let skip = (len - n) as usize;
+    return Ok(Expr::List(items[skip..].to_vec()));
+  }
+
+  if n == len {
+    return Ok(list.clone());
+  }
+
+  let needed = (n - len) as usize;
+  let mut result = vec![pad.clone(); needed];
+  result.extend(items.iter().cloned());
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based PadRight: pad list on the right to length n.
+/// If n < len, truncates from the right.
+pub fn pad_right_ast(
+  list: &Expr,
+  n: i128,
+  pad: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PadRight".to_string(),
+        args: vec![list.clone(), Expr::Integer(n), pad.clone()],
+      });
+    }
+  };
+
+  let len = items.len() as i128;
+  if n <= 0 {
+    return Ok(Expr::List(vec![]));
+  }
+
+  if n < len {
+    // Truncate from the right
+    return Ok(Expr::List(items[..n as usize].to_vec()));
+  }
+
+  if n == len {
+    return Ok(list.clone());
+  }
+
+  let needed = (n - len) as usize;
+  let mut result = items.clone();
+  result.extend(vec![pad.clone(); needed]);
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based Join: join multiple lists.
+pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut result = Vec::new();
+  for list in lists {
+    match list {
+      Expr::List(items) => result.extend(items.iter().cloned()),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Join".to_string(),
+          args: lists.to_vec(),
+        });
+      }
+    }
+  }
+  Ok(Expr::List(result))
+}
+
+/// AST-based Append: append element to list.
+pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      let mut result = items.clone();
+      result.push(elem.clone());
+      Ok(Expr::List(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Append".to_string(),
+      args: vec![list.clone(), elem.clone()],
+    }),
+  }
+}
+
+/// AST-based Prepend: prepend element to list.
+pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
+  match list {
+    Expr::List(items) => {
+      let mut result = vec![elem.clone()];
+      result.extend(items.iter().cloned());
+      Ok(Expr::List(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Prepend".to_string(),
+      args: vec![list.clone(), elem.clone()],
+    }),
+  }
+}
+
+/// AST-based DeleteDuplicatesBy: remove duplicates by key function.
+pub fn delete_duplicates_by_ast(
+  list: &Expr,
+  func: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DeleteDuplicatesBy".to_string(),
+        args: vec![list.clone(), func.clone()],
+      });
+    }
+  };
+
+  use std::collections::HashSet;
+  let mut seen: HashSet<String> = HashSet::new();
+  let mut result = Vec::new();
+
+  for item in items {
+    let key = apply_func_ast(func, item)?;
+    let key_str = crate::syntax::expr_to_string(&key);
+    if seen.insert(key_str) {
+      result.push(item.clone());
+    }
+  }
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based Median: calculate median of a list.
+pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Median".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Median: list is empty".into(),
+    ));
+  }
+
+  // Extract numeric values
+  let mut values: Vec<f64> = Vec::new();
+  for item in items {
+    if let Some(n) = expr_to_f64(item) {
+      values.push(n);
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "Median".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  }
+
+  values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+  let len = values.len();
+  if len % 2 == 1 {
+    Ok(f64_to_expr(values[len / 2]))
+  } else {
+    Ok(f64_to_expr((values[len / 2 - 1] + values[len / 2]) / 2.0))
+  }
+}
+
+/// AST-based Count: count elements equal to pattern.
+pub fn count_ast(
+  list: &Expr,
+  pattern: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Count".to_string(),
+        args: vec![list.clone(), pattern.clone()],
+      });
+    }
+  };
+
+  let pattern_str = crate::syntax::expr_to_string(pattern);
+  let count = items
+    .iter()
+    .filter(|item| crate::syntax::expr_to_string(item) == pattern_str)
+    .count();
+
+  Ok(Expr::Integer(count as i128))
+}
+
+/// AST-based ConstantArray: create array filled with constant.
+/// ConstantArray[c, n] -> {c, c, ..., c} (n times)
+/// ConstantArray[c, {n1, n2}] -> nested array
+pub fn constant_array_ast(
+  elem: &Expr,
+  dims: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match dims {
+    Expr::Integer(n) => {
+      if *n < 0 {
+        return Err(InterpreterError::EvaluationError(
+          "ConstantArray: dimension must be non-negative".into(),
+        ));
+      }
+      Ok(Expr::List(vec![elem.clone(); *n as usize]))
+    }
+    Expr::List(dim_list) => {
+      if dim_list.is_empty() {
+        return Ok(elem.clone());
+      }
+      let first_dim = expr_to_i128(&dim_list[0]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "ConstantArray: dimensions must be integers".into(),
+        )
+      })?;
+      if dim_list.len() == 1 {
+        Ok(Expr::List(vec![elem.clone(); first_dim as usize]))
+      } else {
+        let rest_dims = Expr::List(dim_list[1..].to_vec());
+        let inner = constant_array_ast(elem, &rest_dims)?;
+        Ok(Expr::List(vec![inner; first_dim as usize]))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "ConstantArray".to_string(),
+      args: vec![elem.clone(), dims.clone()],
+    }),
+  }
+}
+
+/// AST-based NestWhile: nest while condition is true.
+pub fn nest_while_ast(
+  func: &Expr,
+  init: &Expr,
+  test: &Expr,
+  max_iterations: Option<i128>,
+) -> Result<Expr, InterpreterError> {
+  let max = max_iterations.unwrap_or(10000);
+  let mut current = init.clone();
+
+  for _ in 0..max {
+    let test_result = apply_func_ast(test, &current)?;
+    if expr_to_bool(&test_result) != Some(true) {
+      break;
+    }
+    current = apply_func_ast(func, &current)?;
+  }
+
+  Ok(current)
+}
+
+/// AST-based NestWhileList: like NestWhile but returns list.
+pub fn nest_while_list_ast(
+  func: &Expr,
+  init: &Expr,
+  test: &Expr,
+  max_iterations: Option<i128>,
+) -> Result<Expr, InterpreterError> {
+  let max = max_iterations.unwrap_or(10000);
+  let mut results = vec![init.clone()];
+  let mut current = init.clone();
+
+  for _ in 0..max {
+    let test_result = apply_func_ast(test, &current)?;
+    if expr_to_bool(&test_result) != Some(true) {
+      break;
+    }
+    current = apply_func_ast(func, &current)?;
+    results.push(current.clone());
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// AST-based Product: product of list elements or iterator product.
+pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1 {
+    // Product[{a, b, c}] -> a * b * c
+    let items = match &args[0] {
+      Expr::List(items) => items,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Product".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+
+    let mut product = 1.0;
+    for item in items {
+      if let Some(n) = expr_to_f64(item) {
+        product *= n;
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Product".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+    return Ok(f64_to_expr(product));
+  }
+
+  if args.len() == 2 {
+    // Product[expr, {i, min, max}] -> multiply expr for each i
+    let body = &args[0];
+    let iter_spec = &args[1];
+
+    match iter_spec {
+      Expr::List(items) if items.len() >= 2 => {
+        let var_name = match &items[0] {
+          Expr::Identifier(name) => name.clone(),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Product".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+
+        let (min, max) = if items.len() == 2 {
+          let max_val = expr_to_i128(&items[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Product: iterator bounds must be integers".into(),
+            )
+          })?;
+          (1i128, max_val)
+        } else {
+          let min_val = expr_to_i128(&items[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Product: iterator bounds must be integers".into(),
+            )
+          })?;
+          let max_val = expr_to_i128(&items[2]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Product: iterator bounds must be integers".into(),
+            )
+          })?;
+          (min_val, max_val)
+        };
+
+        let mut product = 1.0;
+        for i in min..=max {
+          let substituted = crate::syntax::substitute_variable(
+            body,
+            &var_name,
+            &Expr::Integer(i),
+          );
+          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+          if let Some(n) = expr_to_f64(&val) {
+            product *= n;
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Product".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        return Ok(f64_to_expr(product));
+      }
+      _ => {}
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Product".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// AST-based Sum: sum of list elements or iterator sum.
+pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1 {
+    // Sum[{a, b, c}] -> a + b + c (same as Total)
+    return crate::functions::math_ast::total_ast(args);
+  }
+
+  if args.len() == 2 {
+    // Sum[expr, {i, min, max}] -> add expr for each i
+    let body = &args[0];
+    let iter_spec = &args[1];
+
+    match iter_spec {
+      Expr::List(items) if items.len() >= 2 => {
+        let var_name = match &items[0] {
+          Expr::Identifier(name) => name.clone(),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Sum".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+
+        let (min, max) = if items.len() == 2 {
+          let max_val = expr_to_i128(&items[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Sum: iterator bounds must be integers".into(),
+            )
+          })?;
+          (1i128, max_val)
+        } else {
+          let min_val = expr_to_i128(&items[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Sum: iterator bounds must be integers".into(),
+            )
+          })?;
+          let max_val = expr_to_i128(&items[2]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Sum: iterator bounds must be integers".into(),
+            )
+          })?;
+          (min_val, max_val)
+        };
+
+        let mut sum = 0.0;
+        for i in min..=max {
+          let substituted = crate::syntax::substitute_variable(
+            body,
+            &var_name,
+            &Expr::Integer(i),
+          );
+          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+          if let Some(n) = expr_to_f64(&val) {
+            sum += n;
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Sum".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        return Ok(f64_to_expr(sum));
+      }
+      _ => {}
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Sum".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// AST-based Thread: thread a function over lists.
+/// Thread[f[{a, b}, {c, d}]] -> {f[a, c], f[b, d]}
+pub fn thread_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      // Find which args are lists
+      let mut list_indices: Vec<usize> = Vec::new();
+      let mut list_len: Option<usize> = None;
+
+      for (i, arg) in args.iter().enumerate() {
+        if let Expr::List(items) = arg {
+          if let Some(len) = list_len {
+            if items.len() != len {
+              return Err(InterpreterError::EvaluationError(
+                "Thread: all lists must have the same length".into(),
+              ));
+            }
+          } else {
+            list_len = Some(items.len());
+          }
+          list_indices.push(i);
+        }
+      }
+
+      if list_indices.is_empty() {
+        return Ok(expr.clone());
+      }
+
+      let len = list_len.unwrap();
+      let mut results = Vec::new();
+
+      for j in 0..len {
+        let new_args: Vec<Expr> = args
+          .iter()
+          .enumerate()
+          .map(|(i, arg)| {
+            if list_indices.contains(&i) {
+              if let Expr::List(items) = arg {
+                items[j].clone()
+              } else {
+                arg.clone()
+              }
+            } else {
+              arg.clone()
+            }
+          })
+          .collect();
+        let result =
+          crate::evaluator::evaluate_function_call_ast(name, &new_args)?;
+        results.push(result);
+      }
+
+      Ok(Expr::List(results))
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
+/// AST-based Through: apply multiple functions.
+/// Through[{f, g}[x]] -> {f[x], g[x]}
+pub fn through_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::FunctionCall { name: _, args } if !args.is_empty() => {
+      // Check if first "name" is actually a list
+      // Through[{f, g}[x]] is parsed as FunctionCall with name "{f, g}"
+      // This is tricky - we need to handle this case specially
+      Ok(expr.clone()) // Simplified for now
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
+/// AST-based TakeLargest: take n largest elements.
+pub fn take_largest_ast(
+  list: &Expr,
+  n: i128,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeLargest".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  };
+
+  // Extract numeric values with indices
+  let mut keyed: Vec<(f64, Expr)> = Vec::new();
+  for item in items {
+    if let Some(v) = expr_to_f64(item) {
+      keyed.push((v, item.clone()));
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "TakeLargest".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  }
+
+  keyed
+    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+  let take = (n as usize).min(keyed.len());
+  let result: Vec<Expr> =
+    keyed.into_iter().take(take).map(|(_, e)| e).collect();
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based TakeSmallest: take n smallest elements.
+pub fn take_smallest_ast(
+  list: &Expr,
+  n: i128,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeSmallest".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  };
+
+  // Extract numeric values with indices
+  let mut keyed: Vec<(f64, Expr)> = Vec::new();
+  for item in items {
+    if let Some(v) = expr_to_f64(item) {
+      keyed.push((v, item.clone()));
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "TakeSmallest".to_string(),
+        args: vec![list.clone(), Expr::Integer(n)],
+      });
+    }
+  }
+
+  keyed
+    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+  let take = (n as usize).min(keyed.len());
+  let result: Vec<Expr> =
+    keyed.into_iter().take(take).map(|(_, e)| e).collect();
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based ArrayDepth: compute depth of nested lists.
+pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  fn compute_depth(expr: &Expr) -> i128 {
+    match expr {
+      Expr::List(items) => {
+        if items.is_empty() {
+          1
+        } else {
+          1 + items.iter().map(compute_depth).min().unwrap_or(0)
+        }
+      }
+      _ => 0,
+    }
+  }
+
+  Ok(Expr::Integer(compute_depth(list)))
+}
+
+/// AST-based TakeWhile: take elements while predicate is true.
+pub fn take_while_ast(
+  list: &Expr,
+  pred: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeWhile".to_string(),
+        args: vec![list.clone(), pred.clone()],
+      });
+    }
+  };
+
+  let mut result = Vec::new();
+  for item in items {
+    let test_result = apply_func_ast(pred, item)?;
+    if expr_to_bool(&test_result) == Some(true) {
+      result.push(item.clone());
+    } else {
+      break;
+    }
+  }
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based Do: execute expression multiple times.
+/// Do[expr, n] -> execute expr n times
+/// Do[expr, {i, max}] -> execute with i from 1 to max
+/// Do[expr, {i, min, max}] -> execute with i from min to max
+pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
+  match iter_spec {
+    Expr::Integer(n) => {
+      for _ in 0..*n {
+        crate::evaluator::evaluate_expr_to_expr(body)?;
+      }
+      Ok(Expr::Identifier("Null".to_string()))
+    }
+    Expr::List(items) if !items.is_empty() => {
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Do: iterator variable must be an identifier".into(),
+          ));
+        }
+      };
+
+      let (min, max) = if items.len() == 2 {
+        let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Do: iterator bound must be an integer".into(),
+          )
+        })?;
+        (1i128, max_val)
+      } else if items.len() >= 3 {
+        let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
+        let min_val = expr_to_i128(&min_expr).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Do: iterator bound must be an integer".into(),
+          )
+        })?;
+        let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Do: iterator bound must be an integer".into(),
+          )
+        })?;
+        (min_val, max_val)
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Do: invalid iterator specification".into(),
+        ));
+      };
+
+      for i in min..=max {
+        let substituted = crate::syntax::substitute_variable(
+          body,
+          &var_name,
+          &Expr::Integer(i),
+        );
+        crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+      }
+      Ok(Expr::Identifier("Null".to_string()))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Do: invalid iterator specification".into(),
+    )),
+  }
+}
+
+/// AST-based DeleteCases: remove elements matching pattern.
+pub fn delete_cases_ast(
+  list: &Expr,
+  pattern: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DeleteCases".to_string(),
+        args: vec![list.clone(), pattern.clone()],
+      });
+    }
+  };
+
+  let pattern_str = crate::syntax::expr_to_string(pattern);
+  let result: Vec<Expr> = items
+    .iter()
+    .filter(|item| {
+      let item_str = crate::syntax::expr_to_string(item);
+      !matches_pattern_simple(&item_str, &pattern_str)
+    })
+    .cloned()
+    .collect();
+
+  Ok(Expr::List(result))
+}
+
+/// AST-based MinMax: return {min, max} of a list.
+pub fn min_max_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MinMax".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::List(vec![
+      Expr::Identifier("Infinity".to_string()),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      },
+    ]));
+  }
+
+  let mut min_val = f64::INFINITY;
+  let mut max_val = f64::NEG_INFINITY;
+
+  for item in items {
+    if let Some(n) = expr_to_f64(item) {
+      if n < min_val {
+        min_val = n;
+      }
+      if n > max_val {
+        max_val = n;
+      }
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "MinMax".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  }
+
+  Ok(Expr::List(vec![f64_to_expr(min_val), f64_to_expr(max_val)]))
+}
