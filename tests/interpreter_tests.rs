@@ -479,4 +479,93 @@ mod interpreter_tests {
       assert_eq!(interpret("StringLength[#]& @ \"hello\"").unwrap(), "5");
     }
   }
+
+  mod user_defined_functions {
+    use super::*;
+
+    #[test]
+    fn function_with_multiple_calls() {
+      // Regression test: ensure function calls with different arguments
+      // return different results (not cached incorrectly)
+      assert_eq!(
+        interpret("f[a_, b_, c_] := {a, b, c}; f[1, 2, 3]").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn function_calls_are_not_incorrectly_cached() {
+      // This test ensures that consecutive calls to a user-defined function
+      // with different arguments return correct results
+      assert_eq!(
+        interpret(
+          "g[a_, b_, c_] := a + b + c; x = g[1, 2, 3]; y = g[4, 5, 6]; {x, y}"
+        )
+        .unwrap(),
+        "{6, 15}"
+      );
+    }
+
+    #[test]
+    fn map_apply_with_user_function() {
+      // Test @@@ with user-defined function
+      assert_eq!(
+        interpret("f[a_, b_, c_] := a + b + c; f @@@ {{1, 2, 3}, {4, 5, 6}}")
+          .unwrap(),
+        "{6, 15}"
+      );
+    }
+
+    #[test]
+    fn user_function_with_if_lazy_evaluation() {
+      // Test that If only evaluates the selected branch in user-defined functions
+      // If both branches were evaluated, First[{}] would error
+      assert_eq!(
+        interpret("f[x_] := If[x > 0, 1, First[{}]]; f[5]").unwrap(),
+        "1"
+      );
+      assert_eq!(
+        interpret("f[x_] := If[x > 0, First[{}], 2]; f[-5]").unwrap(),
+        "2"
+      );
+    }
+  }
+
+  mod part_extraction {
+    use super::*;
+
+    #[test]
+    fn nested_list_part_via_variable() {
+      // Test that Part extraction works correctly for nested lists stored in variables
+      assert_eq!(interpret("x = {{a, b}, {c, d}}; x[[1]]").unwrap(), "{a, b}");
+      assert_eq!(interpret("x = {{a, b}, {c, d}}; x[[2]]").unwrap(), "{c, d}");
+    }
+
+    #[test]
+    fn deeply_nested_list_part() {
+      assert_eq!(
+        interpret("x = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; x[[1]]").unwrap(),
+        "{{1, 2}, {3, 4}}"
+      );
+    }
+  }
+
+  mod length_function {
+    use super::*;
+
+    #[test]
+    fn length_with_variable() {
+      // Test that Length works with lists stored in variables
+      assert_eq!(interpret("x = {1, 2, 3}; Length[x]").unwrap(), "3");
+      assert_eq!(interpret("x = {}; Length[x]").unwrap(), "0");
+    }
+
+    #[test]
+    fn length_with_nested_list_variable() {
+      assert_eq!(
+        interpret("x = {{a, b}, {c, d}, {e, f}}; Length[x]").unwrap(),
+        "3"
+      );
+    }
+  }
 }

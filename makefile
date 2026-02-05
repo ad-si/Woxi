@@ -37,18 +37,18 @@ test-shebang: install
 
 
 .PHONY: test-scripts
-test-scripts: install
+test-scripts:
 	@echo "Testing scripts with woxi …"
 	@for script in tests/scripts/[!_]*.wls; do \
 		echo "Running $$script …"; \
-		timeout 20 woxi run "$$script" > /dev/null || exit 1; \
+		timeout 20 cargo run --quiet -- run "$$script" > /dev/null || exit 1; \
 	done
-	woxi run ./tests/scripts/_cli_args.wls -- 5 > /dev/null || exit 1
+	cargo run -- run ./tests/scripts/_cli_args.wls -- 5 > /dev/null || exit 1
 	@echo "All scripts executed successfully with woxi."
 
 
 .PHONY: test-scripts-wolframscript
-test-scripts-wolframscript: install
+test-scripts-wolframscript:
 	@echo "Testing scripts with wolframscript …"
 	@for script in tests/scripts/[!_]*.wls; do \
 		echo "Running $$script …"; \

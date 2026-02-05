@@ -1,9 +1,12 @@
-use crate::syntax::{AST, WoNum, str_to_wonum, wonum_to_number_str};
+use crate::syntax::{
+  AST, BinaryOperator, ComparisonOp, Expr, UnaryOperator, WoNum,
+  expr_to_string, str_to_wonum, wonum_to_number_str,
+};
 use crate::utils::create_file;
 use crate::{
   ENV, FUNC_DEFS, InterpreterError, Rule, StoredValue, apply_map_operator,
   eval_association, extract_string, format_result, functions, interpret,
-  store_function_definition,
+  parse_list_string, store_function_definition,
 };
 
 /// Check if a result value needs to be quoted when substituted into an expression.
@@ -38,6 +41,326 @@ fn needs_string_quotes(s: &str) -> bool {
   }
   // Everything else (empty strings, strings with spaces/special chars) needs quoting
   true
+}
+
+/// Evaluate an Expr AST directly without re-parsing.
+/// This is the core optimization that avoids re-parsing function bodies.
+pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
+  match expr {
+    Expr::Integer(n) => Ok(n.to_string()),
+    Expr::Real(f) => Ok(format_result(*f)),
+    Expr::String(s) => Ok(format!("\"{}\"", s)),
+    Expr::Identifier(name) => {
+      // Look up in environment
+      if let Some(StoredValue::Raw(val)) =
+        ENV.with(|e| e.borrow().get(name).cloned())
+      {
+        Ok(val)
+      } else {
+        // Return as symbolic
+        Ok(name.clone())
+      }
+    }
+    Expr::Slot(n) => {
+      // Slots should be replaced before evaluation
+      // If we get here, return as-is
+      if *n == 1 {
+        Ok("#".to_string())
+      } else {
+        Ok(format!("#{}", n))
+      }
+    }
+    Expr::Constant(name) => match name.as_str() {
+      "Pi" | "-Pi" => {
+        if name.starts_with('-') {
+          Ok(format_result(-std::f64::consts::PI))
+        } else {
+          Ok(format_result(std::f64::consts::PI))
+        }
+      }
+      _ => Ok(name.clone()),
+    },
+    Expr::List(items) => {
+      let evaluated: Result<Vec<String>, _> =
+        items.iter().map(evaluate_expr).collect();
+      Ok(format!("{{{}}}", evaluated?.join(", ")))
+    }
+    Expr::FunctionCall { name, args } => {
+      // Special handling for If - lazy evaluation of branches
+      if name == "If" && (args.len() == 2 || args.len() == 3) {
+        let cond = evaluate_expr(&args[0])?;
+        if cond == "True" {
+          return evaluate_expr(&args[1]);
+        } else if cond == "False" {
+          if args.len() == 3 {
+            return evaluate_expr(&args[2]);
+          } else {
+            return Ok("Null".to_string());
+          }
+        } else {
+          // Condition didn't evaluate to True/False - return unevaluated
+          let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
+          return Ok(format!("If[{}]", args_str.join(", ")));
+        }
+      }
+      // Evaluate arguments and call the function
+      let args_str: Vec<String> =
+        args.iter().map(evaluate_expr).collect::<Result<_, _>>()?;
+      let call_str = format!("{}[{}]", name, args_str.join(", "));
+      interpret(&call_str)
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let left_val = evaluate_expr(left)?;
+      let right_val = evaluate_expr(right)?;
+
+      match op {
+        BinaryOperator::Plus => {
+          if let (Ok(l), Ok(r)) =
+            (left_val.parse::<f64>(), right_val.parse::<f64>())
+          {
+            Ok(format_result(l + r))
+          } else {
+            // Symbolic
+            Ok(format!("{} + {}", left_val, right_val))
+          }
+        }
+        BinaryOperator::Minus => {
+          if let (Ok(l), Ok(r)) =
+            (left_val.parse::<f64>(), right_val.parse::<f64>())
+          {
+            Ok(format_result(l - r))
+          } else {
+            Ok(format!("{} - {}", left_val, right_val))
+          }
+        }
+        BinaryOperator::Times => {
+          if let (Ok(l), Ok(r)) =
+            (left_val.parse::<f64>(), right_val.parse::<f64>())
+          {
+            Ok(format_result(l * r))
+          } else {
+            Ok(format!("{} * {}", left_val, right_val))
+          }
+        }
+        BinaryOperator::Divide => {
+          if let (Ok(l), Ok(r)) =
+            (left_val.parse::<f64>(), right_val.parse::<f64>())
+          {
+            if r == 0.0 {
+              Err(InterpreterError::EvaluationError("Division by zero".into()))
+            } else {
+              Ok(format_result(l / r))
+            }
+          } else {
+            Ok(format!("{} / {}", left_val, right_val))
+          }
+        }
+        BinaryOperator::Power => {
+          if let (Ok(l), Ok(r)) =
+            (left_val.parse::<f64>(), right_val.parse::<f64>())
+          {
+            Ok(format_result(l.powf(r)))
+          } else {
+            Ok(format!("{}^{}", left_val, right_val))
+          }
+        }
+        BinaryOperator::And => {
+          let l = left_val == "True";
+          let r = right_val == "True";
+          Ok(if l && r { "True" } else { "False" }.to_string())
+        }
+        BinaryOperator::Or => {
+          let l = left_val == "True";
+          let r = right_val == "True";
+          Ok(if l || r { "True" } else { "False" }.to_string())
+        }
+        BinaryOperator::StringJoin => {
+          // Remove quotes if present
+          let l = left_val.trim_matches('"');
+          let r = right_val.trim_matches('"');
+          Ok(format!("\"{}{}\"", l, r))
+        }
+      }
+    }
+    Expr::UnaryOp { op, operand } => {
+      let val = evaluate_expr(operand)?;
+      match op {
+        UnaryOperator::Minus => {
+          if let Ok(n) = val.parse::<f64>() {
+            Ok(format_result(-n))
+          } else {
+            Ok(format!("-{}", val))
+          }
+        }
+        UnaryOperator::Not => {
+          if val == "True" {
+            Ok("False".to_string())
+          } else if val == "False" {
+            Ok("True".to_string())
+          } else {
+            Ok(format!("!{}", val))
+          }
+        }
+      }
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      if operands.len() < 2 || operators.is_empty() {
+        return Ok("True".to_string());
+      }
+
+      let values: Vec<String> = operands
+        .iter()
+        .map(evaluate_expr)
+        .collect::<Result<_, _>>()?;
+
+      // Evaluate comparison chain
+      for i in 0..operators.len() {
+        let left = &values[i];
+        let right = &values[i + 1];
+        let op = &operators[i];
+
+        let result = match op {
+          ComparisonOp::Equal => {
+            if let (Ok(l), Ok(r)) = (left.parse::<f64>(), right.parse::<f64>())
+            {
+              l == r
+            } else {
+              left == right
+            }
+          }
+          ComparisonOp::NotEqual => {
+            if let (Ok(l), Ok(r)) = (left.parse::<f64>(), right.parse::<f64>())
+            {
+              l != r
+            } else {
+              left != right
+            }
+          }
+          ComparisonOp::Less => {
+            if let (Ok(l), Ok(r)) = (left.parse::<f64>(), right.parse::<f64>())
+            {
+              l < r
+            } else {
+              return Ok(format!("{} < {}", left, right));
+            }
+          }
+          ComparisonOp::LessEqual => {
+            if let (Ok(l), Ok(r)) = (left.parse::<f64>(), right.parse::<f64>())
+            {
+              l <= r
+            } else {
+              return Ok(format!("{} <= {}", left, right));
+            }
+          }
+          ComparisonOp::Greater => {
+            if let (Ok(l), Ok(r)) = (left.parse::<f64>(), right.parse::<f64>())
+            {
+              l > r
+            } else {
+              return Ok(format!("{} > {}", left, right));
+            }
+          }
+          ComparisonOp::GreaterEqual => {
+            if let (Ok(l), Ok(r)) = (left.parse::<f64>(), right.parse::<f64>())
+            {
+              l >= r
+            } else {
+              return Ok(format!("{} >= {}", left, right));
+            }
+          }
+          ComparisonOp::SameQ => left == right,
+          ComparisonOp::UnsameQ => left != right,
+        };
+
+        if !result {
+          return Ok("False".to_string());
+        }
+      }
+      Ok("True".to_string())
+    }
+    Expr::CompoundExpr(exprs) => {
+      let mut result = String::new();
+      for e in exprs {
+        result = evaluate_expr(e)?;
+      }
+      Ok(result)
+    }
+    Expr::Association(items) => {
+      let parts: Vec<String> = items
+        .iter()
+        .map(|(k, v)| {
+          let key = evaluate_expr(k)?;
+          let val = evaluate_expr(v)?;
+          Ok(format!("{} -> {}", key, val))
+        })
+        .collect::<Result<_, InterpreterError>>()?;
+      Ok(format!("<|{}|>", parts.join(", ")))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let p = expr_to_string(pattern);
+      let r = evaluate_expr(replacement)?;
+      Ok(format!("{} -> {}", p, r))
+    }
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      let p = expr_to_string(pattern);
+      let r = expr_to_string(replacement);
+      Ok(format!("{} :> {}", p, r))
+    }
+    Expr::ReplaceAll { expr: e, rules } => {
+      let expr_str = evaluate_expr(e)?;
+      let rules_str = evaluate_expr(rules)?;
+      interpret(&format!("{} /. {}", expr_str, rules_str))
+    }
+    Expr::ReplaceRepeated { expr: e, rules } => {
+      let expr_str = evaluate_expr(e)?;
+      let rules_str = evaluate_expr(rules)?;
+      interpret(&format!("{} //. {}", expr_str, rules_str))
+    }
+    Expr::Map { func, list } => {
+      let func_str = expr_to_string(func);
+      let list_str = evaluate_expr(list)?;
+      interpret(&format!("{} /@ {}", func_str, list_str))
+    }
+    Expr::Apply { func, list } => {
+      let func_str = expr_to_string(func);
+      let list_str = evaluate_expr(list)?;
+      interpret(&format!("{} @@ {}", func_str, list_str))
+    }
+    Expr::Postfix { expr: e, func } => {
+      let expr_str = evaluate_expr(e)?;
+      let func_str = expr_to_string(func);
+      interpret(&format!("{} // {}", expr_str, func_str))
+    }
+    Expr::Part { expr: e, index } => {
+      let expr_str = evaluate_expr(e)?;
+      let idx_str = evaluate_expr(index)?;
+      interpret(&format!("{}[[{}]]", expr_str, idx_str))
+    }
+    Expr::Function { body } => {
+      // Return anonymous function as-is (with & appended)
+      Ok(format!("{}&", expr_to_string(body)))
+    }
+    Expr::Pattern { name, head } => {
+      if let Some(h) = head {
+        Ok(format!("{}_{}", name, h))
+      } else {
+        Ok(format!("{}_", name))
+      }
+    }
+    Expr::Raw(s) => {
+      // Fallback: interpret the raw string
+      interpret(s)
+    }
+  }
 }
 
 /// Represents either a numeric value or a symbolic term in an expression
@@ -84,7 +407,7 @@ fn try_evaluate_term(
       // Keep strings as symbols (with quotes preserved for SameQ comparison)
       Ok(SymbolicTerm::Symbol(term.as_str().to_string()))
     }
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let result = evaluate_expression(term)?;
       // Try to parse as numeric, otherwise keep as symbolic
       if let Ok(val) = result.parse::<f64>() {
@@ -416,6 +739,7 @@ pub fn evaluate_pairs(
         // --- handle anonymous functions (return as-is when not applied) ---
         else if first.as_rule() == Rule::SimpleAnonymousFunction
           || first.as_rule() == Rule::FunctionAnonymousFunction
+          || first.as_rule() == Rule::ListAnonymousFunction
         {
           return Ok(first.as_str().to_string());
         }
@@ -511,14 +835,10 @@ pub fn evaluate_pairs(
       // If not found as association, try to evaluate as a list and use numeric index
       if let Ok(list_str) = evaluate_expression(first_pair.clone()) {
         // Try to parse as a list: {a, b, c}
-        if list_str.starts_with('{') && list_str.ends_with('}') {
-          let items: Vec<&str> = list_str[1..list_str.len() - 1]
-            .split(',')
-            .map(|s| s.trim())
-            .collect();
+        if let Some(items) = parse_list_string(&list_str) {
           if let Ok(idx) = key.parse::<usize>() {
             if idx >= 1 && idx <= items.len() {
-              return Ok(items[idx - 1].to_string());
+              return Ok(items[idx - 1].clone());
             }
             // Index out of bounds - print warning and return sentinel to suppress main's output
             // For variable access like x[[10]], show the evaluated list in the expression
@@ -534,7 +854,7 @@ pub fn evaluate_pairs(
         "Argument must be an association or list".into(),
       ))
     }
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       {
         let mut expr_inner = expr.clone().into_inner();
         if let Some(first) = expr_inner.next()
@@ -628,6 +948,7 @@ pub fn evaluate_pairs(
               Rule::SimpleAnonymousFunction
                 | Rule::FunctionAnonymousFunction
                 | Rule::ParenAnonymousFunction
+                | Rule::ListAnonymousFunction
             ) {
               // Anonymous function: substitute # with the argument
               let mut body =
@@ -718,6 +1039,55 @@ pub fn evaluate_pairs(
           && items[1].as_str() == "/@"
         {
           return apply_map_operator(items[0].clone(), items[2].clone());
+        }
+
+        // Handle @@@ (MapApply) operator: f @@@ {{a, b}, {c, d}} -> {f[a, b], f[c, d]}
+        if items.len() == 3
+          && items[1].as_rule() == Rule::Operator
+          && items[1].as_str() == "@@@"
+        {
+          let func = items[0].clone();
+          let list = items[2].clone();
+
+          let func_name = if func.as_rule() == Rule::Identifier {
+            func.as_str().to_string()
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "Left operand of @@@ must be a function".into(),
+            ));
+          };
+
+          // Evaluate the list and extract its sublists
+          let list_str = evaluate_expression(list)?;
+          if list_str.starts_with('{') && list_str.ends_with('}') {
+            let inner = &list_str[1..list_str.len() - 1];
+            let elements = split_list_elements(inner);
+            let mut results = Vec::new();
+            for elem in elements {
+              // Each element should be a list that we apply the function to
+              if elem.starts_with('{') && elem.ends_with('}') {
+                let inner = &elem[1..elem.len() - 1];
+                let expr = format!("{}[{}]", func_name, inner);
+                match interpret(&expr) {
+                  Ok(result) => results.push(result),
+                  Err(InterpreterError::EvaluationError(e))
+                    if e.starts_with("Unknown function:") =>
+                  {
+                    results.push(expr);
+                  }
+                  Err(e) => return Err(e),
+                }
+              } else {
+                // If element is not a list, return it unapplied (mimics Wolfram behavior)
+                results.push(format!("{}[{}]", func_name, elem));
+              }
+            }
+            return Ok(format!("{{{}}}", results.join(", ")));
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "Right operand of @@@ must be a list".into(),
+            ));
+          }
         }
 
         // Handle @@ (Apply) operator: f @@ {a, b, c} -> f[a, b, c]
@@ -912,12 +1282,32 @@ pub fn evaluate_pairs(
                   .trim()
                   .to_owned();
 
-                // keep previously-computed parameter list (may be empty if
-                // the parser didn't yield Pattern nodes)
-                let body_txt = rhs_txt;
+                // Parse the body text into an Expr AST
+                // We need to parse it to get a pest Pair, then convert to Expr
+                let body_expr = match crate::parse(&rhs_txt) {
+                  Ok(mut pairs) => {
+                    if let Some(program) = pairs.next() {
+                      // Get the first expression from the program
+                      if let Some(expr_pair) = program.into_inner().next() {
+                        crate::syntax::pair_to_expr(expr_pair)
+                      } else {
+                        Expr::Raw(rhs_txt)
+                      }
+                    } else {
+                      Expr::Raw(rhs_txt)
+                    }
+                  }
+                  Err(_) => Expr::Raw(rhs_txt),
+                };
 
                 FUNC_DEFS.with(|m| {
-                  m.borrow_mut().insert(func_name, (params, body_txt));
+                  let mut defs = m.borrow_mut();
+                  let entry = defs.entry(func_name).or_insert_with(Vec::new);
+                  // Remove any existing definition with the same arity
+                  let arity = params.len();
+                  entry.retain(|(p, _)| p.len() != arity);
+                  // Add the new definition with parsed AST
+                  entry.push((params, body_expr));
                 });
 
                 return Ok("Null".to_string());
@@ -1225,7 +1615,7 @@ pub fn evaluate_pairs(
       let has_logical_ops = ops.iter().any(|op| {
         matches!(
           *op,
-          "&&" | "||" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">="
+          "&&" | "||" | "===" | "=!=" | "==" | "!=" | "<" | ">" | "<=" | ">="
         )
       });
 
@@ -1251,6 +1641,7 @@ pub fn evaluate_pairs(
             "&&" => functions::boolean::and_strs(&term_strs),
             "||" => functions::boolean::or_strs(&term_strs),
             "===" => functions::boolean::same_q_strs(&term_strs),
+            "=!=" => functions::boolean::unsame_q_strs(&term_strs),
             "==" => functions::math::equal_strs(&term_strs),
             "!=" => functions::math::unequal_strs(&term_strs),
             "<" => functions::math::less_strs(&term_strs),
@@ -1271,6 +1662,7 @@ pub fn evaluate_pairs(
             "&&" => functions::boolean::and_strs(&pair),
             "||" => functions::boolean::or_strs(&pair),
             "===" => functions::boolean::same_q_strs(&pair),
+            "=!=" => functions::boolean::unsame_q_strs(&pair),
             "==" => functions::math::equal_strs(&pair),
             "!=" => functions::math::unequal_strs(&pair),
             "<" => functions::math::less_strs(&pair),
@@ -1532,7 +1924,7 @@ pub fn evaluate_pairs(
       let mut last = None;
       for node in expr.into_inner() {
         match node.as_rule() {
-          Rule::Expression => {
+          Rule::Expression | Rule::ExpressionNoImplicit => {
             last = Some(evaluate_expression(node)?);
           }
           Rule::FunctionDefinition => {
@@ -1553,6 +1945,14 @@ pub fn evaluate_pairs(
       Ok(format!("{{{}}}", items.join(", ")))
     }
     Rule::FunctionCall => evaluate_function_call(expr),
+    Rule::CompoundExpression => {
+      // Evaluate each expression in sequence, return the last one
+      let mut last_result = "Null".to_string();
+      for inner in expr.into_inner() {
+        last_result = evaluate_expression(inner)?;
+      }
+      Ok(last_result)
+    }
     Rule::Identifier => {
       let id = expr.as_str();
       if id == "Now" {
@@ -1619,7 +2019,7 @@ fn fast_eval_to_f64(
         id
       )))
     }
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut inner = pair.clone().into_inner();
       if let Some(first) = inner.next()
         && inner.next().is_none()
@@ -1690,10 +2090,11 @@ pub fn evaluate_term(
       // For string arguments in string functions, just return 0.0 (never used as a number)
       Ok(0.0)
     }
-    Rule::Expression => evaluate_expression(term).and_then(|s| {
-      s.parse::<f64>()
-        .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
-    }),
+    Rule::Expression | Rule::ExpressionNoImplicit => evaluate_expression(term)
+      .and_then(|s| {
+        s.parse::<f64>()
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      }),
     Rule::FunctionCall => evaluate_function_call(term).and_then(|s| {
       if s == "True" {
         Ok(1.0)
@@ -1755,10 +2156,18 @@ pub fn evaluate_term(
     }
     Rule::SimpleAnonymousFunction
     | Rule::FunctionAnonymousFunction
-    | Rule::ParenAnonymousFunction => {
+    | Rule::ParenAnonymousFunction
+    | Rule::ListAnonymousFunction => {
       // Anonymous functions when evaluated as a term (not applied) should error
       // or return 0.0 as a placeholder
       Ok(0.0)
+    }
+    Rule::CompoundExpression => {
+      // Evaluate compound expression and convert to number
+      evaluate_expression(term).and_then(|s| {
+        s.parse::<f64>()
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))
+      })
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unexpected rule in Term: {:?}",
@@ -2062,7 +2471,7 @@ pub fn evaluate_function_call(
     // Extract list from the argument
     let list = match arg.as_rule() {
       Rule::List => arg,
-      Rule::Expression => {
+      Rule::Expression | Rule::ExpressionNoImplicit => {
         let mut inner_expr = arg.into_inner();
         if let Some(first) = inner_expr.next() {
           if first.as_rule() == Rule::List {
@@ -2130,73 +2539,87 @@ pub fn evaluate_function_call(
     inner.filter(|p| p.as_str() != ",").collect();
 
   // ----- user-defined functions ------------------------------------------
-  if let Some((params, body)) =
-    FUNC_DEFS.with(|m| m.borrow().get(func_name).cloned())
-  {
-    // Patch: If the function definition has 0 parameters, but the call has 1 argument,
-    // and the function was defined as f[x_] := ..., treat it as a single-parameter function.
-    if params.is_empty() && args_pairs.len() == 1 {
-      // Try to extract the parameter name from the function definition's body
-      // (since the parser may have failed to store the param)
-      // We'll use "x" as a default parameter name.
-      let param = "x".to_string();
-      let val = evaluate_expression(args_pairs[0].clone())?;
-      let prev = ENV.with(|e| {
-        e.borrow_mut()
-          .insert(param.clone(), StoredValue::Raw(val.clone()))
-      });
-      let result = interpret(&body)?;
-      ENV.with(|e| {
-        let mut env = e.borrow_mut();
-        if let Some(v) = prev {
-          env.insert(param, v);
+  // Look up function definitions and find one matching the arity
+  let func_defs = FUNC_DEFS.with(|m| m.borrow().get(func_name).cloned());
+  if let Some(definitions) = func_defs {
+    let call_arity = args_pairs.len();
+
+    // Find a definition matching the call arity
+    let matching_def = definitions
+      .iter()
+      .find(|(params, _)| params.len() == call_arity)
+      .or_else(|| {
+        // Fallback: if no exact match, try definition with 0 params and 1 arg
+        // (for cases where parser didn't capture the param)
+        if call_arity == 1 {
+          definitions.iter().find(|(params, _)| params.is_empty())
         } else {
-          env.remove(&param);
+          None
         }
       });
-      return Ok(result);
-    }
 
-    if args_pairs.len() != params.len() {
+    if let Some((params, body)) = matching_def {
+      // Special case: 0 params but 1 argument (parser workaround)
+      if params.is_empty() && call_arity == 1 {
+        let param = "x".to_string();
+        let val = evaluate_expression(args_pairs[0].clone())?;
+        let prev = ENV.with(|e| {
+          e.borrow_mut()
+            .insert(param.clone(), StoredValue::Raw(val.clone()))
+        });
+        // Evaluate the AST directly instead of re-parsing
+        let result = evaluate_expr(body)?;
+        ENV.with(|e| {
+          let mut env = e.borrow_mut();
+          if let Some(v) = prev {
+            env.insert(param, v);
+          } else {
+            env.remove(&param);
+          }
+        });
+        return Ok(result);
+      }
+
+      // evaluate actual arguments
+      let mut arg_vals = Vec::new();
+      for p in &args_pairs {
+        arg_vals.push(evaluate_expression(p.clone())?);
+      }
+
+      // save previous bindings, bind new ones
+      let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
+      for (param, val) in params.iter().zip(arg_vals.iter()) {
+        let pv = ENV.with(|e| {
+          e.borrow_mut()
+            .insert(param.clone(), StoredValue::Raw(val.clone()))
+        });
+        prev.push((param.clone(), pv));
+      }
+
+      // Evaluate the AST directly instead of re-parsing (the core optimization)
+      let result = evaluate_expr(body)?;
+
+      // restore previous bindings
+      for (param, old) in prev {
+        ENV.with(|e| {
+          let mut env = e.borrow_mut();
+          if let Some(v) = old {
+            env.insert(param, v);
+          } else {
+            env.remove(&param);
+          }
+        });
+      }
+      return Ok(result);
+    } else {
+      // No matching arity found
+      let available_arities: Vec<_> =
+        definitions.iter().map(|(p, _)| p.len()).collect();
       return Err(InterpreterError::EvaluationError(format!(
-        "{} called with {} arguments; {} expected",
-        func_name,
-        args_pairs.len(),
-        params.len()
+        "{} called with {} arguments; available arities: {:?}",
+        func_name, call_arity, available_arities
       )));
     }
-
-    // evaluate actual arguments
-    let mut arg_vals = Vec::new();
-    for p in &args_pairs {
-      arg_vals.push(evaluate_expression(p.clone())?);
-    }
-
-    // save previous bindings, bind new ones
-    let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
-    for (param, val) in params.iter().zip(arg_vals.iter()) {
-      let pv = ENV.with(|e| {
-        e.borrow_mut()
-          .insert(param.clone(), StoredValue::Raw(val.clone()))
-      });
-      prev.push((param.clone(), pv));
-    }
-
-    // evaluate body inside the extended environment
-    let result = interpret(&body)?;
-
-    // restore previous bindings
-    for (param, old) in prev {
-      ENV.with(|e| {
-        let mut env = e.borrow_mut();
-        if let Some(v) = old {
-          env.insert(param, v);
-        } else {
-          env.remove(&param);
-        }
-      });
-    }
-    return Ok(result);
   }
 
   match func_name {
@@ -2218,7 +2641,7 @@ pub fn evaluate_function_call(
       let var_pair = &args_pairs[0];
       let var_name = match var_pair.as_rule() {
         Rule::Identifier => var_pair.as_str().to_string(),
-        Rule::Expression => {
+        Rule::Expression | Rule::ExpressionNoImplicit => {
           let mut inner = var_pair.clone().into_inner();
           if let Some(first) = inner.next() {
             if first.as_rule() == Rule::Identifier && inner.next().is_none() {
@@ -2266,6 +2689,7 @@ pub fn evaluate_function_call(
     "Xor" => functions::boolean::xor(&args_pairs),
     "Not" => functions::boolean::not(&args_pairs, &call_text),
     "SameQ" => functions::boolean::same_q(&args_pairs),
+    "UnsameQ" => functions::boolean::unsame_q(&args_pairs),
     "If" => functions::boolean::if_condition(&args_pairs, &call_text),
     "Which" => functions::boolean::which(&args_pairs),
     "Do" => functions::boolean::do_loop(&args_pairs),
@@ -2689,6 +3113,22 @@ pub fn evaluate_function_call(
       Ok(format!("{}[{}]", head, args.join(", ")))
     }
 
+    // ClearAll - clear all definitions for symbols
+    "ClearAll" => {
+      for arg in &args_pairs {
+        let name = arg.as_str().trim();
+        // Remove from environment
+        ENV.with(|e| {
+          e.borrow_mut().remove(name);
+        });
+        // Remove from function definitions
+        FUNC_DEFS.with(|f| {
+          f.borrow_mut().remove(name);
+        });
+      }
+      Ok("Null".to_string())
+    }
+
     _ => Err(InterpreterError::EvaluationError(format!(
       "Unknown function: {}",
       func_name
@@ -3030,7 +3470,7 @@ fn expr_to_full_form(
   expr: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   match expr.as_rule() {
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let items: Vec<_> = expr.clone().into_inner().collect();
 
       // Single element expression - recurse
@@ -3061,6 +3501,7 @@ fn expr_to_full_form(
             "->" => "Rule",
             "==" => "Equal",
             "===" => "SameQ",
+            "=!=" => "UnsameQ",
             "!=" => "Unequal",
             "<" => "Less",
             ">" => "Greater",
@@ -3179,7 +3620,7 @@ fn get_head(
   expr: pest::iterators::Pair<Rule>,
 ) -> Result<String, InterpreterError> {
   match expr.as_rule() {
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let items: Vec<_> = expr.clone().into_inner().collect();
 
       // Single element expression - recurse
@@ -3201,6 +3642,7 @@ fn get_head(
             "->" => "Rule",
             "==" => "Equal",
             "===" => "SameQ",
+            "=!=" => "UnsameQ",
             "!=" => "Unequal",
             "<" => "Less",
             ">" => "Greater",

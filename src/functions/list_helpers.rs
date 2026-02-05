@@ -158,7 +158,7 @@ pub fn all_true(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
       .map(|p| evaluate_expression(p))
       .collect::<Result<_, _>>()?,
     // expression that syntactically contains a list
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut expr_inner = list_pair.clone().into_inner();
       if let Some(first) = expr_inner.next() {
         if first.as_rule() == Rule::List && expr_inner.next().is_none() {
@@ -249,7 +249,7 @@ pub fn any_true(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
       .filter(|p| p.as_str() != ",")
       .map(|p| evaluate_expression(p))
       .collect::<Result<_, _>>()?,
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut expr_inner = list_pair.clone().into_inner();
       if let Some(first) = expr_inner.next() {
         if first.as_rule() == Rule::List && expr_inner.next().is_none() {
@@ -329,7 +329,7 @@ pub fn none_true(
       .filter(|p| p.as_str() != ",")
       .map(|p| evaluate_expression(p))
       .collect::<Result<_, _>>()?,
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut expr_inner = list_pair.clone().into_inner();
       if let Some(first) = expr_inner.next() {
         if first.as_rule() == Rule::List && expr_inner.next().is_none() {
@@ -401,34 +401,25 @@ pub fn select(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   }
 
   // ----- extract list --------------------------------------------------
+  // Try to get list items directly from the pair, or evaluate and parse
   let list_pair = &args_pairs[0];
-  let list_rule = list_pair.as_rule();
-  let elems: Vec<_> = if list_rule == Rule::List {
-    list_pair
-      .clone()
-      .into_inner()
-      .filter(|p| p.as_str() != ",")
-      .collect()
-  } else if list_rule == Rule::Expression {
-    let mut expr_inner = list_pair.clone().into_inner();
-    if let Some(first) = expr_inner.next() {
-      if first.as_rule() == Rule::List {
-        first.into_inner().filter(|p| p.as_str() != ",").collect()
-      } else {
-        return Err(InterpreterError::EvaluationError(
-          "First argument of Select must be a list".into(),
-        ));
+  let (elems, elem_strs): (Vec<_>, Option<Vec<String>>) =
+    match crate::functions::list::get_list_items(list_pair) {
+      Ok(items) => (items, None),
+      Err(_) => {
+        // List is the result of a function call or variable - evaluate and parse
+        let list_str = evaluate_expression(list_pair.clone())?;
+        if list_str.starts_with('{') && list_str.ends_with('}') {
+          let inner = &list_str[1..list_str.len() - 1];
+          let parsed = parse_list_elements(inner);
+          (vec![], Some(parsed))
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "First argument of Select must be a list".into(),
+          ));
+        }
       }
-    } else {
-      return Err(InterpreterError::EvaluationError(
-        "First argument of Select must be a list".into(),
-      ));
-    }
-  } else {
-    return Err(InterpreterError::EvaluationError(
-      "First argument of Select must be a list".into(),
-    ));
-  };
+    };
 
   // ----- identify predicate -------------------------------------------
   let pred_pair = &args_pairs[1];
@@ -442,47 +433,88 @@ pub fn select(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
 
   // ----- filter --------------------------------------------------------
   let mut kept = Vec::new();
-  for elem in elems {
-    let passes = if is_slot_pred {
-      // build expression by substituting the Slot (#) with the element’s
-      // evaluated value and dropping the trailing ‘&’
-      let mut expr = pred_src.trim_end_matches('&').to_string();
-      let elem_str = evaluate_expression(elem.clone())?;
-      expr = expr.replace('#', &elem_str);
-      // evaluate the resulting Wolfram-expression
-      let res = interpret(&expr)?;
-      as_bool(&res).unwrap_or(false)
-    } else {
-      match pred_src {
-        "EvenQ" | "OddQ" => {
-          let n = evaluate_term(elem.clone())?;
-          if n.fract() != 0.0 {
-            false
-          } else {
-            let even = (n as i64) % 2 == 0;
-            if pred_src == "EvenQ" { even } else { !even }
+
+  // Handle both parsed pairs and pre-evaluated strings
+  if let Some(strs) = elem_strs {
+    // Elements are already evaluated strings
+    for elem_str in strs {
+      let passes = if is_slot_pred {
+        let mut expr = pred_src.trim_end_matches('&').to_string();
+        expr = expr.replace('#', &elem_str);
+        let res = interpret(&expr)?;
+        as_bool(&res).unwrap_or(false)
+      } else {
+        match pred_src {
+          "EvenQ" | "OddQ" => {
+            if let Ok(n) = elem_str.parse::<f64>() {
+              if n.fract() != 0.0 {
+                false
+              } else {
+                let even = (n as i64) % 2 == 0;
+                if pred_src == "EvenQ" { even } else { !even }
+              }
+            } else {
+              false
+            }
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unknown predicate function: {}",
+              pred_src
+            )));
           }
         }
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Unknown predicate function: {}",
-            pred_src
-          )));
-        }
+      };
+      if passes {
+        kept.push(elem_str);
       }
-    };
-    if passes {
-      kept.push(evaluate_expression(elem.clone())?);
+    }
+  } else {
+    // Elements are parsed pairs
+    for elem in elems {
+      let passes = if is_slot_pred {
+        // build expression by substituting the Slot (#) with the element's
+        // evaluated value and dropping the trailing '&'
+        let mut expr = pred_src.trim_end_matches('&').to_string();
+        let elem_str = evaluate_expression(elem.clone())?;
+        expr = expr.replace('#', &elem_str);
+        // evaluate the resulting Wolfram-expression
+        let res = interpret(&expr)?;
+        as_bool(&res).unwrap_or(false)
+      } else {
+        match pred_src {
+          "EvenQ" | "OddQ" => {
+            let n = evaluate_term(elem.clone())?;
+            if n.fract() != 0.0 {
+              false
+            } else {
+              let even = (n as i64) % 2 == 0;
+              if pred_src == "EvenQ" { even } else { !even }
+            }
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Unknown predicate function: {}",
+              pred_src
+            )));
+          }
+        }
+      };
+      if passes {
+        kept.push(evaluate_expression(elem.clone())?);
+      }
     }
   }
   Ok(format!("{{{}}}", kept.join(", ")))
 }
 
-/// Handle Flatten[list] - Flatten nested lists into a single list
+/// Handle Flatten[list] or Flatten[list, n] - Flatten nested lists
+/// - With 1 arg: Flatten completely
+/// - With 2 args: Flatten only n levels deep
 pub fn flatten(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
-  if args_pairs.len() != 1 {
+  if args_pairs.is_empty() || args_pairs.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Flatten expects exactly 1 argument".into(),
+      "Flatten expects 1 or 2 arguments".into(),
     ));
   }
 
@@ -497,8 +529,20 @@ pub fn flatten(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     ));
   }
 
-  // Function to recursively flatten nested lists
-  fn flatten_list_string(s: &str) -> Result<Vec<String>, InterpreterError> {
+  // Parse level depth if provided
+  let max_depth: Option<usize> = if args_pairs.len() == 2 {
+    let level_str = evaluate_expression(args_pairs[1].clone())?;
+    level_str.parse().ok()
+  } else {
+    None // Flatten completely
+  };
+
+  // Function to flatten lists with optional level limit
+  fn flatten_list_string(
+    s: &str,
+    current_depth: usize,
+    max_depth: Option<usize>,
+  ) -> Result<Vec<String>, InterpreterError> {
     // Remove outer braces and split by commas
     let inner = &s[1..s.len() - 1];
     let mut result = Vec::new();
@@ -514,9 +558,16 @@ pub fn flatten(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
           let part = inner[start..i].trim();
           if !part.is_empty() {
             if part.starts_with('{') && part.ends_with('}') {
-              // Recursively flatten nested list
-              let nested = flatten_list_string(part)?;
-              result.extend(nested);
+              // Check if we should flatten this level
+              let should_flatten =
+                max_depth.is_none_or(|max| current_depth < max);
+              if should_flatten {
+                let nested =
+                  flatten_list_string(part, current_depth + 1, max_depth)?;
+                result.extend(nested);
+              } else {
+                result.push(part.to_string());
+              }
             } else {
               result.push(part.to_string());
             }
@@ -531,8 +582,14 @@ pub fn flatten(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     let last_part = inner[start..].trim();
     if !last_part.is_empty() {
       if last_part.starts_with('{') && last_part.ends_with('}') {
-        let nested = flatten_list_string(last_part)?;
-        result.extend(nested);
+        let should_flatten = max_depth.is_none_or(|max| current_depth < max);
+        if should_flatten {
+          let nested =
+            flatten_list_string(last_part, current_depth + 1, max_depth)?;
+          result.extend(nested);
+        } else {
+          result.push(last_part.to_string());
+        }
       } else {
         result.push(last_part.to_string());
       }
@@ -541,7 +598,7 @@ pub fn flatten(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
     Ok(result)
   }
 
-  let flattened = flatten_list_string(&list_text)?;
+  let flattened = flatten_list_string(&list_text, 0, max_depth)?;
   Ok(format!("{{{}}}", flattened.join(", ")))
 }
 
@@ -856,45 +913,42 @@ pub fn first_or_last(
     )));
   }
   let list_pair = &args_pairs[0];
-  // Accept both List and Expression wrapping a List
-  let list_rule = list_pair.as_rule();
-  let items: Vec<_> = if list_rule == Rule::List {
-    list_pair
-      .clone()
-      .into_inner()
-      .filter(|p| p.as_str() != ",")
-      .collect()
-  } else if list_rule == Rule::Expression {
-    let mut expr_inner = list_pair.clone().into_inner();
-    if let Some(first) = expr_inner.next() {
-      if first.as_rule() == Rule::List {
-        first.into_inner().filter(|p| p.as_str() != ",").collect()
+
+  // Try to get items directly from the pair, or evaluate and parse
+  match crate::functions::list::get_list_items(list_pair) {
+    Ok(items) => {
+      let target = if func_name == "First" {
+        items.first()
       } else {
-        return Err(InterpreterError::EvaluationError(format!(
+        items.last()
+      };
+      match target {
+        Some(item) => evaluate_expression(item.clone()),
+        _ => Err(InterpreterError::EvaluationError("Empty list".into())),
+      }
+    }
+    Err(_) => {
+      // List is the result of a function call or variable - evaluate and parse
+      let list_str = evaluate_expression(list_pair.clone())?;
+      if list_str.starts_with('{') && list_str.ends_with('}') {
+        let inner = &list_str[1..list_str.len() - 1];
+        let parsed = parse_list_elements(inner);
+        if parsed.is_empty() {
+          return Err(InterpreterError::EvaluationError("Empty list".into()));
+        }
+        let target = if func_name == "First" {
+          parsed.first()
+        } else {
+          parsed.last()
+        };
+        Ok(target.unwrap().clone())
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
           "{} function argument must be a list",
           func_name
-        )));
+        )))
       }
-    } else {
-      return Err(InterpreterError::EvaluationError(format!(
-        "{} function argument must be a list",
-        func_name
-      )));
     }
-  } else {
-    return Err(InterpreterError::EvaluationError(format!(
-      "{} function argument must be a list",
-      func_name
-    )));
-  };
-  let target = if func_name == "First" {
-    items.first()
-  } else {
-    items.last()
-  };
-  match target {
-    Some(item) => evaluate_expression(item.clone()),
-    _ => Err(InterpreterError::EvaluationError("Empty list".into())),
   }
 }
 
@@ -910,55 +964,58 @@ pub fn rest_or_most(
       func_name
     )));
   }
-  // extract list items exactly like the First/Last implementation
   let list_pair = &args_pairs[0];
-  let list_rule = list_pair.as_rule();
-  let items: Vec<_> = if list_rule == Rule::List {
-    list_pair
-      .clone()
-      .into_inner()
-      .filter(|p| p.as_str() != ",")
-      .collect()
-  } else if list_rule == Rule::Expression {
-    let mut expr_inner = list_pair.clone().into_inner();
-    if let Some(first) = expr_inner.next() {
-      if first.as_rule() == Rule::List {
-        first.into_inner().filter(|p| p.as_str() != ",").collect()
+
+  // Try to get items directly from the pair, or evaluate and parse
+  match crate::functions::list::get_list_items(list_pair) {
+    Ok(items) => {
+      let slice: Vec<_> = if func_name == "Rest" {
+        if items.len() <= 1 {
+          vec![]
+        } else {
+          items[1..].to_vec()
+        }
       } else {
-        return Err(InterpreterError::EvaluationError(format!(
+        // Most
+        if items.len() <= 1 {
+          vec![]
+        } else {
+          items[..items.len() - 1].to_vec()
+        }
+      };
+      let evaluated: Result<Vec<_>, _> =
+        slice.into_iter().map(|p| evaluate_expression(p)).collect();
+      Ok(format!("{{{}}}", evaluated?.join(", ")))
+    }
+    Err(_) => {
+      // List is the result of a function call or variable - evaluate and parse
+      let list_str = evaluate_expression(list_pair.clone())?;
+      if list_str.starts_with('{') && list_str.ends_with('}') {
+        let inner = &list_str[1..list_str.len() - 1];
+        let parsed = parse_list_elements(inner);
+        let slice: Vec<_> = if func_name == "Rest" {
+          if parsed.len() <= 1 {
+            vec![]
+          } else {
+            parsed[1..].to_vec()
+          }
+        } else {
+          // Most
+          if parsed.len() <= 1 {
+            vec![]
+          } else {
+            parsed[..parsed.len() - 1].to_vec()
+          }
+        };
+        Ok(format!("{{{}}}", slice.join(", ")))
+      } else {
+        Err(InterpreterError::EvaluationError(format!(
           "{} function argument must be a list",
           func_name
-        )));
+        )))
       }
-    } else {
-      return Err(InterpreterError::EvaluationError(format!(
-        "{} function argument must be a list",
-        func_name
-      )));
     }
-  } else {
-    return Err(InterpreterError::EvaluationError(format!(
-      "{} function argument must be a list",
-      func_name
-    )));
-  };
-  let slice: Vec<_> = if func_name == "Rest" {
-    if items.len() <= 1 {
-      vec![]
-    } else {
-      items[1..].to_vec()
-    }
-  } else {
-    // Most
-    if items.len() <= 1 {
-      vec![]
-    } else {
-      items[..items.len() - 1].to_vec()
-    }
-  };
-  let evaluated: Result<Vec<_>, _> =
-    slice.into_iter().map(|p| evaluate_expression(p)).collect();
-  Ok(format!("{{{}}}", evaluated?.join(", ")))
+  }
 }
 
 /// Handle Cases[list, pattern] - Extract elements matching a pattern
@@ -986,13 +1043,15 @@ pub fn cases(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   Ok(format!("{{{}}}", result.join(", ")))
 }
 
-/// Handle DeleteCases[list, pattern] - Remove elements matching a pattern
+/// Handle DeleteCases[list, pattern] or DeleteCases[list, pattern, levelspec, n]
+/// - Remove elements matching a pattern
+/// - With 4 args: levelspec is ignored (assumes level 1), n is max deletions
 pub fn delete_cases(
   args_pairs: &[Pair<Rule>],
 ) -> Result<String, InterpreterError> {
-  if args_pairs.len() != 2 {
+  if args_pairs.len() != 2 && args_pairs.len() != 4 {
     return Err(InterpreterError::EvaluationError(
-      "DeleteCases expects exactly 2 arguments".into(),
+      "DeleteCases expects 2 or 4 arguments".into(),
     ));
   }
 
@@ -1000,12 +1059,47 @@ pub fn delete_cases(
   let pattern_pair = &args_pairs[1];
   let pattern = evaluate_expression(pattern_pair.clone())?;
 
-  let items = crate::functions::list::get_list_items(list_pair)?;
-  let mut result = Vec::new();
+  // Parse max deletions count if provided (4-argument form)
+  let max_deletions: Option<usize> = if args_pairs.len() == 4 {
+    // args_pairs[2] is levelspec (ignored for now, assume level 1)
+    // args_pairs[3] is max count
+    let count_str = evaluate_expression(args_pairs[3].clone())?;
+    count_str.parse().ok()
+  } else {
+    None
+  };
 
-  for item in items {
-    let item_str = evaluate_expression(item.clone())?;
-    if item_str != pattern {
+  // Try to get items directly from the pair, or evaluate and parse
+  let item_strs = match crate::functions::list::get_list_items(list_pair) {
+    Ok(items) => {
+      let res: Result<Vec<_>, _> =
+        items.into_iter().map(|p| evaluate_expression(p)).collect();
+      res?
+    }
+    Err(_) => {
+      // List is the result of a function call or variable - evaluate and parse
+      let list_str = evaluate_expression(list_pair.clone())?;
+      if list_str.starts_with('{') && list_str.ends_with('}') {
+        let inner = &list_str[1..list_str.len() - 1];
+        parse_list_elements(inner)
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of DeleteCases must be a list".into(),
+        ));
+      }
+    }
+  };
+
+  let mut result = Vec::new();
+  let mut deleted_count = 0;
+
+  for item_str in item_strs {
+    let should_delete = item_str == pattern
+      && max_deletions.is_none_or(|max| deleted_count < max);
+
+    if should_delete {
+      deleted_count += 1;
+    } else {
       result.push(item_str);
     }
   }
@@ -1089,10 +1183,26 @@ pub fn partition(
   }
   let n_int = n as usize;
 
-  let items = crate::functions::list::get_list_items(list_pair)?;
-  let evaluated: Result<Vec<_>, _> =
-    items.into_iter().map(|p| evaluate_expression(p)).collect();
-  let evaluated = evaluated?;
+  // Try to get items directly from the pair, or evaluate and parse
+  let evaluated = match crate::functions::list::get_list_items(list_pair) {
+    Ok(items) => {
+      let res: Result<Vec<_>, _> =
+        items.into_iter().map(|p| evaluate_expression(p)).collect();
+      res?
+    }
+    Err(_) => {
+      // List is the result of a function call - evaluate and parse
+      let list_str = evaluate_expression(list_pair.clone())?;
+      if list_str.starts_with('{') && list_str.ends_with('}') {
+        let inner = &list_str[1..list_str.len() - 1];
+        parse_list_elements(inner)
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "First argument of Partition must be a list".into(),
+        ));
+      }
+    }
+  };
 
   // Partition into chunks of size n, discarding incomplete final chunk
   let mut result = Vec::new();
@@ -1420,7 +1530,7 @@ fn get_list_elements(
 }
 
 /// Parse comma-separated list elements (handling nested structures)
-fn parse_list_elements(s: &str) -> Vec<String> {
+pub fn parse_list_elements(s: &str) -> Vec<String> {
   let mut elements = Vec::new();
   let mut current = String::new();
   let mut depth = 0;
@@ -2447,7 +2557,7 @@ pub fn map_indexed(
       .filter(|p| p.as_str() != ",")
       .map(|p| evaluate_expression(p))
       .collect::<Result<_, _>>()?,
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut expr_inner = list_pair.clone().into_inner();
       if let Some(first) = expr_inner.next() {
         if first.as_rule() == Rule::List && expr_inner.next().is_none() {
@@ -2651,7 +2761,7 @@ pub fn scan(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
       .filter(|p| p.as_str() != ",")
       .map(|p| evaluate_expression(p))
       .collect::<Result<_, _>>()?,
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut expr_inner = list_pair.clone().into_inner();
       if let Some(first) = expr_inner.next() {
         if first.as_rule() == Rule::List && expr_inner.next().is_none() {

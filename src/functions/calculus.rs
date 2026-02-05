@@ -135,7 +135,7 @@ fn parse_to_sym(pair: Pair<Rule>) -> Result<SymExpr, InterpreterError> {
       let inner = pair.into_inner().next().unwrap();
       parse_to_sym(inner)
     }
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let items: Vec<_> = pair.into_inner().collect();
 
       if items.len() == 1 {
@@ -589,7 +589,7 @@ pub fn derivative(
   let var_pair = &args_pairs[1];
   let var_name = match var_pair.as_rule() {
     Rule::Identifier => var_pair.as_str().to_string(),
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut inner = var_pair.clone().into_inner();
       if let Some(first) = inner.next() {
         if first.as_rule() == Rule::Identifier && inner.next().is_none() {
@@ -745,7 +745,7 @@ pub fn integral(args_pairs: &[Pair<Rule>]) -> Result<String, InterpreterError> {
   let var_pair = &args_pairs[1];
   let var_name = match var_pair.as_rule() {
     Rule::Identifier => var_pair.as_str().to_string(),
-    Rule::Expression => {
+    Rule::Expression | Rule::ExpressionNoImplicit => {
       let mut inner = var_pair.clone().into_inner();
       if let Some(first) = inner.next() {
         if first.as_rule() == Rule::Identifier && inner.next().is_none() {
