@@ -213,4 +213,7 @@ Statement = _{ FunctionDefinition | Expression }
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
 StatementSeparator = _{ ";"? }
 
-Program = { SOI ~ Statement ~ (StatementSeparator ~ Statement)* ~ EOI }
+// TrailingSemicolon marks that the last statement ends with ; (suppresses output)
+TrailingSemicolon = { ";" }
+
+Program = { SOI ~ Statement ~ (StatementSeparator ~ Statement)* ~ TrailingSemicolon? ~ EOI }
