@@ -1682,6 +1682,56 @@ mod interpreter_tests {
     }
   }
 
+  mod while_loop {
+    use super::*;
+
+    #[test]
+    fn basic_while() {
+      clear_state();
+      assert_eq!(interpret("i = 0; While[i < 5, i++]; i").unwrap(), "5");
+    }
+
+    #[test]
+    fn while_with_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret("n = 0; While[n < 10, n = n + 3]; n").unwrap(),
+        "12"
+      );
+    }
+
+    #[test]
+    fn while_returns_null() {
+      clear_state();
+      assert_eq!(interpret("i = 0; While[i < 3, i++]").unwrap(), "Null");
+    }
+
+    #[test]
+    fn while_with_break() {
+      clear_state();
+      assert_eq!(
+        interpret("i = 0; While[True, i++; If[i >= 5, Break[]]]; i").unwrap(),
+        "5"
+      );
+    }
+
+    #[test]
+    fn while_in_module() {
+      clear_state();
+      assert_eq!(
+        interpret("Module[{i = 0, s = 0}, While[i < 5, s += i; i++]; s]")
+          .unwrap(),
+        "10"
+      );
+    }
+
+    #[test]
+    fn while_false_condition() {
+      clear_state();
+      assert_eq!(interpret("While[False, Print[1]]").unwrap(), "Null");
+    }
+  }
+
   mod return_value {
     use super::*;
 
