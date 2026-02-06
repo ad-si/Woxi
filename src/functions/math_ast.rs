@@ -371,6 +371,15 @@ pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper for Power of two arguments
 fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // Special case: 0^0 is Indeterminate (matches Wolfram)
+  let base_is_zero = matches!(base, Expr::Integer(0))
+    || matches!(base, Expr::Real(f) if *f == 0.0);
+  let exp_is_zero = matches!(exp, Expr::Integer(0))
+    || matches!(exp, Expr::Real(f) if *f == 0.0);
+  if base_is_zero && exp_is_zero {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
   // Special case: integer base with negative integer exponent -> Rational
   if let (Expr::Integer(b), Expr::Integer(e)) = (base, exp)
     && *e < 0
