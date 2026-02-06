@@ -793,3 +793,15 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: func_args.to_vec(),
   })
 }
+
+/// MatchQ[expr, pattern] - Tests if an expression matches a pattern
+pub fn match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MatchQ expects exactly 2 arguments".into(),
+    ));
+  }
+  let matches =
+    crate::functions::list_helpers_ast::matches_pattern_ast(&args[0], &args[1]);
+  Ok(bool_expr(matches))
+}

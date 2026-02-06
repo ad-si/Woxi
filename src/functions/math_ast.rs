@@ -1198,6 +1198,152 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Clip[x
+pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Clip expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let x = match expr_to_num(&args[0]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "Clip".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let (min_val, max_val) = if args.len() == 2 {
+    match &args[1] {
+      Expr::List(bounds) if bounds.len() == 2 => {
+        let min = expr_to_num(&bounds[0]).ok_or_else(|| {
+          InterpreterError::EvaluationError("Clip: min must be numeric".into())
+        })?;
+        let max = expr_to_num(&bounds[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError("Clip: max must be numeric".into())
+        })?;
+        (min, max)
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Clip: second argument must be {min, max}".into(),
+        ));
+      }
+    }
+  } else {
+    (-1.0, 1.0)
+  };
+
+  let clipped = if x < min_val {
+    min_val
+  } else if x > max_val {
+    max_val
+  } else {
+    x
+  };
+
+  Ok(num_to_expr(clipped))
+}
+
+/// RandomChoice[list
+pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::Rng;
+  let mut rng = rand::thread_rng();
+
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RandomChoice expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    Expr::List(_) => {
+      return Err(InterpreterError::EvaluationError(
+        "RandomChoice: list cannot be empty".into(),
+      ));
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "RandomChoice".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if args.len() == 1 {
+    let idx = rng.gen_range(0..items.len());
+    Ok(items[idx].clone())
+  } else {
+    let n = match &args[1] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "RandomChoice: second argument must be a non-negative integer".into(),
+        ));
+      }
+    };
+    let result: Vec<Expr> = (0..n)
+      .map(|_| {
+        let idx = rng.gen_range(0..items.len());
+        items[idx].clone()
+      })
+      .collect();
+    Ok(Expr::List(result))
+  }
+}
+
+/// RandomSample[list
+pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::seq::SliceRandom;
+
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RandomSample expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "RandomSample".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut rng = rand::thread_rng();
+
+  if args.len() == 1 {
+    let mut shuffled = items.clone();
+    shuffled.shuffle(&mut rng);
+    Ok(Expr::List(shuffled))
+  } else {
+    let n = match &args[1] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "RandomSample: second argument must be a non-negative integer".into(),
+        ));
+      }
+    };
+    if n > items.len() {
+      return Err(InterpreterError::EvaluationError(format!(
+        "RandomSample: cannot sample {} elements from list of length {}",
+        n,
+        items.len()
+      )));
+    }
+    let sampled: Vec<Expr> =
+      items.choose_multiple(&mut rng, n).cloned().collect();
+    Ok(Expr::List(sampled))
+  }
+}
+
 /// Sin, Cos, Tan, etc. - Trigonometric functions
 pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -1487,7 +1633,7 @@ fn fibonacci_number(n: u128) -> i128 {
   b
 }
 
-/// IntegerDigits[n] or IntegerDigits[n, base] - Returns list of digits
+/// IntegerDigits[n
 pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1532,7 +1678,7 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(digits))
 }
 
-/// FromDigits[list] or FromDigits[list, base] - Constructs integer from digits
+/// FromDigits[list
 pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1993,7 +2139,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Rationalize[x] or Rationalize[x, dx] - Converts real to rational approximation
+/// Rationalize[x
 pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(

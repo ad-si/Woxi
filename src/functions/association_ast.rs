@@ -230,3 +230,83 @@ pub fn associate_to_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Association(items))
 }
+
+/// KeySort[assoc] - Sorts an association by its keys
+pub fn key_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "KeySort expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Association(items) => {
+      let mut sorted = items.clone();
+      sorted.sort_by(|a, b| {
+        let ka = crate::syntax::expr_to_string(&a.0);
+        let kb = crate::syntax::expr_to_string(&b.0);
+        if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
+          na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+        } else {
+          ka.cmp(&kb)
+        }
+      });
+      Ok(Expr::Association(sorted))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "KeySort expects an association".into(),
+    )),
+  }
+}
+
+/// KeyValueMap[f, assoc] - Maps a function over key-value pairs, returning a list
+/// KeyValueMap[f, <|a -> 1, b -> 2|>] -> {f[a, 1], f[b, 2]}
+pub fn key_value_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "KeyValueMap expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let func = &args[0];
+
+  match &args[1] {
+    Expr::Association(items) => {
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|(key, value)| match func {
+          Expr::Identifier(name) if name == "List" => {
+            Ok(Expr::List(vec![key.clone(), value.clone()]))
+          }
+          Expr::Identifier(name) => {
+            crate::evaluator::evaluate_function_call_ast(
+              name,
+              &[key.clone(), value.clone()],
+            )
+          }
+          Expr::Function { body } => {
+            let substituted = crate::syntax::substitute_slots(
+              body,
+              &[key.clone(), value.clone()],
+            );
+            crate::evaluator::evaluate_expr_to_expr(&substituted)
+          }
+          Expr::FunctionCall { name, args: fargs } => {
+            let mut new_args = fargs.clone();
+            new_args.push(key.clone());
+            new_args.push(value.clone());
+            crate::evaluator::evaluate_function_call_ast(name, &new_args)
+          }
+          _ => Ok(Expr::FunctionCall {
+            name: "KeyValueMap".to_string(),
+            args: vec![func.clone(), Expr::Association(items.clone())],
+          }),
+        })
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "KeyValueMap expects an association as second argument".into(),
+    )),
+  }
+}
