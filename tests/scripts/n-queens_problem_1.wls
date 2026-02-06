@@ -10,3 +10,9 @@ nQueen[q_List: {}, n_] :=
     Except[{Null} | {}], {2}]], Null]
 
 Print[nQueen[{}, 6]]
+
+matrixView[n_] :=
+ Grid[Normal@
+     SparseArray[MapIndexed[{#, First@#2} -> "Q" &, #], {n, n}, "."],
+    Frame -> All] & /@ nQueen[n]
+Print[matrixView[6]]

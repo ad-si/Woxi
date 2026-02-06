@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-PartExtract = { (List | Identifier) ~ "[[" ~ Expression ~ "]]" }
+PartExtract = { (List | Identifier) ~ "[[" ~ Expression ~ ("," ~ Expression)* ~ "]]" }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
@@ -29,6 +29,8 @@ FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" }
 ParenAnonymousFunction = { "(" ~ Expression ~ ")" ~ "&" ~ !"&" }
 // ListAnonymousFunction handles {expr1, expr2, ...}& - for expressions like {#1, #2}&
 ListAnonymousFunction = { List ~ "&" ~ !"&" }
+// RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
+RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
 BaseFunctionCall = { Identifier ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
@@ -42,7 +44,9 @@ Operator = {
   | "|"      // Alternatives operator
   | "===" | "=!=" | "==" | "!="  // SameQ, UnsameQ (must be before == and !=), Equal, Unequal
   | "<=" | ">="
+  | ":>"     // RuleDelayed (must be before := and >)
   | ":="
+  | "->"     // Rule (must be before - and >)
   | "+" | "-" | "*" | "/" | "^"
   | "<" | ">"
   | "=" | "@"
@@ -51,6 +55,10 @@ Operator = {
 // PostfixFunction: function used in postfix application (x // f or x // Map[f])
 // Uses BaseFunctionCall to avoid circular reference with FunctionCall -> FunctionArg -> Expression -> PostfixApplication
 PostfixFunction = { BaseFunctionCall | Identifier }
+
+// Increment/Decrement: x++ or x-- (postfix operators)
+Increment = { Identifier ~ "++" }
+Decrement = { Identifier ~ "--" }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
@@ -86,6 +94,8 @@ Term = _{
   | FunctionCall
   | SimpleAnonymousFunction
   | ImplicitTimes
+  | Increment
+  | Decrement
   | Identifier
   | Slot
   | Association
@@ -114,6 +124,8 @@ TermNoImplicit = _{
   | ParenAnonymousFunction
   | FunctionCall
   | SimpleAnonymousFunction
+  | Increment
+  | Decrement
   | Identifier
   | Slot
   | Association
@@ -165,15 +177,15 @@ ReplaceRepeatedExpr = { Term ~ "//." ~ (List | ReplacementRule) }
 List = { "{" ~ (ListItem ~ ("," ~ ListItem)*)? ~ "}" }
 // ListItem can be a ReplacementRule (for rule lists) or an Expression
 // ReplacementRule must be tried first because x_ -> y looks like Expression x_ followed by -> operator
-ListItem = _{ ReplacementRule | Expression }
+ListItem = _{ RuleAnonymousFunction | ReplacementRule | Expression }
 
-AssociationItem = { Expression ~ "->" ~ Expression }
+AssociationItem = { ConditionExpr ~ "->" ~ ConditionExpr }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
 
 // Function calls (supports chained calls like f[x][y])
 // Simplified: Just use Expression for most args - patterns and compound expressions via Expression's Term
 // FunctionArg can be a ReplacementRule, CompoundExpression, or Expression
-FunctionArg = _{ ReplacementRule | CompoundExpression | Expression }
+FunctionArg = _{ RuleAnonymousFunction | ReplacementRule | CompoundExpression | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ BracketArgs+ }

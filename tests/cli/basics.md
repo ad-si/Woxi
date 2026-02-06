@@ -56,3 +56,17 @@ $ wo 'Print[5]'
 5
 Null
 ```
+
+Multiple arguments are concatenated:
+
+```scrut
+$ wo 'Print["a", "b", "c"]'
+abc
+Null
+```
+
+```scrut
+$ wo 'Print[1, " + ", 2, " = ", 3]'
+1 + 2 = 3
+Null
+```

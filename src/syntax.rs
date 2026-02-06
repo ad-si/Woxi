@@ -570,13 +570,44 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         body: Box::new(body),
       }
     }
+    Rule::RuleAnonymousFunction => {
+      // Anonymous function with Rule body: {#, First@#2} -> "Q" &
+      let inner = pair.into_inner().next().unwrap(); // The ReplacementRule
+      let body = pair_to_expr(inner);
+      Expr::Function {
+        body: Box::new(body),
+      }
+    }
     Rule::PartExtract => {
       let mut inner = pair.into_inner();
-      let expr = pair_to_expr(inner.next().unwrap());
-      let index = pair_to_expr(inner.next().unwrap());
-      Expr::Part {
-        expr: Box::new(expr),
-        index: Box::new(index),
+      let base_expr = pair_to_expr(inner.next().unwrap());
+      // Chain multiple indices as nested Part: a[[1,2,3]] -> Part[Part[Part[a,1],2],3]
+      let mut result = base_expr;
+      for idx_pair in inner {
+        let index = pair_to_expr(idx_pair);
+        result = Expr::Part {
+          expr: Box::new(result),
+          index: Box::new(index),
+        };
+      }
+      result
+    }
+    Rule::Increment => {
+      // x++ -> Increment[x]
+      let inner = pair.into_inner().next().unwrap();
+      let var = pair_to_expr(inner);
+      Expr::FunctionCall {
+        name: "Increment".to_string(),
+        args: vec![var],
+      }
+    }
+    Rule::Decrement => {
+      // x-- -> Decrement[x]
+      let inner = pair.into_inner().next().unwrap();
+      let var = pair_to_expr(inner);
+      Expr::FunctionCall {
+        name: "Decrement".to_string(),
+        args: vec![var],
       }
     }
     Rule::ImplicitTimes => {
@@ -1215,7 +1246,19 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{} // {}", expr_to_string(expr), expr_to_string(func))
     }
     Expr::Part { expr, index } => {
-      format!("{}[[{}]]", expr_to_string(expr), expr_to_string(index))
+      // Flatten nested Part into a single [[i, j, k]] notation
+      let mut indices = vec![expr_to_string(index)];
+      let mut base = expr.as_ref();
+      while let Expr::Part {
+        expr: inner_expr,
+        index: inner_index,
+      } = base
+      {
+        indices.push(expr_to_string(inner_index));
+        base = inner_expr.as_ref();
+      }
+      indices.reverse();
+      format!("{}[[{}]]", expr_to_string(base), indices.join(", "))
     }
     Expr::Function { body } => {
       format!("{}&", expr_to_string(body))
@@ -1531,9 +1574,11 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
       expr: Box::new(substitute_slots(e, values)),
       index: Box::new(substitute_slots(index, values)),
     },
-    Expr::Function { body } => Expr::Function {
-      body: Box::new(substitute_slots(body, values)),
-    },
+    Expr::Function { body } => {
+      // Do NOT substitute slots inside nested Function bodies.
+      // Slots (#, #2, etc.) bind to the innermost & (Function).
+      Expr::Function { body: body.clone() }
+    }
     Expr::PatternOptional {
       name,
       head,

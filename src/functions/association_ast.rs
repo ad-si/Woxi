@@ -177,6 +177,7 @@ pub fn associate_to_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (key_expr, val_expr)
       })
       .collect::<Vec<_>>(),
+    Some(crate::StoredValue::ExprVal(Expr::Association(items))) => items,
     Some(crate::StoredValue::Raw(s)) => {
       if let Ok(Expr::Association(items)) = crate::syntax::string_to_expr(&s) {
         items
@@ -187,7 +188,7 @@ pub fn associate_to_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )));
       }
     }
-    None => {
+    None | Some(crate::StoredValue::ExprVal(_)) => {
       return Err(InterpreterError::EvaluationError(format!(
         "{} is not defined",
         var_name
