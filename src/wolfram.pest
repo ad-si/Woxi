@@ -167,7 +167,9 @@ Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>
 // Simplified: Just use Expression for most args - patterns and compound expressions via Expression's Term
 // FunctionArg can be a ReplacementRule, CompoundExpression, or Expression
 FunctionArg = _{ ReplacementRule | CompoundExpression | Expression }
-FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
+// BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
+BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
+FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ BracketArgs+ }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
 FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternWithHead | PatternSimple }

@@ -1176,6 +1176,38 @@ pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Flatten[list, n] - flatten a list to depth n
+pub fn flatten_level_ast(
+  list: &Expr,
+  depth: i128,
+) -> Result<Expr, InterpreterError> {
+  fn flatten_to_depth(expr: &Expr, depth: i128, result: &mut Vec<Expr>) {
+    if depth <= 0 {
+      result.push(expr.clone());
+      return;
+    }
+    match expr {
+      Expr::List(items) => {
+        for item in items {
+          flatten_to_depth(item, depth - 1, result);
+        }
+      }
+      _ => result.push(expr.clone()),
+    }
+  }
+
+  match list {
+    Expr::List(items) => {
+      let mut result = Vec::new();
+      for item in items {
+        flatten_to_depth(item, depth, &mut result);
+      }
+      Ok(Expr::List(result))
+    }
+    _ => Ok(list.clone()),
+  }
+}
+
 /// AST-based Reverse: reverse a list.
 pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
@@ -2403,6 +2435,15 @@ pub fn delete_cases_ast(
   list: &Expr,
   pattern: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  delete_cases_with_count_ast(list, pattern, None)
+}
+
+/// DeleteCases[list, pattern, levelspec, n] - delete at most n matches
+pub fn delete_cases_with_count_ast(
+  list: &Expr,
+  pattern: &Expr,
+  max_count: Option<i128>,
+) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
@@ -2414,11 +2455,22 @@ pub fn delete_cases_ast(
   };
 
   let pattern_str = crate::syntax::expr_to_string(pattern);
+  let mut removed = 0i128;
   let result: Vec<Expr> = items
     .iter()
     .filter(|item| {
+      if let Some(max) = max_count
+        && removed >= max
+      {
+        return true; // keep remaining items
+      }
       let item_str = crate::syntax::expr_to_string(item);
-      !matches_pattern_simple(&item_str, &pattern_str)
+      if matches_pattern_simple(&item_str, &pattern_str) {
+        removed += 1;
+        false
+      } else {
+        true
+      }
     })
     .cloned()
     .collect();
@@ -2581,5 +2633,362 @@ pub fn insert_ast(
 
   let mut result = items;
   result.insert(insert_pos, elem.clone());
+  Ok(Expr::List(result))
+}
+
+/// Array[f, n] - creates a list by applying f to indices 1..n
+pub fn array_ast(func: &Expr, n: i128) -> Result<Expr, InterpreterError> {
+  let mut result = Vec::new();
+  for i in 1..=n {
+    let arg = Expr::Integer(i);
+    let val = apply_func_ast(func, &arg)?;
+    result.push(val);
+  }
+  Ok(Expr::List(result))
+}
+
+/// Gather[list] - gathers elements into sublists of identical elements
+pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Gather expects a list argument".into(),
+      ));
+    }
+  };
+  let mut groups: Vec<Vec<Expr>> = Vec::new();
+  for item in items {
+    let found = groups.iter_mut().find(|g| {
+      crate::syntax::expr_to_string(&g[0])
+        == crate::syntax::expr_to_string(item)
+    });
+    if let Some(group) = found {
+      group.push(item.clone());
+    } else {
+      groups.push(vec![item.clone()]);
+    }
+  }
+  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+}
+
+/// GatherBy[list, f] - gathers elements into sublists by applying f
+pub fn gather_by_ast(
+  func: &Expr,
+  list: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "GatherBy expects a list as first argument".into(),
+      ));
+    }
+  };
+  let mut groups: Vec<(String, Vec<Expr>)> = Vec::new();
+  for item in items {
+    let key = apply_func_ast(func, item)?;
+    let key_str = crate::syntax::expr_to_string(&key);
+    let found = groups.iter_mut().find(|(k, _)| *k == key_str);
+    if let Some((_, group)) = found {
+      group.push(item.clone());
+    } else {
+      groups.push((key_str, vec![item.clone()]));
+    }
+  }
+  Ok(Expr::List(
+    groups.into_iter().map(|(_, v)| Expr::List(v)).collect(),
+  ))
+}
+
+/// Split[list] - splits into sublists of identical consecutive elements
+pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Split expects a list argument".into(),
+      ));
+    }
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
+  for item in items.iter().skip(1) {
+    let last_group = groups.last().unwrap();
+    if crate::syntax::expr_to_string(&last_group[0])
+      == crate::syntax::expr_to_string(item)
+    {
+      groups.last_mut().unwrap().push(item.clone());
+    } else {
+      groups.push(vec![item.clone()]);
+    }
+  }
+  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+}
+
+/// SplitBy[list, f] - splits into sublists of consecutive elements with same f value
+pub fn split_by_ast(
+  func: &Expr,
+  list: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "SplitBy expects a list as first argument".into(),
+      ));
+    }
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  let mut prev_key = apply_func_ast(func, &items[0])?;
+  let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
+  for item in items.iter().skip(1) {
+    let key = apply_func_ast(func, item)?;
+    if crate::syntax::expr_to_string(&key)
+      == crate::syntax::expr_to_string(&prev_key)
+    {
+      groups.last_mut().unwrap().push(item.clone());
+    } else {
+      groups.push(vec![item.clone()]);
+      prev_key = key;
+    }
+  }
+  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+}
+
+/// Extract[list, n] - extracts element at position n
+/// Extract[list, {n1, n2, ...}] - extracts element at nested position
+pub fn extract_ast(
+  list: &Expr,
+  index: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match index {
+    Expr::Integer(_) => part_ast(list, index),
+    Expr::List(indices) => {
+      // Nested extraction: Extract[expr, {i, j, ...}]
+      let mut current = list.clone();
+      for idx in indices {
+        current = part_ast(&current, idx)?;
+      }
+      Ok(current)
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Extract: invalid index".into(),
+    )),
+  }
+}
+
+/// Catenate[{list1, list2, ...}] - concatenates lists
+pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
+  let outer = match list_of_lists {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Catenate expects a list of lists".into(),
+      ));
+    }
+  };
+  let mut result = Vec::new();
+  for item in outer {
+    match item {
+      Expr::List(inner) => result.extend(inner.clone()),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Catenate expects all elements to be lists".into(),
+        ));
+      }
+    }
+  }
+  Ok(Expr::List(result))
+}
+
+/// Apply[f, list] - applies f to the elements of list (f @@ list)
+pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Apply expects a list as second argument".into(),
+      ));
+    }
+  };
+  match func {
+    Expr::Identifier(name) => {
+      crate::evaluator::evaluate_function_call_ast(name, &items)
+    }
+    Expr::Function { body } => {
+      let substituted = crate::syntax::substitute_slots(body, &items);
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Apply: first argument must be a function".into(),
+    )),
+  }
+}
+
+/// Identity[x] - returns x unchanged
+pub fn identity_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+  Ok(arg.clone())
+}
+
+/// Outer[f, list1, list2] - generalized outer product
+pub fn outer_ast(
+  func: &Expr,
+  list1: &Expr,
+  list2: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items1 = match list1 {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Outer expects lists as arguments".into(),
+      ));
+    }
+  };
+  let items2 = match list2 {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Outer expects lists as arguments".into(),
+      ));
+    }
+  };
+  let mut result = Vec::new();
+  for a in items1 {
+    let mut row = Vec::new();
+    for b in items2 {
+      let val = match func {
+        Expr::Identifier(name) => crate::evaluator::evaluate_function_call_ast(
+          name,
+          &[a.clone(), b.clone()],
+        )?,
+        Expr::Function { body } => {
+          let substituted =
+            crate::syntax::substitute_slots(body, &[a.clone(), b.clone()]);
+          crate::evaluator::evaluate_expr_to_expr(&substituted)?
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Outer: first argument must be a function".into(),
+          ));
+        }
+      };
+      row.push(val);
+    }
+    result.push(Expr::List(row));
+  }
+  Ok(Expr::List(result))
+}
+
+/// Inner[f, list1, list2, g] - generalized inner product
+pub fn inner_ast(
+  f: &Expr,
+  list1: &Expr,
+  list2: &Expr,
+  g: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items1 = match list1 {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Inner expects lists as arguments".into(),
+      ));
+    }
+  };
+  let items2 = match list2 {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Inner expects lists as arguments".into(),
+      ));
+    }
+  };
+  if items1.len() != items2.len() {
+    return Err(InterpreterError::EvaluationError(
+      "Inner: lists must have the same length".into(),
+    ));
+  }
+  // Apply f pairwise, then apply g to combine
+  let mut products = Vec::new();
+  for (a, b) in items1.iter().zip(items2.iter()) {
+    let val = match f {
+      Expr::Identifier(name) => crate::evaluator::evaluate_function_call_ast(
+        name,
+        &[a.clone(), b.clone()],
+      )?,
+      Expr::Function { body } => {
+        let substituted =
+          crate::syntax::substitute_slots(body, &[a.clone(), b.clone()]);
+        crate::evaluator::evaluate_expr_to_expr(&substituted)?
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Inner: first argument must be a function".into(),
+        ));
+      }
+    };
+    products.push(val);
+  }
+  // Apply g to combine all products
+  match g {
+    Expr::Identifier(name) => {
+      crate::evaluator::evaluate_function_call_ast(name, &products)
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Inner: fourth argument must be a function".into(),
+    )),
+  }
+}
+
+/// ReplacePart[list, n -> val] - replaces element at position n
+pub fn replace_part_ast(
+  list: &Expr,
+  rule: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ReplacePart expects a list as first argument".into(),
+      ));
+    }
+  };
+  let (pos, val) = match rule {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ReplacePart expects a rule as second argument".into(),
+      ));
+    }
+  };
+  let idx = match pos {
+    Expr::Integer(n) => {
+      let len = items.len() as i128;
+      if *n > 0 && *n <= len {
+        (*n - 1) as usize
+      } else if *n < 0 && -*n <= len {
+        (len + *n) as usize
+      } else {
+        return Err(InterpreterError::EvaluationError(format!(
+          "ReplacePart: position {} out of range",
+          n
+        )));
+      }
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ReplacePart: position must be an integer".into(),
+      ));
+    }
+  };
+  let mut result = items;
+  result[idx] = val.clone();
   Ok(Expr::List(result))
 }
