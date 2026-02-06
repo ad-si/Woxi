@@ -57,7 +57,7 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if expression is constant with respect to a variable
-fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
+pub fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
   match expr {
     Expr::Integer(_) | Expr::Real(_) | Expr::String(_) | Expr::Constant(_) => {
       true
@@ -505,7 +505,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// Simplify an expression
-fn simplify(expr: Expr) -> Expr {
+pub fn simplify(expr: Expr) -> Expr {
   match expr {
     Expr::BinaryOp { op, left, right } => {
       let left = simplify(*left);

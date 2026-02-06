@@ -1,0 +1,1644 @@
+//! AST-native polynomial functions.
+//!
+//! Expand, Factor, Simplify, Coefficient, Exponent, PolynomialQ.
+
+use crate::InterpreterError;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
+
+use super::calculus_ast::{is_constant_wrt, simplify};
+
+// ─── helpers ────────────────────────────────────────────────────────
+
+use std::collections::HashMap;
+
+/// Extract a map of variable_name → exponent from a list of variable factors.
+/// E.g. [x^2, y] → {"x": 2, "y": 1}
+fn extract_exponent_map(var_factors: &[Expr]) -> HashMap<String, i128> {
+  let mut map = HashMap::new();
+  for f in var_factors {
+    match f {
+      Expr::Identifier(name) => {
+        *map.entry(name.clone()).or_insert(0) += 1;
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        let name = expr_to_string(left);
+        let exp = match right.as_ref() {
+          Expr::Integer(n) => *n,
+          _ => 1,
+        };
+        *map.entry(name).or_insert(0) += exp;
+      }
+      _ => {
+        let name = expr_to_string(f);
+        *map.entry(name).or_insert(0) += 1;
+      }
+    }
+  }
+  map
+}
+
+/// Helper to create boolean result
+fn bool_expr(b: bool) -> Expr {
+  Expr::Identifier(if b { "True" } else { "False" }.to_string())
+}
+
+// ─── PolynomialQ ────────────────────────────────────────────────────
+
+/// PolynomialQ[expr, var] - Tests if expr is a polynomial in var
+pub fn polynomial_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "PolynomialQ expects exactly 2 arguments".into(),
+    ));
+  }
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Second argument of PolynomialQ must be a symbol".into(),
+      ));
+    }
+  };
+  Ok(bool_expr(is_polynomial(&args[0], var)))
+}
+
+/// Recursively check whether an expression is a polynomial in `var`.
+fn is_polynomial(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => true,
+    Expr::Identifier(_) => true, // either it IS the variable or a constant symbol – both ok
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times => {
+        is_polynomial(left, var) && is_polynomial(right, var)
+      }
+      BinaryOperator::Power => {
+        // base must contain the variable and exponent must be a non-negative integer
+        if is_constant_wrt(right, var) {
+          if let Expr::Integer(n) = right.as_ref() {
+            *n >= 0 && is_polynomial(left, var)
+          } else {
+            // non-integer exponent like x^y where y is a symbol ≠ var
+            // Only polynomial if base is constant w.r.t. var
+            is_constant_wrt(left, var)
+          }
+        } else {
+          false
+        }
+      }
+      BinaryOperator::Divide => {
+        // polynomial / constant-in-var is still polynomial
+        is_polynomial(left, var) && is_constant_wrt(right, var)
+      }
+      _ => is_constant_wrt(expr, var),
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_polynomial(operand, var),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" | "Times" => args.iter().all(|a| is_polynomial(a, var)),
+      "Power" if args.len() == 2 => {
+        if is_constant_wrt(&args[1], var) {
+          if let Expr::Integer(n) = &args[1] {
+            *n >= 0 && is_polynomial(&args[0], var)
+          } else {
+            is_constant_wrt(&args[0], var)
+          }
+        } else {
+          false
+        }
+      }
+      _ => is_constant_wrt(expr, var),
+    },
+    Expr::List(_) => false,
+    _ => is_constant_wrt(expr, var),
+  }
+}
+
+// ─── Exponent ───────────────────────────────────────────────────────
+
+/// Exponent[expr, var] - Returns the maximum power of var in expr
+pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Exponent expects exactly 2 arguments".into(),
+    ));
+  }
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Second argument of Exponent must be a symbol".into(),
+      ));
+    }
+  };
+  match max_power(&args[0], var) {
+    Some(n) => Ok(Expr::Integer(n)),
+    None => Ok(Expr::FunctionCall {
+      name: "Exponent".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Find the maximum power of `var` in `expr`.  Returns None for non-polynomial forms.
+fn max_power(expr: &Expr, var: &str) -> Option<i128> {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) | Expr::String(_) => {
+      Some(0)
+    }
+    Expr::Identifier(name) => {
+      if name == var {
+        Some(1)
+      } else {
+        Some(0)
+      }
+    }
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus | BinaryOperator::Minus => {
+        let l = max_power(left, var)?;
+        let r = max_power(right, var)?;
+        Some(l.max(r))
+      }
+      BinaryOperator::Times => {
+        let l = max_power(left, var)?;
+        let r = max_power(right, var)?;
+        Some(l + r)
+      }
+      BinaryOperator::Power => {
+        if is_constant_wrt(left, var) {
+          Some(0)
+        } else if is_constant_wrt(right, var) {
+          if let Expr::Integer(n) = right.as_ref() {
+            let base_pow = max_power(left, var)?;
+            Some(base_pow * n)
+          } else {
+            None
+          }
+        } else {
+          None
+        }
+      }
+      BinaryOperator::Divide => {
+        if is_constant_wrt(right, var) {
+          max_power(left, var)
+        } else {
+          None
+        }
+      }
+      _ => {
+        if is_constant_wrt(expr, var) {
+          Some(0)
+        } else {
+          None
+        }
+      }
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => max_power(operand, var),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" => {
+        let mut m: i128 = 0;
+        for a in args {
+          m = m.max(max_power(a, var)?);
+        }
+        Some(m)
+      }
+      "Times" => {
+        let mut s: i128 = 0;
+        for a in args {
+          s += max_power(a, var)?;
+        }
+        Some(s)
+      }
+      "Power" if args.len() == 2 => {
+        if is_constant_wrt(&args[0], var) {
+          Some(0)
+        } else if let Expr::Integer(n) = &args[1] {
+          let base_pow = max_power(&args[0], var)?;
+          Some(base_pow * n)
+        } else {
+          None
+        }
+      }
+      _ => {
+        if is_constant_wrt(expr, var) {
+          Some(0)
+        } else {
+          None
+        }
+      }
+    },
+    _ => {
+      if is_constant_wrt(expr, var) {
+        Some(0)
+      } else {
+        None
+      }
+    }
+  }
+}
+
+// ─── Coefficient ────────────────────────────────────────────────────
+
+/// Coefficient[expr, var] or Coefficient[expr, var, n]
+/// Returns the coefficient of var^n (default n=1).
+pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Coefficient expects 2 or 3 arguments".into(),
+    ));
+  }
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Second argument of Coefficient must be a symbol".into(),
+      ));
+    }
+  };
+  let power: i128 = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(n) => *n,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Coefficient".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  // First expand, then extract coefficient
+  let expanded = expand_expr(&args[0]);
+  let terms = collect_additive_terms(&expanded);
+  let mut coeff_sum: Vec<Expr> = Vec::new();
+
+  for term in &terms {
+    if let Some(c) = extract_coefficient_of_power(term, var, power) {
+      coeff_sum.push(c);
+    }
+  }
+
+  if coeff_sum.is_empty() {
+    Ok(Expr::Integer(0))
+  } else if coeff_sum.len() == 1 {
+    Ok(coeff_sum.remove(0))
+  } else {
+    // Sum all coefficient contributions
+    let mut result = coeff_sum.remove(0);
+    for c in coeff_sum {
+      result = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(result),
+        right: Box::new(c),
+      };
+    }
+    Ok(simplify(result))
+  }
+}
+
+/// Collect all additive terms from an expression (flattening Plus).
+fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut terms = collect_additive_terms(left);
+      terms.extend(collect_additive_terms(right));
+      terms
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let mut terms = collect_additive_terms(left);
+      let right_terms = collect_additive_terms(right);
+      for t in right_terms {
+        terms.push(Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(t),
+        });
+      }
+      terms
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut terms = Vec::new();
+      for a in args {
+        terms.extend(collect_additive_terms(a));
+      }
+      terms
+    }
+    _ => vec![expr.clone()],
+  }
+}
+
+/// From a single term, extract the coefficient of `var^power`.
+/// E.g. for term = 3*x^2, var = "x", power = 2 → Some(3)
+/// For term = a*x^2, var = "x", power = 2 → Some(a)
+fn extract_coefficient_of_power(
+  term: &Expr,
+  var: &str,
+  power: i128,
+) -> Option<Expr> {
+  // Get the power of var and the remaining coefficient
+  let (term_power, coeff) = term_var_power_and_coeff(term, var);
+  if term_power == power {
+    Some(coeff)
+  } else {
+    None
+  }
+}
+
+/// Decompose a multiplicative term into (power_of_var, coefficient).
+/// E.g. 3*x^2 → (2, 3); a*x → (1, a); 5 → (0, 5); x → (1, 1)
+fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
+  match term {
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) | Expr::String(_) => {
+      (0, term.clone())
+    }
+    Expr::Identifier(name) => {
+      if name == var {
+        (1, Expr::Integer(1))
+      } else {
+        (0, term.clone())
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Identifier(name) = left.as_ref()
+        && name == var
+        && let Expr::Integer(n) = right.as_ref()
+      {
+        return (*n, Expr::Integer(1));
+      }
+      // Check if the whole thing is constant w.r.t. var
+      if is_constant_wrt(term, var) {
+        (0, term.clone())
+      } else {
+        // Complex expression — try to factor out var powers
+        (-1, term.clone()) // sentinel: won't match any requested power
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (lp, lc) = term_var_power_and_coeff(left, var);
+      let (rp, rc) = term_var_power_and_coeff(right, var);
+      let total_power = lp + rp;
+      let coeff = multiply_exprs(&lc, &rc);
+      (total_power, coeff)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (p, c) = term_var_power_and_coeff(operand, var);
+      (
+        p,
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(c),
+        },
+      )
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Times" => {
+        let mut total_power: i128 = 0;
+        let mut coeffs: Vec<Expr> = Vec::new();
+        for a in args {
+          let (p, c) = term_var_power_and_coeff(a, var);
+          total_power += p;
+          coeffs.push(c);
+        }
+        let coeff = coeffs
+          .into_iter()
+          .reduce(|a, b| multiply_exprs(&a, &b))
+          .unwrap_or(Expr::Integer(1));
+        (total_power, coeff)
+      }
+      "Power" if args.len() == 2 => {
+        if let Expr::Identifier(name) = &args[0]
+          && name == var
+          && let Expr::Integer(n) = &args[1]
+        {
+          return (*n, Expr::Integer(1));
+        }
+        if is_constant_wrt(term, var) {
+          (0, term.clone())
+        } else {
+          (-1, term.clone())
+        }
+      }
+      _ => {
+        if is_constant_wrt(term, var) {
+          (0, term.clone())
+        } else {
+          (-1, term.clone())
+        }
+      }
+    },
+    _ => {
+      if is_constant_wrt(term, var) {
+        (0, term.clone())
+      } else {
+        (-1, term.clone())
+      }
+    }
+  }
+}
+
+/// Multiply two expressions, simplifying trivial cases.
+fn multiply_exprs(a: &Expr, b: &Expr) -> Expr {
+  match (a, b) {
+    (Expr::Integer(1), _) => b.clone(),
+    (_, Expr::Integer(1)) => a.clone(),
+    (Expr::Integer(0), _) | (_, Expr::Integer(0)) => Expr::Integer(0),
+    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x * y),
+    _ => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
+    },
+  }
+}
+
+/// Add two expressions, simplifying trivial cases.
+fn add_exprs(a: &Expr, b: &Expr) -> Expr {
+  match (a, b) {
+    (Expr::Integer(0), _) => b.clone(),
+    (_, Expr::Integer(0)) => a.clone(),
+    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
+    _ => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
+    },
+  }
+}
+
+// ─── Expand ─────────────────────────────────────────────────────────
+
+/// Expand[expr] - Expands products and positive integer powers
+pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Expand expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(expand_and_combine(&args[0]))
+}
+
+/// Expand an expression and combine like terms.
+fn expand_and_combine(expr: &Expr) -> Expr {
+  let expanded = expand_expr(expr);
+  let terms = collect_additive_terms(&expanded);
+  combine_and_build(terms)
+}
+
+/// Recursively expand an expression.
+fn expand_expr(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::Identifier(_)
+    | Expr::Slot(_) => expr.clone(),
+
+    Expr::BinaryOp { op, left, right } => {
+      let left_exp = expand_expr(left);
+      let right_exp = expand_expr(right);
+      match op {
+        BinaryOperator::Plus => Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(left_exp),
+          right: Box::new(right_exp),
+        },
+        BinaryOperator::Minus => Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(left_exp),
+          right: Box::new(right_exp),
+        },
+        BinaryOperator::Times => distribute_product(&left_exp, &right_exp),
+        BinaryOperator::Power => {
+          // (sum)^n where n is positive integer
+          if let Expr::Integer(n) = &right_exp
+            && *n >= 2
+            && is_sum(&left_exp)
+          {
+            return expand_power(&left_exp, *n);
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(left_exp),
+            right: Box::new(right_exp),
+          }
+        }
+        _ => Expr::BinaryOp {
+          op: *op,
+          left: Box::new(left_exp),
+          right: Box::new(right_exp),
+        },
+      }
+    }
+
+    Expr::UnaryOp { op, operand } => {
+      let operand_exp = expand_expr(operand);
+      match op {
+        UnaryOperator::Minus => {
+          // Distribute minus over sums
+          let terms = collect_additive_terms(&operand_exp);
+          let negated: Vec<Expr> =
+            terms.into_iter().map(|t| negate_term(&t)).collect();
+          build_sum(negated)
+        }
+        _ => Expr::UnaryOp {
+          op: *op,
+          operand: Box::new(operand_exp),
+        },
+      }
+    }
+
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" => {
+        let expanded_args: Vec<Expr> = args.iter().map(expand_expr).collect();
+        let mut all_terms = Vec::new();
+        for a in &expanded_args {
+          all_terms.extend(collect_additive_terms(a));
+        }
+        build_sum(all_terms)
+      }
+      "Times" => {
+        let expanded_args: Vec<Expr> = args.iter().map(expand_expr).collect();
+        if expanded_args.is_empty() {
+          return Expr::Integer(1);
+        }
+        let mut result = expanded_args[0].clone();
+        for a in &expanded_args[1..] {
+          result = distribute_product(&result, a);
+        }
+        result
+      }
+      "Power" if args.len() == 2 => {
+        let base = expand_expr(&args[0]);
+        let exp = expand_expr(&args[1]);
+        if let Expr::Integer(n) = &exp
+          && *n >= 2
+          && is_sum(&base)
+        {
+          return expand_power(&base, *n);
+        }
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![base, exp],
+        }
+      }
+      _ => expr.clone(),
+    },
+
+    _ => expr.clone(),
+  }
+}
+
+/// Check if an expression is a sum (Plus).
+fn is_sum(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } if name == "Plus" => true,
+    _ => false,
+  }
+}
+
+/// Distribute the product of two expanded expressions.
+/// If either is a sum, produce all cross-products.
+fn distribute_product(left: &Expr, right: &Expr) -> Expr {
+  let left_terms = collect_additive_terms(left);
+  let right_terms = collect_additive_terms(right);
+
+  if left_terms.len() == 1 && right_terms.len() == 1 {
+    // Neither is a sum — just multiply
+    return multiply_terms(&left_terms[0], &right_terms[0]);
+  }
+
+  let mut result_terms = Vec::new();
+  for l in &left_terms {
+    for r in &right_terms {
+      result_terms.push(multiply_terms(l, r));
+    }
+  }
+  build_sum(result_terms)
+}
+
+/// Multiply two non-sum terms (individual monomials).
+fn multiply_terms(a: &Expr, b: &Expr) -> Expr {
+  // Handle negation
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = a
+  {
+    return negate_term(&multiply_terms(operand, b));
+  }
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = b
+  {
+    return negate_term(&multiply_terms(a, operand));
+  }
+
+  match (a, b) {
+    (Expr::Integer(1), _) => b.clone(),
+    (_, Expr::Integer(1)) => a.clone(),
+    (Expr::Integer(0), _) | (_, Expr::Integer(0)) => Expr::Integer(0),
+    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x * y),
+    (Expr::Real(x), Expr::Real(y)) => Expr::Real(x * y),
+    (Expr::Integer(x), Expr::Real(y)) | (Expr::Real(y), Expr::Integer(x)) => {
+      Expr::Real(*x as f64 * y)
+    }
+    _ => {
+      // Combine like bases: x * x → x^2, x^a * x^b → x^(a+b)
+      let mut a_factors = collect_multiplicative_factors(a);
+      let b_factors = collect_multiplicative_factors(b);
+      a_factors.extend(b_factors);
+      combine_product_factors(a_factors)
+    }
+  }
+}
+
+/// Combine multiplicative factors, merging like bases into powers.
+/// [x, x, y] → x^2 * y
+fn combine_product_factors(factors: Vec<Expr>) -> Expr {
+  // Group factors by base, sum exponents
+  let mut base_exps: Vec<(String, Expr, Expr)> = Vec::new(); // (sort_key, base, exponent)
+  let mut numeric_coeff = Expr::Integer(1);
+
+  for f in &factors {
+    match f {
+      Expr::Integer(_) | Expr::Real(_) => {
+        numeric_coeff = multiply_exprs(&numeric_coeff, f);
+      }
+      _ => {
+        let (base, exp) = extract_base_and_exp(f);
+        let key = expr_to_string(&base);
+        if let Some(entry) = base_exps.iter_mut().find(|(k, _, _)| *k == key) {
+          entry.2 = add_exprs(&entry.2, &exp);
+        } else {
+          base_exps.push((key, base, exp));
+        }
+      }
+    }
+  }
+
+  // Build result
+  let mut result_factors: Vec<Expr> = Vec::new();
+  if !matches!(&numeric_coeff, Expr::Integer(1)) {
+    result_factors.push(numeric_coeff);
+  }
+
+  for (_, base, exp) in base_exps {
+    let exp = simplify(exp);
+    if matches!(&exp, Expr::Integer(0)) {
+      continue; // x^0 = 1, skip
+    } else if matches!(&exp, Expr::Integer(1)) {
+      result_factors.push(base);
+    } else {
+      result_factors.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(exp),
+      });
+    }
+  }
+
+  if result_factors.is_empty() {
+    Expr::Integer(1)
+  } else {
+    build_product(result_factors)
+  }
+}
+
+/// Extract base and exponent from a factor.
+fn extract_base_and_exp(expr: &Expr) -> (Expr, Expr) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (*left.clone(), *right.clone()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    _ => (expr.clone(), Expr::Integer(1)),
+  }
+}
+
+/// Negate a term.
+fn negate_term(t: &Expr) -> Expr {
+  match t {
+    Expr::Integer(n) => Expr::Integer(-n),
+    Expr::Real(f) => Expr::Real(-f),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => *operand.clone(),
+    _ => Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(t.clone()),
+    },
+  }
+}
+
+/// Expand (sum)^n by repeated distribution.
+fn expand_power(base: &Expr, n: i128) -> Expr {
+  if n == 0 {
+    return Expr::Integer(1);
+  }
+  if n == 1 {
+    return base.clone();
+  }
+  // Repeated multiplication
+  let mut result = base.clone();
+  for _ in 1..n {
+    result = distribute_product(&result, base);
+    // Combine like terms to keep expression manageable
+    let terms = collect_additive_terms(&result);
+    result = combine_and_build(terms);
+  }
+  result
+}
+
+/// Build a sum (BinaryOp::Plus chain) from terms.
+fn build_sum(terms: Vec<Expr>) -> Expr {
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+  let mut iter = terms.into_iter();
+  let mut result = iter.next().unwrap();
+  for t in iter {
+    // Handle negative terms: a + (-b) stays as BinaryOp::Plus with UnaryOp::Minus
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(t),
+    };
+  }
+  result
+}
+
+/// Combine like terms and sort, then build the final expression.
+fn combine_and_build(terms: Vec<Expr>) -> Expr {
+  // Represent each term as (key, coefficient) where key identifies the "variable part"
+  let mut term_map: Vec<(String, Vec<Expr>, Expr)> = Vec::new(); // (sort_key, var_factors, coeff)
+
+  for term in &terms {
+    let (coeff, var_key, var_factors) = decompose_term(term);
+    // Find existing entry
+    if let Some(entry) = term_map.iter_mut().find(|(k, _, _)| *k == var_key) {
+      entry.2 = add_exprs(&entry.2, &coeff);
+    } else {
+      term_map.push((var_key, var_factors, coeff));
+    }
+  }
+
+  // Sort terms using Wolfram's canonical ordering:
+  // Reverse-variable lexicographic ascending — sort by last variable ascending,
+  // then next-to-last ascending, etc. Constants come first naturally (all exponents 0).
+  term_map.sort_by(|(ka, va, _), (kb, vb, _)| {
+    // Constants first
+    match (ka.is_empty(), kb.is_empty()) {
+      (true, true) => return std::cmp::Ordering::Equal,
+      (true, false) => return std::cmp::Ordering::Less,
+      (false, true) => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
+    let ea = extract_exponent_map(va);
+    let eb = extract_exponent_map(vb);
+    // Collect all variable names, sort alphabetically
+    let mut all_vars: Vec<&String> = ea.keys().chain(eb.keys()).collect();
+    all_vars.sort();
+    all_vars.dedup();
+    // Compare from LAST variable ascending, then next-to-last ascending, etc.
+    for var in all_vars.iter().rev() {
+      let pa = ea.get(*var).copied().unwrap_or(0);
+      let pb = eb.get(*var).copied().unwrap_or(0);
+      if pa != pb {
+        return pa.cmp(&pb); // ascending
+      }
+    }
+    std::cmp::Ordering::Equal
+  });
+
+  // Build result terms
+  let mut result_terms: Vec<Expr> = Vec::new();
+  for (_, var_factors, coeff) in term_map {
+    let coeff = simplify(coeff);
+    if matches!(&coeff, Expr::Integer(0)) {
+      continue; // skip zero terms
+    }
+    if var_factors.is_empty() {
+      // Constant term
+      result_terms.push(coeff);
+    } else if matches!(&coeff, Expr::Integer(1)) {
+      // Coefficient is 1, just use the variable part
+      let var_expr = build_product(var_factors);
+      result_terms.push(var_expr);
+    } else if matches!(&coeff, Expr::Integer(-1)) {
+      let var_expr = build_product(var_factors);
+      result_terms.push(negate_term(&var_expr));
+    } else {
+      let var_expr = build_product(var_factors);
+      result_terms.push(multiply_exprs(&coeff, &var_expr));
+    }
+  }
+
+  if result_terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    build_sum(result_terms)
+  }
+}
+
+/// Decompose a term into (numeric_coefficient, sort_key, variable_factors).
+/// E.g. 3*x^2*y → (3, "x^2*y", [x^2, y])
+///      -x → (-1, "x^1", [x])
+///      5 → (5, "", [])
+fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
+  match term {
+    Expr::Integer(_) | Expr::Real(_) => (term.clone(), String::new(), vec![]),
+    Expr::Identifier(_) => {
+      (Expr::Integer(1), expr_to_string(term), vec![term.clone()])
+    }
+    Expr::Constant(_) => {
+      (Expr::Integer(1), expr_to_string(term), vec![term.clone()])
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (c, k, v) = decompose_term(operand);
+      (negate_term(&c), k, v)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => {
+      let factors = collect_multiplicative_factors(term);
+      let mut numeric_coeff = Expr::Integer(1);
+      let mut var_factors: Vec<Expr> = Vec::new();
+
+      for f in &factors {
+        match f {
+          Expr::Integer(_) | Expr::Real(_) => {
+            numeric_coeff = multiply_exprs(&numeric_coeff, f);
+          }
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } => {
+            numeric_coeff = negate_term(&numeric_coeff);
+            match operand.as_ref() {
+              Expr::Integer(_) | Expr::Real(_) => {
+                numeric_coeff = multiply_exprs(&numeric_coeff, operand);
+              }
+              _ => var_factors.push(*operand.clone()),
+            }
+          }
+          _ => var_factors.push(f.clone()),
+        }
+      }
+
+      // Sort variable factors for canonical key
+      var_factors.sort_by_key(expr_to_string);
+      let key = var_factors
+        .iter()
+        .map(expr_to_string)
+        .collect::<Vec<_>>()
+        .join("*");
+      (numeric_coeff, key, var_factors)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      ..
+    } => (Expr::Integer(1), expr_to_string(term), vec![term.clone()]),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut numeric_coeff = Expr::Integer(1);
+      let mut var_factors: Vec<Expr> = Vec::new();
+
+      for f in args {
+        match f {
+          Expr::Integer(_) | Expr::Real(_) => {
+            numeric_coeff = multiply_exprs(&numeric_coeff, f);
+          }
+          _ => var_factors.push(f.clone()),
+        }
+      }
+
+      var_factors.sort_by_key(expr_to_string);
+      let key = var_factors
+        .iter()
+        .map(expr_to_string)
+        .collect::<Vec<_>>()
+        .join("*");
+      (numeric_coeff, key, var_factors)
+    }
+    _ => (Expr::Integer(1), expr_to_string(term), vec![term.clone()]),
+  }
+}
+
+/// Collect multiplicative factors from nested Times.
+fn collect_multiplicative_factors(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut factors = collect_multiplicative_factors(left);
+      factors.extend(collect_multiplicative_factors(right));
+      factors
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut factors = Vec::new();
+      for a in args {
+        factors.extend(collect_multiplicative_factors(a));
+      }
+      factors
+    }
+    _ => vec![expr.clone()],
+  }
+}
+
+/// Build a product from factors.
+fn build_product(factors: Vec<Expr>) -> Expr {
+  if factors.is_empty() {
+    return Expr::Integer(1);
+  }
+  let mut iter = factors.into_iter();
+  let mut result = iter.next().unwrap();
+  for f in iter {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(result),
+      right: Box::new(f),
+    };
+  }
+  result
+}
+
+// ─── Simplify ───────────────────────────────────────────────────────
+
+/// Simplify[expr] - User-facing simplification
+pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Simplify expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(simplify_expr(&args[0]))
+}
+
+/// Full simplification: expand, combine like terms, simplify.
+fn simplify_expr(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::Identifier(_) => expr.clone(),
+
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let num = simplify_expr(left);
+      let den = simplify_expr(right);
+      // Try to cancel: expand both and see if we can simplify
+      simplify_division(&num, &den)
+    }
+
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let base = simplify_expr(left);
+      let exp = simplify_expr(right);
+      simplify(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(exp),
+      })
+    }
+
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let l = simplify_expr(left);
+      let r = simplify_expr(right);
+      // Combine powers: x * x → x^2, x^a * x^b → x^(a+b)
+      simplify_product(&l, &r)
+    }
+
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    } => {
+      // Collect terms, combine like terms
+      expand_and_combine(expr)
+    }
+
+    Expr::UnaryOp { op, operand } => {
+      let inner = simplify_expr(operand);
+      simplify(Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(inner),
+      })
+    }
+
+    // Handle FunctionCall forms of Plus, Times, Power
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" => expand_and_combine(expr),
+      "Times" if args.len() == 2 => {
+        let l = simplify_expr(&args[0]);
+        let r = simplify_expr(&args[1]);
+        simplify_product(&l, &r)
+      }
+      "Power" if args.len() == 2 => {
+        let base = simplify_expr(&args[0]);
+        let exp = simplify_expr(&args[1]);
+        simplify(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(base),
+          right: Box::new(exp),
+        })
+      }
+      "Rational" if args.len() == 2 => expr.clone(),
+      _ => expr.clone(),
+    },
+
+    _ => simplify(expr.clone()),
+  }
+}
+
+/// Simplify a product, combining powers.
+fn simplify_product(a: &Expr, b: &Expr) -> Expr {
+  // x * x → x^2
+  if expr_to_string(a) == expr_to_string(b) {
+    return Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(a.clone()),
+      right: Box::new(Expr::Integer(2)),
+    };
+  }
+
+  // x^a * x^b → x^(a+b)
+  let (base_a, exp_a) = extract_base_exp(a);
+  let (base_b, exp_b) = extract_base_exp(b);
+  if expr_to_string(&base_a) == expr_to_string(&base_b) {
+    let new_exp = simplify(Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(exp_a),
+      right: Box::new(exp_b),
+    });
+    return simplify(Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(base_a),
+      right: Box::new(new_exp),
+    });
+  }
+
+  simplify(Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left: Box::new(a.clone()),
+    right: Box::new(b.clone()),
+  })
+}
+
+/// Extract base and exponent from a power expression.
+fn extract_base_exp(expr: &Expr) -> (Expr, Expr) {
+  extract_base_and_exp(expr)
+}
+
+/// Simplify a division by trying polynomial cancellation.
+fn simplify_division(num: &Expr, den: &Expr) -> Expr {
+  // If same expression, return 1
+  if expr_to_string(num) == expr_to_string(den) {
+    return Expr::Integer(1);
+  }
+
+  // Try: if denominator is a single factor, try polynomial division
+  // E.g. (x^2 - 1) / (x - 1) → x + 1
+  // We try to do this by expanding the numerator and attempting polynomial long division
+  let num_expanded = expand_and_combine(num);
+  let den_expanded = expand_and_combine(den);
+
+  // Try to find the variable
+  if let Some(var) = find_single_variable(&num_expanded)
+    && let Some(quotient) =
+      poly_divide_single_var(&num_expanded, &den_expanded, &var)
+  {
+    return quotient;
+  }
+
+  simplify(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num_expanded),
+    right: Box::new(den_expanded),
+  })
+}
+
+/// Find a single variable in an expression (for univariate polynomial division).
+fn find_single_variable(expr: &Expr) -> Option<String> {
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(expr, &mut vars);
+  if vars.len() == 1 {
+    vars.into_iter().next()
+  } else {
+    None
+  }
+}
+
+/// Collect all variable names from an expression.
+fn collect_variables(
+  expr: &Expr,
+  vars: &mut std::collections::HashSet<String>,
+) {
+  match expr {
+    Expr::Identifier(name)
+      if name != "True" && name != "False" && name != "Null" =>
+    {
+      vars.insert(name.clone());
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_variables(left, vars);
+      collect_variables(right, vars);
+    }
+    Expr::UnaryOp { operand, .. } => collect_variables(operand, vars),
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_variables(a, vars);
+      }
+    }
+    Expr::List(items) => {
+      for i in items {
+        collect_variables(i, vars);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Try polynomial long division of num/den in a single variable.
+/// Returns Some(quotient) if den divides num exactly.
+fn poly_divide_single_var(num: &Expr, den: &Expr, var: &str) -> Option<Expr> {
+  let num_coeffs = extract_poly_coeffs(num, var)?;
+  let den_coeffs = extract_poly_coeffs(den, var)?;
+
+  if den_coeffs.is_empty() {
+    return None;
+  }
+
+  let num_deg = num_coeffs.len() as i128 - 1;
+  let den_deg = den_coeffs.len() as i128 - 1;
+
+  if num_deg < den_deg {
+    return None;
+  }
+
+  // Polynomial long division with integer/rational coefficients
+  let mut remainder = num_coeffs.clone();
+  let mut quotient = vec![0i128; (num_deg - den_deg + 1) as usize];
+  let lead_den = *den_coeffs.last()?;
+
+  if lead_den == 0 {
+    return None;
+  }
+
+  for i in (0..quotient.len()).rev() {
+    let rem_idx = i + den_coeffs.len() - 1;
+    if rem_idx >= remainder.len() {
+      continue;
+    }
+    if remainder[rem_idx] % lead_den != 0 {
+      return None; // Not exactly divisible with integers
+    }
+    let q = remainder[rem_idx] / lead_den;
+    quotient[i] = q;
+    for j in 0..den_coeffs.len() {
+      remainder[i + j] -= q * den_coeffs[j];
+    }
+  }
+
+  // Check remainder is zero
+  if remainder.iter().any(|&c| c != 0) {
+    return None;
+  }
+
+  // Build quotient polynomial
+  Some(coeffs_to_expr(&quotient, var))
+}
+
+/// Extract integer polynomial coefficients from expr, indexed by power.
+/// coeffs[i] = coefficient of var^i
+fn extract_poly_coeffs(expr: &Expr, var: &str) -> Option<Vec<i128>> {
+  let terms = collect_additive_terms(expr);
+  let mut max_pow: i128 = 0;
+  let mut term_data: Vec<(i128, i128)> = Vec::new(); // (power, integer_coeff)
+
+  for term in &terms {
+    let (power, coeff) = term_var_power_and_coeff(term, var);
+    if power < 0 {
+      return None; // non-polynomial term
+    }
+    let int_coeff = match &simplify(coeff) {
+      Expr::Integer(n) => *n,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        if let Expr::Integer(n) = operand.as_ref() {
+          -n
+        } else {
+          return None;
+        }
+      }
+      _ => return None, // non-integer coefficient
+    };
+    max_pow = max_pow.max(power);
+    term_data.push((power, int_coeff));
+  }
+
+  let mut coeffs = vec![0i128; (max_pow + 1) as usize];
+  for (power, c) in term_data {
+    coeffs[power as usize] += c;
+  }
+
+  Some(coeffs)
+}
+
+/// Build a polynomial expression from integer coefficients.
+/// coeffs[i] = coefficient of var^i
+fn coeffs_to_expr(coeffs: &[i128], var: &str) -> Expr {
+  let mut terms: Vec<Expr> = Vec::new();
+
+  for (i, &c) in coeffs.iter().enumerate() {
+    if c == 0 {
+      continue;
+    }
+    let var_part = if i == 0 {
+      None
+    } else if i == 1 {
+      Some(Expr::Identifier(var.to_string()))
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier(var.to_string())),
+        right: Box::new(Expr::Integer(i as i128)),
+      })
+    };
+
+    let term = match (c, var_part) {
+      (c, None) => Expr::Integer(c),
+      (1, Some(v)) => v,
+      (-1, Some(v)) => negate_term(&v),
+      (c, Some(v)) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(c)),
+        right: Box::new(v),
+      },
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    build_sum(terms)
+  }
+}
+
+// ─── Factor ─────────────────────────────────────────────────────────
+
+/// Factor[expr] - Factor a polynomial expression
+pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Factor expects exactly 1 argument".into(),
+    ));
+  }
+
+  // First expand to canonical form
+  let expanded = expand_and_combine(&args[0]);
+
+  // Try to find the variable
+  let var = match find_single_variable(&expanded) {
+    Some(v) => v,
+    None => return Ok(expanded), // multivariate or constant — return as is
+  };
+
+  // Extract integer coefficients
+  let coeffs = match extract_poly_coeffs(&expanded, &var) {
+    Some(c) => c,
+    None => return Ok(expanded), // non-integer coefficients
+  };
+
+  // Factor out GCD of coefficients
+  let gcd_coeff = coeffs
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, gcd_i128);
+  if gcd_coeff == 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  let reduced_coeffs: Vec<i128> =
+    coeffs.iter().map(|c| c / gcd_coeff).collect();
+
+  // Factor out leading negative
+  let (sign, reduced_coeffs) =
+    if reduced_coeffs.last().map(|&c| c < 0).unwrap_or(false) {
+      (
+        -1i128,
+        reduced_coeffs.iter().map(|c| -c).collect::<Vec<_>>(),
+      )
+    } else {
+      (1, reduced_coeffs)
+    };
+  let overall = gcd_coeff * sign;
+
+  // Factor the monic-ish polynomial
+  let factors = factor_integer_poly(&reduced_coeffs, &var);
+
+  if factors.len() <= 1 && overall == 1 {
+    // Couldn't factor further
+    return Ok(expanded);
+  }
+
+  // Build result: overall * factor1 * factor2 * ...
+  let mut result_factors: Vec<Expr> = Vec::new();
+
+  if overall != 1 {
+    result_factors.push(Expr::Integer(overall));
+  }
+
+  if factors.is_empty() {
+    result_factors.push(coeffs_to_expr(&reduced_coeffs, &var));
+  } else {
+    result_factors.extend(factors);
+  }
+
+  if result_factors.len() == 1 {
+    return Ok(result_factors.remove(0));
+  }
+
+  Ok(build_product(result_factors))
+}
+
+/// GCD of two i128 values.
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Factor an integer polynomial given as coefficients.
+/// Returns a list of factor expressions, or empty if can't factor.
+fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
+  // Remove trailing zeros (factor out x^k)
+  let leading_zeros = coeffs.iter().take_while(|&&c| c == 0).count();
+  let trimmed = &coeffs[leading_zeros..];
+
+  let mut factors: Vec<Expr> = Vec::new();
+
+  // Add x^k factor if leading zeros
+  if leading_zeros > 0 {
+    if leading_zeros == 1 {
+      factors.push(Expr::Identifier(var.to_string()));
+    } else {
+      factors.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier(var.to_string())),
+        right: Box::new(Expr::Integer(leading_zeros as i128)),
+      });
+    }
+  }
+
+  if trimmed.len() <= 1 {
+    // Constant or empty
+    if trimmed.len() == 1 && trimmed[0] != 1 {
+      factors.push(Expr::Integer(trimmed[0]));
+    }
+    return factors;
+  }
+
+  // Try to find rational roots and factor
+  let mut remaining = trimmed.to_vec();
+
+  loop {
+    if remaining.len() <= 1 {
+      break;
+    }
+    if remaining.len() == 2 {
+      // Linear: ax + b → (b + a*x) but represented as canonical form
+      factors.push(linear_to_expr(remaining[0], remaining[1], var));
+      break;
+    }
+
+    // Try rational root theorem
+    match find_integer_root(&remaining) {
+      Some(root) => {
+        // Factor out (x - root) which in canonical form is (root_neg + x) → (-root + x)
+        factors.push(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-root)),
+          right: Box::new(Expr::Identifier(var.to_string())),
+        });
+        remaining = divide_by_root(&remaining, root);
+      }
+      None => {
+        // Can't find more roots — remaining is irreducible
+        if remaining != [1] {
+          factors.push(coeffs_to_expr(&remaining, var));
+        }
+        break;
+      }
+    }
+  }
+
+  // Sort factors by their constant term for canonical ordering
+  factors.sort_by(|a, b| {
+    let ca = factor_constant_term(a);
+    let cb = factor_constant_term(b);
+    ca.cmp(&cb)
+      .then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
+  });
+
+  factors
+}
+
+/// Get the constant term of a factor expression for sorting.
+fn factor_constant_term(expr: &Expr) -> i128 {
+  match expr {
+    Expr::Integer(n) => *n,
+    Expr::Identifier(_) => 0, // x has constant term 0
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      ..
+    } => {
+      if let Expr::Integer(n) = left.as_ref() {
+        *n
+      } else {
+        0
+      }
+    }
+    _ => 0,
+  }
+}
+
+/// Build a linear expression from coefficients: c0 + c1*x
+fn linear_to_expr(c0: i128, c1: i128, var: &str) -> Expr {
+  if c1 == 1 {
+    if c0 == 0 {
+      Expr::Identifier(var.to_string())
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(c0)),
+        right: Box::new(Expr::Identifier(var.to_string())),
+      }
+    }
+  } else {
+    let var_part = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(c1)),
+      right: Box::new(Expr::Identifier(var.to_string())),
+    };
+    if c0 == 0 {
+      var_part
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(c0)),
+        right: Box::new(var_part),
+      }
+    }
+  }
+}
+
+/// Find an integer root of polynomial with given coefficients.
+/// Uses rational root theorem: possible roots are ±(factors of c0) / (factors of leading coeff).
+fn find_integer_root(coeffs: &[i128]) -> Option<i128> {
+  if coeffs.is_empty() {
+    return None;
+  }
+  let c0 = coeffs[0]; // constant term
+  let lead = coeffs[coeffs.len() - 1]; // leading coefficient
+
+  if c0 == 0 {
+    return Some(0);
+  }
+
+  // Get divisors of c0 and lead
+  let c0_divs = integer_divisors(c0.abs());
+  let lead_divs = integer_divisors(lead.abs());
+
+  for &p in &c0_divs {
+    for &q in &lead_divs {
+      // Try root = p/q (only if it's an integer)
+      if p % q == 0 {
+        let root = p / q;
+        if evaluate_poly(coeffs, root) == 0 {
+          return Some(root);
+        }
+        if evaluate_poly(coeffs, -root) == 0 {
+          return Some(-root);
+        }
+      }
+    }
+  }
+  None
+}
+
+/// Evaluate polynomial at integer x.
+fn evaluate_poly(coeffs: &[i128], x: i128) -> i128 {
+  let mut result: i128 = 0;
+  let mut power: i128 = 1;
+  for &c in coeffs {
+    result = result
+      .checked_add(c.checked_mul(power).unwrap_or(i128::MAX))
+      .unwrap_or(i128::MAX);
+    if result == i128::MAX {
+      return result; // overflow guard
+    }
+    power = power.checked_mul(x).unwrap_or(i128::MAX);
+  }
+  result
+}
+
+/// Get all positive divisors of n.
+fn integer_divisors(n: i128) -> Vec<i128> {
+  if n == 0 {
+    return vec![1];
+  }
+  let n = n.abs();
+  let mut divs = Vec::new();
+  let mut i = 1i128;
+  while i * i <= n {
+    if n % i == 0 {
+      divs.push(i);
+      if i != n / i {
+        divs.push(n / i);
+      }
+    }
+    i += 1;
+  }
+  divs.sort();
+  divs
+}
+
+/// Divide polynomial by (x - root) using synthetic division.
+fn divide_by_root(coeffs: &[i128], root: i128) -> Vec<i128> {
+  // coeffs[i] = coefficient of x^i, so coeffs = [c0, c1, c2, ...]
+  // We need to divide by (x - root)
+  let n = coeffs.len();
+  if n <= 1 {
+    return vec![];
+  }
+  let mut result = vec![0i128; n - 1];
+  // Synthetic division: work from highest power down
+  result[n - 2] = coeffs[n - 1];
+  for i in (0..n - 2).rev() {
+    result[i] = coeffs[i + 1] + root * result[i + 1];
+  }
+  result
+}
