@@ -60,6 +60,12 @@ PostfixFunction = { BaseFunctionCall | Identifier }
 Increment = { Identifier ~ "++" }
 Decrement = { Identifier ~ "--" }
 
+// Compound assignment: x += y, x -= y, x *= y, x /= y
+AddTo = { Identifier ~ "+=" ~ Expression }
+SubtractFrom = { Identifier ~ "-=" ~ Expression }
+TimesBy = { Identifier ~ "*=" ~ Expression }
+DivideBy = { Identifier ~ "/=" ~ Expression }
+
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
 
@@ -94,6 +100,10 @@ Term = _{
   | SimpleAnonymousFunction
   | ImplicitTimes
   | NumericValue
+  | AddTo
+  | SubtractFrom
+  | TimesBy
+  | DivideBy
   | Increment
   | Decrement
   | Identifier
@@ -124,6 +134,10 @@ TermNoImplicit = _{
   | ParenAnonymousFunction
   | FunctionCall
   | SimpleAnonymousFunction
+  | AddTo
+  | SubtractFrom
+  | TimesBy
+  | DivideBy
   | Increment
   | Decrement
   | Identifier

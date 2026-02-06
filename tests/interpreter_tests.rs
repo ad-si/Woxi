@@ -1483,4 +1483,224 @@ mod interpreter_tests {
       assert_eq!(interpret("x + y /. {x -> 10, y -> 20}").unwrap(), "30");
     }
   }
+
+  mod compound_assignment {
+    use super::*;
+
+    #[test]
+    fn add_to() {
+      clear_state();
+      assert_eq!(interpret("x = 5; x += 3; x").unwrap(), "8");
+    }
+
+    #[test]
+    fn add_to_return_value() {
+      clear_state();
+      assert_eq!(interpret("x = 10; x += 7").unwrap(), "17");
+    }
+
+    #[test]
+    fn subtract_from() {
+      clear_state();
+      assert_eq!(interpret("x = 10; x -= 3; x").unwrap(), "7");
+    }
+
+    #[test]
+    fn times_by() {
+      clear_state();
+      assert_eq!(interpret("x = 5; x *= 4; x").unwrap(), "20");
+    }
+
+    #[test]
+    fn divide_by() {
+      clear_state();
+      assert_eq!(interpret("x = 20; x /= 4; x").unwrap(), "5");
+    }
+
+    #[test]
+    fn chained_compound_assignment() {
+      clear_state();
+      assert_eq!(interpret("x = 1; x += 2; x *= 3; x -= 1; x").unwrap(), "8");
+    }
+  }
+
+  mod fibonacci_builtin {
+    use super::*;
+
+    #[test]
+    fn fibonacci_zero() {
+      assert_eq!(interpret("Fibonacci[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn fibonacci_one() {
+      assert_eq!(interpret("Fibonacci[1]").unwrap(), "1");
+    }
+
+    #[test]
+    fn fibonacci_small() {
+      assert_eq!(interpret("Fibonacci[9]").unwrap(), "34");
+      assert_eq!(interpret("Fibonacci[10]").unwrap(), "55");
+    }
+
+    #[test]
+    fn fibonacci_negative() {
+      assert_eq!(interpret("Fibonacci[-1]").unwrap(), "1");
+      assert_eq!(interpret("Fibonacci[-2]").unwrap(), "-1");
+      assert_eq!(interpret("Fibonacci[-3]").unwrap(), "2");
+      assert_eq!(interpret("Fibonacci[-4]").unwrap(), "-3");
+    }
+
+    #[test]
+    fn fibonacci_symbolic() {
+      assert_eq!(interpret("Fibonacci[x]").unwrap(), "Fibonacci[x]");
+    }
+  }
+
+  mod down_values {
+    use super::*;
+
+    #[test]
+    fn basic_down_value() {
+      clear_state();
+      assert_eq!(interpret("f[0] = 42; f[0]").unwrap(), "42");
+    }
+
+    #[test]
+    fn multiple_down_values() {
+      clear_state();
+      assert_eq!(interpret("f[0] = 0; f[1] = 1; f[0]").unwrap(), "0");
+      assert_eq!(interpret("f[1]").unwrap(), "1");
+    }
+
+    #[test]
+    fn down_value_with_pattern() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g[0] = 0; g[1] = 1; g[n_Integer] := g[n - 1] + g[n - 2]; g[5]"
+        )
+        .unwrap(),
+        "5"
+      );
+    }
+
+    #[test]
+    fn memoized_down_value() {
+      clear_state();
+      assert_eq!(
+        interpret("h[0] = 0; h[1] = 1; h[n_Integer] := h[n] = h[n - 1] + h[n - 2]; h[10]").unwrap(),
+        "55"
+      );
+    }
+  }
+
+  mod block_scoping {
+    use super::*;
+
+    #[test]
+    fn basic_block() {
+      clear_state();
+      assert_eq!(interpret("Block[{x = 5}, x + 1]").unwrap(), "6");
+    }
+
+    #[test]
+    fn block_restores_variables() {
+      clear_state();
+      assert_eq!(interpret("x = 10; Block[{x = 5}, x]; x").unwrap(), "10");
+    }
+
+    #[test]
+    fn block_uninitialized_var() {
+      clear_state();
+      assert_eq!(interpret("Block[{x}, x]").unwrap(), "Null");
+    }
+
+    #[test]
+    fn block_multiple_vars() {
+      clear_state();
+      assert_eq!(interpret("Block[{x = 3, y = 4}, x + y]").unwrap(), "7");
+    }
+  }
+
+  mod for_loop {
+    use super::*;
+
+    #[test]
+    fn basic_for() {
+      clear_state();
+      assert_eq!(
+        interpret("s = 0; For[i = 1, i <= 5, i++, s += i]; s").unwrap(),
+        "15"
+      );
+    }
+
+    #[test]
+    fn for_returns_null() {
+      clear_state();
+      assert_eq!(interpret("For[i = 0, i < 3, i++, i]").unwrap(), "Null");
+    }
+  }
+
+  mod return_value {
+    use super::*;
+
+    #[test]
+    fn return_in_block() {
+      clear_state();
+      assert_eq!(interpret("Block[{}, Return[42]]").unwrap(), "42");
+    }
+
+    #[test]
+    fn return_in_module() {
+      clear_state();
+      assert_eq!(interpret("Module[{x = 10}, Return[x + 1]]").unwrap(), "11");
+    }
+  }
+
+  mod set_delayed {
+    use super::*;
+
+    #[test]
+    fn list_pattern_destructuring() {
+      clear_state();
+      assert_eq!(
+        interpret("swap[{a_Integer, b_Integer}] := {b, a}; swap[{1, 2}]")
+          .unwrap(),
+        "{2, 1}"
+      );
+    }
+
+    #[test]
+    fn list_pattern_with_computation() {
+      clear_state();
+      assert_eq!(
+        interpret("f[{x_Integer, y_Integer}] := x + y; f[{3, 4}]").unwrap(),
+        "7"
+      );
+    }
+  }
+
+  mod newline_statements {
+    use super::*;
+
+    #[test]
+    fn multiline_assignments() {
+      clear_state();
+      assert_eq!(interpret("x = 5\ny = 10\nx + y").unwrap(), "15");
+    }
+
+    #[test]
+    fn multiline_with_blank_lines() {
+      clear_state();
+      assert_eq!(interpret("x = 42\n\nx").unwrap(), "42");
+    }
+
+    #[test]
+    fn multiline_preserves_continuation() {
+      clear_state();
+      // A function definition spanning lines should still work
+      assert_eq!(interpret("f[x_] :=\n  x + 1\nf[5]").unwrap(), "6");
+    }
+  }
 }

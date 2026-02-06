@@ -447,13 +447,20 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           });
         }
       }
-      // Special handling for Module - don't evaluate args (body needs local bindings first)
+      // Special handling for Module/Block - don't evaluate args (body needs local bindings first)
       if name == "Module" {
         return module_ast(args);
+      }
+      if name == "Block" {
+        return block_ast(args);
       }
       // Special handling for Set - first arg must be identifier or Part, second gets evaluated
       if name == "Set" && args.len() == 2 {
         return set_ast(&args[0], &args[1]);
+      }
+      // Special handling for SetDelayed - stores function definitions
+      if name == "SetDelayed" && args.len() == 2 {
+        return set_delayed_ast(&args[0], &args[1]);
       }
       // Special handling for Increment/Decrement - x++ / x--
       if (name == "Increment" || name == "Decrement")
@@ -486,9 +493,60 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         });
         return Ok(current_val);
       }
+      // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
+      if (name == "AddTo"
+        || name == "SubtractFrom"
+        || name == "TimesBy"
+        || name == "DivideBy")
+        && args.len() == 2
+        && let Expr::Identifier(var_name) = &args[0]
+      {
+        let rhs = evaluate_expr_to_expr(&args[1])?;
+        let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+        let current_val = match current {
+          Some(StoredValue::ExprVal(e)) => e,
+          Some(StoredValue::Raw(s)) => {
+            crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+          }
+          _ => Expr::Integer(0),
+        };
+        let op = match name.as_str() {
+          "AddTo" => crate::syntax::BinaryOperator::Plus,
+          "SubtractFrom" => crate::syntax::BinaryOperator::Minus,
+          "TimesBy" => crate::syntax::BinaryOperator::Times,
+          "DivideBy" => crate::syntax::BinaryOperator::Divide,
+          _ => unreachable!(),
+        };
+        let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+          op,
+          left: Box::new(current_val),
+          right: Box::new(rhs),
+        })?;
+        ENV.with(|e| {
+          e.borrow_mut().insert(
+            var_name.clone(),
+            StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
+          );
+        });
+        return Ok(new_val);
+      }
+      // Special handling for Return - raises ReturnValue to short-circuit evaluation
+      if name == "Return" {
+        let val = if args.is_empty() {
+          Expr::Identifier("Null".to_string())
+        } else {
+          evaluate_expr_to_expr(&args[0])?
+        };
+        return Err(InterpreterError::ReturnValue(val));
+      }
       // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
       // These functions take unevaluated expressions as first argument
-      if name == "Table" || name == "Do" || name == "With" {
+      if name == "Table"
+        || name == "Do"
+        || name == "With"
+        || name == "Block"
+        || name == "For"
+      {
         // Pass unevaluated args to the function dispatcher
         return evaluate_function_call_ast(name, args);
       }
@@ -1006,6 +1064,7 @@ pub fn evaluate_function_call_ast(
   // These must be handled natively to avoid infinite recursion
   match name {
     "Module" => return module_ast(args),
+    "Block" => return block_ast(args),
     "With" if args.len() == 2 => return with_ast(args),
     "Set" if args.len() == 2 => {
       return set_ast(&args[0], &args[1]);
@@ -1360,6 +1419,9 @@ pub fn evaluate_function_call_ast(
     }
     "Do" if args.len() == 2 => {
       return list_helpers_ast::do_ast(&args[0], &args[1]);
+    }
+    "For" if args.len() == 4 => {
+      return for_ast(args);
     }
     "DeleteCases" if args.len() == 2 => {
       return list_helpers_ast::delete_cases_ast(&args[0], &args[1]);
@@ -1816,6 +1878,9 @@ pub fn evaluate_function_call_ast(
     "Prime" if args.len() == 1 => {
       return crate::functions::math_ast::prime_ast(args);
     }
+    "Fibonacci" if args.len() == 1 => {
+      return crate::functions::math_ast::fibonacci_ast(args);
+    }
     "IntegerDigits" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::integer_digits_ast(args);
     }
@@ -1877,6 +1942,14 @@ pub fn evaluate_function_call_ast(
     }
     "Xor" if args.len() >= 2 => {
       return crate::functions::boolean_ast::xor_ast(args);
+    }
+    "Return" => {
+      let val = if args.is_empty() {
+        Expr::Identifier("Null".to_string())
+      } else {
+        args[0].clone()
+      };
+      return Err(InterpreterError::ReturnValue(val));
     }
     "SameQ" if args.len() >= 2 => {
       return crate::functions::boolean_ast::same_q_ast(args);
@@ -2228,8 +2301,12 @@ fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prev.push((var_name.clone(), pv));
   }
 
-  // Evaluate the body expression using AST evaluation
-  let result = evaluate_expr_to_expr(body_expr)?;
+  // Evaluate the body expression using AST evaluation, catching Return[]
+  let result = match evaluate_expr_to_expr(body_expr) {
+    Ok(val) => Ok(val),
+    Err(InterpreterError::ReturnValue(val)) => Ok(val),
+    Err(e) => Err(e),
+  };
 
   // Restore previous bindings
   for (var_name, old) in prev {
@@ -2243,7 +2320,155 @@ fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(result)
+  result
+}
+
+/// AST-based Block implementation - dynamic scoping (like Module but without unique symbols).
+/// Block[{x = 1, y}, body] - variables are localized but use their original names.
+fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Block expects 2 arguments; {} given",
+      args.len()
+    )));
+  }
+
+  let vars_expr = &args[0];
+  let body_expr = &args[1];
+
+  // Parse variable declarations (same as Module)
+  let local_vars = match vars_expr {
+    Expr::List(items) => {
+      let mut vars = Vec::new();
+      for item in items {
+        match item {
+          Expr::FunctionCall {
+            name,
+            args: set_args,
+          } if name == "Set" && set_args.len() == 2 => {
+            if let Expr::Identifier(var_name) = &set_args[0] {
+              vars.push((var_name.clone(), Some(set_args[1].clone())));
+            }
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
+            if let Expr::Identifier(var_name) = pattern.as_ref() {
+              vars.push((var_name.clone(), Some(replacement.as_ref().clone())));
+            }
+          }
+          Expr::Identifier(var_name) => {
+            vars.push((var_name.clone(), None));
+          }
+          _ => {
+            let s = expr_to_string(item);
+            if let Some((name, init)) = s.split_once('=') {
+              let name = name.trim();
+              let init = init.trim();
+              if !name.is_empty() && !name.contains(' ') {
+                let init_expr = string_to_expr(init)?;
+                vars.push((name.to_string(), Some(init_expr)));
+              }
+            }
+          }
+        }
+      }
+      vars
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Block expects a list of variable declarations as first argument"
+          .into(),
+      ));
+    }
+  };
+
+  // Save previous bindings and set up new ones
+  let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
+
+  for (var_name, init_expr) in &local_vars {
+    let val = if let Some(expr) = init_expr {
+      let evaluated = evaluate_expr_to_expr(expr)?;
+      expr_to_string(&evaluated)
+    } else {
+      // Block uses Null for uninitialized variables (unlike Module which creates unique symbols)
+      "Null".to_string()
+    };
+
+    let pv = ENV.with(|e| {
+      e.borrow_mut()
+        .insert(var_name.clone(), StoredValue::Raw(val))
+    });
+    prev.push((var_name.clone(), pv));
+  }
+
+  // Evaluate the body expression, catching Return[]
+  let result = match evaluate_expr_to_expr(body_expr) {
+    Ok(val) => Ok(val),
+    Err(InterpreterError::ReturnValue(val)) => Ok(val),
+    Err(e) => Err(e),
+  };
+
+  // Restore previous bindings (even if body returned an error)
+  for (var_name, old) in prev {
+    ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      if let Some(v) = old {
+        env.insert(var_name, v);
+      } else {
+        env.remove(&var_name);
+      }
+    });
+  }
+
+  result
+}
+
+/// AST-based For loop: For[init, test, incr, body]
+fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 4 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "For expects 4 arguments; {} given",
+      args.len()
+    )));
+  }
+
+  let init = &args[0];
+  let test = &args[1];
+  let incr = &args[2];
+  let body = &args[3];
+
+  const MAX_ITERATIONS: usize = 100000;
+
+  // Evaluate the initialization
+  evaluate_expr_to_expr(init)?;
+
+  let mut iterations = 0;
+  loop {
+    // Evaluate the test condition
+    let test_result = evaluate_expr_to_expr(test)?;
+    match test_result {
+      Expr::Identifier(s) if s == "True" => {}
+      Expr::Identifier(s) if s == "False" => break,
+      _ => break,
+    }
+
+    // Evaluate the body
+    evaluate_expr_to_expr(body)?;
+
+    // Evaluate the increment
+    evaluate_expr_to_expr(incr)?;
+
+    iterations += 1;
+    if iterations >= MAX_ITERATIONS {
+      return Err(InterpreterError::EvaluationError(
+        "For: maximum iterations exceeded".into(),
+      ));
+    }
+  }
+
+  Ok(Expr::Identifier("Null".to_string()))
 }
 
 /// AST-based With implementation - substitutes bindings into body before evaluation.
@@ -2491,9 +2716,199 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(rhs_value);
   }
 
+  // Handle DownValues: f[val1, val2, ...] = rhs
+  // Store as a function definition with literal-match conditions
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+
+    // Build param names and conditions for each argument
+    let mut params = Vec::new();
+    let mut conditions: Vec<Option<Expr>> = Vec::new();
+    let defaults = vec![None; lhs_args.len()];
+    let heads = vec![None; lhs_args.len()];
+
+    for (i, arg) in lhs_args.iter().enumerate() {
+      let param_name = format!("_dv{}", i);
+      // Evaluate the literal argument value
+      let eval_arg = evaluate_expr_to_expr(arg)?;
+      // Condition: _dvN === eval_arg (using SameQ for exact matching)
+      conditions.push(Some(Expr::Comparison {
+        operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+        operators: vec![crate::syntax::ComparisonOp::SameQ],
+      }));
+      params.push(param_name);
+    }
+
+    crate::FUNC_DEFS.with(|m| {
+      let mut defs = m.borrow_mut();
+      let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
+      // Insert at the beginning so specific values take priority over general patterns
+      entry.insert(0, (params, conditions, defaults, heads, rhs_value.clone()));
+    });
+
+    return Ok(rhs_value);
+  }
+
   Err(InterpreterError::EvaluationError(
-    "First argument of Set must be an identifier or part extract".into(),
+    "First argument of Set must be an identifier, part extract, or function call".into(),
   ))
+}
+
+/// Handle SetDelayed[f[patterns...], body] — stores a function definition.
+/// This handles cases that the PEG FunctionDefinition rule doesn't parse,
+/// such as list-pattern arguments: f[{x_Integer, y_Integer}] := body.
+fn set_delayed_ast(lhs: &Expr, body: &Expr) -> Result<Expr, InterpreterError> {
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+  {
+    let mut params = Vec::new();
+    let mut conditions: Vec<Option<Expr>> = Vec::new();
+    let mut defaults: Vec<Option<Expr>> = Vec::new();
+    let mut heads: Vec<Option<String>> = Vec::new();
+    // We also need to track substitutions for list-pattern destructuring
+    let mut body_substitutions: Vec<(String, Vec<(String, Option<String>)>)> =
+      Vec::new();
+
+    for (i, arg) in lhs_args.iter().enumerate() {
+      match arg {
+        // List pattern: {x_Integer, y_Integer} — destructure a list argument
+        Expr::List(patterns) => {
+          let param_name = format!("_lp{}", i);
+          // Condition: argument must be a list with the right length
+          conditions.push(Some(Expr::Comparison {
+            operands: vec![
+              Expr::FunctionCall {
+                name: "Length".to_string(),
+                args: vec![Expr::Identifier(param_name.clone())],
+              },
+              Expr::Integer(patterns.len() as i128),
+            ],
+            operators: vec![crate::syntax::ComparisonOp::SameQ],
+          }));
+          // Extract pattern names and head constraints from list elements
+          let mut element_bindings = Vec::new();
+          for pat in patterns {
+            let (pat_name, head) = extract_pattern_info(pat);
+            element_bindings.push((pat_name, head));
+          }
+          body_substitutions.push((param_name.clone(), element_bindings));
+          params.push(param_name);
+          defaults.push(None);
+          heads.push(Some("List".to_string()));
+        }
+        // Simple pattern: x_ or x_Head
+        _ => {
+          let (pat_name, head) = extract_pattern_info(arg);
+          params.push(pat_name);
+          conditions.push(None);
+          defaults.push(None);
+          heads.push(head);
+        }
+      }
+    }
+
+    // Build the body with list-destructuring substitutions.
+    // For each list-pattern param, replace references to element names
+    // with Part[param, index] expressions.
+    let mut final_body = body.clone();
+    for (param_name, element_bindings) in &body_substitutions {
+      for (idx, (elem_name, _head)) in element_bindings.iter().enumerate() {
+        if !elem_name.is_empty() {
+          // Replace elem_name with Part[param_name, idx+1]
+          let part_expr = Expr::FunctionCall {
+            name: "Part".to_string(),
+            args: vec![
+              Expr::Identifier(param_name.clone()),
+              Expr::Integer((idx + 1) as i128),
+            ],
+          };
+          final_body = crate::syntax::substitute_variable(
+            &final_body,
+            elem_name,
+            &part_expr,
+          );
+        }
+      }
+    }
+
+    crate::FUNC_DEFS.with(|m| {
+      let mut defs = m.borrow_mut();
+      let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
+      entry.push((params, conditions, defaults, heads, final_body));
+    });
+
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  // Fallback: return symbolic form
+  Ok(Expr::FunctionCall {
+    name: "SetDelayed".to_string(),
+    args: vec![lhs.clone(), body.clone()],
+  })
+}
+
+/// Extract a pattern name and optional head constraint from a pattern expression.
+/// e.g., x_Integer -> ("x", Some("Integer")), x_ -> ("x", None)
+fn extract_pattern_info(expr: &Expr) -> (String, Option<String>) {
+  match expr {
+    Expr::Identifier(name) => {
+      // Could be a pattern like "x_Integer" or "x_" in text form
+      if let Some(pos) = name.find('_') {
+        let pat_name = name[..pos].to_string();
+        let head = &name[pos + 1..];
+        if head.is_empty() {
+          (pat_name, None)
+        } else {
+          (pat_name, Some(head.to_string()))
+        }
+      } else {
+        (name.clone(), None)
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      // Pattern[name, Blank[head]] or Pattern[name, Blank[]]
+      if let Expr::Identifier(pat_name) = &args[0]
+        && let Expr::FunctionCall {
+          name: blank_name,
+          args: blank_args,
+        } = &args[1]
+        && blank_name == "Blank"
+      {
+        let head = blank_args.first().and_then(|a| {
+          if let Expr::Identifier(h) = a {
+            Some(h.clone())
+          } else {
+            None
+          }
+        });
+        return (pat_name.clone(), head);
+      }
+      (String::new(), None)
+    }
+    _ => {
+      // Try to extract from string representation
+      let s = expr_to_string(expr);
+      if let Some(pos) = s.find('_') {
+        let pat_name = s[..pos].to_string();
+        let head = &s[pos + 1..];
+        if head.is_empty() {
+          (pat_name, None)
+        } else {
+          (pat_name, Some(head.to_string()))
+        }
+      } else {
+        (String::new(), None)
+      }
+    }
+  }
 }
 
 /// Perform nested access on an association: assoc["a", "b"] -> assoc["a"]["b"]
