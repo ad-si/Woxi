@@ -10,7 +10,7 @@ use woxi::{
 /// Set WOXI_USE_WOLFRAM=true to run via `wolframscript -file` instead,
 /// validating that wolframscript produces the same output:
 ///
-///   WOXI_USE_WOLFRAM=true cargo test script_snapshots
+///   WOXI_USE_WOLFRAM=true cargo test script_
 fn run_script_snapshot(name: &str) {
   run_script_snapshot_with_args(name, &[]);
 }

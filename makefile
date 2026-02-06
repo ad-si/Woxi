@@ -39,7 +39,7 @@ test-shebang: install
 .PHONY: test-scripts-wolframscript
 test-scripts-wolframscript:
 	@echo "Testing scripts with wolframscript against snapshots …"
-	WOXI_USE_WOLFRAM=true cargo test script_snapshots --quiet
+	WOXI_USE_WOLFRAM=true cargo test script_ --quiet -- --test-threads=1
 	@echo "All wolframscript script tests passed."
 
 

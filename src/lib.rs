@@ -21,8 +21,10 @@ enum StoredValue {
 }
 thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
-    //            name         Vec of (parameter names, body-AST) for multi-arity support
-    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    //            name         Vec of (parameter names, per-param condition, body-AST) for multi-arity + condition support
+    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    // Function attributes (e.g., Listable, Flat, etc.)
+    static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
 }
 
 #[derive(Error, Debug)]
@@ -108,6 +110,7 @@ pub fn without_shebang(src: &str) -> String {
 pub fn clear_state() {
   ENV.with(|e| e.borrow_mut().clear());
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
+  FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   clear_captured_stdout();
 }
 
@@ -551,21 +554,32 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
   let mut inner = pair.into_inner();
   let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
 
-  // Collect all pattern parameters
+  // Collect all pattern parameters and their optional conditions
   let mut params = Vec::new();
+  let mut conditions: Vec<Option<syntax::Expr>> = Vec::new();
   let mut body_pair = None;
+  let mut has_any_condition = false;
 
   for item in inner {
     match item.as_rule() {
-      Rule::PatternSimple
-      | Rule::PatternTest
-      | Rule::PatternCondition
-      | Rule::PatternWithHead => {
+      Rule::PatternCondition => {
+        // PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
+        let mut pat_inner = item.into_inner();
+        let param_name = pat_inner.next().unwrap().as_str().to_owned();
+        // The second child is the ConditionExpr
+        let cond_pair = pat_inner.next().unwrap();
+        let cond_expr = syntax::pair_to_expr(cond_pair);
+        params.push(param_name);
+        conditions.push(Some(cond_expr));
+        has_any_condition = true;
+      }
+      Rule::PatternSimple | Rule::PatternTest | Rule::PatternWithHead => {
         // Extract parameter name from pattern (e.g., "x_" -> "x", "x_List" -> "x")
         let param = item.as_str().trim_end_matches('_').to_owned();
         // Handle patterns by taking just the name part before the _
         let param = param.split('_').next().unwrap_or(&param).to_owned();
         params.push(param);
+        conditions.push(None);
       }
       Rule::Expression
       | Rule::ExpressionNoImplicit
@@ -584,11 +598,20 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
   FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(func_name).or_insert_with(Vec::new);
-    // Remove any existing definition with the same arity
     let arity = params.len();
-    entry.retain(|(p, _)| p.len() != arity);
-    // Add the new definition with parsed AST
-    entry.push((params, body_expr));
+    if has_any_condition {
+      // Conditional definition: only remove existing definitions with same arity
+      // that have the exact same conditions (re-definition of same pattern)
+      // For simplicity, just append - Wolfram keeps all conditional defs
+    } else {
+      // Unconditional definition: remove only other unconditional defs with same arity
+      // (keep conditional definitions - they are more specific)
+      entry.retain(|(p, conds, _)| {
+        p.len() != arity || conds.iter().any(|c| c.is_some())
+      });
+    }
+    // Add the new definition with parsed AST and conditions
+    entry.push((params, conditions, body_expr));
   });
   Ok(())
 }
