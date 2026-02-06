@@ -3,4 +3,5 @@
 /*-checkpoint.ipynb
 /target
 /tests/book
+/tests/cli/playground/pkg
 /tests/scripts/_*

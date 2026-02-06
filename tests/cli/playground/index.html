@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Woxi Playground</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <div class="status" id="status"></div>
+
+  <div id="wrapper">
+    <nav>
+      <a href="/">&#8592; Back to Docs</a>
+    </nav>
+
+    <main>
+      <h1>Woxi Playground</h1>
+
+      <hr />
+
+      <div class="examples">
+        <span>Examples:</span>
+        <button class="example-btn" data-code="Map[#^2 &amp;, {1, 2, 3, 4, 5}]">Map</button>
+        <button class="example-btn" data-code="Select[Range[30], PrimeQ]">Primes</button>
+        <button class="example-btn" data-code="FactorInteger[2025]">Factorize</button>
+        <button class="example-btn" data-code="Permutations[{a, b, c}]">Permutations</button>
+        <button class="example-btn" data-code="Table[Factorial[n], {n, 1, 10}]">Factorials</button>
+        <button class="example-btn" data-code="FoldList[Plus, 0, {1, 2, 3, 4, 5}]">FoldList</button>
+        <button class="example-btn" data-code="Transpose[{{1, 2, 3}, {4, 5, 6}}]">Transpose</button>
+        <button class="example-btn" data-code="NestList[# * 2 &amp;, 1, 8]">NestList</button>
+      </div>
+
+      <div class="editor-container" id="editor"></div>
+
+      <div class="controls">
+        <button id="runBtn" disabled>
+          Run
+          <div class="spinner" id="runSpinner"></div>
+        </button>
+        <button id="clearBtn">Clear</button>
+        <span class="shortcut-hint">Ctrl+Enter to run</span>
+      </div>
+
+      <div class="output-container">
+        <h3>Output</h3>
+        <pre id="output"></pre>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="script.js"></script>
+</body>
+
+</html>

@@ -461,8 +461,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1537,6 +1539,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs",
+ "getrandom 0.2.16",
  "insta",
  "jupyter-protocol",
  "pest",
@@ -1548,6 +1551,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+ "wasm-bindgen",
  "zeromq",
 ]
 

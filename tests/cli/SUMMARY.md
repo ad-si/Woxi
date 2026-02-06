@@ -16,3 +16,4 @@
 - [Jupyter](jupyter.md)
 - [Resources](resources.md)
 - [Related](related.md)
+- [Playground](playground/index.html)

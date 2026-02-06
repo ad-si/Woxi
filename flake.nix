@@ -25,9 +25,11 @@
             coreutils # cat
             gnumake
             gnused
+            lld
             mdbook
             rustc
             rustfmt
+            wasm-pack
           ];
         };
         formatter = pkgs.nixfmt-tree; # Format this file with `nix fmt`
