@@ -1457,6 +1457,23 @@ pub fn evaluate_function_call_ast(
         )),
       };
     }
+    "Run" if args.len() == 1 => {
+      if let Expr::String(cmd) = &args[0] {
+        use std::process::Command;
+        let status = Command::new("sh").arg("-c").arg(cmd).status();
+        return match status {
+          Ok(s) => Ok(Expr::Integer(s.code().unwrap_or(-1) as i128)),
+          Err(e) => Err(InterpreterError::EvaluationError(format!(
+            "Run: failed to execute command: {}",
+            e
+          ))),
+        };
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Run expects a string argument".into(),
+        ));
+      }
+    }
     "Print" => {
       // 0 args → just output a newline and return Null
       if args.is_empty() {
