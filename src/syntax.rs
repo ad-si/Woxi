@@ -1161,38 +1161,41 @@ pub fn expr_to_string(expr: &Expr) -> String {
         BinaryOperator::Alternatives => ("|", true),
       };
 
-      // Helper to check if expr needs parentheses based on precedence
-      let needs_parens = |e: &Expr, for_power_exp: bool| -> bool {
-        match e {
-          // For Power exponent, Plus needs parens
+      // Helper to check if expr is a lower-precedence additive expression
+      let is_additive = |e: &Expr| -> bool {
+        matches!(
+          e,
           Expr::BinaryOp {
             op: BinaryOperator::Plus | BinaryOperator::Minus,
             ..
-          } if for_power_exp => true,
-          Expr::FunctionCall { name, .. }
-            if name == "Plus" && for_power_exp =>
-          {
-            true
           }
-          _ => false,
-        }
+        ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
       };
+
+      let is_multiplicative = matches!(
+        op,
+        BinaryOperator::Times | BinaryOperator::Divide | BinaryOperator::Power
+      );
 
       let left_str = expr_to_string(left);
       let right_str = expr_to_string(right);
 
-      // Wrap right operand in parens if needed (for Power with Plus/Minus exponent)
-      let is_power = matches!(op, BinaryOperator::Power);
-      let right_formatted = if is_power && needs_parens(right, true) {
+      // Add parens when a lower-precedence expr is inside a higher-precedence one
+      let left_formatted = if is_multiplicative && is_additive(left) {
+        format!("({})", left_str)
+      } else {
+        left_str
+      };
+      let right_formatted = if is_multiplicative && is_additive(right) {
         format!("({})", right_str)
       } else {
         right_str
       };
 
       if needs_space {
-        format!("{} {} {}", left_str, op_str, right_formatted)
+        format!("{} {} {}", left_formatted, op_str, right_formatted)
       } else {
-        format!("{}{}{}", left_str, op_str, right_formatted)
+        format!("{}{}{}", left_formatted, op_str, right_formatted)
       }
     }
     Expr::UnaryOp { op, operand } => {
