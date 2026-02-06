@@ -618,14 +618,31 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     return Expr::Raw(String::new());
   }
 
+  // Collect trailing PostfixFunction pairs (lowest precedence, always at end)
+  let mut postfix_funcs: Vec<Pair<Rule>> = Vec::new();
+  while inner
+    .last()
+    .is_some_and(|p| p.as_rule() == Rule::PostfixFunction)
+  {
+    postfix_funcs.push(inner.pop().unwrap());
+  }
+  postfix_funcs.reverse(); // restore left-to-right order
+
   // Single term case
   if inner.len() == 1 {
-    return pair_to_expr(inner.remove(0));
+    let mut result = pair_to_expr(inner.remove(0));
+    for func_pair in postfix_funcs {
+      let func = pair_to_expr(func_pair);
+      result = Expr::Postfix {
+        expr: Box::new(result),
+        func: Box::new(func),
+      };
+    }
+    return result;
   }
 
-  // Check for ReplaceAll/ReplaceRepeated patterns FIRST
-  // These show up as: Term (List|ReplacementRule) (PostfixFunction)*
-  // Must check this before simple postfix to handle cases like: expr /. rule // f
+  // Check for ReplaceAll/ReplaceRepeated patterns
+  // These show up as: Term (List|ReplacementRule)
   if inner.len() >= 2 {
     let second_rule = inner[1].as_rule();
     if second_rule == Rule::List || second_rule == Rule::ReplacementRule {
@@ -646,9 +663,9 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           rules: Box::new(rules),
         }
       };
-      // Apply any remaining postfix functions
-      while !inner.is_empty() {
-        let func = pair_to_expr(inner.remove(0));
+      // Apply postfix functions
+      for func_pair in postfix_funcs {
+        let func = pair_to_expr(func_pair);
         result = Expr::Postfix {
           expr: Box::new(result),
           func: Box::new(func),
@@ -656,25 +673,6 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       }
       return result;
     }
-  }
-
-  // Check for simple postfix application pattern: Term (// PostfixFunction)+
-  // Only reaches here if there's no ReplaceAll/ReplaceRepeated before the postfix
-  let mut i = 1;
-  while i < inner.len() {
-    if inner[i].as_rule() == Rule::PostfixFunction {
-      // This is a postfix chain
-      let mut result = pair_to_expr(inner.remove(0));
-      while !inner.is_empty() && inner[0].as_rule() == Rule::PostfixFunction {
-        let func = pair_to_expr(inner.remove(0));
-        result = Expr::Postfix {
-          expr: Box::new(result),
-          func: Box::new(func),
-        };
-      }
-      return result;
-    }
-    i += 1;
   }
 
   // Parse operators: Term (Operator Term)*
@@ -693,44 +691,53 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     }
   }
 
-  if terms.len() == 1 {
-    return terms.remove(0);
-  }
+  let mut result = if terms.len() == 1 {
+    terms.remove(0)
+  } else {
+    // Check if all operators are comparison operators
+    let all_comparisons = operators.iter().all(|op| {
+      matches!(
+        op.as_str(),
+        "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!="
+      )
+    });
 
-  // Check if all operators are comparison operators
-  let all_comparisons = operators.iter().all(|op| {
-    matches!(
-      op.as_str(),
-      "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!="
-    )
-  });
+    if all_comparisons && !operators.is_empty() {
+      // Build comparison chain
+      let comp_ops: Vec<ComparisonOp> = operators
+        .iter()
+        .map(|op| match op.as_str() {
+          "==" => ComparisonOp::Equal,
+          "!=" => ComparisonOp::NotEqual,
+          "<" => ComparisonOp::Less,
+          "<=" => ComparisonOp::LessEqual,
+          ">" => ComparisonOp::Greater,
+          ">=" => ComparisonOp::GreaterEqual,
+          "===" => ComparisonOp::SameQ,
+          "=!=" => ComparisonOp::UnsameQ,
+          _ => ComparisonOp::Equal,
+        })
+        .collect();
+      Expr::Comparison {
+        operands: terms,
+        operators: comp_ops,
+      }
+    } else {
+      // Build binary operation tree (left-to-right for same precedence)
+      build_binary_tree(terms, operators)
+    }
+  };
 
-  if all_comparisons && !operators.is_empty() {
-    // Build comparison chain
-    let comp_ops: Vec<ComparisonOp> = operators
-      .iter()
-      .map(|op| match op.as_str() {
-        "==" => ComparisonOp::Equal,
-        "!=" => ComparisonOp::NotEqual,
-        "<" => ComparisonOp::Less,
-        "<=" => ComparisonOp::LessEqual,
-        ">" => ComparisonOp::Greater,
-        ">=" => ComparisonOp::GreaterEqual,
-        "===" => ComparisonOp::SameQ,
-        "=!=" => ComparisonOp::UnsameQ,
-        _ => ComparisonOp::Equal,
-      })
-      .collect();
-    return Expr::Comparison {
-      operands: terms,
-      operators: comp_ops,
+  // Apply postfix functions (lowest precedence)
+  for func_pair in postfix_funcs {
+    let func = pair_to_expr(func_pair);
+    result = Expr::Postfix {
+      expr: Box::new(result),
+      func: Box::new(func),
     };
   }
 
-  // Build binary operation tree (left-to-right for same precedence)
-  // For simplicity, we don't implement full precedence here since
-  // the pest parser already handles grouping
-  build_binary_tree(terms, operators)
+  result
 }
 
 /// Get precedence of an operator (higher = binds tighter)
