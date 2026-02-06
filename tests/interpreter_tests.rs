@@ -152,6 +152,20 @@ mod interpreter_tests {
         "3"
       );
     }
+
+    #[test]
+    fn postfix_after_operator_chain() {
+      // (1 + 2) // ToString is ToString[Plus[1, 2]]
+      assert_eq!(interpret("1 + 2 // ToString").unwrap(), "3");
+      // Map operator followed by postfix
+      assert_eq!(interpret("Sqrt /@ {1, 4, 9} // Length").unwrap(), "3");
+    }
+
+    #[test]
+    fn postfix_after_map_with_anonymous_function() {
+      // Which[...]& /@ Range[1, 5] // Map[Print] - pattern from fizzbuzz_5
+      assert_eq!(interpret("(# + 1)& /@ {1, 2, 3} // Length").unwrap(), "3");
+    }
   }
 
   mod pattern_matching {

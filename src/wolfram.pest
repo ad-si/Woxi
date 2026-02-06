@@ -53,15 +53,14 @@ ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
 
 // Unified Expression: parses a base term/operators, then looks for optional postfix/replace operators
 // This avoids redundant parsing by checking for special operators after the main parse
-// Note: /. and //. can be followed by // for postfix application
+// Postfix application (//) has lowest precedence and can follow any expression form
 Expression = {
     Term ~ (
-        // Check for operators in order of specificity
-        ("//" ~ PostfixFunction)+ |   // Postfix application: x // f
-        ("//." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |  // ReplaceRepeated: x //. rule // f
-        ("/." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |   // ReplaceAll: x /. rule // f
-        (Operator ~ Term)*   // Regular operators: x + y, etc.
+        ("//." ~ (List | ReplacementRule)) |  // ReplaceRepeated: x //. rule
+        ("/." ~ (List | ReplacementRule)) |   // ReplaceAll: x /. rule
+        (Operator ~ Term)*                    // Regular operators: x + y, etc.
     )
+    ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -120,11 +119,11 @@ TermNoImplicit = _{
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
     TermNoImplicit ~ (
-        ("//" ~ PostfixFunction)+ |
-        ("//." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |
-        ("/." ~ (List | ReplacementRule) ~ ("//" ~ PostfixFunction)*) |
+        ("//." ~ (List | ReplacementRule)) |
+        ("/." ~ (List | ReplacementRule)) |
         (Operator ~ TermNoImplicit)*
     )
+    ~ ("//" ~ PostfixFunction)*
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition
