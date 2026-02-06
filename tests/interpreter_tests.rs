@@ -1429,4 +1429,58 @@ mod interpreter_tests {
       );
     }
   }
+
+  mod replace_all_after_operators {
+    use super::*;
+
+    #[test]
+    fn replace_all_after_plus() {
+      assert_eq!(interpret("x + y /. x -> 1").unwrap(), "1 + y");
+    }
+
+    #[test]
+    fn replace_all_after_times() {
+      assert_eq!(interpret("x * y /. x -> 2").unwrap(), "2*y");
+    }
+
+    #[test]
+    fn replace_all_after_power() {
+      assert_eq!(interpret("x^2 + y /. x -> 3").unwrap(), "9 + y");
+    }
+
+    #[test]
+    fn replace_all_multiple_operators() {
+      assert_eq!(interpret("x + y + z /. {x -> 1, y -> 2}").unwrap(), "3 + z");
+    }
+
+    #[test]
+    fn replace_all_times_multiple_vars() {
+      assert_eq!(interpret("x * y * z /. {x -> 2, y -> 3}").unwrap(), "6*z");
+    }
+
+    #[test]
+    fn replace_all_with_implicit_times() {
+      assert_eq!(interpret("2 x + 3 y /. {x -> 1, y -> 2}").unwrap(), "8");
+    }
+
+    #[test]
+    fn replace_repeated_after_plus() {
+      assert_eq!(interpret("x + y //. x -> 1").unwrap(), "1 + y");
+    }
+
+    #[test]
+    fn replace_repeated_after_times() {
+      assert_eq!(interpret("x * y //. x -> 2").unwrap(), "2*y");
+    }
+
+    #[test]
+    fn replace_all_after_comparison() {
+      assert_eq!(interpret("x > y /. x -> 3").unwrap(), "3 > y");
+    }
+
+    #[test]
+    fn replace_all_all_vars_replaced() {
+      assert_eq!(interpret("x + y /. {x -> 10, y -> 20}").unwrap(), "30");
+    }
+  }
 }
