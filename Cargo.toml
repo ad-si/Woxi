@@ -23,3 +23,6 @@ thiserror = "1.0.63"
 tokio = { version = "1.45.0", features = ["full"] }
 uuid = { version = "1.16.0", features = ["v4"] }
 zeromq = { version = "0.5.0-pre", features = ["tokio-runtime"], default-features = false }
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }

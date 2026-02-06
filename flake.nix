@@ -20,6 +20,7 @@
           buildInputs = with pkgs; [
             bash
             cargo
+            cargo-insta
             clippy
             coreutils # cat
             gnumake

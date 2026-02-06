@@ -3,7 +3,7 @@ mod jupyter;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use woxi::{interpret, set_script_command_line};
+use woxi::{interpret, set_script_command_line, without_shebang};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -46,16 +46,6 @@ enum Commands {
   },
   #[command(external_subcommand)]
   Script(Vec<String>), // invoked by a shebang:  woxi <file> [...]
-}
-
-/// Remove a first line that starts with "#!" (shebang);
-/// returns the remainder as a new `String`.
-fn without_shebang(src: &str) -> String {
-  if src.starts_with("#!") {
-    src.lines().skip(1).collect::<Vec<_>>().join("\n")
-  } else {
-    src.to_owned()
-  }
 }
 
 fn install_kernel(user: bool, system: bool) -> std::io::Result<()> {

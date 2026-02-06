@@ -1,0 +1,11 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+True
+True
+False
+True
+False
+True
+True
