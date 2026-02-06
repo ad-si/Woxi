@@ -5,6 +5,7 @@ AllTrue,Checks if all elements in a list are true,✅
 And,Checks if all conditions are true,✅
 AnyTrue,Checks if any element in a list is true,✅
 Append,Adds an element to the end of a list,✅
+AppendTo,Appends an element to a list stored in a variable,✅
 Apply,Applies a function to list elements as arguments,✅
 ArcCos,Returns the arc cosine of a number,✅
 ArcSin,Returns the arc sine of a number,✅
@@ -14,6 +15,7 @@ AtomQ,Tests if expression is an atom (not a compound expression),✅
 Catenate,Flattens one level of lists,✅
 Ceiling,Returns the smallest integer greater than or equal to a number,✅
 Characters,Converts a string into a list of single-character strings,✅
+Coefficient,Extracts the coefficient of a term in a polynomial,✅
 Complement,Returns elements in first list but not in others,✅
 Composition,Composes multiple functions,✅
 ConstantArray,Creates an array of repeated elements,✅
@@ -24,16 +26,19 @@ CreateFile,Creates a file with a name or a random file in the default area for t
 DateString,Returns a string representing the current local date and time,✅
 DeleteDuplicates,Removes duplicate elements from a list,✅
 Differences,Returns successive differences between consecutive elements,✅
+Divide,Divide numbers,✅
 Divisors,Returns all divisors of an integer,✅
 DivisorSigma,Returns the sum of k-th powers of divisors,✅
-Divide,Divide numbers,✅
 Do,Evaluates an expression repeatedly,✅
 Drop,Returns the list without its first n elements,✅
 Equal,Checks if two values are equal,✅
 EulerPhi,Returns Euler's totient function,✅
 EvenQ,Checks if a number is even,✅
 Exp,Returns the exponential function e^x,✅
+Expand,Expands products and positive integer powers of sums,✅
+Exponent,Returns the maximum power of a variable in a polynomial,✅
 Extract,Extracts parts at specified positions,✅
+Factor,Factors a polynomial over the integers,✅
 Factorial,Returns the factorial of a non-negative integer,✅
 FactorInteger,Returns prime factorization as {prime exponent} pairs,✅
 First,Returns the first element of a list,✅
@@ -55,7 +60,6 @@ Insert,Inserts an element at a specified position in a list,✅
 IntegerDigits,Returns list of digits of an integer,✅
 IntegerQ,Tests if the expression evaluates to an integer,✅
 Intersection,Returns sorted intersection of lists,✅
-Join,Concatenates multiple lists together,✅
 Join,Concatenates multiple lists,✅
 KeyDropFrom,Removes a key-value pair from an association,✅
 KeyExistsQ,Checks if a key exists in an association,✅
@@ -78,8 +82,8 @@ MemberQ,Checks if a list contains a value,✅
 Min,Returns the minimum value from a set of arguments or a list,✅
 MinMax,Returns the minimum and maximum of a list,✅
 Minus,Subtracts numbers,✅
-MoebiusMu,Returns the Möbius function value,✅
 Mod,Returns the remainder of integer division,✅
+MoebiusMu,Returns the Möbius function value,✅
 Most,Returns the list without its last element,✅
 Negative,Tests if a number is negative,✅
 NoneTrue,Checks if no element in a list is true,✅
@@ -95,11 +99,14 @@ Outer,Generalized outer product,✅
 PadLeft,Pads a list on the left to a specified length,✅
 PadRight,Pads a list on the right to a specified length,✅
 Part,Returns the nth element of a list,✅
+Piecewise,Represents a piecewise function,✅
 Plus,Adds numbers together,✅
+PolynomialQ,Tests whether an expression is a polynomial,✅
 Position,Finds all positions of a pattern in a list,✅
 Positive,Tests if a number is positive,✅
 Power,Raises a number to a power,✅
 Prepend,Adds an element to the beginning of a list,✅
+PrependTo,Prepends an element to a list stored in a variable,✅
 Prime,Returns the nth prime number,✅
 PrimeQ,Tests if a number is prime,✅
 Print,Outputs a string to the console,✅
@@ -119,6 +126,7 @@ Round,Returns the nearest integer to a number,✅
 Scan,Applies a function to each element for side effects,✅
 Select,Picks elements of a list that satisfy a criterion,✅
 Sign,Returns the sign of a number,✅
+Simplify,Performs algebraic simplification of expressions,✅
 Sort,Sorts a list in ascending order,✅
 Sort,Sorts a list in ascending order,✅
 Split,Splits list at boundaries where consecutive elements differ,✅
@@ -130,15 +138,16 @@ StringEndsQ,Checks if a string ends with a specific substring,✅
 StringJoin,Concatenates strings,✅
 StringLength,Returns the length of a string,✅
 StringMatchQ,Tests if string matches a pattern with wildcards,✅
+StringPadLeft,Pads a string on the left to a specified length,✅
+StringPadRight,Pads a string on the right to a specified length,✅
 StringPosition,Finds all positions of a substring,✅
 StringQ,Tests if expression is a string,✅
 StringReplace,Replaces occurrences of substrings in a string,✅
 StringRiffle,Joins a list of strings with a separator,✅
 StringSplit,Splits a string into a list of substrings,✅
-StringPadLeft,Pads a string on the left to a specified length,✅
-StringPadRight,Pads a string on the right to a specified length,✅
 StringStartsQ,Checks if a string starts with a specific substring,✅
 StringTake,Returns a substring of a string,✅
+Switch,Evaluates an expression and matches it against patterns,✅
 Table,Generates a list by evaluating an expression,✅
 Take,Returns the first n elements of a list,✅
 TakeWhile,Takes elements from start while predicate is true,✅
@@ -151,6 +160,7 @@ ToLowerCase,Converts a string to lowercase,✅
 Total,Sums the elements of a list,✅
 ToUpperCase,Converts a string to uppercase,✅
 Transpose,Transposes a matrix (list of lists),✅
+Tuples,Generates all tuples of elements from a list,✅
 Unequal,Checks if two values are not equal,✅
 Union,Returns sorted union of lists,✅
 Values,Returns the values of an association,✅

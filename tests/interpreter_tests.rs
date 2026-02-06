@@ -1743,4 +1743,380 @@ mod interpreter_tests {
       assert_eq!(interpret("f[x_] :=\n  x + 1\nf[5]").unwrap(), "6");
     }
   }
+
+  // ─── Polynomial Functions ─────────────────────────────────────────
+
+  mod polynomial_q {
+    use super::*;
+
+    #[test]
+    fn basic_polynomial() {
+      assert_eq!(interpret("PolynomialQ[x^2 + 1, x]").unwrap(), "True");
+      assert_eq!(
+        interpret("PolynomialQ[3*x^3 + 2*x + 1, x]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn constant_is_polynomial() {
+      assert_eq!(interpret("PolynomialQ[5, x]").unwrap(), "True");
+    }
+
+    #[test]
+    fn variable_is_polynomial() {
+      assert_eq!(interpret("PolynomialQ[x, x]").unwrap(), "True");
+    }
+
+    #[test]
+    fn non_polynomial() {
+      assert_eq!(interpret("PolynomialQ[Sin[x], x]").unwrap(), "False");
+      assert_eq!(interpret("PolynomialQ[1/x, x]").unwrap(), "False");
+    }
+
+    #[test]
+    fn multivariate() {
+      assert_eq!(interpret("PolynomialQ[x^2 + y, x]").unwrap(), "True");
+    }
+  }
+
+  mod exponent {
+    use super::*;
+
+    #[test]
+    fn basic_exponent() {
+      assert_eq!(interpret("Exponent[x^3 + x, x]").unwrap(), "3");
+      assert_eq!(interpret("Exponent[x^2 + 3*x + 2, x]").unwrap(), "2");
+    }
+
+    #[test]
+    fn constant_exponent() {
+      assert_eq!(interpret("Exponent[5, x]").unwrap(), "0");
+    }
+
+    #[test]
+    fn linear_exponent() {
+      assert_eq!(interpret("Exponent[3*x + 1, x]").unwrap(), "1");
+    }
+  }
+
+  mod coefficient {
+    use super::*;
+
+    #[test]
+    fn quadratic_coefficients() {
+      assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x, 2]").unwrap(), "1");
+      assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x, 1]").unwrap(), "3");
+      assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x, 0]").unwrap(), "2");
+    }
+
+    #[test]
+    fn default_power_is_one() {
+      assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x]").unwrap(), "3");
+    }
+
+    #[test]
+    fn symbolic_coefficients() {
+      assert_eq!(
+        interpret("Coefficient[a*x^2 + b*x + c, x, 2]").unwrap(),
+        "a"
+      );
+      assert_eq!(
+        interpret("Coefficient[a*x^2 + b*x + c, x, 1]").unwrap(),
+        "b"
+      );
+      assert_eq!(
+        interpret("Coefficient[a*x^2 + b*x + c, x, 0]").unwrap(),
+        "c"
+      );
+    }
+
+    #[test]
+    fn zero_coefficient() {
+      assert_eq!(interpret("Coefficient[x^2 + 1, x, 1]").unwrap(), "0");
+    }
+  }
+
+  mod expand {
+    use super::*;
+
+    #[test]
+    fn simple_product() {
+      assert_eq!(
+        interpret("Expand[(x + 1)*(x + 2)]").unwrap(),
+        "2 + 3*x + x^2"
+      );
+    }
+
+    #[test]
+    fn square() {
+      assert_eq!(interpret("Expand[(x + 1)^2]").unwrap(), "1 + 2*x + x^2");
+    }
+
+    #[test]
+    fn cube() {
+      assert_eq!(
+        interpret("Expand[(x + 1)^3]").unwrap(),
+        "1 + 3*x + 3*x^2 + x^3"
+      );
+    }
+
+    #[test]
+    fn distribute() {
+      assert_eq!(interpret("Expand[x*(x + 1)]").unwrap(), "x + x^2");
+    }
+
+    #[test]
+    fn already_expanded() {
+      assert_eq!(interpret("Expand[x^2 + 3*x + 2]").unwrap(), "2 + 3*x + x^2");
+    }
+
+    #[test]
+    fn constant() {
+      assert_eq!(interpret("Expand[5]").unwrap(), "5");
+    }
+
+    #[test]
+    fn difference_of_squares() {
+      assert_eq!(interpret("Expand[(x + 2)*(x - 2)]").unwrap(), "-4 + x^2");
+    }
+
+    #[test]
+    fn multivariate_two_vars() {
+      assert_eq!(interpret("Expand[(x + y)^2]").unwrap(), "x^2 + 2*x*y + y^2");
+    }
+
+    #[test]
+    fn multivariate_four_vars() {
+      assert_eq!(
+        interpret("Expand[(a + b)*(c + d)]").unwrap(),
+        "a*c + b*c + a*d + b*d"
+      );
+    }
+
+    #[test]
+    fn multivariate_with_constant() {
+      assert_eq!(
+        interpret("Expand[(x + y + 1)^2]").unwrap(),
+        "1 + 2*x + x^2 + 2*y + 2*x*y + y^2"
+      );
+    }
+  }
+
+  mod simplify {
+    use super::*;
+
+    #[test]
+    fn combine_like_terms() {
+      assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
+    }
+
+    #[test]
+    fn combine_powers() {
+      assert_eq!(interpret("Simplify[x*x]").unwrap(), "x^2");
+    }
+
+    #[test]
+    fn cancel_division() {
+      assert_eq!(interpret("Simplify[(x^2 - 1)/(x - 1)]").unwrap(), "1 + x");
+    }
+
+    #[test]
+    fn trivial() {
+      assert_eq!(interpret("Simplify[5]").unwrap(), "5");
+      assert_eq!(interpret("Simplify[x]").unwrap(), "x");
+    }
+  }
+
+  mod factor {
+    use super::*;
+
+    #[test]
+    fn quadratic() {
+      assert_eq!(
+        interpret("Factor[x^2 + 3*x + 2]").unwrap(),
+        "(1 + x)*(2 + x)"
+      );
+    }
+
+    #[test]
+    fn difference_of_squares() {
+      assert_eq!(interpret("Factor[x^2 - 4]").unwrap(), "(-2 + x)*(2 + x)");
+    }
+
+    #[test]
+    fn with_common_factor() {
+      assert_eq!(
+        interpret("Factor[2*x^2 + 6*x + 4]").unwrap(),
+        "2*(1 + x)*(2 + x)"
+      );
+    }
+
+    #[test]
+    fn irreducible() {
+      assert_eq!(interpret("Factor[x^2 + 1]").unwrap(), "1 + x^2");
+    }
+
+    #[test]
+    fn cubic() {
+      assert_eq!(
+        interpret("Factor[x^3 - 1]").unwrap(),
+        "(-1 + x)*(1 + x + x^2)"
+      );
+    }
+
+    #[test]
+    fn linear() {
+      assert_eq!(interpret("Factor[2*x + 4]").unwrap(), "2*(2 + x)");
+    }
+  }
+
+  // ─── Control Flow ─────────────────────────────────────────────────
+
+  mod switch {
+    use super::*;
+
+    #[test]
+    fn basic_match() {
+      assert_eq!(interpret("Switch[2, 1, a, 2, b, 3, c]").unwrap(), "b");
+    }
+
+    #[test]
+    fn first_match() {
+      assert_eq!(interpret("Switch[1, 1, a, 2, b, 3, c]").unwrap(), "a");
+    }
+
+    #[test]
+    fn no_match_returns_null() {
+      assert_eq!(interpret("Switch[4, 1, a, 2, b, 3, c]").unwrap(), "Null");
+    }
+
+    #[test]
+    fn wildcard_match() {
+      assert_eq!(interpret("Switch[4, 1, a, _, c]").unwrap(), "c");
+    }
+
+    #[test]
+    fn evaluated_expression() {
+      assert_eq!(interpret("Switch[1 + 1, 1, a, 2, b, 3, c]").unwrap(), "b");
+    }
+  }
+
+  mod piecewise {
+    use super::*;
+
+    #[test]
+    fn first_true() {
+      assert_eq!(interpret("Piecewise[{{1, True}}]").unwrap(), "1");
+    }
+
+    #[test]
+    fn second_true() {
+      assert_eq!(
+        interpret("Piecewise[{{1, False}, {2, True}}]").unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn default_value() {
+      assert_eq!(
+        interpret("Piecewise[{{1, False}, {2, False}}, 42]").unwrap(),
+        "42"
+      );
+    }
+
+    #[test]
+    fn no_match_default_zero() {
+      assert_eq!(interpret("Piecewise[{{1, False}}]").unwrap(), "0");
+    }
+
+    #[test]
+    fn with_conditions() {
+      clear_state();
+      assert_eq!(
+        interpret("x = 5; Piecewise[{{1, x < 0}, {2, x >= 0}}]").unwrap(),
+        "2"
+      );
+    }
+  }
+
+  // ─── List Operations ──────────────────────────────────────────────
+
+  mod append_to {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      clear_state();
+      assert_eq!(
+        interpret("x = {1, 2, 3}; AppendTo[x, 4]").unwrap(),
+        "{1, 2, 3, 4}"
+      );
+    }
+
+    #[test]
+    fn updates_variable() {
+      clear_state();
+      assert_eq!(
+        interpret("x = {1, 2}; AppendTo[x, 3]; x").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+  }
+
+  mod prepend_to {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      clear_state();
+      assert_eq!(
+        interpret("x = {1, 2, 3}; PrependTo[x, 0]").unwrap(),
+        "{0, 1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn updates_variable() {
+      clear_state();
+      assert_eq!(
+        interpret("x = {2, 3}; PrependTo[x, 1]; x").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+  }
+
+  mod tuples {
+    use super::*;
+
+    #[test]
+    fn pairs() {
+      assert_eq!(
+        interpret("Tuples[{a, b}, 2]").unwrap(),
+        "{{a, a}, {a, b}, {b, a}, {b, b}}"
+      );
+    }
+
+    #[test]
+    fn triples() {
+      assert_eq!(
+        interpret("Tuples[{0, 1}, 3]").unwrap(),
+        "{{0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1}, {1, 0, 0}, {1, 0, 1}, {1, 1, 0}, {1, 1, 1}}"
+      );
+    }
+
+    #[test]
+    fn singles() {
+      assert_eq!(
+        interpret("Tuples[{a, b, c}, 1]").unwrap(),
+        "{{a}, {b}, {c}}"
+      );
+    }
+
+    #[test]
+    fn empty_tuple() {
+      assert_eq!(interpret("Tuples[{a, b}, 0]").unwrap(), "{{}}");
+    }
+  }
 }

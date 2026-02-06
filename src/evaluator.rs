@@ -530,6 +530,49 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         });
         return Ok(new_val);
       }
+      // Special handling for AppendTo, PrependTo - x = Append[x, elem]
+      if (name == "AppendTo" || name == "PrependTo")
+        && args.len() == 2
+        && let Expr::Identifier(var_name) = &args[0]
+      {
+        let elem = evaluate_expr_to_expr(&args[1])?;
+        let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+        let current_val = match current {
+          Some(StoredValue::ExprVal(e)) => e,
+          Some(StoredValue::Raw(s)) => {
+            crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![]))
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "{} requires a variable with a list value",
+              name
+            )));
+          }
+        };
+        let new_val = match current_val {
+          Expr::List(mut items) => {
+            if name == "AppendTo" {
+              items.push(elem);
+            } else {
+              items.insert(0, elem);
+            }
+            Expr::List(items)
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "{}: {} is not a list",
+              name, var_name
+            )));
+          }
+        };
+        ENV.with(|e| {
+          e.borrow_mut().insert(
+            var_name.clone(),
+            StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
+          );
+        });
+        return Ok(new_val);
+      }
       // Special handling for Return - raises ReturnValue to short-circuit evaluation
       if name == "Return" {
         let val = if args.is_empty() {
@@ -538,6 +581,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           evaluate_expr_to_expr(&args[0])?
         };
         return Err(InterpreterError::ReturnValue(val));
+      }
+      // Special handling for Switch - lazy evaluation of branches
+      if name == "Switch" && args.len() >= 3 {
+        return crate::functions::control_flow_ast::switch_ast(args);
+      }
+      // Special handling for Piecewise - lazy evaluation of branches
+      if name == "Piecewise" && !args.is_empty() && args.len() <= 2 {
+        return crate::functions::control_flow_ast::piecewise_ast(args);
       }
       // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
       // These functions take unevaluated expressions as first argument
@@ -1998,6 +2049,31 @@ pub fn evaluate_function_call_ast(
     }
     "Nor" if args.len() >= 2 => {
       return crate::functions::boolean_ast::nor_ast(args);
+    }
+
+    // AST-native polynomial functions
+    "Expand" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::expand_ast(args);
+    }
+    "Factor" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::factor_ast(args);
+    }
+    "Simplify" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::simplify_ast(args);
+    }
+    "Coefficient" if args.len() >= 2 && args.len() <= 3 => {
+      return crate::functions::polynomial_ast::coefficient_ast(args);
+    }
+    "Exponent" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::exponent_ast(args);
+    }
+    "PolynomialQ" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::polynomial_q_ast(args);
+    }
+
+    // AST-native list generation
+    "Tuples" if args.len() == 2 => {
+      return crate::functions::list_helpers_ast::tuples_ast(args);
     }
 
     // Use AST-native calculus functions

@@ -3375,3 +3375,53 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec(),
   })
 }
+
+/// Tuples[list, n] - Generate all n-tuples from elements of list (Cartesian product).
+pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Tuples expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Tuples".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = match &args[1] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Tuples".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if n == 0 {
+    return Ok(Expr::List(vec![Expr::List(vec![])]));
+  }
+
+  // Iterative Cartesian product
+  let mut result: Vec<Vec<Expr>> = vec![vec![]];
+
+  for _ in 0..n {
+    let mut new_result = Vec::new();
+    for tuple in &result {
+      for item in items {
+        let mut new_tuple = tuple.clone();
+        new_tuple.push(item.clone());
+        new_result.push(new_tuple);
+      }
+    }
+    result = new_result;
+  }
+
+  Ok(Expr::List(result.into_iter().map(Expr::List).collect()))
+}
