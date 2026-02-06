@@ -78,6 +78,7 @@ script_test!(script_fizzbuzz_5, "fizzbuzz_5.wls");
 script_test!(script_hello_world, "hello_world.wls");
 script_test!(script_n_queens_problem_1, "n-queens_problem_1.wls");
 script_test!(script_n_queens_problem_2, "n-queens_problem_2.wls");
+script_test!(script_fibonacci_sequence, "fibonacci_sequence.wls");
 
 #[test]
 fn script_cli_args() {

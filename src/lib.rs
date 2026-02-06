@@ -36,6 +36,8 @@ pub enum InterpreterError {
   EmptyInput,
   #[error("Evaluation error: {0}")]
   EvaluationError(String),
+  #[error("Return")]
+  ReturnValue(syntax::Expr),
 }
 
 /// Extended result type that includes both stdout and the result
@@ -228,8 +230,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
   let _guard = DepthGuard;
 
+  // Insert semicolons at top-level newline boundaries so the PEG grammar
+  // correctly separates statements like "fib[0] = 0\nfib[1] = 1" instead
+  // of treating them as implicit multiplication.
+  let preprocessed = insert_statement_separators(trimmed);
+
   // Regular interpretation - use AST-based evaluation
-  let pairs = parse(input)?;
+  let pairs = parse(&preprocessed)?;
   let mut pairs = pairs.into_iter();
   let program = pairs.next().ok_or(InterpreterError::EmptyInput)?;
 
@@ -266,6 +273,110 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   } else {
     Err(InterpreterError::EmptyInput)
   }
+}
+
+/// Insert semicolons at top-level newline boundaries so the parser treats
+/// each logical line as a separate statement.  Newlines inside brackets,
+/// parentheses or braces are left alone (they're part of a multiline expression).
+/// Lines that already end with `;` or `:=` are also left alone.
+fn insert_statement_separators(input: &str) -> String {
+  // Fast path: no newlines means nothing to do
+  if !input.contains('\n') {
+    return input.to_string();
+  }
+
+  let mut result = String::with_capacity(input.len() + 32);
+  let mut depth: i32 = 0; // nesting depth of [], (), {}
+  let mut in_string = false;
+  let mut in_comment = false;
+  let mut line_has_code = false; // whether the current line has non-whitespace, non-comment content
+  let mut last_code_char: Option<char> = None; // last meaningful (non-comment) character
+  let mut prev_code_char: Option<char> = None; // second-to-last meaningful character
+  let chars: Vec<char> = input.chars().collect();
+  let len = chars.len();
+  let mut i = 0;
+
+  while i < len {
+    let ch = chars[i];
+
+    // Track comment state: (* ... *)
+    if !in_string && i + 1 < len && ch == '(' && chars[i + 1] == '*' {
+      in_comment = true;
+      result.push(ch);
+      i += 1;
+      continue;
+    }
+    if in_comment && i + 1 < len && ch == '*' && chars[i + 1] == ')' {
+      in_comment = false;
+      result.push(ch);
+      result.push(chars[i + 1]);
+      i += 2;
+      continue;
+    }
+    if in_comment {
+      result.push(ch);
+      i += 1;
+      continue;
+    }
+
+    // Track string state
+    if ch == '"' {
+      in_string = !in_string;
+      result.push(ch);
+      line_has_code = true;
+      prev_code_char = last_code_char;
+      last_code_char = Some(ch);
+      i += 1;
+      continue;
+    }
+    if in_string {
+      result.push(ch);
+      prev_code_char = last_code_char;
+      last_code_char = Some(ch);
+      i += 1;
+      continue;
+    }
+
+    // Track nesting depth
+    match ch {
+      '[' | '(' | '{' => depth += 1,
+      ']' | ')' | '}' => depth -= 1,
+      _ => {}
+    }
+
+    if ch == '\n' && depth == 0 {
+      // Only add `;` if the current line had actual code (not just comments/whitespace)
+      // and doesn't already end with `;` or `:=`
+      let ends_with_set_delayed =
+        last_code_char == Some('=') && prev_code_char == Some(':');
+      let needs_semi =
+        line_has_code && last_code_char != Some(';') && !ends_with_set_delayed;
+
+      if needs_semi {
+        result.push(';');
+      }
+      result.push('\n');
+
+      // Reset line tracking
+      line_has_code = false;
+      last_code_char = None;
+      prev_code_char = None;
+    } else if ch == '\n' {
+      // Newline inside nesting — just pass through
+      result.push(ch);
+    } else {
+      if !ch.is_whitespace() {
+        line_has_code = true;
+        prev_code_char = last_code_char;
+        last_code_char = Some(ch);
+      }
+      result.push(ch);
+    }
+
+    i += 1;
+  }
+
+  result
 }
 
 /// Try to evaluate a simple function call without full parsing.

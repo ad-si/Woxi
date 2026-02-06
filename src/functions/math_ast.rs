@@ -1448,6 +1448,45 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Fibonacci[n] - Returns the nth Fibonacci number
+pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n < 0 {
+        // F(-n) = (-1)^(n+1) * F(n)
+        let pos_n = (-*n) as u128;
+        let fib = fibonacci_number(pos_n);
+        let sign = if pos_n.is_multiple_of(2) {
+          -1i128
+        } else {
+          1i128
+        };
+        Ok(Expr::Integer(sign * fib))
+      } else {
+        Ok(Expr::Integer(fibonacci_number(*n as u128)))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Fibonacci".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+fn fibonacci_number(n: u128) -> i128 {
+  if n == 0 {
+    return 0;
+  }
+  let mut a: i128 = 0;
+  let mut b: i128 = 1;
+  for _ in 1..n {
+    let tmp = a + b;
+    a = b;
+    b = tmp;
+  }
+  b
+}
+
 /// IntegerDigits[n] or IntegerDigits[n, base] - Returns list of digits
 pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {

@@ -610,6 +610,46 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         args: vec![var],
       }
     }
+    Rule::AddTo => {
+      // x += y -> AddTo[x, y]
+      let mut inner = pair.into_inner();
+      let var = pair_to_expr(inner.next().unwrap());
+      let val = pair_to_expr(inner.next().unwrap());
+      Expr::FunctionCall {
+        name: "AddTo".to_string(),
+        args: vec![var, val],
+      }
+    }
+    Rule::SubtractFrom => {
+      // x -= y -> SubtractFrom[x, y]
+      let mut inner = pair.into_inner();
+      let var = pair_to_expr(inner.next().unwrap());
+      let val = pair_to_expr(inner.next().unwrap());
+      Expr::FunctionCall {
+        name: "SubtractFrom".to_string(),
+        args: vec![var, val],
+      }
+    }
+    Rule::TimesBy => {
+      // x *= y -> TimesBy[x, y]
+      let mut inner = pair.into_inner();
+      let var = pair_to_expr(inner.next().unwrap());
+      let val = pair_to_expr(inner.next().unwrap());
+      Expr::FunctionCall {
+        name: "TimesBy".to_string(),
+        args: vec![var, val],
+      }
+    }
+    Rule::DivideBy => {
+      // x /= y -> DivideBy[x, y]
+      let mut inner = pair.into_inner();
+      let var = pair_to_expr(inner.next().unwrap());
+      let val = pair_to_expr(inner.next().unwrap());
+      Expr::FunctionCall {
+        name: "DivideBy".to_string(),
+        args: vec![var, val],
+      }
+    }
     Rule::ImplicitTimes => {
       // Implicit multiplication: x y z -> Times[x, y, z]
       let factors: Vec<Expr> = pair.into_inner().map(pair_to_expr).collect();
