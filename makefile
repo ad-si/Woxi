@@ -59,13 +59,22 @@ install:
 	cargo install --path .
 
 
+.PHONY: wasm-build
+wasm-build:
+	wasm-pack build \
+		-d tests/cli/playground/pkg \
+		--target web \
+		--no-default-features \
+		--features wasm
+
+
 .PHONY: docs/serve
-docs/serve:
+docs/serve: wasm-build
 	mdbook serve --port 5501 ./tests
 
 
 .PHONY: docs/build
-docs/build:
+docs/build: wasm-build
 	mdbook build ./tests
 
 

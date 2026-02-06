@@ -1569,7 +1569,8 @@ pub fn evaluate_function_call_ast(
       return crate::functions::string_ast::string_free_q_ast(args);
     }
 
-    // AST-native file and date functions
+    // AST-native file and date functions (not available in WASM)
+    #[cfg(not(target_arch = "wasm32"))]
     "CreateFile" => {
       let filename_opt = if args.is_empty() {
         None
@@ -1584,6 +1585,7 @@ pub fn evaluate_function_call_ast(
         Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
       };
     }
+    #[cfg(not(target_arch = "wasm32"))]
     "DateString" => {
       use chrono::Local;
       let current_time = Local::now();
@@ -1629,6 +1631,7 @@ pub fn evaluate_function_call_ast(
         )),
       };
     }
+    #[cfg(not(target_arch = "wasm32"))]
     "Run" if args.len() == 1 => {
       if let Expr::String(cmd) = &args[0] {
         use std::process::Command;

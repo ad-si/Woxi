@@ -9,6 +9,8 @@ pub mod evaluator;
 pub mod functions;
 pub mod syntax;
 pub mod utils;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 #[derive(Parser)]
 #[grammar = "wolfram.pest"]
