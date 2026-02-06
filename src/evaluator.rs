@@ -582,6 +582,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         };
         return Err(InterpreterError::ReturnValue(val));
       }
+      // Special handling for Break[] - raises BreakSignal
+      if name == "Break" && args.is_empty() {
+        return Err(InterpreterError::BreakSignal);
+      }
+      // Special handling for Continue[] - raises ContinueSignal
+      if name == "Continue" && args.is_empty() {
+        return Err(InterpreterError::ContinueSignal);
+      }
       // Special handling for Switch - lazy evaluation of branches
       if name == "Switch" && args.len() >= 3 {
         return crate::functions::control_flow_ast::switch_ast(args);
@@ -597,6 +605,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "With"
         || name == "Block"
         || name == "For"
+        || name == "While"
       {
         // Pass unevaluated args to the function dispatcher
         return evaluate_function_call_ast(name, args);
@@ -2567,7 +2576,12 @@ fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Evaluate the body
-    evaluate_expr_to_expr(body)?;
+    match evaluate_expr_to_expr(body) {
+      Ok(_) => {}
+      Err(InterpreterError::BreakSignal) => break,
+      Err(InterpreterError::ContinueSignal) => {}
+      Err(e) => return Err(e),
+    }
 
     // Evaluate the increment
     evaluate_expr_to_expr(incr)?;

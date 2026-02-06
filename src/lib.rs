@@ -40,6 +40,10 @@ pub enum InterpreterError {
   EvaluationError(String),
   #[error("Return")]
   ReturnValue(syntax::Expr),
+  #[error("Break")]
+  BreakSignal,
+  #[error("Continue")]
+  ContinueSignal,
 }
 
 /// Extended result type that includes both stdout and the result

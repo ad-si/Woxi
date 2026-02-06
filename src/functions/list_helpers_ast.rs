@@ -2850,7 +2850,12 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
   match iter_spec {
     Expr::Integer(n) => {
       for _ in 0..*n {
-        crate::evaluator::evaluate_expr_to_expr(body)?;
+        match crate::evaluator::evaluate_expr_to_expr(body) {
+          Ok(_) => {}
+          Err(InterpreterError::BreakSignal) => break,
+          Err(InterpreterError::ContinueSignal) => {}
+          Err(e) => return Err(e),
+        }
       }
       Ok(Expr::Identifier("Null".to_string()))
     }
@@ -2898,7 +2903,12 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           &var_name,
           &Expr::Integer(i),
         );
-        crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+        match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+          Ok(_) => {}
+          Err(InterpreterError::BreakSignal) => break,
+          Err(InterpreterError::ContinueSignal) => {}
+          Err(e) => return Err(e),
+        }
       }
       Ok(Expr::Identifier("Null".to_string()))
     }
