@@ -707,11 +707,19 @@ fn expr_to_full_form(expr: &Expr) -> String {
       format!("{}[{}]", expr_to_full_form(func), expr_to_full_form(expr))
     }
     Expr::Part { expr, index } => {
-      format!(
-        "Part[{}, {}]",
-        expr_to_full_form(expr),
-        expr_to_full_form(index)
-      )
+      // Flatten nested Part into Part[expr, i1, i2, ...]
+      let mut indices = vec![expr_to_full_form(index)];
+      let mut base = expr.as_ref();
+      while let Expr::Part {
+        expr: inner_expr,
+        index: inner_index,
+      } = base
+      {
+        indices.push(expr_to_full_form(inner_index));
+        base = inner_expr.as_ref();
+      }
+      indices.reverse();
+      format!("Part[{}, {}]", expr_to_full_form(base), indices.join(", "))
     }
     Expr::Function { body } => {
       format!("Function[{}]", expr_to_full_form(body))

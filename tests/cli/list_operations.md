@@ -1201,6 +1201,18 @@ $ wo 'Riffle[{}, x]'
 {}
 ```
 
+Element-wise interleaving with a second list:
+
+```scrut
+$ wo 'Riffle[{a, b, c, d}, {1, 2, 3, 4}]'
+{a, 1, b, 2, c, 3, d, 4}
+```
+
+```scrut
+$ wo 'Riffle[{a, b, c}, {1, 2}]'
+{a, 1, b, 2, c}
+```
+
 
 ## `AnyTrue`
 
@@ -1454,4 +1466,99 @@ $ wo 'Inner[Times, {1, 2, 3}, {4, 5, 6}, Plus]'
 ```scrut
 $ wo 'Inner[Plus, {1, 2}, {3, 4}, Times]'
 24
+```
+
+
+## `Permutations`
+
+Generates all permutations of a list.
+
+```scrut
+$ wo 'Permutations[{a, b, c}]'
+{{a, b, c}, {a, c, b}, {b, a, c}, {b, c, a}, {c, a, b}, {c, b, a}}
+```
+
+```scrut
+$ wo 'Permutations[{1, 2, 3}, {2}]'
+{{1, 2}, {1, 3}, {2, 1}, {2, 3}, {3, 1}, {3, 2}}
+```
+
+```scrut
+$ wo 'Permutations[{1, 2}, {1}]'
+{{1}, {2}}
+```
+
+```scrut
+$ wo 'Permutations[{a}]'
+{{a}}
+```
+
+```scrut
+$ wo 'Permutations[{}]'
+{{}}
+```
+
+```scrut
+$ wo 'Length[Permutations[Range[4]]]'
+24
+```
+
+
+## `Subsets`
+
+Generates subsets (combinations) of a list.
+
+```scrut
+$ wo 'Subsets[{a, b, c}]'
+{{}, {a}, {b}, {c}, {a, b}, {a, c}, {b, c}, {a, b, c}}
+```
+
+```scrut
+$ wo 'Subsets[{a, b, c}, {2}]'
+{{a, b}, {a, c}, {b, c}}
+```
+
+```scrut
+$ wo 'Subsets[{a, b, c}, {0}]'
+{{}}
+```
+
+```scrut
+$ wo 'Subsets[{1, 2, 3, 4}, {3}]'
+{{1, 2, 3}, {1, 2, 4}, {1, 3, 4}, {2, 3, 4}}
+```
+
+
+## `SparseArray`
+
+Creates a matrix from position-value rules with a default fill value.
+
+```scrut
+$ wo 'SparseArray[{{1, 2} -> "Q", {3, 1} -> "Q"}, {3, 3}, "."]'
+{{., Q, .}, {., ., .}, {Q, ., .}}
+```
+
+```scrut
+$ wo 'Normal[SparseArray[{{1, 2} -> "Q"}, {2, 2}, "."]]'
+{{., Q}, {., .}}
+```
+
+
+## `Table` (multi-dimensional)
+
+Table supports multiple iterator specifications for multi-dimensional arrays.
+
+```scrut
+$ wo 'Table[i + j, {i, 1, 2}, {j, 1, 3}]'
+{{2, 3, 4}, {3, 4, 5}}
+```
+
+```scrut
+$ wo 'Table["x", {3}]'
+{x, x, x}
+```
+
+```scrut
+$ wo 'Table[0, {3}, {2}]'
+{{0, 0}, {0, 0}, {0, 0}}
 ```

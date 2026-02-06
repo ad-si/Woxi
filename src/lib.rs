@@ -17,7 +17,8 @@ pub struct WolframParser;
 #[derive(Clone)]
 enum StoredValue {
   Association(Vec<(String, String)>),
-  Raw(String), // keep evaluated textual value
+  Raw(String),           // keep evaluated textual value
+  ExprVal(syntax::Expr), // keep as structured AST for fast Part access
 }
 thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
@@ -183,10 +184,18 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     && trimmed.chars().next().unwrap().is_ascii_alphabetic()
   {
     // This is a simple identifier
-    if let Some(StoredValue::Raw(val)) =
-      ENV.with(|e| e.borrow().get(trimmed).cloned())
-    {
-      return Ok(val);
+    if let Some(stored) = ENV.with(|e| e.borrow().get(trimmed).cloned()) {
+      return Ok(match stored {
+        StoredValue::ExprVal(e) => syntax::expr_to_output(&e),
+        StoredValue::Raw(val) => val,
+        StoredValue::Association(items) => {
+          let parts: Vec<String> = items
+            .iter()
+            .map(|(k, v)| format!("{} -> {}", k, v))
+            .collect();
+          format!("<|{}|>", parts.join(", "))
+        }
+      });
     }
     // Return identifier as-is if not found
     return Ok(trimmed.to_string());
@@ -359,6 +368,7 @@ fn try_fast_function_call(
         // It's an identifier, look it up
         match ENV.with(|e| e.borrow().get(arg).cloned()) {
           Some(StoredValue::Raw(val)) => val,
+          Some(StoredValue::ExprVal(e)) => syntax::expr_to_string(&e),
           _ => return None,
         }
       } else if arg.starts_with('{') && arg.ends_with('}') {
@@ -394,6 +404,7 @@ fn try_fast_function_call(
       {
         match ENV.with(|e| e.borrow().get(arg).cloned()) {
           Some(StoredValue::Raw(val)) => val,
+          Some(StoredValue::ExprVal(e)) => syntax::expr_to_string(&e),
           _ => return None,
         }
       } else if arg.starts_with('{') && arg.ends_with('}') {

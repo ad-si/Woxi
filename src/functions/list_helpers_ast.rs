@@ -839,6 +839,26 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Table[expr, {i, max}] -> {expr with i=1, ..., expr with i=max}
 /// Table[expr, {i, {list}}] -> {expr with i=elem1, expr with i=elem2, ...}
 /// Table[expr, n] -> {expr, expr, ..., expr} (n times)
+/// Multi-dimensional Table: Table[expr, iter1, iter2, ...]
+/// Recursively nests Table from last iterator to first.
+pub fn table_multi_ast(
+  body: &Expr,
+  iters: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if iters.len() == 1 {
+    return table_ast(body, &iters[0]);
+  }
+  // Nest: the body for the outer iterator is Table[body, inner_iters...]
+  // We build from the innermost outward
+  let inner_body = Expr::FunctionCall {
+    name: "Table".to_string(),
+    args: std::iter::once(body.clone())
+      .chain(iters[1..].iter().cloned())
+      .collect(),
+  };
+  table_ast(&inner_body, &iters[0])
+}
+
 pub fn table_ast(
   body: &Expr,
   iter_spec: &Expr,
@@ -861,6 +881,22 @@ pub fn table_ast(
     Expr::List(items) => {
       if items.is_empty() {
         return Ok(Expr::List(vec![]));
+      }
+
+      // Handle {n} form (single element = just repeat count, no variable)
+      if items.len() == 1 {
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&items[0])?;
+        let n = expr_to_i128(&evaluated).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Table: iterator bound must be an integer".into(),
+          )
+        })?;
+        let mut results = Vec::new();
+        for _ in 0..n {
+          let val = crate::evaluator::evaluate_expr_to_expr(body)?;
+          results.push(val);
+        }
+        return Ok(Expr::List(results));
       }
 
       // Extract iterator variable
@@ -1669,6 +1705,18 @@ pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
 
   if items.is_empty() {
     return Ok(Expr::List(vec![]));
+  }
+
+  // If sep is a list, interleave element-wise: Riffle[{a,b,c}, {x,y,z}] -> {a,x,b,y,c,z}
+  if let Expr::List(sep_items) = sep {
+    let mut result = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+      result.push(item.clone());
+      if i < sep_items.len() {
+        result.push(sep_items[i].clone());
+      }
+    }
+    return Ok(Expr::List(result));
   }
 
   let mut result = Vec::new();
@@ -3110,4 +3158,220 @@ pub fn replace_part_ast(
   let mut result = items;
   result[idx] = val.clone();
   Ok(Expr::List(result))
+}
+
+/// AST-based Permutations: generate all permutations of a list.
+/// Permutations[{a, b, c}] -> all permutations
+/// Permutations[{a, b, c}, {k}] -> all permutations of length k
+pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let list = &args[0];
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Permutations".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let k = if args.len() >= 2 {
+    // Second arg should be {k} — a list with one integer
+    match &args[1] {
+      Expr::List(spec) if spec.len() == 1 => match &spec[0] {
+        Expr::Integer(n) => *n as usize,
+        _ => items.len(),
+      },
+      Expr::Integer(n) => *n as usize,
+      _ => items.len(),
+    }
+  } else {
+    items.len()
+  };
+
+  let n = items.len();
+  if k > n {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let mut result = Vec::new();
+  let indices: Vec<usize> = (0..n).collect();
+  generate_k_permutations(
+    &indices,
+    k,
+    &mut vec![],
+    &mut vec![false; n],
+    &items,
+    &mut result,
+  );
+  Ok(Expr::List(result))
+}
+
+/// Helper to generate k-permutations
+fn generate_k_permutations(
+  _indices: &[usize],
+  k: usize,
+  current: &mut Vec<usize>,
+  used: &mut Vec<bool>,
+  items: &[Expr],
+  result: &mut Vec<Expr>,
+) {
+  if current.len() == k {
+    let perm: Vec<Expr> = current.iter().map(|&i| items[i].clone()).collect();
+    result.push(Expr::List(perm));
+    return;
+  }
+  for i in 0..items.len() {
+    if !used[i] {
+      used[i] = true;
+      current.push(i);
+      generate_k_permutations(_indices, k, current, used, items, result);
+      current.pop();
+      used[i] = false;
+    }
+  }
+}
+
+/// AST-based Subsets: generate subsets of a list.
+/// Subsets[{a, b, c}] -> all subsets
+/// Subsets[{a, b, c}, {k}] -> all subsets of size k
+pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let list = &args[0];
+  let items = match list {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Subsets".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if args.len() >= 2 {
+    // Subsets[list, {k}] - subsets of specific size
+    match &args[1] {
+      Expr::List(spec) if spec.len() == 1 => {
+        if let Expr::Integer(k) = &spec[0] {
+          let k = *k as usize;
+          let mut result = Vec::new();
+          generate_combinations(&items, k, 0, &mut vec![], &mut result);
+          return Ok(Expr::List(result));
+        }
+      }
+      _ => {}
+    }
+  }
+
+  // Subsets[list] - all subsets
+  let n = items.len();
+  let mut result = Vec::new();
+  for k in 0..=n {
+    generate_combinations(&items, k, 0, &mut vec![], &mut result);
+  }
+  Ok(Expr::List(result))
+}
+
+/// Helper to generate combinations (subsets of size k)
+fn generate_combinations(
+  items: &[Expr],
+  k: usize,
+  start: usize,
+  current: &mut Vec<Expr>,
+  result: &mut Vec<Expr>,
+) {
+  if current.len() == k {
+    result.push(Expr::List(current.clone()));
+    return;
+  }
+  for i in start..items.len() {
+    current.push(items[i].clone());
+    generate_combinations(items, k, i + 1, current, result);
+    current.pop();
+  }
+}
+
+/// AST-based SparseArray: create a matrix from position rules.
+/// SparseArray[rules, {rows, cols}, default] -> evaluates rules and creates matrix
+pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 3 {
+    return Ok(Expr::FunctionCall {
+      name: "SparseArray".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let rules = &args[0];
+  let dims = &args[1];
+  let default = &args[2];
+
+  // Extract dimensions
+  let dim_values = match dims {
+    Expr::List(items) => {
+      let mut result = Vec::new();
+      for item in items {
+        match item {
+          Expr::Integer(n) => result.push(*n as usize),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "SparseArray".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+      result
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if dim_values.len() == 2 {
+    let rows = dim_values[0];
+    let cols = dim_values[1];
+
+    // Initialize matrix with default value
+    let mut matrix: Vec<Vec<Expr>> = vec![vec![default.clone(); cols]; rows];
+
+    // Process rules: {pos -> val, pos -> val, ...}
+    let rule_list = match rules {
+      Expr::List(items) => items.clone(),
+      _ => vec![rules.clone()],
+    };
+
+    for rule in &rule_list {
+      match rule {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => {
+          // pattern should be {row, col} (1-indexed)
+          if let Expr::List(pos) = pattern.as_ref()
+            && pos.len() == 2
+            && let (Expr::Integer(r), Expr::Integer(c)) = (&pos[0], &pos[1])
+          {
+            let ri = (*r - 1) as usize;
+            let ci = (*c - 1) as usize;
+            if ri < rows && ci < cols {
+              matrix[ri][ci] = replacement.as_ref().clone();
+            }
+          }
+        }
+        _ => {} // skip non-rules
+      }
+    }
+
+    // Convert to nested list
+    let result: Vec<Expr> = matrix.into_iter().map(Expr::List).collect();
+    return Ok(Expr::List(result));
+  }
+
+  // For non-2D arrays, return symbolic
+  Ok(Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: args.to_vec(),
+  })
 }

@@ -12,10 +12,18 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
     Expr::String(s) => Ok(format!("\"{}\"", s)),
     Expr::Identifier(name) => {
       // Look up in environment
-      if let Some(StoredValue::Raw(val)) =
-        ENV.with(|e| e.borrow().get(name).cloned())
-      {
-        Ok(val)
+      if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
+        match stored {
+          StoredValue::ExprVal(e) => Ok(expr_to_string(&e)),
+          StoredValue::Raw(val) => Ok(val),
+          StoredValue::Association(items) => {
+            let parts: Vec<String> = items
+              .iter()
+              .map(|(k, v)| format!("{} -> {}", k, v))
+              .collect();
+            Ok(format!("<|{}|>", parts.join(", ")))
+          }
+        }
       } else {
         // Return as symbolic
         Ok(name.clone())
@@ -269,7 +277,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       pattern,
       replacement,
     } => {
-      let p = expr_to_string(pattern);
+      let p = evaluate_expr(pattern)?;
       let r = evaluate_expr(replacement)?;
       Ok(format!("{} -> {}", p, r))
     }
@@ -377,6 +385,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Look up in environment
       if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
         match stored {
+          StoredValue::ExprVal(e) => Ok(e),
           StoredValue::Raw(val) => {
             // Parse the stored value back to Expr
             string_to_expr(&val)
@@ -445,6 +454,37 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Special handling for Set - first arg must be identifier or Part, second gets evaluated
       if name == "Set" && args.len() == 2 {
         return set_ast(&args[0], &args[1]);
+      }
+      // Special handling for Increment/Decrement - x++ / x--
+      if (name == "Increment" || name == "Decrement")
+        && args.len() == 1
+        && let Expr::Identifier(var_name) = &args[0]
+      {
+        let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+        let current_val = match current {
+          Some(StoredValue::ExprVal(e)) => e,
+          Some(StoredValue::Raw(s)) => {
+            crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+          }
+          _ => Expr::Integer(0),
+        };
+        let delta = if name == "Increment" {
+          Expr::Integer(1)
+        } else {
+          Expr::Integer(-1)
+        };
+        let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(current_val.clone()),
+          right: Box::new(delta),
+        })?;
+        ENV.with(|e| {
+          e.borrow_mut().insert(
+            var_name.clone(),
+            StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
+          );
+        });
+        return Ok(current_val);
       }
       // Special handling for Table, Do, With - don't evaluate args (body needs iteration/bindings)
       // These functions take unevaluated expressions as first argument
@@ -704,9 +744,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       pattern,
       replacement,
     } => {
+      let p = evaluate_expr_to_expr(pattern)?;
       let r = evaluate_expr_to_expr(replacement)?;
       Ok(Expr::Rule {
-        pattern: pattern.clone(),
+        pattern: Box::new(p),
         replacement: Box::new(r),
       })
     }
@@ -752,8 +793,22 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       apply_postfix_ast(&evaluated_expr, func)
     }
     Expr::Part { expr: e, index } => {
-      let evaluated_expr = evaluate_expr_to_expr(e)?;
       let evaluated_idx = evaluate_expr_to_expr(index)?;
+      // Optimize: for Part on an Identifier stored as ExprVal, avoid full clone
+      if let Expr::Identifier(var_name) = e.as_ref() {
+        let result = ENV.with(|env| {
+          let env = env.borrow();
+          if let Some(StoredValue::ExprVal(stored)) = env.get(var_name) {
+            Some(extract_part_ast(stored, &evaluated_idx))
+          } else {
+            None
+          }
+        });
+        if let Some(r) = result {
+          return r;
+        }
+      }
+      let evaluated_expr = evaluate_expr_to_expr(e)?;
       extract_part_ast(&evaluated_expr, &evaluated_idx)
     }
     Expr::Function { body } => {
@@ -1091,6 +1146,11 @@ pub fn evaluate_function_call_ast(
     "Table" if args.len() == 2 => {
       return list_helpers_ast::table_ast(&args[0], &args[1]);
     }
+    "Table" if args.len() >= 3 => {
+      // Multi-dimensional Table: Table[expr, iter1, iter2, ...]
+      // Nest from innermost to outermost
+      return list_helpers_ast::table_multi_ast(&args[0], &args[1..]);
+    }
     "MapThread" if args.len() == 2 => {
       return list_helpers_ast::map_thread_ast(&args[0], &args[1]);
     }
@@ -1098,6 +1158,20 @@ pub fn evaluate_function_call_ast(
       if let Expr::Integer(n) = &args[1] {
         return list_helpers_ast::partition_ast(&args[0], *n);
       }
+    }
+    "Permutations" if !args.is_empty() && args.len() <= 2 => {
+      return list_helpers_ast::permutations_ast(args);
+    }
+    "Subsets" if !args.is_empty() && args.len() <= 2 => {
+      return list_helpers_ast::subsets_ast(args);
+    }
+    "SparseArray" if !args.is_empty() => {
+      return list_helpers_ast::sparse_array_ast(args);
+    }
+    "Normal" if args.len() == 1 => {
+      // Normal[SparseArray[...]] - SparseArray already evaluates to a list,
+      // so Normal just returns its argument (identity for already-evaluated arrays)
+      return Ok(args[0].clone());
     }
     "First" if args.len() == 1 => {
       return list_helpers_ast::first_ast(&args[0]);
@@ -1517,17 +1591,12 @@ pub fn evaluate_function_call_ast(
         crate::capture_stdout("");
         return Ok(Expr::Identifier("Null".to_string()));
       }
-      // 1 arg accepted
-      if args.len() != 1 {
-        return Err(InterpreterError::EvaluationError(
-          "Print expects at most 1 argument".into(),
-        ));
-      }
-      // Format and print the argument
-      let display_str = match &args[0] {
-        Expr::String(s) => s.clone(),
-        other => expr_to_string(other),
-      };
+      // Format and print all arguments concatenated (like Wolfram Print)
+      let display_str: String = args
+        .iter()
+        .map(crate::syntax::expr_to_output)
+        .collect::<Vec<_>>()
+        .join("");
       println!("{}", display_str);
       crate::capture_stdout(&display_str);
       return Ok(Expr::Identifier("Null".to_string()));
@@ -2033,6 +2102,26 @@ pub fn evaluate_function_call_ast(
     }
   }
 
+  // Check if the variable stores a value that can be called as a function
+  // (e.g., anonymous function stored in a variable: f = (# + 1) &; f[5])
+  let stored_value = crate::ENV.with(|e| {
+    let env = e.borrow();
+    env.get(name).cloned()
+  });
+  if let Some(stored) = &stored_value {
+    let parsed = match stored {
+      crate::StoredValue::ExprVal(e) => Some(e.clone()),
+      crate::StoredValue::Raw(val_str) => {
+        crate::syntax::string_to_expr(val_str).ok()
+      }
+      _ => None,
+    };
+    if let Some(Expr::Function { body }) = &parsed {
+      let substituted = crate::syntax::substitute_slots(body, args);
+      return evaluate_expr_to_expr(&substituted);
+    }
+  }
+
   // Unknown function - return as symbolic function call
   Ok(Expr::FunctionCall {
     name: name.to_string(),
@@ -2210,60 +2299,156 @@ fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(&substituted)
 }
 
-/// AST-based Set implementation to handle Part assignment on associations
+/// Recursively set a value at a path of indices within an Expr.
+/// Supports lists and FunctionCall arguments (e.g., Grid[[1, row, col]]).
+fn set_part_deep(
+  expr: &mut Expr,
+  indices: &[Expr],
+  value: &Expr,
+) -> Result<(), InterpreterError> {
+  if indices.is_empty() {
+    *expr = value.clone();
+    return Ok(());
+  }
+
+  let idx = match &indices[0] {
+    Expr::Integer(n) => *n as i64,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Part assignment: index must be an integer".into(),
+      ));
+    }
+  };
+
+  match expr {
+    Expr::List(items) => {
+      let len = items.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx < 0 || actual_idx >= len {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Part::partw: Part {} of list does not exist.",
+          idx
+        )));
+      }
+      set_part_deep(&mut items[actual_idx as usize], &indices[1..], value)
+    }
+    Expr::FunctionCall { args, .. } => {
+      // Part 0 is the head, Part 1.. are arguments (1-indexed)
+      if idx == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Cannot set Part 0 (head) of a function call".into(),
+        ));
+      }
+      let actual_idx = (idx - 1) as usize;
+      if actual_idx >= args.len() {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Part::partw: Part {} of expression does not exist.",
+          idx
+        )));
+      }
+      set_part_deep(&mut args[actual_idx], &indices[1..], value)
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Part assignment: cannot index into this expression".into(),
+    )),
+  }
+}
+
+/// AST-based Set implementation to handle Part assignment on associations and lists
 fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
-  // Handle Part assignment: myHash[["key"]] = value
-  if let Expr::Part { expr, index } = lhs
-    && let Expr::Identifier(var_name) = expr.as_ref()
-  {
+  // Handle Part assignment: var[[indices]] = value
+  if let Expr::Part { .. } = lhs {
+    // Flatten nested Part to get base variable and list of indices
+    let mut indices = Vec::new();
+    let mut current = lhs;
+    while let Expr::Part { expr, index } = current {
+      indices.push(index.as_ref().clone());
+      current = expr.as_ref();
+    }
+    indices.reverse();
+
+    let var_name = match current {
+      Expr::Identifier(name) => name.clone(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Part assignment requires a variable name".into(),
+        ));
+      }
+    };
+
+    // Evaluate indices
+    let mut eval_indices = Vec::new();
+    for idx in &indices {
+      eval_indices.push(evaluate_expr_to_expr(idx)?);
+    }
+
     // Evaluate the RHS
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
-    // Get the key - extract string from String or use identifier name
-    let key = match index.as_ref() {
-      Expr::String(s) => s.clone(),
-      Expr::Identifier(s) => s.clone(),
-      other => expr_to_string(other),
-    };
-
-    // Update or add the key in the association
-    ENV.with(|e| {
-      let mut env = e.borrow_mut();
-      if let Some(StoredValue::Association(pairs)) = env.get_mut(var_name) {
-        // Update existing key or add new key
-        if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
-          pair.1 = expr_to_string(&rhs_value);
-        } else {
-          pairs.push((key, expr_to_string(&rhs_value)));
-        }
-        Ok(())
-      } else {
-        Err(InterpreterError::EvaluationError(format!(
-          "{} is not an association",
-          var_name
-        )))
+    // Single-index association assignment: myHash[["key"]] = value
+    if eval_indices.len() == 1 {
+      let is_assoc = crate::ENV.with(|e| {
+        let env = e.borrow();
+        matches!(env.get(&var_name), Some(StoredValue::Association(_)))
+      });
+      if is_assoc {
+        let key = match &eval_indices[0] {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          other => expr_to_string(other),
+        };
+        crate::ENV.with(|e| {
+          let mut env = e.borrow_mut();
+          if let Some(StoredValue::Association(pairs)) = env.get_mut(&var_name)
+          {
+            if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
+              pair.1 = expr_to_string(&rhs_value);
+            } else {
+              pairs.push((key, expr_to_string(&rhs_value)));
+            }
+          }
+        });
+        return Ok(rhs_value);
       }
-    })?;
+    }
 
-    // Return the updated association as Expr
-    return ENV.with(|e| {
-      let env = e.borrow();
-      if let Some(StoredValue::Association(pairs)) = env.get(var_name) {
-        let items: Vec<(Expr, Expr)> = pairs
-          .iter()
-          .map(|(k, v)| {
-            let key_expr = Expr::Identifier(k.clone());
-            let val_expr = string_to_expr(v).unwrap_or(Expr::Raw(v.clone()));
-            (key_expr, val_expr)
-          })
-          .collect();
-        Ok(Expr::Association(items))
+    // General Part assignment: modify in-place if ExprVal, otherwise parse/modify/store
+    let modified_in_place = crate::ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      if let Some(StoredValue::ExprVal(expr)) = env.get_mut(&var_name) {
+        // Modify directly in place — no clone needed
+        set_part_deep(expr, &eval_indices, &rhs_value)
       } else {
-        Err(InterpreterError::EvaluationError(
-          "Variable not found".into(),
-        ))
+        Err(InterpreterError::EvaluationError("not ExprVal".into()))
       }
     });
+    if modified_in_place.is_ok() {
+      return Ok(rhs_value);
+    }
+
+    // Fallback: parse stored string, modify, store back as ExprVal
+    let stored_str = crate::ENV.with(|e| {
+      let env = e.borrow();
+      match env.get(&var_name) {
+        Some(StoredValue::Raw(s)) => Some(s.clone()),
+        _ => None,
+      }
+    });
+    if let Some(stored_str) = stored_str {
+      let mut stored_expr =
+        string_to_expr(&stored_str).unwrap_or(Expr::Raw(stored_str));
+      set_part_deep(&mut stored_expr, &eval_indices, &rhs_value)?;
+      crate::ENV.with(|e| {
+        e.borrow_mut()
+          .insert(var_name, StoredValue::ExprVal(stored_expr))
+      });
+      return Ok(rhs_value);
+    }
+
+    return Err(InterpreterError::EvaluationError(format!(
+      "Variable {} not found",
+      var_name
+    )));
   }
 
   // Handle simple identifier assignment: x = value
@@ -2287,6 +2472,12 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::Association(pairs))
+      });
+    } else if matches!(&rhs_value, Expr::List(_) | Expr::FunctionCall { .. }) {
+      // Store lists and function calls as ExprVal for fast Part access
+      ENV.with(|e| {
+        e.borrow_mut()
+          .insert(var_name.clone(), StoredValue::ExprVal(rhs_value.clone()))
       });
     } else {
       ENV.with(|e| {
