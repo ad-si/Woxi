@@ -7,7 +7,7 @@ Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 UnsignedInteger = @{ ASCII_DIGIT+ }
 UnsignedReal = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
-Constant = { ("-")? ~ "Pi" }
+Constant = { ("-")? ~ "Pi" ~ !(ASCII_ALPHANUMERIC | "_") }
 NumericValue = { Real | Integer | Constant }
 UnsignedNumericValue = { UnsignedReal | UnsignedInteger | Constant }
 
