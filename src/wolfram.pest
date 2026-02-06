@@ -5,8 +5,11 @@ PartExtract = { (List | Identifier) ~ "[[" ~ Expression ~ "]]" }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+UnsignedInteger = @{ ASCII_DIGIT+ }
+UnsignedReal = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 Constant = { ("-")? ~ "Pi" }
 NumericValue = { Real | Integer | Constant }
+UnsignedNumericValue = { UnsignedReal | UnsignedInteger | Constant }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
@@ -89,9 +92,9 @@ Term = _{
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
+// Uses UnsignedNumericValue to prevent "n-1" from being parsed as implicit multiplication n*(-1)
 SimpleTerm = _{
-    NumericValue
-  | Constant
+    UnsignedNumericValue
   | FunctionCall
   | Identifier
   | "(" ~ Expression ~ ")"

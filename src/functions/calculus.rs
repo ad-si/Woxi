@@ -44,13 +44,13 @@ impl SymExpr {
 /// Parse a Pair into a symbolic expression
 fn parse_to_sym(pair: Pair<Rule>) -> Result<SymExpr, InterpreterError> {
   match pair.as_rule() {
-    Rule::Integer => {
+    Rule::Integer | Rule::UnsignedInteger => {
       let n = pair.as_str().parse::<i64>().map_err(|_| {
         InterpreterError::EvaluationError("Invalid integer".into())
       })?;
       Ok(SymExpr::Num(n))
     }
-    Rule::Real => {
+    Rule::Real | Rule::UnsignedReal => {
       // For symbolic computation, we'll treat reals as symbols for now
       Ok(SymExpr::Var(pair.as_str().to_string()))
     }
@@ -78,7 +78,7 @@ fn parse_to_sym(pair: Pair<Rule>) -> Result<SymExpr, InterpreterError> {
       // If not found or not parseable, treat as a symbolic variable
       Ok(SymExpr::Var(name))
     }
-    Rule::NumericValue => {
+    Rule::NumericValue | Rule::UnsignedNumericValue => {
       let inner = pair.into_inner().next().unwrap();
       parse_to_sym(inner)
     }

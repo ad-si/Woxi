@@ -351,11 +351,11 @@ use pest::iterators::Pair;
 /// This is used to store function bodies without re-parsing.
 pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
   match pair.as_rule() {
-    Rule::Integer => {
+    Rule::Integer | Rule::UnsignedInteger => {
       let s = pair.as_str();
       Expr::Integer(s.parse().unwrap_or(0))
     }
-    Rule::Real => {
+    Rule::Real | Rule::UnsignedReal => {
       let s = pair.as_str();
       Expr::Real(s.parse().unwrap_or(0.0))
     }
@@ -376,7 +376,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::Slot(num)
     }
     Rule::Constant => Expr::Constant(pair.as_str().to_string()),
-    Rule::NumericValue => {
+    Rule::NumericValue | Rule::UnsignedNumericValue => {
       let inner = pair.into_inner().next().unwrap();
       pair_to_expr(inner)
     }
@@ -455,7 +455,9 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         .collect();
       Expr::FunctionCall { name, args }
     }
-    Rule::Expression | Rule::ExpressionNoImplicit => parse_expression(pair),
+    Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
+      parse_expression(pair)
+    }
     Rule::CompoundExpression => {
       let exprs: Vec<Expr> = pair
         .into_inner()
@@ -682,7 +684,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 
   for item in inner {
     match item.as_rule() {
-      Rule::Operator => {
+      Rule::Operator | Rule::ConditionOp => {
         operators.push(item.as_str().to_string());
       }
       _ => {

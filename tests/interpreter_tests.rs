@@ -1,4 +1,4 @@
-use woxi::interpret;
+use woxi::{clear_state, interpret};
 
 mod interpreter_tests {
   use super::*;
@@ -1306,6 +1306,127 @@ mod interpreter_tests {
       // Times[a, b] should come before c alphabetically (a < c)
       let result = interpret("FullForm[a b + c]").unwrap();
       assert_eq!(result, "Plus[Times[a, b], c]");
+    }
+  }
+
+  mod subtraction_without_spaces {
+    use super::*;
+
+    #[test]
+    fn n_minus_1_in_function_body() {
+      // Regression: n-1 (without spaces) was parsed as implicit multiplication n*(-1)
+      clear_state();
+      assert_eq!(interpret("f[n_] := n-1; f[99]").unwrap(), "98");
+    }
+
+    #[test]
+    fn subtraction_in_nested_function_call() {
+      // Regression: ToString[n-1] was evaluating n-1 as -(n) instead of n minus 1
+      clear_state();
+      assert_eq!(interpret("f[n_] := ToString[n-1]; f[99]").unwrap(), "98");
+    }
+
+    #[test]
+    fn subtraction_in_string_join() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          r#"f[n_] := ToString[n] <> " minus 1 is " <> ToString[n-1]; f[10]"#
+        )
+        .unwrap(),
+        "10 minus 1 is 9"
+      );
+    }
+
+    #[test]
+    fn negative_numbers_still_work() {
+      assert_eq!(interpret("{-1, -2, -3}").unwrap(), "{-1, -2, -3}");
+      assert_eq!(interpret("-1 + 3").unwrap(), "2");
+    }
+  }
+
+  mod conditional_definitions {
+    use super::*;
+
+    #[test]
+    fn single_condition() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "f[n_ /; n > 0] := \"positive\"; f[n_] := \"non-positive\"; f[3]"
+        )
+        .unwrap(),
+        "positive"
+      );
+    }
+
+    #[test]
+    fn single_condition_fallback() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "f[n_ /; n > 0] := \"positive\"; f[n_] := \"non-positive\"; f[-1]"
+        )
+        .unwrap(),
+        "non-positive"
+      );
+    }
+
+    #[test]
+    fn multiple_conditions_fizzbuzz() {
+      // Regression: multiple SetDelayed definitions with conditions overwrote each other
+      clear_state();
+      assert_eq!(
+        interpret(r#"f[n_ /; Mod[n, 15] == 0] := "FizzBuzz"; f[n_ /; Mod[n, 3] == 0] := "Fizz"; f[n_ /; Mod[n, 5] == 0] := "Buzz"; f[n_] := n; f[3]"#).unwrap(),
+        "Fizz"
+      );
+      assert_eq!(interpret("f[5]").unwrap(), "Buzz");
+      assert_eq!(interpret("f[15]").unwrap(), "FizzBuzz");
+      assert_eq!(interpret("f[7]").unwrap(), "7");
+    }
+
+    #[test]
+    fn conditions_tried_in_order() {
+      // Definitions are tried in the order they were defined
+      clear_state();
+      assert_eq!(
+        interpret(r#"g[n_ /; n > 10] := "big"; g[n_ /; n > 0] := "small"; g[n_] := "zero or negative"; g[20]"#).unwrap(),
+        "big"
+      );
+      assert_eq!(interpret("g[5]").unwrap(), "small");
+      assert_eq!(interpret("g[0]").unwrap(), "zero or negative");
+    }
+  }
+
+  mod set_attributes {
+    use super::*;
+
+    #[test]
+    fn listable_threads_over_list() {
+      clear_state();
+      assert_eq!(
+        interpret("SetAttributes[f, Listable]; f[x_] := x * 2; f[{1, 2, 3}]")
+          .unwrap(),
+        "{2, 4, 6}"
+      );
+    }
+
+    #[test]
+    fn listable_with_conditions() {
+      clear_state();
+      assert_eq!(
+        interpret(r#"SetAttributes[f, Listable]; f[n_ /; Mod[n, 3] == 0] := "Fizz"; f[n_] := n; f[{1, 2, 3, 4, 5, 6}]"#).unwrap(),
+        r#"{1, 2, Fizz, 4, 5, Fizz}"#
+      );
+    }
+
+    #[test]
+    fn listable_single_value_unchanged() {
+      clear_state();
+      assert_eq!(
+        interpret("SetAttributes[f, Listable]; f[x_] := x + 1; f[5]").unwrap(),
+        "6"
+      );
     }
   }
 }

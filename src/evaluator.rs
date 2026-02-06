@@ -924,6 +924,34 @@ pub fn evaluate_function_call_ast(
     "Set" if args.len() == 2 => {
       return set_ast(&args[0], &args[1]);
     }
+    "SetAttributes" if args.len() == 2 => {
+      if let Expr::Identifier(func_name) = &args[0] {
+        let attr = match &args[1] {
+          Expr::Identifier(a) => vec![a.clone()],
+          Expr::List(items) => items
+            .iter()
+            .filter_map(|item| {
+              if let Expr::Identifier(a) = item {
+                Some(a.clone())
+              } else {
+                None
+              }
+            })
+            .collect(),
+          _ => vec![],
+        };
+        crate::FUNC_ATTRS.with(|m| {
+          let mut attrs = m.borrow_mut();
+          let entry = attrs.entry(func_name.clone()).or_insert_with(Vec::new);
+          for a in attr {
+            if !entry.contains(&a) {
+              entry.push(a);
+            }
+          }
+        });
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+    }
     "If" => {
       if args.len() >= 2 && args.len() <= 4 {
         let cond = evaluate_expr_to_expr(&args[0])?;
@@ -1791,28 +1819,70 @@ pub fn evaluate_function_call_ast(
     _ => {}
   }
 
-  // Check for user-defined functions
-  let user_func_result = crate::FUNC_DEFS.with(|m| {
-    let defs = m.borrow();
-    if let Some(overloads) = defs.get(name) {
-      // Find matching arity
-      for (params, body_expr) in overloads {
-        if params.len() == args.len() {
-          // Found a match - substitute parameters with arguments
-          let mut substituted = body_expr.clone();
-          for (param, arg) in params.iter().zip(args.iter()) {
-            substituted =
-              crate::syntax::substitute_variable(&substituted, param, arg);
-          }
-          return Some(substituted);
-        }
+  // Check for Listable attribute: thread function over list arguments
+  let is_listable = crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.contains(&"Listable".to_string()))
+  });
+  if is_listable {
+    // Check if any argument is a List
+    if let Some(list_idx) = args.iter().position(|a| matches!(a, Expr::List(_)))
+      && let Expr::List(items) = &args[list_idx]
+    {
+      let mut results = Vec::new();
+      for item in items {
+        let mut new_args = args.to_vec();
+        new_args[list_idx] = item.clone();
+        results.push(evaluate_function_call_ast(name, &new_args)?);
       }
+      return Ok(Expr::List(results));
     }
-    None
+  }
+
+  // Check for user-defined functions
+  // Clone overloads to avoid holding the borrow across evaluate calls
+  let overloads = crate::FUNC_DEFS.with(|m| {
+    let defs = m.borrow();
+    defs.get(name).cloned()
   });
 
-  if let Some(body) = user_func_result {
-    return evaluate_expr_to_expr(&body);
+  if let Some(overloads) = overloads {
+    for (params, conditions, body_expr) in &overloads {
+      if params.len() != args.len() {
+        continue;
+      }
+      // Check all conditions (if any) by substituting params with args and evaluating
+      let mut conditions_met = true;
+      for cond_opt in conditions.iter() {
+        if let Some(cond_expr) = cond_opt {
+          // Substitute all parameters with their argument values in the condition
+          let mut substituted_cond = cond_expr.clone();
+          for (param, arg) in params.iter().zip(args.iter()) {
+            substituted_cond =
+              crate::syntax::substitute_variable(&substituted_cond, param, arg);
+          }
+          // Evaluate the condition - it must return True
+          match evaluate_expr_to_expr(&substituted_cond) {
+            Ok(Expr::Identifier(s)) if s == "True" => {} // condition met
+            _ => {
+              conditions_met = false;
+              break;
+            }
+          }
+        }
+      }
+      if !conditions_met {
+        continue;
+      }
+      // All conditions met - substitute parameters with arguments and evaluate body
+      let mut substituted = body_expr.clone();
+      for (param, arg) in params.iter().zip(args.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      return evaluate_expr_to_expr(&substituted);
+    }
   }
 
   // Unknown function - return as symbolic function call
