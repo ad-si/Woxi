@@ -647,6 +647,26 @@ $ wo 'Power[5, 0]'
 ```
 
 
+### `0^0`
+
+0 raised to 0 is Indeterminate.
+
+```scrut
+$ wo '0^0'
+Indeterminate
+```
+
+```scrut
+$ wo 'Power[0, 0]'
+Indeterminate
+```
+
+```scrut
+$ wo '0.0^0'
+Indeterminate
+```
+
+
 ### `Power[2, -1]`
 
 2 raised to the power of -1 equals 0.5 (1/2).
