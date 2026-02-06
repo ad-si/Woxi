@@ -223,6 +223,47 @@ $ wo 'ArrayDepth[5]'
 ```
 
 
+## `Run`
+
+Executes a system command and returns the exit code.
+
+```scrut
+$ wo 'Run["echo hello"]'
+hello
+0
+```
+
+```scrut
+$ wo 'Run["exit 0"]'
+0
+```
+
+```scrut
+$ wo 'Run["exit 1"]'
+1
+```
+
+
+## Pattern Definitions with `SetDelayed`
+
+Define a function using pattern matching.
+
+```scrut
+$ wo 'f[x_] := x^2; f[3]'
+9
+```
+
+```scrut
+$ wo 'f[x_] := x^2; f[5]'
+25
+```
+
+```scrut
+$ wo 'f[x_] := x + 1; f[10]'
+11
+```
+
+
 ## `DateString`
 
 ```scrut
