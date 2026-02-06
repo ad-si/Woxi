@@ -1633,6 +1633,9 @@ pub fn evaluate_function_call_ast(
     "Sqrt" if args.len() == 1 => {
       return crate::functions::math_ast::sqrt_ast(args);
     }
+    "Surd" if args.len() == 2 => {
+      return crate::functions::math_ast::surd_ast(args);
+    }
     "Floor" if args.len() == 1 => {
       return crate::functions::math_ast::floor_ast(args);
     }
@@ -1662,6 +1665,9 @@ pub fn evaluate_function_call_ast(
     }
     "Factorial" if args.len() == 1 => {
       return crate::functions::math_ast::factorial_ast(args);
+    }
+    "Gamma" if args.len() == 1 => {
+      return crate::functions::math_ast::gamma_ast(args);
     }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);

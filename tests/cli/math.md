@@ -921,6 +921,71 @@ $ wo 'GCD[21, 14]'
 ```
 
 
+## `Surd`
+
+Real-valued nth root.
+
+```scrut
+$ wo 'Surd[8, 3]'
+2
+```
+
+```scrut
+$ wo 'Surd[27, 3]'
+3
+```
+
+```scrut
+$ wo 'Surd[16, 4]'
+2
+```
+
+```scrut
+$ wo 'Surd[-8, 3]'
+-2
+```
+
+```scrut
+$ wo 'Surd[x, 3]'
+Surd[x, 3]
+```
+
+
+## `Gamma`
+
+Gamma function. For positive integers, Gamma[n] = (n-1)!.
+
+```scrut
+$ wo 'Gamma[1]'
+1
+```
+
+```scrut
+$ wo 'Gamma[5]'
+24
+```
+
+```scrut
+$ wo 'Gamma[6]'
+120
+```
+
+```scrut
+$ wo 'Gamma[0]'
+ComplexInfinity
+```
+
+```scrut
+$ wo 'Gamma[-1]'
+ComplexInfinity
+```
+
+```scrut
+$ wo 'Gamma[x]'
+Gamma[x]
+```
+
+
 ## `IntegerDigits`
 
 Returns the list of digits of an integer.

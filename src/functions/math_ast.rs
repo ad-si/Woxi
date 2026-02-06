@@ -617,6 +617,40 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Surd[x, n] - Real-valued nth root
+pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Surd expects exactly 2 arguments".into(),
+    ));
+  }
+  match (expr_to_num(&args[0]), expr_to_num(&args[1])) {
+    (Some(x), Some(n)) => {
+      if n == 0.0 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      // Real-valued nth root: sign(x) * |x|^(1/n)
+      let result = if x < 0.0 && n.fract() == 0.0 && (n as i128) % 2 != 0 {
+        // Odd integer root of negative number
+        -((-x).powf(1.0 / n))
+      } else if x < 0.0 {
+        // Even root of negative number - return symbolic
+        return Ok(Expr::FunctionCall {
+          name: "Surd".to_string(),
+          args: args.to_vec(),
+        });
+      } else {
+        x.powf(1.0 / n)
+      };
+      Ok(num_to_expr(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Surd".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// Floor[x] - Floor function
 pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -955,6 +989,76 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Factorial".to_string(),
       args: args.to_vec(),
     })
+  }
+}
+
+/// Gamma[n] - Gamma function: Gamma[n] = (n-1)! for positive integers
+pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Gamma expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n <= 0 {
+        // Gamma has poles at non-positive integers
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      // Gamma[n] = (n-1)! for positive integers
+      let mut result: i128 = 1;
+      for i in 2..*n {
+        result = result.saturating_mul(i);
+      }
+      Ok(Expr::Integer(result))
+    }
+    Expr::Real(f) => {
+      if *f <= 0.0 && f.fract() == 0.0 {
+        // Poles at non-positive integers
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      // Use Stirling's approximation via the standard library's tgamma equivalent
+      // Rust doesn't have tgamma in std, but we can compute via the Lanczos approximation
+      let result = gamma_fn(*f);
+      if result.is_infinite() {
+        Ok(Expr::Identifier("ComplexInfinity".to_string()))
+      } else {
+        Ok(Expr::Real(result))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Lanczos approximation for the Gamma function
+fn gamma_fn(x: f64) -> f64 {
+  if x < 0.5 {
+    // Reflection formula: Gamma(1-z) * Gamma(z) = pi / sin(pi*z)
+    std::f64::consts::PI
+      / ((std::f64::consts::PI * x).sin() * gamma_fn(1.0 - x))
+  } else {
+    let x = x - 1.0;
+    let g = 7.0;
+    let c = [
+      0.999_999_999_999_809_9,
+      676.5203681218851,
+      -1259.1392167224028,
+      771.323_428_777_653_1,
+      -176.615_029_162_140_6,
+      12.507343278686905,
+      -0.13857109526572012,
+      9.984_369_578_019_572e-6,
+      1.5056327351493116e-7,
+    ];
+    let mut sum = c[0];
+    for (i, &ci) in c.iter().enumerate().skip(1) {
+      sum += ci / (x + i as f64);
+    }
+    let t = x + g + 0.5;
+    (2.0 * std::f64::consts::PI).sqrt() * t.powf(x + 0.5) * (-t).exp() * sum
   }
 }
 
