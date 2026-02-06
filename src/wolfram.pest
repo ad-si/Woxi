@@ -38,7 +38,8 @@ Operator = {
   | "@@"     // Apply operator (must be before single @)
   | "<>"     // StringJoin operator (must be before < and >)
   | "&&"     // And operator (must be before single &)
-  | "||"     // Or operator
+  | "||"     // Or operator (must be before single |)
+  | "|"      // Alternatives operator
   | "===" | "=!=" | "==" | "!="  // SameQ, UnsameQ (must be before == and !=), Equal, Unequal
   | "<=" | ">="
   | ":="
@@ -129,7 +130,7 @@ ExpressionNoImplicit = {
     ~ ("//" ~ PostfixFunction)*
 }
 
-// Pattern: x_ or x_Head or x_?test or x_ /; condition
+// Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
 PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
@@ -145,9 +146,13 @@ ConditionOp = {
   | "/@" | "@@"                   // Map/Apply
 }
 PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
+// PatternOptional: x_ : default or x_Head : default (Optional pattern with default value)
+// Note: Wolfram uses both "x_:val" and "x_ : val" syntax. The colon must NOT be ":=" (SetDelayed)
+PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ !("=" | ">") ~ Term }
+PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ Term }
 PatternWithHead = { PatternName ~ "_" ~ Identifier }
 PatternSimple = { PatternName ~ "_" }
-Pattern = { PatternCondition | PatternTest | PatternWithHead | PatternSimple }
+Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
 // PatternExpr can be a pattern or a term (for replacement rules)
@@ -174,7 +179,7 @@ BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ BracketArgs+ }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
-FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternWithHead | PatternSimple }
+FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple }
 // Body is a simple ExpressionNoImplicit (we removed CompoundExpression option to prevent
 // greedy parsing of subsequent statements as part of the function body)
 // Compound expressions in function bodies should use explicit parentheses: f[x_] := (a; b)

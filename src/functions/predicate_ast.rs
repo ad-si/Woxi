@@ -419,6 +419,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         BinaryOperator::And => "And",
         BinaryOperator::Or => "Or",
         BinaryOperator::StringJoin => "StringJoin",
+        BinaryOperator::Alternatives => "Alternatives",
       }
     }
     Expr::UnaryOp { op, .. } => {
@@ -584,6 +585,13 @@ fn expr_to_full_form(expr: &Expr) -> String {
             expr_to_full_form(right)
           )
         }
+        BinaryOperator::Alternatives => {
+          format!(
+            "Alternatives[{}, {}]",
+            expr_to_full_form(left),
+            expr_to_full_form(right)
+          )
+        }
       }
     }
     Expr::UnaryOp { op, operand } => {
@@ -714,6 +722,18 @@ fn expr_to_full_form(expr: &Expr) -> String {
       } else {
         format!("Pattern[{}, Blank[]]", name)
       }
+    }
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => {
+      let pattern_part = if let Some(h) = head {
+        format!("Pattern[{}, Blank[{}]]", name, h)
+      } else {
+        format!("Pattern[{}, Blank[]]", name)
+      };
+      format!("Optional[{}, {}]", pattern_part, expr_to_full_form(default))
     }
     Expr::Raw(s) => s.clone(),
     Expr::CurriedCall { func, args } => {

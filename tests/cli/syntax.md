@@ -42,3 +42,33 @@ Chained postfix:
 $ wo '16 // Sqrt // Sqrt'
 2
 ```
+
+
+## Prefix application (`@`) with comparison operators
+
+`@` has higher precedence than `==`, so `f@x == y` means `(f@x) == y`.
+
+```scrut
+$ wo 'Length@{1,2,3} == 3'
+True
+```
+
+```scrut
+$ wo 'Length@Union@{1,2,1} == Length@Union[{1,2,1} + Range@3] == 3'
+False
+```
+
+
+## Alternatives (`|`)
+
+The `|` operator represents alternatives in pattern matching.
+
+```scrut
+$ wo 'Cases[{1, "a", 2, "b"}, _Integer]'
+{1, 2}
+```
+
+```scrut
+$ wo 'Cases[{1, 2, 3, 4, 5}, Except[2 | 4]]'
+{1, 3, 5}
+```

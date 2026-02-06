@@ -436,14 +436,15 @@ pub fn cases_ast(
 
   let mut kept = Vec::new();
   for item in items {
-    // For now, use string-based pattern matching
-    // This is a simplification; full pattern matching is complex
-    let item_str = crate::syntax::expr_to_string(item);
-    let pattern_str = crate::syntax::expr_to_string(pattern);
-
-    // Simple pattern check
-    if matches_pattern_simple(&item_str, &pattern_str) {
+    if matches_pattern_ast(item, pattern) {
       kept.push(item.clone());
+    } else {
+      // Fall back to string matching for compatibility
+      let item_str = crate::syntax::expr_to_string(item);
+      let pattern_str = crate::syntax::expr_to_string(pattern);
+      if matches_pattern_simple(&item_str, &pattern_str) {
+        kept.push(item.clone());
+      }
     }
   }
 
@@ -482,6 +483,124 @@ fn matches_pattern_simple(value: &str, pattern: &str) -> bool {
 
   // Literal match
   value == pattern
+}
+
+/// AST-based pattern matching for expressions.
+/// Supports: Blank (_), named patterns (x_), head patterns (_Integer, _List, etc.),
+/// Except, Alternatives, and literal matching.
+fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
+  match pattern {
+    // Blank pattern: _ matches anything
+    Expr::Pattern {
+      name: _,
+      head: None,
+    } => true,
+    // Head-constrained pattern: _Integer, _List, etc.
+    Expr::Pattern {
+      name: _,
+      head: Some(h),
+    } => get_expr_head_str(expr) == h,
+    // Identifier patterns like "_", "_Integer", "_List", etc.
+    Expr::Identifier(s) if s == "_" => true,
+    Expr::Identifier(s) if s.starts_with('_') => {
+      let head = &s[1..];
+      get_expr_head_str(expr) == head
+    }
+    // Except[pattern] - matches anything that doesn't match the inner pattern
+    Expr::FunctionCall { name, args }
+      if name == "Except" && args.len() == 1 =>
+    {
+      !matches_pattern_ast(expr, &args[0])
+    }
+    // Alternatives: a | b - matches if either side matches
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Alternatives,
+      left,
+      right,
+    } => matches_pattern_ast(expr, left) || matches_pattern_ast(expr, right),
+    // Literal comparison
+    _ => {
+      let pattern_str = crate::syntax::expr_to_string(pattern);
+      let expr_str = crate::syntax::expr_to_string(expr);
+      expr_str == pattern_str
+    }
+  }
+}
+
+/// Get the head of an expression as a string
+fn get_expr_head_str(expr: &Expr) -> &str {
+  match expr {
+    Expr::Integer(_) => "Integer",
+    Expr::Real(_) => "Real",
+    Expr::String(_) => "String",
+    Expr::List(_) => "List",
+    Expr::FunctionCall { name, .. } => name,
+    Expr::Association(_) => "Association",
+    _ => "Symbol",
+  }
+}
+
+/// Cases with level specification: Cases[list, pattern, {level}]
+pub fn cases_with_level_ast(
+  list: &Expr,
+  pattern: &Expr,
+  level_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Parse level spec: {n} means exactly level n
+  let level = match level_spec {
+    Expr::List(items) if items.len() == 1 => match &items[0] {
+      Expr::Integer(n) => *n as usize,
+      _ => 1,
+    },
+    _ => 1,
+  };
+
+  let mut results = Vec::new();
+  collect_at_level(list, pattern, level, 0, &mut results);
+  Ok(Expr::List(results))
+}
+
+/// Recursively collect elements matching pattern at a specific level
+fn collect_at_level(
+  expr: &Expr,
+  pattern: &Expr,
+  target_level: usize,
+  current_level: usize,
+  results: &mut Vec<Expr>,
+) {
+  if current_level == target_level {
+    if matches_pattern_ast(expr, pattern) {
+      results.push(expr.clone());
+    }
+    return;
+  }
+
+  // Recurse into sublists/subexpressions
+  match expr {
+    Expr::List(items) => {
+      for item in items {
+        collect_at_level(
+          item,
+          pattern,
+          target_level,
+          current_level + 1,
+          results,
+        );
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for arg in args {
+        collect_at_level(
+          arg,
+          pattern,
+          target_level,
+          current_level + 1,
+          results,
+        );
+      }
+    }
+    _ => {}
+  }
 }
 
 /// AST-based Position: find positions of elements matching a pattern.

@@ -306,8 +306,14 @@ pub enum Expr {
   CurriedCall { func: Box<Expr>, args: Vec<Expr> },
   /// Anonymous function: body &
   Function { body: Box<Expr> },
-  /// Pattern: name_
+  /// Pattern: name_ or name_Head
   Pattern { name: String, head: Option<String> },
+  /// Optional pattern: name_ : default or name_Head : default
+  PatternOptional {
+    name: String,
+    head: Option<String>,
+    default: Box<Expr>,
+  },
   /// Constant like Pi, E, etc.
   Constant(String),
   /// Raw unparsed text (fallback)
@@ -324,6 +330,7 @@ pub enum BinaryOperator {
   And,
   Or,
   StringJoin,
+  Alternatives,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -520,6 +527,31 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let name = inner.next().unwrap().as_str().to_string();
       let head = inner.next().map(|p| p.as_str().to_string());
       Expr::Pattern { name, head }
+    }
+    Rule::PatternOptionalSimple => {
+      // PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ Term }
+      let mut inner = pair.into_inner();
+      let name = inner.next().unwrap().as_str().to_string();
+      let default_pair = inner.next().unwrap();
+      let default = pair_to_expr(default_pair);
+      Expr::PatternOptional {
+        name,
+        head: None,
+        default: Box::new(default),
+      }
+    }
+    Rule::PatternOptionalWithHead => {
+      // PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ Term }
+      let mut inner = pair.into_inner();
+      let name = inner.next().unwrap().as_str().to_string();
+      let head = Some(inner.next().unwrap().as_str().to_string());
+      let default_pair = inner.next().unwrap();
+      let default = pair_to_expr(default_pair);
+      Expr::PatternOptional {
+        name,
+        head,
+        default: Box::new(default),
+      }
     }
     Rule::PatternTest | Rule::PatternCondition => {
       // Store the full pattern string as Raw to preserve test/condition info
@@ -745,14 +777,17 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 /// Get precedence of an operator (higher = binds tighter)
 fn operator_precedence(op: &str) -> u8 {
   match op {
-    "||" => 1,
-    "&&" => 2,
-    "->" | ":>" => 3,
-    "/@" | "@@" | "@" => 4,
-    "+" | "-" => 5,
-    "*" | "/" => 6,
-    "^" => 7,
-    "<>" => 5, // Same as + for string concatenation
+    "=" | ":=" => 1, // Assignment (lowest)
+    "|" => 2,        // Alternatives
+    "||" => 3,
+    "&&" => 4,
+    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 5, // Comparisons
+    "->" | ":>" => 6,
+    "+" | "-" => 7,
+    "*" | "/" => 8,
+    "<>" => 7, // Same as + for string concatenation
+    "/@" | "@@@" | "@@" | "@" => 9, // Map/Apply/Prefix (higher than arithmetic)
+    "^" => 10,
     _ => 0,
   }
 }
@@ -864,6 +899,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
     },
+    "|" => Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left: Box::new(left.clone()),
+      right: Box::new(right.clone()),
+    },
     "/@" => Expr::Map {
       func: Box::new(left.clone()),
       list: Box::new(right.clone()),
@@ -896,6 +936,37 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "SetDelayed".to_string(),
       args: vec![left.clone(), right.clone()],
     },
+    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => {
+      let comp_op = match op_str {
+        "==" => ComparisonOp::Equal,
+        "!=" => ComparisonOp::NotEqual,
+        "<" => ComparisonOp::Less,
+        "<=" => ComparisonOp::LessEqual,
+        ">" => ComparisonOp::Greater,
+        ">=" => ComparisonOp::GreaterEqual,
+        "===" => ComparisonOp::SameQ,
+        "=!=" => ComparisonOp::UnsameQ,
+        _ => ComparisonOp::Equal,
+      };
+      // If the left side is already a Comparison, extend the chain
+      if let Expr::Comparison {
+        operands: mut ops,
+        operators: mut comp_ops,
+      } = left.clone()
+      {
+        ops.push(right.clone());
+        comp_ops.push(comp_op);
+        Expr::Comparison {
+          operands: ops,
+          operators: comp_ops,
+        }
+      } else {
+        Expr::Comparison {
+          operands: vec![left.clone(), right.clone()],
+          operators: vec![comp_op],
+        }
+      }
+    }
     _ => Expr::Raw(format!(
       "{} {} {}",
       expr_to_string(left),
@@ -1020,6 +1091,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
         BinaryOperator::And => ("&&", true),
         BinaryOperator::Or => ("||", true),
         BinaryOperator::StringJoin => ("<>", false),
+        BinaryOperator::Alternatives => ("|", true),
       };
 
       // Helper to check if expr needs parentheses based on precedence
@@ -1153,6 +1225,17 @@ pub fn expr_to_string(expr: &Expr) -> String {
         format!("{}_{}", name, h)
       } else {
         format!("{}_", name)
+      }
+    }
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => {
+      if let Some(h) = head {
+        format!("{}_{}:{}", name, h, expr_to_string(default))
+      } else {
+        format!("{}_:{}", name, expr_to_string(default))
       }
     }
     Expr::Constant(s) => s.clone(),
@@ -1451,6 +1534,15 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
     Expr::Function { body } => Expr::Function {
       body: Box::new(substitute_slots(body, values)),
     },
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => Expr::PatternOptional {
+      name: name.clone(),
+      head: head.clone(),
+      default: Box::new(substitute_slots(default, values)),
+    },
     // Atoms that don't contain slots
     _ => expr.clone(),
   }
@@ -1557,6 +1649,15 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     },
     Expr::Function { body } => Expr::Function {
       body: Box::new(substitute_variable(body, var_name, value)),
+    },
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => Expr::PatternOptional {
+      name: name.clone(),
+      head: head.clone(),
+      default: Box::new(substitute_variable(default, var_name, value)),
     },
     // Atoms that don't contain the variable
     _ => expr.clone(),
