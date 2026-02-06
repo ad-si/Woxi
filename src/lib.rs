@@ -251,6 +251,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
 
   let mut last_result = None;
   let mut any_nonempty = false;
+  let mut trailing_semicolon = false;
   for node in program.into_inner() {
     match node.as_rule() {
       Rule::Expression => {
@@ -266,12 +267,19 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         store_function_definition(node)?;
         any_nonempty = true;
       }
-      _ => {} // ignore semicolons, etc.
+      Rule::TrailingSemicolon => {
+        trailing_semicolon = true;
+      }
+      _ => {} // ignore EOI, etc.
     }
   }
 
   if any_nonempty {
-    last_result.ok_or(InterpreterError::EmptyInput)
+    if trailing_semicolon {
+      Ok("Null".to_string())
+    } else {
+      last_result.ok_or(InterpreterError::EmptyInput)
+    }
   } else {
     Err(InterpreterError::EmptyInput)
   }

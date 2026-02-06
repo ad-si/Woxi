@@ -168,6 +168,46 @@ mod interpreter_tests {
     }
   }
 
+  mod trailing_semicolon {
+    use super::*;
+
+    #[test]
+    fn trailing_semicolon_returns_null() {
+      // expr; is CompoundExpression[expr, Null] — result is Null
+      assert_eq!(interpret("1 + 2;").unwrap(), "Null");
+    }
+
+    #[test]
+    fn trailing_semicolon_with_print() {
+      // Print[1]; should still execute Print, result is Null
+      assert_eq!(interpret("Print[1];").unwrap(), "Null");
+    }
+
+    #[test]
+    fn trailing_semicolon_with_postfix() {
+      // {1,2,3} // Map[Print]; should print and return Null
+      assert_eq!(interpret("{1,2,3} // Map[Print];").unwrap(), "Null");
+    }
+
+    #[test]
+    fn no_trailing_semicolon_shows_result() {
+      // Without trailing ;, result should be shown
+      assert_eq!(interpret("1 + 2").unwrap(), "3");
+    }
+
+    #[test]
+    fn compound_expression_with_trailing_semicolon() {
+      // x = 5; x + 1; should return Null
+      assert_eq!(interpret("x = 5; x + 1;").unwrap(), "Null");
+    }
+
+    #[test]
+    fn compound_expression_without_trailing_semicolon() {
+      // x = 5; x + 1 should show the final result
+      assert_eq!(interpret("x = 5; x + 1").unwrap(), "6");
+    }
+  }
+
   mod pattern_matching {
     use super::*;
 

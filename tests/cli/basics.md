@@ -25,6 +25,21 @@ $ wo 'x = 2; x = x + 5'
 7
 ```
 
+A trailing semicolon evaluates but returns `Null`:
+
+```scrut
+$ wo '1 + 2;'
+Null
+```
+
+```scrut
+$ wo '{1,2,3} // Map[Print];'
+1
+2
+3
+Null
+```
+
 
 ## `Set`
 
