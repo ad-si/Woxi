@@ -716,6 +716,11 @@ fn expr_to_full_form(expr: &Expr) -> String {
       }
     }
     Expr::Raw(s) => s.clone(),
+    Expr::CurriedCall { func, args } => {
+      // CurriedCall[f[a]][b] displays as f[a][b]
+      let args_str: Vec<String> = args.iter().map(expr_to_full_form).collect();
+      format!("{}[{}]", expr_to_full_form(func), args_str.join(", "))
+    }
   }
 }
 

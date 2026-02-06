@@ -162,6 +162,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         }
         Power => {
           // Power rule for x^n: n * x^(n-1) * x'
+          // Use Plus[-1, n] to match Wolfram's canonical form (-1 + n)
           if is_constant_wrt(right, var) {
             let df = differentiate(left, var)?;
             Ok(simplify(Expr::BinaryOp {
@@ -173,9 +174,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                   op: Power,
                   left: left.clone(),
                   right: Box::new(Expr::BinaryOp {
-                    op: Minus,
-                    left: right.clone(),
-                    right: Box::new(Expr::Integer(1)),
+                    op: Plus,
+                    left: Box::new(Expr::Integer(-1)),
+                    right: right.clone(),
                   }),
                 }),
               }),

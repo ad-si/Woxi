@@ -1164,6 +1164,98 @@ mod interpreter_tests {
     }
   }
 
+  mod anonymous_function_call {
+    use super::*;
+
+    #[test]
+    fn identity_anonymous() {
+      // #&[1] should return 1
+      assert_eq!(interpret("#&[1]").unwrap(), "1");
+    }
+
+    #[test]
+    fn power_anonymous() {
+      // #^2&[{1, 2, 3}] should map squaring
+      assert_eq!(interpret("#^2 &[{1, 2, 3}]").unwrap(), "{1, 4, 9}");
+    }
+
+    #[test]
+    fn anonymous_with_addition() {
+      assert_eq!(interpret("#+10&[5]").unwrap(), "15");
+    }
+  }
+
+  mod prefix_application_associativity {
+    use super::*;
+
+    #[test]
+    fn right_associative_chaining() {
+      // f @ g @ x should be f[g[x]] (right-associative)
+      assert_eq!(
+        interpret("Double[x_] := x * 2; Double @ Sin @ (Pi/2)").unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn single_prefix() {
+      assert_eq!(interpret("Sqrt @ 16").unwrap(), "4");
+    }
+  }
+
+  mod sign_predicates {
+    use super::*;
+
+    #[test]
+    fn positive() {
+      assert_eq!(interpret("Positive[5]").unwrap(), "True");
+      assert_eq!(interpret("Positive[-3]").unwrap(), "False");
+      assert_eq!(interpret("Positive[0]").unwrap(), "False");
+    }
+
+    #[test]
+    fn negative() {
+      assert_eq!(interpret("Negative[-5]").unwrap(), "True");
+      assert_eq!(interpret("Negative[3]").unwrap(), "False");
+      assert_eq!(interpret("Negative[0]").unwrap(), "False");
+    }
+
+    #[test]
+    fn non_positive() {
+      assert_eq!(interpret("NonPositive[-5]").unwrap(), "True");
+      assert_eq!(interpret("NonPositive[0]").unwrap(), "True");
+      assert_eq!(interpret("NonPositive[3]").unwrap(), "False");
+    }
+
+    #[test]
+    fn non_negative() {
+      assert_eq!(interpret("NonNegative[5]").unwrap(), "True");
+      assert_eq!(interpret("NonNegative[0]").unwrap(), "True");
+      assert_eq!(interpret("NonNegative[-3]").unwrap(), "False");
+    }
+  }
+
+  mod if_function_extended {
+    use super::*;
+
+    #[test]
+    fn if_four_args_default() {
+      // If[non-boolean, true-branch, false-branch, default]
+      // Non-boolean condition should return default (4th arg)
+      assert_eq!(interpret("If[\"x\", 1, 0, 2]").unwrap(), "2");
+    }
+
+    #[test]
+    fn if_four_args_true() {
+      assert_eq!(interpret("If[True, 1, 0, 2]").unwrap(), "1");
+    }
+
+    #[test]
+    fn if_four_args_false() {
+      assert_eq!(interpret("If[False, 1, 0, 2]").unwrap(), "0");
+    }
+  }
+
   mod plus_formatting {
     use super::*;
 

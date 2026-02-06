@@ -302,6 +302,8 @@ pub enum Expr {
   Postfix { expr: Box<Expr>, func: Box<Expr> },
   /// Part extraction: expr[[index]]
   Part { expr: Box<Expr>, index: Box<Expr> },
+  /// Curried/chained function call: f[a][b] - func is f[a], args is {b}
+  CurriedCall { func: Box<Expr>, args: Vec<Expr> },
   /// Anonymous function: body &
   Function { body: Box<Expr> },
   /// Pattern: name_
@@ -389,12 +391,59 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::FunctionCall => {
       let mut inner = pair.into_inner();
       let name_pair = inner.next().unwrap();
-      let name = name_pair.as_str().to_string();
-      let args: Vec<Expr> = inner
-        .filter(|p| p.as_str() != ",")
-        .map(pair_to_expr)
+      // Collect bracket sequences separately for proper chained call handling
+      let bracket_sequences: Vec<Vec<Expr>> = inner
+        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| {
+          bracket
+            .into_inner()
+            .filter(|p| {
+              p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+            })
+            .map(pair_to_expr)
+            .collect()
+        })
         .collect();
-      Expr::FunctionCall { name, args }
+      // Check if the function head is an anonymous function
+      if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
+        let anon_expr = pair_to_expr(name_pair);
+        // Build curried calls: (#&)[1] or (#^2&)[{1,2,3}]
+        let mut result = Expr::CurriedCall {
+          func: Box::new(anon_expr),
+          args: bracket_sequences[0].clone(),
+        };
+        for args in bracket_sequences.into_iter().skip(1) {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
+        result
+      } else {
+        let name = name_pair.as_str().to_string();
+        // Build chained calls: f[a][b] becomes Apply(f[a], b)
+        if bracket_sequences.len() == 1 {
+          Expr::FunctionCall {
+            name,
+            args: bracket_sequences.into_iter().next().unwrap(),
+          }
+        } else {
+          // Multiple bracket sequences: build nested Apply calls
+          // f[a][b][c] becomes: first build f[a], then apply [b], then apply [c]
+          let mut result = Expr::FunctionCall {
+            name,
+            args: bracket_sequences[0].clone(),
+          };
+          for args in bracket_sequences.into_iter().skip(1) {
+            // Wrap as a curried call: FunctionCall applied to new args
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args,
+            };
+          }
+          result
+        }
+      }
     }
     Rule::BaseFunctionCall => {
       let mut inner = pair.into_inner();
@@ -734,8 +783,12 @@ fn build_expr_with_precedence(
       break;
     }
 
-    // For right-associative operators (like ^), use prec, otherwise use prec + 1
-    let next_min_prec = if op_str == "^" { prec } else { prec + 1 };
+    // For right-associative operators (like ^ and @), use prec, otherwise use prec + 1
+    let next_min_prec = if op_str == "^" || op_str == "@" {
+      prec
+    } else {
+      prec + 1
+    };
 
     // Build the right side with higher precedence
     let right =
@@ -1095,6 +1148,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
     }
     Expr::Constant(s) => s.clone(),
     Expr::Raw(s) => s.clone(),
+    Expr::CurriedCall { func, args } => {
+      // Display as nested calls: f[a][b, c]
+      let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
+      format!("{}[{}]", expr_to_string(func), args_str.join(", "))
+    }
   }
 }
 
