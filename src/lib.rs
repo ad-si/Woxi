@@ -21,8 +21,8 @@ enum StoredValue {
 }
 thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
-    //            name         Vec of (parameter names, per-param condition, body-AST) for multi-arity + condition support
-    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    //            name         Vec of (param_names, conditions, defaults, head_constraints, body_AST) for multi-arity + condition + optional support
+    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
 }
@@ -554,9 +554,11 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
   let mut inner = pair.into_inner();
   let func_name = inner.next().unwrap().as_str().to_owned(); // Identifier
 
-  // Collect all pattern parameters and their optional conditions
+  // Collect all pattern parameters with their optional conditions, defaults, and head constraints
   let mut params = Vec::new();
   let mut conditions: Vec<Option<syntax::Expr>> = Vec::new();
+  let mut defaults: Vec<Option<syntax::Expr>> = Vec::new();
+  let mut heads: Vec<Option<String>> = Vec::new();
   let mut body_pair = None;
   let mut has_any_condition = false;
 
@@ -571,15 +573,52 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         let cond_expr = syntax::pair_to_expr(cond_pair);
         params.push(param_name);
         conditions.push(Some(cond_expr));
+        defaults.push(None);
+        heads.push(None);
         has_any_condition = true;
       }
-      Rule::PatternSimple | Rule::PatternTest | Rule::PatternWithHead => {
-        // Extract parameter name from pattern (e.g., "x_" -> "x", "x_List" -> "x")
+      Rule::PatternOptionalSimple => {
+        // PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ Term }
+        let mut pat_inner = item.into_inner();
+        let param_name = pat_inner.next().unwrap().as_str().to_owned();
+        let default_pair = pat_inner.next().unwrap();
+        let default_expr = syntax::pair_to_expr(default_pair);
+        params.push(param_name);
+        conditions.push(None);
+        defaults.push(Some(default_expr));
+        heads.push(None);
+      }
+      Rule::PatternOptionalWithHead => {
+        // PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ Term }
+        let mut pat_inner = item.into_inner();
+        let param_name = pat_inner.next().unwrap().as_str().to_owned();
+        let head_name = pat_inner.next().unwrap().as_str().to_owned();
+        let default_pair = pat_inner.next().unwrap();
+        let default_expr = syntax::pair_to_expr(default_pair);
+        params.push(param_name);
+        conditions.push(None);
+        defaults.push(Some(default_expr));
+        heads.push(Some(head_name));
+      }
+      Rule::PatternWithHead => {
+        // Extract parameter name and head (e.g., "x_List" -> name="x", head="List")
+        let mut pat_inner = item.into_inner();
+        let param_name = pat_inner.next().unwrap().as_str().to_owned();
+        let head_name = pat_inner.next().unwrap().as_str().to_owned();
+        params.push(param_name);
+        conditions.push(None);
+        defaults.push(None);
+        heads.push(Some(head_name));
+      }
+      Rule::PatternSimple | Rule::PatternTest => {
+        // Extract parameter name from pattern (e.g., "x_" -> "x")
         let param = item.as_str().trim_end_matches('_').to_owned();
         // Handle patterns by taking just the name part before the _
         let param = param.split('_').next().unwrap_or(&param).to_owned();
         params.push(param);
         conditions.push(None);
+        defaults.push(None);
+        heads.push(None);
       }
       Rule::Expression
       | Rule::ExpressionNoImplicit
@@ -606,12 +645,12 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
     } else {
       // Unconditional definition: remove only other unconditional defs with same arity
       // (keep conditional definitions - they are more specific)
-      entry.retain(|(p, conds, _)| {
+      entry.retain(|(p, conds, _, _, _)| {
         p.len() != arity || conds.iter().any(|c| c.is_some())
       });
     }
-    // Add the new definition with parsed AST and conditions
-    entry.push((params, conditions, body_expr));
+    // Add the new definition with parsed AST, conditions, defaults, and head constraints
+    entry.push((params, conditions, defaults, heads, body_expr));
   });
   Ok(())
 }

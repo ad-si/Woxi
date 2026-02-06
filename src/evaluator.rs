@@ -142,6 +142,10 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           let r = right_val.trim_matches('"');
           Ok(format!("\"{}{}\"", l, r))
         }
+        BinaryOperator::Alternatives => {
+          // Alternatives stays symbolic (used in pattern matching)
+          Ok(format!("{} | {}", left_val, right_val))
+        }
       }
     }
     Expr::UnaryOp { op, operand } => {
@@ -333,6 +337,15 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         Ok(format!("{}_", name))
       }
     }
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => Ok(expr_to_string(&Expr::PatternOptional {
+      name: name.clone(),
+      head: head.clone(),
+      default: default.clone(),
+    })),
     Expr::Raw(s) => {
       // Fallback: parse to AST and evaluate to avoid interpret() recursion
       let parsed = string_to_expr(s)?;
@@ -536,6 +549,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           let l = expr_to_raw_string(&left_val);
           let r = expr_to_raw_string(&right_val);
           Ok(Expr::String(format!("{}{}", l, r)))
+        }
+        BinaryOperator::Alternatives => {
+          // Alternatives stays symbolic (used in pattern matching)
+          Ok(Expr::BinaryOp {
+            op: BinaryOperator::Alternatives,
+            left: Box::new(left_val),
+            right: Box::new(right_val),
+          })
         }
       }
     }
@@ -743,6 +764,15 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       name: name.clone(),
       head: head.clone(),
     }),
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => Ok(Expr::PatternOptional {
+      name: name.clone(),
+      head: head.clone(),
+      default: default.clone(),
+    }),
     Expr::Raw(s) => {
       // Fallback: parse and evaluate the raw string
       let parsed = string_to_expr(s)?;
@@ -921,6 +951,7 @@ pub fn evaluate_function_call_ast(
   // These must be handled natively to avoid infinite recursion
   match name {
     "Module" => return module_ast(args),
+    "With" if args.len() == 2 => return with_ast(args),
     "Set" if args.len() == 2 => {
       return set_ast(&args[0], &args[1]);
     }
@@ -1028,6 +1059,11 @@ pub fn evaluate_function_call_ast(
     }
     "Cases" if args.len() == 2 => {
       return list_helpers_ast::cases_ast(&args[0], &args[1]);
+    }
+    "Cases" if args.len() == 3 => {
+      return list_helpers_ast::cases_with_level_ast(
+        &args[0], &args[1], &args[2],
+      );
     }
     "Position" if args.len() == 2 => {
       return list_helpers_ast::position_ast(&args[0], &args[1]);
@@ -1871,17 +1907,106 @@ pub fn evaluate_function_call_ast(
   });
 
   if let Some(overloads) = overloads {
-    for (params, conditions, body_expr) in &overloads {
-      if params.len() != args.len() {
+    for (params, conditions, param_defaults, param_heads, body_expr) in
+      &overloads
+    {
+      // Count required params (those without defaults)
+      let required_count =
+        param_defaults.iter().filter(|d| d.is_none()).count();
+      let total_count = params.len();
+
+      // Accept if required_count <= args.len() <= total_count
+      if args.len() < required_count || args.len() > total_count {
         continue;
       }
+
+      // Build the effective argument list by matching provided args to params.
+      // Optional params are filled left-to-right; when there are fewer args than params,
+      // optional params use their defaults starting from the leftmost optional param.
+      let effective_args = if args.len() == total_count {
+        // All params provided - check head constraints
+        let mut head_ok = true;
+        for (i, arg) in args.iter().enumerate() {
+          if let Some(head) = &param_heads[i]
+            && get_expr_head(arg) != *head
+          {
+            head_ok = false;
+            break;
+          }
+        }
+        if !head_ok {
+          continue;
+        }
+        args.to_vec()
+      } else {
+        // Fewer args than params - fill optional params with defaults
+        // Strategy: try to assign args left-to-right, using defaults for optional params
+        // when args run out. For each param, if it's optional and we need to save args
+        // for required params later, use the default.
+        let num_optional_to_default = total_count - args.len();
+        let mut effective = Vec::with_capacity(total_count);
+        let mut arg_idx = 0;
+        let mut defaults_used = 0;
+
+        for i in 0..total_count {
+          if param_defaults[i].is_some()
+            && defaults_used < num_optional_to_default
+          {
+            // Check if we should use default: if the arg doesn't match the head constraint
+            // or if we need to reserve remaining args for required params
+            let remaining_args = args.len() - arg_idx;
+            let remaining_required: usize = param_defaults[i + 1..]
+              .iter()
+              .filter(|d| d.is_none())
+              .count();
+            let should_default = if remaining_args <= remaining_required {
+              // Must default - not enough args for remaining required params
+              true
+            } else if let Some(head) = &param_heads[i] {
+              // Has head constraint - check if current arg matches
+              arg_idx < args.len() && get_expr_head(&args[arg_idx]) != *head
+            } else {
+              false
+            };
+
+            if should_default {
+              effective.push(param_defaults[i].clone().unwrap());
+              defaults_used += 1;
+            } else if arg_idx < args.len() {
+              // Check head constraint
+              if let Some(head) = &param_heads[i]
+                && get_expr_head(&args[arg_idx]) != *head
+              {
+                break; // head mismatch
+              }
+              effective.push(args[arg_idx].clone());
+              arg_idx += 1;
+            }
+          } else if arg_idx < args.len() {
+            // Required param or optional param that should be filled
+            if let Some(head) = &param_heads[i]
+              && get_expr_head(&args[arg_idx]) != *head
+            {
+              break; // head mismatch for required param - this overload doesn't match
+            }
+            effective.push(args[arg_idx].clone());
+            arg_idx += 1;
+          }
+        }
+
+        if effective.len() != total_count {
+          continue; // matching failed
+        }
+        effective
+      };
+
       // Check all conditions (if any) by substituting params with args and evaluating
       let mut conditions_met = true;
       for cond_opt in conditions.iter() {
         if let Some(cond_expr) = cond_opt {
           // Substitute all parameters with their argument values in the condition
           let mut substituted_cond = cond_expr.clone();
-          for (param, arg) in params.iter().zip(args.iter()) {
+          for (param, arg) in params.iter().zip(effective_args.iter()) {
             substituted_cond =
               crate::syntax::substitute_variable(&substituted_cond, param, arg);
           }
@@ -1900,7 +2025,7 @@ pub fn evaluate_function_call_ast(
       }
       // All conditions met - substitute parameters with arguments and evaluate body
       let mut substituted = body_expr.clone();
-      for (param, arg) in params.iter().zip(args.iter()) {
+      for (param, arg) in params.iter().zip(effective_args.iter()) {
         substituted =
           crate::syntax::substitute_variable(&substituted, param, arg);
       }
@@ -2030,6 +2155,59 @@ fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(result)
+}
+
+/// AST-based With implementation - substitutes bindings into body before evaluation.
+/// With[{x = val, y = val2}, body] replaces x and y in body with evaluated values.
+fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let vars_expr = &args[0];
+  let body_expr = &args[1];
+
+  // Parse variable declarations from the first argument (should be a List)
+  let bindings: Vec<(String, Expr)> = match vars_expr {
+    Expr::List(items) => {
+      let mut vars = Vec::new();
+      for item in items {
+        match item {
+          Expr::FunctionCall {
+            name,
+            args: set_args,
+          } if name == "Set" && set_args.len() == 2 => {
+            if let Expr::Identifier(var_name) = &set_args[0] {
+              let val = evaluate_expr_to_expr(&set_args[1])?;
+              vars.push((var_name.clone(), val));
+            }
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
+            if let Expr::Identifier(var_name) = pattern.as_ref() {
+              let val = evaluate_expr_to_expr(replacement)?;
+              vars.push((var_name.clone(), val));
+            }
+          }
+          _ => {}
+        }
+      }
+      vars
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "With expects a list of variable declarations as first argument".into(),
+      ));
+    }
+  };
+
+  // Substitute all bindings into the body
+  let mut substituted = body_expr.clone();
+  for (var_name, val) in &bindings {
+    substituted =
+      crate::syntax::substitute_variable(&substituted, var_name, val);
+  }
+
+  // Evaluate the substituted body
+  evaluate_expr_to_expr(&substituted)
 }
 
 /// AST-based Set implementation to handle Part assignment on associations
