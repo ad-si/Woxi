@@ -676,7 +676,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
 
 /// Parse an expression with operators into an Expr
 fn parse_expression(pair: Pair<Rule>) -> Expr {
-  let pair_str = pair.as_str().to_string();
   let mut inner: Vec<Pair<Rule>> = pair.into_inner().collect();
 
   if inner.is_empty() {
@@ -693,8 +692,23 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   }
   postfix_funcs.reverse(); // restore left-to-right order
 
-  // Single term case
-  if inner.len() == 1 {
+  // Check for trailing ReplaceAll/ReplaceRepeated suffix:
+  // Term (Operator Term)* (ReplaceAllSuffix | ReplaceRepeatedSuffix)?
+  let replace_rules = if inner.last().is_some_and(|p| {
+    p.as_rule() == Rule::ReplaceAllSuffix
+      || p.as_rule() == Rule::ReplaceRepeatedSuffix
+  }) {
+    let suffix = inner.pop().unwrap();
+    let is_replace_repeated = suffix.as_rule() == Rule::ReplaceRepeatedSuffix;
+    // The suffix contains the List or ReplacementRule as its child
+    let rules_pair = suffix.into_inner().next().unwrap();
+    Some((rules_pair, is_replace_repeated))
+  } else {
+    None
+  };
+
+  // Single term case (no operators, no replace)
+  if inner.len() == 1 && replace_rules.is_none() {
     let mut result = pair_to_expr(inner.remove(0));
     for func_pair in postfix_funcs {
       let func = pair_to_expr(func_pair);
@@ -704,40 +718,6 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       };
     }
     return result;
-  }
-
-  // Check for ReplaceAll/ReplaceRepeated patterns
-  // These show up as: Term (List|ReplacementRule)
-  if inner.len() >= 2 {
-    let second_rule = inner[1].as_rule();
-    if second_rule == Rule::List || second_rule == Rule::ReplacementRule {
-      // Determine if this is ReplaceRepeated by checking if original expression had "//.
-      let is_replace_repeated =
-        pair_str.contains("//.") && !pair_str.contains("///.");
-
-      let expr = pair_to_expr(inner.remove(0));
-      let rules = pair_to_expr(inner.remove(0));
-      let mut result = if is_replace_repeated {
-        Expr::ReplaceRepeated {
-          expr: Box::new(expr),
-          rules: Box::new(rules),
-        }
-      } else {
-        Expr::ReplaceAll {
-          expr: Box::new(expr),
-          rules: Box::new(rules),
-        }
-      };
-      // Apply postfix functions
-      for func_pair in postfix_funcs {
-        let func = pair_to_expr(func_pair);
-        result = Expr::Postfix {
-          expr: Box::new(result),
-          func: Box::new(func),
-        };
-      }
-      return result;
-    }
   }
 
   // Parse operators: Term (Operator Term)*
@@ -792,6 +772,22 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       build_binary_tree(terms, operators)
     }
   };
+
+  // Apply ReplaceAll/ReplaceRepeated if present
+  if let Some((rules_pair, is_replace_repeated)) = replace_rules {
+    let rules = pair_to_expr(rules_pair);
+    result = if is_replace_repeated {
+      Expr::ReplaceRepeated {
+        expr: Box::new(result),
+        rules: Box::new(rules),
+      }
+    } else {
+      Expr::ReplaceAll {
+        expr: Box::new(result),
+        rules: Box::new(rules),
+      }
+    };
+  }
 
   // Apply postfix functions (lowest precedence)
   for func_pair in postfix_funcs {
