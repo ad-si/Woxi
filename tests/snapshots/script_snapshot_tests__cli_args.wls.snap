@@ -1,0 +1,6 @@
+---
+source: tests/script_snapshot_tests.rs
+assertion_line: 57
+expression: stdout
+---
+25

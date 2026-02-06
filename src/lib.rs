@@ -93,6 +93,24 @@ pub fn set_system_variable(name: &str, value: &str) {
   });
 }
 
+/// Remove a first line that starts with "#!" (shebang);
+/// returns the remainder as a new `String`.
+pub fn without_shebang(src: &str) -> String {
+  if src.starts_with("#!") {
+    src.lines().skip(1).collect::<Vec<_>>().join("\n")
+  } else {
+    src.to_owned()
+  }
+}
+
+/// Clear all thread-local interpreter state (environment variables
+/// and user-defined functions).  Useful for isolating test runs.
+pub fn clear_state() {
+  ENV.with(|e| e.borrow_mut().clear());
+  FUNC_DEFS.with(|m| m.borrow_mut().clear());
+  clear_captured_stdout();
+}
+
 /// Set the $ScriptCommandLine variable from command-line arguments
 pub fn set_script_command_line(args: &[String]) {
   // Format as a Wolfram list: {"script.wls", "arg1", "arg2", ...}
