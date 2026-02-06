@@ -1176,6 +1176,9 @@ pub fn evaluate_function_call_ast(
     "Map" if args.len() == 2 => {
       return list_helpers_ast::map_ast(&args[0], &args[1]);
     }
+    "MapAt" if args.len() == 3 => {
+      return list_helpers_ast::map_at_ast(&args[0], &args[1], &args[2]);
+    }
     "Select" if args.len() == 2 => {
       return list_helpers_ast::select_ast(&args[0], &args[1]);
     }
@@ -1199,6 +1202,9 @@ pub fn evaluate_function_call_ast(
     }
     "SortBy" if args.len() == 2 => {
       return list_helpers_ast::sort_by_ast(&args[0], &args[1]);
+    }
+    "Ordering" if !args.is_empty() && args.len() <= 2 => {
+      return list_helpers_ast::ordering_ast(args);
     }
     "Nest" if args.len() == 3 => {
       if let Expr::Integer(n) = &args[2] {
@@ -1238,6 +1244,9 @@ pub fn evaluate_function_call_ast(
     }
     "Tally" if args.len() == 1 => {
       return list_helpers_ast::tally_ast(&args[0]);
+    }
+    "Counts" if args.len() == 1 => {
+      return list_helpers_ast::counts_ast(&args[0]);
     }
     "DeleteDuplicates" if args.len() == 1 => {
       return list_helpers_ast::delete_duplicates_ast(&args[0]);
@@ -1461,6 +1470,12 @@ pub fn evaluate_function_call_ast(
       if let Expr::Integer(n) = &args[1] {
         return list_helpers_ast::take_smallest_ast(&args[0], *n);
       }
+    }
+    "MinimalBy" if args.len() == 2 => {
+      return list_helpers_ast::minimal_by_ast(&args[0], &args[1]);
+    }
+    "MaximalBy" if args.len() == 2 => {
+      return list_helpers_ast::maximal_by_ast(&args[0], &args[1]);
     }
     "ArrayDepth" if args.len() == 1 => {
       return list_helpers_ast::array_depth_ast(&args[0]);
@@ -1781,12 +1796,21 @@ pub fn evaluate_function_call_ast(
     "Lookup" if args.len() >= 2 => {
       return crate::functions::association_ast::lookup_ast(args);
     }
+    "KeySort" if args.len() == 1 => {
+      return crate::functions::association_ast::key_sort_ast(args);
+    }
+    "KeyValueMap" if args.len() == 2 => {
+      return crate::functions::association_ast::key_value_map_ast(args);
+    }
 
     "MemberQ" if args.len() == 2 => {
       return crate::functions::predicate_ast::member_q_ast(args);
     }
     "FreeQ" if args.len() == 2 => {
       return crate::functions::predicate_ast::free_q_ast(args);
+    }
+    "MatchQ" if args.len() == 2 => {
+      return crate::functions::predicate_ast::match_q_ast(args);
     }
     "Divisible" if args.len() == 2 => {
       return crate::functions::predicate_ast::divisible_ast(args);
@@ -1898,6 +1922,15 @@ pub fn evaluate_function_call_ast(
     }
     "RandomReal" => {
       return crate::functions::math_ast::random_real_ast(args);
+    }
+    "RandomChoice" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::random_choice_ast(args);
+    }
+    "RandomSample" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::random_sample_ast(args);
+    }
+    "Clip" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::clip_ast(args);
     }
     "Sin" if args.len() == 1 => {
       return crate::functions::math_ast::sin_ast(args);

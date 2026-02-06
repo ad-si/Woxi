@@ -352,6 +352,239 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
   ))
 }
 
+///// Ordering[list
+pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Ordering expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Ordering".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut indexed: Vec<(usize, &Expr)> = items.iter().enumerate().collect();
+
+  indexed.sort_by(|a, b| {
+    let va = crate::syntax::expr_to_string(a.1);
+    let vb = crate::syntax::expr_to_string(b.1);
+    if let (Ok(na), Ok(nb)) = (va.parse::<f64>(), vb.parse::<f64>()) {
+      na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+    } else {
+      va.cmp(&vb)
+    }
+  });
+
+  let mut result: Vec<Expr> = indexed
+    .iter()
+    .map(|(idx, _)| Expr::Integer((*idx + 1) as i128))
+    .collect();
+
+  if args.len() == 2
+    && let Expr::Integer(n) = &args[1]
+  {
+    let n = *n;
+    if n >= 0 {
+      result.truncate(n as usize);
+    } else {
+      // Negative n: take last |n| elements (largest positions)
+      let abs_n = n.unsigned_abs() as usize;
+      if abs_n <= result.len() {
+        result = result.split_off(result.len() - abs_n);
+      }
+    }
+  }
+
+  Ok(Expr::List(result))
+}
+
+/// MinimalBy[list, f] - Returns all elements that minimize f
+pub fn minimal_by_ast(
+  list: &Expr,
+  func: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) if !items.is_empty() => items,
+    Expr::List(_) => return Ok(Expr::List(vec![])),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MinimalBy".to_string(),
+        args: vec![list.clone(), func.clone()],
+      });
+    }
+  };
+
+  let keyed: Vec<(Expr, Expr)> = items
+    .iter()
+    .map(|item| {
+      let key = apply_func_ast(func, item)?;
+      Ok((item.clone(), key))
+    })
+    .collect::<Result<_, InterpreterError>>()?;
+
+  let min_key = keyed
+    .iter()
+    .map(|(_, k)| k)
+    .min_by(|a, b| {
+      let ka = crate::syntax::expr_to_string(a);
+      let kb = crate::syntax::expr_to_string(b);
+      if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
+        na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+      } else {
+        ka.cmp(&kb)
+      }
+    })
+    .cloned();
+
+  if let Some(min_k) = min_key {
+    let min_str = crate::syntax::expr_to_string(&min_k);
+    let result: Vec<Expr> = keyed
+      .into_iter()
+      .filter(|(_, k)| crate::syntax::expr_to_string(k) == min_str)
+      .map(|(item, _)| item)
+      .collect();
+    Ok(Expr::List(result))
+  } else {
+    Ok(Expr::List(vec![]))
+  }
+}
+
+/// MaximalBy[list, f] - Returns all elements that maximize f
+pub fn maximal_by_ast(
+  list: &Expr,
+  func: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) if !items.is_empty() => items,
+    Expr::List(_) => return Ok(Expr::List(vec![])),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MaximalBy".to_string(),
+        args: vec![list.clone(), func.clone()],
+      });
+    }
+  };
+
+  let keyed: Vec<(Expr, Expr)> = items
+    .iter()
+    .map(|item| {
+      let key = apply_func_ast(func, item)?;
+      Ok((item.clone(), key))
+    })
+    .collect::<Result<_, InterpreterError>>()?;
+
+  let max_key = keyed
+    .iter()
+    .map(|(_, k)| k)
+    .max_by(|a, b| {
+      let ka = crate::syntax::expr_to_string(a);
+      let kb = crate::syntax::expr_to_string(b);
+      if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
+        na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+      } else {
+        ka.cmp(&kb)
+      }
+    })
+    .cloned();
+
+  if let Some(max_k) = max_key {
+    let max_str = crate::syntax::expr_to_string(&max_k);
+    let result: Vec<Expr> = keyed
+      .into_iter()
+      .filter(|(_, k)| crate::syntax::expr_to_string(k) == max_str)
+      .map(|(item, _)| item)
+      .collect();
+    Ok(Expr::List(result))
+  } else {
+    Ok(Expr::List(vec![]))
+  }
+}
+
+/// MapAt[f, list, pos] - Apply function at specific positions
+/// Supports single integer, list of integers, and negative indices
+pub fn map_at_ast(
+  func: &Expr,
+  list: &Expr,
+  pos_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MapAt".to_string(),
+        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+      });
+    }
+  };
+
+  let len = items.len() as i128;
+
+  // Collect positions to modify
+  // Wolfram uses {{1}, {3}} for multiple positions (list of single-element lists)
+  let positions: Vec<i128> = match pos_spec {
+    Expr::Integer(n) => vec![*n],
+    Expr::List(pos_list) => {
+      // Each element must be a single-element list like {1}
+      let mut positions = Vec::new();
+      for p in pos_list {
+        match p {
+          Expr::List(inner) if inner.len() == 1 => {
+            if let Expr::Integer(n) = &inner[0] {
+              positions.push(*n);
+            }
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "MapAt".to_string(),
+              args: vec![func.clone(), list.clone(), pos_spec.clone()],
+            });
+          }
+        }
+      }
+      positions
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MapAt".to_string(),
+        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+      });
+    }
+  };
+
+  let mut indices = std::collections::HashSet::new();
+  for p in positions {
+    let idx = if p < 0 {
+      (len + p) as usize
+    } else {
+      (p - 1) as usize
+    };
+    if idx < items.len() {
+      indices.insert(idx);
+    }
+  }
+
+  let result: Result<Vec<Expr>, _> = items
+    .iter()
+    .enumerate()
+    .map(|(i, item)| {
+      if indices.contains(&i) {
+        apply_func_ast(func, item)
+      } else {
+        Ok(item.clone())
+      }
+    })
+    .collect();
+
+  Ok(Expr::List(result?))
+}
+
 /// AST-based Nest: apply a function n times.
 /// Nest[f, x, n] -> f[f[f[...f[x]...]]] (n times)
 pub fn nest_ast(
@@ -488,7 +721,7 @@ fn matches_pattern_simple(value: &str, pattern: &str) -> bool {
 /// AST-based pattern matching for expressions.
 /// Supports: Blank (_), named patterns (x_), head patterns (_Integer, _List, etc.),
 /// Except, Alternatives, and literal matching.
-fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
+pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
   match pattern {
     // Blank pattern: _ matches anything
     Expr::Pattern {
@@ -518,6 +751,46 @@ fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       left,
       right,
     } => matches_pattern_ast(expr, left) || matches_pattern_ast(expr, right),
+    // Structural matching for lists: {_, _} matches {1, 2}
+    Expr::List(pat_items) => {
+      if let Expr::List(expr_items) = expr {
+        pat_items.len() == expr_items.len()
+          && pat_items
+            .iter()
+            .zip(expr_items.iter())
+            .all(|(p, e)| matches_pattern_ast(e, p))
+      } else {
+        false
+      }
+    }
+    // Structural matching for function calls: f[_
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } => {
+      if pat_name == "Except"
+        || pat_name == "PatternTest"
+        || pat_name == "Condition"
+      {
+        // Already handled above or not a structural match
+        let pattern_str = crate::syntax::expr_to_string(pattern);
+        let expr_str = crate::syntax::expr_to_string(expr);
+        expr_str == pattern_str
+      } else if let Expr::FunctionCall {
+        name: expr_name,
+        args: expr_args,
+      } = expr
+      {
+        pat_name == expr_name
+          && pat_args.len() == expr_args.len()
+          && pat_args
+            .iter()
+            .zip(expr_args.iter())
+            .all(|(p, e)| matches_pattern_ast(e, p))
+      } else {
+        false
+      }
+    }
     // Literal comparison
     _ => {
       let pattern_str = crate::syntax::expr_to_string(pattern);
@@ -696,6 +969,44 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     .collect();
 
   Ok(Expr::List(pairs))
+}
+
+///// Counts[list] - Returns association of distinct elements with their counts
+/// Counts[{a, b, a, c, b, a}] -> <|a -> 3, b -> 2, c -> 1|>
+pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Counts".to_string(),
+        args: vec![list.clone()],
+      });
+    }
+  };
+
+  use std::collections::HashMap;
+  let mut counts: HashMap<String, (Expr, i128)> = HashMap::new();
+  let mut order: Vec<String> = Vec::new();
+
+  for item in items {
+    let key_str = crate::syntax::expr_to_string(item);
+    if let Some((_, count)) = counts.get_mut(&key_str) {
+      *count += 1;
+    } else {
+      order.push(key_str.clone());
+      counts.insert(key_str, (item.clone(), 1));
+    }
+  }
+
+  let pairs: Vec<(Expr, Expr)> = order
+    .into_iter()
+    .map(|k| {
+      let (expr, count) = counts.remove(&k).unwrap();
+      (expr, Expr::Integer(count))
+    })
+    .collect();
+
+  Ok(Expr::Association(pairs))
 }
 
 /// AST-based DeleteDuplicates: remove duplicate elements.

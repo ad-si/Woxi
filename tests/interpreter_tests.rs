@@ -2119,4 +2119,348 @@ mod interpreter_tests {
       assert_eq!(interpret("Tuples[{a, b}, 0]").unwrap(), "{{}}");
     }
   }
+
+  mod match_q {
+    use super::*;
+
+    #[test]
+    fn head_matching() {
+      assert_eq!(interpret("MatchQ[{1, 2, 3}, _List]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[42, _Integer]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[3.14, _Real]").unwrap(), "True");
+      assert_eq!(interpret(r#"MatchQ["hello", _String]"#).unwrap(), "True");
+    }
+
+    #[test]
+    fn head_mismatch() {
+      assert_eq!(interpret("MatchQ[1, _String]").unwrap(), "False");
+      assert_eq!(interpret("MatchQ[1, _List]").unwrap(), "False");
+      assert_eq!(interpret(r#"MatchQ["x", _Integer]"#).unwrap(), "False");
+    }
+
+    #[test]
+    fn blank_matches_anything() {
+      assert_eq!(interpret("MatchQ[42, _]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[{1, 2}, _]").unwrap(), "True");
+      assert_eq!(interpret(r#"MatchQ["x", _]"#).unwrap(), "True");
+    }
+
+    #[test]
+    fn literal_matching() {
+      assert_eq!(interpret("MatchQ[42, 42]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[42, 43]").unwrap(), "False");
+      assert_eq!(interpret("MatchQ[x, x]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[x, y]").unwrap(), "False");
+    }
+  }
+
+  mod counts {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(
+        interpret("Counts[{a, b, a, c, b, a}]").unwrap(),
+        "<|a -> 3, b -> 2, c -> 1|>"
+      );
+    }
+
+    #[test]
+    fn integers() {
+      assert_eq!(
+        interpret("Counts[{1, 2, 1, 3, 2, 1}]").unwrap(),
+        "<|1 -> 3, 2 -> 2, 3 -> 1|>"
+      );
+    }
+
+    #[test]
+    fn single_element() {
+      assert_eq!(interpret("Counts[{x}]").unwrap(), "<|x -> 1|>");
+    }
+
+    #[test]
+    fn all_same() {
+      assert_eq!(interpret("Counts[{a, a, a}]").unwrap(), "<|a -> 3|>");
+    }
+  }
+
+  mod clip {
+    use super::*;
+
+    #[test]
+    fn clip_above() {
+      assert_eq!(interpret("Clip[15, {0, 10}]").unwrap(), "10");
+    }
+
+    #[test]
+    fn clip_below() {
+      assert_eq!(interpret("Clip[-5, {0, 10}]").unwrap(), "0");
+    }
+
+    #[test]
+    fn clip_within() {
+      assert_eq!(interpret("Clip[5, {0, 10}]").unwrap(), "5");
+    }
+
+    #[test]
+    fn clip_default() {
+      // Clip[x
+      assert_eq!(interpret("Clip[1.5]").unwrap(), "1");
+      assert_eq!(interpret("Clip[-0.5]").unwrap(), "-0.5");
+      assert_eq!(interpret("Clip[0.5]").unwrap(), "0.5");
+      assert_eq!(interpret("Clip[5]").unwrap(), "1");
+      assert_eq!(interpret("Clip[-5]").unwrap(), "-1");
+    }
+
+    #[test]
+    fn clip_boundaries() {
+      assert_eq!(interpret("Clip[0, {0, 10}]").unwrap(), "0");
+      assert_eq!(interpret("Clip[10, {0, 10}]").unwrap(), "10");
+    }
+  }
+
+  mod ordering {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(interpret("Ordering[{3, 1, 2}]").unwrap(), "{2, 3, 1}");
+    }
+
+    #[test]
+    fn with_limit() {
+      assert_eq!(interpret("Ordering[{3, 1, 2}, 2]").unwrap(), "{2, 3}");
+    }
+
+    #[test]
+    fn already_sorted() {
+      assert_eq!(interpret("Ordering[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+    }
+
+    #[test]
+    fn reverse_sorted() {
+      assert_eq!(interpret("Ordering[{3, 2, 1}]").unwrap(), "{3, 2, 1}");
+    }
+
+    #[test]
+    fn single_element() {
+      assert_eq!(interpret("Ordering[{5}]").unwrap(), "{1}");
+    }
+
+    #[test]
+    fn strings() {
+      assert_eq!(interpret("Ordering[{c, a, b}]").unwrap(), "{2, 3, 1}");
+    }
+  }
+
+  mod minimal_by {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(
+        interpret("MinimalBy[{-3, 1, 2, -1}, Abs]").unwrap(),
+        "{1, -1}"
+      );
+    }
+
+    #[test]
+    fn single_min() {
+      assert_eq!(
+        interpret("MinimalBy[{5, 3, 7, 1, 4}, Identity]").unwrap(),
+        "{1}"
+      );
+    }
+
+    #[test]
+    fn with_anonymous_function() {
+      assert_eq!(
+        interpret("MinimalBy[{10, 21, 32, 43}, Mod[#, 10] &]").unwrap(),
+        "{10}"
+      );
+    }
+  }
+
+  mod maximal_by {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(interpret("MaximalBy[{-3, 1, 2, -1}, Abs]").unwrap(), "{-3}");
+    }
+
+    #[test]
+    fn string_length() {
+      assert_eq!(
+        interpret(r#"MaximalBy[{"abc", "x", "ab"}, StringLength]"#).unwrap(),
+        "{abc}"
+      );
+    }
+
+    #[test]
+    fn single_max() {
+      assert_eq!(
+        interpret("MaximalBy[{5, 3, 7, 1, 4}, Identity]").unwrap(),
+        "{7}"
+      );
+    }
+  }
+
+  mod map_at {
+    use super::*;
+
+    #[test]
+    fn single_position() {
+      assert_eq!(
+        interpret("MapAt[f, {a, b, c, d}, 2]").unwrap(),
+        "{a, f[b], c, d}"
+      );
+    }
+
+    #[test]
+    fn negative_position() {
+      assert_eq!(
+        interpret("MapAt[f, {a, b, c, d}, -1]").unwrap(),
+        "{a, b, c, f[d]}"
+      );
+    }
+
+    #[test]
+    fn multiple_positions() {
+      // Wolfram uses {{1}, {3}} for multiple positions
+      assert_eq!(
+        interpret("MapAt[f, {a, b, c, d}, {{1}, {3}}]").unwrap(),
+        "{f[a], b, f[c], d}"
+      );
+    }
+
+    #[test]
+    fn first_and_last() {
+      assert_eq!(
+        interpret("MapAt[f, {a, b, c}, {{1}, {-1}}]").unwrap(),
+        "{f[a], b, f[c]}"
+      );
+    }
+
+    #[test]
+    fn with_anonymous_function() {
+      assert_eq!(
+        interpret("MapAt[# + 1 &, {10, 20, 30}, 2]").unwrap(),
+        "{10, 21, 30}"
+      );
+    }
+  }
+
+  mod key_sort {
+    use super::*;
+
+    #[test]
+    fn string_keys() {
+      assert_eq!(
+        interpret("KeySort[<|c -> 3, a -> 1, b -> 2|>]").unwrap(),
+        "<|a -> 1, b -> 2, c -> 3|>"
+      );
+    }
+
+    #[test]
+    fn integer_keys() {
+      assert_eq!(
+        interpret("KeySort[<|3 -> c, 1 -> a, 2 -> b|>]").unwrap(),
+        "<|1 -> a, 2 -> b, 3 -> c|>"
+      );
+    }
+
+    #[test]
+    fn already_sorted() {
+      assert_eq!(
+        interpret("KeySort[<|a -> 1, b -> 2|>]").unwrap(),
+        "<|a -> 1, b -> 2|>"
+      );
+    }
+  }
+
+  mod key_value_map {
+    use super::*;
+
+    #[test]
+    fn named_function() {
+      assert_eq!(
+        interpret("KeyValueMap[f, <|a -> 1, b -> 2|>]").unwrap(),
+        "{f[a, 1], f[b, 2]}"
+      );
+    }
+
+    #[test]
+    fn list_function() {
+      assert_eq!(
+        interpret("KeyValueMap[List, <|a -> 1, b -> 2|>]").unwrap(),
+        "{{a, 1}, {b, 2}}"
+      );
+    }
+
+    #[test]
+    fn anonymous_function() {
+      assert_eq!(
+        interpret("KeyValueMap[#2 &, <|x -> 10, y -> 20|>]").unwrap(),
+        "{10, 20}"
+      );
+    }
+  }
+
+  mod random_choice {
+    use super::*;
+
+    #[test]
+    fn single_choice() {
+      let result = interpret("RandomChoice[{a, b, c}]").unwrap();
+      assert!(result == "a" || result == "b" || result == "c");
+    }
+
+    #[test]
+    fn multiple_choices() {
+      assert_eq!(
+        interpret("Length[RandomChoice[{1, 2, 3}, 10]]").unwrap(),
+        "10"
+      );
+    }
+
+    #[test]
+    fn single_element_list() {
+      assert_eq!(interpret("RandomChoice[{x}]").unwrap(), "x");
+      assert_eq!(interpret("RandomChoice[{x}, 3]").unwrap(), "{x, x, x}");
+    }
+  }
+
+  mod random_sample {
+    use super::*;
+
+    #[test]
+    fn sample_count() {
+      assert_eq!(
+        interpret("Length[RandomSample[{1, 2, 3, 4, 5}, 3]]").unwrap(),
+        "3"
+      );
+    }
+
+    #[test]
+    fn full_permutation() {
+      assert_eq!(interpret("Length[RandomSample[{a, b, c}]]").unwrap(), "3");
+    }
+
+    #[test]
+    fn sample_one() {
+      let result = interpret("RandomSample[{a, b, c}, 1]").unwrap();
+      assert!(result == "{a}" || result == "{b}" || result == "{c}");
+    }
+
+    #[test]
+    fn no_duplicates() {
+      // RandomSample should return distinct elements
+      assert_eq!(
+        interpret("Length[DeleteDuplicates[RandomSample[{1, 2, 3, 4, 5}, 5]]]")
+          .unwrap(),
+        "5"
+      );
+    }
+  }
 }
