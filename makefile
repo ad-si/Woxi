@@ -50,6 +50,10 @@ test-unit-wolframscript:
 	@echo "All unit test verifications passed."
 
 
+.PHONY: test-conformance
+test-conformance: test-unit-wolframscript test-cli-wolframscript test-scripts-wolframscript
+
+
 .PHONY: test
 test: test-unit test-cli test-shebang
 
