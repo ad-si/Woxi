@@ -2,8 +2,8 @@ use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
 };
 use crate::{
-  ENV, InterpreterError, StoredValue, format_real_result, format_result,
-  interpret,
+  ENV, InterpreterError, PART_DEPTH, StoredValue, format_real_result,
+  format_result, interpret,
 };
 
 /// Evaluate an Expr AST directly without re-parsing.
@@ -934,10 +934,12 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       apply_postfix_ast(&evaluated_expr, func)
     }
     Expr::Part { expr: e, index } => {
+      // Track Part nesting depth for Part::partd warnings
+      PART_DEPTH.with(|d| *d.borrow_mut() += 1);
       let evaluated_idx = evaluate_expr_to_expr(index)?;
       // Optimize: for Part on an Identifier stored as ExprVal, avoid full clone
-      if let Expr::Identifier(var_name) = e.as_ref() {
-        let result = ENV.with(|env| {
+      let result = if let Expr::Identifier(var_name) = e.as_ref() {
+        let env_result = ENV.with(|env| {
           let env = env.borrow();
           if let Some(StoredValue::ExprVal(stored)) = env.get(var_name) {
             Some(extract_part_ast(stored, &evaluated_idx))
@@ -945,12 +947,38 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
             None
           }
         });
-        if let Some(r) = result {
-          return r;
+        if let Some(r) = env_result {
+          r?
+        } else {
+          let evaluated_expr = evaluate_expr_to_expr(e)?;
+          extract_part_ast(&evaluated_expr, &evaluated_idx)?
+        }
+      } else {
+        let evaluated_expr = evaluate_expr_to_expr(e)?;
+        extract_part_ast(&evaluated_expr, &evaluated_idx)?
+      };
+      PART_DEPTH.with(|d| *d.borrow_mut() -= 1);
+      // Part::partd: warn only at the outermost Part level (depth == 0)
+      let at_outermost = PART_DEPTH.with(|d| *d.borrow() == 0);
+      if at_outermost && let Expr::Part { .. } = &result {
+        let base = get_part_base(&result);
+        if matches!(
+          base,
+          Expr::Identifier(_) | Expr::Integer(_) | Expr::Real(_)
+        ) {
+          let original = Expr::Part {
+            expr: e.clone(),
+            index: index.clone(),
+          };
+          let part_str = crate::syntax::expr_to_string(&original);
+          eprintln!();
+          eprintln!(
+            "Part::partd: Part specification {} is longer than depth of object.",
+            part_str
+          );
         }
       }
-      let evaluated_expr = evaluate_expr_to_expr(e)?;
-      extract_part_ast(&evaluated_expr, &evaluated_idx)
+      Ok(result)
     }
     Expr::Function { body } => {
       // Return anonymous function as-is
@@ -1336,11 +1364,23 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::subsets_ast(args);
     }
     "SparseArray" if !args.is_empty() => {
-      return list_helpers_ast::sparse_array_ast(args);
+      // Return SparseArray unevaluated (like Wolfram); use Normal[] to expand
+      return Ok(Expr::FunctionCall {
+        name: "SparseArray".to_string(),
+        args: args.to_vec(),
+      });
     }
     "Normal" if args.len() == 1 => {
-      // Normal[SparseArray[...]] - SparseArray already evaluates to a list,
-      // so Normal just returns its argument (identity for already-evaluated arrays)
+      // Normal[SparseArray[...]] expands to a regular list
+      if let Expr::FunctionCall {
+        name,
+        args: sa_args,
+      } = &args[0]
+        && name == "SparseArray"
+      {
+        return list_helpers_ast::sparse_array_ast(sa_args);
+      }
+      // For other expressions, Normal is identity
       return Ok(args[0].clone());
     }
     "First" if args.len() == 1 => {
@@ -1667,7 +1707,7 @@ pub fn evaluate_function_call_ast(
     "StringCases" if args.len() == 2 => {
       return crate::functions::string_ast::string_cases_ast(args);
     }
-    "ToString" if args.len() == 1 => {
+    "ToString" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::string_ast::to_string_ast(args);
     }
     "ToExpression" if args.len() == 1 => {
@@ -1754,7 +1794,11 @@ pub fn evaluate_function_call_ast(
         use std::process::Command;
         let status = Command::new("sh").arg("-c").arg(cmd).status();
         return match status {
-          Ok(s) => Ok(Expr::Integer(s.code().unwrap_or(-1) as i128)),
+          Ok(s) => {
+            // Wolfram's Run returns the raw wait status (exit_code * 256)
+            let code = s.code().unwrap_or(-1) as i128;
+            Ok(Expr::Integer(code * 256))
+          }
           Err(e) => Err(InterpreterError::EvaluationError(format!(
             "Run: failed to execute command: {}",
             e
@@ -2784,11 +2828,8 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         matches!(env.get(&var_name), Some(StoredValue::Association(_)))
       });
       if is_assoc {
-        let key = match &eval_indices[0] {
-          Expr::String(s) => s.clone(),
-          Expr::Identifier(s) => s.clone(),
-          other => expr_to_string(other),
-        };
+        // Use expr_to_string to match the storage format (preserves string quotes)
+        let key = expr_to_string(&eval_indices[0]);
         crate::ENV.with(|e| {
           let mut env = e.borrow_mut();
           if let Some(StoredValue::Association(pairs)) = env.get_mut(&var_name)
@@ -2852,13 +2893,9 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       let pairs: Vec<(String, String)> = items
         .iter()
         .map(|(k, v)| {
-          // Extract key without quotes for consistent storage
-          let key_str = match k {
-            Expr::String(s) => s.clone(),
-            Expr::Identifier(s) => s.clone(),
-            other => expr_to_string(other),
-          };
-          (key_str, expr_to_string(v))
+          // Use expr_to_string for keys to preserve type info
+          // (e.g. Expr::String("x") → "\"x\"", Expr::Identifier("x") → "x")
+          (expr_to_string(k), expr_to_string(v))
         })
         .collect();
       ENV.with(|e| {
@@ -3091,7 +3128,7 @@ fn association_nested_access(
           .iter()
           .map(|(k, v)| {
             (
-              Expr::Identifier(k.clone()),
+              string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
               string_to_expr(v).unwrap_or(Expr::Raw(v.clone())),
             )
           })
@@ -3115,11 +3152,8 @@ fn association_nested_access(
       let mut current_pairs = pairs;
 
       for key in keys {
-        let key_str = match key {
-          Expr::String(s) => s.clone(),
-          Expr::Identifier(s) => s.clone(),
-          other => expr_to_string(other),
-        };
+        // Use expr_to_string to match storage format (preserves string quotes)
+        let key_str = expr_to_string(key);
 
         // Look up key in current association
         if let Some((_, val)) =
@@ -3197,9 +3231,7 @@ fn parse_association_string(
   // Simple parsing - split by ", " and then by " -> "
   for item in split_association_items(inner) {
     if let Some(arrow_pos) = item.find(" -> ") {
-      let key_raw = item[..arrow_pos].trim();
-      // Strip quotes from key if present
-      let key = key_raw.trim_matches('"').to_string();
+      let key = item[..arrow_pos].trim().to_string();
       let val = item[arrow_pos + 4..].trim().to_string();
       pairs.push((key, val));
     }
@@ -3609,6 +3641,14 @@ fn apply_postfix_ast(
   apply_function_to_arg(func, expr)
 }
 
+/// Get the innermost base of nested Part expressions
+fn get_part_base(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::Part { expr: inner, .. } => get_part_base(inner),
+    _ => expr,
+  }
+}
+
 /// Extract part from expression on AST (expr[[index]])
 fn extract_part_ast(
   expr: &Expr,
@@ -3652,14 +3692,10 @@ fn extract_part_ast(
       if actual_idx >= 0 && actual_idx < len {
         Ok(items[actual_idx as usize].clone())
       } else {
-        // Print warning and return unevaluated Part expression
-        use std::io::{self, Write};
+        // Print warning to stderr and return unevaluated Part expression
         let expr_str = crate::syntax::expr_to_string(expr);
-        println!(
-          "\nPart::partw: Part {} of {} does not exist.",
-          idx, expr_str
-        );
-        io::stdout().flush().ok();
+        eprintln!();
+        eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
         Ok(Expr::Part {
           expr: Box::new(expr.clone()),
           index: Box::new(index.clone()),
@@ -3673,10 +3709,9 @@ fn extract_part_ast(
       if actual_idx >= 0 && actual_idx < len {
         Ok(Expr::String(chars[actual_idx as usize].to_string()))
       } else {
-        // Print warning and return unevaluated Part expression
-        use std::io::{self, Write};
-        println!("\nPart::partw: Part {} of \"{}\" does not exist.", idx, s);
-        io::stdout().flush().ok();
+        // Print warning to stderr and return unevaluated Part expression
+        eprintln!();
+        eprintln!("Part::partw: Part {} of \"{}\" does not exist.", idx, s);
         Ok(Expr::Part {
           expr: Box::new(expr.clone()),
           index: Box::new(index.clone()),
@@ -4012,6 +4047,15 @@ fn apply_wolfram_pattern(
   }
 }
 
+/// Evaluate a FullForm string expression and return the result in FullForm.
+/// Unlike `interpret()`, this preserves string quotes so that round-tripping
+/// through string_to_expr works correctly.
+fn evaluate_fullform(s: &str) -> Result<String, InterpreterError> {
+  let expr = crate::syntax::string_to_expr(s)?;
+  let result = evaluate_expr_to_expr(&expr)?;
+  Ok(expr_to_string(&result))
+}
+
 /// Apply ReplaceAll with direct pattern and replacement strings
 fn apply_replace_all_direct(
   expr: &str,
@@ -4032,8 +4076,8 @@ fn apply_replace_all_direct(
         if let Some(replaced) =
           apply_wolfram_pattern(elem, &wolfram_pattern, replacement)?
         {
-          // Try to evaluate the replacement
-          let evaluated = interpret(&replaced).unwrap_or(replaced);
+          // Try to evaluate the replacement (preserve FullForm for round-tripping)
+          let evaluated = evaluate_fullform(&replaced).unwrap_or(replaced);
           results.push(evaluated);
         } else {
           // No match, keep original
@@ -4047,7 +4091,7 @@ fn apply_replace_all_direct(
       if let Some(replaced) =
         apply_wolfram_pattern(expr, &wolfram_pattern, replacement)?
       {
-        let evaluated = interpret(&replaced).unwrap_or(replaced);
+        let evaluated = evaluate_fullform(&replaced).unwrap_or(replaced);
         return Ok(evaluated);
       }
       return Ok(expr.to_string());
@@ -4059,8 +4103,8 @@ fn apply_replace_all_direct(
 
   // Re-evaluate the result to simplify if possible
   if result != *expr {
-    // Try to interpret the result, but if it fails, return as-is
-    interpret(&result).or(Ok(result))
+    // Try to evaluate the result, but if it fails, return as-is
+    evaluate_fullform(&result).or(Ok(result))
   } else {
     Ok(result)
   }
@@ -4116,8 +4160,8 @@ fn apply_replace_repeated_direct(
       break;
     }
 
-    // Re-evaluate to simplify
-    current = interpret(&next).unwrap_or(next);
+    // Re-evaluate to simplify (preserve FullForm for round-tripping)
+    current = evaluate_fullform(&next).unwrap_or(next);
   }
 
   Ok(current)

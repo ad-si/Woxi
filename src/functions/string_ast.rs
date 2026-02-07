@@ -441,16 +441,27 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// ToString[expr] - convert expression to string
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "ToString expects exactly 1 argument".into(),
+      "ToString expects 1 or 2 arguments".into(),
     ));
   }
-  // Get the string representation (without quotes for strings)
-  let s = match &args[0] {
-    Expr::String(s) => s.clone(),
-    _ => crate::syntax::expr_to_string(&args[0]),
-  };
+
+  // Check for InputForm as second argument
+  if args.len() == 2
+    && let Expr::Identifier(form) = &args[1]
+    && form == "InputForm"
+  {
+    // InputForm: infix operators + quoted strings
+    let s = crate::syntax::expr_to_input_form(&args[0]);
+    return Ok(Expr::String(s));
+  }
+  // Other forms: fall through to default (OutputForm-like) behavior
+
+  // Default (no form or unrecognized form): OutputForm-like
+  // Uses expr_to_output which renders strings without quotes and handles
+  // display forms like FullForm[expr] → FullForm notation
+  let s = crate::syntax::expr_to_output(&args[0]);
   Ok(Expr::String(s))
 }
 

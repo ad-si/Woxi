@@ -466,11 +466,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       parse_expression(pair)
     }
     Rule::CompoundExpression => {
-      let exprs: Vec<Expr> = pair
+      let trailing_semi = pair.as_str().trim_end().ends_with(';');
+      let mut exprs: Vec<Expr> = pair
         .into_inner()
         .filter(|p| p.as_str() != ";")
         .map(pair_to_expr)
         .collect();
+      // A trailing ; means the result is Null (CompoundExpression[..., Null])
+      if trailing_semi {
+        exprs.push(Expr::Identifier("Null".to_string()));
+      }
       if exprs.len() == 1 {
         exprs.into_iter().next().unwrap()
       } else {
@@ -1291,7 +1296,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
         base = inner_expr.as_ref();
       }
       indices.reverse();
-      format!("{}[[{}]]", expr_to_string(base), indices.join(", "))
+      format!("{}[[{}]]", expr_to_string(base), indices.join(","))
     }
     Expr::Function { body } => {
       format!("{}&", expr_to_string(body))
@@ -1334,6 +1339,10 @@ pub fn expr_to_output(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Special case: FullForm[expr] displays the inner expr in FullForm notation
+      if name == "FullForm" && args.len() == 1 {
+        return crate::functions::predicate_ast::expr_to_full_form(&args[0]);
+      }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
         return format!(
@@ -1440,6 +1449,58 @@ pub fn expr_to_output(expr: &Expr) -> String {
     }
     // For all other cases, delegate to expr_to_string
     _ => expr_to_string(expr),
+  }
+}
+
+/// Render Expr in InputForm - like expr_to_output but strings are quoted.
+pub fn expr_to_input_form(expr: &Expr) -> String {
+  match expr {
+    Expr::String(s) => {
+      let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+      format!("\"{}\"", escaped)
+    }
+    Expr::List(items) => {
+      let parts: Vec<String> = items.iter().map(expr_to_input_form).collect();
+      format!("{{{}}}", parts.join(", "))
+    }
+    Expr::Association(items) => {
+      let parts: Vec<String> = items
+        .iter()
+        .map(|(k, v)| {
+          format!("{} -> {}", expr_to_input_form(k), expr_to_input_form(v))
+        })
+        .collect();
+      format!("<|{}|>", parts.join(", "))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      format!(
+        "{} -> {}",
+        expr_to_input_form(pattern),
+        expr_to_input_form(replacement)
+      )
+    }
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      format!(
+        "{} :> {}",
+        expr_to_input_form(pattern),
+        expr_to_input_form(replacement)
+      )
+    }
+    // FunctionCall: handle FullForm specially in InputForm (keep the wrapper)
+    Expr::FunctionCall { name, args }
+      if name == "FullForm" && args.len() == 1 =>
+    {
+      format!("FullForm[{}]", expr_to_input_form(&args[0]))
+    }
+    // For all other cases, delegate to expr_to_output (which handles
+    // infix Plus/Times/Power, Rational, etc.)
+    _ => expr_to_output(expr),
   }
 }
 

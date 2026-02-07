@@ -1427,6 +1427,23 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn tostring_input_form() {
+      // ToString[expr, InputForm] — strings are quoted, fractions single-line
+      assert_eq!(
+        interpret(r#"ToString["hello", InputForm]"#).unwrap(),
+        r#""hello""#
+      );
+      assert_eq!(interpret("ToString[1/3, InputForm]").unwrap(), "1/3");
+      assert_eq!(
+        interpret(r#"ToString[{1, "a", x^2}, InputForm]"#).unwrap(),
+        r#"{1, "a", x^2}"#
+      );
+      assert_eq!(interpret("ToString[x + y, InputForm]").unwrap(), "x + y");
+      // Without InputForm, strings are unquoted
+      assert_eq!(interpret(r#"ToString["hello"]"#).unwrap(), "hello");
+    }
+
+    #[test]
     fn negative_numbers_still_work() {
       assert_eq!(interpret("{-1, -2, -3}").unwrap(), "{-1, -2, -3}");
       assert_eq!(interpret("-1 + 3").unwrap(), "2");
@@ -1786,14 +1803,18 @@ mod interpreter_tests {
     #[test]
     fn return_in_block() {
       clear_state();
-      // Return propagates through Block; at top level it becomes the inner value
-      assert_eq!(interpret("Block[{}, Return[42]]").unwrap(), "42");
+      // Return propagates through Block; at top level it becomes symbolic Return[val] (like wolframscript)
+      assert_eq!(interpret("Block[{}, Return[42]]").unwrap(), "Return[42]");
     }
 
     #[test]
     fn return_in_module() {
       clear_state();
-      assert_eq!(interpret("Module[{x = 10}, Return[x + 1]]").unwrap(), "11");
+      // At top level, uncaught Return[] becomes symbolic Return[val] (like wolframscript)
+      assert_eq!(
+        interpret("Module[{x = 10}, Return[x + 1]]").unwrap(),
+        "Return[11]"
+      );
     }
 
     #[test]

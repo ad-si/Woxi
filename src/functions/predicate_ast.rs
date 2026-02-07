@@ -494,7 +494,7 @@ fn format_real_helper(f: f64) -> String {
 }
 
 /// Helper to convert Expr to its FullForm string representation
-fn expr_to_full_form(expr: &Expr) -> String {
+pub fn expr_to_full_form(expr: &Expr) -> String {
   match expr {
     Expr::Integer(n) => n.to_string(),
     Expr::Real(f) => format_real_helper(*f),
@@ -752,9 +752,13 @@ fn expr_to_full_form(expr: &Expr) -> String {
   }
 }
 
-/// FullForm[expr] - Returns the full form representation of an expression
+/// FullForm[expr] - Returns a symbolic FullForm wrapper (like wolframscript).
+/// The display layer (expr_to_output) renders the inner expr in FullForm notation.
 pub fn full_form_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
-  Ok(Expr::String(expr_to_full_form(arg)))
+  Ok(Expr::FunctionCall {
+    name: "FullForm".to_string(),
+    args: vec![arg.clone()],
+  })
 }
 
 /// Construct[f, a, b, c, ...] - Creates function call f[a, b, c, ...]
