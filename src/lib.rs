@@ -28,6 +28,8 @@ thread_local! {
     static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
+    // Track Part evaluation nesting depth for Part::partd warnings
+    static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
 }
 
 #[derive(Error, Debug)]
@@ -156,12 +158,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   {
     return Ok(format_real_result(n));
   }
-  // Check for quoted string - return as-is
+  // Check for quoted string - return content without quotes (like wolframscript)
   if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
     // Make sure there are no unescaped quotes inside
     let inner = &trimmed[1..trimmed.len() - 1];
     if !inner.contains('"') {
-      return Ok(trimmed.to_string());
+      return Ok(inner.to_string());
     }
   }
 
@@ -180,6 +182,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains(" * ")
       && !trimmed.contains(" / ")
       && !trimmed.contains('[')
+      && !trimmed.contains('"')
     {
       // Simple list with no function calls or operators - return as-is
       return Ok(trimmed.to_string());
@@ -199,11 +202,17 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         StoredValue::ExprVal(e) => syntax::expr_to_output(&e),
         StoredValue::Raw(val) => val,
         StoredValue::Association(items) => {
-          let parts: Vec<String> = items
+          let items_expr: Vec<(syntax::Expr, syntax::Expr)> = items
             .iter()
-            .map(|(k, v)| format!("{} -> {}", k, v))
+            .map(|(k, v)| {
+              let key_expr = syntax::string_to_expr(k)
+                .unwrap_or(syntax::Expr::Identifier(k.clone()));
+              let val_expr = syntax::string_to_expr(v)
+                .unwrap_or(syntax::Expr::Raw(v.clone()));
+              (key_expr, val_expr)
+            })
             .collect();
-          format!("<|{}|>", parts.join(", "))
+          syntax::expr_to_output(&syntax::Expr::Association(items_expr))
         }
       });
     }
@@ -264,9 +273,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // Convert Pair to Expr AST
         let expr = syntax::pair_to_expr(node);
         // Evaluate using AST-based evaluation
-        // At top level, uncaught Return[] becomes symbolic Return[val]
+        // At top level, uncaught Return[] becomes symbolic Return[val] (like wolframscript)
         let result_expr = match evaluator::evaluate_expr_to_expr(&expr) {
-          Err(InterpreterError::ReturnValue(val)) => val,
+          Err(InterpreterError::ReturnValue(val)) => {
+            syntax::Expr::FunctionCall {
+              name: "Return".to_string(),
+              args: vec![val],
+            }
+          }
           other => other?,
         };
         // Convert to output string (strips quotes from strings for display)

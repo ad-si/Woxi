@@ -87,7 +87,8 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 
 // CompoundExpression: multiple expressions separated by ;
 // The result is the value of the last expression (like Wolfram's CompoundExpression)
-CompoundExpression = { Expression ~ (";" ~ Expression)+ }
+// A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
+CompoundExpression = { Expression ~ (";" ~ Expression)+ ~ ";"? | Expression ~ ";" }
 Term = _{
     PartExtract
   | Constant
