@@ -1725,6 +1725,18 @@ pub fn evaluate_function_call_ast(
     "StringFreeQ" if args.len() == 2 => {
       return crate::functions::string_ast::string_free_q_ast(args);
     }
+    "ToCharacterCode" if args.len() == 1 => {
+      return crate::functions::string_ast::to_character_code_ast(args);
+    }
+    "FromCharacterCode" if args.len() == 1 => {
+      return crate::functions::string_ast::from_character_code_ast(args);
+    }
+    "CharacterRange" if args.len() == 2 => {
+      return crate::functions::string_ast::character_range_ast(args);
+    }
+    "IntegerString" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::string_ast::integer_string_ast(args);
+    }
 
     // AST-native file and date functions (not available in WASM)
     #[cfg(not(target_arch = "wasm32"))]

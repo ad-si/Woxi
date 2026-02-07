@@ -2825,4 +2825,131 @@ mod interpreter_tests {
       assert_eq!(interpret(r#"Run["true"]"#).unwrap(), "0");
     }
   }
+
+  mod to_character_code {
+    use super::*;
+
+    #[test]
+    fn basic_string() {
+      assert_eq!(
+        interpret(r#"ToCharacterCode["Hello"]"#).unwrap(),
+        "{72, 101, 108, 108, 111}"
+      );
+    }
+
+    #[test]
+    fn empty_string() {
+      assert_eq!(interpret(r#"ToCharacterCode[""]"#).unwrap(), "{}");
+    }
+
+    #[test]
+    fn single_char() {
+      assert_eq!(interpret(r#"ToCharacterCode["A"]"#).unwrap(), "{65}");
+    }
+
+    #[test]
+    fn digits() {
+      assert_eq!(
+        interpret(r#"ToCharacterCode["0123"]"#).unwrap(),
+        "{48, 49, 50, 51}"
+      );
+    }
+  }
+
+  mod from_character_code {
+    use super::*;
+
+    #[test]
+    fn list_of_codes() {
+      assert_eq!(
+        interpret("FromCharacterCode[{72, 101, 108, 108, 111}]").unwrap(),
+        "Hello"
+      );
+    }
+
+    #[test]
+    fn single_code() {
+      assert_eq!(interpret("FromCharacterCode[65]").unwrap(), "A");
+    }
+
+    #[test]
+    fn roundtrip() {
+      assert_eq!(
+        interpret(r#"FromCharacterCode[ToCharacterCode["Test"]]"#).unwrap(),
+        "Test"
+      );
+    }
+  }
+
+  mod character_range {
+    use super::*;
+
+    #[test]
+    fn lowercase() {
+      assert_eq!(
+        interpret(r#"CharacterRange["a", "z"]"#).unwrap(),
+        "{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z}"
+      );
+    }
+
+    #[test]
+    fn uppercase() {
+      assert_eq!(
+        interpret(r#"CharacterRange["A", "F"]"#).unwrap(),
+        "{A, B, C, D, E, F}"
+      );
+    }
+
+    #[test]
+    fn digits() {
+      assert_eq!(
+        interpret(r#"CharacterRange["0", "9"]"#).unwrap(),
+        "{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}"
+      );
+    }
+
+    #[test]
+    fn empty_range() {
+      assert_eq!(interpret(r#"CharacterRange["z", "a"]"#).unwrap(), "{}");
+    }
+
+    #[test]
+    fn single_char() {
+      assert_eq!(interpret(r#"CharacterRange["m", "m"]"#).unwrap(), "{m}");
+    }
+  }
+
+  mod integer_string {
+    use super::*;
+
+    #[test]
+    fn base_10() {
+      assert_eq!(interpret("IntegerString[42]").unwrap(), "42");
+    }
+
+    #[test]
+    fn base_16() {
+      assert_eq!(interpret("IntegerString[255, 16]").unwrap(), "ff");
+    }
+
+    #[test]
+    fn base_2() {
+      assert_eq!(interpret("IntegerString[255, 2]").unwrap(), "11111111");
+    }
+
+    #[test]
+    fn with_padding() {
+      assert_eq!(interpret("IntegerString[255, 16, 4]").unwrap(), "00ff");
+    }
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("IntegerString[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn zero_base_2() {
+      assert_eq!(interpret("IntegerString[0, 2]").unwrap(), "0");
+    }
+  }
 }
