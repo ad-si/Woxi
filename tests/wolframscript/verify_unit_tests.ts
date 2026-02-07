@@ -223,11 +223,6 @@ function main() {
   // Known intentional divergences from wolframscript.
   // These are expressions where Woxi deliberately differs from Wolfram.
   const SKIP_EXPRS = new Set([
-    // Block[{x}, x] — Woxi returns Null, Wolfram returns x
-    "Block[{x}, x]",
-    // Return in Block/Module — Woxi catches Return, Wolfram doesn't
-    "Block[{}, Return[42]]",
-    "Module[{x = 10}, Return[x + 1]]",
     // Switch no-match — Woxi returns Null, Wolfram returns unevaluated
     "Switch[4, 1, a, 2, b, 3, c]",
     // Minus[5, 2] — Woxi uses U+2212, encoding comparison is unreliable

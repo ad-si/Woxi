@@ -2334,7 +2334,11 @@ pub fn evaluate_function_call_ast(
         substituted =
           crate::syntax::substitute_variable(&substituted, param, arg);
       }
-      return evaluate_expr_to_expr(&substituted);
+      // Catch Return[] at the function call boundary
+      return match evaluate_expr_to_expr(&substituted) {
+        Err(InterpreterError::ReturnValue(val)) => Ok(val),
+        other => other,
+      };
     }
   }
 
@@ -2354,7 +2358,11 @@ pub fn evaluate_function_call_ast(
     };
     if let Some(Expr::Function { body }) = &parsed {
       let substituted = crate::syntax::substitute_slots(body, args);
-      return evaluate_expr_to_expr(&substituted);
+      // Catch Return[] at the function call boundary
+      return match evaluate_expr_to_expr(&substituted) {
+        Err(InterpreterError::ReturnValue(val)) => Ok(val),
+        other => other,
+      };
     }
   }
 
@@ -2464,14 +2472,10 @@ fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prev.push((var_name.clone(), pv));
   }
 
-  // Evaluate the body expression using AST evaluation, catching Return[]
-  let result = match evaluate_expr_to_expr(body_expr) {
-    Ok(val) => Ok(val),
-    Err(InterpreterError::ReturnValue(val)) => Ok(val),
-    Err(e) => Err(e),
-  };
+  // Evaluate the body expression (Return propagates through Module, not caught here)
+  let result = evaluate_expr_to_expr(body_expr);
 
-  // Restore previous bindings
+  // Restore previous bindings (even on error/Return)
   for (var_name, old) in prev {
     ENV.with(|e| {
       let mut env = e.borrow_mut();
@@ -2551,27 +2555,22 @@ fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
 
   for (var_name, init_expr) in &local_vars {
-    let val = if let Some(expr) = init_expr {
+    let pv = if let Some(expr) = init_expr {
       let evaluated = evaluate_expr_to_expr(expr)?;
-      expr_to_string(&evaluated)
+      let val = expr_to_string(&evaluated);
+      ENV.with(|e| {
+        e.borrow_mut()
+          .insert(var_name.clone(), StoredValue::Raw(val))
+      })
     } else {
-      // Block uses Null for uninitialized variables (unlike Module which creates unique symbols)
-      "Null".to_string()
+      // Block with no initializer removes the variable binding so it evaluates as a symbol
+      ENV.with(|e| e.borrow_mut().remove(var_name))
     };
-
-    let pv = ENV.with(|e| {
-      e.borrow_mut()
-        .insert(var_name.clone(), StoredValue::Raw(val))
-    });
     prev.push((var_name.clone(), pv));
   }
 
-  // Evaluate the body expression, catching Return[]
-  let result = match evaluate_expr_to_expr(body_expr) {
-    Ok(val) => Ok(val),
-    Err(InterpreterError::ReturnValue(val)) => Ok(val),
-    Err(e) => Err(e),
-  };
+  // Evaluate the body expression (Return propagates through Block, not caught here)
+  let result = evaluate_expr_to_expr(body_expr);
 
   // Restore previous bindings (even if body returned an error)
   for (var_name, old) in prev {
