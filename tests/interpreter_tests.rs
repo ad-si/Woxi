@@ -1701,7 +1701,7 @@ mod interpreter_tests {
     #[test]
     fn block_uninitialized_var() {
       clear_state();
-      assert_eq!(interpret("Block[{x}, x]").unwrap(), "Null");
+      assert_eq!(interpret("Block[{x}, x]").unwrap(), "x");
     }
 
     #[test]
@@ -1786,6 +1786,7 @@ mod interpreter_tests {
     #[test]
     fn return_in_block() {
       clear_state();
+      // Return propagates through Block; at top level it becomes the inner value
       assert_eq!(interpret("Block[{}, Return[42]]").unwrap(), "42");
     }
 
@@ -1793,6 +1794,24 @@ mod interpreter_tests {
     fn return_in_module() {
       clear_state();
       assert_eq!(interpret("Module[{x = 10}, Return[x + 1]]").unwrap(), "11");
+    }
+
+    #[test]
+    fn return_in_block_inside_function() {
+      clear_state();
+      assert_eq!(
+        interpret("f[] := Block[{}, Return[42]]; f[]").unwrap(),
+        "42"
+      );
+    }
+
+    #[test]
+    fn return_in_module_inside_function() {
+      clear_state();
+      assert_eq!(
+        interpret("g[] := Module[{x = 10}, Return[x + 1]]; g[]").unwrap(),
+        "11"
+      );
     }
   }
 

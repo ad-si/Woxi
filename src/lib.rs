@@ -264,7 +264,11 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // Convert Pair to Expr AST
         let expr = syntax::pair_to_expr(node);
         // Evaluate using AST-based evaluation
-        let result_expr = evaluator::evaluate_expr_to_expr(&expr)?;
+        // At top level, uncaught Return[] becomes symbolic Return[val]
+        let result_expr = match evaluator::evaluate_expr_to_expr(&expr) {
+          Err(InterpreterError::ReturnValue(val)) => val,
+          other => other?,
+        };
         // Convert to output string (strips quotes from strings for display)
         last_result = Some(syntax::expr_to_output(&result_expr));
         any_nonempty = true;
