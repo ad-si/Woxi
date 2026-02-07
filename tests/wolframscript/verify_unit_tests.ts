@@ -203,9 +203,155 @@ function extractTestCases(filePath: string): TestCase[] {
   return cases;
 }
 
-/** Escape a string for embedding inside a Wolfram Language string literal */
+/** Escape a string for embedding inside a Wolfram Language string literal.
+ * Non-ASCII characters are escaped as \\:XXXX (Wolfram 4-digit hex escape) */
 function escapeForWolfram(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  let result = "";
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!;
+    if (code > 127) {
+      result += "\\:" + code.toString(16).padStart(4, "0");
+    } else if (ch === "\\") {
+      result += "\\\\";
+    } else if (ch === '"') {
+      result += '\\"';
+    } else {
+      result += ch;
+    }
+  }
+  return result;
+}
+
+/**
+ * Split a top-level semicolon-separated expression into statements.
+ * Respects brackets [], parens (), braces {}, and strings "...".
+ */
+function splitTopLevelSemicolons(s: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let inString = false;
+  let start = 0;
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (ch === "\\" && i + 1 < s.length) {
+        i++; // skip escaped char
+      } else if (ch === '"') {
+        inString = false;
+      }
+    } else {
+      if (ch === '"') {
+        inString = true;
+      } else if (ch === "(" || ch === "[" || ch === "{" || ch === "<" && s[i + 1] === "|") {
+        depth++;
+      } else if (ch === ")" || ch === "]" || ch === "}" || ch === "|" && s[i + 1] === ">") {
+        depth--;
+      } else if (ch === ";" && depth === 0) {
+        // Make sure it's not /; (Condition)
+        if (i > 0 && s[i - 1] === "/") continue;
+        parts.push(s.substring(start, i).trim());
+        start = i + 1;
+      }
+    }
+  }
+
+  const last = s.substring(start).trim();
+  if (last.length > 0) {
+    parts.push(last);
+  }
+
+  return parts;
+}
+
+/**
+ * Run an expression through woxi eval, wrapping it in
+ * ToString[expr, InputForm] to get the canonical comparison format.
+ *
+ * For expressions containing multiple top-level semicolon-separated
+ * statements, we only wrap the last one in ToString[(...), InputForm]
+ * so that := definitions (which can't appear inside parens) work correctly.
+ * Everything stays in a single woxi eval call to preserve state.
+ */
+function runWoxi(expr: string): string {
+  let fullExpr: string;
+
+  // Check if the expression contains := (function definitions) which
+  // can't be wrapped inside ToString[(...), InputForm] parens.
+  // In that case, split into setup statements and wrap only the last.
+  if (expr.includes(":=")) {
+    const stmts = splitTopLevelSemicolons(expr);
+    if (stmts.length > 1) {
+      const setup = stmts.slice(0, -1);
+      const last = stmts[stmts.length - 1];
+      fullExpr = setup.join("; ") + "; ToString[(" + last + "), InputForm]";
+    } else {
+      fullExpr = 'ToString[(' + expr + '), InputForm]';
+    }
+  } else {
+    // No function definitions — wrap the whole expression (preserves trailing ;)
+    fullExpr = 'ToString[(' + expr + '), InputForm]';
+  }
+
+  try {
+    const output = execSync(`woxi eval '${fullExpr.replace(/'/g, "'\\''")}'`, {
+      encoding: "utf-8",
+      timeout: 10_000,
+      stdio: ["pipe", "pipe", "ignore"], // suppress stderr (error messages like Part::partw)
+    }).trim();
+    // Take only the last line — earlier lines may be Print/error side-effects
+    const lines = output.split("\n");
+    return lines[lines.length - 1];
+  } catch {
+    return "<WOXI_ERROR>";
+  }
+}
+
+/**
+ * Build a wolframscript .wls that evaluates ToString[expr, InputForm]
+ * for each test case, comparing against the expected Woxi result.
+ * Mismatches are reported via Print.
+ */
+function buildWolframScript(
+  cases: { expr: string; woxiResult: string; idx: number }[]
+): string {
+  const lines: string[] = [];
+  lines.push("$RecursionLimit = 4096");
+
+  for (const { expr, woxiResult, idx } of cases) {
+    lines.push('ClearAll["Global`*"]');
+
+    const exprEscaped = escapeForWolfram(expr);
+    const expectedEscaped = escapeForWolfram(woxiResult);
+
+    // Only split if expression contains := (function definitions can't be inside parens)
+    let wBlock: string;
+    if (expr.includes(":=")) {
+      const stmts = splitTopLevelSemicolons(expr);
+      if (stmts.length > 1) {
+        const setup = stmts.slice(0, -1).join("; ");
+        const last = stmts[stmts.length - 1];
+        wBlock = setup + "; ToString[(" + last + "), InputForm]";
+      } else {
+        wBlock = "ToString[(" + expr + "), InputForm]";
+      }
+    } else {
+      wBlock = "ToString[(" + expr + "), InputForm]";
+    }
+
+    const wExpected = '"' + expectedEscaped + '"';
+    const wLabel = '"FAIL #' + (idx + 1) + ": " + exprEscaped + '"';
+    lines.push(
+      "Module[{res$$ = (" + wBlock + ")}," +
+        " If[res$$ =!= " + wExpected + "," +
+        " Print[" + wLabel + "];" +
+        ' Print["  Woxi:    ' + expectedEscaped + '"];' +
+        ' Print["  Wolfram: " <> res$$]]]'
+    );
+  }
+
+  lines.push('Print["DONE"]');
+  return lines.join(";\n");
 }
 
 function main() {
@@ -220,83 +366,37 @@ function main() {
     allCases = allCases.concat(extractTestCases(f));
   }
 
-  let skipped = 0;
   console.log(`Extracted ${allCases.length} test cases`);
 
-  // Build a single Wolfram program that evaluates all expressions
-  // and reports mismatches.
-  // Clear state before each test to prevent interference.
-  const wolframLines: string[] = [];
+  // Filter out multiline expressions (they break the generated scripts)
+  const cases = allCases.filter((c) => !c.expr.includes("\n"));
+  const skipped = allCases.length - cases.length;
+  const tested = cases.length;
 
-  // Define a helper that mimics Woxi's output formatting:
-  // - InputForm for single-line rendering (fractions, powers, etc.)
-  // - Strip quotes (Woxi displays strings without quotes)
-  // - Special case FullForm (ToString[FullForm[...]] already works)
-  // Use WoxiTest` context so ClearAll["Global`*"] doesn't remove it.
-  wolframLines.push('$RecursionLimit = 4096');
-  wolframLines.push(
-    'WoxiTest`str[FullForm[x_]] := ToString[FullForm[x]]'
-  );
-  wolframLines.push(
-    'WoxiTest`str[x_] := StringReplace[ToString[x, InputForm], "\\"" -> ""]'
-  );
-
-  for (let i = 0; i < allCases.length; i++) {
-    const { expr, expected, setup } = allCases[i];
-
-    // Skip expressions containing literal newlines (multiline tests)
-    // — they break the generated Wolfram script and are tested elsewhere
-    if (expr.includes("\n")) {
-      skipped++;
-      continue;
-    }
-
-    // Escape for embedding in Wolfram strings
-    const exprEscaped = escapeForWolfram(expr);
-    const expectedEscaped = escapeForWolfram(expected);
-
-    // Clear all Global symbols before each test
-    wolframLines.push('ClearAll["Global`*"]');
-
-    // If this test depends on prior interpret() calls, run setup code first
-    if (setup) {
-      for (const setupExpr of setup) {
-        if (!setupExpr.includes("\n")) {
-          wolframLines.push(setupExpr);
-        }
-      }
-    }
-
-    // Each test: evaluate, convert via WoxiTest`str, compare
-    const n = i + 1;
-    const wExpr = "WoxiTest`str[" + expr + "]";
-    const wExpected = '"' + expectedEscaped + '"';
-    const wLabel = '"FAIL #' + n + ": " + exprEscaped + '"';
-    const wExpectedLabel = '"  Expected: ' + expectedEscaped + '"';
-    wolframLines.push(
-      "Module[{res$$ = " + wExpr + "}," +
-        " If[res$$ =!= " + wExpected + "," +
-        " Print[" + wLabel + "];" +
-        " Print[" + wExpectedLabel + "];" +
-        ' Print["  Got:      " <> res$$]]]'
-    );
+  // Step 1: Run each expression through woxi eval with ToString[_, InputForm]
+  // Woxi is fast (~20ms per call), so this takes ~10s for 500 tests.
+  console.log(`Running ${tested} test cases through woxi eval (${skipped} skipped)...`);
+  const woxiResults: { expr: string; woxiResult: string; idx: number }[] = [];
+  for (let i = 0; i < tested; i++) {
+    const { expr, setup } = cases[i];
+    // For expressions with setup, prepend setup code
+    const fullExpr = setup
+      ? [...setup.filter((s) => !s.includes("\n")), expr].join("; ")
+      : expr;
+    const result = runWoxi(fullExpr);
+    woxiResults.push({ expr: fullExpr, woxiResult: result, idx: i });
   }
 
-  // Add a final sentinel so we know the script completed
-  wolframLines.push('Print["DONE"]');
-
-  const wolframProgram = wolframLines.join(";\n");
-
-  // Write to a temp file and run wolframscript
+  // Step 2: Build a single wolframscript program that evaluates all
+  // expressions and compares against the Woxi results.
+  console.log("Running wolframscript...");
+  const wolframProgram = buildWolframScript(woxiResults);
   const tmpFile = join(ROOT, "tests/wolframscript/.verify_unit_tests.wls");
   writeFileSync(tmpFile, wolframProgram);
 
-  const tested = allCases.length - skipped;
-  console.log(`Running wolframscript on ${tested} test cases (${skipped} skipped)...`);
-
   let output: string;
   try {
-    output = execSync(`wolframscript -file "${tmpFile}"`, {
+    output = execSync(`wolframscript -charset UTF8 -file "${tmpFile}"`, {
       encoding: "utf-8",
       timeout: 300_000,
       maxBuffer: 10 * 1024 * 1024,
@@ -331,20 +431,20 @@ function main() {
   const passCount = tested - failCount;
 
   if (failCount === 0) {
-    console.log(`All ${tested} test cases match wolframscript.`);
+    console.log(`All ${tested} test cases match between Woxi and wolframscript.`);
   } else {
-    console.error(`\n${passCount}/${tested} passed, ${failCount} differ from wolframscript:\n`);
+    console.error(`\n${passCount}/${tested} passed, ${failCount} differ:\n`);
     for (const line of failures) {
       console.error(line);
     }
 
-    // Also print which test case each failure corresponds to
+    // Print file locations
     console.error("\nFile locations:");
     for (const line of failures) {
       const m = line.match(/^FAIL #(\d+)/);
       if (m) {
         const idx = parseInt(m[1]) - 1;
-        const tc = allCases[idx];
+        const tc = cases[idx];
         if (tc) {
           console.error(`  ${tc.file}:${tc.line}`);
         }

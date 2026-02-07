@@ -29,3 +29,5 @@ There is 3 levels of tests:
     Make sure to implement it for all possible cases!
 - Use `wolframscript -code 'Plus[1, 2]'` to verify the output of Wolfram Language code.
 - Do not write code to temporary files. Simply use `cargo run -- eval '<code>'`.
+- If you stumble upon a pre-existing issue, do not try to ignore it or work around it,
+    but rather fix it right away.
