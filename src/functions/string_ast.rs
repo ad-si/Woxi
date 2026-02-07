@@ -586,3 +586,155 @@ pub fn string_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if s.contains(&sub) { "False" } else { "True" }.to_string(),
   ))
 }
+
+/// ToCharacterCode[s] - converts a string to a list of character codes
+pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ToCharacterCode expects exactly 1 argument".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  let codes: Vec<Expr> = s.chars().map(|c| Expr::Integer(c as i128)).collect();
+  Ok(Expr::List(codes))
+}
+
+/// FromCharacterCode[n] or FromCharacterCode[{n1, n2, ...}] - converts character codes to a string
+pub fn from_character_code_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FromCharacterCode expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(n) => {
+      let c = char::from_u32(*n as u32).ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid character code: {}",
+          n
+        ))
+      })?;
+      Ok(Expr::String(c.to_string()))
+    }
+    Expr::List(items) => {
+      let mut result = String::new();
+      for item in items {
+        match item {
+          Expr::Integer(n) => {
+            let c = char::from_u32(*n as u32).ok_or_else(|| {
+              InterpreterError::EvaluationError(format!(
+                "Invalid character code: {}",
+                n
+              ))
+            })?;
+            result.push(c);
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(
+              "FromCharacterCode expects integer arguments".into(),
+            ));
+          }
+        }
+      }
+      Ok(Expr::String(result))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "FromCharacterCode expects an integer or list of integers".into(),
+    )),
+  }
+}
+
+/// CharacterRange[c1, c2] - generates a list of characters from c1 to c2
+pub fn character_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "CharacterRange expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let s1 = expr_to_str(&args[0])?;
+  let s2 = expr_to_str(&args[1])?;
+
+  let c1 = s1.chars().next().ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "CharacterRange: first argument must be a single character".into(),
+    )
+  })?;
+  let c2 = s2.chars().next().ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "CharacterRange: second argument must be a single character".into(),
+    )
+  })?;
+
+  let start = c1 as u32;
+  let end = c2 as u32;
+
+  if start > end {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let chars: Vec<Expr> = (start..=end)
+    .filter_map(char::from_u32)
+    .map(|c| Expr::String(c.to_string()))
+    .collect();
+  Ok(Expr::List(chars))
+}
+
+/// IntegerString[n] or IntegerString[n, base] or IntegerString[n, base, length] - convert integer to string
+pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerString expects 1, 2, or 3 arguments".into(),
+    ));
+  }
+
+  let n = expr_to_int(&args[0])?;
+  let base = if args.len() >= 2 {
+    expr_to_int(&args[1])? as u32
+  } else {
+    10
+  };
+
+  if !(2..=36).contains(&base) {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerString: base must be between 2 and 36".into(),
+    ));
+  }
+
+  let is_negative = n < 0;
+  let abs_n = n.unsigned_abs();
+
+  let mut result = String::new();
+  if abs_n == 0 {
+    result.push('0');
+  } else {
+    let mut val = abs_n;
+    while val > 0 {
+      let digit = (val % base as u128) as u32;
+      let c = char::from_digit(digit, base).unwrap();
+      result.push(c);
+      val /= base as u128;
+    }
+    result = result.chars().rev().collect();
+  }
+
+  if is_negative {
+    result.insert(0, '-');
+  }
+
+  // If length is specified, pad with zeros on the left
+  if args.len() == 3 {
+    let target_len = expr_to_int(&args[2])? as usize;
+    let current_len = result.len();
+    if current_len < target_len {
+      let padding: String =
+        std::iter::repeat_n('0', target_len - current_len).collect();
+      result = format!("{}{}", padding, result);
+    }
+  }
+
+  Ok(Expr::String(result))
+}
