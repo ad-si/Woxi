@@ -43,6 +43,13 @@ test-scripts-wolframscript:
 	@echo "All wolframscript script tests passed."
 
 
+.PHONY: test-unit-wolframscript
+test-unit-wolframscript:
+	@echo "Verifying unit tests against wolframscript …"
+	node tests/wolframscript/verify_unit_tests.ts
+	@echo "All unit test verifications passed."
+
+
 .PHONY: test
 test: test-unit test-cli test-shebang
 
