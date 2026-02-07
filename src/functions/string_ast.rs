@@ -183,6 +183,7 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// StringReplace[s, pattern -> replacement] - replaces occurrences
+/// StringReplace[s, {rule1, rule2, ...}] - applies multiple rules
 pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -192,24 +193,37 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let s = expr_to_str(&args[0])?;
 
-  // Second argument should be a rule
-  let (pattern, replacement) = match &args[1] {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => (expr_to_str(pattern)?, expr_to_str(replacement)?),
-    Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => (expr_to_str(pattern)?, expr_to_str(replacement)?),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "StringReplace: second argument must be a rule".into(),
-      ));
+  fn extract_rule(expr: &Expr) -> Result<(String, String), InterpreterError> {
+    match expr {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Ok((expr_to_str(pattern)?, expr_to_str(replacement)?)),
+      Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => Ok((expr_to_str(pattern)?, expr_to_str(replacement)?)),
+      _ => Err(InterpreterError::EvaluationError(
+        "StringReplace: rules must be of the form pattern -> replacement"
+          .into(),
+      )),
     }
-  };
+  }
 
-  Ok(Expr::String(s.replace(&pattern, &replacement)))
+  match &args[1] {
+    Expr::List(rules) => {
+      let mut result = s;
+      for rule in rules {
+        let (pattern, replacement) = extract_rule(rule)?;
+        result = result.replace(&pattern, &replacement);
+      }
+      Ok(Expr::String(result))
+    }
+    rule => {
+      let (pattern, replacement) = extract_rule(rule)?;
+      Ok(Expr::String(s.replace(&pattern, &replacement)))
+    }
+  }
 }
 
 /// ToUpperCase[s] - converts string to uppercase
