@@ -150,9 +150,11 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   if let Ok(n) = trimmed.parse::<i64>() {
     return Ok(n.to_string());
   }
-  // Check for float
-  if let Ok(n) = trimmed.parse::<f64>() {
-    return Ok(format_result(n));
+  // Check for float (must contain '.' to distinguish from integer)
+  if trimmed.contains('.')
+    && let Ok(n) = trimmed.parse::<f64>()
+  {
+    return Ok(format_real_result(n));
   }
   // Check for quoted string - return as-is
   if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
@@ -609,10 +611,7 @@ fn format_result(result: f64) -> String {
     let int_result = result as i64;
     int_result.to_string()
   } else {
-    format!("{:.10}", result)
-      .trim_end_matches('0')
-      .trim_end_matches('.')
-      .to_string()
+    format!("{}", result)
   }
 }
 
@@ -621,7 +620,7 @@ pub fn format_real_result(result: f64) -> String {
   if result.fract() == 0.0 {
     format!("{}.", result as i64)
   } else {
-    format!("{:.10}", result).trim_end_matches('0').to_string()
+    format!("{}", result)
   }
 }
 

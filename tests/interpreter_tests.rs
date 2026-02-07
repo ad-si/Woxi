@@ -91,14 +91,62 @@ mod interpreter_tests {
 
       #[test]
       fn division() {
-        // ToString[9.6 / 3] in Wolfram returns 3.2
-        assert_eq!(interpret("9.6 / 3").unwrap(), "3.2");
+        assert_eq!(interpret("9.6 / 3").unwrap(), "3.1999999999999997");
       }
 
       #[test]
       fn complex_division() {
-        // ToString[9.6 / 3 + 3.0 / 3] in Wolfram returns 4.2
-        assert_eq!(interpret("9.6 / 3 + 3.0 / 3").unwrap(), "4.2");
+        assert_eq!(
+          interpret("9.6 / 3 + 3.0 / 3").unwrap(),
+          "4.199999999999999"
+        );
+      }
+
+      #[test]
+      fn addition_ieee754_precision() {
+        // Must preserve IEEE 754 representation, not round
+        assert_eq!(interpret("0.1 + 0.2").unwrap(), "0.30000000000000004");
+      }
+
+      #[test]
+      fn division_repeating() {
+        assert_eq!(interpret("1.0 / 3.0").unwrap(), "0.3333333333333333");
+      }
+
+      #[test]
+      fn sqrt_real() {
+        assert_eq!(interpret("Sqrt[2.0]").unwrap(), "1.4142135623730951");
+      }
+
+      #[test]
+      fn whole_number_real() {
+        // Whole-number reals keep trailing dot
+        assert_eq!(interpret("1.0").unwrap(), "1.");
+        assert_eq!(interpret("100.0").unwrap(), "100.");
+      }
+
+      #[test]
+      fn real_type_preserved_in_addition() {
+        assert_eq!(interpret("2.0 + 3.0").unwrap(), "5.");
+        assert_eq!(interpret("Head[2.0 + 3.0]").unwrap(), "Real");
+      }
+
+      #[test]
+      fn real_type_preserved_in_subtraction() {
+        assert_eq!(interpret("6.0 - 3.0").unwrap(), "3.");
+        assert_eq!(interpret("Head[6.0 - 3.0]").unwrap(), "Real");
+      }
+
+      #[test]
+      fn real_type_preserved_in_multiplication() {
+        assert_eq!(interpret("2.0 * 3.0").unwrap(), "6.");
+        assert_eq!(interpret("Head[2.0 * 3.0]").unwrap(), "Real");
+      }
+
+      #[test]
+      fn real_type_preserved_in_negation() {
+        assert_eq!(interpret("-3.0").unwrap(), "-3.");
+        assert_eq!(interpret("Head[-3.0]").unwrap(), "Real");
       }
     }
   }
