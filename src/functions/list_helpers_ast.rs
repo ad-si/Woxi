@@ -1548,14 +1548,13 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   let len = items.len() as i128;
   if count >= 0 {
     if count > len {
-      // Print warning and return unevaluated
-      use std::io::{self, Write};
+      // Print warning to stderr and return unevaluated
       let list_str = crate::syntax::expr_to_string(list);
-      println!(
-        "\nTake::take: Cannot take positions 1 through {} in {}.",
+      eprintln!();
+      eprintln!(
+        "Take::take: Cannot take positions 1 through {} in {}.",
         count, list_str
       );
-      io::stdout().flush().ok();
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
         args: vec![list.clone(), n.clone()],
@@ -1564,14 +1563,13 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     Ok(Expr::List(items[..count as usize].to_vec()))
   } else {
     if -count > len {
-      // Print warning and return unevaluated
-      use std::io::{self, Write};
+      // Print warning to stderr and return unevaluated
       let list_str = crate::syntax::expr_to_string(list);
-      println!(
-        "\nTake::take: Cannot take positions {} through -1 in {}.",
+      eprintln!();
+      eprintln!(
+        "Take::take: Cannot take positions {} through -1 in {}.",
         count, list_str
       );
-      io::stdout().flush().ok();
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
         args: vec![list.clone(), n.clone()],

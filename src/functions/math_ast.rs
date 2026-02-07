@@ -303,13 +303,12 @@ pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   } else {
-    // Wrong arity - print message and return unevaluated expression
-    use std::io::{self, Write};
-    println!(
-      "\nMinus::argx: Minus called with {} arguments; 1 argument is expected.",
+    // Wrong arity - print error to stderr and return unevaluated expression
+    eprintln!();
+    eprintln!(
+      "Minus::argx: Minus called with {} arguments; 1 argument is expected.",
       args.len()
     );
-    io::stdout().flush().ok();
     // Return as a BinaryOp chain with Minus operator
     if args.is_empty() {
       return Err(InterpreterError::EvaluationError(
@@ -398,6 +397,18 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   let exp_is_zero = matches!(exp, Expr::Integer(0))
     || matches!(exp, Expr::Real(f) if *f == 0.0);
   if base_is_zero && exp_is_zero {
+    let base_str = crate::syntax::expr_to_string(base);
+    let exp_str = crate::syntax::expr_to_string(exp);
+    // Align exponent above the base in the warning message
+    // "Power::indet: Indeterminate expression " is 39 chars
+    // Exponent starts at column 39 + len(base), right-align needs + len(exp)
+    let padding = 39 + base_str.len() + exp_str.len();
+    eprintln!();
+    eprintln!("{:>width$}", exp_str, width = padding);
+    eprintln!(
+      "Power::indet: Indeterminate expression {}  encountered.",
+      base_str
+    );
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 

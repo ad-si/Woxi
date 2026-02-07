@@ -240,7 +240,7 @@ $ wo 'Run["exit 0"]'
 
 ```scrut
 $ wo 'Run["exit 1"]'
-1
+256
 ```
 
 
