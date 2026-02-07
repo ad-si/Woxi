@@ -2513,4 +2513,225 @@ mod interpreter_tests {
       );
     }
   }
+
+  mod string_replace {
+    use super::*;
+
+    #[test]
+    fn single_rule() {
+      assert_eq!(
+        interpret(r#"StringReplace["hello world", "world" -> "planet"]"#)
+          .unwrap(),
+        "hello planet"
+      );
+    }
+
+    #[test]
+    fn list_of_rules() {
+      assert_eq!(
+        interpret(r#"StringReplace["hello world", {"hello" -> "goodbye", "world" -> "planet"}]"#)
+          .unwrap(),
+        "goodbye planet"
+      );
+    }
+
+    #[test]
+    fn replace_all_occurrences() {
+      assert_eq!(
+        interpret(r#"StringReplace["abcabc", "a" -> "x"]"#).unwrap(),
+        "xbcxbc"
+      );
+    }
+
+    #[test]
+    fn replace_with_empty() {
+      assert_eq!(
+        interpret(r#"StringReplace["hello", "l" -> ""]"#).unwrap(),
+        "heo"
+      );
+    }
+
+    #[test]
+    fn no_match() {
+      assert_eq!(
+        interpret(r#"StringReplace["hello", "xyz" -> "abc"]"#).unwrap(),
+        "hello"
+      );
+    }
+  }
+
+  mod constant_array {
+    use super::*;
+
+    #[test]
+    fn simple_integer() {
+      assert_eq!(interpret("ConstantArray[0, 3]").unwrap(), "{0, 0, 0}");
+    }
+
+    #[test]
+    fn symbol() {
+      assert_eq!(interpret("ConstantArray[x, 4]").unwrap(), "{x, x, x, x}");
+    }
+
+    #[test]
+    fn nested_dimensions() {
+      assert_eq!(
+        interpret("ConstantArray[0, {2, 3}]").unwrap(),
+        "{{0, 0, 0}, {0, 0, 0}}"
+      );
+    }
+
+    #[test]
+    fn zero_length() {
+      assert_eq!(interpret("ConstantArray[1, 0]").unwrap(), "{}");
+    }
+  }
+
+  mod from_digits {
+    use super::*;
+
+    #[test]
+    fn base_10() {
+      assert_eq!(interpret("FromDigits[{1, 2, 3}]").unwrap(), "123");
+    }
+
+    #[test]
+    fn base_2() {
+      assert_eq!(interpret("FromDigits[{1, 0, 1}, 2]").unwrap(), "5");
+    }
+
+    #[test]
+    fn base_16() {
+      assert_eq!(interpret("FromDigits[{1, 0}, 16]").unwrap(), "16");
+    }
+
+    #[test]
+    fn single_digit() {
+      assert_eq!(interpret("FromDigits[{7}]").unwrap(), "7");
+    }
+
+    #[test]
+    fn empty_list() {
+      assert_eq!(interpret("FromDigits[{}]").unwrap(), "0");
+    }
+  }
+
+  mod complement {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(
+        interpret("Complement[{1, 2, 3, 4}, {2, 4}]").unwrap(),
+        "{1, 3}"
+      );
+    }
+
+    #[test]
+    fn no_overlap() {
+      assert_eq!(
+        interpret("Complement[{1, 2, 3}, {4, 5}]").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn complete_overlap() {
+      assert_eq!(interpret("Complement[{1, 2}, {1, 2}]").unwrap(), "{}");
+    }
+
+    #[test]
+    fn multiple_exclusion_lists() {
+      assert_eq!(
+        interpret("Complement[{1, 2, 3, 4, 5}, {2}, {4}]").unwrap(),
+        "{1, 3, 5}"
+      );
+    }
+  }
+
+  mod count {
+    use super::*;
+
+    #[test]
+    fn count_integer() {
+      assert_eq!(interpret("Count[{1, 2, 3, 2, 1}, 2]").unwrap(), "2");
+    }
+
+    #[test]
+    fn count_zero_matches() {
+      assert_eq!(interpret("Count[{1, 2, 3}, 4]").unwrap(), "0");
+    }
+
+    #[test]
+    fn count_symbol() {
+      assert_eq!(interpret("Count[{a, b, a, c, a}, a]").unwrap(), "3");
+    }
+  }
+
+  mod sort_by {
+    use super::*;
+
+    #[test]
+    fn sort_by_abs() {
+      assert_eq!(
+        interpret("SortBy[{-3, 1, -2, 4}, Abs]").unwrap(),
+        "{1, -2, -3, 4}"
+      );
+    }
+
+    #[test]
+    fn sort_by_length() {
+      assert_eq!(
+        interpret(r#"SortBy[{{1, 2, 3}, {1}, {1, 2}}, Length]"#).unwrap(),
+        "{{1}, {1, 2}, {1, 2, 3}}"
+      );
+    }
+
+    #[test]
+    fn sort_by_anonymous_function() {
+      assert_eq!(
+        interpret("SortBy[{5, 1, 3, 2, 4}, (0 - #) &]").unwrap(),
+        "{5, 4, 3, 2, 1}"
+      );
+    }
+  }
+
+  mod floor {
+    use super::*;
+
+    #[test]
+    fn positive_float() {
+      assert_eq!(interpret("Floor[3.7]").unwrap(), "3");
+    }
+
+    #[test]
+    fn negative_float() {
+      assert_eq!(interpret("Floor[-2.3]").unwrap(), "-3");
+    }
+
+    #[test]
+    fn integer_unchanged() {
+      assert_eq!(interpret("Floor[5]").unwrap(), "5");
+    }
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("Floor[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn symbolic() {
+      assert_eq!(interpret("Floor[x]").unwrap(), "Floor[x]");
+    }
+  }
+
+  mod run {
+    use super::*;
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run_echo() {
+      assert_eq!(interpret(r#"Run["true"]"#).unwrap(), "0");
+    }
+  }
 }
