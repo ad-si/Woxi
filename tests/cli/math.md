@@ -82,7 +82,7 @@ $ wo 'Minus[5]'
 -5
 ```
 
-```scrut
+```scrut {output_stream: combined}
 $ wo 'Minus[5, 2]'
 
 Minus::argx: Minus called with 2 arguments; 1 argument is expected.
@@ -651,18 +651,27 @@ $ wo 'Power[5, 0]'
 
 0 raised to 0 is Indeterminate.
 
-```scrut
+```scrut {output_stream: combined}
 $ wo '0^0'
+
+                                        0
+Power::indet: Indeterminate expression 0  encountered.
 Indeterminate
 ```
 
-```scrut
+```scrut {output_stream: combined}
 $ wo 'Power[0, 0]'
+
+                                        0
+Power::indet: Indeterminate expression 0  encountered.
 Indeterminate
 ```
 
-```scrut
+```scrut {output_stream: combined}
 $ wo '0.0^0'
+
+                                         0
+Power::indet: Indeterminate expression 0.  encountered.
 Indeterminate
 ```
 

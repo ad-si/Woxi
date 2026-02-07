@@ -94,8 +94,10 @@ $ wo 'x = {{a,b},{c,d}}; x[[1,2]]'
 b
 ```
 
-```scrut
+```scrut {output_stream: combined}
 $ wo 'FullForm[a[[1,2,3]]]'
+
+Part::partd: Part specification a[[1,2,3]] is longer than depth of object.
 Part[a, 1, 2, 3]
 ```
 

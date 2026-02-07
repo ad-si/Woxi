@@ -99,14 +99,14 @@ a
 
 Attempting to access an index beyond the list length returns an error.
 
-```scrut
+```scrut {output_stream: combined}
 $ wo '{1, 2, 3}[[5]]'
 
 Part::partw: Part 5 of {1, 2, 3} does not exist.
 {1, 2, 3}[[5]]
 ```
 
-```scrut
+```scrut {output_stream: combined}
 $ wo 'x = {1, 2}; x[[10]]'
 
 Part::partw: Part 10 of {1, 2} does not exist.
@@ -193,7 +193,7 @@ $ wo 'Take[{1, 2, 3, 4, 5}, 1]'
 {1}
 ```
 
-```scrut
+```scrut {output_stream: combined}
 $ wo 'Take[{1, 2, 3}, 5]'
 
 Take::take: Cannot take positions 1 through 5 in {1, 2, 3}.
@@ -1534,7 +1534,7 @@ $ wo 'Subsets[{1, 2, 3, 4}, {3}]'
 Creates a matrix from position-value rules with a default fill value.
 
 ```scrut
-$ wo 'SparseArray[{{1, 2} -> "Q", {3, 1} -> "Q"}, {3, 3}, "."]'
+$ wo 'Normal[SparseArray[{{1, 2} -> "Q", {3, 1} -> "Q"}, {3, 3}, "."]]'
 {{., Q, .}, {., ., .}, {Q, ., .}}
 ```
 
