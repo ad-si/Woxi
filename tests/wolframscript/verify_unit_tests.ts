@@ -220,15 +220,6 @@ function main() {
     allCases = allCases.concat(extractTestCases(f));
   }
 
-  // Known intentional divergences from wolframscript.
-  // These are expressions where Woxi deliberately differs from Wolfram.
-  const SKIP_EXPRS = new Set([
-    // Switch no-match — Woxi returns Null, Wolfram returns unevaluated
-    "Switch[4, 1, a, 2, b, 3, c]",
-    // Minus[5, 2] — Woxi uses U+2212, encoding comparison is unreliable
-    "Minus[5, 2]",
-  ]);
-
   let skipped = 0;
   console.log(`Extracted ${allCases.length} test cases`);
 
@@ -256,12 +247,6 @@ function main() {
     // Skip expressions containing literal newlines (multiline tests)
     // — they break the generated Wolfram script and are tested elsewhere
     if (expr.includes("\n")) {
-      skipped++;
-      continue;
-    }
-
-    // Skip known intentional divergences
-    if (SKIP_EXPRS.has(expr)) {
       skipped++;
       continue;
     }

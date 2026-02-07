@@ -2104,8 +2104,11 @@ mod interpreter_tests {
     }
 
     #[test]
-    fn no_match_returns_null() {
-      assert_eq!(interpret("Switch[4, 1, a, 2, b, 3, c]").unwrap(), "Null");
+    fn no_match_returns_unevaluated() {
+      assert_eq!(
+        interpret("Switch[4, 1, a, 2, b, 3, c]").unwrap(),
+        "Switch[4, 1, a, 2, b, 3, c]"
+      );
     }
 
     #[test]

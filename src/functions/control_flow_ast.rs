@@ -39,8 +39,11 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return evaluate_expr_to_expr(&rest[i]);
   }
 
-  // No match, no default
-  Ok(Expr::Identifier("Null".to_string()))
+  // No match, no default — return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Switch".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Check if `test` matches `pattern`.
