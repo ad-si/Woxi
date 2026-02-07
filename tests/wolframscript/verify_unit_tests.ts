@@ -223,9 +223,6 @@ function main() {
   // Known intentional divergences from wolframscript.
   // These are expressions where Woxi deliberately differs from Wolfram.
   const SKIP_EXPRS = new Set([
-    // Float precision: Woxi uses Rust f64 formatting which differs
-    "9.6 / 3",
-    "9.6 / 3 + 3.0 / 3",
     // Block[{x}, x] — Woxi returns Null, Wolfram returns x
     "Block[{x}, x]",
     // Return in Block/Module — Woxi catches Return, Wolfram doesn't

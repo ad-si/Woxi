@@ -1,7 +1,10 @@
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
 };
-use crate::{ENV, InterpreterError, StoredValue, format_result, interpret};
+use crate::{
+  ENV, InterpreterError, StoredValue, format_real_result, format_result,
+  interpret,
+};
 
 /// Evaluate an Expr AST directly without re-parsing.
 /// This is the core optimization that avoids re-parsing function bodies.
@@ -82,13 +85,21 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
     Expr::BinaryOp { op, left, right } => {
       let left_val = evaluate_expr(left)?;
       let right_val = evaluate_expr(right)?;
+      let any_real = left_val.contains('.') || right_val.contains('.');
+      let fmt = |v: f64| {
+        if any_real {
+          format_real_result(v)
+        } else {
+          format_result(v)
+        }
+      };
 
       match op {
         BinaryOperator::Plus => {
           if let (Ok(l), Ok(r)) =
             (left_val.parse::<f64>(), right_val.parse::<f64>())
           {
-            Ok(format_result(l + r))
+            Ok(fmt(l + r))
           } else {
             // Symbolic
             Ok(format!("{} + {}", left_val, right_val))
@@ -98,7 +109,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           if let (Ok(l), Ok(r)) =
             (left_val.parse::<f64>(), right_val.parse::<f64>())
           {
-            Ok(format_result(l - r))
+            Ok(fmt(l - r))
           } else {
             Ok(format!("{} - {}", left_val, right_val))
           }
@@ -107,7 +118,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           if let (Ok(l), Ok(r)) =
             (left_val.parse::<f64>(), right_val.parse::<f64>())
           {
-            Ok(format_result(l * r))
+            Ok(fmt(l * r))
           } else {
             Ok(format!("{} * {}", left_val, right_val))
           }
@@ -119,7 +130,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
             if r == 0.0 {
               Err(InterpreterError::EvaluationError("Division by zero".into()))
             } else {
-              Ok(format_result(l / r))
+              Ok(fmt(l / r))
             }
           } else {
             Ok(format!("{} / {}", left_val, right_val))
@@ -129,7 +140,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           if let (Ok(l), Ok(r)) =
             (left_val.parse::<f64>(), right_val.parse::<f64>())
           {
-            Ok(format_result(l.powf(r)))
+            Ok(fmt(l.powf(r)))
           } else {
             Ok(format!("{}^{}", left_val, right_val))
           }
@@ -661,7 +672,13 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         }
         BinaryOperator::Minus => {
           if let (Some(l), Some(r)) = (left_num, right_num) {
-            Ok(num_to_expr(l - r))
+            if matches!(&left_val, Expr::Real(_))
+              || matches!(&right_val, Expr::Real(_))
+            {
+              Ok(Expr::Real(l - r))
+            } else {
+              Ok(num_to_expr(l - r))
+            }
           } else {
             Ok(Expr::BinaryOp {
               op: *op,
@@ -672,7 +689,13 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         }
         BinaryOperator::Times => {
           if let (Some(l), Some(r)) = (left_num, right_num) {
-            Ok(num_to_expr(l * r))
+            if matches!(&left_val, Expr::Real(_))
+              || matches!(&right_val, Expr::Real(_))
+            {
+              Ok(Expr::Real(l * r))
+            } else {
+              Ok(num_to_expr(l * r))
+            }
           } else {
             Ok(Expr::BinaryOp {
               op: *op,
@@ -995,10 +1018,15 @@ fn thread_binary_op(
   ) -> Result<Expr, InterpreterError> {
     let ln = expr_to_number(l);
     let rn = expr_to_number(r);
+    let any_real = matches!(l, Expr::Real(_)) || matches!(r, Expr::Real(_));
     match op {
       BinaryOperator::Plus => {
         if let (Some(a), Some(b)) = (ln, rn) {
-          Ok(num_to_expr(a + b))
+          if any_real {
+            Ok(Expr::Real(a + b))
+          } else {
+            Ok(num_to_expr(a + b))
+          }
         } else {
           Ok(Expr::BinaryOp {
             op,
@@ -1009,7 +1037,11 @@ fn thread_binary_op(
       }
       BinaryOperator::Minus => {
         if let (Some(a), Some(b)) = (ln, rn) {
-          Ok(num_to_expr(a - b))
+          if any_real {
+            Ok(Expr::Real(a - b))
+          } else {
+            Ok(num_to_expr(a - b))
+          }
         } else {
           Ok(Expr::BinaryOp {
             op,
@@ -1020,7 +1052,11 @@ fn thread_binary_op(
       }
       BinaryOperator::Times => {
         if let (Some(a), Some(b)) = (ln, rn) {
-          Ok(num_to_expr(a * b))
+          if any_real {
+            Ok(Expr::Real(a * b))
+          } else {
+            Ok(num_to_expr(a * b))
+          }
         } else {
           Ok(Expr::BinaryOp {
             op,
@@ -1033,6 +1069,8 @@ fn thread_binary_op(
         if let (Some(a), Some(b)) = (ln, rn) {
           if b == 0.0 {
             Err(InterpreterError::EvaluationError("Division by zero".into()))
+          } else if any_real {
+            Ok(Expr::Real(a / b))
           } else {
             Ok(num_to_expr(a / b))
           }
@@ -1046,7 +1084,11 @@ fn thread_binary_op(
       }
       BinaryOperator::Power => {
         if let (Some(a), Some(b)) = (ln, rn) {
-          Ok(num_to_expr(a.powf(b)))
+          if any_real {
+            Ok(Expr::Real(a.powf(b)))
+          } else {
+            Ok(num_to_expr(a.powf(b)))
+          }
         } else {
           Ok(Expr::BinaryOp {
             op,

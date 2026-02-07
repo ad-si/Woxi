@@ -116,9 +116,13 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Simple numeric sum
   let mut sum = 0.0;
   let mut all_numeric = true;
+  let mut any_real = false;
   for arg in &flat_args {
     if let Some(n) = expr_to_num(arg) {
       sum += n;
+      if matches!(arg, Expr::Real(_)) {
+        any_real = true;
+      }
     } else {
       all_numeric = false;
       break;
@@ -126,7 +130,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if all_numeric {
-    Ok(num_to_expr(sum))
+    if any_real {
+      Ok(Expr::Real(sum))
+    } else {
+      Ok(num_to_expr(sum))
+    }
   } else {
     // Separate numeric and symbolic terms
     let mut numeric_sum = 0.0;
@@ -248,9 +256,13 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Simple numeric product
   let mut product = 1.0;
   let mut all_numeric = true;
+  let mut any_real = false;
   for arg in args {
     if let Some(n) = expr_to_num(arg) {
       product *= n;
+      if matches!(arg, Expr::Real(_)) {
+        any_real = true;
+      }
     } else {
       all_numeric = false;
       break;
@@ -258,7 +270,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if all_numeric {
-    Ok(num_to_expr(product))
+    if any_real {
+      Ok(Expr::Real(product))
+    } else {
+      Ok(num_to_expr(product))
+    }
   } else {
     Ok(Expr::FunctionCall {
       name: "Times".to_string(),
@@ -273,6 +289,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     // Unary minus
+    if matches!(&args[0], Expr::Real(_))
+      && let Some(n) = expr_to_num(&args[0])
+    {
+      return Ok(Expr::Real(-n));
+    }
     if let Some(n) = expr_to_num(&args[0]) {
       Ok(num_to_expr(-n))
     } else {

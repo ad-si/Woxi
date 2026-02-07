@@ -1089,15 +1089,9 @@ fn format_real(f: f64) -> String {
     // Whole number - format with decimal point to indicate it's a Real
     format!("{}.", f as i64)
   } else {
-    // Check if a shorter representation (10 digits) rounds to the same value
-    let short = format!("{:.10}", f).trim_end_matches('0').to_string();
-    if let Ok(parsed) = short.parse::<f64>()
-      && (parsed - f).abs() < 1e-14
-    {
-      return short;
-    }
-    // Otherwise use full precision (16 digits), trim trailing zeros
-    format!("{:.16}", f).trim_end_matches('0').to_string()
+    // Use Rust's default formatter which produces the shortest
+    // representation that round-trips to the same f64 value
+    format!("{}", f)
   }
 }
 
