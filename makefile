@@ -33,7 +33,7 @@ test-cli-wolframscript: install
 
 .PHONY: test-shebang
 test-shebang: install
-	test "$$(./tests/woxi/hello_world.wls)" == 'Hello World!'
+	test "$$(./tests/woxi/hello_world.wls)" = 'Hello World!'
 
 
 .PHONY: test-scripts-wolframscript

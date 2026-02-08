@@ -738,3 +738,100 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::String(result))
 }
+
+// ─── Alphabet ──────────────────────────────────────────────────────
+
+/// Alphabet[] - Returns the list of lowercase English letters
+pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if !args.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Alphabet".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let letters: Vec<Expr> =
+    ('a'..='z').map(|c| Expr::String(c.to_string())).collect();
+  Ok(Expr::List(letters))
+}
+
+// ─── LetterQ ───────────────────────────────────────────────────────
+
+/// LetterQ[string] - True if string consists entirely of letters
+pub fn letter_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LetterQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      let result = !s.is_empty() && s.chars().all(|c| c.is_alphabetic());
+      Ok(Expr::Identifier(
+        if result { "True" } else { "False" }.to_string(),
+      ))
+    }
+    _ => Ok(Expr::Identifier("False".to_string())),
+  }
+}
+
+// ─── UpperCaseQ ────────────────────────────────────────────────────
+
+/// UpperCaseQ[string] - True if string consists entirely of uppercase letters
+pub fn upper_case_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "UpperCaseQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      let result = !s.is_empty()
+        && s.chars().all(|c| c.is_alphabetic() && c.is_uppercase());
+      Ok(Expr::Identifier(
+        if result { "True" } else { "False" }.to_string(),
+      ))
+    }
+    _ => Ok(Expr::Identifier("False".to_string())),
+  }
+}
+
+// ─── LowerCaseQ ────────────────────────────────────────────────────
+
+/// LowerCaseQ[string] - True if string consists entirely of lowercase letters
+pub fn lower_case_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LowerCaseQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      let result = !s.is_empty()
+        && s.chars().all(|c| c.is_alphabetic() && c.is_lowercase());
+      Ok(Expr::Identifier(
+        if result { "True" } else { "False" }.to_string(),
+      ))
+    }
+    _ => Ok(Expr::Identifier("False".to_string())),
+  }
+}
+
+// ─── DigitQ ────────────────────────────────────────────────────────
+
+/// DigitQ[string] - True if string consists entirely of digits
+pub fn digit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DigitQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      let result = !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+      Ok(Expr::Identifier(
+        if result { "True" } else { "False" }.to_string(),
+      ))
+    }
+    _ => Ok(Expr::Identifier("False".to_string())),
+  }
+}

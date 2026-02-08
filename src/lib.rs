@@ -183,6 +183,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains(" / ")
       && !trimmed.contains('[')
       && !trimmed.contains('"')
+      && !trimmed.contains("Nothing")
     {
       // Simple list with no function calls or operators - return as-is
       return Ok(trimmed.to_string());
@@ -823,7 +824,7 @@ fn nth_prime(n: usize) -> usize {
   num
 }
 
-fn is_prime(n: usize) -> bool {
+pub fn is_prime(n: usize) -> bool {
   if n <= 1 {
     return false;
   }

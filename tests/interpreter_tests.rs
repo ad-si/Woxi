@@ -3269,4 +3269,524 @@ mod interpreter_tests {
       assert_eq!(interpret("HoldForm[1 + 1]").unwrap(), "HoldForm[1 + 1]");
     }
   }
+
+  mod numerator {
+    use super::*;
+
+    #[test]
+    fn rational() {
+      assert_eq!(interpret("Numerator[3/4]").unwrap(), "3");
+    }
+
+    #[test]
+    fn integer() {
+      assert_eq!(interpret("Numerator[5]").unwrap(), "5");
+    }
+
+    #[test]
+    fn negative_rational() {
+      assert_eq!(interpret("Numerator[-3/4]").unwrap(), "-3");
+    }
+
+    #[test]
+    fn whole_number_rational() {
+      assert_eq!(interpret("Numerator[6/3]").unwrap(), "2");
+    }
+  }
+
+  mod denominator {
+    use super::*;
+
+    #[test]
+    fn rational() {
+      assert_eq!(interpret("Denominator[3/4]").unwrap(), "4");
+    }
+
+    #[test]
+    fn integer() {
+      assert_eq!(interpret("Denominator[5]").unwrap(), "1");
+    }
+
+    #[test]
+    fn negative_rational() {
+      assert_eq!(interpret("Denominator[-3/4]").unwrap(), "4");
+    }
+
+    #[test]
+    fn reduced_form() {
+      assert_eq!(interpret("Denominator[6/4]").unwrap(), "2");
+    }
+  }
+
+  mod binomial {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(interpret("Binomial[10, 3]").unwrap(), "120");
+    }
+
+    #[test]
+    fn zero_k() {
+      assert_eq!(interpret("Binomial[5, 0]").unwrap(), "1");
+    }
+
+    #[test]
+    fn k_equals_n() {
+      assert_eq!(interpret("Binomial[5, 5]").unwrap(), "1");
+    }
+
+    #[test]
+    fn k_greater_than_n() {
+      assert_eq!(interpret("Binomial[3, 5]").unwrap(), "0");
+    }
+
+    #[test]
+    fn negative_n() {
+      assert_eq!(interpret("Binomial[-3, 2]").unwrap(), "6");
+    }
+
+    #[test]
+    fn zero_zero() {
+      assert_eq!(interpret("Binomial[0, 0]").unwrap(), "1");
+    }
+
+    #[test]
+    fn choose_one() {
+      assert_eq!(interpret("Binomial[7, 1]").unwrap(), "7");
+    }
+
+    #[test]
+    fn large_n() {
+      assert_eq!(interpret("Binomial[20, 10]").unwrap(), "184756");
+    }
+  }
+
+  mod multinomial {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(interpret("Multinomial[2, 3, 4]").unwrap(), "1260");
+    }
+
+    #[test]
+    fn two_args() {
+      // Multinomial[a, b] = Binomial[a+b, a]
+      assert_eq!(interpret("Multinomial[3, 4]").unwrap(), "35");
+    }
+
+    #[test]
+    fn single_arg() {
+      assert_eq!(interpret("Multinomial[5]").unwrap(), "1");
+    }
+
+    #[test]
+    fn empty() {
+      assert_eq!(interpret("Multinomial[]").unwrap(), "1");
+    }
+
+    #[test]
+    fn all_ones() {
+      // Multinomial[1,1,1] = 3! / (1!*1!*1!) = 6
+      assert_eq!(interpret("Multinomial[1, 1, 1]").unwrap(), "6");
+    }
+  }
+
+  mod power_mod {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(interpret("PowerMod[2, 10, 1000]").unwrap(), "24");
+    }
+
+    #[test]
+    fn modular_inverse() {
+      assert_eq!(interpret("PowerMod[3, -1, 7]").unwrap(), "5");
+    }
+
+    #[test]
+    fn large_exponent() {
+      assert_eq!(interpret("PowerMod[2, 100, 13]").unwrap(), "3");
+    }
+
+    #[test]
+    fn base_zero() {
+      assert_eq!(interpret("PowerMod[0, 5, 7]").unwrap(), "0");
+    }
+
+    #[test]
+    fn exponent_zero() {
+      assert_eq!(interpret("PowerMod[5, 0, 7]").unwrap(), "1");
+    }
+
+    #[test]
+    fn negative_base() {
+      assert_eq!(interpret("PowerMod[-2, 3, 7]").unwrap(), "6");
+    }
+  }
+
+  mod prime_pi {
+    use super::*;
+
+    #[test]
+    fn small_values() {
+      assert_eq!(interpret("PrimePi[1]").unwrap(), "0");
+      assert_eq!(interpret("PrimePi[2]").unwrap(), "1");
+      assert_eq!(interpret("PrimePi[10]").unwrap(), "4");
+      assert_eq!(interpret("PrimePi[100]").unwrap(), "25");
+    }
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("PrimePi[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn negative() {
+      assert_eq!(interpret("PrimePi[-5]").unwrap(), "0");
+    }
+
+    #[test]
+    fn at_prime() {
+      // PrimePi[7] = 4 (primes: 2, 3, 5, 7)
+      assert_eq!(interpret("PrimePi[7]").unwrap(), "4");
+    }
+  }
+
+  mod next_prime {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(interpret("NextPrime[7]").unwrap(), "11");
+    }
+
+    #[test]
+    fn from_composite() {
+      assert_eq!(interpret("NextPrime[10]").unwrap(), "11");
+    }
+
+    #[test]
+    fn from_one() {
+      assert_eq!(interpret("NextPrime[1]").unwrap(), "2");
+    }
+
+    #[test]
+    fn from_two() {
+      assert_eq!(interpret("NextPrime[2]").unwrap(), "3");
+    }
+
+    #[test]
+    fn from_zero() {
+      assert_eq!(interpret("NextPrime[0]").unwrap(), "2");
+    }
+
+    #[test]
+    fn from_negative() {
+      assert_eq!(interpret("NextPrime[-5]").unwrap(), "2");
+    }
+  }
+
+  mod bit_length {
+    use super::*;
+
+    #[test]
+    fn basic_values() {
+      assert_eq!(interpret("BitLength[0]").unwrap(), "0");
+      assert_eq!(interpret("BitLength[1]").unwrap(), "1");
+      assert_eq!(interpret("BitLength[2]").unwrap(), "2");
+      assert_eq!(interpret("BitLength[7]").unwrap(), "3");
+      assert_eq!(interpret("BitLength[8]").unwrap(), "4");
+      assert_eq!(interpret("BitLength[255]").unwrap(), "8");
+      assert_eq!(interpret("BitLength[256]").unwrap(), "9");
+    }
+
+    #[test]
+    fn negative() {
+      assert_eq!(interpret("BitLength[-1]").unwrap(), "1");
+      assert_eq!(interpret("BitLength[-255]").unwrap(), "8");
+    }
+  }
+
+  mod integer_part {
+    use super::*;
+
+    #[test]
+    fn positive_float() {
+      assert_eq!(interpret("IntegerPart[3.7]").unwrap(), "3");
+    }
+
+    #[test]
+    fn negative_float() {
+      assert_eq!(interpret("IntegerPart[-3.7]").unwrap(), "-3");
+    }
+
+    #[test]
+    fn integer() {
+      assert_eq!(interpret("IntegerPart[5]").unwrap(), "5");
+    }
+
+    #[test]
+    fn rational() {
+      assert_eq!(interpret("IntegerPart[7/3]").unwrap(), "2");
+    }
+
+    #[test]
+    fn negative_rational() {
+      assert_eq!(interpret("IntegerPart[-7/3]").unwrap(), "-2");
+    }
+  }
+
+  mod fractional_part {
+    use super::*;
+
+    #[test]
+    fn integer() {
+      assert_eq!(interpret("FractionalPart[5]").unwrap(), "0");
+    }
+
+    #[test]
+    fn rational() {
+      assert_eq!(interpret("FractionalPart[7/3]").unwrap(), "1/3");
+    }
+
+    #[test]
+    fn negative_rational() {
+      assert_eq!(interpret("FractionalPart[-7/3]").unwrap(), "-1/3");
+    }
+  }
+
+  mod chop {
+    use super::*;
+
+    #[test]
+    fn small_number() {
+      assert_eq!(interpret("Chop[0.00000000001]").unwrap(), "0");
+    }
+
+    #[test]
+    fn normal_number() {
+      assert_eq!(interpret("Chop[1.5]").unwrap(), "1.5");
+    }
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("Chop[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn negative_small() {
+      assert_eq!(interpret("Chop[-0.00000000001]").unwrap(), "0");
+    }
+
+    #[test]
+    fn list() {
+      assert_eq!(
+        interpret("Chop[{0.00000000001, 1.5, -0.000000000001}]").unwrap(),
+        "{0, 1.5, 0}"
+      );
+    }
+
+    #[test]
+    fn custom_tolerance() {
+      assert_eq!(interpret("Chop[0.05, 0.1]").unwrap(), "0");
+      assert_eq!(interpret("Chop[0.5, 0.1]").unwrap(), "0.5");
+    }
+  }
+
+  mod cube_root {
+    use super::*;
+
+    #[test]
+    fn perfect_cube() {
+      assert_eq!(interpret("CubeRoot[8]").unwrap(), "2");
+    }
+
+    #[test]
+    fn negative_perfect_cube() {
+      assert_eq!(interpret("CubeRoot[-27]").unwrap(), "-3");
+    }
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("CubeRoot[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn one() {
+      assert_eq!(interpret("CubeRoot[1]").unwrap(), "1");
+    }
+
+    #[test]
+    fn large_cube() {
+      assert_eq!(interpret("CubeRoot[1000]").unwrap(), "10");
+    }
+
+    #[test]
+    fn non_perfect_cube_symbolic() {
+      // Non-perfect cubes remain symbolic for integers
+      assert_eq!(interpret("CubeRoot[2]").unwrap(), "CubeRoot[2]");
+    }
+  }
+
+  mod subdivide {
+    use super::*;
+
+    #[test]
+    fn unit_interval() {
+      assert_eq!(interpret("Subdivide[4]").unwrap(), "{0, 1/4, 1/2, 3/4, 1}");
+    }
+
+    #[test]
+    fn two_parts() {
+      assert_eq!(interpret("Subdivide[2]").unwrap(), "{0, 1/2, 1}");
+    }
+
+    #[test]
+    fn one_part() {
+      assert_eq!(interpret("Subdivide[1]").unwrap(), "{0, 1}");
+    }
+
+    #[test]
+    fn custom_range() {
+      assert_eq!(
+        interpret("Subdivide[0, 10, 5]").unwrap(),
+        "{0, 2, 4, 6, 8, 10}"
+      );
+    }
+
+    #[test]
+    fn two_arg_form() {
+      assert_eq!(
+        interpret("Subdivide[10, 5]").unwrap(),
+        "{0, 2, 4, 6, 8, 10}"
+      );
+    }
+  }
+
+  mod nothing {
+    use super::*;
+
+    #[test]
+    fn filters_from_list() {
+      assert_eq!(interpret("{1, Nothing, 3}").unwrap(), "{1, 3}");
+    }
+
+    #[test]
+    fn multiple_nothing() {
+      assert_eq!(
+        interpret("{Nothing, 1, Nothing, 2, Nothing}").unwrap(),
+        "{1, 2}"
+      );
+    }
+
+    #[test]
+    fn all_nothing() {
+      assert_eq!(interpret("{Nothing, Nothing}").unwrap(), "{}");
+    }
+
+    #[test]
+    fn nothing_standalone() {
+      assert_eq!(interpret("Nothing").unwrap(), "Nothing");
+    }
+  }
+
+  mod alphabet {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      let result = interpret("Alphabet[]").unwrap();
+      assert!(result.starts_with("{a, b, c"));
+      assert!(result.ends_with("x, y, z}"));
+    }
+
+    #[test]
+    fn length() {
+      assert_eq!(interpret("Length[Alphabet[]]").unwrap(), "26");
+    }
+  }
+
+  mod letter_q {
+    use super::*;
+
+    #[test]
+    fn all_letters() {
+      assert_eq!(interpret("LetterQ[\"abc\"]").unwrap(), "True");
+    }
+
+    #[test]
+    fn with_digits() {
+      assert_eq!(interpret("LetterQ[\"ab3\"]").unwrap(), "False");
+    }
+
+    #[test]
+    fn empty_string() {
+      assert_eq!(interpret("LetterQ[\"\"]").unwrap(), "False");
+    }
+
+    #[test]
+    fn uppercase() {
+      assert_eq!(interpret("LetterQ[\"ABC\"]").unwrap(), "True");
+    }
+  }
+
+  mod upper_case_q {
+    use super::*;
+
+    #[test]
+    fn all_upper() {
+      assert_eq!(interpret("UpperCaseQ[\"ABC\"]").unwrap(), "True");
+    }
+
+    #[test]
+    fn mixed() {
+      assert_eq!(interpret("UpperCaseQ[\"AbC\"]").unwrap(), "False");
+    }
+
+    #[test]
+    fn all_lower() {
+      assert_eq!(interpret("UpperCaseQ[\"abc\"]").unwrap(), "False");
+    }
+  }
+
+  mod lower_case_q {
+    use super::*;
+
+    #[test]
+    fn all_lower() {
+      assert_eq!(interpret("LowerCaseQ[\"abc\"]").unwrap(), "True");
+    }
+
+    #[test]
+    fn mixed() {
+      assert_eq!(interpret("LowerCaseQ[\"AbC\"]").unwrap(), "False");
+    }
+
+    #[test]
+    fn all_upper() {
+      assert_eq!(interpret("LowerCaseQ[\"ABC\"]").unwrap(), "False");
+    }
+  }
+
+  mod digit_q {
+    use super::*;
+
+    #[test]
+    fn all_digits() {
+      assert_eq!(interpret("DigitQ[\"123\"]").unwrap(), "True");
+    }
+
+    #[test]
+    fn with_letters() {
+      assert_eq!(interpret("DigitQ[\"12a\"]").unwrap(), "False");
+    }
+
+    #[test]
+    fn empty() {
+      assert_eq!(interpret("DigitQ[\"\"]").unwrap(), "False");
+    }
+  }
 }
