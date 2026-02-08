@@ -1181,6 +1181,82 @@ mod interpreter_tests {
       assert!((val - 2.160246899469287).abs() < 1e-10);
     }
   }
+
+  mod integer_length {
+    use super::*;
+
+    #[test]
+    fn integer_length_basic() {
+      assert_eq!(interpret("IntegerLength[12345]").unwrap(), "5");
+      assert_eq!(interpret("IntegerLength[0]").unwrap(), "0");
+      assert_eq!(interpret("IntegerLength[1]").unwrap(), "1");
+      assert_eq!(interpret("IntegerLength[-99]").unwrap(), "2");
+    }
+
+    #[test]
+    fn integer_length_base() {
+      assert_eq!(interpret("IntegerLength[255, 16]").unwrap(), "2");
+      assert_eq!(interpret("IntegerLength[100, 10]").unwrap(), "3");
+      assert_eq!(interpret("IntegerLength[255, 2]").unwrap(), "8");
+      assert_eq!(interpret("IntegerLength[12345, 2]").unwrap(), "14");
+    }
+  }
+
+  mod rescale {
+    use super::*;
+
+    #[test]
+    fn rescale_basic() {
+      assert_eq!(interpret("Rescale[5, {0, 10}]").unwrap(), "1/2");
+      assert_eq!(interpret("Rescale[0, {0, 10}]").unwrap(), "0");
+      assert_eq!(interpret("Rescale[10, {0, 10}]").unwrap(), "1");
+    }
+
+    #[test]
+    fn rescale_with_target_range() {
+      assert_eq!(interpret("Rescale[5, {0, 10}, {-1, 1}]").unwrap(), "0");
+    }
+
+    #[test]
+    fn rescale_list() {
+      assert_eq!(
+        interpret("Rescale[{1, 2, 3, 4, 5}]").unwrap(),
+        "{0, 1/4, 1/2, 3/4, 1}"
+      );
+    }
+
+    #[test]
+    fn rescale_boundary() {
+      assert_eq!(interpret("Rescale[3, {1, 5}]").unwrap(), "1/2");
+    }
+  }
+
+  mod normalize {
+    use super::*;
+
+    #[test]
+    fn normalize_integers_perfect() {
+      assert_eq!(interpret("Normalize[{3, 4}]").unwrap(), "{3/5, 4/5}");
+    }
+
+    #[test]
+    fn normalize_integers_irrational() {
+      assert_eq!(
+        interpret("Normalize[{1, 1, 1}]").unwrap(),
+        "{1/Sqrt[3], 1/Sqrt[3], 1/Sqrt[3]}"
+      );
+    }
+
+    #[test]
+    fn normalize_zero_vector() {
+      assert_eq!(interpret("Normalize[{0, 0, 0}]").unwrap(), "{0, 0, 0}");
+    }
+
+    #[test]
+    fn normalize_three_elements() {
+      assert_eq!(
+        interpret("Normalize[{1, 2, 2}]").unwrap(),
+        "{1/3, 2/3, 2/3}"
   mod minus_wrong_arity {
     use super::*;
 

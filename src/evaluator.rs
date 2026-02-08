@@ -2164,6 +2164,15 @@ pub fn evaluate_function_call_ast(
     "RootMeanSquare" if args.len() == 1 => {
       return crate::functions::math_ast::root_mean_square_ast(args);
     }
+    "IntegerLength" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::integer_length_ast(args);
+    }
+    "Rescale" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::math_ast::rescale_ast(args);
+    }
+    "Normalize" if args.len() == 1 => {
+      return crate::functions::math_ast::normalize_ast(args);
+    }
     "Factorial" if args.len() == 1 => {
       return crate::functions::math_ast::factorial_ast(args);
     }
