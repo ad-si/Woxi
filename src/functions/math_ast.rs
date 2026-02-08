@@ -2510,6 +2510,560 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+// ─── Number Theory Functions ─────────────────────────────────────
+
+/// DigitCount[n] - counts of each digit 1-9,0 in base 10
+/// DigitCount[n, b] - counts of each digit in base b
+/// DigitCount[n, b, d] - count of specific digit d in base b
+pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "DigitCount expects 1 to 3 arguments".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) => n.abs(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DigitCount".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let base = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Integer(b) if *b >= 2 => *b,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DigitCount".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    10
+  };
+
+  // Get digit list in the given base
+  let mut digits = Vec::new();
+  let mut val = n;
+  if val == 0 {
+    digits.push(0);
+  } else {
+    while val > 0 {
+      digits.push((val % base) as usize);
+      val /= base;
+    }
+  }
+
+  if args.len() == 3 {
+    // DigitCount[n, b, d] - count of specific digit d
+    let d = match &args[2] {
+      Expr::Integer(d) => *d as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DigitCount".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let count = digits.iter().filter(|&&x| x == d).count();
+    Ok(Expr::Integer(count as i128))
+  } else {
+    // DigitCount[n] or DigitCount[n, b] - list of counts for digits 1..base-1, 0
+    // Wolfram returns counts in order: digit 1, digit 2, ..., digit (base-1), digit 0
+    let mut counts = vec![0i128; base as usize];
+    for &d in &digits {
+      counts[d] += 1;
+    }
+    // Reorder: digits 1, 2, ..., base-1, 0
+    let mut result = Vec::with_capacity(base as usize);
+    for d in 1..base as usize {
+      result.push(Expr::Integer(counts[d]));
+    }
+    result.push(Expr::Integer(counts[0]));
+    Ok(Expr::List(result))
+  }
+}
+
+/// DigitSum[n] - sum of digits in base 10
+/// DigitSum[n, b] - sum of digits in base b
+pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "DigitSum expects 1 or 2 arguments".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) => n.abs(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DigitSum".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let base = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(b) if *b >= 2 => *b,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "DigitSum".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    10
+  };
+
+  let mut sum: i128 = 0;
+  let mut val = n;
+  if val == 0 {
+    return Ok(Expr::Integer(0));
+  }
+  while val > 0 {
+    sum += val % base;
+    val /= base;
+  }
+  Ok(Expr::Integer(sum))
+}
+
+/// ContinuedFraction[x] - exact continued fraction for rational numbers
+/// ContinuedFraction[x, n] - first n terms for real numbers
+pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ContinuedFraction expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // Handle Rational[p, q] or Integer
+  match &args[0] {
+    Expr::Integer(n) => {
+      return Ok(Expr::List(vec![Expr::Integer(*n)]));
+    }
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1]) {
+        let mut result = Vec::new();
+        let mut a = *p;
+        let mut b = *q;
+        while b != 0 {
+          let quotient = if (a < 0) != (b < 0) && a % b != 0 {
+            a / b - 1
+          } else {
+            a / b
+          };
+          result.push(Expr::Integer(quotient));
+          let rem = a - quotient * b;
+          a = b;
+          b = rem;
+        }
+        return Ok(Expr::List(result));
+      }
+    }
+    _ => {}
+  }
+
+  // For real numbers with n terms
+  if args.len() == 2
+    && let Some(x) = try_eval_to_f64(&args[0])
+  {
+    let n = match &args[1] {
+      Expr::Integer(n) if *n > 0 => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "ContinuedFraction".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let mut result = Vec::new();
+    let mut val = x;
+    for _ in 0..n {
+      let a = val.floor() as i128;
+      result.push(Expr::Integer(a));
+      let frac = val - a as f64;
+      if frac.abs() < 1e-10 {
+        break;
+      }
+      val = 1.0 / frac;
+    }
+    return Ok(Expr::List(result));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "ContinuedFraction".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// LucasL[n] - Lucas number L_n
+pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LucasL expects exactly 1 argument".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LucasL".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  // L(0) = 2, L(1) = 1, L(n) = L(n-1) + L(n-2)
+  if n == 0 {
+    return Ok(Expr::Integer(2));
+  }
+  if n == 1 {
+    return Ok(Expr::Integer(1));
+  }
+  let mut a: i128 = 2;
+  let mut b: i128 = 1;
+  for _ in 2..=n {
+    let c = a + b;
+    a = b;
+    b = c;
+  }
+  Ok(Expr::Integer(b))
+}
+
+/// ChineseRemainder[{r1,r2,...}, {m1,m2,...}] - Chinese Remainder Theorem
+pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ChineseRemainder expects exactly 2 arguments".into(),
+    ));
+  }
+  let remainders = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ChineseRemainder".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let moduli = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ChineseRemainder".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  if remainders.len() != moduli.len() {
+    return Err(InterpreterError::EvaluationError(
+      "ChineseRemainder: lists must have the same length".into(),
+    ));
+  }
+
+  let mut r_vals = Vec::new();
+  let mut m_vals = Vec::new();
+  for (r, m) in remainders.iter().zip(moduli.iter()) {
+    match (r, m) {
+      (Expr::Integer(rv), Expr::Integer(mv)) if *mv > 0 => {
+        r_vals.push(*rv);
+        m_vals.push(*mv);
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "ChineseRemainder".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  // Extended GCD helper
+  fn extended_gcd(a: i128, b: i128) -> (i128, i128, i128) {
+    if b == 0 {
+      (a, 1, 0)
+    } else {
+      let (g, x1, y1) = extended_gcd(b, a % b);
+      (g, y1, x1 - (a / b) * y1)
+    }
+  }
+
+  // Solve using CRT iteratively
+  let mut result = r_vals[0].rem_euclid(m_vals[0]);
+  let mut modulus = m_vals[0];
+
+  for i in 1..r_vals.len() {
+    let ri = r_vals[i].rem_euclid(m_vals[i]);
+    let mi = m_vals[i];
+    let (g, p, _) = extended_gcd(modulus, mi);
+    if (ri - result) % g != 0 {
+      return Err(InterpreterError::EvaluationError(
+        "ChineseRemainder: no solution exists".into(),
+      ));
+    }
+    let lcm = modulus / g * mi;
+    result =
+      (result + modulus * ((ri - result) / g % (mi / g)) * p).rem_euclid(lcm);
+    modulus = lcm;
+  }
+
+  Ok(Expr::Integer(result))
+}
+
+/// DivisorSum[n, form] - applies form to each divisor and sums
+pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "DivisorSum expects exactly 2 arguments".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) if *n > 0 => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DivisorSum".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let func = &args[1];
+
+  // Get divisors
+  let mut divs = Vec::new();
+  for i in 1..=n {
+    if n % i == 0 {
+      divs.push(i);
+    }
+  }
+
+  // Apply function to each divisor and sum
+  let mut sum = Expr::Integer(0);
+  for d in divs {
+    let val = crate::evaluator::apply_function_to_arg(func, &Expr::Integer(d))?;
+    sum = crate::functions::math_ast::plus_ast(&[sum, val])?;
+  }
+  Ok(sum)
+}
+
+// ─── Combinatorics Functions ─────────────────────────────────────
+
+/// BernoulliB[n] - nth Bernoulli number
+pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "BernoulliB expects exactly 1 argument".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BernoulliB".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Use the formula: B(n) computed via the explicit sum formula
+  // Store as rational numbers (numer, denom)
+  // B(0) = 1, B(1) = -1/2, B(odd>1) = 0
+  if n == 0 {
+    return Ok(Expr::Integer(1));
+  }
+  if n == 1 {
+    return Ok(make_rational(-1, 2));
+  }
+  if n % 2 != 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Compute using the recurrence: sum_{k=0}^{n-1} C(n,k) * B(k) / (n - k + 1) = 0 ... wait
+  // Better: B(n) = -1/(n+1) * sum_{k=0}^{n-1} C(n+1, k) * B(k)
+  // We'll compute all Bernoulli numbers up to n
+
+  // Represent as (numerator, denominator)
+  let mut b: Vec<(i128, i128)> = Vec::with_capacity(n + 1);
+  b.push((1, 1)); // B(0) = 1
+  if n >= 1 {
+    b.push((-1, 2)); // B(1) = -1/2
+  }
+
+  fn rat_gcd(a: i128, b: i128) -> i128 {
+    let (mut a, mut b) = (a.abs(), b.abs());
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a
+  }
+
+  fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+    let num = a.0 * b.1 + b.0 * a.1;
+    let den = a.1 * b.1;
+    let g = rat_gcd(num, den);
+    if den < 0 {
+      (-num / g, -den / g)
+    } else {
+      (num / g, den / g)
+    }
+  }
+
+  fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+    let num = a.0 * b.0;
+    let den = a.1 * b.1;
+    let g = rat_gcd(num, den);
+    if den < 0 {
+      (-num / g, -den / g)
+    } else {
+      (num / g, den / g)
+    }
+  }
+
+  for m in 2..=n {
+    if m % 2 != 0 && m > 1 {
+      b.push((0, 1));
+      continue;
+    }
+    // B(m) = -1/(m+1) * sum_{k=0}^{m-1} C(m+1, k) * B(k)
+    let mut sum: (i128, i128) = (0, 1);
+    let mut binom: i128 = 1; // C(m+1, k) starting at k=0
+    for k in 0..m {
+      sum = rat_add(sum, rat_mul((binom, 1), b[k]));
+      binom = binom * (m as i128 + 1 - k as i128) / (k as i128 + 1);
+    }
+    let result = rat_mul((-1, m as i128 + 1), sum);
+    b.push(result);
+  }
+
+  let (num, den) = b[n];
+  Ok(make_rational(num, den))
+}
+
+/// CatalanNumber[n] - nth Catalan number = C(2n,n)/(n+1)
+pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "CatalanNumber expects exactly 1 argument".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CatalanNumber".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // C(2n, n) / (n + 1)
+  let mut result: i128 = 1;
+  for i in 0..n {
+    result = result * (2 * n - i) / (i + 1);
+  }
+  result /= n + 1;
+  Ok(Expr::Integer(result))
+}
+
+/// StirlingS1[n, k] - Stirling number of the first kind (signed)
+pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StirlingS1 expects exactly 2 arguments".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "StirlingS1".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let k = match &args[1] {
+    Expr::Integer(k) if *k >= 0 => *k as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "StirlingS1".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if k > n {
+    return Ok(Expr::Integer(0));
+  }
+  if n == 0 && k == 0 {
+    return Ok(Expr::Integer(1));
+  }
+  if k == 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // s(n,k) = s(n-1,k-1) - (n-1)*s(n-1,k) (signed Stirling S1)
+  // Use DP table
+  let mut table = vec![vec![0i128; k + 1]; n + 1];
+  table[0][0] = 1;
+  for i in 1..=n {
+    for j in 1..=k.min(i) {
+      table[i][j] = table[i - 1][j - 1] - (i as i128 - 1) * table[i - 1][j];
+    }
+  }
+  Ok(Expr::Integer(table[n][k]))
+}
+
+/// StirlingS2[n, k] - Stirling number of the second kind
+pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StirlingS2 expects exactly 2 arguments".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "StirlingS2".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let k = match &args[1] {
+    Expr::Integer(k) if *k >= 0 => *k as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "StirlingS2".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if k > n {
+    return Ok(Expr::Integer(0));
+  }
+  if n == 0 && k == 0 {
+    return Ok(Expr::Integer(1));
+  }
+  if k == 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // S(n,k) = k*S(n-1,k) + S(n-1,k-1)
+  let mut table = vec![vec![0i128; k + 1]; n + 1];
+  table[0][0] = 1;
+  for i in 1..=n {
+    for j in 1..=k.min(i) {
+      table[i][j] = j as i128 * table[i - 1][j] + table[i - 1][j - 1];
+    }
+  }
+  Ok(Expr::Integer(table[n][k]))
+}
+
 /// Prime[n] - Returns the nth prime number
 pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
