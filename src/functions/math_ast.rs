@@ -5057,3 +5057,103 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
   }
 }
+
+/// Unitize[x] - returns 0 for 0, 1 for anything else
+/// Unitize[list] - maps over lists
+pub fn unitize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Unitize expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    Expr::Integer(_) => Ok(Expr::Integer(1)),
+    Expr::Real(f) if *f == 0.0 => Ok(Expr::Integer(0)),
+    Expr::Real(_) => Ok(Expr::Integer(1)),
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, InterpreterError> =
+        items.iter().map(|x| unitize_ast(&[x.clone()])).collect();
+      Ok(Expr::List(results?))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Unitize".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Ramp[x] - returns max(0, x)
+/// Ramp[list] - maps over lists
+pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Ramp expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => Ok(Expr::Integer((*n).max(0))),
+    Expr::Real(f) => Ok(if *f > 0.0 {
+      Expr::Real(*f)
+    } else {
+      Expr::Integer(0)
+    }),
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, InterpreterError> =
+        items.iter().map(|x| ramp_ast(&[x.clone()])).collect();
+      Ok(Expr::List(results?))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Ramp".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// KroneckerDelta[args...] - returns 1 if all arguments are equal, 0 otherwise
+pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Ok(Expr::Integer(1));
+  }
+  // All arguments must be numeric and equal
+  let first_str = crate::syntax::expr_to_string(&args[0]);
+  for arg in &args[1..] {
+    let s = crate::syntax::expr_to_string(arg);
+    if s != first_str {
+      // Check if both are numeric and compare numerically
+      if let (Some(a), Some(b)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(arg))
+      {
+        if a != b {
+          return Ok(Expr::Integer(0));
+        }
+      } else {
+        return Ok(Expr::Integer(0));
+      }
+    }
+  }
+  Ok(Expr::Integer(1))
+}
+
+/// UnitStep[x] - returns 0 for x < 0, 1 for x >= 0
+/// UnitStep[list] - maps over lists
+pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "UnitStep expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => Ok(Expr::Integer(if *n >= 0 { 1 } else { 0 })),
+    Expr::Real(f) => Ok(Expr::Integer(if *f >= 0.0 { 1 } else { 0 })),
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, InterpreterError> =
+        items.iter().map(|x| unit_step_ast(&[x.clone()])).collect();
+      Ok(Expr::List(results?))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "UnitStep".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}

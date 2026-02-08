@@ -4324,4 +4324,125 @@ mod interpreter_tests {
       );
     }
   }
+
+  // ─── Utility Functions ──────────────────────────────────────────────
+
+  mod reap_sow {
+    use super::*;
+
+    #[test]
+    fn reap_sow_basic() {
+      assert_eq!(
+        interpret("Reap[Sow[1]; Sow[2]; 42]").unwrap(),
+        "{42, {{1, 2}}}"
+      );
+    }
+
+    #[test]
+    fn reap_without_sow() {
+      assert_eq!(interpret("Reap[42]").unwrap(), "{42, {}}");
+    }
+
+    #[test]
+    fn sow_returns_value() {
+      assert_eq!(interpret("Sow[7]").unwrap(), "7");
+    }
+  }
+
+  mod unitize {
+    use super::*;
+
+    #[test]
+    fn unitize_list() {
+      assert_eq!(
+        interpret("Unitize[{0, 1, -3, 0, 5}]").unwrap(),
+        "{0, 1, 1, 0, 1}"
+      );
+    }
+
+    #[test]
+    fn unitize_zero() {
+      assert_eq!(interpret("Unitize[0]").unwrap(), "0");
+    }
+
+    #[test]
+    fn unitize_nonzero() {
+      assert_eq!(interpret("Unitize[42]").unwrap(), "1");
+    }
+  }
+
+  mod ramp {
+    use super::*;
+
+    #[test]
+    fn ramp_list() {
+      assert_eq!(
+        interpret("Ramp[{-2, -1, 0, 1, 2}]").unwrap(),
+        "{0, 0, 0, 1, 2}"
+      );
+    }
+
+    #[test]
+    fn ramp_negative() {
+      assert_eq!(interpret("Ramp[-5]").unwrap(), "0");
+    }
+
+    #[test]
+    fn ramp_positive() {
+      assert_eq!(interpret("Ramp[3]").unwrap(), "3");
+    }
+  }
+
+  mod kronecker_delta {
+    use super::*;
+
+    #[test]
+    fn equal() {
+      assert_eq!(interpret("KroneckerDelta[1, 1]").unwrap(), "1");
+    }
+
+    #[test]
+    fn unequal() {
+      assert_eq!(interpret("KroneckerDelta[1, 2]").unwrap(), "0");
+    }
+
+    #[test]
+    fn three_equal() {
+      assert_eq!(interpret("KroneckerDelta[3, 3, 3]").unwrap(), "1");
+    }
+
+    #[test]
+    fn three_unequal() {
+      assert_eq!(interpret("KroneckerDelta[1, 2, 1]").unwrap(), "0");
+    }
+
+    #[test]
+    fn no_args() {
+      assert_eq!(interpret("KroneckerDelta[]").unwrap(), "1");
+    }
+  }
+
+  mod unit_step {
+    use super::*;
+
+    #[test]
+    fn positive() {
+      assert_eq!(interpret("UnitStep[1]").unwrap(), "1");
+    }
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("UnitStep[0]").unwrap(), "1");
+    }
+
+    #[test]
+    fn negative() {
+      assert_eq!(interpret("UnitStep[-1]").unwrap(), "0");
+    }
+
+    #[test]
+    fn list() {
+      assert_eq!(interpret("UnitStep[{-1, 0, 1}]").unwrap(), "{0, 1, 1}");
+    }
+  }
 }
