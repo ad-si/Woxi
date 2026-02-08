@@ -816,6 +816,93 @@ pub fn lower_case_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── StringInsert ──────────────────────────────────────────────────
+
+/// StringInsert[string, snew, n] - inserts snew at position n in string
+pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "StringInsert expects exactly 3 arguments".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  let insert = expr_to_str(&args[1])?;
+  let n = expr_to_int(&args[2])?;
+
+  let chars: Vec<char> = s.chars().collect();
+  let len = chars.len() as i128;
+
+  // Wolfram: positive n means before position n, negative means from end
+  let pos = if n > 0 {
+    (n - 1).min(len) as usize
+  } else if n < 0 {
+    // -1 means after last char, -2 means before last char, etc.
+    let p = len + 1 + n;
+    p.max(0) as usize
+  } else {
+    return Err(InterpreterError::EvaluationError(
+      "StringInsert: position cannot be 0".into(),
+    ));
+  };
+
+  let mut result: String = chars[..pos].iter().collect();
+  result.push_str(&insert);
+  result.extend(&chars[pos..]);
+  Ok(Expr::String(result))
+}
+
+// ─── StringDelete ──────────────────────────────────────────────────
+
+/// StringDelete[string, sub] - deletes all occurrences of sub from string
+pub fn string_delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringDelete expects exactly 2 arguments".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  let sub = expr_to_str(&args[1])?;
+  Ok(Expr::String(s.replace(&sub, "")))
+}
+
+// ─── Capitalize ────────────────────────────────────────────────────
+
+/// Capitalize[string] - capitalizes the first letter of the string
+pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Capitalize expects exactly 1 argument".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  if s.is_empty() {
+    return Ok(Expr::String(s));
+  }
+  let mut chars = s.chars();
+  let first = chars.next().unwrap().to_uppercase().to_string();
+  let rest: String = chars.collect();
+  Ok(Expr::String(format!("{}{}", first, rest)))
+}
+
+// ─── Decapitalize ──────────────────────────────────────────────────
+
+/// Decapitalize[string] - lowercases the first letter of the string
+pub fn decapitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Decapitalize expects exactly 1 argument".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  if s.is_empty() {
+    return Ok(Expr::String(s));
+  }
+  let mut chars = s.chars();
+  let first = chars.next().unwrap().to_lowercase().to_string();
+  let rest: String = chars.collect();
+  Ok(Expr::String(format!("{}{}", first, rest)))
+}
+
 // ─── DigitQ ────────────────────────────────────────────────────────
 
 /// DigitQ[string] - True if string consists entirely of digits
