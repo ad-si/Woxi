@@ -4250,4 +4250,78 @@ mod interpreter_tests {
       );
     }
   }
+
+  // ─── Association Operations ─────────────────────────────────────────
+
+  mod association_thread {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(
+        interpret("AssociationThread[{a, b}, {1, 2}]").unwrap(),
+        "<|a -> 1, b -> 2|>"
+      );
+    }
+  }
+
+  mod merge {
+    use super::*;
+
+    #[test]
+    fn merge_with_total() {
+      assert_eq!(
+        interpret("Merge[{<|a -> 1|>, <|a -> 2, b -> 3|>}, Total]").unwrap(),
+        "<|a -> 3, b -> 3|>"
+      );
+    }
+  }
+
+  mod key_map {
+    use super::*;
+
+    #[test]
+    fn key_map_basic() {
+      assert_eq!(
+        interpret("KeyMap[f, <|a -> 1, b -> 2|>]").unwrap(),
+        "<|f[a] -> 1, f[b] -> 2|>"
+      );
+    }
+  }
+
+  mod key_select {
+    use super::*;
+
+    #[test]
+    fn key_select_even() {
+      assert_eq!(
+        interpret("KeySelect[<|1 -> a, 2 -> b, 3 -> c|>, EvenQ]").unwrap(),
+        "<|2 -> b|>"
+      );
+    }
+  }
+
+  mod key_take {
+    use super::*;
+
+    #[test]
+    fn key_take_basic() {
+      assert_eq!(
+        interpret("KeyTake[<|a -> 1, b -> 2, c -> 3|>, {a, c}]").unwrap(),
+        "<|a -> 1, c -> 3|>"
+      );
+    }
+  }
+
+  mod key_drop {
+    use super::*;
+
+    #[test]
+    fn key_drop_basic() {
+      assert_eq!(
+        interpret("KeyDrop[<|a -> 1, b -> 2, c -> 3|>, {a}]").unwrap(),
+        "<|b -> 2, c -> 3|>"
+      );
+    }
+  }
 }
