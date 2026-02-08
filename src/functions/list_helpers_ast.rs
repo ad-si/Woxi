@@ -3744,3 +3744,150 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(result.into_iter().map(Expr::List).collect()))
 }
+
+/// Dimensions[list] - Returns the dimensions of a nested list
+pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Dimensions expects exactly 1 argument".into(),
+    ));
+  }
+
+  fn get_dimensions(expr: &Expr) -> Vec<i128> {
+    match expr {
+      Expr::List(items) => {
+        let mut dims = vec![items.len() as i128];
+        if !items.is_empty() {
+          // Check if all sub-elements are lists of the same length
+          let sub_dims: Vec<Vec<i128>> =
+            items.iter().map(get_dimensions).collect();
+          if !sub_dims.is_empty() && sub_dims.iter().all(|d| d == &sub_dims[0])
+          {
+            dims.extend(sub_dims[0].iter());
+          }
+        }
+        dims
+      }
+      _ => vec![],
+    }
+  }
+
+  let dims = get_dimensions(&args[0]);
+  Ok(Expr::List(dims.into_iter().map(Expr::Integer).collect()))
+}
+
+/// Delete[list, pos] - Delete an element at a position
+pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Delete expects exactly 2 arguments".into(),
+    ));
+  }
+
+  if let Expr::List(items) = &args[0] {
+    // Collect positions to delete
+    let positions: Vec<i128> = match &args[1] {
+      Expr::Integer(n) => vec![*n],
+      Expr::List(pos_list) => pos_list
+        .iter()
+        .filter_map(|p| {
+          if let Expr::List(inner) = p
+            && inner.len() == 1
+            && let Expr::Integer(n) = &inner[0]
+          {
+            return Some(*n);
+          }
+          if let Expr::Integer(n) = p {
+            Some(*n)
+          } else {
+            None
+          }
+        })
+        .collect(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Delete: invalid position".into(),
+        ));
+      }
+    };
+
+    // Convert to 0-based indices, handling negative indices
+    let len = items.len() as i128;
+    let mut indices_to_remove: Vec<usize> = positions
+      .iter()
+      .filter_map(|&pos| {
+        let idx = if pos > 0 {
+          (pos - 1) as usize
+        } else if pos < 0 {
+          (len + pos) as usize
+        } else {
+          return None;
+        };
+        if idx < items.len() { Some(idx) } else { None }
+      })
+      .collect();
+    indices_to_remove.sort();
+    indices_to_remove.dedup();
+
+    let result: Vec<Expr> = items
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| !indices_to_remove.contains(i))
+      .map(|(_, item)| item.clone())
+      .collect();
+    Ok(Expr::List(result))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Delete".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// OrderedQ[list] - Tests if a list is in sorted (non-decreasing) order
+pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "OrderedQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  if let Expr::List(items) = &args[0] {
+    if items.len() <= 1 {
+      return Ok(Expr::Identifier("True".to_string()));
+    }
+    for i in 0..items.len() - 1 {
+      if !expr_le(&items[i], &items[i + 1]) {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    }
+    Ok(Expr::Identifier("True".to_string()))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "OrderedQ".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// Helper: compare two Expr values for ordering (less-or-equal)
+fn expr_le(a: &Expr, b: &Expr) -> bool {
+  // Try numeric comparison first
+  let a_num = match a {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let b_num = match b {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  if let (Some(an), Some(bn)) = (a_num, b_num) {
+    return an <= bn;
+  }
+  // Fall back to string comparison
+  let a_str = crate::syntax::expr_to_string(a);
+  let b_str = crate::syntax::expr_to_string(b);
+  a_str <= b_str
+}
