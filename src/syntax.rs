@@ -382,7 +382,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       };
       Expr::Slot(num)
     }
-    Rule::Constant => Expr::Constant(pair.as_str().to_string()),
+    Rule::Constant => Expr::Constant(pair.as_str().trim().to_string()),
     Rule::NumericValue | Rule::UnsignedNumericValue => {
       let inner = pair.into_inner().next().unwrap();
       pair_to_expr(inner)
@@ -1131,6 +1131,71 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "Factorial" && args.len() == 1 {
         return format!("{}!", expr_to_string(&args[0]));
       }
+      if name == "Rule" && args.len() == 2 {
+        return format!(
+          "{} -> {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
+      if name == "RuleDelayed" && args.len() == 2 {
+        return format!(
+          "{} :> {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
+      if name == "Composition" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" @* ");
+      }
+      // Special case: Times displays as infix with *
+      if name == "Times" && args.len() >= 2 {
+        // Handle Times[-1, x, ...] as "-x*..."
+        if matches!(&args[0], Expr::Integer(-1)) {
+          let rest = args[1..]
+            .iter()
+            .map(|a| {
+              let s = expr_to_string(a);
+              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                || matches!(
+                  a,
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Plus | BinaryOperator::Minus,
+                    ..
+                  }
+                )
+              {
+                format!("({})", s)
+              } else {
+                s
+              }
+            })
+            .collect::<Vec<_>>()
+            .join("*");
+          return format!("-{}", rest);
+        }
+        return args
+          .iter()
+          .map(|a| {
+            let s = expr_to_string(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus | BinaryOperator::Minus,
+                  ..
+                }
+              )
+            {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect::<Vec<_>>()
+          .join("*");
+      }
       let parts: Vec<String> = args.iter().map(expr_to_string).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
@@ -1376,6 +1441,30 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       // Special case: Times displays as infix with * (no spaces)
       if name == "Times" && args.len() >= 2 {
+        // Handle Times[-1, x] as "-x" and Times[-1, x, y, ...] as "-x*y*..."
+        if args.len() >= 2 && matches!(&args[0], Expr::Integer(-1)) {
+          let rest = args[1..]
+            .iter()
+            .map(|a| {
+              let s = expr_to_output(a);
+              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                || matches!(
+                  a,
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Plus | BinaryOperator::Minus,
+                    ..
+                  }
+                )
+              {
+                format!("({})", s)
+              } else {
+                s
+              }
+            })
+            .collect::<Vec<_>>()
+            .join("*");
+          return format!("-{}", rest);
+        }
         return args
           .iter()
           .map(|a| {
@@ -1416,6 +1505,24 @@ pub fn expr_to_output(expr: &Expr) -> String {
           exp_str
         };
         return format!("{}^{}", base, exp);
+      }
+      if name == "Rule" && args.len() == 2 {
+        return format!(
+          "{} -> {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
+      if name == "RuleDelayed" && args.len() == 2 {
+        return format!(
+          "{} :> {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
+      if name == "Composition" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" @* ");
       }
       let parts: Vec<String> = args.iter().map(expr_to_output).collect();
       format!("{}[{}]", name, parts.join(", "))
