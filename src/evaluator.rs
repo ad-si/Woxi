@@ -2149,6 +2149,21 @@ pub fn evaluate_function_call_ast(
     "Mean" if args.len() == 1 => {
       return crate::functions::math_ast::mean_ast(args);
     }
+    "Variance" if args.len() == 1 => {
+      return crate::functions::math_ast::variance_ast(args);
+    }
+    "StandardDeviation" if args.len() == 1 => {
+      return crate::functions::math_ast::standard_deviation_ast(args);
+    }
+    "GeometricMean" if args.len() == 1 => {
+      return crate::functions::math_ast::geometric_mean_ast(args);
+    }
+    "HarmonicMean" if args.len() == 1 => {
+      return crate::functions::math_ast::harmonic_mean_ast(args);
+    }
+    "RootMeanSquare" if args.len() == 1 => {
+      return crate::functions::math_ast::root_mean_square_ast(args);
+    }
     "Factorial" if args.len() == 1 => {
       return crate::functions::math_ast::factorial_ast(args);
     }

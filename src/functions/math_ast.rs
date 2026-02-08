@@ -4404,3 +4404,370 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::List(items))
 }
+
+/// Variance[list] - Sample variance (unbiased, divides by n-1)
+/// Variance[{1, 2, 3}] => 1
+/// Variance[{1.0, 2.0, 3.0}] => 1.0
+pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Variance expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::List(items) => {
+      if items.len() < 2 {
+        return Err(InterpreterError::EvaluationError(
+          "Variance: need at least 2 elements".into(),
+        ));
+      }
+      // Try all-integer exact path
+      let mut all_int = true;
+      let mut int_vals: Vec<i128> = Vec::new();
+      let mut has_real = false;
+      for item in items {
+        match item {
+          Expr::Integer(n) => int_vals.push(*n),
+          Expr::Real(_) => {
+            all_int = false;
+            has_real = true;
+            break;
+          }
+          _ => {
+            all_int = false;
+            break;
+          }
+        }
+      }
+      if all_int && !int_vals.is_empty() {
+        // Exact: Variance = Sum[(xi - mean)^2] / (n-1)
+        // = (n * Sum[xi^2] - (Sum[xi])^2) / (n * (n-1))
+        let n = int_vals.len() as i128;
+        let sum: i128 = int_vals.iter().sum();
+        let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
+        let numer = n * sum_sq - sum * sum;
+        let denom = n * (n - 1);
+        return Ok(make_rational(numer, denom));
+      }
+      if has_real || !all_int {
+        // Float path
+        let mut vals = Vec::new();
+        for item in items {
+          if let Some(v) = expr_to_num(item) {
+            vals.push(v);
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Variance".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        let n = vals.len() as f64;
+        let mean = vals.iter().sum::<f64>() / n;
+        let var =
+          vals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        return Ok(num_to_expr(var));
+      }
+      Ok(Expr::FunctionCall {
+        name: "Variance".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Variance".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// StandardDeviation[list] - Sample standard deviation (Sqrt of Variance)
+/// StandardDeviation[{1, 2, 3}] => 1
+/// StandardDeviation[{1.0, 2.0, 3.0}] => 1.0
+pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "StandardDeviation expects exactly 1 argument".into(),
+    ));
+  }
+  let var = variance_ast(args)?;
+  match &var {
+    Expr::Integer(n) => {
+      // StandardDeviation is Sqrt[Variance]
+      let v = *n;
+      if v == 0 {
+        return Ok(Expr::Integer(0));
+      }
+      if v == 1 {
+        return Ok(Expr::Integer(1));
+      }
+      // Check if it's a perfect square
+      let root = (v as f64).sqrt() as i128;
+      for candidate in [root - 1, root, root + 1] {
+        if candidate >= 0 && candidate * candidate == v {
+          return Ok(Expr::Integer(candidate));
+        }
+      }
+      // Return Sqrt[n] symbolically
+      Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(v)],
+      })
+    }
+    Expr::Real(f) => Ok(num_to_expr(f.sqrt())),
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Rational" && fargs.len() == 2 =>
+    {
+      // Sqrt[p/q] - try to simplify
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&fargs[0], &fargs[1]) {
+        let fval = (*p as f64) / (*q as f64);
+        if fval >= 0.0 {
+          // Check if both are perfect squares
+          let p_root = (*p as f64).sqrt() as i128;
+          let q_root = (*q as f64).sqrt() as i128;
+          if p_root * p_root == *p && q_root * q_root == *q {
+            return Ok(make_rational(p_root, q_root));
+          }
+        }
+        // Return Sqrt[Rational[p, q]] symbolically
+        return Ok(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![var.clone()],
+        });
+      }
+      Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![var],
+      })
+    }
+    // If variance returned symbolic, wrap in Sqrt
+    _ => Ok(Expr::FunctionCall {
+      name: "StandardDeviation".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// GeometricMean[list] - Geometric mean: (product of elements)^(1/n)
+/// GeometricMean[{2, 8}] => 4
+/// GeometricMean[{1.0, 2.0, 3.0}] => 1.8171205928321397
+pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "GeometricMean expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "GeometricMean: empty list".into(),
+        ));
+      }
+      // Float path
+      let mut vals = Vec::new();
+      for item in items {
+        if let Some(v) = try_eval_to_f64(item) {
+          vals.push(v);
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "GeometricMean".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+      let n = vals.len() as f64;
+      let product: f64 = vals.iter().product();
+      let result = product.powf(1.0 / n);
+      // Check if result is an integer
+      Ok(num_to_expr(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "GeometricMean".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// HarmonicMean[list] - Harmonic mean: n / Sum[1/xi]
+/// HarmonicMean[{1, 2, 3}] => 18/11
+/// HarmonicMean[{1.0, 2.0, 3.0}] => 1.6363636363636365
+pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "HarmonicMean expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "HarmonicMean: empty list".into(),
+        ));
+      }
+      // Try all-integer exact path using rational arithmetic
+      let mut all_int = true;
+      let mut int_vals: Vec<i128> = Vec::new();
+      let mut has_real = false;
+      for item in items {
+        match item {
+          Expr::Integer(n) => {
+            if *n == 0 {
+              return Err(InterpreterError::EvaluationError(
+                "HarmonicMean: division by zero".into(),
+              ));
+            }
+            int_vals.push(*n);
+          }
+          Expr::Real(_) => {
+            all_int = false;
+            has_real = true;
+            break;
+          }
+          _ => {
+            all_int = false;
+            break;
+          }
+        }
+      }
+      if all_int && !int_vals.is_empty() {
+        // HarmonicMean = n / Sum[1/xi]
+        // = n / (Sum[product/xi] / product)
+        // = n * product / Sum[product/xi]
+        // Use rational sum: Sum[1/xi] = numer/denom
+        let n = int_vals.len() as i128;
+        let mut sum_numer: i128 = 0;
+        let mut sum_denom: i128 = 1;
+        for &x in &int_vals {
+          // Add 1/x to sum_numer/sum_denom
+          // a/b + 1/x = (a*x + b) / (b*x)
+          sum_numer = sum_numer * x + sum_denom;
+          sum_denom *= x;
+          // Simplify to avoid overflow
+          let g = gcd(sum_numer.abs(), sum_denom.abs());
+          sum_numer /= g;
+          sum_denom /= g;
+        }
+        // HarmonicMean = n / (sum_numer/sum_denom) = n * sum_denom / sum_numer
+        let result_numer = n * sum_denom;
+        let result_denom = sum_numer;
+        return Ok(make_rational(result_numer, result_denom));
+      }
+      if has_real || !all_int {
+        // Float path
+        let mut vals = Vec::new();
+        for item in items {
+          if let Some(v) = expr_to_num(item) {
+            if v == 0.0 {
+              return Err(InterpreterError::EvaluationError(
+                "HarmonicMean: division by zero".into(),
+              ));
+            }
+            vals.push(v);
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "HarmonicMean".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        let n = vals.len() as f64;
+        let sum_recip: f64 = vals.iter().map(|x| 1.0 / x).sum();
+        return Ok(num_to_expr(n / sum_recip));
+      }
+      Ok(Expr::FunctionCall {
+        name: "HarmonicMean".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "HarmonicMean".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// RootMeanSquare[list] - Sqrt[Mean[list^2]]
+/// RootMeanSquare[{1, 2, 3}] => Sqrt[14/3]
+/// RootMeanSquare[{1.0, 2.0, 3.0}] => 2.160246899469287
+pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RootMeanSquare expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Err(InterpreterError::EvaluationError(
+          "RootMeanSquare: empty list".into(),
+        ));
+      }
+      // Try all-integer exact path
+      let mut all_int = true;
+      let mut int_vals: Vec<i128> = Vec::new();
+      let mut has_real = false;
+      for item in items {
+        match item {
+          Expr::Integer(n) => int_vals.push(*n),
+          Expr::Real(_) => {
+            all_int = false;
+            has_real = true;
+            break;
+          }
+          _ => {
+            all_int = false;
+            break;
+          }
+        }
+      }
+      if all_int && !int_vals.is_empty() {
+        let n = int_vals.len() as i128;
+        let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
+        // RMS = Sqrt[sum_sq / n]
+        let g = gcd(sum_sq.abs(), n);
+        let numer = sum_sq / g;
+        let denom = n / g;
+        // Check if numer/denom is a perfect square
+        if denom == 1 {
+          let root = (numer as f64).sqrt() as i128;
+          if root * root == numer {
+            return Ok(Expr::Integer(root));
+          }
+          return Ok(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(numer)],
+          });
+        }
+        // Return Sqrt[Rational[numer, denom]]
+        return Ok(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![make_rational(numer, denom)],
+        });
+      }
+      if has_real || !all_int {
+        let mut vals = Vec::new();
+        for item in items {
+          if let Some(v) = expr_to_num(item) {
+            vals.push(v);
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "RootMeanSquare".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        let n = vals.len() as f64;
+        let mean_sq = vals.iter().map(|x| x * x).sum::<f64>() / n;
+        return Ok(num_to_expr(mean_sq.sqrt()));
+      }
+      Ok(Expr::FunctionCall {
+        name: "RootMeanSquare".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "RootMeanSquare".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}

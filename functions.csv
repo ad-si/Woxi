@@ -80,13 +80,16 @@ FromDigits,Constructs integer from list of digits,✅
 Gather,Groups identical elements together,✅
 GatherBy,Groups elements by applying a function,✅
 GCD,Returns the greatest common divisor of integers,✅
+GeometricMean,Returns the geometric mean of a list,✅
 Greater,Checks if one value is greater than another,✅
 GreaterEqual,Checks if one value is greater than or equal to another,✅
+HarmonicMean,Returns the harmonic mean of a list,✅
 Identity,Returns its argument unchanged,✅
 If,Checks if a condition is true and returns one of two values,✅
 Inner,Generalized inner product,✅
 Insert,Inserts an element at a specified position in a list,✅
 IntegerDigits,Returns list of digits of an integer,✅
+IntegerLength,Returns the number of digits in an integer,✅
 IntegerPart,Returns the integer part of a number (truncation towards zero),✅
 IntegerQ,Tests if the expression evaluates to an integer,✅
 Intersection,Returns sorted intersection of lists,✅
@@ -164,10 +167,12 @@ RandomSample,Random selection without replacement,✅
 Range,"Generates a sequence of numbers with optional start, end, and step",✅
 Range,Generates a sequence of numbers,✅
 ReplacePart,Replaces element at a specific position,✅
+Rescale,Rescales values to a specified range,✅
 Rest,Returns the list without its first element,✅
 Reverse,Returns a list with elements in reverse order,✅
 Reverse,Returns a list with elements in reverse order,✅
 Riffle,Inserts an element between each pair of elements,✅
+RootMeanSquare,Returns the root mean square of a list,✅
 RotateLeft,Rotates list elements to the left,✅
 RotateRight,Rotates list elements to the right,✅
 Round,Returns the nearest integer to a number,✅
@@ -182,6 +187,7 @@ Sort,Sorts a list in ascending order,✅
 Split,Splits list at boundaries where consecutive elements differ,✅
 SplitBy,Splits list at boundaries where a function changes value,✅
 Sqrt,Returns the square root of a number,✅
+StandardDeviation,Returns the standard deviation of a list,✅
 StirlingS1,Returns the Stirling number of the first kind,✅
 StirlingS2,Returns the Stirling number of the second kind,✅
 StringContainsQ,Tests if a string contains a substring,✅
@@ -214,18 +220,20 @@ Throw,Throws a value to be caught by Catch,✅
 Times,Multiply numbers,✅
 ToExpression,Converts a string to an evaluated expression,✅
 ToLowerCase,Converts a string to lowercase,✅
-Total,Sums the elements of a list,✅
 ToUpperCase,Converts a string to uppercase,✅
+Total,Sums the elements of a list,✅
 Transpose,Transposes a matrix (list of lists),✅
 Tuples,Generates all tuples of elements from a list,✅
 Unequal,Checks if two values are not equal,✅
 Union,Returns sorted union of lists,✅
 UpperCaseQ,Tests if a string consists entirely of uppercase letters,✅
 Values,Returns the values of an association,✅
+Variance,Returns the variance of a list,✅
 Which,Evaluates conditions and returns the value for the first true one,✅
 While,Evaluates an expression repeatedly while a condition is true,✅
 Xor,Checks if exactly one condition is true,✅
 
+-----
 
 $Aborted,,
 $ActivationKey,,
