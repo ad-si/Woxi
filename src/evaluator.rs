@@ -2182,6 +2182,33 @@ pub fn evaluate_function_call_ast(
     "ArcTan" if args.len() == 1 => {
       return crate::functions::math_ast::arctan_ast(args);
     }
+    "Sinh" if args.len() == 1 => {
+      return crate::functions::math_ast::sinh_ast(args);
+    }
+    "Cosh" if args.len() == 1 => {
+      return crate::functions::math_ast::cosh_ast(args);
+    }
+    "Tanh" if args.len() == 1 => {
+      return crate::functions::math_ast::tanh_ast(args);
+    }
+    "Coth" if args.len() == 1 => {
+      return crate::functions::math_ast::coth_ast(args);
+    }
+    "Sech" if args.len() == 1 => {
+      return crate::functions::math_ast::sech_ast(args);
+    }
+    "Csch" if args.len() == 1 => {
+      return crate::functions::math_ast::csch_ast(args);
+    }
+    "ArcSinh" if args.len() == 1 => {
+      return crate::functions::math_ast::arcsinh_ast(args);
+    }
+    "ArcCosh" if args.len() == 1 => {
+      return crate::functions::math_ast::arccosh_ast(args);
+    }
+    "ArcTanh" if args.len() == 1 => {
+      return crate::functions::math_ast::arctanh_ast(args);
+    }
     "Prime" if args.len() == 1 => {
       return crate::functions::math_ast::prime_ast(args);
     }
