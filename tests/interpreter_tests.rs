@@ -1257,6 +1257,48 @@ mod interpreter_tests {
       assert_eq!(
         interpret("Normalize[{1, 2, 2}]").unwrap(),
         "{1/3, 2/3, 2/3}"
+      );
+    }
+  }
+
+  mod subsequences {
+    use super::*;
+
+    #[test]
+    fn subsequences_all() {
+      assert_eq!(
+        interpret("Subsequences[{a, b, c}]").unwrap(),
+        "{{}, {a}, {b}, {c}, {a, b}, {b, c}, {a, b, c}}"
+      );
+    }
+
+    #[test]
+    fn subsequences_fixed_length() {
+      assert_eq!(
+        interpret("Subsequences[{a, b, c}, {2}]").unwrap(),
+        "{{a, b}, {b, c}}"
+      );
+    }
+
+    #[test]
+    fn subsequences_length_range() {
+      assert_eq!(
+        interpret("Subsequences[{a, b, c, d}, {2, 3}]").unwrap(),
+        "{{a, b}, {b, c}, {c, d}, {a, b, c}, {b, c, d}}"
+      );
+    }
+
+    #[test]
+    fn subsequences_empty() {
+      assert_eq!(interpret("Subsequences[{}]").unwrap(), "{{}}");
+    }
+
+    #[test]
+    fn subsequences_zero_length() {
+      assert_eq!(interpret("Subsequences[{a, b}, {0, 0}]").unwrap(), "{{}}");
+    }
+  }
+
   mod minus_wrong_arity {
     use super::*;
 

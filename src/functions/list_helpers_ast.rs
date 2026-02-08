@@ -4025,3 +4025,85 @@ fn expr_le(a: &Expr, b: &Expr) -> bool {
   let b_str = crate::syntax::expr_to_string(b);
   a_str <= b_str
 }
+
+/// Subsequences[list] - all contiguous subsequences
+/// Subsequences[list, {n}] - contiguous subsequences of length n
+/// Subsequences[list, {nmin, nmax}] - lengths in range
+/// Subsequences[{a, b, c}] => {{}, {a}, {b}, {c}, {a, b}, {b, c}, {a, b, c}}
+pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Subsequences expects 1 or 2 arguments".into(),
+    ));
+  }
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Subsequences".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = items.len();
+
+  // Determine min and max lengths
+  let (min_len, max_len) = if args.len() == 2 {
+    match &args[1] {
+      Expr::List(spec) => {
+        if spec.len() == 1 {
+          // {n} - exactly length n
+          if let Expr::Integer(k) = &spec[0] {
+            let k = *k as usize;
+            (k, k)
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Subsequences".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        } else if spec.len() == 2 {
+          // {nmin, nmax}
+          if let (Expr::Integer(lo), Expr::Integer(hi)) = (&spec[0], &spec[1]) {
+            (*lo as usize, *hi as usize)
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Subsequences".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "Subsequences".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+      Expr::Integer(k) => {
+        let k = *k as usize;
+        (k, k)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Subsequences".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    (0, n)
+  };
+
+  let mut result = Vec::new();
+  for len in min_len..=max_len.min(n) {
+    if len == 0 {
+      result.push(Expr::List(vec![]));
+    } else {
+      for start in 0..=(n - len) {
+        result.push(Expr::List(items[start..start + len].to_vec()));
+      }
+    }
+  }
+  Ok(Expr::List(result))
+}
