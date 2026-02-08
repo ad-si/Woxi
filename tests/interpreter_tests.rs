@@ -4019,4 +4019,149 @@ mod interpreter_tests {
       assert_eq!(interpret("DigitQ[\"\"]").unwrap(), "True");
     }
   }
+
+  // ─── Linear Algebra ─────────────────────────────────────────────────
+
+  mod dot {
+    use super::*;
+
+    #[test]
+    fn vector_dot_product() {
+      assert_eq!(interpret("Dot[{1, 2, 3}, {4, 5, 6}]").unwrap(), "32");
+    }
+
+    #[test]
+    fn matrix_vector() {
+      assert_eq!(
+        interpret("Dot[{{1, 0}, {0, 1}}, {5, 6}]").unwrap(),
+        "{5, 6}"
+      );
+    }
+
+    #[test]
+    fn matrix_matrix() {
+      assert_eq!(
+        interpret("Dot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}]").unwrap(),
+        "{{19, 22}, {43, 50}}"
+      );
+    }
+
+    #[test]
+    fn dot_simple() {
+      assert_eq!(interpret("Dot[{1, 2}, {3, 4}]").unwrap(), "11");
+    }
+  }
+
+  mod det {
+    use super::*;
+
+    #[test]
+    fn det_2x2() {
+      assert_eq!(interpret("Det[{{1, 2}, {3, 4}}]").unwrap(), "-2");
+    }
+
+    #[test]
+    fn det_3x3() {
+      assert_eq!(
+        interpret("Det[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+        "6"
+      );
+    }
+
+    #[test]
+    fn det_identity() {
+      assert_eq!(interpret("Det[{{1, 0}, {0, 1}}]").unwrap(), "1");
+    }
+  }
+
+  mod inverse {
+    use super::*;
+
+    #[test]
+    fn inverse_2x2() {
+      assert_eq!(
+        interpret("Inverse[{{1, 2}, {3, 4}}]").unwrap(),
+        "{{-2, 1}, {3/2, -1/2}}"
+      );
+    }
+
+    #[test]
+    fn inverse_identity() {
+      assert_eq!(
+        interpret("Inverse[{{1, 0}, {0, 1}}]").unwrap(),
+        "{{1, 0}, {0, 1}}"
+      );
+    }
+  }
+
+  mod tr {
+    use super::*;
+
+    #[test]
+    fn trace_2x2() {
+      assert_eq!(interpret("Tr[{{1, 2}, {3, 4}}]").unwrap(), "5");
+    }
+
+    #[test]
+    fn trace_3x3() {
+      assert_eq!(
+        interpret("Tr[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+        "6"
+      );
+    }
+
+    #[test]
+    fn trace_vector() {
+      assert_eq!(interpret("Tr[{1, 2, 3}]").unwrap(), "6");
+    }
+  }
+
+  mod identity_matrix {
+    use super::*;
+
+    #[test]
+    fn identity_3() {
+      assert_eq!(
+        interpret("IdentityMatrix[3]").unwrap(),
+        "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+      );
+    }
+
+    #[test]
+    fn identity_1() {
+      assert_eq!(interpret("IdentityMatrix[1]").unwrap(), "{{1}}");
+    }
+  }
+
+  mod diagonal_matrix {
+    use super::*;
+
+    #[test]
+    fn diagonal_basic() {
+      assert_eq!(
+        interpret("DiagonalMatrix[{1, 2, 3}]").unwrap(),
+        "{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}"
+      );
+    }
+  }
+
+  mod cross {
+    use super::*;
+
+    #[test]
+    fn cross_basic() {
+      assert_eq!(
+        interpret("Cross[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+        "{-3, 6, -3}"
+      );
+    }
+
+    #[test]
+    fn cross_unit_vectors() {
+      assert_eq!(
+        interpret("Cross[{1, 0, 0}, {0, 1, 0}]").unwrap(),
+        "{0, 0, 1}"
+      );
+    }
+  }
 }

@@ -193,6 +193,11 @@ fn gcd(a: i128, b: i128) -> i128 {
 
 /// Create a rational or integer result from numerator/denominator
 /// Simplifies the fraction and returns Integer if denominator is 1
+/// Public wrapper for creating rational expressions
+pub fn make_rational_pub(numer: i128, denom: i128) -> Expr {
+  make_rational(numer, denom)
+}
+
 fn make_rational(numer: i128, denom: i128) -> Expr {
   if denom == 0 {
     // Division by zero - shouldn't reach here but be safe
