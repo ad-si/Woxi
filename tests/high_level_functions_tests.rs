@@ -77,12 +77,31 @@ mod high_level_functions_tests {
     }
   }
 
-  // mod group_by_tests {
-  //   #[test]
-  //   #[ignore]
-  //   fn test_group_by_function() {
-  //     // let result = interpret("GroupBy[{1, 2, 3, 4, 5}, EvenQ]").unwrap();
-  //     // assert_eq!(result, "<|False -> {1, 3, 5}, True -> {2, 4}|>");
-  //   }
-  // }
+  // ─── Catch/Throw ───────────────────────────────────────────────────
+  mod catch_throw_tests {
+    use super::*;
+    #[test]
+    fn test_catch_with_throw() {
+      assert_eq!(interpret("Catch[1 + Throw[2]]").unwrap(), "2");
+    }
+    #[test]
+    fn test_catch_no_throw() {
+      assert_eq!(interpret("Catch[1 + 2]").unwrap(), "3");
+    }
+    #[test]
+    fn test_catch_with_tag() {
+      assert_eq!(
+        interpret(r#"Catch[Throw["hello", "tag"], "tag"]"#).unwrap(),
+        "hello"
+      );
+    }
+    #[test]
+    fn test_throw_value() {
+      assert_eq!(interpret("Catch[Throw[42]]").unwrap(), "42");
+    }
+    #[test]
+    fn test_nested_catch() {
+      assert_eq!(interpret("Catch[Catch[Throw[1, a], b], a]").unwrap(), "1");
+    }
+  }
 }

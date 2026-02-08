@@ -46,6 +46,8 @@ pub enum InterpreterError {
   BreakSignal,
   #[error("Continue")]
   ContinueSignal,
+  #[error("Throw")]
+  ThrowValue(syntax::Expr, Option<syntax::Expr>),
 }
 
 /// Extended result type that includes both stdout and the result
