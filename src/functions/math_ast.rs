@@ -4771,3 +4771,284 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
   }
 }
+
+/// IntegerLength[n] - Number of digits of n in base 10
+/// IntegerLength[n, b] - Number of digits in base b
+/// IntegerLength[12345] => 5
+/// IntegerLength[255, 16] => 2
+/// IntegerLength[0] => 0
+pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerLength expects 1 or 2 arguments".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "IntegerLength".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let base = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(b) => {
+        if *b < 2 {
+          return Err(InterpreterError::EvaluationError(
+            "IntegerLength: base must be at least 2".into(),
+          ));
+        }
+        *b
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "IntegerLength".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    10
+  };
+
+  if n == 0 {
+    return Ok(Expr::Integer(0));
+  }
+  let mut abs_n = n.abs();
+  let mut count = 0i128;
+  while abs_n > 0 {
+    abs_n /= base;
+    count += 1;
+  }
+  Ok(Expr::Integer(count))
+}
+
+/// Rescale[x, {xmin, xmax}] - rescales x to [0,1]
+/// Rescale[x, {xmin, xmax}, {ymin, ymax}] - rescales x to [ymin,ymax]
+/// Rescale[list] - rescales list elements to [0,1] based on min/max
+pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Rescale expects 1 to 3 arguments".into(),
+    ));
+  }
+
+  // Rescale[list] - auto-detect min/max
+  if args.len() == 1 {
+    if let Expr::List(items) = &args[0] {
+      if items.is_empty() {
+        return Ok(Expr::List(vec![]));
+      }
+      // Find min and max
+      let mut vals = Vec::new();
+      let mut all_int = true;
+      let mut int_vals: Vec<i128> = Vec::new();
+      for item in items {
+        match item {
+          Expr::Integer(n) => {
+            vals.push(*n as f64);
+            int_vals.push(*n);
+          }
+          Expr::Real(f) => {
+            vals.push(*f);
+            all_int = false;
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Rescale".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+      if all_int && !int_vals.is_empty() {
+        let min_val = *int_vals.iter().min().unwrap();
+        let max_val = *int_vals.iter().max().unwrap();
+        if min_val == max_val {
+          return Ok(Expr::List(vec![Expr::Integer(0); items.len()]));
+        }
+        let range = max_val - min_val;
+        let result: Vec<Expr> = int_vals
+          .iter()
+          .map(|x| make_rational(x - min_val, range))
+          .collect();
+        return Ok(Expr::List(result));
+      }
+      let min_val = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+      let max_val = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+      if (max_val - min_val).abs() < f64::EPSILON {
+        return Ok(Expr::List(vec![Expr::Integer(0); items.len()]));
+      }
+      let result: Vec<Expr> = vals
+        .iter()
+        .map(|x| num_to_expr((x - min_val) / (max_val - min_val)))
+        .collect();
+      return Ok(Expr::List(result));
+    }
+    // Single non-list value needs {xmin, xmax}
+    return Ok(Expr::FunctionCall {
+      name: "Rescale".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Rescale[x, {xmin, xmax}] or Rescale[x, {xmin, xmax}, {ymin, ymax}]
+  let range = match &args[1] {
+    Expr::List(r) if r.len() == 2 => r,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Rescale".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let (ymin, ymax) = if args.len() == 3 {
+    match &args[2] {
+      Expr::List(r) if r.len() == 2 => (&r[0], &r[1]),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Rescale".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    (&Expr::Integer(0) as &Expr, &Expr::Integer(1) as &Expr)
+  };
+
+  // Try integer exact path
+  if let (
+    Expr::Integer(x),
+    Expr::Integer(xmin),
+    Expr::Integer(xmax),
+    Expr::Integer(yn),
+    Expr::Integer(yx),
+  ) = (&args[0], &range[0], &range[1], ymin, ymax)
+  {
+    if xmax == xmin {
+      return Err(InterpreterError::EvaluationError(
+        "Rescale: xmin and xmax must be different".into(),
+      ));
+    }
+    // result = ymin + (x - xmin) * (ymax - ymin) / (xmax - xmin)
+    let numer = yn * (xmax - xmin) + (x - xmin) * (yx - yn);
+    let denom = xmax - xmin;
+    return Ok(make_rational(numer, denom));
+  }
+
+  // Float path
+  if let (Some(x), Some(xmin), Some(xmax)) = (
+    try_eval_to_f64(&args[0]),
+    try_eval_to_f64(&range[0]),
+    try_eval_to_f64(&range[1]),
+  ) {
+    if (xmax - xmin).abs() < f64::EPSILON {
+      return Err(InterpreterError::EvaluationError(
+        "Rescale: xmin and xmax must be different".into(),
+      ));
+    }
+    let t = (x - xmin) / (xmax - xmin);
+    if args.len() == 3
+      && let (Some(yn), Some(yx)) =
+        (try_eval_to_f64(ymin), try_eval_to_f64(ymax))
+    {
+      return Ok(num_to_expr(yn + t * (yx - yn)));
+    }
+    return Ok(num_to_expr(t));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Rescale".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Normalize[v] - normalizes a vector to unit length
+/// Normalize[{3, 4}] => {3/5, 4/5}
+/// Normalize[{0, 0, 0}] => {0, 0, 0}
+pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Normalize expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::List(items) => {
+      if items.is_empty() {
+        return Ok(Expr::List(vec![]));
+      }
+      // Compute the Euclidean norm
+      let mut vals = Vec::new();
+      let mut all_int = true;
+      let mut int_vals: Vec<i128> = Vec::new();
+      for item in items {
+        match item {
+          Expr::Integer(n) => {
+            vals.push(*n as f64);
+            int_vals.push(*n);
+          }
+          Expr::Real(f) => {
+            vals.push(*f);
+            all_int = false;
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Normalize".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+      let norm_sq: f64 = vals.iter().map(|x| x * x).sum();
+      if norm_sq == 0.0 {
+        return Ok(args[0].clone());
+      }
+      let norm = norm_sq.sqrt();
+
+      if all_int {
+        // Try to keep exact: each element / Sqrt[sum_sq]
+        let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
+        // Check if sum_sq is a perfect square
+        let root = (sum_sq as f64).sqrt() as i128;
+        if root * root == sum_sq && root > 0 {
+          // Exact: each element / root
+          let result: Vec<Expr> =
+            int_vals.iter().map(|x| make_rational(*x, root)).collect();
+          return Ok(Expr::List(result));
+        }
+        // Return as xi / Sqrt[sum_sq]
+        let result: Vec<Expr> = int_vals
+          .iter()
+          .map(|x| {
+            if *x == 0 {
+              Expr::Integer(0)
+            } else {
+              // x / Sqrt[sum_sq] = x * Power[sum_sq, -1/2]
+              Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(Expr::Integer(*x)),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Sqrt".to_string(),
+                  args: vec![Expr::Integer(sum_sq)],
+                }),
+              }
+            }
+          })
+          .collect();
+        return Ok(Expr::List(result));
+      }
+
+      // Float path
+      let result: Vec<Expr> =
+        vals.iter().map(|x| num_to_expr(x / norm)).collect();
+      Ok(Expr::List(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Normalize".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
