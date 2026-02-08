@@ -91,3 +91,51 @@ $ wo 'assoc = <|"outer" -> <|"inner" -> 8|>|>; assoc["outer", "inner"]'
 $ wo 'assoc = <|"a" -> 2, "b" -> 3|>; Map[#^2&, assoc]'
 <|a -> 4, b -> 9|>
 ```
+
+
+## `AssociationThread`
+
+```scrut
+$ wo 'AssociationThread[{a, b, c}, {1, 2, 3}]'
+<|a -> 1, b -> 2, c -> 3|>
+```
+
+
+## `Merge`
+
+```scrut
+$ wo 'Merge[{<|a -> 1|>, <|a -> 2, b -> 3|>}, Total]'
+<|a -> 3, b -> 3|>
+```
+
+
+## `KeyMap`
+
+```scrut
+$ wo 'KeyMap[f, <|a -> 1, b -> 2|>]'
+<|f[a] -> 1, f[b] -> 2|>
+```
+
+
+## `KeySelect`
+
+```scrut
+$ wo 'KeySelect[<|1 -> a, 2 -> b, 3 -> c|>, EvenQ]'
+<|2 -> b|>
+```
+
+
+## `KeyTake`
+
+```scrut
+$ wo 'KeyTake[<|a -> 1, b -> 2, c -> 3|>, {a, c}]'
+<|a -> 1, c -> 3|>
+```
+
+
+## `KeyDrop`
+
+```scrut
+$ wo 'KeyDrop[<|a -> 1, b -> 2, c -> 3|>, {a}]'
+<|b -> 2, c -> 3|>
+```

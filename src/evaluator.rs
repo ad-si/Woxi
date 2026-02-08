@@ -2510,6 +2510,29 @@ pub fn evaluate_function_call_ast(
       return crate::functions::linear_algebra_ast::cross_ast(args);
     }
 
+    // AST-native additional association functions
+    "AssociationMap" if args.len() == 2 => {
+      return crate::functions::association_ast::association_map_ast(args);
+    }
+    "AssociationThread" if args.len() == 2 => {
+      return crate::functions::association_ast::association_thread_ast(args);
+    }
+    "Merge" if args.len() == 2 => {
+      return crate::functions::association_ast::merge_ast(args);
+    }
+    "KeyMap" if args.len() == 2 => {
+      return crate::functions::association_ast::key_map_ast(args);
+    }
+    "KeySelect" if args.len() == 2 => {
+      return crate::functions::association_ast::key_select_ast(args);
+    }
+    "KeyTake" if args.len() == 2 => {
+      return crate::functions::association_ast::key_take_ast(args);
+    }
+    "KeyDrop" if args.len() == 2 => {
+      return crate::functions::association_ast::key_drop_ast(args);
+    }
+
     // AST-native additional polynomial/CAS functions
     "ExpandAll" if args.len() == 1 => {
       return crate::functions::polynomial_ast::expand_all_ast(args);
