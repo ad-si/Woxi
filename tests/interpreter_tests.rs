@@ -4222,4 +4222,32 @@ mod interpreter_tests {
       );
     }
   }
+
+  // ─── Calculus ───────────────────────────────────────────────────────
+
+  mod limit {
+    use super::*;
+
+    #[test]
+    fn limit_sin_x_over_x() {
+      assert_eq!(interpret("Limit[Sin[x]/x, x -> 0]").unwrap(), "1");
+    }
+
+    #[test]
+    fn limit_direct_substitution() {
+      assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
+    }
+  }
+
+  mod series {
+    use super::*;
+
+    #[test]
+    fn series_exp() {
+      assert_eq!(
+        interpret("Series[Exp[x], {x, 0, 3}]").unwrap(),
+        "SeriesData[x, 0, {1, 1, 1/2, 1/6}, 0, 4, 1]"
+      );
+    }
+  }
 }
