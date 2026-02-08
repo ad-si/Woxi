@@ -3485,7 +3485,7 @@ mod interpreter_tests {
 
     #[test]
     fn from_negative() {
-      assert_eq!(interpret("NextPrime[-5]").unwrap(), "2");
+      assert_eq!(interpret("NextPrime[-5]").unwrap(), "-3");
     }
   }
 
@@ -3505,7 +3505,7 @@ mod interpreter_tests {
 
     #[test]
     fn negative() {
-      assert_eq!(interpret("BitLength[-1]").unwrap(), "1");
+      assert_eq!(interpret("BitLength[-1]").unwrap(), "0");
       assert_eq!(interpret("BitLength[-255]").unwrap(), "8");
     }
   }
@@ -3626,8 +3626,8 @@ mod interpreter_tests {
 
     #[test]
     fn non_perfect_cube_symbolic() {
-      // Non-perfect cubes remain symbolic for integers
-      assert_eq!(interpret("CubeRoot[2]").unwrap(), "CubeRoot[2]");
+      // Non-perfect cubes return n^(1/3)
+      assert_eq!(interpret("CubeRoot[2]").unwrap(), "2^(1/3)");
     }
   }
 
@@ -3724,7 +3724,7 @@ mod interpreter_tests {
 
     #[test]
     fn empty_string() {
-      assert_eq!(interpret("LetterQ[\"\"]").unwrap(), "False");
+      assert_eq!(interpret("LetterQ[\"\"]").unwrap(), "True");
     }
 
     #[test]
@@ -3786,7 +3786,7 @@ mod interpreter_tests {
 
     #[test]
     fn empty() {
-      assert_eq!(interpret("DigitQ[\"\"]").unwrap(), "False");
+      assert_eq!(interpret("DigitQ[\"\"]").unwrap(), "True");
     }
   }
 }

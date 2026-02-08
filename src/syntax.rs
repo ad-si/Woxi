@@ -1250,7 +1250,19 @@ pub fn expr_to_string(expr: &Expr) -> String {
       } else {
         left_str
       };
-      let right_formatted = if is_multiplicative && is_additive(right) {
+      let needs_right_parens = (is_multiplicative && is_additive(right))
+        || (matches!(op, BinaryOperator::Power)
+          && (matches!(
+            right.as_ref(),
+            Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
+          ) || matches!(
+            right.as_ref(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              ..
+            }
+          )));
+      let right_formatted = if needs_right_parens {
         format!("({})", right_str)
       } else {
         right_str

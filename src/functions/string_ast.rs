@@ -765,7 +765,7 @@ pub fn letter_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::String(s) => {
-      let result = !s.is_empty() && s.chars().all(|c| c.is_alphabetic());
+      let result = s.chars().all(|c| c.is_alphabetic());
       Ok(Expr::Identifier(
         if result { "True" } else { "False" }.to_string(),
       ))
@@ -827,7 +827,7 @@ pub fn digit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::String(s) => {
-      let result = !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+      let result = s.chars().all(|c| c.is_ascii_digit());
       Ok(Expr::Identifier(
         if result { "True" } else { "False" }.to_string(),
       ))

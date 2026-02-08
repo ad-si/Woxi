@@ -594,6 +594,26 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Special case: Integer^Rational — keep symbolic unless result is exact integer
+  if let Expr::Integer(b) = base
+    && let Expr::FunctionCall { name, args: rargs } = exp
+    && name == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(numer), Expr::Integer(denom)) = (&rargs[0], &rargs[1])
+  {
+    // Try to compute exact integer root
+    let result = (*b as f64).powf(*numer as f64 / *denom as f64);
+    if result.fract() == 0.0 && result.is_finite() {
+      return Ok(Expr::Integer(result as i128));
+    }
+    // Not exact — keep symbolic
+    return Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(base.clone()),
+      right: Box::new(exp.clone()),
+    });
+  }
+
   // If either operand is Real, result is Real (even if whole number)
   let has_real = matches!(base, Expr::Real(_)) || matches!(exp, Expr::Real(_));
 
@@ -3304,6 +3324,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // ─── NextPrime ─────────────────────────────────────────────────────
 
 /// NextPrime[n] - Returns the smallest prime greater than n
+/// Negative primes (-2, -3, -5, ...) are included in the search space.
 pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -3311,23 +3332,8 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
-    Expr::Integer(n) => {
-      let mut candidate = if *n < 2 { 2 } else { *n + 1 };
-      while !crate::is_prime(candidate as usize) {
-        candidate += 1;
-      }
-      Ok(Expr::Integer(candidate))
-    }
-    Expr::Real(f) => {
-      let mut candidate = (f.floor() as i128) + 1;
-      if candidate < 2 {
-        candidate = 2;
-      }
-      while !crate::is_prime(candidate as usize) {
-        candidate += 1;
-      }
-      Ok(Expr::Integer(candidate))
-    }
+    Expr::Integer(n) => Ok(Expr::Integer(next_prime_after(*n))),
+    Expr::Real(f) => Ok(Expr::Integer(next_prime_after(f.floor() as i128))),
     _ => Ok(Expr::FunctionCall {
       name: "NextPrime".to_string(),
       args: args.to_vec(),
@@ -3335,9 +3341,35 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Find the smallest prime > n (including negative primes like -2, -3, -5, ...).
+fn next_prime_after(n: i128) -> i128 {
+  // For n >= 1: search upward from n+1
+  if n >= 1 {
+    let mut candidate = n + 1;
+    while !crate::is_prime(candidate as usize) {
+      candidate += 1;
+    }
+    return candidate;
+  }
+  // For n < -2: check negative primes between n and -2 (exclusive of n, inclusive of -2)
+  // A negative prime is -p where p is a positive prime.
+  // Search from n+1 upward: for each candidate c, check if |c| is prime.
+  if n < -2 {
+    for c in (n + 1)..=-2 {
+      if c < 0 && crate::is_prime((-c) as usize) {
+        return c;
+      }
+    }
+  }
+  // No negative prime found > n, or n is -2, -1, or 0: smallest positive prime is 2
+  2
+}
+
 // ─── BitLength ─────────────────────────────────────────────────────
 
-/// BitLength[n] - Number of bits needed to represent |n|
+/// BitLength[n] - Number of bits in the binary representation
+/// For n >= 0: Floor[Log2[n]] + 1, with BitLength[0] = 0
+/// For n < 0: BitLength[-n - 1] (2's complement convention)
 pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -3346,10 +3378,11 @@ pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(n) => {
-      if *n == 0 {
+      let val = if *n < 0 { (-*n) - 1 } else { *n };
+      if val == 0 {
         Ok(Expr::Integer(0))
       } else {
-        Ok(Expr::Integer(128 - n.abs().leading_zeros() as i128))
+        Ok(Expr::Integer(128 - val.leading_zeros() as i128))
       }
     }
     _ => Ok(Expr::FunctionCall {
@@ -3513,10 +3546,14 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if root * root * root == abs_n {
         return Ok(Expr::Integer(sign * root as i128));
       }
-      // Not a perfect cube — return symbolic
-      Ok(Expr::FunctionCall {
-        name: "CubeRoot".to_string(),
-        args: args.to_vec(),
+      // Not a perfect cube — return n^(1/3)
+      Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(args[0].clone()),
+        right: Box::new(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(3)],
+        }),
       })
     }
     Expr::Real(f) => Ok(Expr::Real(f.signum() * f.abs().cbrt())),
