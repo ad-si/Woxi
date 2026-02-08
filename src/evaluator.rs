@@ -2314,6 +2314,36 @@ pub fn evaluate_function_call_ast(
     "Subdivide" if !args.is_empty() && args.len() <= 3 => {
       return crate::functions::math_ast::subdivide_ast(args);
     }
+    "DigitCount" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::math_ast::digit_count_ast(args);
+    }
+    "DigitSum" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::digit_sum_ast(args);
+    }
+    "ContinuedFraction" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::continued_fraction_ast(args);
+    }
+    "LucasL" if args.len() == 1 => {
+      return crate::functions::math_ast::lucas_l_ast(args);
+    }
+    "ChineseRemainder" if args.len() == 2 => {
+      return crate::functions::math_ast::chinese_remainder_ast(args);
+    }
+    "DivisorSum" if args.len() == 2 => {
+      return crate::functions::math_ast::divisor_sum_ast(args);
+    }
+    "BernoulliB" if args.len() == 1 => {
+      return crate::functions::math_ast::bernoulli_b_ast(args);
+    }
+    "CatalanNumber" if args.len() == 1 => {
+      return crate::functions::math_ast::catalan_number_ast(args);
+    }
+    "StirlingS1" if args.len() == 2 => {
+      return crate::functions::math_ast::stirling_s1_ast(args);
+    }
+    "StirlingS2" if args.len() == 2 => {
+      return crate::functions::math_ast::stirling_s2_ast(args);
+    }
 
     // AST-native boolean functions
     "And" if args.len() >= 2 => {

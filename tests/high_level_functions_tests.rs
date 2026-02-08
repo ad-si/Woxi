@@ -290,6 +290,176 @@ mod high_level_functions_tests {
     }
   }
 
+  // ─── Number Theory ─────────────────────────────────────────────────
+  mod digit_count_tests {
+    use super::*;
+    #[test]
+    fn test_digit_count_base10() {
+      assert_eq!(
+        interpret("DigitCount[1234]").unwrap(),
+        "{1, 1, 1, 1, 0, 0, 0, 0, 0, 0}"
+      );
+    }
+    #[test]
+    fn test_digit_count_base2() {
+      assert_eq!(interpret("DigitCount[255, 2]").unwrap(), "{8, 0}");
+    }
+    #[test]
+    fn test_digit_count_specific_digit() {
+      assert_eq!(interpret("DigitCount[1234, 10, 1]").unwrap(), "1");
+    }
+  }
+
+  mod digit_sum_tests {
+    use super::*;
+    #[test]
+    fn test_digit_sum_base10() {
+      assert_eq!(interpret("DigitSum[1234]").unwrap(), "10");
+    }
+    #[test]
+    fn test_digit_sum_base16() {
+      assert_eq!(interpret("DigitSum[255, 16]").unwrap(), "30");
+    }
+    #[test]
+    fn test_digit_sum_zero() {
+      assert_eq!(interpret("DigitSum[0]").unwrap(), "0");
+    }
+  }
+
+  mod continued_fraction_tests {
+    use super::*;
+    #[test]
+    fn test_rational() {
+      assert_eq!(interpret("ContinuedFraction[3/7]").unwrap(), "{0, 2, 3}");
+    }
+    #[test]
+    fn test_integer() {
+      assert_eq!(interpret("ContinuedFraction[5]").unwrap(), "{5}");
+    }
+    #[test]
+    fn test_pi_5terms() {
+      assert_eq!(
+        interpret("ContinuedFraction[Pi, 5]").unwrap(),
+        "{3, 7, 15, 1, 292}"
+      );
+    }
+    #[test]
+    fn test_rational_22_7() {
+      assert_eq!(interpret("ContinuedFraction[22/7]").unwrap(), "{3, 7}");
+    }
+  }
+
+  mod lucas_l_tests {
+    use super::*;
+    #[test]
+    fn test_lucas_l_10() {
+      assert_eq!(interpret("LucasL[10]").unwrap(), "123");
+    }
+    #[test]
+    fn test_lucas_l_0() {
+      assert_eq!(interpret("LucasL[0]").unwrap(), "2");
+    }
+    #[test]
+    fn test_lucas_l_1() {
+      assert_eq!(interpret("LucasL[1]").unwrap(), "1");
+    }
+  }
+
+  mod chinese_remainder_tests {
+    use super::*;
+    #[test]
+    fn test_basic() {
+      assert_eq!(
+        interpret("ChineseRemainder[{1,2,3},{3,5,7}]").unwrap(),
+        "52"
+      );
+    }
+  }
+
+  mod divisor_sum_tests {
+    use super::*;
+    #[test]
+    fn test_basic() {
+      assert_eq!(interpret("DivisorSum[12, #^2&]").unwrap(), "210");
+    }
+  }
+
+  // ─── Combinatorics ─────────────────────────────────────────────────
+  mod bernoulli_b_tests {
+    use super::*;
+    #[test]
+    fn test_bernoulli_0() {
+      assert_eq!(interpret("BernoulliB[0]").unwrap(), "1");
+    }
+    #[test]
+    fn test_bernoulli_1() {
+      assert_eq!(interpret("BernoulliB[1]").unwrap(), "-1/2");
+    }
+    #[test]
+    fn test_bernoulli_2() {
+      assert_eq!(interpret("BernoulliB[2]").unwrap(), "1/6");
+    }
+    #[test]
+    fn test_bernoulli_odd() {
+      assert_eq!(interpret("BernoulliB[3]").unwrap(), "0");
+    }
+    #[test]
+    fn test_bernoulli_10() {
+      assert_eq!(interpret("BernoulliB[10]").unwrap(), "5/66");
+    }
+    #[test]
+    fn test_bernoulli_4() {
+      assert_eq!(interpret("BernoulliB[4]").unwrap(), "-1/30");
+    }
+  }
+
+  mod catalan_number_tests {
+    use super::*;
+    #[test]
+    fn test_catalan_5() {
+      assert_eq!(interpret("CatalanNumber[5]").unwrap(), "42");
+    }
+    #[test]
+    fn test_catalan_0() {
+      assert_eq!(interpret("CatalanNumber[0]").unwrap(), "1");
+    }
+    #[test]
+    fn test_catalan_1() {
+      assert_eq!(interpret("CatalanNumber[1]").unwrap(), "1");
+    }
+    #[test]
+    fn test_catalan_10() {
+      assert_eq!(interpret("CatalanNumber[10]").unwrap(), "16796");
+    }
+  }
+
+  mod stirling_s1_tests {
+    use super::*;
+    #[test]
+    fn test_stirling_s1_5_2() {
+      assert_eq!(interpret("StirlingS1[5, 2]").unwrap(), "-50");
+    }
+    #[test]
+    fn test_stirling_s1_boundary() {
+      assert_eq!(interpret("StirlingS1[0, 0]").unwrap(), "1");
+      assert_eq!(interpret("StirlingS1[3, 0]").unwrap(), "0");
+      assert_eq!(interpret("StirlingS1[3, 4]").unwrap(), "0");
+    }
+  }
+
+  mod stirling_s2_tests {
+    use super::*;
+    #[test]
+    fn test_stirling_s2_5_2() {
+      assert_eq!(interpret("StirlingS2[5, 2]").unwrap(), "15");
+    }
+    #[test]
+    fn test_stirling_s2_boundary() {
+      assert_eq!(interpret("StirlingS2[0, 0]").unwrap(), "1");
+      assert_eq!(interpret("StirlingS2[3, 0]").unwrap(), "0");
+    }
+  }
+
   // ─── Catch/Throw ───────────────────────────────────────────────────
   mod catch_throw_tests {
     use super::*;
