@@ -2971,3 +2971,654 @@ fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
 
   (sign * p1, q1)
 }
+
+// ─── Numerator / Denominator ───────────────────────────────────────
+
+/// Numerator[x] - Returns the numerator of a rational expression
+pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Numerator expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    // Numerator[Rational[a, b]] → a
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      Ok(rargs[0].clone())
+    }
+    // Numerator[integer] → integer
+    Expr::Integer(_) => Ok(args[0].clone()),
+    // Numerator[real] → real
+    Expr::Real(_) => Ok(args[0].clone()),
+    // Numerator[a / b] (BinaryOp Divide) → a
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      ..
+    } => Ok(left.as_ref().clone()),
+    // Numerator[Times[-1, x]] where x is Power[y, -1] → -1 (i.e. -1/y)
+    // Numerator[Times[a, Power[b, -1]]] → a
+    Expr::FunctionCall { name, args: targs }
+      if name == "Times" && targs.len() == 2 =>
+    {
+      // Check if second factor is Power[_, -1] (denominator form)
+      if is_reciprocal(&targs[1]) {
+        return Ok(targs[0].clone());
+      }
+      if is_reciprocal(&targs[0]) {
+        return Ok(targs[1].clone());
+      }
+      // Not a fraction form
+      Ok(args[0].clone())
+    }
+    _ => Ok(args[0].clone()),
+  }
+}
+
+/// Denominator[x] - Returns the denominator of a rational expression
+pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Denominator expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    // Denominator[Rational[a, b]] → b
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      Ok(rargs[1].clone())
+    }
+    // Denominator[integer] → 1
+    Expr::Integer(_) => Ok(Expr::Integer(1)),
+    // Denominator[real] → 1
+    Expr::Real(_) => Ok(Expr::Integer(1)),
+    // Denominator[a / b] → b
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      right,
+      ..
+    } => Ok(right.as_ref().clone()),
+    // Denominator[Times[a, Power[b, -1]]] → b
+    Expr::FunctionCall { name, args: targs }
+      if name == "Times" && targs.len() == 2 =>
+    {
+      if let Some(base) = get_reciprocal_base(&targs[1]) {
+        return Ok(base);
+      }
+      if let Some(base) = get_reciprocal_base(&targs[0]) {
+        return Ok(base);
+      }
+      Ok(Expr::Integer(1))
+    }
+    _ => Ok(Expr::Integer(1)),
+  }
+}
+
+/// Check if an expression is Power[x, -1]
+fn is_reciprocal(expr: &Expr) -> bool {
+  get_reciprocal_base(expr).is_some()
+}
+
+/// If expr is Power[base, -1], return Some(base), else None
+fn get_reciprocal_base(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(-1) = right.as_ref() {
+        Some(left.as_ref().clone())
+      } else {
+        match right.as_ref() {
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          } if matches!(operand.as_ref(), Expr::Integer(1)) => {
+            Some(left.as_ref().clone())
+          }
+          _ => None,
+        }
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::Integer(-1) = &args[1] {
+        Some(args[0].clone())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+// ─── Binomial ──────────────────────────────────────────────────────
+
+/// Binomial[n, k] - Binomial coefficient
+pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Binomial expects exactly 2 arguments".into(),
+    ));
+  }
+  match (&args[0], &args[1]) {
+    (Expr::Integer(n), Expr::Integer(k)) => {
+      Ok(Expr::Integer(binomial_coeff(*n, *k)))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Binomial".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute binomial coefficient for arbitrary integers (generalized)
+fn binomial_coeff(n: i128, k: i128) -> i128 {
+  if k < 0 {
+    return 0;
+  }
+  if k == 0 {
+    return 1;
+  }
+  if n >= 0 {
+    if k > n {
+      return 0;
+    }
+    // Use the smaller of k and n-k for efficiency
+    let k = k.min(n - k);
+    let mut result: i128 = 1;
+    for i in 0..k {
+      result = result * (n - i) / (i + 1);
+    }
+    result
+  } else {
+    // Generalized: Binomial[-n, k] = (-1)^k * Binomial[n+k-1, k]
+    let sign = if k % 2 == 0 { 1 } else { -1 };
+    sign * binomial_coeff(-n + k - 1, k)
+  }
+}
+
+// ─── Multinomial ───────────────────────────────────────────────────
+
+/// Multinomial[n1, n2, ...] - Multinomial coefficient (n1+n2+...)! / (n1! * n2! * ...)
+pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Ok(Expr::Integer(1));
+  }
+  let mut ints = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::Integer(n) => {
+        if *n < 0 {
+          return Err(InterpreterError::EvaluationError(
+            "Multinomial: arguments must be non-negative integers".into(),
+          ));
+        }
+        ints.push(*n);
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Multinomial".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+  // Compute using iterated binomial coefficients: Multinomial[a,b,c] = C(a+b+c, a) * C(b+c, b)
+  let mut total: i128 = 0;
+  let mut result: i128 = 1;
+  for &ni in &ints {
+    total += ni;
+    result *= binomial_coeff(total, ni);
+  }
+  Ok(Expr::Integer(result))
+}
+
+// ─── PowerMod ──────────────────────────────────────────────────────
+
+/// PowerMod[a, b, m] - Modular exponentiation: a^b mod m
+pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "PowerMod expects exactly 3 arguments".into(),
+    ));
+  }
+  match (&args[0], &args[1], &args[2]) {
+    (Expr::Integer(base), Expr::Integer(exp), Expr::Integer(modulus)) => {
+      if *modulus == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "PowerMod: modulus cannot be zero".into(),
+        ));
+      }
+      let m = modulus.unsigned_abs();
+      if *exp < 0 {
+        // Negative exponent: compute modular inverse first
+        // a^(-e) mod m = (a^(-1))^e mod m
+        if let Some(inv) = mod_inverse(*base, *modulus) {
+          let result = mod_pow_unsigned(inv as u128, (-*exp) as u128, m);
+          Ok(Expr::Integer(result as i128))
+        } else {
+          Err(InterpreterError::EvaluationError(
+            "PowerMod: modular inverse does not exist".into(),
+          ))
+        }
+      } else {
+        // Normalize base to be non-negative mod m
+        let b = ((*base % *modulus) + *modulus) % *modulus;
+        let result = mod_pow_unsigned(b as u128, *exp as u128, m);
+        Ok(Expr::Integer(result as i128))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "PowerMod".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Binary exponentiation: base^exp mod modulus (all unsigned)
+fn mod_pow_unsigned(mut base: u128, mut exp: u128, modulus: u128) -> u128 {
+  if modulus == 1 {
+    return 0;
+  }
+  let mut result: u128 = 1;
+  base %= modulus;
+  while exp > 0 {
+    if exp % 2 == 1 {
+      result = result * base % modulus;
+    }
+    exp >>= 1;
+    base = base * base % modulus;
+  }
+  result
+}
+
+/// Extended Euclidean algorithm for modular inverse
+fn mod_inverse(a: i128, m: i128) -> Option<i128> {
+  let m_abs = m.abs();
+  let a = ((a % m_abs) + m_abs) % m_abs;
+  let (mut old_r, mut r) = (a, m_abs);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  while r != 0 {
+    let q = old_r / r;
+    let temp_r = r;
+    r = old_r - q * r;
+    old_r = temp_r;
+    let temp_s = s;
+    s = old_s - q * s;
+    old_s = temp_s;
+  }
+  if old_r != 1 {
+    None // No inverse exists
+  } else {
+    Some(((old_s % m_abs) + m_abs) % m_abs)
+  }
+}
+
+// ─── PrimePi ───────────────────────────────────────────────────────
+
+/// PrimePi[n] - Counts the number of primes <= n
+pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PrimePi expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n < 2 {
+        return Ok(Expr::Integer(0));
+      }
+      let n_usize = *n as usize;
+      let mut count: i128 = 0;
+      for i in 2..=n_usize {
+        if crate::is_prime(i) {
+          count += 1;
+        }
+      }
+      Ok(Expr::Integer(count))
+    }
+    Expr::Real(f) => {
+      if *f < 2.0 {
+        return Ok(Expr::Integer(0));
+      }
+      let n = f.floor() as usize;
+      let mut count: i128 = 0;
+      for i in 2..=n {
+        if crate::is_prime(i) {
+          count += 1;
+        }
+      }
+      Ok(Expr::Integer(count))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "PrimePi".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+// ─── NextPrime ─────────────────────────────────────────────────────
+
+/// NextPrime[n] - Returns the smallest prime greater than n
+pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "NextPrime expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => {
+      let mut candidate = if *n < 2 { 2 } else { *n + 1 };
+      while !crate::is_prime(candidate as usize) {
+        candidate += 1;
+      }
+      Ok(Expr::Integer(candidate))
+    }
+    Expr::Real(f) => {
+      let mut candidate = (f.floor() as i128) + 1;
+      if candidate < 2 {
+        candidate = 2;
+      }
+      while !crate::is_prime(candidate as usize) {
+        candidate += 1;
+      }
+      Ok(Expr::Integer(candidate))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "NextPrime".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+// ─── BitLength ─────────────────────────────────────────────────────
+
+/// BitLength[n] - Number of bits needed to represent |n|
+pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "BitLength expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n == 0 {
+        Ok(Expr::Integer(0))
+      } else {
+        Ok(Expr::Integer(128 - n.abs().leading_zeros() as i128))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "BitLength".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+// ─── IntegerPart / FractionalPart ──────────────────────────────────
+
+/// IntegerPart[x] - Integer part (truncation towards zero)
+pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerPart expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => Ok(Expr::Integer(*n)),
+    Expr::Real(f) => Ok(Expr::Integer(f.trunc() as i128)),
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
+        && *d != 0
+      {
+        // Truncate towards zero
+        return Ok(Expr::Integer(n / d));
+      }
+      Ok(Expr::FunctionCall {
+        name: "IntegerPart".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => {
+      if let Some(f) = try_eval_to_f64(&args[0]) {
+        Ok(Expr::Integer(f.trunc() as i128))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "IntegerPart".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+/// FractionalPart[x] - Fractional part: x - IntegerPart[x]
+pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FractionalPart expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(_) => Ok(Expr::Integer(0)),
+    Expr::Real(f) => {
+      let frac = *f - f.trunc();
+      if frac == 0.0 {
+        Ok(Expr::Integer(0))
+      } else {
+        Ok(Expr::Real(frac))
+      }
+    }
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
+        && *d != 0
+      {
+        let int_part = n / d;
+        let frac_n = n - int_part * d;
+        if frac_n == 0 {
+          return Ok(Expr::Integer(0));
+        }
+        return Ok(make_rational(frac_n, *d));
+      }
+      Ok(Expr::FunctionCall {
+        name: "FractionalPart".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => {
+      if let Some(f) = try_eval_to_f64(&args[0]) {
+        let frac = f - f.trunc();
+        if frac == 0.0 {
+          Ok(Expr::Integer(0))
+        } else {
+          Ok(Expr::Real(frac))
+        }
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "FractionalPart".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+// ─── Chop ──────────────────────────────────────────────────────────
+
+/// Chop[x] or Chop[x, delta] - Replaces approximate real numbers close to zero by exact 0
+pub fn chop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Chop expects 1 or 2 arguments".into(),
+    ));
+  }
+  let tolerance = if args.len() == 2 {
+    match try_eval_to_f64(&args[1]) {
+      Some(t) => t,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "Chop".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1e-10 // Default tolerance
+  };
+
+  chop_expr(&args[0], tolerance)
+}
+
+fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::Real(f) => {
+      if f.abs() < tolerance {
+        Ok(Expr::Integer(0))
+      } else {
+        Ok(expr.clone())
+      }
+    }
+    Expr::List(items) => {
+      let chopped: Result<Vec<Expr>, _> =
+        items.iter().map(|e| chop_expr(e, tolerance)).collect();
+      Ok(Expr::List(chopped?))
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
+// ─── CubeRoot ──────────────────────────────────────────────────────
+
+/// CubeRoot[x] - Real-valued cube root
+pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "CubeRoot expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => {
+      // Check for perfect cubes
+      let sign = n.signum();
+      let abs_n = n.unsigned_abs();
+      let root = (abs_n as f64).cbrt().round() as u128;
+      if root * root * root == abs_n {
+        return Ok(Expr::Integer(sign * root as i128));
+      }
+      // Not a perfect cube — return symbolic
+      Ok(Expr::FunctionCall {
+        name: "CubeRoot".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    Expr::Real(f) => Ok(Expr::Real(f.signum() * f.abs().cbrt())),
+    _ => {
+      if let Some(f) = try_eval_to_f64(&args[0]) {
+        Ok(Expr::Real(f.signum() * f.abs().cbrt()))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "CubeRoot".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+// ─── Subdivide ─────────────────────────────────────────────────────
+
+/// Subdivide[n] - subdivide [0,1] into n equal parts
+/// Subdivide[xmax, n] - subdivide [0, xmax] into n equal parts
+/// Subdivide[xmin, xmax, n] - subdivide [xmin, xmax] into n equal parts
+pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Subdivide expects 1 to 3 arguments".into(),
+    ));
+  }
+  let (xmin, xmax, n_val) = match args.len() {
+    1 => {
+      // Subdivide[n]
+      match &args[0] {
+        Expr::Integer(n) => (0i128, 1i128, *n),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Subdivide".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    2 => {
+      // Subdivide[xmax, n]
+      match (&args[0], &args[1]) {
+        (Expr::Integer(xmax), Expr::Integer(n)) => (0, *xmax, *n),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Subdivide".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    3 => {
+      // Subdivide[xmin, xmax, n]
+      match (&args[0], &args[1], &args[2]) {
+        (Expr::Integer(xmin), Expr::Integer(xmax), Expr::Integer(n)) => {
+          (*xmin, *xmax, *n)
+        }
+        _ => {
+          // Try float version
+          if let (Some(xmin_f), Some(xmax_f), Some(n_f)) = (
+            try_eval_to_f64(&args[0]),
+            try_eval_to_f64(&args[1]),
+            try_eval_to_f64(&args[2]),
+          ) {
+            let n = n_f as i128;
+            if n < 0 {
+              return Err(InterpreterError::EvaluationError(
+                "Subdivide: n must be non-negative".into(),
+              ));
+            }
+            let mut items = Vec::with_capacity(n as usize + 1);
+            for i in 0..=n {
+              let t = i as f64 / n as f64;
+              let val = xmin_f + t * (xmax_f - xmin_f);
+              items.push(num_to_expr(val));
+            }
+            return Ok(Expr::List(items));
+          }
+          return Ok(Expr::FunctionCall {
+            name: "Subdivide".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    _ => unreachable!(),
+  };
+  if n_val < 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Subdivide: n must be non-negative".into(),
+    ));
+  }
+  if n_val == 0 {
+    return Ok(Expr::List(vec![Expr::Integer(xmin)]));
+  }
+  let mut items = Vec::with_capacity(n_val as usize + 1);
+  let range = xmax - xmin;
+  for i in 0..=n_val {
+    // Compute xmin + i * range / n as exact rational
+    let numer = xmin * n_val + i * range;
+    items.push(make_rational(numer, n_val));
+  }
+  Ok(Expr::List(items))
+}

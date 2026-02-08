@@ -43,9 +43,14 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
     }
     Expr::Constant(name) => Ok(name.clone()),
     Expr::List(items) => {
-      let evaluated: Result<Vec<String>, _> =
-        items.iter().map(evaluate_expr).collect();
-      Ok(format!("{{{}}}", evaluated?.join(", ")))
+      let evaluated: Vec<String> = items
+        .iter()
+        .map(evaluate_expr)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|s| s != "Nothing")
+        .collect();
+      Ok(format!("{{{}}}", evaluated.join(", ")))
     }
     Expr::FunctionCall { name, args } => {
       // Special handling for If - lazy evaluation of branches
@@ -416,9 +421,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     Expr::Constant(name) => Ok(Expr::Constant(name.clone())),
     Expr::List(items) => {
-      let evaluated: Result<Vec<Expr>, _> =
-        items.iter().map(evaluate_expr_to_expr).collect();
-      Ok(Expr::List(evaluated?))
+      let evaluated: Vec<Expr> = items
+        .iter()
+        .map(evaluate_expr_to_expr)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|e| !matches!(e, Expr::Identifier(s) if s == "Nothing"))
+        .collect();
+      Ok(Expr::List(evaluated))
     }
     Expr::FunctionCall { name, args } => {
       // Special handling for If - lazy evaluation of branches
@@ -1788,6 +1798,21 @@ pub fn evaluate_function_call_ast(
     "IntegerString" if !args.is_empty() && args.len() <= 3 => {
       return crate::functions::string_ast::integer_string_ast(args);
     }
+    "Alphabet" if args.is_empty() => {
+      return crate::functions::string_ast::alphabet_ast(args);
+    }
+    "LetterQ" if args.len() == 1 => {
+      return crate::functions::string_ast::letter_q_ast(args);
+    }
+    "UpperCaseQ" if args.len() == 1 => {
+      return crate::functions::string_ast::upper_case_q_ast(args);
+    }
+    "LowerCaseQ" if args.len() == 1 => {
+      return crate::functions::string_ast::lower_case_q_ast(args);
+    }
+    "DigitQ" if args.len() == 1 => {
+      return crate::functions::string_ast::digit_q_ast(args);
+    }
 
     // AST-native file and date functions (not available in WASM)
     #[cfg(not(target_arch = "wasm32"))]
@@ -2164,6 +2189,45 @@ pub fn evaluate_function_call_ast(
     }
     "Rationalize" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::rationalize_ast(args);
+    }
+    "Numerator" if args.len() == 1 => {
+      return crate::functions::math_ast::numerator_ast(args);
+    }
+    "Denominator" if args.len() == 1 => {
+      return crate::functions::math_ast::denominator_ast(args);
+    }
+    "Binomial" if args.len() == 2 => {
+      return crate::functions::math_ast::binomial_ast(args);
+    }
+    "Multinomial" => {
+      return crate::functions::math_ast::multinomial_ast(args);
+    }
+    "PowerMod" if args.len() == 3 => {
+      return crate::functions::math_ast::power_mod_ast(args);
+    }
+    "PrimePi" if args.len() == 1 => {
+      return crate::functions::math_ast::prime_pi_ast(args);
+    }
+    "NextPrime" if args.len() == 1 => {
+      return crate::functions::math_ast::next_prime_ast(args);
+    }
+    "BitLength" if args.len() == 1 => {
+      return crate::functions::math_ast::bit_length_ast(args);
+    }
+    "IntegerPart" if args.len() == 1 => {
+      return crate::functions::math_ast::integer_part_ast(args);
+    }
+    "FractionalPart" if args.len() == 1 => {
+      return crate::functions::math_ast::fractional_part_ast(args);
+    }
+    "Chop" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::chop_ast(args);
+    }
+    "CubeRoot" if args.len() == 1 => {
+      return crate::functions::math_ast::cube_root_ast(args);
+    }
+    "Subdivide" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::math_ast::subdivide_ast(args);
     }
 
     // AST-native boolean functions
