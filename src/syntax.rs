@@ -1250,7 +1250,18 @@ pub fn expr_to_string(expr: &Expr) -> String {
       } else {
         left_str
       };
+      let is_right_multiplicative = |e: &Expr| -> bool {
+        matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Times | BinaryOperator::Divide,
+            ..
+          }
+        ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Times")
+      };
       let needs_right_parens = (is_multiplicative && is_additive(right))
+        || (matches!(op, BinaryOperator::Divide)
+          && is_right_multiplicative(right))
         || (matches!(op, BinaryOperator::Power)
           && (matches!(
             right.as_ref(),
