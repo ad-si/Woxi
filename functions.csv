@@ -209,6 +209,7 @@ StringSplit,Splits a string into a list of substrings,✅
 StringStartsQ,Checks if a string starts with a specific substring,✅
 StringTake,Returns a substring of a string,✅
 Subdivide,Divides a range into equal parts,✅
+Subsequences,Returns all contiguous subsequences of a list,✅
 Switch,Evaluates an expression and matches it against patterns,✅
 Table,Generates a list by evaluating an expression,✅
 Take,Returns the first n elements of a list,✅

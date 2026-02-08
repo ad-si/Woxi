@@ -1470,6 +1470,9 @@ pub fn evaluate_function_call_ast(
     "Subsets" if !args.is_empty() && args.len() <= 2 => {
       return list_helpers_ast::subsets_ast(args);
     }
+    "Subsequences" if !args.is_empty() && args.len() <= 2 => {
+      return list_helpers_ast::subsequences_ast(args);
+    }
     "SparseArray" if !args.is_empty() => {
       // Return SparseArray unevaluated (like Wolfram); use Normal[] to expand
       return Ok(Expr::FunctionCall {
