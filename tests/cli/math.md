@@ -1289,3 +1289,108 @@ False
 $ wo 'CoprimeQ[14, 15]'
 True
 ```
+
+
+## Linear Algebra
+
+### `Dot`
+
+```scrut
+$ wo 'Dot[{1, 2, 3}, {4, 5, 6}]'
+32
+```
+
+```scrut
+$ wo 'Dot[{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}]'
+{{19, 22}, {43, 50}}
+```
+
+### `Det`
+
+```scrut
+$ wo 'Det[{{1, 2}, {3, 4}}]'
+-2
+```
+
+### `Inverse`
+
+```scrut
+$ wo 'Inverse[{{1, 2}, {3, 4}}]'
+{{-2, 1}, {3/2, -1/2}}
+```
+
+### `Tr`
+
+```scrut
+$ wo 'Tr[{{1, 2}, {3, 4}}]'
+5
+```
+
+### `IdentityMatrix`
+
+```scrut
+$ wo 'IdentityMatrix[3]'
+{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}
+```
+
+### `DiagonalMatrix`
+
+```scrut
+$ wo 'DiagonalMatrix[{1, 2, 3}]'
+{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}
+```
+
+### `Cross`
+
+```scrut
+$ wo 'Cross[{1, 2, 3}, {4, 5, 6}]'
+{-3, 6, -3}
+```
+
+
+## Utility Functions
+
+### `Unitize`
+
+```scrut
+$ wo 'Unitize[{0, 1, -3, 0, 5}]'
+{0, 1, 1, 0, 1}
+```
+
+### `Ramp`
+
+```scrut
+$ wo 'Ramp[{-2, -1, 0, 1, 2}]'
+{0, 0, 0, 1, 2}
+```
+
+### `KroneckerDelta`
+
+```scrut
+$ wo 'KroneckerDelta[1, 1]'
+1
+```
+
+```scrut
+$ wo 'KroneckerDelta[1, 2]'
+0
+```
+
+### `UnitStep`
+
+```scrut
+$ wo 'UnitStep[{-1, 0, 1}]'
+{0, 1, 1}
+```
+
+### `Reap` / `Sow`
+
+```scrut
+$ wo 'Reap[Sow[1]; Sow[2]; 42]'
+{42, {{1, 2}}}
+```
+
+```scrut
+$ wo 'Reap[42]'
+{42, {}}
+```

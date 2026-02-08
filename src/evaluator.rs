@@ -2480,6 +2480,28 @@ pub fn evaluate_function_call_ast(
     "Integrate" if args.len() == 2 => {
       return crate::functions::calculus_ast::integrate_ast(args);
     }
+    // AST-native linear algebra functions
+    "Dot" if args.len() == 2 => {
+      return crate::functions::linear_algebra_ast::dot_ast(args);
+    }
+    "Det" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::det_ast(args);
+    }
+    "Inverse" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::inverse_ast(args);
+    }
+    "Tr" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::tr_ast(args);
+    }
+    "IdentityMatrix" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::identity_matrix_ast(args);
+    }
+    "DiagonalMatrix" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::diagonal_matrix_ast(args);
+    }
+    "Cross" if args.len() == 2 => {
+      return crate::functions::linear_algebra_ast::cross_ast(args);
+    }
 
     // ReplaceAll and ReplaceRepeated function call forms
     "ReplaceAll" if args.len() == 2 => {
