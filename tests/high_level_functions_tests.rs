@@ -178,6 +178,68 @@ mod high_level_functions_tests {
     fn test_capitalize() {
       assert_eq!(
         interpret(r#"Capitalize["hello world"]"#).unwrap(),
+        "Hello world"
+      );
+    }
+    #[test]
+    fn test_capitalize_empty() {
+      assert_eq!(interpret(r#"Capitalize[""]"#).unwrap(), "");
+    }
+    #[test]
+    fn test_capitalize_already() {
+      assert_eq!(interpret(r#"Capitalize["Hello"]"#).unwrap(), "Hello");
+    }
+  }
+
+  mod decapitalize_tests {
+    use super::*;
+    #[test]
+    fn test_decapitalize() {
+      assert_eq!(
+        interpret(r#"Decapitalize["Hello World"]"#).unwrap(),
+        "hello World"
+      );
+    }
+    #[test]
+    fn test_decapitalize_empty() {
+      assert_eq!(interpret(r#"Decapitalize[""]"#).unwrap(), "");
+    }
+  }
+
+  mod string_insert_tests {
+    use super::*;
+    #[test]
+    fn test_string_insert() {
+      assert_eq!(
+        interpret(r#"StringInsert["abcdef", "X", 3]"#).unwrap(),
+        "abXcdef"
+      );
+    }
+    #[test]
+    fn test_string_insert_start() {
+      assert_eq!(interpret(r#"StringInsert["abc", "X", 1]"#).unwrap(), "Xabc");
+    }
+    #[test]
+    fn test_string_insert_negative() {
+      assert_eq!(
+        interpret(r#"StringInsert["abc", "X", -1]"#).unwrap(),
+        "abcX"
+      );
+    }
+  }
+
+  mod string_delete_tests {
+    use super::*;
+    #[test]
+    fn test_string_delete() {
+      assert_eq!(interpret(r#"StringDelete["abcabc", "b"]"#).unwrap(), "acac");
+    }
+    #[test]
+    fn test_string_delete_none() {
+      assert_eq!(interpret(r#"StringDelete["abc", "x"]"#).unwrap(), "abc");
+    }
+  }
+
   // ─── Catch/Throw ───────────────────────────────────────────────────
   mod catch_throw_tests {
     use super::*;

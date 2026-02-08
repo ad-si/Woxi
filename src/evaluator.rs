@@ -1850,6 +1850,18 @@ pub fn evaluate_function_call_ast(
     "DigitQ" if args.len() == 1 => {
       return crate::functions::string_ast::digit_q_ast(args);
     }
+    "StringInsert" if args.len() == 3 => {
+      return crate::functions::string_ast::string_insert_ast(args);
+    }
+    "StringDelete" if args.len() == 2 => {
+      return crate::functions::string_ast::string_delete_ast(args);
+    }
+    "Capitalize" if args.len() == 1 => {
+      return crate::functions::string_ast::capitalize_ast(args);
+    }
+    "Decapitalize" if args.len() == 1 => {
+      return crate::functions::string_ast::decapitalize_ast(args);
+    }
 
     // AST-native file and date functions (not available in WASM)
     #[cfg(not(target_arch = "wasm32"))]
