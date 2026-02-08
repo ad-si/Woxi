@@ -41,16 +41,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         Ok(format!("#{}", n))
       }
     }
-    Expr::Constant(name) => match name.as_str() {
-      "Pi" | "-Pi" => {
-        if name.starts_with('-') {
-          Ok(format_result(-std::f64::consts::PI))
-        } else {
-          Ok(format_result(std::f64::consts::PI))
-        }
-      }
-      _ => Ok(name.clone()),
-    },
+    Expr::Constant(name) => Ok(name.clone()),
     Expr::List(items) => {
       let evaluated: Result<Vec<String>, _> =
         items.iter().map(evaluate_expr).collect();
@@ -423,12 +414,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Slots should be replaced before evaluation
       Ok(Expr::Slot(*n))
     }
-    Expr::Constant(name) => match name.as_str() {
-      "Pi" => Ok(Expr::Real(std::f64::consts::PI)),
-      "-Pi" => Ok(Expr::Real(-std::f64::consts::PI)),
-      "E" => Ok(Expr::Real(std::f64::consts::E)),
-      _ => Ok(Expr::Constant(name.clone())),
-    },
+    Expr::Constant(name) => Ok(Expr::Constant(name.clone())),
     Expr::List(items) => {
       let evaluated: Result<Vec<Expr>, _> =
         items.iter().map(evaluate_expr_to_expr).collect();
@@ -782,6 +768,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         .collect::<Result<_, _>>()?;
 
       // Evaluate comparison chain
+      // Use try_eval_to_f64 for numeric comparisons (handles symbolic Pi, E, Degree, Sin[...], etc.)
+      use crate::functions::math_ast::try_eval_to_f64;
       for i in 0..operators.len() {
         let left = &values[i];
         let right = &values[i + 1];
@@ -790,7 +778,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         let result = match op {
           ComparisonOp::Equal | ComparisonOp::SameQ => {
             if let (Some(l), Some(r)) =
-              (expr_to_number(left), expr_to_number(right))
+              (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l == r
             } else {
@@ -799,7 +787,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           ComparisonOp::NotEqual | ComparisonOp::UnsameQ => {
             if let (Some(l), Some(r)) =
-              (expr_to_number(left), expr_to_number(right))
+              (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l != r
             } else {
@@ -808,7 +796,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           ComparisonOp::Less => {
             if let (Some(l), Some(r)) =
-              (expr_to_number(left), expr_to_number(right))
+              (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l < r
             } else {
@@ -821,7 +809,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           ComparisonOp::LessEqual => {
             if let (Some(l), Some(r)) =
-              (expr_to_number(left), expr_to_number(right))
+              (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l <= r
             } else {
@@ -833,7 +821,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           ComparisonOp::Greater => {
             if let (Some(l), Some(r)) =
-              (expr_to_number(left), expr_to_number(right))
+              (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l > r
             } else {
@@ -845,7 +833,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           ComparisonOp::GreaterEqual => {
             if let (Some(l), Some(r)) =
-              (expr_to_number(left), expr_to_number(right))
+              (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l >= r
             } else {
@@ -1019,8 +1007,15 @@ fn expr_to_number(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
+    Expr::Constant(name) => constant_to_f64(name),
     _ => None,
   }
+}
+
+/// Resolve a named constant to its numeric f64 value.
+/// Constants (Pi, E, Degree) are kept symbolic — use try_eval_to_f64 for numeric evaluation.
+fn constant_to_f64(_name: &str) -> Option<f64> {
+  None
 }
 
 /// Convert a number to an appropriate Expr (Integer if whole, Real otherwise)

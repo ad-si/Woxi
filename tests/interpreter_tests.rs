@@ -2952,4 +2952,121 @@ mod interpreter_tests {
       assert_eq!(interpret("IntegerString[0, 2]").unwrap(), "0");
     }
   }
+
+  mod degree_constant {
+    use super::*;
+
+    #[test]
+    fn degree_symbolic() {
+      assert_eq!(interpret("Degree").unwrap(), "Degree");
+    }
+
+    #[test]
+    fn degree_numeric() {
+      assert_eq!(interpret("N[Degree]").unwrap(), "0.017453292519943295");
+    }
+
+    #[test]
+    fn degree_arithmetic() {
+      assert_eq!(interpret("Sin[30 Degree]").unwrap(), "1/2");
+    }
+
+    #[test]
+    fn sin_exact_values() {
+      assert_eq!(interpret("Sin[0]").unwrap(), "0");
+      assert_eq!(interpret("Sin[Pi/6]").unwrap(), "1/2");
+      assert_eq!(interpret("Sin[Pi/4]").unwrap(), "1/Sqrt[2]");
+      assert_eq!(interpret("Sin[Pi/3]").unwrap(), "Sqrt[3]/2");
+      assert_eq!(interpret("Sin[Pi/2]").unwrap(), "1");
+      assert_eq!(interpret("Sin[Pi]").unwrap(), "0");
+      assert_eq!(interpret("Sin[2 Pi]").unwrap(), "0");
+    }
+
+    #[test]
+    fn sin_exact_negative() {
+      assert_eq!(interpret("Sin[210 Degree]").unwrap(), "-1/2");
+      assert_eq!(interpret("Sin[270 Degree]").unwrap(), "-1");
+    }
+
+    #[test]
+    fn cos_exact_values() {
+      assert_eq!(interpret("Cos[0]").unwrap(), "1");
+      assert_eq!(interpret("Cos[Pi/6]").unwrap(), "Sqrt[3]/2");
+      assert_eq!(interpret("Cos[Pi/4]").unwrap(), "1/Sqrt[2]");
+      assert_eq!(interpret("Cos[Pi/3]").unwrap(), "1/2");
+      assert_eq!(interpret("Cos[Pi/2]").unwrap(), "0");
+      assert_eq!(interpret("Cos[Pi]").unwrap(), "-1");
+      assert_eq!(interpret("Cos[2 Pi]").unwrap(), "1");
+    }
+
+    #[test]
+    fn cos_exact_negative() {
+      assert_eq!(interpret("Cos[120 Degree]").unwrap(), "-1/2");
+      assert_eq!(interpret("Cos[180 Degree]").unwrap(), "-1");
+    }
+
+    #[test]
+    fn tan_exact_values() {
+      assert_eq!(interpret("Tan[0]").unwrap(), "0");
+      assert_eq!(interpret("Tan[Pi/6]").unwrap(), "1/Sqrt[3]");
+      assert_eq!(interpret("Tan[Pi/4]").unwrap(), "1");
+      assert_eq!(interpret("Tan[Pi/3]").unwrap(), "Sqrt[3]");
+      assert_eq!(interpret("Tan[Pi]").unwrap(), "0");
+    }
+
+    #[test]
+    fn tan_exact_negative() {
+      assert_eq!(interpret("Tan[120 Degree]").unwrap(), "-Sqrt[3]");
+      assert_eq!(interpret("Tan[135 Degree]").unwrap(), "-1");
+    }
+
+    #[test]
+    fn sin_degree_all_quadrants() {
+      assert_eq!(interpret("Sin[45 Degree]").unwrap(), "1/Sqrt[2]");
+      assert_eq!(interpret("Sin[90 Degree]").unwrap(), "1");
+      assert_eq!(interpret("Sin[120 Degree]").unwrap(), "Sqrt[3]/2");
+      assert_eq!(interpret("Sin[135 Degree]").unwrap(), "1/Sqrt[2]");
+      assert_eq!(interpret("Sin[150 Degree]").unwrap(), "1/2");
+      assert_eq!(interpret("Sin[180 Degree]").unwrap(), "0");
+      assert_eq!(interpret("Sin[360 Degree]").unwrap(), "0");
+    }
+  }
+
+  mod e_constant {
+    use super::*;
+
+    #[test]
+    fn e_symbolic() {
+      assert_eq!(interpret("E").unwrap(), "E");
+    }
+
+    #[test]
+    fn e_numeric() {
+      assert_eq!(interpret("N[E]").unwrap(), "2.718281828459045");
+    }
+
+    #[test]
+    fn e_comparison() {
+      assert_eq!(interpret("E > 2").unwrap(), "True");
+    }
+  }
+
+  mod pi_symbolic {
+    use super::*;
+
+    #[test]
+    fn pi_stays_symbolic() {
+      assert_eq!(interpret("Pi").unwrap(), "Pi");
+    }
+
+    #[test]
+    fn pi_comparison() {
+      assert_eq!(interpret("Pi > 3").unwrap(), "True");
+    }
+
+    #[test]
+    fn pi_less() {
+      assert_eq!(interpret("Pi < 4").unwrap(), "True");
+    }
+  }
 }
