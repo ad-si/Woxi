@@ -87,6 +87,25 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "ArcTan" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| v.atan())
       }
+      "Sinh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sinh()),
+      "Cosh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.cosh()),
+      "Tanh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.tanh()),
+      "Coth" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| 1.0 / v.tanh())
+      }
+      "Sech" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| 1.0 / v.cosh())
+      }
+      "Csch" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| 1.0 / v.sinh())
+      }
+      "ArcSinh" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| v.asinh())
+      }
+      "ArcCosh" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .and_then(|v| if v >= 1.0 { Some(v.acosh()) } else { None }),
+      "ArcTanh" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .and_then(|v| if v.abs() < 1.0 { Some(v.atanh()) } else { None }),
       "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sqrt()),
       "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.abs()),
       "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.exp()),
@@ -2315,6 +2334,178 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcTan".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+// ─── Hyperbolic Trig Functions ────────────────────────────────────
+
+/// Sinh[x] - Hyperbolic sine
+pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Sinh expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) => return Ok(Expr::Real(f.sinh())),
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "Sinh".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Cosh[x] - Hyperbolic cosine
+pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Cosh expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(1)),
+    Expr::Real(f) => return Ok(Expr::Real(f.cosh())),
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "Cosh".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Tanh[x] - Hyperbolic tangent
+pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Tanh expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) => return Ok(Expr::Real(f.tanh())),
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "Tanh".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Coth[x] - Hyperbolic cotangent
+pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Coth expects 1 argument".into(),
+    ));
+  }
+  if let Expr::Real(f) = &args[0] {
+    let t = f.tanh();
+    if t == 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Coth: division by zero".into(),
+      ));
+    }
+    return Ok(Expr::Real(1.0 / t));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Coth".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Sech[x] - Hyperbolic secant
+pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Sech expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(1)),
+    Expr::Real(f) => return Ok(Expr::Real(1.0 / f.cosh())),
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "Sech".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Csch[x] - Hyperbolic cosecant
+pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Csch expects 1 argument".into(),
+    ));
+  }
+  if let Expr::Real(f) = &args[0] {
+    let s = f.sinh();
+    if s == 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "Csch: division by zero".into(),
+      ));
+    }
+    return Ok(Expr::Real(1.0 / s));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Csch".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// ArcSinh[x] - Inverse hyperbolic sine
+pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcSinh expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) => return Ok(Expr::Real(f.asinh())),
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcSinh".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// ArcCosh[x] - Inverse hyperbolic cosine
+pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCosh expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(1) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) if *f >= 1.0 => return Ok(Expr::Real(f.acosh())),
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcCosh".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// ArcTanh[x] - Inverse hyperbolic tangent
+pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcTanh expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(f.atanh())),
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcTanh".to_string(),
     args: args.to_vec(),
   })
 }

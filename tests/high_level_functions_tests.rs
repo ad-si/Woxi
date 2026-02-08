@@ -77,6 +77,107 @@ mod high_level_functions_tests {
     }
   }
 
+  // ─── Hyperbolic Trig Functions ────────────────────────────────────
+  mod sinh_tests {
+    use super::*;
+    #[test]
+    fn test_sinh_zero() {
+      assert_eq!(interpret("Sinh[0]").unwrap(), "0");
+    }
+    #[test]
+    fn test_sinh_real() {
+      assert_eq!(interpret("Sinh[1.0]").unwrap(), "1.1752011936438014");
+    }
+    #[test]
+    fn test_sinh_symbolic() {
+      assert_eq!(interpret("Sinh[x]").unwrap(), "Sinh[x]");
+    }
+  }
+
+  mod cosh_tests {
+    use super::*;
+    #[test]
+    fn test_cosh_zero() {
+      assert_eq!(interpret("Cosh[0]").unwrap(), "1");
+    }
+    #[test]
+    fn test_cosh_real() {
+      assert_eq!(interpret("Cosh[1.0]").unwrap(), "1.5430806348152437");
+    }
+    #[test]
+    fn test_cosh_symbolic() {
+      assert_eq!(interpret("Cosh[x]").unwrap(), "Cosh[x]");
+    }
+  }
+
+  mod tanh_tests {
+    use super::*;
+    #[test]
+    fn test_tanh_zero() {
+      assert_eq!(interpret("Tanh[0]").unwrap(), "0");
+    }
+    #[test]
+    fn test_tanh_real() {
+      assert_eq!(interpret("Tanh[1.0]").unwrap(), "0.7615941559557649");
+    }
+  }
+
+  mod sech_tests {
+    use super::*;
+    #[test]
+    fn test_sech_zero() {
+      assert_eq!(interpret("Sech[0]").unwrap(), "1");
+    }
+    #[test]
+    fn test_sech_real() {
+      // Sech[1.0] = 1/Cosh[1.0]
+      assert_eq!(interpret("Sech[1.0]").unwrap(), "0.6480542736638855");
+    }
+  }
+
+  mod arcsinh_tests {
+    use super::*;
+    #[test]
+    fn test_arcsinh_zero() {
+      assert_eq!(interpret("ArcSinh[0]").unwrap(), "0");
+    }
+    #[test]
+    fn test_arcsinh_real() {
+      assert_eq!(interpret("ArcSinh[1.0]").unwrap(), "0.881373587019543");
+    }
+  }
+
+  mod arccosh_tests {
+    use super::*;
+    #[test]
+    fn test_arccosh_one() {
+      assert_eq!(interpret("ArcCosh[1]").unwrap(), "0");
+    }
+    #[test]
+    fn test_arccosh_real() {
+      assert_eq!(interpret("ArcCosh[2.0]").unwrap(), "1.3169578969248166");
+    }
+  }
+
+  mod arctanh_tests {
+    use super::*;
+    #[test]
+    fn test_arctanh_zero() {
+      assert_eq!(interpret("ArcTanh[0]").unwrap(), "0");
+    }
+    #[test]
+    fn test_arctanh_real() {
+      assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
+    }
+  }
+
+  // ─── String Functions ──────────────────────────────────────────────
+  mod capitalize_tests {
+    use super::*;
+    #[test]
+    fn test_capitalize() {
+      assert_eq!(
+        interpret(r#"Capitalize["hello world"]"#).unwrap(),
   // ─── Catch/Throw ───────────────────────────────────────────────────
   mod catch_throw_tests {
     use super::*;
