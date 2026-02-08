@@ -2503,6 +2503,22 @@ pub fn evaluate_function_call_ast(
       return crate::functions::linear_algebra_ast::cross_ast(args);
     }
 
+    // AST-native additional polynomial/CAS functions
+    "ExpandAll" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::expand_all_ast(args);
+    }
+    "Cancel" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::cancel_ast(args);
+    }
+    "Collect" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::collect_ast(args);
+    }
+    "Together" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::together_ast(args);
+    }
+    "Apart" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::polynomial_ast::apart_ast(args);
+    }
     // ReplaceAll and ReplaceRepeated function call forms
     "ReplaceAll" if args.len() == 2 => {
       let expr = &args[0];

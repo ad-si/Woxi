@@ -4164,4 +4164,62 @@ mod interpreter_tests {
       );
     }
   }
+
+  // ─── CAS / Algebra ──────────────────────────────────────────────────
+
+  mod cancel {
+    use super::*;
+
+    #[test]
+    fn cancel_simple() {
+      assert_eq!(interpret("Cancel[(x^2 - 1)/(x - 1)]").unwrap(), "1 + x");
+    }
+
+    #[test]
+    fn cancel_cubic() {
+      assert_eq!(interpret("Cancel[(x^3 - x)/(x^2 - 1)]").unwrap(), "x");
+    }
+  }
+
+  mod expand_all {
+    use super::*;
+
+    #[test]
+    fn expand_all_basic() {
+      assert_eq!(
+        interpret("ExpandAll[x*(x + 1)^2]").unwrap(),
+        "x + 2*x^2 + x^3"
+      );
+    }
+  }
+
+  mod collect_tests {
+    use super::*;
+
+    #[test]
+    fn collect_basic() {
+      assert_eq!(interpret("Collect[x*y + x*z, x]").unwrap(), "x*(y + z)");
+    }
+  }
+
+  mod together {
+    use super::*;
+
+    #[test]
+    fn together_basic() {
+      assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
+    }
+  }
+
+  mod apart {
+    use super::*;
+
+    #[test]
+    fn apart_basic() {
+      assert_eq!(
+        interpret("Apart[1/(x^2 - 1)]").unwrap(),
+        "1/(2*(-1 + x)) - 1/(2*(1 + x))"
+      );
+    }
+  }
 }

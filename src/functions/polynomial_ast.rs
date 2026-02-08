@@ -1642,3 +1642,717 @@ fn divide_by_root(coeffs: &[i128], root: i128) -> Vec<i128> {
   }
   result
 }
+
+// ─── ExpandAll ──────────────────────────────────────────────────────
+
+/// ExpandAll[expr] - Recursively expands all subexpressions
+pub fn expand_all_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ExpandAll expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(expand_all_recursive(&args[0]))
+}
+
+/// Recursively expand all subexpressions, then expand at the top level
+fn expand_all_recursive(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::Identifier(_)
+    | Expr::Slot(_) => expr.clone(),
+
+    Expr::BinaryOp { op, left, right } => {
+      let left_exp = expand_all_recursive(left);
+      let right_exp = expand_all_recursive(right);
+      // After recursively expanding sub-expressions, expand at this level
+      expand_and_combine(&Expr::BinaryOp {
+        op: *op,
+        left: Box::new(left_exp),
+        right: Box::new(right_exp),
+      })
+    }
+
+    Expr::UnaryOp { op, operand } => {
+      let operand_exp = expand_all_recursive(operand);
+      expand_and_combine(&Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(operand_exp),
+      })
+    }
+
+    Expr::FunctionCall { name, args } => {
+      let expanded_args: Vec<Expr> =
+        args.iter().map(expand_all_recursive).collect();
+      // After expanding sub-expressions, expand at this level for Plus/Times/Power
+      match name.as_str() {
+        "Plus" | "Times" | "Power" => expand_and_combine(&Expr::FunctionCall {
+          name: name.clone(),
+          args: expanded_args,
+        }),
+        _ => Expr::FunctionCall {
+          name: name.clone(),
+          args: expanded_args,
+        },
+      }
+    }
+
+    _ => expr.clone(),
+  }
+}
+
+// ─── Cancel ─────────────────────────────────────────────────────────
+
+/// Cancel[expr] - Cancels common factors between numerator and denominator
+pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Cancel expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(cancel_expr(&args[0]))
+}
+
+fn cancel_expr(expr: &Expr) -> Expr {
+  // Look for division
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let num = expand_and_combine(left);
+      let den = expand_and_combine(right);
+
+      // Try polynomial division
+      if let Some(var) = find_single_variable_both(&num, &den)
+        && let (Some(num_coeffs), Some(den_coeffs)) = (
+          extract_poly_coeffs(&num, &var),
+          extract_poly_coeffs(&den, &var),
+        )
+      {
+        // Find the GCD of the two polynomials
+        if let Some(gcd_coeffs) = poly_gcd(&num_coeffs, &den_coeffs)
+          && (gcd_coeffs.len() > 1
+            || (gcd_coeffs.len() == 1 && gcd_coeffs[0] != 1))
+        {
+          // Divide both by GCD
+          if let (Some(new_num), Some(new_den)) = (
+            poly_exact_divide(&num_coeffs, &gcd_coeffs),
+            poly_exact_divide(&den_coeffs, &gcd_coeffs),
+          ) {
+            let num_expr = coeffs_to_expr(&new_num, &var);
+            let den_expr = coeffs_to_expr(&new_den, &var);
+            // If denominator is 1, just return numerator
+            if new_den == [1] {
+              return num_expr;
+            }
+            return Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(num_expr),
+              right: Box::new(den_expr),
+            };
+          }
+        }
+      }
+
+      // Fall back to simplify_division
+      simplify_division(&num, &den)
+    }
+    _ => expand_and_combine(expr),
+  }
+}
+
+/// Find the single variable that appears in either or both expressions
+fn find_single_variable_both(a: &Expr, b: &Expr) -> Option<String> {
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(a, &mut vars);
+  collect_variables(b, &mut vars);
+  if vars.len() == 1 {
+    vars.into_iter().next()
+  } else {
+    None
+  }
+}
+
+/// Compute GCD of two integer polynomials using Euclidean algorithm
+fn poly_gcd(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
+  if b.iter().all(|&c| c == 0) {
+    return Some(a.to_vec());
+  }
+  if a.iter().all(|&c| c == 0) {
+    return Some(b.to_vec());
+  }
+
+  let mut r0 = a.to_vec();
+  let mut r1 = b.to_vec();
+
+  // Trim trailing zeros
+  while r0.last() == Some(&0) && r0.len() > 1 {
+    r0.pop();
+  }
+  while r1.last() == Some(&0) && r1.len() > 1 {
+    r1.pop();
+  }
+
+  // Euclidean algorithm for polynomials
+  for _ in 0..100 {
+    if r1.iter().all(|&c| c == 0) || r1.is_empty() {
+      // Normalize: make leading coefficient positive and divide by GCD of coefficients
+      let g = r0.iter().copied().filter(|&c| c != 0).fold(0i128, gcd_i128);
+      if g > 0 {
+        let result: Vec<i128> = r0.iter().map(|c| c / g).collect();
+        if result.last().map(|&c| c < 0).unwrap_or(false) {
+          return Some(result.iter().map(|c| -c).collect());
+        }
+        return Some(result);
+      }
+      return Some(r0);
+    }
+    if r0.len() < r1.len() {
+      std::mem::swap(&mut r0, &mut r1);
+    }
+    // Pseudo-remainder
+    let remainder = poly_pseudo_remainder(&r0, &r1)?;
+    r0 = r1;
+    r1 = remainder;
+  }
+  None
+}
+
+/// Compute pseudo-remainder of polynomial division
+fn poly_pseudo_remainder(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
+  if b.is_empty() || b.iter().all(|&c| c == 0) {
+    return None;
+  }
+  let mut rem = a.to_vec();
+  let b_lead = *b.last()?;
+  let b_deg = b.len() - 1;
+
+  while rem.len() > b.len()
+    || (rem.len() == b.len() && !rem.iter().all(|&c| c == 0))
+  {
+    while rem.last() == Some(&0) && rem.len() > 1 {
+      rem.pop();
+    }
+    if rem.len() < b.len() {
+      break;
+    }
+    let rem_lead = *rem.last()?;
+    let rem_deg = rem.len() - 1;
+    if rem_deg < b_deg {
+      break;
+    }
+    let shift = rem_deg - b_deg;
+    // Multiply remainder by b_lead and subtract rem_lead * shifted b
+    for c in &mut rem {
+      *c *= b_lead;
+    }
+    for (i, &bc) in b.iter().enumerate() {
+      rem[i + shift] -= rem_lead * bc;
+    }
+    // Trim trailing zeros
+    while rem.last() == Some(&0) && rem.len() > 1 {
+      rem.pop();
+    }
+  }
+
+  // Simplify by GCD of coefficients
+  let g = rem
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, gcd_i128);
+  if g > 1 {
+    rem = rem.iter().map(|c| c / g).collect();
+  }
+  Some(rem)
+}
+
+/// Exact polynomial division: returns quotient if a is divisible by b
+fn poly_exact_divide(a: &[i128], b: &[i128]) -> Option<Vec<i128>> {
+  if b.is_empty() || b.iter().all(|&c| c == 0) {
+    return None;
+  }
+  let a_deg = a.len() as i128 - 1;
+  let b_deg = b.len() as i128 - 1;
+  if a_deg < b_deg {
+    return None;
+  }
+  let mut remainder = a.to_vec();
+  let mut quotient = vec![0i128; (a_deg - b_deg + 1) as usize];
+  let lead_b = *b.last()?;
+  if lead_b == 0 {
+    return None;
+  }
+
+  for i in (0..quotient.len()).rev() {
+    let rem_idx = i + b.len() - 1;
+    if rem_idx >= remainder.len() {
+      continue;
+    }
+    if remainder[rem_idx] % lead_b != 0 {
+      return None;
+    }
+    let q = remainder[rem_idx] / lead_b;
+    quotient[i] = q;
+    for j in 0..b.len() {
+      remainder[i + j] -= q * b[j];
+    }
+  }
+
+  if remainder.iter().any(|&c| c != 0) {
+    return None;
+  }
+  Some(quotient)
+}
+
+// ─── Collect ────────────────────────────────────────────────────────
+
+/// Collect[expr, x] - Collects terms by powers of x
+pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Collect expects exactly 2 arguments".into(),
+    ));
+  }
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Collect".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Expand and collect terms by power of var
+  let expanded = expand_and_combine(&args[0]);
+  let terms = collect_additive_terms(&expanded);
+
+  // Group terms by power of var
+  let mut power_groups: Vec<(i128, Vec<Expr>)> = Vec::new();
+
+  for term in &terms {
+    let (power, coeff) = term_var_power_and_coeff(term, var);
+    if let Some(entry) = power_groups.iter_mut().find(|(p, _)| *p == power) {
+      entry.1.push(coeff);
+    } else {
+      power_groups.push((power, vec![coeff]));
+    }
+  }
+
+  // Sort by power ascending
+  power_groups.sort_by_key(|(p, _)| *p);
+
+  // Build result: sum of (combined_coeff * var^power)
+  let mut result_terms = Vec::new();
+  for (power, coeffs) in power_groups {
+    // Sum the coefficients
+    let combined_coeff = if coeffs.len() == 1 {
+      simplify(coeffs[0].clone())
+    } else {
+      let sum = coeffs
+        .into_iter()
+        .reduce(|a, b| add_exprs(&a, &b))
+        .unwrap_or(Expr::Integer(0));
+      simplify(sum)
+    };
+
+    if matches!(&combined_coeff, Expr::Integer(0)) {
+      continue;
+    }
+
+    let var_part = if power == 0 {
+      None
+    } else if power == 1 {
+      Some(Expr::Identifier(var.to_string()))
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::Identifier(var.to_string())),
+        right: Box::new(Expr::Integer(power)),
+      })
+    };
+
+    let term = match (combined_coeff.clone(), var_part) {
+      (c, None) => c,
+      (Expr::Integer(1), Some(v)) => v,
+      (c, Some(v)) if matches!(&c, Expr::Integer(-1)) => negate_term(&v),
+      (c, Some(v)) => multiply_exprs(&v, &c),
+    };
+    result_terms.push(term);
+  }
+
+  if result_terms.is_empty() {
+    Ok(Expr::Integer(0))
+  } else {
+    Ok(build_sum(result_terms))
+  }
+}
+
+// ─── Together ───────────────────────────────────────────────────────
+
+/// Together[expr] - Combines fractions over a common denominator
+pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Together expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(together_expr(&args[0]))
+}
+
+/// Extract numerator and denominator from an expression
+fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => (*left.clone(), *right.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      (args[0].clone(), args[1].clone())
+    }
+    _ => (expr.clone(), Expr::Integer(1)),
+  }
+}
+
+fn together_expr(expr: &Expr) -> Expr {
+  // Collect additive terms and put them over a common denominator
+  let terms = collect_additive_terms(expr);
+  if terms.len() <= 1 {
+    return expr.clone();
+  }
+
+  // Extract numerator and denominator for each term
+  let mut fractions: Vec<(Expr, Expr)> = Vec::new();
+  for term in &terms {
+    fractions.push(extract_num_den(term));
+  }
+
+  // Compute the common denominator (product of all denominators, simplified)
+  let mut common_den = Expr::Integer(1);
+  let mut unique_dens: Vec<Expr> = Vec::new();
+  for (_, den) in &fractions {
+    if !matches!(den, Expr::Integer(1)) {
+      let den_str = expr_to_string(den);
+      if !unique_dens.iter().any(|d| expr_to_string(d) == den_str) {
+        unique_dens.push(den.clone());
+        common_den = multiply_exprs(&common_den, den);
+      }
+    }
+  }
+
+  if matches!(&common_den, Expr::Integer(1)) {
+    // No fractions to combine
+    return expr.clone();
+  }
+
+  // Build numerator: sum of (num_i * common_den / den_i)
+  let mut new_num_terms = Vec::new();
+  for (num, den) in &fractions {
+    if matches!(den, Expr::Integer(1)) {
+      // Multiply by full common_den
+      new_num_terms.push(multiply_exprs(num, &common_den));
+    } else {
+      // Multiply by common_den / den
+      let mut factor = Expr::Integer(1);
+      for ud in &unique_dens {
+        let ud_str = expr_to_string(ud);
+        let den_str = expr_to_string(den);
+        if ud_str != den_str {
+          factor = multiply_exprs(&factor, ud);
+        }
+      }
+      new_num_terms.push(multiply_exprs(num, &factor));
+    }
+  }
+
+  let combined_num = if new_num_terms.len() == 1 {
+    expand_and_combine(&new_num_terms.remove(0))
+  } else {
+    expand_and_combine(&build_sum(new_num_terms))
+  };
+  let combined_den = expand_and_combine(&common_den);
+
+  if matches!(&combined_den, Expr::Integer(1)) {
+    combined_num
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(combined_num),
+      right: Box::new(combined_den),
+    }
+  }
+}
+
+// ─── Apart ──────────────────────────────────────────────────────────
+
+/// Apart[expr] - Partial fraction decomposition
+pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Apart expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let var = if args.len() == 2 {
+    match &args[1] {
+      Expr::Identifier(name) => name.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Apart".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    // Find the variable automatically
+    match find_single_variable(&args[0]) {
+      Some(v) => v,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "Apart".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  };
+
+  apart_expr(&args[0], &var)
+}
+
+fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
+  // Extract numerator and denominator
+  let (num, den) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => (*left.clone(), *right.clone()),
+    _ => {
+      return Ok(expr.clone());
+    }
+  };
+
+  let num_expanded = expand_and_combine(&num);
+  let den_expanded = expand_and_combine(&den);
+
+  let num_coeffs = match extract_poly_coeffs(&num_expanded, var) {
+    Some(c) => c,
+    None => return Ok(expr.clone()),
+  };
+  let den_coeffs = match extract_poly_coeffs(&den_expanded, var) {
+    Some(c) => c,
+    None => return Ok(expr.clone()),
+  };
+
+  // If numerator degree >= denominator degree, do polynomial division first
+  if num_coeffs.len() >= den_coeffs.len() {
+    if let Some(quot_coeffs) = poly_exact_divide(&num_coeffs, &den_coeffs) {
+      // Perfectly divisible
+      return Ok(coeffs_to_expr(&quot_coeffs, var));
+    }
+    // Polynomial long division with remainder
+    let (quotient, remainder) = poly_long_divide(&num_coeffs, &den_coeffs);
+    if remainder.iter().all(|&c| c == 0) {
+      return Ok(coeffs_to_expr(&quotient, var));
+    }
+    // result = quotient + Apart[remainder/den]
+    let quot_expr = coeffs_to_expr(&quotient, var);
+    let rem_expr = coeffs_to_expr(&remainder, var);
+    let frac = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(rem_expr),
+      right: Box::new(den_expanded.clone()),
+    };
+    let apart_remainder = apart_proper_fraction(&frac, var)?;
+    return Ok(add_exprs(&quot_expr, &apart_remainder));
+  }
+
+  apart_proper_fraction(expr, var)
+}
+
+/// Perform partial fraction decomposition for a proper fraction (deg(num) < deg(den))
+fn apart_proper_fraction(
+  expr: &Expr,
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  let (num, den) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => (*left.clone(), *right.clone()),
+    _ => return Ok(expr.clone()),
+  };
+
+  let den_expanded = expand_and_combine(&den);
+  let den_coeffs = match extract_poly_coeffs(&den_expanded, var) {
+    Some(c) => c,
+    None => return Ok(expr.clone()),
+  };
+
+  // Factor the denominator
+  let gcd_coeff = den_coeffs
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, gcd_i128);
+  if gcd_coeff == 0 {
+    return Ok(expr.clone());
+  }
+  let reduced: Vec<i128> = den_coeffs.iter().map(|c| c / gcd_coeff).collect();
+  let (sign, reduced) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+    (-1i128, reduced.iter().map(|c| -c).collect::<Vec<_>>())
+  } else {
+    (1, reduced)
+  };
+  let _overall = gcd_coeff * sign;
+
+  // Find roots of denominator
+  let mut remaining = reduced.clone();
+  let mut roots: Vec<i128> = Vec::new();
+
+  loop {
+    if remaining.len() <= 1 {
+      break;
+    }
+    match find_integer_root(&remaining) {
+      Some(root) => {
+        roots.push(root);
+        remaining = divide_by_root(&remaining, root);
+      }
+      None => break,
+    }
+  }
+
+  if roots.len() < 2 {
+    // Can't decompose further
+    return Ok(expr.clone());
+  }
+
+  // Simple partial fraction for distinct linear factors:
+  // N(x) / ((x-r1)(x-r2)...) = A1/(x-r1) + A2/(x-r2) + ...
+  // where Ai = N(ri) / product of (ri - rj) for j != i
+  let num_expanded = expand_and_combine(&num);
+  let num_coeffs = match extract_poly_coeffs(&num_expanded, var) {
+    Some(c) => c,
+    None => return Ok(expr.clone()),
+  };
+
+  // If there's a remaining irreducible factor, we can't do simple partial fractions
+  if !remaining.iter().all(|&c| c == 0) && remaining.len() > 1 {
+    return Ok(expr.clone());
+  }
+
+  let mut result_terms = Vec::new();
+  let overall_factor = gcd_coeff * sign;
+
+  for (i, &root) in roots.iter().enumerate() {
+    let num_at_root = evaluate_poly(&num_coeffs, root);
+    let mut den_product = 1i128;
+    for (j, &other_root) in roots.iter().enumerate() {
+      if i != j {
+        den_product *= root - other_root;
+      }
+    }
+    // Handle the remaining factor
+    if remaining.len() == 1 && remaining[0] != 0 {
+      den_product *= remaining[0];
+    }
+    den_product *= overall_factor;
+
+    if den_product == 0 {
+      return Ok(expr.clone());
+    }
+
+    // A_i = num_at_root / den_product
+    // Term = A_i / (x - root) which in canonical form is A_i / (-root + x)
+    let g = gcd_i128(num_at_root.abs(), den_product.abs());
+    let (mut an, mut ad) = (num_at_root / g, den_product / g);
+    if ad < 0 {
+      an = -an;
+      ad = -ad;
+    }
+
+    let linear_factor = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(-root)),
+      right: Box::new(Expr::Identifier(var.to_string())),
+    };
+
+    let abs_an = an.abs();
+    let frac = if ad == 1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(abs_an)),
+        right: Box::new(linear_factor),
+      }
+    } else {
+      // an / (ad * linear_factor) — Wolfram format: 1/(2*(-1 + x))
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(abs_an)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(ad)),
+          right: Box::new(linear_factor),
+        }),
+      }
+    };
+
+    if an < 0 {
+      result_terms.push(Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(frac),
+      });
+    } else {
+      result_terms.push(frac);
+    }
+  }
+
+  if result_terms.is_empty() {
+    Ok(expr.clone())
+  } else {
+    Ok(build_sum(result_terms))
+  }
+}
+
+/// Polynomial long division returning (quotient, remainder) as coefficient vectors
+fn poly_long_divide(num: &[i128], den: &[i128]) -> (Vec<i128>, Vec<i128>) {
+  let n_deg = num.len();
+  let d_deg = den.len();
+  if n_deg < d_deg {
+    return (vec![0], num.to_vec());
+  }
+  let mut remainder = num.to_vec();
+  let mut quotient = vec![0i128; n_deg - d_deg + 1];
+  let lead_den = den[d_deg - 1];
+  if lead_den == 0 {
+    return (vec![0], num.to_vec());
+  }
+
+  for i in (0..quotient.len()).rev() {
+    let rem_idx = i + d_deg - 1;
+    if rem_idx >= remainder.len() {
+      continue;
+    }
+    if remainder[rem_idx] % lead_den != 0 {
+      // Non-integer quotient - stop here
+      return (vec![0], num.to_vec());
+    }
+    let q = remainder[rem_idx] / lead_den;
+    quotient[i] = q;
+    for j in 0..d_deg {
+      remainder[i + j] -= q * den[j];
+    }
+  }
+  (quotient, remainder)
+}
