@@ -5,11 +5,16 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
-/// Helper to extract numeric value from Expr
+/// Helper - constants are kept symbolic, no direct f64 conversion in expr_to_num.
+fn constant_to_f64(_name: &str) -> Option<f64> {
+  None
+}
+
 fn expr_to_num(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
+    Expr::Constant(name) => constant_to_f64(name),
     // Handle Rational[numer, denom]
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
@@ -22,6 +27,127 @@ fn expr_to_num(expr: &Expr) -> Option<f64> {
       }
       None
     }
+    _ => None,
+  }
+}
+
+/// Recursively try to evaluate any expression to f64.
+/// This handles constants (Pi, E, Degree), arithmetic operations, and known functions.
+/// Used by N[], comparisons, and anywhere a numeric value is needed from a symbolic expression.
+pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::Constant(name) => match name.as_str() {
+      "Pi" => Some(std::f64::consts::PI),
+      "-Pi" => Some(-std::f64::consts::PI),
+      "E" => Some(std::f64::consts::E),
+      "Degree" => Some(std::f64::consts::PI / 180.0),
+      "-Degree" => Some(-std::f64::consts::PI / 180.0),
+      _ => None,
+    },
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => try_eval_to_f64(operand).map(|v| -v),
+    Expr::BinaryOp { op, left, right } => {
+      let l = try_eval_to_f64(left)?;
+      let r = try_eval_to_f64(right)?;
+      match op {
+        BinaryOperator::Plus => Some(l + r),
+        BinaryOperator::Minus => Some(l - r),
+        BinaryOperator::Times => Some(l * r),
+        BinaryOperator::Divide => {
+          if r != 0.0 {
+            Some(l / r)
+          } else {
+            None
+          }
+        }
+        BinaryOperator::Power => Some(l.powf(r)),
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Rational" if args.len() == 2 => {
+        let n = try_eval_to_f64(&args[0])?;
+        let d = try_eval_to_f64(&args[1])?;
+        if d != 0.0 { Some(n / d) } else { None }
+      }
+      "Sin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sin()),
+      "Cos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.cos()),
+      "Tan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.tan()),
+      "ArcSin" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| v.asin())
+      }
+      "ArcCos" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| v.acos())
+      }
+      "ArcTan" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| v.atan())
+      }
+      "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sqrt()),
+      "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.abs()),
+      "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.exp()),
+      "Log" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .and_then(|v| if v > 0.0 { Some(v.ln()) } else { None }),
+      "Log" if args.len() == 2 => {
+        let base = try_eval_to_f64(&args[0])?;
+        let val = try_eval_to_f64(&args[1])?;
+        if base > 0.0 && base != 1.0 && val > 0.0 {
+          Some(val.ln() / base.ln())
+        } else {
+          None
+        }
+      }
+      "Log10" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .and_then(|v| if v > 0.0 { Some(v.log10()) } else { None }),
+      "Log2" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .and_then(|v| if v > 0.0 { Some(v.log2()) } else { None }),
+      "Power" if args.len() == 2 => {
+        let b = try_eval_to_f64(&args[0])?;
+        let e = try_eval_to_f64(&args[1])?;
+        Some(b.powf(e))
+      }
+      "Floor" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| v.floor())
+      }
+      "Ceiling" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| v.ceil())
+      }
+      "Round" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| v.round())
+      }
+      "Times" => {
+        let mut product = 1.0;
+        for arg in args {
+          product *= try_eval_to_f64(arg)?;
+        }
+        Some(product)
+      }
+      "Plus" => {
+        let mut sum = 0.0;
+        for arg in args {
+          sum += try_eval_to_f64(arg)?;
+        }
+        Some(sum)
+      }
+      "Factorial" if args.len() == 1 => {
+        if let Expr::Integer(n) = &args[0]
+          && *n >= 0
+          && *n <= 170
+        {
+          let mut result = 1.0f64;
+          for i in 2..=(*n as u64) {
+            result *= i as f64;
+          }
+          return Some(result);
+        }
+        None
+      }
+      _ => None,
+    },
     _ => None,
   }
 }
@@ -75,6 +201,27 @@ fn make_rational(numer: i128, denom: i128) -> Expr {
       name: "Rational".to_string(),
       args: vec![Expr::Integer(numer), Expr::Integer(denom)],
     }
+  }
+}
+
+/// Multiply a numeric scalar (Integer, Rational, or Real) by an expression.
+/// Handles identity (1 * x = x) and zero (0 * x = 0).
+fn multiply_scalar_by_expr(
+  scalar: &Expr,
+  expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match scalar {
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    Expr::Integer(1) => Ok(expr.clone()),
+    Expr::Integer(-1) => Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), expr.clone()],
+    }),
+    _ => Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(scalar.clone()),
+      right: Box::new(expr.clone()),
+    }),
   }
 }
 
@@ -355,6 +502,27 @@ fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(make_rational(*numer, *denom));
   }
 
+  // Simplify (n * expr) / d where n, d are integers → simplify coefficient
+  if let Expr::Integer(d) = b
+    && *d != 0
+    && let Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } = a
+  {
+    // (Integer * expr) / Integer → (n/d) * expr
+    if let Expr::Integer(n) = left.as_ref() {
+      let coeff = make_rational(*n, *d);
+      return multiply_scalar_by_expr(&coeff, right);
+    }
+    // (expr * Integer) / Integer → expr * (n/d)
+    if let Expr::Integer(n) = right.as_ref() {
+      let coeff = make_rational(*n, *d);
+      return multiply_scalar_by_expr(&coeff, left);
+    }
+  }
+
   // For reals, perform floating-point division
   match (expr_to_num(a), expr_to_num(b)) {
     (Some(x), Some(y)) => {
@@ -526,13 +694,21 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args.iter().collect()
   };
 
-  let mut max: Option<f64> = None;
-  for item in items {
-    if let Some(n) = expr_to_num(item) {
-      max = Some(match max {
-        Some(m) => m.max(n),
-        None => n,
-      });
+  let mut best_val: Option<f64> = None;
+  let mut best_expr: Option<&Expr> = None;
+  for item in &items {
+    if let Some(n) = try_eval_to_f64(item) {
+      match best_val {
+        Some(m) if n > m => {
+          best_val = Some(n);
+          best_expr = Some(item);
+        }
+        None => {
+          best_val = Some(n);
+          best_expr = Some(item);
+        }
+        _ => {}
+      }
     } else {
       // Non-numeric, return symbolic
       return Ok(Expr::FunctionCall {
@@ -542,7 +718,10 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(num_to_expr(max.unwrap_or(f64::NEG_INFINITY)))
+  match best_expr {
+    Some(expr) => Ok((*expr).clone()),
+    None => Ok(num_to_expr(f64::NEG_INFINITY)),
+  }
 }
 
 /// Min[args...] or Min[list] - Minimum value
@@ -566,13 +745,21 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args.iter().collect()
   };
 
-  let mut min: Option<f64> = None;
-  for item in items {
-    if let Some(n) = expr_to_num(item) {
-      min = Some(match min {
-        Some(m) => m.min(n),
-        None => n,
-      });
+  let mut best_val: Option<f64> = None;
+  let mut best_expr: Option<&Expr> = None;
+  for item in &items {
+    if let Some(n) = try_eval_to_f64(item) {
+      match best_val {
+        Some(m) if n < m => {
+          best_val = Some(n);
+          best_expr = Some(item);
+        }
+        None => {
+          best_val = Some(n);
+          best_expr = Some(item);
+        }
+        _ => {}
+      }
     } else {
       return Ok(Expr::FunctionCall {
         name: "Min".to_string(),
@@ -581,7 +768,10 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(num_to_expr(min.unwrap_or(f64::INFINITY)))
+  match best_expr {
+    Some(expr) => Ok((*expr).clone()),
+    None => Ok(num_to_expr(f64::INFINITY)),
+  }
 }
 
 /// Abs[x] - Absolute value
@@ -591,7 +781,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Abs expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
+  if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(num_to_expr(n.abs()))
   } else {
     Ok(Expr::FunctionCall {
@@ -608,7 +798,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sign expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
+  if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(Expr::Integer(if n > 0.0 {
       1
     } else if n < 0.0 {
@@ -631,21 +821,68 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sqrt expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    if n < 0.0 {
-      // Complex result - return symbolic
+  match &args[0] {
+    // Perfect squares: Sqrt[0]=0, Sqrt[1]=1, Sqrt[4]=2, etc.
+    Expr::Integer(n) if *n >= 0 => {
+      let root = (*n as f64).sqrt();
+      if root.fract() == 0.0 && root.abs() < i128::MAX as f64 {
+        return Ok(Expr::Integer(root as i128));
+      }
+      // Simplify: extract largest perfect square factor
+      // e.g., Sqrt[12] = 2*Sqrt[3]
+      let n_val = *n as u64;
+      let mut outside = 1u64;
+      let mut inside = n_val;
+      let mut factor = 2u64;
+      while factor * factor <= inside {
+        while inside.is_multiple_of(factor * factor) {
+          outside *= factor;
+          inside /= factor * factor;
+        }
+        factor += 1;
+      }
+      if outside > 1 && inside > 1 {
+        return Ok(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(outside as i128),
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::Integer(inside as i128)],
+            },
+          ],
+        });
+      }
+      // Not a perfect square, return symbolic
       Ok(Expr::FunctionCall {
         name: "Sqrt".to_string(),
         args: args.to_vec(),
       })
-    } else {
-      Ok(num_to_expr(n.sqrt()))
     }
-  } else {
-    Ok(Expr::FunctionCall {
+    // Sqrt[Rational[a, b]] — evaluate for perfect squares
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
+        && *n >= 0
+        && *d > 0
+      {
+        let nr = (*n as f64).sqrt();
+        let dr = (*d as f64).sqrt();
+        if nr.fract() == 0.0 && dr.fract() == 0.0 {
+          return Ok(make_rational(nr as i128, dr as i128));
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
+    _ => Ok(Expr::FunctionCall {
       name: "Sqrt".to_string(),
       args: args.to_vec(),
-    })
+    }),
   }
 }
 
@@ -690,7 +927,7 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Floor expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
+  if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(Expr::Integer(n.floor() as i128))
   } else {
     Ok(Expr::FunctionCall {
@@ -707,7 +944,7 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Ceiling expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
+  if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(Expr::Integer(n.ceil() as i128))
   } else {
     Ok(Expr::FunctionCall {
@@ -765,7 +1002,8 @@ pub fn mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
-      if let (Some(a), Some(b)) = (expr_to_num(&args[0]), expr_to_num(&args[1]))
+      if let (Some(a), Some(b)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
       {
         if b == 0.0 {
           Err(InterpreterError::EvaluationError(
@@ -803,7 +1041,8 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
-      if let (Some(a), Some(b)) = (expr_to_num(&args[0]), expr_to_num(&args[1]))
+      if let (Some(a), Some(b)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
       {
         if b == 0.0 {
           Err(InterpreterError::EvaluationError(
@@ -1101,16 +1340,25 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "N expects 1 or 2 arguments".into(),
     ));
   }
-  // For now, just return the numeric value if it's already numeric
-  match &args[0] {
+  n_eval(&args[0])
+}
+
+/// Recursively convert an expression to numeric (Real) form
+fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
     Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
-    Expr::Real(f) => Ok(Expr::Real(*f)),
-    Expr::Constant(c) => match c.as_str() {
-      "Pi" => Ok(Expr::Real(std::f64::consts::PI)),
-      "E" => Ok(Expr::Real(std::f64::consts::E)),
-      _ => Ok(args[0].clone()),
-    },
-    _ => Ok(args[0].clone()),
+    Expr::Real(_) => Ok(expr.clone()),
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, _> = items.iter().map(n_eval).collect();
+      Ok(Expr::List(results?))
+    }
+    _ => {
+      if let Some(v) = try_eval_to_f64(expr) {
+        Ok(Expr::Real(v))
+      } else {
+        Ok(expr.clone())
+      }
+    }
   }
 }
 
@@ -1376,21 +1624,425 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Sin, Cos, Tan, etc. - Trigonometric functions
+/// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
+/// Returns Some((k, n)) in lowest terms, None if not recognized.
+/// Handles patterns: Pi, n*Pi, Pi/d, n*Pi/d, n*Degree, Degree, and FunctionCall variants.
+fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
+  use crate::syntax::BinaryOperator;
+
+  // Helper to extract an integer value
+  fn as_int(e: &Expr) -> Option<i64> {
+    match e {
+      Expr::Integer(n) => Some(*n as i64),
+      // Handle negative constants like -Pi parsed as Constant("-Pi")
+      _ => None,
+    }
+  }
+
+  // Helper to check if expr is Pi
+  fn is_pi(e: &Expr) -> bool {
+    matches!(e, Expr::Constant(name) if name == "Pi")
+  }
+
+  // Helper to check if expr is Degree
+  fn is_degree(e: &Expr) -> bool {
+    matches!(e, Expr::Constant(name) if name == "Degree")
+  }
+
+  // Helper to reduce fraction
+  fn reduce(k: i64, n: i64) -> (i64, i64) {
+    if k == 0 {
+      return (0, 1);
+    }
+    let g = gcd(k.unsigned_abs() as i128, n.unsigned_abs() as i128) as i64;
+    let (k, n) = (k / g, n / g);
+    if n < 0 { (-k, -n) } else { (k, n) }
+  }
+
+  match expr {
+    // Pi => (1, 1)
+    _ if is_pi(expr) => Some((1, 1)),
+    // -Pi => (-1, 1)
+    Expr::Constant(name) if name == "-Pi" => Some((-1, 1)),
+    // Degree => (1, 180)
+    _ if is_degree(expr) => Some((1, 180)),
+    // -Degree => (-1, 180)
+    Expr::Constant(name) if name == "-Degree" => Some((-1, 180)),
+    // Integer(0) => (0, 1) — sin(0) etc.
+    Expr::Integer(0) => Some((0, 1)),
+
+    // n * Pi or Pi * n
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if is_pi(right)
+        && let Some(n) = as_int(left)
+      {
+        return Some(reduce(n, 1));
+      }
+      if is_pi(left)
+        && let Some(n) = as_int(right)
+      {
+        return Some(reduce(n, 1));
+      }
+      // n * Degree or Degree * n
+      if is_degree(right)
+        && let Some(n) = as_int(left)
+      {
+        return Some(reduce(n, 180));
+      }
+      if is_degree(left)
+        && let Some(n) = as_int(right)
+      {
+        return Some(reduce(n, 180));
+      }
+      // n * (Pi / d) or (Pi / d) * n
+      if let Some(n) = as_int(left)
+        && let Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: num,
+          right: den,
+        } = right.as_ref()
+        && is_pi(num)
+        && let Some(d) = as_int(den)
+      {
+        return Some(reduce(n, d));
+      }
+      if let Some(n) = as_int(right)
+        && let Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: num,
+          right: den,
+        } = left.as_ref()
+        && is_pi(num)
+        && let Some(d) = as_int(den)
+      {
+        return Some(reduce(n, d));
+      }
+      None
+    }
+
+    // Pi / d
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      if is_pi(left)
+        && let Some(d) = as_int(right)
+      {
+        return Some(reduce(1, d));
+      }
+      // (n * Pi) / d
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: tl,
+        right: tr,
+      } = left.as_ref()
+      {
+        if is_pi(tr)
+          && let (Some(n), Some(d)) = (as_int(tl), as_int(right))
+        {
+          return Some(reduce(n, d));
+        }
+        if is_pi(tl)
+          && let (Some(n), Some(d)) = (as_int(tr), as_int(right))
+        {
+          return Some(reduce(n, d));
+        }
+      }
+      None
+    }
+
+    // FunctionCall("Times", [n, Pi]) or FunctionCall("Times", [n, Degree])
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      if is_pi(&args[1])
+        && let Some(n) = as_int(&args[0])
+      {
+        return Some(reduce(n, 1));
+      }
+      if is_pi(&args[0])
+        && let Some(n) = as_int(&args[1])
+      {
+        return Some(reduce(n, 1));
+      }
+      if is_degree(&args[1])
+        && let Some(n) = as_int(&args[0])
+      {
+        return Some(reduce(n, 180));
+      }
+      if is_degree(&args[0])
+        && let Some(n) = as_int(&args[1])
+      {
+        return Some(reduce(n, 180));
+      }
+      // Times[Rational[k, n], Pi]
+      if let Expr::FunctionCall {
+        name: rn,
+        args: rargs,
+      } = &args[0]
+        && rn == "Rational"
+        && rargs.len() == 2
+        && is_pi(&args[1])
+        && let (Some(k), Some(n)) = (as_int(&rargs[0]), as_int(&rargs[1]))
+      {
+        return Some(reduce(k, n));
+      }
+      None
+    }
+
+    // Rational[k, n] * Pi handled via BinaryOp(Times, Rational[k,n], Pi)
+    // FunctionCall("Rational", [k, n]) as a standalone — not a Pi fraction
+    _ => None,
+  }
+}
+
+/// Exact Sin value for k*Pi/n. Returns None if no simple exact form.
+fn exact_sin(k: i64, n: i64) -> Option<Expr> {
+  // Normalize to [0, 2*Pi) i.e., k mod 2n, with k in [0, 2n)
+  let period = 2 * n;
+  let k = ((k % period) + period) % period;
+  // Use symmetry: sin is periodic with period 2*Pi
+  // Map to first quadrant and track sign
+  let (k_ref, sign) = if k <= n / 2 {
+    // First quadrant: [0, Pi/2]
+    // k/n is in [0, 1/2], angle is in [0, Pi/2]
+    // But we need to check: k*Pi/n in [0, Pi/2] means k/n <= 1/2
+    (k, 1i64)
+  } else if k <= n {
+    // Second quadrant: (Pi/2, Pi]
+    // sin(Pi - x) = sin(x)
+    (n - k, 1)
+  } else if k < 2 * n {
+    // Third and fourth quadrants: (Pi, 2*Pi)
+    // sin(Pi + x) = -sin(x)
+    if k <= 3 * n / 2 {
+      (k - n, -1)
+    } else {
+      (2 * n - k, -1)
+    }
+  } else {
+    (0, 1) // k == 2n, sin(2*Pi) = 0
+  };
+
+  // Reduce k_ref/n to lowest terms for table lookup
+  let g = gcd(k_ref as i128, n as i128) as i64;
+  let (kr, nr) = (k_ref / g, n / g);
+  // Now compute sin(kr * Pi / nr) for first quadrant reference angle
+  let val = match (kr, nr) {
+    (0, _) => Expr::Integer(0),
+    // sin(Pi/6) = 1/2
+    (1, 6) => make_rational(1, 2),
+    // sin(Pi/4) = 1/Sqrt[2]
+    (1, 4) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(2)],
+      }),
+    },
+    // sin(Pi/3) = Sqrt[3]/2
+    (1, 3) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(3)],
+      }),
+      right: Box::new(Expr::Integer(2)),
+    },
+    // sin(Pi/2) = 1
+    (1, 2) => Expr::Integer(1),
+    _ => return None,
+  };
+
+  if sign == -1 {
+    if matches!(val, Expr::Integer(0)) {
+      Some(Expr::Integer(0))
+    } else {
+      Some(negate_expr(val))
+    }
+  } else {
+    Some(val)
+  }
+}
+
+/// Exact Cos value for k*Pi/n. Uses cos(x) = sin(Pi/2 - x).
+fn exact_cos(k: i64, n: i64) -> Option<Expr> {
+  // cos(k*Pi/n) = sin(Pi/2 - k*Pi/n) = sin((n - 2k)*Pi/(2n))
+  // Simplify: cos(k*Pi/n) = sin((n/2 - k)*Pi/n) -- only works if n is even
+  // Better: use direct table
+  let period = 2 * n;
+  let k = ((k % period) + period) % period;
+  // Map to first quadrant
+  let (k_ref, sign) = if k <= n / 2 {
+    (k, 1i64)
+  } else if k <= n {
+    (n - k, -1)
+  } else if k <= 3 * n / 2 {
+    (k - n, -1)
+  } else {
+    (2 * n - k, 1)
+  };
+
+  // Reduce k_ref/n to lowest terms for table lookup
+  let g = gcd(k_ref as i128, n as i128) as i64;
+  let (kr, nr) = (k_ref / g, n / g);
+  let val = match (kr, nr) {
+    (0, _) => Expr::Integer(1),
+    // cos(Pi/6) = Sqrt[3]/2
+    (1, 6) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(3)],
+      }),
+      right: Box::new(Expr::Integer(2)),
+    },
+    // cos(Pi/4) = 1/Sqrt[2]
+    (1, 4) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(2)],
+      }),
+    },
+    // cos(Pi/3) = 1/2
+    (1, 3) => make_rational(1, 2),
+    // cos(Pi/2) = 0
+    (1, 2) => Expr::Integer(0),
+    _ => return None,
+  };
+
+  if sign == -1 {
+    if matches!(val, Expr::Integer(0)) {
+      Some(Expr::Integer(0))
+    } else {
+      Some(negate_expr(val))
+    }
+  } else {
+    Some(val)
+  }
+}
+
+/// Exact Tan value for k*Pi/n.
+/// Tan has period Pi, so normalize k mod n. Undefined when cos = 0.
+fn exact_tan(k: i64, n: i64) -> Option<Expr> {
+  // Tan has period Pi, so reduce k*Pi/n mod Pi => (k mod n)*Pi/n
+  let k_mod = ((k % n) + n) % n; // in [0, n)
+  // Use symmetry: tan(-x) = -tan(x), tan(Pi - x) = -tan(x)
+  // Normalize to [0, Pi/2) i.e., k_mod/n in [0, 1/2)
+  // Check for Pi/2: k_mod*2 == n means angle is Pi/2 (undefined)
+  if k_mod * 2 == n {
+    return None; // tan(Pi/2) is undefined
+  }
+  let (k_ref, n_ref, sign) = if k_mod * 2 < n {
+    // First half [0, Pi/2): positive
+    (k_mod, n, 1i64)
+  } else {
+    // Second half (Pi/2, Pi): tan(Pi - x) = -tan(x)
+    (n - k_mod, n, -1)
+  };
+  // Reduce fraction k_ref/n_ref
+  let g = gcd(k_ref as i128, n_ref as i128) as i64;
+  let (kr, nr) = (k_ref / g, n_ref / g);
+
+  let val = match (kr, nr) {
+    (0, _) => Expr::Integer(0),
+    // tan(Pi/6) = 1/Sqrt[3]
+    (1, 6) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(3)],
+      }),
+    },
+    // tan(Pi/4) = 1
+    (1, 4) => Expr::Integer(1),
+    // tan(Pi/3) = Sqrt[3]
+    (1, 3) => Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::Integer(3)],
+    },
+    _ => return None,
+  };
+
+  if sign == -1 {
+    if matches!(val, Expr::Integer(0)) {
+      Some(Expr::Integer(0))
+    } else {
+      Some(negate_expr(val))
+    }
+  } else {
+    Some(val)
+  }
+}
+
+/// Negate an Expr, simplifying integer, rational, and division cases
+fn negate_expr(expr: Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) => Expr::Integer(-n),
+    Expr::Real(f) => Expr::Real(-f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-n), args[1].clone()],
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), Expr::FunctionCall { name, args }],
+        }
+      }
+    }
+    // -a/b => (-a)/b
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(negate_expr(*left)),
+      right,
+    },
+    other => Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), other],
+    },
+  }
+}
+
+/// Sin, Cos, Tan - Trigonometric functions (fully symbolic)
+/// Only evaluate to float for Real arguments. For integer/symbolic args,
+/// try exact Pi-fraction lookup, otherwise return unevaluated.
 pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Sin expects 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    Ok(num_to_expr(n.sin()))
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Sin".to_string(),
-      args: args.to_vec(),
-    })
+  // Real args: evaluate numerically
+  if let Expr::Real(f) = &args[0] {
+    return Ok(num_to_expr(f.sin()));
   }
+  // Try symbolic Pi-fraction: Sin[k*Pi/n]
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && let Some(exact) = exact_sin(k, n)
+  {
+    return Ok(exact);
+  }
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Sin".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1399,14 +2051,18 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cos expects 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    Ok(num_to_expr(n.cos()))
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Cos".to_string(),
-      args: args.to_vec(),
-    })
+  if let Expr::Real(f) = &args[0] {
+    return Ok(num_to_expr(f.cos()));
   }
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && let Some(exact) = exact_cos(k, n)
+  {
+    return Ok(exact);
+  }
+  Ok(Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1415,14 +2071,18 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Tan expects 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    Ok(num_to_expr(n.tan()))
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Tan".to_string(),
-      args: args.to_vec(),
-    })
+  if let Expr::Real(f) = &args[0] {
+    return Ok(num_to_expr(f.tan()));
   }
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && let Some(exact) = exact_tan(k, n)
+  {
+    return Ok(exact);
+  }
+  Ok(Expr::FunctionCall {
+    name: "Tan".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1431,52 +2091,50 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Exp expects 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    Ok(num_to_expr(n.exp()))
-  } else {
-    Ok(Expr::FunctionCall {
+  match &args[0] {
+    Expr::Integer(0) => Ok(Expr::Integer(1)),
+    Expr::Real(f) => Ok(Expr::Real(f.exp())),
+    _ => Ok(Expr::FunctionCall {
       name: "Exp".to_string(),
       args: args.to_vec(),
-    })
+    }),
   }
 }
 
 pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     1 => {
-      if let Some(n) = expr_to_num(&args[0]) {
-        if n > 0.0 {
-          Ok(Expr::Real(n.ln()))
-        } else {
-          Err(InterpreterError::EvaluationError(
-            "Log: argument must be positive".into(),
-          ))
-        }
-      } else {
-        Ok(Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: args.to_vec(),
-        })
+      // Log[1] = 0
+      if matches!(&args[0], Expr::Integer(1)) {
+        return Ok(Expr::Integer(0));
       }
+      if let Expr::Real(f) = &args[0] {
+        if *f > 0.0 {
+          return Ok(Expr::Real(f.ln()));
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Log: argument must be positive".into(),
+          ));
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: args.to_vec(),
+      })
     }
     2 => {
-      // Log[base, x]
-      if let (Some(base), Some(x)) =
-        (expr_to_num(&args[0]), expr_to_num(&args[1]))
+      // Log[base, x] — evaluate only for Real args
+      if let (Expr::Real(base), Expr::Real(x)) = (&args[0], &args[1])
+        && *base > 0.0
+        && *base != 1.0
+        && *x > 0.0
       {
-        if base > 0.0 && base != 1.0 && x > 0.0 {
-          Ok(Expr::Real(x.ln() / base.ln()))
-        } else {
-          Err(InterpreterError::EvaluationError(
-            "Log: invalid arguments".into(),
-          ))
-        }
-      } else {
-        Ok(Expr::FunctionCall {
-          name: "Log".to_string(),
-          args: args.to_vec(),
-        })
+        return Ok(Expr::Real(x.ln() / base.ln()));
       }
+      Ok(Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: args.to_vec(),
+      })
     }
     _ => Err(InterpreterError::EvaluationError(
       "Log expects 1 or 2 arguments".into(),
@@ -1491,20 +2149,15 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Log10 expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    if n > 0.0 {
-      Ok(Expr::Real(n.log10()))
-    } else {
-      Err(InterpreterError::EvaluationError(
-        "Log10: argument must be positive".into(),
-      ))
-    }
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Log10".to_string(),
-      args: args.to_vec(),
-    })
+  if let Expr::Real(f) = &args[0]
+    && *f > 0.0
+  {
+    return Ok(Expr::Real(f.log10()));
   }
+  Ok(Expr::FunctionCall {
+    name: "Log10".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Log2[x] - Base-2 logarithm
@@ -1514,83 +2167,117 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Log2 expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    if n > 0.0 {
-      Ok(Expr::Real(n.log2()))
-    } else {
-      Err(InterpreterError::EvaluationError(
-        "Log2: argument must be positive".into(),
-      ))
-    }
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Log2".to_string(),
-      args: args.to_vec(),
-    })
+  if let Expr::Real(f) = &args[0]
+    && *f > 0.0
+  {
+    return Ok(Expr::Real(f.log2()));
   }
+  Ok(Expr::FunctionCall {
+    name: "Log2".to_string(),
+    args: args.to_vec(),
+  })
 }
 
-/// ArcSin[x] - Inverse sine
+/// ArcSin[x] - Inverse sine (symbolic)
 pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ArcSin expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    if (-1.0..=1.0).contains(&n) {
-      Ok(Expr::Real(n.asin()))
-    } else {
-      Err(InterpreterError::EvaluationError(
-        "ArcSin: argument must be in the range [-1, 1]".into(),
-      ))
+  // Exact values: ArcSin[0] = 0, ArcSin[1] = Pi/2, ArcSin[-1] = -Pi/2
+  // ArcSin[1/2] = Pi/6, ArcSin[-1/2] = -Pi/6
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Integer(1) => {
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      });
     }
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "ArcSin".to_string(),
-      args: args.to_vec(),
-    })
+    Expr::Integer(-1) => {
+      return Ok(negate_expr(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      }));
+    }
+    Expr::Real(f) => {
+      if (-1.0..=1.0).contains(f) {
+        return Ok(Expr::Real(f.asin()));
+      }
+    }
+    _ => {}
   }
+  Ok(Expr::FunctionCall {
+    name: "ArcSin".to_string(),
+    args: args.to_vec(),
+  })
 }
 
-/// ArcCos[x] - Inverse cosine
+/// ArcCos[x] - Inverse cosine (symbolic)
 pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ArcCos expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    if (-1.0..=1.0).contains(&n) {
-      Ok(Expr::Real(n.acos()))
-    } else {
-      Err(InterpreterError::EvaluationError(
-        "ArcCos: argument must be in the range [-1, 1]".into(),
-      ))
+  // Exact values: ArcCos[0] = Pi/2, ArcCos[1] = 0, ArcCos[-1] = Pi
+  match &args[0] {
+    Expr::Integer(1) => return Ok(Expr::Integer(0)),
+    Expr::Integer(0) => {
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      });
     }
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "ArcCos".to_string(),
-      args: args.to_vec(),
-    })
+    Expr::Integer(-1) => return Ok(Expr::Constant("Pi".to_string())),
+    Expr::Real(f) => {
+      if (-1.0..=1.0).contains(f) {
+        return Ok(Expr::Real(f.acos()));
+      }
+    }
+    _ => {}
   }
+  Ok(Expr::FunctionCall {
+    name: "ArcCos".to_string(),
+    args: args.to_vec(),
+  })
 }
 
-/// ArcTan[x] - Inverse tangent
+/// ArcTan[x] - Inverse tangent (symbolic)
 pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ArcTan expects exactly 1 argument".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
-    Ok(Expr::Real(n.atan()))
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "ArcTan".to_string(),
-      args: args.to_vec(),
-    })
+  // Exact values: ArcTan[0] = 0, ArcTan[1] = Pi/4, ArcTan[-1] = -Pi/4
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Integer(1) => {
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(4)),
+      });
+    }
+    Expr::Integer(-1) => {
+      return Ok(negate_expr(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(4)),
+      }));
+    }
+    Expr::Real(f) => return Ok(Expr::Real(f.atan())),
+    _ => {}
   }
+  Ok(Expr::FunctionCall {
+    name: "ArcTan".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Prime[n] - Returns the nth prime number
