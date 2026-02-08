@@ -240,6 +240,56 @@ mod high_level_functions_tests {
     }
   }
 
+  // ─── List Functions ────────────────────────────────────────────────
+  mod delete_adjacent_duplicates_tests {
+    use super::*;
+    #[test]
+    fn test_basic() {
+      assert_eq!(
+        interpret("DeleteAdjacentDuplicates[{1,1,2,3,3,3,2,2}]").unwrap(),
+        "{1, 2, 3, 2}"
+      );
+    }
+    #[test]
+    fn test_no_duplicates() {
+      assert_eq!(
+        interpret("DeleteAdjacentDuplicates[{1,2,3}]").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+    #[test]
+    fn test_empty() {
+      assert_eq!(interpret("DeleteAdjacentDuplicates[{}]").unwrap(), "{}");
+    }
+  }
+
+  mod commonest_tests {
+    use super::*;
+    #[test]
+    fn test_commonest_single() {
+      assert_eq!(interpret("Commonest[{a,b,a,c,b,a}]").unwrap(), "{a}");
+    }
+    #[test]
+    fn test_commonest_n() {
+      assert_eq!(interpret("Commonest[{a,b,a,c,b,a}, 2]").unwrap(), "{a, b}");
+    }
+    #[test]
+    fn test_commonest_numeric() {
+      assert_eq!(interpret("Commonest[{1,2,2,3,3,3}]").unwrap(), "{3}");
+    }
+  }
+
+  mod compose_list_tests {
+    use super::*;
+    #[test]
+    fn test_compose_list() {
+      assert_eq!(
+        interpret("ComposeList[{f,g,h}, x]").unwrap(),
+        "{x, f[x], g[f[x]], h[g[f[x]]]}"
+      );
+    }
+  }
+
   // ─── Catch/Throw ───────────────────────────────────────────────────
   mod catch_throw_tests {
     use super::*;

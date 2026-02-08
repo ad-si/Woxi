@@ -3870,6 +3870,140 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── DeleteAdjacentDuplicates ──────────────────────────────────────
+
+/// DeleteAdjacentDuplicates[list] - removes consecutive duplicate elements
+pub fn delete_adjacent_duplicates_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DeleteAdjacentDuplicates expects exactly 1 argument".into(),
+    ));
+  }
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DeleteAdjacentDuplicates".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let mut result = vec![items[0].clone()];
+  for item in items.iter().skip(1) {
+    if crate::syntax::expr_to_string(item)
+      != crate::syntax::expr_to_string(result.last().unwrap())
+    {
+      result.push(item.clone());
+    }
+  }
+  Ok(Expr::List(result))
+}
+
+// ─── Commonest ─────────────────────────────────────────────────────
+
+/// Commonest[list] - returns the most common element(s)
+/// Commonest[list, n] - returns the n most common elements
+pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Commonest expects 1 or 2 arguments".into(),
+    ));
+  }
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Commonest".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let n = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(n) if *n >= 1 => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Commonest".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  // Count occurrences, preserving order of first appearance
+  let mut counts: Vec<(String, &Expr, usize)> = Vec::new();
+  for item in items {
+    let key = crate::syntax::expr_to_string(item);
+    if let Some(entry) = counts.iter_mut().find(|(k, _, _)| k == &key) {
+      entry.2 += 1;
+    } else {
+      counts.push((key, item, 1));
+    }
+  }
+
+  // Sort by count descending (stable sort preserves insertion order for ties)
+  counts.sort_by(|a, b| b.2.cmp(&a.2));
+
+  // Take top n distinct count levels
+  let mut result = Vec::new();
+  let mut distinct_counts = 0;
+  let mut last_count = 0;
+  for (_, item, count) in &counts {
+    if *count != last_count {
+      distinct_counts += 1;
+      if distinct_counts > n {
+        break;
+      }
+      last_count = *count;
+    }
+    result.push((*item).clone());
+  }
+
+  Ok(Expr::List(result))
+}
+
+// ─── ComposeList ──────────────────────────────────────────────────
+
+/// ComposeList[{f, g, h}, x] -> {x, f[x], g[f[x]], h[g[f[x]]]}
+pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ComposeList expects exactly 2 arguments".into(),
+    ));
+  }
+  let funcs = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ComposeList".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut result = vec![args[1].clone()];
+  let mut current = args[1].clone();
+  for func in funcs {
+    current = apply_func_ast(func, &current)?;
+    result.push(current.clone());
+  }
+  Ok(Expr::List(result))
+}
+
 /// Helper: compare two Expr values for ordering (less-or-equal)
 fn expr_le(a: &Expr, b: &Expr) -> bool {
   // Try numeric comparison first

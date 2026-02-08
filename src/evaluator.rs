@@ -1437,6 +1437,15 @@ pub fn evaluate_function_call_ast(
     "OrderedQ" if args.len() == 1 => {
       return list_helpers_ast::ordered_q_ast(args);
     }
+    "DeleteAdjacentDuplicates" if args.len() == 1 => {
+      return list_helpers_ast::delete_adjacent_duplicates_ast(args);
+    }
+    "Commonest" if !args.is_empty() && args.len() <= 2 => {
+      return list_helpers_ast::commonest_ast(args);
+    }
+    "ComposeList" if args.len() == 2 => {
+      return list_helpers_ast::compose_list_ast(args);
+    }
 
     // Additional AST-native list functions
     "Table" if args.len() == 2 => {
