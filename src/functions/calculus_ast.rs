@@ -577,3 +577,233 @@ pub fn simplify(expr: Expr) -> Expr {
     _ => expr,
   }
 }
+
+/// Limit[expr, x -> x0] - Compute the limit of expr as x approaches x0
+pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Limit expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // Second argument must be a Rule: x -> x0
+  let (var_name, point) = match &args[1] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let name = match pattern.as_ref() {
+        Expr::Identifier(n) => n.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Limit".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (name, replacement.as_ref().clone())
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Limit".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Strategy: try direct substitution first
+  let substituted =
+    crate::syntax::substitute_variable(&args[0], &var_name, &point);
+  let result = crate::evaluator::evaluate_expr_to_expr(&substituted);
+
+  match result {
+    Ok(ref val) => {
+      // Check if the result is a valid numeric value (not Indeterminate, ComplexInfinity, etc.)
+      match val {
+        Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => {
+          return result;
+        }
+        Expr::FunctionCall { name, args: fargs }
+          if name == "Rational" && fargs.len() == 2 =>
+        {
+          // Check for 0/0 indeterminate form
+          if matches!(&fargs[1], Expr::Integer(0)) {
+            // Fall through to L'Hôpital
+          } else {
+            return result;
+          }
+        }
+        Expr::FunctionCall { name, .. }
+          if name == "DirectedInfinity" || name == "Indeterminate" =>
+        {
+          // Fall through to try other methods
+        }
+        _ => {
+          // Check if it evaluates to a number via N[]
+          if crate::functions::math_ast::try_eval_to_f64(val).is_some() {
+            return result;
+          }
+          // Return unevaluated if substitution doesn't yield a clean result
+        }
+      }
+    }
+    Err(_) => {
+      // Substitution failed (e.g., division by zero)
+    }
+  }
+
+  // Try L'Hôpital's rule for 0/0 forms
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: num,
+    right: den,
+  } = &args[0]
+  {
+    let num_at_point =
+      crate::syntax::substitute_variable(num, &var_name, &point);
+    let den_at_point =
+      crate::syntax::substitute_variable(den, &var_name, &point);
+    let num_val = crate::evaluator::evaluate_expr_to_expr(&num_at_point);
+    let den_val = crate::evaluator::evaluate_expr_to_expr(&den_at_point);
+
+    if let (Ok(Expr::Integer(0)), Ok(Expr::Integer(0))) = (&num_val, &den_val) {
+      // Apply L'Hôpital: Limit[f'/g', x -> x0]
+      if let (Ok(df), Ok(dg)) =
+        (differentiate(num, &var_name), differentiate(den, &var_name))
+      {
+        let new_expr = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(simplify(df)),
+          right: Box::new(simplify(dg)),
+        };
+        return limit_ast(&[new_expr, args[1].clone()]);
+      }
+    }
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Limit".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Series[expr, {x, x0, n}] - Taylor series expansion
+pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Series expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // Second argument: {x, x0, n}
+  let (var_name, x0, order) = match &args[1] {
+    Expr::List(items) if items.len() == 3 => {
+      let name = match &items[0] {
+        Expr::Identifier(n) => n.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Series".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let order = match &items[2] {
+        Expr::Integer(n) => *n,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Series".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (name, items[1].clone(), order)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Series".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Compute Taylor coefficients: f^(k)(x0) / k!
+  let mut coefficients = Vec::new();
+  let mut current_expr = args[0].clone();
+
+  for k in 0..=order {
+    // Evaluate current derivative at x0
+    let substituted =
+      crate::syntax::substitute_variable(&current_expr, &var_name, &x0);
+    let value = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+
+    // Compute k!
+    let mut factorial = 1i128;
+    for i in 2..=k {
+      factorial *= i;
+    }
+
+    // Coefficient = value / k!
+    let coeff = if matches!(&value, Expr::Integer(0)) {
+      Expr::Integer(0)
+    } else if factorial == 1 {
+      value
+    } else {
+      // value / factorial
+      match &value {
+        Expr::Integer(n) => {
+          let g = gcd(n.abs(), factorial);
+          let (num, den) = (n / g, factorial / g);
+          if den == 1 {
+            Expr::Integer(num)
+          } else {
+            crate::functions::math_ast::make_rational_pub(num, den)
+          }
+        }
+        _ => Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(value),
+          right: Box::new(Expr::Integer(factorial)),
+        },
+      }
+    };
+
+    coefficients.push(coeff);
+
+    // Differentiate for the next iteration (unless this is the last)
+    if k < order {
+      current_expr = match differentiate(&current_expr, &var_name) {
+        Ok(d) => simplify(d),
+        Err(_) => {
+          return Ok(Expr::FunctionCall {
+            name: "Series".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+    }
+  }
+
+  // Build SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, 1]
+  Ok(Expr::FunctionCall {
+    name: "SeriesData".to_string(),
+    args: vec![
+      Expr::Identifier(var_name),
+      x0,
+      Expr::List(coefficients),
+      Expr::Integer(0),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ],
+  })
+}
+
+fn gcd(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}

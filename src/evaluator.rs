@@ -2480,6 +2480,13 @@ pub fn evaluate_function_call_ast(
     "Integrate" if args.len() == 2 => {
       return crate::functions::calculus_ast::integrate_ast(args);
     }
+    "Limit" if args.len() == 2 => {
+      return crate::functions::calculus_ast::limit_ast(args);
+    }
+    "Series" if args.len() == 2 => {
+      return crate::functions::calculus_ast::series_ast(args);
+    }
+
     // AST-native linear algebra functions
     "Dot" if args.len() == 2 => {
       return crate::functions::linear_algebra_ast::dot_ast(args);
