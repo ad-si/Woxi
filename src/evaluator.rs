@@ -653,6 +653,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "ClearAll"
         || name == "HoldForm"
         || name == "ValueQ"
+        || name == "Reap"
       {
         // Pass unevaluated args to the function dispatcher
         return evaluate_function_call_ast(name, args);
@@ -2549,6 +2550,62 @@ pub fn evaluate_function_call_ast(
     "Apart" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::polynomial_ast::apart_ast(args);
     }
+
+    // AST-native utility math functions
+    "Unitize" if args.len() == 1 => {
+      return crate::functions::math_ast::unitize_ast(args);
+    }
+    "Ramp" if args.len() == 1 => {
+      return crate::functions::math_ast::ramp_ast(args);
+    }
+    "KroneckerDelta" => {
+      return crate::functions::math_ast::kronecker_delta_ast(args);
+    }
+    "UnitStep" if args.len() == 1 => {
+      return crate::functions::math_ast::unit_step_ast(args);
+    }
+
+    // Echo[expr] - prints expr and returns it
+    "Echo" if args.len() == 1 => {
+      let output = crate::syntax::expr_to_output(&args[0]);
+      println!(">> {}", output);
+      crate::capture_stdout(&format!(">> {}", output));
+      return Ok(args[0].clone());
+    }
+
+    // Sow[expr] - adds expr to the current Reap collection
+    "Sow" if args.len() == 1 => {
+      crate::SOW_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        if let Some(last) = stack.last_mut() {
+          last.push(args[0].clone());
+        }
+      });
+      return Ok(args[0].clone());
+    }
+
+    // Reap[expr] - evaluates expr, collecting all Sow'd values
+    "Reap" if args.len() == 1 => {
+      // Push a new collection
+      crate::SOW_STACK.with(|stack| {
+        stack.borrow_mut().push(Vec::new());
+      });
+      // Evaluate the expression
+      let result = evaluate_expr_to_expr(&args[0])?;
+      // Pop the collection
+      let sowed = crate::SOW_STACK
+        .with(|stack| stack.borrow_mut().pop().unwrap_or_default());
+      // Return {result, {sowed_values}} or {result, {}} if none
+      if sowed.is_empty() {
+        return Ok(Expr::List(vec![result, Expr::List(vec![])]));
+      } else {
+        return Ok(Expr::List(vec![
+          result,
+          Expr::List(vec![Expr::List(sowed)]),
+        ]));
+      }
+    }
+
     // ReplaceAll and ReplaceRepeated function call forms
     "ReplaceAll" if args.len() == 2 => {
       let expr = &args[0];
