@@ -597,6 +597,43 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "Continue" && args.is_empty() {
         return Err(InterpreterError::ContinueSignal);
       }
+      // Special handling for Throw[value] and Throw[value, tag]
+      if name == "Throw" && !args.is_empty() && args.len() <= 2 {
+        let val = evaluate_expr_to_expr(&args[0])?;
+        let tag = if args.len() == 2 {
+          Some(evaluate_expr_to_expr(&args[1])?)
+        } else {
+          None
+        };
+        return Err(InterpreterError::ThrowValue(val, tag));
+      }
+      // Special handling for Catch[expr] and Catch[expr, form]
+      if name == "Catch" && !args.is_empty() && args.len() <= 2 {
+        let tag_pattern = if args.len() == 2 {
+          Some(evaluate_expr_to_expr(&args[1])?)
+        } else {
+          None
+        };
+        match evaluate_expr_to_expr(&args[0]) {
+          Ok(result) => return Ok(result),
+          Err(InterpreterError::ThrowValue(val, thrown_tag)) => {
+            // If Catch has a tag pattern, check if it matches
+            if let Some(ref pattern) = tag_pattern {
+              if let Some(ref tag) = thrown_tag
+                && crate::syntax::expr_to_string(pattern)
+                  == crate::syntax::expr_to_string(tag)
+              {
+                return Ok(val);
+              }
+              // Tag doesn't match - re-throw
+              return Err(InterpreterError::ThrowValue(val, thrown_tag));
+            }
+            // No tag pattern - catch everything
+            return Ok(val);
+          }
+          Err(e) => return Err(e),
+        }
+      }
       // Special handling for Switch - lazy evaluation of branches
       if name == "Switch" && args.len() >= 3 {
         return crate::functions::control_flow_ast::switch_ast(args);
