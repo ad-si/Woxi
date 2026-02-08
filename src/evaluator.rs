@@ -603,13 +603,29 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "Block"
         || name == "For"
         || name == "While"
+        || name == "ClearAll"
+        || name == "HoldForm"
+        || name == "ValueQ"
       {
         // Pass unevaluated args to the function dispatcher
         return evaluate_function_call_ast(name, args);
       }
+      // Check if name is a variable holding a callable value (Function, FunctionCall like Composition)
+      let var_val = ENV.with(|e| e.borrow().get(name).cloned());
+      if let Some(StoredValue::ExprVal(stored_expr)) = &var_val {
+        match stored_expr {
+          Expr::Function { .. } | Expr::FunctionCall { .. } => {
+            let evaluated_args: Vec<Expr> = args
+              .iter()
+              .map(evaluate_expr_to_expr)
+              .collect::<Result<_, _>>()?;
+            return apply_curried_call(stored_expr, &evaluated_args);
+          }
+          _ => {}
+        }
+      }
       // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
-      let assoc_val = ENV.with(|e| e.borrow().get(name).cloned());
-      if let Some(StoredValue::Association(_)) = assoc_val {
+      if let Some(StoredValue::Association(_)) = var_val {
         // Evaluate arguments and perform nested access
         let evaluated_args: Vec<Expr> = args
           .iter()
@@ -1222,6 +1238,37 @@ pub fn evaluate_function_call_ast(
         return Ok(Expr::Identifier("Null".to_string()));
       }
     }
+    "ClearAll" => {
+      for arg in args {
+        if let Expr::Identifier(sym) = arg {
+          ENV.with(|e| e.borrow_mut().remove(sym));
+          crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+          crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
+        }
+      }
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
+    "HoldForm" if args.len() == 1 => {
+      return Ok(Expr::FunctionCall {
+        name: "HoldForm".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    "ValueQ" if args.len() == 1 => {
+      if let Expr::Identifier(sym) = &args[0] {
+        let has_value = ENV.with(|e| e.borrow().contains_key(sym));
+        let has_func = crate::FUNC_DEFS.with(|m| m.borrow().contains_key(sym));
+        return Ok(Expr::Identifier(
+          if has_value || has_func {
+            "True"
+          } else {
+            "False"
+          }
+          .to_string(),
+        ));
+      }
+      return Ok(Expr::Identifier("False".to_string()));
+    }
     "If" => {
       if args.len() >= 2 && args.len() <= 4 {
         let cond = evaluate_expr_to_expr(&args[0])?;
@@ -1333,6 +1380,15 @@ pub fn evaluate_function_call_ast(
     }
     "Complement" => {
       return list_helpers_ast::complement_ast(args);
+    }
+    "Dimensions" if args.len() == 1 => {
+      return list_helpers_ast::dimensions_ast(args);
+    }
+    "Delete" if args.len() == 2 => {
+      return list_helpers_ast::delete_ast(args);
+    }
+    "OrderedQ" if args.len() == 1 => {
+      return list_helpers_ast::ordered_q_ast(args);
     }
 
     // Additional AST-native list functions
@@ -1989,7 +2045,7 @@ pub fn evaluate_function_call_ast(
     "Ceiling" if args.len() == 1 => {
       return crate::functions::math_ast::ceiling_ast(args);
     }
-    "Round" if args.len() == 1 => {
+    "Round" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::round_ast(args);
     }
     "Mod" if args.len() == 2 => {
@@ -3810,6 +3866,14 @@ fn apply_curried_call(
         // Operator form: prepend the argument instead of appending
         let new_args = vec![args[0].clone(), func_args[0].clone()];
         evaluate_function_call_ast(name, &new_args)
+      } else if name == "Composition" && !func_args.is_empty() {
+        // Composition[f, g, h][x] applies functions right-to-left: f[g[h[x]]]
+        let mut result = args.to_vec();
+        for f in func_args.iter().rev() {
+          let intermediate = apply_curried_call(f, &result)?;
+          result = vec![intermediate];
+        }
+        Ok(result.into_iter().next().unwrap())
       } else {
         // Standard curried call: append args
         let mut new_args = func_args.clone();

@@ -956,12 +956,31 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Round[x] - Round to nearest integer using banker's rounding (round half to even)
 pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Round expects exactly 1 argument".into(),
+      "Round expects 1 or 2 arguments".into(),
     ));
   }
-  if let Some(n) = expr_to_num(&args[0]) {
+  if args.len() == 2 {
+    // Round[x, a] - round x to nearest multiple of a
+    if let (Some(x), Some(a)) =
+      (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+    {
+      if a == 0.0 {
+        return Ok(args[0].clone());
+      }
+      let rounded = (x / a).round() * a;
+      if rounded.fract() == 0.0 && rounded.abs() < i128::MAX as f64 {
+        return Ok(Expr::Integer(rounded as i128));
+      }
+      return Ok(Expr::Real(rounded));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Round".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  if let Some(n) = try_eval_to_f64(&args[0]) {
     // Banker's rounding: round half to even
     let rounded = if n.fract().abs() == 0.5 {
       let floor = n.floor();

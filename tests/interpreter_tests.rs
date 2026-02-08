@@ -2953,6 +2953,30 @@ mod interpreter_tests {
     }
   }
 
+  mod round {
+    use super::*;
+
+    #[test]
+    fn round_integer() {
+      assert_eq!(interpret("Round[3]").unwrap(), "3");
+    }
+
+    #[test]
+    fn round_real() {
+      assert_eq!(interpret("Round[2.6]").unwrap(), "3");
+    }
+
+    #[test]
+    fn round_two_args() {
+      assert_eq!(interpret("Round[3.14159, 0.01]").unwrap(), "3.14");
+    }
+
+    #[test]
+    fn round_to_tens() {
+      assert_eq!(interpret("Round[37, 10]").unwrap(), "40");
+    }
+  }
+
   mod degree_constant {
     use super::*;
 
@@ -3067,6 +3091,182 @@ mod interpreter_tests {
     #[test]
     fn pi_less() {
       assert_eq!(interpret("Pi < 4").unwrap(), "True");
+    }
+  }
+
+  mod clear_all {
+    use super::*;
+
+    #[test]
+    fn clear_variable() {
+      assert_eq!(interpret("x = 5; ClearAll[x]; x").unwrap(), "x");
+    }
+
+    #[test]
+    fn clear_multiple() {
+      assert_eq!(
+        interpret("a = 1; b = 2; ClearAll[a, b]; {a, b}").unwrap(),
+        "{a, b}"
+      );
+    }
+
+    #[test]
+    fn clear_preserves_others() {
+      assert_eq!(
+        interpret("a = 1; b = 2; ClearAll[a]; {a, b}").unwrap(),
+        "{a, 2}"
+      );
+    }
+  }
+
+  mod dimensions {
+    use super::*;
+
+    #[test]
+    fn dimensions_2d() {
+      assert_eq!(
+        interpret("Dimensions[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+        "{2, 3}"
+      );
+    }
+
+    #[test]
+    fn dimensions_1d() {
+      assert_eq!(interpret("Dimensions[{1, 2, 3}]").unwrap(), "{3}");
+    }
+
+    #[test]
+    fn dimensions_3d() {
+      assert_eq!(
+        interpret("Dimensions[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]").unwrap(),
+        "{2, 2, 2}"
+      );
+    }
+
+    #[test]
+    fn dimensions_ragged() {
+      assert_eq!(interpret("Dimensions[{{1, 2}, {3}}]").unwrap(), "{2}");
+    }
+  }
+
+  mod delete {
+    use super::*;
+
+    #[test]
+    fn delete_positive() {
+      assert_eq!(interpret("Delete[{a, b, c, d}, 2]").unwrap(), "{a, c, d}");
+    }
+
+    #[test]
+    fn delete_negative() {
+      assert_eq!(interpret("Delete[{a, b, c, d}, -1]").unwrap(), "{a, b, c}");
+    }
+
+    #[test]
+    fn delete_multiple() {
+      assert_eq!(
+        interpret("Delete[{a, b, c, d, e}, {{1}, {3}}]").unwrap(),
+        "{b, d, e}"
+      );
+    }
+  }
+
+  mod ordered_q {
+    use super::*;
+
+    #[test]
+    fn ordered_sorted() {
+      assert_eq!(interpret("OrderedQ[{1, 2, 3}]").unwrap(), "True");
+    }
+
+    #[test]
+    fn ordered_unsorted() {
+      assert_eq!(interpret("OrderedQ[{3, 1, 2}]").unwrap(), "False");
+    }
+
+    #[test]
+    fn ordered_equal() {
+      assert_eq!(interpret("OrderedQ[{1, 1, 2}]").unwrap(), "True");
+    }
+
+    #[test]
+    fn ordered_strings() {
+      assert_eq!(
+        interpret("OrderedQ[{\"a\", \"b\", \"c\"}]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn ordered_empty() {
+      assert_eq!(interpret("OrderedQ[{}]").unwrap(), "True");
+    }
+  }
+
+  mod composition {
+    use super::*;
+
+    #[test]
+    fn composition_apply() {
+      assert_eq!(
+        interpret("Composition[StringLength, ToString][12345]").unwrap(),
+        "5"
+      );
+    }
+
+    #[test]
+    fn composition_symbolic() {
+      assert_eq!(interpret("Composition[f, g]").unwrap(), "f @* g");
+    }
+
+    #[test]
+    fn composition_variable() {
+      assert_eq!(
+        interpret("f = Composition[StringLength, ToString]; f[12345]").unwrap(),
+        "5"
+      );
+    }
+  }
+
+  mod value_q {
+    use super::*;
+
+    #[test]
+    fn value_q_defined() {
+      assert_eq!(interpret("x = 5; ValueQ[x]").unwrap(), "True");
+    }
+
+    #[test]
+    fn value_q_undefined() {
+      assert_eq!(interpret("ValueQ[undefined]").unwrap(), "False");
+    }
+
+    #[test]
+    fn value_q_cleared() {
+      assert_eq!(interpret("x = 5; ClearAll[x]; ValueQ[x]").unwrap(), "False");
+    }
+  }
+
+  mod rule_display {
+    use super::*;
+
+    #[test]
+    fn rule_display() {
+      assert_eq!(interpret("Rule[a, b]").unwrap(), "a -> b");
+    }
+
+    #[test]
+    fn rule_delayed_display() {
+      assert_eq!(interpret("RuleDelayed[a, b]").unwrap(), "a :> b");
+    }
+  }
+
+  mod hold_form {
+    use super::*;
+
+    #[test]
+    fn hold_form_unevaluated() {
+      assert_eq!(interpret("HoldForm[1 + 1]").unwrap(), "HoldForm[1 + 1]");
     }
   }
 }
