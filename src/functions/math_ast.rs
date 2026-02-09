@@ -4169,6 +4169,58 @@ pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── IntegerExponent ──────────────────────────────────────────────
+
+/// IntegerExponent[n, b] - largest power of b that divides n
+/// IntegerExponent[n] - largest power of 2 that divides n
+pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerExponent expects 1 or 2 arguments".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "IntegerExponent".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let base = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(b) => *b,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "IntegerExponent".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    2 // default base
+  };
+
+  if n == 0 {
+    return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+  if base <= 1 {
+    return Ok(Expr::FunctionCall {
+      name: "IntegerExponent".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let mut count = 0i128;
+  let mut val = n.abs();
+  while val > 0 && val % base == 0 {
+    count += 1;
+    val /= base;
+  }
+  Ok(Expr::Integer(count))
+}
+
 // ─── IntegerPart / FractionalPart ──────────────────────────────────
 
 /// IntegerPart[x] - Integer part (truncation towards zero)

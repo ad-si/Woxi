@@ -1435,6 +1435,12 @@ pub fn evaluate_function_call_ast(
     "Delete" if args.len() == 2 => {
       return list_helpers_ast::delete_ast(args);
     }
+    "Order" if args.len() == 2 => {
+      // Order[e1, e2]: 1 if e1 < e2, -1 if e1 > e2, 0 if equal (canonical ordering)
+      let result =
+        crate::functions::list_helpers_ast::compare_exprs(&args[0], &args[1]);
+      return Ok(Expr::Integer(result as i128));
+    }
     "OrderedQ" if args.len() == 1 => {
       return list_helpers_ast::ordered_q_ast(args);
     }
@@ -1833,6 +1839,14 @@ pub fn evaluate_function_call_ast(
     }
     "StringPadRight" if args.len() >= 2 && args.len() <= 3 => {
       return crate::functions::string_ast::string_pad_right_ast(args);
+    }
+    "EditDistance" if args.len() == 2 => {
+      return crate::functions::string_ast::edit_distance_ast(args);
+    }
+    "LongestCommonSubsequence" if args.len() == 2 => {
+      return crate::functions::string_ast::longest_common_subsequence_ast(
+        args,
+      );
     }
     "StringCount" if args.len() == 2 => {
       return crate::functions::string_ast::string_count_ast(args);
@@ -2333,6 +2347,9 @@ pub fn evaluate_function_call_ast(
     }
     "BitLength" if args.len() == 1 => {
       return crate::functions::math_ast::bit_length_ast(args);
+    }
+    "IntegerExponent" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::integer_exponent_ast(args);
     }
     "IntegerPart" if args.len() == 1 => {
       return crate::functions::math_ast::integer_part_ast(args);

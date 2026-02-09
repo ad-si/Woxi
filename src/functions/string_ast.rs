@@ -47,7 +47,8 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(s.chars().count() as i128))
 }
 
-/// StringTake[s, n] - returns the first n characters of a string
+/// StringTake[s, n] - first n chars; StringTake[s, -n] - last n chars;
+/// StringTake[s, {m, n}] - chars m through n; StringTake[s, {n}] - nth char
 pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -55,17 +56,54 @@ pub fn string_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  let n = expr_to_int(&args[1])?;
-  if n < 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Second argument of StringTake must be non-negative".into(),
-    ));
+  let chars: Vec<char> = s.chars().collect();
+  let len = chars.len() as i128;
+
+  match &args[1] {
+    Expr::List(elems) if elems.len() == 1 => {
+      // StringTake[s, {n}] - just the nth character
+      let n = expr_to_int(&elems[0])?;
+      let idx = if n > 0 { n - 1 } else { len + n };
+      if idx < 0 || idx >= len {
+        return Err(InterpreterError::EvaluationError(format!(
+          "StringTake index {} out of range for string of length {}",
+          n, len
+        )));
+      }
+      Ok(Expr::String(chars[idx as usize].to_string()))
+    }
+    Expr::List(elems) if elems.len() == 2 => {
+      // StringTake[s, {m, n}] - characters m through n
+      let m = expr_to_int(&elems[0])?;
+      let n = expr_to_int(&elems[1])?;
+      let start = if m > 0 { m - 1 } else { len + m };
+      let end = if n > 0 { n - 1 } else { len + n };
+      if start < 0 || end < 0 || start >= len || end >= len || start > end {
+        return Err(InterpreterError::EvaluationError(format!(
+          "StringTake range {{{}, {}}} out of range for string of length {}",
+          m, n, len
+        )));
+      }
+      let taken: String = chars[start as usize..=end as usize].iter().collect();
+      Ok(Expr::String(taken))
+    }
+    _ => {
+      // StringTake[s, n] or StringTake[s, -n]
+      let n = expr_to_int(&args[1])?;
+      if n >= 0 {
+        let take_n = n.min(len) as usize;
+        let taken: String = chars[..take_n].iter().collect();
+        Ok(Expr::String(taken))
+      } else {
+        let take_n = (-n).min(len) as usize;
+        let taken: String = chars[len as usize - take_n..].iter().collect();
+        Ok(Expr::String(taken))
+      }
+    }
   }
-  let taken: String = s.chars().take(n as usize).collect();
-  Ok(Expr::String(taken))
 }
 
-/// StringDrop[s, n] - returns the string with the first n characters removed
+/// StringDrop[s, n] - drop first n chars; StringDrop[s, -n] - drop last n chars
 pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -73,14 +111,18 @@ pub fn string_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
+  let chars: Vec<char> = s.chars().collect();
+  let len = chars.len() as i128;
   let n = expr_to_int(&args[1])?;
-  if n < 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Second argument of StringDrop must be non-negative".into(),
-    ));
+  if n >= 0 {
+    let drop_n = n.min(len) as usize;
+    let dropped: String = chars[drop_n..].iter().collect();
+    Ok(Expr::String(dropped))
+  } else {
+    let drop_n = (-n).min(len) as usize;
+    let dropped: String = chars[..len as usize - drop_n].iter().collect();
+    Ok(Expr::String(dropped))
   }
-  let dropped: String = s.chars().skip(n as usize).collect();
-  Ok(Expr::String(dropped))
 }
 
 /// StringJoin[s1, s2, ...] or StringJoin[{s1, s2, ...}] - concatenates strings
@@ -959,4 +1001,73 @@ pub fn digit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::Identifier("False".to_string())),
   }
+}
+
+/// EditDistance[s1, s2] - Levenshtein distance between two strings
+pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "EditDistance expects exactly 2 arguments".into(),
+    ));
+  }
+  let s1 = expr_to_str(&args[0])?;
+  let s2 = expr_to_str(&args[1])?;
+  let a: Vec<char> = s1.chars().collect();
+  let b: Vec<char> = s2.chars().collect();
+  let n = a.len();
+  let m = b.len();
+
+  let mut dp = vec![vec![0usize; m + 1]; n + 1];
+  for i in 0..=n {
+    dp[i][0] = i;
+  }
+  for j in 0..=m {
+    dp[0][j] = j;
+  }
+  for i in 1..=n {
+    for j in 1..=m {
+      let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+      dp[i][j] = (dp[i - 1][j] + 1)
+        .min(dp[i][j - 1] + 1)
+        .min(dp[i - 1][j - 1] + cost);
+    }
+  }
+  Ok(Expr::Integer(dp[n][m] as i128))
+}
+
+/// LongestCommonSubsequence[s1, s2] - longest common contiguous substring
+pub fn longest_common_subsequence_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LongestCommonSubsequence expects exactly 2 arguments".into(),
+    ));
+  }
+  let s1 = expr_to_str(&args[0])?;
+  let s2 = expr_to_str(&args[1])?;
+  let chars1: Vec<char> = s1.chars().collect();
+  let chars2: Vec<char> = s2.chars().collect();
+  let n = chars1.len();
+  let m = chars2.len();
+
+  let mut max_len = 0usize;
+  let mut end_idx = 0usize;
+
+  // DP table for longest common substring
+  let mut dp = vec![vec![0usize; m + 1]; n + 1];
+  for i in 1..=n {
+    for j in 1..=m {
+      if chars1[i - 1] == chars2[j - 1] {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+        if dp[i][j] > max_len {
+          max_len = dp[i][j];
+          end_idx = i;
+        }
+      }
+    }
+  }
+
+  let result: String = chars1[end_idx - max_len..end_idx].iter().collect();
+  Ok(Expr::String(result))
 }

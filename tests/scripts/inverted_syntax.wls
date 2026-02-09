@@ -1,0 +1,7 @@
+a = 4
+
+b = 5
+
+If[1<2,
+Print["This was expected"]
+]

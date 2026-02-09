@@ -1,0 +1,12 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Sin[1]
+Cos[1]
+Tan[1]
+Pi/2
+0
+Pi/4
+1
+0

@@ -1,15 +1,17 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-PartExtract = { (List | Identifier) ~ "[[" ~ Expression ~ ("," ~ Expression)* ~ "]]" }
+PartExtract = { (FunctionCall | List | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
 UnsignedInteger = @{ ASCII_DIGIT+ }
 UnsignedReal = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+// Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010)
+BasePrefix = @{ ASCII_DIGIT+ ~ "^^" ~ (ASCII_ALPHANUMERIC)+ }
 Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
-NumericValue = { Real | Integer | Constant }
-UnsignedNumericValue = { UnsignedReal | UnsignedInteger | Constant }
+NumericValue = { BasePrefix | Real | Integer | Constant }
+UnsignedNumericValue = { BasePrefix | UnsignedReal | UnsignedInteger | Constant }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
