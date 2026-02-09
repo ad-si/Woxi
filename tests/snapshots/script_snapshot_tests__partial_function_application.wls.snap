@@ -1,0 +1,6 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{2, 4, 6, 8, 10}
+{1, 4, 9, 16, 25}

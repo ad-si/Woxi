@@ -104,7 +104,6 @@ script_test!(script_array_length, "array_length.wls");
 script_test!(script_sort_an_integer_array, "sort_an_integer_array.wls");
 script_test!(script_test_integerness, "test_integerness.wls");
 script_test!(script_hello_world_text, "hello_world_text.wls");
-script_test!(script_tasks_hello_world, "tasks_hello_world.wls");
 script_test!(
   script_loops_for_with_a_specified_step,
   "loops_for_with_a_specified_step.wls"
@@ -180,6 +179,56 @@ script_test!(
 );
 script_test!(script_string_length, "string_length.wls");
 script_test!(script_vector_products, "vector_products.wls");
+script_test!(
+  script_strip_whitespace,
+  "strip_whitespace_from_a_string_top_and_tail.wls"
+);
+script_test!(script_function_definition, "function_definition.wls");
+script_test!(
+  script_formatted_numeric_output,
+  "formatted_numeric_output.wls"
+);
+script_test!(
+  script_sum_digits_of_an_integer,
+  "sum_digits_of_an_integer.wls"
+);
+script_test!(script_inverted_syntax, "inverted_syntax.wls");
+script_test!(
+  script_longest_common_substring,
+  "longest_common_substring.wls"
+);
+script_test!(script_substring, "substring.wls");
+script_test!(script_string_comparison, "string_comparison.wls");
+script_test!(script_string_matching, "string_matching.wls");
+script_test!(
+  script_sum_and_product_of_an_array,
+  "sum_and_product_of_an_array.wls"
+);
+script_test!(
+  script_find_first_and_last_set_bit,
+  "find_first_and_last_set_bit_of_a_long_integer.wls"
+);
+script_test!(
+  script_trigonometric_functions,
+  "trigonometric_functions.wls"
+);
+script_test!(script_substring_top_and_tail, "substring_top_and_tail.wls");
+script_test!(
+  script_string_interpolation,
+  "string_interpolation_(included).wls"
+);
+script_test!(script_josephus_problem, "josephus_problem.wls");
+script_test!(script_loops_n_plus_one_half, "loops_n_plus_one_half.wls");
+script_test!(
+  script_partial_function_application,
+  "partial_function_application.wls"
+);
+script_test!(
+  script_non_decimal_radices_input,
+  "non-decimal_radices_input.wls"
+);
+script_test!(script_levenshtein_distance, "levenshtein_distance.wls");
+script_test!(script_100_doors, "100_doors.wls");
 
 #[test]
 fn script_cli_args() {

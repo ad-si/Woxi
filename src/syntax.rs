@@ -366,6 +366,18 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let s = pair.as_str();
       Expr::Real(s.parse().unwrap_or(0.0))
     }
+    Rule::BasePrefix => {
+      let s = pair.as_str();
+      // Parse base^^digits format (e.g. 16^^FF = 255, 2^^1010 = 10)
+      let parts: Vec<&str> = s.splitn(2, "^^").collect();
+      let base: u32 = parts[0].parse().unwrap_or(10);
+      let digits = parts[1];
+      // i128::from_str_radix only supports lowercase, so normalize
+      match i128::from_str_radix(&digits.to_lowercase(), base) {
+        Ok(val) => Expr::Integer(val),
+        Err(_) => Expr::Integer(0),
+      }
+    }
     Rule::String => {
       let s = pair.as_str();
       // Remove surrounding quotes and process escape sequences

@@ -1,0 +1,18 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Comparing for equality (case sensitive): Hello and Hello ARE equal
+Comparing for inequality (case sensitive): Hello and Hello ARE equal
+Comparing for order (case sensitive): Hello comes in the same spot as Hello
+Comparing for equality (case insensitive): Hello and Hello ARE equal
+
+Comparing for equality (case sensitive): 3.1 and 3.14159 are NOT equal
+Comparing for inequality (case sensitive): 3.1 and 3.14159 are NOT equal
+Comparing for order (case sensitive): 3.1 comes before 3.14159
+Comparing for equality (case insensitive): 3.1 and 3.14159 are NOT equal
+
+Comparing for equality (case sensitive): mathematica and Mathematica are NOT equal
+Comparing for inequality (case sensitive): mathematica and Mathematica are NOT equal
+Comparing for order (case sensitive): mathematica comes before Mathematica
+Comparing for equality (case insensitive): mathematica and Mathematica ARE equal

@@ -2473,6 +2473,30 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
 
+        // Check for list iteration form: {i, list}
+        if items.len() == 2 {
+          let evaluated_second =
+            crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+          if let Expr::List(list_items) = &evaluated_second {
+            // Product[expr, {i, list}] -> iterate over list elements
+            let mut product = 1.0;
+            for item in list_items {
+              let substituted =
+                crate::syntax::substitute_variable(body, &var_name, item);
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              if let Some(n) = expr_to_f64(&val) {
+                product *= n;
+              } else {
+                return Ok(Expr::FunctionCall {
+                  name: "Product".to_string(),
+                  args: args.to_vec(),
+                });
+              }
+            }
+            return Ok(f64_to_expr(product));
+          }
+        }
+
         // Check if bounds are numeric
         let bounds = if items.len() == 2 {
           expr_to_i128(&items[1]).map(|max| (1i128, max))
@@ -2595,6 +2619,30 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           }
         };
+
+        // Check for list iteration form: {i, list}
+        if items.len() == 2 {
+          let evaluated_second =
+            crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+          if let Expr::List(list_items) = &evaluated_second {
+            // Sum[expr, {i, list}] -> iterate over list elements
+            let mut sum = 0.0;
+            for item in list_items {
+              let substituted =
+                crate::syntax::substitute_variable(body, &var_name, item);
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              if let Some(n) = expr_to_f64(&val) {
+                sum += n;
+              } else {
+                return Ok(Expr::FunctionCall {
+                  name: "Sum".to_string(),
+                  args: args.to_vec(),
+                });
+              }
+            }
+            return Ok(f64_to_expr(sum));
+          }
+        }
 
         let (min, max) = if items.len() == 2 {
           let max_val = expr_to_i128(&items[1]).ok_or_else(|| {
@@ -4057,8 +4105,9 @@ pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result))
 }
 
-/// Helper: compare two Expr values for ordering (less-or-equal)
-fn expr_le(a: &Expr, b: &Expr) -> bool {
+/// Compare two Expr values for canonical ordering.
+/// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
+pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   // Try numeric comparison first
   let a_num = match a {
     Expr::Integer(n) => Some(*n as f64),
@@ -4071,12 +4120,60 @@ fn expr_le(a: &Expr, b: &Expr) -> bool {
     _ => None,
   };
   if let (Some(an), Some(bn)) = (a_num, b_num) {
-    return an <= bn;
+    return if an < bn {
+      1
+    } else if an > bn {
+      -1
+    } else {
+      0
+    };
   }
-  // Fall back to string comparison
+  // Numbers come before non-numbers
+  if a_num.is_some() {
+    return 1;
+  }
+  if b_num.is_some() {
+    return -1;
+  }
+  // Wolfram canonical string ordering: case-insensitive first, then lowercase < uppercase
   let a_str = crate::syntax::expr_to_string(a);
   let b_str = crate::syntax::expr_to_string(b);
-  a_str <= b_str
+  wolfram_string_order(&a_str, &b_str)
+}
+
+/// Wolfram canonical string ordering: case-insensitive alphabetical, then lowercase < uppercase
+fn wolfram_string_order(a: &str, b: &str) -> i64 {
+  let a_chars: Vec<char> = a.chars().collect();
+  let b_chars: Vec<char> = b.chars().collect();
+
+  for (ac, bc) in a_chars.iter().zip(b_chars.iter()) {
+    let al = ac.to_lowercase().next().unwrap_or(*ac);
+    let bl = bc.to_lowercase().next().unwrap_or(*bc);
+    if al != bl {
+      // Case-insensitive comparison first
+      return if al < bl { 1 } else { -1 };
+    }
+    // Same letter, different case: lowercase comes first
+    if ac != bc {
+      // lowercase < uppercase in Wolfram ordering
+      if ac.is_lowercase() && bc.is_uppercase() {
+        return 1;
+      } else if ac.is_uppercase() && bc.is_lowercase() {
+        return -1;
+      }
+    }
+  }
+  // If all compared chars are equal, shorter string comes first
+  match a_chars.len().cmp(&b_chars.len()) {
+    std::cmp::Ordering::Less => 1,
+    std::cmp::Ordering::Greater => -1,
+    std::cmp::Ordering::Equal => 0,
+  }
+}
+
+/// Helper: compare two Expr values for ordering (less-or-equal)
+fn expr_le(a: &Expr, b: &Expr) -> bool {
+  compare_exprs(a, b) >= 0
 }
 
 /// Subsequences[list] - all contiguous subsequences

@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+nput string
+input strin
+nput strin

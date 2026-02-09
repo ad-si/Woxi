@@ -32,3 +32,5 @@ There is 3 levels of tests:
 - Do not write code to temporary files. Simply use `cargo run -- eval '<code>'`.
 - If you stumble upon a pre-existing issue, do not try to ignore it or work around it,
     but rather fix it right away.
+- Always execute scripts with a `timeout 20` to avoid getting stuck.
+    If any of the scripts take a longer to execute, it should be considered a bug.

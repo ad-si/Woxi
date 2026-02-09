@@ -1,0 +1,8 @@
+Print[Sin[1]]
+Print[Cos[1]]
+Print[Tan[1]]
+Print[ArcSin[1]]
+Print[ArcCos[1]]
+Print[ArcTan[1]]
+Print[Sin[90 Degree]]
+Print[Cos[90 Degree]]
