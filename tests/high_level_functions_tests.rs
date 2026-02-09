@@ -167,7 +167,8 @@ mod high_level_functions_tests {
     }
     #[test]
     fn test_arctanh_real() {
-      assert_eq!(interpret("ArcTanh[0.5]").unwrap(), "0.5493061443340549");
+      let result: f64 = interpret("ArcTanh[0.5]").unwrap().parse().unwrap();
+      assert!((result - 0.5493061443340549).abs() < 1e-15);
     }
   }
 
