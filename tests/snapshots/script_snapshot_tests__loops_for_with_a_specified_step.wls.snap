@@ -1,0 +1,9 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+1
+5
+9
+13
+17

@@ -3207,6 +3207,33 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     10
   };
 
+  // Handle string argument: FromDigits["1234"] or FromDigits["1a", 16]
+  if let Expr::String(s) = &args[0] {
+    let mut result: i128 = 0;
+    for ch in s.chars() {
+      let d = if ch.is_ascii_digit() {
+        (ch as i128) - ('0' as i128)
+      } else if ch.is_ascii_lowercase() {
+        (ch as i128) - ('a' as i128) + 10
+      } else if ch.is_ascii_uppercase() {
+        (ch as i128) - ('A' as i128) + 10
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "FromDigits".to_string(),
+          args: args.to_vec(),
+        });
+      };
+      if d >= base {
+        return Err(InterpreterError::EvaluationError(format!(
+          "FromDigits: invalid digit {} for base {}",
+          ch, base
+        )));
+      }
+      result = result * base + d;
+    }
+    return Ok(Expr::Integer(result));
+  }
+
   let items = match &args[0] {
     Expr::List(items) => items,
     _ => {

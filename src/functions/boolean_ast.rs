@@ -146,11 +146,12 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier("Null".to_string()))
 }
 
-/// While[test, body] - While loop
+/// While[test, body] or While[test] - While loop
+/// Single-arg form: evaluates test repeatedly (do-while pattern with side effects)
 pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "While expects exactly 2 arguments".into(),
+      "While expects 1 or 2 arguments".into(),
     ));
   }
 
@@ -161,11 +162,13 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let test = evaluate_expr_to_expr(&args[0])?;
     match as_bool(&test) {
       Some(true) => {
-        match evaluate_expr_to_expr(&args[1]) {
-          Ok(_) => {}
-          Err(InterpreterError::BreakSignal) => break,
-          Err(InterpreterError::ContinueSignal) => {}
-          Err(e) => return Err(e),
+        if args.len() == 2 {
+          match evaluate_expr_to_expr(&args[1]) {
+            Ok(_) => {}
+            Err(InterpreterError::BreakSignal) => break,
+            Err(InterpreterError::ContinueSignal) => {}
+            Err(e) => return Err(e),
+          }
         }
         iterations += 1;
         if iterations >= MAX_ITERATIONS {

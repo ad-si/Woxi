@@ -110,7 +110,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::String(joined))
 }
 
-/// StringSplit[s, delim] - splits a string by a delimiter
+/// StringSplit[s, delim] - splits a string by a delimiter (string or list of strings)
 pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -118,14 +118,52 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
-  let delim = expr_to_str(&args[1])?;
 
-  let parts: Vec<Expr> = if delim.is_empty() {
+  // Collect delimiters: either a single string or a list of strings
+  let delims: Vec<String> = match &args[1] {
+    Expr::List(items) => {
+      let mut ds = Vec::new();
+      for item in items {
+        ds.push(expr_to_str(item)?);
+      }
+      ds
+    }
+    _ => vec![expr_to_str(&args[1])?],
+  };
+
+  let parts: Vec<Expr> = if delims.len() == 1 && delims[0].is_empty() {
     s.chars().map(|c| Expr::String(c.to_string())).collect()
-  } else {
-    s.split(&delim)
+  } else if delims.len() == 1 {
+    s.split(&delims[0])
       .map(|p| Expr::String(p.to_string()))
       .collect()
+  } else {
+    // Split by multiple delimiters: scan left to right, try longest delimiter match first
+    let mut sorted_delims = delims.clone();
+    sorted_delims.sort_by(|a, b| b.len().cmp(&a.len()));
+    let mut result = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+      let remaining: String = chars[i..].iter().collect();
+      let mut matched = false;
+      for d in &sorted_delims {
+        if !d.is_empty() && remaining.starts_with(d.as_str()) {
+          result.push(Expr::String(current.clone()));
+          current.clear();
+          i += d.len();
+          matched = true;
+          break;
+        }
+      }
+      if !matched {
+        current.push(chars[i]);
+        i += 1;
+      }
+    }
+    result.push(Expr::String(current));
+    result
   };
   Ok(Expr::List(parts))
 }

@@ -798,6 +798,20 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// LeapYearQ[{year}] - Tests if a year is a leap year
+pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let year = match &args[0] {
+    Expr::List(items) if !items.is_empty() => match &items[0] {
+      Expr::Integer(n) => *n,
+      _ => return Ok(bool_expr(false)),
+    },
+    Expr::Integer(_) => return Ok(bool_expr(false)),
+    _ => return Ok(bool_expr(false)),
+  };
+  let is_leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+  Ok(bool_expr(is_leap))
+}
+
 /// MatchQ[expr, pattern] - Tests if an expression matches a pattern
 pub fn match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

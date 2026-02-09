@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{Sin[1], Sin[2], Sin[3], Sin[4], Sin[5], Sin[6], Sin[7], Sin[8], Sin[9], Sin[10]}
+Sin[1]
+{Sin[1], Sin[3], Sin[4], Sin[5], Sin[6], Sin[7], Sin[8], Sin[9], Sin[10]}

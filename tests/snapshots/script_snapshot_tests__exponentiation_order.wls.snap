@@ -1,0 +1,7 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+5^3^2 = 1953125
+(5^3)^2 = 15625
+5^(3^2) = 1953125

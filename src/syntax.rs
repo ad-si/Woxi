@@ -368,8 +368,30 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::String => {
       let s = pair.as_str();
-      // Remove surrounding quotes
-      Expr::String(s[1..s.len() - 1].to_string())
+      // Remove surrounding quotes and process escape sequences
+      let raw = &s[1..s.len() - 1];
+      let mut result = String::with_capacity(raw.len());
+      let mut chars = raw.chars();
+      while let Some(c) = chars.next() {
+        if c == '\\' {
+          match chars.next() {
+            Some('n') => result.push('\n'),
+            Some('t') => result.push('\t'),
+            Some('r') => result.push('\r'),
+            Some('\\') => result.push('\\'),
+            Some('"') => result.push('"'),
+            Some('\n') => {} // line continuation: skip the newline
+            Some(other) => {
+              result.push('\\');
+              result.push(other);
+            }
+            None => result.push('\\'),
+          }
+        } else {
+          result.push(c);
+        }
+      }
+      Expr::String(result)
     }
     Rule::Identifier => Expr::Identifier(pair.as_str().to_string()),
     Rule::Slot => {
@@ -857,9 +879,12 @@ fn operator_precedence(op: &str) -> u8 {
     "->" | ":>" => 6,
     "+" | "-" => 7,
     "*" | "/" => 8,
-    "<>" => 7, // Same as + for string concatenation
-    "/@" | "@@@" | "@@" | "@" => 9, // Map/Apply/Prefix (higher than arithmetic)
-    "^" => 10,
+    "<>" => 7,         // Same as + for string concatenation
+    "." => 9,          // Dot (higher than arithmetic)
+    "@@@" | "@@" => 9, // Apply/MapApply
+    "@" => 9,          // Prefix application
+    "/@" => 10,        // Map (higher than Apply)
+    "^" => 11,         // Power (highest)
     _ => 0,
   }
 }
@@ -992,6 +1017,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       func: Box::new(left.clone()),
       arg: Box::new(right.clone()),
     },
+    "." => Expr::FunctionCall {
+      name: "Dot".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
     "->" => Expr::Rule {
       pattern: Box::new(left.clone()),
       replacement: Box::new(right.clone()),
@@ -1105,7 +1134,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
   match expr {
     Expr::Integer(n) => n.to_string(),
     Expr::Real(f) => format_real(*f),
-    Expr::String(s) => format!("\"{}\"", s),
+    Expr::String(s) => {
+      let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
+        .replace('\r', "\\r");
+      format!("\"{}\"", escaped)
+    }
     Expr::Identifier(s) => s.clone(),
     Expr::Slot(n) => {
       if *n == 1 {
@@ -1586,7 +1623,12 @@ pub fn expr_to_output(expr: &Expr) -> String {
 pub fn expr_to_input_form(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => {
-      let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+      let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
+        .replace('\r', "\\r");
       format!("\"{}\"", escaped)
     }
     Expr::List(items) => {
@@ -1827,13 +1869,25 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
         .map(|e| substitute_variable(e, var_name, value))
         .collect(),
     ),
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> = args
         .iter()
         .map(|e| substitute_variable(e, var_name, value))
-        .collect(),
-    },
+        .collect();
+      if name == var_name {
+        // The function name matches the variable being substituted.
+        // Transform into a CurriedCall so the value is applied to the args.
+        Expr::CurriedCall {
+          func: Box::new(value.clone()),
+          args: new_args,
+        }
+      } else {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args,
+        }
+      }
+    }
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
       left: Box::new(substitute_variable(left, var_name, value)),

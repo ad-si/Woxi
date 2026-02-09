@@ -1,4 +1,4 @@
-use woxi::{clear_state, interpret};
+use woxi::{clear_state, interpret, interpret_with_stdout};
 
 mod interpreter_tests {
   use super::*;
@@ -4443,6 +4443,123 @@ mod interpreter_tests {
     #[test]
     fn list() {
       assert_eq!(interpret("UnitStep[{-1, 0, 1}]").unwrap(), "{0, 1, 1}");
+    }
+  }
+
+  mod list_function {
+    use super::*;
+
+    #[test]
+    fn basic() {
+      assert_eq!(interpret("List[1, 2, 3]").unwrap(), "{1, 2, 3}");
+    }
+
+    #[test]
+    fn empty() {
+      assert_eq!(interpret("List[]").unwrap(), "{}");
+    }
+
+    #[test]
+    fn nested() {
+      assert_eq!(interpret("List[List[1, 2], 3]").unwrap(), "{{1, 2}, 3}");
+    }
+  }
+
+  mod implicit_times_in_function_body {
+    use super::*;
+
+    #[test]
+    fn numeric_times_variable() {
+      assert_eq!(interpret("f[x_] := 2 x; f[5]").unwrap(), "10");
+    }
+
+    #[test]
+    fn numeric_times_function_call() {
+      assert_eq!(
+        interpret("L[n_] := 2 Fibonacci[n + 1] - 1; L[5]").unwrap(),
+        "15"
+      );
+    }
+  }
+
+  mod do_single_iter {
+    use super::*;
+
+    #[test]
+    fn repeat_n_times() {
+      clear_state();
+      assert_eq!(
+        interpret_with_stdout("Do[Print[\"hello\"], {3}]")
+          .unwrap()
+          .stdout,
+        "hello\nhello\nhello\n"
+      );
+    }
+  }
+
+  mod while_single_arg {
+    use super::*;
+
+    #[test]
+    fn do_while_pattern() {
+      clear_state();
+      assert_eq!(
+        interpret_with_stdout(
+          "value = 0; While[value++; Print[value]; Mod[value,6]!=0]"
+        )
+        .unwrap()
+        .stdout,
+        "1\n2\n3\n4\n5\n6\n"
+      );
+    }
+  }
+
+  mod string_split_list_delimiters {
+    use super::*;
+
+    #[test]
+    fn multiple_delimiters() {
+      assert_eq!(
+        interpret("StringSplit[\"a!===b=!=c\", {\"==\", \"!=\", \"=\"}]")
+          .unwrap(),
+        "{a, , b, , c}"
+      );
+    }
+
+    #[test]
+    fn single_delimiter_in_list() {
+      assert_eq!(
+        interpret("StringSplit[\"a,b,c\", {\",\"}]").unwrap(),
+        "{a, b, c}"
+      );
+    }
+  }
+
+  mod function_name_substitution {
+    use super::*;
+
+    #[test]
+    fn pass_function_as_argument() {
+      clear_state();
+      assert_eq!(
+        interpret_with_stdout("g[f_] := f[]; g[Print[\"Hello\"] &]")
+          .unwrap()
+          .stdout,
+        "Hello\n"
+      );
+    }
+
+    #[test]
+    fn repeat_with_anonymous_function() {
+      clear_state();
+      assert_eq!(
+        interpret_with_stdout(
+          "repeat[f_, n_] := Do[f[], {n}]; repeat[Print[\"hi\"] &, 3]"
+        )
+        .unwrap()
+        .stdout,
+        "hi\nhi\nhi\n"
+      );
     }
   }
 }

@@ -79,6 +79,107 @@ script_test!(script_hello_world, "hello_world.wls");
 script_test!(script_n_queens_problem_1, "n-queens_problem_1.wls");
 script_test!(script_n_queens_problem_2, "n-queens_problem_2.wls");
 script_test!(script_fibonacci_sequence, "fibonacci_sequence.wls");
+script_test!(script_least_common_multiple, "least_common_multiple.wls");
+script_test!(script_leap_year, "leap_year.wls");
+script_test!(script_identity_matrix, "identity_matrix.wls");
+script_test!(script_dot_product, "dot_product.wls");
+script_test!(script_copy_a_string, "copy_a_string.wls");
+script_test!(
+  script_permutations_with_repetitions,
+  "permutations_with_repetitions.wls"
+);
+script_test!(script_reverse_a_string, "reverse_a_string.wls");
+script_test!(
+  script_increment_a_numerical_string,
+  "increment_a_numerical_string.wls"
+);
+script_test!(script_unicode_variable_names, "unicode_variable_names.wls");
+script_test!(script_catamorphism, "catamorphism.wls");
+script_test!(
+  script_terminal_control_display_an_extended_character,
+  "terminal_control_display_an_extended_character.wls"
+);
+
+script_test!(script_array_length, "array_length.wls");
+script_test!(script_sort_an_integer_array, "sort_an_integer_array.wls");
+script_test!(script_test_integerness, "test_integerness.wls");
+script_test!(script_hello_world_text, "hello_world_text.wls");
+script_test!(script_tasks_hello_world, "tasks_hello_world.wls");
+script_test!(
+  script_loops_for_with_a_specified_step,
+  "loops_for_with_a_specified_step.wls"
+);
+script_test!(script_loops_while, "loops_while.wls");
+script_test!(
+  script_loop_over_multiple_arrays_simultaneously,
+  "loop_over_multiple_arrays_simultaneously.wls"
+);
+script_test!(script_loops_for, "loops_for.wls");
+script_test!(script_loops_downward_for, "loops_downward_for.wls");
+script_test!(
+  script_non_decimal_radices_output,
+  "non-decimal_radices_output.wls"
+);
+script_test!(script_exponentiation_order, "exponentiation_order.wls");
+script_test!(script_here_document, "here_document.wls");
+script_test!(script_loops_continue, "loops_continue.wls");
+script_test!(script_string_concatenation, "string_concatenation.wls");
+script_test!(
+  script_singly_linked_list_element_insertion,
+  "singly-linked_list_element_insertion.wls"
+);
+script_test!(
+  script_singly_linked_list_element_definition,
+  "singly-linked_list_element_definition.wls"
+);
+script_test!(
+  script_chinese_remainder_theorem,
+  "chinese_remainder_theorem.wls"
+);
+script_test!(
+  script_evaluate_binomial_coefficients,
+  "evaluate_binomial_coefficients.wls"
+);
+script_test!(script_array_concatenation, "array_concatenation.wls");
+script_test!(script_power_set, "power_set.wls");
+script_test!(script_character_codes, "character_codes.wls");
+script_test!(script_binary_digits, "binary_digits.wls");
+script_test!(
+  script_singly_linked_list_traversal,
+  "singly-linked_list_traversal.wls"
+);
+script_test!(script_string_case, "string_case.wls");
+script_test!(
+  script_determine_if_a_string_is_numeric,
+  "determine_if_a_string_is_numeric.wls"
+);
+script_test!(script_leonardo_numbers, "leonardo_numbers.wls");
+script_test!(script_return_multiple_values, "return_multiple_values.wls");
+script_test!(script_palindrome_detection, "palindrome_detection.wls");
+script_test!(
+  script_averages_root_mean_square,
+  "averages_root_mean_square.wls"
+);
+script_test!(
+  script_non_decimal_radices_convert,
+  "non-decimal_radices_convert.wls"
+);
+script_test!(script_factors_of_an_integer, "factors_of_an_integer.wls");
+script_test!(script_arrays, "arrays.wls");
+script_test!(script_map_range, "map_range.wls");
+script_test!(script_multisplit, "multisplit.wls");
+script_test!(script_flatten_a_list, "flatten_a_list.wls");
+script_test!(script_tokenize_a_string, "tokenize_a_string.wls");
+script_test!(script_repeat, "repeat.wls");
+script_test!(script_loops_do_while, "loops_do-while.wls");
+script_test!(script_averages_mode, "averages_mode.wls");
+script_test!(script_string_append, "string_append.wls");
+script_test!(
+  script_generate_lower_case_ascii_alphabet,
+  "generate_lower_case_ascii_alphabet.wls"
+);
+script_test!(script_string_length, "string_length.wls");
+script_test!(script_vector_products, "vector_products.wls");
 
 #[test]
 fn script_cli_args() {
