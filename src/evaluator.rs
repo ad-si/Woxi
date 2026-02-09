@@ -1526,6 +1526,10 @@ pub fn evaluate_function_call_ast(
     "Sort" if args.len() == 1 => {
       return list_helpers_ast::sort_ast(&args[0]);
     }
+    "List" => {
+      // List[a, b, c] is equivalent to {a, b, c}
+      return Ok(Expr::List(args.to_vec()));
+    }
     "Range" => {
       return list_helpers_ast::range_ast(args);
     }
@@ -1988,6 +1992,9 @@ pub fn evaluate_function_call_ast(
     "EvenQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::even_q_ast(args);
     }
+    "LeapYearQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::leap_year_q_ast(args);
+    }
     "OddQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::odd_q_ast(args);
     }
@@ -2412,7 +2419,7 @@ pub fn evaluate_function_call_ast(
     "Which" if args.len() >= 2 && args.len().is_multiple_of(2) => {
       return crate::functions::boolean_ast::which_ast(args);
     }
-    "While" if args.len() == 2 => {
+    "While" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::boolean_ast::while_ast(args);
     }
     "Equal" if args.len() >= 2 => {
@@ -3296,8 +3303,11 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::Association(pairs))
       });
-    } else if matches!(&rhs_value, Expr::List(_) | Expr::FunctionCall { .. }) {
-      // Store lists and function calls as ExprVal for fast Part access
+    } else if matches!(
+      &rhs_value,
+      Expr::List(_) | Expr::FunctionCall { .. } | Expr::String(_)
+    ) {
+      // Store lists, function calls, and strings as ExprVal for faithful roundtrip
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::ExprVal(rhs_value.clone()))

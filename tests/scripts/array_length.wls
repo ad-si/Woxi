@@ -1,0 +1,1 @@
+Print[Length[{"apple", "orange"}]]

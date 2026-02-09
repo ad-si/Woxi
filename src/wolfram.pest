@@ -13,9 +13,9 @@ UnsignedNumericValue = { UnsignedReal | UnsignedInteger | Constant }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
-PatternName = @{ ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
-Identifier = @{ (ASCII_ALPHA | "_" | "$") ~ (ASCII_ALPHANUMERIC | "_")* }
-String = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
+Identifier = @{ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* }
+String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
 // Anonymous function syntax: body & where body contains # slots
 Slot = @{ "#" ~ ASCII_DIGIT* }
@@ -48,6 +48,7 @@ Operator = {
   | ":="
   | "->"     // Rule (must be before - and >)
   | "+" | "-" | "*" | "/" | "^"
+  | "." ~ !ASCII_DIGIT  // Dot operator (not decimal point)
   | "<" | ">"
   | "=" | "@"
 }
@@ -126,7 +127,6 @@ SimpleTerm = _{
 // to prevent greedy matching across statement boundaries
 TermNoImplicit = _{
     PartExtract
-  | NumericValue
   | Constant
   | String
   | ListAnonymousFunction
@@ -135,6 +135,8 @@ TermNoImplicit = _{
   | ParenAnonymousFunction
   | FunctionCall
   | SimpleAnonymousFunction
+  | ImplicitTimes
+  | NumericValue
   | AddTo
   | SubtractFrom
   | TimesBy

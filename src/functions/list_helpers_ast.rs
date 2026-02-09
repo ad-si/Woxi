@@ -2857,7 +2857,25 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Identifier("Null".to_string()))
     }
-    Expr::List(items) if !items.is_empty() => {
+    Expr::List(items) if items.len() == 1 => {
+      // Do[body, {n}] — repeat n times without iterator variable
+      let n_expr = crate::evaluator::evaluate_expr_to_expr(&items[0])?;
+      let n = expr_to_i128(&n_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Do: repeat count must be an integer".into(),
+        )
+      })?;
+      for _ in 0..n {
+        match crate::evaluator::evaluate_expr_to_expr(body) {
+          Ok(_) => {}
+          Err(InterpreterError::BreakSignal) => break,
+          Err(InterpreterError::ContinueSignal) => {}
+          Err(e) => return Err(e),
+        }
+      }
+      Ok(Expr::Identifier("Null".to_string()))
+    }
+    Expr::List(items) if items.len() >= 2 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
         _ => {
@@ -2867,14 +2885,14 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         }
       };
 
-      let (min, max) = if items.len() == 2 {
+      let (min, max, step) = if items.len() == 2 {
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "Do: iterator bound must be an integer".into(),
           )
         })?;
-        (1i128, max_val)
+        (1i128, max_val, 1i128)
       } else if items.len() >= 3 {
         let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
@@ -2888,24 +2906,59 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
             "Do: iterator bound must be an integer".into(),
           )
         })?;
-        (min_val, max_val)
+        let step_val = if items.len() >= 4 {
+          let step_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
+          expr_to_i128(&step_expr).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Do: step must be an integer".into(),
+            )
+          })?
+        } else {
+          1i128
+        };
+        (min_val, max_val, step_val)
       } else {
         return Err(InterpreterError::EvaluationError(
           "Do: invalid iterator specification".into(),
         ));
       };
 
-      for i in min..=max {
-        let substituted = crate::syntax::substitute_variable(
-          body,
-          &var_name,
-          &Expr::Integer(i),
-        );
-        match crate::evaluator::evaluate_expr_to_expr(&substituted) {
-          Ok(_) => {}
-          Err(InterpreterError::BreakSignal) => break,
-          Err(InterpreterError::ContinueSignal) => {}
-          Err(e) => return Err(e),
+      if step == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Do: step cannot be zero".into(),
+        ));
+      }
+
+      let mut i = min;
+      if step > 0 {
+        while i <= max {
+          let substituted = crate::syntax::substitute_variable(
+            body,
+            &var_name,
+            &Expr::Integer(i),
+          );
+          match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+            Ok(_) => {}
+            Err(InterpreterError::BreakSignal) => break,
+            Err(InterpreterError::ContinueSignal) => {}
+            Err(e) => return Err(e),
+          }
+          i += step;
+        }
+      } else {
+        while i >= max {
+          let substituted = crate::syntax::substitute_variable(
+            body,
+            &var_name,
+            &Expr::Integer(i),
+          );
+          match crate::evaluator::evaluate_expr_to_expr(&substituted) {
+            Ok(_) => {}
+            Err(InterpreterError::BreakSignal) => break,
+            Err(InterpreterError::ContinueSignal) => {}
+            Err(e) => return Err(e),
+          }
+          i += step;
         }
       }
       Ok(Expr::Identifier("Null".to_string()))

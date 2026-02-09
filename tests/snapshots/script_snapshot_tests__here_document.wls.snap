@@ -1,0 +1,15 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+Mathematica
+   is an
+interesing
+ language,
+ with its
+  strings
+   being
+ multiline
+ by default
+ when not
+backs\ashed!

@@ -1,0 +1,1 @@
+Print[StringLength["Hello world"]];

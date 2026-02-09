@@ -1,0 +1,1 @@
+Print[StringReverse["asdf"]]

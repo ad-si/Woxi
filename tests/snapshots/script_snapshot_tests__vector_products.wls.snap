@@ -1,0 +1,8 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+49
+{5, 5, -7}
+6
+{-267, 204, -3}

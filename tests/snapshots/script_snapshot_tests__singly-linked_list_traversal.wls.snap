@@ -1,0 +1,9 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+rosettacode
+kitten
+sitting
+rosettacode
+raisethysword
