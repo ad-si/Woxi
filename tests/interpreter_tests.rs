@@ -483,6 +483,37 @@ mod interpreter_tests {
         "empty"
       );
     }
+
+    #[test]
+    fn paren_anonymous_with_compound_expression() {
+      // (expr1; expr2)& should create an anonymous function with CompoundExpression body
+      assert_eq!(
+        interpret("Reap[Nest[(Sow[#]; 3*# + 1) &, 7, 5]]").unwrap(),
+        "{1822, {{7, 22, 67, 202, 607}}}"
+      );
+    }
+
+    #[test]
+    fn paren_anonymous_direct_call() {
+      // (expr)&[args] should call the anonymous function directly
+      assert_eq!(interpret("(# + 1) &[5]").unwrap(), "6");
+      assert_eq!(interpret("(# * 2 + 3) &[4]").unwrap(), "11");
+      assert_eq!(interpret("(#1 + #2) &[3, 4]").unwrap(), "7");
+    }
+
+    #[test]
+    fn function_anonymous_direct_call() {
+      // If[...]&[args] should call the anonymous function directly
+      assert_eq!(interpret("If[# > 0, #, 0] &[5]").unwrap(), "5");
+      assert_eq!(interpret("If[# > 0, #, 0] &[-3]").unwrap(), "0");
+    }
+
+    #[test]
+    fn list_anonymous_direct_call() {
+      // {expr}&[args] should call the anonymous function directly
+      assert_eq!(interpret("{#, #^2} &[3]").unwrap(), "{3, 9}");
+      assert_eq!(interpret("{#1, #2, #1 + #2} &[2, 5]").unwrap(), "{2, 5, 7}");
+    }
   }
 
   mod table_with_list_iterator {
