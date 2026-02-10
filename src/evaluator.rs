@@ -2641,19 +2641,24 @@ pub fn evaluate_function_call_ast(
       return Ok(args[0].clone());
     }
 
-    // Sow[expr] - adds expr to the current Reap collection
-    "Sow" if args.len() == 1 => {
+    // Sow[expr] or Sow[expr, tag] - adds expr to the current Reap collection
+    "Sow" if args.len() == 1 || args.len() == 2 => {
+      let tag = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::Identifier("None".to_string())
+      };
       crate::SOW_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
         if let Some(last) = stack.last_mut() {
-          last.push(args[0].clone());
+          last.push((args[0].clone(), tag));
         }
       });
       return Ok(args[0].clone());
     }
 
-    // Reap[expr] - evaluates expr, collecting all Sow'd values
-    "Reap" if args.len() == 1 => {
+    // Reap[expr] or Reap[expr, pattern] - evaluates expr, collecting all Sow'd values
+    "Reap" if args.len() == 1 || args.len() == 2 => {
       // Push a new collection
       crate::SOW_STACK.with(|stack| {
         stack.borrow_mut().push(Vec::new());
@@ -2663,14 +2668,62 @@ pub fn evaluate_function_call_ast(
       // Pop the collection
       let sowed = crate::SOW_STACK
         .with(|stack| stack.borrow_mut().pop().unwrap_or_default());
-      // Return {result, {sowed_values}} or {result, {}} if none
-      if sowed.is_empty() {
-        return Ok(Expr::List(vec![result, Expr::List(vec![])]));
+
+      if args.len() == 1 {
+        // Reap[expr] - group by unique tags, preserving order of first appearance
+        if sowed.is_empty() {
+          return Ok(Expr::List(vec![result, Expr::List(vec![])]));
+        }
+        let mut tag_order: Vec<Expr> = Vec::new();
+        let mut tag_groups: Vec<Vec<Expr>> = Vec::new();
+        for (val, tag) in &sowed {
+          if let Some(idx) = tag_order
+            .iter()
+            .position(|t| expr_to_string(t) == expr_to_string(tag))
+          {
+            tag_groups[idx].push(val.clone());
+          } else {
+            tag_order.push(tag.clone());
+            tag_groups.push(vec![val.clone()]);
+          }
+        }
+        let groups: Vec<Expr> =
+          tag_groups.into_iter().map(Expr::List).collect();
+        return Ok(Expr::List(vec![result, Expr::List(groups)]));
       } else {
-        return Ok(Expr::List(vec![
-          result,
-          Expr::List(vec![Expr::List(sowed)]),
-        ]));
+        // Reap[expr, patt] or Reap[expr, {patt1, patt2, ...}]
+        let patt_arg = evaluate_expr_to_expr(&args[1])?;
+        let patterns = match &patt_arg {
+          Expr::List(pats) => pats.clone(),
+          _ => vec![patt_arg.clone()],
+        };
+        let is_list_form = matches!(&patt_arg, Expr::List(_));
+
+        let mut result_groups: Vec<Expr> = Vec::new();
+        for patt in &patterns {
+          // Collect all sowed values whose tag matches the pattern
+          let mut matched: Vec<Expr> = Vec::new();
+          let is_blank = matches!(patt, Expr::Pattern { .. });
+          for (val, tag) in &sowed {
+            if is_blank || expr_to_string(tag) == expr_to_string(patt) {
+              matched.push(val.clone());
+            }
+          }
+          if is_list_form {
+            // {patt1, patt2, ...} form: each pattern gets a list wrapping
+            if matched.is_empty() {
+              result_groups.push(Expr::List(vec![]));
+            } else {
+              result_groups.push(Expr::List(vec![Expr::List(matched)]));
+            }
+          } else {
+            // single pattern form: just the matched list
+            if !matched.is_empty() {
+              result_groups.push(Expr::List(matched));
+            }
+          }
+        }
+        return Ok(Expr::List(vec![result, Expr::List(result_groups)]));
       }
     }
 

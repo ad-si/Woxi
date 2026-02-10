@@ -4714,6 +4714,64 @@ mod interpreter_tests {
     fn sow_returns_value() {
       assert_eq!(interpret("Sow[7]").unwrap(), "7");
     }
+
+    #[test]
+    fn sow_with_tag() {
+      assert_eq!(
+        interpret(r#"Reap[Sow[1, "a"]; Sow[2, "b"]; Sow[3, "a"]]"#).unwrap(),
+        "{3, {{1, 3}, {2}}}"
+      );
+    }
+
+    #[test]
+    fn reap_with_single_tag_pattern() {
+      assert_eq!(
+        interpret(r#"Reap[Sow[1, "a"]; Sow[2, "b"]; Sow[3, "a"], "a"]"#)
+          .unwrap(),
+        "{3, {{1, 3}}}"
+      );
+    }
+
+    #[test]
+    fn reap_with_tag_list() {
+      assert_eq!(
+        interpret(r#"Reap[Sow[1, "a"]; Sow[2, "b"]; Sow[3, "a"], {"a", "b"}]"#)
+          .unwrap(),
+        "{3, {{{1, 3}}, {{2}}}}"
+      );
+    }
+
+    #[test]
+    fn reap_tagged_with_do_loop() {
+      assert_eq!(
+        interpret(r#"Reap[Do[If[EvenQ[i], Sow[i, "even"], Sow[i, "odd"]], {i, 6}], {"even", "odd"}]"#).unwrap(),
+        "{Null, {{{2, 4, 6}}, {{1, 3, 5}}}}"
+      );
+    }
+
+    #[test]
+    fn reap_mixed_tagged_untagged() {
+      assert_eq!(
+        interpret(r#"Reap[Sow[1]; Sow[2, "a"]; Sow[3]]"#).unwrap(),
+        "{3, {{1, 3}, {2}}}"
+      );
+    }
+
+    #[test]
+    fn reap_with_none_tag() {
+      assert_eq!(
+        interpret("Reap[Sow[1]; Sow[2]; Sow[3], None]").unwrap(),
+        "{3, {{1, 2, 3}}}"
+      );
+    }
+
+    #[test]
+    fn reap_tag_list_with_no_matches() {
+      assert_eq!(
+        interpret(r#"Reap[Sow[1, "a"], {"b"}]"#).unwrap(),
+        "{1, {{}}}"
+      );
+    }
   }
 
   mod unitize {
