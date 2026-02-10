@@ -4132,6 +4132,40 @@ mod interpreter_tests {
     fn dot_simple() {
       assert_eq!(interpret("Dot[{1, 2}, {3, 4}]").unwrap(), "11");
     }
+
+    #[test]
+    fn infix_dot_vector() {
+      // Infix . operator should evaluate the same as Dot[]
+      assert_eq!(interpret("{1, 2, 3} . {4, 5, 6}").unwrap(), "32");
+    }
+
+    #[test]
+    fn infix_dot_matrix_vector() {
+      assert_eq!(
+        interpret("{{1, 2}, {3, 4}} . {5, 6}").unwrap(),
+        "{17, 39}"
+      );
+    }
+
+    #[test]
+    fn infix_dot_matrix_matrix() {
+      assert_eq!(
+        interpret("{{1, 2}, {3, 4}} . {{5, 6}, {7, 8}}").unwrap(),
+        "{{19, 22}, {43, 50}}"
+      );
+    }
+
+    #[test]
+    fn infix_dot_symbolic() {
+      // Symbolic dot returns unevaluated in infix form
+      assert_eq!(interpret("a . b").unwrap(), "a . b");
+    }
+
+    #[test]
+    fn dot_display_infix() {
+      // Dot[a, b] should display as infix a . b
+      assert_eq!(interpret("Dot[a, b]").unwrap(), "a . b");
+    }
   }
 
   mod det {
@@ -4369,7 +4403,8 @@ mod interpreter_tests {
     #[test]
     fn on_list() {
       assert_eq!(
-        interpret("AssociationMap[StringLength, {\"cat\", \"horse\", \"ox\"}]").unwrap(),
+        interpret("AssociationMap[StringLength, {\"cat\", \"horse\", \"ox\"}]")
+          .unwrap(),
         "<|cat -> 3, horse -> 5, ox -> 2|>"
       );
     }
