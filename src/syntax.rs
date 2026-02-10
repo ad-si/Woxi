@@ -496,6 +496,11 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         .collect();
       Expr::FunctionCall { name, args }
     }
+    Rule::LeadingMinus => {
+      // LeadingMinus is handled in parse_expression, not here directly
+      // But if encountered standalone, treat as a sentinel
+      Expr::Integer(0) // Should not be reached
+    }
     Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
       parse_expression(pair)
     }
@@ -803,13 +808,24 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   // Build expression with proper precedence
   let mut terms: Vec<Expr> = Vec::new();
   let mut operators: Vec<String> = Vec::new();
+  let mut leading_minus = false;
 
   for item in inner {
     match item.as_rule() {
+      Rule::LeadingMinus => {
+        // Insert synthetic 0 and "-" operator so that -x^2 becomes 0 - x^2
+        // This ensures ^ binds tighter than unary minus
+        leading_minus = true;
+      }
       Rule::Operator | Rule::ConditionOp => {
         operators.push(item.as_str().to_string());
       }
       _ => {
+        if leading_minus {
+          terms.push(Expr::Integer(0));
+          operators.push("-".to_string());
+          leading_minus = false;
+        }
         terms.push(pair_to_expr(item));
       }
     }
@@ -1249,6 +1265,26 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{}[{}]", name, parts.join(", "))
     }
     Expr::BinaryOp { op, left, right } => {
+      // Special case: Times[-1, expr] should display as -expr
+      if matches!(op, BinaryOperator::Times)
+        && matches!(left.as_ref(), Expr::Integer(-1))
+      {
+        let right_str = expr_to_string(right);
+        // Add parens if needed for clarity (e.g., -(a+b))
+        return if matches!(
+          right.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        ) || matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
+        {
+          format!("-({})", right_str)
+        } else {
+          format!("-{}", right_str)
+        };
+      }
+
       // Special case: a + (-b) should display as a - b
       if matches!(op, BinaryOperator::Plus)
         && let Expr::UnaryOp {
@@ -1259,6 +1295,19 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let left_str = expr_to_string(left);
         let operand_str = expr_to_string(operand);
         return format!("{} - {}", left_str, operand_str);
+      }
+      // Special case: a + Times[-1, b] should display as a - b
+      if matches!(op, BinaryOperator::Plus)
+        && let Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: t_left,
+          right: t_right,
+        } = right.as_ref()
+        && matches!(t_left.as_ref(), Expr::Integer(-1))
+      {
+        let left_str = expr_to_string(left);
+        let right_str = expr_to_string(t_right);
+        return format!("{} - {}", left_str, right_str);
       }
 
       // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||
@@ -1308,6 +1357,23 @@ pub fn expr_to_string(expr: &Expr) -> String {
           }
         ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Times")
       };
+      // Check if right side of Power is a negative (Times[-1, ...]) or UnaryOp::Minus
+      let is_negative_expr = |e: &Expr| -> bool {
+        matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left,
+            ..
+          } if matches!(left.as_ref(), Expr::Integer(-1))
+        ) || matches!(
+          e,
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            ..
+          }
+        ) || matches!(e, Expr::Integer(n) if *n < 0)
+      };
       let needs_right_parens = (is_multiplicative && is_additive(right))
         || (matches!(op, BinaryOperator::Divide)
           && is_right_multiplicative(right))
@@ -1321,7 +1387,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
               op: BinaryOperator::Divide,
               ..
             }
-          )));
+          ) || is_negative_expr(right)));
       let right_formatted = if needs_right_parens {
         format!("({})", right_str)
       } else {
@@ -1504,6 +1570,41 @@ pub fn expr_to_output(expr: &Expr) -> String {
           {
             result.push_str(" - ");
             result.push_str(&expr_to_output(operand));
+          } else if let Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left,
+            right,
+          } = arg
+          {
+            if matches!(left.as_ref(), Expr::Integer(-1)) {
+              result.push_str(" - ");
+              result.push_str(&expr_to_output(right));
+            } else if let Expr::Integer(n) = left.as_ref() {
+              if *n < 0 {
+                result.push_str(" - ");
+                // Display as (-n)*right
+                let pos = Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Integer(-n)),
+                  right: right.clone(),
+                };
+                result.push_str(&expr_to_output(&pos));
+              } else {
+                result.push_str(" + ");
+                result.push_str(&expr_to_output(arg));
+              }
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_output(arg));
+            }
+          } else if let Expr::Integer(n) = arg {
+            if *n < 0 {
+              result.push_str(" - ");
+              result.push_str(&expr_to_output(&Expr::Integer(-n)));
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_output(arg));
+            }
           } else {
             result.push_str(" + ");
             result.push_str(&expr_to_output(arg));

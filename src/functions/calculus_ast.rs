@@ -28,7 +28,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   differentiate(&args[0], &var_name)
 }
 
-/// Integrate[expr, var] - Symbolic integration
+/// Integrate[expr, var] or Integrate[expr, {var, lo, hi}] - Symbolic integration
 pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -36,13 +36,57 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Get the variable name
+  // Check if the second argument is {var, lo, hi} (definite integral)
+  if let Expr::List(items) = &args[1]
+    && items.len() == 3
+  {
+    let var_name = match &items[0] {
+      Expr::Identifier(name) => name.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Integrate".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let lo = &items[1];
+    let hi = &items[2];
+
+    // Try known definite integrals first
+    if let Some(result) = try_definite_integral(&args[0], &var_name, lo, hi) {
+      return Ok(result);
+    }
+
+    // Fall back: compute indefinite integral and evaluate at bounds
+    if let Some(antideriv) = integrate(&args[0], &var_name) {
+      let antideriv = simplify(antideriv);
+      // F(hi) - F(lo)
+      let at_hi = crate::syntax::substitute_variable(&antideriv, &var_name, hi);
+      let at_lo = crate::syntax::substitute_variable(&antideriv, &var_name, lo);
+      let at_hi = crate::evaluator::evaluate_expr_to_expr(&at_hi)?;
+      let at_lo = crate::evaluator::evaluate_expr_to_expr(&at_lo)?;
+      return Ok(simplify(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(at_hi),
+        right: Box::new(at_lo),
+      }));
+    }
+
+    // Return unevaluated
+    return Ok(Expr::FunctionCall {
+      name: "Integrate".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Indefinite integral: Integrate[expr, var]
   let var_name = match &args[1] {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Second argument of Integrate must be a symbol".into(),
-      ));
+      return Ok(Expr::FunctionCall {
+        name: "Integrate".to_string(),
+        args: args.to_vec(),
+      });
     }
   };
 
@@ -54,6 +98,227 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec(),
     }),
   }
+}
+
+/// Check if an expression represents Infinity
+fn is_infinity(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(name) if name == "Infinity")
+}
+
+/// Check if an expression represents -Infinity (via UnaryOp::Minus or Times[-1, Infinity])
+fn is_negative_infinity(expr: &Expr) -> bool {
+  match expr {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_infinity(operand),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      (matches!(left.as_ref(), Expr::Integer(-1)) && is_infinity(right))
+        || (matches!(right.as_ref(), Expr::Integer(-1)) && is_infinity(left))
+    }
+    Expr::Integer(n) if *n < 0 => false, // negative number, not -Infinity
+    _ => false,
+  }
+}
+
+/// Try to evaluate a definite integral using known closed-form results
+fn try_definite_integral(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Option<Expr> {
+  // Gaussian integral: ∫_{-∞}^{∞} E^(-a*x^2) dx = Sqrt[Pi/a]
+  if is_negative_infinity(lo)
+    && is_infinity(hi)
+    && let Some(coeff) = match_gaussian(integrand, var)
+  {
+    // coeff is 'a' in E^(-a*x^2): result = Sqrt[Pi/a]
+    return Some(match coeff {
+      Expr::Integer(1) => Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Constant("Pi".to_string())],
+      },
+      _ => Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Constant("Pi".to_string())),
+          right: Box::new(coeff),
+        }],
+      },
+    });
+  }
+
+  // Half-Gaussian: ∫_0^{∞} E^(-a*x^2) dx = Sqrt[Pi/a]/2
+  if matches!(lo, Expr::Integer(0))
+    && is_infinity(hi)
+    && let Some(coeff) = match_gaussian(integrand, var)
+  {
+    let sqrt_part = match coeff {
+      Expr::Integer(1) => Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Constant("Pi".to_string())],
+      },
+      _ => Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Constant("Pi".to_string())),
+          right: Box::new(coeff),
+        }],
+      },
+    };
+    return Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(sqrt_part),
+      right: Box::new(Expr::Integer(2)),
+    });
+  }
+
+  None
+}
+
+/// Try to match an expression as E^(-a*x^2) where a is a positive constant.
+/// Returns Some(a) if it matches, None otherwise.
+fn match_gaussian(expr: &Expr, var: &str) -> Option<Expr> {
+  // Match E^(exponent) where E is the constant
+  let exponent = match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Constant(c) if c == "E") {
+        Some(right.as_ref())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }?;
+
+  // Match -a*x^2 or -(x^2) forms in the exponent
+  match_neg_a_x_squared(exponent, var)
+}
+
+/// Match an exponent expression as -a*x^2 and return 'a'.
+/// Handles forms: -x^2, -(x^2), -a*x^2, Times[-1, x, x], etc.
+fn match_neg_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
+  match expr {
+    // UnaryOp::Minus wrapping something
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      // -x^2 => a=1
+      if is_var_squared(operand, var) {
+        return Some(Expr::Integer(1));
+      }
+      // -(a*x^2) => a
+      if let Some(coeff) = match_a_x_squared(operand, var) {
+        return Some(coeff);
+      }
+      None
+    }
+    // Times[-1, x^2] or Times[x^2, -1]
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      // -1 * x^2
+      if matches!(left.as_ref(), Expr::Integer(-1))
+        && is_var_squared(right, var)
+      {
+        return Some(Expr::Integer(1));
+      }
+      if matches!(right.as_ref(), Expr::Integer(-1))
+        && is_var_squared(left, var)
+      {
+        return Some(Expr::Integer(1));
+      }
+      // -1 * (a * x^2)
+      if matches!(left.as_ref(), Expr::Integer(-1))
+        && let Some(coeff) = match_a_x_squared(right, var)
+      {
+        return Some(coeff);
+      }
+      if matches!(right.as_ref(), Expr::Integer(-1))
+        && let Some(coeff) = match_a_x_squared(left, var)
+      {
+        return Some(coeff);
+      }
+      // (-a) * x^2 where a is a negative integer
+      if let Expr::Integer(n) = left.as_ref()
+        && *n < 0
+        && is_var_squared(right, var)
+      {
+        return Some(Expr::Integer(-*n));
+      }
+      if let Expr::Integer(n) = right.as_ref()
+        && *n < 0
+        && is_var_squared(left, var)
+      {
+        return Some(Expr::Integer(-*n));
+      }
+      None
+    }
+    // BinaryOp::Minus: 0 - x^2 or similar (unlikely but handle)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Integer(0)) {
+        if is_var_squared(right, var) {
+          return Some(Expr::Integer(1));
+        }
+        if let Some(coeff) = match_a_x_squared(right, var) {
+          return Some(coeff);
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Check if expr is x^2 (where x is the variable)
+fn is_var_squared(expr: &Expr, var: &str) -> bool {
+  matches!(
+    expr,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Identifier(name) if name == var)
+      && matches!(right.as_ref(), Expr::Integer(2))
+  )
+}
+
+/// Match a*x^2 and return 'a'
+fn match_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    // a * x^2
+    if is_constant_wrt(left, var) && is_var_squared(right, var) {
+      return Some(*left.clone());
+    }
+    // x^2 * a
+    if is_var_squared(left, var) && is_constant_wrt(right, var) {
+      return Some(*right.clone());
+    }
+  }
+  None
 }
 
 /// Check if expression is constant with respect to a variable
