@@ -4490,6 +4490,36 @@ mod interpreter_tests {
         "<|2 -> b|>"
       );
     }
+
+    #[test]
+    fn key_select_string_starts_q() {
+      assert_eq!(
+        interpret(
+          "KeySelect[<|\"apple\" -> 1, \"ax\" -> 2, \"banana\" -> 3|>, StringStartsQ[\"a\"]]"
+        )
+        .unwrap(),
+        "<|apple -> 1, ax -> 2|>"
+      );
+    }
+
+    #[test]
+    fn key_select_string_ends_q() {
+      assert_eq!(
+        interpret(
+          "KeySelect[<|\"hello\" -> 1, \"world\" -> 2, \"foo\" -> 3|>, StringEndsQ[\"o\"]]"
+        )
+        .unwrap(),
+        "<|hello -> 1, foo -> 3|>"
+      );
+    }
+
+    #[test]
+    fn key_select_anonymous_function() {
+      assert_eq!(
+        interpret("KeySelect[<|-3 -> x, 0 -> y, 5 -> z|>, # > 0 &]").unwrap(),
+        "<|5 -> z|>"
+      );
+    }
   }
 
   mod key_take {
@@ -4872,7 +4902,8 @@ mod interpreter_tests {
     #[test]
     fn collatz_sequence() {
       assert_eq!(
-        interpret("NestWhileList[If[EvenQ[#], #/2, 3 # + 1] &, 27, # > 1 &]").unwrap(),
+        interpret("NestWhileList[If[EvenQ[#], #/2, 3 # + 1] &, 27, # > 1 &]")
+          .unwrap(),
         "{27, 82, 41, 124, 62, 31, 94, 47, 142, 71, 214, 107, 322, 161, 484, 242, 121, 364, 182, 91, 274, 137, 412, 206, 103, 310, 155, 466, 233, 700, 350, 175, 526, 263, 790, 395, 1186, 593, 1780, 890, 445, 1336, 668, 334, 167, 502, 251, 754, 377, 1132, 566, 283, 850, 425, 1276, 638, 319, 958, 479, 1438, 719, 2158, 1079, 3238, 1619, 4858, 2429, 7288, 3644, 1822, 911, 2734, 1367, 4102, 2051, 6154, 3077, 9232, 4616, 2308, 1154, 577, 1732, 866, 433, 1300, 650, 325, 976, 488, 244, 122, 61, 184, 92, 46, 23, 70, 35, 106, 53, 160, 80, 40, 20, 10, 5, 16, 8, 4, 2, 1}"
       );
     }
@@ -4880,8 +4911,70 @@ mod interpreter_tests {
     #[test]
     fn collatz_short() {
       assert_eq!(
-        interpret("NestWhileList[If[EvenQ[#], #/2, 3 # + 1] &, 6, # > 1 &]").unwrap(),
+        interpret("NestWhileList[If[EvenQ[#], #/2, 3 # + 1] &, 6, # > 1 &]")
+          .unwrap(),
         "{6, 3, 10, 5, 16, 8, 4, 2, 1}"
+      );
+    }
+  }
+
+  mod operator_form {
+    use super::*;
+
+    #[test]
+    fn string_starts_q_curried() {
+      assert_eq!(
+        interpret("StringStartsQ[\"He\"][\"Hello\"]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn string_starts_q_curried_false() {
+      assert_eq!(
+        interpret("StringStartsQ[\"Wo\"][\"Hello\"]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn string_ends_q_curried() {
+      assert_eq!(
+        interpret("StringEndsQ[\"lo\"][\"Hello\"]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn string_contains_q_curried() {
+      assert_eq!(
+        interpret("StringContainsQ[\"ell\"][\"Hello\"]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn member_q_curried() {
+      assert_eq!(
+        interpret("MemberQ[2][{1, 2, 3}]").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn member_q_curried_false() {
+      assert_eq!(
+        interpret("MemberQ[5][{1, 2, 3}]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn select_with_curried_string_starts_q() {
+      assert_eq!(
+        interpret("Select[{\"apple\", \"avocado\", \"banana\"}, StringStartsQ[\"a\"]]")
+          .unwrap(),
+        "{apple, avocado}"
       );
     }
   }

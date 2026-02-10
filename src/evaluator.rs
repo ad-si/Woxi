@@ -4170,10 +4170,18 @@ pub fn apply_function_to_arg(
     }
     Expr::FunctionCall { name, args } => {
       // Curried function: f[a] applied to b becomes f[a, b]
-      // Special case: ReplaceAll and ReplaceRepeated operator forms
-      // ReplaceAll[rules][expr] becomes ReplaceAll[expr, rules]
-      // ReplaceRepeated[rules][expr] becomes ReplaceRepeated[expr, rules]
-      if (name == "ReplaceAll" || name == "ReplaceRepeated") && args.len() == 1
+      // Special case: operator forms where f[x][y] becomes f[y, x]
+      // (the applied argument becomes the first parameter)
+      if matches!(
+        name.as_str(),
+        "ReplaceAll"
+          | "ReplaceRepeated"
+          | "StringStartsQ"
+          | "StringEndsQ"
+          | "StringContainsQ"
+          | "StringMatchQ"
+          | "MemberQ"
+      ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
         let new_args = vec![arg.clone(), args[0].clone()];
@@ -4221,11 +4229,17 @@ fn apply_curried_call(
       args: func_args,
     } => {
       // Curried function: f[a][b] becomes f[a, b]
-      // Special case: ReplaceAll and ReplaceRepeated operator forms
-      // ReplaceAll[rules][expr] becomes ReplaceAll[expr, rules]
-      // ReplaceRepeated[rules][expr] becomes ReplaceRepeated[expr, rules]
-      if (name == "ReplaceAll" || name == "ReplaceRepeated")
-        && func_args.len() == 1
+      // Special case: operator forms where f[x][y] becomes f[y, x]
+      if matches!(
+        name.as_str(),
+        "ReplaceAll"
+          | "ReplaceRepeated"
+          | "StringStartsQ"
+          | "StringEndsQ"
+          | "StringContainsQ"
+          | "StringMatchQ"
+          | "MemberQ"
+      ) && func_args.len() == 1
         && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
