@@ -505,6 +505,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(bigint_to_expr(big_product));
     }
 
+    // 0 * anything = 0
+    if big_product == BigInt::from(0) {
+      return Ok(Expr::Integer(0));
+    }
+
     let mut final_args: Vec<Expr> = Vec::new();
     if big_product != BigInt::from(1) {
       final_args.push(bigint_to_expr(big_product));
@@ -519,32 +524,53 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Simple numeric product
-  let mut product = 1.0;
-  let mut all_numeric = true;
+  // Separate numeric and symbolic arguments
+  let mut numeric_product = 1.0;
   let mut any_real = false;
+  let mut symbolic_args: Vec<Expr> = Vec::new();
+
   for arg in args {
     if let Some(n) = expr_to_num(arg) {
-      product *= n;
+      numeric_product *= n;
       if matches!(arg, Expr::Real(_)) {
         any_real = true;
       }
     } else {
-      all_numeric = false;
-      break;
+      symbolic_args.push(arg.clone());
     }
   }
 
-  if all_numeric {
+  // If all arguments are numeric, return the product
+  if symbolic_args.is_empty() {
     if any_real {
-      Ok(Expr::Real(product))
+      return Ok(Expr::Real(numeric_product));
     } else {
-      Ok(num_to_expr(product))
+      return Ok(num_to_expr(numeric_product));
     }
+  }
+
+  // 0 * anything = 0
+  if numeric_product == 0.0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Build final args: numeric coefficient (if not 1) + symbolic terms
+  let mut final_args: Vec<Expr> = Vec::new();
+  if numeric_product != 1.0 || any_real {
+    if any_real {
+      final_args.push(Expr::Real(numeric_product));
+    } else {
+      final_args.push(num_to_expr(numeric_product));
+    }
+  }
+  final_args.extend(symbolic_args);
+
+  if final_args.len() == 1 {
+    Ok(final_args.remove(0))
   } else {
     Ok(Expr::FunctionCall {
       name: "Times".to_string(),
-      args: args.to_vec(),
+      args: final_args,
     })
   }
 }
