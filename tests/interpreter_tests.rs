@@ -4347,6 +4347,48 @@ mod interpreter_tests {
     }
   }
 
+  mod association_map {
+    use super::*;
+
+    #[test]
+    fn reverse_on_association() {
+      assert_eq!(
+        interpret("AssociationMap[Reverse, <|a -> 1, b -> 2|>]").unwrap(),
+        "<|1 -> a, 2 -> b|>"
+      );
+    }
+
+    #[test]
+    fn symbolic_function_on_association() {
+      assert_eq!(
+        interpret("AssociationMap[f, <|x -> 10, y -> 20|>]").unwrap(),
+        "Association[f[x -> 10], f[y -> 20]]"
+      );
+    }
+
+    #[test]
+    fn on_list() {
+      assert_eq!(
+        interpret("AssociationMap[StringLength, {\"cat\", \"horse\", \"ox\"}]").unwrap(),
+        "<|cat -> 3, horse -> 5, ox -> 2|>"
+      );
+    }
+  }
+
+  mod reverse_rule {
+    use super::*;
+
+    #[test]
+    fn reverse_rule() {
+      assert_eq!(interpret("Reverse[a -> b]").unwrap(), "b -> a");
+    }
+
+    #[test]
+    fn reverse_rule_numeric() {
+      assert_eq!(interpret("Reverse[1 -> 2]").unwrap(), "2 -> 1");
+    }
+  }
+
   mod merge {
     use super::*;
 
@@ -4533,10 +4575,7 @@ mod interpreter_tests {
 
     #[test]
     fn symbolic_single() {
-      assert_eq!(
-        interpret("KroneckerDelta[x]").unwrap(),
-        "KroneckerDelta[x]"
-      );
+      assert_eq!(interpret("KroneckerDelta[x]").unwrap(), "KroneckerDelta[x]");
     }
 
     #[test]

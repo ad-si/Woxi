@@ -279,7 +279,6 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           replacement: Box::new(value.clone()),
         };
         let result = crate::evaluator::apply_function_to_arg(func, &rule)?;
-        // Result must be a Rule to form a valid association
         match result {
           Expr::Rule {
             pattern,
@@ -288,7 +287,8 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             new_items.push((*pattern, *replacement));
           }
           _ => {
-            // Return the mapped results as a list (like Wolfram when f doesn't produce rules)
+            // When f doesn't produce rules, collect all results as Association args
+            // Wolfram returns Association[f[...], f[...]] (not a plain List)
             let results: Result<Vec<Expr>, InterpreterError> = items
               .iter()
               .map(|(k, v)| {
@@ -299,14 +299,26 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 crate::evaluator::apply_function_to_arg(func, &r)
               })
               .collect();
-            return Ok(Expr::List(results?));
+            return Ok(Expr::FunctionCall {
+              name: "Association".to_string(),
+              args: results?,
+            });
           }
         }
       }
       Ok(Expr::Association(new_items))
     }
+    Expr::List(items) => {
+      // AssociationMap[f, {e1, e2, ...}] creates <|e1 -> f[e1], e2 -> f[e2], ...|>
+      let mut new_items = Vec::new();
+      for item in items {
+        let result = crate::evaluator::apply_function_to_arg(func, item)?;
+        new_items.push((item.clone(), result));
+      }
+      Ok(Expr::Association(new_items))
+    }
     _ => Err(InterpreterError::EvaluationError(
-      "AssociationMap expects an association as second argument".into(),
+      "AssociationMap expects an association or list as second argument".into(),
     )),
   }
 }

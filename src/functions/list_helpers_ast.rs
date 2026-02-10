@@ -1680,6 +1680,13 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       reversed.reverse();
       Ok(Expr::List(reversed))
     }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Ok(Expr::Rule {
+      pattern: replacement.clone(),
+      replacement: pattern.clone(),
+    }),
     _ => Ok(Expr::FunctionCall {
       name: "Reverse".to_string(),
       args: vec![list.clone()],
