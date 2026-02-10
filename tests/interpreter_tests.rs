@@ -2410,6 +2410,43 @@ mod interpreter_tests {
     fn linear() {
       assert_eq!(interpret("Factor[2*x + 4]").unwrap(), "2*(2 + x)");
     }
+
+    #[test]
+    fn cyclotomic_x6_minus_1() {
+      assert_eq!(
+        interpret("Factor[x^6 - 1]").unwrap(),
+        "(-1 + x)*(1 + x)*(1 - x + x^2)*(1 + x + x^2)"
+      );
+    }
+
+    #[test]
+    fn cyclotomic_x12_minus_1() {
+      assert_eq!(
+        interpret("Factor[x^12 - 1]").unwrap(),
+        "(-1 + x)*(1 + x)*(1 + x^2)*(1 - x + x^2)*(1 + x + x^2)*(1 - x^2 + x^4)"
+      );
+    }
+
+    #[test]
+    fn cyclotomic_x100_minus_1() {
+      assert_eq!(
+        interpret("Factor[x^100 - 1]").unwrap(),
+        "(-1 + x)*(1 + x)*(1 + x^2)*(1 - x + x^2 - x^3 + x^4)*(1 + x + x^2 + x^3 + x^4)*(1 - x^2 + x^4 - x^6 + x^8)*(1 - x^5 + x^10 - x^15 + x^20)*(1 + x^5 + x^10 + x^15 + x^20)*(1 - x^10 + x^20 - x^30 + x^40)"
+      );
+    }
+
+    #[test]
+    fn irreducible_x4_plus_1() {
+      assert_eq!(interpret("Factor[x^4 + 1]").unwrap(), "1 + x^4");
+    }
+
+    #[test]
+    fn cyclotomic_x4_minus_1() {
+      assert_eq!(
+        interpret("Factor[x^4 - 1]").unwrap(),
+        "(-1 + x)*(1 + x)*(1 + x^2)"
+      );
+    }
   }
 
   // ─── Control Flow ─────────────────────────────────────────────────
