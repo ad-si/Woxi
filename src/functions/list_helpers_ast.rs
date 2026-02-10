@@ -2633,22 +2633,31 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             crate::evaluator::evaluate_expr_to_expr(&items[1])?;
           if let Expr::List(list_items) = &evaluated_second {
             // Sum[expr, {i, list}] -> iterate over list elements
-            let mut sum = 0.0;
+            let mut acc = Expr::Integer(0);
             for item in list_items {
               let substituted =
                 crate::syntax::substitute_variable(body, &var_name, item);
               let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-              if let Some(n) = expr_to_f64(&val) {
-                sum += n;
-              } else {
-                return Ok(Expr::FunctionCall {
-                  name: "Sum".to_string(),
-                  args: args.to_vec(),
-                });
-              }
+              acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
             }
-            return Ok(f64_to_expr(sum));
+            return Ok(acc);
           }
+        }
+
+        // Check for infinite sum: {i, min, Infinity}
+        if items.len() == 3
+          && let Expr::Identifier(s) = &items[2]
+          && s == "Infinity"
+        {
+          let min_val = expr_to_i128(&items[1]).unwrap_or(1);
+          if let Some(result) = try_infinite_sum(body, &var_name, min_val)? {
+            return Ok(result);
+          }
+          // Could not evaluate symbolically — return unevaluated
+          return Ok(Expr::FunctionCall {
+            name: "Sum".to_string(),
+            args: args.to_vec(),
+          });
         }
 
         let (min, max) = if items.len() == 2 {
@@ -2672,7 +2681,7 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (min_val, max_val)
         };
 
-        let mut sum = 0.0;
+        let mut acc = Expr::Integer(0);
         for i in min..=max {
           let substituted = crate::syntax::substitute_variable(
             body,
@@ -2680,16 +2689,9 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &Expr::Integer(i),
           );
           let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-          if let Some(n) = expr_to_f64(&val) {
-            sum += n;
-          } else {
-            return Ok(Expr::FunctionCall {
-              name: "Sum".to_string(),
-              args: args.to_vec(),
-            });
-          }
+          acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
         }
-        return Ok(f64_to_expr(sum));
+        return Ok(acc);
       }
       _ => {}
     }
@@ -2699,6 +2701,283 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Sum".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Try to evaluate a known infinite series Sum[body, {var, min, Infinity}].
+/// Returns Some(result) if a closed form is found, None otherwise.
+fn try_infinite_sum(
+  body: &Expr,
+  var_name: &str,
+  min: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Only handle sums starting at 1 for now
+  if min != 1 {
+    return Ok(None);
+  }
+
+  // Try to detect the pattern 1/var^s (i.e., var^(-s))
+  // The body for 1/n^2 is: Times[1, Power[Power[n, 2], -1]]
+  // which evaluates/simplifies to Power[n, -2] conceptually,
+  // but in practice we need to match the AST structure.
+  if let Some(s) = match_reciprocal_power(body, var_name) {
+    if s >= 2 && s % 2 == 0 {
+      // Zeta(s) for even s: (-1)^(s/2+1) * B_s * (2*Pi)^s / (2 * s!)
+      return Ok(Some(zeta_even(s)?));
+    }
+    // Odd s >= 3: no known closed form in terms of Pi (returns Zeta[s])
+    if s >= 3 && s % 2 == 1 {
+      return Ok(Some(Expr::FunctionCall {
+        name: "Zeta".to_string(),
+        args: vec![Expr::Integer(s as i128)],
+      }));
+    }
+  }
+
+  Ok(None)
+}
+
+/// Match the pattern `1/var^s` in the body expression.
+/// Returns Some(s) if the body is equivalent to var^(-s) with s a positive integer.
+fn match_reciprocal_power(body: &Expr, var_name: &str) -> Option<i64> {
+  use crate::syntax::BinaryOperator;
+
+  match body {
+    // Direct Power[var, -s]
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Identifier(name) = left.as_ref()
+        && name == var_name
+        && let Some(exp) = get_integer(right)
+        && exp < 0
+      {
+        return Some(-exp as i64);
+      }
+      // Power[Power[var, s], -1]
+      match_power_inverse(body, var_name)
+    }
+    // Divide[1, Power[var, s]] or Divide[1, var]  (how 1/var^s is stored internally)
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      if is_one(left) {
+        // 1 / var^s
+        if let Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: base,
+          right: exp,
+        } = right.as_ref()
+          && let Expr::Identifier(name) = base.as_ref()
+          && name == var_name
+          && let Some(s) = get_integer(exp)
+          && s > 0
+        {
+          return Some(s as i64);
+        }
+        // 1 / var => s = 1
+        if let Expr::Identifier(name) = right.as_ref()
+          && name == var_name
+        {
+          return Some(1);
+        }
+      }
+      None
+    }
+    // Times[1, Power[Power[var, s], -1]]  (FullForm representation)
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if is_one(left) {
+        return match_power_inverse(right, var_name);
+      }
+      if is_one(right) {
+        return match_power_inverse(left, var_name);
+      }
+      None
+    }
+    _ => match_power_inverse(body, var_name),
+  }
+}
+
+/// Match Power[Power[var, s], -1] or Power[var, -s]
+fn match_power_inverse(expr: &Expr, var_name: &str) -> Option<i64> {
+  use crate::syntax::BinaryOperator;
+
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      // Power[something, -1] where something = Power[var, s]
+      if let Some(-1) = get_integer(right) {
+        if let Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: inner_left,
+          right: inner_right,
+        } = left.as_ref()
+          && let Expr::Identifier(name) = inner_left.as_ref()
+          && name == var_name
+          && let Some(s) = get_integer(inner_right)
+          && s > 0
+        {
+          return Some(s as i64);
+        }
+        // Power[var, -1] => s = 1
+        if let Expr::Identifier(name) = left.as_ref()
+          && name == var_name
+        {
+          return Some(1);
+        }
+      }
+      // Power[var, -s] directly
+      if let Expr::Identifier(name) = left.as_ref()
+        && name == var_name
+        && let Some(exp) = get_integer(right)
+        && exp < 0
+      {
+        return Some(-exp as i64);
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Get an integer value from an Expr
+fn get_integer(expr: &Expr) -> Option<i128> {
+  match expr {
+    Expr::Integer(n) => Some(*n),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      if let Expr::Integer(n) = operand.as_ref() {
+        Some(-n)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+fn is_one(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(1))
+}
+
+/// Compute ζ(2k) = |B_{2k}| * (2π)^{2k} / (2 * (2k)!) as a symbolic expression.
+/// Returns Pi^(2k) * rational_coefficient.
+fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Get B_s using bernoulli_b_ast
+  let b_s =
+    crate::functions::math_ast::bernoulli_b_ast(&[Expr::Integer(s as i128)])?;
+
+  // Extract the rational value of B_s as (num, den)
+  let (b_num, b_den) = match &b_s {
+    Expr::Integer(n) => (*n, 1i128),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) => (*n, *d),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Sum".to_string(),
+            args: vec![],
+          });
+        }
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Sum".to_string(),
+        args: vec![],
+      });
+    }
+  };
+
+  // ζ(s) = (-1)^(s/2+1) * B_s * (2π)^s / (2 * s!)
+  // Since B_s for even s alternates sign: B_2 = 1/6, B_4 = -1/30, B_6 = 1/42, ...
+  // (-1)^(s/2+1) * B_s = |B_s| always positive
+  // So ζ(s) = |B_s| * (2π)^s / (2 * s!)
+
+  // Compute (2^s) * |B_s_num| / (2 * s! * |B_s_den|)
+  // = 2^(s-1) * |B_s_num| / (s! * |B_s_den|)
+  let abs_b_num = b_num.abs();
+
+  // Compute 2^(s-1) and s!
+  let two_pow = 2i128.checked_pow((s - 1) as u32).unwrap_or(i128::MAX);
+  let mut factorial: i128 = 1;
+  for i in 2..=s as i128 {
+    factorial = factorial.checked_mul(i).unwrap_or(i128::MAX);
+  }
+
+  // The coefficient of Pi^s is: 2^(s-1) * |B_s_num| / (s! * B_s_den)
+  let coeff_num = two_pow * abs_b_num;
+  let coeff_den = factorial * b_den.abs();
+
+  // Simplify the fraction
+  let g = gcd_i128(coeff_num.abs(), coeff_den.abs());
+  let final_num = coeff_num / g;
+  let final_den = coeff_den / g;
+
+  // Build the expression: (final_num / final_den) * Pi^s
+  let pi_power = if s == 1 {
+    Expr::Identifier("Pi".to_string())
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(Expr::Identifier("Pi".to_string())),
+      right: Box::new(Expr::Integer(s as i128)),
+    }
+  };
+
+  if final_num == 1 && final_den == 1 {
+    Ok(pi_power)
+  } else if final_den == 1 {
+    Ok(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(final_num)),
+      right: Box::new(pi_power),
+    })
+  } else if final_num == 1 {
+    // 1/d * Pi^s => Pi^s / d
+    Ok(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(pi_power),
+      right: Box::new(Expr::Integer(final_den)),
+    })
+  } else {
+    // n/d * Pi^s => (n * Pi^s) / d
+    Ok(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(final_num)),
+        right: Box::new(pi_power),
+      }),
+      right: Box::new(Expr::Integer(final_den)),
+    })
+  }
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
 }
 
 /// AST-based Thread: thread a function over lists.

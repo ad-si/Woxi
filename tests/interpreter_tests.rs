@@ -5402,4 +5402,98 @@ mod interpreter_tests {
       assert_eq!(result.stdout, ">> hello\n");
     }
   }
+
+  mod sum {
+    use super::*;
+
+    #[test]
+    fn finite_sum_integers() {
+      assert_eq!(interpret("Sum[i, {i, 1, 10}]").unwrap(), "55");
+    }
+
+    #[test]
+    fn finite_sum_squares() {
+      assert_eq!(interpret("Sum[i^2, {i, 1, 5}]").unwrap(), "55");
+    }
+
+    #[test]
+    fn finite_sum_with_explicit_min() {
+      assert_eq!(interpret("Sum[i, {i, 5, 10}]").unwrap(), "45");
+    }
+
+    #[test]
+    fn infinite_sum_zeta_2() {
+      assert_eq!(interpret("Sum[1/n^2, {n, 1, Infinity}]").unwrap(), "Pi^2/6");
+    }
+
+    #[test]
+    fn infinite_sum_zeta_4() {
+      assert_eq!(
+        interpret("Sum[1/n^4, {n, 1, Infinity}]").unwrap(),
+        "Pi^4/90"
+      );
+    }
+
+    #[test]
+    fn infinite_sum_zeta_6() {
+      assert_eq!(
+        interpret("Sum[1/n^6, {n, 1, Infinity}]").unwrap(),
+        "Pi^6/945"
+      );
+    }
+
+    #[test]
+    fn infinite_sum_zeta_8() {
+      assert_eq!(
+        interpret("Sum[1/n^8, {n, 1, Infinity}]").unwrap(),
+        "Pi^8/9450"
+      );
+    }
+
+    #[test]
+    fn infinite_sum_zeta_10() {
+      assert_eq!(
+        interpret("Sum[1/n^10, {n, 1, Infinity}]").unwrap(),
+        "Pi^10/93555"
+      );
+    }
+
+    #[test]
+    fn infinite_sum_zeta_12() {
+      assert_eq!(
+        interpret("Sum[1/n^12, {n, 1, Infinity}]").unwrap(),
+        "(691*Pi^12)/638512875"
+      );
+    }
+
+    #[test]
+    fn infinite_sum_zeta_odd_returns_zeta() {
+      assert_eq!(
+        interpret("Sum[1/n^3, {n, 1, Infinity}]").unwrap(),
+        "Zeta[3]"
+      );
+      assert_eq!(
+        interpret("Sum[1/n^5, {n, 1, Infinity}]").unwrap(),
+        "Zeta[5]"
+      );
+    }
+
+    #[test]
+    fn infinite_sum_negative_power_form() {
+      // n^(-2) form should also work
+      assert_eq!(
+        interpret("Sum[n^(-2), {n, 1, Infinity}]").unwrap(),
+        "Pi^2/6"
+      );
+    }
+
+    #[test]
+    fn infinite_sum_harmonic_unevaluated() {
+      // Sum[1/n, {n, 1, Infinity}] diverges — should return unevaluated
+      assert_eq!(
+        interpret("Sum[1/n, {n, 1, Infinity}]").unwrap(),
+        "Sum[1/n, {n, 1, Infinity}]"
+      );
+    }
+  }
 }
