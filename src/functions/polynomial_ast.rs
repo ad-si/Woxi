@@ -1485,20 +1485,34 @@ fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
         remaining = divide_by_root(&remaining, root);
       }
       None => {
-        // Can't find more roots — remaining is irreducible
-        if remaining != [1] {
-          factors.push(coeffs_to_expr(&remaining, var));
+        // Can't find more integer roots — try polynomial trial division
+        let sub_factors = try_factor_no_rational_roots(&remaining, var);
+        if sub_factors.is_empty() {
+          if remaining != [1] {
+            factors.push(coeffs_to_expr(&remaining, var));
+          }
+        } else {
+          factors.extend(sub_factors);
         }
         break;
       }
     }
   }
 
-  // Sort factors by their constant term for canonical ordering
+  // Sort factors by: constant term, then degree, then string representation
   factors.sort_by(|a, b| {
     let ca = factor_constant_term(a);
     let cb = factor_constant_term(b);
     ca.cmp(&cb)
+      .then_with(|| factor_degree(a).cmp(&factor_degree(b)))
+      .then_with(|| {
+        // For same degree, sort by number of terms (fewer terms first)
+        factor_term_count(a).cmp(&factor_term_count(b))
+      })
+      .then_with(|| {
+        // For same degree and term count, sort by first non-constant coefficient
+        factor_first_nonconst_coeff(a).cmp(&factor_first_nonconst_coeff(b))
+      })
       .then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
   });
 
@@ -1506,6 +1520,7 @@ fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
 }
 
 /// Get the constant term of a factor expression for sorting.
+/// Recursively descends into the leftmost leaf of Plus chains.
 fn factor_constant_term(expr: &Expr) -> i128 {
   match expr {
     Expr::Integer(n) => *n,
@@ -1515,13 +1530,84 @@ fn factor_constant_term(expr: &Expr) -> i128 {
       left,
       ..
     } => {
-      if let Expr::Integer(n) = left.as_ref() {
-        *n
-      } else {
-        0
-      }
+      // Recurse into left child to find the constant term
+      factor_constant_term(left)
     }
     _ => 0,
+  }
+}
+
+/// Get the degree of a factor expression for sorting.
+fn factor_degree(expr: &Expr) -> usize {
+  let s = expr_to_string(expr);
+  // Count the highest power of the variable
+  // Look for x^N patterns
+  let mut max_deg = 0usize;
+  for cap in s.split('^') {
+    // After '^', try to parse the number
+    if let Ok(n) = cap
+      .chars()
+      .take_while(|c| c.is_ascii_digit())
+      .collect::<String>()
+      .parse::<usize>()
+      && n > max_deg
+    {
+      max_deg = n;
+    }
+  }
+  // If no power found but contains a variable, degree is 1
+  if max_deg == 0 && s.chars().any(|c| c.is_ascii_lowercase()) {
+    max_deg = 1;
+  }
+  max_deg
+}
+
+/// Count the number of additive terms in a factor expression for sorting.
+fn factor_term_count(expr: &Expr) -> usize {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => factor_term_count(left) + factor_term_count(right),
+    _ => 1,
+  }
+}
+
+/// Get the first non-constant coefficient of a factor expression for sorting.
+/// This finds the coefficient of the lowest-degree non-constant term.
+fn factor_first_nonconst_coeff(expr: &Expr) -> i128 {
+  // Convert the expression back to string and parse the first non-constant term's sign
+  let s = expr_to_string(expr);
+  // Find the first term with a variable (after the constant)
+  // Parse the sign: look for first occurrence of the variable
+  // The pattern will be like "1 + x", "1 - x", "1 + x^5", "1 - x^5"
+  // After "1", look for " + " or " - " before the variable
+  let parts: Vec<&str> =
+    s.splitn(2, |c: char| c.is_ascii_lowercase()).collect();
+  if parts.len() < 2 {
+    return 0;
+  }
+  let prefix = parts[0].trim_end();
+  if prefix.ends_with('+') || prefix.ends_with("+ ") {
+    1
+  } else if prefix.ends_with('-') || prefix.ends_with("- ") {
+    -1
+  } else if prefix.ends_with('*') {
+    // coefficient * variable — extract the number before *
+    let before_star = prefix.trim_end_matches('*').trim();
+    // Find the last number in this prefix
+    let num_str: String = before_star
+      .chars()
+      .rev()
+      .take_while(|c| c.is_ascii_digit() || *c == '-')
+      .collect::<String>()
+      .chars()
+      .rev()
+      .collect();
+    num_str.parse().unwrap_or(0)
+  } else {
+    0
   }
 }
 
@@ -1641,6 +1727,375 @@ fn divide_by_root(coeffs: &[i128], root: i128) -> Vec<i128> {
     result[i] = coeffs[i + 1] + root * result[i + 1];
   }
   result
+}
+
+/// Polynomial long division: divide `num` by `den`.
+/// Returns (quotient, remainder) as coefficient vectors.
+/// Coefficients are stored as [c0, c1, c2, ...] (c_i is coefficient of x^i).
+/// Only works when division is exact over integers (remainder should be zero for our use).
+fn poly_div(num: &[i128], den: &[i128]) -> Option<(Vec<i128>, Vec<i128>)> {
+  let n = num.len();
+  let m = den.len();
+  if m == 0 || m > n {
+    return None;
+  }
+  let lead_den = *den.last().unwrap();
+  if lead_den == 0 {
+    return None;
+  }
+
+  let mut rem = num.to_vec();
+  let quot_len = n - m + 1;
+  let mut quot = vec![0i128; quot_len];
+
+  for i in (0..quot_len).rev() {
+    if rem[i + m - 1] % lead_den != 0 {
+      // Not exactly divisible over integers
+      return None;
+    }
+    let coeff = rem[i + m - 1] / lead_den;
+    quot[i] = coeff;
+    for j in 0..m {
+      rem[i + j] -= coeff * den[j];
+    }
+  }
+
+  // Trim trailing zeros from remainder
+  while rem.len() > 1 && *rem.last().unwrap() == 0 {
+    rem.pop();
+  }
+
+  Some((quot, rem))
+}
+
+/// Compute the n-th cyclotomic polynomial as integer coefficients.
+/// Φ_1(x) = x - 1
+/// Φ_n(x) = (x^n - 1) / ∏_{d|n, d<n} Φ_d(x)
+fn cyclotomic_poly(n: u64) -> Vec<i128> {
+  if n == 1 {
+    return vec![-1, 1]; // x - 1
+  }
+
+  // Start with x^n - 1
+  let mut result = vec![0i128; (n + 1) as usize];
+  result[0] = -1;
+  result[n as usize] = 1;
+
+  // Divide by Φ_d(x) for all proper divisors d of n
+  let divs = divisors_of(n);
+  for d in divs {
+    if d < n {
+      let phi_d = cyclotomic_poly(d);
+      if let Some((q, _)) = poly_div(&result, &phi_d) {
+        result = q;
+      }
+    }
+  }
+
+  result
+}
+
+/// Get all divisors of n in sorted order.
+fn divisors_of(n: u64) -> Vec<u64> {
+  let mut divs = Vec::new();
+  let mut i = 1u64;
+  while i * i <= n {
+    if n.is_multiple_of(i) {
+      divs.push(i);
+      if i != n / i {
+        divs.push(n / i);
+      }
+    }
+    i += 1;
+  }
+  divs.sort();
+  divs
+}
+
+/// Try to factor a polynomial (with no rational roots) using polynomial trial division.
+/// First tries cyclotomic factors, then Kronecker-style trial division for small degrees.
+fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
+  let deg = coeffs.len() - 1;
+  if deg <= 1 {
+    return vec![];
+  }
+
+  // Try cyclotomic polynomial division:
+  // Check divisors up to reasonable size
+  let mut remaining = coeffs.to_vec();
+  let mut factors: Vec<Vec<i128>> = Vec::new();
+
+  // Try cyclotomic polynomials Φ_n for n up to 2*deg
+  // (any cyclotomic factor of a degree-d poly has n ≤ some bound)
+  let max_n = (2 * deg) as u64;
+  // Collect cyclotomic polys sorted by degree (ascending) for greedy factoring
+  let mut cyclo_candidates: Vec<(u64, Vec<i128>)> = Vec::new();
+  for n in 2..=max_n {
+    let cp = cyclotomic_poly(n);
+    if cp.len() - 1 <= deg {
+      cyclo_candidates.push((n, cp));
+    }
+  }
+  // Sort by degree so we try smaller factors first
+  cyclo_candidates.sort_by_key(|(_, c)| c.len());
+
+  let mut changed = true;
+  while changed {
+    changed = false;
+    for (_n, cp) in &cyclo_candidates {
+      if cp.len() > remaining.len() {
+        continue;
+      }
+      if let Some((q, rem)) = poly_div(&remaining, cp)
+        && rem.iter().all(|&c| c == 0)
+      {
+        factors.push(cp.clone());
+        remaining = q;
+        changed = true;
+        // Trim trailing zeros
+        while remaining.len() > 1 && *remaining.last().unwrap() == 0 {
+          remaining.pop();
+        }
+        if remaining.len() <= 1 {
+          break;
+        }
+      }
+    }
+    if remaining.len() <= 1 {
+      break;
+    }
+  }
+
+  if factors.is_empty() {
+    // No cyclotomic factors found — try Kronecker's method for small-degree polynomials
+    return try_kronecker_factor(coeffs, var);
+  }
+
+  // We found cyclotomic factors; handle the remainder
+  if remaining.len() > 2 {
+    // Try to factor the remainder further with Kronecker
+    let sub = try_kronecker_factor(&remaining, var);
+    if sub.is_empty() {
+      factors.push(remaining);
+    } else {
+      return factors
+        .iter()
+        .map(|f| coeffs_to_expr(f, var))
+        .chain(sub)
+        .collect();
+    }
+  } else if remaining.len() > 1 || (remaining.len() == 1 && remaining[0] != 1) {
+    factors.push(remaining);
+  }
+
+  factors.iter().map(|f| coeffs_to_expr(f, var)).collect()
+}
+
+/// Kronecker's method for factoring integer polynomials of small degree.
+/// Try all monic integer polynomial divisors of degree 2..=deg/2
+/// by evaluating at enough points to determine the candidate factor.
+fn try_kronecker_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
+  let deg = coeffs.len() - 1;
+  if deg <= 3 {
+    // For degree 2-3, if no rational roots exist, it's irreducible over Z
+    return vec![];
+  }
+
+  // For degree 4+, try factoring as product of two polynomials
+  // Evaluate at points 0, 1, -1, 2, -2, ...
+  let max_trial_degree = deg / 2;
+  if max_trial_degree > 20 {
+    // Too expensive for Kronecker
+    return vec![];
+  }
+
+  // Evaluate the polynomial at points 0, 1, -1, 2, -2, ... (need max_trial_degree + 1 points)
+  let num_points = max_trial_degree + 1;
+  let eval_points: Vec<i128> = (0..num_points as i128)
+    .flat_map(|i| if i == 0 { vec![0] } else { vec![i, -i] })
+    .take(num_points)
+    .collect();
+
+  let poly_vals: Vec<i128> = eval_points
+    .iter()
+    .map(|&x| evaluate_poly(coeffs, x))
+    .collect();
+
+  // For each trial degree d (2..=max_trial_degree), try to find a factor
+  for trial_deg in 2..=max_trial_degree {
+    let n_pts = trial_deg + 1;
+    // Get divisors of poly value at each eval point
+    let mut divisor_sets: Vec<Vec<i128>> = Vec::new();
+    for i in 0..n_pts {
+      let val = poly_vals[i];
+      if val == 0 {
+        // The trial factor also evaluates to 0 at this point
+        divisor_sets.push(vec![0]);
+      } else {
+        let abs_divs = integer_divisors(val.abs());
+        let mut divs: Vec<i128> = Vec::new();
+        for &d in &abs_divs {
+          divs.push(d);
+          divs.push(-d);
+        }
+        divisor_sets.push(divs);
+      }
+    }
+
+    // Try all combinations of divisor values and interpolate
+    let combos = cartesian_product(&divisor_sets);
+    for combo in combos {
+      // Interpolate: find a polynomial of degree trial_deg with values combo at eval_points
+      if let Some(factor_coeffs) =
+        lagrange_interpolate_integer(&eval_points[..n_pts], &combo)
+      {
+        // Check if leading coeff is ±1 (monic or neg-monic) and degree matches
+        if factor_coeffs.len() != trial_deg + 1 {
+          continue;
+        }
+        let lead = *factor_coeffs.last().unwrap();
+        if lead == 0 {
+          continue;
+        }
+
+        // Try dividing
+        if let Some((q, rem)) = poly_div(coeffs, &factor_coeffs)
+          && rem.iter().all(|&c| c == 0)
+        {
+          // Found a factor! Recursively factor both parts
+          let mut result = Vec::new();
+          let sub1 = factor_sub_poly(&factor_coeffs, var);
+          let sub2 = factor_sub_poly(&q, var);
+          result.extend(sub1);
+          result.extend(sub2);
+          return result;
+        }
+      }
+    }
+  }
+
+  vec![]
+}
+
+/// Factor a sub-polynomial by trying rational roots first, then trial division.
+fn factor_sub_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
+  if coeffs.len() <= 1 {
+    if coeffs.len() == 1 && coeffs[0] != 1 {
+      return vec![Expr::Integer(coeffs[0])];
+    }
+    return vec![];
+  }
+  if coeffs.len() == 2 {
+    return vec![linear_to_expr(coeffs[0], coeffs[1], var)];
+  }
+
+  // Try rational roots first
+  let mut remaining = coeffs.to_vec();
+  let mut factors: Vec<Expr> = Vec::new();
+  loop {
+    match find_integer_root(&remaining) {
+      Some(root) => {
+        factors.push(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(-root)),
+          right: Box::new(Expr::Identifier(var.to_string())),
+        });
+        remaining = divide_by_root(&remaining, root);
+        if remaining.len() <= 1 {
+          break;
+        }
+        if remaining.len() == 2 {
+          factors.push(linear_to_expr(remaining[0], remaining[1], var));
+          return factors;
+        }
+      }
+      None => break,
+    }
+  }
+
+  if remaining.len() > 1 {
+    // Irreducible remainder
+    factors.push(coeffs_to_expr(&remaining, var));
+  }
+  factors
+}
+
+/// Compute cartesian product of divisor sets (with size limit to avoid explosion).
+fn cartesian_product(sets: &[Vec<i128>]) -> Vec<Vec<i128>> {
+  if sets.is_empty() {
+    return vec![vec![]];
+  }
+
+  // Limit total combinations to avoid exponential blowup
+  let total: usize = sets.iter().map(|s| s.len()).product();
+  if total > 10000 {
+    return vec![];
+  }
+
+  let mut result = vec![vec![]];
+  for set in sets {
+    let mut new_result = Vec::new();
+    for combo in &result {
+      for &val in set {
+        let mut new_combo = combo.clone();
+        new_combo.push(val);
+        new_result.push(new_combo);
+      }
+    }
+    result = new_result;
+  }
+  result
+}
+
+/// Lagrange interpolation over integers.
+/// Given points (x_i, y_i), find polynomial with integer coefficients.
+/// Returns None if the interpolation doesn't yield integer coefficients.
+fn lagrange_interpolate_integer(xs: &[i128], ys: &[i128]) -> Option<Vec<i128>> {
+  let n = xs.len();
+  if n == 0 {
+    return None;
+  }
+
+  // Use the Newton form of interpolation (divided differences)
+  let mut divided_diffs = ys.to_vec();
+
+  for j in 1..n {
+    for i in (j..n).rev() {
+      let num = divided_diffs[i] - divided_diffs[i - 1];
+      let den = xs[i] - xs[i - j];
+      if den == 0 {
+        return None;
+      }
+      if num % den != 0 {
+        return None; // Not integer coefficients
+      }
+      divided_diffs[i] = num / den;
+    }
+  }
+
+  // Convert Newton form to standard coefficients
+  // P(x) = d[0] + d[1]*(x-x0) + d[2]*(x-x0)*(x-x1) + ...
+  let mut coeffs = vec![0i128; n];
+  // Build up: start with d[n-1], multiply by (x - x_{n-2}), add d[n-2], etc.
+  coeffs[0] = divided_diffs[n - 1];
+  for i in (0..n - 1).rev() {
+    // Multiply current poly by (x - xs[i])
+    // coeffs represents polynomial, multiply by (x - xs[i])
+    // New coeffs[j] = coeffs[j-1] - xs[i]*coeffs[j]
+    let mut new_coeffs = vec![0i128; n];
+    for j in (0..n).rev() {
+      new_coeffs[j] = if j > 0 { coeffs[j - 1] } else { 0 } - xs[i] * coeffs[j];
+    }
+    new_coeffs[0] += divided_diffs[i];
+    coeffs = new_coeffs;
+  }
+
+  // Trim trailing zeros
+  while coeffs.len() > 1 && *coeffs.last().unwrap() == 0 {
+    coeffs.pop();
+  }
+
+  Some(coeffs)
 }
 
 // ─── ExpandAll ──────────────────────────────────────────────────────
