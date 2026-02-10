@@ -4939,10 +4939,7 @@ mod interpreter_tests {
 
     #[test]
     fn string_ends_q_curried() {
-      assert_eq!(
-        interpret("StringEndsQ[\"lo\"][\"Hello\"]").unwrap(),
-        "True"
-      );
+      assert_eq!(interpret("StringEndsQ[\"lo\"][\"Hello\"]").unwrap(), "True");
     }
 
     #[test]
@@ -4955,25 +4952,21 @@ mod interpreter_tests {
 
     #[test]
     fn member_q_curried() {
-      assert_eq!(
-        interpret("MemberQ[2][{1, 2, 3}]").unwrap(),
-        "True"
-      );
+      assert_eq!(interpret("MemberQ[2][{1, 2, 3}]").unwrap(), "True");
     }
 
     #[test]
     fn member_q_curried_false() {
-      assert_eq!(
-        interpret("MemberQ[5][{1, 2, 3}]").unwrap(),
-        "False"
-      );
+      assert_eq!(interpret("MemberQ[5][{1, 2, 3}]").unwrap(), "False");
     }
 
     #[test]
     fn select_with_curried_string_starts_q() {
       assert_eq!(
-        interpret("Select[{\"apple\", \"avocado\", \"banana\"}, StringStartsQ[\"a\"]]")
-          .unwrap(),
+        interpret(
+          "Select[{\"apple\", \"avocado\", \"banana\"}, StringStartsQ[\"a\"]]"
+        )
+        .unwrap(),
         "{apple, avocado}"
       );
     }

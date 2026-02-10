@@ -3485,19 +3485,17 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       },
       // IntegerPartitions[n, {kmin, kmax}] — range of parts
-      Expr::List(lst) if lst.len() == 2 => {
-        match (&lst[0], &lst[1]) {
-          (Expr::Integer(lo), Expr::Integer(hi)) if *lo >= 0 && *hi >= 0 => {
-            (*lo as u64, *hi as u64)
-          }
-          _ => {
-            return Ok(Expr::FunctionCall {
-              name: "IntegerPartitions".to_string(),
-              args: args.to_vec(),
-            });
-          }
+      Expr::List(lst) if lst.len() == 2 => match (&lst[0], &lst[1]) {
+        (Expr::Integer(lo), Expr::Integer(hi)) if *lo >= 0 && *hi >= 0 => {
+          (*lo as u64, *hi as u64)
         }
-      }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "IntegerPartitions".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      },
       _ => {
         return Ok(Expr::FunctionCall {
           name: "IntegerPartitions".to_string(),
@@ -3556,7 +3554,15 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &allowed {
     Some(elems) => {
-      generate_partitions_restricted(n, max_len, min_len, elems, 0, &mut current, &mut result);
+      generate_partitions_restricted(
+        n,
+        max_len,
+        min_len,
+        elems,
+        0,
+        &mut current,
+        &mut result,
+      );
     }
     None => {
       generate_partitions(n, n, max_len, min_len, &mut current, &mut result);
@@ -3566,7 +3572,9 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(
     result
       .into_iter()
-      .map(|p| Expr::List(p.into_iter().map(|v| Expr::Integer(v as i128)).collect()))
+      .map(|p| {
+        Expr::List(p.into_iter().map(|v| Expr::Integer(v as i128)).collect())
+      })
       .collect(),
   ))
 }
@@ -3593,7 +3601,14 @@ fn generate_partitions(
   let upper = remaining.min(max_part);
   for part in (1..=upper).rev() {
     current.push(part);
-    generate_partitions(remaining - part, part, max_len, min_len, current, result);
+    generate_partitions(
+      remaining - part,
+      part,
+      max_len,
+      min_len,
+      current,
+      result,
+    );
     current.pop();
   }
 }
@@ -3623,7 +3638,15 @@ fn generate_partitions_restricted(
       continue;
     }
     current.push(part);
-    generate_partitions_restricted(remaining - part, max_len, min_len, elems, i, current, result);
+    generate_partitions_restricted(
+      remaining - part,
+      max_len,
+      min_len,
+      elems,
+      i,
+      current,
+      result,
+    );
     current.pop();
   }
 }
