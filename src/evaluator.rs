@@ -766,6 +766,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
             } else {
               Ok(num_to_expr(l * r))
             }
+          } else if matches!(&left_val, Expr::Integer(0))
+            || matches!(&right_val, Expr::Integer(0))
+          {
+            Ok(Expr::Integer(0))
+          } else if matches!(&left_val, Expr::Integer(1)) {
+            Ok(right_val)
+          } else if matches!(&right_val, Expr::Integer(1)) {
+            Ok(left_val)
           } else {
             Ok(Expr::BinaryOp {
               op: *op,
@@ -1220,6 +1228,13 @@ fn thread_binary_op(
           } else {
             Ok(num_to_expr(a * b))
           }
+        } else if matches!(l, Expr::Integer(0)) || matches!(r, Expr::Integer(0))
+        {
+          Ok(Expr::Integer(0))
+        } else if matches!(l, Expr::Integer(1)) {
+          Ok(r.clone())
+        } else if matches!(r, Expr::Integer(1)) {
+          Ok(l.clone())
         } else {
           Ok(Expr::BinaryOp {
             op,

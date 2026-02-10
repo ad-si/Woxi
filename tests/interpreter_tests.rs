@@ -149,6 +149,51 @@ mod interpreter_tests {
         assert_eq!(interpret("Head[-3.0]").unwrap(), "Real");
       }
     }
+
+    mod times_simplification {
+      use super::*;
+
+      #[test]
+      fn zero_times_symbol() {
+        assert_eq!(interpret("0*x").unwrap(), "0");
+        assert_eq!(interpret("x*0").unwrap(), "0");
+      }
+
+      #[test]
+      fn one_times_symbol() {
+        assert_eq!(interpret("1*x").unwrap(), "x");
+        assert_eq!(interpret("x*1").unwrap(), "x");
+      }
+
+      #[test]
+      fn times_function_zero() {
+        assert_eq!(interpret("Times[0, x]").unwrap(), "0");
+        assert_eq!(interpret("Times[x, 0]").unwrap(), "0");
+        assert_eq!(interpret("Times[0, x, y]").unwrap(), "0");
+      }
+
+      #[test]
+      fn times_function_one() {
+        assert_eq!(interpret("Times[1, x]").unwrap(), "x");
+        assert_eq!(interpret("Times[x, 1]").unwrap(), "x");
+      }
+
+      #[test]
+      fn times_coefficient() {
+        assert_eq!(interpret("Times[2, x]").unwrap(), "2*x");
+        assert_eq!(interpret("Times[-1, x]").unwrap(), "-x");
+      }
+
+      #[test]
+      fn zero_times_list() {
+        assert_eq!(interpret("0*{a, b, c}").unwrap(), "{0, 0, 0}");
+      }
+
+      #[test]
+      fn one_times_list() {
+        assert_eq!(interpret("1*{a, b, c}").unwrap(), "{a, b, c}");
+      }
+    }
   }
 
   mod errors {
@@ -4332,6 +4377,26 @@ mod interpreter_tests {
     fn dot_display_infix() {
       // Dot[a, b] should display as infix a . b
       assert_eq!(interpret("Dot[a, b]").unwrap(), "a . b");
+    }
+
+    #[test]
+    fn identity_matrix_dot_symbolic_vector() {
+      assert_eq!(
+        interpret("Dot[IdentityMatrix[2], {x, y}]").unwrap(),
+        "{x, y}"
+      );
+      assert_eq!(
+        interpret("Dot[IdentityMatrix[3], {a, b, c}]").unwrap(),
+        "{a, b, c}"
+      );
+    }
+
+    #[test]
+    fn matrix_dot_symbolic_vector() {
+      assert_eq!(
+        interpret("Dot[{{2, 0}, {0, 3}}, {x, y}]").unwrap(),
+        "{2*x, 3*y}"
+      );
     }
   }
 
