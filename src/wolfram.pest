@@ -78,8 +78,12 @@ ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
 // ReplaceAll (/.) and ReplaceRepeated (//.) can appear after operator chains: x = y /. rules
 ReplaceAllSuffix = { "/." ~ (List | ReplacementRule) }
 ReplaceRepeatedSuffix = { "//." ~ (List | ReplacementRule) }
+// LeadingMinus marks a leading "-" in an expression: -x, -f[x], -(a+b), etc.
+// Only matches when NOT followed by a digit (so -3 still parses as negative Integer)
+// Handled in parse_expression as a synthetic 0 - expr with proper precedence
+LeadingMinus = { "-" ~ !ASCII_DIGIT }
 Expression = {
-    Term ~ (Operator ~ Term)*
+    (LeadingMinus ~ Term | Term) ~ (Operator ~ Term)*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
 }
@@ -153,7 +157,7 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    TermNoImplicit ~ (Operator ~ TermNoImplicit)*
+    (LeadingMinus ~ TermNoImplicit | TermNoImplicit) ~ (Operator ~ TermNoImplicit)*
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
 }
@@ -163,7 +167,7 @@ PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
-    Term ~ (ConditionOp ~ Term)*
+    (LeadingMinus ~ Term | Term) ~ (ConditionOp ~ Term)*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 ConditionOp = {

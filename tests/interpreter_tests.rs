@@ -998,6 +998,79 @@ mod interpreter_tests {
     }
   }
 
+  mod definite_integrals {
+    use super::*;
+
+    #[test]
+    fn gaussian_integral_full() {
+      // ∫_{-∞}^{∞} E^(-x^2) dx = Sqrt[Pi]
+      assert_eq!(
+        interpret("Integrate[E^(-x^2), {x, -Infinity, Infinity}]").unwrap(),
+        "Sqrt[Pi]"
+      );
+    }
+
+    #[test]
+    fn gaussian_integral_with_coefficient() {
+      // ∫_{-∞}^{∞} E^(-2x^2) dx = Sqrt[Pi/2]
+      assert_eq!(
+        interpret("Integrate[E^(-2*x^2), {x, -Infinity, Infinity}]").unwrap(),
+        "Sqrt[Pi/2]"
+      );
+    }
+
+    #[test]
+    fn half_gaussian_integral() {
+      // ∫_0^{∞} E^(-x^2) dx = Sqrt[Pi]/2
+      assert_eq!(
+        interpret("Integrate[E^(-x^2), {x, 0, Infinity}]").unwrap(),
+        "Sqrt[Pi]/2"
+      );
+    }
+
+    #[test]
+    fn definite_integral_polynomial() {
+      // ∫_0^1 x^2 dx = 1/3
+      assert_eq!(interpret("Integrate[x^2, {x, 0, 1}]").unwrap(), "1/3");
+    }
+
+    #[test]
+    fn definite_integral_constant() {
+      // ∫_0^3 5 dx = 15
+      assert_eq!(interpret("Integrate[5, {x, 0, 3}]").unwrap(), "15");
+    }
+  }
+
+  mod unary_minus_parsing {
+    use super::*;
+
+    #[test]
+    fn negative_identifier_in_parens() {
+      assert_eq!(interpret("(-x)").unwrap(), "-x");
+    }
+
+    #[test]
+    fn negative_power_in_parens() {
+      // (-x^2) should be -(x^2), not (-x)^2
+      assert_eq!(interpret("(-x^2)").unwrap(), "-x^2");
+    }
+
+    #[test]
+    fn negative_expr_plus_constant() {
+      assert_eq!(interpret("(-x + 3)").unwrap(), "3 - x");
+    }
+
+    #[test]
+    fn e_to_negative_x_squared() {
+      assert_eq!(interpret("E^(-x^2)").unwrap(), "E^(-x^2)");
+    }
+
+    #[test]
+    fn negative_power_exponent() {
+      assert_eq!(interpret("x^(-2)").unwrap(), "x^(-2)");
+    }
+  }
+
   mod multiplication_formatting {
     use super::*;
 

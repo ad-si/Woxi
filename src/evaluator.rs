@@ -729,6 +729,13 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
             } else {
               Ok(num_to_expr(l - r))
             }
+          } else if matches!(&left_val, Expr::Integer(0)) {
+            // 0 - x => -x (Times[-1, x])
+            Ok(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(-1)),
+              right: Box::new(right_val),
+            })
           } else {
             Ok(Expr::BinaryOp {
               op: *op,
