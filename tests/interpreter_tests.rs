@@ -4906,6 +4906,55 @@ mod interpreter_tests {
     }
   }
 
+  mod string_split_single_arg {
+    use super::*;
+
+    #[test]
+    fn split_by_whitespace() {
+      assert_eq!(
+        interpret("StringSplit[\"Wolfram Language is incredible\"]").unwrap(),
+        "{Wolfram, Language, is, incredible}"
+      );
+    }
+
+    #[test]
+    fn split_multiple_spaces() {
+      assert_eq!(
+        interpret("StringSplit[\"  hello   world  \"]").unwrap(),
+        "{hello, world}"
+      );
+    }
+
+    #[test]
+    fn split_single_word() {
+      assert_eq!(interpret("StringSplit[\"hello\"]").unwrap(), "{hello}");
+    }
+
+    #[test]
+    fn split_empty_string() {
+      assert_eq!(interpret("StringSplit[\"\"]").unwrap(), "{}");
+    }
+
+    #[test]
+    fn split_with_tabs_and_newlines() {
+      assert_eq!(
+        interpret("StringSplit[\"a\\tb\\nc\"]").unwrap(),
+        "{a, b, c}"
+      );
+    }
+
+    #[test]
+    fn map_string_reverse_over_split() {
+      assert_eq!(
+        interpret(
+          "StringReverse /@ StringSplit[\"Wolfram Language is incredible\"]"
+        )
+        .unwrap(),
+        "{marfloW, egaugnaL, si, elbidercni}"
+      );
+    }
+  }
+
   mod function_name_substitution {
     use super::*;
 

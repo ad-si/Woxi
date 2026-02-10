@@ -1790,7 +1790,7 @@ pub fn evaluate_function_call_ast(
     "StringJoin" => {
       return crate::functions::string_ast::string_join_ast(args);
     }
-    "StringSplit" if args.len() == 2 => {
+    "StringSplit" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::string_ast::string_split_ast(args);
     }
     "StringStartsQ" if args.len() == 2 => {
