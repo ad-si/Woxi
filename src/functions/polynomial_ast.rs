@@ -2202,7 +2202,19 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (c, None) => c,
       (Expr::Integer(1), Some(v)) => v,
       (c, Some(v)) if matches!(&c, Expr::Integer(-1)) => negate_term(&v),
-      (c, Some(v)) => multiply_exprs(&v, &c),
+      (c, Some(v)) => {
+        // Wolfram canonical Times ordering: coefficient goes first unless
+        // the coefficient contains a variable that sorts after the collect
+        // variable alphabetically, in which case the variable goes first.
+        let mut coeff_vars = std::collections::HashSet::new();
+        collect_variables(&c, &mut coeff_vars);
+        let var_after = coeff_vars.iter().any(|cv| cv.as_str() > var);
+        if var_after {
+          multiply_exprs(&v, &c)
+        } else {
+          multiply_exprs(&c, &v)
+        }
+      }
     };
     result_terms.push(term);
   }

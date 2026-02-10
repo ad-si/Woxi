@@ -4376,6 +4376,32 @@ mod interpreter_tests {
     fn collect_basic() {
       assert_eq!(interpret("Collect[x*y + x*z, x]").unwrap(), "x*(y + z)");
     }
+
+    #[test]
+    fn collect_symbolic_coefficients() {
+      // Coefficients with variables before the collect variable go first
+      assert_eq!(
+        interpret("Collect[a*x^2 + b*x + c*x^2 + d*x, x]").unwrap(),
+        "(b + d)*x + (a + c)*x^2"
+      );
+    }
+
+    #[test]
+    fn collect_mixed_coefficients() {
+      // Coefficient (2+y) has y > x alphabetically, so x goes first
+      assert_eq!(
+        interpret("Collect[x*y + 2*x + 3*y + 6, x]").unwrap(),
+        "6 + 3*y + x*(2 + y)"
+      );
+    }
+
+    #[test]
+    fn collect_with_constant_term() {
+      assert_eq!(
+        interpret("Collect[a*x^2 + b*x^2 + c*x + d*x + e, x]").unwrap(),
+        "e + (c + d)*x + (a + b)*x^2"
+      );
+    }
   }
 
   mod together {
