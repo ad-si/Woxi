@@ -2919,7 +2919,7 @@ fn together_expr(expr: &Expr) -> Expr {
   } else {
     let mut canonical_dens: Vec<Expr> =
       unique_dens.iter().map(expand_and_combine).collect();
-    canonical_dens.sort_by_key(|a| expr_to_string(a));
+    canonical_dens.sort_by_key(expr_to_string);
     build_product(canonical_dens)
   };
 
@@ -3080,6 +3080,9 @@ fn apart_proper_fraction(
     return Ok(expr.clone());
   }
 
+  // Sort roots descending so linear factors (-root + x) appear in ascending order
+  roots.sort_by(|a, b| b.cmp(a));
+
   // Simple partial fraction for distinct linear factors:
   // N(x) / ((x-r1)(x-r2)...) = A1/(x-r1) + A2/(x-r2) + ...
   // where Ai = N(ri) / product of (ri - rj) for j != i
@@ -3124,14 +3127,26 @@ fn apart_proper_fraction(
       ad = -ad;
     }
 
-    let linear_factor = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(Expr::Integer(-root)),
-      right: Box::new(Expr::Identifier(var.to_string())),
+    // Build linear factor: when root is 0, just use the variable directly
+    let linear_factor = if root == 0 {
+      Expr::Identifier(var.to_string())
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-root)),
+        right: Box::new(Expr::Identifier(var.to_string())),
+      }
     };
 
     let abs_an = an.abs();
-    let frac = if ad == 1 {
+    let frac = if ad == 1 && abs_an == 1 {
+      // Wolfram canonical form: (expr)^(-1)
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(linear_factor),
+        right: Box::new(Expr::Integer(-1)),
+      }
+    } else if ad == 1 {
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: Box::new(Expr::Integer(abs_an)),

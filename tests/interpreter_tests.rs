@@ -970,6 +970,13 @@ mod interpreter_tests {
       // D[x^n, x] = n*x^(-1 + n)
       assert_eq!(interpret("D[x^n, x]").unwrap(), "n*x^(-1 + n)");
     }
+
+    #[test]
+    fn power_plus_base_gets_parens() {
+      assert_eq!(interpret("(1 + x)^(-1)").unwrap(), "(1 + x)^(-1)");
+      assert_eq!(interpret("(-1 + x)^(-1)").unwrap(), "(-1 + x)^(-1)");
+      assert_eq!(interpret("(2 + x)^3").unwrap(), "(2 + x)^3");
+    }
   }
 
   mod integrate_with_sum {
@@ -4482,6 +4489,30 @@ mod interpreter_tests {
       assert_eq!(
         interpret("Apart[1/(x^2 - 1)]").unwrap(),
         "1/(2*(-1 + x)) - 1/(2*(1 + x))"
+      );
+    }
+
+    #[test]
+    fn apart_x2_plus_1_over_x3_minus_x() {
+      assert_eq!(
+        interpret("Apart[(x^2 + 1)/(x^3 - x)]").unwrap(),
+        "(-1 + x)^(-1) - x^(-1) + (1 + x)^(-1)"
+      );
+    }
+
+    #[test]
+    fn apart_two_linear_factors() {
+      assert_eq!(
+        interpret("Apart[1/((x - 1)*(x - 2))]").unwrap(),
+        "(-2 + x)^(-1) - (-1 + x)^(-1)"
+      );
+    }
+
+    #[test]
+    fn apart_three_linear_factors() {
+      assert_eq!(
+        interpret("Apart[1/((x-1)*(x-2)*(x-3))]").unwrap(),
+        "1/(2*(-3 + x)) - (-2 + x)^(-1) + 1/(2*(-1 + x))"
       );
     }
   }

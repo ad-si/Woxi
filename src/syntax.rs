@@ -1283,6 +1283,121 @@ pub fn expr_to_string(expr: &Expr) -> String {
           .collect::<Vec<_>>()
           .join("*");
       }
+      // Special case: Plus displays as infix with + (with spaces)
+      if name == "Plus" && args.len() >= 2 {
+        let mut result = expr_to_string(&args[0]);
+        for arg in args.iter().skip(1) {
+          if let Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } = arg
+          {
+            result.push_str(" - ");
+            result.push_str(&expr_to_string(operand));
+          } else if let Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left,
+            right,
+          } = arg
+          {
+            if matches!(left.as_ref(), Expr::Integer(-1)) {
+              result.push_str(" - ");
+              result.push_str(&expr_to_string(right));
+            } else if let Expr::Integer(n) = left.as_ref() {
+              if *n < 0 {
+                result.push_str(" - ");
+                let pos = Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(Expr::Integer(-n)),
+                  right: right.clone(),
+                };
+                result.push_str(&expr_to_string(&pos));
+              } else {
+                result.push_str(" + ");
+                result.push_str(&expr_to_string(arg));
+              }
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_string(arg));
+            }
+          } else if let Expr::FunctionCall {
+            name: fn_name,
+            args: fn_args,
+          } = arg
+          {
+            if fn_name == "Times"
+              && fn_args.len() >= 2
+              && matches!(&fn_args[0], Expr::Integer(-1))
+            {
+              result.push_str(" - ");
+              let pos_args = fn_args[1..].to_vec();
+              if pos_args.len() == 1 {
+                result.push_str(&expr_to_string(&pos_args[0]));
+              } else {
+                result.push_str(&expr_to_string(&Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: pos_args,
+                }));
+              }
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_string(arg));
+            }
+          } else if let Expr::Integer(n) = arg {
+            if *n < 0 {
+              result.push_str(" - ");
+              result.push_str(&expr_to_string(&Expr::Integer(-n)));
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_string(arg));
+            }
+          } else {
+            result.push_str(" + ");
+            result.push_str(&expr_to_string(arg));
+          }
+        }
+        return result;
+      }
+      // Special case: Power displays as infix with ^ (no spaces)
+      if name == "Power" && args.len() == 2 {
+        let base_str = expr_to_string(&args[0]);
+        let exp_str = expr_to_string(&args[1]);
+        // Wrap base in parens if it's a Plus (lower precedence than Power)
+        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            &args[0],
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          ) {
+          format!("({})", base_str)
+        } else {
+          base_str
+        };
+        // Wrap exponent in parens if it's a Plus, or negative
+        let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            &args[1],
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          )
+          || matches!(&args[1], Expr::Integer(n) if *n < 0)
+          || matches!(
+            &args[1],
+            Expr::UnaryOp {
+              op: UnaryOperator::Minus,
+              ..
+            }
+          ) {
+          format!("({})", exp_str)
+        } else {
+          exp_str
+        };
+        return format!("{}^{}", base, exp);
+      }
       let parts: Vec<String> = args.iter().map(expr_to_string).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
@@ -1740,14 +1855,35 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       // Special case: Power displays as infix with ^ (no spaces)
       if name == "Power" && args.len() == 2 {
-        let base = expr_to_output(&args[0]);
+        let base_str = expr_to_output(&args[0]);
         let exp_str = expr_to_output(&args[1]);
-        // Wrap exponent in parens if it's a Plus (lower precedence)
+        // Wrap base in parens if it's a Plus (lower precedence than Power)
+        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            &args[0],
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          ) {
+          format!("({})", base_str)
+        } else {
+          base_str
+        };
+        // Wrap exponent in parens if it's a Plus, or negative
         let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
           || matches!(
             &args[1],
             Expr::BinaryOp {
               op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          )
+          || matches!(&args[1], Expr::Integer(n) if *n < 0)
+          || matches!(
+            &args[1],
+            Expr::UnaryOp {
+              op: UnaryOperator::Minus,
               ..
             }
           ) {
