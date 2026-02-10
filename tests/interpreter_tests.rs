@@ -4327,6 +4327,34 @@ mod interpreter_tests {
     fn cancel_cubic() {
       assert_eq!(interpret("Cancel[(x^3 - x)/(x^2 - 1)]").unwrap(), "x");
     }
+
+    #[test]
+    fn cancel_symbolic_common_factor() {
+      assert_eq!(interpret("Cancel[(a*b)/(a*c)]").unwrap(), "b/c");
+    }
+
+    #[test]
+    fn cancel_symbolic_powers() {
+      assert_eq!(interpret("Cancel[(a^2*b)/(a*b^2)]").unwrap(), "a/b");
+    }
+
+    #[test]
+    fn cancel_numeric_content() {
+      assert_eq!(interpret("Cancel[(2*x)/(4*x)]").unwrap(), "1/2");
+    }
+
+    #[test]
+    fn cancel_mixed_symbolic_and_poly() {
+      assert_eq!(interpret("Cancel[(a*b*x)/(a*c*x^2)]").unwrap(), "b/(c*x)");
+    }
+
+    #[test]
+    fn cancel_quadratic() {
+      assert_eq!(
+        interpret("Cancel[(x^2 + 2*x + 1)/(x + 1)]").unwrap(),
+        "1 + x"
+      );
+    }
   }
 
   mod expand_all {
