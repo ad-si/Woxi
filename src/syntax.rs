@@ -602,16 +602,70 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       // The string-based pattern matching in apply_replace_all_direct handles these
       Expr::Raw(pair.as_str().to_string())
     }
-    Rule::SimpleAnonymousFunction
-    | Rule::FunctionAnonymousFunction
-    | Rule::ParenAnonymousFunction
-    | Rule::ListAnonymousFunction => {
-      // Anonymous function like #^2& or If[#>0,#,0]&
+    Rule::SimpleAnonymousFunction => {
+      // Simple anonymous function like #^2& — never has BracketArgs
       let s = pair.as_str().trim().trim_end_matches('&');
-      // Parse the body
       let body = parse_anonymous_body(s);
       Expr::Function {
         body: Box::new(body),
+      }
+    }
+    Rule::FunctionAnonymousFunction
+    | Rule::ParenAnonymousFunction
+    | Rule::ListAnonymousFunction => {
+      // Anonymous function like If[#>0,#,0]& or (#===0)& or {#,#^2}&
+      // May optionally have BracketArgs for direct calls: (#+1)&[5]
+      let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
+      let bracket_args: Vec<Vec<Expr>> = inner_pairs
+        .iter()
+        .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| {
+          bracket
+            .clone()
+            .into_inner()
+            .filter(|p| {
+              p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+            })
+            .map(pair_to_expr)
+            .collect()
+        })
+        .collect();
+      // Extract body string: everything before the first BracketArgs, trimmed of &
+      let body_str = if bracket_args.is_empty() {
+        pair.as_str().trim().trim_end_matches('&').to_string()
+      } else {
+        // Find where the first BracketArgs starts in the string
+        let first_bracket = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::BracketArgs))
+          .unwrap();
+        let bracket_start = first_bracket.as_span().start();
+        let pair_start = pair.as_span().start();
+        let body_end = bracket_start - pair_start;
+        pair.as_str()[..body_end]
+          .trim()
+          .trim_end_matches('&')
+          .to_string()
+      };
+      let body = parse_anonymous_body(&body_str);
+      let anon_func = Expr::Function {
+        body: Box::new(body),
+      };
+      if bracket_args.is_empty() {
+        anon_func
+      } else {
+        // Build curried calls for direct application: (#+1)&[5] or (#+1)&[5][6]
+        let mut result = Expr::CurriedCall {
+          func: Box::new(anon_func),
+          args: bracket_args[0].clone(),
+        };
+        for args in bracket_args.into_iter().skip(1) {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
+        result
       }
     }
     Rule::RuleAnonymousFunction => {

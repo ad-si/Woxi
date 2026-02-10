@@ -26,11 +26,14 @@ SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
 // SlotTerm is what can follow an operator in a simple anonymous function
 SlotTerm = _{ NumericValue | Constant | String | Identifier | Slot | "(" ~ Expression ~ ")" }
 // FunctionAnonymousFunction is a function call (like If[...]) followed by & (not &&)
-FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" }
+// Optional BracketArgs allow direct calls: If[# > 0, #, 0]&[5]
+FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" ~ BracketArgs* }
 // ParenAnonymousFunction handles (Expression)& - for expressions like (# === "")&
-ParenAnonymousFunction = { "(" ~ Expression ~ ")" ~ "&" ~ !"&" }
+// Optional BracketArgs allow direct calls: (# + 1)&[5]
+ParenAnonymousFunction = { "(" ~ (CompoundExpression | Expression) ~ ")" ~ "&" ~ !"&" ~ BracketArgs* }
 // ListAnonymousFunction handles {expr1, expr2, ...}& - for expressions like {#1, #2}&
-ListAnonymousFunction = { List ~ "&" ~ !"&" }
+// Optional BracketArgs allow direct calls: {#, #^2}&[3]
+ListAnonymousFunction = { List ~ "&" ~ !"&" ~ BracketArgs* }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
