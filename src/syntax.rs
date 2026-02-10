@@ -818,7 +818,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         leading_minus = true;
       }
       Rule::Operator | Rule::ConditionOp => {
-        operators.push(item.as_str().to_string());
+        operators.push(item.as_str().trim().to_string());
       }
       _ => {
         if leading_minus {
@@ -1206,6 +1206,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "RuleDelayed" && args.len() == 2 {
         return format!(
           "{} :> {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
+      // Special case: Dot[a, b] displays as a . b (infix notation)
+      if name == "Dot" && args.len() == 2 {
+        return format!(
+          "{} . {}",
           expr_to_string(&args[0]),
           expr_to_string(&args[1])
         );
@@ -1689,6 +1697,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "RuleDelayed" && args.len() == 2 {
         return format!(
           "{} :> {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
+      // Special case: Dot[a, b] displays as a . b (infix notation)
+      if name == "Dot" && args.len() == 2 {
+        return format!(
+          "{} . {}",
           expr_to_output(&args[0]),
           expr_to_output(&args[1])
         );
