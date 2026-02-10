@@ -5198,7 +5198,7 @@ pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(if *f > 0.0 {
       Expr::Real(*f)
     } else {
-      Expr::Integer(0)
+      Expr::Real(0.0)
     }),
     Expr::List(items) => {
       let results: Result<Vec<Expr>, InterpreterError> =
@@ -5213,38 +5213,99 @@ pub fn ramp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// KroneckerDelta[args...] - returns 1 if all arguments are equal, 0 otherwise
+/// KroneckerDelta[n] - returns 1 if n==0, 0 if n!=0 (equivalent to KroneckerDelta[n, 0])
 pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
   }
-  // All arguments must be numeric and equal
+
+  // Single argument: KroneckerDelta[n] is 1 if n==0, 0 otherwise
+  if args.len() == 1 {
+    return match &args[0] {
+      Expr::Integer(n) => Ok(Expr::Integer(if *n == 0 { 1 } else { 0 })),
+      Expr::Real(f) => Ok(Expr::Integer(if *f == 0.0 { 1 } else { 0 })),
+      _ => Ok(Expr::FunctionCall {
+        name: "KroneckerDelta".to_string(),
+        args: args.to_vec(),
+      }),
+    };
+  }
+
+  // Multi argument: check if all are equal
+  // First check if any are symbolic (non-numeric)
+  let mut has_symbolic = false;
+  let mut all_equal = true;
   let first_str = crate::syntax::expr_to_string(&args[0]);
   for arg in &args[1..] {
     let s = crate::syntax::expr_to_string(arg);
     if s != first_str {
+      all_equal = false;
       // Check if both are numeric and compare numerically
       if let (Some(a), Some(b)) =
         (try_eval_to_f64(&args[0]), try_eval_to_f64(arg))
       {
         if a != b {
           return Ok(Expr::Integer(0));
+        } else {
+          all_equal = true;
         }
       } else {
-        return Ok(Expr::Integer(0));
+        has_symbolic = true;
       }
     }
   }
-  Ok(Expr::Integer(1))
+  if has_symbolic {
+    Ok(Expr::FunctionCall {
+      name: "KroneckerDelta".to_string(),
+      args: args.to_vec(),
+    })
+  } else if all_equal {
+    Ok(Expr::Integer(1))
+  } else {
+    Ok(Expr::Integer(0))
+  }
 }
 
 /// UnitStep[x] - returns 0 for x < 0, 1 for x >= 0
-/// UnitStep[list] - maps over lists
+/// UnitStep[x1, x2, ...] - returns 1 if all xi >= 0, 0 if any xi < 0
+/// UnitStep[list] - maps over lists (single arg only)
 pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "UnitStep expects exactly 1 argument".into(),
+      "UnitStep expects at least 1 argument".into(),
     ));
   }
+
+  // Multi-arg: UnitStep[x1, x2, ...] = product of UnitStep[xi]
+  if args.len() > 1 {
+    let mut has_symbolic = false;
+    for arg in args {
+      match arg {
+        Expr::Integer(n) => {
+          if *n < 0 {
+            return Ok(Expr::Integer(0));
+          }
+        }
+        Expr::Real(f) => {
+          if *f < 0.0 {
+            return Ok(Expr::Integer(0));
+          }
+        }
+        _ => {
+          has_symbolic = true;
+        }
+      }
+    }
+    if has_symbolic {
+      return Ok(Expr::FunctionCall {
+        name: "UnitStep".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    return Ok(Expr::Integer(1));
+  }
+
+  // Single arg
   match &args[0] {
     Expr::Integer(n) => Ok(Expr::Integer(if *n >= 0 { 1 } else { 0 })),
     Expr::Real(f) => Ok(Expr::Integer(if *f >= 0.0 { 1 } else { 0 })),

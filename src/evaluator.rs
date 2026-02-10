@@ -2592,7 +2592,7 @@ pub fn evaluate_function_call_ast(
     "KroneckerDelta" => {
       return crate::functions::math_ast::kronecker_delta_ast(args);
     }
-    "UnitStep" if args.len() == 1 => {
+    "UnitStep" if !args.is_empty() => {
       return crate::functions::math_ast::unit_step_ast(args);
     }
 

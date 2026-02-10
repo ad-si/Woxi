@@ -4473,6 +4473,24 @@ mod interpreter_tests {
     fn ramp_positive() {
       assert_eq!(interpret("Ramp[3]").unwrap(), "3");
     }
+
+    #[test]
+    fn ramp_negative_real_returns_real_zero() {
+      assert_eq!(interpret("Ramp[-0.1]").unwrap(), "0.");
+    }
+
+    #[test]
+    fn ramp_positive_real() {
+      assert_eq!(interpret("Ramp[3.2]").unwrap(), "3.2");
+    }
+
+    #[test]
+    fn ramp_map_with_reals() {
+      assert_eq!(
+        interpret("Map[Ramp, {-5, 3.2, -0.1, 7}]").unwrap(),
+        "{0, 3.2, 0., 7}"
+      );
+    }
   }
 
   mod kronecker_delta {
@@ -4502,6 +4520,40 @@ mod interpreter_tests {
     fn no_args() {
       assert_eq!(interpret("KroneckerDelta[]").unwrap(), "1");
     }
+
+    #[test]
+    fn single_zero() {
+      assert_eq!(interpret("KroneckerDelta[0]").unwrap(), "1");
+    }
+
+    #[test]
+    fn single_nonzero() {
+      assert_eq!(interpret("KroneckerDelta[3]").unwrap(), "0");
+    }
+
+    #[test]
+    fn symbolic_single() {
+      assert_eq!(
+        interpret("KroneckerDelta[x]").unwrap(),
+        "KroneckerDelta[x]"
+      );
+    }
+
+    #[test]
+    fn symbolic_pair() {
+      assert_eq!(
+        interpret("KroneckerDelta[i, j]").unwrap(),
+        "KroneckerDelta[i, j]"
+      );
+    }
+
+    #[test]
+    fn table_identity_matrix() {
+      assert_eq!(
+        interpret("Table[KroneckerDelta[i, j], {i, 3}, {j, 3}]").unwrap(),
+        "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+      );
+    }
   }
 
   mod unit_step {
@@ -4525,6 +4577,29 @@ mod interpreter_tests {
     #[test]
     fn list() {
       assert_eq!(interpret("UnitStep[{-1, 0, 1}]").unwrap(), "{0, 1, 1}");
+    }
+
+    #[test]
+    fn multi_arg_all_positive() {
+      assert_eq!(interpret("UnitStep[1, 2, 3]").unwrap(), "1");
+    }
+
+    #[test]
+    fn multi_arg_with_negative() {
+      assert_eq!(interpret("UnitStep[1, 2, -1]").unwrap(), "0");
+    }
+
+    #[test]
+    fn multi_arg_all_zero() {
+      assert_eq!(interpret("UnitStep[0, 0, 0]").unwrap(), "1");
+    }
+
+    #[test]
+    fn list_mixed() {
+      assert_eq!(
+        interpret("UnitStep[{-3, -1, 0, 1, 3}]").unwrap(),
+        "{0, 0, 1, 1, 1}"
+      );
     }
   }
 
