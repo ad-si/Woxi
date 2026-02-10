@@ -4141,10 +4141,7 @@ mod interpreter_tests {
 
     #[test]
     fn infix_dot_matrix_vector() {
-      assert_eq!(
-        interpret("{{1, 2}, {3, 4}} . {5, 6}").unwrap(),
-        "{17, 39}"
-      );
+      assert_eq!(interpret("{{1, 2}, {3, 4}} . {5, 6}").unwrap(), "{17, 39}");
     }
 
     #[test]
@@ -4277,6 +4274,41 @@ mod interpreter_tests {
       assert_eq!(
         interpret("Cross[{1, 0, 0}, {0, 1, 0}]").unwrap(),
         "{0, 0, 1}"
+      );
+    }
+
+    #[test]
+    fn cross_symbolic() {
+      // Negated products should be parenthesized: -(c*e) not -c*e
+      let result = interpret("Cross[{a, b, c}, {d, e, f}]").unwrap();
+      assert!(result.contains("-(c*e)"), "Expected -(c*e) in {}", result);
+      assert!(result.contains("b*f"), "Expected b*f in {}", result);
+      assert!(result.contains("-(b*d)"), "Expected -(b*d) in {}", result);
+      assert!(result.contains("a*e"), "Expected a*e in {}", result);
+    }
+
+    #[test]
+    fn cross_unit_vectors_yz() {
+      assert_eq!(
+        interpret("Cross[{0, 1, 0}, {0, 0, 1}]").unwrap(),
+        "{1, 0, 0}"
+      );
+    }
+
+    #[test]
+    fn cross_unit_vectors_zx() {
+      assert_eq!(
+        interpret("Cross[{0, 0, 1}, {1, 0, 0}]").unwrap(),
+        "{0, 1, 0}"
+      );
+    }
+
+    #[test]
+    fn cross_symbolic_return() {
+      // Non-3-vectors should return unevaluated
+      assert_eq!(
+        interpret("Cross[{1, 2}, {3, 4}]").unwrap(),
+        "Cross[{1, 2}, {3, 4}]"
       );
     }
   }
