@@ -189,6 +189,16 @@ pub fn bigint_to_expr(n: num_bigint::BigInt) -> Expr {
   }
 }
 
+/// Check if an expression requires BigInt arithmetic (exceeds f64 precision).
+/// f64 can only represent integers exactly up to 2^53.
+fn needs_bigint_arithmetic(expr: &Expr) -> bool {
+  match expr {
+    Expr::BigInteger(_) => true,
+    Expr::Integer(n) => n.unsigned_abs() > (1u128 << 53),
+    _ => false,
+  }
+}
+
 /// Compute GCD of two integers using Euclidean algorithm
 fn gcd(a: i128, b: i128) -> i128 {
   let (mut a, mut b) = (a.abs(), b.abs());
@@ -293,8 +303,8 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Check if any argument is BigInteger — use BigInt arithmetic path
-  let has_bigint = flat_args.iter().any(|a| matches!(a, Expr::BigInteger(_)));
+  // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
+  let has_bigint = flat_args.iter().any(needs_bigint_arithmetic);
 
   if has_bigint {
     use num_bigint::BigInt;
@@ -471,6 +481,44 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
+  let has_bigint = args.iter().any(needs_bigint_arithmetic);
+
+  if has_bigint {
+    use num_bigint::BigInt;
+    let mut big_product = BigInt::from(1);
+    let mut all_int = true;
+    let mut symbolic_args: Vec<Expr> = Vec::new();
+
+    for arg in args {
+      match arg {
+        Expr::Integer(n) => big_product *= BigInt::from(*n),
+        Expr::BigInteger(n) => big_product *= n,
+        _ => {
+          all_int = false;
+          symbolic_args.push(arg.clone());
+        }
+      }
+    }
+
+    if all_int {
+      return Ok(bigint_to_expr(big_product));
+    }
+
+    let mut final_args: Vec<Expr> = Vec::new();
+    if big_product != BigInt::from(1) {
+      final_args.push(bigint_to_expr(big_product));
+    }
+    final_args.extend(symbolic_args);
+    if final_args.len() == 1 {
+      return Ok(final_args.remove(0));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: final_args,
+    });
+  }
+
   // Simple numeric product
   let mut product = 1.0;
   let mut all_numeric = true;
@@ -506,11 +554,12 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (use Subtract for that)
 pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
-    // Unary minus
-    if matches!(&args[0], Expr::Real(_))
-      && let Some(n) = expr_to_num(&args[0])
-    {
-      return Ok(Expr::Real(-n));
+    // Unary minus - handle BigInteger and large Integer directly
+    match &args[0] {
+      Expr::Integer(n) => return Ok(Expr::Integer(-n)),
+      Expr::BigInteger(n) => return Ok(bigint_to_expr(-n)),
+      Expr::Real(f) => return Ok(Expr::Real(-f)),
+      _ => {}
     }
     if let Some(n) = expr_to_num(&args[0]) {
       Ok(num_to_expr(-n))

@@ -1003,6 +1003,35 @@ mod interpreter_tests {
         "340282366920938463463374607431768211456"
       );
     }
+
+    #[test]
+    fn large_i128_subtraction() {
+      // 2^67 fits in i128 but exceeds f64 precision (> 2^53)
+      assert_eq!(interpret("2^67 - 1").unwrap(), "147573952589676412927");
+    }
+
+    #[test]
+    fn large_i128_addition() {
+      assert_eq!(interpret("2^67 + 1").unwrap(), "147573952589676412929");
+    }
+
+    #[test]
+    fn large_i128_multiplication() {
+      assert_eq!(interpret("2^67 * 3").unwrap(), "442721857769029238784");
+    }
+
+    #[test]
+    fn large_i128_sum_of_two() {
+      assert_eq!(interpret("10^20 + 10^20").unwrap(), "200000000000000000000");
+    }
+
+    #[test]
+    fn factor_integer_large() {
+      assert_eq!(
+        interpret("FactorInteger[2^67 - 1]").unwrap(),
+        "{{193707721, 1}, {761838257287, 1}}"
+      );
+    }
   }
 
   mod replace_repeated {
