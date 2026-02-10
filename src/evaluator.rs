@@ -2496,6 +2496,9 @@ pub fn evaluate_function_call_ast(
     "StirlingS2" if args.len() == 2 => {
       return crate::functions::math_ast::stirling_s2_ast(args);
     }
+    "FrobeniusNumber" if args.len() == 1 => {
+      return crate::functions::math_ast::frobenius_number_ast(args);
+    }
 
     // AST-native boolean functions
     "And" if args.len() >= 2 => {

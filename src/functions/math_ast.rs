@@ -6350,3 +6350,105 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
   }
 }
+
+/// FrobeniusNumber[{a1, a2, ...}] - Largest integer that cannot be represented
+/// as a non-negative integer linear combination of the given positive integers.
+/// Returns Infinity if the GCD is not 1, -1 if 1 is in the set.
+pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "FrobeniusNumber".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FrobeniusNumber".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "FrobeniusNumber".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Extract positive integers
+  let mut nums: Vec<i128> = Vec::new();
+  for item in items {
+    match item {
+      Expr::Integer(n) if *n > 0 => nums.push(*n),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "FrobeniusNumber".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  // If 1 is in the set, every non-negative integer is representable
+  if nums.contains(&1) {
+    return Ok(Expr::Integer(-1));
+  }
+
+  // Compute GCD of all elements
+  fn gcd(a: i128, b: i128) -> i128 {
+    if b == 0 { a.abs() } else { gcd(b, a % b) }
+  }
+
+  let mut g = nums[0];
+  for &n in &nums[1..] {
+    g = gcd(g, n);
+  }
+
+  // If GCD > 1, infinitely many integers can't be represented
+  if g > 1 {
+    return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // For two coprime numbers, use the closed formula: a*b - a - b
+  if nums.len() == 2 {
+    let (a, b) = (nums[0], nums[1]);
+    return Ok(Expr::Integer(a * b - a - b));
+  }
+
+  // General case: dynamic programming
+  // Upper bound for Frobenius number: a1*a2 - a1 - a2 (using two smallest)
+  nums.sort();
+  let a0 = nums[0] as usize;
+
+  // Use the round-robin algorithm (Wilf) based on shortest paths
+  // Build shortest-path array: n[i] = smallest number representable that is ≡ i (mod a0)
+  let mut n_arr = vec![i128::MAX; a0];
+  n_arr[0] = 0;
+
+  // BFS/relaxation
+  let mut changed = true;
+  while changed {
+    changed = false;
+    for residue in 0..a0 {
+      if n_arr[residue] == i128::MAX {
+        continue;
+      }
+      for &aj in &nums[1..] {
+        let new_val = n_arr[residue] + aj;
+        let new_residue = (new_val as usize) % a0;
+        if new_val < n_arr[new_residue] {
+          n_arr[new_residue] = new_val;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  // Frobenius number is max(n_arr) - a0
+  let max_n = *n_arr.iter().max().unwrap();
+  Ok(Expr::Integer(max_n - a0 as i128))
+}
