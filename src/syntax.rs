@@ -1687,7 +1687,23 @@ pub fn expr_to_string(expr: &Expr) -> String {
         UnaryOperator::Minus => "-",
         UnaryOperator::Not => "!",
       };
-      format!("{}{}", op_str, expr_to_string(operand))
+      let inner = expr_to_string(operand);
+      let needs_parens = matches!(op, UnaryOperator::Minus)
+        && matches!(
+          operand.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus
+              | BinaryOperator::Minus
+              | BinaryOperator::Times
+              | BinaryOperator::Divide,
+            ..
+          }
+        );
+      if needs_parens {
+        format!("{}({})", op_str, inner)
+      } else {
+        format!("{}{}", op_str, inner)
+      }
     }
     Expr::Comparison {
       operands,

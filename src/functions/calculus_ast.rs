@@ -540,6 +540,66 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             right: Box::new(df),
           }))
         }
+        "Sec" if args.len() == 1 => {
+          // d/dx[sec(f(x))] = sec(f(x)) * tan(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(Expr::FunctionCall {
+                name: "Sec".to_string(),
+                args: args.clone(),
+              }),
+              right: Box::new(Expr::FunctionCall {
+                name: "Tan".to_string(),
+                args: args.clone(),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Csc" if args.len() == 1 => {
+          // d/dx[csc(f(x))] = -csc(f(x)) * cot(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Csc".to_string(),
+                  args: args.clone(),
+                }),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Cot".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Cot" if args.len() == 1 => {
+          // d/dx[cot(f(x))] = -csc^2(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Csc".to_string(),
+                  args: args.clone(),
+                }),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        }
         "Exp" if args.len() == 1 => {
           // d/dx[e^f(x)] = e^f(x) * f'(x)
           let df = differentiate(&args[0], var)?;
@@ -1382,6 +1442,260 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Rational arithmetic helpers for coefficient-based series computation
+/// Represents a rational number as (numerator, denominator) with denominator > 0
+fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let num = a.0 * b.1 + b.0 * a.1;
+  let den = a.1 * b.1;
+  rat_reduce(num, den)
+}
+
+fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  rat_reduce(a.0 * b.0, a.1 * b.1)
+}
+
+fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  if b.0 < 0 {
+    rat_reduce(-a.0 * b.1, a.1 * -b.0)
+  } else {
+    rat_reduce(a.0 * b.1, a.1 * b.0)
+  }
+}
+
+fn rat_reduce(num: i128, den: i128) -> (i128, i128) {
+  if num == 0 {
+    return (0, 1);
+  }
+  let g = gcd(num.abs(), den.abs());
+  let (n, d) = (num / g, den / g);
+  if d < 0 { (-n, -d) } else { (n, d) }
+}
+
+fn rat_to_expr(r: (i128, i128)) -> Expr {
+  if r.1 == 1 {
+    Expr::Integer(r.0)
+  } else {
+    crate::functions::math_ast::make_rational_pub(r.0, r.1)
+  }
+}
+
+/// Cauchy product of two coefficient vectors (convolution)
+fn cauchy_product(
+  a: &[(i128, i128)],
+  b: &[(i128, i128)],
+  n: usize,
+) -> (i128, i128) {
+  let mut sum = (0i128, 1i128);
+  for k in 0..=n {
+    if k < a.len() && (n - k) < b.len() {
+      sum = rat_add(sum, rat_mul(a[k], b[n - k]));
+    }
+  }
+  sum
+}
+
+/// Compute Tan[x] series coefficients around x=0 up to order n
+/// Uses recurrence: tan'(x) = 1 + tan²(x), t(0) = 0
+fn tan_series_coeffs(order: usize) -> Vec<(i128, i128)> {
+  let mut t: Vec<(i128, i128)> = vec![(0, 1)]; // t_0 = 0
+  for n in 0..order {
+    // (n+1)*t_{n+1} = delta_{n,0} + sum_{k=0..n} t_k * t_{n-k}
+    let mut rhs = cauchy_product(&t, &t, n);
+    if n == 0 {
+      rhs = rat_add(rhs, (1, 1));
+    }
+    // t_{n+1} = rhs / (n+1)
+    t.push(rat_div(rhs, ((n + 1) as i128, 1)));
+  }
+  t
+}
+
+/// Compute Sec[x] series coefficients around x=0 up to order n
+/// Uses: sec'(x) = sec(x)*tan(x), sec(0) = 1
+/// If s = sec, t = tan: s'= s*t, t' = 1 + t^2 = s^2
+fn sec_series_coeffs(order: usize) -> Vec<(i128, i128)> {
+  let mut s: Vec<(i128, i128)> = vec![(1, 1)]; // s_0 = 1
+  let mut t: Vec<(i128, i128)> = vec![(0, 1)]; // t_0 = 0
+  for n in 0..order {
+    // (n+1)*t_{n+1} = sum_{k=0..n} s_k * s_{n-k}
+    let t_rhs = cauchy_product(&s, &s, n);
+    t.push(rat_div(t_rhs, ((n + 1) as i128, 1)));
+    // (n+1)*s_{n+1} = sum_{k=0..n} s_k * t_{n-k}
+    let s_rhs = cauchy_product(&s, &t, n);
+    s.push(rat_div(s_rhs, ((n + 1) as i128, 1)));
+  }
+  s
+}
+
+/// Compute Csc[x] series coefficients around x=0 up to order n
+/// csc(x) = 1/sin(x), has a pole at x=0 so series starts at x^{-1}
+/// Returns (coefficients, nmin) where nmin is the starting power
+fn csc_series_coeffs(order: usize) -> (Vec<(i128, i128)>, i128) {
+  // csc(x) = 1/x + x/6 + 7*x^3/360 + ...
+  // Use: sin(x)*csc(x) = 1, solve for csc coefficients
+  // sin coefficients: s_1 = 1, s_3 = -1/6, s_5 = 1/120, ...
+  let total = order + 2; // need extra terms since csc starts at x^{-1}
+  let mut sin_c: Vec<(i128, i128)> = Vec::new();
+  let mut factorial = 1i128;
+  for k in 0..=total {
+    if k % 2 == 0 {
+      sin_c.push((0, 1));
+    } else {
+      let sign = if (k / 2) % 2 == 0 { 1 } else { -1 };
+      sin_c.push((sign, factorial));
+    }
+    if k < total {
+      factorial *= (k + 1) as i128;
+    }
+  }
+  // Recompute: sin_c[k] = coefficient of x^k in sin(x)
+  // We need sin_c as rationals properly
+  let mut sin_coeffs: Vec<(i128, i128)> = Vec::new();
+  let mut fact = 1i128;
+  for k in 0..=total {
+    if k > 1 {
+      fact *= k as i128;
+    }
+    if k % 2 == 0 {
+      sin_coeffs.push((0, 1));
+    } else {
+      let sign = if (k / 2) % 2 == 0 { 1i128 } else { -1 };
+      sin_coeffs.push(rat_reduce(sign, fact));
+    }
+  }
+
+  // csc(x) = c_{-1}/x + c_1*x + c_3*x^3 + ...
+  // sin(x)*csc(x) = 1
+  // Shift: let csc(x) = (1/x) * C(x) where C(x) = c_0 + c_1*x + c_2*x^2 + ...
+  // Then sin(x) * C(x) / x = 1, so sin(x)/x * C(x) = 1
+  // sinc(x) = sin(x)/x = 1 - x^2/6 + x^4/120 - ...
+  // sinc coefficients: sinc_k = sin_coeffs[k+1] (shift by one)
+  let mut sinc: Vec<(i128, i128)> = Vec::new();
+  for k in 0..=total {
+    if k + 1 < sin_coeffs.len() {
+      sinc.push(sin_coeffs[k + 1]);
+    } else {
+      sinc.push((0, 1));
+    }
+  }
+
+  // C(x) = 1/sinc(x), so sinc*C = 1
+  // c_0 = 1/sinc_0 = 1
+  // c_n = -(1/sinc_0) * sum_{k=1..n} sinc_k * c_{n-k}
+  let mut c: Vec<(i128, i128)> = vec![(1, 1)];
+  for n in 1..=total {
+    let mut s = (0i128, 1i128);
+    for k in 1..=n {
+      if k < sinc.len() && (n - k) < c.len() {
+        s = rat_add(s, rat_mul(sinc[k], c[n - k]));
+      }
+    }
+    c.push(rat_reduce(-s.0, s.1));
+  }
+
+  // csc(x) = c_0/x + c_1 + c_2*x + ... = c_0*x^{-1} + c_1*x^0 + ...
+  // In SeriesData format, nmin = -1, coefficients are c_0, c_1, c_2, ...
+  // But only keep up to order
+  let keep = (order as i128 + 2) as usize; // from x^{-1} to x^{order}
+  let coeffs: Vec<(i128, i128)> = c.into_iter().take(keep).collect();
+  (coeffs, -1)
+}
+
+/// Compute Cot[x] series coefficients around x=0
+/// Uses: cot'(x) = -1 - cot²(x) (but cot has pole at 0)
+/// cot(x) = cos(x)/sin(x) = 1/x - x/3 - x^3/45 - ...
+/// Returns (coefficients, nmin)
+fn cot_series_coeffs(order: usize) -> (Vec<(i128, i128)>, i128) {
+  // Use cos(x)/sin(x) = cot(x)
+  // cos(x) = cot(x)*sin(x)
+  // Similar to csc: let cot(x) = (1/x)*C(x)
+  // cos(x) = C(x)*sin(x)/x = C(x)*sinc(x)
+  let total = order + 2;
+
+  let mut sin_coeffs: Vec<(i128, i128)> = Vec::new();
+  let mut cos_coeffs: Vec<(i128, i128)> = Vec::new();
+  let mut fact = 1i128;
+  for k in 0..=total {
+    if k > 1 {
+      fact *= k as i128;
+    }
+    if k % 2 == 0 {
+      let sign = if (k / 2) % 2 == 0 { 1i128 } else { -1 };
+      cos_coeffs.push(rat_reduce(sign, fact));
+      sin_coeffs.push((0, 1));
+    } else {
+      cos_coeffs.push((0, 1));
+      let sign = if (k / 2) % 2 == 0 { 1i128 } else { -1 };
+      sin_coeffs.push(rat_reduce(sign, fact));
+    }
+  }
+
+  // sinc = sin(x)/x
+  let mut sinc: Vec<(i128, i128)> = Vec::new();
+  for k in 0..=total {
+    if k + 1 < sin_coeffs.len() {
+      sinc.push(sin_coeffs[k + 1]);
+    } else {
+      sinc.push((0, 1));
+    }
+  }
+
+  // C(x)*sinc(x) = cos(x), where cot(x) = C(x)/x
+  // c_0 = cos_0/sinc_0 = 1
+  // c_n = (cos_n - sum_{k=1..n} sinc_k * c_{n-k}) / sinc_0
+  let mut c: Vec<(i128, i128)> = vec![(1, 1)];
+  for n in 1..=total {
+    let mut s = if n < cos_coeffs.len() {
+      cos_coeffs[n]
+    } else {
+      (0, 1)
+    };
+    for k in 1..=n {
+      if k < sinc.len() && (n - k) < c.len() {
+        s = rat_add(s, rat_mul((-sinc[k].0, sinc[k].1), c[n - k]));
+      }
+    }
+    c.push(s);
+  }
+
+  let keep = (order as i128 + 2) as usize;
+  let coeffs: Vec<(i128, i128)> = c.into_iter().take(keep).collect();
+  (coeffs, -1)
+}
+
+/// Try coefficient-based series for known functions around x=0.
+/// Returns Some((coefficients, nmin)) if handled, None otherwise.
+fn try_fast_series(
+  expr: &Expr,
+  var_name: &str,
+  x0: &Expr,
+  order: i128,
+) -> Option<(Vec<(i128, i128)>, i128)> {
+  // Only for expansion around 0
+  if !matches!(x0, Expr::Integer(0)) {
+    return None;
+  }
+
+  // Only for f[var] form
+  match expr {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      // Check inner arg is the variable
+      if !matches!(&args[0], Expr::Identifier(v) if v == var_name) {
+        return None;
+      }
+      let n = order as usize;
+      match name.as_str() {
+        "Tan" => Some((tan_series_coeffs(n), 0)),
+        "Sec" => Some((sec_series_coeffs(n), 0)),
+        "Csc" => Some(csc_series_coeffs(n)),
+        "Cot" => Some(cot_series_coeffs(n)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Series[expr, {x, x0, n}] - Taylor series expansion
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -1420,6 +1734,46 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // Try fast coefficient-based computation for known functions
+  if let Some((rat_coeffs, nmin)) =
+    try_fast_series(&args[0], &var_name, &x0, order)
+  {
+    let mut coefficients: Vec<Expr> =
+      rat_coeffs.iter().map(|r| rat_to_expr(*r)).collect();
+    let mut actual_nmin = nmin;
+
+    // Strip leading zeros
+    while !coefficients.is_empty()
+      && matches!(coefficients[0], Expr::Integer(0))
+    {
+      coefficients.remove(0);
+      actual_nmin += 1;
+    }
+
+    // Strip trailing zeros
+    while coefficients.len() > 1
+      && matches!(coefficients.last(), Some(Expr::Integer(0)))
+    {
+      coefficients.pop();
+    }
+
+    if coefficients.is_empty() {
+      return Ok(Expr::Integer(0));
+    }
+
+    return Ok(Expr::FunctionCall {
+      name: "SeriesData".to_string(),
+      args: vec![
+        Expr::Identifier(var_name),
+        x0,
+        Expr::List(coefficients),
+        Expr::Integer(actual_nmin),
+        Expr::Integer(order + 1),
+        Expr::Integer(1),
+      ],
+    });
+  }
 
   // Compute Taylor coefficients: f^(k)(x0) / k!
   let mut coefficients = Vec::new();
