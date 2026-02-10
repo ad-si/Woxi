@@ -4448,6 +4448,30 @@ mod interpreter_tests {
     fn together_basic() {
       assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
     }
+
+    #[test]
+    fn together_symbolic_fractions() {
+      assert_eq!(
+        interpret("Together[a/b + c/d]").unwrap(),
+        "(b*c + a*d)/(b*d)"
+      );
+    }
+
+    #[test]
+    fn together_subtracted_fractions() {
+      assert_eq!(
+        interpret("Together[1/(x-1) - 1/(x+1)]").unwrap(),
+        "2/((-1 + x)*(1 + x))"
+      );
+    }
+
+    #[test]
+    fn together_added_fractions_with_binomial_denominators() {
+      assert_eq!(
+        interpret("Together[1/(x-1) + 1/(x+1)]").unwrap(),
+        "(2*x)/((-1 + x)*(1 + x))"
+      );
+    }
   }
 
   mod apart {

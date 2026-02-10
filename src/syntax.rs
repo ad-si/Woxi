@@ -1367,8 +1367,21 @@ pub fn expr_to_string(expr: &Expr) -> String {
       let left_str = expr_to_string(left);
       let right_str = expr_to_string(right);
 
-      // Add parens when a lower-precedence expr is inside a higher-precedence one
-      let left_formatted = if is_multiplicative && is_additive(left) {
+      // Add parens when a lower-precedence expr is inside a higher-precedence one,
+      // or when the numerator of a division is a product (Wolfram convention)
+      let left_needs_parens = (is_multiplicative && is_additive(left))
+        || (matches!(op, BinaryOperator::Divide)
+          && (matches!(
+            left.as_ref(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              ..
+            }
+          ) || matches!(
+            left.as_ref(),
+            Expr::FunctionCall { name, .. } if name == "Times"
+          )));
+      let left_formatted = if left_needs_parens {
         format!("({})", left_str)
       } else {
         left_str

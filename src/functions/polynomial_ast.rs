@@ -2693,7 +2693,9 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(together_expr(&args[0]))
 }
 
-/// Extract numerator and denominator from an expression
+/// Extract numerator and denominator from an expression.
+/// Handles BinaryOp::Divide, Rational, Power[..., -1], and
+/// Times[..., Power[..., -1]] forms.
 fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
   match expr {
     Expr::BinaryOp {
@@ -2706,7 +2708,151 @@ fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
     {
       (args[0].clone(), args[1].clone())
     }
+    // Power[base, -1] => 1/base
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Some(neg_exp) = get_negative_integer(&args[1]) {
+        if neg_exp == 1 {
+          (Expr::Integer(1), args[0].clone())
+        } else {
+          (
+            Expr::Integer(1),
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![args[0].clone(), Expr::Integer(neg_exp as i128)],
+            },
+          )
+        }
+      } else {
+        (expr.clone(), Expr::Integer(1))
+      }
+    }
+    // Times[factors...] — split into numerator factors and denominator factors
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Flatten nested Times first
+      let flat_args = flatten_times_args(args);
+      let mut num_factors = Vec::new();
+      let mut den_factors = Vec::new();
+      for arg in &flat_args {
+        match arg {
+          Expr::FunctionCall {
+            name: pname,
+            args: pargs,
+          } if pname == "Power" && pargs.len() == 2 => {
+            if let Some(neg_exp) = get_negative_integer(&pargs[1]) {
+              if neg_exp == 1 {
+                den_factors.push(pargs[0].clone());
+              } else {
+                den_factors.push(Expr::FunctionCall {
+                  name: "Power".to_string(),
+                  args: vec![pargs[0].clone(), Expr::Integer(neg_exp as i128)],
+                });
+              }
+            } else {
+              num_factors.push(arg.clone());
+            }
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => {
+            if let Some(neg_exp) = get_negative_integer(right) {
+              if neg_exp == 1 {
+                den_factors.push(*left.clone());
+              } else {
+                den_factors.push(Expr::FunctionCall {
+                  name: "Power".to_string(),
+                  args: vec![*left.clone(), Expr::Integer(neg_exp as i128)],
+                });
+              }
+            } else {
+              num_factors.push(arg.clone());
+            }
+          }
+          _ => num_factors.push(arg.clone()),
+        }
+      }
+      if den_factors.is_empty() {
+        (expr.clone(), Expr::Integer(1))
+      } else {
+        let num = build_product(num_factors);
+        let den = build_product(den_factors);
+        (num, den)
+      }
+    }
+    // BinaryOp::Times — split into numerator and denominator factors
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      // Flatten into a Times FunctionCall and recurse
+      let flat = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![*left.clone(), *right.clone()],
+      };
+      extract_num_den(&flat)
+    }
+    // UnaryOp::Minus — negate the numerator
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (num, den) = extract_num_den(operand);
+      (negate_expr(&num), den)
+    }
     _ => (expr.clone(), Expr::Integer(1)),
+  }
+}
+
+/// Flatten nested Times args: Times[a, Times[b, c]] → [a, b, c]
+fn flatten_times_args(args: &[Expr]) -> Vec<Expr> {
+  let mut flat = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::FunctionCall { name, args: inner } if name == "Times" => {
+        flat.extend(flatten_times_args(inner));
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flat.extend(flatten_times_args(&[*left.clone(), *right.clone()]));
+      }
+      _ => flat.push(arg.clone()),
+    }
+  }
+  flat
+}
+
+/// Check if an expression is a negative integer and return its absolute value
+fn get_negative_integer(expr: &Expr) -> Option<i64> {
+  match expr {
+    Expr::Integer(n) if *n < 0 => Some((-*n) as i64),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => match operand.as_ref() {
+      Expr::Integer(n) if *n > 0 => Some(*n as i64),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Negate an expression
+fn negate_expr(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) => Expr::Integer(-n),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => *operand.clone(),
+    _ => Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(expr.clone()),
+    },
   }
 }
 
@@ -2766,7 +2912,16 @@ fn together_expr(expr: &Expr) -> Expr {
   } else {
     expand_and_combine(&build_sum(new_num_terms))
   };
-  let combined_den = expand_and_combine(&common_den);
+  // Keep denominator in factored form (Wolfram behavior),
+  // but canonicalize each individual factor and sort them
+  let combined_den = if unique_dens.len() == 1 {
+    expand_and_combine(&unique_dens[0])
+  } else {
+    let mut canonical_dens: Vec<Expr> =
+      unique_dens.iter().map(expand_and_combine).collect();
+    canonical_dens.sort_by_key(|a| expr_to_string(a));
+    build_product(canonical_dens)
+  };
 
   if matches!(&combined_den, Expr::Integer(1)) {
     combined_num
