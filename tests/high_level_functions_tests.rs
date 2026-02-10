@@ -522,6 +522,48 @@ mod high_level_functions_tests {
     }
   }
 
+  // ─── FrobeniusNumber ─────────────────────────────────────────────────
+  mod frobenius_number_tests {
+    use super::*;
+    #[test]
+    fn test_frobenius_two_coprime() {
+      assert_eq!(interpret("FrobeniusNumber[{2, 5}]").unwrap(), "3");
+      assert_eq!(interpret("FrobeniusNumber[{3, 7}]").unwrap(), "11");
+    }
+    #[test]
+    fn test_frobenius_three_elements() {
+      assert_eq!(interpret("FrobeniusNumber[{3, 5, 7}]").unwrap(), "4");
+      assert_eq!(interpret("FrobeniusNumber[{7, 13, 23}]").unwrap(), "45");
+      assert_eq!(interpret("FrobeniusNumber[{6, 9, 20}]").unwrap(), "43");
+    }
+    #[test]
+    fn test_frobenius_with_one() {
+      assert_eq!(interpret("FrobeniusNumber[{1, 5}]").unwrap(), "-1");
+      assert_eq!(interpret("FrobeniusNumber[{1, 2, 3}]").unwrap(), "-1");
+    }
+    #[test]
+    fn test_frobenius_non_coprime() {
+      assert_eq!(interpret("FrobeniusNumber[{2, 4}]").unwrap(), "Infinity");
+      assert_eq!(interpret("FrobeniusNumber[{6, 9}]").unwrap(), "Infinity");
+    }
+    #[test]
+    fn test_frobenius_single_element() {
+      assert_eq!(interpret("FrobeniusNumber[{5}]").unwrap(), "Infinity");
+      assert_eq!(interpret("FrobeniusNumber[{1}]").unwrap(), "-1");
+    }
+    #[test]
+    fn test_frobenius_unevaluated() {
+      assert_eq!(
+        interpret("FrobeniusNumber[{-2, 5}]").unwrap(),
+        "FrobeniusNumber[{-2, 5}]"
+      );
+      assert_eq!(
+        interpret("FrobeniusNumber[{}]").unwrap(),
+        "FrobeniusNumber[{}]"
+      );
+    }
+  }
+
   // ─── Catch/Throw ───────────────────────────────────────────────────
   mod catch_throw_tests {
     use super::*;
