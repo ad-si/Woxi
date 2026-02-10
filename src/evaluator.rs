@@ -2608,7 +2608,7 @@ pub fn evaluate_function_call_ast(
     "Integrate" if args.len() == 2 => {
       return crate::functions::calculus_ast::integrate_ast(args);
     }
-    "Limit" if args.len() == 2 => {
+    "Limit" if (2..=3).contains(&args.len()) => {
       return crate::functions::calculus_ast::limit_ast(args);
     }
     "Series" if args.len() == 2 => {

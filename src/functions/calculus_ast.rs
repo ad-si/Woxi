@@ -1062,13 +1062,200 @@ fn is_clean_value(expr: &Expr) -> bool {
   }
 }
 
+/// Direction for one-sided limits
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LimitDirection {
+  /// Two-sided limit (default)
+  TwoSided,
+  /// From above (x -> x0+), i.e. from the right
+  FromAbove,
+  /// From below (x -> x0-), i.e. from the left
+  FromBelow,
+}
+
+/// Parse the Direction option from a Rule like `Direction -> "FromAbove"`
+fn parse_direction(option: &Expr) -> Option<LimitDirection> {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = option
+    && let Expr::Identifier(name) = pattern.as_ref()
+    && name == "Direction"
+  {
+    match replacement.as_ref() {
+      Expr::String(s) if s == "FromAbove" => {
+        return Some(LimitDirection::FromAbove);
+      }
+      Expr::String(s) if s == "FromBelow" => {
+        return Some(LimitDirection::FromBelow);
+      }
+      _ => {}
+    }
+  }
+  None
+}
+
+/// Evaluate an expression numerically at var = point + delta
+fn eval_near_point(
+  expr: &Expr,
+  var: &str,
+  point: &Expr,
+  delta: f64,
+) -> Option<f64> {
+  let point_val = crate::functions::math_ast::try_eval_to_f64(point)?;
+  let val_at = point_val + delta;
+  let subst =
+    crate::syntax::substitute_variable(expr, var, &Expr::Real(val_at));
+  let result = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
+  crate::functions::math_ast::try_eval_to_f64(&result)
+}
+
+/// Compute a one-sided limit numerically by evaluating at points approaching x0
+fn numerical_one_sided_limit(
+  expr: &Expr,
+  var_name: &str,
+  point: &Expr,
+  direction: LimitDirection,
+) -> Option<Expr> {
+  let sign = match direction {
+    LimitDirection::FromAbove => 1.0,
+    LimitDirection::FromBelow => -1.0,
+    LimitDirection::TwoSided => return None,
+  };
+
+  // Evaluate at decreasing distances from the point
+  let deltas = [1e-2, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12];
+  let mut vals = Vec::new();
+  for &d in &deltas {
+    if let Some(v) = eval_near_point(expr, var_name, point, sign * d) {
+      if v.is_nan() {
+        return None;
+      }
+      vals.push(v);
+    } else {
+      return None;
+    }
+  }
+
+  // Check for immediate infinity (even at the first sample point)
+  if vals.iter().any(|v| v.is_infinite()) {
+    // Determine sign from the first non-infinite value, or from the infinite ones
+    let sign_positive = vals
+      .iter()
+      .find(|v| !v.is_infinite())
+      .map(|v| *v > 0.0)
+      .unwrap_or_else(|| vals[0].is_sign_positive());
+    if sign_positive {
+      return Some(Expr::Identifier("Infinity".to_string()));
+    } else {
+      return Some(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      });
+    }
+  }
+
+  // Check if the values are monotonically diverging (sign consistent, magnitude increasing)
+  let all_positive = vals.iter().all(|&v| v > 0.0);
+  let all_negative = vals.iter().all(|&v| v < 0.0);
+  let magnitudes_increasing = vals.windows(2).all(|w| w[1].abs() > w[0].abs());
+
+  if magnitudes_increasing && (all_positive || all_negative) {
+    // Check that the growth is unbounded (magnitude at least doubles over the range)
+    if vals.last().unwrap().abs() > 2.0 * vals.first().unwrap().abs() {
+      if all_positive {
+        return Some(Expr::Identifier("Infinity".to_string()));
+      } else {
+        return Some(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
+        });
+      }
+    }
+  }
+
+  // Check convergence to a finite value
+  let last = *vals.last().unwrap();
+  let second_last = vals[vals.len() - 2];
+  let diff = (last - second_last).abs();
+  let scale = last.abs().max(second_last.abs()).max(1e-15);
+  if diff / scale < 0.01 || diff < 1e-10 {
+    // Converging — determine the value
+    let rounded = last.round();
+    if (last - rounded).abs() < 1e-6 {
+      return Some(Expr::Integer(rounded as i128));
+    }
+    // Check for known constants
+    if (last - std::f64::consts::E).abs() < 1e-4 {
+      return Some(Expr::Constant("E".to_string()));
+    }
+    if (last - std::f64::consts::PI).abs() < 1e-4 {
+      return Some(Expr::Constant("Pi".to_string()));
+    }
+    return Some(Expr::Real(last));
+  }
+
+  None
+}
+
+/// Compute a two-sided limit numerically by checking both sides agree
+fn numerical_two_sided_limit(
+  expr: &Expr,
+  var_name: &str,
+  point: &Expr,
+) -> Option<Expr> {
+  let from_above =
+    numerical_one_sided_limit(expr, var_name, point, LimitDirection::FromAbove);
+  let from_below =
+    numerical_one_sided_limit(expr, var_name, point, LimitDirection::FromBelow);
+
+  match (from_above, from_below) {
+    (Some(a), Some(b)) => {
+      // Check if both sides agree
+      let a_val = crate::functions::math_ast::try_eval_to_f64(&a);
+      let b_val = crate::functions::math_ast::try_eval_to_f64(&b);
+      match (a_val, b_val) {
+        (Some(av), Some(bv)) => {
+          let diff = (av - bv).abs();
+          let scale = av.abs().max(bv.abs()).max(1e-15);
+          if diff / scale < 0.01 || diff < 1e-10 {
+            // Both sides converge to the same value
+            return Some(a);
+          }
+          // Sides disagree — indeterminate
+          Some(Expr::Identifier("Indeterminate".to_string()))
+        }
+        _ => {
+          // At least one side is infinite — check if they match symbolically
+          let a_str = crate::syntax::expr_to_string(&a);
+          let b_str = crate::syntax::expr_to_string(&b);
+          if a_str == b_str {
+            return Some(a);
+          }
+          // Different infinities — indeterminate
+          Some(Expr::Identifier("Indeterminate".to_string()))
+        }
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Limit[expr, x -> x0] - Compute the limit of expr as x approaches x0
+/// Limit[expr, x -> x0, Direction -> "FromAbove"] - One-sided limit
 pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Limit expects exactly 2 arguments".into(),
+      "Limit expects 2 or 3 arguments".into(),
     ));
   }
+
+  // Parse optional Direction from 3rd argument
+  let direction = if args.len() == 3 {
+    parse_direction(&args[2]).unwrap_or(LimitDirection::TwoSided)
+  } else {
+    LimitDirection::TwoSided
+  };
 
   // Second argument must be a Rule: x -> x0
   let (var_name, point) = match &args[1] {
@@ -1166,6 +1353,24 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           right: Box::new(simplify(dg)),
         };
         return limit_ast(&[new_expr, args[1].clone()]);
+      }
+    }
+  }
+
+  // Numerical approach for one-sided or two-sided limits
+  match direction {
+    LimitDirection::FromAbove | LimitDirection::FromBelow => {
+      if let Some(result) =
+        numerical_one_sided_limit(&args[0], &var_name, &point, direction)
+      {
+        return Ok(result);
+      }
+    }
+    LimitDirection::TwoSided => {
+      if let Some(result) =
+        numerical_two_sided_limit(&args[0], &var_name, &point)
+      {
+        return Ok(result);
       }
     }
   }

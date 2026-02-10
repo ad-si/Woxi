@@ -4796,6 +4796,78 @@ mod interpreter_tests {
     fn limit_n_to_infinity() {
       assert_eq!(interpret("Limit[n, n -> Infinity]").unwrap(), "Infinity");
     }
+
+    #[test]
+    fn limit_one_over_x_at_zero_from_above() {
+      assert_eq!(
+        interpret(r#"Limit[1/x, x -> 0, Direction -> "FromAbove"]"#).unwrap(),
+        "Infinity"
+      );
+    }
+
+    #[test]
+    fn limit_one_over_x_at_zero_from_below() {
+      assert_eq!(
+        interpret(r#"Limit[1/x, x -> 0, Direction -> "FromBelow"]"#).unwrap(),
+        "-Infinity"
+      );
+    }
+
+    #[test]
+    fn limit_one_over_x_at_zero_no_direction() {
+      // Without direction, 1/x at 0 is indeterminate (different from left and right)
+      assert_eq!(interpret("Limit[1/x, x -> 0]").unwrap(), "Indeterminate");
+    }
+
+    #[test]
+    fn limit_one_over_x_squared_at_zero() {
+      // 1/x^2 -> Infinity from both sides, so no direction needed
+      assert_eq!(interpret("Limit[1/x^2, x -> 0]").unwrap(), "Infinity");
+    }
+
+    #[test]
+    fn limit_one_over_x_squared_from_above() {
+      assert_eq!(
+        interpret(r#"Limit[1/x^2, x -> 0, Direction -> "FromAbove"]"#).unwrap(),
+        "Infinity"
+      );
+    }
+
+    #[test]
+    fn limit_sqrt_x_at_zero_from_above() {
+      assert_eq!(
+        interpret(r#"Limit[Sqrt[x], x -> 0, Direction -> "FromAbove"]"#)
+          .unwrap(),
+        "0"
+      );
+    }
+
+    #[test]
+    fn limit_log_x_at_zero_from_above() {
+      assert_eq!(
+        interpret(r#"Limit[Log[x], x -> 0, Direction -> "FromAbove"]"#)
+          .unwrap(),
+        "-Infinity"
+      );
+    }
+
+    #[test]
+    fn limit_exp_neg_one_over_x_from_above() {
+      assert_eq!(
+        interpret(r#"Limit[Exp[-1/x], x -> 0, Direction -> "FromAbove"]"#)
+          .unwrap(),
+        "0"
+      );
+    }
+
+    #[test]
+    fn limit_exp_neg_one_over_x_from_below() {
+      assert_eq!(
+        interpret(r#"Limit[Exp[-1/x], x -> 0, Direction -> "FromBelow"]"#)
+          .unwrap(),
+        "Infinity"
+      );
+    }
   }
 
   mod differentiate_plus_times {
