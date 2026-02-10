@@ -1273,6 +1273,19 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Strip leading zero coefficients and adjust nmin
+  let mut nmin: i128 = 0;
+  while !coefficients.is_empty() && matches!(coefficients[0], Expr::Integer(0))
+  {
+    coefficients.remove(0);
+    nmin += 1;
+  }
+
+  // If all coefficients are zero, return 0
+  if coefficients.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
   // Build SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, 1]
   Ok(Expr::FunctionCall {
     name: "SeriesData".to_string(),
@@ -1280,7 +1293,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Identifier(var_name),
       x0,
       Expr::List(coefficients),
-      Expr::Integer(0),
+      Expr::Integer(nmin),
       Expr::Integer(order + 1),
       Expr::Integer(1),
     ],
