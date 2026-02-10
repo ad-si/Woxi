@@ -1297,7 +1297,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
         return if matches!(
           right.as_ref(),
           Expr::BinaryOp {
-            op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times,
+            op: BinaryOperator::Plus
+              | BinaryOperator::Minus
+              | BinaryOperator::Times,
             ..
           }
         ) || matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
