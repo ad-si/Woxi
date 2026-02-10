@@ -3275,6 +3275,15 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn tan_complex_infinity() {
+      assert_eq!(interpret("Tan[Pi/2]").unwrap(), "ComplexInfinity");
+      assert_eq!(interpret("Tan[90 Degree]").unwrap(), "ComplexInfinity");
+      assert_eq!(interpret("Tan[270 Degree]").unwrap(), "ComplexInfinity");
+      assert_eq!(interpret("Tan[450 Degree]").unwrap(), "ComplexInfinity");
+      assert_eq!(interpret("Tan[3 Pi/2]").unwrap(), "ComplexInfinity");
+    }
+
+    #[test]
     fn sin_degree_all_quadrants() {
       assert_eq!(interpret("Sin[45 Degree]").unwrap(), "1/Sqrt[2]");
       assert_eq!(interpret("Sin[90 Degree]").unwrap(), "1");
