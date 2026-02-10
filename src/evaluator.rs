@@ -1120,14 +1120,22 @@ fn expr_to_bigint(expr: &Expr) -> Option<num_bigint::BigInt> {
   }
 }
 
-/// Apply a binary operation when at least one operand is a BigInteger
+/// Check if an expression requires BigInt arithmetic (exceeds f64 precision).
+/// f64 can only represent integers exactly up to 2^53.
+fn needs_bigint(expr: &Expr) -> bool {
+  match expr {
+    Expr::BigInteger(_) => true,
+    Expr::Integer(n) => n.unsigned_abs() > (1u128 << 53),
+    _ => false,
+  }
+}
+
+/// Apply a binary operation when at least one operand is a BigInteger or large Integer
 fn bigint_binary_op<F>(left: &Expr, right: &Expr, op: F) -> Option<Expr>
 where
   F: FnOnce(num_bigint::BigInt, num_bigint::BigInt) -> num_bigint::BigInt,
 {
-  let has_big =
-    matches!(left, Expr::BigInteger(_)) || matches!(right, Expr::BigInteger(_));
-  if !has_big {
+  if !needs_bigint(left) && !needs_bigint(right) {
     return None;
   }
   let l = expr_to_bigint(left)?;
@@ -1147,6 +1155,30 @@ fn thread_binary_op(
     r: &Expr,
     op: BinaryOperator,
   ) -> Result<Expr, InterpreterError> {
+    // Check if BigInt arithmetic is needed
+    if (needs_bigint(l) || needs_bigint(r))
+      && let (Some(lb), Some(rb)) = (expr_to_bigint(l), expr_to_bigint(r))
+    {
+      let result = match op {
+        BinaryOperator::Plus => lb + rb,
+        BinaryOperator::Minus => lb - rb,
+        BinaryOperator::Times => lb * rb,
+        _ => {
+          // For Divide/Power, fall through to f64 path
+          let ln = expr_to_number(l);
+          let rn = expr_to_number(r);
+          if let (Some(a), Some(b)) = (ln, rn) {
+            return Ok(num_to_expr(a / b));
+          }
+          return Ok(Expr::BinaryOp {
+            op,
+            left: Box::new(l.clone()),
+            right: Box::new(r.clone()),
+          });
+        }
+      };
+      return Ok(crate::functions::math_ast::bigint_to_expr(result));
+    }
     let ln = expr_to_number(l);
     let rn = expr_to_number(r);
     let any_real = matches!(l, Expr::Real(_)) || matches!(r, Expr::Real(_));
