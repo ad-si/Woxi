@@ -5252,4 +5252,65 @@ mod interpreter_tests {
       assert!(result.graphics.is_none());
     }
   }
+
+  mod echo {
+    use super::*;
+
+    #[test]
+    fn single_arg_returns_value() {
+      clear_state();
+      let result = interpret_with_stdout("Echo[42]").unwrap();
+      assert_eq!(result.result, "42");
+      assert_eq!(result.stdout, ">> 42\n");
+    }
+
+    #[test]
+    fn single_arg_with_expression() {
+      clear_state();
+      let result = interpret_with_stdout("Echo[2 + 3]").unwrap();
+      assert_eq!(result.result, "5");
+      assert_eq!(result.stdout, ">> 5\n");
+    }
+
+    #[test]
+    fn two_args_custom_label() {
+      clear_state();
+      let result = interpret_with_stdout("Echo[2 + 3, \"result: \"]").unwrap();
+      assert_eq!(result.result, "5");
+      assert_eq!(result.stdout, ">> result:  5\n");
+    }
+
+    #[test]
+    fn three_args_with_function() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Echo[{1, 2, 3}, \"length: \", Length]").unwrap();
+      assert_eq!(result.result, "{1, 2, 3}");
+      assert_eq!(result.stdout, ">> length:  3\n");
+    }
+
+    #[test]
+    fn map_echo() {
+      clear_state();
+      let result = interpret_with_stdout("Map[Echo, {1, 2, 3}]").unwrap();
+      assert_eq!(result.result, "{1, 2, 3}");
+      assert_eq!(result.stdout, ">> 1\n>> 2\n>> 3\n");
+    }
+
+    #[test]
+    fn echo_with_list() {
+      clear_state();
+      let result = interpret_with_stdout("Echo[{a, b, c}]").unwrap();
+      assert_eq!(result.result, "{a, b, c}");
+      assert_eq!(result.stdout, ">> {a, b, c}\n");
+    }
+
+    #[test]
+    fn echo_with_string() {
+      clear_state();
+      let result = interpret_with_stdout("Echo[\"hello\"]").unwrap();
+      assert_eq!(result.result, "hello");
+      assert_eq!(result.stdout, ">> hello\n");
+    }
+  }
 }

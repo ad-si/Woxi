@@ -2606,11 +2606,38 @@ pub fn evaluate_function_call_ast(
       return crate::functions::math_ast::unit_step_ast(args);
     }
 
-    // Echo[expr] - prints expr and returns it
-    "Echo" if args.len() == 1 => {
-      let output = crate::syntax::expr_to_output(&args[0]);
-      println!(">> {}", output);
-      crate::capture_stdout(&format!(">> {}", output));
+    // Echo[expr] - prints ">> expr" and returns expr
+    // Echo[expr, label] - prints ">> label expr" and returns expr
+    // Echo[expr, label, f] - prints ">> label f[expr]" and returns expr
+    "Echo" if !args.is_empty() && args.len() <= 3 => {
+      let label = if args.len() >= 2 {
+        crate::syntax::expr_to_output(&args[1])
+      } else {
+        ">> ".to_string()
+      };
+      let display_expr = if args.len() == 3 {
+        let f_applied = match &args[2] {
+          Expr::Identifier(f_name) => Expr::FunctionCall {
+            name: f_name.clone(),
+            args: vec![args[0].clone()],
+          },
+          other => Expr::FunctionCall {
+            name: "Apply".to_string(),
+            args: vec![other.clone(), args[0].clone()],
+          },
+        };
+        let result = evaluate_expr_to_expr(&f_applied)?;
+        crate::syntax::expr_to_output(&result)
+      } else {
+        crate::syntax::expr_to_output(&args[0])
+      };
+      let line = if args.len() >= 2 {
+        format!(">> {} {}", label, display_expr)
+      } else {
+        format!(">> {}", display_expr)
+      };
+      println!("{}", line);
+      crate::capture_stdout(&line);
       return Ok(args[0].clone());
     }
 
