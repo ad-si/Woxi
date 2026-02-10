@@ -1697,8 +1697,20 @@ fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
   fn as_int(e: &Expr) -> Option<i64> {
     match e {
       Expr::Integer(n) => Some(*n as i64),
-      // Handle negative constants like -Pi parsed as Constant("-Pi")
       _ => None,
+    }
+  }
+
+  // Helper to extract a rational value (k, n) from Rational[k, n]
+  fn as_rational(e: &Expr) -> Option<(i64, i64)> {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Rational"
+      && args.len() == 2
+      && let (Some(k), Some(n)) = (as_int(&args[0]), as_int(&args[1]))
+    {
+      Some((k, n))
+    } else {
+      None
     }
   }
 
@@ -1783,6 +1795,17 @@ fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
         && let Some(d) = as_int(den)
       {
         return Some(reduce(n, d));
+      }
+      // Rational[k, d] * Pi or Pi * Rational[k, d]
+      if is_pi(right)
+        && let Some((k, d)) = as_rational(left)
+      {
+        return Some(reduce(k, d));
+      }
+      if is_pi(left)
+        && let Some((k, d)) = as_rational(right)
+      {
+        return Some(reduce(k, d));
       }
       None
     }
@@ -1998,9 +2021,9 @@ fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   let k_mod = ((k % n) + n) % n; // in [0, n)
   // Use symmetry: tan(-x) = -tan(x), tan(Pi - x) = -tan(x)
   // Normalize to [0, Pi/2) i.e., k_mod/n in [0, 1/2)
-  // Check for Pi/2: k_mod*2 == n means angle is Pi/2 (undefined)
+  // Check for Pi/2: k_mod*2 == n means angle is Pi/2 → ComplexInfinity
   if k_mod * 2 == n {
-    return None; // tan(Pi/2) is undefined
+    return Some(Expr::Identifier("ComplexInfinity".to_string()));
   }
   let (k_ref, n_ref, sign) = if k_mod * 2 < n {
     // First half [0, Pi/2): positive
