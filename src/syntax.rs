@@ -362,7 +362,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
   match pair.as_rule() {
     Rule::Integer | Rule::UnsignedInteger => {
       let s = pair.as_str();
-      Expr::Integer(s.parse().unwrap_or(0))
+      match s.parse::<i128>() {
+        Ok(n) => Expr::Integer(n),
+        Err(_) => {
+          // Overflows i128 — use BigInteger
+          match s.parse::<num_bigint::BigInt>() {
+            Ok(n) => Expr::BigInteger(n),
+            Err(_) => Expr::Integer(0),
+          }
+        }
+      }
     }
     Rule::Real | Rule::UnsignedReal => {
       let s = pair.as_str();
@@ -377,7 +386,15 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       // i128::from_str_radix only supports lowercase, so normalize
       match i128::from_str_radix(&digits.to_lowercase(), base) {
         Ok(val) => Expr::Integer(val),
-        Err(_) => Expr::Integer(0),
+        Err(_) => {
+          // Overflows i128 — try BigInteger
+          use num_bigint::BigInt;
+          use num_traits::Num;
+          match BigInt::from_str_radix(&digits.to_lowercase(), base) {
+            Ok(n) => Expr::BigInteger(n),
+            Err(_) => Expr::Integer(0),
+          }
+        }
       }
     }
     Rule::String => {

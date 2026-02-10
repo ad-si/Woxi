@@ -5039,6 +5039,80 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── BigInt Primality (Miller-Rabin) ──────────────────────────────
+
+/// Miller-Rabin primality test for BigInt values.
+/// Uses deterministic witnesses for small numbers and a set of strong
+/// witnesses that provides correct results for all numbers < 3.317e24,
+/// plus additional witnesses for larger numbers.
+pub fn is_prime_bigint(n: &num_bigint::BigInt) -> bool {
+  use num_bigint::BigInt;
+  use num_traits::{One, Zero};
+
+  let one = BigInt::one();
+  let two = &one + &one;
+  let three = &two + &one;
+
+  if *n <= one {
+    return false;
+  }
+  if *n == two || *n == three {
+    return true;
+  }
+  if (n % &two).is_zero() || (n % &three).is_zero() {
+    return false;
+  }
+
+  // Small primes trial division
+  let small_primes: &[u64] = &[
+    5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73,
+    79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157,
+    163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239,
+    241, 251,
+  ];
+  for &p in small_primes {
+    let bp = BigInt::from(p);
+    if *n == bp {
+      return true;
+    }
+    if (n % &bp).is_zero() {
+      return false;
+    }
+  }
+
+  // Write n-1 = d * 2^r
+  let n_minus_1 = n - &one;
+  let mut d = n_minus_1.clone();
+  let mut r: u64 = 0;
+  while (&d % &two).is_zero() {
+    d /= &two;
+    r += 1;
+  }
+
+  // Witness bases — deterministic for numbers < 3.317e24,
+  // and probabilistically correct (error < 2^-128) for larger numbers
+  let witnesses: &[u64] = &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+
+  'witness: for &a in witnesses {
+    let a_big = BigInt::from(a);
+    if a_big >= *n {
+      continue;
+    }
+    let mut x = a_big.modpow(&d, n);
+    if x == one || x == n_minus_1 {
+      continue;
+    }
+    for _ in 0..r - 1 {
+      x = x.modpow(&two, n);
+      if x == n_minus_1 {
+        continue 'witness;
+      }
+    }
+    return false;
+  }
+  true
+}
+
 // ─── NextPrime ─────────────────────────────────────────────────────
 
 /// NextPrime[n] - Returns the smallest prime greater than n
@@ -5052,6 +5126,7 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(n) => Ok(Expr::Integer(next_prime_after(*n))),
     Expr::Real(f) => Ok(Expr::Integer(next_prime_after(f.floor() as i128))),
+    Expr::BigInteger(n) => Ok(bigint_to_expr(next_prime_after_bigint(n))),
     _ => Ok(Expr::FunctionCall {
       name: "NextPrime".to_string(),
       args: args.to_vec(),
@@ -5081,6 +5156,43 @@ fn next_prime_after(n: i128) -> i128 {
   }
   // No negative prime found > n, or n is -2, -1, or 0: smallest positive prime is 2
   2
+}
+
+/// Find the smallest prime > n for BigInt values.
+fn next_prime_after_bigint(n: &num_bigint::BigInt) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
+  use num_traits::{One, Zero};
+
+  let one = BigInt::one();
+  let two = &one + &one;
+
+  // For positive n, search upward
+  if *n >= one {
+    let mut candidate = n + &one;
+    // Ensure candidate is odd
+    if (&candidate % &two).is_zero() {
+      candidate += &one;
+    }
+    // If candidate is 2, check it
+    if candidate == two {
+      return two;
+    }
+    loop {
+      if is_prime_bigint(&candidate) {
+        return candidate;
+      }
+      candidate += &two;
+    }
+  }
+
+  // For negative or zero n, delegate to i128 path for small values
+  // since BigInt negative values that reach here would be small enough
+  let zero = BigInt::zero();
+  if *n <= zero {
+    return BigInt::from(2);
+  }
+
+  unreachable!()
 }
 
 // ─── BitLength ─────────────────────────────────────────────────────

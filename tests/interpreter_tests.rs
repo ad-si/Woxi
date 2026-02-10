@@ -4014,6 +4014,40 @@ mod interpreter_tests {
     fn from_negative() {
       assert_eq!(interpret("NextPrime[-5]").unwrap(), "-3");
     }
+
+    #[test]
+    fn big_integer_10_pow_100() {
+      assert_eq!(
+        interpret("NextPrime[10^100]").unwrap(),
+        "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000267"
+      );
+    }
+
+    #[test]
+    fn big_integer_10_pow_50() {
+      assert_eq!(
+        interpret("NextPrime[10^50]").unwrap(),
+        "100000000000000000000000000000000000000000000000151"
+      );
+    }
+
+    #[test]
+    fn big_integer_result_is_prime() {
+      assert_eq!(interpret("PrimeQ[NextPrime[10^100]]").unwrap(), "True");
+    }
+
+    #[test]
+    fn prime_q_big_integer() {
+      assert_eq!(interpret("PrimeQ[10^100]").unwrap(), "False");
+    }
+
+    #[test]
+    fn prime_q_big_prime() {
+      assert_eq!(
+        interpret("PrimeQ[10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000267]").unwrap(),
+        "True"
+      );
+    }
   }
 
   mod bit_length {

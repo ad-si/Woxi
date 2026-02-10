@@ -194,6 +194,13 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PrimeQ expects exactly 1 argument".into(),
     ));
   }
+  if let Expr::BigInteger(n) = &args[0] {
+    use num_traits::Signed;
+    let abs_n = n.abs();
+    return Ok(bool_expr(crate::functions::math_ast::is_prime_bigint(
+      &abs_n,
+    )));
+  }
   let n = match &args[0] {
     Expr::Integer(n) => *n,
     Expr::Real(f) => {
