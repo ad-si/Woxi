@@ -152,14 +152,23 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::String(joined))
 }
 
-/// StringSplit[s, delim] - splits a string by a delimiter (string or list of strings)
+/// StringSplit[s] - splits by whitespace; StringSplit[s, delim] - splits by delimiter
 pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "StringSplit expects exactly 2 arguments".into(),
+      "StringSplit expects 1 or 2 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
+
+  // 1-argument form: split by whitespace, removing empty strings
+  if args.len() == 1 {
+    let parts: Vec<Expr> = s
+      .split_whitespace()
+      .map(|p| Expr::String(p.to_string()))
+      .collect();
+    return Ok(Expr::List(parts));
+  }
 
   // Collect delimiters: either a single string or a list of strings
   let delims: Vec<String> = match &args[1] {
