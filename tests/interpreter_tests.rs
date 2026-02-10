@@ -1166,6 +1166,20 @@ mod interpreter_tests {
     fn power_no_spaces() {
       assert_eq!(interpret("Power[x, 2]").unwrap(), "x^2");
     }
+
+    #[test]
+    fn negated_division_formatting() {
+      // Wolfram displays -(a/b) not -a/b or (-a)/b
+      assert_eq!(interpret("-a/b").unwrap(), "-(a/b)");
+      assert_eq!(interpret("{-a/b}").unwrap(), "{-(a/b)}");
+    }
+
+    #[test]
+    fn negated_product_formatting() {
+      // Wolfram displays -(a*b) not -a*b
+      assert_eq!(interpret("-a*b").unwrap(), "-(a*b)");
+      assert_eq!(interpret("{-a*b}").unwrap(), "{-(a*b)}");
+    }
   }
 
   // Regression tests for bug fixes
@@ -4329,6 +4343,23 @@ mod interpreter_tests {
     fn inverse_identity() {
       assert_eq!(
         interpret("Inverse[{{1, 0}, {0, 1}}]").unwrap(),
+        "{{1, 0}, {0, 1}}"
+      );
+    }
+
+    #[test]
+    fn inverse_symbolic_2x2() {
+      assert_eq!(
+        interpret("Inverse[{{a, b}, {c, d}}]").unwrap(),
+        "{{d/(-(b*c) + a*d), -(b/(-(b*c) + a*d))}, {-(c/(-(b*c) + a*d)), a/(-(b*c) + a*d)}}"
+      );
+    }
+
+    #[test]
+    fn inverse_times_identity() {
+      // A . Inverse[A] should give identity matrix for numeric matrices
+      assert_eq!(
+        interpret("{{1, 2}, {3, 4}} . Inverse[{{1, 2}, {3, 4}}]").unwrap(),
         "{{1, 0}, {0, 1}}"
       );
     }

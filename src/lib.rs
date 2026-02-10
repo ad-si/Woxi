@@ -208,16 +208,17 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains("//")
       && !trimmed.contains("/@")
       && !trimmed.contains("@@")
-      && !trimmed.contains(" + ")
-      && !trimmed.contains(" - ")
-      && !trimmed.contains(" * ")
-      && !trimmed.contains(" / ")
+      && !trimmed.contains('+')
+      && !trimmed.contains('-')
+      && !trimmed.contains('*')
+      && !trimmed.contains('/')
       && !trimmed.contains('[')
       && !trimmed.contains('"')
       && !trimmed.contains('#')
       && !trimmed.contains("Nothing")
       && !trimmed.contains(" . ")
       && !trimmed.contains(".{")
+      && !trimmed.contains('^')
     {
       // Simple list with no function calls or operators - return as-is
       return Ok(trimmed.to_string());

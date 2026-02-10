@@ -1303,14 +1303,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
             })
             .collect::<Vec<_>>()
             .join("*");
-          // Wolfram wraps negated products in parens: -(a*b) not -a*b
+          // Wolfram wraps negated products/divisions in parens: -(a*b) not -a*b, -(a/b) not -a/b
           let needs_neg_parens = args.len() > 2
             || (args.len() == 2
               && (matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Times")
                 || matches!(
                   &args[1],
                   Expr::BinaryOp {
-                    op: BinaryOperator::Times,
+                    op: BinaryOperator::Times | BinaryOperator::Divide,
                     ..
                   }
                 )));
@@ -1459,19 +1459,74 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{}[{}]", name, parts.join(", "))
     }
     Expr::BinaryOp { op, left, right } => {
+      // Special case: (-x)/y should display as -(x/y) (Wolfram convention)
+      // Only when the numerator is exactly Times[-1, x], not a negative integer coefficient
+      if matches!(op, BinaryOperator::Divide) {
+        let negated_inner = match left.as_ref() {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: t_left,
+            right: t_right,
+          } if matches!(t_left.as_ref(), Expr::Integer(-1)) => {
+            Some(t_right.as_ref())
+          }
+          Expr::FunctionCall { name, args }
+            if name == "Times"
+              && args.len() >= 2
+              && matches!(&args[0], Expr::Integer(-1)) =>
+          {
+            None // handled below for FunctionCall variant
+          }
+          _ => None,
+        };
+        if let Some(inner) = negated_inner {
+          let inner_div = Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(inner.clone()),
+            right: right.clone(),
+          };
+          let inner_str = expr_to_string(&inner_div);
+          return format!("-({})", inner_str);
+        }
+        // Handle FunctionCall Times[-1, ...] as numerator
+        if let Expr::FunctionCall { name, args } = left.as_ref()
+          && name == "Times"
+          && args.len() >= 2
+          && matches!(&args[0], Expr::Integer(-1))
+        {
+          let pos_args = args[1..].to_vec();
+          let pos_numerator = if pos_args.len() == 1 {
+            pos_args[0].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: pos_args,
+            }
+          };
+          let inner_div = Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(pos_numerator),
+            right: right.clone(),
+          };
+          let inner_str = expr_to_string(&inner_div);
+          return format!("-({})", inner_str);
+        }
+      }
+
       // Special case: Times[-1, expr] should display as -expr
       if matches!(op, BinaryOperator::Times)
         && matches!(left.as_ref(), Expr::Integer(-1))
       {
         let right_str = expr_to_string(right);
-        // Add parens for lower-precedence ops (Plus/Minus) and for products (Times)
-        // Wolfram displays -(a*b) not -a*b
+        // Add parens for lower-precedence ops (Plus/Minus), products (Times), and divisions (Divide)
+        // Wolfram displays -(a*b) not -a*b, and -(a/b) not -a/b
         return if matches!(
           right.as_ref(),
           Expr::BinaryOp {
             op: BinaryOperator::Plus
               | BinaryOperator::Minus
-              | BinaryOperator::Times,
+              | BinaryOperator::Times
+              | BinaryOperator::Divide,
             ..
           }
         ) || matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
