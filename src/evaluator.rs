@@ -2301,6 +2301,9 @@ pub fn evaluate_function_call_ast(
     "FactorInteger" if args.len() == 1 => {
       return crate::functions::math_ast::factor_integer_ast(args);
     }
+    "IntegerPartitions" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::math_ast::integer_partitions_ast(args);
+    }
     "Divisors" if args.len() == 1 => {
       return crate::functions::math_ast::divisors_ast(args);
     }

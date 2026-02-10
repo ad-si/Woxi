@@ -2729,7 +2729,9 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// FromContinuedFraction[{a0, a1, a2, ...}] - reconstruct a number from its continued fraction
-pub fn from_continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn from_continued_fraction_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "FromContinuedFraction expects 1 argument".into(),
@@ -3441,6 +3443,191 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Divisors[n] - Returns a sorted list of all divisors of n
+// ─── IntegerPartitions ─────────────────────────────────────────────
+// IntegerPartitions[n] — all partitions of n
+// IntegerPartitions[n, k] — partitions with at most k parts
+// IntegerPartitions[n, {k}] — partitions with exactly k parts
+// IntegerPartitions[n, {kmin, kmax}] — partitions with kmin..kmax parts
+// IntegerPartitions[n, kspec, {d1, d2, ...}] — using only given elements
+// kspec can be All (equivalent to no constraint)
+pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Parse n
+  let n = match &args[0] {
+    Expr::Integer(v) => *v,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "IntegerPartitions".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if n < 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  let n = n as u64;
+
+  // Parse length constraints from second arg
+  let (min_len, max_len) = if args.len() >= 2 {
+    match &args[1] {
+      // IntegerPartitions[n, k] — at most k parts
+      Expr::Integer(k) if *k >= 0 => (1, *k as u64),
+      // IntegerPartitions[n, All] — no constraint
+      Expr::Identifier(s) if s == "All" => (1, n.max(1)),
+      // IntegerPartitions[n, {k}] — exactly k parts
+      Expr::List(lst) if lst.len() == 1 => match &lst[0] {
+        Expr::Integer(k) if *k >= 0 => (*k as u64, *k as u64),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "IntegerPartitions".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      },
+      // IntegerPartitions[n, {kmin, kmax}] — range of parts
+      Expr::List(lst) if lst.len() == 2 => {
+        match (&lst[0], &lst[1]) {
+          (Expr::Integer(lo), Expr::Integer(hi)) if *lo >= 0 && *hi >= 0 => {
+            (*lo as u64, *hi as u64)
+          }
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "IntegerPartitions".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "IntegerPartitions".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    (1, n.max(1))
+  };
+
+  // Parse allowed elements from third arg
+  let allowed: Option<Vec<u64>> = if args.len() == 3 {
+    match &args[2] {
+      Expr::List(elems) => {
+        let mut vals = Vec::new();
+        for e in elems {
+          match e {
+            Expr::Integer(v) if *v > 0 => vals.push(*v as u64),
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "IntegerPartitions".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          }
+        }
+        vals.sort_unstable();
+        vals.dedup();
+        vals.reverse(); // descending for generation
+        Some(vals)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "IntegerPartitions".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    None
+  };
+
+  // Special case: n == 0
+  // The only partition of 0 is the empty partition {}, which has 0 parts
+  if n == 0 {
+    if min_len == 0 || (args.len() < 2) {
+      return Ok(Expr::List(vec![Expr::List(vec![])]));
+    } else {
+      return Ok(Expr::List(vec![]));
+    }
+  }
+
+  let mut result = Vec::new();
+  let mut current = Vec::new();
+
+  match &allowed {
+    Some(elems) => {
+      generate_partitions_restricted(n, max_len, min_len, elems, 0, &mut current, &mut result);
+    }
+    None => {
+      generate_partitions(n, n, max_len, min_len, &mut current, &mut result);
+    }
+  }
+
+  Ok(Expr::List(
+    result
+      .into_iter()
+      .map(|p| Expr::List(p.into_iter().map(|v| Expr::Integer(v as i128)).collect()))
+      .collect(),
+  ))
+}
+
+/// Generate all partitions of `remaining` where each part <= `max_part`,
+/// with total number of parts between `min_len` and `max_len`.
+fn generate_partitions(
+  remaining: u64,
+  max_part: u64,
+  max_len: u64,
+  min_len: u64,
+  current: &mut Vec<u64>,
+  result: &mut Vec<Vec<u64>>,
+) {
+  if remaining == 0 {
+    if current.len() as u64 >= min_len {
+      result.push(current.clone());
+    }
+    return;
+  }
+  if current.len() as u64 >= max_len {
+    return;
+  }
+  let upper = remaining.min(max_part);
+  for part in (1..=upper).rev() {
+    current.push(part);
+    generate_partitions(remaining - part, part, max_len, min_len, current, result);
+    current.pop();
+  }
+}
+
+/// Generate partitions using only elements from `elems` (sorted descending).
+fn generate_partitions_restricted(
+  remaining: u64,
+  max_len: u64,
+  min_len: u64,
+  elems: &[u64],
+  start_idx: usize,
+  current: &mut Vec<u64>,
+  result: &mut Vec<Vec<u64>>,
+) {
+  if remaining == 0 {
+    if current.len() as u64 >= min_len {
+      result.push(current.clone());
+    }
+    return;
+  }
+  if current.len() as u64 >= max_len {
+    return;
+  }
+  for i in start_idx..elems.len() {
+    let part = elems[i];
+    if part > remaining {
+      continue;
+    }
+    current.push(part);
+    generate_partitions_restricted(remaining - part, max_len, min_len, elems, i, current, result);
+    current.pop();
+  }
+}
+
 pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
