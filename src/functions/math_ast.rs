@@ -2657,6 +2657,480 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(sum))
 }
 
+// --- Minimal arbitrary-precision unsigned integer for high-precision ContinuedFraction ---
+
+/// Little-endian base-2^64 unsigned integer.
+#[derive(Clone, Debug)]
+struct BigUint {
+  digits: Vec<u64>,
+}
+
+impl BigUint {
+  fn zero() -> Self {
+    BigUint { digits: vec![0] }
+  }
+
+  fn from_u64(n: u64) -> Self {
+    BigUint { digits: vec![n] }
+  }
+
+  fn from_u128(n: u128) -> Self {
+    let lo = n as u64;
+    let hi = (n >> 64) as u64;
+    let mut b = BigUint {
+      digits: vec![lo, hi],
+    };
+    b.trim();
+    b
+  }
+
+  fn is_zero(&self) -> bool {
+    self.digits.iter().all(|&d| d == 0)
+  }
+
+  fn trim(&mut self) {
+    while self.digits.len() > 1 && *self.digits.last().unwrap() == 0 {
+      self.digits.pop();
+    }
+  }
+
+  fn cmp(&self, other: &BigUint) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let a_len = self.digits.len();
+    let b_len = other.digits.len();
+    if a_len != b_len {
+      return a_len.cmp(&b_len);
+    }
+    for i in (0..a_len).rev() {
+      match self.digits[i].cmp(&other.digits[i]) {
+        Ordering::Equal => continue,
+        ord => return ord,
+      }
+    }
+    Ordering::Equal
+  }
+
+  /// self + other
+  fn add(&self, other: &BigUint) -> BigUint {
+    let max_len = self.digits.len().max(other.digits.len());
+    let mut result = Vec::with_capacity(max_len + 1);
+    let mut carry: u64 = 0;
+    for i in 0..max_len {
+      let a = if i < self.digits.len() {
+        self.digits[i]
+      } else {
+        0
+      };
+      let b = if i < other.digits.len() {
+        other.digits[i]
+      } else {
+        0
+      };
+      let (s1, c1) = a.overflowing_add(b);
+      let (s2, c2) = s1.overflowing_add(carry);
+      result.push(s2);
+      carry = (c1 as u64) + (c2 as u64);
+    }
+    if carry > 0 {
+      result.push(carry);
+    }
+    let mut r = BigUint { digits: result };
+    r.trim();
+    r
+  }
+
+  /// self - other (assumes self >= other)
+  fn sub(&self, other: &BigUint) -> BigUint {
+    let mut result = Vec::with_capacity(self.digits.len());
+    let mut borrow: u64 = 0;
+    for i in 0..self.digits.len() {
+      let a = self.digits[i];
+      let b = if i < other.digits.len() {
+        other.digits[i]
+      } else {
+        0
+      };
+      let (s1, c1) = a.overflowing_sub(b);
+      let (s2, c2) = s1.overflowing_sub(borrow);
+      result.push(s2);
+      borrow = (c1 as u64) + (c2 as u64);
+    }
+    let mut r = BigUint { digits: result };
+    r.trim();
+    r
+  }
+
+  /// self * other
+  fn mul(&self, other: &BigUint) -> BigUint {
+    let n = self.digits.len() + other.digits.len();
+    let mut result = vec![0u64; n];
+    for i in 0..self.digits.len() {
+      let mut carry: u128 = 0;
+      for j in 0..other.digits.len() {
+        let prod = (self.digits[i] as u128) * (other.digits[j] as u128)
+          + (result[i + j] as u128)
+          + carry;
+        result[i + j] = prod as u64;
+        carry = prod >> 64;
+      }
+      if carry > 0 {
+        result[i + other.digits.len()] += carry as u64;
+      }
+    }
+    let mut r = BigUint { digits: result };
+    r.trim();
+    r
+  }
+
+  /// self * scalar
+  fn mul_u64(&self, scalar: u64) -> BigUint {
+    let mut result = Vec::with_capacity(self.digits.len() + 1);
+    let mut carry: u128 = 0;
+    for &d in &self.digits {
+      let prod = (d as u128) * (scalar as u128) + carry;
+      result.push(prod as u64);
+      carry = prod >> 64;
+    }
+    if carry > 0 {
+      result.push(carry as u64);
+    }
+    let mut r = BigUint { digits: result };
+    r.trim();
+    r
+  }
+
+  /// Division: returns (quotient, remainder)
+  fn divmod(&self, other: &BigUint) -> (BigUint, BigUint) {
+    use std::cmp::Ordering;
+    if other.is_zero() {
+      panic!("BigUint division by zero");
+    }
+    match self.cmp(other) {
+      Ordering::Less => return (BigUint::zero(), self.clone()),
+      Ordering::Equal => return (BigUint::from_u64(1), BigUint::zero()),
+      _ => {}
+    }
+    if other.digits.len() == 1 {
+      let d = other.digits[0];
+      let (q, r) = self.divmod_u64(d);
+      return (q, BigUint::from_u64(r));
+    }
+    // Long division
+    self.long_divmod(other)
+  }
+
+  /// Divide by a single u64, returns (quotient, remainder)
+  fn divmod_u64(&self, d: u64) -> (BigUint, u64) {
+    let mut result = vec![0u64; self.digits.len()];
+    let mut rem: u128 = 0;
+    for i in (0..self.digits.len()).rev() {
+      rem = (rem << 64) | (self.digits[i] as u128);
+      result[i] = (rem / d as u128) as u64;
+      rem %= d as u128;
+    }
+    let mut q = BigUint { digits: result };
+    q.trim();
+    (q, rem as u64)
+  }
+
+  /// Long division for multi-digit divisors
+  fn long_divmod(&self, other: &BigUint) -> (BigUint, BigUint) {
+    // Shift-and-subtract algorithm operating on bits
+    let mut remainder = BigUint::zero();
+    let self_bits = self.bit_len();
+    let mut quotient_digits = vec![0u64; self_bits.div_ceil(64)];
+    for i in (0..self_bits).rev() {
+      // remainder = remainder << 1 | bit_i(self)
+      remainder = remainder.shl1();
+      if self.bit(i) {
+        remainder.digits[0] |= 1;
+      }
+      if remainder.cmp(other) != std::cmp::Ordering::Less {
+        remainder = remainder.sub(other);
+        quotient_digits[i / 64] |= 1u64 << (i % 64);
+      }
+    }
+    let mut q = BigUint {
+      digits: quotient_digits,
+    };
+    q.trim();
+    (q, remainder)
+  }
+
+  fn bit_len(&self) -> usize {
+    if self.is_zero() {
+      return 0;
+    }
+    let top = self.digits.len() - 1;
+    top * 64 + (64 - self.digits[top].leading_zeros() as usize)
+  }
+
+  fn bit(&self, i: usize) -> bool {
+    let word = i / 64;
+    let bit = i % 64;
+    if word >= self.digits.len() {
+      false
+    } else {
+      (self.digits[word] >> bit) & 1 == 1
+    }
+  }
+
+  fn shl1(&self) -> BigUint {
+    let mut result = Vec::with_capacity(self.digits.len() + 1);
+    let mut carry = 0u64;
+    for &d in &self.digits {
+      result.push((d << 1) | carry);
+      carry = d >> 63;
+    }
+    if carry > 0 {
+      result.push(carry);
+    }
+    let mut r = BigUint { digits: result };
+    r.trim();
+    r
+  }
+
+  /// Convert to i128 if it fits
+  fn to_i128(&self) -> Option<i128> {
+    match self.digits.len() {
+      1 => Some(self.digits[0] as i128),
+      2 => {
+        let val = (self.digits[1] as u128) << 64 | (self.digits[0] as u128);
+        if val <= i128::MAX as u128 {
+          Some(val as i128)
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  }
+
+  fn gcd(a: &BigUint, b: &BigUint) -> BigUint {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    while !b.is_zero() {
+      let (_, r) = a.divmod(&b);
+      a = b;
+      b = r;
+    }
+    a
+  }
+}
+
+/// Signed big rational number: numerator/denominator with sign.
+#[derive(Clone)]
+struct BigRational {
+  num: BigUint,
+  den: BigUint,
+  negative: bool,
+}
+
+impl BigRational {
+  fn zero() -> Self {
+    BigRational {
+      num: BigUint::zero(),
+      den: BigUint::from_u64(1),
+      negative: false,
+    }
+  }
+
+  fn from_i64(n: i64) -> Self {
+    BigRational {
+      num: BigUint::from_u64(n.unsigned_abs()),
+      den: BigUint::from_u64(1),
+      negative: n < 0,
+    }
+  }
+
+  fn reduce(&mut self) {
+    if self.num.is_zero() {
+      self.negative = false;
+      self.den = BigUint::from_u64(1);
+      return;
+    }
+    let g = BigUint::gcd(&self.num, &self.den);
+    if !g.is_zero() && g.digits != vec![1] {
+      let (qn, _) = self.num.divmod(&g);
+      let (qd, _) = self.den.divmod(&g);
+      self.num = qn;
+      self.den = qd;
+    }
+  }
+
+  /// self + other
+  fn add(&self, other: &BigRational) -> BigRational {
+    // a/b + c/d = (a*d + c*b) / (b*d) respecting signs
+    let ad = self.num.mul(&other.den);
+    let cb = other.num.mul(&self.den);
+    let bd = self.den.mul(&other.den);
+    let (num, negative) = if self.negative == other.negative {
+      (ad.add(&cb), self.negative)
+    } else {
+      match ad.cmp(&cb) {
+        std::cmp::Ordering::Greater | std::cmp::Ordering::Equal => {
+          (ad.sub(&cb), self.negative)
+        }
+        std::cmp::Ordering::Less => (cb.sub(&ad), other.negative),
+      }
+    };
+    let mut r = BigRational {
+      num,
+      den: bd,
+      negative,
+    };
+    r.reduce();
+    r
+  }
+
+  /// self - other
+  fn sub(&self, other: &BigRational) -> BigRational {
+    let neg_other = BigRational {
+      num: other.num.clone(),
+      den: other.den.clone(),
+      negative: !other.negative,
+    };
+    self.add(&neg_other)
+  }
+
+  /// self * scalar (positive integer)
+  fn mul_u64(&self, s: u64) -> BigRational {
+    let mut r = BigRational {
+      num: self.num.mul_u64(s),
+      den: self.den.clone(),
+      negative: self.negative,
+    };
+    r.reduce();
+    r
+  }
+
+  /// Floor division: returns (floor, remainder) such that self = floor + remainder/1
+  /// where 0 <= remainder < 1 (for positive self)
+  fn floor_and_remainder(&self) -> (i128, BigRational) {
+    let (q, r) = self.num.divmod(&self.den);
+    let q_i128 = q.to_i128().unwrap_or(0);
+    let floor_val = if self.negative && !r.is_zero() {
+      -(q_i128 + 1)
+    } else if self.negative {
+      -q_i128
+    } else {
+      q_i128
+    };
+    // remainder = self - floor_val
+    let floor_rat = BigRational::from_i64(floor_val as i64);
+    let rem = self.sub(&floor_rat);
+    (floor_val, rem)
+  }
+
+  /// 1 / self
+  fn reciprocal(&self) -> BigRational {
+    BigRational {
+      num: self.den.clone(),
+      den: self.num.clone(),
+      negative: self.negative,
+    }
+  }
+}
+
+/// Compute atan(1/k) as a BigRational using the Taylor series:
+/// atan(x) = x - x^3/3 + x^5/5 - ...
+/// For x = 1/k: atan(1/k) = 1/k - 1/(3*k^3) + 1/(5*k^5) - ...
+fn big_atan_recip(k: u64, terms: usize) -> BigRational {
+  let mut result = BigRational::zero();
+  let k2 = k as u128 * k as u128; // k^2 as u128
+  // power_denom tracks k^(2n+1) as BigUint
+  let mut power_denom = BigUint::from_u64(k);
+  let k2_big = BigUint::from_u128(k2);
+  for n in 0..terms {
+    let divisor = (2 * n + 1) as u64;
+    // term = 1 / (divisor * power_denom)
+    let term = BigRational {
+      num: BigUint::from_u64(1),
+      den: power_denom.mul_u64(divisor),
+      negative: n % 2 != 0,
+    };
+    result = result.add(&term);
+    power_denom = power_denom.mul(&k2_big);
+  }
+  result
+}
+
+/// Compute Pi as a BigRational using Machin's formula:
+/// Pi/4 = 4*atan(1/5) - atan(1/239)
+fn pi_as_big_rational(terms: usize) -> BigRational {
+  let atan5 = big_atan_recip(5, terms);
+  let atan239 = big_atan_recip(239, terms);
+  // Pi = 4 * (4*atan(1/5) - atan(1/239))
+  let four_atan5 = atan5.mul_u64(4);
+  let diff = four_atan5.sub(&atan239);
+  diff.mul_u64(4)
+}
+
+/// Compute E as a BigRational using the series: e = sum(1/k!, k=0..terms)
+fn e_as_big_rational(terms: usize) -> BigRational {
+  let mut result = BigRational::zero();
+  let mut factorial = BigUint::from_u64(1);
+  for k in 0..terms {
+    if k > 0 {
+      factorial = factorial.mul_u64(k as u64);
+    }
+    let term = BigRational {
+      num: BigUint::from_u64(1),
+      den: factorial.clone(),
+      negative: false,
+    };
+    result = result.add(&term);
+  }
+  result
+}
+
+/// Compute the continued fraction of a BigRational, returning up to n terms.
+fn continued_fraction_from_big_rational(
+  val: &BigRational,
+  n: usize,
+) -> Vec<i128> {
+  let mut result = Vec::new();
+  let mut current = val.clone();
+  for _ in 0..n {
+    let (floor_val, rem) = current.floor_and_remainder();
+    result.push(floor_val);
+    if rem.num.is_zero() {
+      break;
+    }
+    current = rem.reciprocal();
+  }
+  result
+}
+
+/// Try to compute a constant expression as a high-precision BigRational.
+/// Returns None if the expression is not a recognized constant.
+fn try_constant_as_big_rational(
+  expr: &Expr,
+  n_terms: usize,
+) -> Option<BigRational> {
+  // Use n_terms + 10 series terms for safety margin
+  let series_terms = n_terms + 10;
+  match expr {
+    Expr::Constant(name) if name == "Pi" => {
+      Some(pi_as_big_rational(series_terms))
+    }
+    Expr::Constant(name) if name == "E" => {
+      Some(e_as_big_rational(series_terms))
+    }
+    Expr::Constant(name) if name == "-Pi" => {
+      let mut pi = pi_as_big_rational(series_terms);
+      pi.negative = true;
+      Some(pi)
+    }
+    Expr::Constant(name) if name == "-E" => {
+      let mut e = e_as_big_rational(series_terms);
+      e.negative = true;
+      Some(e)
+    }
+    _ => None,
+  }
+}
+
 /// ContinuedFraction[x] - exact continued fraction for rational numbers
 /// ContinuedFraction[x, n] - first n terms for real numbers
 pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2695,10 +3169,8 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {}
   }
 
-  // For real numbers with n terms
-  if args.len() == 2
-    && let Some(x) = try_eval_to_f64(&args[0])
-  {
+  // For expressions with n terms
+  if args.len() == 2 {
     let n = match &args[1] {
       Expr::Integer(n) if *n > 0 => *n as usize,
       _ => {
@@ -2708,18 +3180,28 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
     };
-    let mut result = Vec::new();
-    let mut val = x;
-    for _ in 0..n {
-      let a = val.floor() as i128;
-      result.push(Expr::Integer(a));
-      let frac = val - a as f64;
-      if frac.abs() < 1e-10 {
-        break;
-      }
-      val = 1.0 / frac;
+
+    // Try high-precision computation for known constants
+    if let Some(big_rat) = try_constant_as_big_rational(&args[0], n) {
+      let cf = continued_fraction_from_big_rational(&big_rat, n);
+      return Ok(Expr::List(cf.into_iter().map(Expr::Integer).collect()));
     }
-    return Ok(Expr::List(result));
+
+    // Fall back to f64 for generic real expressions
+    if let Some(x) = try_eval_to_f64(&args[0]) {
+      let mut result = Vec::new();
+      let mut val = x;
+      for _ in 0..n {
+        let a = val.floor() as i128;
+        result.push(Expr::Integer(a));
+        let frac = val - a as f64;
+        if frac.abs() < 1e-10 {
+          break;
+        }
+        val = 1.0 / frac;
+      }
+      return Ok(Expr::List(result));
+    }
   }
 
   Ok(Expr::FunctionCall {

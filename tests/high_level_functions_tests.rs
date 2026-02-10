@@ -348,6 +348,20 @@ mod high_level_functions_tests {
     fn test_rational_22_7() {
       assert_eq!(interpret("ContinuedFraction[22/7]").unwrap(), "{3, 7}");
     }
+    #[test]
+    fn test_pi_30terms() {
+      assert_eq!(
+        interpret("ContinuedFraction[Pi, 30]").unwrap(),
+        "{3, 7, 15, 1, 292, 1, 1, 1, 2, 1, 3, 1, 14, 2, 1, 1, 2, 2, 2, 2, 1, 84, 2, 1, 1, 15, 3, 13, 1, 4}"
+      );
+    }
+    #[test]
+    fn test_e_40terms() {
+      assert_eq!(
+        interpret("ContinuedFraction[E, 40]").unwrap(),
+        "{2, 1, 2, 1, 1, 4, 1, 1, 6, 1, 1, 8, 1, 1, 10, 1, 1, 12, 1, 1, 14, 1, 1, 16, 1, 1, 18, 1, 1, 20, 1, 1, 22, 1, 1, 24, 1, 1, 26, 1}"
+      );
+    }
   }
 
   mod from_continued_fraction_tests {
