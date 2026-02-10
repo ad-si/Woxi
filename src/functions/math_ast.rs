@@ -2728,6 +2728,87 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// FromContinuedFraction[{a0, a1, a2, ...}] - reconstruct a number from its continued fraction
+pub fn from_continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FromContinuedFraction expects 1 argument".into(),
+    ));
+  }
+
+  let elements = match &args[0] {
+    Expr::List(elems) => elems,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FromContinuedFraction".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if elements.is_empty() {
+    return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // Collect all integers
+  let mut ints: Vec<i128> = Vec::new();
+  for elem in elements {
+    match elem {
+      Expr::Integer(n) => ints.push(*n),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "FromContinuedFraction".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  // Build fraction from right to left: start with last element, then a_i + 1/acc
+  // Use numerator/denominator representation to stay exact
+  let mut num = *ints.last().unwrap();
+  let mut den: i128 = 1;
+
+  for i in (0..ints.len() - 1).rev() {
+    // acc = num/den, we want ints[i] + 1/acc = ints[i] + den/num = (ints[i]*num + den)/num
+    let new_num = ints[i] * num + den;
+    let new_den = num;
+    num = new_num;
+    den = new_den;
+  }
+
+  // Simplify by GCD
+  fn gcd(mut a: i128, mut b: i128) -> i128 {
+    a = a.abs();
+    b = b.abs();
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a
+  }
+
+  let g = gcd(num, den);
+  num /= g;
+  den /= g;
+
+  // Normalize sign: keep denominator positive
+  if den < 0 {
+    num = -num;
+    den = -den;
+  }
+
+  if den == 1 {
+    Ok(Expr::Integer(num))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(num), Expr::Integer(den)],
+    })
+  }
+}
+
 /// LucasL[n] - Lucas number L_n
 pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
