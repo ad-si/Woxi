@@ -4827,6 +4827,51 @@ mod interpreter_tests {
         "SeriesData[x, 0, {1, 1, 1/2, 1/6}, 0, 4, 1]"
       );
     }
+
+    #[test]
+    fn series_exp_order4() {
+      assert_eq!(
+        interpret("Series[Exp[x], {x, 0, 4}]").unwrap(),
+        "SeriesData[x, 0, {1, 1, 1/2, 1/6, 1/24}, 0, 5, 1]"
+      );
+    }
+
+    #[test]
+    fn series_sin_strips_leading_zero() {
+      assert_eq!(
+        interpret("Series[Sin[x], {x, 0, 5}]").unwrap(),
+        "SeriesData[x, 0, {1, 0, -1/6, 0, 1/120}, 1, 6, 1]"
+      );
+    }
+
+    #[test]
+    fn series_cos_no_leading_zero() {
+      assert_eq!(
+        interpret("Series[Cos[x], {x, 0, 6}]").unwrap(),
+        "SeriesData[x, 0, {1, 0, -1/2, 0, 1/24, 0, -1/720}, 0, 7, 1]"
+      );
+    }
+
+    #[test]
+    fn series_log_around_1() {
+      assert_eq!(
+        interpret("Series[Log[x], {x, 1, 3}]").unwrap(),
+        "SeriesData[x, 1, {1, -1/2, 1/3}, 1, 4, 1]"
+      );
+    }
+
+    #[test]
+    fn series_geometric() {
+      assert_eq!(
+        interpret("Series[1/(1 - x), {x, 0, 3}]").unwrap(),
+        "SeriesData[x, 0, {1, 1, 1, 1}, 0, 4, 1]"
+      );
+    }
+
+    #[test]
+    fn series_zero_returns_zero() {
+      assert_eq!(interpret("Series[0, {x, 0, 3}]").unwrap(), "0");
+    }
   }
 
   // ─── Association Operations ─────────────────────────────────────────
