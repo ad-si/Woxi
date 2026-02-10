@@ -368,17 +368,11 @@ mod high_level_functions_tests {
     }
     #[test]
     fn test_single_element() {
-      assert_eq!(
-        interpret("FromContinuedFraction[{2}]").unwrap(),
-        "2"
-      );
+      assert_eq!(interpret("FromContinuedFraction[{2}]").unwrap(), "2");
     }
     #[test]
     fn test_empty_list() {
-      assert_eq!(
-        interpret("FromContinuedFraction[{}]").unwrap(),
-        "Infinity"
-      );
+      assert_eq!(interpret("FromContinuedFraction[{}]").unwrap(), "Infinity");
     }
     #[test]
     fn test_fibonacci_convergent() {
@@ -539,6 +533,79 @@ mod high_level_functions_tests {
     #[test]
     fn test_nested_catch() {
       assert_eq!(interpret("Catch[Catch[Throw[1, a], b], a]").unwrap(), "1");
+    }
+  }
+
+  // ─── IntegerPartitions ──────────────────────────────────────────────
+  mod integer_partitions_tests {
+    use super::*;
+    #[test]
+    fn test_integer_partitions_5() {
+      assert_eq!(
+        interpret("IntegerPartitions[5]").unwrap(),
+        "{{5}, {4, 1}, {3, 2}, {3, 1, 1}, {2, 2, 1}, {2, 1, 1, 1}, {1, 1, 1, 1, 1}}"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_0() {
+      assert_eq!(interpret("IntegerPartitions[0]").unwrap(), "{{}}");
+    }
+    #[test]
+    fn test_integer_partitions_1() {
+      assert_eq!(interpret("IntegerPartitions[1]").unwrap(), "{{1}}");
+    }
+    #[test]
+    fn test_integer_partitions_negative() {
+      assert_eq!(interpret("IntegerPartitions[-1]").unwrap(), "{}");
+    }
+    #[test]
+    fn test_integer_partitions_max_length() {
+      assert_eq!(
+        interpret("IntegerPartitions[10, 3]").unwrap(),
+        "{{10}, {9, 1}, {8, 2}, {8, 1, 1}, {7, 3}, {7, 2, 1}, {6, 4}, {6, 3, 1}, {6, 2, 2}, {5, 5}, {5, 4, 1}, {5, 3, 2}, {4, 4, 2}, {4, 3, 3}}"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_exact_length() {
+      assert_eq!(
+        interpret("IntegerPartitions[5, {3}]").unwrap(),
+        "{{3, 1, 1}, {2, 2, 1}}"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_length_range() {
+      assert_eq!(
+        interpret("IntegerPartitions[5, {2, 3}]").unwrap(),
+        "{{4, 1}, {3, 2}, {3, 1, 1}, {2, 2, 1}}"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_restricted_elements() {
+      assert_eq!(
+        interpret("IntegerPartitions[10, All, {1, 2, 5}]").unwrap(),
+        "{{5, 5}, {5, 2, 2, 1}, {5, 2, 1, 1, 1}, {5, 1, 1, 1, 1, 1}, {2, 2, 2, 2, 2}, {2, 2, 2, 2, 1, 1}, {2, 2, 2, 1, 1, 1, 1}, {2, 2, 1, 1, 1, 1, 1, 1}, {2, 1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1}}"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_length_and_elements() {
+      assert_eq!(
+        interpret("IntegerPartitions[6, {3}, {1, 2, 3}]").unwrap(),
+        "{{3, 2, 1}, {2, 2, 2}}"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_20_length() {
+      assert_eq!(
+        interpret("IntegerPartitions[20] // Length").unwrap(),
+        "627"
+      );
+    }
+    #[test]
+    fn test_integer_partitions_3_max2() {
+      assert_eq!(
+        interpret("IntegerPartitions[3, 2]").unwrap(),
+        "{{3}, {2, 1}}"
+      );
     }
   }
 }
