@@ -1246,6 +1246,20 @@ pub fn expr_to_string(expr: &Expr) -> String {
             })
             .collect::<Vec<_>>()
             .join("*");
+          // Wolfram wraps negated products in parens: -(a*b) not -a*b
+          let needs_neg_parens = args.len() > 2
+            || (args.len() == 2
+              && (matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Times")
+                || matches!(
+                  &args[1],
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    ..
+                  }
+                )));
+          if needs_neg_parens {
+            return format!("-({})", rest);
+          }
           return format!("-{}", rest);
         }
         return args
@@ -1278,14 +1292,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
         && matches!(left.as_ref(), Expr::Integer(-1))
       {
         let right_str = expr_to_string(right);
-        // Add parens if needed for clarity (e.g., -(a+b))
+        // Add parens for lower-precedence ops (Plus/Minus) and for products (Times)
+        // Wolfram displays -(a*b) not -a*b
         return if matches!(
           right.as_ref(),
           Expr::BinaryOp {
-            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            op: BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times,
             ..
           }
-        ) || matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
+        ) || matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
         {
           format!("-({})", right_str)
         } else {
@@ -1605,6 +1620,30 @@ pub fn expr_to_output(expr: &Expr) -> String {
               result.push_str(" + ");
               result.push_str(&expr_to_output(arg));
             }
+          } else if let Expr::FunctionCall {
+            name: fn_name,
+            args: fn_args,
+          } = arg
+          {
+            if fn_name == "Times"
+              && fn_args.len() >= 2
+              && matches!(&fn_args[0], Expr::Integer(-1))
+            {
+              result.push_str(" - ");
+              // Format the positive part of the product
+              let pos_args = fn_args[1..].to_vec();
+              if pos_args.len() == 1 {
+                result.push_str(&expr_to_output(&pos_args[0]));
+              } else {
+                result.push_str(&expr_to_output(&Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: pos_args,
+                }));
+              }
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_output(arg));
+            }
           } else if let Expr::Integer(n) = arg {
             if *n < 0 {
               result.push_str(" - ");
@@ -1644,6 +1683,22 @@ pub fn expr_to_output(expr: &Expr) -> String {
             })
             .collect::<Vec<_>>()
             .join("*");
+          // Wolfram wraps negated products in parens: -(a*b) not -a*b
+          // This applies when there's a single remaining arg that is itself a Times,
+          // or when there are 2+ remaining args (which form a product)
+          let needs_neg_parens = args.len() > 2
+            || (args.len() == 2
+              && (matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Times")
+                || matches!(
+                  &args[1],
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    ..
+                  }
+                )));
+          if needs_neg_parens {
+            return format!("-({})", rest);
+          }
           return format!("-{}", rest);
         }
         return args
