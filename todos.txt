@@ -1,4 +1,3 @@
-wolframscript -code 'Limit[(1 + 1/n)^n, n -> Infinity]'
 wolframscript -code 'Limit[1/x, x -> 0, Direction -> "FromAbove"]'
 wolframscript -code 'Limit[1/x, x -> 0, Direction -> "FromBelow"]'
 wolframscript -code 'Series[Sin[x], {x, 0, 5}]'
@@ -9,7 +8,6 @@ wolframscript -code 'Series[Log[x], {x, 1, 3}]'
 
 wolframscript -code 'Integrate[Log[Sin[x]], {x, 0, Pi/2}]'
 wolframscript -code 'DSolve[y''[x] + y[x] == Tan[x], y[x], x]'
-wolframscript -code 'FrobeniusNumber[{7, 13, 23}]'
 wolframscript -code 'Sum[(-1)^n / Factorial[2n+1] * x^(2n+1), {n, 0, Infinity}]'
 wolframscript -code 'RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[n], n] // FullSimplify'
 wolframscript -code 'Series[Exp[Sin[x]], {x, 0, 8}]'

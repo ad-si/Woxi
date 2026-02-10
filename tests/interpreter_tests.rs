@@ -4773,6 +4773,48 @@ mod interpreter_tests {
     fn limit_direct_substitution() {
       assert_eq!(interpret("Limit[x^2, x -> 3]").unwrap(), "9");
     }
+
+    #[test]
+    fn limit_compound_interest() {
+      assert_eq!(interpret("Limit[(1 + 1/n)^n, n -> Infinity]").unwrap(), "E");
+    }
+
+    #[test]
+    fn limit_compound_interest_general() {
+      assert_eq!(
+        interpret("Limit[(1 + 2/n)^n, n -> Infinity]").unwrap(),
+        "E^2"
+      );
+    }
+
+    #[test]
+    fn limit_one_over_n() {
+      assert_eq!(interpret("Limit[1/n, n -> Infinity]").unwrap(), "0");
+    }
+
+    #[test]
+    fn limit_n_to_infinity() {
+      assert_eq!(interpret("Limit[n, n -> Infinity]").unwrap(), "Infinity");
+    }
+  }
+
+  mod differentiate_plus_times {
+    use super::*;
+
+    #[test]
+    fn d_x_plus_one() {
+      assert_eq!(interpret("D[x + 1, x]").unwrap(), "1");
+    }
+
+    #[test]
+    fn d_x_squared_plus_x() {
+      assert_eq!(interpret("D[x^2 + x, x]").unwrap(), "1 + 2*x");
+    }
+
+    #[test]
+    fn d_log_one_plus_t() {
+      assert_eq!(interpret("D[Log[1 + t], t]").unwrap(), "1/(1 + t)");
+    }
   }
 
   mod series {

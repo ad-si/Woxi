@@ -561,6 +561,49 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             right: Box::new(args[0].clone()),
           }))
         }
+        // Handle evaluated Plus[a, b, ...] (FunctionCall form of +)
+        "Plus" if args.len() >= 2 => {
+          let mut result = differentiate(&args[0], var)?;
+          for arg in &args[1..] {
+            let d = differentiate(arg, var)?;
+            result = simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(result),
+              right: Box::new(d),
+            });
+          }
+          Ok(result)
+        }
+        // Handle evaluated Times[a, b] (FunctionCall form of *)
+        "Times" if args.len() == 2 => {
+          // Product rule: d/dx[a * b] = a' * b + a * b'
+          let da = differentiate(&args[0], var)?;
+          let db = differentiate(&args[1], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(da),
+              right: Box::new(args[1].clone()),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(args[0].clone()),
+              right: Box::new(db),
+            }),
+          }))
+        }
+        // Handle evaluated Power[base, exp] (FunctionCall form of ^)
+        "Power" if args.len() == 2 => differentiate(
+          &Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(args[0].clone()),
+            right: Box::new(args[1].clone()),
+          },
+          var,
+        ),
+        // Handle Rational[n, d] as constant
+        "Rational" if args.len() == 2 => Ok(Expr::Integer(0)),
         _ => Ok(Expr::FunctionCall {
           name: "D".to_string(),
           args: vec![expr.clone(), Expr::Identifier(var.to_string())],
@@ -843,6 +886,182 @@ pub fn simplify(expr: Expr) -> Expr {
   }
 }
 
+/// Extract base and exponent from Power expressions (both BinaryOp and FunctionCall forms)
+fn extract_power(expr: &Expr) -> Option<(Expr, Expr)> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some((*left.clone(), *right.clone())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    _ => None,
+  }
+}
+
+/// Check if an expression approaches 1 when var -> Infinity
+fn eval_at_infinity_is_one(expr: &Expr, var: &str) -> bool {
+  // Substitute a large value and check if close to 1
+  let subst =
+    crate::syntax::substitute_variable(expr, var, &Expr::Integer(1_000_000));
+  if let Ok(val) = crate::evaluator::evaluate_expr_to_expr(&subst)
+    && let Some(f) = crate::functions::math_ast::try_eval_to_f64(&val)
+  {
+    return (f - 1.0).abs() < 0.01;
+  }
+  false
+}
+
+/// Check if an expression diverges to infinity when var -> Infinity
+fn eval_at_infinity_diverges(expr: &Expr, var: &str) -> Option<bool> {
+  let subst =
+    crate::syntax::substitute_variable(expr, var, &Expr::Integer(1_000_000));
+  if let Ok(val) = crate::evaluator::evaluate_expr_to_expr(&subst)
+    && let Some(f) = crate::functions::math_ast::try_eval_to_f64(&val)
+  {
+    if f > 1e5 {
+      return Some(true); // positive infinity
+    }
+    if f < -1e5 {
+      return Some(false); // negative infinity (returns Some(false) for sign)
+    }
+  }
+  None
+}
+
+/// Handle limits at infinity.
+/// Strategies:
+/// 1. If expr is constant wrt var, return it directly
+/// 2. Direct substitution heuristic (evaluate at large n) to classify the limit
+/// 3. For f^g where f->1, g->inf: Limit = E^(Limit[g*(f-1)])
+/// 4. For expressions going to 0 or a constant: detect via structure
+fn limit_at_infinity(
+  expr: &Expr,
+  var_name: &str,
+  point: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // If the expression is constant wrt the variable, return it
+  if is_constant_wrt(expr, var_name) {
+    return crate::evaluator::evaluate_expr_to_expr(expr);
+  }
+
+  // Handle var itself: Limit[n, n -> Infinity] = Infinity
+  if let Expr::Identifier(name) = expr
+    && name == var_name
+  {
+    return Ok(point.clone());
+  }
+
+  // Handle f^g form (e.g., (1 + 1/n)^n -> E)
+  if let Some((base, exp)) = extract_power(expr) {
+    // Check if base -> 1 and exponent -> Infinity (1^Infinity indeterminate form)
+    if eval_at_infinity_is_one(&base, var_name)
+      && eval_at_infinity_diverges(&exp, var_name).is_some()
+    {
+      // Use identity: Limit[f^g] = E^(Limit[g * (f - 1)]) when f -> 1, g -> inf
+      let f_minus_1 = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(base),
+        right: Box::new(Expr::Integer(1)),
+      };
+      let product = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(exp),
+        right: Box::new(f_minus_1),
+      };
+      // Take the limit of g * (f - 1) as var -> Infinity
+      let rule = Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var_name.to_string())),
+        replacement: Box::new(point.clone()),
+      };
+      let exponent_limit = limit_ast(&[product, rule])?;
+
+      // If the exponent limit is a clean value, return E^limit
+      if is_clean_value(&exponent_limit) {
+        let result = simplify(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(Expr::Constant("E".to_string())),
+          right: Box::new(exponent_limit),
+        });
+        return crate::evaluator::evaluate_expr_to_expr(&result);
+      }
+    }
+  }
+
+  // For simple expressions, try evaluating at two large values to detect convergence
+  let val1 = eval_at_large_n(expr, var_name, 1_000_000);
+  let val2 = eval_at_large_n(expr, var_name, 10_000_000);
+  if let (Some(f1), Some(f2)) = (val1, val2) {
+    // Both diverging to +infinity
+    if f1 > 1e5 && f2 > f1 {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    // Both diverging to -infinity
+    if f1 < -1e5 && f2 < f1 {
+      return Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      });
+    }
+    // Approaching zero: both values small and getting smaller
+    if f2.abs() < 1e-4 && f2.abs() < f1.abs() {
+      return Ok(Expr::Integer(0));
+    }
+    // Check convergence: values should be close (relative difference)
+    let diff = (f1 - f2).abs();
+    let scale = f1.abs().max(f2.abs()).max(1e-15);
+    if diff / scale < 0.01 {
+      // Converging to a nonzero limit — determine the value
+      // Check if the limit is a known integer
+      let rounded = f2.round();
+      if (f2 - rounded).abs() < 1e-4 {
+        return Ok(Expr::Integer(rounded as i128));
+      }
+      // Check for known constants
+      if (f2 - std::f64::consts::E).abs() < 1e-3 {
+        return Ok(Expr::Constant("E".to_string()));
+      }
+      if (f2 - std::f64::consts::PI).abs() < 1e-3 {
+        return Ok(Expr::Constant("Pi".to_string()));
+      }
+    }
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Limit".to_string(),
+    args: vec![
+      expr.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var_name.to_string())),
+        replacement: Box::new(point.clone()),
+      },
+    ],
+  })
+}
+
+/// Evaluate an expression numerically at var = n
+fn eval_at_large_n(expr: &Expr, var: &str, n: i128) -> Option<f64> {
+  let subst = crate::syntax::substitute_variable(expr, var, &Expr::Integer(n));
+  let val = crate::evaluator::evaluate_expr_to_expr(&subst).ok()?;
+  crate::functions::math_ast::try_eval_to_f64(&val)
+}
+
+/// Check if an expression is a "clean" value (integer, real, constant, or rational)
+fn is_clean_value(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      true
+    }
+    _ => crate::functions::math_ast::try_eval_to_f64(expr).is_some(),
+  }
+}
+
 /// Limit[expr, x -> x0] - Compute the limit of expr as x approaches x0
 pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -875,6 +1094,11 @@ pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // Handle limits at Infinity
+  if is_infinity(&point) || is_negative_infinity(&point) {
+    return limit_at_infinity(&args[0], &var_name, &point);
+  }
 
   // Strategy: try direct substitution first
   let substituted =
