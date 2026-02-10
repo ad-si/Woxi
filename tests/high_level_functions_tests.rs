@@ -350,6 +350,59 @@ mod high_level_functions_tests {
     }
   }
 
+  mod from_continued_fraction_tests {
+    use super::*;
+    #[test]
+    fn test_pi_approximation() {
+      assert_eq!(
+        interpret("FromContinuedFraction[{3, 7, 15, 1, 292, 1}]").unwrap(),
+        "104348/33215"
+      );
+    }
+    #[test]
+    fn test_simple() {
+      assert_eq!(
+        interpret("FromContinuedFraction[{1, 2, 3}]").unwrap(),
+        "10/7"
+      );
+    }
+    #[test]
+    fn test_single_element() {
+      assert_eq!(
+        interpret("FromContinuedFraction[{2}]").unwrap(),
+        "2"
+      );
+    }
+    #[test]
+    fn test_empty_list() {
+      assert_eq!(
+        interpret("FromContinuedFraction[{}]").unwrap(),
+        "Infinity"
+      );
+    }
+    #[test]
+    fn test_fibonacci_convergent() {
+      assert_eq!(
+        interpret("FromContinuedFraction[{1, 1, 1, 1, 1, 1, 1, 1}]").unwrap(),
+        "34/21"
+      );
+    }
+    #[test]
+    fn test_starting_with_zero() {
+      assert_eq!(
+        interpret("FromContinuedFraction[{0, 1, 1, 1, 1, 1}]").unwrap(),
+        "5/8"
+      );
+    }
+    #[test]
+    fn test_roundtrip() {
+      assert_eq!(
+        interpret("FromContinuedFraction[ContinuedFraction[355/113]]").unwrap(),
+        "355/113"
+      );
+    }
+  }
+
   mod lucas_l_tests {
     use super::*;
     #[test]

@@ -2382,6 +2382,9 @@ pub fn evaluate_function_call_ast(
     "ContinuedFraction" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::continued_fraction_ast(args);
     }
+    "FromContinuedFraction" if args.len() == 1 => {
+      return crate::functions::math_ast::from_continued_fraction_ast(args);
+    }
     "LucasL" if args.len() == 1 => {
       return crate::functions::math_ast::lucas_l_ast(args);
     }
