@@ -188,6 +188,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains(" / ")
       && !trimmed.contains('[')
       && !trimmed.contains('"')
+      && !trimmed.contains('#')
       && !trimmed.contains("Nothing")
       && !trimmed.contains(" . ")
       && !trimmed.contains(".{")

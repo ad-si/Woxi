@@ -126,6 +126,7 @@ SimpleTerm = _{
     UnsignedNumericValue
   | FunctionCall
   | Identifier
+  | Slot
   | "(" ~ Expression ~ ")"
 }
 
