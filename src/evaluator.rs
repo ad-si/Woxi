@@ -2325,6 +2325,15 @@ pub fn evaluate_function_call_ast(
     "Tan" if args.len() == 1 => {
       return crate::functions::math_ast::tan_ast(args);
     }
+    "Sec" if args.len() == 1 => {
+      return crate::functions::math_ast::sec_ast(args);
+    }
+    "Csc" if args.len() == 1 => {
+      return crate::functions::math_ast::csc_ast(args);
+    }
+    "Cot" if args.len() == 1 => {
+      return crate::functions::math_ast::cot_ast(args);
+    }
     "Exp" if args.len() == 1 => {
       return crate::functions::math_ast::exp_ast(args);
     }

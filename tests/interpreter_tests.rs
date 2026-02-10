@@ -4944,6 +4944,152 @@ mod interpreter_tests {
     fn series_zero_returns_zero() {
       assert_eq!(interpret("Series[0, {x, 0, 3}]").unwrap(), "0");
     }
+
+    #[test]
+    fn series_tan_order5() {
+      assert_eq!(
+        interpret("Series[Tan[x], {x, 0, 5}]").unwrap(),
+        "SeriesData[x, 0, {1, 0, 1/3, 0, 2/15}, 1, 6, 1]"
+      );
+    }
+
+    #[test]
+    fn series_tan_order15() {
+      assert_eq!(
+        interpret("Series[Tan[x], {x, 0, 15}]").unwrap(),
+        "SeriesData[x, 0, {1, 0, 1/3, 0, 2/15, 0, 17/315, 0, 62/2835, 0, 1382/155925, 0, 21844/6081075, 0, 929569/638512875}, 1, 16, 1]"
+      );
+    }
+
+    #[test]
+    fn series_sec_order6() {
+      assert_eq!(
+        interpret("Series[Sec[x], {x, 0, 6}]").unwrap(),
+        "SeriesData[x, 0, {1, 0, 1/2, 0, 5/24, 0, 61/720}, 0, 7, 1]"
+      );
+    }
+
+    #[test]
+    fn series_cot_order6() {
+      assert_eq!(
+        interpret("Series[Cot[x], {x, 0, 6}]").unwrap(),
+        "SeriesData[x, 0, {1, 0, -1/3, 0, -1/45, 0, -2/945}, -1, 7, 1]"
+      );
+    }
+
+    #[test]
+    fn series_csc_order6() {
+      assert_eq!(
+        interpret("Series[Csc[x], {x, 0, 6}]").unwrap(),
+        "SeriesData[x, 0, {1, 0, 1/6, 0, 7/360, 0, 31/15120}, -1, 7, 1]"
+      );
+    }
+  }
+
+  mod trig_sec_csc_cot {
+    use super::*;
+
+    #[test]
+    fn sec_zero() {
+      assert_eq!(interpret("Sec[0]").unwrap(), "1");
+    }
+
+    #[test]
+    fn sec_pi_third() {
+      assert_eq!(interpret("Sec[Pi/3]").unwrap(), "2");
+    }
+
+    #[test]
+    fn sec_pi_fourth() {
+      assert_eq!(interpret("Sec[Pi/4]").unwrap(), "Sqrt[2]");
+    }
+
+    #[test]
+    fn sec_pi_sixth() {
+      assert_eq!(interpret("Sec[Pi/6]").unwrap(), "2/Sqrt[3]");
+    }
+
+    #[test]
+    fn sec_pi_half() {
+      assert_eq!(interpret("Sec[Pi/2]").unwrap(), "ComplexInfinity");
+    }
+
+    #[test]
+    fn sec_pi() {
+      assert_eq!(interpret("Sec[Pi]").unwrap(), "-1");
+    }
+
+    #[test]
+    fn csc_pi_half() {
+      assert_eq!(interpret("Csc[Pi/2]").unwrap(), "1");
+    }
+
+    #[test]
+    fn csc_pi_sixth() {
+      assert_eq!(interpret("Csc[Pi/6]").unwrap(), "2");
+    }
+
+    #[test]
+    fn csc_pi_fourth() {
+      assert_eq!(interpret("Csc[Pi/4]").unwrap(), "Sqrt[2]");
+    }
+
+    #[test]
+    fn csc_pi_third() {
+      assert_eq!(interpret("Csc[Pi/3]").unwrap(), "2/Sqrt[3]");
+    }
+
+    #[test]
+    fn cot_pi_fourth() {
+      assert_eq!(interpret("Cot[Pi/4]").unwrap(), "1");
+    }
+
+    #[test]
+    fn cot_pi_third() {
+      assert_eq!(interpret("Cot[Pi/3]").unwrap(), "1/Sqrt[3]");
+    }
+
+    #[test]
+    fn cot_pi_sixth() {
+      assert_eq!(interpret("Cot[Pi/6]").unwrap(), "Sqrt[3]");
+    }
+
+    #[test]
+    fn cot_pi_half() {
+      assert_eq!(interpret("Cot[Pi/2]").unwrap(), "0");
+    }
+
+    #[test]
+    fn d_sec() {
+      assert_eq!(interpret("D[Sec[x], x]").unwrap(), "Sec[x]*Tan[x]");
+    }
+
+    #[test]
+    fn d_csc() {
+      assert_eq!(interpret("D[Csc[x], x]").unwrap(), "-(Csc[x]*Cot[x])");
+    }
+
+    #[test]
+    fn d_cot() {
+      assert_eq!(interpret("D[Cot[x], x]").unwrap(), "-Csc[x]^2");
+    }
+
+    #[test]
+    fn sec_negative_angle() {
+      // Sec[-Pi/3] = Sec[Pi/3] = 2
+      assert_eq!(interpret("Sec[-Pi/3]").unwrap(), "2");
+    }
+
+    #[test]
+    fn csc_negative_angle() {
+      // Csc[-Pi/6] = -Csc[Pi/6] = -2
+      assert_eq!(interpret("Csc[-Pi/6]").unwrap(), "-2");
+    }
+
+    #[test]
+    fn cot_zero() {
+      assert_eq!(interpret("Cot[0]").unwrap(), "ComplexInfinity");
+    }
   }
 
   // ─── Association Operations ─────────────────────────────────────────

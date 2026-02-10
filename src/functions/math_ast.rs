@@ -78,6 +78,18 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Sin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sin()),
       "Cos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.cos()),
       "Tan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.tan()),
+      "Sec" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
+        let c = v.cos();
+        if c != 0.0 { Some(1.0 / c) } else { None }
+      }),
+      "Csc" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
+        let s = v.sin();
+        if s != 0.0 { Some(1.0 / s) } else { None }
+      }),
+      "Cot" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
+        let s = v.sin();
+        if s != 0.0 { Some(v.cos() / s) } else { None }
+      }),
       "ArcSin" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| v.asin())
       }
@@ -2208,6 +2220,155 @@ fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
+fn exact_sec(k: i64, n: i64) -> Option<Expr> {
+  // Sec has period 2*Pi, and Sec(-x) = Sec(x), Sec(Pi-x) = -Sec(x)
+  // Reduce to [0, 2*Pi)
+  let k_mod = ((k % (2 * n)) + 2 * n) % (2 * n);
+  // Use Sec(x) = Sec(2*Pi - x) symmetry to reduce to [0, Pi]
+  let k2 = if k_mod > n { 2 * n - k_mod } else { k_mod };
+  // In [0, Pi]: Sec(Pi - x) = -Sec(x), so reduce to [0, Pi/2]
+  let (k_ref, sign) = if k2 * 2 > n {
+    (n - k2, -1i64) // Pi - angle
+  } else {
+    (k2, 1)
+  };
+  // Check for Pi/2: k_ref*2 == n means Sec(Pi/2) = ComplexInfinity
+  if k_ref * 2 == n {
+    return Some(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  let g = gcd(k_ref as i128, n as i128) as i64;
+  let (kr, nr) = (k_ref / g, n / g);
+
+  let val = match (kr, nr) {
+    (0, _) => Expr::Integer(1),
+    // Sec(Pi/6) = 2/Sqrt[3]
+    (1, 6) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(3)],
+      }),
+    },
+    // Sec(Pi/4) = Sqrt[2]
+    (1, 4) => Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::Integer(2)],
+    },
+    // Sec(Pi/3) = 2
+    (1, 3) => Expr::Integer(2),
+    _ => return None,
+  };
+
+  if sign == -1 {
+    Some(negate_expr(val))
+  } else {
+    Some(val)
+  }
+}
+
+fn exact_csc(k: i64, n: i64) -> Option<Expr> {
+  // Csc has period 2*Pi, Csc(-x) = -Csc(x), Csc(Pi-x) = Csc(x)
+  // Reduce to [0, 2*Pi)
+  let k_mod = ((k % (2 * n)) + 2 * n) % (2 * n);
+  // Csc(0) and Csc(Pi) are ComplexInfinity
+  if k_mod == 0 || k_mod == n {
+    return Some(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  // Use Csc(2*Pi - x) = -Csc(x) to reduce to [0, Pi]
+  let (k2, sign1) = if k_mod > n {
+    (2 * n - k_mod, -1i64)
+  } else {
+    (k_mod, 1)
+  };
+  // In (0, Pi): Csc(Pi - x) = Csc(x), so reduce to (0, Pi/2]
+  let k_ref = if k2 * 2 > n { n - k2 } else { k2 };
+
+  let g = gcd(k_ref as i128, n as i128) as i64;
+  let (kr, nr) = (k_ref / g, n / g);
+
+  let val = match (kr, nr) {
+    // Csc(Pi/2) = 1
+    (1, 2) => Expr::Integer(1),
+    // Csc(Pi/6) = 2
+    (1, 6) => Expr::Integer(2),
+    // Csc(Pi/4) = Sqrt[2]
+    (1, 4) => Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::Integer(2)],
+    },
+    // Csc(Pi/3) = 2/Sqrt[3]
+    (1, 3) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(3)],
+      }),
+    },
+    _ => return None,
+  };
+
+  if sign1 == -1 {
+    Some(negate_expr(val))
+  } else {
+    Some(val)
+  }
+}
+
+fn exact_cot(k: i64, n: i64) -> Option<Expr> {
+  // Cot has period Pi, Cot(-x) = -Cot(x)
+  // Reduce k*Pi/n mod Pi => (k mod n)*Pi/n
+  let k_mod = ((k % n) + n) % n;
+  // Cot(0) = ComplexInfinity
+  if k_mod == 0 {
+    return Some(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  // Cot(Pi/2) = 0
+  if k_mod * 2 == n {
+    return Some(Expr::Integer(0));
+  }
+  // Use Cot(Pi - x) = -Cot(x) to reduce to (0, Pi/2)
+  let (k_ref, sign) = if k_mod * 2 > n {
+    (n - k_mod, -1i64)
+  } else {
+    (k_mod, 1)
+  };
+
+  let g = gcd(k_ref as i128, n as i128) as i64;
+  let (kr, nr) = (k_ref / g, n / g);
+
+  let val = match (kr, nr) {
+    // Cot(Pi/6) = Sqrt[3]
+    (1, 6) => Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::Integer(3)],
+    },
+    // Cot(Pi/4) = 1
+    (1, 4) => Expr::Integer(1),
+    // Cot(Pi/3) = 1/Sqrt[3]
+    (1, 3) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(1)),
+      right: Box::new(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(3)],
+      }),
+    },
+    _ => return None,
+  };
+
+  if sign == -1 {
+    if matches!(val, Expr::Integer(0)) {
+      Some(Expr::Integer(0))
+    } else {
+      Some(negate_expr(val))
+    }
+  } else {
+    Some(val)
+  }
+}
+
 /// Negate an Expr, simplifying integer, rational, and division cases
 fn negate_expr(expr: Expr) -> Expr {
   match expr {
@@ -2228,16 +2389,31 @@ fn negate_expr(expr: Expr) -> Expr {
         }
       }
     }
-    // -a/b => (-a)/b
+    // -(a/b) => Times[-1, a/b] to match Wolfram output style
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left: Box::new(negate_expr(*left)),
-      right,
-    },
+    } => {
+      // If numerator is an integer, negate it directly: -(n/b) => (-n)/b
+      if let Expr::Integer(n) = *left
+        && n > 1
+      {
+        return Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Integer(-n)),
+          right,
+        };
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left,
+          right,
+        }),
+      }
+    }
     other => Expr::FunctionCall {
       name: "Times".to_string(),
       args: vec![Expr::Integer(-1), other],
@@ -2307,6 +2483,78 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "Tan".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Sec expects 1 argument".into(),
+    ));
+  }
+  if let Expr::Real(f) = &args[0] {
+    let c = f.cos();
+    if c == 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    return Ok(num_to_expr(1.0 / c));
+  }
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && let Some(exact) = exact_sec(k, n)
+  {
+    return Ok(exact);
+  }
+  Ok(Expr::FunctionCall {
+    name: "Sec".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Csc expects 1 argument".into(),
+    ));
+  }
+  if let Expr::Real(f) = &args[0] {
+    let s = f.sin();
+    if s == 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    return Ok(num_to_expr(1.0 / s));
+  }
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && let Some(exact) = exact_csc(k, n)
+  {
+    return Ok(exact);
+  }
+  Ok(Expr::FunctionCall {
+    name: "Csc".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Cot expects 1 argument".into(),
+    ));
+  }
+  if let Expr::Real(f) = &args[0] {
+    let s = f.sin();
+    if s == 0.0 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    return Ok(num_to_expr(f.cos() / s));
+  }
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && let Some(exact) = exact_cot(k, n)
+  {
+    return Ok(exact);
+  }
+  Ok(Expr::FunctionCall {
+    name: "Cot".to_string(),
     args: args.to_vec(),
   })
 }
