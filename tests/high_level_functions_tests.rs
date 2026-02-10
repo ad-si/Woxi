@@ -595,10 +595,7 @@ mod high_level_functions_tests {
     }
     #[test]
     fn test_integer_partitions_20_length() {
-      assert_eq!(
-        interpret("IntegerPartitions[20] // Length").unwrap(),
-        "627"
-      );
+      assert_eq!(interpret("IntegerPartitions[20] // Length").unwrap(), "627");
     }
     #[test]
     fn test_integer_partitions_3_max2() {
