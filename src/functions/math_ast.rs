@@ -180,6 +180,15 @@ fn num_to_expr(n: f64) -> Expr {
   }
 }
 
+/// Convert a BigInt to Expr::Integer if it fits in i128, otherwise Expr::BigInteger
+pub fn bigint_to_expr(n: num_bigint::BigInt) -> Expr {
+  use num_traits::ToPrimitive;
+  match n.to_i128() {
+    Some(i) => Expr::Integer(i),
+    None => Expr::BigInteger(n),
+  }
+}
+
 /// Compute GCD of two integers using Euclidean algorithm
 fn gcd(a: i128, b: i128) -> i128 {
   let (mut a, mut b) = (a.abs(), b.abs());
@@ -281,6 +290,44 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           right: Box::new(b.clone()),
         }),
       }
+    });
+  }
+
+  // Check if any argument is BigInteger — use BigInt arithmetic path
+  let has_bigint = flat_args.iter().any(|a| matches!(a, Expr::BigInteger(_)));
+
+  if has_bigint {
+    use num_bigint::BigInt;
+    let mut big_sum = BigInt::from(0);
+    let mut all_int = true;
+    let mut symbolic_args: Vec<Expr> = Vec::new();
+
+    for arg in &flat_args {
+      match arg {
+        Expr::Integer(n) => big_sum += BigInt::from(*n),
+        Expr::BigInteger(n) => big_sum += n,
+        _ => {
+          all_int = false;
+          symbolic_args.push(arg.clone());
+        }
+      }
+    }
+
+    if all_int {
+      return Ok(bigint_to_expr(big_sum));
+    }
+
+    let mut final_args: Vec<Expr> = Vec::new();
+    if big_sum != BigInt::from(0) {
+      final_args.push(bigint_to_expr(big_sum));
+    }
+    final_args.extend(symbolic_args);
+    if final_args.len() == 1 {
+      return Ok(final_args.remove(0));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: final_args,
     });
   }
 
@@ -636,6 +683,24 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       left: Box::new(base.clone()),
       right: Box::new(exp.clone()),
     });
+  }
+
+  // Integer^Integer with non-negative exponent: use exact BigInt arithmetic
+  if let (Expr::Integer(b), Expr::Integer(e)) = (base, exp)
+    && *e >= 0
+  {
+    use num_bigint::BigInt;
+    let base_big = BigInt::from(*b);
+    let result = num_traits::pow::pow(base_big, *e as usize);
+    return Ok(bigint_to_expr(result));
+  }
+
+  // BigInteger base with integer exponent
+  if let (Expr::BigInteger(b), Expr::Integer(e)) = (base, exp)
+    && *e >= 0
+  {
+    let result = num_traits::pow::pow(b.clone(), *e as usize);
+    return Ok(bigint_to_expr(result));
   }
 
   // If either operand is Real, result is Real (even if whole number)
@@ -4800,7 +4865,7 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       } else {
         // Normalize base to be non-negative mod m
-        let b = ((*base % *modulus) + *modulus) % *modulus;
+        let b = base.rem_euclid(*modulus);
         let result = mod_pow_unsigned(b as u128, *exp as u128, m);
         Ok(Expr::Integer(result as i128))
       }
@@ -4813,20 +4878,25 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Binary exponentiation: base^exp mod modulus (all unsigned)
-fn mod_pow_unsigned(mut base: u128, mut exp: u128, modulus: u128) -> u128 {
+/// Uses BigUint for intermediate multiplication to avoid u128 overflow.
+fn mod_pow_unsigned(base: u128, mut exp: u128, modulus: u128) -> u128 {
+  use num_bigint::BigUint;
+  use num_traits::ToPrimitive;
+
   if modulus == 1 {
     return 0;
   }
-  let mut result: u128 = 1;
-  base %= modulus;
+  let m = BigUint::from(modulus);
+  let mut result = BigUint::from(1u32);
+  let mut b = BigUint::from(base % modulus);
   while exp > 0 {
     if exp % 2 == 1 {
-      result = result * base % modulus;
+      result = result * &b % &m;
     }
     exp >>= 1;
-    base = base * base % modulus;
+    b = &b * &b % &m;
   }
-  result
+  result.to_u128().unwrap_or(0)
 }
 
 /// Extended Euclidean algorithm for modular inverse

@@ -11,6 +11,7 @@ use crate::{
 pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(n.to_string()),
+    Expr::BigInteger(n) => Ok(n.to_string()),
     Expr::Real(f) => Ok(format_result(*f)),
     Expr::String(s) => Ok(format!("\"{}\"", s)),
     Expr::Identifier(name) => {
@@ -386,6 +387,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Integer(*n)),
+    Expr::BigInteger(n) => Ok(Expr::BigInteger(n.clone())),
     Expr::Real(f) => Ok(Expr::Real(*f)),
     Expr::String(s) => Ok(Expr::String(s.clone())),
     Expr::Identifier(name) => {
@@ -722,7 +724,12 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           crate::functions::math_ast::plus_ast(&[left_val, right_val])
         }
         BinaryOperator::Minus => {
-          if let (Some(l), Some(r)) = (left_num, right_num) {
+          // Handle BigInteger arithmetic
+          if let Some(result) =
+            bigint_binary_op(&left_val, &right_val, |a, b| a - b)
+          {
+            Ok(result)
+          } else if let (Some(l), Some(r)) = (left_num, right_num) {
             if matches!(&left_val, Expr::Real(_))
               || matches!(&right_val, Expr::Real(_))
             {
@@ -746,7 +753,12 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
         }
         BinaryOperator::Times => {
-          if let (Some(l), Some(r)) = (left_num, right_num) {
+          // Handle BigInteger arithmetic
+          if let Some(result) =
+            bigint_binary_op(&left_val, &right_val, |a, b| a * b)
+          {
+            Ok(result)
+          } else if let (Some(l), Some(r)) = (left_num, right_num) {
             if matches!(&left_val, Expr::Real(_))
               || matches!(&right_val, Expr::Real(_))
             {
@@ -1097,6 +1109,30 @@ fn num_to_expr(n: f64) -> Expr {
   } else {
     Expr::Real(n)
   }
+}
+
+/// Convert an Expr to BigInt if it's an integer type
+fn expr_to_bigint(expr: &Expr) -> Option<num_bigint::BigInt> {
+  match expr {
+    Expr::Integer(n) => Some(num_bigint::BigInt::from(*n)),
+    Expr::BigInteger(n) => Some(n.clone()),
+    _ => None,
+  }
+}
+
+/// Apply a binary operation when at least one operand is a BigInteger
+fn bigint_binary_op<F>(left: &Expr, right: &Expr, op: F) -> Option<Expr>
+where
+  F: FnOnce(num_bigint::BigInt, num_bigint::BigInt) -> num_bigint::BigInt,
+{
+  let has_big =
+    matches!(left, Expr::BigInteger(_)) || matches!(right, Expr::BigInteger(_));
+  if !has_big {
+    return None;
+  }
+  let l = expr_to_bigint(left)?;
+  let r = expr_to_bigint(right)?;
+  Some(crate::functions::math_ast::bigint_to_expr(op(l, r)))
 }
 
 /// Thread a binary operation over lists (e.g., {1,2,3} + 2 -> {3,4,5})

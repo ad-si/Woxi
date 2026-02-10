@@ -960,6 +960,51 @@ mod interpreter_tests {
     }
   }
 
+  mod big_integer {
+    use super::*;
+
+    #[test]
+    fn power_exceeding_i128() {
+      assert_eq!(
+        interpret("2^127").unwrap(),
+        "170141183460469231731687303715884105728"
+      );
+    }
+
+    #[test]
+    fn power_200() {
+      assert_eq!(
+        interpret("2^200").unwrap(),
+        "1606938044258990275541962092341162602522202993782792835301376"
+      );
+    }
+
+    #[test]
+    fn big_power_minus_one_fits_i128() {
+      // 2^127 - 1 = i128::MAX, should convert back to Integer
+      assert_eq!(
+        interpret("2^127 - 1").unwrap(),
+        "170141183460469231731687303715884105727"
+      );
+    }
+
+    #[test]
+    fn big_power_addition() {
+      assert_eq!(
+        interpret("2^127 + 1").unwrap(),
+        "170141183460469231731687303715884105729"
+      );
+    }
+
+    #[test]
+    fn big_power_multiplication() {
+      assert_eq!(
+        interpret("2^127 * 2").unwrap(),
+        "340282366920938463463374607431768211456"
+      );
+    }
+  }
+
   mod replace_repeated {
     use super::*;
 
@@ -3811,6 +3856,13 @@ mod interpreter_tests {
     #[test]
     fn negative_base() {
       assert_eq!(interpret("PowerMod[-2, 3, 7]").unwrap(), "6");
+    }
+
+    #[test]
+    fn large_modulus() {
+      // 2^127 - 1 is a Mersenne prime; by Fermat's little theorem, 2^(p-1) ≡ 1 (mod p)
+      // so 2^p ≡ 2 (mod p), meaning PowerMod[2, 2^127-1, 2^127-1] = 2
+      assert_eq!(interpret("PowerMod[2, 2^127 - 1, 2^127 - 1]").unwrap(), "2");
     }
   }
 

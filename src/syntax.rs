@@ -244,6 +244,8 @@ pub enum AST {
 pub enum Expr {
   /// Integer literal
   Integer(i128),
+  /// Big integer (exceeds i128 range)
+  BigInteger(num_bigint::BigInt),
   /// Real/float literal
   Real(f64),
   /// String literal (without quotes)
@@ -1215,6 +1217,7 @@ fn format_real(f: f64) -> String {
 pub fn expr_to_string(expr: &Expr) -> String {
   match expr {
     Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => format_real(*f),
     Expr::String(s) => {
       let escaped = s

@@ -497,6 +497,7 @@ fn format_real_helper(f: f64) -> String {
 pub fn expr_to_full_form(expr: &Expr) -> String {
   match expr {
     Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => format_real_helper(*f),
     Expr::String(s) => format!("\"{}\"", s),
     Expr::Identifier(s) => s.clone(),
