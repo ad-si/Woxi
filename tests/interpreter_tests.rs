@@ -6500,4 +6500,107 @@ mod interpreter_tests {
       assert_eq!(interpret("FixedPoint[Floor[#/2] &, 100]").unwrap(), "0");
     }
   }
+
+  mod string_patterns {
+    use super::*;
+
+    #[test]
+    fn repeated_parsing() {
+      // Repeated[x] displays as x..
+      assert_eq!(
+        interpret("Repeated[DigitCharacter]").unwrap(),
+        "DigitCharacter.."
+      );
+      // RepeatedNull[x] displays as x...
+      assert_eq!(
+        interpret("RepeatedNull[DigitCharacter]").unwrap(),
+        "DigitCharacter..."
+      );
+    }
+
+    #[test]
+    fn repeated_shorthand_parsing() {
+      // .. parses as Repeated, ... parses as RepeatedNull
+      assert_eq!(interpret("DigitCharacter ..").unwrap(), "DigitCharacter..");
+      assert_eq!(
+        interpret("DigitCharacter ...").unwrap(),
+        "DigitCharacter..."
+      );
+      assert_eq!(
+        interpret("LetterCharacter ..").unwrap(),
+        "LetterCharacter.."
+      );
+    }
+
+    #[test]
+    fn repeated_head() {
+      assert_eq!(interpret("Head[DigitCharacter ..]").unwrap(), "Repeated");
+      assert_eq!(
+        interpret("Head[DigitCharacter ...]").unwrap(),
+        "RepeatedNull"
+      );
+    }
+
+    #[test]
+    fn string_cases_digit_character_repeated() {
+      assert_eq!(
+        interpret("StringCases[\"The year is 2025\", DigitCharacter ..]")
+          .unwrap(),
+        "{2025}"
+      );
+      assert_eq!(
+        interpret("StringCases[\"abc123def456\", DigitCharacter ..]").unwrap(),
+        "{123, 456}"
+      );
+    }
+
+    #[test]
+    fn string_cases_single_digit_character() {
+      assert_eq!(
+        interpret("StringCases[\"abc123\", DigitCharacter]").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn string_cases_letter_character_repeated() {
+      assert_eq!(
+        interpret("StringCases[\"abc123def456\", LetterCharacter ..]").unwrap(),
+        "{abc, def}"
+      );
+    }
+
+    #[test]
+    fn string_cases_whitespace_character_repeated() {
+      assert_eq!(
+        interpret("StringCases[\"hello world foo\", WhitespaceCharacter ..]")
+          .unwrap(),
+        "{ ,  }"
+      );
+    }
+
+    #[test]
+    fn string_cases_word_character_repeated() {
+      assert_eq!(
+        interpret("StringCases[\"abc123\", WordCharacter ..]").unwrap(),
+        "{abc123}"
+      );
+    }
+
+    #[test]
+    fn string_cases_no_matches() {
+      assert_eq!(
+        interpret("StringCases[\"hello\", DigitCharacter ..]").unwrap(),
+        "{}"
+      );
+    }
+
+    #[test]
+    fn string_cases_literal_still_works() {
+      assert_eq!(
+        interpret("StringCases[\"abcabc\", \"bc\"]").unwrap(),
+        "{bc, bc}"
+      );
+    }
+  }
 }

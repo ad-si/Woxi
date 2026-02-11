@@ -56,7 +56,7 @@ Operator = {
   | ":="
   | "->"     // Rule (must be before - and >)
   | "+" | "-" | "*" | "/" | "^"
-  | "." ~ !ASCII_DIGIT  // Dot operator (not decimal point)
+  | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"
   | "=" | "@"
 }
@@ -84,12 +84,17 @@ ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
 // ReplaceAll (/.) and ReplaceRepeated (//.) can appear after operator chains: x = y /. rules
 ReplaceAllSuffix = { "/." ~ (List | ReplacementRule) }
 ReplaceRepeatedSuffix = { "//." ~ (List | ReplacementRule) }
+// Repeated (..) and RepeatedNull (...) are postfix pattern operators
+// "..." must be tried before ".." since PEG is ordered-choice
+RepeatedNullSuffix = { "..." }
+RepeatedSuffix = { ".." ~ !"." }
 // LeadingMinus marks a leading "-" in an expression: -x, -f[x], -(a+b), etc.
 // Only matches when NOT followed by a digit (so -3 still parses as negative Integer)
 // Handled in parse_expression as a synthetic 0 - expr with proper precedence
 LeadingMinus = { "-" ~ !ASCII_DIGIT }
 Expression = {
     (LeadingMinus ~ Term | Term) ~ (Operator ~ Term)*
+    ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
 }
@@ -167,6 +172,7 @@ TermNoImplicit = _{
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
     (LeadingMinus ~ TermNoImplicit | TermNoImplicit) ~ (Operator ~ TermNoImplicit)*
+    ~ (RepeatedNullSuffix | RepeatedSuffix)?
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
 }
