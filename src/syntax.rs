@@ -1614,7 +1614,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||
       let (op_str, needs_space) = match op {
         BinaryOperator::Plus => ("+", true),
-        BinaryOperator::Minus => ("−", true),
+        BinaryOperator::Minus => ("-", true),
         BinaryOperator::Times => ("*", false),
         BinaryOperator::Divide => ("/", false),
         BinaryOperator::Power => ("^", false),
