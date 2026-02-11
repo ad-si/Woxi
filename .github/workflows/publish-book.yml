@@ -50,7 +50,7 @@ jobs:
           node-version: '22'
 
       - name: Install JupyterLab
-        run: uv tool install jupyterlab
+        run: uv pip install --system jupyterlab
 
       - name: Build JupyterLite kernel extension
         run: cd jupyterlite-woxi-kernel && jlpm install && jlpm build:prod
