@@ -17,7 +17,10 @@ pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumberQ expects exactly 1 argument".into(),
     ));
   }
-  let is_number = matches!(&args[0], Expr::Integer(_) | Expr::Real(_));
+  let is_number = matches!(
+    &args[0],
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigFloat(_, _)
+  );
   Ok(bool_expr(is_number))
 }
 
@@ -123,7 +126,10 @@ pub fn numeric_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // Same as NumberQ for evaluated expressions
-  let is_numeric = matches!(&args[0], Expr::Integer(_) | Expr::Real(_));
+  let is_numeric = matches!(
+    &args[0],
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigFloat(_, _)
+  );
   Ok(bool_expr(is_numeric))
 }
 
@@ -405,7 +411,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let head = match &args[0] {
     Expr::Integer(_) => "Integer",
-    Expr::Real(_) => "Real",
+    Expr::Real(_) | Expr::BigFloat(_, _) => "Real",
     Expr::String(_) => "String",
     Expr::Identifier(_) => "Symbol",
     Expr::List(_) => "List",
@@ -506,6 +512,7 @@ pub fn expr_to_full_form(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => format_real_helper(*f),
+    Expr::BigFloat(digits, prec) => format!("{}`{}.", digits, prec),
     Expr::String(s) => format!("\"{}\"", s),
     Expr::Identifier(s) => s.clone(),
     Expr::Slot(n) => {

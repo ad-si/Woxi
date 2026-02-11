@@ -13,6 +13,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
     Expr::Integer(n) => Ok(n.to_string()),
     Expr::BigInteger(n) => Ok(n.to_string()),
     Expr::Real(f) => Ok(format_result(*f)),
+    Expr::BigFloat(digits, prec) => Ok(format!("{}`{}.", digits, prec)),
     Expr::String(s) => Ok(format!("\"{}\"", s)),
     Expr::Identifier(name) => {
       // Look up in environment
@@ -389,6 +390,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => Ok(Expr::Integer(*n)),
     Expr::BigInteger(n) => Ok(Expr::BigInteger(n.clone())),
     Expr::Real(f) => Ok(Expr::Real(*f)),
+    Expr::BigFloat(d, p) => Ok(Expr::BigFloat(d.clone(), *p)),
     Expr::String(s) => Ok(Expr::String(s.clone())),
     Expr::Identifier(name) => {
       // Look up in environment

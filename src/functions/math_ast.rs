@@ -39,6 +39,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
     Expr::Constant(name) => match name.as_str() {
       "Pi" => Some(std::f64::consts::PI),
       "-Pi" => Some(-std::f64::consts::PI),
@@ -1555,6 +1556,18 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "N expects 1 or 2 arguments".into(),
     ));
   }
+  if args.len() == 2 {
+    // N[expr, precision] — arbitrary-precision evaluation
+    let precision = match &args[1] {
+      Expr::Integer(n) if *n > 0 => *n as usize,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "N: precision must be a positive integer".into(),
+        ));
+      }
+    };
+    return n_eval_arbitrary(&args[0], precision);
+  }
   n_eval(&args[0])
 }
 
@@ -1563,6 +1576,7 @@ fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
     Expr::Real(_) => Ok(expr.clone()),
+    Expr::BigFloat(_, _) => Ok(expr.clone()),
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> = items.iter().map(n_eval).collect();
       Ok(Expr::List(results?))
@@ -1574,6 +1588,284 @@ fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
         Ok(expr.clone())
       }
     }
+  }
+}
+
+/// Convert decimal digit precision to the nominal bit-precision.
+/// `astro-float` internally rounds up to 64-bit word boundaries.
+/// Minimum 128 bits (2 words) to avoid precision issues with small values.
+fn nominal_bits(precision: usize) -> usize {
+  let bits = (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize;
+  bits.max(128)
+}
+
+/// N[expr, precision] — arbitrary-precision numeric evaluation using BigFloat
+fn n_eval_arbitrary(
+  expr: &Expr,
+  precision: usize,
+) -> Result<Expr, InterpreterError> {
+  // Handle List recursively at the Expr level
+  if let Expr::List(items) = expr {
+    let results: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|e| n_eval_arbitrary(e, precision))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
+  use astro_float::{Consts, Radix, RoundingMode};
+
+  let mut cc = Consts::new().map_err(|e| {
+    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+  })?;
+  let rm = RoundingMode::ToEven;
+
+  // Compute at the nominal bit-precision. astro-float internally
+  // rounds up to 64-bit word boundaries, giving us the correct
+  // number of output digits.
+  let bits = nominal_bits(precision);
+  let result = expr_to_bigfloat(expr, bits, rm, &mut cc)?;
+
+  let formatted = result.format(Radix::Dec, rm, &mut cc).map_err(|e| {
+    InterpreterError::EvaluationError(format!("BigFloat format error: {}", e))
+  })?;
+
+  // Convert scientific notation to decimal and trim trailing zeros.
+  let decimal = bigfloat_to_decimal(&formatted);
+
+  Ok(Expr::BigFloat(decimal, precision))
+}
+
+/// Convert astro-float's scientific notation output (e.g., "3.14159e+0")
+/// to Wolfram-style decimal notation (e.g., "3.14159").
+fn bigfloat_to_decimal(s: &str) -> String {
+  let is_negative = s.starts_with('-');
+  let s = if is_negative { &s[1..] } else { s };
+
+  // Parse scientific notation: "d.dddddddddde+NNN" or "d.dddddddddde-NNN"
+  let (mantissa, exponent) = if let Some(e_pos) = s.find('e') {
+    let exp: i64 = s[e_pos + 1..].parse().unwrap_or(0);
+    (&s[..e_pos], exp)
+  } else {
+    (s, 0i64)
+  };
+
+  // Extract digits from mantissa (removing the decimal point)
+  let dot_pos = mantissa.find('.').unwrap_or(mantissa.len());
+  let digits: String =
+    mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
+
+  if digits.is_empty() {
+    return "0.".to_string();
+  }
+
+  // The first digit is at position 10^exponent.
+  // dot_pos in the mantissa tells us where the decimal point was.
+  // In scientific notation "d.dddd e+N", the actual decimal position
+  // is after (1 + exponent) digits from the start.
+  let decimal_position = (dot_pos as i64 + exponent);
+
+  let prefix = if is_negative { "-" } else { "" };
+
+  if decimal_position <= 0 {
+    // Number like 0.000xxxx
+    let zeros = (-decimal_position) as usize;
+    let trimmed = digits.trim_end_matches('0');
+    if trimmed.is_empty() {
+      format!("{}0.", prefix)
+    } else {
+      format!("{}0.{}{}", prefix, "0".repeat(zeros), trimmed)
+    }
+  } else {
+    let dp = decimal_position as usize;
+    if dp >= digits.len() {
+      // All digits are in the integer part (e.g., "100.")
+      // Pad with zeros to reach the decimal position
+      let padded = format!("{}{}", digits, "0".repeat(dp - digits.len()));
+      format!("{}{}.", prefix, padded)
+    } else {
+      // Some digits before decimal, some after
+      let int_part = &digits[..dp];
+      let frac_part = digits[dp..].trim_end_matches('0');
+      if frac_part.is_empty() {
+        format!("{}{}.", prefix, int_part)
+      } else {
+        format!("{}{}.{}", prefix, int_part, frac_part)
+      }
+    }
+  }
+}
+
+/// Recursively convert an Expr to a BigFloat with the given precision.
+fn expr_to_bigfloat(
+  expr: &Expr,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<astro_float::BigFloat, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  use astro_float::BigFloat;
+
+  match expr {
+    Expr::Integer(n) => Ok(BigFloat::from_i128(*n, bits)),
+    Expr::BigInteger(n) => {
+      // Convert BigInt to BigFloat by parsing its decimal string
+      let s = n.to_string();
+      Ok(BigFloat::parse(&s, astro_float::Radix::Dec, bits, rm, cc))
+    }
+    Expr::Real(f) => Ok(BigFloat::from_f64(*f, bits)),
+    Expr::BigFloat(digits, _) => Ok(BigFloat::parse(
+      digits,
+      astro_float::Radix::Dec,
+      bits,
+      rm,
+      cc,
+    )),
+    Expr::Constant(name) => match name.as_str() {
+      "Pi" | "-Pi" => {
+        let pi = cc.pi(bits, rm);
+        if name == "-Pi" { Ok(pi.neg()) } else { Ok(pi) }
+      }
+      "E" => Ok(cc.e(bits, rm)),
+      "Degree" => {
+        let pi = cc.pi(bits, rm);
+        let d180 = BigFloat::from_i32(180, bits);
+        Ok(pi.div(&d180, bits, rm))
+      }
+      _ => Err(InterpreterError::EvaluationError(format!(
+        "N: cannot evaluate constant {} to arbitrary precision",
+        name
+      ))),
+    },
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let val = expr_to_bigfloat(operand, bits, rm, cc)?;
+      Ok(val.neg())
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let l = expr_to_bigfloat(left, bits, rm, cc)?;
+      let r = expr_to_bigfloat(right, bits, rm, cc)?;
+      match op {
+        BinaryOperator::Plus => Ok(l.add(&r, bits, rm)),
+        BinaryOperator::Minus => Ok(l.sub(&r, bits, rm)),
+        BinaryOperator::Times => Ok(l.mul(&r, bits, rm)),
+        BinaryOperator::Divide => Ok(l.div(&r, bits, rm)),
+        BinaryOperator::Power => Ok(l.pow(&r, bits, rm, cc)),
+        _ => Err(InterpreterError::EvaluationError(
+          "N: unsupported binary operator for arbitrary precision".into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      match name.as_str() {
+        "Rational" if args.len() == 2 => {
+          let n = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let d = expr_to_bigfloat(&args[1], bits, rm, cc)?;
+          Ok(n.div(&d, bits, rm))
+        }
+        "Sqrt" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.sqrt(bits, rm))
+        }
+        "Sin" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.sin(bits, rm, cc))
+        }
+        "Cos" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.cos(bits, rm, cc))
+        }
+        "Tan" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.tan(bits, rm, cc))
+        }
+        "Exp" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.exp(bits, rm, cc))
+        }
+        "Log" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.ln(bits, rm, cc))
+        }
+        "Log" if args.len() == 2 => {
+          let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let val = expr_to_bigfloat(&args[1], bits, rm, cc)?;
+          Ok(val.log(&base, bits, rm, cc))
+        }
+        "Abs" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.abs())
+        }
+        "Sinh" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.sinh(bits, rm, cc))
+        }
+        "Cosh" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.cosh(bits, rm, cc))
+        }
+        "Tanh" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.tanh(bits, rm, cc))
+        }
+        "ArcSin" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.asin(bits, rm, cc))
+        }
+        "ArcCos" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.acos(bits, rm, cc))
+        }
+        "ArcTan" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.atan(bits, rm, cc))
+        }
+        "ArcSinh" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.asinh(bits, rm, cc))
+        }
+        "ArcCosh" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.acosh(bits, rm, cc))
+        }
+        "ArcTanh" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(v.atanh(bits, rm, cc))
+        }
+        "Plus" => {
+          // Evaluated Plus[a, b, c, ...] as a function call
+          let mut result = BigFloat::from_i32(0, bits);
+          for arg in args {
+            let v = expr_to_bigfloat(arg, bits, rm, cc)?;
+            result = result.add(&v, bits, rm);
+          }
+          Ok(result)
+        }
+        "Times" => {
+          let mut result = BigFloat::from_i32(1, bits);
+          for arg in args {
+            let v = expr_to_bigfloat(arg, bits, rm, cc)?;
+            result = result.mul(&v, bits, rm);
+          }
+          Ok(result)
+        }
+        "Power" if args.len() == 2 => {
+          let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let exp = expr_to_bigfloat(&args[1], bits, rm, cc)?;
+          Ok(base.pow(&exp, bits, rm, cc))
+        }
+        _ => Err(InterpreterError::EvaluationError(format!(
+          "N: cannot evaluate {}[...] to arbitrary precision",
+          name
+        ))),
+      }
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "N: cannot evaluate expression to arbitrary precision: {}",
+      crate::syntax::expr_to_string(expr)
+    ))),
   }
 }
 
