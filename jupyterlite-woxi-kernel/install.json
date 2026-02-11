@@ -1,0 +1,5 @@
+{
+  "packageManager": "python",
+  "packageName": "jupyterlite-woxi-kernel",
+  "uninstallInstructions": "Use pip to uninstall:\n\npip uninstall jupyterlite-woxi-kernel"
+}

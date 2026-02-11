@@ -5,3 +5,5 @@
 /tests/book
 /tests/cli/playground/pkg
 /tests/scripts/_*
+/tests/cli/jupyterlite
+/.jupyterlite.doit.db

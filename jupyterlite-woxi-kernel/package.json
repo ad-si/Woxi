@@ -1,0 +1,55 @@
+{
+  "name": "@woxi/jupyterlite-woxi-kernel",
+  "version": "0.1.0",
+  "description": "Woxi (Wolfram Language) kernel for JupyterLite",
+  "keywords": [
+    "jupyter",
+    "jupyterlab",
+    "jupyterlite",
+    "jupyterlite-extension",
+    "wolfram"
+  ],
+  "license": "MIT",
+  "files": [
+    "lib/**/*.{d.ts,eot,gif,html,jpg,js,js.map,json,png,svg,woff2,ttf}",
+    "style/**/*.{css,js,eot,gif,html,jpg,json,png,svg,woff2,ttf}"
+  ],
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:lib": "tsc",
+    "build:labextension": "jupyter labextension build .",
+    "build:prod": "jlpm build:lib && jlpm build:labextension",
+    "clean": "rimraf lib tsconfig.tsbuildinfo jupyterlite_woxi_kernel/labextension"
+  },
+  "dependencies": {
+    "@jupyterlab/services": "^7.0.0",
+    "@jupyterlite/kernel": "^0.5.0",
+    "@jupyterlite/server": "^0.5.0"
+  },
+  "devDependencies": {
+    "@jupyterlab/builder": "^4.0.0",
+    "@jupyterlab/coreutils": "^6.0.0",
+    "rimraf": "^5.0.0",
+    "typescript": "~5.3.0"
+  },
+  "jupyterlab": {
+    "extension": true,
+    "outputDir": "jupyterlite_woxi_kernel/labextension",
+    "sharedPackages": {
+      "@jupyterlite/kernel": {
+        "bundled": false,
+        "singleton": true
+      },
+      "@jupyterlite/server": {
+        "bundled": false,
+        "singleton": true
+      },
+      "@jupyterlab/services": {
+        "bundled": false,
+        "singleton": true
+      }
+    }
+  }
+}
