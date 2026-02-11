@@ -622,6 +622,92 @@ mod replace_all_after_operators {
   }
 }
 
+mod replace_all_expression_rhs {
+  use super::*;
+
+  #[test]
+  fn rule_delayed_with_division() {
+    assert_eq!(
+      interpret("{0, 0, 1, 1, 1, 1} /. {any_Integer :> any / 2}").unwrap(),
+      "{0, 0, 1/2, 1/2, 1/2, 1/2}"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_with_addition() {
+    assert_eq!(
+      interpret("{1, 2, 3} /. {x_ :> x + 10}").unwrap(),
+      "{11, 12, 13}"
+    );
+  }
+
+  #[test]
+  fn rule_with_expression_rhs() {
+    assert_eq!(
+      interpret("{1, 2, 3} /. x_Integer -> x + 10").unwrap(),
+      "{11, 12, 13}"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_with_power() {
+    assert_eq!(interpret("5 /. x_Integer :> x^2").unwrap(), "25");
+  }
+}
+
+mod replace_all_head_constraint {
+  use super::*;
+
+  #[test]
+  fn integer_head_matches() {
+    assert_eq!(
+      interpret("{0, 0, 1, 1, 1, 1} /. {any_Integer :> any / 2}").unwrap(),
+      "{0, 0, 1/2, 1/2, 1/2, 1/2}"
+    );
+  }
+
+  #[test]
+  fn integer_head_skips_non_integers() {
+    assert_eq!(
+      interpret(r#"{1, 2.5, "hello", x} /. a_Integer :> a + 100"#).unwrap(),
+      "{101, 2.5, hello, x}"
+    );
+  }
+
+  #[test]
+  fn string_head_matches() {
+    assert_eq!(
+      interpret(r#"{1, "hi", "bye"} /. s_String :> StringLength[s]"#).unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn real_head_matches() {
+    assert_eq!(
+      interpret("{1, 2.5, 3.0} /. x_Real :> x * 10").unwrap(),
+      "{1, 25., 30.}"
+    );
+  }
+
+  #[test]
+  fn head_no_match_returns_unchanged() {
+    assert_eq!(
+      interpret(r#""hello" /. x_Integer :> x^2"#).unwrap(),
+      "hello"
+    );
+  }
+
+  #[test]
+  fn multiple_head_rules() {
+    assert_eq!(
+      interpret("{1, 2.5, 3} /. {a_Integer :> a + 100, b_Real :> b * 10}")
+        .unwrap(),
+      "{101, 25., 103}"
+    );
+  }
+}
+
 mod replace_repeated {
   use super::*;
 

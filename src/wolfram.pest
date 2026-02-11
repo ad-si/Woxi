@@ -203,7 +203,7 @@ Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOp
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
 // PatternExpr can be a pattern or a term (for replacement rules)
-ReplacementRule = { (PatternCondition | PatternTest | PatternWithHead | PatternSimple | Term) ~ ("->" | ":>") ~ Term }
+ReplacementRule = { (PatternCondition | PatternTest | PatternWithHead | PatternSimple | Term) ~ ("->" | ":>") ~ ConditionExpr }
 
 // Replacement expressions: expr /. rule or expr //. rule
 ReplaceAllExpr = { Term ~ "/." ~ (List | ReplacementRule) }
