@@ -4,6 +4,7 @@ import { BaseKernel, IKernel } from '@jupyterlite/kernel';
 interface WoxiWasm {
   default: () => Promise<void>;
   evaluate: (code: string) => string;
+  get_graphics: () => string;
   clear: () => void;
 }
 
@@ -70,22 +71,24 @@ export class WoxiKernel extends BaseKernel implements IKernel {
 
     try {
       const result = this._wasm!.evaluate(code);
+      const graphics = this._wasm!.get_graphics();
 
-      if (result) {
-        // Detect SVG output (from Plot, etc.)
-        if (result.trimStart().startsWith('<svg')) {
-          this.publishExecuteResult({
-            execution_count: this.executionCount,
-            data: { 'image/svg+xml': result },
-            metadata: {},
-          });
-        } else {
-          this.publishExecuteResult({
-            execution_count: this.executionCount,
-            data: { 'text/plain': result },
-            metadata: {},
-          });
-        }
+      if (graphics) {
+        // Render SVG graphics (from Plot, etc.)
+        this.publishExecuteResult({
+          execution_count: this.executionCount,
+          data: {
+            'image/svg+xml': graphics,
+            'text/plain': '-Graphics-',
+          },
+          metadata: {},
+        });
+      } else if (result) {
+        this.publishExecuteResult({
+          execution_count: this.executionCount,
+          data: { 'text/plain': result },
+          metadata: {},
+        });
       }
 
       return {
