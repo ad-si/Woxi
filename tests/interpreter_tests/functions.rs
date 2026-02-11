@@ -565,3 +565,66 @@ mod prefix_application_associativity {
     assert_eq!(interpret("Sqrt @ 16").unwrap(), "4");
   }
 }
+
+mod expression_level_anonymous_function {
+  use super::*;
+
+  #[test]
+  fn multi_operator_body() {
+    // #^2 + 1 & — body has multiple operators, not just Slot op Term
+    assert_eq!(interpret("Map[#^2 + 1 &, {3, 0}]").unwrap(), "{10, 1}");
+    assert_eq!(interpret("Map[# * 2 - 3 &, {5, 10}]").unwrap(), "{7, 17}");
+  }
+
+  #[test]
+  fn replace_all_body() {
+    // # /. {rules} & — body contains ReplaceAll with conditional patterns
+    assert_eq!(
+      interpret(
+        "Map[# /. {n_ /; EvenQ[n] :> n/2, n_ /; OddQ[n] :> 3 n + 1} &, {27, 6}]"
+      )
+      .unwrap(),
+      "{82, 3}"
+    );
+  }
+
+  #[test]
+  fn replace_all_simple_rule() {
+    // # /. rule & — body contains ReplaceAll with a single rule
+    assert_eq!(
+      interpret("Map[# /. x_ /; x > 3 :> 0 &, {1, 2, 5, 4, 3}]").unwrap(),
+      "{1, 2, 0, 0, 3}"
+    );
+  }
+
+  #[test]
+  fn nestlist_collatz() {
+    // Full Collatz sequence via NestList with ReplaceAll in anonymous function
+    assert_eq!(
+      interpret("NestList[# /. {n_ /; EvenQ[n] :> n/2, n_ /; OddQ[n] :> 3 n + 1} &, 27, 10]")
+        .unwrap(),
+      "{27, 82, 41, 124, 62, 31, 94, 47, 142, 71, 214}"
+    );
+  }
+
+  #[test]
+  fn postfix_application_body() {
+    // body // func & — body contains postfix application
+    assert_eq!(
+      interpret("Map[# // Abs &, {-3, 2, -1}]").unwrap(),
+      "{3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn existing_forms_still_work() {
+    // Simple: Slot op Term (uses SimpleAnonymousFunction)
+    assert_eq!(interpret("Map[# + 1 &, {5}]").unwrap(), "{6}");
+    // Function call (uses FunctionAnonymousFunction)
+    assert_eq!(interpret("Map[Sin[#] &, {0}]").unwrap(), "{0}");
+    // Paren (uses ParenAnonymousFunction)
+    assert_eq!(interpret("(# + 1) &[5]").unwrap(), "6");
+    // List (uses ListAnonymousFunction)
+    assert_eq!(interpret("{#, #^2} &[3]").unwrap(), "{3, 9}");
+  }
+}
