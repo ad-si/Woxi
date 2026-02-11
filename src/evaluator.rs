@@ -1989,6 +1989,35 @@ pub fn evaluate_function_call_ast(
 
     // AST-native file and date functions (not available in WASM)
     #[cfg(not(target_arch = "wasm32"))]
+    "Export" if args.len() >= 2 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        other => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "Export: first argument must be a filename string, got {}",
+            crate::syntax::expr_to_string(other)
+          )));
+        }
+      };
+      // The second argument has already been evaluated, which triggers
+      // capture_graphics() for Plot expressions.  Grab the SVG.
+      let content = match &args[1] {
+        Expr::Identifier(s) if s == "-Graphics-" => {
+          crate::get_captured_graphics().ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Export: no graphics to export".into(),
+            )
+          })?
+        }
+        Expr::String(s) => s.clone(),
+        other => crate::syntax::expr_to_string(other),
+      };
+      std::fs::write(&filename, &content).map_err(|e| {
+        InterpreterError::EvaluationError(format!("Export: {e}"))
+      })?;
+      return Ok(Expr::String(filename));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     "CreateFile" => {
       let filename_opt = if args.is_empty() {
         None
