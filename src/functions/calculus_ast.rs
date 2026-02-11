@@ -678,6 +678,137 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Build `expr / divisor`, simplifying to just `expr` when `divisor == 1`.
+/// For integer divisors, produces `Rational[1, n] * expr` to match Wolfram output.
+fn make_divided(expr: Expr, divisor: Expr) -> Expr {
+  match &divisor {
+    Expr::Integer(1) => expr,
+    Expr::Integer(n) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(crate::functions::math_ast::make_rational_pub(1, *n)),
+      right: Box::new(expr),
+    },
+    _ => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(expr),
+      right: Box::new(divisor),
+    },
+  }
+}
+
+/// Build `-expr / divisor`, simplifying to `-expr` when `divisor == 1`.
+/// For integer divisors, produces `Rational[-1, n] * expr` to match Wolfram output.
+fn make_neg_divided(expr: Expr, divisor: Expr) -> Expr {
+  match &divisor {
+    Expr::Integer(1) => Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(expr),
+    },
+    Expr::Integer(n) => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(crate::functions::math_ast::make_rational_pub(-1, *n)),
+      right: Box::new(expr),
+    },
+    _ => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(expr),
+      }),
+      right: Box::new(divisor),
+    },
+  }
+}
+
+/// Try to match an expression as `a*var` where `a` is constant w.r.t. `var`,
+/// or just `var` (returning `Integer(1)`).
+/// Returns Some(a) if it matches, None otherwise.
+fn try_match_linear_arg(expr: &Expr, var: &str) -> Option<Expr> {
+  match expr {
+    Expr::Identifier(name) if name == var => Some(Expr::Integer(1)),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if is_constant_wrt(left, var)
+        && matches!(right.as_ref(), Expr::Identifier(name) if name == var)
+      {
+        Some(*left.clone())
+      } else if is_constant_wrt(right, var)
+        && matches!(left.as_ref(), Expr::Identifier(name) if name == var)
+      {
+        Some(*right.clone())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Try to integrate Sin[f(x)]^2 or Cos[f(x)]^2 using power-reduction identities.
+/// sin²(a*x) = x/2 - sin(2*a*x)/(4*a)
+/// cos²(a*x) = x/2 + sin(2*a*x)/(4*a)
+fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
+  if let Expr::FunctionCall { name, args } = base
+    && args.len() == 1
+  {
+    let is_sin = name == "Sin";
+    let is_cos = name == "Cos";
+    if !is_sin && !is_cos {
+      return None;
+    }
+    let coeff = try_match_linear_arg(&args[0], var)?;
+    // Build: 2*a*x
+    let double_arg = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(args[0].clone()),
+    });
+    // sin(2*a*x)
+    let sin_double = Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![double_arg],
+    };
+    // 4*a
+    let four_a = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(4)),
+      right: Box::new(coeff),
+    });
+    // x/2
+    let x_half = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Identifier(var.to_string())),
+      right: Box::new(Expr::Integer(2)),
+    };
+    // sin(2*a*x)/(4*a)
+    let sin_term = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(sin_double),
+      right: Box::new(four_a),
+    };
+    if is_sin {
+      // x/2 - sin(2*a*x)/(4*a)
+      Some(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(x_half),
+        right: Box::new(sin_term),
+      })
+    } else {
+      // x/2 + sin(2*a*x)/(4*a)
+      Some(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(x_half),
+        right: Box::new(sin_term),
+      })
+    }
+  } else {
+    None
+  }
+}
+
 /// Integrate an expression with respect to a variable
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   match expr {
@@ -793,6 +924,13 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(new_exp),
             });
           }
+          // ∫ Sin[x]^2 dx = x/2 - Sin[2*x]/4
+          // ∫ Cos[x]^2 dx = x/2 + Sin[2*x]/4
+          if matches!(right.as_ref(), Expr::Integer(2))
+            && let Some(result) = try_integrate_trig_squared(left, var)
+          {
+            return Some(result);
+          }
           None
         }
         _ => None,
@@ -812,29 +950,24 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           })
         }
         "Sin" if args.len() == 1 => {
-          // ∫ sin(x) dx = -cos(x)
-          if let Expr::Identifier(n) = &args[0]
-            && n == var
-          {
-            return Some(Expr::UnaryOp {
-              op: crate::syntax::UnaryOperator::Minus,
-              operand: Box::new(Expr::FunctionCall {
-                name: "Cos".to_string(),
-                args: args.clone(),
-              }),
-            });
+          // ∫ sin(a*x) dx = -cos(a*x)/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let cos_expr = Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: args.clone(),
+            };
+            return Some(make_neg_divided(cos_expr, coeff));
           }
           None
         }
         "Cos" if args.len() == 1 => {
-          // ∫ cos(x) dx = sin(x)
-          if let Expr::Identifier(n) = &args[0]
-            && n == var
-          {
-            return Some(Expr::FunctionCall {
+          // ∫ cos(a*x) dx = sin(a*x)/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let sin_expr = Expr::FunctionCall {
               name: "Sin".to_string(),
               args: args.clone(),
-            });
+            };
+            return Some(make_divided(sin_expr, coeff));
           }
           None
         }

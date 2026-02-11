@@ -24,6 +24,53 @@ mod integrate_with_sum {
       result
     );
   }
+
+  #[test]
+  fn integrate_cos() {
+    assert_eq!(interpret("Integrate[Cos[x], x]").unwrap(), "Sin[x]");
+  }
+
+  #[test]
+  fn integrate_sin_linear_arg() {
+    // ∫ sin(2x) dx = -1/2*cos(2x)
+    assert_eq!(
+      interpret("Integrate[Sin[2*x], x]").unwrap(),
+      "-1/2*Cos[2*x]"
+    );
+  }
+
+  #[test]
+  fn integrate_cos_linear_arg() {
+    // ∫ cos(3x) dx = sin(3x)/3
+    assert_eq!(interpret("Integrate[Cos[3*x], x]").unwrap(), "Sin[3*x]/3");
+  }
+
+  #[test]
+  fn integrate_sin_squared() {
+    // ∫ sin²(x) dx = x/2 - sin(2x)/4
+    assert_eq!(
+      interpret("Integrate[Sin[x]^2, x]").unwrap(),
+      "x/2 - Sin[2*x]/4"
+    );
+  }
+
+  #[test]
+  fn integrate_cos_squared() {
+    // ∫ cos²(x) dx = x/2 + sin(2x)/4
+    assert_eq!(
+      interpret("Integrate[Cos[x]^2, x]").unwrap(),
+      "x/2 + Sin[2*x]/4"
+    );
+  }
+
+  #[test]
+  fn integrate_sin_squared_definite() {
+    // ∫_0^Pi sin²(x) dx = Pi/2
+    assert_eq!(
+      interpret("Integrate[Sin[x]^2, {x, 0, Pi}]").unwrap(),
+      "Pi/2"
+    );
+  }
 }
 
 mod definite_integrals {
