@@ -88,6 +88,10 @@ ReplaceRepeatedSuffix = { "//." ~ (List | ReplacementRule) }
 // "..." must be tried before ".." since PEG is ordered-choice
 RepeatedNullSuffix = { "..." }
 RepeatedSuffix = { ".." ~ !"." }
+// AnonymousFunctionSuffix: & (not &&) at Expression level — lowest precedence
+// Handles cases like #^2 + 1 &, # /. {rules} &, etc.
+// Optional BracketArgs allow direct calls: (# /. rules &)[5]
+AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // LeadingMinus marks a leading "-" in an expression: -x, -f[x], -(a+b), etc.
 // Only matches when NOT followed by a digit (so -3 still parses as negative Integer)
 // Handled in parse_expression as a synthetic 0 - expr with proper precedence
@@ -97,6 +101,7 @@ Expression = {
     ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
+    ~ AnonymousFunctionSuffix?                 // Function: expr & (lowest precedence)
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -175,6 +180,7 @@ ExpressionNoImplicit = {
     ~ (RepeatedNullSuffix | RepeatedSuffix)?
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
+    ~ AnonymousFunctionSuffix?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default

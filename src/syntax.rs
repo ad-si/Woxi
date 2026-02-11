@@ -842,6 +842,23 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     return Expr::Raw(String::new());
   }
 
+  // Check for AnonymousFunctionSuffix (lowest precedence, always at very end)
+  let anon_func_suffix = if inner
+    .last()
+    .is_some_and(|p| p.as_rule() == Rule::AnonymousFunctionSuffix)
+  {
+    let suffix = inner.pop().unwrap();
+    // Collect optional BracketArgs for direct calls like (# + 1 /. x -> 2 &)[5]
+    let bracket_args: Vec<Vec<Expr>> = suffix
+      .into_inner()
+      .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+      .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+      .collect();
+    Some(bracket_args)
+  } else {
+    None
+  };
+
   // Collect trailing PostfixFunction pairs (lowest precedence, always at end)
   let mut postfix_funcs: Vec<Pair<Rule>> = Vec::new();
   while inner
@@ -887,6 +904,17 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         expr: Box::new(result),
         func: Box::new(func),
       };
+    }
+    if let Some(bracket_args) = anon_func_suffix {
+      result = Expr::Function {
+        body: Box::new(result),
+      };
+      for args in bracket_args {
+        result = Expr::CurriedCall {
+          func: Box::new(result),
+          args,
+        };
+      }
     }
     return result;
   }
@@ -984,13 +1012,26 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     };
   }
 
-  // Apply postfix functions (lowest precedence)
+  // Apply postfix functions
   for func_pair in postfix_funcs {
     let func = pair_to_expr(func_pair);
     result = Expr::Postfix {
       expr: Box::new(result),
       func: Box::new(func),
     };
+  }
+
+  // Apply AnonymousFunctionSuffix (lowest precedence): expr &
+  if let Some(bracket_args) = anon_func_suffix {
+    result = Expr::Function {
+      body: Box::new(result),
+    };
+    for args in bracket_args {
+      result = Expr::CurriedCall {
+        func: Box::new(result),
+        args,
+      };
+    }
   }
 
   result
