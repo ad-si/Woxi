@@ -79,13 +79,30 @@ wasm-build:
 		--features wasm
 
 
+.PHONY: jupyterlite-kernel-build
+jupyterlite-kernel-build:
+	cd jupyterlite-woxi-kernel && jlpm install && jlpm build:prod
+
+
+.PHONY: jupyterlite-build
+jupyterlite-build: wasm-build jupyterlite-kernel-build
+	rm -f .jupyterlite.doit.db
+	uvx \
+		--refresh \
+		--with jupyterlite-core \
+		--with jupyterlab \
+		--with ./jupyterlite-woxi-kernel \
+		jupyter lite build --output-dir tests/cli/jupyterlite
+	cp -r tests/cli/playground/pkg tests/cli/jupyterlite/wasm
+
+
 .PHONY: docs/serve
-docs/serve: wasm-build
+docs/serve: jupyterlite-build
 	mdbook serve --port 5501 ./tests
 
 
 .PHONY: docs/build
-docs/build: wasm-build
+docs/build: jupyterlite-build
 	mdbook build ./tests
 
 

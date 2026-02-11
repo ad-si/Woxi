@@ -36,11 +36,39 @@ jobs:
       - name: Build WASM playground
         run: make wasm-build
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install JupyterLab
+        run: uv tool install jupyterlab
+
+      - name: Build JupyterLite kernel extension
+        run: cd jupyterlite-woxi-kernel && jlpm install && jlpm build:prod
+
+      - name: Build JupyterLite
+        run: |
+          uvx \
+            --with jupyterlite-core \
+            --with jupyterlab \
+            --with ./jupyterlite-woxi-kernel \
+            jupyter lite build --output-dir tests/cli/jupyterlite
+          cp -r tests/cli/playground/pkg tests/cli/jupyterlite/wasm
+
       - name: Setup Nix
         uses: cachix/install-nix-action@v31
 
       - name: Build documentation
-        run: nix develop -c make docs/build
+        run: nix develop -c mdbook build ./tests
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

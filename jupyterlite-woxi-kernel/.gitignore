@@ -1,0 +1,6 @@
+/.yarn
+/jupyterlite_woxi_kernel/_version.py
+/jupyterlite_woxi_kernel/labextension
+/lib
+/node_modules
+/tsconfig.tsbuildinfo
