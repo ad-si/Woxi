@@ -190,6 +190,8 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Equal[a, b] or a == b - Tests for equality
+/// Returns True if all args are identical, False if all are numeric and differ,
+/// or stays symbolic (unevaluated) if args contain symbols and aren't identical.
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -197,18 +199,50 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  use crate::functions::math_ast::try_eval_to_f64;
+
   let first_str = crate::syntax::expr_to_string(&args[0]);
+  let mut all_identical = true;
 
   for arg in args.iter().skip(1) {
     let val_str = crate::syntax::expr_to_string(arg);
     if val_str != first_str {
-      return Ok(Expr::Identifier("False".to_string()));
+      all_identical = false;
+      break;
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+
+  if all_identical {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Check if all args are numeric
+  let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
+  if nums.iter().all(|n| n.is_some()) {
+    let first = nums[0].unwrap();
+    for n in nums.iter().skip(1) {
+      if n.unwrap() != first {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    }
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Only stay symbolic if at least one arg has free symbols
+  if args.iter().any(crate::evaluator::has_free_symbols) {
+    Ok(Expr::FunctionCall {
+      name: "Equal".to_string(),
+      args: args.to_vec(),
+    })
+  } else {
+    // No free symbols, not identical → False
+    Ok(Expr::Identifier("False".to_string()))
+  }
 }
 
 /// Unequal[a, b] or a != b - Tests for inequality
+/// Returns False if any args are identical, True if all are numeric and pairwise different,
+/// or stays symbolic (unevaluated) if args contain symbols and aren't identical.
 pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -216,7 +250,9 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // All arguments must be pairwise different
+  use crate::functions::math_ast::try_eval_to_f64;
+
+  // Check if any pair is structurally identical → False
   let strs: Vec<String> =
     args.iter().map(crate::syntax::expr_to_string).collect();
 
@@ -227,7 +263,24 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+
+  // Check if all args are numeric
+  let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
+  if nums.iter().all(|n| n.is_some()) {
+    // All numeric and pairwise different (checked above via strings)
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Only stay symbolic if at least one arg has free symbols
+  if args.iter().any(crate::evaluator::has_free_symbols) {
+    Ok(Expr::FunctionCall {
+      name: "Unequal".to_string(),
+      args: args.to_vec(),
+    })
+  } else {
+    // No free symbols, pairwise different → True
+    Ok(Expr::Identifier("True".to_string()))
+  }
 }
 
 /// Helper to extract numeric value from Expr — delegates to try_eval_to_f64 for full recursive evaluation

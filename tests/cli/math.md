@@ -86,7 +86,7 @@ $ wo 'Minus[5]'
 $ wo 'Minus[5, 2]'
 
 Minus::argx: Minus called with 2 arguments; 1 argument is expected.
-5 − 2
+5 - 2
 ```
 
 

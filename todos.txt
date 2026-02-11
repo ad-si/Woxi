@@ -16,7 +16,6 @@ wolframscript -code 'NestList[# /. x_ /; x > 1 :> {x - 1, x - 2} // Flatten &, {
 wolframscript -code 'NestList[# /. {n_ /; EvenQ[n] :> n/2, n_ /; OddQ[n] :> 3 n + 1} &, 27, 100]'
 wolframscript -code 'RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[n], n] // FullSimplify'
 wolframscript -code 'RSolve[{a[n] == a[n-1] + a[n-2], a[0] == 0, a[1] == 1}, a[n], n]'
-wolframscript -code 'Solve[x^2 + 3x - 10 == 0, x]'
 wolframscript -code 'Solve[x^5 - x + 1 == 0, x]'
 wolframscript -code 'Sum[(-1)^n / Factorial[2n+1] * x^(2n+1), {n, 0, Infinity}]'
 wolframscript -code 'Table[If[PrimeQ[i], Framed[i, Background->Yellow], i], {i, 1, 20}]'

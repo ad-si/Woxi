@@ -870,7 +870,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         let op = &operators[i];
 
         let result = match op {
-          ComparisonOp::Equal | ComparisonOp::SameQ => {
+          ComparisonOp::SameQ => {
             if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
@@ -879,13 +879,47 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               expr_to_string(left) == expr_to_string(right)
             }
           }
-          ComparisonOp::NotEqual | ComparisonOp::UnsameQ => {
+          ComparisonOp::Equal => {
+            if let (Some(l), Some(r)) =
+              (try_eval_to_f64(left), try_eval_to_f64(right))
+            {
+              l == r
+            } else if expr_to_string(left) == expr_to_string(right) {
+              true
+            } else if has_free_symbols(left) || has_free_symbols(right) {
+              // Symbolic: return unevaluated
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
+            } else {
+              false
+            }
+          }
+          ComparisonOp::UnsameQ => {
             if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l != r
             } else {
               expr_to_string(left) != expr_to_string(right)
+            }
+          }
+          ComparisonOp::NotEqual => {
+            if let (Some(l), Some(r)) =
+              (try_eval_to_f64(left), try_eval_to_f64(right))
+            {
+              l != r
+            } else if expr_to_string(left) == expr_to_string(right) {
+              false
+            } else if has_free_symbols(left) || has_free_symbols(right) {
+              // Symbolic: return unevaluated
+              return Ok(Expr::Comparison {
+                operands: values,
+                operators: operators.clone(),
+              });
+            } else {
+              true
             }
           }
           ComparisonOp::Less => {
@@ -1093,6 +1127,49 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         .collect::<Result<_, _>>()?;
       apply_curried_call(&evaluated_func, &evaluated_args)
     }
+  }
+}
+
+/// Check if an expression contains free symbols (unbound identifiers).
+/// Known constants (True, False, I, Pi, etc.) are NOT free symbols.
+pub fn has_free_symbols(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name) => !matches!(
+      name.as_str(),
+      "True"
+        | "False"
+        | "Null"
+        | "I"
+        | "Pi"
+        | "E"
+        | "Degree"
+        | "Infinity"
+        | "ComplexInfinity"
+        | "Indeterminate"
+        | "Nothing"
+    ),
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::Slot(_) => false,
+    Expr::List(items) => items.iter().any(has_free_symbols),
+    Expr::BinaryOp { left, right, .. } => {
+      has_free_symbols(left) || has_free_symbols(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_free_symbols(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(has_free_symbols),
+    Expr::Comparison { operands, .. } => operands.iter().any(has_free_symbols),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => has_free_symbols(pattern) || has_free_symbols(replacement),
+    Expr::Association(pairs) => pairs
+      .iter()
+      .any(|(k, v)| has_free_symbols(k) || has_free_symbols(v)),
+    _ => false,
   }
 }
 
@@ -2647,6 +2724,9 @@ pub fn evaluate_function_call_ast(
     }
     "PolynomialQ" if args.len() == 2 => {
       return crate::functions::polynomial_ast::polynomial_q_ast(args);
+    }
+    "Solve" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::solve_ast(args);
     }
 
     // AST-native list generation

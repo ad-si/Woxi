@@ -895,6 +895,28 @@ pub fn simplify(expr: Expr) -> Expr {
         (Times, _, Expr::Integer(1)) => return left,
         // x - 0 = x
         (Minus, _, Expr::Integer(0)) => return left,
+        // 0 - n = -n  (for integers)
+        (Minus, Expr::Integer(0), Expr::Integer(n)) => {
+          return Expr::Integer(-n);
+        }
+        // 0 - (-x) = x
+        (
+          Minus,
+          Expr::Integer(0),
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          },
+        ) => {
+          return *operand.clone();
+        }
+        // 0 - x = -x  (general)
+        (Minus, Expr::Integer(0), _) => {
+          return Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(right),
+          };
+        }
         // x / 1 = x
         (Divide, _, Expr::Integer(1)) => return left,
         // x^0 = 1

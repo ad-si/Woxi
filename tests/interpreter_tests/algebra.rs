@@ -739,3 +739,141 @@ mod replace_repeated_operator_form {
     assert_eq!(result, "2");
   }
 }
+
+mod symbolic_equal {
+  use super::*;
+
+  #[test]
+  fn numeric_equal() {
+    assert_eq!(interpret("1 == 1").unwrap(), "True");
+    assert_eq!(interpret("1 == 2").unwrap(), "False");
+  }
+
+  #[test]
+  fn identical_symbols() {
+    assert_eq!(interpret("x == x").unwrap(), "True");
+  }
+
+  #[test]
+  fn different_symbols_stay_symbolic() {
+    assert_eq!(interpret("x == y").unwrap(), "x == y");
+  }
+
+  #[test]
+  fn symbolic_expression_vs_number() {
+    assert_eq!(interpret("x + 1 == 0").unwrap(), "1 + x == 0");
+  }
+
+  #[test]
+  fn same_q_always_evaluates() {
+    assert_eq!(interpret("x === x").unwrap(), "True");
+    assert_eq!(interpret("x === y").unwrap(), "False");
+  }
+
+  #[test]
+  fn unequal_symbolic() {
+    assert_eq!(interpret("x != x").unwrap(), "False");
+    assert_eq!(interpret("x != y").unwrap(), "x != y");
+  }
+
+  #[test]
+  fn unsame_q_always_evaluates() {
+    assert_eq!(interpret("x =!= x").unwrap(), "False");
+    assert_eq!(interpret("x =!= y").unwrap(), "True");
+  }
+}
+
+mod solve {
+  use super::*;
+
+  #[test]
+  fn linear_equation() {
+    assert_eq!(interpret("Solve[x - 5 == 0, x]").unwrap(), "{{x -> 5}}");
+    assert_eq!(interpret("Solve[2*x + 6 == 0, x]").unwrap(), "{{x -> -3}}");
+    assert_eq!(interpret("Solve[3*x + 9 == 0, x]").unwrap(), "{{x -> -3}}");
+  }
+
+  #[test]
+  fn quadratic_integer_roots() {
+    assert_eq!(
+      interpret("Solve[x^2 + 3x - 10 == 0, x]").unwrap(),
+      "{{x -> -5}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_symmetric() {
+    assert_eq!(
+      interpret("Solve[x^2 - 4 == 0, x]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_with_leading_coeff() {
+    assert_eq!(
+      interpret("Solve[2*x^2 - 8 == 0, x]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_repeated_root() {
+    assert_eq!(
+      interpret("Solve[x^2 + 2*x + 1 == 0, x]").unwrap(),
+      "{{x -> -1}, {x -> -1}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_complex_roots() {
+    assert_eq!(
+      interpret("Solve[x^2 + 1 == 0, x]").unwrap(),
+      "{{x -> -I}, {x -> I}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_irrational_roots() {
+    assert_eq!(
+      interpret("Solve[x^2 - 5 == 0, x]").unwrap(),
+      "{{x -> -Sqrt[5]}, {x -> Sqrt[5]}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_golden_ratio() {
+    assert_eq!(
+      interpret("Solve[x^2 + x - 1 == 0, x]").unwrap(),
+      "{{x -> (-1 - Sqrt[5])/2}, {x -> (-1 + Sqrt[5])/2}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_general() {
+    assert_eq!(
+      interpret("Solve[x^2 - 2*x - 3 == 0, x]").unwrap(),
+      "{{x -> -1}, {x -> 3}}"
+    );
+  }
+
+  #[test]
+  fn trivial_x_equals_zero() {
+    assert_eq!(interpret("Solve[x == 0, x]").unwrap(), "{{x -> 0}}");
+  }
+
+  #[test]
+  fn tautology() {
+    assert_eq!(interpret("Solve[x == x, x]").unwrap(), "{{}}");
+  }
+
+  #[test]
+  fn contradiction() {
+    assert_eq!(interpret("Solve[2 == 3, x]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn rational_solution() {
+    assert_eq!(interpret("Solve[2*x - 1 == 0, x]").unwrap(), "{{x -> 1/2}}");
+  }
+}

@@ -917,9 +917,9 @@ mod minus_wrong_arity {
 
   #[test]
   fn minus_two_args_returns_unevaluated() {
-    // Minus[5, 2] should print warning and return 5 − 2
+    // Minus[5, 2] should print warning and return 5 - 2
     let result = interpret("Minus[5, 2]").unwrap();
-    assert_eq!(result, "5 − 2");
+    assert_eq!(result, "5 - 2");
   }
 }
 
