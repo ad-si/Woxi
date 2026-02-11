@@ -1053,6 +1053,31 @@ mod interpreter_tests {
     fn integer_division_stays_integer() {
       assert_eq!(interpret("10 / 2").unwrap(), "5");
     }
+
+    #[test]
+    fn trailing_dot_float_standalone() {
+      assert_eq!(interpret("1.").unwrap(), "1.");
+    }
+
+    #[test]
+    fn trailing_dot_float_in_function_call() {
+      assert_eq!(interpret("Head[1.]").unwrap(), "Real");
+    }
+
+    #[test]
+    fn trailing_dot_float_in_list() {
+      assert_eq!(interpret("{1., 2., 3.}").unwrap(), "{1., 2., 3.}");
+    }
+
+    #[test]
+    fn trailing_dot_float_arithmetic() {
+      assert_eq!(interpret("1. + 2.").unwrap(), "3.");
+    }
+
+    #[test]
+    fn trailing_dot_float_equals_explicit() {
+      assert_eq!(interpret("1. == 1.0").unwrap(), "True");
+    }
   }
 
   mod big_integer {
@@ -6431,6 +6456,48 @@ mod interpreter_tests {
     fn n_number_q() {
       // NumberQ[N[Pi, 50]] should be True
       assert_eq!(interpret("NumberQ[N[Pi, 50]]").unwrap(), "True");
+    }
+  }
+
+  mod fixed_point {
+    use super::*;
+
+    #[test]
+    fn fixed_point_cos() {
+      assert_eq!(
+        interpret("FixedPoint[Cos, 1.0]").unwrap(),
+        "0.7390851332151607"
+      );
+    }
+
+    #[test]
+    fn fixed_point_sqrt2_newton() {
+      // Newton's method for sqrt(2): f(x) = (x + 2/x) / 2
+      assert_eq!(
+        interpret("FixedPoint[N[(# + 2/#)/2] &, 1.]").unwrap(),
+        "1.414213562373095"
+      );
+    }
+
+    #[test]
+    fn fixed_point_identity() {
+      // FixedPoint on a value that's already a fixed point
+      assert_eq!(interpret("FixedPoint[# &, 5]").unwrap(), "5");
+    }
+
+    #[test]
+    fn fixed_point_with_max_iterations() {
+      // FixedPoint with explicit max iterations
+      assert_eq!(
+        interpret("FixedPoint[Cos, 1.0, 100]").unwrap(),
+        "0.7390851332151607"
+      );
+    }
+
+    #[test]
+    fn fixed_point_floor_halving() {
+      // Floor[#/2]& converges to 0
+      assert_eq!(interpret("FixedPoint[Floor[#/2] &, 100]").unwrap(), "0");
     }
   }
 }
