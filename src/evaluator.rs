@@ -2033,6 +2033,13 @@ pub fn evaluate_function_call_ast(
       };
     }
     #[cfg(not(target_arch = "wasm32"))]
+    "Directory" if args.is_empty() => {
+      return match std::env::current_dir() {
+        Ok(path) => Ok(Expr::String(path.to_string_lossy().into_owned())),
+        Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
+      };
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     "DateString" => {
       use chrono::Local;
       let current_time = Local::now();

@@ -26,6 +26,29 @@ mod date_string {
   }
 }
 
+mod directory {
+  use super::*;
+
+  #[test]
+  fn directory_returns_string() {
+    let result = interpret("StringQ[Directory[]]").unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn directory_returns_nonempty_string() {
+    let result = interpret("StringLength[Directory[]] > 0").unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn directory_contains_separator() {
+    // Any real directory path should contain a path separator
+    let result = interpret("StringContainsQ[Directory[], \"/\"]").unwrap();
+    assert_eq!(result, "True");
+  }
+}
+
 mod create_file {
   use super::*;
 
