@@ -2,6 +2,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::{clear_state, interpret, interpret_with_stdout};
 
+#[wasm_bindgen(start)]
+pub fn init() {
+  console_error_panic_hook::set_once();
+}
+
 /// Evaluate a Wolfram Language expression and return the result.
 /// If the expression produces Print output, it is prepended to the result.
 #[wasm_bindgen]

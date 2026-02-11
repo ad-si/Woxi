@@ -22,7 +22,7 @@ cli = [
   "dep:uuid",
   "dep:zeromq",
 ]
-wasm = ["dep:wasm-bindgen", "dep:getrandom"]
+wasm = ["dep:wasm-bindgen", "dep:getrandom", "dep:console_error_panic_hook"]
 
 [dependencies]
 anyhow = "1.0.98"
@@ -44,6 +44,7 @@ snailquote = "0.3.1"
 thiserror = "1.0.63"
 tokio = { version = "1.45.0", features = ["full"], optional = true }
 uuid = { version = "1.16.0", features = ["v4"], optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 zeromq = { version = "0.5.0-pre", features = ["tokio-runtime"], default-features = false, optional = true }
 regex = "1.12.3"
