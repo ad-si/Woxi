@@ -364,7 +364,7 @@ async fn handle_execute_request(
   // 3. Execute the code using woxi interpreter with the new stdout capture mode
 
   // Use the new interpret_with_stdout function to get both stdout and the result
-  let execution_result =
+  let (execution_result, graphics) =
     match woxi::interpret_with_stdout(&execute_request.code) {
       Ok(result) => {
         // Send captured stdout if there's any content
@@ -378,8 +378,8 @@ async fn handle_execute_request(
           iopub_socket.send(stream_msg).await?;
         }
 
-        // Return the result
-        result.result
+        // Return the result and any graphical output
+        (result.result, result.graphics)
       }
       Err(e) => {
         // Send stderr stream message with error
@@ -392,7 +392,7 @@ async fn handle_execute_request(
         iopub_socket.send(error_msg).await?;
 
         // Return error text for execute_result
-        format!("Error: {0}", e)
+        (format!("Error: {0}", e), None)
       }
     };
 
@@ -402,6 +402,11 @@ async fn handle_execute_request(
     media
       .content
       .push(jupyter_protocol::MediaType::Plain(execution_result));
+
+    // If graphical output was produced, add SVG media type
+    if let Some(svg) = graphics {
+      media.content.push(jupyter_protocol::MediaType::Svg(svg));
+    }
 
     let execute_result = ExecuteResult {
       execution_count: ExecutionCount(execution_count),

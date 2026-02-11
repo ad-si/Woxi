@@ -57,6 +57,7 @@ pub enum InterpreterError {
 pub struct InterpretResult {
   pub stdout: String,
   pub result: String,
+  pub graphics: Option<String>,
 }
 
 impl WolframParser {
@@ -79,6 +80,11 @@ thread_local! {
     static CAPTURED_STDOUT: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
+// Captured graphical output (SVG) from Plot and related functions
+thread_local! {
+    static CAPTURED_GRAPHICS: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
 /// Clears the captured stdout buffer
 fn clear_captured_stdout() {
   CAPTURED_STDOUT.with(|buffer| {
@@ -97,6 +103,25 @@ fn capture_stdout(text: &str) {
 /// Gets the captured stdout content
 fn get_captured_stdout() -> String {
   CAPTURED_STDOUT.with(|buffer| buffer.borrow().clone())
+}
+
+/// Clears the captured graphics buffer
+fn clear_captured_graphics() {
+  CAPTURED_GRAPHICS.with(|buffer| {
+    *buffer.borrow_mut() = None;
+  });
+}
+
+/// Stores SVG graphics for capture by the Jupyter kernel
+pub fn capture_graphics(svg: &str) {
+  CAPTURED_GRAPHICS.with(|buffer| {
+    *buffer.borrow_mut() = Some(svg.to_string());
+  });
+}
+
+/// Gets the captured graphics content
+fn get_captured_graphics() -> Option<String> {
+  CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().clone())
 }
 
 // Re-export evaluate_expr from evaluator module
@@ -128,6 +153,7 @@ pub fn clear_state() {
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
   clear_captured_stdout();
+  clear_captured_graphics();
 }
 
 /// Set the $ScriptCommandLine variable from command-line arguments
@@ -620,17 +646,23 @@ fn split_args(s: &str) -> Vec<String> {
 pub fn interpret_with_stdout(
   input: &str,
 ) -> Result<InterpretResult, InterpreterError> {
-  // Clear the stdout capture buffer
+  // Clear the capture buffers
   clear_captured_stdout();
+  clear_captured_graphics();
 
   // Perform the standard interpretation
   let result = interpret(input)?;
 
-  // Get the captured stdout
+  // Get the captured output
   let stdout = get_captured_stdout();
+  let graphics = get_captured_graphics();
 
-  // Return both stdout and the result
-  Ok(InterpretResult { stdout, result })
+  // Return stdout, result, and any graphical output
+  Ok(InterpretResult {
+    stdout,
+    result,
+    graphics,
+  })
 }
 
 fn format_result(result: f64) -> String {
