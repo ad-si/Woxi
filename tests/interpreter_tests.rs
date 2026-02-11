@@ -5111,4 +5111,90 @@ mod interpreter_tests {
       );
     }
   }
+
+  mod plot {
+    use super::*;
+
+    #[test]
+    fn plot_returns_graphics() {
+      clear_state();
+      assert_eq!(
+        interpret("Plot[Sin[x], {x, 0, 2 Pi}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn plot_produces_svg() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 2 Pi}]").unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      assert!(result.graphics.is_some());
+      let svg = result.graphics.unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("</svg>"));
+      assert!(svg.contains("<path"));
+    }
+
+    #[test]
+    fn plot_cos() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Cos[x], {x, 0, 2 Pi}]").unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      assert!(result.graphics.is_some());
+    }
+
+    #[test]
+    fn plot_polynomial() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[x^2, {x, -2, 2}]").unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      assert!(result.graphics.is_some());
+    }
+
+    #[test]
+    fn plot_expression() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[x^2 - 1, {x, -3, 3}]").unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      assert!(result.graphics.is_some());
+    }
+
+    #[test]
+    fn plot_with_numeric_range() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}]").unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      assert!(result.graphics.is_some());
+    }
+
+    #[test]
+    fn plot_unevaluated_with_one_arg() {
+      clear_state();
+      // Like Wolfram, Plot with wrong args returns unevaluated
+      assert_eq!(
+        interpret("Plot[Sin[x]]").unwrap(),
+        "Plot[Sin[x]]"
+      );
+    }
+
+    #[test]
+    fn plot_error_bad_iterator() {
+      clear_state();
+      assert!(interpret("Plot[Sin[x], 5]").is_err());
+    }
+
+    #[test]
+    fn plot_no_graphics_for_non_plot() {
+      clear_state();
+      let result = interpret_with_stdout("1 + 2").unwrap();
+      assert_eq!(result.result, "3");
+      assert!(result.graphics.is_none());
+    }
+  }
 }

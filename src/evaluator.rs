@@ -654,6 +654,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "HoldForm"
         || name == "ValueQ"
         || name == "Reap"
+        || name == "Plot"
       {
         // Pass unevaluated args to the function dispatcher
         return evaluate_function_call_ast(name, args);
@@ -1984,6 +1985,9 @@ pub fn evaluate_function_call_ast(
           "Run expects a string argument".into(),
         ));
       }
+    }
+    "Plot" if args.len() >= 2 => {
+      return crate::functions::plot::plot_ast(args);
     }
     "Print" => {
       // 0 args → just output a newline and return Null
