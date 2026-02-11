@@ -2425,6 +2425,9 @@ pub fn evaluate_function_call_ast(
     "FromDigits" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::from_digits_ast(args);
     }
+    "IntegerName" if args.len() == 1 => {
+      return crate::functions::math_ast::integer_name_ast(args);
+    }
     "FactorInteger" if args.len() == 1 => {
       return crate::functions::math_ast::factor_integer_ast(args);
     }

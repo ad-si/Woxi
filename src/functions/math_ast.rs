@@ -6992,3 +6992,159 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_n = *n_arr.iter().max().unwrap();
   Ok(Expr::Integer(max_n - a0 as i128))
 }
+
+// ── IntegerName ──────────────────────────────────────────────────────────
+
+const ONES: [&str; 20] = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+];
+
+const TENS: [&str; 10] = [
+  "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty",
+  "ninety",
+];
+
+const SCALES: [&str; 7] = [
+  "",
+  "thousand",
+  "million",
+  "billion",
+  "trillion",
+  "quadrillion",
+  "quintillion",
+];
+
+/// Spell out a number 0..=999 in English words.
+/// Uses U+2010 HYPHEN for compound numbers like "twenty‐one".
+fn spell_below_1000(n: u64) -> String {
+  if n == 0 {
+    return String::new();
+  }
+  let mut parts = Vec::new();
+  let hundreds = n / 100;
+  let remainder = n % 100;
+  if hundreds > 0 {
+    parts.push(format!("{} hundred", ONES[hundreds as usize]));
+  }
+  if remainder > 0 {
+    if remainder < 20 {
+      parts.push(ONES[remainder as usize].to_string());
+    } else {
+      let tens = remainder / 10;
+      let ones = remainder % 10;
+      if ones == 0 {
+        parts.push(TENS[tens as usize].to_string());
+      } else {
+        // U+2010 HYPHEN between tens and ones
+        parts.push(format!(
+          "{}\u{2010}{}",
+          TENS[tens as usize], ONES[ones as usize]
+        ));
+      }
+    }
+  }
+  parts.join(" ")
+}
+
+pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // IntegerName[n] - convert integer to English name
+  // IntegerName also works on lists
+  if args.len() == 1
+    && let Expr::List(items) = &args[0]
+  {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| integer_name_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(v) => *v,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "IntegerName".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let negative = n < 0;
+  let abs_n = n.unsigned_abs();
+
+  if abs_n == 0 {
+    return Ok(Expr::String("zero".to_string()));
+  }
+
+  // For numbers 1..=999, spell out entirely in words
+  if abs_n <= 999 {
+    let word = spell_below_1000(abs_n as u64);
+    let result = if negative {
+      format!("negative {}", word)
+    } else {
+      word
+    };
+    return Ok(Expr::String(result));
+  }
+
+  // For numbers >= 1000, break into groups of 3 digits.
+  // Higher groups use digit representation, the lowest group (< 1000) uses words.
+  let mut groups: Vec<(u64, usize)> = Vec::new(); // (group_value, scale_index)
+  let mut remaining = abs_n as u64;
+  let mut scale_idx = 0;
+  while remaining > 0 {
+    let group = remaining % 1000;
+    if group > 0 {
+      groups.push((group, scale_idx));
+    }
+    remaining /= 1000;
+    scale_idx += 1;
+  }
+  groups.reverse();
+
+  let mut parts = Vec::new();
+  for &(group, sidx) in &groups {
+    if sidx == 0 {
+      // Lowest group: use digits (for numbers >= 1000)
+      parts.push(format!("{}", group));
+    } else {
+      // Higher groups: use digits + scale word
+      let scale = if sidx < SCALES.len() {
+        SCALES[sidx]
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "IntegerName".to_string(),
+          args: args.to_vec(),
+        });
+      };
+      parts.push(format!("{} {}", group, scale));
+    }
+  }
+
+  let result = parts.join(" ");
+  let result = if negative {
+    format!("negative {}", result)
+  } else {
+    result
+  };
+  Ok(Expr::String(result))
+}
