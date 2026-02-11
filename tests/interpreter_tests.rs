@@ -3218,6 +3218,98 @@ mod interpreter_tests {
     }
   }
 
+  mod integer_name {
+    use super::*;
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("IntegerName[0]").unwrap(), "zero");
+    }
+
+    #[test]
+    fn small_numbers() {
+      assert_eq!(interpret("IntegerName[1]").unwrap(), "one");
+      assert_eq!(interpret("IntegerName[10]").unwrap(), "ten");
+      assert_eq!(interpret("IntegerName[11]").unwrap(), "eleven");
+      assert_eq!(interpret("IntegerName[15]").unwrap(), "fifteen");
+      assert_eq!(interpret("IntegerName[19]").unwrap(), "nineteen");
+    }
+
+    #[test]
+    fn tens() {
+      assert_eq!(interpret("IntegerName[20]").unwrap(), "twenty");
+      assert_eq!(interpret("IntegerName[21]").unwrap(), "twenty\u{2010}one");
+      assert_eq!(interpret("IntegerName[50]").unwrap(), "fifty");
+      assert_eq!(interpret("IntegerName[99]").unwrap(), "ninety\u{2010}nine");
+    }
+
+    #[test]
+    fn hundreds() {
+      assert_eq!(interpret("IntegerName[100]").unwrap(), "one hundred");
+      assert_eq!(interpret("IntegerName[101]").unwrap(), "one hundred one");
+      assert_eq!(
+        interpret("IntegerName[123]").unwrap(),
+        "one hundred twenty\u{2010}three"
+      );
+      assert_eq!(
+        interpret("IntegerName[999]").unwrap(),
+        "nine hundred ninety\u{2010}nine"
+      );
+    }
+
+    #[test]
+    fn thousands() {
+      assert_eq!(interpret("IntegerName[1000]").unwrap(), "1 thousand");
+      assert_eq!(interpret("IntegerName[1001]").unwrap(), "1 thousand 1");
+      assert_eq!(interpret("IntegerName[1100]").unwrap(), "1 thousand 100");
+      assert_eq!(interpret("IntegerName[2500]").unwrap(), "2 thousand 500");
+      assert_eq!(interpret("IntegerName[10000]").unwrap(), "10 thousand");
+      assert_eq!(
+        interpret("IntegerName[123456]").unwrap(),
+        "123 thousand 456"
+      );
+    }
+
+    #[test]
+    fn millions_and_above() {
+      assert_eq!(interpret("IntegerName[1000000]").unwrap(), "1 million");
+      assert_eq!(
+        interpret("IntegerName[987654321]").unwrap(),
+        "987 million 654 thousand 321"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000000000000]").unwrap(),
+        "1 trillion"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000000000000000]").unwrap(),
+        "1 quadrillion"
+      );
+      assert_eq!(
+        interpret("IntegerName[1000000000000000000]").unwrap(),
+        "1 quintillion"
+      );
+    }
+
+    #[test]
+    fn negative() {
+      assert_eq!(interpret("IntegerName[-5]").unwrap(), "negative five");
+      assert_eq!(
+        interpret("IntegerName[-999]").unwrap(),
+        "negative nine hundred ninety\u{2010}nine"
+      );
+      assert_eq!(
+        interpret("IntegerName[-1000]").unwrap(),
+        "negative 1 thousand"
+      );
+    }
+
+    #[test]
+    fn non_integer_returns_symbolic() {
+      assert_eq!(interpret("IntegerName[x]").unwrap(), "IntegerName[x]");
+    }
+  }
+
   mod complement {
     use super::*;
 
