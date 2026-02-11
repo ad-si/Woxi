@@ -1,7 +1,7 @@
+use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
-use crate::InterpreterError;
 
 /// Plot dimensions
 const SVG_WIDTH: f64 = 360.0;
@@ -20,10 +20,7 @@ fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
     Expr::Identifier(name) if name == var => value.clone(),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args
-        .iter()
-        .map(|a| substitute_var(a, var, value))
-        .collect(),
+      args: args.iter().map(|a| substitute_var(a, var, value)).collect(),
     },
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
@@ -191,12 +188,10 @@ fn generate_svg(
       // Clamp to plot area
       let sy_clamped = sy.max(MARGIN_TOP).min(MARGIN_TOP + PLOT_HEIGHT);
       current_segment.push((sx, sy_clamped));
+    } else if current_segment.len() > 1 {
+      path_parts.push(std::mem::take(&mut current_segment));
     } else {
-      if current_segment.len() > 1 {
-        path_parts.push(std::mem::take(&mut current_segment));
-      } else {
-        current_segment.clear();
-      }
+      current_segment.clear();
     }
   }
   if current_segment.len() > 1 {
@@ -297,10 +292,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
-  let y_data_max = finite_ys
-    .iter()
-    .cloned()
-    .fold(f64::NEG_INFINITY, f64::max);
+  let y_data_max = finite_ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
   // Add 4% padding
   let y_range = y_data_max - y_data_min;

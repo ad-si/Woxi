@@ -248,6 +248,8 @@ pub enum Expr {
   BigInteger(num_bigint::BigInt),
   /// Real/float literal
   Real(f64),
+  /// Arbitrary-precision real: (formatted_digits, precision_in_decimal_digits)
+  BigFloat(String, usize),
   /// String literal (without quotes)
   String(String),
   /// Identifier/symbol
@@ -1236,6 +1238,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => format_real(*f),
+    Expr::BigFloat(digits, prec) => format!("{}`{}.", digits, prec),
     Expr::String(s) => {
       let escaped = s
         .replace('\\', "\\\\")

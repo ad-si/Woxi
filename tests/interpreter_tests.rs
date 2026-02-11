@@ -5787,8 +5787,7 @@ mod interpreter_tests {
     #[test]
     fn plot_produces_svg() {
       clear_state();
-      let result =
-        interpret_with_stdout("Plot[Sin[x], {x, 0, 2 Pi}]").unwrap();
+      let result = interpret_with_stdout("Plot[Sin[x], {x, 0, 2 Pi}]").unwrap();
       assert_eq!(result.result, "-Graphics-");
       assert!(result.graphics.is_some());
       let svg = result.graphics.unwrap();
@@ -5800,8 +5799,7 @@ mod interpreter_tests {
     #[test]
     fn plot_cos() {
       clear_state();
-      let result =
-        interpret_with_stdout("Plot[Cos[x], {x, 0, 2 Pi}]").unwrap();
+      let result = interpret_with_stdout("Plot[Cos[x], {x, 0, 2 Pi}]").unwrap();
       assert_eq!(result.result, "-Graphics-");
       assert!(result.graphics.is_some());
     }
@@ -5809,8 +5807,7 @@ mod interpreter_tests {
     #[test]
     fn plot_polynomial() {
       clear_state();
-      let result =
-        interpret_with_stdout("Plot[x^2, {x, -2, 2}]").unwrap();
+      let result = interpret_with_stdout("Plot[x^2, {x, -2, 2}]").unwrap();
       assert_eq!(result.result, "-Graphics-");
       assert!(result.graphics.is_some());
     }
@@ -5818,8 +5815,7 @@ mod interpreter_tests {
     #[test]
     fn plot_expression() {
       clear_state();
-      let result =
-        interpret_with_stdout("Plot[x^2 - 1, {x, -3, 3}]").unwrap();
+      let result = interpret_with_stdout("Plot[x^2 - 1, {x, -3, 3}]").unwrap();
       assert_eq!(result.result, "-Graphics-");
       assert!(result.graphics.is_some());
     }
@@ -5827,8 +5823,7 @@ mod interpreter_tests {
     #[test]
     fn plot_with_numeric_range() {
       clear_state();
-      let result =
-        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}]").unwrap();
+      let result = interpret_with_stdout("Plot[Sin[x], {x, 0, 6}]").unwrap();
       assert_eq!(result.result, "-Graphics-");
       assert!(result.graphics.is_some());
     }
@@ -5837,10 +5832,7 @@ mod interpreter_tests {
     fn plot_unevaluated_with_one_arg() {
       clear_state();
       // Like Wolfram, Plot with wrong args returns unevaluated
-      assert_eq!(
-        interpret("Plot[Sin[x]]").unwrap(),
-        "Plot[Sin[x]]"
-      );
+      assert_eq!(interpret("Plot[Sin[x]]").unwrap(), "Plot[Sin[x]]");
     }
 
     #[test]
@@ -6010,6 +6002,99 @@ mod interpreter_tests {
         interpret("Sum[1/n, {n, 1, Infinity}]").unwrap(),
         "Sum[1/n, {n, 1, Infinity}]"
       );
+    }
+  }
+
+  mod n_arbitrary_precision {
+    use super::*;
+
+    #[test]
+    fn n_default_precision_unchanged() {
+      // N[expr] with 1 arg should still return f64 precision
+      assert_eq!(interpret("N[Pi]").unwrap(), "3.141592653589793");
+      assert_eq!(interpret("N[E]").unwrap(), "2.718281828459045");
+      assert_eq!(interpret("N[Degree]").unwrap(), "0.017453292519943295");
+    }
+
+    #[test]
+    fn n_pi_arbitrary_first_digits() {
+      // N[Pi, 50] — check that first 50 significant digits are correct
+      let result = interpret("N[Pi, 50]").unwrap();
+      assert!(
+        result
+          .starts_with("3.14159265358979323846264338327950288419716939937510")
+      );
+      assert!(result.ends_with("`50."));
+    }
+
+    #[test]
+    fn n_e_arbitrary_first_digits() {
+      // N[E, 30] — check first 30 significant digits
+      let result = interpret("N[E, 30]").unwrap();
+      assert!(result.starts_with("2.7182818284590452353602874713"));
+      assert!(result.ends_with("`30."));
+    }
+
+    #[test]
+    fn n_integer_arbitrary() {
+      // N[100, 20] should return 100.`20.
+      assert_eq!(interpret("N[100, 20]").unwrap(), "100.`20.");
+      // N[7, 20] should return 7.`20.
+      assert_eq!(interpret("N[7, 20]").unwrap(), "7.`20.");
+    }
+
+    #[test]
+    fn n_rational_arbitrary() {
+      // N[1/3, 20] — should start with 0.3333...
+      let result = interpret("N[1/3, 20]").unwrap();
+      assert!(result.starts_with("0.3333333333333333333"));
+      assert!(result.ends_with("`20."));
+    }
+
+    #[test]
+    fn n_sqrt_arbitrary() {
+      // N[Sqrt[2], 20] — check first 20 digits
+      let result = interpret("N[Sqrt[2], 20]").unwrap();
+      assert!(result.starts_with("1.414213562373095048801688724"));
+      assert!(result.ends_with("`20."));
+    }
+
+    #[test]
+    fn n_pi_10000_digits() {
+      // N[Pi, 10000] — the main todo item
+      let result = interpret("N[Pi, 10000]").unwrap();
+      // Check the suffix
+      assert!(result.ends_with("`10000."));
+      // Check first 50 digits of Pi
+      assert!(
+        result
+          .starts_with("3.14159265358979323846264338327950288419716939937510")
+      );
+      // Check digit count: should have > 10000 sig digits
+      let digits_part = result.split('`').next().unwrap();
+      let sig_digits: usize =
+        digits_part.chars().filter(|c| c.is_ascii_digit()).count();
+      assert!(sig_digits >= 10000);
+    }
+
+    #[test]
+    fn n_pi_100_digits() {
+      // N[Pi, 100] — check first 100 digits
+      let result = interpret("N[Pi, 100]").unwrap();
+      assert!(result.starts_with("3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862803482534211706798214808651"));
+      assert!(result.ends_with("`100."));
+    }
+
+    #[test]
+    fn n_head_is_real() {
+      // Head[N[Pi, 50]] should be Real
+      assert_eq!(interpret("Head[N[Pi, 50]]").unwrap(), "Real");
+    }
+
+    #[test]
+    fn n_number_q() {
+      // NumberQ[N[Pi, 50]] should be True
+      assert_eq!(interpret("NumberQ[N[Pi, 50]]").unwrap(), "True");
     }
   }
 }
