@@ -852,6 +852,17 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   }
   postfix_funcs.reverse(); // restore left-to-right order
 
+  // Check for Repeated/RepeatedNull suffix (.., ...)
+  let repeated_suffix = if inner.last().is_some_and(|p| {
+    p.as_rule() == Rule::RepeatedSuffix
+      || p.as_rule() == Rule::RepeatedNullSuffix
+  }) {
+    let suffix = inner.pop().unwrap();
+    Some(suffix.as_rule() == Rule::RepeatedNullSuffix)
+  } else {
+    None
+  };
+
   // Check for trailing ReplaceAll/ReplaceRepeated suffix:
   // Term (Operator Term)* (ReplaceAllSuffix | ReplaceRepeatedSuffix)?
   let replace_rules = if inner.last().is_some_and(|p| {
@@ -867,8 +878,8 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     None
   };
 
-  // Single term case (no operators, no replace)
-  if inner.len() == 1 && replace_rules.is_none() {
+  // Single term case (no operators, no replace, no repeated)
+  if inner.len() == 1 && replace_rules.is_none() && repeated_suffix.is_none() {
     let mut result = pair_to_expr(inner.remove(0));
     for func_pair in postfix_funcs {
       let func = pair_to_expr(func_pair);
@@ -943,6 +954,19 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       build_binary_tree(terms, operators)
     }
   };
+
+  // Apply Repeated/RepeatedNull suffix if present
+  if let Some(is_repeated_null) = repeated_suffix {
+    let name = if is_repeated_null {
+      "RepeatedNull"
+    } else {
+      "Repeated"
+    };
+    result = Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![result],
+    };
+  }
 
   // Apply ReplaceAll/ReplaceRepeated if present
   if let Some((rules_pair, is_replace_repeated)) = replace_rules {
@@ -1262,6 +1286,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Special case: Repeated[x] displays as x..
+      if name == "Repeated" && args.len() == 1 {
+        return format!("{}..", expr_to_string(&args[0]));
+      }
+      // Special case: RepeatedNull[x] displays as x...
+      if name == "RepeatedNull" && args.len() == 1 {
+        return format!("{}...", expr_to_string(&args[0]));
+      }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
         return format!(
@@ -1847,6 +1879,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // Special case: FullForm[expr] displays the inner expr in FullForm notation
       if name == "FullForm" && args.len() == 1 {
         return crate::functions::predicate_ast::expr_to_full_form(&args[0]);
+      }
+      // Special case: Repeated[x] displays as x..
+      if name == "Repeated" && args.len() == 1 {
+        return format!("{}..", expr_to_output(&args[0]));
+      }
+      // Special case: RepeatedNull[x] displays as x...
+      if name == "RepeatedNull" && args.len() == 1 {
+        return format!("{}...", expr_to_output(&args[0]));
       }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {

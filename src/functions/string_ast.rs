@@ -508,6 +508,41 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Convert a Wolfram string pattern expression to a regex pattern string.
+/// Returns None if the expression is not a recognized string pattern.
+fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
+  match expr {
+    // String literal patterns
+    Expr::String(s) => Some(regex::escape(s)),
+
+    // Character class patterns
+    Expr::Identifier(name) => match name.as_str() {
+      "DigitCharacter" => Some("[0-9]".to_string()),
+      "LetterCharacter" => Some("[a-zA-Z]".to_string()),
+      "WhitespaceCharacter" => Some("\\s".to_string()),
+      "WordCharacter" => Some("[a-zA-Z0-9]".to_string()),
+      "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
+      _ => None,
+    },
+
+    // Repeated[pat] = pat.. (one or more)
+    Expr::FunctionCall { name, args }
+      if name == "Repeated" && args.len() == 1 =>
+    {
+      string_pattern_to_regex(&args[0]).map(|r| format!("(?:{})+", r))
+    }
+
+    // RepeatedNull[pat] = pat... (zero or more)
+    Expr::FunctionCall { name, args }
+      if name == "RepeatedNull" && args.len() == 1 =>
+    {
+      string_pattern_to_regex(&args[0]).map(|r| format!("(?:{})*", r))
+    }
+
+    _ => None,
+  }
+}
+
 /// StringCases[s, patt] - find all substrings matching pattern
 pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -516,6 +551,23 @@ pub fn string_cases_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0])?;
+
+  // Try pattern-based matching first
+  if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
+    let re = regex::Regex::new(&regex_str).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Invalid string pattern: {}",
+        e
+      ))
+    })?;
+    let matches: Vec<Expr> = re
+      .find_iter(&s)
+      .map(|m| Expr::String(m.as_str().to_string()))
+      .collect();
+    return Ok(Expr::List(matches));
+  }
+
+  // Fall back to literal string matching
   let patt = expr_to_str(&args[1])?;
 
   let mut matches = Vec::new();
