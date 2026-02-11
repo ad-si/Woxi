@@ -561,6 +561,56 @@ mod interpreter_tests {
     }
   }
 
+  mod part_anonymous_function {
+    use super::*;
+
+    #[test]
+    fn slot_part_simple() {
+      // #[[n]]& extracts the nth element
+      assert_eq!(interpret("#[[2]] &[{3, 4, 5}]").unwrap(), "4");
+      assert_eq!(interpret("#[[1]] &[{10, 20, 30}]").unwrap(), "10");
+      assert_eq!(interpret("#[[3]] &[{10, 20, 30}]").unwrap(), "30");
+    }
+
+    #[test]
+    fn slot_part_in_list_anonymous() {
+      // {#[[1]], #[[2]]}& is a list anonymous function with Part extracts
+      assert_eq!(interpret("{#[[2]], #[[1]]} &[{3, 4}]").unwrap(), "{4, 3}");
+    }
+
+    #[test]
+    fn slot_part_with_arithmetic() {
+      // #[[1]] + #[[2]]& performs arithmetic on parts
+      assert_eq!(interpret("#[[1]] + #[[2]] &[{3, 4}]").unwrap(), "7");
+      assert_eq!(interpret("#[[1]] * #[[2]] &[{5, 6}]").unwrap(), "30");
+    }
+
+    #[test]
+    fn slot_part_in_nest() {
+      // Fibonacci via Nest with Part-based anonymous function
+      assert_eq!(
+        interpret("Nest[{#[[2]], #[[1]] + #[[2]]} &, {0, 1}, 10]").unwrap(),
+        "{55, 89}"
+      );
+    }
+
+    #[test]
+    fn slot_part_in_map() {
+      // Map with Part-based anonymous function
+      assert_eq!(
+        interpret("Map[#[[1]] &, {{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+        "{1, 3, 5}"
+      );
+    }
+
+    #[test]
+    fn slot_part_without_anonymous_function() {
+      // Part extraction on slots in evaluated contexts (no &)
+      assert_eq!(interpret("{1, 2, 3}[[2]]").unwrap(), "2");
+      assert_eq!(interpret("x = {10, 20, 30}; x[[3]]").unwrap(), "30");
+    }
+  }
+
   mod table_with_list_iterator {
     use super::*;
 
