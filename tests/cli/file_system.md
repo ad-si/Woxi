@@ -1,5 +1,17 @@
 # Functions
 
+## `Directory[]`
+
+```scrut
+$ wo 'Directory[]'
+/\S+ (regex)
+```
+
+```scrut
+$ wo 'StringQ[Directory[]]'
+True
+```
+
 ## `CreateFile[]`
 
 ```scrut
