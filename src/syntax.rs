@@ -633,7 +633,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::FunctionAnonymousFunction
     | Rule::ParenAnonymousFunction
-    | Rule::ListAnonymousFunction => {
+    | Rule::ListAnonymousFunction
+    | Rule::PartAnonymousFunction => {
       // Anonymous function like If[#>0,#,0]& or (#===0)& or {#,#^2}&
       // May optionally have BracketArgs for direct calls: (#+1)&[5]
       let inner_pairs: Vec<_> = pair.clone().into_inner().collect();

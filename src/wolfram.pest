@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-PartExtract = { (FunctionCall | List | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
+PartExtract = { (FunctionCall | List | Slot | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
@@ -23,8 +23,8 @@ String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ A
 Slot = @{ "#" ~ ASCII_DIGIT* }
 // SimpleAnonymousFunction is # or # op term followed by & (not &&)
 SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
-// SlotTerm is what can follow an operator in a simple anonymous function
-SlotTerm = _{ NumericValue | Constant | String | Identifier | Slot | "(" ~ Expression ~ ")" }
+// SlotTerm is what can follow an operator in an anonymous function body
+SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Identifier | Slot | "(" ~ Expression ~ ")" }
 // FunctionAnonymousFunction is a function call (like If[...]) followed by & (not &&)
 // Optional BracketArgs allow direct calls: If[# > 0, #, 0]&[5]
 FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" ~ BracketArgs* }
@@ -34,6 +34,9 @@ ParenAnonymousFunction = { "(" ~ (CompoundExpression | Expression) ~ ")" ~ "&" ~
 // ListAnonymousFunction handles {expr1, expr2, ...}& - for expressions like {#1, #2}&
 // Optional BracketArgs allow direct calls: {#, #^2}&[3]
 ListAnonymousFunction = { List ~ "&" ~ !"&" ~ BracketArgs* }
+// PartAnonymousFunction handles PartExtract& - for expressions like #[[2]]& or #[[1]] + #[[2]]&
+// Optional BracketArgs allow direct calls: #[[2]]&[{3, 4, 5}]
+PartAnonymousFunction = { PartExtract ~ (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
@@ -100,7 +103,8 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
 CompoundExpression = { Expression ~ (";" ~ Expression)+ ~ ";"? | Expression ~ ";" }
 Term = _{
-    PartExtract
+    PartAnonymousFunction
+  | PartExtract
   | Constant
   | String
   | ListAnonymousFunction
@@ -136,7 +140,8 @@ SimpleTerm = _{
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
 // to prevent greedy matching across statement boundaries
 TermNoImplicit = _{
-    PartExtract
+    PartAnonymousFunction
+  | PartExtract
   | Constant
   | String
   | ListAnonymousFunction
