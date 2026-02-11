@@ -3310,6 +3310,66 @@ mod interpreter_tests {
     }
   }
 
+  mod roman_numeral {
+    use super::*;
+
+    #[test]
+    fn zero() {
+      assert_eq!(interpret("RomanNumeral[0]").unwrap(), "N");
+    }
+
+    #[test]
+    fn basic_values() {
+      assert_eq!(interpret("RomanNumeral[1]").unwrap(), "I");
+      assert_eq!(interpret("RomanNumeral[5]").unwrap(), "V");
+      assert_eq!(interpret("RomanNumeral[10]").unwrap(), "X");
+      assert_eq!(interpret("RomanNumeral[50]").unwrap(), "L");
+      assert_eq!(interpret("RomanNumeral[100]").unwrap(), "C");
+      assert_eq!(interpret("RomanNumeral[500]").unwrap(), "D");
+      assert_eq!(interpret("RomanNumeral[1000]").unwrap(), "M");
+    }
+
+    #[test]
+    fn subtractive_forms() {
+      assert_eq!(interpret("RomanNumeral[4]").unwrap(), "IV");
+      assert_eq!(interpret("RomanNumeral[9]").unwrap(), "IX");
+      assert_eq!(interpret("RomanNumeral[40]").unwrap(), "XL");
+      assert_eq!(interpret("RomanNumeral[90]").unwrap(), "XC");
+      assert_eq!(interpret("RomanNumeral[400]").unwrap(), "CD");
+      assert_eq!(interpret("RomanNumeral[900]").unwrap(), "CM");
+    }
+
+    #[test]
+    fn complex_numbers() {
+      assert_eq!(interpret("RomanNumeral[14]").unwrap(), "XIV");
+      assert_eq!(interpret("RomanNumeral[49]").unwrap(), "XLIX");
+      assert_eq!(interpret("RomanNumeral[99]").unwrap(), "XCIX");
+      assert_eq!(interpret("RomanNumeral[444]").unwrap(), "CDXLIV");
+      assert_eq!(interpret("RomanNumeral[1999]").unwrap(), "MCMXCIX");
+      assert_eq!(interpret("RomanNumeral[2025]").unwrap(), "MMXXV");
+      assert_eq!(interpret("RomanNumeral[3999]").unwrap(), "MMMCMXCIX");
+    }
+
+    #[test]
+    fn extended_range() {
+      assert_eq!(interpret("RomanNumeral[4000]").unwrap(), "MMMM");
+      assert_eq!(interpret("RomanNumeral[4999]").unwrap(), "MMMMCMXCIX");
+    }
+
+    #[test]
+    fn negative_integers() {
+      assert_eq!(interpret("RomanNumeral[-1]").unwrap(), "I");
+      assert_eq!(interpret("RomanNumeral[-5]").unwrap(), "V");
+      assert_eq!(interpret("RomanNumeral[-2025]").unwrap(), "MMXXV");
+    }
+
+    #[test]
+    fn non_integer_returns_unevaluated() {
+      assert_eq!(interpret("RomanNumeral[x]").unwrap(), "RomanNumeral[x]");
+      assert_eq!(interpret("RomanNumeral[1.5]").unwrap(), "RomanNumeral[1.5]");
+    }
+  }
+
   mod complement {
     use super::*;
 

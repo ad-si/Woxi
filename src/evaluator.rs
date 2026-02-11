@@ -2428,6 +2428,9 @@ pub fn evaluate_function_call_ast(
     "IntegerName" if args.len() == 1 => {
       return crate::functions::math_ast::integer_name_ast(args);
     }
+    "RomanNumeral" if args.len() == 1 => {
+      return crate::functions::math_ast::roman_numeral_ast(args);
+    }
     "FactorInteger" if args.len() == 1 => {
       return crate::functions::math_ast::factor_integer_ast(args);
     }

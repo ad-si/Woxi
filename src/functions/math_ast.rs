@@ -7148,3 +7148,63 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   Ok(Expr::String(result))
 }
+
+pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // RomanNumeral[n] - convert integer to Roman numeral string
+  // Returns a Symbol (not a String) — e.g. RomanNumeral[2025] => MMXXV
+  // Negative integers: convert the absolute value
+  // Zero: returns N
+  // Non-integer: return unevaluated
+
+  let n = match &args[0] {
+    Expr::Integer(v) => *v,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "RomanNumeral".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if n == 0 {
+    return Ok(Expr::Identifier("N".to_string()));
+  }
+
+  let abs_n = n.unsigned_abs() as u64;
+
+  // For values >= 5000, Wolfram uses display forms with overscript bars.
+  // We support up to 4999 with plain Roman numerals.
+  if abs_n >= 5000 {
+    return Ok(Expr::FunctionCall {
+      name: "RomanNumeral".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  const VALUES: [(u64, &str); 13] = [
+    (1000, "M"),
+    (900, "CM"),
+    (500, "D"),
+    (400, "CD"),
+    (100, "C"),
+    (90, "XC"),
+    (50, "L"),
+    (40, "XL"),
+    (10, "X"),
+    (9, "IX"),
+    (5, "V"),
+    (4, "IV"),
+    (1, "I"),
+  ];
+
+  let mut result = String::new();
+  let mut remaining = abs_n;
+  for &(value, numeral) in &VALUES {
+    while remaining >= value {
+      result.push_str(numeral);
+      remaining -= value;
+    }
+  }
+
+  Ok(Expr::Identifier(result))
+}
