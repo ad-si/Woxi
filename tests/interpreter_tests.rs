@@ -2136,6 +2136,49 @@ mod interpreter_tests {
     fn replace_all_all_vars_replaced() {
       assert_eq!(interpret("x + y /. {x -> 10, y -> 20}").unwrap(), "30");
     }
+
+    #[test]
+    fn replace_all_list_of_rules_simultaneous() {
+      // Rules should be applied simultaneously, not sequentially
+      // 2->1 and 1->0 should NOT chain (2 becomes 1, not 0)
+      assert_eq!(
+        interpret("{1,1,2,2,2,2} /. {2 -> 1, 1 -> 0}").unwrap(),
+        "{0, 0, 1, 1, 1, 1}"
+      );
+    }
+
+    #[test]
+    fn replace_all_list_of_rules_first_match_wins() {
+      // x->y should match, then y->z should NOT apply to the result
+      assert_eq!(interpret("x /. {x -> y, y -> z}").unwrap(), "y");
+    }
+
+    #[test]
+    fn replace_all_list_of_rules_no_match() {
+      // No rule matches, original expression returned
+      assert_eq!(
+        interpret("{3, 4, 5} /. {1 -> a, 2 -> b}").unwrap(),
+        "{3, 4, 5}"
+      );
+    }
+
+    #[test]
+    fn replace_all_list_of_rules_partial_match() {
+      // Only some elements match
+      assert_eq!(
+        interpret("{a, b, c} /. {a -> x, b -> y}").unwrap(),
+        "{x, y, c}"
+      );
+    }
+
+    #[test]
+    fn replace_all_list_of_rules_swap() {
+      // Swap a and b simultaneously
+      assert_eq!(
+        interpret("{a, b, a, b} /. {a -> b, b -> a}").unwrap(),
+        "{b, a, b, a}"
+      );
+    }
   }
 
   mod compound_assignment {
