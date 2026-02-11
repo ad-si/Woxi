@@ -17,4 +17,4 @@
 - [Resources](resources.md)
 - [Related](related.md)
 - [Playground](playground/index.html)
-- [JupyterLite](jupyterlite/index.html)
+- [JupyterLite](jupyterlite-showcase.html)

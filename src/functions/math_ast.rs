@@ -1599,6 +1599,122 @@ fn nominal_bits(precision: usize) -> usize {
   bits.max(128)
 }
 
+/// Convert a BigFloat to a decimal string using num-bigint for the base
+/// conversion, avoiding astro-float's `format()` which panics on wasm32.
+fn bigfloat_to_string(
+  bf: &astro_float::BigFloat,
+) -> Result<String, InterpreterError> {
+  use num_bigint::BigUint;
+  use num_traits::Zero;
+
+  // Extract raw parts: mantissa words, significant bits, sign, exponent
+  let (words, sig_bits, sign, exponent, _inexact) =
+    bf.as_raw_parts().ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "N: cannot format NaN or Inf".into(),
+      )
+    })?;
+
+  if sig_bits == 0 || words.iter().all(|&w| w == 0) {
+    return Ok("0.".to_string());
+  }
+
+  // Build a BigUint from the mantissa words (little-endian u64 words).
+  let mantissa = BigUint::from_bytes_le(
+    &words
+      .iter()
+      .flat_map(|w| w.to_le_bytes())
+      .collect::<Vec<u8>>(),
+  );
+
+  // The value is: sign * mantissa * 2^(exponent - mantissa_bit_length)
+  // where mantissa_bit_length = words.len() * 64.
+  let mantissa_bits = words.len() * 64;
+  let shift = exponent as i64 - mantissa_bits as i64;
+
+  // Compute target digits from the actual mantissa size to preserve
+  // all available precision from the BigFloat.
+  let target_digits =
+    (mantissa_bits as f64 / std::f64::consts::LOG2_10).ceil() as usize + 2;
+
+  // Strategy: compute mantissa * 10^target_digits * 2^shift, then divide
+  // by 10^target_digits later to place the decimal point.
+  //
+  // If shift >= 0: integer_part = mantissa << shift
+  // If shift < 0: we need to compute mantissa * 10^target_digits >> (-shift)
+  //   to get target_digits of fractional precision.
+
+  let (int_digits, decimal_exp) = if shift >= 0 {
+    // Value = mantissa * 2^shift (an integer, possibly very large)
+    let int_val = &mantissa << (shift as u64);
+    let s = int_val.to_string();
+    let len = s.len();
+    // decimal_exp = number of digits in integer part
+    (s, len as i64)
+  } else {
+    // Value = mantissa / 2^(-shift)
+    // Multiply mantissa by 10^target_digits first to preserve fractional digits
+    let neg_shift = (-shift) as u64;
+    let scale = BigUint::from(10u32).pow(target_digits as u32);
+    let scaled = &mantissa * &scale;
+
+    // Now divide by 2^(-shift)
+    let result = &scaled >> neg_shift;
+
+    if result.is_zero() {
+      return Ok("0.".to_string());
+    }
+
+    let s = result.to_string();
+    // The decimal point should be placed target_digits from the right
+    let decimal_exp = s.len() as i64 - target_digits as i64;
+    (s, decimal_exp)
+  };
+
+  // Build the decimal string with the decimal point
+  let is_negative = sign.is_negative();
+  let prefix = if is_negative { "-" } else { "" };
+
+  let digits = int_digits.as_bytes();
+
+  if decimal_exp <= 0 {
+    // Number like 0.000xxxx
+    let zeros = (-decimal_exp) as usize;
+    let trimmed = int_digits.trim_end_matches('0');
+    if trimmed.is_empty() {
+      Ok(format!("{}0.", prefix))
+    } else {
+      let frac: String = format!("{}{}", "0".repeat(zeros), trimmed);
+      let frac = frac.trim_end_matches('0');
+      if frac.is_empty() {
+        Ok(format!("{}0.", prefix))
+      } else {
+        Ok(format!("{}0.{}", prefix, frac))
+      }
+    }
+  } else {
+    let dp = decimal_exp as usize;
+    if dp >= digits.len() {
+      // All digits are in the integer part
+      let padded = format!(
+        "{}{}",
+        int_digits,
+        "0".repeat(dp - digits.len())
+      );
+      Ok(format!("{}{}.", prefix, padded))
+    } else {
+      // Some digits before decimal, some after
+      let int_part = &int_digits[..dp];
+      let frac_part = int_digits[dp..].trim_end_matches('0');
+      if frac_part.is_empty() {
+        Ok(format!("{}{}.", prefix, int_part))
+      } else {
+        Ok(format!("{}{}.{}", prefix, int_part, frac_part))
+      }
+    }
+  }
+}
+
 /// N[expr, precision] — arbitrary-precision numeric evaluation using BigFloat
 fn n_eval_arbitrary(
   expr: &Expr,
@@ -1613,7 +1729,7 @@ fn n_eval_arbitrary(
     return Ok(Expr::List(results?));
   }
 
-  use astro_float::{Consts, Radix, RoundingMode};
+  use astro_float::{Consts, RoundingMode};
 
   let mut cc = Consts::new().map_err(|e| {
     InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
@@ -1626,74 +1742,9 @@ fn n_eval_arbitrary(
   let bits = nominal_bits(precision);
   let result = expr_to_bigfloat(expr, bits, rm, &mut cc)?;
 
-  let formatted = result.format(Radix::Dec, rm, &mut cc).map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat format error: {}", e))
-  })?;
-
-  // Convert scientific notation to decimal and trim trailing zeros.
-  let decimal = bigfloat_to_decimal(&formatted);
+  let decimal = bigfloat_to_string(&result)?;
 
   Ok(Expr::BigFloat(decimal, precision))
-}
-
-/// Convert astro-float's scientific notation output (e.g., "3.14159e+0")
-/// to Wolfram-style decimal notation (e.g., "3.14159").
-fn bigfloat_to_decimal(s: &str) -> String {
-  let is_negative = s.starts_with('-');
-  let s = if is_negative { &s[1..] } else { s };
-
-  // Parse scientific notation: "d.dddddddddde+NNN" or "d.dddddddddde-NNN"
-  let (mantissa, exponent) = if let Some(e_pos) = s.find('e') {
-    let exp: i64 = s[e_pos + 1..].parse().unwrap_or(0);
-    (&s[..e_pos], exp)
-  } else {
-    (s, 0i64)
-  };
-
-  // Extract digits from mantissa (removing the decimal point)
-  let dot_pos = mantissa.find('.').unwrap_or(mantissa.len());
-  let digits: String =
-    mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
-
-  if digits.is_empty() {
-    return "0.".to_string();
-  }
-
-  // The first digit is at position 10^exponent.
-  // dot_pos in the mantissa tells us where the decimal point was.
-  // In scientific notation "d.dddd e+N", the actual decimal position
-  // is after (1 + exponent) digits from the start.
-  let decimal_position = dot_pos as i64 + exponent;
-
-  let prefix = if is_negative { "-" } else { "" };
-
-  if decimal_position <= 0 {
-    // Number like 0.000xxxx
-    let zeros = (-decimal_position) as usize;
-    let trimmed = digits.trim_end_matches('0');
-    if trimmed.is_empty() {
-      format!("{}0.", prefix)
-    } else {
-      format!("{}0.{}{}", prefix, "0".repeat(zeros), trimmed)
-    }
-  } else {
-    let dp = decimal_position as usize;
-    if dp >= digits.len() {
-      // All digits are in the integer part (e.g., "100.")
-      // Pad with zeros to reach the decimal position
-      let padded = format!("{}{}", digits, "0".repeat(dp - digits.len()));
-      format!("{}{}.", prefix, padded)
-    } else {
-      // Some digits before decimal, some after
-      let int_part = &digits[..dp];
-      let frac_part = digits[dp..].trim_end_matches('0');
-      if frac_part.is_empty() {
-        format!("{}{}.", prefix, int_part)
-      } else {
-        format!("{}{}.{}", prefix, int_part, frac_part)
-      }
-    }
-  }
 }
 
 /// Recursively convert an Expr to a BigFloat with the given precision.
