@@ -18,6 +18,13 @@ pub fn evaluate(input: &str) -> String {
   }
 }
 
+/// Return the captured SVG graphics from the last `evaluate()` call, if any.
+/// Returns an empty string when there is no graphics output.
+#[wasm_bindgen]
+pub fn get_graphics() -> String {
+  crate::get_captured_graphics().unwrap_or_default()
+}
+
 /// Clear all interpreter state (variables and function definitions).
 #[wasm_bindgen]
 pub fn clear() {
