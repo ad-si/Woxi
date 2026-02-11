@@ -1275,11 +1275,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
     }
     Expr::Identifier(s) => s.clone(),
     Expr::Slot(n) => {
-      if *n == 1 {
-        "#".to_string()
-      } else {
-        format!("#{}", n)
-      }
+      format!("#{}", n)
     }
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(expr_to_string).collect();
