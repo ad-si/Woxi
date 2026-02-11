@@ -1330,6 +1330,22 @@ pub fn expr_to_string(expr: &Expr) -> String {
       }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
+        // Handle Times[Rational[1, d], expr] as "expr/d"
+        // Handle Times[Rational[-1, d], expr] as "-expr/d"
+        // Handle Times[Rational[1, d], expr] as "expr/d" (Wolfram convention)
+        if args.len() == 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
+          && let Expr::Integer(d) = &rargs[1]
+        {
+          let inner = expr_to_string(&args[1]);
+          return format!("{}/{}", inner, d);
+        }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
           let rest = args[1..]
@@ -1560,6 +1576,23 @@ pub fn expr_to_string(expr: &Expr) -> String {
           let inner_str = expr_to_string(&inner_div);
           return format!("-({})", inner_str);
         }
+      }
+
+      // Special case: BinaryOp Times with Rational[1, d] or Rational[-1, d]
+      // Rational[1, d] * expr → "expr/d", Rational[-1, d] * expr → "-expr/d"
+      if matches!(op, BinaryOperator::Times)
+        && let Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } = left.as_ref()
+        && rname == "Rational"
+        && rargs.len() == 2
+        && let (Expr::Integer(num), Expr::Integer(den)) = (&rargs[0], &rargs[1])
+        && *num == 1
+        && *den > 0
+      {
+        let inner = expr_to_string(right);
+        return format!("{}/{}", inner, den);
       }
 
       // Special case: Times[-1, expr] should display as -expr
