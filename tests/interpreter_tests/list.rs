@@ -1,0 +1,1024 @@
+use super::*;
+
+mod list_threading {
+  use super::*;
+
+  #[test]
+  fn list_plus_scalar() {
+    assert_eq!(interpret("{1, 2, 3} + 10").unwrap(), "{11, 12, 13}");
+  }
+
+  #[test]
+  fn scalar_plus_list() {
+    assert_eq!(interpret("10 + {1, 2, 3}").unwrap(), "{11, 12, 13}");
+  }
+
+  #[test]
+  fn list_plus_list() {
+    assert_eq!(
+      interpret("{1, 2, 3} + {10, 20, 30}").unwrap(),
+      "{11, 22, 33}"
+    );
+  }
+
+  #[test]
+  fn list_times_scalar() {
+    assert_eq!(interpret("{1, 2, 3} * 2").unwrap(), "{2, 4, 6}");
+  }
+
+  #[test]
+  fn list_power_scalar() {
+    assert_eq!(interpret("{1, 2, 3}^2").unwrap(), "{1, 4, 9}");
+  }
+}
+
+mod table_with_list_iterator {
+  use super::*;
+
+  #[test]
+  fn table_iterate_over_list() {
+    // Table[expr, {x, {a, b, c}}] iterates x over the list elements
+    assert_eq!(
+      interpret("Table[x^2, {x, {1, 2, 3}}]").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
+
+  #[test]
+  fn table_iterate_over_nested_list() {
+    // Iterate over list of pairs
+    assert_eq!(
+      interpret("Table[First[pair], {pair, {{1, 2}, {3, 4}, {5, 6}}}]")
+        .unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn table_iterate_over_strings() {
+    assert_eq!(
+      interpret("Table[StringLength[s], {s, {\"a\", \"bb\", \"ccc\"}}]")
+        .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}
+
+mod table_with_step {
+  use super::*;
+
+  #[test]
+  fn table_positive_step() {
+    assert_eq!(
+      interpret("Table[i, {i, 1, 10, 2}]").unwrap(),
+      "{1, 3, 5, 7, 9}"
+    );
+  }
+
+  #[test]
+  fn table_negative_step() {
+    assert_eq!(
+      interpret("Table[i, {i, 10, 1, -2}]").unwrap(),
+      "{10, 8, 6, 4, 2}"
+    );
+  }
+
+  #[test]
+  fn table_step_of_three() {
+    assert_eq!(interpret("Table[i, {i, 0, 9, 3}]").unwrap(), "{0, 3, 6, 9}");
+  }
+}
+
+mod union_sorting {
+  use super::*;
+
+  #[test]
+  fn union_sorts_elements() {
+    assert_eq!(interpret("Union[{3, 1, 2}]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn union_removes_duplicates_and_sorts() {
+    assert_eq!(interpret("Union[{3, 1, 2, 1, 3}]").unwrap(), "{1, 2, 3}");
+  }
+}
+
+mod subsequences {
+  use super::*;
+
+  #[test]
+  fn subsequences_all() {
+    assert_eq!(
+      interpret("Subsequences[{a, b, c}]").unwrap(),
+      "{{}, {a}, {b}, {c}, {a, b}, {b, c}, {a, b, c}}"
+    );
+  }
+
+  #[test]
+  fn subsequences_fixed_length() {
+    assert_eq!(
+      interpret("Subsequences[{a, b, c}, {2}]").unwrap(),
+      "{{a, b}, {b, c}}"
+    );
+  }
+
+  #[test]
+  fn subsequences_length_range() {
+    assert_eq!(
+      interpret("Subsequences[{a, b, c, d}, {2, 3}]").unwrap(),
+      "{{a, b}, {b, c}, {c, d}, {a, b, c}, {b, c, d}}"
+    );
+  }
+
+  #[test]
+  fn subsequences_empty() {
+    assert_eq!(interpret("Subsequences[{}]").unwrap(), "{{}}");
+  }
+
+  #[test]
+  fn subsequences_zero_length() {
+    assert_eq!(interpret("Subsequences[{a, b}, {0, 0}]").unwrap(), "{{}}");
+  }
+}
+
+mod tuples {
+  use super::*;
+
+  #[test]
+  fn pairs() {
+    assert_eq!(
+      interpret("Tuples[{a, b}, 2]").unwrap(),
+      "{{a, a}, {a, b}, {b, a}, {b, b}}"
+    );
+  }
+
+  #[test]
+  fn triples() {
+    assert_eq!(
+      interpret("Tuples[{0, 1}, 3]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1}, {1, 0, 0}, {1, 0, 1}, {1, 1, 0}, {1, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn singles() {
+    assert_eq!(
+      interpret("Tuples[{a, b, c}, 1]").unwrap(),
+      "{{a}, {b}, {c}}"
+    );
+  }
+
+  #[test]
+  fn empty_tuple() {
+    assert_eq!(interpret("Tuples[{a, b}, 0]").unwrap(), "{{}}");
+  }
+}
+
+mod ordering {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("Ordering[{3, 1, 2}]").unwrap(), "{2, 3, 1}");
+  }
+
+  #[test]
+  fn with_limit() {
+    assert_eq!(interpret("Ordering[{3, 1, 2}, 2]").unwrap(), "{2, 3}");
+  }
+
+  #[test]
+  fn already_sorted() {
+    assert_eq!(interpret("Ordering[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn reverse_sorted() {
+    assert_eq!(interpret("Ordering[{3, 2, 1}]").unwrap(), "{3, 2, 1}");
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("Ordering[{5}]").unwrap(), "{1}");
+  }
+
+  #[test]
+  fn strings() {
+    assert_eq!(interpret("Ordering[{c, a, b}]").unwrap(), "{2, 3, 1}");
+  }
+}
+
+mod delete {
+  use super::*;
+
+  #[test]
+  fn delete_positive() {
+    assert_eq!(interpret("Delete[{a, b, c, d}, 2]").unwrap(), "{a, c, d}");
+  }
+
+  #[test]
+  fn delete_negative() {
+    assert_eq!(interpret("Delete[{a, b, c, d}, -1]").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn delete_multiple() {
+    assert_eq!(
+      interpret("Delete[{a, b, c, d, e}, {{1}, {3}}]").unwrap(),
+      "{b, d, e}"
+    );
+  }
+}
+
+mod dimensions {
+  use super::*;
+
+  #[test]
+  fn dimensions_2d() {
+    assert_eq!(
+      interpret("Dimensions[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn dimensions_1d() {
+    assert_eq!(interpret("Dimensions[{1, 2, 3}]").unwrap(), "{3}");
+  }
+
+  #[test]
+  fn dimensions_3d() {
+    assert_eq!(
+      interpret("Dimensions[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn dimensions_ragged() {
+    assert_eq!(interpret("Dimensions[{{1, 2}, {3}}]").unwrap(), "{2}");
+  }
+}
+
+mod nothing {
+  use super::*;
+
+  #[test]
+  fn filters_from_list() {
+    assert_eq!(interpret("{1, Nothing, 3}").unwrap(), "{1, 3}");
+  }
+
+  #[test]
+  fn multiple_nothing() {
+    assert_eq!(
+      interpret("{Nothing, 1, Nothing, 2, Nothing}").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn all_nothing() {
+    assert_eq!(interpret("{Nothing, Nothing}").unwrap(), "{}");
+  }
+
+  #[test]
+  fn nothing_standalone() {
+    assert_eq!(interpret("Nothing").unwrap(), "Nothing");
+  }
+}
+
+mod list_function {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("List[1, 2, 3]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn empty() {
+    assert_eq!(interpret("List[]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn nested() {
+    assert_eq!(interpret("List[List[1, 2], 3]").unwrap(), "{{1, 2}, 3}");
+  }
+}
+
+mod minimal_by {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("MinimalBy[{-3, 1, 2, -1}, Abs]").unwrap(),
+      "{1, -1}"
+    );
+  }
+
+  #[test]
+  fn single_min() {
+    assert_eq!(
+      interpret("MinimalBy[{5, 3, 7, 1, 4}, Identity]").unwrap(),
+      "{1}"
+    );
+  }
+
+  #[test]
+  fn with_anonymous_function() {
+    assert_eq!(
+      interpret("MinimalBy[{10, 21, 32, 43}, Mod[#, 10] &]").unwrap(),
+      "{10}"
+    );
+  }
+}
+
+mod maximal_by {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("MaximalBy[{-3, 1, 2, -1}, Abs]").unwrap(), "{-3}");
+  }
+
+  #[test]
+  fn string_length() {
+    assert_eq!(
+      interpret(r#"MaximalBy[{"abc", "x", "ab"}, StringLength]"#).unwrap(),
+      "{abc}"
+    );
+  }
+
+  #[test]
+  fn single_max() {
+    assert_eq!(
+      interpret("MaximalBy[{5, 3, 7, 1, 4}, Identity]").unwrap(),
+      "{7}"
+    );
+  }
+}
+
+mod map_at {
+  use super::*;
+
+  #[test]
+  fn single_position() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d}, 2]").unwrap(),
+      "{a, f[b], c, d}"
+    );
+  }
+
+  #[test]
+  fn negative_position() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d}, -1]").unwrap(),
+      "{a, b, c, f[d]}"
+    );
+  }
+
+  #[test]
+  fn multiple_positions() {
+    // Wolfram uses {{1}, {3}} for multiple positions
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c, d}, {{1}, {3}}]").unwrap(),
+      "{f[a], b, f[c], d}"
+    );
+  }
+
+  #[test]
+  fn first_and_last() {
+    assert_eq!(
+      interpret("MapAt[f, {a, b, c}, {{1}, {-1}}]").unwrap(),
+      "{f[a], b, f[c]}"
+    );
+  }
+
+  #[test]
+  fn with_anonymous_function() {
+    assert_eq!(
+      interpret("MapAt[# + 1 &, {10, 20, 30}, 2]").unwrap(),
+      "{10, 21, 30}"
+    );
+  }
+}
+
+mod sort_by {
+  use super::*;
+
+  #[test]
+  fn sort_by_abs() {
+    assert_eq!(
+      interpret("SortBy[{-3, 1, -2, 4}, Abs]").unwrap(),
+      "{1, -2, -3, 4}"
+    );
+  }
+
+  #[test]
+  fn sort_by_length() {
+    assert_eq!(
+      interpret(r#"SortBy[{{1, 2, 3}, {1}, {1, 2}}, Length]"#).unwrap(),
+      "{{1}, {1, 2}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn sort_by_anonymous_function() {
+    assert_eq!(
+      interpret("SortBy[{5, 1, 3, 2, 4}, (0 - #) &]").unwrap(),
+      "{5, 4, 3, 2, 1}"
+    );
+  }
+}
+
+mod complement {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("Complement[{1, 2, 3, 4}, {2, 4}]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn no_overlap() {
+    assert_eq!(
+      interpret("Complement[{1, 2, 3}, {4, 5}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn complete_overlap() {
+    assert_eq!(interpret("Complement[{1, 2}, {1, 2}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn multiple_exclusion_lists() {
+    assert_eq!(
+      interpret("Complement[{1, 2, 3, 4, 5}, {2}, {4}]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+}
+
+mod count {
+  use super::*;
+
+  #[test]
+  fn count_integer() {
+    assert_eq!(interpret("Count[{1, 2, 3, 2, 1}, 2]").unwrap(), "2");
+  }
+
+  #[test]
+  fn count_zero_matches() {
+    assert_eq!(interpret("Count[{1, 2, 3}, 4]").unwrap(), "0");
+  }
+
+  #[test]
+  fn count_symbol() {
+    assert_eq!(interpret("Count[{a, b, a, c, a}, a]").unwrap(), "3");
+  }
+}
+
+mod counts {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("Counts[{a, b, a, c, b, a}]").unwrap(),
+      "<|a -> 3, b -> 2, c -> 1|>"
+    );
+  }
+
+  #[test]
+  fn integers() {
+    assert_eq!(
+      interpret("Counts[{1, 2, 1, 3, 2, 1}]").unwrap(),
+      "<|1 -> 3, 2 -> 2, 3 -> 1|>"
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("Counts[{x}]").unwrap(), "<|x -> 1|>");
+  }
+
+  #[test]
+  fn all_same() {
+    assert_eq!(interpret("Counts[{a, a, a}]").unwrap(), "<|a -> 3|>");
+  }
+}
+
+mod clip {
+  use super::*;
+
+  #[test]
+  fn clip_above() {
+    assert_eq!(interpret("Clip[15, {0, 10}]").unwrap(), "10");
+  }
+
+  #[test]
+  fn clip_below() {
+    assert_eq!(interpret("Clip[-5, {0, 10}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn clip_within() {
+    assert_eq!(interpret("Clip[5, {0, 10}]").unwrap(), "5");
+  }
+
+  #[test]
+  fn clip_default() {
+    // Clip[x
+    assert_eq!(interpret("Clip[1.5]").unwrap(), "1");
+    assert_eq!(interpret("Clip[-0.5]").unwrap(), "-0.5");
+    assert_eq!(interpret("Clip[0.5]").unwrap(), "0.5");
+    assert_eq!(interpret("Clip[5]").unwrap(), "1");
+    assert_eq!(interpret("Clip[-5]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn clip_boundaries() {
+    assert_eq!(interpret("Clip[0, {0, 10}]").unwrap(), "0");
+    assert_eq!(interpret("Clip[10, {0, 10}]").unwrap(), "10");
+  }
+}
+
+mod random_choice {
+  use super::*;
+
+  #[test]
+  fn single_choice() {
+    let result = interpret("RandomChoice[{a, b, c}]").unwrap();
+    assert!(result == "a" || result == "b" || result == "c");
+  }
+
+  #[test]
+  fn multiple_choices() {
+    assert_eq!(
+      interpret("Length[RandomChoice[{1, 2, 3}, 10]]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn single_element_list() {
+    assert_eq!(interpret("RandomChoice[{x}]").unwrap(), "x");
+    assert_eq!(interpret("RandomChoice[{x}, 3]").unwrap(), "{x, x, x}");
+  }
+}
+
+mod random_sample {
+  use super::*;
+
+  #[test]
+  fn sample_count() {
+    assert_eq!(
+      interpret("Length[RandomSample[{1, 2, 3, 4, 5}, 3]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn full_permutation() {
+    assert_eq!(interpret("Length[RandomSample[{a, b, c}]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn sample_one() {
+    let result = interpret("RandomSample[{a, b, c}, 1]").unwrap();
+    assert!(result == "{a}" || result == "{b}" || result == "{c}");
+  }
+
+  #[test]
+  fn no_duplicates() {
+    // RandomSample should return distinct elements
+    assert_eq!(
+      interpret("Length[DeleteDuplicates[RandomSample[{1, 2, 3, 4, 5}, 5]]]")
+        .unwrap(),
+      "5"
+    );
+  }
+}
+
+mod part_extraction {
+  use super::*;
+
+  #[test]
+  fn nested_list_part_via_variable() {
+    // Test that Part extraction works correctly for nested lists stored in variables
+    assert_eq!(interpret("x = {{a, b}, {c, d}}; x[[1]]").unwrap(), "{a, b}");
+    assert_eq!(interpret("x = {{a, b}, {c, d}}; x[[2]]").unwrap(), "{c, d}");
+  }
+
+  #[test]
+  fn deeply_nested_list_part() {
+    assert_eq!(
+      interpret("x = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; x[[1]]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+}
+
+mod length_function {
+  use super::*;
+
+  #[test]
+  fn length_with_variable() {
+    // Test that Length works with lists stored in variables
+    assert_eq!(interpret("x = {1, 2, 3}; Length[x]").unwrap(), "3");
+    assert_eq!(interpret("x = {}; Length[x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn length_with_nested_list_variable() {
+    assert_eq!(
+      interpret("x = {{a, b}, {c, d}, {e, f}}; Length[x]").unwrap(),
+      "3"
+    );
+  }
+}
+
+mod part_out_of_bounds {
+  use super::*;
+
+  #[test]
+  fn part_returns_unevaluated_on_out_of_bounds() {
+    // {1, 2, 3}[[5]] should return unevaluated Part expression
+    let result = interpret("{1, 2, 3}[[5]]").unwrap();
+    assert_eq!(result, "{1, 2, 3}[[5]]");
+  }
+
+  #[test]
+  fn part_negative_index_out_of_bounds() {
+    let result = interpret("{1, 2}[[-5]]").unwrap();
+    assert_eq!(result, "{1, 2}[[-5]]");
+  }
+}
+
+mod take_out_of_bounds {
+  use super::*;
+
+  #[test]
+  fn take_returns_unevaluated_on_out_of_bounds() {
+    // Take[{1, 2, 3}, 5] should return unevaluated
+    let result = interpret("Take[{1, 2, 3}, 5]").unwrap();
+    assert_eq!(result, "Take[{1, 2, 3}, 5]");
+  }
+
+  #[test]
+  fn take_negative_out_of_bounds() {
+    let result = interpret("Take[{1, 2}, -5]").unwrap();
+    assert_eq!(result, "Take[{1, 2}, -5]");
+  }
+}
+
+mod constant_array {
+  use super::*;
+
+  #[test]
+  fn simple_integer() {
+    assert_eq!(interpret("ConstantArray[0, 3]").unwrap(), "{0, 0, 0}");
+  }
+
+  #[test]
+  fn symbol() {
+    assert_eq!(interpret("ConstantArray[x, 4]").unwrap(), "{x, x, x, x}");
+  }
+
+  #[test]
+  fn nested_dimensions() {
+    assert_eq!(
+      interpret("ConstantArray[0, {2, 3}]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn zero_length() {
+    assert_eq!(interpret("ConstantArray[1, 0]").unwrap(), "{}");
+  }
+}
+
+mod unitize {
+  use super::*;
+
+  #[test]
+  fn unitize_list() {
+    assert_eq!(
+      interpret("Unitize[{0, 1, -3, 0, 5}]").unwrap(),
+      "{0, 1, 1, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn unitize_zero() {
+    assert_eq!(interpret("Unitize[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn unitize_nonzero() {
+    assert_eq!(interpret("Unitize[42]").unwrap(), "1");
+  }
+}
+
+mod ramp {
+  use super::*;
+
+  #[test]
+  fn ramp_list() {
+    assert_eq!(
+      interpret("Ramp[{-2, -1, 0, 1, 2}]").unwrap(),
+      "{0, 0, 0, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn ramp_negative() {
+    assert_eq!(interpret("Ramp[-5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn ramp_positive() {
+    assert_eq!(interpret("Ramp[3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn ramp_negative_real_returns_real_zero() {
+    assert_eq!(interpret("Ramp[-0.1]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn ramp_positive_real() {
+    assert_eq!(interpret("Ramp[3.2]").unwrap(), "3.2");
+  }
+
+  #[test]
+  fn ramp_map_with_reals() {
+    assert_eq!(
+      interpret("Map[Ramp, {-5, 3.2, -0.1, 7}]").unwrap(),
+      "{0, 3.2, 0., 7}"
+    );
+  }
+}
+
+mod kronecker_delta {
+  use super::*;
+
+  #[test]
+  fn equal() {
+    assert_eq!(interpret("KroneckerDelta[1, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn unequal() {
+    assert_eq!(interpret("KroneckerDelta[1, 2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn three_equal() {
+    assert_eq!(interpret("KroneckerDelta[3, 3, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn three_unequal() {
+    assert_eq!(interpret("KroneckerDelta[1, 2, 1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn no_args() {
+    assert_eq!(interpret("KroneckerDelta[]").unwrap(), "1");
+  }
+
+  #[test]
+  fn single_zero() {
+    assert_eq!(interpret("KroneckerDelta[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn single_nonzero() {
+    assert_eq!(interpret("KroneckerDelta[3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_single() {
+    assert_eq!(interpret("KroneckerDelta[x]").unwrap(), "KroneckerDelta[x]");
+  }
+
+  #[test]
+  fn symbolic_pair() {
+    assert_eq!(
+      interpret("KroneckerDelta[i, j]").unwrap(),
+      "KroneckerDelta[i, j]"
+    );
+  }
+
+  #[test]
+  fn table_identity_matrix() {
+    assert_eq!(
+      interpret("Table[KroneckerDelta[i, j], {i, 3}, {j, 3}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+}
+
+mod unit_step {
+  use super::*;
+
+  #[test]
+  fn positive() {
+    assert_eq!(interpret("UnitStep[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("UnitStep[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("UnitStep[-1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn list() {
+    assert_eq!(interpret("UnitStep[{-1, 0, 1}]").unwrap(), "{0, 1, 1}");
+  }
+
+  #[test]
+  fn multi_arg_all_positive() {
+    assert_eq!(interpret("UnitStep[1, 2, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn multi_arg_with_negative() {
+    assert_eq!(interpret("UnitStep[1, 2, -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn multi_arg_all_zero() {
+    assert_eq!(interpret("UnitStep[0, 0, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn list_mixed() {
+    assert_eq!(
+      interpret("UnitStep[{-3, -1, 0, 1, 3}]").unwrap(),
+      "{0, 0, 1, 1, 1}"
+    );
+  }
+}
+
+mod nest_while_list {
+  use super::*;
+
+  #[test]
+  fn basic_increment() {
+    assert_eq!(
+      interpret("NestWhileList[# + 1 &, 0, # < 5 &]").unwrap(),
+      "{0, 1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn halving() {
+    assert_eq!(
+      interpret("NestWhileList[# / 2 &, 64, EvenQ]").unwrap(),
+      "{64, 32, 16, 8, 4, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn collatz_sequence() {
+    assert_eq!(
+      interpret("NestWhileList[If[EvenQ[#], #/2, 3 # + 1] &, 27, # > 1 &]")
+        .unwrap(),
+      "{27, 82, 41, 124, 62, 31, 94, 47, 142, 71, 214, 107, 322, 161, 484, 242, 121, 364, 182, 91, 274, 137, 412, 206, 103, 310, 155, 466, 233, 700, 350, 175, 526, 263, 790, 395, 1186, 593, 1780, 890, 445, 1336, 668, 334, 167, 502, 251, 754, 377, 1132, 566, 283, 850, 425, 1276, 638, 319, 958, 479, 1438, 719, 2158, 1079, 3238, 1619, 4858, 2429, 7288, 3644, 1822, 911, 2734, 1367, 4102, 2051, 6154, 3077, 9232, 4616, 2308, 1154, 577, 1732, 866, 433, 1300, 650, 325, 976, 488, 244, 122, 61, 184, 92, 46, 23, 70, 35, 106, 53, 160, 80, 40, 20, 10, 5, 16, 8, 4, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn collatz_short() {
+    assert_eq!(
+      interpret("NestWhileList[If[EvenQ[#], #/2, 3 # + 1] &, 6, # > 1 &]")
+        .unwrap(),
+      "{6, 3, 10, 5, 16, 8, 4, 2, 1}"
+    );
+  }
+}
+
+mod reap_sow {
+  use super::*;
+
+  #[test]
+  fn reap_sow_basic() {
+    assert_eq!(
+      interpret("Reap[Sow[1]; Sow[2]; 42]").unwrap(),
+      "{42, {{1, 2}}}"
+    );
+  }
+
+  #[test]
+  fn reap_without_sow() {
+    assert_eq!(interpret("Reap[42]").unwrap(), "{42, {}}");
+  }
+
+  #[test]
+  fn sow_returns_value() {
+    assert_eq!(interpret("Sow[7]").unwrap(), "7");
+  }
+
+  #[test]
+  fn sow_with_tag() {
+    assert_eq!(
+      interpret(r#"Reap[Sow[1, "a"]; Sow[2, "b"]; Sow[3, "a"]]"#).unwrap(),
+      "{3, {{1, 3}, {2}}}"
+    );
+  }
+
+  #[test]
+  fn reap_with_single_tag_pattern() {
+    assert_eq!(
+      interpret(r#"Reap[Sow[1, "a"]; Sow[2, "b"]; Sow[3, "a"], "a"]"#).unwrap(),
+      "{3, {{1, 3}}}"
+    );
+  }
+
+  #[test]
+  fn reap_with_tag_list() {
+    assert_eq!(
+      interpret(r#"Reap[Sow[1, "a"]; Sow[2, "b"]; Sow[3, "a"], {"a", "b"}]"#)
+        .unwrap(),
+      "{3, {{{1, 3}}, {{2}}}}"
+    );
+  }
+
+  #[test]
+  fn reap_tagged_with_do_loop() {
+    assert_eq!(
+        interpret(r#"Reap[Do[If[EvenQ[i], Sow[i, "even"], Sow[i, "odd"]], {i, 6}], {"even", "odd"}]"#).unwrap(),
+        "{Null, {{{2, 4, 6}}, {{1, 3, 5}}}}"
+      );
+  }
+
+  #[test]
+  fn reap_mixed_tagged_untagged() {
+    assert_eq!(
+      interpret(r#"Reap[Sow[1]; Sow[2, "a"]; Sow[3]]"#).unwrap(),
+      "{3, {{1, 3}, {2}}}"
+    );
+  }
+
+  #[test]
+  fn reap_with_none_tag() {
+    assert_eq!(
+      interpret("Reap[Sow[1]; Sow[2]; Sow[3], None]").unwrap(),
+      "{3, {{1, 2, 3}}}"
+    );
+  }
+
+  #[test]
+  fn reap_tag_list_with_no_matches() {
+    assert_eq!(
+      interpret(r#"Reap[Sow[1, "a"], {"b"}]"#).unwrap(),
+      "{1, {{}}}"
+    );
+  }
+}
+
+mod ordered_q {
+  use super::*;
+
+  #[test]
+  fn ordered_sorted() {
+    assert_eq!(interpret("OrderedQ[{1, 2, 3}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn ordered_unsorted() {
+    assert_eq!(interpret("OrderedQ[{3, 1, 2}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn ordered_equal() {
+    assert_eq!(interpret("OrderedQ[{1, 1, 2}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn ordered_strings() {
+    assert_eq!(
+      interpret("OrderedQ[{\"a\", \"b\", \"c\"}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn ordered_empty() {
+    assert_eq!(interpret("OrderedQ[{}]").unwrap(), "True");
+  }
+}

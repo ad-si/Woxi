@@ -1,0 +1,567 @@
+use super::*;
+
+mod user_defined_functions {
+  use super::*;
+
+  #[test]
+  fn function_with_multiple_calls() {
+    // Regression test: ensure function calls with different arguments
+    // return different results (not cached incorrectly)
+    assert_eq!(
+      interpret("f[a_, b_, c_] := {a, b, c}; f[1, 2, 3]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn function_calls_are_not_incorrectly_cached() {
+    // This test ensures that consecutive calls to a user-defined function
+    // with different arguments return correct results
+    assert_eq!(
+      interpret(
+        "g[a_, b_, c_] := a + b + c; x = g[1, 2, 3]; y = g[4, 5, 6]; {x, y}"
+      )
+      .unwrap(),
+      "{6, 15}"
+    );
+  }
+
+  #[test]
+  fn map_apply_with_user_function() {
+    // Test @@@ with user-defined function
+    assert_eq!(
+      interpret("f[a_, b_, c_] := a + b + c; f @@@ {{1, 2, 3}, {4, 5, 6}}")
+        .unwrap(),
+      "{6, 15}"
+    );
+  }
+
+  #[test]
+  fn user_function_with_if_lazy_evaluation() {
+    // Test that If only evaluates the selected branch in user-defined functions
+    // If both branches were evaluated, First[{}] would error
+    assert_eq!(
+      interpret("f[x_] := If[x > 0, 1, First[{}]]; f[5]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("f[x_] := If[x > 0, First[{}], 2]; f[-5]").unwrap(),
+      "2"
+    );
+  }
+}
+
+mod conditional_definitions {
+  use super::*;
+
+  #[test]
+  fn single_condition() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[n_ /; n > 0] := \"positive\"; f[n_] := \"non-positive\"; f[3]"
+      )
+      .unwrap(),
+      "positive"
+    );
+  }
+
+  #[test]
+  fn single_condition_fallback() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[n_ /; n > 0] := \"positive\"; f[n_] := \"non-positive\"; f[-1]"
+      )
+      .unwrap(),
+      "non-positive"
+    );
+  }
+
+  #[test]
+  fn multiple_conditions_fizzbuzz() {
+    // Regression: multiple SetDelayed definitions with conditions overwrote each other
+    clear_state();
+    assert_eq!(
+        interpret(r#"f[n_ /; Mod[n, 15] == 0] := "FizzBuzz"; f[n_ /; Mod[n, 3] == 0] := "Fizz"; f[n_ /; Mod[n, 5] == 0] := "Buzz"; f[n_] := n; f[3]"#).unwrap(),
+        "Fizz"
+      );
+    assert_eq!(interpret("f[5]").unwrap(), "Buzz");
+    assert_eq!(interpret("f[15]").unwrap(), "FizzBuzz");
+    assert_eq!(interpret("f[7]").unwrap(), "7");
+  }
+
+  #[test]
+  fn conditions_tried_in_order() {
+    // Definitions are tried in the order they were defined
+    clear_state();
+    assert_eq!(
+        interpret(r#"g[n_ /; n > 10] := "big"; g[n_ /; n > 0] := "small"; g[n_] := "zero or negative"; g[20]"#).unwrap(),
+        "big"
+      );
+    assert_eq!(interpret("g[5]").unwrap(), "small");
+    assert_eq!(interpret("g[0]").unwrap(), "zero or negative");
+  }
+}
+
+mod set_attributes {
+  use super::*;
+
+  #[test]
+  fn listable_threads_over_list() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Listable]; f[x_] := x * 2; f[{1, 2, 3}]")
+        .unwrap(),
+      "{2, 4, 6}"
+    );
+  }
+
+  #[test]
+  fn listable_with_conditions() {
+    clear_state();
+    assert_eq!(
+        interpret(r#"SetAttributes[f, Listable]; f[n_ /; Mod[n, 3] == 0] := "Fizz"; f[n_] := n; f[{1, 2, 3, 4, 5, 6}]"#).unwrap(),
+        r#"{1, 2, Fizz, 4, 5, Fizz}"#
+      );
+  }
+
+  #[test]
+  fn listable_single_value_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Listable]; f[x_] := x + 1; f[5]").unwrap(),
+      "6"
+    );
+  }
+}
+
+mod anonymous_function_call {
+  use super::*;
+
+  #[test]
+  fn identity_anonymous() {
+    // #&[1] should return 1
+    assert_eq!(interpret("#&[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn power_anonymous() {
+    // #^2&[{1, 2, 3}] should map squaring
+    assert_eq!(interpret("#^2 &[{1, 2, 3}]").unwrap(), "{1, 4, 9}");
+  }
+
+  #[test]
+  fn anonymous_with_addition() {
+    assert_eq!(interpret("#+10&[5]").unwrap(), "15");
+  }
+}
+
+mod function_name_substitution {
+  use super::*;
+
+  #[test]
+  fn pass_function_as_argument() {
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("g[f_] := f[]; g[Print[\"Hello\"] &]")
+        .unwrap()
+        .stdout,
+      "Hello\n"
+    );
+  }
+
+  #[test]
+  fn repeat_with_anonymous_function() {
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout(
+        "repeat[f_, n_] := Do[f[], {n}]; repeat[Print[\"hi\"] &, 3]"
+      )
+      .unwrap()
+      .stdout,
+      "hi\nhi\nhi\n"
+    );
+  }
+}
+
+mod set_delayed {
+  use super::*;
+
+  #[test]
+  fn list_pattern_destructuring() {
+    clear_state();
+    assert_eq!(
+      interpret("swap[{a_Integer, b_Integer}] := {b, a}; swap[{1, 2}]")
+        .unwrap(),
+      "{2, 1}"
+    );
+  }
+
+  #[test]
+  fn list_pattern_with_computation() {
+    clear_state();
+    assert_eq!(
+      interpret("f[{x_Integer, y_Integer}] := x + y; f[{3, 4}]").unwrap(),
+      "7"
+    );
+  }
+}
+
+mod down_values {
+  use super::*;
+
+  #[test]
+  fn basic_down_value() {
+    clear_state();
+    assert_eq!(interpret("f[0] = 42; f[0]").unwrap(), "42");
+  }
+
+  #[test]
+  fn multiple_down_values() {
+    clear_state();
+    assert_eq!(interpret("f[0] = 0; f[1] = 1; f[0]").unwrap(), "0");
+    assert_eq!(interpret("f[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn down_value_with_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g[0] = 0; g[1] = 1; g[n_Integer] := g[n - 1] + g[n - 2]; g[5]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn memoized_down_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h[0] = 0; h[1] = 1; h[n_Integer] := h[n] = h[n - 1] + h[n - 2]; h[10]"
+      )
+      .unwrap(),
+      "55"
+    );
+  }
+}
+
+mod pattern_matching {
+  use super::*;
+
+  mod blank_pattern {
+    use super::*;
+
+    #[test]
+    fn simple_blank_matches_any() {
+      // x_ matches any expression
+      assert_eq!(interpret("5 /. x_ :> 10").unwrap(), "10");
+      // Strings are displayed without quotes at top level (Wolfram behavior)
+      assert_eq!(interpret("\"hello\" /. x_ :> \"world\"").unwrap(), "world");
+    }
+
+    #[test]
+    fn blank_with_replacement_using_variable() {
+      // The matched value can be used in replacement
+      // Note: expressions in replacement need parentheses
+      assert_eq!(interpret("5 /. x_ :> (x + 1)").unwrap(), "6");
+      assert_eq!(interpret("3 /. n_ :> (n * 2)").unwrap(), "6");
+    }
+
+    #[test]
+    fn blank_on_list_elements() {
+      // Pattern applies to each element in a list
+      // Note: expressions in replacement need parentheses
+      assert_eq!(
+        interpret("{1, 2, 3} /. x_ :> (x + 10)").unwrap(),
+        "{11, 12, 13}"
+      );
+    }
+  }
+
+  mod conditional_pattern {
+    use super::*;
+
+    #[test]
+    fn condition_true_matches() {
+      assert_eq!(
+        interpret("6 /. x_ /; Mod[x, 2] == 0 :> \"even\"").unwrap(),
+        "even"
+      );
+    }
+
+    #[test]
+    fn condition_false_no_match() {
+      assert_eq!(
+        interpret("5 /. x_ /; Mod[x, 2] == 0 :> \"even\"").unwrap(),
+        "5"
+      );
+    }
+
+    #[test]
+    fn conditional_with_function_call() {
+      assert_eq!(
+        interpret("3 /. i_ /; Mod[i, 3] == 0 :> \"Fizz\"").unwrap(),
+        "Fizz"
+      );
+      assert_eq!(
+        interpret("5 /. i_ /; Mod[i, 5] == 0 :> \"Buzz\"").unwrap(),
+        "Buzz"
+      );
+    }
+
+    #[test]
+    fn conditional_on_list() {
+      assert_eq!(
+        interpret("{1, 2, 3, 4} /. x_ /; x > 2 :> 0").unwrap(),
+        "{1, 2, 0, 0}"
+      );
+    }
+  }
+
+  mod pattern_test {
+    use super::*;
+
+    #[test]
+    fn pattern_test_matches() {
+      assert_eq!(interpret("4 /. x_?EvenQ :> \"even\"").unwrap(), "even");
+    }
+
+    #[test]
+    fn pattern_test_no_match() {
+      assert_eq!(interpret("3 /. x_?EvenQ :> \"even\"").unwrap(), "3");
+    }
+
+    #[test]
+    fn pattern_test_on_list() {
+      assert_eq!(
+        interpret("{1, 2, 3, 4} /. x_?EvenQ :> 0").unwrap(),
+        "{1, 0, 3, 0}"
+      );
+    }
+
+    #[test]
+    fn pattern_test_with_oddq() {
+      assert_eq!(
+        interpret("{1, 2, 3, 4} /. x_?OddQ :> 0").unwrap(),
+        "{0, 2, 0, 4}"
+      );
+    }
+  }
+
+  mod multiple_rules {
+    use super::*;
+
+    #[test]
+    fn list_of_rules_applied_in_order() {
+      // First matching rule wins
+      // Note: strings inside lists still show quotes (only top-level strings are unquoted)
+      assert_eq!(
+        interpret(
+          "{1, 2, 3} /. {x_ /; x == 1 :> \"one\", x_ /; x == 2 :> \"two\"}"
+        )
+        .unwrap(),
+        "{one, two, 3}"
+      );
+    }
+
+    #[test]
+    fn fizzbuzz_style_rules() {
+      // Test the FizzBuzz pattern
+      assert_eq!(
+          interpret("15 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "FizzBuzz"
+        );
+      assert_eq!(
+          interpret("9 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "Fizz"
+        );
+      assert_eq!(
+          interpret("10 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "Buzz"
+        );
+      assert_eq!(
+          interpret("7 /. {i_ /; Mod[i, 15] == 0 :> \"FizzBuzz\", i_ /; Mod[i, 3] == 0 :> \"Fizz\", i_ /; Mod[i, 5] == 0 :> \"Buzz\"}").unwrap(),
+          "7"
+        );
+    }
+  }
+}
+
+mod paren_anonymous_function {
+  use super::*;
+
+  #[test]
+  fn paren_anonymous_with_comparison() {
+    // (# === "")& is an anonymous function testing for empty string
+    // Uses postfix @ operator since direct call syntax is not supported
+    assert_eq!(interpret("(# === \"\")& @ \"hello\"").unwrap(), "False");
+    assert_eq!(interpret("(# === \"\")& @ \"\"").unwrap(), "True");
+  }
+
+  #[test]
+  fn paren_anonymous_with_arithmetic() {
+    assert_eq!(interpret("(# + 1)& @ 5").unwrap(), "6");
+    assert_eq!(interpret("(# * 2 + 3)& @ 4").unwrap(), "11");
+  }
+
+  #[test]
+  fn paren_anonymous_in_map() {
+    assert_eq!(interpret("Map[(# + 1)&, {1, 2, 3}]").unwrap(), "{2, 3, 4}");
+  }
+
+  #[test]
+  fn paren_anonymous_with_if() {
+    assert_eq!(interpret("(If[# > 0, #, 0])& @ 5").unwrap(), "5");
+    assert_eq!(interpret("(If[# > 0, #, 0])& @ -3").unwrap(), "0");
+  }
+
+  #[test]
+  fn paren_anonymous_in_postfix() {
+    // If[# === "", i, #]& @ "hello" should return "hello" (strings displayed without quotes)
+    assert_eq!(
+      interpret("(If[# === \"\", \"empty\", #])& @ \"hello\"").unwrap(),
+      "hello"
+    );
+    assert_eq!(
+      interpret("(If[# === \"\", \"empty\", #])& @ \"\"").unwrap(),
+      "empty"
+    );
+  }
+
+  #[test]
+  fn paren_anonymous_with_compound_expression() {
+    // (expr1; expr2)& should create an anonymous function with CompoundExpression body
+    assert_eq!(
+      interpret("Reap[Nest[(Sow[#]; 3*# + 1) &, 7, 5]]").unwrap(),
+      "{1822, {{7, 22, 67, 202, 607}}}"
+    );
+  }
+
+  #[test]
+  fn paren_anonymous_direct_call() {
+    // (expr)&[args] should call the anonymous function directly
+    assert_eq!(interpret("(# + 1) &[5]").unwrap(), "6");
+    assert_eq!(interpret("(# * 2 + 3) &[4]").unwrap(), "11");
+    assert_eq!(interpret("(#1 + #2) &[3, 4]").unwrap(), "7");
+  }
+
+  #[test]
+  fn function_anonymous_direct_call() {
+    // If[...]&[args] should call the anonymous function directly
+    assert_eq!(interpret("If[# > 0, #, 0] &[5]").unwrap(), "5");
+    assert_eq!(interpret("If[# > 0, #, 0] &[-3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn list_anonymous_direct_call() {
+    // {expr}&[args] should call the anonymous function directly
+    assert_eq!(interpret("{#, #^2} &[3]").unwrap(), "{3, 9}");
+    assert_eq!(interpret("{#1, #2, #1 + #2} &[2, 5]").unwrap(), "{2, 5, 7}");
+  }
+}
+
+mod part_anonymous_function {
+  use super::*;
+
+  #[test]
+  fn slot_part_simple() {
+    // #[[n]]& extracts the nth element
+    assert_eq!(interpret("#[[2]] &[{3, 4, 5}]").unwrap(), "4");
+    assert_eq!(interpret("#[[1]] &[{10, 20, 30}]").unwrap(), "10");
+    assert_eq!(interpret("#[[3]] &[{10, 20, 30}]").unwrap(), "30");
+  }
+
+  #[test]
+  fn slot_part_in_list_anonymous() {
+    // {#[[1]], #[[2]]}& is a list anonymous function with Part extracts
+    assert_eq!(interpret("{#[[2]], #[[1]]} &[{3, 4}]").unwrap(), "{4, 3}");
+  }
+
+  #[test]
+  fn slot_part_with_arithmetic() {
+    // #[[1]] + #[[2]]& performs arithmetic on parts
+    assert_eq!(interpret("#[[1]] + #[[2]] &[{3, 4}]").unwrap(), "7");
+    assert_eq!(interpret("#[[1]] * #[[2]] &[{5, 6}]").unwrap(), "30");
+  }
+
+  #[test]
+  fn slot_part_in_nest() {
+    // Fibonacci via Nest with Part-based anonymous function
+    assert_eq!(
+      interpret("Nest[{#[[2]], #[[1]] + #[[2]]} &, {0, 1}, 10]").unwrap(),
+      "{55, 89}"
+    );
+  }
+
+  #[test]
+  fn slot_part_in_map() {
+    // Map with Part-based anonymous function
+    assert_eq!(
+      interpret("Map[#[[1]] &, {{1, 2}, {3, 4}, {5, 6}}]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn slot_part_without_anonymous_function() {
+    // Part extraction on slots in evaluated contexts (no &)
+    assert_eq!(interpret("{1, 2, 3}[[2]]").unwrap(), "2");
+    assert_eq!(interpret("x = {10, 20, 30}; x[[3]]").unwrap(), "30");
+  }
+}
+
+mod postfix_with_anonymous_function {
+  use super::*;
+
+  #[test]
+  fn postfix_at_with_simple_anonymous() {
+    assert_eq!(interpret("#^2& @ 3").unwrap(), "9");
+    assert_eq!(interpret("#+1& @ 5").unwrap(), "6");
+  }
+
+  #[test]
+  fn postfix_at_with_function_anonymous() {
+    assert_eq!(interpret("Sqrt[#]& @ 16").unwrap(), "4");
+  }
+
+  #[test]
+  fn postfix_at_with_string_result() {
+    // Anonymous function that returns a string (strings displayed without quotes)
+    assert_eq!(
+      interpret("If[# > 0, \"positive\", \"non-positive\"]& @ 5").unwrap(),
+      "positive"
+    );
+    assert_eq!(
+      interpret("If[# > 0, \"positive\", \"non-positive\"]& @ -3").unwrap(),
+      "non-positive"
+    );
+  }
+
+  #[test]
+  fn postfix_at_preserves_string_arg() {
+    // When the argument is a string, it should be preserved
+    assert_eq!(interpret("StringLength[#]& @ \"hello\"").unwrap(), "5");
+  }
+}
+
+mod prefix_application_associativity {
+  use super::*;
+
+  #[test]
+  fn right_associative_chaining() {
+    // f @ g @ x should be f[g[x]] (right-associative)
+    assert_eq!(
+      interpret("Double[x_] := x * 2; Double @ Sin @ (Pi/2)").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn single_prefix() {
+    assert_eq!(interpret("Sqrt @ 16").unwrap(), "4");
+  }
+}
