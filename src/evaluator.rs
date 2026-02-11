@@ -4205,6 +4205,28 @@ fn get_expr_head(expr: &Expr) -> String {
   }
 }
 
+/// Get the head of an expression from its string representation (for string-based pattern matching)
+fn get_string_expr_head(expr: &str) -> String {
+  let expr = expr.trim();
+  if expr.starts_with('"') && expr.ends_with('"') {
+    "String".to_string()
+  } else if expr.starts_with('{') && expr.ends_with('}') {
+    "List".to_string()
+  } else if expr.starts_with("<|") && expr.ends_with("|>") {
+    "Association".to_string()
+  } else if expr.contains('[') && expr.ends_with(']') {
+    // FunctionCall: extract the function name
+    let bracket_pos = expr.find('[').unwrap();
+    expr[..bracket_pos].to_string()
+  } else if expr.contains('.') && expr.parse::<f64>().is_ok() {
+    "Real".to_string()
+  } else if expr.parse::<i64>().is_ok() {
+    "Integer".to_string()
+  } else {
+    "Symbol".to_string()
+  }
+}
+
 /// Apply bindings to a replacement expression
 #[allow(dead_code)]
 fn apply_bindings(
@@ -4629,13 +4651,26 @@ fn parse_wolfram_pattern(pattern: &str) -> Option<WolframPattern> {
     }
   }
 
-  // Check for simple blank pattern: x_
-  if pattern.ends_with('_') && !pattern.contains(' ') {
-    let var_name = pattern[..pattern.len() - 1].trim().to_string();
+  // Check for head blank pattern: x_Head (e.g. x_Integer, x_String)
+  // or simple blank pattern: x_
+  if let Some(underscore_idx) = pattern.find('_') {
+    let var_name = pattern[..underscore_idx].trim().to_string();
+    let after_underscore = &pattern[underscore_idx + 1..];
     if !var_name.is_empty()
       && var_name.chars().all(|c| c.is_alphanumeric() || c == '$')
+      && !pattern.contains(' ')
     {
-      return Some(WolframPattern::Blank { var_name });
+      if after_underscore.is_empty() {
+        return Some(WolframPattern::Blank { var_name });
+      } else if after_underscore
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '$')
+      {
+        return Some(WolframPattern::HeadBlank {
+          var_name,
+          head: after_underscore.to_string(),
+        });
+      }
     }
   }
 
@@ -4646,6 +4681,8 @@ fn parse_wolfram_pattern(pattern: &str) -> Option<WolframPattern> {
 enum WolframPattern {
   /// x_ - matches any single expression
   Blank { var_name: String },
+  /// x_Head - matches if Head[x] == Head (e.g. x_Integer, x_String)
+  HeadBlank { var_name: String, head: String },
   /// x_?test - matches if test[x] is True
   Test { var_name: String, test_func: String },
   /// x_ /; condition - matches if condition (with x substituted) is True
@@ -4717,6 +4754,16 @@ fn apply_wolfram_pattern(
       // x_ matches any expression - substitute var_name with expr in replacement
       let result = replace_var_with_value(replacement, var_name, expr);
       Ok(Some(result))
+    }
+    WolframPattern::HeadBlank { var_name, head } => {
+      // x_Head matches if Head[expr] == head
+      let expr_head = get_string_expr_head(expr);
+      if expr_head == *head {
+        let result = replace_var_with_value(replacement, var_name, expr);
+        Ok(Some(result))
+      } else {
+        Ok(None)
+      }
     }
     WolframPattern::Test {
       var_name,
