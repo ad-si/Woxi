@@ -5793,7 +5793,12 @@ mod interpreter_tests {
       let svg = result.graphics.unwrap();
       assert!(svg.starts_with("<svg"));
       assert!(svg.contains("</svg>"));
-      assert!(svg.contains("<path"));
+      assert!(
+        svg.contains("<polyline")
+          || svg.contains("<line")
+          || svg.contains("<path")
+          || svg.contains("<circle")
+      );
     }
 
     #[test]
@@ -5847,6 +5852,42 @@ mod interpreter_tests {
       let result = interpret_with_stdout("1 + 2").unwrap();
       assert_eq!(result.result, "3");
       assert!(result.graphics.is_none());
+    }
+
+    #[test]
+    fn plot_svg_has_viewbox() {
+      clear_state();
+      let result = interpret_with_stdout("Plot[Sin[x], {x, 0, 6}]").unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("viewBox="));
+      assert!(svg.contains("width=\"360\""));
+      assert!(svg.contains("height=\"225\""));
+    }
+
+    #[test]
+    fn export_plot_to_svg() {
+      clear_state();
+      let path = "/tmp/woxi_test_export_plot.svg";
+      let result =
+        interpret(&format!("Export[\"{path}\", Plot[Sin[x], {{x, -10, 10}}]]"))
+          .unwrap();
+      assert_eq!(result, path);
+      let content = std::fs::read_to_string(path).unwrap();
+      assert!(content.starts_with("<svg"));
+      assert!(content.contains("</svg>"));
+      std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn export_string_to_file() {
+      clear_state();
+      let path = "/tmp/woxi_test_export_string.txt";
+      let result =
+        interpret(&format!("Export[\"{path}\", \"hello world\"]")).unwrap();
+      assert_eq!(result, path);
+      let content = std::fs::read_to_string(path).unwrap();
+      assert_eq!(content, "hello world");
+      std::fs::remove_file(path).ok();
     }
   }
 

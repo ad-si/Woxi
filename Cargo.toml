@@ -33,6 +33,7 @@ getrandom = { version = "0.2", features = ["js"], optional = true }
 jupyter-protocol = { git = "https://github.com/runtimed/runtimed", optional = true }
 astro-float = "0.9"
 num-bigint = "0.4.6"
+plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series"] }
 num-traits = "0.2.19"
 pest = "2.5"
 pest_derive = "2.5"

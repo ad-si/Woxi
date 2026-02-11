@@ -1663,7 +1663,7 @@ fn bigfloat_to_decimal(s: &str) -> String {
   // dot_pos in the mantissa tells us where the decimal point was.
   // In scientific notation "d.dddd e+N", the actual decimal position
   // is after (1 + exponent) digits from the start.
-  let decimal_position = (dot_pos as i64 + exponent);
+  let decimal_position = dot_pos as i64 + exponent;
 
   let prefix = if is_negative { "-" } else { "" };
 

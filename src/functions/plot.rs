@@ -1,17 +1,18 @@
+use plotters::prelude::*;
+
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
-/// Plot dimensions
-const SVG_WIDTH: f64 = 360.0;
-const SVG_HEIGHT: f64 = 225.0;
-const MARGIN_LEFT: f64 = 55.0;
-const MARGIN_RIGHT: f64 = 10.0;
-const MARGIN_TOP: f64 = 10.0;
-const MARGIN_BOTTOM: f64 = 35.0;
-const PLOT_WIDTH: f64 = SVG_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
-const PLOT_HEIGHT: f64 = SVG_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM;
+const SVG_WIDTH: u32 = 360;
+const SVG_HEIGHT: u32 = 225;
+/// Internal rendering resolution multiplier for sub-pixel precision.
+/// Plotters maps to integer coordinates, so we render at a higher resolution
+/// and scale down via SVG viewBox to get smooth curves.
+const RESOLUTION_SCALE: u32 = 10;
+const RENDER_WIDTH: u32 = SVG_WIDTH * RESOLUTION_SCALE;
+const RENDER_HEIGHT: u32 = SVG_HEIGHT * RESOLUTION_SCALE;
 const NUM_SAMPLES: usize = 500;
 
 /// Substitute all occurrences of a variable with a value in an expression
@@ -48,177 +49,177 @@ fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   try_eval_to_f64(&result)
 }
 
-/// Generate nice tick values for an axis
-fn nice_ticks(min: f64, max: f64, target_count: usize) -> Vec<f64> {
-  if (max - min).abs() < f64::EPSILON {
-    return vec![min];
+/// Split points into contiguous finite segments, breaking at NaN/Infinity
+fn split_into_segments(points: &[(f64, f64)]) -> Vec<Vec<(f64, f64)>> {
+  let mut segments: Vec<Vec<(f64, f64)>> = Vec::new();
+  let mut current: Vec<(f64, f64)> = Vec::new();
+
+  for &(x, y) in points {
+    if y.is_finite() {
+      current.push((x, y));
+    } else if current.len() > 1 {
+      segments.push(std::mem::take(&mut current));
+    } else {
+      current.clear();
+    }
   }
-  let range = max - min;
-  let rough_step = range / target_count as f64;
-  let mag = 10.0_f64.powf(rough_step.log10().floor());
-  let normalized = rough_step / mag;
-  let nice_step = if normalized < 1.5 {
+  if current.len() > 1 {
+    segments.push(current);
+  }
+  segments
+}
+
+/// Compute a "nice" major tick step given the axis range and desired label count.
+fn nice_step(range: f64, target_labels: usize) -> f64 {
+  let raw = range / target_labels as f64;
+  let mag = 10_f64.powf(raw.abs().log10().floor());
+  let norm = raw / mag;
+  let nice = if norm <= 1.0 {
     1.0
-  } else if normalized < 3.0 {
+  } else if norm <= 2.0 {
     2.0
-  } else if normalized < 7.0 {
+  } else if norm <= 5.0 {
     5.0
   } else {
     10.0
   };
-  let step = nice_step * mag;
-  let start = (min / step).ceil() * step;
-  let mut ticks = vec![];
-  let mut tick = start;
-  while tick <= max + step * 0.001 {
-    ticks.push(tick);
-    tick += step;
-  }
-  ticks
+  nice * mag
 }
 
-/// Format a tick label value
-fn format_tick_label(val: f64) -> String {
-  if (val - val.round()).abs() < 1e-10 {
-    format!("{}", val.round() as i64)
-  } else if (val * 10.0 - (val * 10.0).round()).abs() < 1e-9 {
-    format!("{:.1}", val)
+/// Check whether a tick value falls on a major tick grid.
+fn is_major_tick(v: f64, step: f64) -> bool {
+  if step == 0.0 {
+    return true;
+  }
+  let remainder = (v / step).round() * step - v;
+  remainder.abs() < step * 1e-9
+}
+
+/// Format a tick value, dropping the trailing ".0" for integers.
+fn format_tick(v: f64) -> String {
+  if (v - v.round()).abs() < 1e-9 {
+    format!("{}", v.round() as i64)
   } else {
-    format!("{:.2}", val)
+    format!("{v:.1}")
   }
 }
 
-/// Generate SVG for a 2D plot
+/// Generate SVG for a 2D plot using plotters
 fn generate_svg(
   points: &[(f64, f64)],
   x_range: (f64, f64),
   y_range: (f64, f64),
-) -> String {
+) -> Result<String, InterpreterError> {
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
 
-  let to_svg_x = |x: f64| -> f64 {
-    MARGIN_LEFT + (x - x_min) / (x_max - x_min) * PLOT_WIDTH
-  };
-  let to_svg_y = |y: f64| -> f64 {
-    MARGIN_TOP + PLOT_HEIGHT - (y - y_min) / (y_max - y_min) * PLOT_HEIGHT
-  };
+  let mut buf = String::new();
+  {
+    let root = SVGBackend::with_string(&mut buf, (RENDER_WIDTH, RENDER_HEIGHT))
+      .into_drawing_area();
+    root
+      .fill(&WHITE)
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-  let mut svg = String::new();
-  svg.push_str(&format!(
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" \
-     width=\"{}\" height=\"{}\" \
-     viewBox=\"0 0 {} {}\">",
-    SVG_WIDTH as i32, SVG_HEIGHT as i32, SVG_WIDTH as i32, SVG_HEIGHT as i32,
-  ));
-  svg.push('\n');
+    let s = RESOLUTION_SCALE as i32;
+    let tick = 4 * s;
+    let dark_gray = RGBColor(0x66, 0x66, 0x66);
+    let light_gray = RGBColor(0xCC, 0xCC, 0xCC);
 
-  // White background for plot area
-  svg.push_str(&format!(
-    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"white\"/>",
-    MARGIN_LEFT, MARGIN_TOP, PLOT_WIDTH, PLOT_HEIGHT,
-  ));
-  svg.push('\n');
+    let mut chart = ChartBuilder::on(&root)
+      .margin(10 * s)
+      .x_label_area_size(25 * RESOLUTION_SCALE)
+      .y_label_area_size(40 * RESOLUTION_SCALE)
+      .build_cartesian_2d(x_min..x_max, y_min..y_max)
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-  // Frame
-  svg.push_str(&format!(
-    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" \
-     fill=\"none\" stroke=\"#333\" stroke-width=\"0.5\"/>",
-    MARGIN_LEFT, MARGIN_TOP, PLOT_WIDTH, PLOT_HEIGHT,
-  ));
-  svg.push('\n');
+    // Compute nice major tick step (~5 labels), then request enough ticks
+    // for ~5 minor subdivisions between each major tick.
+    let x_major = nice_step(x_max - x_min, 5);
+    let y_major = nice_step(y_max - y_min, 5);
+    let x_minor_step = x_major / 5.0;
+    let y_minor_step = y_major / 5.0;
+    let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
+    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
 
-  // X axis ticks and labels
-  let x_ticks = nice_ticks(x_min, x_max, 5);
-  for &tick in &x_ticks {
-    let sx = to_svg_x(tick);
-    let tick_bottom = MARGIN_TOP + PLOT_HEIGHT;
-    svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-       stroke=\"#333\" stroke-width=\"0.5\"/>",
-      sx,
-      tick_bottom,
-      sx,
-      tick_bottom + 5.0,
-    ));
-    svg.push('\n');
-    svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
-       font-family=\"Arial,sans-serif\" font-size=\"11\" \
-       fill=\"#333\">{}</text>",
-      sx,
-      tick_bottom + 18.0,
-      format_tick_label(tick),
-    ));
-    svg.push('\n');
-  }
+    chart
+      .configure_mesh()
+      .disable_mesh()
+      .x_labels(x_tick_count)
+      .y_labels(y_tick_count)
+      .x_label_formatter(&move |v: &f64| {
+        if is_major_tick(*v, x_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .y_label_formatter(&move |v: &f64| {
+        if is_major_tick(*v, y_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
+      .label_style(
+        ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+          .into_font()
+          .color(&dark_gray),
+      )
+      .set_tick_mark_size(LabelAreaPosition::Left, tick)
+      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
+      .draw()
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-  // Y axis ticks and labels
-  let y_ticks = nice_ticks(y_min, y_max, 4);
-  for &tick in &y_ticks {
-    let sy = to_svg_y(tick);
-    svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-       stroke=\"#333\" stroke-width=\"0.5\"/>",
-      MARGIN_LEFT - 5.0,
-      sy,
-      MARGIN_LEFT,
-      sy,
-    ));
-    svg.push('\n');
-    svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" \
-       font-family=\"Arial,sans-serif\" font-size=\"11\" \
-       fill=\"#333\">{}</text>",
-      MARGIN_LEFT - 8.0,
-      sy + 4.0,
-      format_tick_label(tick),
-    ));
-    svg.push('\n');
-  }
-
-  // Build path segments, breaking on NaN/Infinity
-  let mut path_parts: Vec<Vec<(f64, f64)>> = Vec::new();
-  let mut current_segment: Vec<(f64, f64)> = Vec::new();
-
-  for &(x, y) in points {
-    if y.is_finite() {
-      let sx = to_svg_x(x);
-      let sy = to_svg_y(y);
-      // Clamp to plot area
-      let sy_clamped = sy.max(MARGIN_TOP).min(MARGIN_TOP + PLOT_HEIGHT);
-      current_segment.push((sx, sy_clamped));
-    } else if current_segment.len() > 1 {
-      path_parts.push(std::mem::take(&mut current_segment));
-    } else {
-      current_segment.clear();
+    // Draw lighter origin lines through x=0 and y=0 if visible
+    let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
+    if y_min < 0.0 && y_max > 0.0 {
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(x_min, 0.0), (x_max, 0.0)],
+          origin_line,
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
-  }
-  if current_segment.len() > 1 {
-    path_parts.push(current_segment);
-  }
-
-  // Draw each segment as an SVG path
-  for segment in &path_parts {
-    let mut d = String::new();
-    for (i, &(sx, sy)) in segment.iter().enumerate() {
-      if i == 0 {
-        d.push_str(&format!("M{:.2},{:.2}", sx, sy));
-      } else {
-        d.push_str(&format!("L{:.2},{:.2}", sx, sy));
-      }
+    if x_min < 0.0 && x_max > 0.0 {
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(0.0, y_min), (0.0, y_max)],
+          origin_line,
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
-    svg.push_str(&format!(
-      "<path d=\"{}\" fill=\"none\" stroke=\"#5E81B5\" \
-       stroke-width=\"1.5\" stroke-linejoin=\"round\" \
-       stroke-linecap=\"round\"/>",
-      d,
-    ));
-    svg.push('\n');
+
+    let wolfram_blue = RGBColor(0x5E, 0x81, 0xB5);
+    let segments = split_into_segments(points);
+
+    for segment in &segments {
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          segment.clone(),
+          wolfram_blue.stroke_width(15), // 1.5px at display size
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+
+    root
+      .present()
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   }
 
-  svg.push_str("</svg>");
-  svg
+  // Rewrite the opening <svg> tag to use viewBox so the high-resolution
+  // internal coordinates are scaled down to the intended display size.
+  if let Some(pos) = buf.find('>') {
+    let new_header = format!(
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\"",
+      SVG_WIDTH, SVG_HEIGHT, RENDER_WIDTH, RENDER_HEIGHT,
+    );
+    // Replace everything from <svg up to (but not including) the first >
+    buf.replace_range(..pos, &new_header);
+  }
+
+  Ok(buf)
 }
 
 /// Implementation of Plot[f, {x, xmin, xmax}]
@@ -305,7 +306,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_max = y_data_max + padding;
 
   // Generate SVG
-  let svg = generate_svg(&points, (x_min, x_max), (y_min, y_max));
+  let svg = generate_svg(&points, (x_min, x_max), (y_min, y_max))?;
 
   // Store the SVG for capture by the Jupyter kernel
   crate::capture_graphics(&svg);

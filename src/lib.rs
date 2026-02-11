@@ -120,7 +120,7 @@ pub fn capture_graphics(svg: &str) {
 }
 
 /// Gets the captured graphics content
-fn get_captured_graphics() -> Option<String> {
+pub fn get_captured_graphics() -> Option<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().clone())
 }
 
