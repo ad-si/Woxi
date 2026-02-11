@@ -3936,11 +3936,11 @@ fn apply_replace_all_ast(
       replacement,
     } => (expr_to_string(pattern), expr_to_string(replacement)),
     Expr::List(items) if !items.is_empty() => {
-      // Multiple rules - apply each rule in order to the expression
-      // Each rule is applied to the result of the previous rule
-      let mut current = expr_to_string(expr);
-      for rule in items {
-        let (pat, repl) = match rule {
+      // Multiple rules - try each rule in order on each subexpression,
+      // using the first matching rule (Wolfram semantics: simultaneous application)
+      let rule_pairs: Vec<(String, String)> = items
+        .iter()
+        .filter_map(|rule| match rule {
           Expr::Rule {
             pattern,
             replacement,
@@ -3948,13 +3948,14 @@ fn apply_replace_all_ast(
           | Expr::RuleDelayed {
             pattern,
             replacement,
-          } => (expr_to_string(pattern), expr_to_string(replacement)),
-          _ => continue,
-        };
-        // Apply this rule to the current expression
-        current = apply_replace_all_direct(&current, &pat, &repl)?;
-      }
-      return string_to_expr(&current);
+          } => Some((expr_to_string(pattern), expr_to_string(replacement))),
+          _ => None,
+        })
+        .collect();
+      let expr_str = expr_to_string(expr);
+      let result =
+        apply_replace_all_direct_multi_rules(&expr_str, &rule_pairs)?;
+      return string_to_expr(&result);
     }
     _ => return Ok(expr.clone()),
   };
@@ -3972,8 +3973,7 @@ fn apply_replace_repeated_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Extract pattern and replacement from rules
-  let (pattern_str, replacement_str) = match rules {
+  match rules {
     Expr::Rule {
       pattern,
       replacement,
@@ -3981,15 +3981,46 @@ fn apply_replace_repeated_ast(
     | Expr::RuleDelayed {
       pattern,
       replacement,
-    } => (expr_to_string(pattern), expr_to_string(replacement)),
-    _ => return Ok(expr.clone()),
-  };
-
-  // Use the string-based function which handles all pattern types correctly
-  let expr_str = expr_to_string(expr);
-  let result =
-    apply_replace_repeated_direct(&expr_str, &pattern_str, &replacement_str)?;
-  string_to_expr(&result)
+    } => {
+      let pattern_str = expr_to_string(pattern);
+      let replacement_str = expr_to_string(replacement);
+      let expr_str = expr_to_string(expr);
+      let result = apply_replace_repeated_direct(
+        &expr_str,
+        &pattern_str,
+        &replacement_str,
+      )?;
+      string_to_expr(&result)
+    }
+    Expr::List(items) if !items.is_empty() => {
+      // Multiple rules - repeatedly try each rule in order, using first match
+      let rule_pairs: Vec<(String, String)> = items
+        .iter()
+        .filter_map(|rule| match rule {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => Some((expr_to_string(pattern), expr_to_string(replacement))),
+          _ => None,
+        })
+        .collect();
+      let mut current = expr_to_string(expr);
+      let max_iterations = 1000;
+      for _ in 0..max_iterations {
+        let next = apply_replace_all_direct_multi_rules(&current, &rule_pairs)?;
+        if next == current {
+          break;
+        }
+        current = next;
+      }
+      string_to_expr(&current)
+    }
+    _ => Ok(expr.clone()),
+  }
 }
 
 /// Check if two Expr values are structurally equal
@@ -4780,6 +4811,154 @@ fn apply_replace_all_direct(
   } else {
     Ok(result)
   }
+}
+
+/// Apply ReplaceAll with multiple rules simultaneously.
+/// For each subexpression, try each rule in order and use the first match.
+fn apply_replace_all_direct_multi_rules(
+  expr: &str,
+  rules: &[(String, String)],
+) -> Result<String, InterpreterError> {
+  // For list expressions, apply rules to each element
+  if expr.starts_with('{') && expr.ends_with('}') {
+    let inner = &expr[1..expr.len() - 1];
+    let elements = split_list_elements(inner);
+    let mut results = Vec::new();
+
+    for elem in elements {
+      let elem = elem.trim();
+      let replaced = apply_first_matching_rule(elem, rules)?;
+      results.push(replaced);
+    }
+
+    return Ok(format!("{{{}}}", results.join(", ")));
+  }
+
+  // For non-list expressions, first try matching the whole expression
+  // against each rule (needed for Wolfram patterns like i_ /; cond)
+  for (pattern, replacement) in rules {
+    if let Some(wolfram_pattern) = parse_wolfram_pattern(pattern)
+      && let Some(replaced) =
+        apply_wolfram_pattern(expr, &wolfram_pattern, replacement)?
+    {
+      let evaluated = evaluate_fullform(&replaced).unwrap_or(replaced);
+      return Ok(evaluated);
+    }
+  }
+
+  // Then apply literal symbol rules simultaneously in one pass
+  let result = replace_in_expr_multi_rules(expr, rules);
+
+  if result != *expr {
+    evaluate_fullform(&result).or(Ok(result))
+  } else {
+    Ok(result)
+  }
+}
+
+/// Try each rule in order on a single expression, return the result of
+/// the first matching rule. If no rule matches, return the original.
+fn apply_first_matching_rule(
+  elem: &str,
+  rules: &[(String, String)],
+) -> Result<String, InterpreterError> {
+  for (pattern, replacement) in rules {
+    // Check if this is a Wolfram pattern
+    if let Some(wolfram_pattern) = parse_wolfram_pattern(pattern) {
+      if let Some(replaced) =
+        apply_wolfram_pattern(elem, &wolfram_pattern, replacement)?
+      {
+        let evaluated = evaluate_fullform(&replaced).unwrap_or(replaced);
+        return Ok(evaluated);
+      }
+    } else {
+      // Literal replacement - check if it matches
+      let result = replace_in_expr(elem, pattern, replacement);
+      if result != elem {
+        let evaluated = evaluate_fullform(&result).unwrap_or(result);
+        return Ok(evaluated);
+      }
+    }
+  }
+  // No rule matched
+  Ok(elem.to_string())
+}
+
+/// Replace multiple patterns simultaneously in an expression, respecting word boundaries.
+/// At each position, try each rule in order and use the first match.
+fn replace_in_expr_multi_rules(
+  expr: &str,
+  rules: &[(String, String)],
+) -> String {
+  // Separate function-call patterns from symbol patterns
+  let mut func_rules: Vec<(&str, &str)> = Vec::new();
+  let mut symbol_rules: Vec<(&str, &str)> = Vec::new();
+
+  for (pattern, replacement) in rules {
+    if pattern.contains('[') && pattern.contains(']') {
+      func_rules.push((pattern, replacement));
+    } else {
+      symbol_rules.push((pattern, replacement));
+    }
+  }
+
+  // First apply function-call pattern rules (literal string replacement, first match wins)
+  let mut current = expr.to_string();
+  for (pattern, replacement) in &func_rules {
+    let next = current.replace(pattern, replacement);
+    if next != current {
+      current = next;
+      break; // First matching rule wins
+    }
+  }
+
+  // Then apply symbol rules simultaneously in one pass
+  if symbol_rules.is_empty() {
+    return current;
+  }
+
+  let mut result = String::new();
+  let chars: Vec<char> = current.chars().collect();
+  let mut i = 0;
+
+  while i < chars.len() {
+    let mut matched = false;
+
+    // Try each symbol rule at this position (first match wins)
+    for (pattern, replacement) in &symbol_rules {
+      let pat_chars: Vec<char> = pattern.chars().collect();
+      if i + pat_chars.len() <= chars.len()
+        && chars[i..i + pat_chars.len()] == pat_chars[..]
+      {
+        // Check word boundaries
+        let prev_char = if i > 0 { Some(chars[i - 1]) } else { None };
+        let next_char = if i + pat_chars.len() < chars.len() {
+          Some(chars[i + pat_chars.len()])
+        } else {
+          None
+        };
+
+        let prev_ok =
+          prev_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+        let next_ok =
+          next_char.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+
+        if prev_ok && next_ok {
+          result.push_str(replacement);
+          i += pat_chars.len();
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    if !matched {
+      result.push(chars[i]);
+      i += 1;
+    }
+  }
+
+  result
 }
 
 /// Split a list's inner content by commas, respecting nested structures
