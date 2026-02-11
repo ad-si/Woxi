@@ -5,14 +5,12 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
-const SVG_WIDTH: u32 = 360;
-const SVG_HEIGHT: u32 = 225;
+const DEFAULT_WIDTH: u32 = 360;
+const DEFAULT_HEIGHT: u32 = 225;
 /// Internal rendering resolution multiplier for sub-pixel precision.
 /// Plotters maps to integer coordinates, so we render at a higher resolution
 /// and scale down via SVG viewBox to get smooth curves.
 const RESOLUTION_SCALE: u32 = 10;
-const RENDER_WIDTH: u32 = SVG_WIDTH * RESOLUTION_SCALE;
-const RENDER_HEIGHT: u32 = SVG_HEIGHT * RESOLUTION_SCALE;
 const NUM_SAMPLES: usize = 500;
 
 /// Substitute all occurrences of a variable with a value in an expression
@@ -104,18 +102,24 @@ fn format_tick(v: f64) -> String {
   }
 }
 
-/// Generate SVG for a 2D plot using plotters
+/// Generate SVG for a 2D plot using plotters.
+/// When `full_width` is true, the SVG uses `width="100%"` to fill its container.
 fn generate_svg(
   points: &[(f64, f64)],
   x_range: (f64, f64),
   y_range: (f64, f64),
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
 ) -> Result<String, InterpreterError> {
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
+  let render_width = svg_width * RESOLUTION_SCALE;
+  let render_height = svg_height * RESOLUTION_SCALE;
 
   let mut buf = String::new();
   {
-    let root = SVGBackend::with_string(&mut buf, (RENDER_WIDTH, RENDER_HEIGHT))
+    let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
       .into_drawing_area();
     root
       .fill(&WHITE)
@@ -211,15 +215,64 @@ fn generate_svg(
   // Rewrite the opening <svg> tag to use viewBox so the high-resolution
   // internal coordinates are scaled down to the intended display size.
   if let Some(pos) = buf.find('>') {
-    let new_header = format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\"",
-      SVG_WIDTH, SVG_HEIGHT, RENDER_WIDTH, RENDER_HEIGHT,
-    );
+    let new_header = if full_width {
+      format!(
+        "<svg width=\"100%\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\"",
+        render_width, render_height,
+      )
+    } else {
+      format!(
+        "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\"",
+        svg_width, svg_height, render_width, render_height,
+      )
+    };
     // Replace everything from <svg up to (but not including) the first >
     buf.replace_range(..pos, &new_header);
   }
 
   Ok(buf)
+}
+
+/// Parse ImageSize option value into (width, height, full_width).
+/// Supports: integer, {w, h}, and named sizes (Tiny, Small, Medium, Large, Full).
+/// Full uses a 720px render resolution but emits `width="100%"` in SVG.
+fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
+  match value {
+    Expr::Integer(n) if *n > 0 => {
+      let w = *n as u32;
+      let h = (w as f64 * DEFAULT_HEIGHT as f64 / DEFAULT_WIDTH as f64).round()
+        as u32;
+      Some((w, h, false))
+    }
+    Expr::Real(f) if *f > 0.0 => {
+      let w = f.round() as u32;
+      let h = (w as f64 * DEFAULT_HEIGHT as f64 / DEFAULT_WIDTH as f64).round()
+        as u32;
+      Some((w, h, false))
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let w = match &items[0] {
+        Expr::Integer(n) if *n > 0 => *n as u32,
+        Expr::Real(f) if *f > 0.0 => f.round() as u32,
+        _ => return None,
+      };
+      let h = match &items[1] {
+        Expr::Integer(n) if *n > 0 => *n as u32,
+        Expr::Real(f) if *f > 0.0 => f.round() as u32,
+        _ => return None,
+      };
+      Some((w, h, false))
+    }
+    Expr::Identifier(name) => match name.as_str() {
+      "Tiny" => Some((100, 63, false)),
+      "Small" => Some((200, 125, false)),
+      "Medium" => Some((DEFAULT_WIDTH, DEFAULT_HEIGHT, false)),
+      "Large" => Some((480, 300, false)),
+      "Full" => Some((720, 450, true)),
+      _ => None,
+    },
+    _ => None,
+  }
 }
 
 /// Implementation of Plot[f, {x, xmin, xmax}]
@@ -232,6 +285,24 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let body = &args[0];
   let iter_spec = &args[1];
+
+  // Parse options (Rule expressions after the first two arguments)
+  let mut svg_width = DEFAULT_WIDTH;
+  let mut svg_height = DEFAULT_HEIGHT;
+  let mut full_width = false;
+  for opt in &args[2..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
+      && let Some((w, h, fw)) = parse_image_size(replacement)
+    {
+      svg_width = w;
+      svg_height = h;
+      full_width = fw;
+    }
+  }
 
   // Parse iterator spec: {x, xmin, xmax}
   let (var_name, x_min, x_max) = match iter_spec {
@@ -306,7 +377,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_max = y_data_max + padding;
 
   // Generate SVG
-  let svg = generate_svg(&points, (x_min, x_max), (y_min, y_max))?;
+  let svg = generate_svg(
+    &points,
+    (x_min, x_max),
+    (y_min, y_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
 
   // Store the SVG for capture by the Jupyter kernel
   crate::capture_graphics(&svg);

@@ -5865,6 +5865,99 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn plot_image_size_integer() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}, ImageSize -> 600]")
+          .unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("width=\"600\""));
+      assert!(svg.contains("height=\"375\""));
+    }
+
+    #[test]
+    fn plot_image_size_pair() {
+      clear_state();
+      let result = interpret_with_stdout(
+        "Plot[Sin[x], {x, 0, 6}, ImageSize -> {800, 300}]",
+      )
+      .unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("width=\"800\""));
+      assert!(svg.contains("height=\"300\""));
+    }
+
+    #[test]
+    fn plot_image_size_named() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}, ImageSize -> Large]")
+          .unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("width=\"480\""));
+      assert!(svg.contains("height=\"300\""));
+    }
+
+    #[test]
+    fn plot_image_size_tiny() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}, ImageSize -> Tiny]")
+          .unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("width=\"100\""));
+      assert!(svg.contains("height=\"63\""));
+    }
+
+    #[test]
+    fn plot_image_size_small() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}, ImageSize -> Small]")
+          .unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("width=\"200\""));
+      assert!(svg.contains("height=\"125\""));
+    }
+
+    #[test]
+    fn plot_image_size_medium() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}, ImageSize -> Medium]")
+          .unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("width=\"360\""));
+      assert!(svg.contains("height=\"225\""));
+    }
+
+    #[test]
+    fn plot_image_size_full() {
+      clear_state();
+      let result =
+        interpret_with_stdout("Plot[Sin[x], {x, 0, 6}, ImageSize -> Full]")
+          .unwrap();
+      let svg = result.graphics.unwrap();
+      // Full uses width="100%" to scale with the container
+      assert!(svg.contains("width=\"100%\""));
+      // viewBox still uses the 720x450 render base for proper aspect ratio
+      assert!(svg.contains("viewBox=\"0 0 7200 4500\""));
+    }
+
+    #[test]
+    fn plot_image_size_default_unchanged() {
+      // Without ImageSize option, default 360x225 is used
+      clear_state();
+      let result = interpret_with_stdout("Plot[Sin[x], {x, 0, 6}]").unwrap();
+      let svg = result.graphics.unwrap();
+      assert!(svg.contains("width=\"360\""));
+      assert!(svg.contains("height=\"225\""));
+    }
+
+    #[test]
     fn export_plot_to_svg() {
       clear_state();
       let path = "/tmp/woxi_test_export_plot.svg";
