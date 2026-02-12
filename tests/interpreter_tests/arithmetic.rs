@@ -341,6 +341,85 @@ mod big_integer {
       "{{170141183460469231731687303715884105727, 1}}"
     );
   }
+
+  #[test]
+  fn head_of_big_integer() {
+    assert_eq!(interpret("Head[2^128]").unwrap(), "Integer");
+  }
+
+  #[test]
+  fn integer_q_big_integer() {
+    assert_eq!(interpret("IntegerQ[2^128]").unwrap(), "True");
+  }
+
+  #[test]
+  fn even_q_big_integer() {
+    assert_eq!(interpret("EvenQ[2^128]").unwrap(), "True");
+  }
+
+  #[test]
+  fn odd_q_big_integer() {
+    assert_eq!(interpret("OddQ[2^128 + 1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn number_q_big_integer() {
+    assert_eq!(interpret("NumberQ[2^128]").unwrap(), "True");
+  }
+
+  #[test]
+  fn divisible_big_integer() {
+    assert_eq!(interpret("Divisible[2^128, 4]").unwrap(), "True");
+    assert_eq!(interpret("Divisible[2^128 + 1, 2]").unwrap(), "False");
+  }
+
+  #[test]
+  fn composite_q_big_integer() {
+    assert_eq!(interpret("CompositeQ[2^128]").unwrap(), "True");
+  }
+
+  #[test]
+  fn nest_with_big_integer() {
+    assert_eq!(
+      interpret("Nest[#+1&, 2^128, 3]").unwrap(),
+      "340282366920938463463374607431768211459"
+    );
+  }
+
+  #[test]
+  fn fibonacci_big_integer() {
+    assert_eq!(
+      interpret("Fibonacci[200]").unwrap(),
+      "280571172992510140037611932413038677189525"
+    );
+  }
+
+  #[test]
+  fn factorial_big_integer() {
+    // 50! is larger than i128
+    assert_eq!(
+      interpret("Factorial[50]").unwrap(),
+      "30414093201713378043612608166064768844377641568960512000000000000"
+    );
+  }
+
+  #[test]
+  fn digit_count_big_integer() {
+    assert_eq!(interpret("DigitCount[2^128, 10, 3]").unwrap(), "7");
+  }
+
+  #[test]
+  fn part_of_list_with_big_integer() {
+    assert_eq!(
+      interpret("{2^128, 2^129}[[1]]").unwrap(),
+      "340282366920938463463374607431768211456"
+    );
+  }
+
+  #[test]
+  fn bit_length_big_integer() {
+    assert_eq!(interpret("BitLength[2^128]").unwrap(), "129");
+  }
 }
 
 mod power_with_negative_exponent {

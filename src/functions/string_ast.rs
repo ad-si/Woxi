@@ -11,6 +11,7 @@ fn expr_to_str(expr: &Expr) -> Result<String, InterpreterError> {
     Expr::String(s) => Ok(s.clone()),
     Expr::Identifier(s) => Ok(s.clone()),
     Expr::Integer(n) => Ok(n.to_string()),
+    Expr::BigInteger(n) => Ok(n.to_string()),
     Expr::Real(f) => Ok(crate::format_result(*f)),
     _ => {
       // Try to get string representation
@@ -29,6 +30,14 @@ fn expr_to_str(expr: &Expr) -> Result<String, InterpreterError> {
 fn expr_to_int(expr: &Expr) -> Result<i128, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(*n),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_i128().ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Integer too large for this operation".into(),
+        )
+      })
+    }
     Expr::Real(f) if f.fract() == 0.0 => Ok(*f as i128),
     _ => Err(InterpreterError::EvaluationError(
       "Expected integer argument".into(),
@@ -760,25 +769,49 @@ pub fn from_character_code_ast(
       })?;
       Ok(Expr::String(c.to_string()))
     }
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      let code = n.to_u32().ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid character code: {}",
+          n
+        ))
+      })?;
+      let c = char::from_u32(code).ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid character code: {}",
+          n
+        ))
+      })?;
+      Ok(Expr::String(c.to_string()))
+    }
     Expr::List(items) => {
       let mut result = String::new();
       for item in items {
-        match item {
-          Expr::Integer(n) => {
-            let c = char::from_u32(*n as u32).ok_or_else(|| {
+        let code = match item {
+          Expr::Integer(n) => *n as u32,
+          Expr::BigInteger(n) => {
+            use num_traits::ToPrimitive;
+            n.to_u32().ok_or_else(|| {
               InterpreterError::EvaluationError(format!(
                 "Invalid character code: {}",
                 n
               ))
-            })?;
-            result.push(c);
+            })?
           }
           _ => {
             return Err(InterpreterError::EvaluationError(
               "FromCharacterCode expects integer arguments".into(),
             ));
           }
-        }
+        };
+        let c = char::from_u32(code).ok_or_else(|| {
+          InterpreterError::EvaluationError(format!(
+            "Invalid character code: {}",
+            code
+          ))
+        })?;
+        result.push(c);
       }
       Ok(Expr::String(result))
     }

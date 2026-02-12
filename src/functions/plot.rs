@@ -244,6 +244,16 @@ fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
         as u32;
       Some((w, h, false))
     }
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      let w = n.to_u32()?;
+      if w == 0 {
+        return None;
+      }
+      let h = (w as f64 * DEFAULT_HEIGHT as f64 / DEFAULT_WIDTH as f64).round()
+        as u32;
+      Some((w, h, false))
+    }
     Expr::Real(f) if *f > 0.0 => {
       let w = f.round() as u32;
       let h = (w as f64 * DEFAULT_HEIGHT as f64 / DEFAULT_WIDTH as f64).round()
@@ -253,11 +263,27 @@ fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
     Expr::List(items) if items.len() == 2 => {
       let w = match &items[0] {
         Expr::Integer(n) if *n > 0 => *n as u32,
+        Expr::BigInteger(n) => {
+          use num_traits::ToPrimitive;
+          let v = n.to_u32()?;
+          if v == 0 {
+            return None;
+          }
+          v
+        }
         Expr::Real(f) if *f > 0.0 => f.round() as u32,
         _ => return None,
       };
       let h = match &items[1] {
         Expr::Integer(n) if *n > 0 => *n as u32,
+        Expr::BigInteger(n) => {
+          use num_traits::ToPrimitive;
+          let v = n.to_u32()?;
+          if v == 0 {
+            return None;
+          }
+          v
+        }
         Expr::Real(f) if *f > 0.0 => f.round() as u32,
         _ => return None,
       };
