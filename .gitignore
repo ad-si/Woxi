@@ -1,9 +1,10 @@
+/*-checkpoint.ipynb
 /.direnv
 /.env
-/*-checkpoint.ipynb
+/.jupyterlite.doit.db
 /target
+/tests/_*
 /tests/book
+/tests/cli/jupyterlite
 /tests/cli/playground/pkg
 /tests/scripts/_*
-/tests/cli/jupyterlite
-/.jupyterlite.doit.db
