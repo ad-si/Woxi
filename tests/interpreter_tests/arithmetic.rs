@@ -312,6 +312,35 @@ mod big_integer {
       "{{193707721, 1}, {761838257287, 1}}"
     );
   }
+
+  #[test]
+  fn factor_integer_bigint_2_128_minus_1() {
+    assert_eq!(
+      interpret("FactorInteger[2^128 - 1]").unwrap(),
+      "{{3, 1}, {5, 1}, {17, 1}, {257, 1}, {641, 1}, {65537, 1}, {274177, 1}, {6700417, 1}, {67280421310721, 1}}"
+    );
+  }
+
+  #[test]
+  fn factor_integer_bigint_power_of_2() {
+    assert_eq!(interpret("FactorInteger[2^200]").unwrap(), "{{2, 200}}");
+  }
+
+  #[test]
+  fn factor_integer_negative_bigint() {
+    assert_eq!(
+      interpret("FactorInteger[-(2^128 - 1)]").unwrap(),
+      "{{-1, 1}, {3, 1}, {5, 1}, {17, 1}, {257, 1}, {641, 1}, {65537, 1}, {274177, 1}, {6700417, 1}, {67280421310721, 1}}"
+    );
+  }
+
+  #[test]
+  fn factor_integer_bigint_mersenne_prime() {
+    assert_eq!(
+      interpret("FactorInteger[2^127 - 1]").unwrap(),
+      "{{170141183460469231731687303715884105727, 1}}"
+    );
+  }
 }
 
 mod power_with_negative_exponent {

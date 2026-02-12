@@ -4596,20 +4596,27 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match &args[0] {
-    Expr::Integer(n) => *n,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "FactorInteger".to_string(),
-        args: args.to_vec(),
-      });
-    }
-  };
+  match &args[0] {
+    Expr::Integer(n) => factor_integer_i128(*n),
+    Expr::BigInteger(n) => factor_integer_bigint(n),
+    _ => Ok(Expr::FunctionCall {
+      name: "FactorInteger".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
 
+fn factor_integer_i128(n: i128) -> Result<Expr, InterpreterError> {
   if n == 0 {
     return Err(InterpreterError::EvaluationError(
       "FactorInteger: argument cannot be zero".into(),
     ));
+  }
+
+  // For large integers where trial division would be too slow,
+  // delegate to the BigInt path which uses Pollard's rho
+  if n.unsigned_abs() > (1u128 << 53) {
+    return factor_integer_bigint(&BigInt::from(n));
   }
 
   let mut factors: Vec<Expr> = Vec::new();
@@ -4625,7 +4632,7 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Handle factor of 2
   let mut count = 0i128;
-  while num % 2 == 0 {
+  while num.is_multiple_of(2) {
     count += 1;
     num /= 2;
   }
@@ -4633,11 +4640,11 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     factors.push(Expr::List(vec![Expr::Integer(2), Expr::Integer(count)]));
   }
 
-  // Handle odd factors
+  // Handle odd factors (safe for small n where trial division is fast)
   let mut i: u128 = 3;
   while i * i <= num {
     let mut count = 0i128;
-    while num % i == 0 {
+    while num.is_multiple_of(i) {
       count += 1;
       num /= i;
     }
@@ -4656,6 +4663,117 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(1),
     ]));
   }
+
+  Ok(Expr::List(factors))
+}
+
+fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
+  use num_traits::{One, Signed, Zero};
+
+  if n.is_zero() {
+    return Err(InterpreterError::EvaluationError(
+      "FactorInteger: argument cannot be zero".into(),
+    ));
+  }
+
+  let mut factors: Vec<Expr> = Vec::new();
+
+  if n.is_negative() {
+    factors.push(Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)]));
+  }
+
+  let mut remaining = n.abs();
+  let one = BigInt::one();
+
+  if remaining == one {
+    return Ok(Expr::List(factors));
+  }
+
+  // Trial division for small primes
+  let two = BigInt::from(2);
+  let mut count = 0i128;
+  while (&remaining % &two).is_zero() {
+    count += 1;
+    remaining /= &two;
+  }
+  if count > 0 {
+    factors.push(Expr::List(vec![Expr::Integer(2), Expr::Integer(count)]));
+  }
+
+  let trial_limit = 1_000_000u64;
+  let mut i = 3u64;
+  while i <= trial_limit {
+    let bi = BigInt::from(i);
+    if &bi * &bi > remaining {
+      break;
+    }
+    let mut count = 0i128;
+    while (&remaining % &bi).is_zero() {
+      count += 1;
+      remaining /= &bi;
+    }
+    if count > 0 {
+      factors.push(Expr::List(vec![
+        Expr::Integer(i as i128),
+        Expr::Integer(count),
+      ]));
+    }
+    i += 2;
+  }
+
+  // Factor remaining cofactor using num_prime (Pollard's rho + SQUFOF)
+  if remaining > one {
+    let remaining_uint = remaining.to_biguint().unwrap();
+    let prime_factors = num_prime::nt_funcs::factorize(remaining_uint);
+    for (factor, exponent) in prime_factors {
+      let factor_bigint = BigInt::from(factor);
+      // Merge with existing factor or add new entry
+      let mut merged = false;
+      for f in factors.iter_mut() {
+        if let Expr::List(pair) = f {
+          let matches = match (&pair[0], &factor_bigint) {
+            (Expr::Integer(a), b) => BigInt::from(*a) == *b,
+            (Expr::BigInteger(a), b) => a == b,
+            _ => false,
+          };
+          if matches {
+            if let Expr::Integer(ref mut exp) = pair[1] {
+              *exp += exponent as i128;
+            }
+            merged = true;
+            break;
+          }
+        }
+      }
+      if !merged {
+        factors.push(Expr::List(vec![
+          bigint_to_expr(factor_bigint),
+          Expr::Integer(exponent as i128),
+        ]));
+      }
+    }
+  }
+
+  // Sort factors by prime value
+  factors.sort_by(|a, b| {
+    let a_val = match a {
+      Expr::List(pair) => match &pair[0] {
+        Expr::Integer(n) => BigInt::from(*n),
+        Expr::BigInteger(n) => n.clone(),
+        _ => BigInt::zero(),
+      },
+      _ => BigInt::zero(),
+    };
+    let b_val = match b {
+      Expr::List(pair) => match &pair[0] {
+        Expr::Integer(n) => BigInt::from(*n),
+        Expr::BigInteger(n) => n.clone(),
+        _ => BigInt::zero(),
+      },
+      _ => BigInt::zero(),
+    };
+    a_val.cmp(&b_val)
+  });
 
   Ok(Expr::List(factors))
 }
