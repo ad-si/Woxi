@@ -2712,6 +2712,9 @@ pub fn evaluate_function_call_ast(
     "Integrate" if args.len() == 2 => {
       return crate::functions::calculus_ast::integrate_ast(args);
     }
+    "NIntegrate" if args.len() == 2 => {
+      return crate::functions::calculus_ast::nintegrate_ast(args);
+    }
     "Limit" if (2..=3).contains(&args.len()) => {
       return crate::functions::calculus_ast::limit_ast(args);
     }

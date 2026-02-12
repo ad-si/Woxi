@@ -2135,3 +2135,117 @@ fn gcd(a: i128, b: i128) -> i128 {
   }
   a
 }
+
+/// NIntegrate[expr, {var, lo, hi}] - Numerical integration
+pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NIntegrate expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // Second argument must be {var, lo, hi}
+  let (var_name, lo, hi) = match &args[1] {
+    Expr::List(items) if items.len() == 3 => {
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "NIntegrate: first element of integration range must be a symbol"
+              .into(),
+          ));
+        }
+      };
+      // Evaluate bounds to numeric values
+      let lo_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+      let hi_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
+      let lo = crate::functions::math_ast::try_eval_to_f64(&lo_expr)
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "NIntegrate: lower bound must be numeric".into(),
+          )
+        })?;
+      let hi = crate::functions::math_ast::try_eval_to_f64(&hi_expr)
+        .ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "NIntegrate: upper bound must be numeric".into(),
+          )
+        })?;
+      (var_name, lo, hi)
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "NIntegrate expects {var, lo, hi} as second argument".into(),
+      ));
+    }
+  };
+
+  let integrand = &args[0];
+
+  // Evaluate the integrand at a point
+  let eval_at = |x: f64| -> Option<f64> {
+    let substituted =
+      crate::syntax::substitute_variable(integrand, &var_name, &Expr::Real(x));
+    let evaluated =
+      crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+    crate::functions::math_ast::try_eval_to_f64(&evaluated)
+  };
+
+  let result = adaptive_simpson(&eval_at, lo, hi, 1e-12, 50);
+
+  match result {
+    Some(val) => Ok(Expr::Real(val)),
+    None => Err(InterpreterError::EvaluationError(
+      "NIntegrate: failed to converge or integrand is not numeric".into(),
+    )),
+  }
+}
+
+/// Adaptive Simpson's quadrature
+fn adaptive_simpson(
+  f: &dyn Fn(f64) -> Option<f64>,
+  a: f64,
+  b: f64,
+  tol: f64,
+  max_depth: u32,
+) -> Option<f64> {
+  let fa = f(a)?;
+  let fb = f(b)?;
+  let m = (a + b) / 2.0;
+  let fm = f(m)?;
+  let whole = (b - a) / 6.0 * (fa + 4.0 * fm + fb);
+  adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth)
+}
+
+fn adaptive_simpson_rec(
+  f: &dyn Fn(f64) -> Option<f64>,
+  a: f64,
+  b: f64,
+  tol: f64,
+  whole: f64,
+  fa: f64,
+  fm: f64,
+  fb: f64,
+  depth: u32,
+) -> Option<f64> {
+  let m = (a + b) / 2.0;
+  let m1 = (a + m) / 2.0;
+  let m2 = (m + b) / 2.0;
+  let fm1 = f(m1)?;
+  let fm2 = f(m2)?;
+  let h = b - a;
+  let left = h / 12.0 * (fa + 4.0 * fm1 + fm);
+  let right = h / 12.0 * (fm + 4.0 * fm2 + fb);
+  let refined = left + right;
+  let error = (refined - whole) / 15.0;
+
+  if depth == 0 || error.abs() < tol {
+    Some(refined + error)
+  } else {
+    let left_result =
+      adaptive_simpson_rec(f, a, m, tol / 2.0, left, fa, fm1, fm, depth - 1)?;
+    let right_result =
+      adaptive_simpson_rec(f, m, b, tol / 2.0, right, fm, fm2, fb, depth - 1)?;
+    Some(left_result + right_result)
+  }
+}

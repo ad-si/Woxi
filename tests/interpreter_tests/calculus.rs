@@ -339,6 +339,82 @@ mod limit {
   }
 }
 
+mod nintegrate {
+  use super::*;
+
+  fn assert_approx(code: &str, expected: f64, tol: f64) {
+    let result = interpret(code).unwrap();
+    let val: f64 = result.parse().unwrap_or_else(|_| {
+      panic!("NIntegrate result should be a number, got: {}", result)
+    });
+    assert!(
+      (val - expected).abs() < tol,
+      "NIntegrate mismatch for {}: got {}, expected {} (diff {})",
+      code,
+      val,
+      expected,
+      (val - expected).abs()
+    );
+  }
+
+  #[test]
+  fn nintegrate_polynomial() {
+    // ∫₀¹ x² dx = 1/3
+    assert_approx("NIntegrate[x^2, {x, 0, 1}]", 1.0 / 3.0, 1e-10);
+  }
+
+  #[test]
+  fn nintegrate_sin() {
+    // ∫₀^π sin(x) dx = 2
+    assert_approx("NIntegrate[Sin[x], {x, 0, Pi}]", 2.0, 1e-10);
+  }
+
+  #[test]
+  fn nintegrate_exp_neg_x_squared() {
+    // ∫₀¹ e^(-x²) dx ≈ 0.7468241328124271
+    assert_approx(
+      "NIntegrate[Exp[-x^2], {x, 0, 1}]",
+      0.7468241328124271,
+      1e-10,
+    );
+  }
+
+  #[test]
+  fn nintegrate_one_over_x() {
+    // ∫₁^e 1/x dx = 1
+    assert_approx("NIntegrate[1/x, {x, 1, E}]", 1.0, 1e-10);
+  }
+
+  #[test]
+  fn nintegrate_oscillatory() {
+    // ∫₀¹⁰ sin(x²) dx ≈ 0.5836708999296233
+    assert_approx(
+      "NIntegrate[Sin[x^2], {x, 0, 10}]",
+      0.5836708999296233,
+      1e-10,
+    );
+  }
+
+  #[test]
+  fn nintegrate_constant() {
+    // ∫₀⁵ 3 dx = 15
+    assert_approx("NIntegrate[3, {x, 0, 5}]", 15.0, 1e-10);
+  }
+
+  #[test]
+  fn nintegrate_cos() {
+    // ∫₀^(π/2) cos(x) dx = 1
+    assert_approx("NIntegrate[Cos[x], {x, 0, Pi/2}]", 1.0, 1e-10);
+  }
+
+  #[test]
+  fn nintegrate_error_no_range() {
+    // NIntegrate requires {var, lo, hi}
+    let result = interpret("NIntegrate[x^2, x]");
+    assert!(result.is_err());
+  }
+}
+
 mod trig_sec_csc_cot {
   use super::*;
 
