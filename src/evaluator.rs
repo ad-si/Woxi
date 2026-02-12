@@ -3985,13 +3985,138 @@ fn split_association_items(s: &str) -> Vec<String> {
   items
 }
 
+/// Check if a pattern Expr contains any Expr::Pattern nodes (named blanks like n_).
+fn contains_pattern(expr: &Expr) -> bool {
+  match expr {
+    Expr::Pattern { .. } => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_pattern(left) || contains_pattern(right)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_pattern),
+    Expr::List(items) => items.iter().any(contains_pattern),
+    Expr::UnaryOp { operand, .. } => contains_pattern(operand),
+    _ => false,
+  }
+}
+
+/// Try AST-based structural pattern matching for a single rule on an expression.
+/// Returns Some(result) if the pattern matched and was replaced.
+fn try_ast_pattern_replace(
+  expr: &Expr,
+  pattern: &Expr,
+  replacement: &Expr,
+  condition: Option<&str>,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Check if pattern contains any Expr::Pattern nodes
+  if !contains_pattern(pattern) {
+    return Ok(None);
+  }
+
+  match expr {
+    Expr::List(items) => {
+      // Apply structural pattern matching to each list element
+      let mut results = Vec::new();
+      let mut any_matched = false;
+      for item in items {
+        if let Some(result) =
+          try_ast_pattern_replace_single(item, pattern, replacement, condition)?
+        {
+          results.push(result);
+          any_matched = true;
+        } else {
+          results.push(item.clone());
+        }
+      }
+      if any_matched {
+        Ok(Some(Expr::List(results)))
+      } else {
+        Ok(None)
+      }
+    }
+    _ => try_ast_pattern_replace_single(expr, pattern, replacement, condition),
+  }
+}
+
+/// Try to match a single expression against a structural pattern.
+fn try_ast_pattern_replace_single(
+  value: &Expr,
+  pattern: &Expr,
+  replacement: &Expr,
+  condition: Option<&str>,
+) -> Result<Option<Expr>, InterpreterError> {
+  if let Some(bindings) = match_pattern(value, pattern) {
+    // Check condition if present
+    if let Some(cond_str) = condition {
+      // Substitute bindings into condition and evaluate
+      let mut substituted_cond = cond_str.to_string();
+      for (var, val) in &bindings {
+        substituted_cond =
+          replace_var_with_value(&substituted_cond, var, &expr_to_string(val));
+      }
+      match interpret(&substituted_cond) {
+        Ok(result) if result == "True" => {}
+        _ => return Ok(None), // Condition not satisfied
+      }
+    }
+    // Substitute bindings into replacement using apply_bindings
+    return Ok(Some(apply_bindings(replacement, &bindings)?));
+  }
+  Ok(None)
+}
+
+/// Extract the pattern Expr and optional /; condition string from a rule's pattern field.
+/// Handles Expr::Raw("pattern_str /; condition_str") by parsing the pattern part
+/// and returning the condition string separately.
+fn extract_pattern_and_condition(pattern: &Expr) -> (Expr, Option<String>) {
+  match pattern {
+    Expr::Raw(s) if s.contains(" /; ") => {
+      // Split on " /; " to get pattern and condition
+      if let Some(idx) = s.find(" /; ") {
+        let pattern_str = &s[..idx];
+        let condition_str = &s[idx + 4..];
+        if let Ok(pattern_expr) = crate::syntax::string_to_expr(pattern_str) {
+          return (pattern_expr, Some(condition_str.to_string()));
+        }
+      }
+      (pattern.clone(), None)
+    }
+    _ => (pattern.clone(), None),
+  }
+}
+
 /// Apply ReplaceAll operation on AST (expr /. rules)
-/// Routes to string-based implementation for correct pattern matching support
+/// Uses AST-based structural pattern matching for patterns containing blanks (n_, x_Head, etc.),
+/// falls back to string-based matching for simple patterns.
 fn apply_replace_all_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Extract pattern and replacement from rules
+  // Try AST-based structural pattern matching first for single rules
+  match rules {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      let (pat_expr, condition) = extract_pattern_and_condition(pattern);
+      if contains_pattern(&pat_expr)
+        && let Some(result) = try_ast_pattern_replace(
+          expr,
+          &pat_expr,
+          replacement,
+          condition.as_deref(),
+        )?
+      {
+        return Ok(result);
+      }
+    }
+    _ => {}
+  }
+
+  // Extract pattern and replacement strings for string-based matching
   let (pattern_str, replacement_str) = match rules {
     Expr::Rule {
       pattern,
@@ -4026,7 +4151,7 @@ fn apply_replace_all_ast(
     _ => return Ok(expr.clone()),
   };
 
-  // Use the string-based function which handles all pattern types correctly
+  // Fall back to string-based function for simple patterns
   let expr_str = expr_to_string(expr);
   let result =
     apply_replace_all_direct(&expr_str, &pattern_str, &replacement_str)?;
@@ -4157,7 +4282,6 @@ fn apply_rules_once(
 }
 
 /// Match a pattern against an expression, returning bindings if successful
-#[allow(dead_code)]
 fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
   match pattern {
     Expr::Pattern { name, head } => {
@@ -4266,6 +4390,53 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
         None
       }
     }
+    Expr::BinaryOp {
+      op: pat_op,
+      left: pat_left,
+      right: pat_right,
+    } => {
+      if let Expr::BinaryOp {
+        op: expr_op,
+        left: expr_left,
+        right: expr_right,
+      } = expr
+      {
+        if pat_op != expr_op {
+          return None;
+        }
+        let mut bindings = Vec::new();
+        if let Some(b) = match_pattern(expr_left, pat_left) {
+          bindings.extend(b);
+        } else {
+          return None;
+        }
+        if let Some(b) = match_pattern(expr_right, pat_right) {
+          bindings.extend(b);
+        } else {
+          return None;
+        }
+        Some(bindings)
+      } else {
+        None
+      }
+    }
+    Expr::UnaryOp {
+      op: pat_op,
+      operand: pat_operand,
+    } => {
+      if let Expr::UnaryOp {
+        op: expr_op,
+        operand: expr_operand,
+      } = expr
+      {
+        if pat_op != expr_op {
+          return None;
+        }
+        match_pattern(expr_operand, pat_operand)
+      } else {
+        None
+      }
+    }
     _ => {
       // For other patterns, check structural equality
       if expr_equal(expr, pattern) {
@@ -4278,7 +4449,6 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
 }
 
 /// Get the head of an expression (for pattern matching with head constraints)
-#[allow(dead_code)]
 fn get_expr_head(expr: &Expr) -> String {
   match expr {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer".to_string(),
@@ -4314,7 +4484,6 @@ fn get_string_expr_head(expr: &str) -> String {
 }
 
 /// Apply bindings to a replacement expression
-#[allow(dead_code)]
 fn apply_bindings(
   replacement: &Expr,
   bindings: &[(String, Expr)],

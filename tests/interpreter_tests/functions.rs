@@ -389,6 +389,46 @@ mod pattern_matching {
         );
     }
   }
+
+  mod structural_pattern {
+    use super::*;
+
+    #[test]
+    fn power_pattern_matches_all() {
+      // x^n_ matches any power of x, binding n to the exponent
+      assert_eq!(
+        interpret("{x^2, x^3, x^4} /. x^n_ :> f[n]").unwrap(),
+        "{f[2], f[3], f[4]}"
+      );
+    }
+
+    #[test]
+    fn power_pattern_with_condition() {
+      // x^n_ /; EvenQ[n] matches only even powers
+      assert_eq!(
+        interpret("{x^2, x^3, x^4} /. x^n_ /; EvenQ[n] :> f[n]").unwrap(),
+        "{f[2], x^3, f[4]}"
+      );
+    }
+
+    #[test]
+    fn power_pattern_non_matching() {
+      // Pattern doesn't match non-power expressions
+      assert_eq!(
+        interpret("{x, x^2, y^3} /. x^n_ :> f[n]").unwrap(),
+        "{x, f[2], y^3}"
+      );
+    }
+
+    #[test]
+    fn function_call_pattern() {
+      // f[n_] pattern matching within replacement rules
+      assert_eq!(
+        interpret("{f[1], f[2], g[3]} /. f[n_] :> n^2").unwrap(),
+        "{1, 4, g[3]}"
+      );
+    }
+  }
 }
 
 mod paren_anonymous_function {

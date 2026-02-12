@@ -567,9 +567,27 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::ReplacementRule => {
       let full_str = pair.as_str();
       let is_delayed = full_str.contains(":>");
-      let mut inner = pair.into_inner();
-      let pattern = pair_to_expr(inner.next().unwrap());
-      let replacement = pair_to_expr(inner.next().unwrap());
+      let children: Vec<_> = pair.into_inner().collect();
+      // Grammar: ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | ":>") ~ ConditionExpr
+      // 2 children: pattern -> replacement
+      // 3 children: pattern /; condition -> replacement
+      let (pattern, replacement) = if children.len() == 3 {
+        // pattern /; condition :> replacement
+        // Store as Raw so the string-based pattern matcher can handle the /; condition
+        let pattern_expr = pair_to_expr(children[0].clone());
+        let condition_expr = pair_to_expr(children[1].clone());
+        let pattern_str = format!(
+          "{} /; {}",
+          expr_to_string(&pattern_expr),
+          expr_to_string(&condition_expr)
+        );
+        (Expr::Raw(pattern_str), pair_to_expr(children[2].clone()))
+      } else {
+        (
+          pair_to_expr(children[0].clone()),
+          pair_to_expr(children[1].clone()),
+        )
+      };
       if is_delayed {
         Expr::RuleDelayed {
           pattern: Box::new(pattern),
