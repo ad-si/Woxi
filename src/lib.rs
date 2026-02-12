@@ -219,6 +219,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains(" . ")
       && !trimmed.contains(".{")
       && !trimmed.contains('^')
+      && !trimmed.contains('.')
+    // Reals may need scientific notation formatting
     {
       // Simple list with no function calls or operators - return as-is
       return Ok(trimmed.to_string());
@@ -667,9 +669,11 @@ pub fn interpret_with_stdout(
 }
 
 fn format_result(result: f64) -> String {
-  if result.fract() == 0.0 {
-    let int_result = result as i64;
-    int_result.to_string()
+  if result.fract() == 0.0 && result.abs() < 1e15 {
+    // Integer result - format without trailing dot
+    format!("{}", result as i64)
+  } else if result.abs() >= 1e6 || (result != 0.0 && result.abs() < 1e-5) {
+    syntax::format_real(result)
   } else {
     format!("{}", result)
   }
@@ -677,11 +681,7 @@ fn format_result(result: f64) -> String {
 
 /// Format a result as a real number (with trailing dot for whole numbers)
 pub fn format_real_result(result: f64) -> String {
-  if result.fract() == 0.0 {
-    format!("{}.", result as i64)
-  } else {
-    format!("{}", result)
-  }
+  syntax::format_real(result)
 }
 
 /// GCD helper function for fraction simplification

@@ -1321,15 +1321,43 @@ fn parse_anonymous_body(s: &str) -> Expr {
 }
 
 /// Format a real number for output (matches Wolfram Language format)
-fn format_real(f: f64) -> String {
-  if f.fract() == 0.0 {
-    // Whole number - format with decimal point to indicate it's a Real
+pub fn format_real(f: f64) -> String {
+  if f.is_infinite() {
+    if f > 0.0 {
+      return "Infinity".to_string();
+    } else {
+      return "-Infinity".to_string();
+    }
+  }
+  if f.is_nan() {
+    return "Indeterminate".to_string();
+  }
+  let abs = f.abs();
+  if abs == 0.0 {
+    return "0.".to_string();
+  }
+  // Wolfram uses *^ scientific notation for |f| >= 1e6 or |f| < 1e-5
+  if !(1e-5..1e6).contains(&abs) {
+    format_real_scientific(f)
+  } else if f.fract() == 0.0 {
+    // Whole number in normal range - format with trailing dot
     format!("{}.", f as i64)
   } else {
     // Use Rust's default formatter which produces the shortest
     // representation that round-trips to the same f64 value
     format!("{}", f)
   }
+}
+
+/// Format a real number using Wolfram's *^ scientific notation.
+/// E.g. 2.733467611516948*^33 or -1.5*^-6
+fn format_real_scientific(f: f64) -> String {
+  let exp = f.abs().log10().floor() as i32;
+  let mantissa = f / 10_f64.powi(exp);
+  // Format mantissa with enough precision, then trim trailing zeros
+  let m_str = format!("{:.15}", mantissa);
+  let m_str = m_str.trim_end_matches('0');
+  format!("{}*^{}", m_str, exp)
 }
 
 /// Convert an Expr back to a string representation

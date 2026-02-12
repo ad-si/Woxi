@@ -12,7 +12,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(n.to_string()),
     Expr::BigInteger(n) => Ok(n.to_string()),
-    Expr::Real(f) => Ok(format_result(*f)),
+    Expr::Real(f) => Ok(crate::syntax::format_real(*f)),
     Expr::BigFloat(digits, prec) => Ok(format!("{}`{}.", digits, prec)),
     Expr::String(s) => Ok(format!("\"{}\"", s)),
     Expr::Identifier(name) => {
