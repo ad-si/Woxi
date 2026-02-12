@@ -268,6 +268,49 @@ fn match_neg_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
       }
       None
     }
+    // FunctionCall("Times", [...]) form
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      // Times[-1, x^2] => a=1
+      // Times[-a, x^2] => a (where a is positive)
+      // Times[-1, a, x^2] => a
+      // Find a negative integer factor and check remaining is a*x^2
+      for (i, arg) in args.iter().enumerate() {
+        if let Expr::Integer(n) = arg
+          && *n < 0
+        {
+          let mut rest: Vec<Expr> = args
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .map(|(_, e)| e.clone())
+            .collect();
+          let rest_expr = if rest.len() == 1 {
+            rest.remove(0)
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: rest,
+            }
+          };
+          if *n == -1 {
+            // Times[-1, x^2] => a=1
+            if is_var_squared(&rest_expr, var) {
+              return Some(Expr::Integer(1));
+            }
+            // Times[-1, a*x^2] => a
+            if let Some(coeff) = match_a_x_squared(&rest_expr, var) {
+              return Some(coeff);
+            }
+          } else {
+            // Times[-a, x^2] => a
+            if is_var_squared(&rest_expr, var) {
+              return Some(Expr::Integer(-*n));
+            }
+          }
+        }
+      }
+      None
+    }
     // BinaryOp::Minus: 0 - x^2 or similar (unlikely but handle)
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Minus,
@@ -316,6 +359,32 @@ fn match_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
     // x^2 * a
     if is_var_squared(left, var) && is_constant_wrt(right, var) {
       return Some(*right.clone());
+    }
+  }
+  // FunctionCall("Times", [...]) form
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+  {
+    // Find x^2 factor, rest is 'a'
+    for (i, arg) in args.iter().enumerate() {
+      if is_var_squared(arg, var) {
+        let rest: Vec<Expr> = args
+          .iter()
+          .enumerate()
+          .filter(|(j, _)| *j != i)
+          .map(|(_, e)| e.clone())
+          .collect();
+        if rest.iter().all(|a| is_constant_wrt(a, var)) {
+          return if rest.len() == 1 {
+            Some(rest[0].clone())
+          } else {
+            Some(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: rest,
+            })
+          };
+        }
+      }
     }
   }
   None
@@ -683,11 +752,6 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
 fn make_divided(expr: Expr, divisor: Expr) -> Expr {
   match &divisor {
     Expr::Integer(1) => expr,
-    Expr::Integer(n) => Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
-      left: Box::new(crate::functions::math_ast::make_rational_pub(1, *n)),
-      right: Box::new(expr),
-    },
     _ => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(expr),
@@ -739,6 +803,39 @@ fn try_match_linear_arg(expr: &Expr, var: &str) -> Option<Expr> {
         && matches!(left.as_ref(), Expr::Identifier(name) if name == var)
       {
         Some(*right.clone())
+      } else {
+        None
+      }
+    }
+    // FunctionCall("Times", [coeff, var]) form
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      // Find the variable factor and collect the rest as coefficient
+      let mut var_idx = None;
+      for (i, arg) in args.iter().enumerate() {
+        if matches!(arg, Expr::Identifier(n) if n == var) {
+          var_idx = Some(i);
+          break;
+        }
+      }
+      if let Some(vi) = var_idx {
+        let rest: Vec<Expr> = args
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| *i != vi)
+          .map(|(_, e)| e.clone())
+          .collect();
+        if rest.iter().all(|a| is_constant_wrt(a, var)) {
+          if rest.len() == 1 {
+            Some(rest[0].clone())
+          } else {
+            Some(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: rest,
+            })
+          }
+        } else {
+          None
+        }
       } else {
         None
       }
@@ -1073,6 +1170,21 @@ pub fn simplify(expr: Expr) -> Expr {
           return Expr::Integer(a * b);
         }
         _ => {}
+      }
+
+      // For Times, delegate to times_ast for proper flattening and sorting
+      if matches!(op, Times)
+        && let Ok(result) =
+          crate::functions::math_ast::times_ast(&[left.clone(), right.clone()])
+      {
+        return result;
+      }
+      // For Plus, delegate to plus_ast for proper sorting
+      if matches!(op, Plus)
+        && let Ok(result) =
+          crate::functions::math_ast::plus_ast(&[left.clone(), right.clone()])
+      {
+        return result;
       }
 
       Expr::BinaryOp {

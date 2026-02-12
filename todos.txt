@@ -1,7 +1,6 @@
 ## Textual
 
 wolframscript -code 'CellularAutomaton[30, {{1}, 0}, 20] // MatrixForm'
-wolframscript -code 'D[Sin[x]^2, x]'
 wolframscript -code 'DSolve[y''[x] + y[x] == Tan[x], y[x], x]'
 wolframscript -code 'DSolve[y''[x] + y[x] == Tan[x], y[x], x]'
 wolframscript -code 'Eigenvalues[{{2, 1}, {1, 2}}]'

@@ -755,34 +755,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
         }
         BinaryOperator::Times => {
-          // Handle BigInteger arithmetic
-          if let Some(result) =
-            bigint_binary_op(&left_val, &right_val, |a, b| a * b)
-          {
-            Ok(result)
-          } else if let (Some(l), Some(r)) = (left_num, right_num) {
-            if matches!(&left_val, Expr::Real(_))
-              || matches!(&right_val, Expr::Real(_))
-            {
-              Ok(Expr::Real(l * r))
-            } else {
-              Ok(num_to_expr(l * r))
-            }
-          } else if matches!(&left_val, Expr::Integer(0))
-            || matches!(&right_val, Expr::Integer(0))
-          {
-            Ok(Expr::Integer(0))
-          } else if matches!(&left_val, Expr::Integer(1)) {
-            Ok(right_val)
-          } else if matches!(&right_val, Expr::Integer(1)) {
-            Ok(left_val)
-          } else {
-            Ok(Expr::BinaryOp {
-              op: *op,
-              left: Box::new(left_val),
-              right: Box::new(right_val),
-            })
-          }
+          // Use times_ast for proper symbolic handling and canonical ordering
+          crate::functions::math_ast::times_ast(&[left_val, right_val])
         }
         BinaryOperator::Divide => {
           // Delegate to divide_ast for proper handling of Rational, Real, etc.

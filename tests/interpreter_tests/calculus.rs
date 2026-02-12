@@ -419,7 +419,7 @@ mod trig_sec_csc_cot {
 
   #[test]
   fn d_csc() {
-    assert_eq!(interpret("D[Csc[x], x]").unwrap(), "-(Csc[x]*Cot[x])");
+    assert_eq!(interpret("D[Csc[x], x]").unwrap(), "-(Cot[x]*Csc[x])");
   }
 
   #[test]

@@ -429,47 +429,6 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Sort symbolic terms: polynomial-like terms first, then transcendental functions
     // This gives Mathematica-like ordering where x^2 comes before Sin[x]
     symbolic_args.sort_by(|a, b| {
-      // Priority: lower number = appears earlier
-      // 0 = polynomial-like (variables, products, powers, divisions)
-      // 1 = transcendental functions (Sin, Cos, Exp, Log, etc.)
-      fn term_priority(e: &Expr) -> i32 {
-        match e {
-          // Pure identifiers (variables) are polynomial-like
-          Expr::Identifier(_) => 0,
-          // Powers are polynomial-like
-          Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
-            ..
-          } => 0,
-          // Division is polynomial-like
-          Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            ..
-          } => 0,
-          // Times is polynomial-like
-          Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Times,
-            ..
-          } => 0,
-          // FunctionCall: Times is polynomial-like, transcendental functions come later
-          Expr::FunctionCall { name, .. } => {
-            match name.as_str() {
-              "Times" | "Power" | "Plus" | "Rational" => 0,
-              // Transcendental functions come after polynomial terms
-              "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh"
-              | "Cosh" | "Tanh" | "Coth" | "Sech" | "Csch" | "ArcSin"
-              | "ArcCos" | "ArcTan" | "ArcCot" | "ArcSec" | "ArcCsc"
-              | "Exp" | "Log" | "Factorial" => 1,
-              // Other functions are polynomial-like (could be user-defined)
-              _ => 0,
-            }
-          }
-          // Unary minus: use inner priority
-          Expr::UnaryOp { operand, .. } => term_priority(operand),
-          // Everything else is polynomial-like
-          _ => 0,
-        }
-      }
       let pa = term_priority(a);
       let pb = term_priority(b);
       if pa != pb {
@@ -494,11 +453,71 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Sort symbolic factors in Times using the same ordering as Wolfram:
+/// polynomial-like terms first (variables, powers), then transcendental functions,
+/// with alphabetical ordering within each group.
+/// Compute term priority for sorting: 0 = polynomial-like, 1 = transcendental.
+fn term_priority(e: &Expr) -> i32 {
+  match e {
+    Expr::Identifier(_) => 0,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      ..
+    } => 0,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      ..
+    } => term_priority(left),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => term_priority(left).max(term_priority(right)),
+    Expr::FunctionCall { name, .. } => match name.as_str() {
+      "Times" | "Power" | "Plus" | "Rational" => 0,
+      "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh"
+      | "Tanh" | "Coth" | "Sech" | "Csch" | "ArcSin" | "ArcCos" | "ArcTan"
+      | "ArcCot" | "ArcSec" | "ArcCsc" | "Exp" | "Log" | "Factorial" => 1,
+      _ => 0,
+    },
+    Expr::UnaryOp { operand, .. } => term_priority(operand),
+    _ => 0,
+  }
+}
+
+fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
+  symbolic_args.sort_by(|a, b| {
+    let pa = term_priority(a);
+    let pb = term_priority(b);
+    if pa != pb {
+      pa.cmp(&pb)
+    } else {
+      crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+    }
+  });
+}
+
 /// Times[args...] - Product of arguments, with list threading
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
   }
+
+  // Flatten nested Times arguments
+  let mut flat_args: Vec<Expr> = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::FunctionCall {
+        name,
+        args: inner_args,
+      } if name == "Times" => {
+        flat_args.extend(inner_args.clone());
+      }
+      _ => flat_args.push(arg.clone()),
+    }
+  }
+  let args = &flat_args;
 
   // Check for list threading
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
@@ -544,6 +563,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(0));
     }
 
+    sort_symbolic_factors(&mut symbolic_args);
     let mut final_args: Vec<Expr> = Vec::new();
     if big_product != BigInt::from(1) {
       final_args.push(bigint_to_expr(big_product));
@@ -558,44 +578,101 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Separate numeric and symbolic arguments
-  let mut numeric_product = 1.0;
+  // Separate into: integers, rationals, reals, and symbolic arguments
+  let mut int_product: i128 = 1;
+  let mut has_int = false;
+  let mut rat_numer: i128 = 1;
+  let mut rat_denom: i128 = 1;
+  let mut has_rational = false;
+  let mut real_product: f64 = 1.0;
   let mut any_real = false;
   let mut symbolic_args: Vec<Expr> = Vec::new();
 
   for arg in args {
-    if let Some(n) = expr_to_num(arg) {
-      numeric_product *= n;
-      if matches!(arg, Expr::Real(_)) {
+    match arg {
+      Expr::Integer(n) => {
+        int_product *= n;
+        has_int = true;
+      }
+      Expr::Real(f) => {
+        real_product *= f;
         any_real = true;
       }
-    } else {
-      symbolic_args.push(arg.clone());
+      Expr::FunctionCall { name, args: rargs }
+        if name == "Rational" && rargs.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
+          rat_numer *= n;
+          rat_denom *= d;
+          has_rational = true;
+        } else {
+          symbolic_args.push(arg.clone());
+        }
+      }
+      _ => {
+        if let Some(n) = expr_to_num(arg) {
+          real_product *= n;
+          any_real = true;
+        } else {
+          symbolic_args.push(arg.clone());
+        }
+      }
     }
   }
+
+  // If any Real, compute everything as float
+  if any_real {
+    let total = (int_product as f64)
+      * (rat_numer as f64 / rat_denom as f64)
+      * real_product;
+    if symbolic_args.is_empty() {
+      return Ok(Expr::Real(total));
+    }
+    if total == 0.0 {
+      return Ok(Expr::Integer(0));
+    }
+    sort_symbolic_factors(&mut symbolic_args);
+    let mut final_args: Vec<Expr> = Vec::new();
+    if total != 1.0 {
+      final_args.push(Expr::Real(total));
+    }
+    final_args.extend(symbolic_args);
+    return if final_args.len() == 1 {
+      Ok(final_args.remove(0))
+    } else {
+      Ok(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: final_args,
+      })
+    };
+  }
+
+  // Exact arithmetic: combine integer * rational
+  // Result is (int_product * rat_numer) / rat_denom
+  let combined_numer = int_product * rat_numer;
+  let combined_denom = rat_denom;
+  let coeff = if has_rational || (has_int && combined_denom != 1) {
+    make_rational(combined_numer, combined_denom)
+  } else {
+    Expr::Integer(int_product)
+  };
 
   // If all arguments are numeric, return the product
   if symbolic_args.is_empty() {
-    if any_real {
-      return Ok(Expr::Real(numeric_product));
-    } else {
-      return Ok(num_to_expr(numeric_product));
-    }
+    return Ok(coeff);
   }
 
   // 0 * anything = 0
-  if numeric_product == 0.0 {
+  if combined_numer == 0 {
     return Ok(Expr::Integer(0));
   }
 
-  // Build final args: numeric coefficient (if not 1) + symbolic terms
+  // Build final args: coefficient (if not 1) + sorted symbolic terms
+  sort_symbolic_factors(&mut symbolic_args);
   let mut final_args: Vec<Expr> = Vec::new();
-  if numeric_product != 1.0 || any_real {
-    if any_real {
-      final_args.push(Expr::Real(numeric_product));
-    } else {
-      final_args.push(num_to_expr(numeric_product));
-    }
+  let is_unit = matches!(&coeff, Expr::Integer(1));
+  if !is_unit {
+    final_args.push(coeff);
   }
   final_args.extend(symbolic_args);
 
@@ -685,21 +762,49 @@ fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   // Simplify (n * expr) / d where n, d are integers → simplify coefficient
   if let Expr::Integer(d) = b
     && *d != 0
-    && let Expr::BinaryOp {
+  {
+    // BinaryOp form
+    if let Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Times,
       left,
       right,
     } = a
-  {
-    // (Integer * expr) / Integer → (n/d) * expr
-    if let Expr::Integer(n) = left.as_ref() {
-      let coeff = make_rational(*n, *d);
-      return multiply_scalar_by_expr(&coeff, right);
+    {
+      // (Integer * expr) / Integer → (n/d) * expr
+      if let Expr::Integer(n) = left.as_ref() {
+        let coeff = make_rational(*n, *d);
+        return multiply_scalar_by_expr(&coeff, right);
+      }
+      // (expr * Integer) / Integer → expr * (n/d)
+      if let Expr::Integer(n) = right.as_ref() {
+        let coeff = make_rational(*n, *d);
+        return multiply_scalar_by_expr(&coeff, left);
+      }
     }
-    // (expr * Integer) / Integer → expr * (n/d)
-    if let Expr::Integer(n) = right.as_ref() {
-      let coeff = make_rational(*n, *d);
-      return multiply_scalar_by_expr(&coeff, left);
+    // FunctionCall("Times", ...) form
+    if let Expr::FunctionCall { name, args: targs } = a
+      && name == "Times"
+    {
+      for (i, arg) in targs.iter().enumerate() {
+        if let Expr::Integer(n) = arg {
+          let coeff = make_rational(*n, *d);
+          let mut rest: Vec<Expr> = targs
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .map(|(_, e)| e.clone())
+            .collect();
+          if rest.len() == 1 {
+            return multiply_scalar_by_expr(&coeff, &rest.remove(0));
+          } else {
+            let rest_expr = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: rest,
+            };
+            return multiply_scalar_by_expr(&coeff, &rest_expr);
+          }
+        }
+      }
     }
   }
 
