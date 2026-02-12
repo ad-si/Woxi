@@ -388,9 +388,9 @@ pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   if args.len() == 2
-    && let Expr::Integer(n) = &args[1]
+    && let Some(n) = expr_to_i128(&args[1])
   {
-    let n = *n;
+    let n = n;
     if n >= 0 {
       result.truncate(n as usize);
     } else {
@@ -530,14 +530,23 @@ pub fn map_at_ast(
   // Wolfram uses {{1}, {3}} for multiple positions (list of single-element lists)
   let positions: Vec<i128> = match pos_spec {
     Expr::Integer(n) => vec![*n],
+    Expr::BigInteger(_) => match expr_to_i128(pos_spec) {
+      Some(n) => vec![n],
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "MapAt".to_string(),
+          args: vec![func.clone(), list.clone(), pos_spec.clone()],
+        });
+      }
+    },
     Expr::List(pos_list) => {
       // Each element must be a single-element list like {1}
       let mut positions = Vec::new();
       for p in pos_list {
         match p {
           Expr::List(inner) if inner.len() == 1 => {
-            if let Expr::Integer(n) = &inner[0] {
-              positions.push(*n);
+            if let Some(n) = expr_to_i128(&inner[0]) {
+              positions.push(n);
             }
           }
           _ => {
@@ -803,8 +812,8 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
 /// Get the head of an expression as a string
 fn get_expr_head_str(expr: &Expr) -> &str {
   match expr {
-    Expr::Integer(_) => "Integer",
-    Expr::Real(_) => "Real",
+    Expr::Integer(_) | Expr::BigInteger(_) => "Integer",
+    Expr::Real(_) | Expr::BigFloat(_, _) => "Real",
     Expr::String(_) => "String",
     Expr::List(_) => "List",
     Expr::FunctionCall { name, .. } => name,
@@ -821,10 +830,9 @@ pub fn cases_with_level_ast(
 ) -> Result<Expr, InterpreterError> {
   // Parse level spec: {n} means exactly level n
   let level = match level_spec {
-    Expr::List(items) if items.len() == 1 => match &items[0] {
-      Expr::Integer(n) => *n as usize,
-      _ => 1,
-    },
+    Expr::List(items) if items.len() == 1 => {
+      expr_to_i128(&items[0]).unwrap_or(1) as usize
+    }
     _ => 1,
   };
 
@@ -1175,15 +1183,18 @@ pub fn table_ast(
   iter_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
   match iter_spec {
-    Expr::Integer(n) => {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
       // Simple form: Table[expr, n]
-      if *n < 0 {
+      let n = expr_to_i128(iter_spec).ok_or_else(|| {
+        InterpreterError::EvaluationError("Table: count too large".into())
+      })?;
+      if n < 0 {
         return Err(InterpreterError::EvaluationError(
           "Table: count must be non-negative".into(),
         ));
       }
       let mut results = Vec::new();
-      for _ in 0..*n {
+      for _ in 0..n {
         let val = crate::evaluator::evaluate_expr_to_expr(body)?;
         results.push(val);
       }
@@ -1331,6 +1342,10 @@ pub fn table_ast(
 fn expr_to_i128(expr: &Expr) -> Option<i128> {
   match expr {
     Expr::Integer(n) => Some(*n),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_i128()
+    }
     Expr::Real(f) if f.fract() == 0.0 => Some(*f as i128),
     _ => None,
   }
@@ -1534,10 +1549,9 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let count = match n {
-    Expr::Integer(i) => *i,
-    Expr::Real(f) if f.fract() == 0.0 => *f as i128,
-    _ => {
+  let count = match expr_to_i128(n) {
+    Some(i) => i,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "Take".to_string(),
         args: vec![list.clone(), n.clone()],
@@ -1593,10 +1607,9 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let count = match n {
-    Expr::Integer(i) => *i,
-    Expr::Real(f) if f.fract() == 0.0 => *f as i128,
-    _ => {
+  let count = match expr_to_i128(n) {
+    Some(i) => i,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "Drop".to_string(),
         args: vec![list.clone(), n.clone()],
@@ -1795,6 +1808,10 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn expr_to_f64(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_f64()
+    }
     Expr::Real(f) => Some(*f),
     _ => None,
   }
@@ -2359,13 +2376,18 @@ pub fn constant_array_ast(
   dims: &Expr,
 ) -> Result<Expr, InterpreterError> {
   match dims {
-    Expr::Integer(n) => {
-      if *n < 0 {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      let n = expr_to_i128(dims).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "ConstantArray: dimension too large".into(),
+        )
+      })?;
+      if n < 0 {
         return Err(InterpreterError::EvaluationError(
           "ConstantArray: dimension must be non-negative".into(),
         ));
       }
-      Ok(Expr::List(vec![elem.clone(); *n as usize]))
+      Ok(Expr::List(vec![elem.clone(); n as usize]))
     }
     Expr::List(dim_list) => {
       if dim_list.is_empty() {
@@ -2854,22 +2876,28 @@ fn match_power_inverse(expr: &Expr, var_name: &str) -> Option<i64> {
 fn get_integer(expr: &Expr) -> Option<i128> {
   match expr {
     Expr::Integer(n) => Some(*n),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_i128()
+    }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
-    } => {
-      if let Expr::Integer(n) = operand.as_ref() {
-        Some(-n)
-      } else {
-        None
+    } => match operand.as_ref() {
+      Expr::Integer(n) => Some(-n),
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        (-n).to_i128()
       }
-    }
+      _ => None,
+    },
     _ => None,
   }
 }
 
 fn is_one(expr: &Expr) -> bool {
   matches!(expr, Expr::Integer(1))
+    || matches!(expr, Expr::BigInteger(n) if *n == num_bigint::BigInt::from(1))
 }
 
 /// Compute ζ(2k) = |B_{2k}| * (2π)^{2k} / (2 * (2k)!) as a symbolic expression.
@@ -2884,11 +2912,23 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
   // Extract the rational value of B_s as (num, den)
   let (b_num, b_den) = match &b_s {
     Expr::Integer(n) => (*n, 1i128),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      match n.to_i128() {
+        Some(v) => (v, 1i128),
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "Sum".to_string(),
+            args: vec![],
+          });
+        }
+      }
+    }
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      match (&args[0], &args[1]) {
-        (Expr::Integer(n), Expr::Integer(d)) => (*n, *d),
+      match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
+        (Some(n), Some(d)) => (n, d),
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Sum".to_string(),
@@ -3180,8 +3220,9 @@ pub fn take_while_ast(
 /// Do[expr, {i, min, max}] -> execute with i from min to max
 pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
   match iter_spec {
-    Expr::Integer(n) => {
-      for _ in 0..*n {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      let n = expr_to_i128(iter_spec).unwrap_or(0);
+      for _ in 0..n {
         match crate::evaluator::evaluate_expr_to_expr(body) {
           Ok(_) => {}
           Err(InterpreterError::BreakSignal) => break,
@@ -3408,13 +3449,16 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
   };
 
   match index {
-    Expr::Integer(i) => {
-      if *i < 1 {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      let i = expr_to_i128(index).ok_or_else(|| {
+        InterpreterError::EvaluationError("Part: index too large".into())
+      })?;
+      if i < 1 {
         return Err(InterpreterError::EvaluationError(
           "Part: index must be a positive integer".into(),
         ));
       }
-      let idx = (*i as usize) - 1;
+      let idx = (i as usize) - 1;
       if idx >= items.len() {
         return Err(InterpreterError::EvaluationError(
           "Part: index out of bounds".into(),
@@ -3470,8 +3514,8 @@ pub fn insert_ast(
     }
   };
 
-  let n = match pos {
-    Expr::Integer(n) => *n,
+  let n = match expr_to_i128(pos) {
+    Some(n) => n,
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Insert: position must be an integer".into(),
@@ -3640,7 +3684,7 @@ pub fn extract_ast(
   index: &Expr,
 ) -> Result<Expr, InterpreterError> {
   match index {
-    Expr::Integer(_) => part_ast(list, index),
+    Expr::Integer(_) | Expr::BigInteger(_) => part_ast(list, index),
     Expr::List(indices) => {
       // Nested extraction: Extract[expr, {i, j, ...}]
       let mut current = list.clone();
@@ -3841,13 +3885,13 @@ pub fn replace_part_ast(
       ));
     }
   };
-  let idx = match pos {
-    Expr::Integer(n) => {
+  let idx = match expr_to_i128(pos) {
+    Some(n) => {
       let len = items.len() as i128;
-      if *n > 0 && *n <= len {
-        (*n - 1) as usize
-      } else if *n < 0 && -*n <= len {
-        (len + *n) as usize
+      if n > 0 && n <= len {
+        (n - 1) as usize
+      } else if n < 0 && -n <= len {
+        (len + n) as usize
       } else {
         return Err(InterpreterError::EvaluationError(format!(
           "ReplacePart: position {} out of range",
@@ -3884,11 +3928,12 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let k = if args.len() >= 2 {
     // Second arg should be {k} — a list with one integer
     match &args[1] {
-      Expr::List(spec) if spec.len() == 1 => match &spec[0] {
-        Expr::Integer(n) => *n as usize,
-        _ => items.len(),
-      },
-      Expr::Integer(n) => *n as usize,
+      Expr::List(spec) if spec.len() == 1 => {
+        expr_to_i128(&spec[0]).unwrap_or(items.len() as i128) as usize
+      }
+      Expr::Integer(_) | Expr::BigInteger(_) => {
+        expr_to_i128(&args[1]).unwrap_or(items.len() as i128) as usize
+      }
       _ => items.len(),
     }
   } else {
@@ -4015,9 +4060,9 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let mut result = Vec::new();
       for item in items {
-        match item {
-          Expr::Integer(n) => result.push(*n as usize),
-          _ => {
+        match expr_to_i128(item) {
+          Some(n) => result.push(n as usize),
+          None => {
             return Ok(Expr::FunctionCall {
               name: "SparseArray".to_string(),
               args: args.to_vec(),
@@ -4174,21 +4219,19 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = &args[0] {
     // Collect positions to delete
     let positions: Vec<i128> = match &args[1] {
-      Expr::Integer(n) => vec![*n],
+      Expr::Integer(_) | Expr::BigInteger(_) => match expr_to_i128(&args[1]) {
+        Some(n) => vec![n],
+        None => return Ok(args[0].clone()),
+      },
       Expr::List(pos_list) => pos_list
         .iter()
         .filter_map(|p| {
           if let Expr::List(inner) = p
             && inner.len() == 1
-            && let Expr::Integer(n) = &inner[0]
           {
-            return Some(*n);
+            return expr_to_i128(&inner[0]);
           }
-          if let Expr::Integer(n) = p {
-            Some(*n)
-          } else {
-            None
-          }
+          expr_to_i128(p).map(|n| n)
         })
         .collect(),
       _ => {
@@ -4395,16 +4438,8 @@ pub fn compose_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
 pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   // Try numeric comparison first
-  let a_num = match a {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
-  let b_num = match b {
-    Expr::Integer(n) => Some(*n as f64),
-    Expr::Real(f) => Some(*f),
-    _ => None,
-  };
+  let a_num = expr_to_f64(a);
+  let b_num = expr_to_f64(b);
   if let (Some(an), Some(bn)) = (a_num, b_num) {
     return if an < bn {
       1
@@ -4516,8 +4551,8 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
         }
       }
-      Expr::Integer(k) => {
-        let k = *k as usize;
+      Expr::Integer(_) | Expr::BigInteger(_) => {
+        let k = expr_to_i128(&args[1]).unwrap_or(0) as usize;
         (k, k)
       }
       _ => {

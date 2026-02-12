@@ -1080,7 +1080,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         let base = get_part_base(&result);
         if matches!(
           base,
-          Expr::Identifier(_) | Expr::Integer(_) | Expr::Real(_)
+          Expr::Identifier(_)
+            | Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
         ) {
           let original = Expr::Part {
             expr: e.clone(),
@@ -1177,8 +1180,22 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
 fn expr_to_number(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_f64()
+    }
     Expr::Real(f) => Some(*f),
     Expr::Constant(name) => constant_to_f64(name),
+    _ => None,
+  }
+}
+
+/// Extract an i128 from Integer or BigInteger (if it fits)
+fn expr_to_i128(expr: &Expr) -> Option<i128> {
+  use num_traits::ToPrimitive;
+  match expr {
+    Expr::Integer(n) => Some(*n),
+    Expr::BigInteger(n) => n.to_i128(),
     _ => None,
   }
 }
@@ -1546,22 +1563,18 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::ordering_ast(args);
     }
     "Nest" if args.len() == 3 => {
-      if let Expr::Integer(n) = &args[2] {
-        return list_helpers_ast::nest_ast(&args[0], &args[1], *n);
+      if let Some(n) = expr_to_i128(&args[2]) {
+        return list_helpers_ast::nest_ast(&args[0], &args[1], n);
       }
     }
     "NestList" if args.len() == 3 => {
-      if let Expr::Integer(n) = &args[2] {
-        return list_helpers_ast::nest_list_ast(&args[0], &args[1], *n);
+      if let Some(n) = expr_to_i128(&args[2]) {
+        return list_helpers_ast::nest_list_ast(&args[0], &args[1], n);
       }
     }
     "FixedPoint" if args.len() >= 2 => {
       let max_iter = if args.len() == 3 {
-        if let Expr::Integer(n) = &args[2] {
-          Some(*n)
-        } else {
-          None
-        }
+        expr_to_i128(&args[2])
       } else {
         None
       };
@@ -1637,8 +1650,8 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::map_thread_ast(&args[0], &args[1]);
     }
     "Partition" if args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1] {
-        return list_helpers_ast::partition_ast(&args[0], *n);
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::partition_ast(&args[0], n);
       }
     }
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
@@ -1692,8 +1705,8 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::flatten_ast(&args[0]);
     }
     "Flatten" if args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1] {
-        return list_helpers_ast::flatten_level_ast(&args[0], *n);
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::flatten_level_ast(&args[0], n);
       }
     }
     "Reverse" if args.len() == 1 => {
@@ -1723,11 +1736,7 @@ pub fn evaluate_function_call_ast(
     }
     "FixedPointList" if args.len() >= 2 => {
       let max_iter = if args.len() == 3 {
-        if let Expr::Integer(n) = &args[2] {
-          Some(*n)
-        } else {
-          None
-        }
+        expr_to_i128(&args[2])
       } else {
         None
       };
@@ -1742,39 +1751,39 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::riffle_ast(&args[0], &args[1]);
     }
     "RotateLeft" if args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1] {
-        return list_helpers_ast::rotate_left_ast(&args[0], *n);
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::rotate_left_ast(&args[0], n);
       }
     }
     "RotateLeft" if args.len() == 1 => {
       return list_helpers_ast::rotate_left_ast(&args[0], 1);
     }
     "RotateRight" if args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1] {
-        return list_helpers_ast::rotate_right_ast(&args[0], *n);
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::rotate_right_ast(&args[0], n);
       }
     }
     "RotateRight" if args.len() == 1 => {
       return list_helpers_ast::rotate_right_ast(&args[0], 1);
     }
     "PadLeft" if args.len() >= 2 => {
-      if let Expr::Integer(n) = &args[1] {
+      if let Some(n) = expr_to_i128(&args[1]) {
         let pad = if args.len() == 3 {
           args[2].clone()
         } else {
           Expr::Integer(0)
         };
-        return list_helpers_ast::pad_left_ast(&args[0], *n, &pad);
+        return list_helpers_ast::pad_left_ast(&args[0], n, &pad);
       }
     }
     "PadRight" if args.len() >= 2 => {
-      if let Expr::Integer(n) = &args[1] {
+      if let Some(n) = expr_to_i128(&args[1]) {
         let pad = if args.len() == 3 {
           args[2].clone()
         } else {
           Expr::Integer(0)
         };
-        return list_helpers_ast::pad_right_ast(&args[0], *n, &pad);
+        return list_helpers_ast::pad_right_ast(&args[0], n, &pad);
       }
     }
     "Join" => {
@@ -1800,11 +1809,7 @@ pub fn evaluate_function_call_ast(
     }
     "NestWhile" if args.len() >= 3 => {
       let max_iter = if args.len() == 4 {
-        if let Expr::Integer(n) = &args[3] {
-          Some(*n)
-        } else {
-          None
-        }
+        expr_to_i128(&args[3])
       } else {
         None
       };
@@ -1814,11 +1819,7 @@ pub fn evaluate_function_call_ast(
     }
     "NestWhileList" if args.len() >= 3 => {
       let max_iter = if args.len() == 4 {
-        if let Expr::Integer(n) = &args[3] {
-          Some(*n)
-        } else {
-          None
-        }
+        expr_to_i128(&args[3])
       } else {
         None
       };
@@ -1844,13 +1845,13 @@ pub fn evaluate_function_call_ast(
       return Ok(args[0].clone());
     }
     "TakeLargest" if args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1] {
-        return list_helpers_ast::take_largest_ast(&args[0], *n);
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::take_largest_ast(&args[0], n);
       }
     }
     "TakeSmallest" if args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1] {
-        return list_helpers_ast::take_smallest_ast(&args[0], *n);
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::take_smallest_ast(&args[0], n);
       }
     }
     "MinimalBy" if args.len() == 2 => {
@@ -1878,11 +1879,7 @@ pub fn evaluate_function_call_ast(
       // DeleteCases[list, pattern, levelspec] or DeleteCases[list, pattern, levelspec, n]
       // For now, levelspec is ignored (treated as level 1)
       let max_count = if args.len() == 4 {
-        if let Expr::Integer(n) = &args[3] {
-          Some(*n)
-        } else {
-          None
-        }
+        expr_to_i128(&args[3])
       } else {
         None
       };
@@ -1900,8 +1897,8 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::insert_ast(&args[0], &args[1], &args[2]);
     }
     "Array" if args.len() == 2 => {
-      if let Expr::Integer(n) = &args[1] {
-        return list_helpers_ast::array_ast(&args[0], *n);
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::array_ast(&args[0], n);
       }
     }
     "Gather" if args.len() == 1 => {
@@ -3483,6 +3480,14 @@ fn set_part_deep(
 
   let idx = match &indices[0] {
     Expr::Integer(n) => *n as i64,
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_i64().ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Part assignment: index too large".into(),
+        )
+      })?
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Part assignment: index must be an integer".into(),
@@ -4199,6 +4204,26 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
     Expr::Integer(n) => {
       if matches!(expr, Expr::Integer(m) if m == n) {
         Some(vec![])
+      } else if let Expr::BigInteger(m) = expr {
+        use num_traits::ToPrimitive;
+        if m.to_i128() == Some(*n) {
+          Some(vec![])
+        } else {
+          None
+        }
+      } else {
+        None
+      }
+    }
+    Expr::BigInteger(n) => {
+      if let Expr::BigInteger(m) = expr {
+        if m == n { Some(vec![]) } else { None }
+      } else if let Expr::Integer(m) = expr {
+        if num_bigint::BigInt::from(*m) == *n {
+          Some(vec![])
+        } else {
+          None
+        }
       } else {
         None
       }
@@ -4282,8 +4307,8 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
 #[allow(dead_code)]
 fn get_expr_head(expr: &Expr) -> String {
   match expr {
-    Expr::Integer(_) => "Integer".to_string(),
-    Expr::Real(_) => "Real".to_string(),
+    Expr::Integer(_) | Expr::BigInteger(_) => "Integer".to_string(),
+    Expr::Real(_) | Expr::BigFloat(_, _) => "Real".to_string(),
     Expr::String(_) => "String".to_string(),
     Expr::List(_) => "List".to_string(),
     Expr::FunctionCall { name, .. } => name.clone(),
@@ -4466,6 +4491,18 @@ fn extract_part_ast(
 
   let idx = match index {
     Expr::Integer(n) => *n as i64,
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      match n.to_i64() {
+        Some(v) => v,
+        None => {
+          return Ok(Expr::Part {
+            expr: Box::new(expr.clone()),
+            index: Box::new(index.clone()),
+          });
+        }
+      }
+    }
     Expr::Real(f) => *f as i64,
     _ => {
       return Ok(Expr::Part {

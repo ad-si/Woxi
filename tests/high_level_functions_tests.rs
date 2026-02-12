@@ -71,9 +71,10 @@ mod high_level_functions_tests {
 
     #[test]
     fn test_prime_function_invalid_input() {
-      assert!(interpret("Prime[0]").is_err());
-      assert!(interpret("Prime[-1]").is_err());
-      assert!(interpret("Prime[1.5]").is_err());
+      // Wolfram returns unevaluated for invalid inputs
+      assert_eq!(interpret("Prime[0]").unwrap(), "Prime[0]");
+      assert_eq!(interpret("Prime[-1]").unwrap(), "Prime[-1]");
+      assert_eq!(interpret("Prime[1.5]").unwrap(), "Prime[1.5]");
     }
   }
 

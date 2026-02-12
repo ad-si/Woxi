@@ -271,7 +271,9 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
-  if matches!(&det, Expr::Integer(0)) {
+  let det_is_zero = matches!(&det, Expr::Integer(0))
+    || matches!(&det, Expr::BigInteger(n) if n == &num_bigint::BigInt::from(0));
+  if det_is_zero {
     return Err(InterpreterError::EvaluationError(
       "Inverse: matrix is singular".into(),
     ));
@@ -399,6 +401,26 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      use num_traits::Zero;
+      if *n >= num_bigint::BigInt::zero() {
+        match n.to_usize() {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "IdentityMatrix".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "IdentityMatrix".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "IdentityMatrix".to_string(),

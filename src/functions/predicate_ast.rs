@@ -19,7 +19,10 @@ pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_number = matches!(
     &args[0],
-    Expr::Integer(_) | Expr::Real(_) | Expr::BigFloat(_, _)
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
   );
   Ok(bool_expr(is_number))
 }
@@ -31,8 +34,8 @@ pub fn integer_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "IntegerQ expects exactly 1 argument".into(),
     ));
   }
-  // Only Expr::Integer is considered an integer, not Expr::Real even if it's 3.0
-  let is_integer = matches!(&args[0], Expr::Integer(_));
+  // Both Expr::Integer and Expr::BigInteger are integers
+  let is_integer = matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_));
   Ok(bool_expr(is_integer))
 }
 
@@ -45,6 +48,10 @@ pub fn even_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_even = match &args[0] {
     Expr::Integer(n) => n % 2 == 0,
+    Expr::BigInteger(n) => {
+      use num_traits::Zero;
+      (n % num_bigint::BigInt::from(2)).is_zero()
+    }
     Expr::Real(f) => {
       if f.fract() == 0.0 {
         (*f as i64) % 2 == 0
@@ -66,6 +73,10 @@ pub fn odd_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_odd = match &args[0] {
     Expr::Integer(n) => n % 2 != 0,
+    Expr::BigInteger(n) => {
+      use num_traits::Zero;
+      !(n % num_bigint::BigInt::from(2)).is_zero()
+    }
     Expr::Real(f) => {
       if f.fract() == 0.0 {
         (*f as i64) % 2 != 0
@@ -110,6 +121,7 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_atom = matches!(
     &args[0],
     Expr::Integer(_)
+      | Expr::BigInteger(_)
       | Expr::Real(_)
       | Expr::String(_)
       | Expr::Identifier(_)
@@ -128,7 +140,10 @@ pub fn numeric_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Same as NumberQ for evaluated expressions
   let is_numeric = matches!(
     &args[0],
-    Expr::Integer(_) | Expr::Real(_) | Expr::BigFloat(_, _)
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
   );
   Ok(bool_expr(is_numeric))
 }
@@ -142,6 +157,7 @@ pub fn positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_positive = match &args[0] {
     Expr::Integer(n) => *n > 0,
+    Expr::BigInteger(n) => *n > num_bigint::BigInt::from(0),
     Expr::Real(f) => *f > 0.0,
     _ => false,
   };
@@ -157,6 +173,7 @@ pub fn negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_negative = match &args[0] {
     Expr::Integer(n) => *n < 0,
+    Expr::BigInteger(n) => *n < num_bigint::BigInt::from(0),
     Expr::Real(f) => *f < 0.0,
     _ => false,
   };
@@ -172,6 +189,7 @@ pub fn non_positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_non_positive = match &args[0] {
     Expr::Integer(n) => *n <= 0,
+    Expr::BigInteger(n) => *n <= num_bigint::BigInt::from(0),
     Expr::Real(f) => *f <= 0.0,
     _ => false,
   };
@@ -187,6 +205,7 @@ pub fn non_negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let is_non_negative = match &args[0] {
     Expr::Integer(n) => *n >= 0,
+    Expr::BigInteger(n) => *n >= num_bigint::BigInt::from(0),
     Expr::Real(f) => *f >= 0.0,
     _ => false,
   };
@@ -250,41 +269,19 @@ pub fn composite_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "CompositeQ expects exactly 1 argument".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) => *n,
-    Expr::Real(f) => {
-      if f.fract() == 0.0 {
-        *f as i128
-      } else {
-        return Ok(bool_expr(false));
-      }
-    }
+  // Delegate to PrimeQ and negate
+  let prime_result = prime_q_ast(args)?;
+  let is_prime = matches!(&prime_result, Expr::Identifier(s) if s == "True");
+
+  // CompositeQ is True only for n > 1 that are not prime
+  let n_gt_1 = match &args[0] {
+    Expr::Integer(n) => *n > 1,
+    Expr::BigInteger(n) => *n > num_bigint::BigInt::from(1),
+    Expr::Real(f) if f.fract() == 0.0 => *f > 1.0,
     _ => return Ok(bool_expr(false)),
   };
 
-  // Composite numbers are > 1 and not prime
-  if n <= 1 {
-    return Ok(bool_expr(false));
-  }
-
-  // Check if it's prime (if so, it's not composite)
-  let is_prime = if n <= 3 {
-    true
-  } else if n % 2 == 0 || n % 3 == 0 {
-    false
-  } else {
-    let mut i = 5i128;
-    let mut result = true;
-    while i * i <= n {
-      if n % i == 0 || n % (i + 2) == 0 {
-        result = false;
-        break;
-      }
-      i += 6;
-    }
-    result
-  };
-  Ok(bool_expr(!is_prime))
+  Ok(bool_expr(n_gt_1 && !is_prime))
 }
 
 /// AssociationQ[expr] - Tests if the expression is an association
@@ -360,8 +357,9 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if first argument is a non-exact number (Real with fractional part)
   let n = match &args[0] {
-    Expr::Integer(n) => *n,
-    Expr::Real(f) if f.fract() == 0.0 => *f as i128,
+    Expr::Integer(n) => num_bigint::BigInt::from(*n),
+    Expr::BigInteger(n) => n.clone(),
+    Expr::Real(f) if f.fract() == 0.0 => num_bigint::BigInt::from(*f as i128),
     Expr::Real(_) => {
       // Non-exact number - return unevaluated
       return Ok(Expr::FunctionCall {
@@ -379,8 +377,9 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Check if second argument is a non-exact number
   let m = match &args[1] {
-    Expr::Integer(m) => *m,
-    Expr::Real(f) if f.fract() == 0.0 => *f as i128,
+    Expr::Integer(m) => num_bigint::BigInt::from(*m),
+    Expr::BigInteger(m) => m.clone(),
+    Expr::Real(f) if f.fract() == 0.0 => num_bigint::BigInt::from(*f as i128),
     Expr::Real(_) => {
       // Non-exact number - return unevaluated
       return Ok(Expr::FunctionCall {
@@ -396,13 +395,16 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  if m == 0 {
-    return Err(InterpreterError::EvaluationError(
-      "Divisible: divisor cannot be zero".into(),
-    ));
-  }
+  {
+    use num_traits::Zero;
+    if m.is_zero() {
+      return Err(InterpreterError::EvaluationError(
+        "Divisible: divisor cannot be zero".into(),
+      ));
+    }
 
-  Ok(bool_expr(n % m == 0))
+    Ok(bool_expr((n % m).is_zero()))
+  }
 }
 
 /// Head[expr] - Returns the head of an expression
@@ -413,7 +415,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let head = match &args[0] {
-    Expr::Integer(_) => "Integer",
+    Expr::Integer(_) | Expr::BigInteger(_) => "Integer",
     Expr::Real(_) | Expr::BigFloat(_, _) => "Real",
     Expr::String(_) => "String",
     Expr::Identifier(_) => "Symbol",
@@ -821,9 +823,16 @@ pub fn leap_year_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let year = match &args[0] {
     Expr::List(items) if !items.is_empty() => match &items[0] {
       Expr::Integer(n) => *n,
+      Expr::BigInteger(n) => {
+        use num_traits::ToPrimitive;
+        match n.to_i128() {
+          Some(v) => v,
+          None => return Ok(bool_expr(false)),
+        }
+      }
       _ => return Ok(bool_expr(false)),
     },
-    Expr::Integer(_) => return Ok(bool_expr(false)),
+    Expr::Integer(_) | Expr::BigInteger(_) => return Ok(bool_expr(false)),
     _ => return Ok(bool_expr(false)),
   };
   let is_leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;

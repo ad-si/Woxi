@@ -204,6 +204,25 @@ pub fn bigint_to_expr(n: num_bigint::BigInt) -> Expr {
   }
 }
 
+/// Try to extract an i128 from Integer or BigInteger (if it fits).
+fn expr_to_i128(e: &Expr) -> Option<i128> {
+  use num_traits::ToPrimitive;
+  match e {
+    Expr::Integer(n) => Some(*n),
+    Expr::BigInteger(n) => n.to_i128(),
+    _ => None,
+  }
+}
+
+/// Extract a BigInt from Integer or BigInteger.
+fn expr_to_bigint(e: &Expr) -> Option<BigInt> {
+  match e {
+    Expr::Integer(n) => Some(BigInt::from(*n)),
+    Expr::BigInteger(n) => Some(n.clone()),
+    _ => None,
+  }
+}
+
 /// Check if an expression requires BigInt arithmetic (exceeds f64 precision).
 /// f64 can only represent integers exactly up to 2^53.
 fn needs_bigint_arithmetic(expr: &Expr) -> bool {
@@ -1471,17 +1490,17 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Factorial expects exactly 1 argument".into(),
     ));
   }
-  if let Expr::Integer(n) = &args[0] {
-    if *n < 0 {
+  if let Some(n) = expr_to_i128(&args[0]) {
+    if n < 0 {
       return Err(InterpreterError::EvaluationError(
         "Factorial: argument must be non-negative".into(),
       ));
     }
-    let mut result: i128 = 1;
-    for i in 2..=*n {
-      result = result.saturating_mul(i);
+    let mut result = BigInt::from(1);
+    for i in 2..=n {
+      result *= i;
     }
-    Ok(Expr::Integer(result))
+    Ok(bigint_to_expr(result))
   } else {
     Ok(Expr::FunctionCall {
       name: "Factorial".to_string(),
@@ -1497,27 +1516,32 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Gamma expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(n) => {
-      if *n <= 0 {
+  match expr_to_i128(&args[0]) {
+    Some(n) => {
+      if n <= 0 {
         // Gamma has poles at non-positive integers
         return Ok(Expr::Identifier("ComplexInfinity".to_string()));
       }
       // Gamma[n] = (n-1)! for positive integers
-      let mut result: i128 = 1;
-      for i in 2..*n {
-        result = result.saturating_mul(i);
+      let mut result = BigInt::from(1);
+      for i in 2..n {
+        result *= i;
       }
-      Ok(Expr::Integer(result))
+      Ok(bigint_to_expr(result))
     }
-    Expr::Real(f) => {
-      if *f <= 0.0 && f.fract() == 0.0 {
+    None if matches!(&args[0], Expr::Real(_)) => {
+      let f = if let Expr::Real(f) = &args[0] {
+        *f
+      } else {
+        unreachable!()
+      };
+      if f <= 0.0 && f.fract() == 0.0 {
         // Poles at non-positive integers
         return Ok(Expr::Identifier("ComplexInfinity".to_string()));
       }
       // Use Stirling's approximation via the standard library's tgamma equivalent
       // Rust doesn't have tgamma in std, but we can compute via the Lanczos approximation
-      let result = gamma_fn(*f);
+      let result = gamma_fn(f);
       if result.is_infinite() {
         Ok(Expr::Identifier("ComplexInfinity".to_string()))
       } else {
@@ -3285,9 +3309,9 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "DigitCount expects 1 to 3 arguments".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) => n.abs(),
-    _ => {
+  let n = match expr_to_bigint(&args[0]) {
+    Some(n) => n.abs(),
+    None => {
       return Ok(Expr::FunctionCall {
         name: "DigitCount".to_string(),
         args: args.to_vec(),
@@ -3295,8 +3319,8 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let base = if args.len() >= 2 {
-    match &args[1] {
-      Expr::Integer(b) if *b >= 2 => *b,
+    match expr_to_i128(&args[1]) {
+      Some(b) if b >= 2 => b,
       _ => {
         return Ok(Expr::FunctionCall {
           name: "DigitCount".to_string(),
@@ -3309,22 +3333,26 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Get digit list in the given base
+  use num_traits::Zero;
+  let big_base = BigInt::from(base);
   let mut digits = Vec::new();
   let mut val = n;
-  if val == 0 {
-    digits.push(0);
+  if val.is_zero() {
+    digits.push(0usize);
   } else {
-    while val > 0 {
-      digits.push((val % base) as usize);
-      val /= base;
+    while !val.is_zero() {
+      use num_traits::ToPrimitive;
+      let rem = (&val % &big_base).to_usize().unwrap_or(0);
+      digits.push(rem);
+      val /= &big_base;
     }
   }
 
   if args.len() == 3 {
     // DigitCount[n, b, d] - count of specific digit d
-    let d = match &args[2] {
-      Expr::Integer(d) => *d as usize,
-      _ => {
+    let d = match expr_to_i128(&args[2]) {
+      Some(d) => d as usize,
+      None => {
         return Ok(Expr::FunctionCall {
           name: "DigitCount".to_string(),
           args: args.to_vec(),
@@ -3358,9 +3386,9 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "DigitSum expects 1 or 2 arguments".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) => n.abs(),
-    _ => {
+  let n = match expr_to_bigint(&args[0]) {
+    Some(n) => n.abs(),
+    None => {
       return Ok(Expr::FunctionCall {
         name: "DigitSum".to_string(),
         args: args.to_vec(),
@@ -3368,8 +3396,8 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let base = if args.len() == 2 {
-    match &args[1] {
-      Expr::Integer(b) if *b >= 2 => *b,
+    match expr_to_i128(&args[1]) {
+      Some(b) if b >= 2 => b,
       _ => {
         return Ok(Expr::FunctionCall {
           name: "DigitSum".to_string(),
@@ -3381,16 +3409,18 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     10
   };
 
-  let mut sum: i128 = 0;
+  use num_traits::Zero;
+  let big_base = BigInt::from(base);
+  let mut sum = BigInt::from(0);
   let mut val = n;
-  if val == 0 {
+  if val.is_zero() {
     return Ok(Expr::Integer(0));
   }
-  while val > 0 {
-    sum += val % base;
-    val /= base;
+  while !val.is_zero() {
+    sum += &val % &big_base;
+    val /= &big_base;
   }
-  Ok(Expr::Integer(sum))
+  Ok(bigint_to_expr(sum))
 }
 
 // --- Minimal arbitrary-precision unsigned integer for high-precision ContinuedFraction ---
@@ -4036,8 +4066,8 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "LucasL expects exactly 1 argument".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "LucasL".to_string(),
@@ -4052,14 +4082,14 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n == 1 {
     return Ok(Expr::Integer(1));
   }
-  let mut a: i128 = 2;
-  let mut b: i128 = 1;
+  let mut a = BigInt::from(2);
+  let mut b = BigInt::from(1);
   for _ in 2..=n {
-    let c = a + b;
+    let c = &a + &b;
     a = b;
     b = c;
   }
-  Ok(Expr::Integer(b))
+  Ok(bigint_to_expr(b))
 }
 
 /// ChineseRemainder[{r1,r2,...}, {m1,m2,...}] - Chinese Remainder Theorem
@@ -4097,9 +4127,17 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut m_vals = Vec::new();
   for (r, m) in remainders.iter().zip(moduli.iter()) {
     match (r, m) {
-      (Expr::Integer(rv), Expr::Integer(mv)) if *mv > 0 => {
-        r_vals.push(*rv);
-        m_vals.push(*mv);
+      (r, m) if expr_to_i128(r).is_some() && expr_to_i128(m).is_some() => {
+        let mv = expr_to_i128(m).unwrap();
+        if mv > 0 {
+          r_vals.push(expr_to_i128(r).unwrap());
+          m_vals.push(mv);
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "ChineseRemainder".to_string(),
+            args: args.to_vec(),
+          });
+        }
       }
       _ => {
         return Ok(Expr::FunctionCall {
@@ -4149,8 +4187,8 @@ pub fn divisor_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "DivisorSum expects exactly 2 arguments".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) if *n > 0 => *n,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n > 0 => n,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DivisorSum".to_string(),
@@ -4186,8 +4224,8 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "BernoulliB expects exactly 1 argument".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "BernoulliB".to_string(),
@@ -4279,8 +4317,8 @@ pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "CatalanNumber expects exactly 1 argument".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 0 => *n,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CatalanNumber".to_string(),
@@ -4305,8 +4343,8 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StirlingS1 expects exactly 2 arguments".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "StirlingS1".to_string(),
@@ -4314,8 +4352,8 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let k = match &args[1] {
-    Expr::Integer(k) if *k >= 0 => *k as usize,
+  let k = match expr_to_i128(&args[1]) {
+    Some(k) if k >= 0 => k as usize,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "StirlingS1".to_string(),
@@ -4353,8 +4391,8 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StirlingS2 expects exactly 2 arguments".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 0 => *n as usize,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "StirlingS2".to_string(),
@@ -4362,8 +4400,8 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let k = match &args[1] {
-    Expr::Integer(k) if *k >= 0 => *k as usize,
+  let k = match expr_to_i128(&args[1]) {
+    Some(k) if k >= 0 => k as usize,
     _ => {
       return Ok(Expr::FunctionCall {
         name: "StirlingS2".to_string(),
@@ -4400,65 +4438,62 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Prime expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(n) => {
-      if *n < 1 {
-        return Err(InterpreterError::EvaluationError(
-          "Prime function argument must be a positive integer greater than 0"
-            .into(),
-        ));
+  match expr_to_i128(&args[0]).or_else(|| {
+    if let Expr::Real(f) = &args[0] {
+      if f.fract() == 0.0 {
+        Some(*f as i128)
+      } else {
+        None
       }
-      Ok(Expr::Integer(crate::nth_prime(*n as usize) as i128))
+    } else {
+      None
     }
-    Expr::Real(f) => {
-      if f.fract() != 0.0 || *f < 1.0 {
-        return Err(InterpreterError::EvaluationError(
-          "Prime function argument must be a positive integer greater than 0"
-            .into(),
-        ));
-      }
-      Ok(Expr::Integer(crate::nth_prime(*f as usize) as i128))
+  }) {
+    Some(n) if n >= 1 => {
+      Ok(Expr::Integer(crate::nth_prime(n as usize) as i128))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Prime".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {
+      // Wolfram returns unevaluated for non-positive or non-integer arguments
+      Ok(Expr::FunctionCall {
+        name: "Prime".to_string(),
+        args: args.to_vec(),
+      })
+    }
   }
 }
 
 /// Fibonacci[n] - Returns the nth Fibonacci number
 pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  match &args[0] {
-    Expr::Integer(n) => {
-      if *n < 0 {
-        // F(-n) = (-1)^(n+1) * F(n)
-        let pos_n = (-*n) as u128;
-        let fib = fibonacci_number(pos_n);
+  match expr_to_i128(&args[0]) {
+    Some(n) => {
+      if n < 0 {
+        let pos_n = (-n) as u128;
+        let fib = fibonacci_number_bigint(pos_n);
         let sign = if pos_n.is_multiple_of(2) {
-          -1i128
+          BigInt::from(-1)
         } else {
-          1i128
+          BigInt::from(1)
         };
-        Ok(Expr::Integer(sign * fib))
+        Ok(bigint_to_expr(sign * fib))
       } else {
-        Ok(Expr::Integer(fibonacci_number(*n as u128)))
+        Ok(bigint_to_expr(fibonacci_number_bigint(n as u128)))
       }
     }
-    _ => Ok(Expr::FunctionCall {
+    None => Ok(Expr::FunctionCall {
       name: "Fibonacci".to_string(),
       args: args.to_vec(),
     }),
   }
 }
 
-fn fibonacci_number(n: u128) -> i128 {
+fn fibonacci_number_bigint(n: u128) -> BigInt {
   if n == 0 {
-    return 0;
+    return BigInt::from(0);
   }
-  let mut a: i128 = 0;
-  let mut b: i128 = 1;
+  let mut a = BigInt::from(0);
+  let mut b = BigInt::from(1);
   for _ in 1..n {
-    let tmp = a + b;
+    let tmp = &a + &b;
     a = b;
     b = tmp;
   }
@@ -4473,9 +4508,9 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match &args[0] {
-    Expr::Integer(n) => n.unsigned_abs(),
-    _ => {
+  let n = match expr_to_bigint(&args[0]) {
+    Some(n) => n.abs(),
+    None => {
       return Ok(Expr::FunctionCall {
         name: "IntegerDigits".to_string(),
         args: args.to_vec(),
@@ -4483,9 +4518,9 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let base: u128 = if args.len() == 2 {
-    match &args[1] {
-      Expr::Integer(b) if *b >= 2 => *b as u128,
+  let base = if args.len() == 2 {
+    match expr_to_i128(&args[1]) {
+      Some(b) if b >= 2 => BigInt::from(b),
       _ => {
         return Err(InterpreterError::EvaluationError(
           "IntegerDigits: base must be an integer >= 2".into(),
@@ -4493,18 +4528,19 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   } else {
-    10
+    BigInt::from(10)
   };
 
-  if n == 0 {
+  use num_traits::Zero;
+  if n.is_zero() {
     return Ok(Expr::List(vec![Expr::Integer(0)]));
   }
 
   let mut digits = Vec::new();
   let mut num = n;
-  while num > 0 {
-    digits.push(Expr::Integer((num % base) as i128));
-    num /= base;
+  while !num.is_zero() {
+    digits.push(bigint_to_expr(&num % &base));
+    num /= &base;
   }
   digits.reverse();
   Ok(Expr::List(digits))
@@ -4519,8 +4555,8 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let base: i128 = if args.len() == 2 {
-    match &args[1] {
-      Expr::Integer(b) if *b >= 2 => *b,
+    match expr_to_i128(&args[1]) {
+      Some(b) if b >= 2 => b,
       _ => {
         return Err(InterpreterError::EvaluationError(
           "FromDigits: base must be an integer >= 2".into(),
@@ -4531,9 +4567,11 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     10
   };
 
+  let big_base = BigInt::from(base);
+
   // Handle string argument: FromDigits["1234"] or FromDigits["1a", 16]
   if let Expr::String(s) = &args[0] {
-    let mut result: i128 = 0;
+    let mut result = BigInt::from(0);
     for ch in s.chars() {
       let d = if ch.is_ascii_digit() {
         (ch as i128) - ('0' as i128)
@@ -4553,9 +4591,9 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ch, base
         )));
       }
-      result = result * base + d;
+      result = result * &big_base + BigInt::from(d);
     }
-    return Ok(Expr::Integer(result));
+    return Ok(bigint_to_expr(result));
   }
 
   let items = match &args[0] {
@@ -4568,16 +4606,16 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut result: i128 = 0;
+  let mut result = BigInt::from(0);
   for item in items {
-    if let Expr::Integer(d) = item {
-      if *d < 0 || *d >= base {
+    if let Some(d) = expr_to_i128(item) {
+      if d < 0 || d >= base {
         return Err(InterpreterError::EvaluationError(format!(
           "FromDigits: invalid digit {} for base {}",
           d, base
         )));
       }
-      result = result * base + *d;
+      result = result * &big_base + BigInt::from(d);
     } else {
       return Ok(Expr::FunctionCall {
         name: "FromDigits".to_string(),
@@ -4585,7 +4623,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   }
-  Ok(Expr::Integer(result))
+  Ok(bigint_to_expr(result))
 }
 
 /// FactorInteger[n] - Returns the prime factorization of n
@@ -4788,9 +4826,9 @@ fn factor_integer_bigint(n: &BigInt) -> Result<Expr, InterpreterError> {
 // kspec can be All (equivalent to no constraint)
 pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse n
-  let n = match &args[0] {
-    Expr::Integer(v) => *v,
-    _ => {
+  let n = match expr_to_i128(&args[0]) {
+    Some(v) => v,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "IntegerPartitions".to_string(),
         args: args.to_vec(),
@@ -4807,12 +4845,14 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (min_len, max_len) = if args.len() >= 2 {
     match &args[1] {
       // IntegerPartitions[n, k] — at most k parts
-      Expr::Integer(k) if *k >= 0 => (1, *k as u64),
+      e if expr_to_i128(e).is_some_and(|k| k >= 0) => {
+        (1, expr_to_i128(e).unwrap() as u64)
+      }
       // IntegerPartitions[n, All] — no constraint
       Expr::Identifier(s) if s == "All" => (1, n.max(1)),
       // IntegerPartitions[n, {k}] — exactly k parts
-      Expr::List(lst) if lst.len() == 1 => match &lst[0] {
-        Expr::Integer(k) if *k >= 0 => (*k as u64, *k as u64),
+      Expr::List(lst) if lst.len() == 1 => match expr_to_i128(&lst[0]) {
+        Some(k) if k >= 0 => (k as u64, k as u64),
         _ => {
           return Ok(Expr::FunctionCall {
             name: "IntegerPartitions".to_string(),
@@ -4821,17 +4861,17 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       },
       // IntegerPartitions[n, {kmin, kmax}] — range of parts
-      Expr::List(lst) if lst.len() == 2 => match (&lst[0], &lst[1]) {
-        (Expr::Integer(lo), Expr::Integer(hi)) if *lo >= 0 && *hi >= 0 => {
-          (*lo as u64, *hi as u64)
+      Expr::List(lst) if lst.len() == 2 => {
+        match (expr_to_i128(&lst[0]), expr_to_i128(&lst[1])) {
+          (Some(lo), Some(hi)) if lo >= 0 && hi >= 0 => (lo as u64, hi as u64),
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "IntegerPartitions".to_string(),
+              args: args.to_vec(),
+            });
+          }
         }
-        _ => {
-          return Ok(Expr::FunctionCall {
-            name: "IntegerPartitions".to_string(),
-            args: args.to_vec(),
-          });
-        }
-      },
+      }
       _ => {
         return Ok(Expr::FunctionCall {
           name: "IntegerPartitions".to_string(),
@@ -4850,7 +4890,9 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut vals = Vec::new();
         for e in elems {
           match e {
-            Expr::Integer(v) if *v > 0 => vals.push(*v as u64),
+            e if expr_to_i128(e).is_some_and(|v| v > 0) => {
+              vals.push(expr_to_i128(e).unwrap() as u64)
+            }
             _ => {
               return Ok(Expr::FunctionCall {
                 name: "IntegerPartitions".to_string(),
@@ -4994,14 +5036,14 @@ pub fn divisors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match &args[0] {
-    Expr::Integer(n) if *n != 0 => n.unsigned_abs(),
-    Expr::Integer(_) => {
+  let n = match expr_to_i128(&args[0]) {
+    Some(0) => {
       return Err(InterpreterError::EvaluationError(
         "Divisors: argument cannot be zero".into(),
       ));
     }
-    _ => {
+    Some(n) => n.unsigned_abs(),
+    None => {
       return Ok(Expr::FunctionCall {
         name: "Divisors".to_string(),
         args: args.to_vec(),
@@ -5035,8 +5077,8 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let k = match &args[0] {
-    Expr::Integer(k) if *k >= 0 => *k as u32,
+  let k = match expr_to_i128(&args[0]) {
+    Some(k) if k >= 0 => k as u32,
     _ => {
       return Err(InterpreterError::EvaluationError(
         "DivisorSigma: first argument must be a non-negative integer".into(),
@@ -5044,14 +5086,14 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let n = match &args[1] {
-    Expr::Integer(n) if *n != 0 => n.unsigned_abs(),
-    Expr::Integer(_) => {
+  let n = match expr_to_i128(&args[1]) {
+    Some(0) => {
       return Err(InterpreterError::EvaluationError(
         "DivisorSigma: second argument cannot be zero".into(),
       ));
     }
-    _ => {
+    Some(n) => n.unsigned_abs(),
+    None => {
       return Ok(Expr::FunctionCall {
         name: "DivisorSigma".to_string(),
         args: args.to_vec(),
@@ -5082,8 +5124,8 @@ pub fn moebius_mu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 1 => *n as u128,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 1 => n as u128,
     _ => {
       return Err(InterpreterError::EvaluationError(
         "MoebiusMu: argument must be a positive integer".into(),
@@ -5135,8 +5177,8 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let n = match &args[0] {
-    Expr::Integer(n) if *n >= 1 => *n as u128,
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 1 => n as u128,
     _ => {
       return Err(InterpreterError::EvaluationError(
         "EulerPhi: argument must be a positive integer".into(),
@@ -5173,10 +5215,8 @@ pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let (a, b) = match (&args[0], &args[1]) {
-    (Expr::Integer(a), Expr::Integer(b)) => {
-      (a.unsigned_abs(), b.unsigned_abs())
-    }
+  let (a, b) = match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
+    (Some(a), Some(b)) => (a.unsigned_abs(), b.unsigned_abs()),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "CoprimeQ".to_string(),
@@ -5551,10 +5591,8 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Binomial expects exactly 2 arguments".into(),
     ));
   }
-  match (&args[0], &args[1]) {
-    (Expr::Integer(n), Expr::Integer(k)) => {
-      Ok(Expr::Integer(binomial_coeff(*n, *k)))
-    }
+  match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
+    (Some(n), Some(k)) => Ok(Expr::Integer(binomial_coeff(n, k))),
     _ => Ok(Expr::FunctionCall {
       name: "Binomial".to_string(),
       args: args.to_vec(),
@@ -5597,16 +5635,14 @@ pub fn multinomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let mut ints = Vec::new();
   for arg in args {
-    match arg {
-      Expr::Integer(n) => {
-        if *n < 0 {
-          return Err(InterpreterError::EvaluationError(
-            "Multinomial: arguments must be non-negative integers".into(),
-          ));
-        }
-        ints.push(*n);
+    match expr_to_i128(arg) {
+      Some(n) if n >= 0 => ints.push(n),
+      Some(_) => {
+        return Err(InterpreterError::EvaluationError(
+          "Multinomial: arguments must be non-negative integers".into(),
+        ));
       }
-      _ => {
+      None => {
         return Ok(Expr::FunctionCall {
           name: "Multinomial".to_string(),
           args: args.to_vec(),
@@ -5633,30 +5669,45 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PowerMod expects exactly 3 arguments".into(),
     ));
   }
-  match (&args[0], &args[1], &args[2]) {
-    (Expr::Integer(base), Expr::Integer(exp), Expr::Integer(modulus)) => {
-      if *modulus == 0 {
+  match (
+    expr_to_bigint(&args[0]),
+    expr_to_bigint(&args[1]),
+    expr_to_bigint(&args[2]),
+  ) {
+    (Some(base), Some(exp), Some(modulus)) => {
+      use num_traits::Zero;
+      if modulus.is_zero() {
         return Err(InterpreterError::EvaluationError(
           "PowerMod: modulus cannot be zero".into(),
         ));
       }
-      let m = modulus.unsigned_abs();
-      if *exp < 0 {
-        // Negative exponent: compute modular inverse first
-        // a^(-e) mod m = (a^(-1))^e mod m
-        if let Some(inv) = mod_inverse(*base, *modulus) {
-          let result = mod_pow_unsigned(inv as u128, (-*exp) as u128, m);
-          Ok(Expr::Integer(result as i128))
-        } else {
-          Err(InterpreterError::EvaluationError(
-            "PowerMod: modular inverse does not exist".into(),
-          ))
+      if exp < BigInt::from(0) {
+        // Negative exponent: need modular inverse
+        // Try i128 path for mod_inverse
+        use num_traits::ToPrimitive;
+        match (base.to_i128(), modulus.to_i128()) {
+          (Some(b), Some(m)) => {
+            if let Some(inv) = mod_inverse(b, m) {
+              let pos_exp = (-exp).to_u128().unwrap_or(0);
+              let result =
+                mod_pow_unsigned(inv as u128, pos_exp, m.unsigned_abs());
+              Ok(Expr::Integer(result as i128))
+            } else {
+              Err(InterpreterError::EvaluationError(
+                "PowerMod: modular inverse does not exist".into(),
+              ))
+            }
+          }
+          _ => Ok(Expr::FunctionCall {
+            name: "PowerMod".to_string(),
+            args: args.to_vec(),
+          }),
         }
       } else {
-        // Normalize base to be non-negative mod m
-        let b = base.rem_euclid(*modulus);
-        let result = mod_pow_unsigned(b as u128, *exp as u128, m);
-        Ok(Expr::Integer(result as i128))
+        let result = base.modpow(&exp, &modulus);
+        // Ensure non-negative result
+        let result = ((result % &modulus) + &modulus) % &modulus;
+        Ok(bigint_to_expr(result))
       }
     }
     _ => Ok(Expr::FunctionCall {
@@ -5719,12 +5770,12 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PrimePi expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(n) => {
-      if *n < 2 {
+  match expr_to_i128(&args[0]) {
+    Some(n) => {
+      if n < 2 {
         return Ok(Expr::Integer(0));
       }
-      let n_usize = *n as usize;
+      let n_usize = n as usize;
       let mut count: i128 = 0;
       for i in 2..=n_usize {
         if crate::is_prime(i) {
@@ -5733,8 +5784,13 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::Integer(count))
     }
-    Expr::Real(f) => {
-      if *f < 2.0 {
+    None if matches!(&args[0], Expr::Real(_)) => {
+      let f = if let Expr::Real(f) = &args[0] {
+        *f
+      } else {
+        unreachable!()
+      };
+      if f < 2.0 {
         return Ok(Expr::Integer(0));
       }
       let n = f.floor() as usize;
@@ -5920,16 +5976,21 @@ pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "BitLength expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(n) => {
-      let val = if *n < 0 { (-*n) - 1 } else { *n };
-      if val == 0 {
+  match expr_to_bigint(&args[0]) {
+    Some(n) => {
+      use num_traits::Zero;
+      let val = if n < BigInt::from(0) {
+        -n - BigInt::from(1)
+      } else {
+        n
+      };
+      if val.is_zero() {
         Ok(Expr::Integer(0))
       } else {
-        Ok(Expr::Integer(128 - val.leading_zeros() as i128))
+        Ok(Expr::Integer(val.bits() as i128))
       }
     }
-    _ => Ok(Expr::FunctionCall {
+    None => Ok(Expr::FunctionCall {
       name: "BitLength".to_string(),
       args: args.to_vec(),
     }),
@@ -5946,9 +6007,9 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "IntegerExponent expects 1 or 2 arguments".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) => *n,
-    _ => {
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) => n,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "IntegerExponent".to_string(),
         args: args.to_vec(),
@@ -5956,9 +6017,9 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let base = if args.len() == 2 {
-    match &args[1] {
-      Expr::Integer(b) => *b,
-      _ => {
+    match expr_to_i128(&args[1]) {
+      Some(b) => b,
+      None => {
         return Ok(Expr::FunctionCall {
           name: "IntegerExponent".to_string(),
           args: args.to_vec(),
@@ -6634,9 +6695,9 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "IntegerLength expects 1 or 2 arguments".into(),
     ));
   }
-  let n = match &args[0] {
-    Expr::Integer(n) => *n,
-    _ => {
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) => n,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "IntegerLength".to_string(),
         args: args.to_vec(),
@@ -6644,16 +6705,14 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   let base = if args.len() == 2 {
-    match &args[1] {
-      Expr::Integer(b) => {
-        if *b < 2 {
-          return Err(InterpreterError::EvaluationError(
-            "IntegerLength: base must be at least 2".into(),
-          ));
-        }
-        *b
+    match expr_to_i128(&args[1]) {
+      Some(b) if b >= 2 => b,
+      Some(_) => {
+        return Err(InterpreterError::EvaluationError(
+          "IntegerLength: base must be at least 2".into(),
+        ));
       }
-      _ => {
+      None => {
         return Ok(Expr::FunctionCall {
           name: "IntegerLength".to_string(),
           args: args.to_vec(),
@@ -7097,7 +7156,9 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut nums: Vec<i128> = Vec::new();
   for item in items {
     match item {
-      Expr::Integer(n) if *n > 0 => nums.push(*n),
+      e if expr_to_i128(e).is_some_and(|n| n > 0) => {
+        nums.push(expr_to_i128(e).unwrap())
+      }
       _ => {
         return Ok(Expr::FunctionCall {
           name: "FrobeniusNumber".to_string(),
@@ -7252,9 +7313,9 @@ pub fn integer_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?));
   }
 
-  let n = match &args[0] {
-    Expr::Integer(v) => *v,
-    _ => {
+  let n = match expr_to_i128(&args[0]) {
+    Some(v) => v,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "IntegerName".to_string(),
         args: args.to_vec(),
@@ -7330,9 +7391,9 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Zero: returns N
   // Non-integer: return unevaluated
 
-  let n = match &args[0] {
-    Expr::Integer(v) => *v,
-    _ => {
+  let n = match expr_to_i128(&args[0]) {
+    Some(v) => v,
+    None => {
       return Ok(Expr::FunctionCall {
         name: "RomanNumeral".to_string(),
         args: args.to_vec(),
