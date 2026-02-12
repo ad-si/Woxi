@@ -4,6 +4,8 @@
 
 use crate::InterpreterError;
 use crate::syntax::Expr;
+use num_bigint::BigInt;
+use num_traits::Signed;
 
 /// Helper - constants are kept symbolic, no direct f64 conversion in expr_to_num.
 fn constant_to_f64(_name: &str) -> Option<f64> {
@@ -1277,32 +1279,42 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
+  use num_traits::Zero;
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while !b.is_zero() {
+    let t = b.clone();
+    b = &a % &b;
+    a = t;
+  }
+  a
+}
+
 /// GCD[a, b, ...] - Greatest common divisor
 pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
   }
 
-  fn gcd(a: i128, b: i128) -> i128 {
-    if b == 0 { a.abs() } else { gcd(b, a % b) }
-  }
-
-  let mut result: Option<i128> = None;
+  let mut result: Option<BigInt> = None;
   for arg in args {
-    if let Expr::Integer(n) = arg {
-      result = Some(match result {
-        Some(r) => gcd(r, *n),
-        None => n.abs(),
-      });
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "GCD".to_string(),
-        args: args.to_vec(),
-      });
-    }
+    let val = match arg {
+      Expr::Integer(n) => BigInt::from(*n),
+      Expr::BigInteger(n) => n.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "GCD".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    result = Some(match result {
+      Some(r) => bigint_gcd(r, val),
+      None => val.abs(),
+    });
   }
 
-  Ok(Expr::Integer(result.unwrap_or(0)))
+  Ok(bigint_to_expr(result.unwrap_or_else(|| BigInt::from(0))))
 }
 
 /// LCM[a, b, ...] - Least common multiple
@@ -1311,34 +1323,33 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  fn gcd(a: i128, b: i128) -> i128 {
-    if b == 0 { a.abs() } else { gcd(b, a % b) }
-  }
-
-  fn lcm(a: i128, b: i128) -> i128 {
-    if a == 0 || b == 0 {
-      0
-    } else {
-      (a.abs() / gcd(a, b)) * b.abs()
-    }
-  }
-
-  let mut result: Option<i128> = None;
+  let mut result: Option<BigInt> = None;
   for arg in args {
-    if let Expr::Integer(n) = arg {
-      result = Some(match result {
-        Some(r) => lcm(r, *n),
-        None => n.abs(),
-      });
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "LCM".to_string(),
-        args: args.to_vec(),
-      });
-    }
+    let val = match arg {
+      Expr::Integer(n) => BigInt::from(*n),
+      Expr::BigInteger(n) => n.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "LCM".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    result = Some(match result {
+      Some(r) => {
+        use num_traits::Zero;
+        if r.is_zero() || val.is_zero() {
+          BigInt::from(0)
+        } else {
+          let g = bigint_gcd(r.clone(), val.clone());
+          (r.abs() / g) * val.abs()
+        }
+      }
+      None => val.abs(),
+    });
   }
 
-  Ok(Expr::Integer(result.unwrap_or(1)))
+  Ok(bigint_to_expr(result.unwrap_or_else(|| BigInt::from(1))))
 }
 
 /// Total[list] - Sum of all elements in a list
@@ -1610,9 +1621,7 @@ fn bigfloat_to_string(
   // Extract raw parts: mantissa words, significant bits, sign, exponent
   let (words, sig_bits, sign, exponent, _inexact) =
     bf.as_raw_parts().ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "N: cannot format NaN or Inf".into(),
-      )
+      InterpreterError::EvaluationError("N: cannot format NaN or Inf".into())
     })?;
 
   if sig_bits == 0 || words.iter().all(|&w| w == 0) {
@@ -1696,11 +1705,7 @@ fn bigfloat_to_string(
     let dp = decimal_exp as usize;
     if dp >= digits.len() {
       // All digits are in the integer part
-      let padded = format!(
-        "{}{}",
-        int_digits,
-        "0".repeat(dp - digits.len())
-      );
+      let padded = format!("{}{}", int_digits, "0".repeat(dp - digits.len()));
       Ok(format!("{}{}.", prefix, padded))
     } else {
       // Some digits before decimal, some after
