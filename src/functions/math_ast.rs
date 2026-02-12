@@ -33,6 +33,66 @@ fn expr_to_num(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// Compute the error function erf(x) using the Taylor series.
+/// erf(x) = (2/sqrt(pi)) * sum_{n=0}^{inf} (-1)^n * x^(2n+1) / (n! * (2n+1))
+pub fn erf_f64(x: f64) -> f64 {
+  // erf is an odd function
+  let sign = if x < 0.0 { -1.0 } else { 1.0 };
+  let x = x.abs();
+
+  if x > 4.0 {
+    // For large |x|, erf(x) ≈ 1 - erfc(x) using continued fraction
+    return sign * (1.0 - erfc_cf(x));
+  }
+
+  // Taylor series: erf(x) = (2/sqrt(pi)) * sum_{n=0}^inf (-1)^n * x^(2n+1) / (n! * (2n+1))
+  let mut sum = 0.0;
+  let mut term = x; // first term: x
+  sum += term;
+  for n in 1..100 {
+    term *= -x * x / (n as f64);
+    let contribution = term / (2 * n + 1) as f64;
+    sum += contribution;
+    if contribution.abs() < 1e-16 * sum.abs() {
+      break;
+    }
+  }
+  sign * sum * 2.0 / std::f64::consts::PI.sqrt()
+}
+
+/// Compute erfc(x) for large x using the continued fraction representation.
+/// erfc(x) = exp(-x^2) / (x * sqrt(pi)) * CF
+fn erfc_cf(x: f64) -> f64 {
+  // Modified Lentz's method for the continued fraction
+  // erfc(x) = (exp(-x^2)/sqrt(pi)) * 1/(x + 1/(2x + 2/(x + 3/(2x + ...))))
+  // Using the form: a_n / (b_n + ...) where a_1=1, a_n = (n-1)/2, b_n = x
+  let mut f = x;
+  let mut c = x;
+  let mut d = 0.0;
+  let tiny = 1e-30;
+
+  for n in 1..200 {
+    let a_n = n as f64 * 0.5;
+    let b_n = x;
+    d = b_n + a_n * d;
+    if d.abs() < tiny {
+      d = tiny;
+    }
+    c = b_n + a_n / c;
+    if c.abs() < tiny {
+      c = tiny;
+    }
+    d = 1.0 / d;
+    let delta = c * d;
+    f *= delta;
+    if (delta - 1.0).abs() < 1e-15 {
+      break;
+    }
+  }
+
+  (-x * x).exp() / (f * std::f64::consts::PI.sqrt())
+}
+
 /// Recursively try to evaluate any expression to f64.
 /// This handles constants (Pi, E, Degree), arithmetic operations, and known functions.
 /// Used by N[], comparisons, and anywhere a numeric value is needed from a symbolic expression.
@@ -124,6 +184,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.sqrt()),
       "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.abs()),
       "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(|v| v.exp()),
+      "Erf" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erf_f64),
+      "Erfc" if args.len() == 1 => {
+        try_eval_to_f64(&args[0]).map(|v| 1.0 - erf_f64(v))
+      }
       "Log" if args.len() == 1 => try_eval_to_f64(&args[0])
         .and_then(|v| if v > 0.0 { Some(v.ln()) } else { None }),
       "Log" if args.len() == 2 => {
@@ -478,7 +542,8 @@ fn term_priority(e: &Expr) -> i32 {
       "Times" | "Power" | "Plus" | "Rational" => 0,
       "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh"
       | "Tanh" | "Coth" | "Sech" | "Csch" | "ArcSin" | "ArcCos" | "ArcTan"
-      | "ArcCot" | "ArcSec" | "ArcCsc" | "Exp" | "Log" | "Factorial" => 1,
+      | "ArcCot" | "ArcSec" | "ArcCsc" | "Exp" | "Log" | "Factorial"
+      | "Erf" | "Erfc" => 1,
       _ => 0,
     },
     Expr::UnaryOp { operand, .. } => term_priority(operand),
@@ -3047,6 +3112,113 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => Ok(Expr::Real(f.exp())),
     _ => Ok(Expr::FunctionCall {
       name: "Exp".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Erf expects 1 argument".into(),
+    ));
+  }
+  // Helper: negate the Erf of the positive part
+  let negate_erf = |inner: Expr| -> Expr {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::FunctionCall {
+        name: "Erf".to_string(),
+        args: vec![inner],
+      }),
+    }
+  };
+  match &args[0] {
+    // Erf[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // Erf[-x] = -Erf[x] (UnaryOp form)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Ok(negate_erf(*operand.clone())),
+    // Erf[Times[-1, x]] = -Erf[x] (evaluated form of -x)
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times" && fargs.len() == 2 =>
+    {
+      if matches!(&fargs[0], Expr::Integer(-1)) {
+        return Ok(negate_erf(fargs[1].clone()));
+      }
+      if matches!(&fargs[1], Expr::Integer(-1)) {
+        return Ok(negate_erf(fargs[0].clone()));
+      }
+      // Negative integer coefficient: Times[-n, x] -> -Erf[Times[n, x]]
+      if let Expr::Integer(n) = &fargs[0]
+        && *n < 0
+      {
+        let pos_arg = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-*n), fargs[1].clone()],
+        };
+        return Ok(negate_erf(pos_arg));
+      }
+      Ok(Expr::FunctionCall {
+        name: "Erf".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    // BinaryOp::Times form: -1 * x
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Integer(-1)) {
+        return Ok(negate_erf(*right.clone()));
+      }
+      if matches!(right.as_ref(), Expr::Integer(-1)) {
+        return Ok(negate_erf(*left.clone()));
+      }
+      if let Expr::Integer(n) = left.as_ref()
+        && *n < 0
+      {
+        let pos_arg = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-*n)),
+          right: right.clone(),
+        };
+        return Ok(negate_erf(pos_arg));
+      }
+      Ok(Expr::FunctionCall {
+        name: "Erf".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    // Erf[-n] for negative integer
+    Expr::Integer(n) if *n < 0 => Ok(negate_erf(Expr::Integer(-*n))),
+    // Numeric evaluation for Real arguments
+    Expr::Real(f) => Ok(Expr::Real(erf_f64(*f))),
+    // Otherwise symbolic
+    _ => Ok(Expr::FunctionCall {
+      name: "Erf".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Erfc expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    // Erfc[0] = 1
+    Expr::Integer(0) => Ok(Expr::Integer(1)),
+    // Numeric evaluation for Real arguments
+    Expr::Real(f) => Ok(Expr::Real(1.0 - erf_f64(*f))),
+    // Otherwise symbolic
+    _ => Ok(Expr::FunctionCall {
+      name: "Erfc".to_string(),
       args: args.to_vec(),
     }),
   }

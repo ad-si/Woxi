@@ -520,3 +520,64 @@ mod trig_sec_csc_cot {
     assert_eq!(interpret("Cot[0]").unwrap(), "ComplexInfinity");
   }
 }
+
+mod erf {
+  use super::*;
+
+  #[test]
+  fn erf_zero() {
+    assert_eq!(interpret("Erf[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn erf_symbolic() {
+    assert_eq!(interpret("Erf[x]").unwrap(), "Erf[x]");
+  }
+
+  #[test]
+  fn erf_negative_arg() {
+    // Erf[-x] = -Erf[x] (odd function)
+    assert_eq!(interpret("Erf[-x]").unwrap(), "-Erf[x]");
+  }
+
+  #[test]
+  fn erfc_zero() {
+    assert_eq!(interpret("Erfc[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn erfc_symbolic() {
+    assert_eq!(interpret("Erfc[x]").unwrap(), "Erfc[x]");
+  }
+}
+
+mod integrate_gaussian {
+  use super::*;
+
+  #[test]
+  fn integrate_exp_neg_x_squared() {
+    // ∫ Exp[-x^2] dx = (Sqrt[Pi]*Erf[x])/2
+    assert_eq!(
+      interpret("Integrate[Exp[-x^2], x]").unwrap(),
+      "(Sqrt[Pi]*Erf[x])/2"
+    );
+  }
+
+  #[test]
+  fn integrate_exp_neg_3_x_squared() {
+    // ∫ Exp[-3*x^2] dx = (Sqrt[Pi/3]*Erf[Sqrt[3]*x])/2
+    assert_eq!(
+      interpret("Integrate[Exp[-3*x^2], x]").unwrap(),
+      "(Sqrt[Pi/3]*Erf[Sqrt[3]*x])/2"
+    );
+  }
+
+  #[test]
+  fn integrate_exp_neg_a_x_squared() {
+    // ∫ Exp[-a*x^2] dx = (Sqrt[Pi/a]*Erf[Sqrt[a]*x])/2
+    assert_eq!(
+      interpret("Integrate[Exp[-a*x^2], x]").unwrap(),
+      "(Sqrt[Pi/a]*Erf[Sqrt[a]*x])/2"
+    );
+  }
+}

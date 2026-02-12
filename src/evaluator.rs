@@ -2423,6 +2423,12 @@ pub fn evaluate_function_call_ast(
     "Exp" if args.len() == 1 => {
       return crate::functions::math_ast::exp_ast(args);
     }
+    "Erf" if args.len() == 1 => {
+      return crate::functions::math_ast::erf_ast(args);
+    }
+    "Erfc" if args.len() == 1 => {
+      return crate::functions::math_ast::erfc_ast(args);
+    }
     "Log" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::log_ast(args);
     }
