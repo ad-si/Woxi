@@ -2510,6 +2510,9 @@ pub fn evaluate_function_call_ast(
     "IntegerDigits" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::integer_digits_ast(args);
     }
+    "RealDigits" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::math_ast::real_digits_ast(args);
+    }
     "FromDigits" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::from_digits_ast(args);
     }
