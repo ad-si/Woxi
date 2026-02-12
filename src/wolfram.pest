@@ -131,6 +131,7 @@ Term = _{
   | DivideBy
   | Increment
   | Decrement
+  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | Identifier
   | Slot
   | Association
@@ -168,6 +169,7 @@ TermNoImplicit = _{
   | DivideBy
   | Increment
   | Decrement
+  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | Identifier
   | Slot
   | Association
@@ -208,8 +210,9 @@ PatternSimple = { PatternName ~ "_" }
 Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
-// PatternExpr can be a pattern or a term (for replacement rules)
-ReplacementRule = { (PatternCondition | PatternTest | PatternWithHead | PatternSimple | Term) ~ ("->" | ":>") ~ ConditionExpr }
+// The LHS is a ConditionExpr (expression that stops before -> and :>) with an optional /; condition.
+// Patterns (x_, x_Head, etc.) can appear as terms within the LHS expression.
+ReplacementRule = { ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | ":>") ~ ConditionExpr }
 
 // Replacement expressions: expr /. rule or expr //. rule
 ReplaceAllExpr = { Term ~ "/." ~ (List | ReplacementRule) }
