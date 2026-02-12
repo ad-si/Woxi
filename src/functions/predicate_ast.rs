@@ -225,6 +225,9 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     true
   } else if n % 2 == 0 || n % 3 == 0 {
     false
+  } else if n.unsigned_abs() > (1u128 << 53) {
+    // For large integers, use Miller-Rabin instead of trial division
+    crate::functions::math_ast::is_prime_bigint(&num_bigint::BigInt::from(n))
   } else {
     let mut i = 5i128;
     let mut result = true;

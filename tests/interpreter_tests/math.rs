@@ -523,6 +523,18 @@ mod next_prime {
         "True"
       );
   }
+
+  #[test]
+  fn prime_q_large_integer_mersenne() {
+    // 2^127 - 1 fits in i128 but is too large for trial division
+    assert_eq!(interpret("PrimeQ[2^127 - 1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn prime_q_large_integer_composite() {
+    // 2^67 - 1 = 193707721 * 761838257287 — fits in i128 but is composite
+    assert_eq!(interpret("PrimeQ[2^67 - 1]").unwrap(), "False");
+  }
 }
 
 mod bit_length {
