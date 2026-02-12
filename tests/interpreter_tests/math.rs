@@ -1431,3 +1431,93 @@ mod real_digits {
     );
   }
 }
+
+mod listable {
+  use super::*;
+
+  #[test]
+  fn fibonacci_list() {
+    assert_eq!(
+      interpret("Fibonacci[{1, 2, 3, 4, 5, 6}]").unwrap(),
+      "{1, 1, 2, 3, 5, 8}"
+    );
+  }
+
+  #[test]
+  fn sin_list() {
+    assert_eq!(interpret("Sin[{0, Pi/2, Pi}]").unwrap(), "{0, 1, 0}");
+  }
+
+  #[test]
+  fn power_list_scalar() {
+    assert_eq!(interpret("Power[{2, 3, 4}, 2]").unwrap(), "{4, 9, 16}");
+  }
+
+  #[test]
+  fn power_scalar_list() {
+    assert_eq!(interpret("Power[2, {1, 2, 3}]").unwrap(), "{2, 4, 8}");
+  }
+
+  #[test]
+  fn mod_list_scalar() {
+    assert_eq!(interpret("Mod[{10, 20, 30}, 7]").unwrap(), "{3, 6, 2}");
+  }
+
+  #[test]
+  fn plus_two_lists() {
+    assert_eq!(
+      interpret("Plus[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "{5, 7, 9}"
+    );
+  }
+
+  #[test]
+  fn plus_list_scalar() {
+    assert_eq!(interpret("{1, 2, 3} + 10").unwrap(), "{11, 12, 13}");
+  }
+
+  #[test]
+  fn times_two_lists() {
+    assert_eq!(interpret("{1, 2, 3} * {4, 5, 6}").unwrap(), "{4, 10, 18}");
+  }
+
+  #[test]
+  fn plus_three_lists() {
+    assert_eq!(
+      interpret("Plus[{1, 2}, {3, 4}, {5, 6}]").unwrap(),
+      "{9, 12}"
+    );
+  }
+
+  #[test]
+  fn mismatched_lengths_no_thread() {
+    // Mismatched list lengths should not thread — function returns unevaluated
+    assert_eq!(interpret("Sin[{1, 2}] + Sin[{3, 4, 5}]").is_err(), true);
+  }
+
+  #[test]
+  fn nested_listable() {
+    assert_eq!(interpret("Abs[{-1, 2, -3, 4}]").unwrap(), "{1, 2, 3, 4}");
+  }
+
+  #[test]
+  fn user_defined_listable() {
+    assert_eq!(
+      interpret("SetAttributes[f, Listable]; f[{1, 2, 3}]").unwrap(),
+      "{f[1], f[2], f[3]}"
+    );
+  }
+
+  #[test]
+  fn evenq_list() {
+    assert_eq!(
+      interpret("EvenQ[{1, 2, 3, 4}]").unwrap(),
+      "{False, True, False, True}"
+    );
+  }
+
+  #[test]
+  fn floor_list() {
+    assert_eq!(interpret("Floor[{1.2, 2.7, 3.5}]").unwrap(), "{1, 2, 3}");
+  }
+}

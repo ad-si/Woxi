@@ -1404,11 +1404,147 @@ fn string_to_expr(s: &str) -> Result<Expr, InterpreterError> {
 /// Dispatch function call to built-in implementations (AST version).
 /// This is the AST equivalent of the string-based function dispatch.
 /// IMPORTANT: This function must NOT call interpret() to avoid infinite recursion.
+/// Built-in Listable functions (thread automatically over list arguments)
+fn is_builtin_listable(name: &str) -> bool {
+  matches!(
+    name,
+    "Fibonacci"
+      | "LucasL"
+      | "Sin"
+      | "Cos"
+      | "Tan"
+      | "Sec"
+      | "Csc"
+      | "Cot"
+      | "Sinh"
+      | "Cosh"
+      | "Tanh"
+      | "Coth"
+      | "Sech"
+      | "Csch"
+      | "ArcSin"
+      | "ArcCos"
+      | "ArcTan"
+      | "ArcSinh"
+      | "ArcCosh"
+      | "ArcTanh"
+      | "Exp"
+      | "Log"
+      | "Log2"
+      | "Log10"
+      | "Abs"
+      | "Sign"
+      | "Floor"
+      | "Ceiling"
+      | "Round"
+      | "Sqrt"
+      | "Surd"
+      | "Factorial"
+      | "Gamma"
+      | "Erf"
+      | "Erfc"
+      | "Prime"
+      | "Power"
+      | "Plus"
+      | "Times"
+      | "Mod"
+      | "Quotient"
+      | "GCD"
+      | "LCM"
+      | "Binomial"
+      | "Multinomial"
+      | "IntegerDigits"
+      | "FactorInteger"
+      | "IntegerLength"
+      | "RealDigits"
+      | "RomanNumeral"
+      | "EulerPhi"
+      | "MoebiusMu"
+      | "DivisorSigma"
+      | "BernoulliB"
+      | "CatalanNumber"
+      | "StirlingS1"
+      | "StirlingS2"
+      | "ContinuedFraction"
+      | "Boole"
+      | "BitLength"
+      | "EvenQ"
+      | "OddQ"
+      | "PrimeQ"
+      | "Positive"
+      | "Negative"
+      | "NonPositive"
+      | "NonNegative"
+      | "StringLength"
+  )
+}
+
+/// Thread a Listable function over list arguments.
+/// Returns Some(result) if threading was applied, None otherwise.
+fn thread_listable(
+  name: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  // Check if any argument is a list
+  let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
+  if !has_list {
+    return Ok(None);
+  }
+
+  // Find the list length (all lists must have the same length)
+  let mut list_len = None;
+  for arg in args {
+    if let Expr::List(items) = arg {
+      match list_len {
+        None => list_len = Some(items.len()),
+        Some(n) if n != items.len() => {
+          // Mismatched list lengths — don't thread, let the function handle it
+          return Ok(None);
+        }
+        _ => {}
+      }
+    }
+  }
+
+  let len = match list_len {
+    Some(n) => n,
+    None => return Ok(None),
+  };
+
+  // Thread element-wise
+  let mut results = Vec::with_capacity(len);
+  for i in 0..len {
+    let threaded_args: Vec<Expr> = args
+      .iter()
+      .map(|arg| {
+        if let Expr::List(items) = arg {
+          items[i].clone()
+        } else {
+          arg.clone()
+        }
+      })
+      .collect();
+    results.push(evaluate_function_call_ast(name, &threaded_args)?);
+  }
+  Ok(Some(Expr::List(results)))
+}
+
 pub fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast;
+
+  // Thread Listable functions over list arguments
+  let is_listable = is_builtin_listable(name)
+    || crate::FUNC_ATTRS.with(|m| {
+      m.borrow()
+        .get(name)
+        .is_some_and(|attrs| attrs.contains(&"Listable".to_string()))
+    });
+  if is_listable && let Some(result) = thread_listable(name, args)? {
+    return Ok(result);
+  }
 
   // Handle functions that would call interpret() if dispatched through evaluate_expression
   // These must be handled natively to avoid infinite recursion
@@ -2979,27 +3115,6 @@ pub fn evaluate_function_call_ast(
     }
 
     _ => {}
-  }
-
-  // Check for Listable attribute: thread function over list arguments
-  let is_listable = crate::FUNC_ATTRS.with(|m| {
-    m.borrow()
-      .get(name)
-      .is_some_and(|attrs| attrs.contains(&"Listable".to_string()))
-  });
-  if is_listable {
-    // Check if any argument is a List
-    if let Some(list_idx) = args.iter().position(|a| matches!(a, Expr::List(_)))
-      && let Expr::List(items) = &args[list_idx]
-    {
-      let mut results = Vec::new();
-      for item in items {
-        let mut new_args = args.to_vec();
-        new_args[list_idx] = item.clone();
-        results.push(evaluate_function_call_ast(name, &new_args)?);
-      }
-      return Ok(Expr::List(results));
-    }
   }
 
   // Check for user-defined functions
