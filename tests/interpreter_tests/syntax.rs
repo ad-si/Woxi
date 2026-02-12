@@ -63,6 +63,37 @@ mod postfix_application {
     // Which[...]& /@ Range[1, 5] // Map[Print] - pattern from fizzbuzz_5
     assert_eq!(interpret("(# + 1)& /@ {1, 2, 3} // Length").unwrap(), "3");
   }
+
+  #[test]
+  fn postfix_with_trailing_ampersand() {
+    // In Wolfram, & binds tighter than //, so "x // f &" means "(f &)[x]"
+    // (f &) is Function[f] which always returns f regardless of argument
+    assert_eq!(interpret("5 // Sqrt &").unwrap(), "Sqrt");
+    // Chained postfix where only last has &
+    assert_eq!(
+      interpret("{3, 1, 2} // Sort // Length &").unwrap(),
+      "Length"
+    );
+  }
+
+  #[test]
+  fn postfix_ampersand_with_function_call() {
+    // "x // f[#, 2] &" means "(f[#, 2] &)[x]" = f[x, 2]
+    assert_eq!(interpret("5 // Power[#, 2] &").unwrap(), "25");
+  }
+
+  #[test]
+  fn nestlist_with_postfix_ampersand() {
+    // Original bug: NestList[... // Flatten &, {10}, 10] should give constant {10}
+    // because (Flatten &) is Function[Flatten] which always returns Flatten
+    assert_eq!(
+      interpret(
+        "NestList[# /. x_ /; x > 1 :> {x - 1, x - 2} // Flatten &, {10}, 10] // Last // Total"
+      )
+      .unwrap(),
+      "10"
+    );
+  }
 }
 
 mod trailing_semicolon {

@@ -852,6 +852,22 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
   }
 }
 
+/// Parse a PostfixFunction pair into an Expr, wrapping in Function if & is present.
+/// In Wolfram, `x // f &` parses as `(f &)[x]`, i.e. & binds tighter than //.
+fn parse_postfix_function(pair: Pair<Rule>) -> Expr {
+  let has_ampersand = pair.as_str().trim_end().ends_with('&');
+  // The inner children are the same (BaseFunctionCall or Identifier);
+  // the "&" is an anonymous literal in the grammar and doesn't appear as a child.
+  let func = pair_to_expr(pair.into_inner().next().unwrap());
+  if has_ampersand {
+    Expr::Function {
+      body: Box::new(func),
+    }
+  } else {
+    func
+  }
+}
+
 /// Parse an expression with operators into an Expr
 fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut inner: Vec<Pair<Rule>> = pair.into_inner().collect();
@@ -917,7 +933,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   if inner.len() == 1 && replace_rules.is_none() && repeated_suffix.is_none() {
     let mut result = pair_to_expr(inner.remove(0));
     for func_pair in postfix_funcs {
-      let func = pair_to_expr(func_pair);
+      let func = parse_postfix_function(func_pair);
       result = Expr::Postfix {
         expr: Box::new(result),
         func: Box::new(func),
@@ -1032,7 +1048,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 
   // Apply postfix functions
   for func_pair in postfix_funcs {
-    let func = pair_to_expr(func_pair);
+    let func = parse_postfix_function(func_pair);
     result = Expr::Postfix {
       expr: Box::new(result),
       func: Box::new(func),
