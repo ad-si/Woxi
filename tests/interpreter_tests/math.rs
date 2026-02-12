@@ -1227,3 +1227,92 @@ mod composition {
     );
   }
 }
+
+mod gcd {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("GCD[12, 8]").unwrap(), "4");
+  }
+
+  #[test]
+  fn coprime() {
+    assert_eq!(interpret("GCD[17, 19]").unwrap(), "1");
+  }
+
+  #[test]
+  fn with_zero() {
+    assert_eq!(interpret("GCD[0, 5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("GCD[-12, 8]").unwrap(), "4");
+  }
+
+  #[test]
+  fn multiple_args() {
+    assert_eq!(interpret("GCD[24, 36, 60]").unwrap(), "12");
+  }
+
+  #[test]
+  fn empty() {
+    assert_eq!(interpret("GCD[]").unwrap(), "0");
+  }
+
+  #[test]
+  fn big_integer() {
+    assert_eq!(interpret("GCD[2^200, 123436216212]").unwrap(), "4");
+  }
+
+  #[test]
+  fn big_integer_both() {
+    assert_eq!(
+      interpret("GCD[2^100, 2^150]").unwrap(),
+      interpret("2^100").unwrap()
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("GCD[x, 5]").unwrap(), "GCD[x, 5]");
+  }
+}
+
+mod lcm {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("LCM[4, 6]").unwrap(), "12");
+  }
+
+  #[test]
+  fn with_zero() {
+    assert_eq!(interpret("LCM[0, 5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn multiple_args() {
+    assert_eq!(interpret("LCM[2, 3, 5]").unwrap(), "30");
+  }
+
+  #[test]
+  fn big_integer() {
+    assert_eq!(
+      interpret("LCM[2^200, 123436216212]").unwrap(),
+      "49588587967610287244150772077232914068094816317781627045866288529276928"
+    );
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("LCM[-4, 6]").unwrap(), "12");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("LCM[x, 5]").unwrap(), "LCM[x, 5]");
+  }
+}
