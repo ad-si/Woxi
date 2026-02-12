@@ -3,6 +3,7 @@ Abs,Returns the absolute value of a number,✅
 Accumulate,Returns cumulative sums of a list,✅
 AllTrue,Checks if all elements in a list are true,✅
 Alphabet,Returns the list of lowercase English letters,✅
+AlphabeticSort,Sorts strings in case-insensitive alphabetical order,✅
 And,Checks if all conditions are true,✅
 AnyTrue,Checks if any element in a list is true,✅
 Append,Adds an element to the end of a list,✅
@@ -24,6 +25,7 @@ CatalanNumber,Returns the nth Catalan number,✅
 Catch,Catches a value thrown by Throw,✅
 Catenate,Flattens one level of lists,✅
 Ceiling,Returns the smallest integer greater than or equal to a number,✅
+CharacterCounts,Returns an association of character frequencies in a string,✅
 Characters,Converts a string into a list of single-character strings,✅
 ChineseRemainder,Solves a system of modular congruences,✅
 Chop,Replaces approximate real numbers close to zero by exact 0,✅
@@ -83,7 +85,9 @@ GCD,Returns the greatest common divisor of integers,✅
 GeometricMean,Returns the geometric mean of a list,✅
 Greater,Checks if one value is greater than another,✅
 GreaterEqual,Checks if one value is greater than or equal to another,✅
+HammingDistance,Returns the number of positions where two equal-length strings differ,✅
 HarmonicMean,Returns the harmonic mean of a list,✅
+Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512,✅
 Identity,Returns its argument unchanged,✅
 If,Checks if a condition is true and returns one of two values,✅
 Inner,Generalized inner product,✅
@@ -167,6 +171,7 @@ RandomInteger,Generate random integers,✅
 RandomSample,Random selection without replacement,✅
 Range,"Generates a sequence of numbers with optional start, end, and step",✅
 Range,Generates a sequence of numbers,✅
+RemoveDiacritics,Removes diacritical marks from a string,✅
 ReplacePart,Replaces element at a specific position,✅
 Rescale,Rescales values to a specified range,✅
 Rest,Returns the list without its first element,✅
@@ -201,13 +206,17 @@ StringLength,Returns the length of a string,✅
 StringMatchQ,Tests if string matches a pattern with wildcards,✅
 StringPadLeft,Pads a string on the left to a specified length,✅
 StringPadRight,Pads a string on the right to a specified length,✅
+StringPart,Extracts characters from a string by index,✅
 StringPosition,Finds all positions of a substring,✅
 StringQ,Tests if expression is a string,✅
 StringReplace,Replaces occurrences of substrings in a string,✅
 StringRiffle,Joins a list of strings with a separator,✅
+StringRotateLeft,Rotates characters in a string to the left,✅
+StringRotateRight,Rotates characters in a string to the right,✅
 StringSplit,Splits a string into a list of substrings,✅
 StringStartsQ,Checks if a string starts with a specific substring,✅
 StringTake,Returns a substring of a string,✅
+StringTakeDrop,Returns the taken and dropped parts of a string as a list,✅
 Subdivide,Divides a range into equal parts,✅
 Subsequences,Returns all contiguous subsequences of a list,✅
 Switch,Evaluates an expression and matches it against patterns,✅
@@ -222,8 +231,8 @@ Throw,Throws a value to be caught by Catch,✅
 Times,Multiply numbers,✅
 ToExpression,Converts a string to an evaluated expression,✅
 ToLowerCase,Converts a string to lowercase,✅
-ToUpperCase,Converts a string to uppercase,✅
 Total,Sums the elements of a list,✅
+ToUpperCase,Converts a string to uppercase,✅
 Transpose,Transposes a matrix (list of lists),✅
 Tuples,Generates all tuples of elements from a list,✅
 Unequal,Checks if two values are not equal,✅
@@ -568,7 +577,6 @@ AllowVersionUpdate,,
 AllSameBy,,
 Alphabet,,
 AlphabeticOrder,,
-AlphabeticSort,,
 AlphaChannel,,
 AlternatingFactorial,,
 AlternatingGroup,,
@@ -1222,7 +1230,6 @@ ChannelSend,,
 ChannelSubscribers,,
 ChanVeseBinarize,,
 Character,,
-CharacterCounts,,
 CharacterEncoding,,
 CharacteristicFunction,,
 CharacteristicPolynomial,,
@@ -2921,7 +2928,6 @@ HalfSpace,,
 HalftoneShading,,
 Haloing,,
 HamiltonianGraphQ,,
-HammingDistance,,
 HammingWindow,,
 HandlerFunctions,,
 HandlerFunctionsKeys,,
@@ -2937,7 +2943,6 @@ HardcorePointProcess,,
 HarmonicMean,,
 HarmonicMeanFilter,,
 HarmonicNumber,,
-Hash,,
 HatchFilling,,
 HatchShading,,
 Haversine,,
@@ -5012,7 +5017,6 @@ RemoveAudioStream,,
 RemoveBackground,,
 RemoveChannelListener,,
 RemoveChannelSubscribers,,
-RemoveDiacritics,,
 RemoveInputStreamMethod,,
 RemoveOutputStreamMethod,,
 RemoveUsers,,
@@ -5609,18 +5613,14 @@ StringJoin,,
 StringLength,,
 StringPadLeft,,
 StringPadRight,,
-StringPart,,
 StringPartition,,
 StringRepeat,,
 StringReplaceList,,
 StringReplacePart,,
 StringReverse,,
-StringRotateLeft,,
-StringRotateRight,,
 StringSkeleton,,
 StringSplit,,
 StringTake,,
-StringTakeDrop,,
 StringTemplate,,
 StringToByteArray,,
 StringToStream,,
