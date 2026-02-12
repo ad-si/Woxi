@@ -1328,3 +1328,106 @@ mod lcm {
     assert_eq!(interpret("LCM[x, 5]").unwrap(), "LCM[x, 5]");
   }
 }
+
+mod real_digits {
+  use super::*;
+
+  #[test]
+  fn pi_20_digits() {
+    assert_eq!(
+      interpret("RealDigits[Pi, 10, 20]").unwrap(),
+      "{{3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4}, 1}"
+    );
+  }
+
+  #[test]
+  fn pi_part_extraction() {
+    assert_eq!(
+      interpret("RealDigits[Pi, 10, 10][[1]]").unwrap(),
+      "{3, 1, 4, 1, 5, 9, 2, 6, 5, 3}"
+    );
+  }
+
+  #[test]
+  fn pi_exponent() {
+    assert_eq!(interpret("RealDigits[Pi, 10, 5][[2]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn e_constant() {
+    assert_eq!(
+      interpret("RealDigits[E, 10, 10]").unwrap(),
+      "{{2, 7, 1, 8, 2, 8, 1, 8, 2, 8}, 1}"
+    );
+  }
+
+  #[test]
+  fn integer_value() {
+    assert_eq!(
+      interpret("RealDigits[42, 10, 5]").unwrap(),
+      "{{4, 2, 0, 0, 0}, 2}"
+    );
+  }
+
+  #[test]
+  fn round_integer() {
+    assert_eq!(
+      interpret("RealDigits[100, 10, 5]").unwrap(),
+      "{{1, 0, 0, 0, 0}, 3}"
+    );
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(
+      interpret("RealDigits[1/7, 10, 12]").unwrap(),
+      "{{1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7}, 0}"
+    );
+  }
+
+  #[test]
+  fn one_third() {
+    assert_eq!(
+      interpret("RealDigits[1/3, 10, 10]").unwrap(),
+      "{{3, 3, 3, 3, 3, 3, 3, 3, 3, 3}, 0}"
+    );
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(
+      interpret("RealDigits[0, 10, 5]").unwrap(),
+      "{{0, 0, 0, 0, 0}, 0}"
+    );
+  }
+
+  #[test]
+  fn negative_number() {
+    // RealDigits uses absolute value for digits
+    assert_eq!(
+      interpret("RealDigits[-Pi, 10, 5]").unwrap(),
+      "{{3, 1, 4, 1, 5}, 1}"
+    );
+  }
+
+  #[test]
+  fn small_number() {
+    assert_eq!(
+      interpret("RealDigits[345/100000, 10, 5]").unwrap(),
+      "{{3, 4, 5, 0, 0}, -2}"
+    );
+  }
+
+  #[test]
+  fn large_precision() {
+    // Test 1000 digits of Pi - verify first and last few digits
+    assert_eq!(
+      interpret("Take[RealDigits[Pi, 10, 1000][[1]], 5]").unwrap(),
+      "{3, 1, 4, 1, 5}"
+    );
+    assert_eq!(
+      interpret("Take[RealDigits[Pi, 10, 1000][[1]], -5]").unwrap(),
+      "{2, 0, 1, 9, 8}"
+    );
+  }
+}

@@ -4823,6 +4823,175 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(digits))
 }
 
+/// Extract decimal digits and exponent from a BigFloat.
+/// Returns (digit_chars, decimal_exponent) where digit_chars are ASCII digit bytes
+/// and decimal_exponent is the number of integer digits (position of decimal point).
+fn bigfloat_to_digits(
+  bf: &astro_float::BigFloat,
+) -> Result<(Vec<u8>, i64), InterpreterError> {
+  use num_bigint::BigUint;
+  use num_traits::Zero;
+
+  let (words, sig_bits, _sign, exponent, _inexact) =
+    bf.as_raw_parts().ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "RealDigits: cannot extract NaN or Inf".into(),
+      )
+    })?;
+
+  if sig_bits == 0 || words.iter().all(|&w| w == 0) {
+    return Ok((vec![b'0'], 0));
+  }
+
+  let mantissa = BigUint::from_bytes_le(
+    &words
+      .iter()
+      .flat_map(|w| w.to_le_bytes())
+      .collect::<Vec<u8>>(),
+  );
+
+  let mantissa_bits = words.len() * 64;
+  let shift = exponent as i64 - mantissa_bits as i64;
+
+  let target_digits =
+    (mantissa_bits as f64 / std::f64::consts::LOG2_10).ceil() as usize + 2;
+
+  let (int_digits, decimal_exp) = if shift >= 0 {
+    let int_val = &mantissa << (shift as u64);
+    let s = int_val.to_string();
+    let len = s.len();
+    (s, len as i64)
+  } else {
+    let neg_shift = (-shift) as u64;
+    let scale = BigUint::from(10u32).pow(target_digits as u32);
+    let scaled = &mantissa * &scale;
+    let result = &scaled >> neg_shift;
+
+    if result.is_zero() {
+      return Ok((vec![b'0'], 0));
+    }
+
+    let s = result.to_string();
+    let decimal_exp = s.len() as i64 - target_digits as i64;
+    (s, decimal_exp)
+  };
+
+  Ok((int_digits.into_bytes(), decimal_exp))
+}
+
+/// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
+/// Returns {digit_list, exponent}.
+pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "RealDigits expects 1 to 3 arguments".into(),
+    ));
+  }
+
+  // Only base 10 is supported for now
+  if args.len() >= 2 {
+    match expr_to_i128(&args[1]) {
+      Some(10) => {}
+      Some(_) => {
+        return Ok(Expr::FunctionCall {
+          name: "RealDigits".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "RealDigits: base must be an integer".into(),
+        ));
+      }
+    }
+  }
+
+  let num_digits: usize = if args.len() >= 3 {
+    match expr_to_i128(&args[2]) {
+      Some(n) if n > 0 => n as usize,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "RealDigits: number of digits must be a positive integer".into(),
+        ));
+      }
+    }
+  } else {
+    // Default: use machine-precision (~16 digits)
+    16
+  };
+
+  let expr = &args[0];
+
+  // Determine sign and work with absolute value
+  let is_negative = match expr {
+    Expr::Integer(n) => *n < 0,
+    Expr::Real(f) => *f < 0.0,
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      ..
+    } => true,
+    _ => false,
+  };
+
+  let abs_expr = if is_negative {
+    Expr::FunctionCall {
+      name: "Abs".to_string(),
+      args: vec![expr.clone()],
+    }
+  } else {
+    expr.clone()
+  };
+
+  // Check for exact zero
+  let is_zero = matches!(&abs_expr, Expr::Integer(0))
+    || matches!(&abs_expr, Expr::Real(f) if *f == 0.0);
+
+  if is_zero {
+    let digits = vec![Expr::Integer(0); num_digits];
+    return Ok(Expr::List(vec![Expr::List(digits), Expr::Integer(0)]));
+  }
+
+  // Compute with extra precision to avoid rounding errors in the last digits
+  let extra = 10;
+  let precision = num_digits + extra;
+
+  use astro_float::{Consts, RoundingMode};
+  let mut cc = Consts::new().map_err(|e| {
+    InterpreterError::EvaluationError(format!("BigFloat init error: {}", e))
+  })?;
+  let rm = RoundingMode::ToEven;
+  let bits = nominal_bits(precision);
+
+  let bf = expr_to_bigfloat(&abs_expr, bits, rm, &mut cc)?;
+
+  let (raw_digits, decimal_exp) = bigfloat_to_digits(&bf)?;
+
+  // raw_digits are the significant digits, decimal_exp is the exponent
+  // (number of digits before the decimal point).
+  // We need exactly num_digits digits.
+  let mut digits: Vec<i128> = raw_digits
+    .iter()
+    .filter(|b| b.is_ascii_digit())
+    .map(|b| (*b - b'0') as i128)
+    .collect();
+
+  // Pad with zeros if we don't have enough digits
+  while digits.len() < num_digits {
+    digits.push(0);
+  }
+
+  // Truncate to requested number of digits
+  digits.truncate(num_digits);
+
+  let digit_exprs: Vec<Expr> =
+    digits.iter().map(|&d| Expr::Integer(d)).collect();
+
+  Ok(Expr::List(vec![
+    Expr::List(digit_exprs),
+    Expr::Integer(decimal_exp as i128),
+  ]))
+}
+
 /// FromDigits[list
 pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
