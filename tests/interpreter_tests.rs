@@ -7,6 +7,7 @@ mod interpreter_tests {
   mod arithmetic;
   mod association;
   mod calculus;
+  mod cellular_automaton;
   mod control_flow;
   mod functions;
   mod io;

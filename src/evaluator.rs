@@ -2754,6 +2754,13 @@ pub fn evaluate_function_call_ast(
       return crate::functions::linear_algebra_ast::cross_ast(args);
     }
 
+    // CellularAutomaton
+    "CellularAutomaton" if args.len() == 3 => {
+      return crate::functions::cellular_automaton_ast::cellular_automaton_ast(
+        args,
+      );
+    }
+
     // AST-native additional association functions
     "AssociationMap" if args.len() == 2 => {
       return crate::functions::association_ast::association_map_ast(args);
