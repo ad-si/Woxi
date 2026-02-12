@@ -784,6 +784,60 @@ fn make_neg_divided(expr: Expr, divisor: Expr) -> Expr {
   }
 }
 
+/// Build the antiderivative of Exp[-a*x^2]:
+///   Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]  (general a)
+///   (Sqrt[Pi]*Erf[x])/2            (when a=1)
+fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
+  let var_expr = Expr::Identifier(var.to_string());
+  let (erf_arg, prefix) = match coeff {
+    Expr::Integer(1) => {
+      // a=1: Erf[x], prefix = Sqrt[Pi]
+      (
+        var_expr,
+        Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::Constant("Pi".to_string())],
+        },
+      )
+    }
+    _ => {
+      // general a: Erf[Sqrt[a]*x], prefix = Sqrt[Pi/a]
+      let sqrt_a = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![coeff.clone()],
+      };
+      let erf_arg = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(sqrt_a),
+        right: Box::new(var_expr),
+      };
+      let prefix = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Constant("Pi".to_string())),
+          right: Box::new(coeff.clone()),
+        }],
+      };
+      (erf_arg, prefix)
+    }
+  };
+  let erf_expr = Expr::FunctionCall {
+    name: "Erf".to_string(),
+    args: vec![erf_arg],
+  };
+  // (prefix * Erf[...]) / 2
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(prefix),
+      right: Box::new(erf_expr),
+    }),
+    right: Box::new(Expr::Integer(2)),
+  }
+}
+
 /// Try to match an expression as `a*var` where `a` is constant w.r.t. `var`,
 /// or just `var` (returning `Integer(1)`).
 /// Returns Some(a) if it matches, None otherwise.
@@ -1077,6 +1131,19 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               name: "Exp".to_string(),
               args: args.clone(),
             });
+          }
+          // ∫ e^(a*x) dx = e^(a*x)/a  (linear argument)
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let exp_expr = Expr::FunctionCall {
+              name: "Exp".to_string(),
+              args: args.clone(),
+            };
+            return Some(make_divided(exp_expr, coeff));
+          }
+          // ∫ Exp[-a*x^2] dx = Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]
+          // (when a=1: Sqrt[Pi]/2 * Erf[x])
+          if let Some(coeff) = match_neg_a_x_squared(&args[0], var) {
+            return Some(make_gaussian_antiderivative(var, &coeff));
           }
           None
         }
