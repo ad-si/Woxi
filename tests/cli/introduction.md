@@ -1,6 +1,10 @@
+![Woxi Logo](images/logo.png)
+
 # Woxi
 
-A Rust-based interpreter for a subset of the Wolfram Language.
+An interpreter for the
+[Wolfram Language](https://en.wikipedia.org/wiki/Wolfram_Language)
+powered by Rust.
 
 
 ## Features
@@ -12,11 +16,14 @@ For example:
 ```wolfram
 #!/usr/bin/env woxi
 
-(* Print 5 random integers between 1 and 6 *)
-Print[RandomInteger[{1, 6}, 5]]
+(* Print the square of 5 random integers between 1 and 9 *)
+RandomInteger[{1, 9}, 5] // Map[#^2&] // Map[Print]
 ```
 
-All code examples in this documentation are run using Woxi.
+It has full support for Jupyter Notebooks including graphical output:
 
-Woxi runs faster than WolframScript as there is no overhead of starting a kernel
-and verifying its license.
+<img alt="Screenshot of Jupyter Notebook" src="images/2026-02-12t1501_jupyter.png" style="max-width: 50rem;">
+
+> [!TIP]
+> **Try it out yourself in our
+> [JupyterLite instance](https://woxi.ad-si.com/jupyterlite/lab/index.html?path=showcase.ipynb)!**
