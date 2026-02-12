@@ -63,7 +63,8 @@ Operator = {
 
 // PostfixFunction: function used in postfix application (x // f or x // Map[f])
 // Uses BaseFunctionCall to avoid circular reference with FunctionCall -> FunctionArg -> Expression -> PostfixApplication
-PostfixFunction = { BaseFunctionCall | Identifier }
+// Optional trailing & allows "x // f &" to parse as x // (f &), matching Wolfram precedence
+PostfixFunction = { (BaseFunctionCall | Identifier) ~ ("&" ~ !"&")? }
 
 // Increment/Decrement: x++ or x-- (postfix operators)
 Increment = { Identifier ~ "++" }
