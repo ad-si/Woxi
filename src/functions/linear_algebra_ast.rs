@@ -609,11 +609,6 @@ fn synthetic_div(coeffs: &[i128], root: i128) -> Vec<i128> {
   result
 }
 
-/// Convert an integer eigenvalue to Expr, sorting value for ordering.
-fn i128_to_eigenvalue_expr(v: i128) -> Expr {
-  Expr::Integer(v)
-}
-
 /// Sort eigenvalues: Wolfram sorts by absolute value descending,
 /// then by value descending for ties.
 fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
