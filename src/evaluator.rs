@@ -2747,6 +2747,9 @@ pub fn evaluate_function_call_ast(
     "DiagonalMatrix" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::diagonal_matrix_ast(args);
     }
+    "Eigenvalues" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::eigenvalues_ast(args);
+    }
     "Cross" if args.len() == 2 => {
       return crate::functions::linear_algebra_ast::cross_ast(args);
     }
