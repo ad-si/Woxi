@@ -2,7 +2,7 @@
 
 # Woxi
 
-A Rust-based interpreter for a subset of the Wolfram Language.
+An interpreter for the Wolfram Language powered by Rust.
 
 
 ## Features
@@ -14,17 +14,23 @@ For example:
 ```wolfram
 #!/usr/bin/env woxi
 
-(* Print 5 random integers between 1 and 6 *)
-Print[RandomInteger[{1, 6}, 5]]
+(* Print the square of 5 random integers between 1 and 9 *)
+RandomInteger[{1, 9}, 5] // Map[#^2&] // Map[Print]
 ```
 
-![Screenshot of Jupyter Notebook](images/2025-05-18t1620_jupyter.png)
+It has full support for Jupyter Notebooks including graphical output:
+
+![Screenshot of Jupyter Notebook](images/2026-02-12t1501_jupyter.png)
+
+> [!TIP]
+> **Try it out yourself in our
+> [JupyterLite instance](https://woxi.ad-si.com/jupyterlite/lab/index.html?path=showcase.ipynb)!**
 
 Check out the [CLI tests](./tests/cli) directory
 to see all currently supported commands and their expected output.
 All tests must pass with Woxi and WolframScript.
 
-Check out the [functions.csv](./functions.csv) file
+Also check out the [functions.csv](./functions.csv) file
 for a list of all Wolfram Language functions and their implementation status.
 
 Woxi runs faster than WolframScript as there is no overhead of starting a kernel
@@ -33,8 +39,7 @@ and verifying its license.
 
 ## Installation
 
-To use Woxi, you need to have [Rust's cargo](https://doc.rust-lang.org/cargo/)
-installed on your system.
+You can easily install it with [Rust's cargo](https://doc.rust-lang.org/cargo/):
 
 ```sh
 cargo install woxi
@@ -71,7 +76,7 @@ woxi eval 'StringJoin["Hello", " ", "World!"]'
 Or you can run a script:
 
 ```sh
-woxi run tests/cli/hello_world.wls
+woxi run tests/scripts/hello_world.wls
 ```
 
 
@@ -89,6 +94,10 @@ Then start the Jupyter server:
 ```sh
 cd examples && jupyter lab
 ```
+
+Or simply use our
+[JupyterLite instance](https://woxi.ad-si.com/jupyterlite/lab/index.html?path=showcase.ipynb).
+It runs fully self-contained in your browser and no data is send to the cloud.
 
 
 ## CLI Comparison With [WolframScript]
@@ -115,5 +124,3 @@ To run the test suite:
 ```sh
 make test
 ```
-
-

@@ -7,3 +7,6 @@ src = "cli"
 [output.html]
 git-repository-url = "https://github.com/ad-si/Woxi"
 edit-url-template = "https://github.com/ad-si/Woxi/edit/main/tests/{path}"
+
+[output.html.print]
+enable = false
