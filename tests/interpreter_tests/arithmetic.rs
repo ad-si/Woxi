@@ -188,6 +188,42 @@ mod arithmetic {
       assert_eq!(interpret("1*{a, b, c}").unwrap(), "{a, b, c}");
     }
   }
+
+  mod times_canonical_ordering {
+    use super::*;
+
+    #[test]
+    fn symbols_sorted_alphabetically() {
+      assert_eq!(interpret("z*a*m*b").unwrap(), "a*b*m*z");
+    }
+
+    #[test]
+    fn number_first_then_symbols() {
+      assert_eq!(interpret("x*3").unwrap(), "3*x");
+      assert_eq!(interpret("b*a*5").unwrap(), "5*a*b");
+    }
+
+    #[test]
+    fn transcendental_after_polynomial() {
+      assert_eq!(interpret("Sin[x]*a*Cos[x]").unwrap(), "a*Cos[x]*Sin[x]");
+      assert_eq!(interpret("Log[x]*x*Cos[y]").unwrap(), "x*Cos[y]*Log[x]");
+    }
+
+    #[test]
+    fn times_function_sorted() {
+      assert_eq!(interpret("Times[z, a, m, b]").unwrap(), "a*b*m*z");
+    }
+
+    #[test]
+    fn rational_preserved_in_product() {
+      assert_eq!(interpret("Rational[1, 3]*Sin[x]").unwrap(), "Sin[x]/3");
+    }
+
+    #[test]
+    fn derivative_sorted() {
+      assert_eq!(interpret("D[Sin[x]^2, x]").unwrap(), "2*Cos[x]*Sin[x]");
+    }
+  }
 }
 
 mod real_number_formatting {

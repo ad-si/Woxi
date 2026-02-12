@@ -1795,7 +1795,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       };
       let inner = expr_to_string(operand);
       let needs_parens = matches!(op, UnaryOperator::Minus)
-        && matches!(
+        && (matches!(
           operand.as_ref(),
           Expr::BinaryOp {
             op: BinaryOperator::Plus
@@ -1804,7 +1804,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
               | BinaryOperator::Divide,
             ..
           }
-        );
+        ) || matches!(
+          operand.as_ref(),
+          Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
+        ));
       if needs_parens {
         format!("{}({})", op_str, inner)
       } else {
@@ -2050,6 +2053,20 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       // Special case: Times displays as infix with * (no spaces)
       if name == "Times" && args.len() >= 2 {
+        // Handle Times[Rational[1, d], expr] as "expr/d"
+        if args.len() == 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
+          && let Expr::Integer(d) = &rargs[1]
+        {
+          let inner = expr_to_output(&args[1]);
+          return format!("{}/{}", inner, d);
+        }
         // Handle Times[-1, x] as "-x" and Times[-1, x, y, ...] as "-x*y*..."
         if args.len() >= 2 && matches!(&args[0], Expr::Integer(-1)) {
           let rest = args[1..]
