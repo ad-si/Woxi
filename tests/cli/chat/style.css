@@ -1,0 +1,272 @@
+/* Auto dark mode */
+@media (prefers-color-scheme: dark) {
+  html:not(.light) { @apply dark; }
+}
+
+/* Textarea auto-resize helper */
+#input {
+  field-sizing: content;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #374151;
+}
+
+/* Message area */
+#messages {
+  scroll-behavior: smooth;
+}
+
+.message-content {
+  line-height: 1.6;
+}
+
+.message-content p {
+  margin-bottom: 0.5em;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content pre {
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.message-content pre code {
+  display: block;
+  padding: 0.75rem 1rem;
+  font-size: 0.85em;
+}
+
+.message-content code:not(pre code) {
+  background: #f3f4f6;
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+
+.dark .message-content code:not(pre code) {
+  background: #1f2937;
+}
+
+.message-content ul, .message-content ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.message-content li {
+  margin: 0.25em 0;
+}
+
+.message-content table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+
+.message-content th, .message-content td {
+  border: 1px solid #d1d5db;
+  padding: 0.4em 0.75em;
+  text-align: left;
+}
+
+.dark .message-content th, .dark .message-content td {
+  border-color: #374151;
+}
+
+/* Tool call card */
+.tool-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  margin: 0.75em 0;
+}
+
+.dark .tool-card {
+  border-color: #374151;
+}
+
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dark .tool-card-header {
+  background: #111827;
+  border-bottom-color: #374151;
+  color: #9ca3af;
+}
+
+.tool-card-header .chevron {
+  transition: transform 0.2s;
+}
+
+.tool-card.collapsed .chevron {
+  transform: rotate(-90deg);
+}
+
+.tool-card.collapsed .tool-card-body {
+  display: none;
+}
+
+.tool-card-code {
+  padding: 0.75rem;
+  background: #1e1e2e;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  color: #cdd6f4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+.tool-card-result {
+  padding: 0.75rem;
+  background: #f0fdf4;
+  border-top: 1px solid #e5e7eb;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.dark .tool-card-result {
+  background: #052e16;
+  border-top-color: #374151;
+  color: #bbf7d0;
+}
+
+.tool-card-result.error {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.dark .tool-card-result.error {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+.tool-card-result.graphics {
+  background: white;
+  display: flex;
+  justify-content: center;
+}
+
+.dark .tool-card-result.graphics {
+  background: #1a1a2e;
+}
+
+.tool-card-result.graphics svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #d1d5db;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Toast */
+.toast {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: toast-in 0.3s ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-0.5rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Conversation list item */
+.conv-item {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.15s;
+}
+
+.conv-item:hover {
+  background: #e5e7eb;
+}
+
+.dark .conv-item:hover {
+  background: #1f2937;
+}
+
+.conv-item.active {
+  background: #e5e7eb;
+}
+
+.dark .conv-item.active {
+  background: #1f2937;
+}
+
+.conv-item .delete-btn {
+  opacity: 0;
+  margin-left: auto;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
+}
+
+.conv-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.conv-item .delete-btn:hover {
+  background: #fecaca;
+  color: #dc2626;
+}
+
+.dark .conv-item .delete-btn:hover {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+/* Streaming cursor */
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.streaming-cursor::after {
+  content: "\25AE";
+  animation: blink 1s step-end infinite;
+  margin-left: 1px;
+}

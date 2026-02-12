@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Woxi Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            sidebar: { light: '#f9fafb', dark: '#111827' },
+            chat: { light: '#ffffff', dark: '#1a1a2e' },
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/mathematica.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="h-screen flex bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+
+  <!-- Sidebar overlay for mobile -->
+  <div id="sidebar-overlay" class="hidden fixed inset-0 bg-black/50 z-20 md:hidden"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar"
+    class="w-64 flex-shrink-0 flex flex-col bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 fixed md:relative inset-y-0 left-0 z-30 -translate-x-full md:translate-x-0 transition-transform">
+    <div class="p-3 border-b border-gray-200 dark:border-gray-800 flex items-center gap-2">
+      <button id="new-chat-btn"
+        class="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        New Chat
+      </button>
+      <button id="sidebar-close-btn" class="md:hidden p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div id="conversation-list" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+    <div class="p-3 border-t border-gray-200 dark:border-gray-800">
+      <button id="settings-btn"
+        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        Settings
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main area -->
+  <main class="flex-1 flex flex-col min-w-0">
+    <!-- Top bar -->
+    <header class="flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+      <button id="sidebar-open-btn" class="md:hidden p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+      <h1 class="text-sm font-medium truncate">Woxi Chat</h1>
+      <div id="wasm-status"
+        class="ml-auto text-xs px-2 py-1 rounded-full bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">
+        Loading WASM...</div>
+    </header>
+
+    <!-- Messages + bottom input (chat mode) -->
+    <div id="chat-view" class="flex-1 flex flex-col min-h-0 hidden">
+      <div id="messages" class="flex-1 overflow-y-auto"></div>
+      <div class="border-t border-gray-200 dark:border-gray-800 p-4">
+        <div class="max-w-3xl mx-auto flex items-end gap-2">
+          <textarea id="input-chat" rows="1" placeholder="Send a message..."
+            class="chat-input flex-1 resize-none rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 max-h-48 overflow-y-auto"
+            disabled></textarea>
+          <button
+            class="send-btn p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            disabled>
+            <svg class="send-icon w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+            <svg class="stop-icon w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Welcome screen + centered input (landing mode) -->
+    <div id="welcome" class="flex-1 flex flex-col items-center justify-center px-4">
+      <div class="text-center max-w-lg mb-8">
+        <h2 class="text-2xl font-semibold mb-2">Woxi Chat</h2>
+        <p class="text-gray-500 dark:text-gray-400">AI assistant with a Wolfram Language interpreter. Ask mathematical,
+          computational, or symbolic questions.</p>
+      </div>
+      <div class="w-full max-w-xl flex items-end gap-2">
+        <textarea id="input-welcome" rows="1" placeholder="Send a message..."
+          class="chat-input flex-1 resize-none rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 max-h-48 overflow-y-auto"
+          disabled></textarea>
+        <button
+          class="send-btn p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          disabled>
+          <svg class="send-icon w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+          <svg class="stop-icon w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24">
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+          </svg>
+        </button>
+      </div>
+      <div class="text-sm text-gray-400 dark:text-gray-400 mt-4 max-w-xl w-full px-4">
+        <button class="example-prompt text-left rounded p-2 hover:underline transition-colors">
+          Calculate the first 50 Fibonacci numbers
+        </button>
+        <button class="example-prompt text-left rounded p-2 hover:underline transition-colors">
+          Create all possible combinations of 3 digits
+        </button>
+        <button class="example-prompt text-left rounded p-2 hover:underline transition-colors">
+          Compute the average of 1000 random integers
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-lg font-semibold">Settings</h2>
+        <button id="settings-close-btn" class="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <p id="settings-intro" class="text-sm text-gray-500 dark:text-gray-400 hidden">Enter your API key to start
+          chatting. Your key is stored locally in your browser and never sent to any server other than the provider's
+          API.</p>
+
+        <div>
+          <label class="block text-sm font-medium mb-2">Provider</label>
+          <div class="flex gap-2">
+            <button data-provider="openai"
+              class="provider-btn flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">OpenAI</button>
+            <button data-provider="anthropic"
+              class="provider-btn flex-1 px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Anthropic</button>
+          </div>
+        </div>
+
+        <div id="openai-settings">
+          <label class="block text-sm font-medium mb-1" for="openai-key">OpenAI API Key</label>
+          <input id="openai-key" type="password" placeholder="sk-..."
+            class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div id="anthropic-settings" class="hidden">
+          <label class="block text-sm font-medium mb-1" for="anthropic-key">Anthropic API Key</label>
+          <input id="anthropic-key" type="password" placeholder="sk-ant-..."
+            class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <button id="save-settings-btn"
+          class="w-full py-2 px-4 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Save</button>
+
+        <hr class="border-gray-200 dark:border-gray-800">
+
+        <button id="clear-data-btn"
+          class="w-full py-2 px-4 text-sm text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">Clear
+          All Data</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+
+</html>

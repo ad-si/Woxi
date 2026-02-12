@@ -6,5 +6,6 @@
 /tests/_*
 /tests/book
 /tests/cli/jupyterlite
+/tests/cli/chat/pkg
 /tests/cli/playground/pkg
 /tests/scripts/_*

@@ -1,0 +1,513 @@
+import { initWoxi, evaluateCode, clearState, isReady } from "./woxi.js"
+import { sendMessage } from "./api.js"
+import {
+  getSettings, saveSettings, hasApiKey, getConversationIndex,
+  getConversation, createConversation, deleteConversation,
+  appendMessage, getMessages, clearAllData,
+} from "./chat.js"
+import {
+  createMessageElement, createStreamingAssistant, appendStreamingText,
+  finalizeStreamingMessage, appendStreamingToolCard, updateToolCard,
+  showToast, scrollToBottom, createToolCard,
+} from "./render.js"
+
+// --- DOM refs ---
+const sidebar = document.getElementById("sidebar")
+const sidebarOverlay = document.getElementById("sidebar-overlay")
+const sidebarOpenBtn = document.getElementById("sidebar-open-btn")
+const sidebarCloseBtn = document.getElementById("sidebar-close-btn")
+const newChatBtn = document.getElementById("new-chat-btn")
+const conversationList = document.getElementById("conversation-list")
+const settingsBtn = document.getElementById("settings-btn")
+const settingsModal = document.getElementById("settings-modal")
+const settingsCloseBtn = document.getElementById("settings-close-btn")
+const saveSettingsBtn = document.getElementById("save-settings-btn")
+const clearDataBtn = document.getElementById("clear-data-btn")
+const providerBtns = document.querySelectorAll(".provider-btn")
+const openaiSettings = document.getElementById("openai-settings")
+const anthropicSettings = document.getElementById("anthropic-settings")
+const openaiKeyInput = document.getElementById("openai-key")
+const anthropicKeyInput = document.getElementById("anthropic-key")
+const messagesEl = document.getElementById("messages")
+const chatView = document.getElementById("chat-view")
+const welcomeEl = document.getElementById("welcome")
+const wasmStatus = document.getElementById("wasm-status")
+const settingsIntro = document.getElementById("settings-intro")
+
+// Both input/button pairs
+const inputEls = document.querySelectorAll(".chat-input")
+const sendBtns = document.querySelectorAll(".send-btn")
+const sendIcons = document.querySelectorAll(".send-icon")
+const stopIcons = document.querySelectorAll(".stop-icon")
+
+// --- State ---
+let activeConvId = null
+let abortController = null
+let isSending = false
+let selectedProvider = "openai"
+
+const MAX_TOOL_CALLS_PER_TURN = 10
+
+/** Returns the currently visible input textarea */
+function activeInput() {
+  return welcomeEl.classList.contains("hidden")
+    ? document.getElementById("input-chat")
+    : document.getElementById("input-welcome")
+}
+
+// --- Init ---
+async function init() {
+  applyDarkMode()
+  loadSettings()
+  renderConversationList()
+
+  // Open most recent conversation or show welcome
+  const index = getConversationIndex()
+  if (index.length > 0) {
+    switchConversation(index[0].id)
+  } else {
+    showWelcome()
+  }
+
+  updateInputState()
+
+  // Auto-open settings if no API key configured
+  if (!hasApiKey()) {
+    openSettings(true)
+  }
+
+  // Init WASM
+  try {
+    await initWoxi()
+    wasmStatus.textContent = "WASM Ready"
+    wasmStatus.className = "ml-auto text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+  } catch (e) {
+    wasmStatus.textContent = "WASM Failed"
+    wasmStatus.className = "ml-auto text-xs px-2 py-1 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+    showToast("Failed to load WASM: " + e.message)
+  }
+}
+
+function applyDarkMode() {
+  if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    document.documentElement.classList.add("dark")
+  }
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+    document.documentElement.classList.toggle("dark", e.matches)
+  })
+}
+
+// --- Settings ---
+function loadSettings() {
+  const s = getSettings()
+  selectedProvider = s.provider
+  openaiKeyInput.value = s.openai_key || ""
+  anthropicKeyInput.value = s.anthropic_key || ""
+  updateProviderUI()
+}
+
+function updateProviderUI() {
+  providerBtns.forEach((btn) => {
+    const active = btn.dataset.provider === selectedProvider
+    btn.classList.toggle("bg-blue-600", active)
+    btn.classList.toggle("text-white", active)
+    btn.classList.toggle("border-blue-600", active)
+  })
+  openaiSettings.classList.toggle("hidden", selectedProvider !== "openai")
+  anthropicSettings.classList.toggle("hidden", selectedProvider !== "anthropic")
+}
+
+function openSettings(showIntro = false) {
+  loadSettings()
+  settingsIntro.classList.toggle("hidden", !showIntro)
+  settingsModal.classList.remove("hidden")
+}
+
+function closeSettings() {
+  settingsModal.classList.add("hidden")
+}
+
+// --- Sidebar ---
+function openSidebar() {
+  sidebar.classList.remove("-translate-x-full")
+  sidebarOverlay.classList.remove("hidden")
+}
+
+function closeSidebar() {
+  sidebar.classList.add("-translate-x-full")
+  sidebarOverlay.classList.add("hidden")
+}
+
+function renderConversationList() {
+  const index = getConversationIndex()
+  conversationList.innerHTML = ""
+  for (const c of index) {
+    const item = document.createElement("div")
+    item.className = `conv-item${c.id === activeConvId ? " active" : ""}`
+    item.dataset.id = c.id
+
+    const title = document.createElement("span")
+    title.className = "truncate"
+    title.textContent = c.title
+    item.appendChild(title)
+
+    const delBtn = document.createElement("button")
+    delBtn.className = "delete-btn"
+    delBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation()
+      handleDeleteConversation(c.id)
+    })
+    item.appendChild(delBtn)
+
+    item.addEventListener("click", () => {
+      switchConversation(c.id)
+      closeSidebar()
+    })
+    conversationList.appendChild(item)
+  }
+}
+
+// --- Conversation ---
+function switchConversation(id) {
+  activeConvId = id
+  renderConversationList()
+  renderMessages()
+
+  // Check if conversation has user messages
+  const messages = getMessages(id)
+  const hasUserMessages = messages.some((m) => m.role === "user")
+  if (hasUserMessages) {
+    showChatView()
+  } else {
+    showWelcome()
+  }
+  updateInputState()
+}
+
+function renderMessages() {
+  messagesEl.innerHTML = ""
+  if (!activeConvId) return
+
+  const messages = getMessages(activeConvId)
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg.role === "system") continue
+
+    if (msg.role === "tool") {
+      continue
+    }
+
+    const el = createMessageElement(msg)
+    if (!el) continue
+
+    if (msg.role === "assistant" && msg.tool_calls) {
+      messagesEl.appendChild(el)
+      const inner = el.querySelector(".max-w-3xl")
+      if (inner) {
+        inner.querySelectorAll(".tool-card").forEach((tc) => tc.remove())
+        for (const tc of msg.tool_calls) {
+          const args = typeof tc.function.arguments === "string"
+            ? JSON.parse(tc.function.arguments)
+            : tc.function.arguments
+          const toolResult = messages.find(
+            (m, j) => j > i && m.role === "tool" && m.tool_call_id === tc.id
+          )
+          inner.appendChild(
+            createToolCard(
+              tc.id,
+              args.code,
+              toolResult?.content,
+              toolResult?.content?.startsWith("Error:"),
+              toolResult?.graphics
+            )
+          )
+        }
+      }
+      continue
+    }
+
+    messagesEl.appendChild(el)
+  }
+  scrollToBottom()
+}
+
+function showWelcome() {
+  welcomeEl.classList.remove("hidden")
+  chatView.classList.add("hidden")
+}
+
+function showChatView() {
+  welcomeEl.classList.add("hidden")
+  chatView.classList.remove("hidden")
+}
+
+function handleNewChat() {
+  const conv = createConversation()
+  clearState()
+  activeConvId = conv.id
+  renderConversationList()
+  messagesEl.innerHTML = ""
+  showWelcome()
+  updateInputState()
+  closeSidebar()
+  activeInput().focus()
+}
+
+function handleDeleteConversation(id) {
+  const remaining = deleteConversation(id)
+  if (id === activeConvId) {
+    if (remaining.length > 0) {
+      switchConversation(remaining[0].id)
+    } else {
+      activeConvId = null
+      messagesEl.innerHTML = ""
+      showWelcome()
+    }
+  }
+  renderConversationList()
+}
+
+// --- Input ---
+function updateInputState() {
+  const canSend = hasApiKey() && !isSending
+  inputEls.forEach((el) => { el.disabled = !hasApiKey() })
+  sendBtns.forEach((btn) => { btn.disabled = !canSend })
+
+  if (isSending) {
+    sendIcons.forEach((el) => el.classList.add("hidden"))
+    stopIcons.forEach((el) => el.classList.remove("hidden"))
+    sendBtns.forEach((btn) => { btn.disabled = false })
+  } else {
+    sendIcons.forEach((el) => el.classList.remove("hidden"))
+    stopIcons.forEach((el) => el.classList.add("hidden"))
+  }
+}
+
+async function handleSend() {
+  const input = activeInput()
+  const text = input.value.trim()
+  if (!text || isSending) return
+
+  if (!hasApiKey()) {
+    openSettings(true)
+    return
+  }
+
+  if (!activeConvId) {
+    const conv = createConversation()
+    clearState()
+    activeConvId = conv.id
+    renderConversationList()
+  }
+
+  // Switch to chat view before appending message
+  showChatView()
+
+  // Append user message
+  const userMsg = { role: "user", content: text }
+  appendMessage(activeConvId, userMsg)
+  const userEl = createMessageElement(userMsg)
+  messagesEl.appendChild(userEl)
+  scrollToBottom()
+
+  // Clear both inputs
+  inputEls.forEach((el) => { el.value = ""; el.style.height = "auto" })
+
+  await runAssistantTurn()
+}
+
+async function runAssistantTurn() {
+  isSending = true
+  updateInputState()
+  abortController = new AbortController()
+
+  let toolCallCount = 0
+
+  try {
+    let continueLoop = true
+
+    while (continueLoop && toolCallCount < MAX_TOOL_CALLS_PER_TURN) {
+      continueLoop = false
+      const messages = getMessages(activeConvId)
+      const settings = getSettings()
+      const apiKey = settings.provider === "openai" ? settings.openai_key : settings.anthropic_key
+
+      const streamEl = createStreamingAssistant()
+      messagesEl.appendChild(streamEl)
+      scrollToBottom()
+
+      let assistantMsg = null
+      let pendingToolCalls = []
+
+      await new Promise((resolve, reject) => {
+        sendMessage(messages, {
+          provider: settings.provider,
+          apiKey,
+          signal: abortController.signal,
+
+          onToken(text) {
+            appendStreamingText(text)
+            scrollToBottom()
+          },
+
+          onToolCall(tc) {
+            pendingToolCalls.push(tc)
+            appendStreamingToolCard(tc.id, tc.arguments.code)
+            scrollToBottom()
+          },
+
+          onDone(msg) {
+            assistantMsg = msg
+            resolve()
+          },
+
+          onError(err) {
+            reject(err)
+          },
+        })
+      })
+
+      finalizeStreamingMessage()
+
+      if (!assistantMsg) break
+
+      appendMessage(activeConvId, assistantMsg)
+
+      if (pendingToolCalls.length > 0) {
+        for (const tc of pendingToolCalls) {
+          toolCallCount++
+          let result, isError = false, graphics = ""
+
+          if (!isReady()) {
+            result = "Error: WASM interpreter not loaded"
+            isError = true
+          } else {
+            try {
+              const evalResult = await evaluateCode(tc.arguments.code)
+              result = evalResult.result
+              graphics = evalResult.graphics || ""
+              isError = result.startsWith("Error:")
+            } catch (e) {
+              result = "Error: " + e.message
+              isError = true
+            }
+          }
+
+          updateToolCard(tc.id, result, isError, graphics)
+          scrollToBottom()
+
+          const toolMsg = { role: "tool", tool_call_id: tc.id, content: result }
+          if (graphics) toolMsg.graphics = graphics
+          appendMessage(activeConvId, toolMsg)
+        }
+
+        continueLoop = true
+      }
+    }
+
+    if (toolCallCount >= MAX_TOOL_CALLS_PER_TURN) {
+      showToast("Reached maximum tool calls per turn", "info")
+    }
+  } catch (e) {
+    if (e.name === "AbortError") {
+      finalizeStreamingMessage()
+    } else {
+      finalizeStreamingMessage()
+      showToast(e.message)
+
+      const errorEl = document.createElement("div")
+      errorEl.className = "px-4 py-3"
+      errorEl.innerHTML = `<div class="max-w-3xl mx-auto text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-4 py-2">${escapeHtml(e.message)}</div>`
+      messagesEl.appendChild(errorEl)
+      scrollToBottom()
+    }
+  } finally {
+    isSending = false
+    abortController = null
+    updateInputState()
+    activeInput().focus()
+  }
+}
+
+function handleStop() {
+  if (abortController) {
+    abortController.abort()
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div")
+  div.textContent = text
+  return div.innerHTML
+}
+
+// --- Event listeners ---
+sidebarOpenBtn.addEventListener("click", openSidebar)
+sidebarCloseBtn.addEventListener("click", closeSidebar)
+sidebarOverlay.addEventListener("click", closeSidebar)
+newChatBtn.addEventListener("click", handleNewChat)
+settingsBtn.addEventListener("click", openSettings)
+settingsCloseBtn.addEventListener("click", closeSettings)
+
+settingsModal.addEventListener("click", (e) => {
+  if (e.target === settingsModal) closeSettings()
+})
+
+providerBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    selectedProvider = btn.dataset.provider
+    updateProviderUI()
+  })
+})
+
+saveSettingsBtn.addEventListener("click", () => {
+  saveSettings({
+    provider: selectedProvider,
+    openai_key: openaiKeyInput.value.trim(),
+    anthropic_key: anthropicKeyInput.value.trim(),
+  })
+  closeSettings()
+  updateInputState()
+  showToast("Settings saved", "success")
+})
+
+clearDataBtn.addEventListener("click", () => {
+  if (confirm("This will delete all conversations and settings. Continue?")) {
+    clearAllData()
+    activeConvId = null
+    messagesEl.innerHTML = ""
+    renderConversationList()
+    showWelcome()
+    loadSettings()
+    updateInputState()
+    showToast("All data cleared", "info")
+  }
+})
+
+sendBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (isSending) handleStop()
+    else handleSend()
+  })
+})
+
+inputEls.forEach((el) => {
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  })
+})
+
+document.querySelectorAll(".example-prompt").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = activeInput()
+    input.value = btn.textContent.trim()
+    input.focus()
+  })
+})
+
+// --- Start ---
+init()
