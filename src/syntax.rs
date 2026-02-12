@@ -1405,6 +1405,44 @@ pub fn expr_to_string(expr: &Expr) -> String {
           let inner = expr_to_string(&args[1]);
           return format!("{}/{}", inner, d);
         }
+        // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)
+        if args.len() == 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && let Expr::Integer(n) = &rargs[0]
+          && let Expr::Integer(d) = &rargs[1]
+          && *n != 1
+          && *n != -1
+          && *d > 0
+        {
+          let inner = expr_to_string(&args[1]);
+          let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+            || matches!(
+              &args[1],
+              Expr::BinaryOp {
+                op: BinaryOperator::Plus | BinaryOperator::Minus,
+                ..
+              }
+            ) {
+            format!("({})", inner)
+          } else {
+            inner
+          };
+          return format!(
+            "({}*{})/{}",
+            if *n < 0 {
+              format!("({})", n)
+            } else {
+              n.to_string()
+            },
+            inner_str,
+            d
+          );
+        }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
           let rest = args[1..]
@@ -1652,6 +1690,45 @@ pub fn expr_to_string(expr: &Expr) -> String {
       {
         let inner = expr_to_string(right);
         return format!("{}/{}", inner, den);
+      }
+
+      // Special case: BinaryOp Times with Rational[n, d] * expr → "(n*expr)/d"
+      if matches!(op, BinaryOperator::Times)
+        && let Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } = left.as_ref()
+        && rname == "Rational"
+        && rargs.len() == 2
+        && let Expr::Integer(num) = &rargs[0]
+        && let Expr::Integer(den) = &rargs[1]
+        && *num != 1
+        && *num != -1
+        && *den > 0
+      {
+        let inner = expr_to_string(right);
+        let inner_str = if matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            right.as_ref(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          ) {
+          format!("({})", inner)
+        } else {
+          inner
+        };
+        return format!(
+          "({}*{})/{}",
+          if *num < 0 {
+            format!("({})", num)
+          } else {
+            num.to_string()
+          },
+          inner_str,
+          den
+        );
       }
 
       // Special case: Times[-1, expr] should display as -expr

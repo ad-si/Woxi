@@ -3,7 +3,6 @@
 wolframscript -code 'CellularAutomaton[30, {{1}, 0}, 20] // MatrixForm'
 wolframscript -code 'DSolve[y''[x] + y[x] == Tan[x], y[x], x]'
 wolframscript -code 'DSolve[y''[x] + y[x] == Tan[x], y[x], x]'
-wolframscript -code 'Eigenvalues[{{2, 1}, {1, 2}}]'
 wolframscript -code 'Entity["Country", "France"]["Population"]'
 wolframscript -code 'EntityList[Entity["Planet"]]'
 wolframscript -code 'EntityValue[Entity["Star", "Sirius"], "DistanceFromEarth"]'

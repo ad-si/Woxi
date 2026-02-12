@@ -245,3 +245,69 @@ mod cross {
     );
   }
 }
+
+mod eigenvalues {
+  use super::*;
+
+  #[test]
+  fn eigenvalues_1x1() {
+    assert_eq!(interpret("Eigenvalues[{{5}}]").unwrap(), "{5}");
+  }
+
+  #[test]
+  fn eigenvalues_2x2_integer() {
+    assert_eq!(
+      interpret("Eigenvalues[{{2, 1}, {1, 2}}]").unwrap(),
+      "{3, 1}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_2x2_diagonal() {
+    assert_eq!(
+      interpret("Eigenvalues[{{2, 0}, {0, 3}}]").unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_2x2_zero() {
+    assert_eq!(
+      interpret("Eigenvalues[{{0, 0}, {0, 0}}]").unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_2x2_with_negative() {
+    assert_eq!(
+      interpret("Eigenvalues[{{4, -2}, {1, 1}}]").unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_2x2_irrational() {
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 2}, {3, 4}}]").unwrap(),
+      "{(5 + Sqrt[33])/2, (5 - Sqrt[33])/2}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_3x3_diagonal() {
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+      "{3, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn eigenvalues_3x3_with_zero() {
+    // {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}} has eigenvalues involving Sqrt[33]
+    assert_eq!(
+      interpret("Eigenvalues[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "{(3*(5 + Sqrt[33]))/2, (3*(5 - Sqrt[33]))/2, 0}"
+    );
+  }
+}
