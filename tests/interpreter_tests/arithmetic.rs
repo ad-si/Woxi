@@ -581,6 +581,41 @@ mod exact_value_returns {
   }
 
   #[test]
+  fn large_float_power_scientific_notation() {
+    // 1.05^1578 is ~2.73e33, must not overflow to i64::MAX
+    let result = interpret("1.05^1578").unwrap();
+    assert!(
+      result.contains("*^"),
+      "Expected scientific notation, got: {}",
+      result
+    );
+    assert!(result.starts_with("2.73346"));
+  }
+
+  #[test]
+  fn large_float_multiplication_scientific_notation() {
+    // 50 * 1.05^1578 should produce scientific notation
+    let result = interpret("50 * (1 + 0.05)^1578").unwrap();
+    assert!(result.contains("*^35"), "Expected *^35, got: {}", result);
+  }
+
+  #[test]
+  fn real_scientific_notation_formatting() {
+    assert_eq!(interpret("1000000.").unwrap(), "1.*^6");
+    assert_eq!(interpret("999999.").unwrap(), "999999.");
+    assert_eq!(interpret("0.000001").unwrap(), "1.*^-6");
+    assert_eq!(interpret("0.00001").unwrap(), "0.00001");
+  }
+
+  #[test]
+  fn real_scientific_notation_in_list() {
+    assert_eq!(
+      interpret("{1000000., 0.000001}").unwrap(),
+      "{1.*^6, 1.*^-6}"
+    );
+  }
+
+  #[test]
   fn mean_returns_rational() {
     // Mean[{0, 0, 0, 10}] = 10/4 = 5/2
     assert_eq!(interpret("Mean[{0, 0, 0, 10}]").unwrap(), "5/2");

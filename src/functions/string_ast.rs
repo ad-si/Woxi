@@ -12,7 +12,7 @@ fn expr_to_str(expr: &Expr) -> Result<String, InterpreterError> {
     Expr::Identifier(s) => Ok(s.clone()),
     Expr::Integer(n) => Ok(n.to_string()),
     Expr::BigInteger(n) => Ok(n.to_string()),
-    Expr::Real(f) => Ok(crate::format_result(*f)),
+    Expr::Real(f) => Ok(crate::syntax::format_real(*f)),
     _ => {
       // Try to get string representation
       let s = crate::syntax::expr_to_string(expr);
