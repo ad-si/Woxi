@@ -496,3 +496,305 @@ mod string_patterns {
     );
   }
 }
+
+mod string_part {
+  use super::*;
+
+  #[test]
+  fn single_index() {
+    assert_eq!(interpret(r#"StringPart["abcdefgh", 3]"#).unwrap(), "c");
+  }
+
+  #[test]
+  fn negative_index() {
+    assert_eq!(interpret(r#"StringPart["abcdefgh", -2]"#).unwrap(), "g");
+  }
+
+  #[test]
+  fn first_char() {
+    assert_eq!(interpret(r#"StringPart["abcdefgh", 1]"#).unwrap(), "a");
+  }
+
+  #[test]
+  fn last_char() {
+    assert_eq!(interpret(r#"StringPart["abcdefgh", -1]"#).unwrap(), "h");
+  }
+
+  #[test]
+  fn list_of_indices() {
+    assert_eq!(
+      interpret(r#"StringPart["abcdefgh", {3, 5}]"#).unwrap(),
+      "{c, e}"
+    );
+  }
+
+  #[test]
+  fn list_with_negative() {
+    assert_eq!(
+      interpret(r#"StringPart["abcdefgh", {1, -1}]"#).unwrap(),
+      "{a, h}"
+    );
+  }
+}
+
+mod string_take_drop {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret(r#"StringTakeDrop["Hello World", 5]"#).unwrap(),
+      "{Hello,  World}"
+    );
+  }
+
+  #[test]
+  fn take_all() {
+    assert_eq!(interpret(r#"StringTakeDrop["abc", 3]"#).unwrap(), "{abc, }");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(
+      interpret(r#"StringTakeDrop["Hello World", -5]"#).unwrap(),
+      "{World, Hello }"
+    );
+  }
+}
+
+mod hamming_distance {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret(r#"HammingDistance["karolin", "kathrin"]"#).unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn binary_strings() {
+    assert_eq!(
+      interpret(r#"HammingDistance["1011101", "1001001"]"#).unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn identical() {
+    assert_eq!(interpret(r#"HammingDistance["abc", "abc"]"#).unwrap(), "0");
+  }
+
+  #[test]
+  fn completely_different() {
+    assert_eq!(interpret(r#"HammingDistance["abc", "xyz"]"#).unwrap(), "3");
+  }
+}
+
+mod character_counts {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret(r#"CharacterCounts["hello"]"#).unwrap(),
+      "<|l -> 2, o -> 1, e -> 1, h -> 1|>"
+    );
+  }
+
+  #[test]
+  fn sorted_by_frequency() {
+    assert_eq!(
+      interpret(r#"CharacterCounts["aababcabcd"]"#).unwrap(),
+      "<|a -> 4, b -> 3, c -> 2, d -> 1|>"
+    );
+  }
+
+  #[test]
+  fn single_char() {
+    assert_eq!(
+      interpret(r#"CharacterCounts["aaa"]"#).unwrap(),
+      "<|a -> 3|>"
+    );
+  }
+}
+
+mod remove_diacritics {
+  use super::*;
+
+  #[test]
+  fn basic_accents() {
+    assert_eq!(
+      interpret("RemoveDiacritics[\"caf\u{00e9}\"]").unwrap(),
+      "cafe"
+    );
+  }
+
+  #[test]
+  fn plain_ascii() {
+    assert_eq!(interpret(r#"RemoveDiacritics["hello"]"#).unwrap(), "hello");
+  }
+
+  #[test]
+  fn umlaut() {
+    assert_eq!(
+      interpret("RemoveDiacritics[\"\u{00fc}ber\"]").unwrap(),
+      "uber"
+    );
+  }
+}
+
+mod string_rotate_left {
+  use super::*;
+
+  #[test]
+  fn rotate_by_2() {
+    assert_eq!(
+      interpret(r#"StringRotateLeft["abcdef", 2]"#).unwrap(),
+      "cdefab"
+    );
+  }
+
+  #[test]
+  fn default_rotation() {
+    assert_eq!(
+      interpret(r#"StringRotateLeft["abcdef"]"#).unwrap(),
+      "bcdefa"
+    );
+  }
+
+  #[test]
+  fn rotate_full_cycle() {
+    assert_eq!(
+      interpret(r#"StringRotateLeft["abcdef", 6]"#).unwrap(),
+      "abcdef"
+    );
+  }
+
+  #[test]
+  fn negative_rotation() {
+    // Negative rotation = rotate right
+    assert_eq!(
+      interpret(r#"StringRotateLeft["abcdef", -1]"#).unwrap(),
+      "fabcde"
+    );
+  }
+}
+
+mod string_rotate_right {
+  use super::*;
+
+  #[test]
+  fn rotate_by_2() {
+    assert_eq!(
+      interpret(r#"StringRotateRight["abcdef", 2]"#).unwrap(),
+      "efabcd"
+    );
+  }
+
+  #[test]
+  fn default_rotation() {
+    assert_eq!(
+      interpret(r#"StringRotateRight["abcdef"]"#).unwrap(),
+      "fabcde"
+    );
+  }
+}
+
+mod alphabetic_sort {
+  use super::*;
+
+  #[test]
+  fn case_insensitive() {
+    assert_eq!(
+      interpret(r#"AlphabeticSort[{"Banana", "apple", "Cherry"}]"#).unwrap(),
+      "{apple, Banana, Cherry}"
+    );
+  }
+
+  #[test]
+  fn already_sorted() {
+    assert_eq!(
+      interpret(r#"AlphabeticSort[{"a", "b", "c"}]"#).unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn reverse_order() {
+    assert_eq!(
+      interpret(r#"AlphabeticSort[{"c", "b", "a"}]"#).unwrap(),
+      "{a, b, c}"
+    );
+  }
+}
+
+mod hash {
+  use super::*;
+
+  #[test]
+  fn md5_hex_string() {
+    assert_eq!(
+      interpret(r#"Hash["hello", "MD5", "HexString"]"#).unwrap(),
+      "5d41402abc4b2a76b9719d911017c592"
+    );
+  }
+
+  #[test]
+  fn sha256_hex_string() {
+    assert_eq!(
+      interpret(r#"Hash["hello", "SHA256", "HexString"]"#).unwrap(),
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    );
+  }
+
+  #[test]
+  fn sha1_hex_string() {
+    assert_eq!(
+      interpret(r#"Hash["hello", "SHA", "HexString"]"#).unwrap(),
+      "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"
+    );
+  }
+
+  #[test]
+  fn md5_integer() {
+    assert_eq!(
+      interpret(r#"Hash["hello", "MD5"]"#).unwrap(),
+      "123957004363873451094272536567338222994"
+    );
+  }
+
+  #[test]
+  fn default_returns_unevaluated() {
+    assert_eq!(interpret(r#"Hash["hello"]"#).unwrap(), "Hash[hello]");
+  }
+}
+
+mod string_riffle_extended {
+  use super::*;
+
+  #[test]
+  fn left_sep_right() {
+    assert_eq!(
+      interpret(r#"StringRiffle[{"a", "b", "c"}, {"[", "|", "]"}]"#).unwrap(),
+      "[a|b|c]"
+    );
+  }
+
+  #[test]
+  fn braces() {
+    assert_eq!(
+      interpret(r#"StringRiffle[{"a", "b", "c"}, {"{", ", ", "}"}]"#).unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn basic_still_works() {
+    assert_eq!(
+      interpret(r#"StringRiffle[{"a", "b", "c"}, ", "]"#).unwrap(),
+      "a, b, c"
+    );
+  }
+}

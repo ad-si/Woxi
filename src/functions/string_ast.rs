@@ -359,7 +359,7 @@ pub fn characters_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(chars))
 }
 
-/// StringRiffle[list, sep] - joins strings with separator
+/// StringRiffle[list] or StringRiffle[list, sep] or StringRiffle[list, {left, sep, right}]
 pub fn string_riffle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -376,14 +376,29 @@ pub fn string_riffle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let sep = if args.len() == 2 {
-    expr_to_str(&args[1])?
-  } else {
-    " ".to_string()
-  };
-
   let strings: Result<Vec<String>, _> = items.iter().map(expr_to_str).collect();
-  Ok(Expr::String(strings?.join(&sep)))
+  let strings = strings?;
+
+  if args.len() == 2 {
+    // Check for {left, sep, right} form
+    if let Expr::List(sep_parts) = &args[1]
+      && sep_parts.len() == 3
+    {
+      let left = expr_to_str(&sep_parts[0])?;
+      let sep = expr_to_str(&sep_parts[1])?;
+      let right = expr_to_str(&sep_parts[2])?;
+      return Ok(Expr::String(format!(
+        "{}{}{}",
+        left,
+        strings.join(&sep),
+        right
+      )));
+    }
+    let sep = expr_to_str(&args[1])?;
+    Ok(Expr::String(strings.join(&sep)))
+  } else {
+    Ok(Expr::String(strings.join(" ")))
+  }
 }
 
 /// StringPosition[s, sub] - find all positions of substring
@@ -1164,4 +1179,317 @@ pub fn longest_common_subsequence_ast(
 
   let result: String = chars1[end_idx - max_len..end_idx].iter().collect();
   Ok(Expr::String(result))
+}
+
+/// StringPart[s, n] - nth character; StringPart[s, {n1,n2,...}] - multiple characters
+pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringPart expects exactly 2 arguments".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  let chars: Vec<char> = s.chars().collect();
+  let len = chars.len() as i128;
+
+  fn resolve_index(n: i128, len: i128) -> Result<usize, InterpreterError> {
+    let idx = if n > 0 { n - 1 } else { len + n };
+    if idx < 0 || idx >= len {
+      return Err(InterpreterError::EvaluationError(format!(
+        "StringPart: index {} out of range for string of length {}",
+        n, len
+      )));
+    }
+    Ok(idx as usize)
+  }
+
+  match &args[1] {
+    Expr::List(indices) => {
+      let mut result = Vec::new();
+      for idx_expr in indices {
+        let n = expr_to_int(idx_expr)?;
+        let idx = resolve_index(n, len)?;
+        result.push(Expr::String(chars[idx].to_string()));
+      }
+      Ok(Expr::List(result))
+    }
+    _ => {
+      let n = expr_to_int(&args[1])?;
+      let idx = resolve_index(n, len)?;
+      Ok(Expr::String(chars[idx].to_string()))
+    }
+  }
+}
+
+/// StringTakeDrop[s, n] - returns {StringTake[s,n], StringDrop[s,n]}
+pub fn string_take_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringTakeDrop expects exactly 2 arguments".into(),
+    ));
+  }
+  let taken = string_take_ast(args)?;
+  let dropped = string_drop_ast(args)?;
+  Ok(Expr::List(vec![taken, dropped]))
+}
+
+/// HammingDistance[s1, s2] - number of positions where characters differ
+pub fn hamming_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "HammingDistance expects exactly 2 arguments".into(),
+    ));
+  }
+  let s1 = expr_to_str(&args[0])?;
+  let s2 = expr_to_str(&args[1])?;
+  let chars1: Vec<char> = s1.chars().collect();
+  let chars2: Vec<char> = s2.chars().collect();
+
+  if chars1.len() != chars2.len() {
+    return Err(InterpreterError::EvaluationError(
+      "HammingDistance: strings must have the same length".into(),
+    ));
+  }
+
+  let dist = chars1
+    .iter()
+    .zip(chars2.iter())
+    .filter(|(a, b)| a != b)
+    .count();
+  Ok(Expr::Integer(dist as i128))
+}
+
+/// CharacterCounts[s] - association of character frequencies, sorted by frequency descending
+pub fn character_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "CharacterCounts expects exactly 1 argument".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+
+  // Count characters preserving first-occurrence order
+  let mut counts: Vec<(char, i128)> = Vec::new();
+  let mut seen: std::collections::HashMap<char, usize> =
+    std::collections::HashMap::new();
+  for c in s.chars() {
+    if let Some(&idx) = seen.get(&c) {
+      counts[idx].1 += 1;
+    } else {
+      seen.insert(c, counts.len());
+      counts.push((c, 1));
+    }
+  }
+
+  // Sort by frequency descending, then by reverse first-occurrence for ties
+  // (reverse the list, then stable-sort by frequency descending)
+  counts.reverse();
+  counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+  let items: Vec<(Expr, Expr)> = counts
+    .into_iter()
+    .map(|(c, n)| (Expr::String(c.to_string()), Expr::Integer(n)))
+    .collect();
+  Ok(Expr::Association(items))
+}
+
+/// RemoveDiacritics[s] - remove diacritical marks from string
+pub fn remove_diacritics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RemoveDiacritics expects exactly 1 argument".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  use unicode_normalization::UnicodeNormalization;
+  // NFD decompose, then filter out combining marks (Unicode category Mn)
+  let result: String = s.nfd().filter(|c| !is_combining_mark(*c)).collect();
+  Ok(Expr::String(result))
+}
+
+/// Check if a character is a Unicode combining mark (category Mn/Mc/Me)
+fn is_combining_mark(c: char) -> bool {
+  let cp = c as u32;
+  // Combining Diacritical Marks: U+0300..U+036F
+  // Combining Diacritical Marks Extended: U+1AB0..U+1AFF
+  // Combining Diacritical Marks Supplement: U+1DC0..U+1DFF
+  // Combining Diacritical Marks for Symbols: U+20D0..U+20FF
+  // Combining Half Marks: U+FE20..U+FE2F
+  (0x0300..=0x036F).contains(&cp)
+    || (0x1AB0..=0x1AFF).contains(&cp)
+    || (0x1DC0..=0x1DFF).contains(&cp)
+    || (0x20D0..=0x20FF).contains(&cp)
+    || (0xFE20..=0xFE2F).contains(&cp)
+}
+
+/// StringRotateLeft[s] or StringRotateLeft[s, n] - rotate characters left
+pub fn string_rotate_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringRotateLeft expects 1 or 2 arguments".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  let n = if args.len() == 2 {
+    expr_to_int(&args[1])?
+  } else {
+    1
+  };
+
+  let chars: Vec<char> = s.chars().collect();
+  if chars.is_empty() {
+    return Ok(Expr::String(s));
+  }
+
+  let len = chars.len();
+  let shift = ((n % len as i128) + len as i128) as usize % len;
+  let mut result: Vec<char> = Vec::with_capacity(len);
+  result.extend_from_slice(&chars[shift..]);
+  result.extend_from_slice(&chars[..shift]);
+  Ok(Expr::String(result.into_iter().collect()))
+}
+
+/// StringRotateRight[s] or StringRotateRight[s, n] - rotate characters right
+pub fn string_rotate_right_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StringRotateRight expects 1 or 2 arguments".into(),
+    ));
+  }
+  let s = expr_to_str(&args[0])?;
+  let n = if args.len() == 2 {
+    expr_to_int(&args[1])?
+  } else {
+    1
+  };
+
+  // Rotate right by n = rotate left by -n
+  let chars: Vec<char> = s.chars().collect();
+  if chars.is_empty() {
+    return Ok(Expr::String(s));
+  }
+
+  let len = chars.len();
+  let shift = ((-(n % len as i128) % len as i128) + len as i128) as usize % len;
+  let mut result: Vec<char> = Vec::with_capacity(len);
+  result.extend_from_slice(&chars[shift..]);
+  result.extend_from_slice(&chars[..shift]);
+  Ok(Expr::String(result.into_iter().collect()))
+}
+
+/// AlphabeticSort[list] - case-insensitive alphabetic sort
+pub fn alphabetic_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "AlphabeticSort expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::List(items) => {
+      let mut sorted = items.clone();
+      sorted.sort_by(|a, b| {
+        let sa = crate::syntax::expr_to_string(a).to_lowercase();
+        let sb = crate::syntax::expr_to_string(b).to_lowercase();
+        sa.cmp(&sb)
+      });
+      Ok(Expr::List(sorted))
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "AlphabeticSort expects a list argument".into(),
+    )),
+  }
+}
+
+/// Hash[s] or Hash[s, type] or Hash[s, type, format]
+pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Hash expects 1, 2, or 3 arguments".into(),
+    ));
+  }
+
+  let s = expr_to_str(&args[0])?;
+
+  let hash_type = if args.len() >= 2 {
+    expr_to_str(&args[1])?
+  } else {
+    // Default hash type — not replicable, return unevaluated
+    return Ok(Expr::FunctionCall {
+      name: "Hash".to_string(),
+      args: args.to_vec(),
+    });
+  };
+
+  let format = if args.len() == 3 {
+    expr_to_str(&args[2])?
+  } else {
+    "Integer".to_string()
+  };
+
+  let hex_string = match hash_type.as_str() {
+    "MD5" => {
+      use md5::Digest;
+      let result = md5::Md5::digest(s.as_bytes());
+      result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+    }
+    "SHA" | "SHA1" => {
+      use sha1::Digest;
+      let result = sha1::Sha1::digest(s.as_bytes());
+      result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+    }
+    "SHA256" => {
+      use sha2::Digest;
+      let result = sha2::Sha256::digest(s.as_bytes());
+      result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+    }
+    "SHA384" => {
+      use sha2::Digest;
+      let result = sha2::Sha384::digest(s.as_bytes());
+      result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+    }
+    "SHA512" => {
+      use sha2::Digest;
+      let result = sha2::Sha512::digest(s.as_bytes());
+      result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Hash".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  match format.as_str() {
+    "HexString" => Ok(Expr::String(hex_string)),
+    "Integer" | _ => {
+      // Convert hex to big integer
+      let n = num_bigint::BigInt::parse_bytes(hex_string.as_bytes(), 16)
+        .unwrap_or_default();
+      // Try to fit in i128
+      use num_traits::ToPrimitive;
+      if let Some(i) = n.to_i128() {
+        Ok(Expr::Integer(i))
+      } else {
+        Ok(Expr::BigInteger(n))
+      }
+    }
+  }
 }
