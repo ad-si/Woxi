@@ -151,3 +151,62 @@ True
 $ wo 'Quantity[5, "Meters"] == Quantity[5, "Meters"]'
 True
 ```
+
+## Compound Unit Conversion
+
+Convert between compound units:
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "Meters"/"Seconds"], "Kilometers"/"Hours"]'
+Quantity[18/5, Kilometers/Hours]
+```
+
+```scrut
+$ wo 'UnitConvert[Quantity[7500, "Kilometers"/"Seconds"], "Kilometers"/"Hours"]'
+Quantity[27000000, Kilometers/Hours]
+```
+
+## Unit Abbreviations
+
+Common unit abbreviations are supported:
+
+```scrut
+$ wo 'Quantity[1, "km/h"]'
+Quantity[1, Kilometers/Hours]
+```
+
+```scrut
+$ wo 'Quantity[1, "m/s"]'
+Quantity[1, Meters/Seconds]
+```
+
+```scrut
+$ wo 'Quantity[1, "mph"]'
+Quantity[1, Miles/Hours]
+```
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "Meters"/"Seconds"], "km/h"]'
+Quantity[18/5, Kilometers/Hours]
+```
+
+## SpeedOfLight
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "SpeedOfLight"], "Meters"/"Seconds"]'
+Quantity[299792458, Meters/Seconds]
+```
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "SpeedOfLight"], "km/h"]'
+Quantity[5396264244/5, Kilometers/Hours]
+```
+
+## Compound Unit Simplification
+
+Same-dimension units are simplified during arithmetic:
+
+```scrut
+$ wo 'Quantity[100, "Kilometers"/"Hours"] / Quantity[3.2, "Seconds"]'
+Quantity[0.008680555555555556, Kilometers/Seconds^2]
+```

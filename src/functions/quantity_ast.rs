@@ -1,9 +1,10 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
+use std::collections::BTreeMap;
 
 // ─── Unit dimension system ──────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Dimension {
   Length,
   Mass,
@@ -141,6 +142,384 @@ fn gcd(mut a: i128, mut b: i128) -> i128 {
   a
 }
 
+// ─── Compound unit decomposition ────────────────────────────────────────────
+
+/// A decomposed compound unit: list of (base_unit_name, exponent) pairs
+/// plus a combined SI conversion factor as a rational.
+struct CompoundUnitInfo {
+  /// Each base unit and its exponent, e.g. [("Kilometers", 1), ("Seconds", -2)]
+  components: Vec<(String, i64)>,
+  /// Combined SI conversion factor as rational numer/denom
+  si_numer: i128,
+  si_denom: i128,
+  /// Dimension exponent map for compatibility checking
+  dimensions: BTreeMap<Dimension, i64>,
+}
+
+/// Raise a rational to an integer power.
+fn rational_pow(numer: i128, denom: i128, exp: i64) -> (i128, i128) {
+  if exp == 0 {
+    return (1, 1);
+  }
+  if exp > 0 {
+    (numer.pow(exp as u32), denom.pow(exp as u32))
+  } else {
+    // Negative exponent: swap numer/denom
+    (denom.pow((-exp) as u32), numer.pow((-exp) as u32))
+  }
+}
+
+/// Resolve common unit abbreviation strings to full unit names.
+fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+
+  // Simple abbreviations → single unit
+  let simple = match s {
+    "m" => "Meters",
+    "km" => "Kilometers",
+    "cm" => "Centimeters",
+    "mm" => "Millimeters",
+    "ft" => "Feet",
+    "in" => "Inches",
+    "mi" => "Miles",
+    "yd" => "Yards",
+    "kg" => "Kilograms",
+    "g" => "Grams",
+    "mg" => "Milligrams",
+    "lb" | "lbs" => "Pounds",
+    "s" => "Seconds",
+    "min" => "Minutes",
+    "h" | "hr" => "Hours",
+    "d" => "Days",
+    "L" => "Liters",
+    "mL" => "Milliliters",
+    "gal" => "Gallons",
+    _ => "",
+  };
+  if !simple.is_empty() {
+    return Some(Expr::Identifier(simple.to_string()));
+  }
+
+  // Compound abbreviations
+  let make_div = |n: &str, d: &str| -> Expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::Identifier(n.to_string())),
+      right: Box::new(Expr::Identifier(d.to_string())),
+    }
+  };
+  match s {
+    "mph" => Some(make_div("Miles", "Hours")),
+    "km/h" | "kph" => Some(make_div("Kilometers", "Hours")),
+    "m/s" => Some(make_div("Meters", "Seconds")),
+    _ => {
+      // Try parsing "X/Y" pattern
+      if let Some((num, den)) = s.split_once('/') {
+        let num_expr = resolve_unit_abbreviation(num).or_else(|| {
+          get_unit_info(num).map(|_| Expr::Identifier(num.to_string()))
+        })?;
+        let den_expr = resolve_unit_abbreviation(den).or_else(|| {
+          get_unit_info(den).map(|_| Expr::Identifier(den.to_string()))
+        })?;
+        Some(Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(num_expr),
+          right: Box::new(den_expr),
+        })
+      } else {
+        None
+      }
+    }
+  }
+}
+
+/// Resolve named compound constants like SpeedOfLight.
+/// Returns (magnitude_factor_numer, magnitude_factor_denom, unit_components).
+fn resolve_compound_constant(
+  name: &str,
+) -> Option<(i128, i128, Vec<(String, i64)>)> {
+  match name {
+    "SpeedOfLight" => Some((
+      299792458,
+      1,
+      vec![("Meters".to_string(), 1), ("Seconds".to_string(), -1)],
+    )),
+    _ => None,
+  }
+}
+
+/// Recursively decompose a unit Expr into a CompoundUnitInfo.
+fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
+  match expr {
+    Expr::Identifier(name) | Expr::String(name) => {
+      // Try direct unit lookup
+      if let Some(info) = get_unit_info(name) {
+        let mut dims = BTreeMap::new();
+        dims.insert(info.dimension, 1);
+        return Some(CompoundUnitInfo {
+          components: vec![(name.clone(), 1)],
+          si_numer: info.to_si_numer,
+          si_denom: info.to_si_denom,
+          dimensions: dims,
+        });
+      }
+      // Try compound constants (e.g. SpeedOfLight)
+      if let Some((mag_n, mag_d, components)) = resolve_compound_constant(name)
+      {
+        let mut si_numer: i128 = mag_n;
+        let mut si_denom: i128 = mag_d;
+        let mut dims = BTreeMap::new();
+        for (unit_name, exp) in &components {
+          let uinfo = get_unit_info(unit_name)?;
+          let (pn, pd) =
+            rational_pow(uinfo.to_si_numer, uinfo.to_si_denom, *exp);
+          si_numer *= pn;
+          si_denom *= pd;
+          *dims.entry(uinfo.dimension).or_insert(0) += exp;
+        }
+        let g = gcd(si_numer, si_denom);
+        return Some(CompoundUnitInfo {
+          components,
+          si_numer: si_numer / g,
+          si_denom: si_denom / g,
+          dimensions: dims,
+        });
+      }
+      // Try abbreviation resolution
+      if let Some(resolved) = resolve_unit_abbreviation(name) {
+        return decompose_unit_expr(&resolved);
+      }
+      None
+    }
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator;
+      match op {
+        BinaryOperator::Divide => {
+          let mut left_info = decompose_unit_expr(left)?;
+          let right_info = decompose_unit_expr(right)?;
+          // Negate right exponents
+          for (name, exp) in &right_info.components {
+            left_info.components.push((name.clone(), -exp));
+          }
+          // SI factor: left / right
+          left_info.si_numer *= right_info.si_denom;
+          left_info.si_denom *= right_info.si_numer;
+          let g = gcd(left_info.si_numer, left_info.si_denom);
+          left_info.si_numer /= g;
+          left_info.si_denom /= g;
+          // Merge dimensions
+          for (dim, exp) in &right_info.dimensions {
+            *left_info.dimensions.entry(*dim).or_insert(0) -= exp;
+          }
+          left_info.dimensions.retain(|_, v| *v != 0);
+          Some(left_info)
+        }
+        BinaryOperator::Times => {
+          let mut left_info = decompose_unit_expr(left)?;
+          let right_info = decompose_unit_expr(right)?;
+          for (name, exp) in &right_info.components {
+            left_info.components.push((name.clone(), *exp));
+          }
+          left_info.si_numer *= right_info.si_numer;
+          left_info.si_denom *= right_info.si_denom;
+          let g = gcd(left_info.si_numer, left_info.si_denom);
+          left_info.si_numer /= g;
+          left_info.si_denom /= g;
+          for (dim, exp) in &right_info.dimensions {
+            *left_info.dimensions.entry(*dim).or_insert(0) += exp;
+          }
+          left_info.dimensions.retain(|_, v| *v != 0);
+          Some(left_info)
+        }
+        BinaryOperator::Power => {
+          let base_info = decompose_unit_expr(left)?;
+          let exp_val = match right.as_ref() {
+            Expr::Integer(n) => *n as i64,
+            _ => return None,
+          };
+          let components: Vec<(String, i64)> = base_info
+            .components
+            .iter()
+            .map(|(n, e)| (n.clone(), e * exp_val))
+            .collect();
+          let (pn, pd) =
+            rational_pow(base_info.si_numer, base_info.si_denom, exp_val);
+          let g = gcd(pn, pd);
+          let dims: BTreeMap<Dimension, i64> = base_info
+            .dimensions
+            .iter()
+            .map(|(d, e)| (*d, e * exp_val))
+            .filter(|(_, e)| *e != 0)
+            .collect();
+          Some(CompoundUnitInfo {
+            components,
+            si_numer: pn / g,
+            si_denom: pd / g,
+            dimensions: dims,
+          })
+        }
+        _ => None,
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut result: Option<CompoundUnitInfo> = None;
+      for arg in args {
+        let info = decompose_unit_expr(arg)?;
+        match &mut result {
+          None => result = Some(info),
+          Some(r) => {
+            for (name, exp) in &info.components {
+              r.components.push((name.clone(), *exp));
+            }
+            r.si_numer *= info.si_numer;
+            r.si_denom *= info.si_denom;
+            let g = gcd(r.si_numer, r.si_denom);
+            r.si_numer /= g;
+            r.si_denom /= g;
+            for (dim, exp) in &info.dimensions {
+              *r.dimensions.entry(*dim).or_insert(0) += exp;
+            }
+            r.dimensions.retain(|_, v| *v != 0);
+          }
+        }
+      }
+      result
+    }
+    _ => None,
+  }
+}
+
+/// Simplify compound unit components by merging same-dimension units.
+/// Returns (simplified_components, conversion_factor_numer, conversion_factor_denom).
+/// The conversion factor should be applied to the magnitude.
+fn simplify_compound_unit(
+  components: &[(String, i64)],
+) -> (Vec<(String, i64)>, i128, i128) {
+  // Group by dimension
+  let mut dim_groups: BTreeMap<Dimension, Vec<(String, i64)>> = BTreeMap::new();
+  let mut unknown: Vec<(String, i64)> = Vec::new();
+
+  for (name, exp) in components {
+    if let Some(info) = get_unit_info(name) {
+      dim_groups
+        .entry(info.dimension)
+        .or_default()
+        .push((name.clone(), *exp));
+    } else {
+      unknown.push((name.clone(), *exp));
+    }
+  }
+
+  let mut conv_numer: i128 = 1;
+  let mut conv_denom: i128 = 1;
+  let mut simplified: Vec<(String, i64)> = Vec::new();
+
+  for units in dim_groups.values() {
+    // Find the "canonical" unit: the one with the largest total absolute exponent
+    let canonical =
+      units.iter().max_by_key(|(_, e)| e.abs()).unwrap().0.clone();
+    let canonical_info = get_unit_info(&canonical).unwrap();
+
+    let mut total_exp: i64 = 0;
+    for (name, exp) in units {
+      if name == &canonical {
+        total_exp += exp;
+      } else {
+        // Convert this unit to canonical: factor = (this_si / canonical_si)^exp
+        let this_info = get_unit_info(name).unwrap();
+        // this_unit in SI = this_si_numer/this_si_denom
+        // canonical in SI = can_si_numer/can_si_denom
+        // conversion per unit = (this_si_n * can_si_d) / (this_si_d * can_si_n)
+        let unit_conv_n = this_info.to_si_numer * canonical_info.to_si_denom;
+        let unit_conv_d = this_info.to_si_denom * canonical_info.to_si_numer;
+        let (pn, pd) = rational_pow(unit_conv_n, unit_conv_d, *exp);
+        conv_numer *= pn;
+        conv_denom *= pd;
+        let g = gcd(conv_numer, conv_denom);
+        conv_numer /= g;
+        conv_denom /= g;
+        total_exp += exp;
+      }
+    }
+
+    if total_exp != 0 {
+      simplified.push((canonical, total_exp));
+    }
+  }
+
+  simplified.extend(unknown);
+
+  (simplified, conv_numer, conv_denom)
+}
+
+/// Build a unit Expr from simplified components.
+/// Positive exponents go in numerator, negative in denominator.
+fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
+  use crate::syntax::BinaryOperator;
+
+  let mut numer_parts: Vec<Expr> = Vec::new();
+  let mut denom_parts: Vec<Expr> = Vec::new();
+
+  for (name, exp) in components {
+    let base = Expr::Identifier(name.clone());
+    let abs_exp = exp.abs();
+    let part = if abs_exp == 1 {
+      base
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(Expr::Integer(abs_exp as i128)),
+      }
+    };
+    if *exp > 0 {
+      numer_parts.push(part);
+    } else {
+      denom_parts.push(part);
+    }
+  }
+
+  let numer = if numer_parts.is_empty() {
+    Expr::Integer(1)
+  } else if numer_parts.len() == 1 {
+    numer_parts.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: numer_parts,
+    }
+  };
+
+  if denom_parts.is_empty() {
+    numer
+  } else {
+    let denom = if denom_parts.len() == 1 {
+      denom_parts.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: denom_parts,
+      }
+    };
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numer),
+      right: Box::new(denom),
+    }
+  }
+}
+
+/// Decompose, simplify, and rebuild a compound unit expression.
+/// Returns (simplified_unit_expr, conversion_factor_numer, conversion_factor_denom).
+fn simplify_unit_expr(unit: &Expr) -> Option<(Expr, i128, i128)> {
+  let info = decompose_unit_expr(unit)?;
+  let (simplified, conv_n, conv_d) = simplify_compound_unit(&info.components);
+  if simplified.is_empty() {
+    return Some((Expr::Integer(1), conv_n, conv_d));
+  }
+  Some((components_to_unit_expr(&simplified), conv_n, conv_d))
+}
+
 // ─── Quantity helpers ───────────────────────────────────────────────────────
 
 /// Extract (magnitude, unit_string) from a Quantity FunctionCall.
@@ -166,14 +545,12 @@ fn unit_name(expr: &Expr) -> Option<&str> {
 
 /// Check if two unit expressions represent compatible (same dimension) units.
 fn units_compatible(u1: &Expr, u2: &Expr) -> bool {
-  let n1 = unit_name(u1);
-  let n2 = unit_name(u2);
-  if let (Some(n1), Some(n2)) = (n1, n2)
-    && let (Some(info1), Some(info2)) = (get_unit_info(n1), get_unit_info(n2))
+  if let (Some(info1), Some(info2)) =
+    (decompose_unit_expr(u1), decompose_unit_expr(u2))
   {
-    return info1.dimension == info2.dimension;
+    return info1.dimensions == info2.dimensions;
   }
-  // If we can't look up the units, they're compatible only if identical
+  // If we can't decompose, they're compatible only if identical
   crate::syntax::expr_to_string(u1) == crate::syntax::expr_to_string(u2)
 }
 
@@ -182,10 +559,20 @@ fn units_equal(u1: &Expr, u2: &Expr) -> bool {
   crate::syntax::expr_to_string(u1) == crate::syntax::expr_to_string(u2)
 }
 
-/// Recursively normalize unit expressions: String → Identifier
+/// Recursively normalize unit expressions: String → Identifier,
+/// and expand abbreviations like "km/h" → Kilometers/Hours.
 fn normalize_unit(unit: Expr) -> Expr {
   match unit {
-    Expr::String(s) => Expr::Identifier(s),
+    Expr::String(ref s) => {
+      // Try abbreviation expansion first
+      if get_unit_info(s).is_some() {
+        Expr::Identifier(s.clone())
+      } else if let Some(expanded) = resolve_unit_abbreviation(s) {
+        normalize_unit(expanded)
+      } else {
+        Expr::Identifier(s.clone())
+      }
+    }
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op,
       left: Box::new(normalize_unit(*left)),
@@ -419,12 +806,30 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some((mag, unit)) = is_quantity(&args[0]) {
     let target = &args[1];
-    let from_name = unit_name(unit);
-    let to_name = unit_name(target);
-    if let (Some(from), Some(to)) = (from_name, to_name) {
-      let new_mag = convert_magnitude(mag, from, to)?;
-      Ok(make_quantity(new_mag, target.clone()))
+
+    // Try compound unit decomposition for both sides
+    let from_info = decompose_unit_expr(unit);
+    let to_info = decompose_unit_expr(target);
+
+    if let (Some(from), Some(to)) = (from_info, to_info) {
+      // Check dimension compatibility
+      if from.dimensions != to.dimensions {
+        return Err(InterpreterError::EvaluationError(format!(
+          "{} and {} are incompatible units.",
+          crate::syntax::expr_to_string(unit),
+          crate::syntax::expr_to_string(target)
+        )));
+      }
+      // Convert: new_mag = mag * (from_si / to_si)
+      let conv_numer = from.si_numer * to.si_denom;
+      let conv_denom = from.si_denom * to.si_numer;
+      let new_mag =
+        multiply_magnitude_by_rational(mag, conv_numer, conv_denom)?;
+      // Build target unit expression from decomposed target components
+      // (preserves the user's target unit naming)
+      Ok(make_quantity(new_mag, normalize_unit(target.clone())))
     } else {
+      // Fallback: return unevaluated
       Ok(Expr::FunctionCall {
         name: "UnitConvert".to_string(),
         args: args.to_vec(),
@@ -494,22 +899,39 @@ pub fn try_quantity_plus(
   }
 
   // All quantities are compatible — convert to first unit and sum magnitudes
+  let first_decomposed = decompose_unit_expr(first_unit);
   let mut magnitudes: Vec<Expr> = vec![first_mag.clone()];
   for q in &quantity_args[1..] {
     let (m, u) = is_quantity(q).unwrap();
-    let from = unit_name(u);
-    if let (Some(from), Some(to)) = (from, target_unit_name) {
-      if from == to {
+    // Try compound unit conversion via decomposition
+    if let (Some(from_info), Some(to_info)) =
+      (&first_decomposed, decompose_unit_expr(u))
+    {
+      let conv_numer = to_info.si_numer * from_info.si_denom;
+      let conv_denom = to_info.si_denom * from_info.si_numer;
+      if conv_numer == conv_denom {
         magnitudes.push(m.clone());
       } else {
-        match convert_magnitude(m, from, to) {
+        match multiply_magnitude_by_rational(m, conv_numer, conv_denom) {
           Ok(converted) => magnitudes.push(converted),
           Err(e) => return Some(Err(e)),
         }
       }
     } else {
-      // Unknown units but same string — just add directly
-      magnitudes.push(m.clone());
+      // Fallback: simple unit names
+      let from = unit_name(u);
+      if let (Some(from), Some(to)) = (from, target_unit_name) {
+        if from == to {
+          magnitudes.push(m.clone());
+        } else {
+          match convert_magnitude(m, from, to) {
+            Ok(converted) => magnitudes.push(converted),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+      } else {
+        magnitudes.push(m.clone());
+      }
     }
   }
 
@@ -565,8 +987,7 @@ pub fn try_quantity_times(
     };
     Some(Ok(make_quantity(new_mag, unit.clone())))
   } else {
-    // Multiple Quantities → compound unit
-    // Quantity[a, u1] * Quantity[b, u2] → Quantity[a*b, u1*u2]
+    // Multiple Quantities → compound unit with simplification
     let mut all_mags: Vec<Expr> = scalar_args;
     let mut unit_parts: Vec<Expr> = Vec::new();
 
@@ -575,13 +996,7 @@ pub fn try_quantity_times(
       unit_parts.push(unit.clone());
     }
 
-    let new_mag = match crate::functions::math_ast::times_ast(&all_mags) {
-      Ok(m) => m,
-      Err(e) => return Some(Err(e)),
-    };
-
-    // Build compound unit: u1*u2*...
-    let compound_unit = if unit_parts.len() == 1 {
+    let raw_compound = if unit_parts.len() == 1 {
       unit_parts.remove(0)
     } else {
       Expr::FunctionCall {
@@ -590,7 +1005,33 @@ pub fn try_quantity_times(
       }
     };
 
-    Some(Ok(make_quantity(new_mag, compound_unit)))
+    // Try to simplify compound unit (merge same-dimension units)
+    let (final_unit, extra_conv_n, extra_conv_d) =
+      simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, 1, 1));
+
+    let mut new_mag = match crate::functions::math_ast::times_ast(&all_mags) {
+      Ok(m) => m,
+      Err(e) => return Some(Err(e)),
+    };
+
+    // Apply conversion factor from unit simplification
+    if extra_conv_n != 1 || extra_conv_d != 1 {
+      new_mag = match multiply_magnitude_by_rational(
+        &new_mag,
+        extra_conv_n,
+        extra_conv_d,
+      ) {
+        Ok(m) => m,
+        Err(e) => return Some(Err(e)),
+      };
+    }
+
+    // If all units cancelled out, return bare magnitude
+    if matches!(&final_unit, Expr::Integer(1)) {
+      Some(Ok(new_mag))
+    } else {
+      Some(Ok(make_quantity(new_mag, final_unit)))
+    }
   }
 }
 
@@ -605,7 +1046,7 @@ pub fn try_quantity_divide(
   match (q_a, q_b) {
     (Some((mag_a, unit_a)), Some((mag_b, unit_b))) => {
       // Quantity / Quantity → Quantity[a/b, u1/u2]
-      let new_mag = match crate::functions::math_ast::divide_ast(&[
+      let mut new_mag = match crate::functions::math_ast::divide_ast(&[
         mag_a.clone(),
         mag_b.clone(),
       ]) {
@@ -616,12 +1057,26 @@ pub fn try_quantity_divide(
         // Same units cancel out
         Some(Ok(new_mag))
       } else {
-        let compound_unit = Expr::BinaryOp {
+        let raw_compound = Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
           left: Box::new(unit_a.clone()),
           right: Box::new(unit_b.clone()),
         };
-        Some(Ok(make_quantity(new_mag, compound_unit)))
+        // Try to simplify (merge same-dimension units)
+        let (final_unit, conv_n, conv_d) =
+          simplify_unit_expr(&raw_compound).unwrap_or((raw_compound, 1, 1));
+        if conv_n != 1 || conv_d != 1 {
+          new_mag =
+            match multiply_magnitude_by_rational(&new_mag, conv_n, conv_d) {
+              Ok(m) => m,
+              Err(e) => return Some(Err(e)),
+            };
+        }
+        if matches!(&final_unit, Expr::Integer(1)) {
+          Some(Ok(new_mag))
+        } else {
+          Some(Ok(make_quantity(new_mag, final_unit)))
+        }
       }
     }
     (Some((mag, unit)), None) => {
@@ -647,7 +1102,18 @@ pub fn try_quantity_divide(
         left: Box::new(unit.clone()),
         right: Box::new(Expr::Integer(-1)),
       };
-      Some(Ok(make_quantity(new_mag, inv_unit)))
+      // Try to simplify
+      let (final_unit, conv_n, conv_d) =
+        simplify_unit_expr(&inv_unit).unwrap_or((inv_unit, 1, 1));
+      let final_mag = if conv_n != 1 || conv_d != 1 {
+        match multiply_magnitude_by_rational(&new_mag, conv_n, conv_d) {
+          Ok(m) => m,
+          Err(e) => return Some(Err(e)),
+        }
+      } else {
+        new_mag
+      };
+      Some(Ok(make_quantity(final_mag, final_unit)))
     }
     _ => None,
   }
@@ -690,14 +1156,27 @@ pub fn try_quantity_compare(
     return None;
   }
 
-  // Convert right to left's unit
-  let from = unit_name(unit_r)?;
-  let to = unit_name(unit_l)?;
+  // Convert right magnitude to left's unit via decomposition
+  let left_info = decompose_unit_expr(unit_l);
+  let right_info = decompose_unit_expr(unit_r);
 
-  let converted_r = if from == to {
-    mag_r.clone()
+  let converted_r = if let (Some(li), Some(ri)) = (left_info, right_info) {
+    let conv_numer = ri.si_numer * li.si_denom;
+    let conv_denom = ri.si_denom * li.si_numer;
+    if conv_numer == conv_denom {
+      mag_r.clone()
+    } else {
+      multiply_magnitude_by_rational(mag_r, conv_numer, conv_denom).ok()?
+    }
   } else {
-    convert_magnitude(mag_r, from, to).ok()?
+    // Fallback to simple conversion
+    let from = unit_name(unit_r)?;
+    let to = unit_name(unit_l)?;
+    if from == to {
+      mag_r.clone()
+    } else {
+      convert_magnitude(mag_r, from, to).ok()?
+    }
   };
 
   // Try numeric comparison

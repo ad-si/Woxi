@@ -1523,13 +1523,48 @@ pub fn format_real(f: f64) -> String {
 
 /// Format a real number using Wolfram's *^ scientific notation.
 /// E.g. 2.733467611516948*^33 or -1.5*^-6
+///
+/// Uses string manipulation on Rust's shortest round-trip representation
+/// to avoid precision loss from dividing by 10^exp.
 fn format_real_scientific(f: f64) -> String {
-  let exp = f.abs().log10().floor() as i32;
-  let mantissa = f / 10_f64.powi(exp);
-  // Format mantissa with enough precision, then trim trailing zeros
-  let m_str = format!("{:.15}", mantissa);
-  let m_str = m_str.trim_end_matches('0');
-  format!("{}*^{}", m_str, exp)
+  let negative = f < 0.0;
+  let abs = f.abs();
+  // Use Rust's shortest round-trip representation (like Wolfram's approach)
+  let s = format!("{}", abs);
+  // Find the decimal point position
+  let (digits, dot_pos) = if let Some(dot) = s.find('.') {
+    // Remove the dot to get all digits, remember where it was
+    let mut d = String::with_capacity(s.len());
+    d.push_str(&s[..dot]);
+    d.push_str(&s[dot + 1..]);
+    (d, dot as i32)
+  } else {
+    (s.clone(), s.len() as i32)
+  };
+  // Remove leading zeros to find first significant digit
+  let leading_zeros = digits.chars().take_while(|&c| c == '0').count();
+  let sig_digits = &digits[leading_zeros..];
+  if sig_digits.is_empty() {
+    return "0.*^0".to_string();
+  }
+  // Exponent: position of first significant digit relative to decimal point
+  let exp = dot_pos - leading_zeros as i32 - 1;
+  // Build mantissa: first digit, dot, remaining digits
+  let mut mantissa = String::new();
+  if negative {
+    mantissa.push('-');
+  }
+  mantissa.push_str(&sig_digits[..1]);
+  mantissa.push('.');
+  if sig_digits.len() > 1 {
+    mantissa.push_str(&sig_digits[1..]);
+  }
+  // Trim trailing zeros after the decimal point, keeping the dot
+  // Wolfram uses "1.*^6" not "1.0*^6"
+  while mantissa.ends_with('0') {
+    mantissa.pop();
+  }
+  format!("{}*^{}", mantissa, exp)
 }
 
 /// Convert an Expr back to a string representation
