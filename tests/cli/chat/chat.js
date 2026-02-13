@@ -20,6 +20,7 @@ const SYSTEM_PROMPT = `
     it might actually be the case that the function is actually not defined in the environment.
   If the final result is a symbolic expression,
     always also show the numerical approximation of it using N[] for better readability.
+  Use camelCase for function names and variables.
 `
 
 export function getSettings() {

@@ -11,6 +11,7 @@ pub mod math_ast;
 pub mod plot;
 pub mod polynomial_ast;
 pub mod predicate_ast;
+pub mod quantity_ast;
 pub mod scoping;
 pub mod string_ast;
 
@@ -27,5 +28,6 @@ pub use math_ast::*;
 pub use plot::*;
 pub use polynomial_ast::*;
 pub use predicate_ast::*;
+pub use quantity_ast::*;
 pub use scoping::*;
 pub use string_ast::*;

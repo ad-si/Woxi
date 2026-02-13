@@ -372,6 +372,12 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // Handle Quantity arithmetic before anything else
+  if let Some(result) = crate::functions::quantity_ast::try_quantity_plus(args)
+  {
+    return result;
+  }
+
   // Flatten nested Plus arguments
   let mut flat_args: Vec<Expr> = Vec::new();
   for arg in args {
@@ -567,6 +573,12 @@ fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(1));
+  }
+
+  // Handle Quantity arithmetic before anything else
+  if let Some(result) = crate::functions::quantity_ast::try_quantity_times(args)
+  {
+    return result;
   }
 
   // Flatten nested Times arguments
@@ -805,6 +817,13 @@ pub fn divide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper for division of two arguments
 fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  // Handle Quantity division
+  if let Some(result) =
+    crate::functions::quantity_ast::try_quantity_divide(a, b)
+  {
+    return result;
+  }
+
   // For two integers, keep as Rational (fraction)
   if let (Expr::Integer(numer), Expr::Integer(denom)) = (a, b) {
     if *denom == 0 {
@@ -898,6 +917,13 @@ pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper for Power of two arguments
 fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // Handle Quantity^n
+  if let Some(result) =
+    crate::functions::quantity_ast::try_quantity_power(base, exp)
+  {
+    return result;
+  }
+
   // Special case: 0^0 is Indeterminate (matches Wolfram)
   let base_is_zero = matches!(base, Expr::Integer(0))
     || matches!(base, Expr::Real(f) if *f == 0.0);
