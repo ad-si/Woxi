@@ -318,6 +318,7 @@ async function handleSend() {
   // Append user message
   const userMsg = { role: "user", content: text }
   appendMessage(activeConvId, userMsg)
+  renderConversationList()
   const msgIndex = getMessages(activeConvId).length - 1
   const userEl = createMessageElement(userMsg, msgIndex)
   messagesEl.appendChild(userEl)
