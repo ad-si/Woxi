@@ -561,3 +561,49 @@ fn compatible_unit_q_compound_false() {
     "False"
   );
 }
+
+// ─── CamelCase "Per" compound units ────────────────────────────────────────
+
+#[test]
+fn quantity_kilometers_per_hour() {
+  assert_eq!(
+    interpret("Quantity[45, \"KilometersPerHour\"]").unwrap(),
+    "Quantity[45, Kilometers/Hours]"
+  );
+}
+
+#[test]
+fn quantity_meters_per_second() {
+  assert_eq!(
+    interpret("Quantity[100, \"MetersPerSecond\"]").unwrap(),
+    "Quantity[100, Meters/Seconds]"
+  );
+}
+
+#[test]
+fn quantity_miles_per_hour() {
+  assert_eq!(
+    interpret("Quantity[60, \"MilesPerHour\"]").unwrap(),
+    "Quantity[60, Miles/Hours]"
+  );
+}
+
+#[test]
+fn unit_convert_per_unit_times_time() {
+  // Quantity[45, km/h] * Quantity[42, min] → Quantity[63/2, km]
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[45, \"KilometersPerHour\"] * Quantity[42, \"Minutes\"], \"Kilometers\"]"
+    )
+    .unwrap(),
+    "Quantity[63/2, Kilometers]"
+  );
+}
+
+#[test]
+fn unit_convert_meters_per_second_squared() {
+  assert_eq!(
+    interpret("Quantity[10, \"MetersPerSecondSquared\"]").unwrap(),
+    "Quantity[10, Meters/Seconds^2]"
+  );
+}

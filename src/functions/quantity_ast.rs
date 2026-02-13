@@ -169,6 +169,73 @@ fn rational_pow(numer: i128, denom: i128, exp: i64) -> (i128, i128) {
   }
 }
 
+/// Try to decompose a CamelCase "Per" compound unit name.
+/// E.g. "KilometersPerHour" → Kilometers / Hours,
+///      "MetersPerSecondSquared" → Meters / Seconds^2
+fn resolve_per_unit(s: &str) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+
+  // Split on "Per" (only the first occurrence)
+  let idx = s.find("Per")?;
+  if idx == 0 {
+    return None; // starts with "Per" — not a compound unit
+  }
+  let numer_part = &s[..idx];
+  let denom_part = &s[idx + 3..];
+  if denom_part.is_empty() {
+    return None;
+  }
+
+  // Check if denominator ends with "Squared" or "Cubed"
+  let (denom_base, exp) = if let Some(base) = denom_part.strip_suffix("Squared")
+  {
+    (base, 2)
+  } else if let Some(base) = denom_part.strip_suffix("Cubed") {
+    (base, 3)
+  } else {
+    (denom_part, 1)
+  };
+
+  // Validate both parts are known units (try plural form too)
+  let numer_name = if get_unit_info(numer_part).is_some() {
+    numer_part.to_string()
+  } else {
+    let plural = format!("{}s", numer_part);
+    if get_unit_info(&plural).is_some() {
+      plural
+    } else {
+      return None;
+    }
+  };
+  let denom_name = if get_unit_info(denom_base).is_some() {
+    denom_base.to_string()
+  } else {
+    let plural = format!("{}s", denom_base);
+    if get_unit_info(&plural).is_some() {
+      plural
+    } else {
+      return None;
+    }
+  };
+
+  let numer_expr = Expr::Identifier(numer_name);
+  let denom_expr = if exp == 1 {
+    Expr::Identifier(denom_name)
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(Expr::Identifier(denom_name.clone())),
+      right: Box::new(Expr::Integer(exp)),
+    }
+  };
+
+  Some(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(numer_expr),
+    right: Box::new(denom_expr),
+  })
+}
+
 /// Resolve common unit abbreviation strings to full unit names.
 fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
   use crate::syntax::BinaryOperator;
@@ -308,6 +375,10 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       }
       // Try abbreviation resolution
       if let Some(resolved) = resolve_unit_abbreviation(name) {
+        return decompose_unit_expr(&resolved);
+      }
+      // Try CamelCase "Per" decomposition (e.g. "KilometersPerHour")
+      if let Some(resolved) = resolve_per_unit(name) {
         return decompose_unit_expr(&resolved);
       }
       // Try parsing as a compound unit expression (e.g. "Meters/Seconds^2")
@@ -594,6 +665,8 @@ fn normalize_unit(unit: Expr) -> Expr {
         Expr::Identifier(s.clone())
       } else if let Some(expanded) = resolve_unit_abbreviation(s) {
         normalize_unit(expanded)
+      } else if let Some(expanded) = resolve_per_unit(s) {
+        normalize_unit(expanded)
       } else if let Some(parsed) = try_parse_unit_string(s) {
         normalize_unit(parsed)
       } else {
@@ -609,6 +682,15 @@ fn normalize_unit(unit: Expr) -> Expr {
       name,
       args: args.into_iter().map(normalize_unit).collect(),
     },
+    Expr::Identifier(ref s) => {
+      // Try CamelCase "Per" decomposition for identifiers too
+      if get_unit_info(s).is_none()
+        && let Some(expanded) = resolve_per_unit(s)
+      {
+        return normalize_unit(expanded);
+      }
+      unit
+    }
     other => other,
   }
 }
