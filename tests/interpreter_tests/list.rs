@@ -430,6 +430,54 @@ mod sort_by {
       "{5, 4, 3, 2, 1}"
     );
   }
+
+  #[test]
+  fn sort_by_string_length_tiebreaker() {
+    assert_eq!(
+      interpret(
+        r#"SortBy[{"Four", "score", "seven", "years", "forth"}, StringLength]"#
+      )
+      .unwrap(),
+      "{Four, forth, score, seven, years}"
+    );
+  }
+
+  #[test]
+  fn sort_by_string_length_three_char() {
+    assert_eq!(
+      interpret(r#"SortBy[{"and", "ago", "our"}, StringLength]"#).unwrap(),
+      "{ago, and, our}"
+    );
+  }
+}
+
+mod sort_canonical {
+  use super::*;
+
+  #[test]
+  fn sort_strings_case_insensitive() {
+    assert_eq!(
+      interpret(r#"Sort[{"Four", "score", "seven", "years", "forth"}]"#)
+        .unwrap(),
+      "{forth, Four, score, seven, years}"
+    );
+  }
+
+  #[test]
+  fn sort_strings_lowercase_before_uppercase() {
+    assert_eq!(
+      interpret(r#"Sort[{"abc", "ABC", "Abc", "aBc"}]"#).unwrap(),
+      "{abc, aBc, Abc, ABC}"
+    );
+  }
+
+  #[test]
+  fn sort_numbers() {
+    assert_eq!(
+      interpret("Sort[{3, 1, 4, 1, 5, 9}]").unwrap(),
+      "{1, 1, 3, 4, 5, 9}"
+    );
+  }
 }
 
 mod complement {
