@@ -102,17 +102,22 @@
     <div id="welcome" class="flex-1 flex flex-col items-center justify-center px-4">
       <div class="text-center max-w-lg mb-8">
         <h2 class="text-2xl font-semibold mb-2">Woxi Chat</h2>
-        <p class="text-gray-500 dark:text-gray-400">AI assistant with a Wolfram Language interpreter. Ask mathematical,
-          computational, or symbolic questions.</p>
+        <p class="mb-4 text-gray-500 dark:text-gray-400">
+          AI assistant with a Wolfram Language interpreter.<br>
+          Ask mathematical, computational, or symbolic questions.
+        </p>
+        <p class="text-xs text-gray-400 dark:text-gray-400">
+          All Wolfram Language computations run locally.
+        </p>
       </div>
       <div class="w-full max-w-xl flex items-end gap-2">
-        <textarea id="input-welcome" rows="1" placeholder="Send a message..."
-          class="chat-input flex-1 resize-none rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 max-h-48 overflow-y-auto"
+        <textarea id="input-welcome" rows="1" placeholder="Send a message …"
+          class="chat-input flex-1 resize-none rounded-xl border border-gray-500 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 max-h-48 overflow-y-auto"
           disabled></textarea>
         <button
           class="send-btn p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           disabled>
-          <svg class="send-icon w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="send-icon w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M12 5l7 7-7 7" />
           </svg>
           <svg class="stop-icon w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24">
