@@ -104,6 +104,65 @@ mod string_split_single_arg {
   }
 }
 
+mod string_split_regex {
+  use super::*;
+
+  #[test]
+  fn split_by_regex_whitespace() {
+    assert_eq!(
+      interpret(
+        r#"StringSplit["hello  world  foo", RegularExpression["\\s+"]]"#
+      )
+      .unwrap(),
+      "{hello, world, foo}"
+    );
+  }
+
+  #[test]
+  fn split_by_regex_non_word() {
+    assert_eq!(
+      interpret(
+        r#"StringSplit["Four score and seven", RegularExpression["\\W+"]]"#
+      )
+      .unwrap(),
+      "{Four, score, and, seven}"
+    );
+  }
+
+  #[test]
+  fn split_by_regex_with_ignore_case() {
+    assert_eq!(
+      interpret(r#"StringSplit["helloXworldxfoo", RegularExpression["x"], IgnoreCase -> True]"#).unwrap(),
+      "{hello, world, foo}"
+    );
+  }
+
+  #[test]
+  fn split_by_regex_ignore_case_false() {
+    assert_eq!(
+      interpret(r#"StringSplit["helloXworldxfoo", RegularExpression["x"], IgnoreCase -> False]"#).unwrap(),
+      "{helloXworld, foo}"
+    );
+  }
+
+  #[test]
+  fn split_by_regex_digits() {
+    assert_eq!(
+      interpret(r#"StringSplit["abc123def456ghi", RegularExpression["\\d+"]]"#)
+        .unwrap(),
+      "{abc, def, ghi}"
+    );
+  }
+
+  #[test]
+  fn gettysburg_example() {
+    assert_eq!(
+      interpret(r#"SortBy[StringSplit["Four score and seven years ago our fathers brought forth", RegularExpression["\\W+"]], StringLength]"#).unwrap(),
+      "{ago, and, our, Four, forth, score, seven, years, brought, fathers}"
+    );
+  }
+}
+
 mod string_replace {
   use super::*;
 

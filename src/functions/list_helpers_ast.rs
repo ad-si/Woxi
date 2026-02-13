@@ -313,6 +313,50 @@ pub fn group_by_ast(
   Ok(Expr::Association(pairs))
 }
 
+/// Wolfram canonical ordering for expressions.
+/// For strings: case-insensitive first, then lowercase before uppercase for ties.
+/// For numbers: numeric comparison.
+/// Mixed: numbers before strings.
+fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  let sa = crate::syntax::expr_to_string(a);
+  let sb = crate::syntax::expr_to_string(b);
+  // Try numeric comparison first
+  if let (Ok(na), Ok(nb)) = (sa.parse::<f64>(), sb.parse::<f64>()) {
+    return na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal);
+  }
+  // If one is numeric and the other isn't, numbers come first
+  if sa.parse::<f64>().is_ok() {
+    return std::cmp::Ordering::Less;
+  }
+  if sb.parse::<f64>().is_ok() {
+    return std::cmp::Ordering::Greater;
+  }
+  // String comparison: case-insensitive first, then lowercase before uppercase
+  let la = sa.to_lowercase();
+  let lb = sb.to_lowercase();
+  match la.cmp(&lb) {
+    std::cmp::Ordering::Equal => {
+      // Tiebreak: lowercase letters sort before uppercase
+      // Compare char-by-char: lowercase < uppercase
+      for (ca, cb) in sa.chars().zip(sb.chars()) {
+        if ca != cb {
+          // If both same letter different case, lowercase comes first
+          if ca.to_lowercase().eq(cb.to_lowercase()) {
+            if ca.is_lowercase() {
+              return std::cmp::Ordering::Less;
+            } else {
+              return std::cmp::Ordering::Greater;
+            }
+          }
+          return ca.cmp(&cb);
+        }
+      }
+      sa.len().cmp(&sb.len())
+    }
+    other => other,
+  }
+}
+
 /// AST-based SortBy: sort elements by the value of a function.
 /// SortBy[{a, b, c}, f] -> elements sorted by f[x]
 pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
@@ -335,15 +379,13 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
     })
     .collect::<Result<_, InterpreterError>>()?;
 
-  // Sort by key (using string representation for comparison)
+  // Sort by key, using canonical ordering as tiebreaker
   keyed.sort_by(|a, b| {
-    let ka = crate::syntax::expr_to_string(&a.1);
-    let kb = crate::syntax::expr_to_string(&b.1);
-    // Try numeric comparison first
-    if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
-      na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
+    let key_ord = canonical_cmp(&a.1, &b.1);
+    if key_ord == std::cmp::Ordering::Equal {
+      canonical_cmp(&a.0, &b.0)
     } else {
-      ka.cmp(&kb)
+      key_ord
     }
   });
 
@@ -1712,16 +1754,7 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {
       let mut sorted = items.clone();
-      sorted.sort_by(|a, b| {
-        let ka = crate::syntax::expr_to_string(a);
-        let kb = crate::syntax::expr_to_string(b);
-        // Try numeric comparison first
-        if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
-          na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
-        } else {
-          ka.cmp(&kb)
-        }
-      });
+      sorted.sort_by(canonical_cmp);
       Ok(Expr::List(sorted))
     }
     _ => Ok(Expr::FunctionCall {

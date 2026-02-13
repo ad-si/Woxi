@@ -161,11 +161,45 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::String(joined))
 }
 
+/// Extract IgnoreCase option from rule arguments (args after the delimiter)
+fn extract_ignore_case(options: &[Expr]) -> bool {
+  for opt in options {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "IgnoreCase")
+      && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+    {
+      return true;
+    }
+  }
+  false
+}
+
+/// Check if an Expr is a RegularExpression[pattern] and extract the pattern string
+fn extract_regex_pattern(expr: &Expr) -> Option<String> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "RegularExpression" && args.len() == 1 =>
+    {
+      if let Expr::String(pat) = &args[0] {
+        Some(pat.clone())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 /// StringSplit[s] - splits by whitespace; StringSplit[s, delim] - splits by delimiter
+/// StringSplit[s, RegularExpression[pat]] - splits by regex pattern
+/// Options: IgnoreCase -> True/False
 pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "StringSplit expects 1 or 2 arguments".into(),
+      "StringSplit expects at least 1 argument".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
@@ -174,6 +208,30 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     let parts: Vec<Expr> = s
       .split_whitespace()
+      .map(|p| Expr::String(p.to_string()))
+      .collect();
+    return Ok(Expr::List(parts));
+  }
+
+  // Extract options from args[2..]
+  let ignore_case = extract_ignore_case(&args[2..]);
+
+  // Check if delimiter is a RegularExpression
+  if let Some(pat) = extract_regex_pattern(&args[1]) {
+    let regex_pat = if ignore_case {
+      format!("(?i){}", pat)
+    } else {
+      pat
+    };
+    let re = regex::Regex::new(&regex_pat).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Invalid regular expression: {}",
+        e
+      ))
+    })?;
+    let parts: Vec<Expr> = re
+      .split(&s)
+      .filter(|p| !p.is_empty())
       .map(|p| Expr::String(p.to_string()))
       .collect();
     return Ok(Expr::List(parts));
@@ -194,9 +252,19 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let parts: Vec<Expr> = if delims.len() == 1 && delims[0].is_empty() {
     s.chars().map(|c| Expr::String(c.to_string())).collect()
   } else if delims.len() == 1 {
-    s.split(&delims[0])
-      .map(|p| Expr::String(p.to_string()))
-      .collect()
+    if ignore_case {
+      let re = regex::RegexBuilder::new(&regex::escape(&delims[0]))
+        .case_insensitive(true)
+        .build()
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!("Regex error: {}", e))
+        })?;
+      re.split(&s).map(|p| Expr::String(p.to_string())).collect()
+    } else {
+      s.split(&delims[0])
+        .map(|p| Expr::String(p.to_string()))
+        .collect()
+    }
   } else {
     // Split by multiple delimiters: scan left to right, try longest delimiter match first
     let mut sorted_delims = delims.clone();
