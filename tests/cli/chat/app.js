@@ -3,7 +3,7 @@ import { sendMessage } from "./api.js"
 import {
   getSettings, saveSettings, hasApiKey, hasBothApiKeys, getConversationIndex,
   getConversation, createConversation, deleteConversation,
-  appendMessage, getMessages, clearAllData, truncateMessages,
+  appendMessage, getMessages, clearAllData, truncateMessages, updateToolMessage,
 } from "./chat.js"
 import {
   createMessageElement, createStreamingAssistant, appendStreamingText,
@@ -380,11 +380,14 @@ async function runAssistantTurn() {
         })
       })
 
-      finalizeStreamingMessage()
+      if (!assistantMsg) {
+        finalizeStreamingMessage()
+        break
+      }
 
-      if (!assistantMsg) break
-
+      const assistantMsgIndex = getMessages(activeConvId).length
       appendMessage(activeConvId, assistantMsg)
+      finalizeStreamingMessage(assistantMsgIndex)
 
       if (pendingToolCalls.length > 0) {
         for (const tc of pendingToolCalls) {
@@ -707,14 +710,94 @@ function splitLines(text) {
   return lines.map((line, i) => i < lines.length - 1 ? line + "\n" : line)
 }
 
-// --- User message actions (copy / edit / retry) ---
+// --- Copy tool code + result ---
+messagesEl.addEventListener("click", (e) => {
+  const copyBtn = e.target.closest(".copy-result-btn")
+  if (!copyBtn) return
+  const card = copyBtn.closest(".tool-card")
+  if (!card) return
+  const code = card.querySelector(".tool-card-code")?.textContent || ""
+  const result = card.querySelector(".tool-card-result:not(.warning):not(.graphics)")?.textContent || ""
+  const text = result ? `${code}\n\n${result}` : code
+  navigator.clipboard.writeText(text)
+  showToast("Copied to clipboard", "success")
+})
+
+// --- Recalculate tool card ---
+messagesEl.addEventListener("click", async (e) => {
+  const recalcBtn = e.target.closest(".recalc-btn")
+  if (!recalcBtn) return
+
+  const card = recalcBtn.closest(".tool-card")
+  if (!card) return
+  if (recalcBtn.classList.contains("recalculating")) return
+
+  const codeEl = card.querySelector(".tool-card-code")
+  if (!codeEl) return
+  const code = codeEl.textContent
+
+  if (!isReady()) {
+    showToast("WASM interpreter not loaded")
+    return
+  }
+
+  recalcBtn.classList.add("recalculating")
+
+  // Remove old result/warning/graphics elements
+  card.querySelectorAll(".tool-card-result").forEach((el) => el.remove())
+  card.classList.remove("collapsed")
+
+  try {
+    const evalResult = await evaluateCode(code)
+    const result = evalResult.result
+    const graphics = evalResult.graphics || ""
+    const warnings = evalResult.warnings || ""
+    const isError = result.startsWith("Error:")
+
+    // Update header status icon (the one that's not .chevron and not inside .recalc-btn)
+    const header = card.querySelector(".tool-card-header")
+    const icons = header.querySelectorAll(":scope > svg:not(.chevron)")
+    const statusIcon = icons.length > 0 ? icons[0] : null
+    if (statusIcon) {
+      statusIcon.outerHTML = isError
+        ? '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
+        : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+    }
+
+    updateToolCard(card.dataset.toolCallId, result, isError, graphics, warnings)
+
+    // Persist updated result to localStorage
+    if (activeConvId) {
+      const content = warnings ? `${result}\n\nWarning: ${warnings}` : result
+      updateToolMessage(activeConvId, card.dataset.toolCallId, content, graphics)
+    }
+  } catch (err) {
+    updateToolCard(card.dataset.toolCallId, "Error: " + err.message, true, "", "")
+  } finally {
+    recalcBtn.classList.remove("recalculating")
+  }
+})
+
+// --- Message actions (copy / edit / retry) ---
 messagesEl.addEventListener("click", (e) => {
   const btn = e.target.closest(".msg-action-btn")
   if (!btn) return
+  const action = btn.dataset.action
+
+  // Assistant message actions
+  if (action === "copy-assistant" || action === "retry-assistant") {
+    const row = btn.closest(".assistant-message-row")
+    if (!row || !row.dataset.msgIndex) return
+    const msgIndex = parseInt(row.dataset.msgIndex, 10)
+    if (action === "copy-assistant") handleCopyAssistantMessage(msgIndex)
+    else handleRetryAssistantMessage(msgIndex)
+    return
+  }
+
+  // User message actions
   const row = btn.closest(".user-message-row")
   if (!row || !row.dataset.msgIndex) return
   const msgIndex = parseInt(row.dataset.msgIndex, 10)
-  const action = btn.dataset.action
 
   if (action === "copy") handleCopyMessage(msgIndex)
   else if (action === "edit") handleEditMessage(msgIndex)
@@ -813,6 +896,22 @@ function handleRetryMessage(msgIndex) {
   renderMessages()
   scrollToBottom()
 
+  runAssistantTurn()
+}
+
+function handleCopyAssistantMessage(msgIndex) {
+  const messages = getMessages(activeConvId)
+  const msg = messages[msgIndex]
+  if (!msg || !msg.content) return
+  navigator.clipboard.writeText(msg.content)
+  showToast("Copied to clipboard", "success")
+}
+
+function handleRetryAssistantMessage(msgIndex) {
+  if (isSending) return
+  truncateMessages(activeConvId, msgIndex)
+  renderMessages()
+  scrollToBottom()
   runAssistantTurn()
 }
 

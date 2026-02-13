@@ -132,6 +132,20 @@ export function getMessages(convId) {
   return conv.messages
 }
 
+export function updateToolMessage(convId, toolCallId, content, graphics) {
+  const conv = getConversation(convId)
+  if (!conv) return
+  const msg = conv.messages.find(
+    (m) => m.role === "tool" && m.tool_call_id === toolCallId
+  )
+  if (!msg) return
+  msg.content = content
+  if (graphics) msg.graphics = graphics
+  else delete msg.graphics
+  conv.updatedAt = Date.now()
+  saveConversation(conv)
+}
+
 export function truncateMessages(convId, fromIndex) {
   const conv = getConversation(convId)
   if (!conv) return
