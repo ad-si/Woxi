@@ -11,9 +11,9 @@ const SYSTEM_PROMPT = `
   Do not repeat the output of the code if you don't have anything important to add to it.
   The interpreter maintains state across calls in this conversation —
     you can define variables and functions and use them in subsequent evaluations.
-  The suggested Wolfram Language code must not contain any graphical functions
-    (such as Plot, ListPlot, Histogram, Graphics, Show, etc.)
-    as the environment does not support displaying them.
+  When the user asks to visualize data or plot functions,
+    use Plot[f, {x, xmin, xmax}] to generate graphs.
+    The environment supports displaying SVG graphics inline.
   If the code causes any error, try some other code to get the answer
     and don't try exactly the same code again.
   Even if the error message implies that a function was used incorrectly,

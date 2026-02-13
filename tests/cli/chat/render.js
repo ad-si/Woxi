@@ -125,16 +125,16 @@ export function createToolCard(toolCallId, code, result, isError, graphics) {
   body.appendChild(codeEl)
 
   if (result !== undefined) {
-    const resultEl = document.createElement("div")
-    resultEl.className = `tool-card-result${isError ? " error" : ""}`
-    resultEl.textContent = result
-    body.appendChild(resultEl)
-
     if (graphics) {
       const graphicsEl = document.createElement("div")
       graphicsEl.className = "tool-card-result graphics"
       graphicsEl.innerHTML = DOMPurify.sanitize(graphics)
       body.appendChild(graphicsEl)
+    } else {
+      const resultEl = document.createElement("div")
+      resultEl.className = `tool-card-result${isError ? " error" : ""}`
+      resultEl.textContent = result
+      body.appendChild(resultEl)
     }
   }
 
@@ -166,16 +166,16 @@ export function updateToolCard(toolCallId, result, isError, graphics, warnings) 
     body.appendChild(warningEl)
   }
 
-  const resultEl = document.createElement("div")
-  resultEl.className = `tool-card-result${isError ? " error" : ""}`
-  resultEl.textContent = result
-  body.appendChild(resultEl)
-
   if (graphics) {
     const graphicsEl = document.createElement("div")
     graphicsEl.className = "tool-card-result graphics"
     graphicsEl.innerHTML = DOMPurify.sanitize(graphics)
     body.appendChild(graphicsEl)
+  } else {
+    const resultEl = document.createElement("div")
+    resultEl.className = `tool-card-result${isError ? " error" : ""}`
+    resultEl.textContent = result
+    body.appendChild(resultEl)
   }
 }
 
