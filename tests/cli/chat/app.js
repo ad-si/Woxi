@@ -82,10 +82,10 @@ async function init() {
   try {
     await initWoxi()
     wasmStatus.textContent = "WASM Ready"
-    wasmStatus.className = "ml-auto text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+    wasmStatus.className = "text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
   } catch (e) {
     wasmStatus.textContent = "WASM Failed"
-    wasmStatus.className = "ml-auto text-xs px-2 py-1 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+    wasmStatus.className = "text-xs px-2 py-1 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
     showToast("Failed to load WASM: " + e.message)
   }
 }
@@ -513,6 +513,47 @@ document.querySelectorAll(".example-prompt").forEach((btn) => {
     input.value = btn.textContent.trim()
     input.focus()
   })
+})
+
+// --- Menu ---
+const menuBtn = document.getElementById("menu-btn")
+const menuDropdown = document.getElementById("menu-dropdown")
+const exportChatBtn = document.getElementById("export-chat-btn")
+
+menuBtn.addEventListener("click", (e) => {
+  e.stopPropagation()
+  menuDropdown.classList.toggle("hidden")
+})
+
+document.addEventListener("click", () => {
+  menuDropdown.classList.add("hidden")
+})
+
+menuDropdown.addEventListener("click", (e) => {
+  e.stopPropagation()
+})
+
+exportChatBtn.addEventListener("click", () => {
+  menuDropdown.classList.add("hidden")
+
+  if (!activeConvId) {
+    showToast("No conversation to export", "info")
+    return
+  }
+
+  const conv = getConversation(activeConvId)
+  if (!conv) {
+    showToast("Conversation not found", "info")
+    return
+  }
+
+  const blob = new Blob([JSON.stringify(conv, null, 2)], { type: "application/json" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `woxi-chat-${conv.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
 })
 
 // --- User message actions (copy / edit / retry) ---
