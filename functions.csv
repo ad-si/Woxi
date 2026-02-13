@@ -140,6 +140,7 @@ HammingDistance,Returns the number of positions where two equal-length strings d
 HarmonicMean,Returns the harmonic mean of a list,✅,pure
 Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512,✅,pure
 Head,Returns the head of an expression,✅,pure
+HistogramList,Returns bin edges and counts for histogram data,✅,pure
 HoldForm,Holds an expression unevaluated for display,✅,pure
 Identity,Returns its argument unchanged,✅,pure
 IdentityMatrix,Creates an identity matrix of given size,✅,pure
@@ -2809,7 +2810,6 @@ HilbertMatrix,,,
 Histogram,,,
 Histogram3D,,,
 HistogramDistribution,,,
-HistogramList,,,
 HistogramPointDensity,,,
 HistogramTransform,,,
 HistogramTransformInterpolation,,,
