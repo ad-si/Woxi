@@ -778,22 +778,11 @@ pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Minus::argx: Minus called with {} arguments; 1 argument is expected.",
       args.len()
     );
-    // Return as a BinaryOp chain with Minus operator
-    if args.is_empty() {
-      return Err(InterpreterError::EvaluationError(
-        "Minus expects at least 1 argument".into(),
-      ));
-    }
-    // Build chain of Minus operators: a - b - c - ...
-    let mut result = args[0].clone();
-    for arg in &args[1..] {
-      result = Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Minus,
-        left: Box::new(result),
-        right: Box::new(arg.clone()),
-      };
-    }
-    Ok(result)
+    // Return unevaluated (like Wolfram) — expr_to_string handles display
+    Ok(Expr::FunctionCall {
+      name: "Minus".to_string(),
+      args: args.to_vec(),
+    })
   }
 }
 
