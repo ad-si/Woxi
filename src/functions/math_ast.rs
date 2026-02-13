@@ -2494,6 +2494,112 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// RandomVariate[dist] or RandomVariate[dist, n]
+/// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
+pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use rand::Rng;
+  use rand_distr::{Distribution, Normal};
+
+  let mut rng = rand::thread_rng();
+
+  let dist = &args[0];
+  let n = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(n) if *n > 0 => Some(*n as usize),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "RandomVariate: second argument must be a positive integer".into(),
+        ));
+      }
+    }
+  } else {
+    None
+  };
+
+  // Extract distribution parameters
+  let sample_fn: Box<dyn FnMut() -> f64> = match dist {
+    Expr::FunctionCall { name, args: dargs }
+      if name == "UniformDistribution" =>
+    {
+      if dargs.len() == 1 {
+        if let Expr::List(bounds) = &dargs[0] {
+          if bounds.len() == 2 {
+            let lo = expr_to_num(&bounds[0]).ok_or_else(|| {
+              InterpreterError::EvaluationError(
+                "UniformDistribution: invalid min bound".into(),
+              )
+            })?;
+            let hi = expr_to_num(&bounds[1]).ok_or_else(|| {
+              InterpreterError::EvaluationError(
+                "UniformDistribution: invalid max bound".into(),
+              )
+            })?;
+            Box::new(move || rng.gen_range(lo..hi))
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "UniformDistribution: expected {min, max}".into(),
+            ));
+          }
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "UniformDistribution: expected a list {min, max}".into(),
+          ));
+        }
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "UniformDistribution: expected 1 argument".into(),
+        ));
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "NormalDistribution" =>
+    {
+      let (mu, sigma) = match dargs.len() {
+        0 => (0.0, 1.0),
+        2 => {
+          let mu = expr_to_num(&dargs[0]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "NormalDistribution: invalid mean".into(),
+            )
+          })?;
+          let sigma = expr_to_num(&dargs[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "NormalDistribution: invalid standard deviation".into(),
+            )
+          })?;
+          (mu, sigma)
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "NormalDistribution: expected 0 or 2 arguments".into(),
+          ));
+        }
+      };
+      let normal = Normal::new(mu, sigma).map_err(|e| {
+        InterpreterError::EvaluationError(format!("NormalDistribution: {}", e))
+      })?;
+      Box::new(move || normal.sample(&mut rng))
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "RandomVariate".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Generate samples
+  let mut sample_fn = sample_fn;
+  match n {
+    None => Ok(Expr::Real(sample_fn())),
+    Some(count) => {
+      let results: Vec<Expr> =
+        (0..count).map(|_| Expr::Real(sample_fn())).collect();
+      Ok(Expr::List(results))
+    }
+  }
+}
+
 /// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
 /// Returns Some((k, n)) in lowest terms, None if not recognized.
 /// Handles patterns: Pi, n*Pi, Pi/d, n*Pi/d, n*Degree, Degree, and FunctionCall variants.

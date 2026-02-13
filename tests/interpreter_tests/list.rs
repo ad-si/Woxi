@@ -1143,3 +1143,102 @@ mod random_integer {
     assert_eq!(interpret("Length[RandomInteger[10, 5]]").unwrap(), "5");
   }
 }
+
+mod distributions {
+  use super::*;
+
+  #[test]
+  fn uniform_distribution_inert() {
+    assert_eq!(
+      interpret("UniformDistribution[{0, 1}]").unwrap(),
+      "UniformDistribution[{0, 1}]"
+    );
+  }
+
+  #[test]
+  fn normal_distribution_default() {
+    assert_eq!(
+      interpret("NormalDistribution[]").unwrap(),
+      "NormalDistribution[0, 1]"
+    );
+  }
+
+  #[test]
+  fn normal_distribution_with_params() {
+    assert_eq!(
+      interpret("NormalDistribution[5, 2]").unwrap(),
+      "NormalDistribution[5, 2]"
+    );
+  }
+}
+
+mod random_variate {
+  use super::*;
+
+  #[test]
+  fn uniform_single() {
+    let result: f64 = interpret("RandomVariate[UniformDistribution[{0, 1}]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(result >= 0.0 && result < 1.0);
+  }
+
+  #[test]
+  fn uniform_list() {
+    assert_eq!(
+      interpret("Length[RandomVariate[UniformDistribution[{0, 1}], 100]]")
+        .unwrap(),
+      "100"
+    );
+  }
+
+  #[test]
+  fn uniform_values_in_range() {
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomVariate[UniformDistribution[{3, 7}], 100], (# >= 3 && # < 7) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn normal_single() {
+    let result: f64 = interpret("RandomVariate[NormalDistribution[]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(result.is_finite());
+  }
+
+  #[test]
+  fn normal_list() {
+    assert_eq!(
+      interpret("Length[RandomVariate[NormalDistribution[0, 1], 50]]").unwrap(),
+      "50"
+    );
+  }
+
+  #[test]
+  fn normal_with_params() {
+    // Mean of 1000 samples from N(100, 1) should be near 100
+    let result: f64 =
+      interpret("Mean[RandomVariate[NormalDistribution[100, 1], 1000]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(result > 95.0 && result < 105.0);
+  }
+
+  #[test]
+  fn combined_mean_stddev() {
+    // The original failing expression
+    let result = interpret(
+      "data = RandomVariate[UniformDistribution[{0, 1}], 1000]; {Mean[data], StandardDeviation[data]}"
+    ).unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.ends_with('}'));
+  }
+}

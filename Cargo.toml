@@ -53,6 +53,7 @@ unicode-normalization = "0.1"
 sha2 = "0.10"
 md-5 = "0.10"
 sha1 = "0.10"
+rand_distr = "0.4"
 
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }
