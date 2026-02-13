@@ -4,6 +4,6 @@
     "jupyter",
     "{connection_file}"
   ],
-  "display_name": "Woxi",
-  "language": "wolfram-language"
+  "display_name": "Woxi (Wolfram Language)",
+  "language": "wolfram"
 }

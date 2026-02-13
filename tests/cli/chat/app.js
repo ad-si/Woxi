@@ -546,6 +546,7 @@ document.querySelectorAll(".example-prompt").forEach((btn) => {
 const menuBtn = document.getElementById("menu-btn")
 const menuDropdown = document.getElementById("menu-dropdown")
 const exportChatBtn = document.getElementById("export-chat-btn")
+const exportNotebookBtn = document.getElementById("export-notebook-btn")
 
 menuBtn.addEventListener("click", (e) => {
   e.stopPropagation()
@@ -578,10 +579,133 @@ exportChatBtn.addEventListener("click", () => {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = `woxi-chat-${conv.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}.json`
+  a.download = `${exportTimestamp()}-woxi-chat-${conv.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}.json`
   a.click()
   URL.revokeObjectURL(url)
 })
+
+exportNotebookBtn.addEventListener("click", () => {
+  menuDropdown.classList.add("hidden")
+
+  if (!activeConvId) {
+    showToast("No conversation to export", "info")
+    return
+  }
+
+  const conv = getConversation(activeConvId)
+  if (!conv) {
+    showToast("Conversation not found", "info")
+    return
+  }
+
+  const cells = []
+  const messages = conv.messages
+  let execCount = 1
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+
+    if (msg.role === "system") continue
+
+    if (msg.role === "user") {
+      cells.push({
+        id: crypto.randomUUID(),
+        cell_type: "markdown",
+        metadata: { trusted: true },
+        source: splitLines(`**User:** ${msg.content}`),
+      })
+    } else if (msg.role === "assistant") {
+      if (msg.content) {
+        cells.push({
+          id: crypto.randomUUID(),
+          cell_type: "markdown",
+          metadata: { trusted: true },
+          source: splitLines(`**Assistant:** ${msg.content}`),
+        })
+      }
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          const args = typeof tc.function.arguments === "string"
+            ? JSON.parse(tc.function.arguments)
+            : tc.function.arguments
+          const toolResult = messages.find(
+            (m, j) => j > i && m.role === "tool" && m.tool_call_id === tc.id
+          )
+          const n = execCount++
+          const outputs = []
+          if (toolResult?.graphics) {
+            outputs.push({
+              output_type: "execute_result",
+              metadata: {},
+              data: {
+                "image/svg+xml": toolResult.graphics,
+                "text/plain": "-Graphics-",
+              },
+              execution_count: n,
+            })
+          } else if (toolResult?.content) {
+            outputs.push({
+              output_type: "execute_result",
+              metadata: {},
+              data: { "text/plain": splitLines(toolResult.content) },
+              execution_count: n,
+            })
+          }
+          cells.push({
+            id: crypto.randomUUID(),
+            cell_type: "code",
+            metadata: { trusted: true },
+            source: splitLines(args.code),
+            outputs,
+            execution_count: n,
+          })
+        }
+      }
+    }
+    // Skip tool messages — their content is already attached to code cells above
+  }
+
+  const notebook = {
+    nbformat: 4,
+    nbformat_minor: 5,
+    metadata: {
+      kernelspec: {
+        name: "woxi",
+        display_name: "Woxi (Wolfram Language)",
+        language: "wolfram",
+      },
+      language_info: {
+        codemirror_mode: { name: "mathematica" },
+        file_extension: ".wls",
+        mimetype: "application/vnd.wolfram.mathematica",
+        name: "wolfram",
+        version: "0.1.0",
+      },
+    },
+    cells,
+  }
+
+  const blob = new Blob([JSON.stringify(notebook, null, 1)], { type: "application/x-ipynb+json" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `${exportTimestamp()}-woxi-chat-${conv.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}.ipynb`
+  a.click()
+  URL.revokeObjectURL(url)
+})
+
+/** Return a timestamp like "2026-02-13t1537" */
+function exportTimestamp() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}t${pad(d.getHours())}${pad(d.getMinutes())}`
+}
+
+/** Split text into notebook-style source lines (each ending with \n except the last) */
+function splitLines(text) {
+  const lines = text.split("\n")
+  return lines.map((line, i) => i < lines.length - 1 ? line + "\n" : line)
+}
 
 // --- User message actions (copy / edit / retry) ---
 messagesEl.addEventListener("click", (e) => {
