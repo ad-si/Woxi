@@ -56,6 +56,16 @@ mod arithmetic {
     fn complex_division() {
       assert_eq!(interpret("10 / 2 + 3 / 3").unwrap(), "6");
     }
+
+    #[test]
+    fn integer_plus_rational_stays_exact() {
+      // Must not convert to float (was returning 4.6)
+      assert_eq!(interpret("1 + 18/5").unwrap(), "23/5");
+      assert_eq!(interpret("2 + 1/3").unwrap(), "7/3");
+      assert_eq!(interpret("1/3 + 1/6").unwrap(), "1/2");
+      assert_eq!(interpret("1/3 + 2/3").unwrap(), "1");
+      assert_eq!(interpret("5 + 1/2 + 1/3").unwrap(), "35/6");
+    }
   }
 
   mod float {

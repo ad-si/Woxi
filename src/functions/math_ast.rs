@@ -297,6 +297,24 @@ fn needs_bigint_arithmetic(expr: &Expr) -> bool {
   }
 }
 
+/// Extract an exact rational (numer, denom) from an Expr.
+/// Integer n → (n, 1), Rational[n, d] → (n, d), otherwise None.
+fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Compute GCD of two integers using Euclidean algorithm
 fn gcd(a: i128, b: i128) -> i128 {
   let (mut a, mut b) = (a.abs(), b.abs());
@@ -445,42 +463,82 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Simple numeric sum
-  let mut sum = 0.0;
+  // Classify arguments: exact (Integer/Rational), real (Real), or symbolic
+  let mut has_real = false;
   let mut all_numeric = true;
-  let mut any_real = false;
   for arg in &flat_args {
-    if let Some(n) = expr_to_num(arg) {
-      sum += n;
-      if matches!(arg, Expr::Real(_)) {
-        any_real = true;
+    match arg {
+      Expr::Real(_) => has_real = true,
+      Expr::Integer(_) => {}
+      Expr::FunctionCall { name, args: rargs }
+        if name == "Rational"
+          && rargs.len() == 2
+          && matches!(rargs[0], Expr::Integer(_))
+          && matches!(rargs[1], Expr::Integer(_)) => {}
+      _ => {
+        all_numeric = false;
       }
-    } else {
-      all_numeric = false;
-      break;
     }
   }
 
-  if all_numeric {
-    if any_real {
-      Ok(Expr::Real(sum))
-    } else {
-      Ok(num_to_expr(sum))
+  // If all numeric and no Reals, use exact rational arithmetic
+  if all_numeric && !has_real {
+    // Sum as exact rational: (numer, denom)
+    let mut sum_n: i128 = 0;
+    let mut sum_d: i128 = 1;
+    for arg in &flat_args {
+      if let Some((n, d)) = expr_to_rational(arg) {
+        // sum_n/sum_d + n/d = (sum_n*d + n*sum_d) / (sum_d*d)
+        sum_n = sum_n * d + n * sum_d;
+        sum_d *= d;
+        let g = gcd(sum_n, sum_d);
+        sum_n /= g;
+        sum_d /= g;
+        // Keep denom positive
+        if sum_d < 0 {
+          sum_n = -sum_n;
+          sum_d = -sum_d;
+        }
+      }
     }
-  } else {
-    // Separate numeric and symbolic terms
-    let mut numeric_sum = 0.0;
-    let mut has_numeric = false;
-    let mut has_real = false;
-    let mut symbolic_args: Vec<Expr> = Vec::new();
+    return Ok(make_rational(sum_n, sum_d));
+  }
 
+  // If all numeric but has Reals, use f64
+  if all_numeric {
+    let mut sum = 0.0;
     for arg in &flat_args {
       if let Some(n) = expr_to_num(arg) {
-        numeric_sum += n;
-        has_numeric = true;
-        if matches!(arg, Expr::Real(_)) {
-          has_real = true;
+        sum += n;
+      }
+    }
+    return Ok(Expr::Real(sum));
+  }
+
+  {
+    // Separate numeric and symbolic terms
+    let mut symbolic_args: Vec<Expr> = Vec::new();
+    let mut has_exact = false;
+    let mut sum_n: i128 = 0;
+    let mut sum_d: i128 = 1;
+    let mut real_sum: f64 = 0.0;
+    let mut has_real_term = false;
+
+    for arg in &flat_args {
+      if let Some((n, d)) = expr_to_rational(arg) {
+        sum_n = sum_n * d + n * sum_d;
+        sum_d *= d;
+        let g = gcd(sum_n, sum_d);
+        sum_n /= g;
+        sum_d /= g;
+        if sum_d < 0 {
+          sum_n = -sum_n;
+          sum_d = -sum_d;
         }
+        has_exact = true;
+      } else if let Expr::Real(f) = arg {
+        real_sum += f;
+        has_real_term = true;
       } else {
         symbolic_args.push(arg.clone());
       }
@@ -488,12 +546,17 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Build final args: numeric sum first (if non-zero), then symbolic terms sorted
     let mut final_args: Vec<Expr> = Vec::new();
-    if has_numeric && numeric_sum != 0.0 {
-      if has_real {
-        final_args.push(Expr::Real(numeric_sum));
-      } else {
-        final_args.push(num_to_expr(numeric_sum));
+
+    // If we have both exact and real, convert exact to f64 and combine
+    if has_exact && has_real_term {
+      let total = (sum_n as f64) / (sum_d as f64) + real_sum;
+      if total != 0.0 {
+        final_args.push(Expr::Real(total));
       }
+    } else if has_real_term && real_sum != 0.0 {
+      final_args.push(Expr::Real(real_sum));
+    } else if has_exact && sum_n != 0 {
+      final_args.push(make_rational(sum_n, sum_d));
     }
 
     // Sort symbolic terms: polynomial-like terms first, then transcendental functions
