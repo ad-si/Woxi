@@ -1419,6 +1419,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
           expr_to_string(&args[1])
         );
       }
+      // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
+      if name == "Minus" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{2212} ");
+      }
       // Special case: Dot[a, b] displays as a . b (infix notation)
       if name == "Dot" && args.len() == 2 {
         return format!(
@@ -2111,6 +2116,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // Special case: Factorial[n] displays as n!
       if name == "Factorial" && args.len() == 1 {
         return format!("{}!", expr_to_output(&args[0]));
+      }
+      // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
+      if name == "Minus" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \u{2212} ");
       }
       // Special case: Plus displays as infix with + (handling - for negative terms)
       if name == "Plus" && args.len() >= 2 {
