@@ -4611,3 +4611,138 @@ pub fn subsequences_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::List(result))
 }
+
+/// BinCounts[data, {min, max, dx}] - count data points in equal-width bins
+/// Bins are [min, min+dx), [min+dx, min+2dx), ..., [max-dx, max)
+pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BinCounts".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Extract numeric values from data, skip non-numeric
+  let values: Vec<f64> = data.iter().filter_map(expr_to_f64).collect();
+
+  let (min_val, max_val, dx) = if args.len() == 1 {
+    // BinCounts[data] - default dx=1, aligned to integer boundaries
+    if values.is_empty() {
+      return Ok(Expr::List(vec![]));
+    }
+    let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let dx = 1.0;
+    let mut lo = (data_min / dx).floor() * dx;
+    if (data_min - lo).abs() < 1e-12 {
+      lo -= dx;
+    }
+    let mut hi = (data_max / dx).ceil() * dx;
+    if (data_max - hi).abs() < 1e-12 {
+      hi += dx;
+    }
+    (lo, hi, dx)
+  } else if args.len() == 2 {
+    match &args[1] {
+      // BinCounts[data, dx]
+      Expr::Integer(dx_int) => {
+        if values.is_empty() {
+          return Ok(Expr::List(vec![]));
+        }
+        let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let dx = *dx_int as f64;
+        let mut lo = (data_min / dx).floor() * dx;
+        if (data_min - lo).abs() < 1e-12 {
+          lo -= dx;
+        }
+        let mut hi = (data_max / dx).ceil() * dx;
+        if (data_max - hi).abs() < 1e-12 {
+          hi += dx;
+        }
+        (lo, hi, dx)
+      }
+      Expr::Real(dx_f) => {
+        if values.is_empty() {
+          return Ok(Expr::List(vec![]));
+        }
+        let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let dx = *dx_f;
+        let mut lo = (data_min / dx).floor() * dx;
+        if (data_min - lo).abs() < 1e-12 {
+          lo -= dx;
+        }
+        let mut hi = (data_max / dx).ceil() * dx;
+        if (data_max - hi).abs() < 1e-12 {
+          hi += dx;
+        }
+        (lo, hi, dx)
+      }
+      // BinCounts[data, {min, max, dx}]
+      Expr::List(spec) if spec.len() == 3 => {
+        let min_v = match expr_to_f64(&spec[0]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "BinCounts".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let max_v = match expr_to_f64(&spec[1]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "BinCounts".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let dx = match expr_to_f64(&spec[2]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "BinCounts".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        (min_v, max_v, dx)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "BinCounts".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    return Ok(Expr::FunctionCall {
+      name: "BinCounts".to_string(),
+      args: args.to_vec(),
+    });
+  };
+
+  if dx <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "BinCounts: bin width must be positive".into(),
+    ));
+  }
+
+  let num_bins = ((max_val - min_val) / dx).round() as usize;
+  let mut counts = vec![0i128; num_bins];
+
+  for &v in &values {
+    if v >= min_val && v < max_val {
+      let bin = ((v - min_val) / dx) as usize;
+      let bin = bin.min(num_bins - 1);
+      counts[bin] += 1;
+    }
+  }
+
+  Ok(Expr::List(counts.into_iter().map(Expr::Integer).collect()))
+}

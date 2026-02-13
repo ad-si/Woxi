@@ -142,6 +142,79 @@ mod rescale {
   }
 }
 
+mod bin_counts {
+  use super::*;
+
+  #[test]
+  fn bin_counts_explicit_bins() {
+    assert_eq!(
+      interpret("BinCounts[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, {0, 10, 2}]")
+        .unwrap(),
+      "{1, 2, 2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_with_dx() {
+    // Bins aligned to dx multiples: [0,2),[2,4),[4,6) = {1,2,2}
+    assert_eq!(
+      interpret("BinCounts[{1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{1, 2, 2}"
+    );
+    assert_eq!(interpret("BinCounts[{3, 4, 5}, 2]").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn bin_counts_values_at_boundaries() {
+    // 5 goes in [5,10), 10 is excluded from [0,10)
+    assert_eq!(
+      interpret("BinCounts[{0, 5, 10}, {0, 10, 5}]").unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_large_dataset() {
+    assert_eq!(
+      interpret("BinCounts[{50, 98, 94, 45, 31, 44, 28, 69, 74, 63, 15, 83, 19, 8, 32, 84, 98, 38, 89, 90, 97, 69, 54, 46, 18, 77, 82, 72, 72, 62, 47, 83, 90, 95, 78, 25, 54, 40, 69, 76, 70, 43, 56, 99, 11, 10, 82, 10, 62, 87, 94, 19, 74, 81, 16, 59, 23, 28, 85, 7, 78, 80, 7, 43, 66, 71, 36, 2, 70, 9, 87, 31, 68, 62, 34, 58, 66, 91, 34, 86, 22, 93, 92, 57, 88, 95, 5, 22, 47, 36, 38, 30, 91, 43, 67, 7, 87, 41, 36, 35}, {0, 100, 10}]").unwrap(),
+      "{7, 8, 6, 12, 10, 7, 11, 11, 14, 14}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_empty_bins() {
+    assert_eq!(
+      interpret("BinCounts[{1, 9}, {0, 10, 2}]").unwrap(),
+      "{1, 0, 0, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_reals() {
+    assert_eq!(
+      interpret("BinCounts[{0.0, 0.5, 1.0, 1.5, 2.0}, {0, 3, 1}]").unwrap(),
+      "{2, 2, 1}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_out_of_range() {
+    // Values outside [min, max) are not counted
+    assert_eq!(
+      interpret("BinCounts[{-5, 0, 5, 15}, {0, 10, 5}]").unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  #[test]
+  fn bin_counts_symbolic_returns_unevaluated() {
+    assert_eq!(
+      interpret("BinCounts[x, {0, 10, 1}]").unwrap(),
+      "BinCounts[x, {0, 10, 1}]"
+    );
+  }
+}
+
 mod normalize {
   use super::*;
 

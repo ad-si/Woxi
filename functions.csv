@@ -24,6 +24,7 @@ AssociationQ,Tests if an expression is an association,✅,pure
 AssociationThread,Creates an association from lists of keys and values,✅,pure
 AtomQ,Tests if expression is an atom (not a compound expression),✅,pure
 BernoulliB,Returns the nth Bernoulli number,✅,pure
+BinCounts,Counts data points in equal-width bins,✅,pure
 Binomial,Returns the binomial coefficient,✅,pure
 BitLength,Returns the number of bits needed to represent an integer,✅,pure
 Block,Scopes local variables within a block of code,✅,pure
@@ -824,7 +825,6 @@ BilateralFilter,,,
 BilateralHypergeometricPFQ,,,
 BilateralLaplaceTransform,,,
 BilateralZTransform,,,
-BinCounts,,,
 BinLists,,,
 Binarize,,,
 BinaryDeserialize,,,
