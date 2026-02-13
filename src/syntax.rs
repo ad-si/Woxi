@@ -377,7 +377,14 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::Real | Rule::UnsignedReal => {
       let s = pair.as_str();
-      Expr::Real(s.parse().unwrap_or(0.0))
+      // Handle Wolfram's *^ scientific notation (e.g. 2.7*^7 = 2.7e7)
+      if let Some(idx) = s.find("*^") {
+        let mantissa: f64 = s[..idx].parse().unwrap_or(0.0);
+        let exponent: i32 = s[idx + 2..].parse().unwrap_or(0);
+        Expr::Real(mantissa * 10_f64.powi(exponent))
+      } else {
+        Expr::Real(s.parse().unwrap_or(0.0))
+      }
     }
     Rule::BasePrefix => {
       let s = pair.as_str();

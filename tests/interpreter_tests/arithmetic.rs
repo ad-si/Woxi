@@ -616,6 +616,28 @@ mod exact_value_returns {
   }
 
   #[test]
+  fn parse_scientific_notation_literal() {
+    // *^ notation should be parseable as a number literal
+    assert_eq!(interpret("2.7*^7").unwrap(), "2.7*^7");
+    assert_eq!(interpret("1.5*^-6").unwrap(), "1.5*^-6");
+    assert_eq!(interpret("-3.14*^10").unwrap(), "-3.14*^10");
+    assert_eq!(interpret("1.*^3").unwrap(), "1000.");
+  }
+
+  #[test]
+  fn scientific_notation_arithmetic() {
+    // Arithmetic with *^ notation should work
+    assert_eq!(interpret("2.5*^7 + 3.0*^7").unwrap(), "5.5*^7");
+    assert_eq!(interpret("1.*^6 * 2").unwrap(), "2.*^6");
+  }
+
+  #[test]
+  fn scientific_notation_in_compound_expression() {
+    // *^ results from intermediate computations should be usable in subsequent expressions
+    assert_eq!(interpret("x = 1.*^6; x * 2").unwrap(), "2.*^6");
+  }
+
+  #[test]
   fn mean_returns_rational() {
     // Mean[{0, 0, 0, 10}] = 10/4 = 5/2
     assert_eq!(interpret("Mean[{0, 0, 0, 10}]").unwrap(), "5/2");
