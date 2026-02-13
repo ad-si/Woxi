@@ -80,7 +80,7 @@ export function renderMarkdown(text) {
 
 export function createMessageElement(msg, index) {
   if (msg.role === "user") return createUserMessage(msg, index)
-  if (msg.role === "assistant") return createAssistantMessage(msg)
+  if (msg.role === "assistant") return createAssistantMessage(msg, index)
   if (msg.role === "tool") return createToolResultMessage(msg)
   return null
 }
@@ -106,9 +106,11 @@ function createUserMessage(msg, index) {
   return el
 }
 
-function createAssistantMessage(msg) {
+function createAssistantMessage(msg, index) {
   const wrapper = document.createElement("div")
-  wrapper.className = "px-4 py-3"
+  const isTextOnly = msg.content && !msg.tool_calls
+  wrapper.className = isTextOnly ? "assistant-message-row px-4 py-3" : "px-4 py-3"
+  if (isTextOnly && index !== undefined) wrapper.dataset.msgIndex = index
 
   const inner = document.createElement("div")
   inner.className = "max-w-3xl mx-auto"
@@ -131,6 +133,21 @@ function createAssistantMessage(msg) {
     }
   }
 
+  // Action buttons for text-only assistant messages (final responses)
+  if (isTextOnly) {
+    const actions = document.createElement("div")
+    actions.className = "assistant-msg-actions"
+    actions.innerHTML = `
+      <button class="msg-action-btn" data-action="copy-assistant" title="Copy">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>
+      </button>
+      <button class="msg-action-btn" data-action="retry-assistant" title="Try again">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+      </button>
+    `
+    inner.appendChild(actions)
+  }
+
   wrapper.appendChild(inner)
   return wrapper
 }
@@ -151,8 +168,13 @@ export function createToolCard(toolCallId, code, result, isError, graphics) {
     <svg class="chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
     <span>Wolfram Language</span>
     ${result === undefined ? '<div class="spinner"></div>' : isError ? '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>' : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'}
+    <span class="flex-1"></span>
+    ${result !== undefined ? `<button class="tool-header-btn copy-result-btn" title="Copy result"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg></button><button class="tool-header-btn recalc-btn" title="Recalculate"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button>` : ''}
   `
-  header.addEventListener("click", () => card.classList.toggle("collapsed"))
+  header.addEventListener("click", (e) => {
+    if (e.target.closest(".tool-header-btn")) return
+    card.classList.toggle("collapsed")
+  })
   card.appendChild(header)
 
   const body = document.createElement("div")
@@ -187,13 +209,30 @@ export function updateToolCard(toolCallId, result, isError, graphics, warnings) 
 
   if (isError) card.classList.add("collapsed")
 
-  // Replace spinner with check/error icon
+  // Replace spinner with check/error icon + add recalculate button
   const header = card.querySelector(".tool-card-header")
   const spinner = header.querySelector(".spinner")
   if (spinner) {
     spinner.outerHTML = isError
       ? '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
       : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+
+    // Add spacer + copy + recalculate buttons
+    if (!header.querySelector(".recalc-btn")) {
+      const spacer = document.createElement("span")
+      spacer.className = "flex-1"
+      header.appendChild(spacer)
+      const copyBtn = document.createElement("button")
+      copyBtn.className = "tool-header-btn copy-result-btn"
+      copyBtn.title = "Copy result"
+      copyBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>'
+      header.appendChild(copyBtn)
+      const recalcBtn = document.createElement("button")
+      recalcBtn.className = "tool-header-btn recalc-btn"
+      recalcBtn.title = "Recalculate"
+      recalcBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>'
+      header.appendChild(recalcBtn)
+    }
   }
 
   const body = card.querySelector(".tool-card-body")
@@ -242,11 +281,38 @@ export function appendStreamingText(text) {
   el.classList.add("streaming-cursor")
 }
 
-export function finalizeStreamingMessage() {
+export function finalizeStreamingMessage(msgIndex) {
   const el = document.querySelector("#streaming-msg .message-content")
-  if (el) el.classList.remove("streaming-cursor")
+  if (el) {
+    el.classList.remove("streaming-cursor")
+    // Remove empty content div (e.g. when assistant only made tool calls)
+    if (!el._rawText) el.remove()
+  }
   const wrapper = document.getElementById("streaming-msg")
-  if (wrapper) wrapper.removeAttribute("id")
+  if (!wrapper) return
+  wrapper.removeAttribute("id")
+
+  // Text-only messages (no tool cards) get copy/retry actions
+  const hasToolCards = wrapper.querySelector(".tool-card")
+  const hasText = el && el._rawText
+  if (msgIndex !== undefined && hasText && !hasToolCards) {
+    wrapper.classList.add("assistant-message-row")
+    wrapper.dataset.msgIndex = msgIndex
+    const inner = wrapper.querySelector(".max-w-3xl")
+    if (inner && !inner.querySelector(".assistant-msg-actions")) {
+      const actions = document.createElement("div")
+      actions.className = "assistant-msg-actions"
+      actions.innerHTML = `
+        <button class="msg-action-btn" data-action="copy-assistant" title="Copy">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>
+        </button>
+        <button class="msg-action-btn" data-action="retry-assistant" title="Try again">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+        </button>
+      `
+      inner.appendChild(actions)
+    }
+  }
 }
 
 export function appendStreamingToolCard(toolCallId, code) {

@@ -136,6 +136,37 @@ textarea {
   display: none;
 }
 
+.tool-card-header .tool-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  color: #9ca3af;
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.tool-card-header:hover .tool-header-btn {
+  opacity: 1;
+}
+
+.tool-card-header .tool-header-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.dark .tool-card-header .tool-header-btn:hover {
+  background: #374151;
+  color: #d1d5db;
+}
+
+.tool-card-header .recalc-btn.recalculating {
+  opacity: 1;
+  animation: spin 0.6s linear infinite;
+}
+
 .tool-card-code {
   padding: 0.75rem;
   background: #1e1e2e;
@@ -287,6 +318,19 @@ textarea {
   opacity: 0;
   transition: opacity 0.15s;
   margin-top: 0.125rem;
+}
+
+.assistant-msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 0.25rem;
+}
+
+.assistant-message-row:hover .assistant-msg-actions {
+  opacity: 1;
 }
 
 .user-message-row:hover .user-msg-actions {
