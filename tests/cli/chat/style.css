@@ -3,8 +3,8 @@
   html:not(.light) { @apply dark; }
 }
 
-/* Textarea auto-resize helper */
-#input {
+/* Textarea auto-resize */
+textarea {
   field-sizing: content;
 }
 
@@ -258,6 +258,45 @@
 .dark .conv-item .delete-btn:hover {
   background: #450a0a;
   color: #fca5a5;
+}
+
+/* User message actions */
+.user-message-row {
+  position: relative;
+}
+
+.user-msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 0.125rem;
+}
+
+.user-message-row:hover .user-msg-actions {
+  opacity: 1;
+}
+
+.msg-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.375rem;
+  color: #9ca3af;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.msg-action-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.dark .msg-action-btn:hover {
+  background: #374151;
+  color: #d1d5db;
 }
 
 /* Streaming cursor */

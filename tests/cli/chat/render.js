@@ -39,18 +39,30 @@ export function renderMarkdown(text) {
   return DOMPurify.sanitize(html)
 }
 
-export function createMessageElement(msg) {
-  if (msg.role === "user") return createUserMessage(msg)
+export function createMessageElement(msg, index) {
+  if (msg.role === "user") return createUserMessage(msg, index)
   if (msg.role === "assistant") return createAssistantMessage(msg)
   if (msg.role === "tool") return createToolResultMessage(msg)
   return null
 }
 
-function createUserMessage(msg) {
+function createUserMessage(msg, index) {
   const el = document.createElement("div")
-  el.className = "flex justify-end px-4 py-3"
+  el.className = "user-message-row flex flex-col items-end px-4 py-3"
+  if (index !== undefined) el.dataset.msgIndex = index
   el.innerHTML = `
     <div class="max-w-[80%] px-4 py-2.5 rounded-2xl bg-blue-600 text-white text-sm whitespace-pre-wrap">${escapeHtml(msg.content)}</div>
+    <div class="user-msg-actions">
+      <button class="msg-action-btn" data-action="copy" title="Copy">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>
+      </button>
+      <button class="msg-action-btn" data-action="edit" title="Edit">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+      <button class="msg-action-btn" data-action="retry" title="Retry">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+      </button>
+    </div>
   `
   return el
 }
