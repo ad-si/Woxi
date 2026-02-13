@@ -18,6 +18,8 @@ const SYSTEM_PROMPT = `
     and don't try exactly the same code again.
   Even if the error message implies that a function was used incorrectly,
     it might actually be the case that the function is actually not defined in the environment.
+  If the final result is a symbolic expression,
+    always also show the numerical approximation of it using N[] for better readability.
 `
 
 export function getSettings() {

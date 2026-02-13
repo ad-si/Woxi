@@ -74,6 +74,8 @@ async function init() {
   // Auto-open settings if no API key configured
   if (!hasApiKey()) {
     openSettings(true)
+  } else {
+    activeInput().focus()
   }
 
   // Init WASM

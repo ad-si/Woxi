@@ -68,6 +68,8 @@ editorView = new EditorView({
   parent: document.getElementById("editor"),
 })
 
+editorView.focus()
+
 // Switch CodeMirror theme when system preference changes
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   editorView.dispatch({
