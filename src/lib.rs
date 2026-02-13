@@ -58,6 +58,7 @@ pub struct InterpretResult {
   pub stdout: String,
   pub result: String,
   pub graphics: Option<String>,
+  pub warnings: Vec<String>,
 }
 
 impl WolframParser {
@@ -85,6 +86,16 @@ thread_local! {
     static CAPTURED_GRAPHICS: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
+// Captured unimplemented function calls (e.g. "Quantity[13.77, \"BillionYears\"]")
+thread_local! {
+    static UNIMPLEMENTED_CALLS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+// Captured warnings (general-purpose, e.g. deprecation notices)
+thread_local! {
+    static CAPTURED_WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
 /// Clears the captured stdout buffer
 fn clear_captured_stdout() {
   CAPTURED_STDOUT.with(|buffer| {
@@ -103,6 +114,52 @@ fn capture_stdout(text: &str) {
 /// Gets the captured stdout content
 fn get_captured_stdout() -> String {
   CAPTURED_STDOUT.with(|buffer| buffer.borrow().clone())
+}
+
+/// Clears the captured warnings and unimplemented calls buffers
+fn clear_captured_warnings() {
+  UNIMPLEMENTED_CALLS.with(|buffer| {
+    buffer.borrow_mut().clear();
+  });
+  CAPTURED_WARNINGS.with(|buffer| {
+    buffer.borrow_mut().clear();
+  });
+}
+
+/// Records a call to an unimplemented built-in function (e.g. "Quantity[13.77, \"BillionYears\"]")
+pub fn capture_unimplemented_call(call_str: &str) {
+  UNIMPLEMENTED_CALLS.with(|buffer| {
+    buffer.borrow_mut().push(call_str.to_string());
+  });
+}
+
+/// Appends a warning message
+pub fn capture_warning(text: &str) {
+  CAPTURED_WARNINGS.with(|buffer| {
+    buffer.borrow_mut().push(text.to_string());
+  });
+}
+
+/// Gets the captured warnings, consolidating unimplemented function calls into a single message
+pub fn get_captured_warnings() -> Vec<String> {
+  let mut warnings = Vec::new();
+
+  let calls = UNIMPLEMENTED_CALLS.with(|buffer| buffer.borrow().clone());
+  if !calls.is_empty() {
+    let joined = calls.join(", ");
+    let verb = if calls.len() == 1 {
+      "is a built-in Wolfram Language function"
+    } else {
+      "are built-in Wolfram Language functions"
+    };
+    warnings.push(format!("{} {} not yet implemented in Woxi.", joined, verb));
+  }
+
+  CAPTURED_WARNINGS.with(|buffer| {
+    warnings.extend(buffer.borrow().clone());
+  });
+
+  warnings
 }
 
 /// Clears the captured graphics buffer
@@ -271,9 +328,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     current
   });
 
-  // Only clear stdout at top level
+  // Only clear buffers at top level
   if depth == 0 {
     clear_captured_stdout();
+    clear_captured_warnings();
   }
 
   // Decrement depth on scope exit
@@ -333,6 +391,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         trailing_semicolon = true;
       }
       _ => {} // ignore EOI, etc.
+    }
+  }
+
+  // Print consolidated unimplemented-function warning to stderr (top-level only)
+  if depth == 0 {
+    for w in get_captured_warnings() {
+      eprintln!("{}", w);
     }
   }
 
@@ -652,6 +717,7 @@ pub fn interpret_with_stdout(
   // Clear the capture buffers
   clear_captured_stdout();
   clear_captured_graphics();
+  clear_captured_warnings();
 
   // Perform the standard interpretation
   let result = interpret(input)?;
@@ -659,12 +725,14 @@ pub fn interpret_with_stdout(
   // Get the captured output
   let stdout = get_captured_stdout();
   let graphics = get_captured_graphics();
+  let warnings = get_captured_warnings();
 
   // Return stdout, result, and any graphical output
   Ok(InterpretResult {
     stdout,
     result,
     graphics,
+    warnings,
   })
 }
 

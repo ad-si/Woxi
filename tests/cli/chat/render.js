@@ -142,7 +142,7 @@ export function createToolCard(toolCallId, code, result, isError, graphics) {
   return card
 }
 
-export function updateToolCard(toolCallId, result, isError, graphics) {
+export function updateToolCard(toolCallId, result, isError, graphics, warnings) {
   const card = document.querySelector(`.tool-card[data-tool-call-id="${toolCallId}"]`)
   if (!card) return
 
@@ -158,6 +158,13 @@ export function updateToolCard(toolCallId, result, isError, graphics) {
   }
 
   const body = card.querySelector(".tool-card-body")
+
+  if (warnings) {
+    const warningEl = document.createElement("div")
+    warningEl.className = "tool-card-result warning"
+    warningEl.textContent = warnings
+    body.appendChild(warningEl)
+  }
 
   const resultEl = document.createElement("div")
   resultEl.className = `tool-card-result${isError ? " error" : ""}`

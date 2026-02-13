@@ -30,6 +30,13 @@ pub fn get_graphics() -> String {
   crate::get_captured_graphics().unwrap_or_default()
 }
 
+/// Return warnings from the last `evaluate()` call as newline-separated text.
+/// Returns an empty string when there are no warnings.
+#[wasm_bindgen]
+pub fn get_warnings() -> String {
+  crate::get_captured_warnings().join("\n")
+}
+
 /// Clear all interpreter state (variables and function definitions).
 #[wasm_bindgen]
 pub fn clear() {

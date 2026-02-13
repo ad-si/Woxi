@@ -125,7 +125,7 @@ function initWorker() {
   worker = new Worker("worker.js", { type: "module" })
 
   worker.onmessage = (e) => {
-    const { type, success, message, result } = e.data
+    const { type, success, message, result, warnings } = e.data
 
     if (type === "init") {
       if (success) {
@@ -141,7 +141,10 @@ function initWorker() {
       document.getElementById("runBtn").disabled = false
 
       if (success) {
-        document.getElementById("output").textContent = result
+        let output = ""
+        if (warnings) output += warnings + "\n"
+        output += result
+        document.getElementById("output").textContent = output
       }
       else {
         document.getElementById("output").textContent = message

@@ -50,7 +50,7 @@ export function clearState() {
 }
 
 function onMessage(e) {
-  const { type, success, message, result, graphics } = e.data
+  const { type, success, message, result, graphics, warnings } = e.data
 
   if (type === "init") {
     if (success) {
@@ -71,7 +71,7 @@ function onMessage(e) {
       evalTimeout = null
     }
     if (success) {
-      if (evalResolve) evalResolve({ result, graphics })
+      if (evalResolve) evalResolve({ result, graphics, warnings })
     } else {
       if (evalReject) evalReject(new Error(message))
     }
