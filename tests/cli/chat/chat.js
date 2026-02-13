@@ -21,6 +21,10 @@ const SYSTEM_PROMPT = `
   If the final result is a symbolic expression,
     always also show the numerical approximation of it using N[] for better readability.
   Use camelCase for function names and variables.
+  When presenting mathematical expressions in your text responses,
+    format them using LaTeX wrapped in dollar signs:
+    $x^2 + 1$ for inline math and $$\\int_0^1 x^2 \\, dx$$ for display math.
+    The chat renders math with KaTeX.
 `
 
 export function getSettings() {

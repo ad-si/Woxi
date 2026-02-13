@@ -1,9 +1,48 @@
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js"
 import DOMPurify from "https://cdn.jsdelivr.net/npm/dompurify/dist/purify.es.mjs"
 
+const mathInline = {
+  name: "mathInline",
+  level: "inline",
+  start(src) { return src.indexOf("$") },
+  tokenizer(src) {
+    const match = src.match(/^\$([^\$\n]+?)\$/)
+    if (match) {
+      return { type: "mathInline", raw: match[0], text: match[1].trim() }
+    }
+  },
+  renderer(token) {
+    try {
+      return window.katex.renderToString(token.text, { throwOnError: false })
+    } catch {
+      return `<code>${escapeHtml(token.text)}</code>`
+    }
+  },
+}
+
+const mathBlock = {
+  name: "mathBlock",
+  level: "block",
+  start(src) { return src.indexOf("$$") },
+  tokenizer(src) {
+    const match = src.match(/^\$\$([\s\S]+?)\$\$/)
+    if (match) {
+      return { type: "mathBlock", raw: match[0], text: match[1].trim() }
+    }
+  },
+  renderer(token) {
+    try {
+      return `<div class="katex-display">${window.katex.renderToString(token.text, { throwOnError: false, displayMode: true })}</div>`
+    } catch {
+      return `<pre><code>${escapeHtml(token.text)}</code></pre>`
+    }
+  },
+}
+
 const marked = new Marked({
   breaks: true,
   gfm: true,
+  extensions: [mathBlock, mathInline],
 })
 
 function highlightCode(code, lang) {
