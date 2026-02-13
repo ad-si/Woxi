@@ -382,6 +382,7 @@ async function runAssistantTurn() {
           toolCallCount++
           let result, isError = false, graphics = ""
 
+          let warnings = ""
           if (!isReady()) {
             result = "Error: WASM interpreter not loaded"
             isError = true
@@ -390,6 +391,7 @@ async function runAssistantTurn() {
               const evalResult = await evaluateCode(tc.arguments.code)
               result = evalResult.result
               graphics = evalResult.graphics || ""
+              warnings = evalResult.warnings || ""
               isError = result.startsWith("Error:")
             } catch (e) {
               result = "Error: " + e.message
@@ -397,10 +399,11 @@ async function runAssistantTurn() {
             }
           }
 
-          updateToolCard(tc.id, result, isError, graphics)
+          updateToolCard(tc.id, result, isError, graphics, warnings)
           scrollToBottom()
 
-          const toolMsg = { role: "tool", tool_call_id: tc.id, content: result }
+          const content = warnings ? `${result}\n\nWarning: ${warnings}` : result
+          const toolMsg = { role: "tool", tool_call_id: tc.id, content }
           if (graphics) toolMsg.graphics = graphics
           appendMessage(activeConvId, toolMsg)
         }

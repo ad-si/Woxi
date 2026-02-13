@@ -168,6 +168,16 @@ textarea {
   color: #fca5a5;
 }
 
+.tool-card-result.warning {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.dark .tool-card-result.warning {
+  background: #451a03;
+  color: #fcd34d;
+}
+
 .tool-card-result.graphics {
   background: white;
   display: flex;

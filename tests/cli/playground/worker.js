@@ -41,7 +41,8 @@ self.onmessage = async function (e) {
 
     try {
       const result = wasm.evaluate(code)
-      postMessage({ type: "result", success: true, result: result })
+      const warnings = wasm.get_warnings()
+      postMessage({ type: "result", success: true, result, warnings })
     }
     catch (error) {
       postMessage({

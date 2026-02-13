@@ -6,6 +6,38 @@ use crate::{
   format_result, interpret,
 };
 
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+/// Set of known Wolfram Language function names (from functions.csv)
+/// that are NOT yet implemented in Woxi.
+static KNOWN_WOLFRAM_FUNCTIONS: LazyLock<HashSet<&'static str>> =
+  LazyLock::new(|| {
+    let csv = include_str!("../functions.csv");
+    csv
+      .lines()
+      .skip(1) // skip header
+      .filter_map(|line| {
+        let mut parts = line.splitn(3, ',');
+        let name = parts.next()?.trim();
+        let _desc = parts.next()?;
+        let status = parts.next().unwrap_or("").trim();
+        // Only include functions that are NOT implemented (not ✅)
+        if status != "✅" && !name.is_empty() && name != "-----" {
+          Some(name)
+        } else {
+          None
+        }
+      })
+      .collect()
+  });
+
+/// Check if a function name is a known Wolfram Language function
+/// that hasn't been implemented yet.
+fn is_known_wolfram_function(name: &str) -> bool {
+  KNOWN_WOLFRAM_FUNCTIONS.contains(name)
+}
+
 /// Evaluate an Expr AST directly without re-parsing.
 /// This is the core optimization that avoids re-parsing function bodies.
 pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
@@ -3277,6 +3309,17 @@ pub fn evaluate_function_call_ast(
         other => other,
       };
     }
+  }
+
+  // Check if the function is a known but unimplemented Wolfram Language function
+  if is_known_wolfram_function(name) {
+    let args_str = args
+      .iter()
+      .map(expr_to_string)
+      .collect::<Vec<_>>()
+      .join(", ");
+    let call_str = format!("{}[{}]", name, args_str);
+    crate::capture_unimplemented_call(&call_str);
   }
 
   // Unknown function - return as symbolic function call

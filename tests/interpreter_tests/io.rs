@@ -348,3 +348,130 @@ mod echo {
     assert_eq!(result.stdout, ">> hello\n");
   }
 }
+
+mod unimplemented_warnings {
+  use super::*;
+
+  #[test]
+  fn known_wolfram_function_produces_warning() {
+    clear_state();
+    let result = interpret_with_stdout("Graph[{1, 2, 3}]").unwrap();
+    assert_eq!(result.result, "Graph[{1, 2, 3}]");
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains("not yet implemented"));
+    assert!(result.warnings[0].contains("Graph["));
+  }
+
+  #[test]
+  fn unknown_function_no_warning() {
+    clear_state();
+    let result = interpret_with_stdout("MyCustomFunc[1, 2]").unwrap();
+    assert_eq!(result.result, "MyCustomFunc[1, 2]");
+    assert!(result.warnings.is_empty());
+  }
+
+  #[test]
+  fn implemented_function_no_warning() {
+    clear_state();
+    let result = interpret_with_stdout("Map[f, {1, 2}]").unwrap();
+    assert_eq!(result.result, "{f[1], f[2]}");
+    assert!(result.warnings.is_empty());
+  }
+
+  #[test]
+  fn warning_not_in_stdout() {
+    clear_state();
+    let result = interpret_with_stdout("Graph[{1}]").unwrap();
+    assert!(!result.stdout.contains("not yet implemented"));
+    assert!(!result.warnings.is_empty());
+  }
+
+  #[test]
+  fn multiple_unimplemented_calls_consolidated_into_single_warning() {
+    clear_state();
+    let result = interpret_with_stdout("{Graph[1], Grid[2]}").unwrap();
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains("Graph[1]"));
+    assert!(result.warnings[0].contains("Grid[2]"));
+    assert!(
+      result.warnings[0].contains("are built-in Wolfram Language functions")
+    );
+  }
+
+  /// Reads functions.csv at compile time and verifies consistency:
+  /// - Every ✅/🚧 function must not produce an "unimplemented" warning
+  ///   (catches stale ✅ marks for functions removed from the evaluator)
+  /// - Every unmarked function that IS dispatched by the evaluator
+  ///   must be flagged (catches forgetting to mark a new function as ✅)
+  #[test]
+  fn functions_csv_consistent_with_evaluator() {
+    let csv = include_str!("../../functions.csv");
+    let mut marked: Vec<String> = Vec::new();
+    let mut unmarked: Vec<String> = Vec::new();
+
+    for line in csv.lines().skip(1) {
+      let mut parts = line.splitn(3, ',');
+      let name = match parts.next() {
+        Some(n) => n.trim().to_string(),
+        None => continue,
+      };
+      if name.is_empty() || name == "-----" || name.starts_with('$') {
+        continue;
+      }
+      let _desc = parts.next();
+      let status = parts.next().unwrap_or("").trim();
+      if status == "✅" || status == "🚧" {
+        marked.push(name);
+      } else {
+        unmarked.push(name);
+      }
+    }
+
+    // 1. Every marked function should not produce an "unimplemented" warning
+    let mut stale_marks = Vec::new();
+    for func in &marked {
+      clear_state();
+      let code = format!("{}[0]", func);
+      if let Ok(result) = interpret_with_stdout(&code) {
+        if result
+          .warnings
+          .iter()
+          .any(|w| w.contains("not yet implemented"))
+        {
+          stale_marks.push(func.clone());
+        }
+      }
+    }
+
+    // 2. Every unmarked function that doesn't warn is secretly implemented
+    let mut missing_marks = Vec::new();
+    for func in &unmarked {
+      clear_state();
+      let code = format!("{}[0]", func);
+      if let Ok(result) = interpret_with_stdout(&code) {
+        if !result
+          .warnings
+          .iter()
+          .any(|w| w.contains("not yet implemented"))
+        {
+          missing_marks.push(func.clone());
+        }
+      }
+    }
+
+    let mut errors = Vec::new();
+    if !stale_marks.is_empty() {
+      errors.push(format!(
+        "Marked as ✅/🚧 but not actually implemented (remove mark): {:?}",
+        stale_marks
+      ));
+    }
+    if !missing_marks.is_empty() {
+      errors.push(format!(
+        "Implemented but not marked in functions.csv (add ✅): {:?}",
+        missing_marks
+      ));
+    }
+    assert!(errors.is_empty(), "\n{}", errors.join("\n"));
+  }
+}
