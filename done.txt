@@ -1,0 +1,8 @@
+FILE: mathics/builtin/numeric.py
+CLASS: Sign
+LINE: 773
+TYPE: >>
+INPUT: Sign[3 - 4*I]
+EXPECTED:
+= 3 / 5 - 4 I / 5
+---

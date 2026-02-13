@@ -1521,3 +1521,98 @@ mod listable {
     assert_eq!(interpret("Floor[{1.2, 2.7, 3.5}]").unwrap(), "{1, 2, 3}");
   }
 }
+
+#[cfg(test)]
+mod sign_complex_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn sign_positive_integer() {
+    assert_eq!(interpret("Sign[19]").unwrap(), "1");
+  }
+
+  #[test]
+  fn sign_negative_integer() {
+    assert_eq!(interpret("Sign[-6]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn sign_zero() {
+    assert_eq!(interpret("Sign[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn sign_list() {
+    assert_eq!(
+      interpret("Sign[{-5, -10, 15, 20, 0}]").unwrap(),
+      "{-1, -1, 1, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn sign_complex_pythagorean() {
+    // Sign[3 - 4*I] = (3 - 4I) / 5
+    assert_eq!(interpret("Sign[3 - 4*I]").unwrap(), "3/5 - (4*I)/5");
+  }
+
+  #[test]
+  fn sign_complex_positive_imaginary() {
+    assert_eq!(interpret("Sign[3 + 4*I]").unwrap(), "3/5 + (4*I)/5");
+  }
+
+  #[test]
+  fn sign_pure_imaginary() {
+    assert_eq!(interpret("Sign[I]").unwrap(), "I");
+  }
+
+  #[test]
+  fn sign_negative_imaginary() {
+    assert_eq!(interpret("Sign[-I]").unwrap(), "-I");
+  }
+
+  #[test]
+  fn sign_complex_irrational_abs() {
+    // Sign[1 + I] = (1 + I) / Sqrt[2]
+    assert_eq!(interpret("Sign[1 + I]").unwrap(), "(1 + I)/Sqrt[2]");
+  }
+
+  #[test]
+  fn sign_complex_irrational_abs_negative() {
+    assert_eq!(interpret("Sign[1 - I]").unwrap(), "(1 - I)/Sqrt[2]");
+  }
+
+  #[test]
+  fn sign_complex_2_plus_i() {
+    assert_eq!(interpret("Sign[2 + I]").unwrap(), "(2 + I)/Sqrt[5]");
+  }
+}
+
+#[cfg(test)]
+mod abs_complex_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn abs_complex_pythagorean() {
+    assert_eq!(interpret("Abs[3 + 4*I]").unwrap(), "5");
+  }
+
+  #[test]
+  fn abs_complex_pythagorean_negative() {
+    assert_eq!(interpret("Abs[3 - 4*I]").unwrap(), "5");
+  }
+
+  #[test]
+  fn abs_pure_imaginary() {
+    assert_eq!(interpret("Abs[I]").unwrap(), "1");
+  }
+
+  #[test]
+  fn abs_complex_irrational() {
+    assert_eq!(interpret("Abs[1 + I]").unwrap(), "Sqrt[2]");
+  }
+
+  #[test]
+  fn abs_negative_complex() {
+    assert_eq!(interpret("Abs[-3 - 4*I]").unwrap(), "5");
+  }
+}

@@ -1240,6 +1240,202 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Try to extract exact complex parts (re, im) from an expression as rational tuples (num, den).
+/// Returns Some(((re_num, re_den), (im_num, im_den))) if the expression is a numeric complex number.
+/// Handles patterns like: a + b*I, a - b*I, b*I, I, and plain reals.
+fn try_extract_complex_exact(
+  expr: &Expr,
+) -> Option<((i128, i128), (i128, i128))> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    // Pure imaginary: I
+    Expr::Identifier(name) if name == "I" => Some(((0, 1), (1, 1))),
+    // Real number (integer or rational)
+    _ if expr_to_rational(expr).is_some() => {
+      let (n, d) = expr_to_rational(expr).unwrap();
+      Some(((n, d), (0, 1)))
+    }
+    // -I or -expr
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let ((rn, rd), (in_, id)) = try_extract_complex_exact(operand)?;
+      Some(((-rn, rd), (-in_, id)))
+    }
+    // Times: n * I, or n * (m * I), etc.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let lc = try_extract_complex_exact(left)?;
+      let rc = try_extract_complex_exact(right)?;
+      // (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+      let ((an, ad_), (bn, bd_)) = lc;
+      let ((cn, cd), (dn, dd)) = rc;
+      // Real part: (an/ad_)*(cn/cd) - (bn/bd_)*(dn/dd)
+      // = (an*cn)/(ad_*cd) - (bn*dn)/(bd_*dd)
+      let re_n1 = an.checked_mul(cn)?;
+      let re_d1 = ad_.checked_mul(cd)?;
+      let re_n2 = bn.checked_mul(dn)?;
+      let re_d2 = bd_.checked_mul(dd)?;
+      // re = re_n1/re_d1 - re_n2/re_d2 = (re_n1*re_d2 - re_n2*re_d1) / (re_d1*re_d2)
+      let re_num = re_n1.checked_mul(re_d2)? - re_n2.checked_mul(re_d1)?;
+      let re_den = re_d1.checked_mul(re_d2)?;
+      // Imag part: (an/ad_)*(dn/dd) + (bn/bd_)*(cn/cd)
+      let im_n1 = an.checked_mul(dn)?;
+      let im_d1 = ad_.checked_mul(dd)?;
+      let im_n2 = bn.checked_mul(cn)?;
+      let im_d2 = bd_.checked_mul(cd)?;
+      let im_num = im_n1.checked_mul(im_d2)? + im_n2.checked_mul(im_d1)?;
+      let im_den = im_d1.checked_mul(im_d2)?;
+      Some(((re_num, re_den), (im_num, im_den)))
+    }
+    // Plus: a + b*I
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let ((an, ad_), (bn, bd_)) = try_extract_complex_exact(left)?;
+      let ((cn, cd), (dn, dd)) = try_extract_complex_exact(right)?;
+      // (a + bi) + (c + di) = (a+c) + (b+d)i
+      let re_num = an.checked_mul(cd)? + cn.checked_mul(ad_)?;
+      let re_den = ad_.checked_mul(cd)?;
+      let im_num = bn.checked_mul(dd)? + dn.checked_mul(bd_)?;
+      let im_den = bd_.checked_mul(dd)?;
+      Some(((re_num, re_den), (im_num, im_den)))
+    }
+    // Minus: a - b*I
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let ((an, ad_), (bn, bd_)) = try_extract_complex_exact(left)?;
+      let ((cn, cd), (dn, dd)) = try_extract_complex_exact(right)?;
+      let re_num = an.checked_mul(cd)? - cn.checked_mul(ad_)?;
+      let re_den = ad_.checked_mul(cd)?;
+      let im_num = bn.checked_mul(dd)? - dn.checked_mul(bd_)?;
+      let im_den = bd_.checked_mul(dd)?;
+      Some(((re_num, re_den), (im_num, im_den)))
+    }
+    // FunctionCall Times[...] - flattened form
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      if args.is_empty() {
+        return None;
+      }
+      let mut result = try_extract_complex_exact(&args[0])?;
+      for arg in &args[1..] {
+        let rhs = try_extract_complex_exact(arg)?;
+        let ((an, ad_), (bn, bd_)) = result;
+        let ((cn, cd), (dn, dd)) = rhs;
+        let re_n1 = an.checked_mul(cn)?;
+        let re_d1 = ad_.checked_mul(cd)?;
+        let re_n2 = bn.checked_mul(dn)?;
+        let re_d2 = bd_.checked_mul(dd)?;
+        let re_num = re_n1.checked_mul(re_d2)? - re_n2.checked_mul(re_d1)?;
+        let re_den = re_d1.checked_mul(re_d2)?;
+        let im_n1 = an.checked_mul(dn)?;
+        let im_d1 = ad_.checked_mul(dd)?;
+        let im_n2 = bn.checked_mul(cn)?;
+        let im_d2 = bd_.checked_mul(cd)?;
+        let im_num = im_n1.checked_mul(im_d2)? + im_n2.checked_mul(im_d1)?;
+        let im_den = im_d1.checked_mul(im_d2)?;
+        result = ((re_num, re_den), (im_num, im_den));
+      }
+      Some(result)
+    }
+    // FunctionCall Plus[...] - flattened form
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      if args.is_empty() {
+        return None;
+      }
+      let mut result = try_extract_complex_exact(&args[0])?;
+      for arg in &args[1..] {
+        let rhs = try_extract_complex_exact(arg)?;
+        let ((an, ad_), (bn, bd_)) = result;
+        let ((cn, cd), (dn, dd)) = rhs;
+        let re_num = an.checked_mul(cd)? + cn.checked_mul(ad_)?;
+        let re_den = ad_.checked_mul(cd)?;
+        let im_num = bn.checked_mul(dd)? + dn.checked_mul(bd_)?;
+        let im_den = bd_.checked_mul(dd)?;
+        result = ((re_num, re_den), (im_num, im_den));
+      }
+      Some(result)
+    }
+    _ => None,
+  }
+}
+
+/// Build a complex number expression from exact rational parts.
+/// Handles special cases: 0 + bi = bi, a + 0i = a, coefficient ±1 elision, etc.
+fn build_complex_expr(
+  re_num: i128,
+  re_den: i128,
+  im_num: i128,
+  im_den: i128,
+) -> Expr {
+  let re = make_rational(re_num, re_den);
+  let g_i = gcd(im_num.abs(), im_den.abs());
+  let (in_s, id_s) = if im_den < 0 {
+    (-im_num / g_i, -im_den / g_i)
+  } else {
+    (im_num / g_i, im_den / g_i)
+  };
+
+  let i_expr = Expr::Identifier("I".to_string());
+
+  // Build the imaginary term with correct sign handling
+  let im_abs_num = in_s.abs();
+  let im_positive = in_s > 0;
+
+  // Build |im| * I
+  let im_term = if im_abs_num == 0 {
+    return re; // Pure real
+  } else if im_abs_num == 1 && id_s == 1 {
+    i_expr
+  } else {
+    let coeff = make_rational(im_abs_num, id_s);
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(coeff),
+      right: Box::new(i_expr),
+    }
+  };
+
+  // Check if real part is zero
+  let g_r = gcd(re_num.abs(), re_den.abs());
+  let re_simplified = if re_den == 0 { re_num } else { re_num / g_r };
+  if re_simplified == 0 {
+    // Pure imaginary
+    return if im_positive {
+      im_term
+    } else {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(im_term),
+      }
+    };
+  }
+
+  // Build re ± im*I
+  if im_positive {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(re),
+      right: Box::new(im_term),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(re),
+      right: Box::new(im_term),
+    }
+  }
+}
+
 /// Abs[x] - Absolute value
 pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -1248,16 +1444,61 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
-    Ok(num_to_expr(n.abs()))
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Abs".to_string(),
-      args: args.to_vec(),
-    })
+    return Ok(num_to_expr(n.abs()));
   }
+  // Handle complex numbers: Abs[a + b*I] = Sqrt[a^2 + b^2]
+  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
+    let g_r = gcd(rn, rd);
+    let (rn, rd) = if rd < 0 {
+      (-rn / g_r, -rd / g_r)
+    } else {
+      (rn / g_r, rd / g_r)
+    };
+    let g_i = gcd(in_, id);
+    let (in_, id) = if id < 0 {
+      (-in_ / g_i, -id / g_i)
+    } else {
+      (in_ / g_i, id / g_i)
+    };
+    if in_ == 0 {
+      // Pure real
+      return Ok(make_rational(rn.abs(), rd));
+    }
+    // Abs = Sqrt[(rn/rd)^2 + (in_/id)^2]
+    // = Sqrt[(rn^2 * id^2 + in_^2 * rd^2) / (rd^2 * id^2)]
+    if let (Some(num2), Some(den2)) = (
+      rn.checked_mul(rn)
+        .and_then(|a| id.checked_mul(id).and_then(|b| a.checked_mul(b)))
+        .and_then(|a| {
+          in_
+            .checked_mul(in_)
+            .and_then(|c| rd.checked_mul(rd).and_then(|d| c.checked_mul(d)))
+            .and_then(|b| a.checked_add(b))
+        }),
+      rd.checked_mul(rd)
+        .and_then(|a| id.checked_mul(id).and_then(|b| a.checked_mul(b))),
+    ) {
+      // Check if num2 is a perfect square
+      let num_sqrt = (num2 as f64).sqrt().round() as i128;
+      let den_sqrt = (den2 as f64).sqrt().round() as i128;
+      if num_sqrt * num_sqrt == num2 && den_sqrt * den_sqrt == den2 {
+        return Ok(make_rational(num_sqrt, den_sqrt));
+      }
+      // Return Sqrt[num2/den2]
+      return Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![make_rational(num2, den2)],
+      });
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Sign[x] - Sign of a number (-1, 0, or 1)
+/// For complex z: Sign[z] = z / Abs[z]
 pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1265,19 +1506,96 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
-    Ok(Expr::Integer(if n > 0.0 {
+    return Ok(Expr::Integer(if n > 0.0 {
       1
     } else if n < 0.0 {
       -1
     } else {
       0
-    }))
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Sign".to_string(),
-      args: args.to_vec(),
-    })
+    }));
   }
+  // Handle complex numbers: Sign[a + b*I] = (a + b*I) / Abs[a + b*I]
+  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
+    let g_r = gcd(rn, rd);
+    let (rn, rd) = if rd < 0 {
+      (-rn / g_r, -rd / g_r)
+    } else {
+      (rn / g_r, rd / g_r)
+    };
+    let g_i = gcd(in_, id);
+    let (in_, id) = if id < 0 {
+      (-in_ / g_i, -id / g_i)
+    } else {
+      (in_ / g_i, id / g_i)
+    };
+    if in_ == 0 {
+      // Pure real - already handled above by try_eval_to_f64
+      return Ok(Expr::Integer(if rn > 0 {
+        1
+      } else if rn < 0 {
+        -1
+      } else {
+        0
+      }));
+    }
+    // Compute |z|^2 = (rn/rd)^2 + (in_/id)^2 = (rn^2*id^2 + in_^2*rd^2) / (rd^2*id^2)
+    if let (Some(abs2_num), Some(abs2_den)) = (
+      rn.checked_mul(rn)
+        .and_then(|a| id.checked_mul(id).and_then(|b| a.checked_mul(b)))
+        .and_then(|a| {
+          in_
+            .checked_mul(in_)
+            .and_then(|c| rd.checked_mul(rd).and_then(|d| c.checked_mul(d)))
+            .and_then(|b| a.checked_add(b))
+        }),
+      rd.checked_mul(rd)
+        .and_then(|a| id.checked_mul(id).and_then(|b| a.checked_mul(b))),
+    ) {
+      // Simplify |z|^2 fraction
+      let g_abs = gcd(abs2_num.abs(), abs2_den.abs());
+      let (abs2_n, abs2_d) = (abs2_num / g_abs, abs2_den / g_abs);
+
+      // Check if |z|^2 is a perfect square (so |z| is rational)
+      let abs2_sqrt = (abs2_n as f64).sqrt().round() as i128;
+      let den_sqrt = (abs2_d as f64).sqrt().round() as i128;
+      if abs2_sqrt * abs2_sqrt == abs2_n
+        && den_sqrt * den_sqrt == abs2_d
+        && abs2_sqrt != 0
+      {
+        // |z| = abs2_sqrt / den_sqrt
+        // Sign = z / |z| = (rn/rd + (in_/id)*I) * (den_sqrt/abs2_sqrt)
+        // Real part: (rn * den_sqrt) / (rd * abs2_sqrt)
+        // Imag part: (in_ * den_sqrt) / (id * abs2_sqrt)
+        let sign_re_num = rn.checked_mul(den_sqrt);
+        let sign_re_den = rd.checked_mul(abs2_sqrt);
+        let sign_im_num = in_.checked_mul(den_sqrt);
+        let sign_im_den = id.checked_mul(abs2_sqrt);
+        if let (Some(srn), Some(srd), Some(sin), Some(sid)) =
+          (sign_re_num, sign_re_den, sign_im_num, sign_im_den)
+        {
+          return Ok(build_complex_expr(srn, srd, sin, sid));
+        }
+      } else {
+        // |z| is irrational: Sign[z] = z / Sqrt[|z|^2]
+        // = (a + b*I) / Sqrt[|z|^2]
+        // Build (a + b*I) * (1/Sqrt[|z|^2])
+        let z_expr = build_complex_expr(rn, rd, in_, id);
+        let abs_expr = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![make_rational(abs2_n, abs2_d)],
+        };
+        return Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(z_expr),
+          right: Box::new(abs_expr),
+        });
+      }
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "Sign".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Sqrt[x] - Square root
