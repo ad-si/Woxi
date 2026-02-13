@@ -379,3 +379,159 @@ fn quantity_less_cross_unit() {
     "True"
   );
 }
+
+// ─── Compound unit simplification ──────────────────────────────────────────
+
+#[test]
+fn quantity_divide_speed_by_time() {
+  // km/h divided by Seconds → Kilometers/Seconds^2
+  // (merges Hours and Seconds into Seconds)
+  let result = interpret(
+    "Quantity[100, \"Kilometers\"/\"Hours\"] / Quantity[3.2, \"Seconds\"]",
+  )
+  .unwrap();
+  assert_eq!(
+    result,
+    "Quantity[0.008680555555555556, Kilometers/Seconds^2]"
+  );
+}
+
+#[test]
+fn quantity_multiply_accel_by_time() {
+  // Kilometers/Seconds^2 * Days → Kilometers/Seconds
+  let result = interpret(
+    "Quantity[0.008680555555555556, \"Kilometers\"/\"Seconds\"^2] * Quantity[10, \"Days\"]",
+  )
+  .unwrap();
+  assert_eq!(result, "Quantity[7500., Kilometers/Seconds]");
+}
+
+// ─── Compound UnitConvert ─────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_compound_km_s_to_km_h() {
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[7500, \"Kilometers\"/\"Seconds\"], \"Kilometers\"/\"Hours\"]"
+    )
+    .unwrap(),
+    "Quantity[27000000, Kilometers/Hours]"
+  );
+}
+
+#[test]
+fn unit_convert_m_s_to_km_h() {
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, \"Meters\"/\"Seconds\"], \"Kilometers\"/\"Hours\"]"
+    )
+    .unwrap(),
+    "Quantity[18/5, Kilometers/Hours]"
+  );
+}
+
+// ─── Unit abbreviations ───────────────────────────────────────────────────
+
+#[test]
+fn quantity_abbreviation_km_h() {
+  assert_eq!(
+    interpret("Quantity[1, \"km/h\"]").unwrap(),
+    "Quantity[1, Kilometers/Hours]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_m_s() {
+  assert_eq!(
+    interpret("Quantity[1, \"m/s\"]").unwrap(),
+    "Quantity[1, Meters/Seconds]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_mph() {
+  assert_eq!(
+    interpret("Quantity[1, \"mph\"]").unwrap(),
+    "Quantity[1, Miles/Hours]"
+  );
+}
+
+#[test]
+fn unit_convert_with_abbreviation_target() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Meters\"/\"Seconds\"], \"km/h\"]")
+      .unwrap(),
+    "Quantity[18/5, Kilometers/Hours]"
+  );
+}
+
+// ─── SpeedOfLight ─────────────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_speed_of_light_to_m_s() {
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, \"SpeedOfLight\"], \"Meters\"/\"Seconds\"]"
+    )
+    .unwrap(),
+    "Quantity[299792458, Meters/Seconds]"
+  );
+}
+
+#[test]
+fn unit_convert_speed_of_light_to_km_h() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"SpeedOfLight\"], \"km/h\"]").unwrap(),
+    "Quantity[5396264244/5, Kilometers/Hours]"
+  );
+}
+
+// ─── Compound unit addition ───────────────────────────────────────────────
+
+#[test]
+fn quantity_add_compound_compatible() {
+  // km/h + m/s should add (both are velocity)
+  let result = interpret(
+    "Quantity[1, \"Kilometers\"/\"Hours\"] + Quantity[1, \"Meters\"/\"Seconds\"]",
+  )
+  .unwrap();
+  // 1 + 18/5 = 23/5, but 18/5 as float is 3.6, so 1 + 3.6 = 4.6
+  assert!(result.contains("Kilometers/Hours"));
+}
+
+// ─── Compound unit comparison ─────────────────────────────────────────────
+
+#[test]
+fn quantity_compare_compound_units() {
+  assert_eq!(
+    interpret(
+      "Quantity[100, \"Kilometers\"/\"Hours\"] > Quantity[10, \"Meters\"/\"Seconds\"]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
+// ─── CompatibleUnitQ with compound units ──────────────────────────────────
+
+#[test]
+fn compatible_unit_q_compound() {
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Kilometers\"/\"Hours\"], Quantity[1, \"Meters\"/\"Seconds\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
+#[test]
+fn compatible_unit_q_compound_false() {
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Kilometers\"/\"Hours\"], Quantity[1, \"Meters\"]]"
+    )
+    .unwrap(),
+    "False"
+  );
+}
