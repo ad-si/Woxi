@@ -486,6 +486,32 @@ fn unit_convert_speed_of_light_to_km_h() {
   );
 }
 
+// ─── UnitConvert with compound string target ──────────────────────────────
+
+#[test]
+fn unit_convert_compound_string_target() {
+  // "Meters/Seconds^2" as a string should be parsed as a compound unit
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, Kilometers/Seconds^2], \"Meters/Seconds^2\"]"
+    )
+    .unwrap(),
+    "Quantity[1000, Meters/Seconds^2]"
+  );
+}
+
+#[test]
+fn unit_convert_acceleration_from_velocity() {
+  // Full acceleration calculation: 100 km/h in 3.2 seconds
+  assert_eq!(
+    interpret(
+      "v0 = Quantity[0, \"km/h\"]; v1 = Quantity[100, \"km/h\"]; t1 = Quantity[3.2, \"Seconds\"]; UnitConvert[(v1 - v0) / t1, \"Meters/Seconds^2\"]"
+    )
+    .unwrap(),
+    "Quantity[8.680555555555555, Meters/Seconds^2]"
+  );
+}
+
 // ─── Compound unit addition ───────────────────────────────────────────────
 
 #[test]

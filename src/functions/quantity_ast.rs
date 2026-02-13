@@ -248,6 +248,27 @@ fn resolve_compound_constant(
   }
 }
 
+/// Try to parse a compound unit string (e.g. "Meters/Seconds^2") into an Expr
+/// by running it through the Wolfram parser.
+fn try_parse_unit_string(s: &str) -> Option<Expr> {
+  // Only attempt if it looks like a compound expression (contains / or ^)
+  if !s.contains('/') && !s.contains('^') && !s.contains('*') {
+    return None;
+  }
+  let pairs = crate::parse(s).ok()?;
+  for pair in pairs {
+    if pair.as_rule() == crate::Rule::Expression {
+      return Some(crate::syntax::pair_to_expr(pair));
+    }
+    for inner in pair.into_inner() {
+      if inner.as_rule() == crate::Rule::Expression {
+        return Some(crate::syntax::pair_to_expr(inner));
+      }
+    }
+  }
+  None
+}
+
 /// Recursively decompose a unit Expr into a CompoundUnitInfo.
 fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
   match expr {
@@ -288,6 +309,10 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       // Try abbreviation resolution
       if let Some(resolved) = resolve_unit_abbreviation(name) {
         return decompose_unit_expr(&resolved);
+      }
+      // Try parsing as a compound unit expression (e.g. "Meters/Seconds^2")
+      if let Some(parsed) = try_parse_unit_string(name) {
+        return decompose_unit_expr(&parsed);
       }
       None
     }
@@ -569,6 +594,8 @@ fn normalize_unit(unit: Expr) -> Expr {
         Expr::Identifier(s.clone())
       } else if let Some(expanded) = resolve_unit_abbreviation(s) {
         normalize_unit(expanded)
+      } else if let Some(parsed) = try_parse_unit_string(s) {
+        normalize_unit(parsed)
       } else {
         Expr::Identifier(s.clone())
       }
