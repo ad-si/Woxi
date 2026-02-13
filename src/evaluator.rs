@@ -778,6 +778,12 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               left: Box::new(Expr::Integer(-1)),
               right: Box::new(right_val),
             })
+          } else if crate::functions::quantity_ast::is_quantity(&left_val)
+            .is_some()
+            || crate::functions::quantity_ast::is_quantity(&right_val).is_some()
+          {
+            // Quantity subtraction: delegate to subtract_ast → Plus[a, Times[-1, b]]
+            crate::functions::math_ast::subtract_ast(&[left_val, right_val])
           } else {
             Ok(Expr::BinaryOp {
               op: *op,
@@ -892,6 +898,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               l == r
             } else if expr_to_string(left) == expr_to_string(right) {
               true
+            } else if let Some(ord) =
+              crate::functions::quantity_ast::try_quantity_compare(left, right)
+            {
+              ord == std::cmp::Ordering::Equal
             } else if has_free_symbols(left) || has_free_symbols(right) {
               // Symbolic: return unevaluated
               return Ok(Expr::Comparison {
@@ -933,6 +943,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l < r
+            } else if let Some(ord) =
+              crate::functions::quantity_ast::try_quantity_compare(left, right)
+            {
+              ord == std::cmp::Ordering::Less
             } else {
               // Return unevaluated comparison
               return Ok(Expr::Comparison {
@@ -946,6 +960,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l <= r
+            } else if let Some(ord) =
+              crate::functions::quantity_ast::try_quantity_compare(left, right)
+            {
+              ord != std::cmp::Ordering::Greater
             } else {
               return Ok(Expr::Comparison {
                 operands: values,
@@ -958,6 +976,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l > r
+            } else if let Some(ord) =
+              crate::functions::quantity_ast::try_quantity_compare(left, right)
+            {
+              ord == std::cmp::Ordering::Greater
             } else {
               return Ok(Expr::Comparison {
                 operands: values,
@@ -970,6 +992,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
               l >= r
+            } else if let Some(ord) =
+              crate::functions::quantity_ast::try_quantity_compare(left, right)
+            {
+              ord != std::cmp::Ordering::Less
             } else {
               return Ok(Expr::Comparison {
                 operands: values,
@@ -2476,6 +2502,26 @@ pub fn evaluate_function_call_ast(
       return crate::functions::predicate_ast::construct_ast(args);
     }
 
+    // Quantity functions
+    "Quantity" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::quantity_ast::quantity_ast(args);
+    }
+    "QuantityMagnitude" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::quantity_ast::quantity_magnitude_ast(args);
+    }
+    "QuantityUnit" if args.len() == 1 => {
+      return crate::functions::quantity_ast::quantity_unit_ast(args);
+    }
+    "QuantityQ" if args.len() == 1 => {
+      return crate::functions::quantity_ast::quantity_q_ast(args);
+    }
+    "CompatibleUnitQ" => {
+      return crate::functions::quantity_ast::compatible_unit_q_ast(args);
+    }
+    "UnitConvert" => {
+      return crate::functions::quantity_ast::unit_convert_ast(args);
+    }
+
     // AST-native math functions
     "Plus" => {
       return crate::functions::math_ast::plus_ast(args);
@@ -2499,6 +2545,10 @@ pub fn evaluate_function_call_ast(
         );
         use std::io::{self, Write};
         io::stdout().flush().ok();
+        return Ok(Expr::FunctionCall {
+          name: "Divide".to_string(),
+          args: args.to_vec(),
+        });
       }
     }
     "Power" if args.len() == 2 => {

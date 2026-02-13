@@ -6,6 +6,7 @@ Alphabet,Returns the list of lowercase English letters,✅,pure
 AlphabeticSort,Sorts strings in case-insensitive alphabetical order,✅,pure
 And,Checks if all conditions are true,✅,pure
 AnyTrue,Checks if any element in a list is true,✅,pure
+Apart,Decomposes a rational expression into partial fractions,✅,pure
 Append,Adds an element to the end of a list,✅,pure
 AppendTo,Appends an element to a list stored in a variable,✅,stateful
 Apply,Applies a function to list elements as arguments,✅,pure
@@ -17,12 +18,17 @@ ArcTan,Returns the arc tangent of a number,✅,pure
 ArcTanh,Returns the inverse hyperbolic tangent,✅,pure
 Arg,Returns the argument (phase angle) of a complex number,✅,pure
 Array,Generates a list by applying a function to successive indices,✅,pure
+ArrayDepth,Returns the depth of a nested array,✅,pure
 AssociationMap,Maps a function over an association,✅,pure
+AssociationQ,Tests if an expression is an association,✅,pure
 AssociationThread,Creates an association from lists of keys and values,✅,pure
 AtomQ,Tests if expression is an atom (not a compound expression),✅,pure
 BernoulliB,Returns the nth Bernoulli number,✅,pure
 Binomial,Returns the binomial coefficient,✅,pure
 BitLength,Returns the number of bits needed to represent an integer,✅,pure
+Block,Scopes local variables within a block of code,✅,pure
+Boole,Converts True to 1 and False to 0,✅,pure
+Cancel,Cancels common factors in a rational expression,✅,pure
 Capitalize,Capitalizes the first letter of a string,✅,pure
 Cases,Returns elements matching a pattern,✅,pure
 CatalanNumber,Returns the nth Catalan number,✅,pure
@@ -35,39 +41,51 @@ CharacterRange,Returns a list of characters in a range,✅,pure
 Characters,Converts a string into a list of single-character strings,✅,pure
 ChineseRemainder,Solves a system of modular congruences,✅,pure
 Chop,Replaces approximate real numbers close to zero by exact 0,✅,pure
+ClearAll,Clears all values and definitions for symbols,✅,stateful
 Clip,Constrains a value to a range,✅,pure
 Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure
 Collect,Collects terms with the same powers of a variable,✅,pure
 Commonest,Returns the most common elements in a list,✅,pure
+CompatibleUnitQ,Tests if two quantities have compatible units,✅,pure
 Complement,Returns elements in first list but not in others,✅,pure
 ComposeList,Returns list of successive function compositions,✅,pure
+CompositeQ,Tests if a number is composite,✅,pure
 Composition,Composes multiple functions,✅,pure
+Conjugate,Returns the complex conjugate,✅,pure
 ConstantArray,Creates an array of repeated elements,✅,pure
+Construct,Constructs an expression from a head and arguments,✅,pure
 ContinuedFraction,Returns the continued fraction representation,✅,pure
 CoprimeQ,Tests if two integers are coprime,✅,pure
 Cos,Returns the cosine of a number,✅,pure
 Cosh,Returns the hyperbolic cosine,✅,pure
+Cot,Returns the cotangent,✅,pure
 Coth,Returns the hyperbolic cotangent,✅,pure
 Count,Counts occurrences of a pattern in a list,✅,pure
 CountBy,Groups and counts elements by a function,✅,pure
 Counts,Returns association of element counts,✅,pure
 CreateFile,Creates a file with a name or a random file in the default area for temporary files,🚧,effectful
 Cross,Computes the cross product of two vectors,✅,pure
+Csc,Returns the cosecant,✅,pure
 Csch,Returns the hyperbolic cosecant,✅,pure
 CubeRoot,Returns the real-valued cube root,✅,pure
 D,Computes the derivative of an expression,✅,pure
 DateString,Returns a string representing the current local date and time,✅,contextual
 Decapitalize,Lowercases the first letter of a string,✅,pure
+Degree,Represents the number of radians in one degree,✅,pure
 Delete,Deletes an element at a given position,✅,pure
 DeleteAdjacentDuplicates,Removes consecutive duplicate elements from a list,✅,pure
 DeleteCases,Deletes elements matching a pattern,✅,pure
 DeleteDuplicates,Removes duplicate elements from a list,✅,pure
 DeleteDuplicatesBy,Deletes duplicates based on a function criterion,✅,pure
 Denominator,Returns the denominator of a rational expression,✅,pure
+Depth,Returns the depth of an expression,✅,pure
+Det,Computes the determinant of a matrix,✅,pure
+DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure
 Differences,Returns successive differences between consecutive elements,✅,pure
 DigitCount,Counts occurrences of each digit in a number,✅,pure
 DigitQ,Tests if a string consists entirely of digits,✅,pure
 DigitSum,Returns the sum of digits of a number,✅,pure
+Dimensions,Returns the dimensions of a nested list,✅,pure
 Divide,Divide numbers,✅,pure
 Divisible,Tests if one number is divisible by another,✅,pure
 DivisorSigma,Returns the sum of k-th powers of divisors,✅,pure
@@ -76,17 +94,24 @@ Divisors,Returns all divisors of an integer,✅,pure
 Do,Evaluates an expression repeatedly,✅,pure
 Dot,Computes the dot product or matrix multiplication,✅,pure
 Drop,Returns the list without its first n elements,✅,pure
+E,Represents the base of the natural logarithm,✅,pure
+Echo,Prints and returns an expression,✅,effectful
 EditDistance,Returns the edit distance between two strings,✅,pure
+Eigenvalues,Computes the eigenvalues of a matrix,✅,pure
 Equal,Checks if two values are equal,✅,pure
+Erf,Returns the error function value,✅,pure
+Erfc,Returns the complementary error function value,✅,pure
 EulerPhi,Returns Euler's totient function,✅,pure
 EvenQ,Checks if a number is even,✅,pure
 Exp,Returns the exponential function e^x,✅,pure
 Expand,Expands products and positive integer powers of sums,✅,pure
+ExpandAll,Expands all products and powers in an expression,✅,pure
 Exponent,Returns the maximum power of a variable in a polynomial,✅,pure
 Extract,Extracts parts at specified positions,✅,pure
 Factor,Factors a polynomial over the integers,✅,pure
 FactorInteger,Returns prime factorization as {prime exponent} pairs,✅,pure
 Factorial,Returns the factorial of a non-negative integer,✅,pure
+Fibonacci,Returns the nth Fibonacci number,✅,pure
 First,Returns the first element of a list,✅,pure
 FixedPoint,Applies a function repeatedly until the result no longer changes,✅,pure
 FixedPointList,Returns the list of results from applying a function repeatedly until fixed point,✅,pure
@@ -97,8 +122,13 @@ FoldList,Returns the list of intermediate results from Fold,✅,pure
 For,Executes a loop with initialization and increment,✅,pure
 FractionalPart,Returns the fractional part of a number,✅,pure
 FreeQ,Tests if expression is free of a specified form,✅,pure
+FrobeniusNumber,Returns the Frobenius number for a set of integers,✅,pure
+FromCharacterCode,Converts character codes to a string,✅,pure
+FromContinuedFraction,Converts a continued fraction to a number,✅,pure
 FromDigits,Constructs integer from list of digits,✅,pure
+FullForm,Returns the full internal form of an expression,✅,pure
 GCD,Returns the greatest common divisor of integers,✅,pure
+Gamma,Returns the gamma function value,✅,pure
 Gather,Groups identical elements together,✅,pure
 GatherBy,Groups elements by applying a function,✅,pure
 GeometricMean,Returns the geometric mean of a list,✅,pure
@@ -108,17 +138,26 @@ GroupBy,Groups elements of a list by a criterion,✅,pure
 HammingDistance,Returns the number of positions where two equal-length strings differ,✅,pure
 HarmonicMean,Returns the harmonic mean of a list,✅,pure
 Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512,✅,pure
+Head,Returns the head of an expression,✅,pure
+HoldForm,Holds an expression unevaluated for display,✅,pure
 Identity,Returns its argument unchanged,✅,pure
+IdentityMatrix,Creates an identity matrix of given size,✅,pure
 If,Checks if a condition is true and returns one of two values,✅,pure
+Im,Returns the imaginary part of a complex number,✅,pure
 Implies,Logical implication,✅,pure
 Inner,Generalized inner product,✅,pure
 Insert,Inserts an element at a specified position in a list,✅,pure
 IntegerDigits,Returns list of digits of an integer,✅,pure
+IntegerExponent,Returns the largest power of a base dividing n,✅,pure
 IntegerLength,Returns the number of digits in an integer,✅,pure
+IntegerName,Returns the English name of an integer,✅,pure
 IntegerPart,Returns the integer part of a number (truncation towards zero),✅,pure
+IntegerPartitions,Returns the integer partitions of n,✅,pure
 IntegerQ,Tests if the expression evaluates to an integer,✅,pure
+IntegerString,Converts an integer to a string in a given base,✅,pure
 Integrate,Computes the indefinite integral of an expression,✅,pure
 Intersection,Returns sorted intersection of lists,✅,pure
+Inverse,Computes the inverse of a matrix,✅,pure
 Join,Concatenates multiple lists,✅,pure
 KeyDrop,Drops specified keys from an association,✅,pure
 KeyDropFrom,Removes a key-value pair from an association,✅,stateful
@@ -129,13 +168,16 @@ KeySort,Sorts an association by its keys,✅,pure
 KeyTake,Takes specified keys from an association,✅,pure
 KeyValueMap,Maps a function over key-value pairs,✅,pure
 Keys,Returns the keys of an association,✅,pure
+KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure
 LCM,Returns the least common multiple of integers,✅,pure
 Last,Returns the last element of a list,✅,pure
+LeapYearQ,Tests if a year is a leap year,✅,pure
 Length,Returns the number of elements in a list,✅,pure
 Less,Checks if one value is less than another,✅,pure
 LessEqual,Checks if one value is less than or equal to another,✅,pure
 LetterQ,Tests if a string consists entirely of letters,✅,pure
 Limit,Computes the limit of an expression,✅,pure
+List,Represents a list of elements,✅,pure
 ListQ,Tests if expression is a list,✅,pure
 Log,Returns the natural logarithm of a number,✅,pure
 Log10,Returns the base-10 logarithm of a number,✅,pure
@@ -160,6 +202,7 @@ MinMax,Returns the minimum and maximum of a list,✅,pure
 MinimalBy,Returns elements that minimize a criterion,✅,pure
 Minus,Subtracts numbers,✅,pure
 Mod,Returns the remainder of integer division,✅,pure
+Module,Scopes local variables with unique names,✅,pure
 MoebiusMu,Returns the Möbius function value,✅,pure
 Most,Returns the list without its last element,✅,pure
 Multinomial,Returns the multinomial coefficient,✅,pure
@@ -179,6 +222,7 @@ NonPositive,Tests if a number is non-positive,✅,pure
 NonPositiveQ,Tests if a number is non-positive,✅,pure
 NoneTrue,Checks if no element in a list is true,✅,pure
 Nor,Logical NOR,✅,pure
+Normal,Converts a special form to a normal expression,✅,pure
 Normalize,Normalizes a vector to unit length,✅,pure
 Not,Checks if a condition is false,✅,pure
 Nothing,Element that disappears from lists,✅,pure
@@ -188,12 +232,15 @@ NumericQ,Tests if expression has a numeric value,✅,pure
 OddQ,Checks if a number is odd,✅,pure
 Or,Checks if at least one condition is true,✅,pure
 Order,Returns the canonical ordering of two expressions,✅,pure
+OrderedQ,Tests if a list is in canonical order,✅,pure
 Ordering,Returns positions that would sort a list,✅,pure
 Outer,Generalized outer product,✅,pure
 PadLeft,Pads a list on the left to a specified length,✅,pure
 PadRight,Pads a list on the right to a specified length,✅,pure
 Part,Returns the nth element of a list,✅,pure
 Partition,Partitions a list into sublists of a given length,✅,pure
+Permutations,Returns all permutations of a list,✅,pure
+Pi,Represents the ratio of circumference to diameter,✅,pure
 Piecewise,Represents a piecewise function,✅,pure
 Plot,Plots a function over a range,✅,effectful
 Plus,Adds numbers together,✅,pure
@@ -210,25 +257,39 @@ PrimePi,Counts the number of primes less than or equal to n,✅,pure
 PrimeQ,Tests if a number is prime,✅,pure
 Print,Outputs a string to the console,✅,effectful
 Product,Computes the product of an expression over a range,✅,pure
+Quantity,Represents a physical quantity with a unit,✅,pure
+QuantityMagnitude,Returns the magnitude of a quantity,✅,pure
+QuantityQ,Tests if an expression is a quantity,✅,pure
+QuantityUnit,Returns the unit of a quantity,✅,pure
 Quotient,Returns the integer quotient of division,✅,pure
+Ramp,Returns the ramp function (max of 0 and x),✅,pure
 RandomChoice,Random selection with replacement,✅,contextual
 RandomInteger,Generate random integers,✅,contextual
+RandomReal,Generates a pseudorandom real number,✅,contextual
 RandomSample,Random selection without replacement,✅,contextual
 Range,Generates a sequence of numbers,✅,pure
+Rationalize,Converts a real number to a nearby rational,✅,pure
+Re,Returns the real part of a complex number,✅,pure
+RealDigits,Returns the digits of a real number,✅,pure
+Reap,Collects expressions sown during evaluation,✅,stateful
 RemoveDiacritics,Removes diacritical marks from a string,✅,pure
 ReplaceAll,Applies replacement rules to an expression,✅,pure
 ReplacePart,Replaces element at a specific position,✅,pure
 ReplaceRepeated,Applies replacement rules repeatedly until fixed point,✅,pure
 Rescale,Rescales values to a specified range,✅,pure
 Rest,Returns the list without its first element,✅,pure
+Return,Returns a value from a function or control structure,✅,pure
 Reverse,Returns a list with elements in reverse order,✅,pure
 Riffle,Inserts an element between each pair of elements,✅,pure
+RomanNumeral,Converts an integer to a Roman numeral string,✅,pure
 RootMeanSquare,Returns the root mean square of a list,✅,pure
 RotateLeft,Rotates list elements to the left,✅,pure
 RotateRight,Rotates list elements to the right,✅,pure
 Round,Returns the nearest integer to a number,✅,pure
+Run,Runs an external command,✅,effectful
 SameQ,Tests if expressions are identical,✅,pure
 Scan,Applies a function to each element for side effects,✅,pure
+Sec,Returns the secant,✅,pure
 Sech,Returns the hyperbolic secant,✅,pure
 Select,Picks elements of a list that satisfy a criterion,✅,pure
 Series,Computes a power series expansion,✅,pure
@@ -236,10 +297,13 @@ Set,Assigns a value to a symbol,✅,stateful
 SetAttributes,Sets attributes for a symbol,✅,stateful
 Sign,Returns the sign of a number,✅,pure
 Simplify,Performs algebraic simplification of expressions,✅,pure
+Sin,Returns the sine,✅,pure
 Sinh,Returns the hyperbolic sine,✅,pure
 Solve,Solves an equation or system of equations,✅,pure
 Sort,Sorts a list in ascending order,✅,pure
 SortBy,Sorts a list using a function as a criterion,✅,pure
+Sow,Sows an expression for collection by Reap,✅,stateful
+SparseArray,Creates a sparse array representation,✅,pure
 Split,Splits list at boundaries where consecutive elements differ,✅,pure
 SplitBy,Splits list at boundaries where a function changes value,✅,pure
 Sqrt,Returns the square root of a number,✅,pure
@@ -264,6 +328,7 @@ StringPosition,Finds all positions of a substring,✅,pure
 StringQ,Tests if expression is a string,✅,pure
 StringRepeat,Repeats a string a specified number of times,✅,pure
 StringReplace,Replaces occurrences of substrings in a string,✅,pure
+StringReverse,Reverses the characters in a string,✅,pure
 StringRiffle,Joins a list of strings with a separator,✅,pure
 StringRotateLeft,Rotates characters in a string to the left,✅,pure
 StringRotateRight,Rotates characters in a string to the right,✅,pure
@@ -271,9 +336,12 @@ StringSplit,Splits a string into a list of substrings,✅,pure
 StringStartsQ,Checks if a string starts with a specific substring,✅,pure
 StringTake,Returns a substring of a string,✅,pure
 StringTakeDrop,Returns the taken and dropped parts of a string as a list,✅,pure
+StringTrim,Removes whitespace from the beginning and end of a string,✅,pure
 Subdivide,Divides a range into equal parts,✅,pure
 Subsequences,Returns all contiguous subsequences of a list,✅,pure
+Subsets,Returns all subsets of a list,✅,pure
 Subtract,Subtracts one number from another,✅,pure
+Sum,Computes a sum over a range,✅,pure
 Surd,Returns the real-valued nth root,✅,pure
 Switch,Evaluates an expression and matches it against patterns,✅,pure
 Table,Generates a list by evaluating an expression,✅,pure
@@ -285,262 +353,34 @@ Tally,Counts occurrences of each distinct element,✅,pure
 Tan,Returns the tangent of a number,✅,pure
 Tanh,Returns the hyperbolic tangent,✅,pure
 Thread,Threads a function over corresponding list elements,✅,pure
+Through,Distributes a list of functions over arguments,✅,pure
 Throw,Throws a value to be caught by Catch,✅,pure
 Times,Multiply numbers,✅,pure
+ToCharacterCode,Converts characters to their character codes,✅,pure
 ToExpression,Converts a string to an evaluated expression,✅,pure
 ToLowerCase,Converts a string to lowercase,✅,pure
+ToString,Converts an expression to a string,✅,pure
 ToUpperCase,Converts a string to uppercase,✅,pure
+Together,Puts terms over a common denominator,✅,pure
 Total,Sums the elements of a list,✅,pure
+Tr,Computes the trace of a matrix,✅,pure
 Transpose,Transposes a matrix (list of lists),✅,pure
+TrueQ,Returns True only for the symbol True,✅,pure
 Tuples,Generates all tuples of elements from a list,✅,pure
 Unequal,Checks if two values are not equal,✅,pure
 Union,Returns sorted union of lists,✅,pure
+UnitConvert,Converts a quantity to a different unit,✅,pure
+UnitStep,Returns the unit step function value,✅,pure
+Unitize,Returns 0 for zero and 1 for nonzero values,✅,pure
 UnsameQ,Tests if expressions are not identical,✅,pure
 UpperCaseQ,Tests if a string consists entirely of uppercase letters,✅,pure
+ValueQ,Tests if a symbol has a value assigned,✅,pure
 Values,Returns the values of an association,✅,pure
 Variance,Returns the variance of a list,✅,pure
 Which,Evaluates conditions and returns the value for the first true one,✅,pure
 While,Evaluates an expression repeatedly while a condition is true,✅,pure
 With,Substitutes local constants into an expression,✅,pure
 Xor,Checks if exactly one condition is true,✅,pure
-,,,
------,,,
-,,,
-$Aborted,,,
-$ActivationKey,,,
-$AllowDataUpdates,,,
-$AllowExternalChannelFunctions,,,
-$AllowInternet,,,
-$AssertFunction,,,
-$Assumptions,,,
-$AudioDecoders,,,
-$AudioEncoders,,,
-$AudioInputDevices,,,
-$AudioOutputDevices,,,
-$BaseDirectory,,,
-$BasePacletsDirectory,,,
-$BatchInput,,,
-$BatchOutput,,,
-$BlockchainBase,,,
-$ByteOrdering,,,
-$CacheBaseDirectory,,,
-$Canceled,,,
-$ChannelBase,,,
-$CharacterEncoding,,,
-$CharacterEncodings,,,
-$CloudAccountName,,,
-$CloudBase,,,
-$CloudConnected,,,
-$CloudCreditsAvailable,,,
-$CloudEvaluation,,,
-$CloudExpressionBase,,,
-$CloudObjectNameFormat,,,
-$CloudObjectURLType,,,
-$CloudRootDirectory,,,
-$CloudSymbolBase,,,
-$CloudUserID,,,
-$CloudUserUUID,,,
-$CloudVersion,,,
-$CommandLine,,,
-$CompilationTarget,,,
-$CompilerEnvironment,,,
-$ConfiguredKernels,,,
-$Context,,,
-$ContextAliases,,,
-$ContextPath,,,
-$ControlActiveSetting,,,
-$CookieStore,,,
-$Cookies,,,
-$CreationDate,,,
-$CryptographicEllipticCurveNames,,,
-$CurrentLink,,,
-$CurrentTask,,,
-$CurrentWebSession,,,
-$DataStructures,,,
-$DateStringFormat,,,
-$DefaultAudioInputDevice,,,
-$DefaultAudioOutputDevice,,,
-$DefaultFrontEnd,,,
-$DefaultImagingDevice,,,
-$DefaultLocalBase,,,
-$DefaultLocalKernel,,,
-$DefaultNetworkInterface,,,
-$DefaultParallelKernels,,,
-$DefaultProxyRules,,,
-$DefaultRemoteBatchSubmissionEnvironment,,,
-$DefaultRemoteKernel,,,
-$DefaultSystemCredentialStore,,,
-$Display,,,
-$DisplayFunction,,,
-$DistributedContexts,,,
-$DistributedDefinitions,,,
-$DynamicEvaluation,,,
-$Echo,,,
-$EmbedCodeEnvironments,,,
-$EmbeddableServices,,,
-$Epilog,,,
-$EvaluationCloudBase,,,
-$EvaluationCloudObject,,,
-$EvaluationEnvironment,,,
-$ExportFormats,,,
-$ExternalIdentifierTypes,,,
-$ExternalStorageBase,,,
-$Failed,,,
-$FontFamilies,,,
-$FrontEnd,,,
-$FrontEndSession,,,
-$GeneratedAssetLocation,,,
-$GeoLocation,,,
-$GeoLocationCity,,,
-$GeoLocationCountry,,,
-$GeoLocationSource,,,
-$HistoryLength,,,
-$HomeDirectory,,,
-$IgnoreEOF,,,
-$ImageFormattingWidth,,,
-$ImageResolution,,,
-$ImagingDevice,,,
-$ImagingDevices,,,
-$ImportFormats,,,
-$IncomingMailSettings,,,
-$InitialDirectory,,,
-$Initialization,,,
-$InitializationContexts,,,
-$Input,,,
-$InputFileName,,,
-$InputStreamMethods,,,
-$Inspector,,,
-$InstallationDirectory,,,
-$InterpreterTypes,,,
-$IterationLimit,,,
-$KernelCount,,,
-$KernelID,,,
-$LLMEvaluator,,,
-$Language,,,
-$LibraryPath,,,
-$LicenseExpirationDate,,,
-$LicenseID,,,
-$LicenseServer,,,
-$Line,,,
-$Linked,,,
-$LocalBase,,,
-$LocalSymbolBase,,,
-$MachineAddresses,,,
-$MachineDomains,,,
-$MachineEpsilon,,,
-$MachineID,,,
-$MachineName,,,
-$MachinePrecision,,,
-$MachineType,,,
-$MaxDisplayedChildren,,,
-$MaxExtraPrecision,,,
-$MaxMachineNumber,,,
-$MaxNumber,,,
-$MaxPiecewiseCases,,,
-$MaxPrecision,,,
-$MaxRootDegree,,,
-$MessageGroups,,,
-$MessageList,,,
-$MessagePrePrint,,,
-$Messages,,,
-$MinMachineNumber,,,
-$MinNumber,,,
-$MinPrecision,,,
-$MobilePhone,,,
-$ModuleNumber,,,
-$NetworkConnected,,,
-$NetworkInterfaces,,,
-$NewMessage,,,
-$NewSymbol,,,
-$NoValue,,,
-$NotebookInlineStorageLimit,,,
-$Notebooks,,,
-$NumberMarks,,,
-$OperatingSystem,,,
-$Output,,,
-$OutputSizeLimit,,,
-$OutputStreamMethods,,,
-$Packages,,,
-$ParentLink,,,
-$ParentProcessID,,,
-$PasswordFile,,,
-$Path,,,
-$PathnameSeparator,,,
-$PerformanceGoal,,,
-$Permissions,,,
-$PersistenceBase,,,
-$PersistencePath,,,
-$PlotTheme,,,
-$Post,,,
-$Pre,,,
-$PreInitialization,,,
-$PrePrint,,,
-$PreRead,,,
-$Printout3DPreviewer,,,
-$ProcessID,,,
-$ProcessorCount,,,
-$ProcessorType,,,
-$ProgressReporting,,,
-$PublisherID,,,
-$RandomGeneratorState,,,
-$RecursionLimit,,,
-$ReleaseNumber,,,
-$RequesterAddress,,,
-$RequesterCloudUserID,,,
-$RequesterCloudUserUUID,,,
-$RequesterWolframID,,,
-$RequesterWolframUUID,,,
-$ResourceSystemBase,,,
-$ResourceSystemPath,,,
-$RootDirectory,,,
-$SSHAuthentication,,,
-$ScriptCommandLine,,,
-$ScriptInputString,,,
-$ServiceCreditsAvailable,,,
-$Services,,,
-$SessionID,,,
-$SharedFunctions,,,
-$SharedVariables,,,
-$SoundDisplayFunction,,,
-$SourceLink,,,
-$StandardErrorStream,,,
-$StandardOutputStream,,,
-$SubtitleDecoders,,,
-$SubtitleEncoders,,,
-$SynchronousEvaluation,,,
-$SyntaxHandler,,,
-$System,,,
-$SystemCharacterEncoding,,,
-$SystemCredentialStore,,,
-$SystemID,,,
-$SystemShell,,,
-$SystemTimeZone,,,
-$SystemWordLength,,,
-$TargetSystems,,,
-$TemplatePath,,,
-$TemporaryDirectory,,,
-$TestFileName,,,
-$TimeUnit,,,
-$TimeZone,,,
-$TimeZoneEntity,,,
-$TimedOut,,,
-$UnitSystem,,,
-$Urgent,,,
-$UserAgent,,,
-$UserAgentString,,,
-$UserBaseDirectory,,,
-$UserBasePacletsDirectory,,,
-$UserDocumentsDirectory,,,
-$UserURLBase,,,
-$Username,,,
-$Version,,,
-$VersionNumber,,,
-$VideoDecoders,,,
-$VideoEncoders,,,
-$VoiceStyles,,,
-$WolframDocumentsDirectory,,,
-$WolframID,,,
-$WolframUUID,,,
 AASTriangle,,,
 APIFunction,,,
 ARCHProcess,,,
@@ -697,7 +537,6 @@ Antonyms,,,
 AnyMatch,,,
 AnyOrder,,,
 AnySubset,,,
-Apart,Decomposes a rational expression into partial fractions,✅,pure
 ApartSquareFree,,,
 Appearance,,,
 AppearanceElements,,,
@@ -734,7 +573,6 @@ ArithmeticGeometricMean,,,
 Around,,,
 AroundReplace,,,
 ArrayComponents,,,
-ArrayDepth,Returns the depth of a nested array,✅,pure
 ArrayDot,,,
 ArrayFilter,,,
 ArrayFlatten,,,
@@ -767,7 +605,6 @@ AssessmentResultObject,,,
 AssociateTo,,,
 Association,,,
 AssociationFormat,,,
-AssociationQ,Tests if an expression is an association,✅,pure
 AssumeDeterministic,,,
 Assuming,,,
 Assumptions,,,
@@ -1043,7 +880,6 @@ Blank,,,
 BlankNullSequence,,,
 BlankSequence,,,
 Blend,,,
-Block,,,
 BlockDiagonalMatrix,,,
 BlockLowerTriangularMatrix,,,
 BlockMap,,,
@@ -1077,7 +913,6 @@ BondLabels,,,
 BondList,,,
 BondQ,,,
 Bookmarks,,,
-Boole,Converts True to 1 and False to 0,✅,pure
 BooleanConsecutiveFunction,,,
 BooleanConvert,,,
 BooleanCountingFunction,,,
@@ -1171,7 +1006,6 @@ Callout,,,
 CalloutMarker,,,
 CalloutStyle,,,
 CanberraDistance,,,
-Cancel,Cancels common factors in a rational expression,✅,pure
 CancelButton,,,
 CandlestickChart,,,
 CanonicalGraph,,,
@@ -1335,7 +1169,6 @@ ClassifierMeasurements,,,
 ClassifierMeasurementsObject,,,
 Classify,,,
 Clear,,,
-ClearAll,Clears all values and definitions for symbols,✅,stateful
 ClearAttributes,,,
 ClearCookies,,,
 ClearDistributedDefinitions,,,
@@ -1443,7 +1276,6 @@ CommunityGraphPlot,,,
 CommunityLabels,,,
 CommunityRegionStyle,,,
 CompanyData,,,
-CompatibleUnitQ,,,
 CompilationOptions,,,
 CompilationTarget,,,
 Compile,,,
@@ -1481,7 +1313,6 @@ Complexes,,,
 ComplexityFunction,,,
 ComponentMeasurements,,,
 ComposeSeries,,,
-CompositeQ,Tests if a number is composite,✅,pure
 CompoundElement,,,
 CompoundExpression,,,
 CompoundPoissonDistribution,,,
@@ -1511,7 +1342,6 @@ Congruent,,,
 ConicGradientFilling,,,
 ConicHullRegion,,,
 ConicOptimization,,,
-Conjugate,Returns the complex conjugate,✅,pure
 ConjugateTranspose,,,
 Conjunction,,,
 ConnectLibraryCallbackFunction,,,
@@ -1533,7 +1363,6 @@ ConstantRegionQ,,,
 ConstantVideo,,,
 Constants,,,
 ConstellationData,,,
-Construct,Constructs an expression from a head and arguments,✅,pure
 Containing,,,
 ContainsAll,,,
 ContainsAny,,,
@@ -1627,7 +1456,6 @@ CosIntegral,,,
 CoshIntegral,,,
 CosineDistance,,,
 CosineWindow,,,
-Cot,Returns the cotangent,✅,pure
 CotDegrees,,,
 CoulombF,,,
 CoulombG,,,
@@ -1682,7 +1510,6 @@ CrossMatrix,,,
 CrossingCount,,,
 CrossingDetect,,,
 CrossingPolygon,,,
-Csc,Returns the cosecant,✅,pure
 CscDegrees,,,
 Cube,,,
 Cubics,,,
@@ -1822,7 +1649,6 @@ DefineInputStreamMethod,,,
 DefineOutputStreamMethod,,,
 DefineResourceFunction,,,
 Definition,,,
-Degree,,,
 DegreeCentrality,,,
 DegreeGraphDistribution,,,
 Deinitialization,,,
@@ -1857,7 +1683,6 @@ DensityPlot3D,,,
 DependentVariables,,,
 Deploy,,,
 Deployed,,,
-Depth,Returns the depth of an expression,✅,pure
 DepthFirstScan,,,
 Derivative,,,
 DerivativeFilter,,,
@@ -1865,7 +1690,6 @@ DerivativePDETerm,,,
 DerivedKey,,,
 DescriptorStateSpace,,,
 DesignMatrix,,,
-Det,Computes the determinant of a matrix,✅,pure
 DeviceClose,,,
 DeviceConfigure,,,
 DeviceExecute,,,
@@ -1882,7 +1706,6 @@ DeviceWrite,,,
 DeviceWriteBuffer,,,
 Devices,,,
 Diagonal,,,
-DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure
 DiagonalMatrixQ,,,
 DiagonalizableMatrixQ,,,
 Dialog,,,
@@ -1928,7 +1751,6 @@ DimensionReducerFunction,,,
 DimensionReduction,,,
 DimensionalCombinations,,,
 DimensionalMeshComponents,,,
-Dimensions,Returns the dimensions of a nested list,✅,pure
 DiracComb,,,
 DiracDelta,,,
 DirectedEdge,,,
@@ -2074,11 +1896,9 @@ DynamicModuleValues,,,
 DynamicSetting,,,
 DynamicUpdating,,,
 DynamicWrapper,,,
-E,,,
 EarthImpactData,,,
 EarthquakeData,,,
 EccentricityCentrality,,,
-Echo,Prints and returns an expression,✅,effectful
 EchoEvaluation,,,
 EchoFunction,,,
 EchoLabel,,,
@@ -2116,7 +1936,6 @@ EdgeWeightedGraphQ,,,
 Editable,,,
 EffectiveInterest,,,
 Eigensystem,,,
-Eigenvalues,Computes the eigenvalues of a matrix,✅,pure
 EigenvectorCentrality,,,
 Eigenvectors,,,
 ElectricCurrentDensityValue,,,
@@ -2199,8 +2018,6 @@ EqualTo,,,
 Equilibrium,,,
 EquirippleFilterKernel,,,
 Equivalent,,,
-Erf,Returns the error function value,✅,pure
-Erfc,Returns the complementary error function value,✅,pure
 Erfi,,,
 ErlangB,,,
 ErlangC,,,
@@ -2259,7 +2076,6 @@ ExpGammaDistribution,,,
 ExpIntegralE,,,
 ExpIntegralEi,,,
 ExpToTrig,,,
-ExpandAll,Expands all products and powers in an expression,✅,pure
 ExpandDenominator,,,
 ExpandFileName,,,
 ExpandNumerator,,,
@@ -2350,7 +2166,6 @@ FeedbackSector,,,
 FeedbackSectorStyle,,,
 FeedbackType,,,
 FetalGrowthData,,,
-Fibonacci,Returns the nth Fibonacci number,✅,pure
 Fibonorial,,,
 FieldCompletionFunction,,,
 FieldHint,,,
@@ -2599,12 +2414,9 @@ FresnelG,,,
 FresnelS,,,
 Friday,,,
 FrobeniusAutomorphism,,,
-FrobeniusNumber,Returns the Frobenius number for a set of integers,✅,pure
 FrobeniusSolve,,,
 FromAbsoluteTime,,,
-FromCharacterCode,Converts character codes to a string,✅,pure
 FromCoefficientRules,,,
-FromContinuedFraction,Converts a continued fraction to a number,✅,pure
 FromDMS,,,
 FromDateString,,,
 FromEntity,,,
@@ -2626,7 +2438,6 @@ FrontEndToken,,,
 FrontEndTokenExecute,,,
 Full,,,
 FullDefinition,,,
-FullForm,Returns the full internal form of an expression,✅,pure
 FullGraphics,,,
 FullInformationOutputRegulator,,,
 FullMoon,,,
@@ -2667,7 +2478,6 @@ GainMargins,,,
 GainPhaseMargins,,,
 GalaxyData,,,
 GalleryView,,,
-Gamma,Returns the gamma function value,✅,pure
 GammaDistribution,,,
 GammaRegularized,,,
 GapPenalty,,,
@@ -2946,7 +2756,6 @@ HatchFilling,,,
 HatchShading,,,
 Haversine,,,
 HazardFunction,,,
-Head,Returns the head of an expression,✅,pure
 HeaderAlignment,,,
 HeaderBackground,,,
 HeaderDisplayFunction,,,
@@ -3015,7 +2824,6 @@ HoldAll,,,
 HoldAllComplete,,,
 HoldComplete,,,
 HoldFirst,,,
-HoldForm,Holds an expression unevaluated for display,✅,pure
 HoldPattern,,,
 HoldRest,,,
 HolderModel,,,
@@ -3056,7 +2864,6 @@ IconData,,,
 IconRules,,,
 Iconize,,,
 Icosahedron,,,
-IdentityMatrix,Creates an identity matrix of given size,✅,pure
 IfCompiled,,,
 IgnoreCase,,,
 IgnoreDiacritics,,,
@@ -3064,7 +2871,6 @@ IgnoreIsotopes,,,
 IgnorePunctuation,,,
 IgnoreStereochemistry,,,
 IgnoringInactive,,,
-Im,Returns the imaginary part of a complex number,✅,pure
 Image,,,
 Image3D,,,
 Image3DProjection,,,
@@ -3257,11 +3063,7 @@ Insphere,,,
 Install,,,
 InstallService,,,
 Integer,,,
-IntegerExponent,Returns the largest power of a base dividing n,✅,pure
-IntegerName,Returns the English name of an integer,✅,pure
-IntegerPartitions,Returns the integer partitions of n,✅,pure
 IntegerReverse,,,
-IntegerString,Converts an integer to a string in a given base,✅,pure
 Integers,,,
 IntegrateChangeVariables,,,
 Interactive,,,
@@ -3291,7 +3093,6 @@ IntervalMarkersStyle,,,
 IntervalMemberQ,,,
 IntervalSlider,,,
 IntervalUnion,,,
-Inverse,Computes the inverse of a matrix,✅,pure
 InverseBetaRegularized,,,
 InverseBilateralLaplaceTransform,,,
 InverseBilateralZTransform,,,
@@ -3442,7 +3243,6 @@ KnotData,,,
 KnownUnitQ,,,
 KochCurve,,,
 KolmogorovSmirnovTest,,,
-KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure
 KroneckerModelDecomposition,,,
 KroneckerProduct,,,
 KroneckerSymbol,,,
@@ -3513,7 +3313,6 @@ LayeredGraphPlot3D,,,
 LeaderSize,,,
 LeafCount,,,
 LeapVariant,,,
-LeapYearQ,Tests if a year is a leap year,✅,pure
 LearnDistribution,,,
 LearnedDistribution,,,
 LearningRate,,,
@@ -3639,7 +3438,6 @@ LinkReadyQ,,,
 LinkWrite,,,
 Links,,,
 LiouvilleLambda,,,
-List,Represents a list of elements,✅,pure
 ListAnimate,,,
 ListContourPlot,,,
 ListContourPlot3D,,,
@@ -3967,7 +3765,6 @@ Modal,,,
 ModelPredictiveController,,,
 ModularInverse,,,
 ModularLambda,,,
-Module,,,
 Modulus,,,
 Molecule,,,
 MoleculeAlign,,,
@@ -4161,7 +3958,6 @@ NonlocalMeansFilter,,,
 NorlundB,,,
 Norm,,,
 NormFunction,,,
-Normal,Converts a special form to a normal expression,✅,pure
 NormalDistribution,,,
 NormalMatrixQ,,,
 NormalizationLayer,,,
@@ -4323,7 +4119,6 @@ Options,,,
 OptionsPattern,,,
 Orange,,,
 OrderDistribution,,,
-OrderedQ,Tests if a list is in canonical order,✅,pure
 OrderingBy,,,
 OrderingLayer,,,
 Orderless,,,
@@ -4520,7 +4315,6 @@ PermutationPower,,,
 PermutationProduct,,,
 PermutationReplace,,,
 PermutationSupport,,,
-Permutations,Returns all permutations of a list,✅,pure
 Permute,,,
 PeronaMalikFilter,,,
 PerpendicularBisector,,,
@@ -4535,7 +4329,6 @@ PhaseMargins,,,
 PhaseRange,,,
 PhongShading,,,
 PhysicalSystemData,,,
-Pi,,,
 Pick,,,
 PieChart,,,
 PieChart3D,,,
@@ -4750,13 +4543,9 @@ QuadraticIrrationalQ,,,
 QuadraticOptimization,,,
 Quantile,,,
 QuantilePlot,,,
-Quantity,,,
 QuantityArray,,,
 QuantityDistribution,,,
 QuantityForm,,,
-QuantityMagnitude,,,
-QuantityQ,,,
-QuantityUnit,,,
 QuantityVariable,,,
 QuantityVariableCanonicalUnit,,,
 QuantityVariableDimensions,,,
@@ -4797,7 +4586,6 @@ RamanujanTau,,,
 RamanujanTauL,,,
 RamanujanTauTheta,,,
 RamanujanTauZ,,,
-Ramp,Returns the ramp function (max of 0 and x),✅,pure
 RandomArrayLayer,,,
 RandomColor,,,
 RandomComplex,,,
@@ -4815,7 +4603,6 @@ RandomPointConfiguration,,,
 RandomPolygon,,,
 RandomPolyhedron,,,
 RandomPrime,,,
-RandomReal,Generates a pseudorandom real number,✅,contextual
 RandomSeeding,,,
 RandomTime,,,
 RandomTree,,,
@@ -4832,7 +4619,6 @@ RasterSize,,,
 Rasterize,,,
 Rational,,,
 RationalExpressionQ,,,
-Rationalize,Converts a real number to a nearby rational,✅,pure
 Rationals,,,
 Ratios,,,
 RawBoxes,,,
@@ -4845,7 +4631,6 @@ RawMemoryRead,,,
 RawMemoryWrite,,,
 RawPointer,,,
 RayleighDistribution,,,
-Re,Returns the real part of a complex number,✅,pure
 ReIm,,,
 ReImLabels,,,
 ReImPlot,,,
@@ -4862,13 +4647,11 @@ ReadString,,,
 Real,,,
 RealAbs,,,
 RealBlockDiagonalForm,,,
-RealDigits,Returns the digits of a real number,✅,pure
 RealExponent,,,
 RealSign,,,
 RealValuedNumberQ,,,
 RealValuedNumericQ,,,
 Reals,,,
-Reap,Collects expressions sown during evaluation,✅,stateful
 ReapVideo,,,
 RecalibrationFunction,,,
 RecognitionPrior,,,
@@ -5011,7 +4794,6 @@ ResponseForm,,,
 RestartInterval,,,
 Restricted,,,
 Resultant,,,
-Return,Returns a value from a function or control structure,✅,pure
 ReturnExpressionPacket,,,
 ReturnPacket,,,
 ReturnReceiptFunction,,,
@@ -5062,7 +4844,6 @@ RobustConvexOptimization,,,
 RogersTanimotoDissimilarity,,,
 RollPitchYawAngles,,,
 RollPitchYawMatrix,,,
-RomanNumeral,Converts an integer to a Roman numeral string,✅,pure
 Root,,,
 RootApproximant,,,
 RootIntervals,,,
@@ -5093,7 +4874,6 @@ RuleDelayed,,,
 RulePlot,,,
 RulerUnits,,,
 RulesTree,,,
-Run,,,
 RunProcess,,,
 RunThrough,,,
 RuntimeAttributes,,,
@@ -5154,7 +4934,6 @@ SearchIndexObject,,,
 SearchIndices,,,
 SearchQueryString,,,
 SearchResultObject,,,
-Sec,Returns the secant,✅,pure
 SecDegrees,,,
 SechDistribution,,,
 SecondOrderConeOptimization,,,
@@ -5290,7 +5069,6 @@ SimpleGraphQ,,,
 SimplePolygonQ,,,
 SimplePolyhedronQ,,,
 Simplex,,,
-Sin,Returns the sine,✅,pure
 SinDegrees,,,
 SinIntegral,,,
 Sinc,,,
@@ -5367,7 +5145,6 @@ SoundNote,,,
 SoundVolume,,,
 SourceLink,,,
 SourcePDETerm,,,
-Sow,Sows an expression for collection by Reap,✅,stateful
 SowVideo,,,
 SpaceCurveData,,,
 Spacer,,,
@@ -5377,7 +5154,6 @@ SpanFromAbove,,,
 SpanFromBoth,,,
 SpanFromLeft,,,
 SpanMaxSize,,,
-SparseArray,Creates a sparse array representation,✅,pure
 SparseArrayQ,,,
 SpatialBinnedPointData,,,
 SpatialBoundaryCorrection,,,
@@ -5527,12 +5303,10 @@ StringFormatQ,,,
 StringPartition,,,
 StringReplaceList,,,
 StringReplacePart,,,
-StringReverse,Reverses the characters in a string,✅,pure
 StringSkeleton,,,
 StringTemplate,,,
 StringToByteArray,,,
 StringToStream,,,
-StringTrim,Removes whitespace from the beginning and end of a string,✅,pure
 StripBoxes,,,
 StripCellGrouping,,,
 StripOnInput,,,
@@ -5569,7 +5343,6 @@ SubsetMap,,,
 SubsetPosition,,,
 SubsetQ,,,
 SubsetReplace,,,
-Subsets,Returns all subsets of a list,✅,pure
 SubstitutionSystem,,,
 Subsuperscript,,,
 SubsuperscriptBox,,,
@@ -5584,7 +5357,6 @@ SucceedsSlantEqual,,,
 SucceedsTilde,,,
 Success,,,
 SuchThat,,,
-Sum,Computes a sum over a range,✅,pure
 SumConvergence,,,
 SummationLayer,,,
 SunPosition,,,
@@ -5790,7 +5562,6 @@ Threaded,,,
 ThreadingLayer,,,
 ThreeJSymbol,,,
 Threshold,,,
-Through,Distributes a list of functions over arguments,✅,pure
 ThueMorse,,,
 Thumbnail,,,
 Thursday,,,
@@ -5843,7 +5614,6 @@ Timing,,,
 Tiny,,,
 TitsGroupT,,,
 ToBoxes,,,
-ToCharacterCode,Converts characters to their character codes,✅,pure
 ToContinuousTimeModel,,,
 ToDiscreteTimeModel,,,
 ToEntity,,,
@@ -5855,10 +5625,8 @@ ToRadicals,,,
 ToRawPointer,,,
 ToRules,,,
 ToSphericalCoordinates,,,
-ToString,Converts an expression to a string,✅,pure
 Today,,,
 ToeplitzMatrix,,,
-Together,Puts terms over a common denominator,✅,pure
 Toggler,,,
 TogglerBar,,,
 TokenWords,,,
@@ -5881,7 +5649,6 @@ TouchscreenAutoZoom,,,
 TouchscreenControlPlacement,,,
 Tour3DVideo,,,
 TourVideo,,,
-Tr,Computes the trace of a matrix,✅,pure
 Trace,,,
 TraceAbove,,,
 TraceBackward,,,
@@ -5999,7 +5766,6 @@ TrimmedMean,,,
 TrimmedVariance,,,
 TropicalStormData,,,
 True,,,
-TrueQ,Returns True only for the symbol True,✅,pure
 TruncateSum,,,
 TruncatedDistribution,,,
 TruncatedPolyhedron,,,
@@ -6069,18 +5835,15 @@ UnionedEntityClass,,,
 Unique,,,
 UniqueElements,,,
 UnitBox,,,
-UnitConvert,,,
 UnitDimensions,,,
 UnitRootTest,,,
 UnitSimplify,,,
-UnitStep,Returns the unit step function value,✅,pure
 UnitSystem,,,
 UnitTriangle,,,
 UnitVector,,,
 UnitVectorLayer,,,
 UnitaryMatrix,,,
 UnitaryMatrixQ,,,
-Unitize,Returns 0 for zero and 1 for nonzero values,✅,pure
 UnityDimensions,,,
 UniverseModelData,,,
 UniversityData,,,
@@ -6124,7 +5887,6 @@ ValidationLength,,,
 ValidationSet,,,
 ValueDimensions,,,
 ValuePreprocessingFunction,,,
-ValueQ,Tests if a symbol has a value assigned,✅,pure
 VandermondeMatrix,,,
 Variables,,,
 VarianceEquivalenceTest,,,

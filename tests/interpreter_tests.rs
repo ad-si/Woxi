@@ -14,6 +14,7 @@ mod interpreter_tests {
   mod linear_algebra;
   mod list;
   mod math;
+  mod quantity;
   mod statistics;
   mod string;
   mod syntax;
