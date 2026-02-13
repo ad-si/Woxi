@@ -120,6 +120,14 @@ export function getMessages(convId) {
   return conv.messages
 }
 
+export function truncateMessages(convId, fromIndex) {
+  const conv = getConversation(convId)
+  if (!conv) return
+  conv.messages = conv.messages.slice(0, fromIndex)
+  conv.updatedAt = Date.now()
+  saveConversation(conv)
+}
+
 export function clearAllData() {
   const index = getConversationIndex()
   for (const c of index) {

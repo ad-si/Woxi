@@ -3,7 +3,7 @@ import { sendMessage } from "./api.js"
 import {
   getSettings, saveSettings, hasApiKey, getConversationIndex,
   getConversation, createConversation, deleteConversation,
-  appendMessage, getMessages, clearAllData,
+  appendMessage, getMessages, clearAllData, truncateMessages,
 } from "./chat.js"
 import {
   createMessageElement, createStreamingAssistant, appendStreamingText,
@@ -198,7 +198,7 @@ function renderMessages() {
       continue
     }
 
-    const el = createMessageElement(msg)
+    const el = createMessageElement(msg, i)
     if (!el) continue
 
     if (msg.role === "assistant" && msg.tool_calls) {
@@ -307,12 +307,13 @@ async function handleSend() {
   // Append user message
   const userMsg = { role: "user", content: text }
   appendMessage(activeConvId, userMsg)
-  const userEl = createMessageElement(userMsg)
+  const msgIndex = getMessages(activeConvId).length - 1
+  const userEl = createMessageElement(userMsg, msgIndex)
   messagesEl.appendChild(userEl)
   scrollToBottom()
 
   // Clear both inputs
-  inputEls.forEach((el) => { el.value = ""; el.style.height = "auto" })
+  inputEls.forEach((el) => { el.value = "" })
 
   await runAssistantTurn()
 }
@@ -508,6 +509,115 @@ document.querySelectorAll(".example-prompt").forEach((btn) => {
     input.focus()
   })
 })
+
+// --- User message actions (copy / edit / retry) ---
+messagesEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".msg-action-btn")
+  if (!btn) return
+  const row = btn.closest(".user-message-row")
+  if (!row || !row.dataset.msgIndex) return
+  const msgIndex = parseInt(row.dataset.msgIndex, 10)
+  const action = btn.dataset.action
+
+  if (action === "copy") handleCopyMessage(msgIndex)
+  else if (action === "edit") handleEditMessage(msgIndex)
+  else if (action === "retry") handleRetryMessage(msgIndex)
+})
+
+function handleCopyMessage(msgIndex) {
+  const messages = getMessages(activeConvId)
+  const msg = messages[msgIndex]
+  if (!msg) return
+  navigator.clipboard.writeText(msg.content)
+  showToast("Copied to clipboard", "success")
+}
+
+function handleEditMessage(msgIndex) {
+  if (isSending) return
+  const messages = getMessages(activeConvId)
+  const msg = messages[msgIndex]
+  if (!msg) return
+
+  const row = messagesEl.querySelector(`.user-message-row[data-msg-index="${msgIndex}"]`)
+  if (!row) return
+
+  // Already editing
+  if (row.querySelector(".edit-area")) return
+
+  const bubble = row.querySelector(".rounded-2xl")
+  const actions = row.querySelector(".user-msg-actions")
+  bubble.classList.add("hidden")
+  actions.classList.add("hidden")
+
+  const editContainer = document.createElement("div")
+  editContainer.className = "edit-area flex flex-col items-end gap-2 max-w-[80%]"
+
+  const textarea = document.createElement("textarea")
+  textarea.className = "w-full rounded-2xl bg-blue-600 text-white text-sm px-4 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+  textarea.value = msg.content
+
+  const btnRow = document.createElement("div")
+  btnRow.className = "flex gap-2"
+
+  const cancelBtn = document.createElement("button")
+  cancelBtn.className = "px-3 py-1 text-xs rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+  cancelBtn.textContent = "Cancel"
+
+  const saveBtn = document.createElement("button")
+  saveBtn.className = "px-3 py-1 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+  saveBtn.textContent = "Save & Send"
+
+  btnRow.appendChild(cancelBtn)
+  btnRow.appendChild(saveBtn)
+  editContainer.appendChild(textarea)
+  editContainer.appendChild(btnRow)
+  row.appendChild(editContainer)
+  textarea.focus()
+
+  cancelBtn.addEventListener("click", () => {
+    editContainer.remove()
+    bubble.classList.remove("hidden")
+    actions.classList.remove("hidden")
+  })
+
+  saveBtn.addEventListener("click", () => {
+    const newText = textarea.value.trim()
+    if (!newText) return
+
+    truncateMessages(activeConvId, msgIndex)
+    const userMsg = { role: "user", content: newText }
+    appendMessage(activeConvId, userMsg)
+    renderMessages()
+    scrollToBottom()
+    runAssistantTurn()
+  })
+
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      saveBtn.click()
+    }
+    if (e.key === "Escape") {
+      cancelBtn.click()
+    }
+  })
+}
+
+function handleRetryMessage(msgIndex) {
+  if (isSending) return
+  const messages = getMessages(activeConvId)
+  const msg = messages[msgIndex]
+  if (!msg) return
+
+  truncateMessages(activeConvId, msgIndex)
+
+  const userMsg = { role: "user", content: msg.content }
+  appendMessage(activeConvId, userMsg)
+  renderMessages()
+  scrollToBottom()
+
+  runAssistantTurn()
+}
 
 // --- Start ---
 init()
