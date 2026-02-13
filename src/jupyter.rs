@@ -482,9 +482,9 @@ async fn handle_kernel_info_request(
 
   // Create kernel info reply
   let language_info = jupyter_protocol::LanguageInfo {
-    name: "woxi".to_string(),
+    name: "wolfram".to_string(),
     version: "0.1.0".to_string(),
-    mimetype: Some("text/x-mathematica".to_string()),
+    mimetype: Some("application/vnd.wolfram.mathematica".to_string()),
     file_extension: Some(".wls".to_string()),
     pygments_lexer: Some("mathematica".to_string()),
     codemirror_mode: Some(jupyter_protocol::CodeMirrorMode::Simple(
