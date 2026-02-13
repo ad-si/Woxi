@@ -40,6 +40,11 @@ export function hasApiKey() {
   return false
 }
 
+export function hasBothApiKeys() {
+  const s = getSettings()
+  return !!s.openai_key && !!s.anthropic_key
+}
+
 export function getConversationIndex() {
   const raw = localStorage.getItem(CONVERSATIONS_KEY)
   if (!raw) return []

@@ -57,7 +57,7 @@ async function sendOpenAI(messages, { apiKey, onToken, onToolCall, onDone, onErr
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "gpt-5.2-codex",
         messages,
         tools: [TOOL_DEFINITION],
         stream: true,
@@ -200,7 +200,7 @@ async function sendAnthropic(messages, { apiKey, onToken, onToolCall, onDone, on
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-opus-4-6",
         max_tokens: 8192,
         system: systemMsg?.content || "",
         messages: anthropicMessages,

@@ -8,6 +8,11 @@ textarea {
   field-sizing: content;
 }
 
+/* Input container acts like a text field */
+.input-container {
+  cursor: text;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
