@@ -1768,6 +1768,9 @@ pub fn evaluate_function_call_ast(
     "Counts" if args.len() == 1 => {
       return list_helpers_ast::counts_ast(&args[0]);
     }
+    "BinCounts" if !args.is_empty() && args.len() <= 2 => {
+      return list_helpers_ast::bin_counts_ast(args);
+    }
     "DeleteDuplicates" if args.len() == 1 => {
       return list_helpers_ast::delete_duplicates_ast(&args[0]);
     }
