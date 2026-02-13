@@ -406,6 +406,7 @@ async function runAssistantTurn() {
               graphics = evalResult.graphics || ""
               warnings = evalResult.warnings || ""
               isError = result.startsWith("Error:")
+                || warnings.includes("not yet implemented")
             } catch (e) {
               result = "Error: " + e.message
               isError = true
