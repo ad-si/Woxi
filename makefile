@@ -76,6 +76,9 @@ install:
 
 .PHONY: wasm-build
 wasm-build:
+	# Invalidate cargo's fingerprint to force recompilation of the woxi crate.
+	# Without this, cargo's wasm32 release cache can go stale and skip rebuilding.
+	touch src/lib.rs
 	wasm-pack build \
 		-d tests/cli/playground/pkg \
 		--target web \
@@ -85,7 +88,7 @@ wasm-build:
 
 .PHONY: chat-build
 chat-build: wasm-build
-	cp -r tests/cli/playground/pkg tests/cli/chat/pkg
+	rsync -a --delete tests/cli/playground/pkg/ tests/cli/chat/pkg/
 
 
 .PHONY: jupyterlite-kernel-build
