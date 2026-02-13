@@ -4746,3 +4746,206 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(counts.into_iter().map(Expr::Integer).collect()))
 }
+
+/// Round a positive value to the nearest "nice" number (1, 2, 5, 10, 20, 50, …)
+/// using log-scale distance to decide which is closest.
+fn nice_number(x: f64) -> f64 {
+  if x <= 0.0 {
+    return 1.0;
+  }
+  let exp = x.log10().floor() as i32;
+  let base = 10f64.powi(exp);
+  let candidates = [1.0 * base, 2.0 * base, 5.0 * base, 10.0 * base];
+  let log_x = x.ln();
+  candidates
+    .iter()
+    .copied()
+    .min_by(|a, b| {
+      (a.ln() - log_x)
+        .abs()
+        .partial_cmp(&(b.ln() - log_x).abs())
+        .unwrap()
+    })
+    .unwrap()
+}
+
+/// Compute the interquartile range (Q3 - Q1) of a sorted slice.
+fn interquartile_range(sorted: &[f64]) -> f64 {
+  let n = sorted.len();
+  if n < 2 {
+    return 0.0;
+  }
+  let q1 = wolfram_quantile(sorted, 0.25);
+  let q3 = wolfram_quantile(sorted, 0.75);
+  q3 - q1
+}
+
+/// Wolfram's default Quantile: h = n*p, j = floor(h), g = h - j.
+/// If g > 0: x_{j+1}, else x_j (1-based indexing).
+fn wolfram_quantile(sorted: &[f64], p: f64) -> f64 {
+  let n = sorted.len();
+  if n == 0 {
+    return 0.0;
+  }
+  let h = n as f64 * p;
+  let j = h.floor() as usize;
+  let g = h - j as f64;
+  if g > 1e-12 {
+    // x_{j+1}, 0-based: sorted[j]
+    sorted[j.min(n - 1)]
+  } else {
+    // x_j, 0-based: sorted[j-1], but j could be 0
+    if j == 0 {
+      sorted[0]
+    } else {
+      sorted[(j - 1).min(n - 1)]
+    }
+  }
+}
+
+/// HistogramList[data] - returns {bin_edges, counts}
+/// HistogramList[data, {dx}] - explicit bin width
+/// HistogramList[data, {min, max, dx}] - explicit bin specification
+pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "HistogramList".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let values: Vec<f64> = data.iter().filter_map(expr_to_f64).collect();
+
+  if values.is_empty() {
+    return Ok(Expr::List(vec![Expr::List(vec![]), Expr::List(vec![])]));
+  }
+
+  let (min_val, max_val, dx) = if args.len() == 1 {
+    // Auto-binning: Freedman-Diaconis rule with nice number rounding
+    let mut sorted = values.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let data_min = sorted[0];
+    let data_max = sorted[sorted.len() - 1];
+    let n = sorted.len() as f64;
+
+    let iqr = interquartile_range(&sorted);
+    let dx = if iqr > 0.0 {
+      nice_number(2.0 * iqr / n.cbrt())
+    } else if data_max > data_min {
+      // Fallback: use range / Sturges' rule
+      let sturges_bins = (n.log2() + 1.0).ceil().max(1.0);
+      nice_number((data_max - data_min) / sturges_bins)
+    } else {
+      // All values identical
+      let v = data_min.abs();
+      if v == 0.0 { 1.0 } else { nice_number(v) }
+    };
+
+    let lo = (data_min / dx).floor() * dx;
+    let mut hi = (data_max / dx).ceil() * dx;
+    // Ensure data_max is strictly inside the last bin
+    if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
+      hi += dx;
+    }
+    (lo, hi, dx)
+  } else if args.len() == 2 {
+    match &args[1] {
+      // HistogramList[data, {dx}]
+      Expr::List(spec) if spec.len() == 1 => {
+        let dx = match expr_to_f64(&spec[0]) {
+          Some(v) if v > 0.0 => v,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "HistogramList".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let data_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let data_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let lo = (data_min / dx).floor() * dx;
+        let mut hi = (data_max / dx).ceil() * dx;
+        if (data_max - hi).abs() < 1e-12 * dx.max(1.0) {
+          hi += dx;
+        }
+        (lo, hi, dx)
+      }
+      // HistogramList[data, {min, max, dx}]
+      Expr::List(spec) if spec.len() == 3 => {
+        let min_v = match expr_to_f64(&spec[0]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "HistogramList".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let max_v = match expr_to_f64(&spec[1]) {
+          Some(v) => v,
+          None => {
+            return Ok(Expr::FunctionCall {
+              name: "HistogramList".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        let dx = match expr_to_f64(&spec[2]) {
+          Some(v) if v > 0.0 => v,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "HistogramList".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        };
+        (min_v, max_v, dx)
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "HistogramList".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    return Ok(Expr::FunctionCall {
+      name: "HistogramList".to_string(),
+      args: args.to_vec(),
+    });
+  };
+
+  if dx <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "HistogramList: bin width must be positive".into(),
+    ));
+  }
+
+  let num_bins = ((max_val - min_val) / dx).round() as usize;
+  if num_bins == 0 {
+    return Ok(Expr::List(vec![Expr::List(vec![]), Expr::List(vec![])]));
+  }
+
+  let mut counts = vec![0i128; num_bins];
+  for &v in &values {
+    if v >= min_val && v <= max_val {
+      let bin = ((v - min_val) / dx) as usize;
+      let bin = bin.min(num_bins - 1);
+      counts[bin] += 1;
+    }
+  }
+
+  // Build bin edges list
+  let mut edges = Vec::with_capacity(num_bins + 1);
+  for i in 0..=num_bins {
+    edges.push(f64_to_expr(min_val + i as f64 * dx));
+  }
+
+  Ok(Expr::List(vec![
+    Expr::List(edges),
+    Expr::List(counts.into_iter().map(Expr::Integer).collect()),
+  ]))
+}

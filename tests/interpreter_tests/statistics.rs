@@ -215,6 +215,101 @@ mod bin_counts {
   }
 }
 
+mod histogram_list {
+  use super::*;
+
+  #[test]
+  fn auto_binning_basic() {
+    assert_eq!(
+      interpret("HistogramList[{50, 98, 94, 45, 31, 44, 28, 69}]").unwrap(),
+      "{{0, 50, 100}, {4, 4}}"
+    );
+  }
+
+  #[test]
+  fn auto_binning_range_10() {
+    assert_eq!(
+      interpret("HistogramList[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]").unwrap(),
+      "{{0, 5, 10, 15}, {4, 5, 1}}"
+    );
+  }
+
+  #[test]
+  fn auto_binning_range_20() {
+    assert_eq!(
+      interpret("HistogramList[Range[20]]").unwrap(),
+      "{{0, 10, 20, 30}, {9, 10, 1}}"
+    );
+  }
+
+  #[test]
+  fn auto_binning_range_100() {
+    assert_eq!(
+      interpret("HistogramList[Range[100]]").unwrap(),
+      "{{0, 20, 40, 60, 80, 100, 120}, {19, 20, 20, 20, 20, 1}}"
+    );
+  }
+
+  #[test]
+  fn auto_binning_floats() {
+    assert_eq!(
+      interpret("HistogramList[{1.5, 2.3, 3.7, 4.1}]").unwrap(),
+      "{{0, 2, 4, 6}, {1, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn auto_binning_negative_values() {
+    assert_eq!(
+      interpret("HistogramList[{-5, -3, 0, 1, 7, 12}]").unwrap(),
+      "{{-10, 0, 10, 20}, {2, 3, 1}}"
+    );
+  }
+
+  #[test]
+  fn auto_binning_all_same() {
+    assert_eq!(
+      interpret("HistogramList[{1, 1, 1, 1}]").unwrap(),
+      "{{1, 2}, {4}}"
+    );
+  }
+
+  #[test]
+  fn auto_binning_single_element() {
+    assert_eq!(interpret("HistogramList[{5}]").unwrap(), "{{5, 10}, {1}}");
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("HistogramList[{}]").unwrap(), "{{}, {}}");
+  }
+
+  #[test]
+  fn explicit_bin_width() {
+    assert_eq!(
+      interpret("HistogramList[{50, 98, 94, 45, 31, 44, 28, 69}, {20}]")
+        .unwrap(),
+      "{{20, 40, 60, 80, 100}, {2, 3, 1, 2}}"
+    );
+  }
+
+  #[test]
+  fn explicit_bin_spec() {
+    assert_eq!(
+      interpret(
+        "HistogramList[{50, 98, 94, 45, 31, 44, 28, 69}, {0, 100, 25}]"
+      )
+      .unwrap(),
+      "{{0, 25, 50, 75, 100}, {0, 4, 2, 2}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    assert_eq!(interpret("HistogramList[x]").unwrap(), "HistogramList[x]");
+  }
+}
+
 mod normalize {
   use super::*;
 
