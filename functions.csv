@@ -226,6 +226,7 @@ NoneTrue,Checks if no element in a list is true,✅,pure
 Nor,Logical NOR,✅,pure
 Normal,Converts a special form to a normal expression,✅,pure
 Normalize,Normalizes a vector to unit length,✅,pure
+NormalDistribution,Represents a normal (Gaussian) probability distribution,✅,pure
 Not,Checks if a condition is false,✅,pure
 Nothing,Element that disappears from lists,✅,pure
 NumberQ,Checks if a value is a number,✅,pure
@@ -269,6 +270,7 @@ RandomChoice,Random selection with replacement,✅,contextual
 RandomInteger,Generate random integers,✅,contextual
 RandomReal,Generates a pseudorandom real number,✅,contextual
 RandomSample,Random selection without replacement,✅,contextual
+RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual
 Range,Generates a sequence of numbers,✅,pure
 Rationalize,Converts a real number to a nearby rational,✅,pure
 Re,Returns the real part of a complex number,✅,pure
@@ -372,6 +374,7 @@ TrueQ,Returns True only for the symbol True,✅,pure
 Tuples,Generates all tuples of elements from a list,✅,pure
 Unequal,Checks if two values are not equal,✅,pure
 Union,Returns sorted union of lists,✅,pure
+UniformDistribution,Represents a continuous uniform probability distribution,✅,pure
 UnitConvert,Converts a quantity to a different unit,✅,pure
 UnitStep,Returns the unit step function value,✅,pure
 Unitize,Returns 0 for zero and 1 for nonzero values,✅,pure
@@ -3959,7 +3962,6 @@ NonlocalMeansFilter,,,
 NorlundB,,,
 Norm,,,
 NormFunction,,,
-NormalDistribution,,,
 NormalMatrixQ,,,
 NormalizationLayer,,,
 Normalized,,,
@@ -4607,7 +4609,6 @@ RandomPrime,,,
 RandomSeeding,,,
 RandomTime,,,
 RandomTree,,,
-RandomVariate,,,
 RandomWalkProcess,,,
 RandomWord,,,
 RangeFilter,,,
@@ -5823,7 +5824,6 @@ UndoOptions,,,
 UndoTrackedVariables,,,
 UnequalTo,,,
 Unevaluated,,,
-UniformDistribution,,,
 UniformGraphDistribution,,,
 UniformPolyhedron,,,
 UniformSumDistribution,,,

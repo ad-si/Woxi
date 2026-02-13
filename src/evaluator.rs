@@ -1664,6 +1664,25 @@ pub fn evaluate_function_call_ast(
         args: args.to_vec(),
       });
     }
+    // Distribution heads — inert symbolic forms
+    "UniformDistribution" if args.len() == 1 => {
+      return Ok(Expr::FunctionCall {
+        name: "UniformDistribution".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    "NormalDistribution" => {
+      // NormalDistribution[] defaults to NormalDistribution[0, 1]
+      let norm_args = if args.is_empty() {
+        vec![Expr::Integer(0), Expr::Integer(1)]
+      } else {
+        args.to_vec()
+      };
+      return Ok(Expr::FunctionCall {
+        name: "NormalDistribution".to_string(),
+        args: norm_args,
+      });
+    }
     "ValueQ" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0] {
         let has_value = ENV.with(|e| e.borrow().contains_key(sym));
@@ -2656,6 +2675,9 @@ pub fn evaluate_function_call_ast(
     }
     "RandomSample" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::random_sample_ast(args);
+    }
+    "RandomVariate" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::random_variate_ast(args);
     }
     "Clip" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::clip_ast(args);
