@@ -1,7 +1,12 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-PartExtract = { (FunctionCall | List | Slot | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
+// Part extraction suffix: [[expr, ...]] for indexing
+PartIndexSuffix = { ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
+
+// PartExtract for non-FunctionCall bases only (List, Slot, Identifier)
+// FunctionCall-based Part extraction is handled by FunctionCallExtended
+PartExtract = { (List | Slot | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* }
@@ -35,6 +40,7 @@ ParenAnonymousFunction = { "(" ~ (CompoundExpression | Expression) ~ ")" ~ "&" ~
 // Optional BracketArgs allow direct calls: {#, #^2}&[3]
 ListAnonymousFunction = { List ~ "&" ~ !"&" ~ BracketArgs* }
 // PartAnonymousFunction handles PartExtract& - for expressions like #[[2]]& or #[[1]] + #[[2]]&
+// Only for non-FunctionCall bases (List/Slot/Identifier). FC-based handled by FunctionCallExtended.
 // Optional BracketArgs allow direct calls: #[[2]]&[{3, 4, 5}]
 PartAnonymousFunction = { PartExtract ~ (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
@@ -113,6 +119,24 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // The result is the value of the last expression (like Wolfram's CompoundExpression)
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
 CompoundExpression = { Expression ~ (";" ~ Expression)+ ~ ";"? | Expression ~ ";" }
+
+// FunctionCallExtended: merges FunctionCall, FunctionCall-based PartExtract,
+// FunctionAnonymousFunction, and FunctionCall-based PartAnonymousFunction
+// into a single rule. This parses the function call ONCE, then checks for
+// optional Part extraction ([[...]]) or anonymous function (&) suffixes.
+// This eliminates exponential backtracking caused by parsing the same
+// FunctionCall 4 times through separate Term alternatives.
+// Named suffix rules so pair_to_expr can detect them reliably.
+FunctionCallAnonSuffix = { "&" ~ !"&" ~ BracketArgs* }
+FunctionCallPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
+FunctionCallExtended = {
+    (Identifier | SimpleAnonymousFunction) ~ BracketArgs+
+    ~ (
+        PartIndexSuffix ~ FunctionCallPartAnonSuffix?
+      | FunctionCallAnonSuffix
+    )?
+}
+
 Term = _{
     PartAnonymousFunction
   | PartExtract
@@ -120,9 +144,8 @@ Term = _{
   | String
   | ListAnonymousFunction
   | List
-  | FunctionAnonymousFunction
   | ParenAnonymousFunction
-  | FunctionCall
+  | FunctionCallExtended
   | SimpleAnonymousFunction
   | ImplicitTimes
   | NumericValue
@@ -158,9 +181,8 @@ TermNoImplicit = _{
   | String
   | ListAnonymousFunction
   | List
-  | FunctionAnonymousFunction
   | ParenAnonymousFunction
-  | FunctionCall
+  | FunctionCallExtended
   | SimpleAnonymousFunction
   | ImplicitTimes
   | NumericValue

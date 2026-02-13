@@ -450,6 +450,171 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         .collect();
       Expr::List(items)
     }
+    Rule::FunctionCallExtended => {
+      // Merged rule: FunctionCall + optional Part extraction + optional anonymous function suffix
+      // Inner pairs: (Identifier|SimpleAnonymousFunction) BracketArgs+ [PartIndexSuffix [FunctionCallPartAnonSuffix] | FunctionCallAnonSuffix]
+      let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
+      let full_str = pair.as_str();
+
+      let name_pair = &inner_pairs[0];
+
+      // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
+      let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
+        .iter()
+        .skip(1) // skip Identifier/SimpleAnonymousFunction
+        .take_while(|p| matches!(p.as_rule(), Rule::BracketArgs))
+        .map(|bracket| bracket.clone().into_inner().map(pair_to_expr).collect())
+        .collect();
+
+      // Detect suffix types via named rules
+      let has_part_index = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
+      let has_anon_suffix = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::FunctionCallAnonSuffix));
+      let has_part_anon_suffix = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::FunctionCallPartAnonSuffix));
+
+      // Extract part indices if present
+      let part_indices: Vec<Expr> = inner_pairs
+        .iter()
+        .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+        .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+        .collect();
+
+      // Build the base function call expression
+      let base_func =
+        if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
+          let anon_expr = pair_to_expr(name_pair.clone());
+          let mut result = Expr::CurriedCall {
+            func: Box::new(anon_expr),
+            args: fc_bracket_args[0].clone(),
+          };
+          for args in fc_bracket_args.iter().skip(1) {
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args: args.clone(),
+            };
+          }
+          result
+        } else {
+          let name = name_pair.as_str().to_string();
+          if fc_bracket_args.len() == 1 {
+            Expr::FunctionCall {
+              name,
+              args: fc_bracket_args[0].clone(),
+            }
+          } else {
+            let mut result = Expr::FunctionCall {
+              name,
+              args: fc_bracket_args[0].clone(),
+            };
+            for args in fc_bracket_args.iter().skip(1) {
+              result = Expr::CurriedCall {
+                func: Box::new(result),
+                args: args.clone(),
+              };
+            }
+            result
+          }
+        };
+
+      // Helper: extract BracketArgs from a suffix pair
+      let extract_suffix_brackets =
+        |suffix_pair: &pest::iterators::Pair<Rule>| -> Vec<Vec<Expr>> {
+          suffix_pair
+            .clone()
+            .into_inner()
+            .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+            .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+            .collect::<Vec<Vec<Expr>>>()
+        };
+
+      // Helper: wrap body in Function and optionally apply to bracket args
+      let make_anon_func = |body: Expr, bracket_args: Vec<Vec<Expr>>| -> Expr {
+        let anon_func = Expr::Function {
+          body: Box::new(body),
+        };
+        if bracket_args.is_empty() {
+          anon_func
+        } else {
+          let mut result = Expr::CurriedCall {
+            func: Box::new(anon_func),
+            args: bracket_args[0].clone(),
+          };
+          for args in bracket_args.into_iter().skip(1) {
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args,
+            };
+          }
+          result
+        }
+      };
+
+      if has_part_index && has_part_anon_suffix {
+        // PartAnonymousFunction: f[x][[i]] op ... &[args]
+        let mut part_result = base_func;
+        for idx in &part_indices {
+          part_result = Expr::Part {
+            expr: Box::new(part_result),
+            index: Box::new(idx.clone()),
+          };
+        }
+        // Re-parse the full body (everything before &) as anonymous function body
+        let body_str = {
+          let s = full_str.trim();
+          if let Some(amp_pos) = s.rfind('&') {
+            if amp_pos == 0 || s.as_bytes()[amp_pos - 1] != b'&' {
+              s[..amp_pos].trim()
+            } else {
+              s
+            }
+          } else {
+            s
+          }
+        };
+        let body = parse_anonymous_body(body_str);
+        let suffix_pair = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::FunctionCallPartAnonSuffix))
+          .unwrap();
+        let anon_brackets = extract_suffix_brackets(suffix_pair);
+        make_anon_func(body, anon_brackets)
+      } else if has_part_index {
+        // Plain PartExtract: f[x][[i]]
+        let mut result = base_func;
+        for idx in &part_indices {
+          result = Expr::Part {
+            expr: Box::new(result),
+            index: Box::new(idx.clone()),
+          };
+        }
+        result
+      } else if has_anon_suffix {
+        // FunctionAnonymousFunction: f[x]&[args]
+        let body_str = {
+          let s = full_str.trim();
+          if let Some(amp_pos) = s.rfind('&') {
+            s[..amp_pos].trim()
+          } else {
+            s
+          }
+        };
+        let body = parse_anonymous_body(body_str);
+        let suffix_pair = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::FunctionCallAnonSuffix))
+          .unwrap();
+        let anon_brackets = extract_suffix_brackets(suffix_pair);
+        make_anon_func(body, anon_brackets)
+      } else {
+        // Plain FunctionCall
+        base_func
+      }
+    }
     Rule::FunctionCall => {
       let mut inner = pair.into_inner();
       let name_pair = inner.next().unwrap();
