@@ -79,7 +79,7 @@ export class WoxiKernel extends BaseKernel implements IKernel {
           execution_count: this.executionCount,
           data: {
             'image/svg+xml': graphics,
-            'text/plain': '-Graphics-',
+            'text/plain': '',
           },
           metadata: {},
         });
