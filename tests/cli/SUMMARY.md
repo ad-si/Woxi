@@ -14,6 +14,7 @@
   - [Symbolic](symbolic.md)
   - [Replacement Rules](replacement_rules.md)
 - [Jupyter](jupyter.md)
+- [Effect Levels](effect_levels.md)
 - [Resources](resources.md)
 - [Related](related.md)
 - [Playground](playground/index.html)
