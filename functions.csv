@@ -280,6 +280,7 @@ ReplacePart,Replaces element at a specific position,✅,pure
 ReplaceRepeated,Applies replacement rules repeatedly until fixed point,✅,pure
 Rescale,Rescales values to a specified range,✅,pure
 Rest,Returns the list without its first element,✅,pure
+RegularExpression,Represents a regular expression pattern for string matching,✅,pure
 Return,Returns a value from a function or control structure,✅,pure
 Reverse,Returns a list with elements in reverse order,✅,pure
 Riffle,Inserts an element between each pair of elements,✅,pure
@@ -4715,7 +4716,6 @@ RegionSymmetricDifference,,,
 RegionUnion,,,
 RegionWithin,,,
 RegisterExternalEvaluator,,,
-RegularExpression,,,
 RegularPolygon,,,
 Regularization,,,
 RegularlySampledQ,,,

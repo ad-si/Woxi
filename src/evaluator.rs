@@ -1657,6 +1657,13 @@ pub fn evaluate_function_call_ast(
         args: args.to_vec(),
       });
     }
+    // Inert symbolic head — evaluates to itself (used as argument to StringSplit etc.)
+    "RegularExpression" if args.len() == 1 => {
+      return Ok(Expr::FunctionCall {
+        name: "RegularExpression".to_string(),
+        args: args.to_vec(),
+      });
+    }
     "ValueQ" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0] {
         let has_value = ENV.with(|e| e.borrow().contains_key(sym));
