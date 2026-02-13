@@ -1,7 +1,7 @@
 import { initWoxi, evaluateCode, clearState, isReady } from "./woxi.js"
 import { sendMessage } from "./api.js"
 import {
-  getSettings, saveSettings, hasApiKey, getConversationIndex,
+  getSettings, saveSettings, hasApiKey, hasBothApiKeys, getConversationIndex,
   getConversation, createConversation, deleteConversation,
   appendMessage, getMessages, clearAllData, truncateMessages,
 } from "./chat.js"
@@ -39,6 +39,7 @@ const inputEls = document.querySelectorAll(".chat-input")
 const sendBtns = document.querySelectorAll(".send-btn")
 const sendIcons = document.querySelectorAll(".send-icon")
 const stopIcons = document.querySelectorAll(".stop-icon")
+const providerToggles = document.querySelectorAll(".provider-toggle")
 
 // --- State ---
 let activeConvId = null
@@ -46,6 +47,7 @@ let abortController = null
 let isSending = false
 let selectedProvider = "openai"
 
+const PROVIDER_LABELS = { openai: "GPT 5.2 Codex", anthropic: "Claude Opus 4.6" }
 const MAX_TOOL_CALLS_PER_TURN = 10
 
 /** Returns the currently visible input textarea */
@@ -284,6 +286,13 @@ function updateInputState() {
     sendIcons.forEach((el) => el.classList.remove("hidden"))
     stopIcons.forEach((el) => el.classList.add("hidden"))
   }
+
+  const showToggle = hasBothApiKeys()
+  providerToggles.forEach((btn) => {
+    btn.classList.toggle("hidden", !showToggle)
+    const label = btn.querySelector(".provider-label")
+    if (label) label.textContent = PROVIDER_LABELS[selectedProvider] || selectedProvider
+  })
 }
 
 async function handleSend() {
@@ -489,6 +498,24 @@ clearDataBtn.addEventListener("click", () => {
     updateInputState()
     showToast("All data cleared", "info")
   }
+})
+
+providerToggles.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const s = getSettings()
+    selectedProvider = selectedProvider === "openai" ? "anthropic" : "openai"
+    s.provider = selectedProvider
+    saveSettings(s)
+    updateProviderUI()
+    updateInputState()
+  })
+})
+
+document.querySelectorAll(".input-container").forEach((container) => {
+  container.addEventListener("click", (e) => {
+    if (e.target.closest("button")) return
+    container.querySelector("textarea")?.focus()
+  })
 })
 
 sendBtns.forEach((btn) => {
