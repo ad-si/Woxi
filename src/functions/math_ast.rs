@@ -2229,8 +2229,43 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "RandomReal: invalid argument".into(),
       )),
     },
+    2 => {
+      // RandomReal[range, n] - generate n random reals
+      let n = match &args[1] {
+        Expr::Integer(n) if *n > 0 => *n as usize,
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "RandomReal: second argument must be a positive integer".into(),
+          ));
+        }
+      };
+
+      let (min, max) = match &args[0] {
+        Expr::Integer(m) => (0.0, *m as f64),
+        Expr::Real(m) => (0.0, *m),
+        Expr::List(items) if items.len() == 2 => {
+          let lo = expr_to_num(&items[0]).ok_or_else(|| {
+            InterpreterError::EvaluationError("RandomReal: invalid min".into())
+          })?;
+          let hi = expr_to_num(&items[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError("RandomReal: invalid max".into())
+          })?;
+          (lo, hi)
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "RandomReal: invalid range".into(),
+          ));
+        }
+      };
+
+      let results: Vec<Expr> = (0..n)
+        .map(|_| Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
+        .collect();
+      Ok(Expr::List(results))
+    }
     _ => Err(InterpreterError::EvaluationError(
-      "RandomReal expects 0 or 1 argument".into(),
+      "RandomReal expects 0, 1, or 2 arguments".into(),
     )),
   }
 }

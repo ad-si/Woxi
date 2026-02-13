@@ -1022,3 +1022,76 @@ mod ordered_q {
     assert_eq!(interpret("OrderedQ[{}]").unwrap(), "True");
   }
 }
+
+mod random_real {
+  use super::*;
+
+  #[test]
+  fn no_args() {
+    let result: f64 = interpret("RandomReal[]").unwrap().parse().unwrap();
+    assert!(result >= 0.0 && result < 1.0);
+  }
+
+  #[test]
+  fn with_max() {
+    let result: f64 = interpret("RandomReal[5]").unwrap().parse().unwrap();
+    assert!(result >= 0.0 && result < 5.0);
+  }
+
+  #[test]
+  fn with_range() {
+    let result: f64 = interpret("RandomReal[{2, 5}]").unwrap().parse().unwrap();
+    assert!(result >= 2.0 && result < 5.0);
+  }
+
+  #[test]
+  fn list_with_max() {
+    assert_eq!(interpret("Length[RandomReal[1, 10]]").unwrap(), "10");
+  }
+
+  #[test]
+  fn list_with_range() {
+    assert_eq!(interpret("Length[RandomReal[{0, 1}, 50]]").unwrap(), "50");
+  }
+
+  #[test]
+  fn list_values_in_range() {
+    // All values should be between 3 and 7
+    assert_eq!(
+      interpret("AllTrue[RandomReal[{3, 7}, 100], (# >= 3 && # < 7) &]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn mean_of_random_reals() {
+    // Mean of RandomReal[1, 1000] should be a real number
+    let result: f64 = interpret("Mean[RandomReal[1, 1000]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(result > 0.0 && result < 1.0);
+  }
+}
+
+mod random_integer {
+  use super::*;
+
+  #[test]
+  fn no_args() {
+    let result: i128 = interpret("RandomInteger[]").unwrap().parse().unwrap();
+    assert!(result == 0 || result == 1);
+  }
+
+  #[test]
+  fn with_max() {
+    let result: i128 = interpret("RandomInteger[10]").unwrap().parse().unwrap();
+    assert!(result >= 0 && result <= 10);
+  }
+
+  #[test]
+  fn list_form() {
+    assert_eq!(interpret("Length[RandomInteger[10, 5]]").unwrap(), "5");
+  }
+}
