@@ -103,7 +103,7 @@ function createToolResultMessage(msg) {
 
 export function createToolCard(toolCallId, code, result, isError, graphics) {
   const card = document.createElement("div")
-  card.className = "tool-card"
+  card.className = `tool-card${isError ? " collapsed" : ""}`
   card.dataset.toolCallId = toolCallId
 
   const header = document.createElement("div")
@@ -111,7 +111,7 @@ export function createToolCard(toolCallId, code, result, isError, graphics) {
   header.innerHTML = `
     <svg class="chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
     <span>Wolfram Language</span>
-    ${result === undefined ? '<div class="spinner"></div>' : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'}
+    ${result === undefined ? '<div class="spinner"></div>' : isError ? '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>' : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'}
   `
   header.addEventListener("click", () => card.classList.toggle("collapsed"))
   card.appendChild(header)
@@ -146,7 +146,9 @@ export function updateToolCard(toolCallId, result, isError, graphics) {
   const card = document.querySelector(`.tool-card[data-tool-call-id="${toolCallId}"]`)
   if (!card) return
 
-  // Replace spinner with check
+  if (isError) card.classList.add("collapsed")
+
+  // Replace spinner with check/error icon
   const header = card.querySelector(".tool-card-header")
   const spinner = header.querySelector(".spinner")
   if (spinner) {
