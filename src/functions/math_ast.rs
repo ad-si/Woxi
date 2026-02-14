@@ -560,15 +560,20 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Sort symbolic terms: polynomial-like terms first, then transcendental functions
-    // This gives Mathematica-like ordering where x^2 comes before Sin[x]
+    // This gives Mathematica-like ordering where x^2 comes before Sin[x].
+    // For alphabetical comparison, strip the leading "-" from negated terms
+    // so that -x sorts next to x rather than before everything.
     symbolic_args.sort_by(|a, b| {
       let pa = term_priority(a);
       let pb = term_priority(b);
       if pa != pb {
         pa.cmp(&pb)
       } else {
-        // Same priority - sort alphabetically
-        crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+        let sa = crate::syntax::expr_to_string(a);
+        let sb = crate::syntax::expr_to_string(b);
+        let sa_stripped = sa.strip_prefix('-').unwrap_or(&sa);
+        let sb_stripped = sb.strip_prefix('-').unwrap_or(&sb);
+        sa_stripped.cmp(sb_stripped)
       }
     });
     final_args.extend(symbolic_args);
@@ -620,15 +625,33 @@ fn term_priority(e: &Expr) -> i32 {
   }
 }
 
+/// Sub-priority for Times factor ordering: identifiers before function calls.
+/// This ensures I sorts before Conjugate[x], matching Wolfram behavior.
+fn times_factor_subpriority(e: &Expr) -> i32 {
+  match e {
+    Expr::Identifier(_) | Expr::Constant(_) => 0,
+    Expr::FunctionCall { name, .. } => match name.as_str() {
+      "Times" | "Power" | "Plus" | "Rational" => 0,
+      _ => 1,
+    },
+    _ => 0,
+  }
+}
+
 fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
   symbolic_args.sort_by(|a, b| {
     let pa = term_priority(a);
     let pb = term_priority(b);
     if pa != pb {
-      pa.cmp(&pb)
-    } else {
-      crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+      return pa.cmp(&pb);
     }
+    // Within same priority, identifiers before function calls
+    let sa = times_factor_subpriority(a);
+    let sb = times_factor_subpriority(b);
+    if sa != sb {
+      return sa.cmp(&sb);
+    }
+    crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
   });
 }
 
@@ -6415,6 +6438,208 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Helper: check if an expression is a known real value (Integer, Real, or Rational)
+fn is_known_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::Real(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      matches!((&args[0], &args[1]), (Expr::Integer(_), Expr::Integer(_)))
+    }
+    _ => false,
+  }
+}
+
+/// Conjugate a single expression, returning the conjugated form.
+/// For known reals, returns the value; for I, returns -I;
+/// for Plus/Times/List, distributes; otherwise wraps in Conjugate[...].
+fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // Known real numbers are their own conjugate
+  if is_known_real(expr) {
+    return Ok(expr.clone());
+  }
+
+  // Complex[a, b] -> Complex[a, -b]
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Complex"
+    && args.len() == 2
+  {
+    let neg_imag = match &args[1] {
+      Expr::Integer(n) => Expr::Integer(-*n),
+      Expr::Real(f) => Expr::Real(-*f),
+      other => Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(other.clone()),
+      },
+    };
+    return Ok(Expr::FunctionCall {
+      name: "Complex".to_string(),
+      args: vec![args[0].clone(), neg_imag],
+    });
+  }
+
+  // Try exact integer/rational complex extraction: handles numeric a + b*I patterns
+  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(expr) {
+    return Ok(build_complex_expr(rn, rd, -in_, id));
+  }
+
+  // Try float complex extraction: handles 1.5 + 2.5*I patterns
+  if let Some((re, im)) = try_extract_complex_float(expr) {
+    return Ok(build_complex_float_expr(re, -im));
+  }
+
+  // I -> -I
+  if let Expr::Identifier(name) = expr
+    && name == "I"
+  {
+    return times_ast(&[Expr::Integer(-1), Expr::Identifier("I".to_string())]);
+  }
+
+  // Distribute over Plus (both FunctionCall and BinaryOp forms)
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Plus"
+    && !args.is_empty()
+  {
+    let conj_args: Vec<Expr> =
+      args.iter().map(conjugate_one).collect::<Result<_, _>>()?;
+    return plus_ast(&conj_args);
+  }
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left,
+    right,
+  } = expr
+  {
+    return plus_ast(&[conjugate_one(left)?, conjugate_one(right)?]);
+  }
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left,
+    right,
+  } = expr
+  {
+    let conj_left = conjugate_one(left)?;
+    let neg_conj_right =
+      times_ast(&[Expr::Integer(-1), conjugate_one(right)?])?;
+    return plus_ast(&[conj_left, neg_conj_right]);
+  }
+
+  // Distribute over Times: factor out known-real and I factors
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && !args.is_empty()
+  {
+    // Separate into known-real/I factors and symbolic factors
+    let mut real_factors: Vec<Expr> = Vec::new();
+    let mut symbolic_factors: Vec<Expr> = Vec::new();
+    let mut i_count: usize = 0;
+
+    for arg in args {
+      if is_known_real(arg) {
+        real_factors.push(arg.clone());
+      } else if matches!(arg, Expr::Identifier(n) if n == "I") {
+        i_count += 1;
+      } else {
+        symbolic_factors.push(arg.clone());
+      }
+    }
+
+    // If we have any known factors or I to pull out
+    if !real_factors.is_empty() || i_count > 0 {
+      // Handle I^n: I^0=1, I^1=-I (conjugated), I^2=-1, I^3=I (conjugated)
+      let i_mod = i_count % 4;
+      // Build the I contribution as a single expression
+      let i_factor: Option<Expr> = match i_mod {
+        1 => {
+          // Conjugate[I] = -I
+          Some(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
+          })
+        }
+        2 => {
+          // I*I = -1, Conjugate[-1] = -1
+          Some(Expr::Integer(-1))
+        }
+        3 => {
+          // I^3 = -I, Conjugate[-I] = I
+          Some(Expr::Identifier("I".to_string()))
+        }
+        _ => None, // i_mod == 0: no I factor
+      };
+
+      // Build the conjugated symbolic part
+      let conj_symbolic = if symbolic_factors.is_empty() {
+        None
+      } else if symbolic_factors.len() == 1 {
+        Some(conjugate_one(&symbolic_factors[0])?)
+      } else {
+        Some(conjugate_one(&Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: symbolic_factors,
+        })?)
+      };
+
+      // Combine: real_factors * i_factor * conj_symbolic
+      let mut all_factors: Vec<Expr> = real_factors;
+      if let Some(ifact) = i_factor {
+        all_factors.push(ifact);
+      }
+      if let Some(cs) = conj_symbolic {
+        all_factors.push(cs);
+      }
+
+      return times_ast(&all_factors);
+    }
+  }
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    // Convert to flattened form and handle there
+    let flat = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![*left.clone(), *right.clone()],
+    };
+    return conjugate_one(&flat);
+  }
+
+  // Distribute over List (both Expr::List and FunctionCall "List")
+  if let Expr::List(items) = expr {
+    let conj_items: Vec<Expr> =
+      items.iter().map(conjugate_one).collect::<Result<_, _>>()?;
+    return Ok(Expr::List(conj_items));
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "List"
+  {
+    let conj_args: Vec<Expr> =
+      args.iter().map(conjugate_one).collect::<Result<_, _>>()?;
+    return Ok(Expr::FunctionCall {
+      name: "List".to_string(),
+      args: conj_args,
+    });
+  }
+
+  // UnaryOp Minus: Conjugate[-x] = -Conjugate[x]
+  if let Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand,
+  } = expr
+  {
+    return times_ast(&[Expr::Integer(-1), conjugate_one(operand)?]);
+  }
+
+  // Default: return unevaluated Conjugate[expr]
+  Ok(Expr::FunctionCall {
+    name: "Conjugate".to_string(),
+    args: vec![expr.clone()],
+  })
+}
+
 /// Conjugate[z] - Complex conjugate (for real numbers, returns the number itself)
 pub fn conjugate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -6423,44 +6648,7 @@ pub fn conjugate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Handle real numbers directly
-  match &args[0] {
-    Expr::Integer(_) | Expr::Real(_) => return Ok(args[0].clone()),
-    Expr::FunctionCall { name, args: inner }
-      if name == "Complex" && inner.len() == 2 =>
-    {
-      // Negate the imaginary part
-      let neg_imag = match &inner[1] {
-        Expr::Integer(n) => Expr::Integer(-*n),
-        Expr::Real(f) => Expr::Real(-*f),
-        other => Expr::UnaryOp {
-          op: crate::syntax::UnaryOperator::Minus,
-          operand: Box::new(other.clone()),
-        },
-      };
-      return Ok(Expr::FunctionCall {
-        name: "Complex".to_string(),
-        args: vec![inner[0].clone(), neg_imag],
-      });
-    }
-    _ => {}
-  }
-
-  // Try exact integer/rational complex extraction: handles a + b*I patterns
-  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
-    return Ok(build_complex_expr(rn, rd, -in_, id));
-  }
-
-  // Try float complex extraction: handles 1.5 + 2.5*I patterns
-  if let Some((re, im)) = try_extract_complex_float(&args[0]) {
-    return Ok(build_complex_float_expr(re, -im));
-  }
-
-  // Symbolic: return unevaluated
-  Ok(Expr::FunctionCall {
-    name: "Conjugate".to_string(),
-    args: args.to_vec(),
-  })
+  conjugate_one(&args[0])
 }
 
 /// Arg[z] - Argument (phase angle) of a complex number
