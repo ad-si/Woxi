@@ -65,15 +65,32 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True
-pub fn select_ast(list: &Expr, pred: &Expr) -> Result<Expr, InterpreterError> {
+/// Select[{a, b, c}, pred, n] -> first n elements where pred[elem] is True
+pub fn select_ast(
+  list: &Expr,
+  pred: &Expr,
+  n: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
+      let mut args = vec![list.clone(), pred.clone()];
+      if let Some(limit) = n {
+        args.push(limit.clone());
+      }
       return Ok(Expr::FunctionCall {
         name: "Select".to_string(),
-        args: vec![list.clone(), pred.clone()],
+        args,
       });
     }
+  };
+
+  let limit = match n {
+    Some(expr) => match expr {
+      Expr::Integer(i) => Some(*i as usize),
+      _ => None,
+    },
+    None => None,
   };
 
   let mut kept = Vec::new();
@@ -81,6 +98,11 @@ pub fn select_ast(list: &Expr, pred: &Expr) -> Result<Expr, InterpreterError> {
     let result = apply_func_ast(pred, item)?;
     if expr_to_bool(&result) == Some(true) {
       kept.push(item.clone());
+      if let Some(lim) = limit
+        && kept.len() >= lim
+      {
+        break;
+      }
     }
   }
 
