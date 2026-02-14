@@ -137,13 +137,14 @@ pub fn numeric_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumericQ expects exactly 1 argument".into(),
     ));
   }
-  // Same as NumberQ for evaluated expressions
+  // NumericQ returns True for numbers and known numeric constants (Pi, E, Degree)
   let is_numeric = matches!(
     &args[0],
     Expr::Integer(_)
       | Expr::BigInteger(_)
       | Expr::Real(_)
       | Expr::BigFloat(_, _)
+      | Expr::Constant(_)
   );
   Ok(bool_expr(is_numeric))
 }

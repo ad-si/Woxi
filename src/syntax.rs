@@ -1896,6 +1896,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
           } if matches!(t_left.as_ref(), Expr::Integer(-1)) => {
             Some(t_right.as_ref())
           }
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } => Some(operand.as_ref()),
           Expr::FunctionCall { name, args }
             if name == "Times"
               && args.len() >= 2
