@@ -17,6 +17,43 @@ mod for_loop {
     clear_state();
     assert_eq!(interpret("For[i = 0, i < 3, i++, i]").unwrap(), "Null");
   }
+
+  #[test]
+  fn for_three_args_no_body() {
+    clear_state();
+    assert_eq!(interpret("For[i = 1, i < 10, i = i*2]; i").unwrap(), "16");
+  }
+
+  #[test]
+  fn for_with_break() {
+    clear_state();
+    assert_eq!(
+      interpret("For[i = 0, i < 10, i++, If[i == 5, Break[]]]; i").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn for_with_continue() {
+    clear_state();
+    assert_eq!(
+      interpret("s = 0; For[i = 0, i < 10, i++, If[Mod[i,2] == 0, Continue[]]; s += i]; s")
+        .unwrap(),
+      "25"
+    );
+  }
+
+  #[test]
+  fn for_with_return_in_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[n_] := For[i = 2, i <= n, i++, If[Mod[n, i] == 0, Return[i]]]; f[15]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
 }
 
 mod while_loop {
