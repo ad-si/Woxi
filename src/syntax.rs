@@ -310,6 +310,11 @@ pub enum Expr {
   CurriedCall { func: Box<Expr>, args: Vec<Expr> },
   /// Anonymous function: body &
   Function { body: Box<Expr> },
+  /// Named-parameter function: Function[x, body] or Function[{x,y,...}, body]
+  NamedFunction {
+    params: Vec<String>,
+    body: Box<Expr>,
+  },
   /// Pattern: name_ or name_Head
   Pattern { name: String, head: Option<String> },
   /// Optional pattern: name_ : default or name_Head : default
@@ -2274,6 +2279,17 @@ pub fn expr_to_string(expr: &Expr) -> String {
     Expr::Function { body } => {
       format!("{}&", expr_to_string(body))
     }
+    Expr::NamedFunction { params, body } => {
+      if params.len() == 1 {
+        format!("Function[{}, {}]", params[0], expr_to_string(body))
+      } else {
+        format!(
+          "Function[{{{}}}, {}]",
+          params.join(", "),
+          expr_to_string(body)
+        )
+      }
+    }
     Expr::Pattern { name, head } => {
       if let Some(h) = head {
         format!("{}_{}", name, h)
@@ -2829,6 +2845,13 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
       // Slots (#, #2, etc.) bind to the innermost & (Function).
       Expr::Function { body: body.clone() }
     }
+    Expr::NamedFunction { params, body } => {
+      // Named functions don't use slots, so no substitution needed
+      Expr::NamedFunction {
+        params: params.clone(),
+        body: body.clone(),
+      }
+    }
     Expr::PatternOptional {
       name,
       head,
@@ -2957,6 +2980,21 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     Expr::Function { body } => Expr::Function {
       body: Box::new(substitute_variable(body, var_name, value)),
     },
+    Expr::NamedFunction { params, body } => {
+      // Don't substitute if var_name is one of the function's own parameters
+      // (they are locally scoped)
+      if params.contains(&var_name.to_string()) {
+        Expr::NamedFunction {
+          params: params.clone(),
+          body: body.clone(),
+        }
+      } else {
+        Expr::NamedFunction {
+          params: params.clone(),
+          body: Box::new(substitute_variable(body, var_name, value)),
+        }
+      }
+    }
     Expr::PatternOptional {
       name,
       head,

@@ -230,6 +230,15 @@ fn apply_func_to_two_args(
         crate::syntax::substitute_slots(body, &[arg1.clone(), arg2.clone()]);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
+    Expr::NamedFunction { params, body } => {
+      let mut substituted = (**body).clone();
+      let args_vec = [arg1, arg2];
+      for (param, arg) in params.iter().zip(args_vec.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
     Expr::FunctionCall { name, args } => {
       // Curried function: f[a] applied to (b, c) becomes f[a, b, c]
       let mut new_args = args.clone();
@@ -1480,6 +1489,14 @@ fn apply_func_to_n_args(
     }
     Expr::Function { body } => {
       let substituted = crate::syntax::substitute_slots(body, args);
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    Expr::NamedFunction { params, body } => {
+      let mut substituted = (**body).clone();
+      for (param, arg) in params.iter().zip(args.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::FunctionCall { name, args: fa } => {
@@ -3851,6 +3868,14 @@ pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
       let substituted = crate::syntax::substitute_slots(body, &items);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
+    Expr::NamedFunction { params, body } => {
+      let mut substituted = (**body).clone();
+      for (param, arg) in params.iter().zip(items.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
     _ => Err(InterpreterError::EvaluationError(
       "Apply: first argument must be a function".into(),
     )),
@@ -3896,6 +3921,15 @@ pub fn outer_ast(
         Expr::Function { body } => {
           let substituted =
             crate::syntax::substitute_slots(body, &[a.clone(), b.clone()]);
+          crate::evaluator::evaluate_expr_to_expr(&substituted)?
+        }
+        Expr::NamedFunction { params, body } => {
+          let mut substituted = (**body).clone();
+          let args_vec = [a, b];
+          for (param, arg) in params.iter().zip(args_vec.iter()) {
+            substituted =
+              crate::syntax::substitute_variable(&substituted, param, arg);
+          }
           crate::evaluator::evaluate_expr_to_expr(&substituted)?
         }
         _ => {
@@ -3950,6 +3984,15 @@ pub fn inner_ast(
       Expr::Function { body } => {
         let substituted =
           crate::syntax::substitute_slots(body, &[a.clone(), b.clone()]);
+        crate::evaluator::evaluate_expr_to_expr(&substituted)?
+      }
+      Expr::NamedFunction { params, body } => {
+        let mut substituted = (**body).clone();
+        let args_vec = [a, b];
+        for (param, arg) in params.iter().zip(args_vec.iter()) {
+          substituted =
+            crate::syntax::substitute_variable(&substituted, param, arg);
+        }
         crate::evaluator::evaluate_expr_to_expr(&substituted)?
       }
       _ => {

@@ -104,6 +104,11 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           return Ok(format!("If[{}]", args_str.join(", ")));
         }
       }
+      // Functions with HoldAll: pass args unevaluated
+      if name == "Function" {
+        let result = evaluate_function_call_ast(name, args)?;
+        return Ok(expr_to_string(&result));
+      }
       // Evaluate using AST path to avoid interpret() recursion
       let evaluated_args: Vec<Expr> = args
         .iter()
@@ -378,6 +383,12 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
     Expr::Function { body } => {
       // Return anonymous function as-is (with & appended)
       Ok(format!("{}&", expr_to_string(body)))
+    }
+    Expr::NamedFunction { params, body } => {
+      Ok(expr_to_string(&Expr::NamedFunction {
+        params: params.clone(),
+        body: body.clone(),
+      }))
     }
     Expr::Pattern { name, head } => {
       if let Some(h) = head {
@@ -684,6 +695,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "Do"
         || name == "With"
         || name == "Block"
+        || name == "Function"
         || name == "For"
         || name == "While"
         || name == "ClearAll"
@@ -699,7 +711,9 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       let var_val = ENV.with(|e| e.borrow().get(name).cloned());
       if let Some(StoredValue::ExprVal(stored_expr)) = &var_val {
         match stored_expr {
-          Expr::Function { .. } | Expr::FunctionCall { .. } => {
+          Expr::Function { .. }
+          | Expr::NamedFunction { .. }
+          | Expr::FunctionCall { .. } => {
             let evaluated_args: Vec<Expr> = args
               .iter()
               .map(evaluate_expr_to_expr)
@@ -1171,6 +1185,13 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Function { body } => {
       // Return anonymous function as-is
       Ok(Expr::Function { body: body.clone() })
+    }
+    Expr::NamedFunction { params, body } => {
+      // Return named function as-is
+      Ok(Expr::NamedFunction {
+        params: params.clone(),
+        body: body.clone(),
+      })
     }
     Expr::Pattern { name, head } => Ok(Expr::Pattern {
       name: name.clone(),
@@ -1644,6 +1665,48 @@ pub fn evaluate_function_call_ast(
   // Handle functions that would call interpret() if dispatched through evaluate_expression
   // These must be handled natively to avoid infinite recursion
   match name {
+    "Function" => {
+      match args.len() {
+        // Function[body] — equivalent to body &
+        1 => {
+          return Ok(Expr::Function {
+            body: Box::new(args[0].clone()),
+          });
+        }
+        // Function[x, body] or Function[{x,y,...}, body]
+        2 => {
+          let params = match &args[0] {
+            Expr::Identifier(name) => vec![name.clone()],
+            Expr::List(items) => items
+              .iter()
+              .filter_map(|item| {
+                if let Expr::Identifier(n) = item {
+                  Some(n.clone())
+                } else {
+                  None
+                }
+              })
+              .collect(),
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "Function".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+          return Ok(Expr::NamedFunction {
+            params,
+            body: Box::new(args[1].clone()),
+          });
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Function".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
     "Module" => return module_ast(args),
     "Block" => return block_ast(args),
     "With" if args.len() == 2 => return with_ast(args),
@@ -3951,9 +4014,13 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       });
     } else if matches!(
       &rhs_value,
-      Expr::List(_) | Expr::FunctionCall { .. } | Expr::String(_)
+      Expr::List(_)
+        | Expr::FunctionCall { .. }
+        | Expr::String(_)
+        | Expr::Function { .. }
+        | Expr::NamedFunction { .. }
     ) {
-      // Store lists, function calls, and strings as ExprVal for faithful roundtrip
+      // Store lists, function calls, functions, and strings as ExprVal for faithful roundtrip
       ENV.with(|e| {
         e.borrow_mut()
           .insert(var_name.clone(), StoredValue::ExprVal(rhs_value.clone()))
@@ -4893,6 +4960,15 @@ fn apply_apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         evaluate_expr_to_expr(&substituted)
       }
     }
+    Expr::NamedFunction { params, body } => {
+      // Named-parameter function applied to list items
+      let mut substituted = (**body).clone();
+      for (param, arg) in params.iter().zip(items.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      evaluate_expr_to_expr(&substituted)
+    }
     _ => Ok(Expr::Apply {
       func: Box::new(func.clone()),
       list: Box::new(list.clone()),
@@ -5105,6 +5181,15 @@ pub fn apply_function_to_arg(
       let substituted = crate::syntax::substitute_slots(body, &[arg.clone()]);
       evaluate_expr_to_expr(&substituted)
     }
+    Expr::NamedFunction { params, body } => {
+      // Named-parameter function: substitute params with arg
+      let mut substituted = (**body).clone();
+      if let Some(param) = params.first() {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      evaluate_expr_to_expr(&substituted)
+    }
     Expr::FunctionCall { name, args } => {
       // Curried function: f[a] applied to b becomes f[a, b]
       // Special case: operator forms where f[x][y] becomes f[y, x]
@@ -5160,6 +5245,15 @@ fn apply_curried_call(
     Expr::Function { body } => {
       // Anonymous function: substitute # with args and evaluate
       let substituted = crate::syntax::substitute_slots(body, args);
+      evaluate_expr_to_expr(&substituted)
+    }
+    Expr::NamedFunction { params, body } => {
+      // Named-parameter function: substitute each param with corresponding arg
+      let mut substituted = (**body).clone();
+      for (param, arg) in params.iter().zip(args.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
       evaluate_expr_to_expr(&substituted)
     }
     Expr::FunctionCall {
