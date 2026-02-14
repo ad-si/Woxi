@@ -754,6 +754,34 @@ mod length_function {
       "3"
     );
   }
+
+  #[test]
+  fn length_of_atoms() {
+    // Atoms have Length 0
+    assert_eq!(interpret("Length[42]").unwrap(), "0");
+    assert_eq!(interpret("Length[3.14]").unwrap(), "0");
+    assert_eq!(interpret(r#"Length["hello"]"#).unwrap(), "0");
+    assert_eq!(interpret("Length[x]").unwrap(), "0");
+    assert_eq!(interpret("Length[True]").unwrap(), "0");
+  }
+
+  #[test]
+  fn length_of_function_call() {
+    // Length counts top-level arguments of any head
+    assert_eq!(interpret("Length[f[a, b, c]]").unwrap(), "3");
+    assert_eq!(interpret("Length[f[]]").unwrap(), "0");
+    assert_eq!(interpret("Length[g[x]]").unwrap(), "1");
+    assert_eq!(interpret("Length[Plus[a, b, c]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn length_of_symbolic_expressions() {
+    // Symbolic arithmetic expressions
+    assert_eq!(interpret("Length[a + b]").unwrap(), "2");
+    assert_eq!(interpret("Length[a + b + c]").unwrap(), "3");
+    assert_eq!(interpret("Length[a * b * c]").unwrap(), "3");
+    assert_eq!(interpret("Length[a^b]").unwrap(), "2");
+  }
 }
 
 mod part_out_of_bounds {
