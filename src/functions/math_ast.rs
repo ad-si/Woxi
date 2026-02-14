@@ -577,11 +577,16 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       final_args.push(make_rational(sum_n, sum_d));
     }
 
+    // Collect like terms: group symbolic terms by their base expression
+    // e.g. E + E → 2*E, 3*x + 2*x → 5*x
+    let collected = collect_like_terms(&symbolic_args);
+
     // Sort symbolic terms: polynomial-like terms first, then transcendental functions
     // This gives Mathematica-like ordering where x^2 comes before Sin[x].
     // For alphabetical comparison, strip the leading "-" from negated terms
     // so that -x sorts next to x rather than before everything.
-    symbolic_args.sort_by(|a, b| {
+    let mut sorted_symbolic = collected;
+    sorted_symbolic.sort_by(|a, b| {
       let pa = term_priority(a);
       let pb = term_priority(b);
       if pa != pb {
@@ -594,7 +599,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         sa_stripped.cmp(sb_stripped)
       }
     });
-    final_args.extend(symbolic_args);
+    final_args.extend(sorted_symbolic);
 
     if final_args.is_empty() {
       Ok(Expr::Integer(0))
@@ -607,6 +612,106 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// Decompose a term into (numeric_coefficient, base_expression).
+/// E.g. `3*x` → (3, 1, x), `x` → (1, 1, x), `-x` → (-1, 1, x),
+/// `Rational[3,4]*x` → (3, 4, x).
+/// Returns (numer, denom, base).
+fn decompose_term(e: &Expr) -> (i128, i128, Expr) {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Check if first arg is a numeric coefficient
+      if let Some((n, d)) = expr_to_rational(&args[0]) {
+        let base = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: args[1..].to_vec(),
+          }
+        };
+        return (n, d, base);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if let Some((n, d)) = expr_to_rational(left) {
+        return (n, d, *right.clone());
+      }
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (n, d, base) = decompose_term(operand);
+      return (-n, d, base);
+    }
+    _ => {}
+  }
+  (1, 1, e.clone())
+}
+
+/// Collect like terms: group symbolic terms by their base expression
+/// and sum their coefficients. E.g. [E, E] → [2*E], [3*x, 2*x] → [5*x].
+fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
+  use std::collections::BTreeMap;
+
+  // Group by string representation of base → sum of coefficients (numer, denom)
+  let mut groups: Vec<(String, Expr, i128, i128)> = Vec::new();
+  let mut index: BTreeMap<String, usize> = BTreeMap::new();
+
+  for term in terms {
+    let (n, d, base) = decompose_term(term);
+    let key = crate::syntax::expr_to_string(&base);
+    if let Some(&idx) = index.get(&key) {
+      // Add rational coefficients: a/b + n/d = (a*d + n*b) / (b*d)
+      let (_, _, ref mut sum_n, ref mut sum_d) = groups[idx];
+      *sum_n = *sum_n * d + n * *sum_d;
+      *sum_d *= d;
+      let g = gcd(*sum_n, *sum_d);
+      *sum_n /= g;
+      *sum_d /= g;
+      if *sum_d < 0 {
+        *sum_n = -*sum_n;
+        *sum_d = -*sum_d;
+      }
+    } else {
+      index.insert(key.clone(), groups.len());
+      groups.push((key, base, n, d));
+    }
+  }
+
+  let mut result = Vec::new();
+  for (_, base, n, d) in groups {
+    if n == 0 {
+      continue; // terms cancelled
+    }
+    if n == 1 && d == 1 {
+      result.push(base);
+    } else {
+      // Reconstruct as flat Times[coefficient, base_args...] to preserve formatting
+      let coeff = make_rational(n, d);
+      let mut times_args = vec![coeff];
+      // Flatten base if it's already a Times
+      match &base {
+        Expr::FunctionCall { name, args: bargs } if name == "Times" => {
+          times_args.extend(bargs.clone());
+        }
+        _ => {
+          times_args.push(base);
+        }
+      }
+      result.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: times_args,
+      });
+    }
+  }
+  result
 }
 
 /// Sort symbolic factors in Times using the same ordering as Wolfram:
@@ -2661,14 +2766,24 @@ fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// `astro-float` internally rounds up to 64-bit word boundaries.
 /// Minimum 128 bits (2 words) to avoid precision issues with small values.
 fn nominal_bits(precision: usize) -> usize {
-  let bits = (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize;
+  // Compute the minimum bits for the requested decimal precision, then
+  // round up to the next 64-bit word boundary. Add one extra word of
+  // guard bits to match Wolfram's output behavior (which displays all
+  // digits from the full word-aligned precision, giving slightly more
+  // digits than requested).
+  let base_bits =
+    (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize;
+  // Round up to next word boundary, then add one extra word for guard bits
+  let bits = ((base_bits + 63) & !63) + 64;
   bits.max(128)
 }
 
 /// Convert a BigFloat to a decimal string using num-bigint for the base
 /// conversion, avoiding astro-float's `format()` which panics on wasm32.
+/// If `max_digits` is Some(n), truncate the output to at most n significant digits.
 fn bigfloat_to_string(
   bf: &astro_float::BigFloat,
+  max_digits: Option<usize>,
 ) -> Result<String, InterpreterError> {
   use num_bigint::BigUint;
   use num_traits::Zero;
@@ -2696,10 +2811,14 @@ fn bigfloat_to_string(
   let mantissa_bits = words.len() * 64;
   let shift = exponent as i64 - mantissa_bits as i64;
 
-  // Compute target digits from the actual mantissa size to preserve
-  // all available precision from the BigFloat.
-  let target_digits =
-    (mantissa_bits as f64 / std::f64::consts::LOG2_10).ceil() as usize + 2;
+  // Compute target digits: use max_digits if given (from requested precision),
+  // otherwise derive from the mantissa bit count.
+  let target_digits = if let Some(d) = max_digits {
+    // Add a few extra digits for rounding, we'll truncate the output later
+    d + 5
+  } else {
+    (mantissa_bits as f64 / std::f64::consts::LOG2_10).ceil() as usize + 2
+  };
 
   // Strategy: compute mantissa * 10^target_digits * 2^shift, then divide
   // by 10^target_digits later to place the decimal point.
@@ -2722,8 +2841,9 @@ fn bigfloat_to_string(
     let scale = BigUint::from(10u32).pow(target_digits as u32);
     let scaled = &mantissa * &scale;
 
-    // Now divide by 2^(-shift)
-    let result = &scaled >> neg_shift;
+    // Now divide by 2^(-shift) with rounding
+    let divisor = BigUint::from(1u32) << neg_shift;
+    let result = (&scaled + (&divisor >> 1u32)) / &divisor;
 
     if result.is_zero() {
       return Ok("0.".to_string());
@@ -2739,6 +2859,25 @@ fn bigfloat_to_string(
   let is_negative = sign.is_negative();
   let prefix = if is_negative { "-" } else { "" };
 
+  // Truncate significant digits if max_digits is specified.
+  // This removes noise from guard bits.
+  let int_digits = if let Some(max_d) = max_digits {
+    // Count significant digits (excluding leading zeros for numbers < 1)
+    let sig_start = if decimal_exp <= 0 {
+      // For 0.00xxx, all digits are significant
+      0
+    } else {
+      0
+    };
+    let sig_count = int_digits.len() - sig_start;
+    if sig_count > max_d {
+      int_digits[..sig_start + max_d].to_string()
+    } else {
+      int_digits
+    }
+  } else {
+    int_digits
+  };
   let digits = int_digits.as_bytes();
 
   if decimal_exp <= 0 {
@@ -2802,7 +2941,7 @@ fn n_eval_arbitrary(
   let bits = nominal_bits(precision);
   let result = expr_to_bigfloat(expr, bits, rm, &mut cc)?;
 
-  let decimal = bigfloat_to_string(&result)?;
+  let decimal = bigfloat_to_string(&result, None)?;
 
   Ok(Expr::BigFloat(decimal, precision))
 }
@@ -4232,6 +4371,30 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Log[1] = 0
       if matches!(&args[0], Expr::Integer(1)) {
         return Ok(Expr::Integer(0));
+      }
+      // Log[E] = 1
+      if matches!(&args[0], Expr::Constant(c) if c == "E") {
+        return Ok(Expr::Integer(1));
+      }
+      // Log[E^n] = n
+      if let Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } = &args[0]
+        && matches!(left.as_ref(), Expr::Constant(c) if c == "E")
+      {
+        return Ok(*right.clone());
+      }
+      if let Expr::FunctionCall {
+        name,
+        args: pow_args,
+      } = &args[0]
+        && name == "Power"
+        && pow_args.len() == 2
+        && matches!(&pow_args[0], Expr::Constant(c) if c == "E")
+      {
+        return Ok(pow_args[1].clone());
       }
       if let Expr::Real(f) = &args[0] {
         if *f > 0.0 {

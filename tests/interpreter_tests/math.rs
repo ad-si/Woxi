@@ -927,6 +927,73 @@ mod e_constant {
   fn e_comparison() {
     assert_eq!(interpret("E > 2").unwrap(), "True");
   }
+
+  #[test]
+  fn log_e_is_one() {
+    assert_eq!(interpret("Log[E]").unwrap(), "1");
+  }
+
+  #[test]
+  fn log_e_power() {
+    assert_eq!(interpret("Log[E^3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn log_e_power_symbolic() {
+    assert_eq!(interpret("Log[E^n]").unwrap(), "n");
+  }
+
+  #[test]
+  fn numeric_q_e() {
+    assert_eq!(interpret("NumericQ[E]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_pi() {
+    assert_eq!(interpret("NumericQ[Pi]").unwrap(), "True");
+  }
+
+  #[test]
+  fn e_plus_e() {
+    assert_eq!(interpret("E + E").unwrap(), "2*E");
+  }
+
+  #[test]
+  fn e_plus_e_plus_e() {
+    assert_eq!(interpret("E + E + E").unwrap(), "3*E");
+  }
+
+  #[test]
+  fn e_like_term_collection() {
+    assert_eq!(interpret("3*E + 2*E").unwrap(), "5*E");
+  }
+
+  #[test]
+  fn e_plus_pi() {
+    assert_eq!(interpret("E + Pi + E").unwrap(), "2*E + Pi");
+  }
+
+  #[test]
+  fn e_times_numeric() {
+    assert_eq!(interpret("3*E").unwrap(), "3*E");
+  }
+
+  #[test]
+  fn e_power() {
+    assert_eq!(interpret("E^2").unwrap(), "E^2");
+  }
+
+  #[test]
+  fn n_e_high_precision() {
+    // First 50 significant digits of E must be correct
+    let result = interpret("N[E, 50]").unwrap();
+    assert!(
+      result.starts_with("2.7182818284590452353602874713526624977572470936999"),
+      "N[E, 50] = {}",
+      result
+    );
+    assert!(result.ends_with("`50."));
+  }
 }
 
 mod pi_symbolic {
