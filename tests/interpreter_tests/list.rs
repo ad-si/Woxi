@@ -1334,3 +1334,97 @@ mod random_variate {
     assert!(result.ends_with('}'));
   }
 }
+
+mod select {
+  use super::*;
+
+  #[test]
+  fn basic_predicate() {
+    assert_eq!(
+      interpret("Select[{1, 2, 3, 4, 5}, OddQ]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn even_q() {
+    assert_eq!(
+      interpret("Select[{1, 2, 3, 4, 5}, EvenQ]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
+  fn anonymous_function() {
+    assert_eq!(
+      interpret("Select[{1, 4, 2, 3}, # > 1 &]").unwrap(),
+      "{4, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn with_limit() {
+    assert_eq!(
+      interpret("Select[{1, 2, 3, 4, 5}, OddQ, 2]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn with_limit_exceeding() {
+    assert_eq!(
+      interpret("Select[{1, 2, 3, 4, 5}, EvenQ, 10]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  #[test]
+  fn with_limit_one() {
+    assert_eq!(
+      interpret("Select[{1, 2, 3, 4, 5}, # > 3 &, 1]").unwrap(),
+      "{4}"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("Select[{}, EvenQ]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn no_matches() {
+    assert_eq!(interpret("Select[{1, 3, 5}, EvenQ]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn operator_form() {
+    assert_eq!(interpret("Select[EvenQ][{1, 2, 3, 4}]").unwrap(), "{2, 4}");
+  }
+
+  #[test]
+  fn with_prime_q() {
+    assert_eq!(
+      interpret("Select[Range[20], PrimeQ]").unwrap(),
+      "{2, 3, 5, 7, 11, 13, 17, 19}"
+    );
+  }
+
+  #[test]
+  fn string_select() {
+    assert_eq!(
+      interpret(
+        "Select[{\"apple\", \"avocado\", \"banana\"}, StringStartsQ[\"a\"]]"
+      )
+      .unwrap(),
+      "{apple, avocado}"
+    );
+  }
+
+  #[test]
+  fn negative_numbers() {
+    assert_eq!(
+      interpret("Select[{-3, -1, 0, 2, 5}, # > 0 &]").unwrap(),
+      "{2, 5}"
+    );
+  }
+}

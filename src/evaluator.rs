@@ -1767,7 +1767,10 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::map_at_ast(&args[0], &args[1], &args[2]);
     }
     "Select" if args.len() == 2 => {
-      return list_helpers_ast::select_ast(&args[0], &args[1]);
+      return list_helpers_ast::select_ast(&args[0], &args[1], None);
+    }
+    "Select" if args.len() == 3 => {
+      return list_helpers_ast::select_ast(&args[0], &args[1], Some(&args[2]));
     }
     "AllTrue" if args.len() == 2 => {
       return list_helpers_ast::all_true_ast(&args[0], &args[1]);
@@ -5115,6 +5118,7 @@ pub fn apply_function_to_arg(
           | "StringContainsQ"
           | "StringMatchQ"
           | "MemberQ"
+          | "Select"
       ) && args.len() == 1
       {
         // Operator form: prepend the argument instead of appending
@@ -5173,6 +5177,7 @@ fn apply_curried_call(
           | "StringContainsQ"
           | "StringMatchQ"
           | "MemberQ"
+          | "Select"
       ) && func_args.len() == 1
         && args.len() == 1
       {
