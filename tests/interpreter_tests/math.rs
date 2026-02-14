@@ -633,6 +633,64 @@ mod floor {
   fn symbolic() {
     assert_eq!(interpret("Floor[x]").unwrap(), "Floor[x]");
   }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("Floor[7/3]").unwrap(), "2");
+    assert_eq!(interpret("Floor[-7/3]").unwrap(), "-3");
+    assert_eq!(interpret("Floor[3/2]").unwrap(), "1");
+    assert_eq!(interpret("Floor[-3/2]").unwrap(), "-2");
+  }
+
+  #[test]
+  fn two_arg_integer_step() {
+    assert_eq!(interpret("Floor[10, 3]").unwrap(), "9");
+    assert_eq!(interpret("Floor[7, 2]").unwrap(), "6");
+    assert_eq!(interpret("Floor[5.8, 2]").unwrap(), "4");
+    assert_eq!(interpret("Floor[-5.5, 2]").unwrap(), "-6");
+  }
+
+  #[test]
+  fn two_arg_rational_step() {
+    assert_eq!(interpret("Floor[7/2, 1/3]").unwrap(), "10/3");
+  }
+
+  #[test]
+  fn two_arg_float_step() {
+    assert_eq!(interpret("Floor[5.5, 0.5]").unwrap(), "5.5");
+    assert_eq!(interpret("Floor[10, 3.]").unwrap(), "9.");
+  }
+
+  #[test]
+  fn two_arg_list() {
+    assert_eq!(interpret("Floor[{2.5, 3.7}, 2]").unwrap(), "{2, 2}");
+  }
+}
+
+mod ceiling_two_arg {
+  use super::*;
+
+  #[test]
+  fn integer_step() {
+    assert_eq!(interpret("Ceiling[10, 3]").unwrap(), "12");
+    assert_eq!(interpret("Ceiling[5.8, 2]").unwrap(), "6");
+    assert_eq!(interpret("Ceiling[-5.5, 2]").unwrap(), "-4");
+  }
+
+  #[test]
+  fn rational_step() {
+    assert_eq!(interpret("Ceiling[7/2, 1/3]").unwrap(), "11/3");
+  }
+
+  #[test]
+  fn float_step() {
+    assert_eq!(interpret("Ceiling[10, 3.]").unwrap(), "12.");
+  }
+
+  #[test]
+  fn list() {
+    assert_eq!(interpret("Ceiling[{2.5, 3.7}, 2]").unwrap(), "{4, 4}");
+  }
 }
 
 mod round {

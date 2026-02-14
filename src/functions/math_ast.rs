@@ -211,8 +211,26 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Floor" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| v.floor())
       }
+      "Floor" if args.len() == 2 => {
+        let x = try_eval_to_f64(&args[0])?;
+        let a = try_eval_to_f64(&args[1])?;
+        if a == 0.0 {
+          None
+        } else {
+          Some((x / a).floor() * a)
+        }
+      }
       "Ceiling" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| v.ceil())
+      }
+      "Ceiling" if args.len() == 2 => {
+        let x = try_eval_to_f64(&args[0])?;
+        let a = try_eval_to_f64(&args[1])?;
+        if a == 0.0 {
+          None
+        } else {
+          Some((x / a).ceil() * a)
+        }
       }
       "Round" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| v.round())
@@ -1858,10 +1876,13 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Floor[x] - Floor function
 pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Floor expects exactly 1 argument".into(),
+      "Floor expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 2 {
+    return floor_ceil_two_arg(&args[0], &args[1], true);
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(Expr::Integer(n.floor() as i128))
@@ -1873,12 +1894,15 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Ceiling[x] - Ceiling function
+/// Ceiling[x] or Ceiling[x, a] - Ceiling function
 pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Ceiling expects exactly 1 argument".into(),
+      "Ceiling expects 1 or 2 arguments".into(),
     ));
+  }
+  if args.len() == 2 {
+    return floor_ceil_two_arg(&args[0], &args[1], false);
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(Expr::Integer(n.ceil() as i128))
@@ -1888,6 +1912,76 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec(),
     })
   }
+}
+
+/// Helper for Floor[x, a] and Ceiling[x, a]
+/// Floor[x, a] = a * Floor[x/a], Ceiling[x, a] = a * Ceiling[x/a]
+fn floor_ceil_two_arg(
+  x: &Expr,
+  a: &Expr,
+  is_floor: bool,
+) -> Result<Expr, InterpreterError> {
+  // Try rational arithmetic first for exact results
+  if let (Some(xn), Some(xd), Some(an), Some(ad)) = (
+    expr_numerator(x),
+    expr_denominator(x),
+    expr_numerator(a),
+    expr_denominator(a),
+  ) {
+    if an == 0 {
+      // Floor[x, 0] or Ceiling[x, 0] → Indeterminate
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    // x/a = (xn * ad) / (xd * an)
+    let num = xn * ad;
+    let den = xd * an;
+    // Floor of rational num/den
+    let floored = if is_floor {
+      rational_floor(num, den)
+    } else {
+      rational_ceil(num, den)
+    };
+    // Result = a * floored = (an/ad) * floored = (an * floored) / ad
+    let res_num = an * floored;
+    if ad == 1 {
+      return Ok(Expr::Integer(res_num));
+    }
+    let g = gcd_i128(res_num.abs(), ad.abs());
+    let rn = res_num / g;
+    let rd = ad / g;
+    if rd == 1 {
+      return Ok(Expr::Integer(rn));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(rn), Expr::Integer(rd)],
+    });
+  }
+  // Fall back to floating point
+  if let (Some(xf), Some(af)) = (try_eval_to_f64(x), try_eval_to_f64(a)) {
+    if af == 0.0 {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    let result = if is_floor {
+      (xf / af).floor() * af
+    } else {
+      (xf / af).ceil() * af
+    };
+    // Result type follows `a`: if `a` is Real, result is Real; otherwise Integer
+    let a_is_float = matches!(a, Expr::Real(_));
+    if a_is_float {
+      return Ok(Expr::Real(result));
+    }
+    if result.fract() == 0.0 && result.abs() < i128::MAX as f64 {
+      return Ok(Expr::Integer(result as i128));
+    }
+    return Ok(Expr::Real(result));
+  }
+  let name = if is_floor { "Floor" } else { "Ceiling" };
+  Ok(Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![x.clone(), a.clone()],
+  })
 }
 
 /// Round[x] - Round to nearest integer using banker's rounding (round half to even)
@@ -8882,4 +8976,77 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::Identifier(result))
+}
+
+/// GCD for i128 values
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
+/// Extract numerator from Integer or Rational expr
+fn expr_numerator(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(n) => Some(*n),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        Some(*n)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Extract denominator from Integer or Rational expr
+fn expr_denominator(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::Integer(_) => Some(1),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let Expr::Integer(d) = &args[1] {
+        Some(*d)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Floor of a rational number num/den
+fn rational_floor(num: i128, den: i128) -> i128 {
+  if den == 0 {
+    return 0; // shouldn't happen, caller checks
+  }
+  // Normalize sign so den > 0
+  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+  if num >= 0 {
+    num / den
+  } else {
+    // For negative: floor division
+    (num - den + 1) / den
+  }
+}
+
+/// Ceiling of a rational number num/den
+fn rational_ceil(num: i128, den: i128) -> i128 {
+  if den == 0 {
+    return 0;
+  }
+  let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+  if num >= 0 {
+    (num + den - 1) / den
+  } else {
+    num / den
+  }
 }
