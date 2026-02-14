@@ -293,6 +293,71 @@ mod high_level_functions_tests {
   }
 
   // ─── Number Theory ─────────────────────────────────────────────────
+  mod integer_digits_tests {
+    use super::*;
+    #[test]
+    fn test_base10() {
+      assert_eq!(
+        interpret("IntegerDigits[12345]").unwrap(),
+        "{1, 2, 3, 4, 5}"
+      );
+    }
+    #[test]
+    fn test_zero() {
+      assert_eq!(interpret("IntegerDigits[0]").unwrap(), "{0}");
+    }
+    #[test]
+    fn test_negative() {
+      assert_eq!(interpret("IntegerDigits[-123]").unwrap(), "{1, 2, 3}");
+    }
+    #[test]
+    fn test_base2() {
+      assert_eq!(
+        interpret("IntegerDigits[255, 2]").unwrap(),
+        "{1, 1, 1, 1, 1, 1, 1, 1}"
+      );
+    }
+    #[test]
+    fn test_base16() {
+      assert_eq!(interpret("IntegerDigits[255, 16]").unwrap(), "{15, 15}");
+    }
+    #[test]
+    fn test_padding() {
+      assert_eq!(
+        interpret("IntegerDigits[42, 10, 5]").unwrap(),
+        "{0, 0, 0, 4, 2}"
+      );
+    }
+    #[test]
+    fn test_truncation() {
+      assert_eq!(
+        interpret("IntegerDigits[12345, 10, 3]").unwrap(),
+        "{3, 4, 5}"
+      );
+    }
+    #[test]
+    fn test_zero_padding() {
+      assert_eq!(
+        interpret("IntegerDigits[0, 10, 5]").unwrap(),
+        "{0, 0, 0, 0, 0}"
+      );
+    }
+    #[test]
+    fn test_negative_padding() {
+      assert_eq!(
+        interpret("IntegerDigits[-42, 10, 5]").unwrap(),
+        "{0, 0, 0, 4, 2}"
+      );
+    }
+    #[test]
+    fn test_base2_padding() {
+      assert_eq!(
+        interpret("IntegerDigits[5, 2, 8]").unwrap(),
+        "{0, 0, 0, 0, 0, 1, 0, 1}"
+      );
+    }
+  }
+
   mod digit_count_tests {
     use super::*;
     #[test]

@@ -5942,11 +5942,11 @@ fn fibonacci_number_bigint(n: u128) -> BigInt {
   b
 }
 
-/// IntegerDigits[n
+/// IntegerDigits[n], IntegerDigits[n, b], IntegerDigits[n, b, len]
 pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "IntegerDigits expects 1 or 2 arguments".into(),
+      "IntegerDigits expects 1 to 3 arguments".into(),
     ));
   }
 
@@ -5960,7 +5960,7 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let base = if args.len() == 2 {
+  let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => BigInt::from(b),
       _ => {
@@ -5974,17 +5974,42 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   use num_traits::Zero;
-  if n.is_zero() {
-    return Ok(Expr::List(vec![Expr::Integer(0)]));
-  }
 
   let mut digits = Vec::new();
-  let mut num = n;
-  while !num.is_zero() {
-    digits.push(bigint_to_expr(&num % &base));
-    num /= &base;
+  if n.is_zero() {
+    digits.push(Expr::Integer(0));
+  } else {
+    let mut num = n;
+    while !num.is_zero() {
+      digits.push(bigint_to_expr(&num % &base));
+      num /= &base;
+    }
+    digits.reverse();
   }
-  digits.reverse();
+
+  // Handle optional length parameter
+  if args.len() == 3 {
+    match expr_to_i128(&args[2]) {
+      Some(len) if len >= 0 => {
+        let len = len as usize;
+        if digits.len() < len {
+          // Pad with zeros on the left
+          let mut padded = vec![Expr::Integer(0); len - digits.len()];
+          padded.append(&mut digits);
+          digits = padded;
+        } else if digits.len() > len {
+          // Truncate from the left (keep least significant digits)
+          digits = digits[digits.len() - len..].to_vec();
+        }
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "IntegerDigits: length must be a non-negative integer".into(),
+        ));
+      }
+    }
+  }
+
   Ok(Expr::List(digits))
 }
 
