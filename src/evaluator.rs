@@ -1084,26 +1084,63 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Part { expr: e, index } => {
       // Track Part nesting depth for Part::partd warnings
       PART_DEPTH.with(|d| *d.borrow_mut() += 1);
-      let evaluated_idx = evaluate_expr_to_expr(index)?;
-      // Optimize: for Part on an Identifier stored as ExprVal, avoid full clone
-      let result = if let Expr::Identifier(var_name) = e.as_ref() {
-        let env_result = ENV.with(|env| {
-          let env = env.borrow();
-          if let Some(StoredValue::ExprVal(stored)) = env.get(var_name) {
-            Some(extract_part_ast(stored, &evaluated_idx))
-          } else {
-            None
-          }
-        });
-        if let Some(r) = env_result {
-          r?
-        } else {
-          let evaluated_expr = evaluate_expr_to_expr(e)?;
-          extract_part_ast(&evaluated_expr, &evaluated_idx)?
-        }
+
+      // Collect the full chain of Part indices (innermost first)
+      // e.g. Part[Part[Part[base, i], j], k] -> base, [i, j, k]
+      let mut indices_unevaluated = vec![index.as_ref().clone()];
+      let mut base_expr = e.as_ref();
+      while let Expr::Part {
+        expr: inner_e,
+        index: inner_idx,
+      } = base_expr
+      {
+        indices_unevaluated.push(inner_idx.as_ref().clone());
+        base_expr = inner_e.as_ref();
+      }
+      indices_unevaluated.reverse(); // now [i, j, k] order (outermost to innermost)
+
+      // Evaluate all indices
+      let mut indices = Vec::with_capacity(indices_unevaluated.len());
+      for idx in &indices_unevaluated {
+        indices.push(evaluate_expr_to_expr(idx)?);
+      }
+
+      // Check if any index is All — use apply_part_indices path only when needed
+      let has_all = indices
+        .iter()
+        .any(|idx| matches!(idx, Expr::Identifier(s) if s == "All"));
+
+      let result = if has_all {
+        // All requires collecting indices and mapping — must clone base
+        let base_val = eval_part_base(base_expr)?;
+        apply_part_indices(&base_val, &indices)?
       } else {
-        let evaluated_expr = evaluate_expr_to_expr(e)?;
-        extract_part_ast(&evaluated_expr, &evaluated_idx)?
+        // Fast path: no All, use original optimized approach
+        // Apply indices one at a time with ENV optimization for identifiers
+        let mut result = if let Expr::Identifier(var_name) = base_expr {
+          let env_result = ENV.with(|env| {
+            let env = env.borrow();
+            if let Some(StoredValue::ExprVal(stored)) = env.get(var_name) {
+              Some(extract_part_ast(stored, &indices[0]))
+            } else {
+              None
+            }
+          });
+          if let Some(r) = env_result {
+            r?
+          } else {
+            let evaluated_expr = evaluate_expr_to_expr(base_expr)?;
+            extract_part_ast(&evaluated_expr, &indices[0])?
+          }
+        } else {
+          let evaluated_expr = evaluate_expr_to_expr(base_expr)?;
+          extract_part_ast(&evaluated_expr, &indices[0])?
+        };
+        // Apply remaining indices
+        for idx in &indices[1..] {
+          result = extract_part_ast(&result, idx)?;
+        }
+        result
       };
       PART_DEPTH.with(|d| *d.borrow_mut() -= 1);
       // Part::partd: warn only at the outermost Part level (depth == 0)
@@ -4897,6 +4934,67 @@ fn get_part_base(expr: &Expr) -> &Expr {
     Expr::Part { expr: inner, .. } => get_part_base(inner),
     _ => expr,
   }
+}
+
+/// Apply a chain of Part indices to an expression, handling All by mapping over elements
+fn apply_part_indices(
+  expr: &Expr,
+  indices: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if indices.is_empty() {
+    return Ok(expr.clone());
+  }
+  let idx = &indices[0];
+  let rest = &indices[1..];
+  if matches!(idx, Expr::Identifier(s) if s == "All") {
+    // All: map remaining indices over each element
+    if rest.is_empty() {
+      // Part[expr, All] with no more indices — return as-is
+      return Ok(expr.clone());
+    }
+    match expr {
+      Expr::List(items) => {
+        let mapped: Result<Vec<Expr>, InterpreterError> = items
+          .iter()
+          .map(|item| apply_part_indices(item, rest))
+          .collect();
+        Ok(Expr::List(mapped?))
+      }
+      Expr::FunctionCall { name, args } => {
+        let mapped: Result<Vec<Expr>, InterpreterError> = args
+          .iter()
+          .map(|item| apply_part_indices(item, rest))
+          .collect();
+        Ok(Expr::FunctionCall {
+          name: name.clone(),
+          args: mapped?,
+        })
+      }
+      _ => apply_part_indices(expr, rest),
+    }
+  } else {
+    // Normal index: extract, then continue with remaining indices
+    let extracted = extract_part_ast(expr, idx)?;
+    apply_part_indices(&extracted, rest)
+  }
+}
+
+/// Evaluate the base expression of a Part, with optimization for identifiers in ENV
+fn eval_part_base(e: &Expr) -> Result<Expr, InterpreterError> {
+  if let Expr::Identifier(var_name) = e {
+    let env_result = ENV.with(|env| {
+      let env = env.borrow();
+      if let Some(StoredValue::ExprVal(stored)) = env.get(var_name) {
+        Some(Ok(stored.clone()))
+      } else {
+        None
+      }
+    });
+    if let Some(r) = env_result {
+      return r;
+    }
+  }
+  evaluate_expr_to_expr(e)
 }
 
 /// Extract part from expression on AST (expr[[index]])

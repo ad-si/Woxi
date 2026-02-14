@@ -671,6 +671,70 @@ mod part_extraction {
       "{{1, 2}, {3, 4}}"
     );
   }
+
+  #[test]
+  fn part_all_flat_list() {
+    // Part[list, All] returns the list as-is
+    assert_eq!(interpret("{a, b, c}[[All]]").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn part_all_column_extraction() {
+    // Part[matrix, All, i] extracts column i
+    assert_eq!(
+      interpret("{{1, 2}, {3, 4}, {5, 6}}[[All, 1]]").unwrap(),
+      "{1, 3, 5}"
+    );
+    assert_eq!(
+      interpret("{{1, 2}, {3, 4}, {5, 6}}[[All, 2]]").unwrap(),
+      "{2, 4, 6}"
+    );
+  }
+
+  #[test]
+  fn part_row_then_all() {
+    // Part[matrix, i, All] returns the whole row
+    assert_eq!(
+      interpret("{{1, 2, 3}, {4, 5, 6}}[[1, All]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn part_all_all_identity() {
+    // Part[matrix, All, All] returns the matrix as-is
+    assert_eq!(
+      interpret("{{a, b, c}, {d, e, f}}[[All, All]]").unwrap(),
+      "{{a, b, c}, {d, e, f}}"
+    );
+  }
+
+  #[test]
+  fn part_all_3d_array() {
+    // Part[3d, All, All, 1] extracts first element at deepest level
+    assert_eq!(
+      interpret("{{{a, b}, {c, d}}, {{e, f}, {g, h}}}[[All, All, 1]]").unwrap(),
+      "{{a, c}, {e, g}}"
+    );
+  }
+
+  #[test]
+  fn part_all_on_function_call() {
+    assert_eq!(interpret("f[a, b, c][[All]]").unwrap(), "f[a, b, c]");
+  }
+
+  #[test]
+  fn part_all_with_variable() {
+    assert_eq!(
+      interpret("x = {{1, 2}, {3, 4}}; x[[All, 1]]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn all_evaluates_to_itself() {
+    assert_eq!(interpret("All").unwrap(), "All");
+  }
 }
 
 mod length_function {
