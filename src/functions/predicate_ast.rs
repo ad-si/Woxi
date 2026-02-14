@@ -458,7 +458,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Identifier(head.to_string()))
 }
 
-/// Length[list] - Returns the length of a list
+/// Length[expr] - Returns the number of elements at the top level of an expression
 pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -467,8 +467,12 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let len = match &args[0] {
     Expr::List(items) => items.len() as i128,
-    Expr::String(s) => s.chars().count() as i128,
     Expr::Association(items) => items.len() as i128,
+    Expr::FunctionCall { args, .. } => args.len() as i128,
+    Expr::BinaryOp { .. } => 2,
+    Expr::UnaryOp { .. } => 1,
+    Expr::Comparison { operands, .. } => operands.len() as i128,
+    // Atoms: Integer, Real, String, Identifier, Rational, BigFloat, BigInteger, etc.
     _ => 0,
   };
   Ok(Expr::Integer(len))
