@@ -1459,6 +1459,61 @@ mod listable {
   }
 
   #[test]
+  fn mod_basic() {
+    assert_eq!(interpret("Mod[10, 3]").unwrap(), "1");
+    assert_eq!(interpret("Mod[7, 4]").unwrap(), "3");
+    assert_eq!(interpret("Mod[15, 5]").unwrap(), "0");
+    assert_eq!(interpret("Mod[0, 5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn mod_negative_args() {
+    assert_eq!(interpret("Mod[-10, 3]").unwrap(), "2");
+    assert_eq!(interpret("Mod[-5, 3]").unwrap(), "1");
+    assert_eq!(interpret("Mod[10, -3]").unwrap(), "-2");
+    assert_eq!(interpret("Mod[-10, -3]").unwrap(), "-1");
+    assert_eq!(interpret("Mod[-1, 3]").unwrap(), "2");
+  }
+
+  #[test]
+  fn mod_rational() {
+    assert_eq!(interpret("Mod[5/2, 1]").unwrap(), "1/2");
+    assert_eq!(interpret("Mod[7/3, 2/3]").unwrap(), "1/3");
+  }
+
+  #[test]
+  fn mod_float() {
+    assert_eq!(interpret("Mod[5.5, 2]").unwrap(), "1.5");
+    assert_eq!(interpret("Mod[7.5, 2]").unwrap(), "1.5");
+  }
+
+  #[test]
+  fn mod_division_by_zero() {
+    assert_eq!(interpret("Mod[10, 0]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Mod[0, 0]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn mod_three_args() {
+    assert_eq!(interpret("Mod[10, 3, 1]").unwrap(), "1");
+    assert_eq!(interpret("Mod[10, 3, -1]").unwrap(), "1");
+    assert_eq!(interpret("Mod[10, 3, 2]").unwrap(), "4");
+    assert_eq!(interpret("Mod[-5, 3, 1]").unwrap(), "1");
+    assert_eq!(interpret("Mod[10, 3, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn mod_three_args_rational() {
+    assert_eq!(interpret("Mod[5/2, 3/2, 0]").unwrap(), "1");
+    assert_eq!(interpret("Mod[5/2, 3/2, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn mod_symbolic() {
+    assert_eq!(interpret("Mod[x, 3]").unwrap(), "Mod[x, 3]");
+  }
+
+  #[test]
   fn mod_list_scalar() {
     assert_eq!(interpret("Mod[{10, 20, 30}, 7]").unwrap(), "{3, 6, 2}");
   }

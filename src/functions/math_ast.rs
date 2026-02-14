@@ -1932,45 +1932,145 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Mod[a, b] - Modulus
+/// Mod[m, n] - Modulus, or Mod[m, n, d] with offset
 pub fn mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Mod expects exactly 2 arguments".into(),
-    ));
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Mod expects 2 or 3 arguments; {} given",
+      args.len()
+    )));
   }
-  match (&args[0], &args[1]) {
-    (Expr::Integer(a), Expr::Integer(b)) => {
-      if *b == 0 {
-        Err(InterpreterError::EvaluationError(
-          "Mod: division by zero".into(),
-        ))
+
+  // 3-argument form: Mod[m, n, d] = m - n * Floor[(m - d) / n]
+  if args.len() == 3 {
+    return mod3_ast(&args[0], &args[1], &args[2]);
+  }
+
+  // 2-argument form: Mod[m, n]
+  mod2_ast(&args[0], &args[1])
+}
+
+/// Helper to extract (numerator, denominator) from Integer or Rational
+fn try_as_rational(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
       } else {
-        // Wolfram's Mod always returns non-negative result
-        let result = ((*a % *b) + *b) % *b;
-        Ok(Expr::Integer(result))
+        None
       }
     }
-    _ => {
-      if let (Some(a), Some(b)) =
-        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
-      {
-        if b == 0.0 {
-          Err(InterpreterError::EvaluationError(
-            "Mod: division by zero".into(),
-          ))
-        } else {
-          let result = ((a % b) + b) % b;
-          Ok(num_to_expr(result))
-        }
-      } else {
-        Ok(Expr::FunctionCall {
-          name: "Mod".to_string(),
-          args: args.to_vec(),
-        })
-      }
-    }
+    _ => None,
   }
+}
+
+/// Mod[m, n] - 2-argument form
+fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Try exact rational arithmetic first
+  if let (Some((mn, md)), Some((nn, nd))) =
+    (try_as_rational(m), try_as_rational(n))
+  {
+    if nn == 0 && nd != 0 {
+      // Mod[m, 0] => Indeterminate
+      eprintln!(
+        "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
+        crate::syntax::expr_to_string(m)
+      );
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    // Convert to common denominator: m = mn/md, n = nn/nd
+    // Mod[mn/md, nn/nd] = Mod[mn*nd, nn*md] / (md*nd)
+    let num_m = mn * nd;
+    let num_n = nn * md;
+    let common_d = md * nd;
+    // Wolfram Mod: result = ((num_m % num_n) + num_n) % num_n, then divide by common_d
+    let rem = ((num_m % num_n) + num_n) % num_n;
+    return Ok(make_rational(rem, common_d));
+  }
+
+  // Float fallback
+  if let (Some(a), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n)) {
+    if b == 0.0 {
+      eprintln!(
+        "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
+        crate::syntax::expr_to_string(m)
+      );
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    let result = ((a % b) + b) % b;
+    return Ok(num_to_expr(result));
+  }
+
+  // Symbolic
+  Ok(Expr::FunctionCall {
+    name: "Mod".to_string(),
+    args: vec![m.clone(), n.clone()],
+  })
+}
+
+/// Mod[m, n, d] - 3-argument form: m - n * Floor[(m - d) / n]
+fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
+  // Try exact rational arithmetic
+  if let (Some((mn, md)), Some((nn, nd)), Some((dn, dd))) =
+    (try_as_rational(m), try_as_rational(n), try_as_rational(d))
+  {
+    if nn == 0 && nd != 0 {
+      eprintln!(
+        "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
+        crate::syntax::expr_to_string(m),
+        crate::syntax::expr_to_string(d)
+      );
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    // m - d = (mn*dd - dn*md) / (md*dd)
+    let diff_n = mn * dd - dn * md;
+    let diff_d = md * dd;
+    // (m - d) / n = (diff_n * nd) / (diff_d * nn)
+    let quot_n = diff_n * nd;
+    let quot_d = diff_d * nn;
+    // Floor of quot_n / quot_d
+    let fl = floor_div(quot_n, quot_d);
+    // result = m - n * fl = mn/md - nn/nd * fl = (mn*nd - nn*md*fl) / (md*nd)
+    let res_n = mn * nd - nn * md * fl;
+    let res_d = md * nd;
+    return Ok(make_rational(res_n, res_d));
+  }
+
+  // Float fallback
+  if let (Some(a), Some(b), Some(c)) =
+    (try_eval_to_f64(m), try_eval_to_f64(n), try_eval_to_f64(d))
+  {
+    if b == 0.0 {
+      eprintln!(
+        "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
+        crate::syntax::expr_to_string(m),
+        crate::syntax::expr_to_string(d)
+      );
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    let result = a - b * ((a - c) / b).floor();
+    return Ok(num_to_expr(result));
+  }
+
+  // Symbolic
+  Ok(Expr::FunctionCall {
+    name: "Mod".to_string(),
+    args: vec![m.clone(), n.clone(), d.clone()],
+  })
+}
+
+/// Integer floor division: floor(a / b)
+fn floor_div(a: i128, b: i128) -> i128 {
+  if b == 0 {
+    return 0;
+  }
+  let d = a / b;
+  let r = a % b;
+  // Adjust if remainder has opposite sign to divisor
+  if r != 0 && (r ^ b) < 0 { d - 1 } else { d }
 }
 
 /// Quotient[a, b] - Integer quotient

@@ -2650,7 +2650,7 @@ pub fn evaluate_function_call_ast(
     "Round" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::round_ast(args);
     }
-    "Mod" if args.len() == 2 => {
+    "Mod" if args.len() == 2 || args.len() == 3 => {
       return crate::functions::math_ast::mod_ast(args);
     }
     "Quotient" if args.len() == 2 => {
