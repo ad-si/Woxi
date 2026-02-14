@@ -310,6 +310,113 @@ mod histogram_list {
   }
 }
 
+mod total {
+  use super::*;
+
+  #[test]
+  fn total_integers() {
+    assert_eq!(interpret("Total[{1, 2, 3}]").unwrap(), "6");
+    assert_eq!(interpret("Total[{1, 2, 3, 4, 5}]").unwrap(), "15");
+  }
+
+  #[test]
+  fn total_empty_list() {
+    assert_eq!(interpret("Total[{}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn total_rationals() {
+    assert_eq!(interpret("Total[{1/2, 1/3, 1/6}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn total_reals() {
+    assert_eq!(interpret("Total[{1, 2.5, 3}]").unwrap(), "6.5");
+  }
+
+  #[test]
+  fn total_symbolic() {
+    assert_eq!(interpret("Total[{x, y, z}]").unwrap(), "x + y + z");
+  }
+
+  #[test]
+  fn total_nested_level_1() {
+    // Total[{{1,2},{3,4}}] sums top-level elements = {4,6}
+    assert_eq!(interpret("Total[{{1, 2}, {3, 4}}]").unwrap(), "{4, 6}");
+  }
+
+  #[test]
+  fn total_level_2() {
+    // Total[list, 2] sums across levels 1 and 2 = scalar
+    assert_eq!(interpret("Total[{{1, 2}, {3, 4}}, 2]").unwrap(), "10");
+  }
+
+  #[test]
+  fn total_level_spec_exact_2() {
+    // Total[list, {2}] sums at exactly level 2 = row sums
+    assert_eq!(interpret("Total[{{1, 2}, {3, 4}}, {2}]").unwrap(), "{3, 7}");
+  }
+
+  #[test]
+  fn total_3d_level_1() {
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]").unwrap(),
+      "{{6, 8}, {10, 12}}"
+    );
+  }
+
+  #[test]
+  fn total_3d_level_2() {
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 2]").unwrap(),
+      "{16, 20}"
+    );
+  }
+
+  #[test]
+  fn total_3d_level_3() {
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 3]").unwrap(),
+      "36"
+    );
+  }
+
+  #[test]
+  fn total_3d_exact_level_2() {
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {2}]").unwrap(),
+      "{{4, 6}, {12, 14}}"
+    );
+  }
+
+  #[test]
+  fn total_3d_exact_level_3() {
+    assert_eq!(
+      interpret("Total[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {3}]").unwrap(),
+      "{{3, 7}, {11, 15}}"
+    );
+  }
+
+  #[test]
+  fn total_infinity() {
+    assert_eq!(
+      interpret("Total[{{1, 2}, {3, 4}}, Infinity]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn total_level_0() {
+    // Total[list, 0] returns the list unchanged
+    assert_eq!(interpret("Total[{1, 2, 3}, 0]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn total_non_list() {
+    assert_eq!(interpret("Total[5]").unwrap(), "5");
+  }
+}
+
 mod normalize {
   use super::*;
 

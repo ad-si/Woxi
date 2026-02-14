@@ -2662,7 +2662,7 @@ pub fn evaluate_function_call_ast(
     "LCM" => {
       return crate::functions::math_ast::lcm_ast(args);
     }
-    "Total" if args.len() == 1 => {
+    "Total" => {
       return crate::functions::math_ast::total_ast(args);
     }
     "Mean" if args.len() == 1 => {

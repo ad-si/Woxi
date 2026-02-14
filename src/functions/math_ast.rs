@@ -2284,18 +2284,22 @@ pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Total[list] - Sum of all elements in a list
+/// Total[list, n] - Sum across levels 1 through n
+/// Total[list, {n}] - Sum at exactly level n
 pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Total expects exactly 1 argument".into(),
+      "Total expects 1 or 2 arguments".into(),
     ));
   }
-  match &args[0] {
-    Expr::List(items) => {
-      let mut sum = 0.0;
-      for item in items {
-        if let Some(n) = expr_to_num(item) {
-          sum += n;
+
+  // Parse level spec from second argument
+  let level_spec = if args.len() == 2 {
+    match &args[1] {
+      // Total[list, {n}] - exact level n
+      Expr::List(items) if items.len() == 1 => {
+        if let Some(n) = expr_to_num(&items[0]) {
+          TotalLevelSpec::Exact(n as usize)
         } else {
           return Ok(Expr::FunctionCall {
             name: "Total".to_string(),
@@ -2303,12 +2307,127 @@ pub fn total_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
         }
       }
-      Ok(num_to_expr(sum))
+      // Total[list, Infinity]
+      Expr::Identifier(s) if s == "Infinity" => {
+        TotalLevelSpec::Through(usize::MAX)
+      }
+      // Total[list, n] - through level n
+      _ => {
+        if let Some(n) = expr_to_num(&args[1]) {
+          TotalLevelSpec::Through(n as usize)
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "Total".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Total".to_string(),
-      args: args.to_vec(),
-    }),
+  } else {
+    TotalLevelSpec::Through(1)
+  };
+
+  match &args[0] {
+    Expr::List(_) => total_with_level(&args[0], &level_spec),
+    // Total[x] for non-list returns x
+    other => Ok(other.clone()),
+  }
+}
+
+enum TotalLevelSpec {
+  Through(usize), // sum levels 1..=n
+  Exact(usize),   // sum at exactly level n
+}
+
+/// Sum a list at level 1 using Plus (Apply[Plus, list])
+/// Handles nested lists by recursively adding element-wise.
+fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
+  if items.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  let mut acc = items[0].clone();
+  for item in &items[1..] {
+    acc = add_exprs_recursive(&acc, item)?;
+  }
+  Ok(acc)
+}
+
+/// Recursively add two expressions, threading over lists element-wise
+fn add_exprs_recursive(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  match (a, b) {
+    (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => {
+      let results: Result<Vec<Expr>, _> = la
+        .iter()
+        .zip(lb.iter())
+        .map(|(x, y)| add_exprs_recursive(x, y))
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    _ => plus_ast(&[a.clone(), b.clone()]),
+  }
+}
+
+/// Recursively apply Total with level spec
+fn total_with_level(
+  expr: &Expr,
+  level_spec: &TotalLevelSpec,
+) -> Result<Expr, InterpreterError> {
+  match level_spec {
+    TotalLevelSpec::Through(n) => total_through_level(expr, *n),
+    TotalLevelSpec::Exact(n) => total_at_exact_level(expr, *n),
+  }
+}
+
+/// Total[list, n] - sum across levels 1 through n
+/// Level 0 means no summing, level 1 means Apply[Plus, list], etc.
+fn total_through_level(
+  expr: &Expr,
+  n: usize,
+) -> Result<Expr, InterpreterError> {
+  if n == 0 {
+    return Ok(expr.clone());
+  }
+  match expr {
+    Expr::List(items) => {
+      // First, recursively process sublists for levels 2..n
+      if n > 1 {
+        let processed: Vec<Expr> = items
+          .iter()
+          .map(|item| total_through_level(item, n - 1))
+          .collect::<Result<Vec<_>, _>>()?;
+        total_sum_level1(&processed)
+      } else {
+        total_sum_level1(items)
+      }
+    }
+    _ => Ok(expr.clone()),
+  }
+}
+
+/// Total[list, {n}] - sum at exactly level n
+/// Level 1 = sum the outermost list, level 2 = sum each sublist, etc.
+fn total_at_exact_level(
+  expr: &Expr,
+  n: usize,
+) -> Result<Expr, InterpreterError> {
+  if n <= 1 {
+    // Sum at this level
+    match expr {
+      Expr::List(items) => total_sum_level1(items),
+      _ => Ok(expr.clone()),
+    }
+  } else {
+    // Recurse into sublists, summing at deeper level
+    match expr {
+      Expr::List(items) => {
+        let processed: Vec<Expr> = items
+          .iter()
+          .map(|item| total_at_exact_level(item, n - 1))
+          .collect::<Result<Vec<_>, _>>()?;
+        Ok(Expr::List(processed))
+      }
+      _ => Ok(expr.clone()),
+    }
   }
 }
 
