@@ -2660,84 +2660,127 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// AST-based Sum: sum of list elements or iterator sum.
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() == 1 {
-    // Sum[{a, b, c}] -> a + b + c (same as Total)
-    return crate::functions::math_ast::total_ast(args);
+  if args.len() < 2 {
+    // Sum requires at least 2 arguments
+    return Ok(Expr::FunctionCall {
+      name: "Sum".to_string(),
+      args: args.to_vec(),
+    });
   }
 
-  if args.len() == 2 {
-    // Sum[expr, {i, min, max}] -> add expr for each i
+  // Multi-dimensional Sum: Sum[expr, {i,...}, {j,...}, ...] => Sum[Sum[expr, {j,...}], {i,...}]
+  if args.len() > 2 {
+    // Evaluate innermost sum first (last iterator), then wrap outward
     let body = &args[0];
-    let iter_spec = &args[1];
+    let inner_iter = &args[args.len() - 1];
+    let inner_sum = sum_ast(&[body.clone(), inner_iter.clone()])?;
+    if args.len() == 3 {
+      return sum_ast(&[inner_sum, args[1].clone()]);
+    } else {
+      let mut new_args = vec![inner_sum];
+      new_args.extend_from_slice(&args[1..args.len() - 1]);
+      return sum_ast(&new_args);
+    }
+  }
 
-    match iter_spec {
-      Expr::List(items) if items.len() >= 2 => {
-        let var_name = match &items[0] {
-          Expr::Identifier(name) => name.clone(),
-          _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Sum".to_string(),
-              args: args.to_vec(),
-            });
-          }
-        };
+  // Sum[expr, {i, min, max}] or variants
+  let body = &args[0];
+  let iter_spec = &args[1];
 
-        // Check for list iteration form: {i, list}
-        if items.len() == 2 {
-          let evaluated_second =
-            crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-          if let Expr::List(list_items) = &evaluated_second {
-            // Sum[expr, {i, list}] -> iterate over list elements
-            let mut acc = Expr::Integer(0);
-            for item in list_items {
-              let substituted =
-                crate::syntax::substitute_variable(body, &var_name, item);
-              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-              acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
-            }
-            return Ok(acc);
-          }
-        }
-
-        // Check for infinite sum: {i, min, Infinity}
-        if items.len() == 3
-          && let Expr::Identifier(s) = &items[2]
-          && s == "Infinity"
-        {
-          let min_val = expr_to_i128(&items[1]).unwrap_or(1);
-          if let Some(result) = try_infinite_sum(body, &var_name, min_val)? {
-            return Ok(result);
-          }
-          // Could not evaluate symbolically — return unevaluated
+  match iter_spec {
+    Expr::List(items) if items.len() >= 2 => {
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
           return Ok(Expr::FunctionCall {
             name: "Sum".to_string(),
             args: args.to_vec(),
           });
         }
+      };
 
-        let (min, max) = if items.len() == 2 {
-          let max_val = expr_to_i128(&items[1]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Sum: iterator bounds must be integers".into(),
-            )
-          })?;
-          (1i128, max_val)
-        } else {
-          let min_val = expr_to_i128(&items[1]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Sum: iterator bounds must be integers".into(),
-            )
-          })?;
-          let max_val = expr_to_i128(&items[2]).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Sum: iterator bounds must be integers".into(),
-            )
-          })?;
-          (min_val, max_val)
-        };
+      // Check for list iteration form: {i, list}
+      if items.len() == 2 {
+        let evaluated_second =
+          crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        if let Expr::List(list_items) = &evaluated_second {
+          // Sum[expr, {i, {v1, v2, ...}}] -> iterate over list elements
+          let mut acc = Expr::Integer(0);
+          for item in list_items {
+            let substituted =
+              crate::syntax::substitute_variable(body, &var_name, item);
+            let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+            acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+          }
+          return Ok(acc);
+        }
+      }
 
-        let mut acc = Expr::Integer(0);
-        for i in min..=max {
+      // Check for infinite sum: {i, min, Infinity}
+      if items.len() == 3
+        && let Expr::Identifier(s) = &items[2]
+        && s == "Infinity"
+      {
+        let min_val = expr_to_i128(&items[1]).unwrap_or(1);
+        if let Some(result) = try_infinite_sum(body, &var_name, min_val)? {
+          return Ok(result);
+        }
+        // Could not evaluate symbolically — return unevaluated
+        return Ok(Expr::FunctionCall {
+          name: "Sum".to_string(),
+          args: args.to_vec(),
+        });
+      }
+
+      // Extract min, max, step
+      let (min, max, step) = if items.len() == 2 {
+        let max_val = expr_to_i128(&items[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Sum: iterator bounds must be integers".into(),
+          )
+        })?;
+        (1i128, max_val, 1i128)
+      } else if items.len() == 3 {
+        let min_val = expr_to_i128(&items[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Sum: iterator bounds must be integers".into(),
+          )
+        })?;
+        let max_val = expr_to_i128(&items[2]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Sum: iterator bounds must be integers".into(),
+          )
+        })?;
+        (min_val, max_val, 1i128)
+      } else {
+        // items.len() == 4: {i, min, max, step}
+        let min_val = expr_to_i128(&items[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Sum: iterator bounds must be integers".into(),
+          )
+        })?;
+        let max_val = expr_to_i128(&items[2]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Sum: iterator bounds must be integers".into(),
+          )
+        })?;
+        let step_val = expr_to_i128(&items[3]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Sum: step must be an integer".into(),
+          )
+        })?;
+        if step_val == 0 {
+          return Err(InterpreterError::EvaluationError(
+            "Sum: step cannot be zero".into(),
+          ));
+        }
+        (min_val, max_val, step_val)
+      };
+
+      let mut acc = Expr::Integer(0);
+      let mut i = min;
+      if step > 0 {
+        while i <= max {
           let substituted = crate::syntax::substitute_variable(
             body,
             &var_name,
@@ -2745,11 +2788,23 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           );
           let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
           acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+          i += step;
         }
-        return Ok(acc);
+      } else {
+        while i >= max {
+          let substituted = crate::syntax::substitute_variable(
+            body,
+            &var_name,
+            &Expr::Integer(i),
+          );
+          let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+          acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+          i += step;
+        }
       }
-      _ => {}
+      return Ok(acc);
     }
+    _ => {}
   }
 
   Ok(Expr::FunctionCall {

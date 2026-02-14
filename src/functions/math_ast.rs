@@ -1010,6 +1010,11 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // x^1 -> x
+  if matches!(exp, Expr::Integer(1)) {
+    return Ok(base.clone());
+  }
+
   // Special case: 0^0 is Indeterminate (matches Wolfram)
   let base_is_zero = matches!(base, Expr::Integer(0))
     || matches!(base, Expr::Real(f) if *f == 0.0);

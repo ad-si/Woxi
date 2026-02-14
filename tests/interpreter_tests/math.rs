@@ -1027,6 +1027,51 @@ mod sum {
       "Sum[1/n, {n, 1, Infinity}]"
     );
   }
+
+  #[test]
+  fn sum_with_step() {
+    // Sum[i, {i, 1, 10, 2}] -> 1 + 3 + 5 + 7 + 9 = 25
+    assert_eq!(interpret("Sum[i, {i, 1, 10, 2}]").unwrap(), "25");
+  }
+
+  #[test]
+  fn sum_with_step_3() {
+    // Sum[i, {i, 1, 10, 3}] -> 1 + 4 + 7 + 10 = 22
+    assert_eq!(interpret("Sum[i, {i, 1, 10, 3}]").unwrap(), "22");
+  }
+
+  #[test]
+  fn sum_with_negative_step() {
+    // Sum[i, {i, 10, 1, -1}] -> 10 + 9 + ... + 1 = 55
+    assert_eq!(interpret("Sum[i, {i, 10, 1, -1}]").unwrap(), "55");
+  }
+
+  #[test]
+  fn sum_multi_dimensional() {
+    // Sum[i*j, {i, 1, 2}, {j, 1, 3}] = 1*1+1*2+1*3+2*1+2*2+2*3 = 18
+    assert_eq!(interpret("Sum[i*j, {i, 1, 2}, {j, 1, 3}]").unwrap(), "18");
+  }
+
+  #[test]
+  fn sum_multi_dimensional_addition() {
+    // Sum[i + j, {i, 1, 3}, {j, 1, 2}] = 21
+    assert_eq!(interpret("Sum[i + j, {i, 1, 3}, {j, 1, 2}]").unwrap(), "21");
+  }
+
+  #[test]
+  fn sum_explicit_list() {
+    // Sum[x^i, {i, {1, 3, 5}}] = x + x^3 + x^5
+    assert_eq!(
+      interpret("Sum[x^i, {i, {1, 3, 5}}]").unwrap(),
+      "x + x^3 + x^5"
+    );
+  }
+
+  #[test]
+  fn sum_single_arg_unevaluated() {
+    // Sum[{a, b, c}] is invalid in Wolfram — requires 2+ args
+    assert_eq!(interpret("Sum[{a, b, c}]").unwrap(), "Sum[{a, b, c}]");
+  }
 }
 
 mod n_arbitrary_precision {
@@ -1456,6 +1501,13 @@ mod listable {
   #[test]
   fn power_scalar_list() {
     assert_eq!(interpret("Power[2, {1, 2, 3}]").unwrap(), "{2, 4, 8}");
+  }
+
+  #[test]
+  fn power_exponent_one_simplifies() {
+    assert_eq!(interpret("x^1").unwrap(), "x");
+    assert_eq!(interpret("Power[y, 1]").unwrap(), "y");
+    assert_eq!(interpret("(a + b)^1").unwrap(), "a + b");
   }
 
   #[test]
