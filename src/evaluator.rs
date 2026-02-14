@@ -623,7 +623,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         } else {
           evaluate_expr_to_expr(&args[0])?
         };
-        return Err(InterpreterError::ReturnValue(val));
+        return Err(InterpreterError::ReturnValue(Box::new(val)));
       }
       // Special handling for Break[] - raises BreakSignal
       if name == "Break" && args.is_empty() {
@@ -637,11 +637,11 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "Throw" && !args.is_empty() && args.len() <= 2 {
         let val = evaluate_expr_to_expr(&args[0])?;
         let tag = if args.len() == 2 {
-          Some(evaluate_expr_to_expr(&args[1])?)
+          Some(Box::new(evaluate_expr_to_expr(&args[1])?))
         } else {
           None
         };
-        return Err(InterpreterError::ThrowValue(val, tag));
+        return Err(InterpreterError::ThrowValue(Box::new(val), tag));
       }
       // Special handling for Catch[expr] and Catch[expr, form]
       if name == "Catch" && !args.is_empty() && args.len() <= 2 {
@@ -659,13 +659,13 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
                 && crate::syntax::expr_to_string(pattern)
                   == crate::syntax::expr_to_string(tag)
               {
-                return Ok(val);
+                return Ok(*val);
               }
               // Tag doesn't match - re-throw
               return Err(InterpreterError::ThrowValue(val, thrown_tag));
             }
             // No tag pattern - catch everything
-            return Ok(val);
+            return Ok(*val);
           }
           Err(e) => return Err(e),
         }
@@ -2955,7 +2955,7 @@ pub fn evaluate_function_call_ast(
       } else {
         args[0].clone()
       };
-      return Err(InterpreterError::ReturnValue(val));
+      return Err(InterpreterError::ReturnValue(Box::new(val)));
     }
     "SameQ" if args.len() >= 2 => {
       return crate::functions::boolean_ast::same_q_ast(args);
@@ -3403,7 +3403,7 @@ pub fn evaluate_function_call_ast(
       }
       // Catch Return[] at the function call boundary
       return match evaluate_expr_to_expr(&substituted) {
-        Err(InterpreterError::ReturnValue(val)) => Ok(val),
+        Err(InterpreterError::ReturnValue(val)) => Ok(*val),
         other => other,
       };
     }
@@ -3427,7 +3427,7 @@ pub fn evaluate_function_call_ast(
       let substituted = crate::syntax::substitute_slots(body, args);
       // Catch Return[] at the function call boundary
       return match evaluate_expr_to_expr(&substituted) {
-        Err(InterpreterError::ReturnValue(val)) => Ok(val),
+        Err(InterpreterError::ReturnValue(val)) => Ok(*val),
         other => other,
       };
     }
