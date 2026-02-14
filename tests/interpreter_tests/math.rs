@@ -1684,3 +1684,123 @@ mod conjugate_tests {
     assert_eq!(interpret("Conjugate[x]").unwrap(), "Conjugate[x]");
   }
 }
+
+#[cfg(test)]
+mod re_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn re_integer() {
+    assert_eq!(interpret("Re[3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn re_real() {
+    assert_eq!(interpret("Re[3.14]").unwrap(), "3.14");
+  }
+
+  #[test]
+  fn re_complex() {
+    assert_eq!(interpret("Re[3 + 4*I]").unwrap(), "3");
+  }
+
+  #[test]
+  fn re_complex_negative_imag() {
+    assert_eq!(interpret("Re[3 - 4*I]").unwrap(), "3");
+  }
+
+  #[test]
+  fn re_pure_imaginary() {
+    assert_eq!(interpret("Re[4*I]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_i() {
+    assert_eq!(interpret("Re[I]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_negative_i() {
+    assert_eq!(interpret("Re[-I]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_zero() {
+    assert_eq!(interpret("Re[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn re_rational_complex() {
+    assert_eq!(interpret("Re[1/2 + 3/4*I]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn re_float_complex() {
+    assert_eq!(interpret("Re[1.5 + 2.5*I]").unwrap(), "1.5");
+  }
+
+  #[test]
+  fn re_symbolic() {
+    assert_eq!(interpret("Re[x]").unwrap(), "Re[x]");
+  }
+}
+
+#[cfg(test)]
+mod im_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn im_integer() {
+    assert_eq!(interpret("Im[3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn im_real() {
+    assert_eq!(interpret("Im[3.14]").unwrap(), "0");
+  }
+
+  #[test]
+  fn im_complex() {
+    assert_eq!(interpret("Im[3 + 4*I]").unwrap(), "4");
+  }
+
+  #[test]
+  fn im_complex_negative_imag() {
+    assert_eq!(interpret("Im[3 - 4*I]").unwrap(), "-4");
+  }
+
+  #[test]
+  fn im_pure_imaginary() {
+    assert_eq!(interpret("Im[4*I]").unwrap(), "4");
+  }
+
+  #[test]
+  fn im_i() {
+    assert_eq!(interpret("Im[I]").unwrap(), "1");
+  }
+
+  #[test]
+  fn im_negative_i() {
+    assert_eq!(interpret("Im[-I]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn im_zero() {
+    assert_eq!(interpret("Im[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn im_rational_complex() {
+    assert_eq!(interpret("Im[1/2 + 3/4*I]").unwrap(), "3/4");
+  }
+
+  #[test]
+  fn im_float_complex() {
+    assert_eq!(interpret("Im[1.5 + 2.5*I]").unwrap(), "2.5");
+  }
+
+  #[test]
+  fn im_symbolic() {
+    assert_eq!(interpret("Im[x]").unwrap(), "Im[x]");
+  }
+}

@@ -6354,17 +6354,30 @@ pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::Integer(_) | Expr::Real(_) => Ok(args[0].clone()),
+    Expr::Integer(_) | Expr::Real(_) => return Ok(args[0].clone()),
     Expr::FunctionCall { name, args: inner }
       if name == "Complex" && inner.len() == 2 =>
     {
-      Ok(inner[0].clone())
+      return Ok(inner[0].clone());
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Re".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {}
   }
+
+  // Try exact integer/rational complex extraction: handles a + b*I patterns
+  if let Some(((rn, rd), _)) = try_extract_complex_exact(&args[0]) {
+    return Ok(make_rational(rn, rd));
+  }
+
+  // Try float complex extraction: handles 1.5 + 2.5*I patterns
+  if let Some((re, _)) = try_extract_complex_float(&args[0]) {
+    return Ok(Expr::Real(re));
+  }
+
+  // Symbolic: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Re".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Im[z] - Imaginary part of a complex number (for real numbers, returns 0)
@@ -6376,17 +6389,30 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match &args[0] {
-    Expr::Integer(_) | Expr::Real(_) => Ok(Expr::Integer(0)),
+    Expr::Integer(_) | Expr::Real(_) => return Ok(Expr::Integer(0)),
     Expr::FunctionCall { name, args: inner }
       if name == "Complex" && inner.len() == 2 =>
     {
-      Ok(inner[1].clone())
+      return Ok(inner[1].clone());
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Im".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {}
   }
+
+  // Try exact integer/rational complex extraction: handles a + b*I patterns
+  if let Some((_, (in_, id))) = try_extract_complex_exact(&args[0]) {
+    return Ok(make_rational(in_, id));
+  }
+
+  // Try float complex extraction: handles 1.5 + 2.5*I patterns
+  if let Some((_, im)) = try_extract_complex_float(&args[0]) {
+    return Ok(Expr::Real(im));
+  }
+
+  // Symbolic: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Im".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Conjugate[z] - Complex conjugate (for real numbers, returns the number itself)

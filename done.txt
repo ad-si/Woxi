@@ -14,3 +14,19 @@ INPUT: Conjugate[3 + 4 I]
 EXPECTED:
 = 3 - 4 I
 ---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Re
+LINE: 859
+TYPE: >>
+INPUT: Re[3+4I]
+EXPECTED:
+= 3
+---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Im
+LINE: 670
+TYPE: >>
+INPUT: Im[3+4I]
+EXPECTED:
+= 4
+---
