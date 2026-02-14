@@ -30,3 +30,59 @@ INPUT: Im[3+4I]
 EXPECTED:
 = 4
 ---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Boole
+LINE: 247
+TYPE: >>
+INPUT: Boole[2 == 2]
+EXPECTED:
+= 1
+---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Boole
+LINE: 249
+TYPE: >>
+INPUT: Boole[7 < 5]
+EXPECTED:
+= 0
+---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Boole
+LINE: 251
+TYPE: >>
+INPUT: Boole[a == 7]
+EXPECTED:
+= Boole[a == 7]
+---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Conjugate
+LINE: 408
+TYPE: >>
+INPUT: Conjugate[a + b * I]
+EXPECTED:
+= Conjugate[a] - I Conjugate[b]
+---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Conjugate
+LINE: 405
+TYPE: >>
+INPUT: Conjugate[3]
+EXPECTED:
+= 3
+---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Conjugate
+LINE: 411
+TYPE: >>
+INPUT: Conjugate[{{1, 2 + I 4, a + I b}, {I}}]
+EXPECTED:
+= {{1, 2 - 4 I, Conjugate[a] - I Conjugate[b]}, {-I}}
+---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Conjugate
+LINE: 414
+TYPE: >>
+INPUT: Conjugate[1.5 + 2.5 I]
+EXPECTED:
+= 1.5 - 2.5 I
+---

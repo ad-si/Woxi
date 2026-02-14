@@ -1683,6 +1683,65 @@ mod conjugate_tests {
   fn conjugate_symbolic() {
     assert_eq!(interpret("Conjugate[x]").unwrap(), "Conjugate[x]");
   }
+
+  #[test]
+  fn conjugate_symbolic_plus_imaginary() {
+    // Distributes over Plus, conjugates I factor
+    assert_eq!(
+      interpret("Conjugate[a + b * I]").unwrap(),
+      "Conjugate[a] - I*Conjugate[b]"
+    );
+  }
+
+  #[test]
+  fn conjugate_distribute_over_list() {
+    assert_eq!(
+      interpret("Conjugate[{1, 2, a}]").unwrap(),
+      "{1, 2, Conjugate[a]}"
+    );
+  }
+
+  #[test]
+  fn conjugate_times_i() {
+    // Conjugate[I*a] = -I*Conjugate[a]
+    assert_eq!(interpret("Conjugate[I*a]").unwrap(), "-I*Conjugate[a]");
+  }
+
+  #[test]
+  fn conjugate_times_real() {
+    // Real coefficient passes through
+    assert_eq!(interpret("Conjugate[2*a]").unwrap(), "2*Conjugate[a]");
+  }
+
+  #[test]
+  fn conjugate_negate_symbolic() {
+    // Conjugate[-a] = -Conjugate[a]
+    assert_eq!(interpret("Conjugate[-a]").unwrap(), "-Conjugate[a]");
+  }
+
+  #[test]
+  fn conjugate_nested_complex_list() {
+    // Distributes over nested lists with mixed elements
+    assert_eq!(
+      interpret("Conjugate[{{1, 2 + I 4, a + I b}, {I}}]").unwrap(),
+      "{{1, 2 - 4*I, Conjugate[a] - I*Conjugate[b]}, {-I}}"
+    );
+  }
+
+  #[test]
+  fn conjugate_numeric_plus_symbolic() {
+    // Conjugate[3 + I*b] = 3 - I*Conjugate[b]
+    assert_eq!(
+      interpret("Conjugate[3 + I*b]").unwrap(),
+      "3 - I*Conjugate[b]"
+    );
+  }
+
+  #[test]
+  fn conjugate_real_plus_symbol() {
+    // Conjugate[a + 2] = 2 + Conjugate[a]
+    assert_eq!(interpret("Conjugate[a + 2]").unwrap(), "2 + Conjugate[a]");
+  }
 }
 
 #[cfg(test)]

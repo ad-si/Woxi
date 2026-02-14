@@ -1721,8 +1721,16 @@ pub fn expr_to_string(expr: &Expr) -> String {
             })
             .collect::<Vec<_>>()
             .join("*");
-          // Wolfram wraps negated products/divisions in parens: -(a*b) not -a*b, -(a/b) not -a/b
-          let needs_neg_parens = args.len() > 2
+          // Wolfram wraps negated products in parens when the factors are
+          // all non-constant symbols: -(a*b), but -I*a, -2*a*b without parens.
+          // The rule: parens needed when coefficient is -1 and ALL remaining
+          // factors are regular variables (not I or numeric constants).
+          let rest_factors = &args[1..];
+          let all_regular_symbols = rest_factors
+            .iter()
+            .all(|a| matches!(a, Expr::Identifier(n) if n != "I"));
+          let needs_neg_parens = (rest_factors.len() >= 2
+            && all_regular_symbols)
             || (args.len() == 2
               && (matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Times")
                 || matches!(
@@ -2445,10 +2453,15 @@ pub fn expr_to_output(expr: &Expr) -> String {
             })
             .collect::<Vec<_>>()
             .join("*");
-          // Wolfram wraps negated products in parens: -(a*b) not -a*b
-          // This applies when there's a single remaining arg that is itself a Times,
-          // or when there are 2+ remaining args (which form a product)
-          let needs_neg_parens = args.len() > 2
+          // Wolfram wraps negated products in parens when all remaining factors
+          // are regular variables: -(a*b), but not when I or function calls are
+          // involved: -I*Conjugate[a], -2*Conjugate[a]*I.
+          let rest_factors = &args[1..];
+          let all_regular_symbols = rest_factors
+            .iter()
+            .all(|a| matches!(a, Expr::Identifier(n) if n != "I"));
+          let needs_neg_parens = (rest_factors.len() >= 2
+            && all_regular_symbols)
             || (args.len() == 2
               && (matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Times")
                 || matches!(
