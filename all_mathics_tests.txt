@@ -282,14 +282,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: Conjugate
-LINE: 402
-TYPE: >>
-INPUT: Conjugate[3 + 4 I]
-EXPECTED:
-= 3 - 4 I
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Conjugate
 LINE: 405
 TYPE: >>
 INPUT: Conjugate[3]

@@ -1369,6 +1369,121 @@ fn try_extract_complex_exact(
   }
 }
 
+/// Try to extract float complex parts (re, im) from an expression.
+/// Returns Some((re, im)) if the expression contains float components with I.
+fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  match expr {
+    Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
+    Expr::Integer(n) => Some((*n as f64, 0.0)),
+    Expr::Real(f) => Some((*f, 0.0)),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let (re, im) = try_extract_complex_float(operand)?;
+      Some((-re, -im))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (a, b) = try_extract_complex_float(left)?;
+      let (c, d) = try_extract_complex_float(right)?;
+      Some((a * c - b * d, a * d + b * c))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let (a, b) = try_extract_complex_float(left)?;
+      let (c, d) = try_extract_complex_float(right)?;
+      Some((a + c, b + d))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let (a, b) = try_extract_complex_float(left)?;
+      let (c, d) = try_extract_complex_float(right)?;
+      Some((a - c, b - d))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      if args.is_empty() {
+        return None;
+      }
+      let mut result = try_extract_complex_float(&args[0])?;
+      for arg in &args[1..] {
+        let (c, d) = try_extract_complex_float(arg)?;
+        let (a, b) = result;
+        result = (a * c - b * d, a * d + b * c);
+      }
+      Some(result)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      if args.is_empty() {
+        return None;
+      }
+      let mut result = try_extract_complex_float(&args[0])?;
+      for arg in &args[1..] {
+        let (c, d) = try_extract_complex_float(arg)?;
+        result = (result.0 + c, result.1 + d);
+      }
+      Some(result)
+    }
+    _ => None,
+  }
+}
+
+/// Build a complex number expression from float parts.
+fn build_complex_float_expr(re: f64, im: f64) -> Expr {
+  let i_expr = Expr::Identifier("I".to_string());
+  let im_abs = im.abs();
+
+  if im == 0.0 {
+    return num_to_expr(re);
+  }
+
+  let im_term = if im_abs == 1.0 {
+    i_expr
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Real(im_abs)),
+      right: Box::new(i_expr),
+    }
+  };
+
+  if re == 0.0 {
+    if im > 0.0 {
+      im_term
+    } else {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(im_term),
+      }
+    }
+  } else {
+    let re_expr = num_to_expr(re);
+    if im > 0.0 {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(re_expr),
+        right: Box::new(im_term),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(re_expr),
+        right: Box::new(im_term),
+      }
+    }
+  }
+}
+
 /// Build a complex number expression from exact rational parts.
 /// Handles special cases: 0 + bi = bi, a + 0i = a, coefficient ±1 elision, etc.
 fn build_complex_expr(
@@ -1412,10 +1527,19 @@ fn build_complex_expr(
     // Pure imaginary
     return if im_positive {
       im_term
-    } else {
+    } else if im_abs_num == 1 && id_s == 1 {
+      // -I
       Expr::UnaryOp {
         op: crate::syntax::UnaryOperator::Minus,
         operand: Box::new(im_term),
+      }
+    } else {
+      // -n*I: build Times[-n, I] directly
+      let coeff = make_rational(-im_abs_num, id_s);
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(coeff),
+        right: Box::new(Expr::Identifier("I".to_string())),
       }
     };
   }
@@ -6273,8 +6397,9 @@ pub fn conjugate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Handle real numbers directly
   match &args[0] {
-    Expr::Integer(_) | Expr::Real(_) => Ok(args[0].clone()),
+    Expr::Integer(_) | Expr::Real(_) => return Ok(args[0].clone()),
     Expr::FunctionCall { name, args: inner }
       if name == "Complex" && inner.len() == 2 =>
     {
@@ -6287,16 +6412,29 @@ pub fn conjugate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           operand: Box::new(other.clone()),
         },
       };
-      Ok(Expr::FunctionCall {
+      return Ok(Expr::FunctionCall {
         name: "Complex".to_string(),
         args: vec![inner[0].clone(), neg_imag],
-      })
+      });
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Conjugate".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {}
   }
+
+  // Try exact integer/rational complex extraction: handles a + b*I patterns
+  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
+    return Ok(build_complex_expr(rn, rd, -in_, id));
+  }
+
+  // Try float complex extraction: handles 1.5 + 2.5*I patterns
+  if let Some((re, im)) = try_extract_complex_float(&args[0]) {
+    return Ok(build_complex_float_expr(re, -im));
+  }
+
+  // Symbolic: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Conjugate".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Arg[z] - Argument (phase angle) of a complex number

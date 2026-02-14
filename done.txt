@@ -6,3 +6,11 @@ INPUT: Sign[3 - 4*I]
 EXPECTED:
 = 3 / 5 - 4 I / 5
 ---
+FILE: mathics/builtin/arithmetic.py
+CLASS: Conjugate
+LINE: 402
+TYPE: >>
+INPUT: Conjugate[3 + 4 I]
+EXPECTED:
+= 3 - 4 I
+---
