@@ -2641,10 +2641,10 @@ pub fn evaluate_function_call_ast(
     "Surd" if args.len() == 2 => {
       return crate::functions::math_ast::surd_ast(args);
     }
-    "Floor" if args.len() == 1 => {
+    "Floor" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::floor_ast(args);
     }
-    "Ceiling" if args.len() == 1 => {
+    "Ceiling" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::ceiling_ast(args);
     }
     "Round" if args.len() == 1 || args.len() == 2 => {
