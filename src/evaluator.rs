@@ -2106,7 +2106,7 @@ pub fn evaluate_function_call_ast(
     "Do" if args.len() == 2 => {
       return list_helpers_ast::do_ast(&args[0], &args[1]);
     }
-    "For" if args.len() == 4 => {
+    "For" if args.len() == 3 || args.len() == 4 => {
       return for_ast(args);
     }
     "DeleteCases" if args.len() == 2 => {
@@ -3667,9 +3667,9 @@ fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// AST-based For loop: For[init, test, incr, body]
 fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 4 {
+  if args.len() < 3 || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(format!(
-      "For expects 4 arguments; {} given",
+      "For expects 3 or 4 arguments; {} given",
       args.len()
     )));
   }
@@ -3677,7 +3677,7 @@ fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let init = &args[0];
   let test = &args[1];
   let incr = &args[2];
-  let body = &args[3];
+  let body = args.get(3);
 
   const MAX_ITERATIONS: usize = 100000;
 
@@ -3694,12 +3694,14 @@ fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => break,
     }
 
-    // Evaluate the body
-    match evaluate_expr_to_expr(body) {
-      Ok(_) => {}
-      Err(InterpreterError::BreakSignal) => break,
-      Err(InterpreterError::ContinueSignal) => {}
-      Err(e) => return Err(e),
+    // Evaluate the body (if provided)
+    if let Some(body) = body {
+      match evaluate_expr_to_expr(body) {
+        Ok(_) => {}
+        Err(InterpreterError::BreakSignal) => break,
+        Err(InterpreterError::ContinueSignal) => {}
+        Err(e) => return Err(e),
+      }
     }
 
     // Evaluate the increment
