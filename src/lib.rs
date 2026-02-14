@@ -43,13 +43,13 @@ pub enum InterpreterError {
   #[error("Evaluation error: {0}")]
   EvaluationError(String),
   #[error("Return")]
-  ReturnValue(syntax::Expr),
+  ReturnValue(Box<syntax::Expr>),
   #[error("Break")]
   BreakSignal,
   #[error("Continue")]
   ContinueSignal,
   #[error("Throw")]
-  ThrowValue(syntax::Expr, Option<syntax::Expr>),
+  ThrowValue(Box<syntax::Expr>, Option<Box<syntax::Expr>>),
 }
 
 /// Extended result type that includes both stdout and the result
@@ -374,7 +374,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           Err(InterpreterError::ReturnValue(val)) => {
             syntax::Expr::FunctionCall {
               name: "Return".to_string(),
-              args: vec![val],
+              args: vec![*val],
             }
           }
           other => other?,
