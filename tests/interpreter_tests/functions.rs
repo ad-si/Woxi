@@ -185,6 +185,118 @@ mod function_name_substitution {
   }
 }
 
+mod function_head {
+  use super::*;
+
+  #[test]
+  fn function_one_arg_is_pure_function() {
+    // Function[body] is equivalent to body &
+    assert_eq!(interpret("Function[# + 1][5]").unwrap(), "6");
+  }
+
+  #[test]
+  fn function_one_arg_with_multiple_slots() {
+    assert_eq!(interpret("Function[#1 + #2][3, 4]").unwrap(), "7");
+  }
+
+  #[test]
+  fn function_named_param_single() {
+    assert_eq!(interpret("Function[x, x + 1][5]").unwrap(), "6");
+  }
+
+  #[test]
+  fn function_named_param_power() {
+    assert_eq!(interpret("Function[x, x^2][3]").unwrap(), "9");
+  }
+
+  #[test]
+  fn function_named_param_multi() {
+    assert_eq!(interpret("Function[{x, y}, x + y][3, 4]").unwrap(), "7");
+  }
+
+  #[test]
+  fn function_named_param_multiply() {
+    assert_eq!(interpret("Function[{x, y}, x*y][3, 4]").unwrap(), "12");
+  }
+
+  #[test]
+  fn function_named_identity() {
+    assert_eq!(interpret("Function[x, x][10]").unwrap(), "10");
+  }
+
+  #[test]
+  fn function_display_one_arg() {
+    // Function[body] displays as body &
+    assert_eq!(interpret("Function[# + 1]").unwrap(), "#1 + 1&");
+  }
+
+  #[test]
+  fn function_display_named_single() {
+    assert_eq!(
+      interpret("Function[x, x + 1]").unwrap(),
+      "Function[x, x + 1]"
+    );
+  }
+
+  #[test]
+  fn function_display_named_multi() {
+    assert_eq!(
+      interpret("Function[{x, y}, x + y]").unwrap(),
+      "Function[{x, y}, x + y]"
+    );
+  }
+
+  #[test]
+  fn function_assigned_to_variable() {
+    clear_state();
+    assert_eq!(interpret("f = Function[x, x + 1]; f[10]").unwrap(), "11");
+  }
+
+  #[test]
+  fn function_multi_param_assigned() {
+    clear_state();
+    assert_eq!(
+      interpret("g = Function[{x, y}, x^2 + y^2]; g[3, 4]").unwrap(),
+      "25"
+    );
+  }
+
+  #[test]
+  fn function_in_map() {
+    assert_eq!(
+      interpret("Map[Function[x, x^2], {1, 2, 3, 4}]").unwrap(),
+      "{1, 4, 9, 16}"
+    );
+  }
+
+  #[test]
+  fn function_in_select() {
+    assert_eq!(
+      interpret("Select[{1, 2, 3, 4, 5}, Function[x, OddQ[x]]]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn function_in_apply() {
+    assert_eq!(
+      interpret("Apply[Function[{x, y}, x + y], {10, 20}]").unwrap(),
+      "30"
+    );
+  }
+
+  #[test]
+  fn function_holdall_body() {
+    // Function should not evaluate the body prematurely
+    assert_eq!(interpret("Function[x, OddQ[x]][3]").unwrap(), "True");
+  }
+
+  #[test]
+  fn function_head_is_function() {
+    assert_eq!(interpret("Head[Function[x, x + 1]]").unwrap(), "Function");
+  }
+}
+
 mod set_delayed {
   use super::*;
 

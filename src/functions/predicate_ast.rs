@@ -452,7 +452,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Map { .. } => "Map",
     Expr::Apply { .. } => "Apply",
     Expr::Part { .. } => "Part",
-    Expr::Function { .. } => "Function",
+    Expr::Function { .. } | Expr::NamedFunction { .. } => "Function",
     Expr::Pattern { .. } => "Pattern",
     _ => "Symbol",
   };
@@ -748,6 +748,17 @@ pub fn expr_to_full_form(expr: &Expr) -> String {
     }
     Expr::Function { body } => {
       format!("Function[{}]", expr_to_full_form(body))
+    }
+    Expr::NamedFunction { params, body } => {
+      if params.len() == 1 {
+        format!("Function[{}, {}]", params[0], expr_to_full_form(body))
+      } else {
+        format!(
+          "Function[List[{}], {}]",
+          params.join(", "),
+          expr_to_full_form(body)
+        )
+      }
     }
     Expr::Pattern { name, head } => {
       if let Some(h) = head {
