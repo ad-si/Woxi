@@ -1616,3 +1616,71 @@ mod abs_complex_tests {
     assert_eq!(interpret("Abs[-3 - 4*I]").unwrap(), "5");
   }
 }
+
+#[cfg(test)]
+mod conjugate_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn conjugate_integer() {
+    assert_eq!(interpret("Conjugate[3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn conjugate_negative_integer() {
+    assert_eq!(interpret("Conjugate[-5]").unwrap(), "-5");
+  }
+
+  #[test]
+  fn conjugate_rational() {
+    assert_eq!(interpret("Conjugate[3/4]").unwrap(), "3/4");
+  }
+
+  #[test]
+  fn conjugate_complex_integer() {
+    assert_eq!(interpret("Conjugate[3 + 4*I]").unwrap(), "3 - 4*I");
+  }
+
+  #[test]
+  fn conjugate_complex_negative_imag() {
+    assert_eq!(interpret("Conjugate[3 - 4*I]").unwrap(), "3 + 4*I");
+  }
+
+  #[test]
+  fn conjugate_pure_imaginary() {
+    assert_eq!(interpret("Conjugate[4*I]").unwrap(), "-4*I");
+  }
+
+  #[test]
+  fn conjugate_i() {
+    assert_eq!(interpret("Conjugate[I]").unwrap(), "-I");
+  }
+
+  #[test]
+  fn conjugate_negative_i() {
+    assert_eq!(interpret("Conjugate[-I]").unwrap(), "I");
+  }
+
+  #[test]
+  fn conjugate_complex_float() {
+    assert_eq!(interpret("Conjugate[1.5 + 2.5*I]").unwrap(), "1.5 - 2.5*I");
+  }
+
+  #[test]
+  fn conjugate_complex_rational() {
+    assert_eq!(
+      interpret("Conjugate[1/2 + 3/4*I]").unwrap(),
+      "1/2 - (3*I)/4"
+    );
+  }
+
+  #[test]
+  fn conjugate_zero() {
+    assert_eq!(interpret("Conjugate[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn conjugate_symbolic() {
+    assert_eq!(interpret("Conjugate[x]").unwrap(), "Conjugate[x]");
+  }
+}
