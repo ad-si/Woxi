@@ -522,6 +522,41 @@ mod power_with_negative_exponent {
   }
 }
 
+mod power_of_i {
+  use super::*;
+
+  #[test]
+  fn i_squared() {
+    assert_eq!(interpret("I^2").unwrap(), "-1");
+  }
+
+  #[test]
+  fn i_cubed() {
+    assert_eq!(interpret("I^3").unwrap(), "-I");
+  }
+
+  #[test]
+  fn i_fourth() {
+    assert_eq!(interpret("I^4").unwrap(), "1");
+  }
+
+  #[test]
+  fn i_negative_one() {
+    assert_eq!(interpret("I^(-1)").unwrap(), "-I");
+  }
+
+  #[test]
+  fn i_negative_two() {
+    assert_eq!(interpret("I^(-2)").unwrap(), "-1");
+  }
+
+  #[test]
+  fn x_to_zero() {
+    assert_eq!(interpret("a^0").unwrap(), "1");
+    assert_eq!(interpret("5^0").unwrap(), "1");
+  }
+}
+
 mod subtract_function {
   use super::*;
 
