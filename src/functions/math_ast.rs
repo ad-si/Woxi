@@ -4785,6 +4785,105 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Helper to construct -Pi/2 matching wolframscript output format
+fn negative_pi_over_2() -> Expr {
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(Expr::Integer(2)),
+    }),
+    right: Box::new(Expr::Constant("Pi".to_string())),
+  }
+}
+
+/// Gudermannian[x] - the Gudermannian function: 2 ArcTan[Tanh[x/2]]
+/// Gudermannian[0] = 0, Gudermannian[Infinity] = Pi/2, Gudermannian[-Infinity] = -Pi/2
+pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Gudermannian expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) if *f == 0.0 => return Ok(Expr::Real(0.0)),
+    Expr::Real(f) => {
+      // Gudermannian[x] = 2 * atan(tanh(x/2))
+      let result = 2.0 * (f / 2.0).tanh().atan();
+      return Ok(Expr::Real(result));
+    }
+    Expr::Identifier(name) if name == "Infinity" => {
+      // Gudermannian[Infinity] = Pi/2
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      });
+    }
+    Expr::Identifier(name) if name == "ComplexInfinity" => {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    Expr::Identifier(name) if name == "Undefined" => {
+      return Ok(Expr::Identifier("Undefined".to_string()));
+    }
+    Expr::Identifier(name) if name == "Indeterminate" => {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    // -Infinity (as BinaryOp)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1))
+      && matches!(right.as_ref(), Expr::Identifier(n) if n == "Infinity") =>
+    {
+      return Ok(negative_pi_over_2());
+    }
+    // -Infinity (as FunctionCall)
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times"
+        && fargs.len() == 2
+        && matches!(fargs[0], Expr::Integer(-1))
+        && matches!(&fargs[1], Expr::Identifier(n) if n == "Infinity") =>
+    {
+      return Ok(negative_pi_over_2());
+    }
+    _ => {}
+  }
+  // Symbolic: return unevaluated (matching wolframscript behavior)
+  Ok(Expr::FunctionCall {
+    name: "Gudermannian".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// InverseGudermannian[x] - the inverse Gudermannian function
+pub fn inverse_gudermannian_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseGudermannian expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) if *f == 0.0 => return Ok(Expr::Real(0.0)),
+    Expr::Real(f) => {
+      // InverseGudermannian[x] = 2 * atanh(tan(x/2))
+      let result = 2.0 * (f / 2.0).tan().atanh();
+      return Ok(Expr::Real(result));
+    }
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "InverseGudermannian".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 // ─── Number Theory Functions ─────────────────────────────────────
 
 /// DigitCount[n] - counts of each digit 1-9,0 in base 10
@@ -9362,6 +9461,139 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "UnitStep".to_string(),
       args: args.to_vec(),
     }),
+  }
+}
+
+/// Precision[x] - the number of significant decimal digits
+/// Returns MachinePrecision for machine reals, Infinity for exact numbers
+pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Precision expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Constant(_) => {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    Expr::Real(_) => Ok(Expr::Identifier("MachinePrecision".to_string())),
+    Expr::BigFloat(_, prec) => Ok(Expr::Real(*prec as f64)),
+    Expr::Identifier(name)
+      if name == "Infinity" || name == "ComplexInfinity" =>
+    {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      ..
+    } => {
+      // Exact rationals like 1/2 have infinite precision
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    Expr::List(items) => {
+      // Precision of a list is the minimum precision of its elements
+      let mut min_prec: Option<f64> = None;
+      for item in items {
+        let p = precision_ast(&[item.clone()])?;
+        match p {
+          Expr::Identifier(name) if name == "Infinity" => {}
+          Expr::Identifier(name) if name == "MachinePrecision" => {
+            let mp = 15.954589770191003; // $MachinePrecision
+            min_prec = Some(min_prec.map_or(mp, |v: f64| v.min(mp)));
+          }
+          Expr::Real(f) => {
+            min_prec = Some(min_prec.map_or(f, |v: f64| v.min(f)));
+          }
+          _ => {}
+        }
+      }
+      match min_prec {
+        Some(p) => Ok(Expr::Real(p)),
+        None => Ok(Expr::Identifier("Infinity".to_string())),
+      }
+    }
+    // For symbolic expressions, check if any subexpression has finite precision
+    Expr::FunctionCall { args: fargs, .. } => {
+      let mut min_prec: Option<f64> = None;
+      for arg in fargs {
+        let p = precision_ast(&[arg.clone()])?;
+        match p {
+          Expr::Identifier(name) if name == "Infinity" => {}
+          Expr::Identifier(name) if name == "MachinePrecision" => {
+            let mp = 15.954589770191003;
+            min_prec = Some(min_prec.map_or(mp, |v: f64| v.min(mp)));
+          }
+          Expr::Real(f) => {
+            min_prec = Some(min_prec.map_or(f, |v: f64| v.min(f)));
+          }
+          _ => {}
+        }
+      }
+      match min_prec {
+        Some(p) => Ok(Expr::Real(p)),
+        None => Ok(Expr::Identifier("Infinity".to_string())),
+      }
+    }
+    _ => Ok(Expr::Identifier("Infinity".to_string())),
+  }
+}
+
+/// Accuracy[x] - the number of significant decimal digits to the right of the decimal point
+/// Returns Infinity for exact numbers, computes from precision for approximate numbers
+pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Accuracy expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Constant(_) => {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    Expr::Real(f) => {
+      // Accuracy = MachinePrecision - Log10[Abs[x]]
+      // MachinePrecision ≈ 15.9546
+      let machine_precision = 15.954589770191003_f64;
+      if *f == 0.0 {
+        // Accuracy[0.] is very large (represents machine epsilon)
+        return Ok(Expr::Real(machine_precision + (2.0_f64).powi(52).log10()));
+      }
+      let accuracy = machine_precision - f.abs().log10();
+      Ok(Expr::Real(accuracy))
+    }
+    Expr::Identifier(name)
+      if name == "Infinity"
+        || name == "ComplexInfinity"
+        || name == "Indeterminate" =>
+    {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      ..
+    } => Ok(Expr::Identifier("Infinity".to_string())),
+    // Symbolic identifiers (variables) have infinite accuracy
+    Expr::Identifier(_) => Ok(Expr::Identifier("Infinity".to_string())),
+    // For symbolic expressions, check subexpressions
+    Expr::FunctionCall { args: fargs, .. } => {
+      let mut has_finite = false;
+      for arg in fargs {
+        let a = accuracy_ast(&[arg.clone()])?;
+        if !matches!(&a, Expr::Identifier(n) if n == "Infinity") {
+          has_finite = true;
+          break;
+        }
+      }
+      if has_finite {
+        Ok(Expr::FunctionCall {
+          name: "Accuracy".to_string(),
+          args: args.to_vec(),
+        })
+      } else {
+        Ok(Expr::Identifier("Infinity".to_string()))
+      }
+    }
+    _ => Ok(Expr::Identifier("Infinity".to_string())),
   }
 }
 

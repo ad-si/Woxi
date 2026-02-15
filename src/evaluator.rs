@@ -1611,6 +1611,8 @@ fn is_builtin_listable(name: &str) -> bool {
       | "ArcSinh"
       | "ArcCosh"
       | "ArcTanh"
+      | "Gudermannian"
+      | "InverseGudermannian"
       | "Exp"
       | "Log"
       | "Log2"
@@ -1662,6 +1664,10 @@ fn is_builtin_listable(name: &str) -> bool {
       | "NonNegative"
       | "StringLength"
       | "MixedFractionParts"
+      | "Precision"
+      | "Accuracy"
+      | "Gudermannian"
+      | "InverseGudermannian"
   )
 }
 
@@ -2669,6 +2675,12 @@ pub fn evaluate_function_call_ast(
     "IntegerQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::integer_q_ast(args);
     }
+    "Precision" if args.len() == 1 => {
+      return crate::functions::math_ast::precision_ast(args);
+    }
+    "Accuracy" if args.len() == 1 => {
+      return crate::functions::math_ast::accuracy_ast(args);
+    }
     "O" if args.len() == 1 || args.len() == 2 => {
       // O[x] → SeriesData[x, 0, {}, 1, 1, 1]
       // O[x, x0] → SeriesData[x, x0, {}, 1, 1, 1]
@@ -3025,6 +3037,12 @@ pub fn evaluate_function_call_ast(
     }
     "ArcTanh" if args.len() == 1 => {
       return crate::functions::math_ast::arctanh_ast(args);
+    }
+    "Gudermannian" if args.len() == 1 => {
+      return crate::functions::math_ast::gudermannian_ast(args);
+    }
+    "InverseGudermannian" if args.len() == 1 => {
+      return crate::functions::math_ast::inverse_gudermannian_ast(args);
     }
     "Prime" if args.len() == 1 => {
       return crate::functions::math_ast::prime_ast(args);
