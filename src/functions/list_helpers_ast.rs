@@ -1513,7 +1513,11 @@ fn apply_func_to_n_args(
 
 /// AST-based Partition: break list into sublists of length n.
 /// Partition[{a, b, c, d, e}, 2] -> {{a, b}, {c, d}}
-pub fn partition_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
+pub fn partition_ast(
+  list: &Expr,
+  n: i128,
+  d: Option<i128>,
+) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
@@ -1531,51 +1535,112 @@ pub fn partition_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   }
 
   let n_usize = n as usize;
+  let d_usize = d.unwrap_or(n) as usize;
+  if d_usize == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Partition: offset must be positive".into(),
+    ));
+  }
+
   let mut results = Vec::new();
-  for chunk in items.chunks(n_usize) {
-    if chunk.len() == n_usize {
-      results.push(Expr::List(chunk.to_vec()));
-    }
+  let mut i = 0;
+  while i + n_usize <= items.len() {
+    results.push(Expr::List(items[i..i + n_usize].to_vec()));
+    i += d_usize;
   }
 
   Ok(Expr::List(results))
 }
 
 /// AST-based First: return first element of list.
-pub fn first_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+/// First[list] or First[list, default] - returns default if list is empty.
+pub fn first_ast(
+  list: &Expr,
+  default: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {
       if items.is_empty() {
-        Err(InterpreterError::EvaluationError(
-          "First: list is empty".into(),
-        ))
+        if let Some(d) = default {
+          Ok(d.clone())
+        } else {
+          Err(InterpreterError::EvaluationError(
+            "First: list is empty".into(),
+          ))
+        }
       } else {
         Ok(items[0].clone())
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "First".to_string(),
-      args: vec![list.clone()],
-    }),
+    Expr::FunctionCall { args, .. } => {
+      if args.is_empty() {
+        if let Some(d) = default {
+          Ok(d.clone())
+        } else {
+          Err(InterpreterError::EvaluationError(
+            "First: expression has no elements".into(),
+          ))
+        }
+      } else {
+        Ok(args[0].clone())
+      }
+    }
+    _ => {
+      if let Some(d) = default {
+        Ok(d.clone())
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "First".to_string(),
+          args: vec![list.clone()],
+        })
+      }
+    }
   }
 }
 
 /// AST-based Last: return last element of list.
-pub fn last_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+/// Last[list] or Last[list, default] - returns default if list is empty.
+pub fn last_ast(
+  list: &Expr,
+  default: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {
       if items.is_empty() {
-        Err(InterpreterError::EvaluationError(
-          "Last: list is empty".into(),
-        ))
+        if let Some(d) = default {
+          Ok(d.clone())
+        } else {
+          Err(InterpreterError::EvaluationError(
+            "Last: list is empty".into(),
+          ))
+        }
       } else {
         Ok(items[items.len() - 1].clone())
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Last".to_string(),
-      args: vec![list.clone()],
-    }),
+    Expr::FunctionCall { args, .. } => {
+      if args.is_empty() {
+        if let Some(d) = default {
+          Ok(d.clone())
+        } else {
+          Err(InterpreterError::EvaluationError(
+            "Last: expression has no elements".into(),
+          ))
+        }
+      } else {
+        Ok(args[args.len() - 1].clone())
+      }
+    }
+    _ => {
+      if let Some(d) = default {
+        Ok(d.clone())
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Last".to_string(),
+          args: vec![list.clone()],
+        })
+      }
+    }
   }
 }
 
@@ -1688,6 +1753,47 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
+  let len = items.len() as i128;
+
+  // Drop[list, {m, n}] - drop elements m through n
+  if let Expr::List(spec) = n {
+    if spec.len() == 2
+      && let (Some(m), Some(n_end)) =
+        (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
+    {
+      let start = if m > 0 { m - 1 } else { len + m };
+      let end = if n_end > 0 { n_end - 1 } else { len + n_end };
+      let start = start.max(0) as usize;
+      let end = (end + 1).max(0).min(len) as usize;
+      if start >= end {
+        return Ok(list.clone());
+      }
+      let mut result = items[..start].to_vec();
+      result.extend_from_slice(&items[end..]);
+      return Ok(Expr::List(result));
+    }
+    // Drop[list, {n}] - drop the nth element
+    if spec.len() == 1
+      && let Some(n_val) = expr_to_i128(&spec[0])
+    {
+      let idx = if n_val > 0 { n_val - 1 } else { len + n_val };
+      if idx < 0 || idx >= len {
+        return Err(InterpreterError::EvaluationError(format!(
+          "Drop: index {} out of range for list of length {}",
+          n_val, len
+        )));
+      }
+      let idx = idx as usize;
+      let mut result = items[..idx].to_vec();
+      result.extend_from_slice(&items[idx + 1..]);
+      return Ok(Expr::List(result));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Drop".to_string(),
+      args: vec![list.clone(), n.clone()],
+    });
+  }
+
   let count = match expr_to_i128(n) {
     Some(i) => i,
     None => {
@@ -1698,7 +1804,6 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let len = items.len() as i128;
   if count >= 0 {
     let drop = count.min(len) as usize;
     Ok(Expr::List(items[drop..].to_vec()))
@@ -1773,6 +1878,14 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       let mut reversed = items.clone();
       reversed.reverse();
       Ok(Expr::List(reversed))
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut reversed = args.clone();
+      reversed.reverse();
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: reversed,
+      })
     }
     Expr::Rule {
       pattern,
@@ -2271,6 +2384,14 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
       result.push(elem.clone());
       Ok(Expr::List(result))
     }
+    Expr::FunctionCall { name, args } => {
+      let mut new_args = args.clone();
+      new_args.push(elem.clone());
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      })
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Append".to_string(),
       args: vec![list.clone(), elem.clone()],
@@ -2285,6 +2406,14 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
       let mut result = vec![elem.clone()];
       result.extend(items.iter().cloned());
       Ok(Expr::List(result))
+    }
+    Expr::FunctionCall { name, args } => {
+      let mut new_args = vec![elem.clone()];
+      new_args.extend(args.iter().cloned());
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      })
     }
     _ => Ok(Expr::FunctionCall {
       name: "Prepend".to_string(),
@@ -3311,6 +3440,97 @@ pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::Integer(compute_depth(list)))
+}
+
+/// ArrayQ[expr] - True if expr is a full array (rectangular at all levels).
+pub fn array_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  fn is_full_array(expr: &Expr) -> bool {
+    match expr {
+      Expr::List(items) => {
+        if items.is_empty() {
+          return true;
+        }
+        // All items must have the same structure
+        let depths: Vec<Vec<usize>> =
+          items.iter().map(get_dimensions).collect();
+        // All items must have the same dimensions
+        depths.iter().all(|d| d == &depths[0])
+      }
+      _ => false,
+    }
+  }
+  Ok(if is_full_array(expr) {
+    Expr::Identifier("True".to_string())
+  } else {
+    Expr::Identifier("False".to_string())
+  })
+}
+
+/// Get the dimensions of a rectangular array
+fn get_dimensions(expr: &Expr) -> Vec<usize> {
+  match expr {
+    Expr::List(items) => {
+      let mut dims = vec![items.len()];
+      if !items.is_empty() {
+        let sub_dims: Vec<Vec<usize>> =
+          items.iter().map(get_dimensions).collect();
+        // Check all sublists have the same dimensions
+        if sub_dims.iter().all(|d| d == &sub_dims[0]) && !sub_dims[0].is_empty()
+        {
+          dims.extend_from_slice(&sub_dims[0]);
+        }
+      }
+      dims
+    }
+    _ => vec![],
+  }
+}
+
+/// VectorQ[expr] - True if expr is a list of non-list elements.
+pub fn vector_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::List(items) => {
+      Ok(if items.iter().all(|i| !matches!(i, Expr::List(_))) {
+        Expr::Identifier("True".to_string())
+      } else {
+        Expr::Identifier("False".to_string())
+      })
+    }
+    _ => Ok(Expr::Identifier("False".to_string())),
+  }
+}
+
+/// MatrixQ[expr] - True if expr is a list of equal-length lists (2D rectangular array).
+pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::List(rows) => {
+      if rows.is_empty() {
+        return Ok(Expr::Identifier("True".to_string()));
+      }
+      // Each row must be a list
+      let mut ncols = None;
+      for row in rows {
+        match row {
+          Expr::List(cols) => {
+            if let Some(expected) = ncols {
+              if cols.len() != expected {
+                return Ok(Expr::Identifier("False".to_string()));
+              }
+            } else {
+              ncols = Some(cols.len());
+            }
+            // Each element must not be a list (must be a scalar)
+            if cols.iter().any(|c| matches!(c, Expr::List(_))) {
+              return Ok(Expr::Identifier("False".to_string()));
+            }
+          }
+          _ => return Ok(Expr::Identifier("False".to_string())),
+        }
+      }
+      Ok(Expr::Identifier("True".to_string()))
+    }
+    _ => Ok(Expr::Identifier("False".to_string())),
+  }
 }
 
 /// AST-based TakeWhile: take elements while predicate is true.

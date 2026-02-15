@@ -906,3 +906,162 @@ mod subsets {
     );
   }
 }
+
+mod append_prepend {
+  use super::*;
+
+  #[test]
+  fn append_to_list() {
+    assert_eq!(interpret("Append[{1, 2, 3}, 4]").unwrap(), "{1, 2, 3, 4}");
+  }
+
+  #[test]
+  fn append_to_function_call() {
+    assert_eq!(interpret("Append[f[a, b], c]").unwrap(), "f[a, b, c]");
+  }
+
+  #[test]
+  fn append_list_element() {
+    assert_eq!(
+      interpret("Append[{a, b}, {c, d}]").unwrap(),
+      "{a, b, {c, d}}"
+    );
+  }
+
+  #[test]
+  fn prepend_to_list() {
+    assert_eq!(interpret("Prepend[{1, 2, 3}, 0]").unwrap(), "{0, 1, 2, 3}");
+  }
+
+  #[test]
+  fn prepend_to_function_call() {
+    assert_eq!(interpret("Prepend[f[a, b], c]").unwrap(), "f[c, a, b]");
+  }
+}
+
+mod drop_extended {
+  use super::*;
+
+  #[test]
+  fn drop_range() {
+    assert_eq!(
+      interpret("Drop[{a, b, c, d, e}, {2, -2}]").unwrap(),
+      "{a, e}"
+    );
+  }
+
+  #[test]
+  fn drop_single_index() {
+    assert_eq!(
+      interpret("Drop[{a, b, c, d, e}, {3}]").unwrap(),
+      "{a, b, d, e}"
+    );
+  }
+
+  #[test]
+  fn drop_zero() {
+    assert_eq!(interpret("Drop[{a, b, c, d}, 0]").unwrap(), "{a, b, c, d}");
+  }
+}
+
+mod partition_extended {
+  use super::*;
+
+  #[test]
+  fn partition_with_stride() {
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e, f}, 3, 1]").unwrap(),
+      "{{a, b, c}, {b, c, d}, {c, d, e}, {d, e, f}}"
+    );
+  }
+
+  #[test]
+  fn partition_with_stride_2() {
+    assert_eq!(
+      interpret("Partition[{a, b, c, d, e}, 2, 1]").unwrap(),
+      "{{a, b}, {b, c}, {c, d}, {d, e}}"
+    );
+  }
+}
+
+mod reverse_extended {
+  use super::*;
+
+  #[test]
+  fn reverse_function_call() {
+    assert_eq!(interpret("Reverse[x[a, b, c]]").unwrap(), "x[c, b, a]");
+  }
+
+  #[test]
+  fn reverse_list() {
+    assert_eq!(interpret("Reverse[{1, 2, 3, 4}]").unwrap(), "{4, 3, 2, 1}");
+  }
+}
+
+mod first_last_extended {
+  use super::*;
+
+  #[test]
+  fn first_with_default_nonempty() {
+    assert_eq!(interpret("First[{a, b, c}, default]").unwrap(), "a");
+  }
+
+  #[test]
+  fn first_with_default_empty() {
+    assert_eq!(interpret("First[{}, default]").unwrap(), "default");
+  }
+
+  #[test]
+  fn last_with_default_nonempty() {
+    assert_eq!(interpret("Last[{a, b, c}, default]").unwrap(), "c");
+  }
+
+  #[test]
+  fn last_with_default_empty() {
+    assert_eq!(interpret("Last[{}, default]").unwrap(), "default");
+  }
+
+  #[test]
+  fn first_of_function_call() {
+    assert_eq!(interpret("First[f[a, b]]").unwrap(), "a");
+  }
+
+  #[test]
+  fn last_of_function_call() {
+    assert_eq!(interpret("Last[f[a, b]]").unwrap(), "b");
+  }
+}
+
+mod array_predicates {
+  use super::*;
+
+  #[test]
+  fn array_q_true() {
+    assert_eq!(interpret("ArrayQ[{{1, 2}, {3, 4}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn array_q_false() {
+    assert_eq!(interpret("ArrayQ[{{1, 2}, {3}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn matrix_q_true() {
+    assert_eq!(interpret("MatrixQ[{{1, 2}, {3, 4}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn matrix_q_false() {
+    assert_eq!(interpret("MatrixQ[{1, 2, 3}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn vector_q_true() {
+    assert_eq!(interpret("VectorQ[{1, 2, 3}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn vector_q_false() {
+    assert_eq!(interpret("VectorQ[{{1}, {2}}]").unwrap(), "False");
+  }
+}

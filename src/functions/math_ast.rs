@@ -8742,16 +8742,8 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "IntegerLength expects 1 or 2 arguments".into(),
     ));
   }
-  let n = match expr_to_i128(&args[0]) {
-    Some(n) => n,
-    None => {
-      return Ok(Expr::FunctionCall {
-        name: "IntegerLength".to_string(),
-        args: args.to_vec(),
-      });
-    }
-  };
-  let base = if args.len() == 2 {
+
+  let base_i128 = if args.len() == 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       Some(_) => {
@@ -8770,16 +8762,73 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     10
   };
 
-  if n == 0 {
-    return Ok(Expr::Integer(0));
+  // Try BigInt path first (handles both Integer and BigInteger)
+  if let Some(n) = expr_to_bigint(&args[0]) {
+    use num_traits::Zero;
+    if n.is_zero() {
+      return Ok(Expr::Integer(0));
+    }
+    let base_big = BigInt::from(base_i128);
+    let mut abs_n = if n < BigInt::zero() { -n } else { n };
+    let mut count = 0i128;
+    while abs_n > BigInt::zero() {
+      abs_n /= &base_big;
+      count += 1;
+    }
+    return Ok(Expr::Integer(count));
   }
-  let mut abs_n = n.abs();
-  let mut count = 0i128;
-  while abs_n > 0 {
-    abs_n /= base;
-    count += 1;
+
+  Ok(Expr::FunctionCall {
+    name: "IntegerLength".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// IntegerReverse[n] - reverse the digits of an integer in base 10.
+/// IntegerReverse[n, b] - reverse the digits of n in base b.
+pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "IntegerReverse expects 1 or 2 arguments".into(),
+    ));
   }
-  Ok(Expr::Integer(count))
+
+  let base = if args.len() == 2 {
+    match expr_to_i128(&args[1]) {
+      Some(b) if b >= 2 => b,
+      Some(_) => {
+        return Err(InterpreterError::EvaluationError(
+          "IntegerReverse: base must be at least 2".into(),
+        ));
+      }
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "IntegerReverse".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    10
+  };
+
+  // Handle BigInteger
+  if let Some(n) = expr_to_bigint(&args[0]) {
+    use num_traits::Zero;
+    let mut abs_n = if n < BigInt::zero() { -n } else { n };
+    let base_big = BigInt::from(base);
+    let mut result = BigInt::zero();
+    while abs_n > BigInt::zero() {
+      result = result * &base_big + (&abs_n % &base_big);
+      abs_n /= &base_big;
+    }
+    return Ok(bigint_to_expr(result));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "IntegerReverse".to_string(),
+    args: args.to_vec(),
+  })
 }
 
 /// Rescale[x, {xmin, xmax}] - rescales x to [0,1]
