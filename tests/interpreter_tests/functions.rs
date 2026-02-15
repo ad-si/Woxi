@@ -780,3 +780,56 @@ mod expression_level_anonymous_function {
     assert_eq!(interpret("{#, #^2} &[3]").unwrap(), "{3, 9}");
   }
 }
+
+mod free_q {
+  use super::*;
+
+  #[test]
+  fn free_q_head_matching_plus() {
+    // Plus is the head of a+b inside a^(a+b)
+    assert_eq!(interpret("FreeQ[{1, 2, a^(a+b)}, Plus]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_flat_subsequence() {
+    // a+b is a subsequence of a+b+c (Plus is Flat)
+    assert_eq!(interpret("FreeQ[a+b+c, a+b]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_flat_subsequence_bc() {
+    assert_eq!(interpret("FreeQ[a+b+c, b+c]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_head_list() {
+    assert_eq!(interpret("FreeQ[{1,2,3}, List]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_head_plus_direct() {
+    assert_eq!(interpret("FreeQ[a+b+c, Plus]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_non_flat_no_subset() {
+    // f is NOT Flat, so f[a,c] is NOT a sub-expression of f[a,b,c]
+    assert_eq!(interpret("FreeQ[f[a,b,c], f[a,c]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn free_q_symbol_as_element() {
+    // Plus appears as a literal element in the list
+    assert_eq!(interpret("FreeQ[{Plus, 1}, Plus]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_basic_true() {
+    assert_eq!(interpret("FreeQ[{1, 2, 3}, 4]").unwrap(), "True");
+  }
+
+  #[test]
+  fn free_q_basic_false() {
+    assert_eq!(interpret("FreeQ[{1, 2, 3}, 2]").unwrap(), "False");
+  }
+}
