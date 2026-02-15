@@ -4,12 +4,14 @@ import {
   getSettings, saveSettings, hasApiKey, hasBothApiKeys, getConversationIndex,
   getConversation, createConversation, deleteConversation,
   appendMessage, getMessages, clearAllData, truncateMessages, updateToolMessage,
+  updateToolCallCode,
 } from "./chat.js"
 import {
   createMessageElement, createStreamingAssistant, appendStreamingText,
   finalizeStreamingMessage, appendStreamingToolCard, updateToolCard,
   showToast, scrollToBottom, createToolCard,
 } from "./render.js"
+import { createEditor, createReadOnlyEditor, getContent, destroyEditor } from "./codemirror.js"
 
 // --- DOM refs ---
 const sidebar = document.getElementById("sidebar")
@@ -325,7 +327,8 @@ function renderMessages() {
               args.code,
               toolResult?.content,
               toolResult?.content?.startsWith("Error:"),
-              toolResult?.graphics
+              toolResult?.graphics,
+              tc.edited
             )
           )
         }
@@ -863,7 +866,7 @@ messagesEl.addEventListener("click", (e) => {
   if (!copyBtn) return
   const card = copyBtn.closest(".tool-card")
   if (!card) return
-  const code = card.querySelector(".tool-card-code")?.textContent || ""
+  const code = card.dataset.code || ""
   const result = card.querySelector(".tool-card-result:not(.warning):not(.graphics)")?.textContent || ""
   const text = result ? `${code}\n\n${result}` : code
   navigator.clipboard.writeText(text)
@@ -879,9 +882,8 @@ messagesEl.addEventListener("click", async (e) => {
   if (!card) return
   if (recalcBtn.classList.contains("recalculating")) return
 
-  const codeEl = card.querySelector(".tool-card-code")
-  if (!codeEl) return
-  const code = codeEl.textContent
+  const code = card.dataset.code
+  if (!code) return
 
   if (!isReady()) {
     showToast("WASM interpreter not loaded")
@@ -923,6 +925,147 @@ messagesEl.addEventListener("click", async (e) => {
   } finally {
     recalcBtn.classList.remove("recalculating")
   }
+})
+
+// --- Edit tool card code in place ---
+messagesEl.addEventListener("click", (e) => {
+  const editBtn = e.target.closest(".edit-code-btn")
+  if (!editBtn) return
+
+  const card = editBtn.closest(".tool-card")
+  if (!card) return
+
+  const codeEl = card.querySelector(".tool-card-code")
+  if (!codeEl || codeEl.classList.contains("editing")) return
+
+  // Enter edit mode
+  codeEl.classList.add("editing")
+  const originalCode = card.dataset.code
+
+  codeEl.innerHTML = ""
+
+  const editorContainer = document.createElement("div")
+  editorContainer.className = "tool-code-editor-wrap"
+  codeEl.appendChild(editorContainer)
+
+  const btnRow = document.createElement("div")
+  btnRow.className = "tool-code-edit-actions"
+
+  const cancelBtn = document.createElement("button")
+  cancelBtn.className = "tool-code-edit-btn cancel"
+  cancelBtn.textContent = "Cancel"
+
+  const runBtn = document.createElement("button")
+  runBtn.className = "tool-code-edit-btn run"
+  runBtn.textContent = "Run"
+
+  btnRow.appendChild(cancelBtn)
+  btnRow.appendChild(runBtn)
+  codeEl.appendChild(btnRow)
+
+  let editorView = null
+
+  function exitEditMode(newCode) {
+    if (editorView) destroyEditor(editorView)
+    editorView = null
+    codeEl.classList.remove("editing")
+    codeEl.innerHTML = ""
+    createReadOnlyEditor(codeEl, newCode)
+  }
+
+  function markEdited() {
+    const header = card.querySelector(".tool-card-header")
+    if (!header.querySelector(".edited-badge")) {
+      const badge = document.createElement("span")
+      badge.className = "edited-badge"
+      badge.textContent = "edited"
+      // Insert after the "Wolfram Language" label
+      const label = header.querySelectorAll(":scope > span")[0]
+      if (label && label.nextSibling) {
+        header.insertBefore(badge, label.nextSibling)
+      } else {
+        header.appendChild(badge)
+      }
+    }
+  }
+
+  async function handleRun() {
+    if (!editorView) return
+    const newCode = getContent(editorView)
+    if (!newCode.trim()) return
+
+    exitEditMode(newCode)
+    card.dataset.code = newCode
+    markEdited()
+
+    if (!isReady()) {
+      showToast("WASM interpreter not loaded")
+      return
+    }
+
+    // Remove old results
+    card.querySelectorAll(".tool-card-result").forEach((el) => el.remove())
+    card.classList.remove("collapsed")
+
+    // Show spinner while evaluating
+    const header = card.querySelector(".tool-card-header")
+    const statusIcons = header.querySelectorAll(":scope > svg:not(.chevron)")
+    if (statusIcons.length > 0) {
+      statusIcons[0].outerHTML = '<div class="spinner"></div>'
+    }
+
+    try {
+      const evalResult = await evaluateCode(newCode)
+      const result = evalResult.result
+      const graphics = evalResult.graphics || ""
+      const warnings = evalResult.warnings || ""
+      const isError = result.startsWith("Error:") || warnings.includes("not yet implemented")
+
+      // Replace spinner with status icon
+      const spinner = header.querySelector(".spinner")
+      if (spinner) {
+        spinner.outerHTML = isError
+          ? '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
+          : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+      }
+
+      updateToolCard(card.dataset.toolCallId, result, isError, graphics, warnings)
+      scrollToBottom()
+
+      // Persist to localStorage
+      if (activeConvId) {
+        updateToolCallCode(activeConvId, card.dataset.toolCallId, newCode)
+        const content = warnings ? `${result}\n\nWarning: ${warnings}` : result
+        updateToolMessage(activeConvId, card.dataset.toolCallId, content, graphics)
+      }
+    } catch (err) {
+      const spinner = header.querySelector(".spinner")
+      if (spinner) {
+        spinner.outerHTML = '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
+      }
+      updateToolCard(card.dataset.toolCallId, "Error: " + err.message, true, "", "")
+    }
+  }
+
+  function handleCancel() {
+    exitEditMode(originalCode)
+  }
+
+  cancelBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation()
+    handleCancel()
+  })
+
+  runBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation()
+    handleRun()
+  })
+
+  editorView = createEditor(editorContainer, originalCode, {
+    onRun: handleRun,
+    onCancel: handleCancel,
+  })
+  editorView.focus()
 })
 
 // --- Message actions (copy / edit / retry) ---

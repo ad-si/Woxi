@@ -25,6 +25,15 @@ const SYSTEM_PROMPT = `
     format them using LaTeX wrapped in dollar signs:
     $x^2 + 1$ for inline math and $$\\int_0^1 x^2 \\, dx$$ for display math.
     The chat renders math with KaTeX.
+  When doing any calculations, you must use the necessary units
+    and don't omit them for simplicity.
+  For example:
+    \`\`\`
+    capacitance = Quantity[100, "Microfarads"];
+    voltage = Quantity[6.0, "Volts"];
+    capacitorEnergy = 1/2 * capacitance * voltage^2;
+    UnitConvert[capacitorEnergy, "Millijoules"]
+    \`\`\`
 `
 
 export function getSettings() {
@@ -144,6 +153,30 @@ export function updateToolMessage(convId, toolCallId, content, graphics) {
   else delete msg.graphics
   conv.updatedAt = Date.now()
   saveConversation(conv)
+}
+
+export function updateToolCallCode(convId, toolCallId, newCode) {
+  const conv = getConversation(convId)
+  if (!conv) return
+  for (const msg of conv.messages) {
+    if (msg.role === "assistant" && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (tc.id === toolCallId) {
+          if (typeof tc.function.arguments === "string") {
+            const args = JSON.parse(tc.function.arguments)
+            args.code = newCode
+            tc.function.arguments = JSON.stringify(args)
+          } else {
+            tc.function.arguments.code = newCode
+          }
+          tc.edited = true
+          conv.updatedAt = Date.now()
+          saveConversation(conv)
+          return
+        }
+      }
+    }
+  }
 }
 
 export function truncateMessages(convId, fromIndex) {

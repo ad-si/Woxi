@@ -1,5 +1,6 @@
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js"
 import DOMPurify from "https://cdn.jsdelivr.net/npm/dompurify/dist/purify.es.mjs"
+import { createReadOnlyEditor, destroyEditor } from "./codemirror.js"
 
 const mathInline = {
   name: "mathInline",
@@ -45,7 +46,7 @@ const marked = new Marked({
   extensions: [mathBlock, mathInline],
 })
 
-function highlightCode(code, lang) {
+export function highlightCode(code, lang) {
   if (lang && window.hljs && window.hljs.getLanguage(lang)) {
     return window.hljs.highlight(code, { language: lang }).value
   }
@@ -195,19 +196,21 @@ function createToolResultMessage(msg) {
   return null
 }
 
-export function createToolCard(toolCallId, code, result, isError, graphics) {
+export function createToolCard(toolCallId, code, result, isError, graphics, edited) {
   const card = document.createElement("div")
   card.className = `tool-card${isError ? " collapsed" : ""}`
   card.dataset.toolCallId = toolCallId
+  card.dataset.code = code
 
   const header = document.createElement("div")
   header.className = "tool-card-header"
   header.innerHTML = `
     <svg class="chevron w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
     <span>Wolfram Language</span>
+    ${edited ? '<span class="edited-badge">edited</span>' : ''}
     ${result === undefined ? '<div class="spinner"></div>' : isError ? '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>' : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'}
     <span class="flex-1"></span>
-    ${result !== undefined ? `<button class="tool-header-btn copy-result-btn" title="Copy result"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg></button><button class="tool-header-btn recalc-btn" title="Recalculate"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button>` : ''}
+    ${result !== undefined ? `<button class="tool-header-btn edit-code-btn" title="Edit code"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="tool-header-btn copy-result-btn" title="Copy result"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg></button><button class="tool-header-btn recalc-btn" title="Recalculate"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button>` : ''}
   `
   header.addEventListener("click", (e) => {
     if (e.target.closest(".tool-header-btn")) return
@@ -220,7 +223,7 @@ export function createToolCard(toolCallId, code, result, isError, graphics) {
 
   const codeEl = document.createElement("div")
   codeEl.className = "tool-card-code"
-  codeEl.innerHTML = highlightCode(code, "mathematica")
+  createReadOnlyEditor(codeEl, code)
   body.appendChild(codeEl)
 
   if (result !== undefined) {
@@ -255,11 +258,16 @@ export function updateToolCard(toolCallId, result, isError, graphics, warnings) 
       ? '<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
       : '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
 
-    // Add spacer + copy + recalculate buttons
+    // Add spacer + edit + copy + recalculate buttons
     if (!header.querySelector(".recalc-btn")) {
       const spacer = document.createElement("span")
       spacer.className = "flex-1"
       header.appendChild(spacer)
+      const editBtn = document.createElement("button")
+      editBtn.className = "tool-header-btn edit-code-btn"
+      editBtn.title = "Edit code"
+      editBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+      header.appendChild(editBtn)
       const copyBtn = document.createElement("button")
       copyBtn.className = "tool-header-btn copy-result-btn"
       copyBtn.title = "Copy result"
