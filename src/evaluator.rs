@@ -2490,6 +2490,35 @@ pub fn evaluate_function_call_ast(
       return Ok(Expr::String(filename));
     }
     #[cfg(not(target_arch = "wasm32"))]
+    "Find" if args.len() == 2 => {
+      // Find[stream_or_file, "text"] - find first line containing text
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Find".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let search = match &args[1] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Find: second argument must be a string".into(),
+          ));
+        }
+      };
+      let content = std::fs::read_to_string(&filename)
+        .map_err(|e| InterpreterError::EvaluationError(format!("Find: {e}")))?;
+      for line in content.lines() {
+        if line.contains(&search) {
+          return Ok(Expr::String(line.to_string()));
+        }
+      }
+      return Ok(Expr::Identifier("EndOfFile".to_string()));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     "CreateFile" => {
       let filename_opt = if args.is_empty() {
         None

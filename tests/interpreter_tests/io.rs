@@ -76,6 +76,28 @@ mod now {
   }
 }
 
+mod find {
+  use super::*;
+
+  #[test]
+  fn find_matching_line() {
+    let path = "/tmp/woxi_test_find.txt";
+    std::fs::write(path, "hello world\nfoo bar\nbaz").unwrap();
+    let result = interpret(&format!("Find[\"{path}\", \"foo\"]")).unwrap();
+    assert_eq!(result, "foo bar");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn find_no_match() {
+    let path = "/tmp/woxi_test_find2.txt";
+    std::fs::write(path, "hello world\nfoo bar").unwrap();
+    let result = interpret(&format!("Find[\"{path}\", \"xyz\"]")).unwrap();
+    assert_eq!(result, "EndOfFile");
+    std::fs::remove_file(path).ok();
+  }
+}
+
 mod directory {
   use super::*;
 
