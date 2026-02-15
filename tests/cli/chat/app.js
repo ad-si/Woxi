@@ -187,8 +187,8 @@ async function init() {
   // Init WASM
   try {
     await initWoxi()
-    wasmStatus.textContent = "WASM Ready"
-    wasmStatus.className = "text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+    wasmStatus.textContent = ""
+    wasmStatus.className = "hidden"
   } catch (e) {
     wasmStatus.textContent = "WASM Failed"
     wasmStatus.className = "text-xs px-2 py-1 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
