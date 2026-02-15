@@ -3225,7 +3225,7 @@ pub fn evaluate_function_call_ast(
     "Coefficient" if args.len() >= 2 && args.len() <= 3 => {
       return crate::functions::polynomial_ast::coefficient_ast(args);
     }
-    "Exponent" if args.len() == 2 => {
+    "Exponent" if args.len() >= 2 && args.len() <= 3 => {
       return crate::functions::polynomial_ast::exponent_ast(args);
     }
     "PolynomialQ" if args.len() == 2 => {

@@ -2404,3 +2404,50 @@ mod im_tests {
     assert_eq!(interpret("Log10[7]").unwrap(), "Log10[7]");
   }
 }
+
+mod exponent {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("Exponent[(x^3 + 1)^2 + 1, x]").unwrap(), "6");
+  }
+
+  #[test]
+  fn zero_expr() {
+    assert_eq!(interpret("Exponent[0, x]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn min_form() {
+    assert_eq!(
+      interpret("Exponent[(x^2 + 1)^3 - 1, x, Min]").unwrap(),
+      "2"
+    );
+  }
+}
+
+mod implicit_multiply_power_precedence {
+  use super::*;
+
+  #[test]
+  fn b_y_cubed() {
+    assert_eq!(interpret("FullForm[b y^3]").unwrap(), "Times[b, Power[y, 3]]");
+  }
+
+  #[test]
+  fn two_x_squared_y_cubed() {
+    assert_eq!(
+      interpret("FullForm[2 x^2 y^3]").unwrap(),
+      "Times[2, Power[x, 2], Power[y, 3]]"
+    );
+  }
+
+  #[test]
+  fn coefficient_with_implicit_multiply() {
+    assert_eq!(
+      interpret("Coefficient[a x^2 + b y^3 + c x + d y + 5, y, 3]").unwrap(),
+      "b"
+    );
+  }
+}

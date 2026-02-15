@@ -967,7 +967,27 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::ImplicitTimes => {
       // Implicit multiplication: x y z -> Times[x, y, z]
-      let factors: Vec<Expr> = pair.into_inner().map(pair_to_expr).collect();
+      // Each factor can optionally have a power suffix (ImplicitPowerSuffix)
+      let inners: Vec<_> = pair.into_inner().collect();
+      let mut factors: Vec<Expr> = Vec::new();
+      let mut i = 0;
+      while i < inners.len() {
+        if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
+          // Power suffix follows the previous factor
+          if let Some(base) = factors.pop() {
+            let exponent =
+              pair_to_expr(inners[i].clone().into_inner().next().unwrap());
+            factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(base),
+              right: Box::new(exponent),
+            });
+          }
+        } else {
+          factors.push(pair_to_expr(inners[i].clone()));
+        }
+        i += 1;
+      }
       if factors.len() == 1 {
         factors.into_iter().next().unwrap()
       } else {
