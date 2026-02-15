@@ -83,7 +83,10 @@ TimesBy = { Identifier ~ "*=" ~ Expression }
 DivideBy = { Identifier ~ "/=" ~ Expression }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
-ImplicitTimes = { SimpleTerm ~ SimpleTerm+ }
+// Each factor can have a power suffix so that "b y^3" parses as b*(y^3) not (b*y)^3
+ImplicitPowerSuffix = { "^" ~ SimpleTerm }
+ImplicitTimesFactor = _{ SimpleTerm ~ ImplicitPowerSuffix? }
+ImplicitTimes = { ImplicitTimesFactor ~ ImplicitTimesFactor+ }
 
 // Unified Expression: parses a base term/operators, then looks for optional postfix/replace operators
 // This avoids redundant parsing by checking for special operators after the main parse
