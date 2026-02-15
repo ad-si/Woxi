@@ -1004,6 +1004,31 @@ mod e_constant {
   }
 
   #[test]
+  fn numeric_q_sqrt_pi() {
+    assert_eq!(interpret("NumericQ[Sqrt[Pi]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_sin_integer() {
+    assert_eq!(interpret("NumericQ[Sin[1]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_compound() {
+    assert_eq!(interpret("NumericQ[Log[2] + Sin[3]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn numeric_q_symbol() {
+    assert_eq!(interpret("NumericQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn numeric_q_i() {
+    assert_eq!(interpret("NumericQ[I]").unwrap(), "True");
+  }
+
+  #[test]
   fn e_plus_e() {
     assert_eq!(interpret("E + E").unwrap(), "2*E");
   }

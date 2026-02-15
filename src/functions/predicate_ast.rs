@@ -163,16 +163,86 @@ pub fn numeric_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumericQ expects exactly 1 argument".into(),
     ));
   }
-  // NumericQ returns True for numbers and known numeric constants (Pi, E, Degree)
-  let is_numeric = matches!(
-    &args[0],
+  Ok(bool_expr(is_numeric_q(&args[0])))
+}
+
+/// Check if an expression is numeric (can be numerically evaluated)
+fn is_numeric_q(expr: &Expr) -> bool {
+  match expr {
     Expr::Integer(_)
-      | Expr::BigInteger(_)
-      | Expr::Real(_)
-      | Expr::BigFloat(_, _)
-      | Expr::Constant(_)
-  );
-  Ok(bool_expr(is_numeric))
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::Constant(_) => true,
+    Expr::Identifier(name) => name == "I" || name == "Infinity",
+    Expr::FunctionCall { name, args, .. } => {
+      is_numeric_function(name) && args.iter().all(is_numeric_q)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      is_numeric_q(left) && is_numeric_q(right)
+    }
+    Expr::UnaryOp { operand, .. } => is_numeric_q(operand),
+    _ => false,
+  }
+}
+
+/// Known numeric functions (have the NumericFunction attribute in Wolfram Language)
+fn is_numeric_function(name: &str) -> bool {
+  matches!(
+    name,
+    "Plus"
+      | "Times"
+      | "Power"
+      | "Sqrt"
+      | "Rational"
+      | "Sin"
+      | "Cos"
+      | "Tan"
+      | "Cot"
+      | "Sec"
+      | "Csc"
+      | "ArcSin"
+      | "ArcCos"
+      | "ArcTan"
+      | "ArcCot"
+      | "ArcSec"
+      | "ArcCsc"
+      | "Sinh"
+      | "Cosh"
+      | "Tanh"
+      | "Coth"
+      | "Sech"
+      | "Csch"
+      | "Exp"
+      | "Log"
+      | "Log2"
+      | "Log10"
+      | "Abs"
+      | "Arg"
+      | "Re"
+      | "Im"
+      | "Conjugate"
+      | "Sign"
+      | "Round"
+      | "Floor"
+      | "Ceiling"
+      | "Max"
+      | "Min"
+      | "Mod"
+      | "Quotient"
+      | "GCD"
+      | "LCM"
+      | "Factorial"
+      | "Factorial2"
+      | "Gamma"
+      | "Beta"
+      | "Binomial"
+      | "Fibonacci"
+      | "EulerPhi"
+      | "BernoulliB"
+      | "Zeta"
+      | "N"
+  )
 }
 
 /// PositiveQ[x] - Tests if x is a positive number
