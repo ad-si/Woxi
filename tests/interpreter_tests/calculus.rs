@@ -581,3 +581,20 @@ mod integrate_gaussian {
     );
   }
 }
+
+mod big_o {
+  use super::*;
+
+  #[test]
+  fn o_basic() {
+    assert_eq!(interpret("O[x]").unwrap(), "SeriesData[x, 0, {}, 1, 1, 1]");
+  }
+
+  #[test]
+  fn o_with_center() {
+    assert_eq!(
+      interpret("O[x, 1]").unwrap(),
+      "SeriesData[x, 1, {}, 1, 1, 1]"
+    );
+  }
+}
