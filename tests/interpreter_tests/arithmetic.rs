@@ -716,4 +716,35 @@ mod exact_value_returns {
     // Median of reals should return real
     assert_eq!(interpret("Median[{1.5, 2.5, 3.5, 4.5}]").unwrap(), "3.");
   }
+
+  #[test]
+  fn quotient_positive() {
+    assert_eq!(interpret("Quotient[23, 7]").unwrap(), "3");
+  }
+
+  #[test]
+  fn quotient_negative_dividend() {
+    // Floor division, not truncation
+    assert_eq!(interpret("Quotient[-23, 7]").unwrap(), "-4");
+  }
+
+  #[test]
+  fn quotient_negative_divisor() {
+    assert_eq!(interpret("Quotient[23, -7]").unwrap(), "-4");
+  }
+
+  #[test]
+  fn quotient_remainder_basic() {
+    assert_eq!(interpret("QuotientRemainder[23, 7]").unwrap(), "{3, 2}");
+  }
+
+  #[test]
+  fn quotient_remainder_negative() {
+    assert_eq!(interpret("QuotientRemainder[-23, 7]").unwrap(), "{-4, 5}");
+  }
+
+  #[test]
+  fn quotient_remainder_negative_divisor() {
+    assert_eq!(interpret("QuotientRemainder[23, -7]").unwrap(), "{-4, -5}");
+  }
 }
