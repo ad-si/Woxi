@@ -7982,6 +7982,21 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── MixedFractionParts ────────────────────────────────────────────
+
+pub fn mixed_fraction_parts_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "MixedFractionParts expects exactly 1 argument".into(),
+    ));
+  }
+  let int_part = integer_part_ast(args)?;
+  let frac_part = fractional_part_ast(args)?;
+  Ok(Expr::List(vec![int_part, frac_part]))
+}
+
 // ─── Chop ──────────────────────────────────────────────────────────
 
 /// Chop[x] or Chop[x, delta] - Replaces approximate real numbers close to zero by exact 0
