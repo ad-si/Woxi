@@ -311,6 +311,45 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         }
       });
     }
+    // Handle built-in symbols that evaluate to values
+    #[cfg(not(target_arch = "wasm32"))]
+    if trimmed == "Now" {
+      use chrono::Local;
+      let now = Local::now();
+      let seconds = now
+        .format("%S%.f")
+        .to_string()
+        .parse::<f64>()
+        .unwrap_or(0.0);
+      let tz_offset_hours = now.offset().local_minus_utc() as f64 / 3600.0;
+      let expr = syntax::Expr::FunctionCall {
+        name: "DateObject".to_string(),
+        args: vec![
+          syntax::Expr::List(vec![
+            syntax::Expr::Integer(
+              now.format("%Y").to_string().parse::<i128>().unwrap(),
+            ),
+            syntax::Expr::Integer(
+              now.format("%m").to_string().parse::<i128>().unwrap(),
+            ),
+            syntax::Expr::Integer(
+              now.format("%d").to_string().parse::<i128>().unwrap(),
+            ),
+            syntax::Expr::Integer(
+              now.format("%H").to_string().parse::<i128>().unwrap(),
+            ),
+            syntax::Expr::Integer(
+              now.format("%M").to_string().parse::<i128>().unwrap(),
+            ),
+            syntax::Expr::Real(seconds),
+          ]),
+          syntax::Expr::Identifier("Instant".to_string()),
+          syntax::Expr::Identifier("Gregorian".to_string()),
+          syntax::Expr::Real(tz_offset_hours),
+        ],
+      };
+      return Ok(syntax::expr_to_output(&expr));
+    }
     // Return identifier as-is if not found
     return Ok(trimmed.to_string());
   }

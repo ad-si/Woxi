@@ -3565,8 +3565,9 @@ pub fn min_max_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 
 /// Part[list, i] or list[[i]] - Extract element at position i (1-indexed)
 pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, head) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Part".to_string(),
@@ -3580,10 +3581,20 @@ pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
       let i = expr_to_i128(index).ok_or_else(|| {
         InterpreterError::EvaluationError("Part: index too large".into())
       })?;
-      if i < 1 {
-        return Err(InterpreterError::EvaluationError(
-          "Part: index must be a positive integer".into(),
-        ));
+      if i == 0 {
+        // Part[expr, 0] returns the head
+        return Ok(Expr::Identifier(head.unwrap_or("List").to_string()));
+      }
+      if i < 0 {
+        // Negative indexing: count from end
+        let len = items.len() as i128;
+        let idx = len + i;
+        if idx < 0 || idx >= len {
+          return Err(InterpreterError::EvaluationError(
+            "Part: index out of bounds".into(),
+          ));
+        }
+        return Ok(items[idx as usize].clone());
       }
       let idx = (i as usize) - 1;
       if idx >= items.len() {

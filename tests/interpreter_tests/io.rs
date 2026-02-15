@@ -26,6 +26,56 @@ mod date_string {
   }
 }
 
+mod now {
+  use super::*;
+
+  #[test]
+  fn now_returns_date_object() {
+    // Now should return a DateObject
+    let result = interpret("Head[Now]").unwrap();
+    assert_eq!(result, "DateObject");
+  }
+
+  #[test]
+  fn now_has_four_args() {
+    // DateObject[{y,m,d,h,m,s}, Instant, Gregorian, offset]
+    let result = interpret("Length[Now]").unwrap();
+    assert_eq!(result, "4");
+  }
+
+  #[test]
+  fn now_first_arg_is_list_of_six() {
+    // The time specification list has 6 elements
+    let result = interpret("Length[Now[[1]]]").unwrap();
+    assert_eq!(result, "6");
+  }
+
+  #[test]
+  fn now_year_is_reasonable() {
+    let result = interpret("Now[[1, 1]] >= 2025").unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn now_granularity_is_instant() {
+    let result = interpret("Now[[2]]").unwrap();
+    assert_eq!(result, "Instant");
+  }
+
+  #[test]
+  fn now_calendar_is_gregorian() {
+    let result = interpret("Now[[3]]").unwrap();
+    assert_eq!(result, "Gregorian");
+  }
+
+  #[test]
+  fn now_different_each_call() {
+    // Two successive calls to Now should not be identical
+    let result = interpret("Now === Now").unwrap();
+    assert_eq!(result, "False");
+  }
+}
+
 mod directory {
   use super::*;
 
