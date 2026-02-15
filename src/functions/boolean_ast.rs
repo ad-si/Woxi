@@ -115,17 +115,22 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let first = evaluate_expr_to_expr(&args[0])?;
-  let first_str = crate::syntax::expr_to_string(&first);
-
-  for arg in args.iter().skip(1) {
+  // Evaluate all arguments and get string representations
+  let mut strs = Vec::with_capacity(args.len());
+  for arg in args {
     let val = evaluate_expr_to_expr(arg)?;
-    let val_str = crate::syntax::expr_to_string(&val);
-    if val_str != first_str {
-      return Ok(Expr::Identifier("True".to_string()));
+    strs.push(crate::syntax::expr_to_string(&val));
+  }
+
+  // UnsameQ is True only if ALL pairs are different
+  for i in 0..strs.len() {
+    for j in (i + 1)..strs.len() {
+      if strs[i] == strs[j] {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
     }
   }
-  Ok(Expr::Identifier("False".to_string()))
+  Ok(Expr::Identifier("True".to_string()))
 }
 
 /// Which[test1, value1, test2, value2, ...] - Multi-way conditional

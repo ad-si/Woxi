@@ -2577,3 +2577,108 @@ mod implicit_multiply_power_precedence {
     );
   }
 }
+
+mod gudermannian {
+  use super::*;
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("Gudermannian[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn zero_float() {
+    assert_eq!(interpret("Gudermannian[0.]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("Gudermannian[4.2]").unwrap(),
+      "1.5408074208608435"
+    );
+  }
+
+  #[test]
+  fn infinity() {
+    assert_eq!(interpret("Gudermannian[Infinity]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn negative_infinity() {
+    assert_eq!(interpret("Gudermannian[-Infinity]").unwrap(), "-1/2*Pi");
+  }
+
+  #[test]
+  fn complex_infinity() {
+    assert_eq!(
+      interpret("Gudermannian[ComplexInfinity]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn undefined() {
+    assert_eq!(interpret("Gudermannian[Undefined]").unwrap(), "Undefined");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("Gudermannian[z]").unwrap(), "Gudermannian[z]");
+  }
+}
+
+mod precision {
+  use super::*;
+
+  #[test]
+  fn integer() {
+    assert_eq!(interpret("Precision[1]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("Precision[1/2]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn machine_real() {
+    assert_eq!(interpret("Precision[0.5]").unwrap(), "MachinePrecision");
+  }
+}
+
+mod accuracy {
+  use super::*;
+
+  #[test]
+  fn integer() {
+    assert_eq!(interpret("Accuracy[1]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn symbol() {
+    assert_eq!(interpret("Accuracy[A]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn machine_real() {
+    // Accuracy[0.5] ≈ 16.2556...
+    let result = interpret("Accuracy[0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 16.2556).abs() < 0.01);
+  }
+}
+
+mod unsame_q_multi {
+  use super::*;
+
+  #[test]
+  fn three_args_with_duplicate() {
+    assert_eq!(interpret("UnsameQ[1, 1, 2]").unwrap(), "False");
+  }
+
+  #[test]
+  fn three_args_all_different() {
+    assert_eq!(interpret("UnsameQ[1, 2, 3]").unwrap(), "True");
+  }
+}
