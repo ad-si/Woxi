@@ -4250,6 +4250,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(0) => Ok(Expr::Integer(1)),
+    Expr::Integer(1) => Ok(Expr::Constant("E".to_string())),
     Expr::Real(f) => Ok(Expr::Real(f.exp())),
     _ => Ok(Expr::FunctionCall {
       name: "Exp".to_string(),
@@ -4437,10 +4438,23 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Log10 expects exactly 1 argument".into(),
     ));
   }
-  if let Expr::Real(f) = &args[0]
-    && *f > 0.0
-  {
-    return Ok(Expr::Real(f.log10()));
+  match &args[0] {
+    Expr::Integer(n) if *n > 0 => {
+      // Check if n is an exact power of 10
+      let mut val = *n;
+      let mut exp = 0i128;
+      while val > 1 && val % 10 == 0 {
+        val /= 10;
+        exp += 1;
+      }
+      if val == 1 {
+        return Ok(Expr::Integer(exp));
+      }
+    }
+    Expr::Real(f) if *f > 0.0 => {
+      return Ok(Expr::Real(f.log10()));
+    }
+    _ => {}
   }
   Ok(Expr::FunctionCall {
     name: "Log10".to_string(),
@@ -4455,10 +4469,18 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Log2 expects exactly 1 argument".into(),
     ));
   }
-  if let Expr::Real(f) = &args[0]
-    && *f > 0.0
-  {
-    return Ok(Expr::Real(f.log2()));
+  match &args[0] {
+    Expr::Integer(n) if *n > 0 => {
+      // Check if n is an exact power of 2
+      let val = *n as u128;
+      if val.is_power_of_two() {
+        return Ok(Expr::Integer(val.trailing_zeros() as i128));
+      }
+    }
+    Expr::Real(f) if *f > 0.0 => {
+      return Ok(Expr::Real(f.log2()));
+    }
+    _ => {}
   }
   Ok(Expr::FunctionCall {
     name: "Log2".to_string(),
