@@ -535,6 +535,14 @@ mod next_prime {
     // 2^67 - 1 = 193707721 * 761838257287 — fits in i128 but is composite
     assert_eq!(interpret("PrimeQ[2^67 - 1]").unwrap(), "False");
   }
+
+  #[test]
+  fn prime_q_negative_integers() {
+    assert_eq!(interpret("PrimeQ[-7]").unwrap(), "True");
+    assert_eq!(interpret("PrimeQ[-2]").unwrap(), "True");
+    assert_eq!(interpret("PrimeQ[-1]").unwrap(), "False");
+    assert_eq!(interpret("PrimeQ[-4]").unwrap(), "False");
+  }
 }
 
 mod bit_length {
