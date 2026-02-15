@@ -46,9 +46,14 @@ textarea {
 }
 
 .message-content pre {
+  background: #fafafa;
   border-radius: 0.5rem;
   overflow-x: auto;
   margin: 0.75em 0;
+}
+
+.dark .message-content pre {
+  background: #282c34;
 }
 
 .message-content pre code {
@@ -168,15 +173,32 @@ textarea {
 }
 
 .tool-card-code {
-  padding: 0.75rem;
-  background: #1e1e2e;
-  font-family: ui-monospace, monospace;
-  font-size: 0.85em;
-  color: #cdd6f4;
-  white-space: pre-wrap;
-  word-break: break-all;
-  overflow-x: auto;
+  overflow: hidden;
 }
+
+/* highlight.js theme — atom-one-light (default) */
+.hljs { background: #fafafa; color: #383a42; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal { color: #a626a4; }
+.hljs-string, .hljs-addition { color: #50a14f; }
+.hljs-number { color: #986801; }
+.hljs-built_in, .hljs-title, .hljs-section { color: #4078f2; }
+.hljs-comment, .hljs-quote { color: #a0a1a7; font-style: italic; }
+.hljs-variable, .hljs-template-variable { color: #e45649; }
+.hljs-attr, .hljs-attribute { color: #986801; }
+.hljs-symbol, .hljs-bullet { color: #4078f2; }
+.hljs-deletion { color: #e45649; }
+
+/* highlight.js theme — atom-one-dark */
+.dark .hljs { background: #282c34; color: #abb2bf; }
+.dark .hljs-keyword, .dark .hljs-selector-tag, .dark .hljs-literal { color: #c678dd; }
+.dark .hljs-string, .dark .hljs-addition { color: #98c379; }
+.dark .hljs-number { color: #d19a66; }
+.dark .hljs-built_in, .dark .hljs-title, .dark .hljs-section { color: #61afef; }
+.dark .hljs-comment, .dark .hljs-quote { color: #5c6370; font-style: italic; }
+.dark .hljs-variable, .dark .hljs-template-variable { color: #e06c75; }
+.dark .hljs-attr, .dark .hljs-attribute { color: #d19a66; }
+.dark .hljs-symbol, .dark .hljs-bullet { color: #61afef; }
+.dark .hljs-deletion { color: #e06c75; }
 
 .tool-card-result {
   padding: 0.75rem;
@@ -227,6 +249,85 @@ textarea {
 .tool-card-result.graphics svg {
   max-width: 100%;
   height: auto;
+}
+
+/* Tool card code editing */
+.tool-card-code.editing {
+  padding: 0;
+}
+
+.tool-code-editor-wrap .cm-editor {
+  border-radius: 0;
+}
+
+.tool-code-editor-wrap .cm-editor.cm-focused {
+  outline: none;
+}
+
+.tool-code-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: #f0f0f0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.dark .tool-code-edit-actions {
+  background: #282c34;
+  border-top-color: #3e4451;
+}
+
+.tool-code-edit-btn {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tool-code-edit-btn.cancel {
+  background: #d1d5db;
+  color: #374151;
+}
+
+.tool-code-edit-btn.cancel:hover {
+  background: #bfc4cc;
+}
+
+.dark .tool-code-edit-btn.cancel {
+  background: #3e4451;
+  color: #abb2bf;
+}
+
+.dark .tool-code-edit-btn.cancel:hover {
+  background: #4b5263;
+}
+
+.tool-code-edit-btn.run {
+  background: #3b82f6;
+  color: white;
+}
+
+.tool-code-edit-btn.run:hover {
+  background: #2563eb;
+}
+
+/* Edited badge */
+.edited-badge {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #d97706;
+  background: #fef3c7;
+  padding: 0.075rem 0.4rem;
+  border-radius: 0.25rem;
+  margin-left: 0.375rem;
+  letter-spacing: 0.01em;
+}
+
+.dark .edited-badge {
+  background: #451a03;
+  color: #fbbf24;
 }
 
 /* Spinner */
