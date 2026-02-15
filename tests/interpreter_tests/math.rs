@@ -2332,4 +2332,50 @@ mod im_tests {
   fn real_valued_number_q_symbol() {
     assert_eq!(interpret("RealValuedNumberQ[x]").unwrap(), "False");
   }
+
+  // ── Exp ──────────────────────────────────────────────────
+
+  #[test]
+  fn exp_zero() {
+    assert_eq!(interpret("Exp[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn exp_one() {
+    assert_eq!(interpret("Exp[1]").unwrap(), "E");
+  }
+
+  // ── Log2 ─────────────────────────────────────────────────
+
+  #[test]
+  fn log2_power_of_two() {
+    assert_eq!(interpret("Log2[1024]").unwrap(), "10");
+  }
+
+  #[test]
+  fn log2_large_power() {
+    assert_eq!(interpret("Log2[4^8]").unwrap(), "16");
+  }
+
+  #[test]
+  fn log2_non_power() {
+    assert_eq!(interpret("Log2[3]").unwrap(), "Log2[3]");
+  }
+
+  // ── Log10 ────────────────────────────────────────────────
+
+  #[test]
+  fn log10_power_of_ten() {
+    assert_eq!(interpret("Log10[1000]").unwrap(), "3");
+  }
+
+  #[test]
+  fn log10_million() {
+    assert_eq!(interpret("Log10[1000000]").unwrap(), "6");
+  }
+
+  #[test]
+  fn log10_non_power() {
+    assert_eq!(interpret("Log10[7]").unwrap(), "Log10[7]");
+  }
 }
