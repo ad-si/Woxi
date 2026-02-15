@@ -228,10 +228,10 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )));
   }
   let n = match &args[0] {
-    Expr::Integer(n) => *n,
+    Expr::Integer(n) => n.abs(),
     Expr::Real(f) => {
       if f.fract() == 0.0 {
-        *f as i128
+        f.abs() as i128
       } else {
         return Ok(bool_expr(false));
       }
