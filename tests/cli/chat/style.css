@@ -13,20 +13,6 @@ textarea {
   cursor: text;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
-}
-.dark ::-webkit-scrollbar-thumb {
-  background: #374151;
-}
 
 /* Message area */
 #messages {
