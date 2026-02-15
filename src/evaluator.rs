@@ -2784,6 +2784,12 @@ pub fn evaluate_function_call_ast(
     "Divisible" if args.len() == 2 => {
       return crate::functions::predicate_ast::divisible_ast(args);
     }
+    "SubsetQ" if args.len() == 2 => {
+      return crate::functions::predicate_ast::subset_q_ast(args);
+    }
+    "OptionQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::option_q_ast(args);
+    }
     "Head" if args.len() == 1 => {
       return crate::functions::predicate_ast::head_ast(args);
     }
@@ -2801,6 +2807,29 @@ pub fn evaluate_function_call_ast(
     // FullForm - returns full form representation (unevaluated)
     "FullForm" if args.len() == 1 => {
       return crate::functions::predicate_ast::full_form_ast(&args[0]);
+    }
+
+    // Attributes[symbol] - returns the attributes of a built-in symbol
+    "Attributes" if args.len() == 1 => {
+      let sym_name = match &args[0] {
+        Expr::Identifier(name) => name.as_str(),
+        Expr::Constant(name) => name.as_str(),
+        Expr::String(name) => name.as_str(),
+        Expr::FunctionCall { name, .. } => name.as_str(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Attributes".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let attrs = get_builtin_attributes(sym_name);
+      return Ok(Expr::List(
+        attrs
+          .iter()
+          .map(|a| Expr::Identifier(a.to_string()))
+          .collect(),
+      ));
     }
 
     // Construct - creates function call f[a][b] etc.
@@ -3394,6 +3423,20 @@ pub fn evaluate_function_call_ast(
     "UnitStep" if !args.is_empty() => {
       return crate::functions::math_ast::unit_step_ast(args);
     }
+    "ConditionalExpression" if args.len() == 2 => match &args[1] {
+      Expr::Identifier(name) if name == "True" => {
+        return Ok(args[0].clone());
+      }
+      Expr::Identifier(name) if name == "False" => {
+        return Ok(Expr::Identifier("Undefined".to_string()));
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "ConditionalExpression".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    },
     "DirectedInfinity" if args.len() <= 1 => {
       if args.is_empty() {
         // DirectedInfinity[] = ComplexInfinity
@@ -6161,4 +6204,306 @@ fn apply_replace_repeated_direct(
   }
 
   Ok(current)
+}
+
+/// Returns the built-in attributes for a given symbol name.
+/// Attributes are returned in alphabetical order, matching wolframscript output.
+pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
+  match name {
+    // Arithmetic operators
+    "Plus" | "Times" => vec![
+      "Flat",
+      "Listable",
+      "NumericFunction",
+      "OneIdentity",
+      "Orderless",
+      "Protected",
+    ],
+    "Power" => vec!["Listable", "NumericFunction", "OneIdentity", "Protected"],
+    "Max" | "Min" => vec![
+      "Flat",
+      "NumericFunction",
+      "OneIdentity",
+      "Orderless",
+      "Protected",
+    ],
+
+    // Trigonometric and math functions (Listable + NumericFunction + Protected)
+    "Sin"
+    | "Cos"
+    | "Tan"
+    | "Cot"
+    | "Sec"
+    | "Csc"
+    | "ArcSin"
+    | "ArcCos"
+    | "ArcTan"
+    | "ArcCot"
+    | "ArcSec"
+    | "ArcCsc"
+    | "Sinh"
+    | "Cosh"
+    | "Tanh"
+    | "Coth"
+    | "Sech"
+    | "Csch"
+    | "ArcSinh"
+    | "ArcCosh"
+    | "ArcTanh"
+    | "ArcCoth"
+    | "ArcSech"
+    | "ArcCsch"
+    | "Log"
+    | "Sqrt"
+    | "Abs"
+    | "Sign"
+    | "Floor"
+    | "Ceiling"
+    | "Round"
+    | "IntegerPart"
+    | "FractionalPart"
+    | "Gamma"
+    | "Factorial"
+    | "Factorial2"
+    | "Erf"
+    | "Erfc"
+    | "Beta"
+    | "Zeta"
+    | "PolyGamma"
+    | "BesselJ"
+    | "BesselY"
+    | "BesselI"
+    | "BesselK"
+    | "EllipticK"
+    | "EllipticE"
+    | "Conjugate"
+    | "Re"
+    | "Im"
+    | "Arg"
+    | "Gudermannian"
+    | "InverseGudermannian"
+    | "Sinc"
+    | "Haversine"
+    | "InverseHaversine"
+    | "FresnelC"
+    | "FresnelS"
+    | "ProductLog"
+    | "DigitCount"
+    | "BitLength" => {
+      vec!["Listable", "NumericFunction", "Protected"]
+    }
+
+    // Exp has ReadProtected too
+    "Exp" => vec!["Listable", "NumericFunction", "Protected", "ReadProtected"],
+
+    // Listable + Protected (non-numeric)
+    "Range" | "IntegerDigits" | "RealDigits" | "Rationalize"
+    | "IntegerString" | "ToCharacterCode" | "FromCharacterCode"
+    | "StringLength" | "Characters" | "ToUpperCase" | "ToLowerCase"
+    | "Boole" | "Positive" | "Negative" | "NonPositive" | "NonNegative"
+    | "EvenQ" | "OddQ" | "PrimeQ" | "IntegerQ" | "NumberQ" | "NumericQ"
+    | "AtomQ" | "Clip" | "Rescale" | "Unitize" | "UnitStep" | "N" => {
+      vec!["Listable", "Protected"]
+    }
+
+    // HoldAll + Protected
+    "Hold" | "HoldForm" | "HoldComplete" | "Table" | "Do" | "While" | "For"
+    | "Module" | "Block" | "With" | "Trace" | "Defer" | "Unevaluated"
+    | "Compile" | "CompoundExpression" | "Switch" | "Which" | "Catch"
+    | "Throw" => {
+      vec!["HoldAll", "Protected"]
+    }
+
+    // Function is HoldAll + Protected
+    "Function" => vec!["HoldAll", "Protected"],
+
+    // HoldFirst + Protected
+    "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
+    "SetDelayed" => vec!["HoldAll", "Protected", "SequenceHold"],
+
+    // HoldRest + Protected
+    "If" => vec!["HoldRest", "Protected"],
+    "RuleDelayed" => vec!["HoldRest", "Protected", "SequenceHold"],
+
+    // And / Or: Flat + HoldAll + OneIdentity + Protected
+    "And" | "Or" => vec!["Flat", "HoldAll", "OneIdentity", "Protected"],
+
+    // Constants
+    "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Catalan" | "Degree"
+    | "Khinchin" | "Glaisher" => {
+      vec!["Constant", "Protected", "ReadProtected"]
+    }
+    "I" => vec!["Locked", "Protected", "ReadProtected"],
+    "Infinity" => vec!["Protected", "ReadProtected"],
+
+    // Protected only
+    "Map"
+    | "Apply"
+    | "Select"
+    | "Sort"
+    | "SortBy"
+    | "Reverse"
+    | "Flatten"
+    | "Join"
+    | "Append"
+    | "Prepend"
+    | "Take"
+    | "Drop"
+    | "Part"
+    | "First"
+    | "Last"
+    | "Rest"
+    | "Most"
+    | "Length"
+    | "Depth"
+    | "Head"
+    | "Nest"
+    | "NestList"
+    | "NestWhile"
+    | "NestWhileList"
+    | "Fold"
+    | "FoldList"
+    | "FixedPoint"
+    | "FixedPointList"
+    | "MemberQ"
+    | "FreeQ"
+    | "Count"
+    | "Position"
+    | "Cases"
+    | "DeleteCases"
+    | "Replace"
+    | "ReplaceAll"
+    | "ReplaceRepeated"
+    | "Thread"
+    | "MapThread"
+    | "MapIndexed"
+    | "Scan"
+    | "MatchQ"
+    | "StringQ"
+    | "ListQ"
+    | "VectorQ"
+    | "MatrixQ"
+    | "FullForm"
+    | "TreeForm"
+    | "Dimensions"
+    | "Total"
+    | "Mean"
+    | "Median"
+    | "Variance"
+    | "StandardDeviation"
+    | "Not"
+    | "Nand"
+    | "Nor"
+    | "Xor"
+    | "Implies"
+    | "Equivalent"
+    | "Equal"
+    | "Unequal"
+    | "Less"
+    | "Greater"
+    | "LessEqual"
+    | "GreaterEqual"
+    | "SameQ"
+    | "UnsameQ"
+    | "True"
+    | "False"
+    | "Null"
+    | "None"
+    | "All"
+    | "Print"
+    | "Echo"
+    | "ToString"
+    | "ToExpression"
+    | "Rule"
+    | "List"
+    | "Association"
+    | "SubsetQ"
+    | "Complement"
+    | "Intersection"
+    | "Union"
+    | "StringJoin"
+    | "StringSplit"
+    | "StringTake"
+    | "StringDrop"
+    | "StringPosition"
+    | "StringReplace"
+    | "StringCases"
+    | "StringMatchQ"
+    | "StringFreeQ"
+    | "StringCount"
+    | "Solve"
+    | "NSolve"
+    | "Reduce"
+    | "FindRoot"
+    | "D"
+    | "Integrate"
+    | "NIntegrate"
+    | "Sum"
+    | "Product"
+    | "Expand"
+    | "ExpandAll"
+    | "Factor"
+    | "Simplify"
+    | "FullSimplify"
+    | "Together"
+    | "Apart"
+    | "Cancel"
+    | "Collect"
+    | "Coefficient"
+    | "CoefficientList"
+    | "Exponent"
+    | "PolynomialQ"
+    | "PolynomialRemainder"
+    | "PolynomialQuotient"
+    | "GCD"
+    | "LCM"
+    | "Mod"
+    | "Quotient"
+    | "QuotientRemainder"
+    | "Divisors"
+    | "FactorInteger"
+    | "PrimePi"
+    | "Prime"
+    | "NextPrime"
+    | "RandomInteger"
+    | "RandomReal"
+    | "RandomChoice"
+    | "RandomSample"
+    | "SeedRandom"
+    | "Dot"
+    | "Cross"
+    | "Transpose"
+    | "Inverse"
+    | "Det"
+    | "Tr"
+    | "LinearSolve"
+    | "Eigenvalues"
+    | "Eigenvectors"
+    | "IdentityMatrix"
+    | "DiagonalMatrix"
+    | "ConstantArray"
+    | "Precision"
+    | "Accuracy"
+    | "MachinePrecision"
+    | "Information"
+    | "Definition"
+    | "Attributes"
+    | "Context"
+    | "Contexts"
+    | "Timing"
+    | "AbsoluteTiming"
+    | "Pause"
+    | "DateList"
+    | "DateString"
+    | "Abort"
+    | "Check"
+    | "CheckAbort"
+    | "Quiet"
+    | "Message" => {
+      vec!["Protected"]
+    }
+
+    // Unknown symbol: empty attributes
+    _ => vec![],
+  }
 }

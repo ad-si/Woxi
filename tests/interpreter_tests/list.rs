@@ -1442,3 +1442,51 @@ mod select {
     );
   }
 }
+
+mod subset_q {
+  use super::*;
+
+  #[test]
+  fn empty_sets() {
+    assert_eq!(interpret("SubsetQ[{}, {}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn subset_true() {
+    assert_eq!(interpret("SubsetQ[{1, 2, 3}, {1, 2}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn subset_false() {
+    assert_eq!(interpret("SubsetQ[{1, 2}, {1, 2, 3}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("SubsetQ[{a, b, c}, {a, c}]").unwrap(), "True");
+  }
+}
+
+mod option_q {
+  use super::*;
+
+  #[test]
+  fn rule() {
+    assert_eq!(interpret("OptionQ[a -> True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn rule_delayed() {
+    assert_eq!(interpret("OptionQ[a :> True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn list_of_rules() {
+    assert_eq!(interpret("OptionQ[{a -> 1, b -> 2}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn not_option() {
+    assert_eq!(interpret("OptionQ[3]").unwrap(), "False");
+  }
+}
