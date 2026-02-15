@@ -614,6 +614,48 @@ mod fractional_part {
   }
 }
 
+mod mixed_fraction_parts {
+  use super::*;
+
+  #[test]
+  fn integer() {
+    assert_eq!(interpret("MixedFractionParts[5]").unwrap(), "{5, 0}");
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("MixedFractionParts[7/3]").unwrap(), "{2, 1/3}");
+  }
+
+  #[test]
+  fn negative_rational() {
+    assert_eq!(interpret("MixedFractionParts[-7/3]").unwrap(), "{-2, -1/3}");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("MixedFractionParts[0]").unwrap(), "{0, 0}");
+  }
+
+  #[test]
+  fn proper_fraction() {
+    assert_eq!(interpret("MixedFractionParts[1/3]").unwrap(), "{0, 1/3}");
+  }
+
+  #[test]
+  fn negative_proper_fraction() {
+    assert_eq!(interpret("MixedFractionParts[-1/3]").unwrap(), "{0, -1/3}");
+  }
+
+  #[test]
+  fn listable() {
+    assert_eq!(
+      interpret("MixedFractionParts[{7/3, 5, 1/2}]").unwrap(),
+      "{{2, 1/3}, {5, 0}, {0, 1/2}}"
+    );
+  }
+}
+
 mod floor {
   use super::*;
 

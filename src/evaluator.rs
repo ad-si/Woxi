@@ -1592,6 +1592,7 @@ fn is_builtin_listable(name: &str) -> bool {
       | "NonPositive"
       | "NonNegative"
       | "StringLength"
+      | "MixedFractionParts"
   )
 }
 
@@ -2946,6 +2947,9 @@ pub fn evaluate_function_call_ast(
     }
     "FractionalPart" if args.len() == 1 => {
       return crate::functions::math_ast::fractional_part_ast(args);
+    }
+    "MixedFractionParts" if args.len() == 1 => {
+      return crate::functions::math_ast::mixed_fraction_parts_ast(args);
     }
     "Chop" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::chop_ast(args);
