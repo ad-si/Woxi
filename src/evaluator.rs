@@ -2758,6 +2758,10 @@ pub fn evaluate_function_call_ast(
       return crate::functions::predicate_ast::depth_ast(args);
     }
 
+    "LeafCount" if args.len() == 1 => {
+      return crate::functions::predicate_ast::leaf_count_ast(args);
+    }
+
     // FullForm - returns full form representation (unevaluated)
     "FullForm" if args.len() == 1 => {
       return crate::functions::predicate_ast::full_form_ast(&args[0]);

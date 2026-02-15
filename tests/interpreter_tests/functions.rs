@@ -781,6 +781,35 @@ mod expression_level_anonymous_function {
   }
 }
 
+mod leaf_count {
+  use super::*;
+
+  #[test]
+  fn leaf_count_sum_expr() {
+    assert_eq!(interpret("LeafCount[1 + x + y^a]").unwrap(), "6");
+  }
+
+  #[test]
+  fn leaf_count_function_call() {
+    assert_eq!(interpret("LeafCount[f[x, y]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn leaf_count_list() {
+    assert_eq!(interpret("LeafCount[{1, 2, 3}]").unwrap(), "4");
+  }
+
+  #[test]
+  fn leaf_count_atom() {
+    assert_eq!(interpret("LeafCount[42]").unwrap(), "1");
+  }
+
+  #[test]
+  fn leaf_count_symbol() {
+    assert_eq!(interpret("LeafCount[x]").unwrap(), "1");
+  }
+}
+
 mod free_q {
   use super::*;
 
