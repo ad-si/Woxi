@@ -9,121 +9,346 @@ enum Dimension {
   Length,
   Mass,
   Time,
+  ElectricCurrent,
   Volume,
 }
 
 /// Conversion factor to SI base unit as a rational (numerator, denominator).
 /// E.g. Kilometers → Meters is (1000, 1).
 struct UnitInfo {
-  dimension: Dimension,
+  /// Dimension exponent map, e.g. Joules = {Mass: 1, Length: 2, Time: -2}
+  dimensions: BTreeMap<Dimension, i64>,
   /// to_si_numer / to_si_denom = number of SI base units per 1 of this unit
   to_si_numer: i128,
   to_si_denom: i128,
 }
 
+fn dims(pairs: &[(Dimension, i64)]) -> BTreeMap<Dimension, i64> {
+  pairs.iter().copied().collect()
+}
+
 fn get_unit_info(name: &str) -> Option<UnitInfo> {
+  use Dimension::*;
   let info = match name {
-    // Length → Meters
+    // ── Length → Meters ───────────────────────────────────────────────
     "Meters" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 1,
       to_si_denom: 1,
     },
     "Kilometers" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 1000,
       to_si_denom: 1,
     },
     "Centimeters" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 1,
       to_si_denom: 100,
     },
     "Millimeters" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 1,
       to_si_denom: 1000,
     },
     "Feet" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 381,
       to_si_denom: 1250,
     },
     "Inches" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 127,
       to_si_denom: 5000,
     },
     "Miles" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 201168,
       to_si_denom: 125,
     },
     "Yards" => UnitInfo {
-      dimension: Dimension::Length,
+      dimensions: dims(&[(Length, 1)]),
       to_si_numer: 1143,
       to_si_denom: 1250,
     },
 
-    // Mass → Kilograms
+    // ── Mass → Kilograms ─────────────────────────────────────────────
     "Kilograms" => UnitInfo {
-      dimension: Dimension::Mass,
+      dimensions: dims(&[(Mass, 1)]),
       to_si_numer: 1,
       to_si_denom: 1,
     },
     "Grams" => UnitInfo {
-      dimension: Dimension::Mass,
+      dimensions: dims(&[(Mass, 1)]),
       to_si_numer: 1,
       to_si_denom: 1000,
     },
     "Milligrams" => UnitInfo {
-      dimension: Dimension::Mass,
+      dimensions: dims(&[(Mass, 1)]),
       to_si_numer: 1,
       to_si_denom: 1000000,
     },
     "Pounds" => UnitInfo {
-      dimension: Dimension::Mass,
+      dimensions: dims(&[(Mass, 1)]),
       to_si_numer: 45359237,
       to_si_denom: 100000000,
     },
 
-    // Time → Seconds
+    // ── Time → Seconds ───────────────────────────────────────────────
     "Seconds" => UnitInfo {
-      dimension: Dimension::Time,
+      dimensions: dims(&[(Time, 1)]),
       to_si_numer: 1,
       to_si_denom: 1,
     },
     "Minutes" => UnitInfo {
-      dimension: Dimension::Time,
+      dimensions: dims(&[(Time, 1)]),
       to_si_numer: 60,
       to_si_denom: 1,
     },
     "Hours" => UnitInfo {
-      dimension: Dimension::Time,
+      dimensions: dims(&[(Time, 1)]),
       to_si_numer: 3600,
       to_si_denom: 1,
     },
     "Days" => UnitInfo {
-      dimension: Dimension::Time,
+      dimensions: dims(&[(Time, 1)]),
       to_si_numer: 86400,
       to_si_denom: 1,
     },
 
-    // Volume → Liters
+    // ── Volume → Liters ──────────────────────────────────────────────
     "Liters" => UnitInfo {
-      dimension: Dimension::Volume,
+      dimensions: dims(&[(Volume, 1)]),
       to_si_numer: 1,
       to_si_denom: 1,
     },
     "Milliliters" => UnitInfo {
-      dimension: Dimension::Volume,
+      dimensions: dims(&[(Volume, 1)]),
       to_si_numer: 1,
       to_si_denom: 1000,
     },
     "Gallons" => UnitInfo {
-      dimension: Dimension::Volume,
+      dimensions: dims(&[(Volume, 1)]),
       to_si_numer: 473176473,
       to_si_denom: 125000000,
+    },
+
+    // ── Electric Current → Amperes ───────────────────────────────────
+    "Amperes" => UnitInfo {
+      dimensions: dims(&[(ElectricCurrent, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Milliamperes" => UnitInfo {
+      dimensions: dims(&[(ElectricCurrent, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+
+    // ── Force: Newtons = kg⋅m/s² ─────────────────────────────────────
+    "Newtons" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 1), (Time, -2)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+
+    // ── Pressure: Pascals = kg/(m⋅s²) ────────────────────────────────
+    "Pascals" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+
+    // ── Energy: Joules = kg⋅m²/s² ────────────────────────────────────
+    "Joules" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Millijoules" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+    "Kilojoules" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+
+    // ── Power: Watts = kg⋅m²/s³ ──────────────────────────────────────
+    "Watts" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Milliwatts" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+    "Kilowatts" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -3)]),
+      to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+
+    // ── Voltage: Volts = kg⋅m²/(A⋅s³) ────────────────────────────────
+    "Volts" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -3),
+        (ElectricCurrent, -1),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Millivolts" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -3),
+        (ElectricCurrent, -1),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+    "Kilovolts" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -3),
+        (ElectricCurrent, -1),
+      ]),
+      to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+
+    // ── Charge: Coulombs = A⋅s ────────────────────────────────────────
+    "Coulombs" => UnitInfo {
+      dimensions: dims(&[(ElectricCurrent, 1), (Time, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+
+    // ── Capacitance: Farads = A²⋅s⁴/(kg⋅m²) ─────────────────────────
+    "Farads" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, -1),
+        (Length, -2),
+        (Time, 4),
+        (ElectricCurrent, 2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Millifarads" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, -1),
+        (Length, -2),
+        (Time, 4),
+        (ElectricCurrent, 2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+    "Microfarads" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, -1),
+        (Length, -2),
+        (Time, 4),
+        (ElectricCurrent, 2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1000000,
+    },
+    "Nanofarads" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, -1),
+        (Length, -2),
+        (Time, 4),
+        (ElectricCurrent, 2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1000000000,
+    },
+    "Picofarads" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, -1),
+        (Length, -2),
+        (Time, 4),
+        (ElectricCurrent, 2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1000000000000,
+    },
+
+    // ── Resistance: Ohms = kg⋅m²/(A²⋅s³) ─────────────────────────────
+    "Ohms" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -3),
+        (ElectricCurrent, -2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Kilohms" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -3),
+        (ElectricCurrent, -2),
+      ]),
+      to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+    "Megohms" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -3),
+        (ElectricCurrent, -2),
+      ]),
+      to_si_numer: 1000000,
+      to_si_denom: 1,
+    },
+
+    // ── Inductance: Henries = kg⋅m²/(A²⋅s²) ──────────────────────────
+    "Henries" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -2),
+        (ElectricCurrent, -2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Millihenries" => UnitInfo {
+      dimensions: dims(&[
+        (Mass, 1),
+        (Length, 2),
+        (Time, -2),
+        (ElectricCurrent, -2),
+      ]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+
+    // ── Energy (time-based): WattHours = kg⋅m²/(s) ⋅ 3600 ────────────
+    // 1 Wh = 3600 J, dimension same as Joules: kg⋅m²/s²
+    "WattHours" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 3600,
+      to_si_denom: 1,
+    },
+    "KilowattHours" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 3600000,
+      to_si_denom: 1,
     },
 
     _ => return None,
@@ -261,6 +486,32 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "L" => "Liters",
     "mL" => "Milliliters",
     "gal" => "Gallons",
+    "A" => "Amperes",
+    "mA" => "Milliamperes",
+    "V" => "Volts",
+    "mV" => "Millivolts",
+    "kV" => "Kilovolts",
+    "J" => "Joules",
+    "mJ" => "Millijoules",
+    "kJ" => "Kilojoules",
+    "W" => "Watts",
+    "mW" => "Milliwatts",
+    "kW" => "Kilowatts",
+    "F" => "Farads",
+    "mF" => "Millifarads",
+    "μF" => "Microfarads",
+    "nF" => "Nanofarads",
+    "pF" => "Picofarads",
+    "C" => "Coulombs",
+    "N" => "Newtons",
+    "Pa" => "Pascals",
+    "Ω" => "Ohms",
+    "kΩ" => "Kilohms",
+    "MΩ" => "Megohms",
+    "H" => "Henries",
+    "mH" => "Millihenries",
+    "Wh" => "WattHours",
+    "kWh" => "KilowattHours",
     _ => "",
   };
   if !simple.is_empty() {
@@ -342,13 +593,11 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
     Expr::Identifier(name) | Expr::String(name) => {
       // Try direct unit lookup
       if let Some(info) = get_unit_info(name) {
-        let mut dims = BTreeMap::new();
-        dims.insert(info.dimension, 1);
         return Some(CompoundUnitInfo {
           components: vec![(name.clone(), 1)],
           si_numer: info.to_si_numer,
           si_denom: info.to_si_denom,
-          dimensions: dims,
+          dimensions: info.dimensions,
         });
       }
       // Try compound constants (e.g. SpeedOfLight)
@@ -363,7 +612,9 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             rational_pow(uinfo.to_si_numer, uinfo.to_si_denom, *exp);
           si_numer *= pn;
           si_denom *= pd;
-          *dims.entry(uinfo.dimension).or_insert(0) += exp;
+          for (dim, dim_exp) in &uinfo.dimensions {
+            *dims.entry(*dim).or_insert(0) += dim_exp * exp;
+          }
         }
         let g = gcd(si_numer, si_denom);
         return Some(CompoundUnitInfo {
@@ -485,20 +736,21 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
   }
 }
 
-/// Simplify compound unit components by merging same-dimension units.
+/// Simplify compound unit components by merging units with the same dimension signature.
 /// Returns (simplified_components, conversion_factor_numer, conversion_factor_denom).
 /// The conversion factor should be applied to the magnitude.
 fn simplify_compound_unit(
   components: &[(String, i64)],
 ) -> (Vec<(String, i64)>, i128, i128) {
-  // Group by dimension
-  let mut dim_groups: BTreeMap<Dimension, Vec<(String, i64)>> = BTreeMap::new();
+  // Group by dimension signature (full BTreeMap<Dimension, i64>)
+  let mut sig_groups: BTreeMap<BTreeMap<Dimension, i64>, Vec<(String, i64)>> =
+    BTreeMap::new();
   let mut unknown: Vec<(String, i64)> = Vec::new();
 
   for (name, exp) in components {
     if let Some(info) = get_unit_info(name) {
-      dim_groups
-        .entry(info.dimension)
+      sig_groups
+        .entry(info.dimensions)
         .or_default()
         .push((name.clone(), *exp));
     } else {
@@ -510,7 +762,7 @@ fn simplify_compound_unit(
   let mut conv_denom: i128 = 1;
   let mut simplified: Vec<(String, i64)> = Vec::new();
 
-  for units in dim_groups.values() {
+  for units in sig_groups.values() {
     // Find the "canonical" unit: the one with the largest total absolute exponent
     let canonical =
       units.iter().max_by_key(|(_, e)| e.abs()).unwrap().0.clone();
@@ -523,9 +775,6 @@ fn simplify_compound_unit(
       } else {
         // Convert this unit to canonical: factor = (this_si / canonical_si)^exp
         let this_info = get_unit_info(name).unwrap();
-        // this_unit in SI = this_si_numer/this_si_denom
-        // canonical in SI = can_si_numer/can_si_denom
-        // conversion per unit = (this_si_n * can_si_d) / (this_si_d * can_si_n)
         let unit_conv_n = this_info.to_si_numer * canonical_info.to_si_denom;
         let unit_conv_d = this_info.to_si_denom * canonical_info.to_si_numer;
         let (pn, pd) = rational_pow(unit_conv_n, unit_conv_d, *exp);
@@ -717,7 +966,7 @@ fn convert_magnitude(
     InterpreterError::EvaluationError(format!("Unknown unit: {}", to_unit))
   })?;
 
-  if from.dimension != to.dimension {
+  if from.dimensions != to.dimensions {
     return Err(InterpreterError::EvaluationError(format!(
       "{} and {} are incompatible units.",
       from_unit, to_unit
