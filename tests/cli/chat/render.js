@@ -89,8 +89,46 @@ function createUserMessage(msg, index) {
   const el = document.createElement("div")
   el.className = "user-message-row flex flex-col items-end px-4 py-3"
   if (index !== undefined) el.dataset.msgIndex = index
-  el.innerHTML = `
-    <div class="max-w-[80%] px-4 py-2.5 rounded-2xl bg-blue-600 text-white text-sm whitespace-pre-wrap">${escapeHtml(msg.content)}</div>
+
+  const bubble = document.createElement("div")
+  bubble.className = "max-w-[80%] px-4 py-2.5 rounded-2xl bg-blue-600 text-white text-sm whitespace-pre-wrap"
+
+  // Render attachments inside the bubble
+  if (msg.attachments && msg.attachments.length > 0) {
+    // Image thumbnails first
+    for (const att of msg.attachments) {
+      if (att.type === "image") {
+        const img = document.createElement("img")
+        img.className = "msg-attachment-thumb"
+        img.src = `data:${att.mediaType};base64,${att.data}`
+        img.alt = att.name
+        bubble.appendChild(img)
+      }
+    }
+
+    // Text file labels
+    const textAtts = msg.attachments.filter((a) => a.type === "text")
+    if (textAtts.length > 0) {
+      const labels = document.createElement("div")
+      labels.className = "msg-attachments"
+      for (const att of textAtts) {
+        const label = document.createElement("span")
+        label.className = "msg-attachment-label"
+        label.innerHTML = `<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`
+        const nameSpan = document.createElement("span")
+        nameSpan.textContent = att.name
+        label.appendChild(nameSpan)
+        labels.appendChild(label)
+      }
+      bubble.appendChild(labels)
+    }
+  }
+
+  const textNode = document.createTextNode(msg.content)
+  bubble.appendChild(textNode)
+
+  el.appendChild(bubble)
+  el.innerHTML += `
     <div class="user-msg-actions">
       <button class="msg-action-btn" data-action="copy" title="Copy">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>

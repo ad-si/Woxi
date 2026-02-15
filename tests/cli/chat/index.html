@@ -113,8 +113,14 @@
           <textarea id="input-chat" rows="1" placeholder="Send a message..."
             class="chat-input w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm focus:outline-none max-h-48 overflow-y-auto"
             disabled></textarea>
+          <div class="attachment-preview hidden px-3 pt-1"></div>
           <div class="flex items-center justify-between px-3 pb-2">
-            <div></div>
+            <div class="flex items-center gap-1">
+              <input type="file" multiple class="file-input hidden">
+              <button class="attach-btn p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Attach files">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+            </div>
             <div class="flex items-center gap-2">
               <button
                 class="provider-toggle hidden flex items-center gap-1 px-2 py-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -157,8 +163,14 @@
         <textarea id="input-welcome" rows="1" placeholder="Send a message …"
           class="chat-input w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base focus:outline-none max-h-48 overflow-y-auto"
           disabled></textarea>
+        <div class="attachment-preview hidden px-3 pt-1"></div>
         <div class="flex items-center justify-between px-3 pb-2">
-          <div></div>
+          <div class="flex items-center gap-1">
+            <input type="file" multiple class="file-input hidden">
+            <button class="attach-btn p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Attach files">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+          </div>
           <div class="flex items-center gap-2">
             <button
               class="provider-toggle hidden flex items-center gap-1 px-2 py-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"

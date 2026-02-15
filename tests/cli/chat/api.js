@@ -48,8 +48,45 @@ export async function sendMessage(messages, opts) {
 
 // --- OpenAI ---
 
+/** Build OpenAI-format content for a message, handling attachments */
+function toOpenAIContent(msg) {
+  if (!msg.attachments || msg.attachments.length === 0) return msg.content
+
+  const parts = []
+
+  // Build text: prepend text file contents, then user text
+  const textParts = []
+  for (const att of msg.attachments) {
+    if (att.type === "text") {
+      textParts.push(`File: ${att.name}\n\`\`\`\n${att.content}\n\`\`\``)
+    }
+  }
+  if (msg.content) textParts.push(msg.content)
+  const text = textParts.join("\n\n")
+  if (text) parts.push({ type: "text", text })
+
+  // Add images
+  for (const att of msg.attachments) {
+    if (att.type === "image") {
+      parts.push({
+        type: "image_url",
+        image_url: { url: `data:${att.mediaType};base64,${att.data}` },
+      })
+    }
+  }
+
+  return parts
+}
+
 async function sendOpenAI(messages, { apiKey, onToken, onToolCall, onDone, onError, signal }) {
   try {
+    const apiMessages = messages.map((msg) => {
+      if (msg.role === "user" && msg.attachments) {
+        return { ...msg, content: toOpenAIContent(msg), attachments: undefined }
+      }
+      return msg
+    })
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -58,7 +95,7 @@ async function sendOpenAI(messages, { apiKey, onToken, onToolCall, onDone, onErr
       },
       body: JSON.stringify({
         model: "gpt-5.2-codex",
-        messages,
+        messages: apiMessages,
         tools: [TOOL_DEFINITION],
         stream: true,
       }),
@@ -142,7 +179,34 @@ function toAnthropicMessages(messages) {
     if (msg.role === "system") continue
 
     if (msg.role === "user") {
-      result.push({ role: "user", content: msg.content })
+      if (msg.attachments && msg.attachments.length > 0) {
+        const content = []
+
+        // Build text: prepend text file contents, then user text
+        const textParts = []
+        for (const att of msg.attachments) {
+          if (att.type === "text") {
+            textParts.push(`File: ${att.name}\n\`\`\`\n${att.content}\n\`\`\``)
+          }
+        }
+        if (msg.content) textParts.push(msg.content)
+        const text = textParts.join("\n\n")
+        if (text) content.push({ type: "text", text })
+
+        // Add images
+        for (const att of msg.attachments) {
+          if (att.type === "image") {
+            content.push({
+              type: "image",
+              source: { type: "base64", media_type: att.mediaType, data: att.data },
+            })
+          }
+        }
+
+        result.push({ role: "user", content })
+      } else {
+        result.push({ role: "user", content: msg.content })
+      }
       continue
     }
 
