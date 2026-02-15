@@ -5462,7 +5462,7 @@ TabView,,,
 TableAlignments,,,
 TableDepth,,,
 TableDirections,,,
-TableForm,,,
+TableForm,Formats data as a table,✅,pure
 TableHeadings,,,
 TableSpacing,,,
 TableView,,,

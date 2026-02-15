@@ -441,3 +441,122 @@ mod power_formatting {
     assert_eq!(interpret("(2 + x)^3").unwrap(), "(2 + x)^3");
   }
 }
+
+mod table_form {
+  use super::*;
+
+  #[test]
+  fn one_dimensional_list() {
+    // TableForm[{a, b, c}] prints each element on its own line
+    assert_eq!(interpret("TableForm[{1, 2, 3}]").unwrap(), "1\n2\n3");
+  }
+
+  #[test]
+  fn one_dimensional_symbols() {
+    assert_eq!(interpret("TableForm[{a, b, c}]").unwrap(), "a\nb\nc");
+  }
+
+  #[test]
+  fn two_dimensional_list() {
+    // TableForm[{{a, b}, {c, d}}] prints as a 2D table
+    assert_eq!(
+      interpret("TableForm[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "1\t2\t3\n4\t5\t6"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_symbols() {
+    assert_eq!(
+      interpret("TableForm[{{a, b}, {c, d}}]").unwrap(),
+      "a\tb\nc\td"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_column_alignment() {
+    // Columns are right-aligned based on the widest element
+    assert_eq!(
+      interpret("TableForm[{{10, 2, 300}, {4, 50000, 6}}]").unwrap(),
+      "10\t    2\t300\n 4\t50000\t  6"
+    );
+  }
+
+  #[test]
+  fn ragged_list() {
+    // Rows of different lengths: short rows are not padded
+    assert_eq!(
+      interpret("TableForm[{{1, 2}, {3, 4, 5}}]").unwrap(),
+      "1\t2\n3\t4\t5"
+    );
+  }
+
+  #[test]
+  fn non_list_argument() {
+    // TableForm[x] for non-list just displays the element
+    assert_eq!(interpret("TableForm[5]").unwrap(), "5");
+    assert_eq!(interpret("TableForm[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn string_elements() {
+    assert_eq!(
+      interpret(r#"TableForm[{"hello", "world"}]"#).unwrap(),
+      "hello\nworld"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("TableForm[{}]").unwrap(), "");
+  }
+
+  #[test]
+  fn with_table_function() {
+    // TableForm combined with Table
+    assert_eq!(
+      interpret("TableForm[Table[i^2, {i, 4}]]").unwrap(),
+      "1\n4\n9\n16"
+    );
+  }
+
+  #[test]
+  fn with_table_two_dimensional() {
+    // TableForm[Table[{i, i^2}, {i, 3}]]
+    assert_eq!(
+      interpret("TableForm[Table[{i, i^2}, {i, 3}]]").unwrap(),
+      "1\t1\n2\t4\n3\t9"
+    );
+  }
+
+  #[test]
+  fn single_element_list() {
+    assert_eq!(interpret("TableForm[{42}]").unwrap(), "42");
+  }
+
+  #[test]
+  fn single_row_two_dimensional() {
+    assert_eq!(
+      interpret("TableForm[{{1, 2, 3}}]").unwrap(),
+      "1\t2\t3"
+    );
+  }
+
+  #[test]
+  fn nested_expressions() {
+    // Elements can be complex expressions
+    assert_eq!(
+      interpret("TableForm[{x^2, Sin[x], 1/2}]").unwrap(),
+      "x^2\nSin[x]\n1/2"
+    );
+  }
+
+  #[test]
+  fn postfix_notation() {
+    // TableForm can be used with postfix //
+    assert_eq!(
+      interpret("{1, 2, 3} // TableForm").unwrap(),
+      "1\n2\n3"
+    );
+  }
+}

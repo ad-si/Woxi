@@ -2604,6 +2604,10 @@ pub fn expr_to_output(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2235} ");
       }
+      // Special case: TableForm[data] displays data as a table
+      if name == "TableForm" && args.len() == 1 {
+        return table_form_output(&args[0]);
+      }
       let parts: Vec<String> = args.iter().map(expr_to_output).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
@@ -2636,6 +2640,67 @@ pub fn expr_to_output(expr: &Expr) -> String {
     }
     // For all other cases, delegate to expr_to_string
     _ => expr_to_string(expr),
+  }
+}
+
+/// Render a TableForm display. 1D lists are shown as columns (one element
+/// per line), 2D lists (list of lists) are shown as tables with aligned
+/// columns, and non-list expressions are displayed as-is.
+fn table_form_output(expr: &Expr) -> String {
+  match expr {
+    Expr::List(items) if items.is_empty() => String::new(),
+    Expr::List(items) => {
+      // Check if any element is a list (2D table case)
+      let has_list_elements =
+        items.iter().any(|item| matches!(item, Expr::List(_)));
+
+      if has_list_elements {
+        // 2D table: render as aligned columns
+        let rows: Vec<Vec<String>> = items
+          .iter()
+          .map(|item| match item {
+            Expr::List(cols) => cols.iter().map(expr_to_output).collect(),
+            _ => vec![expr_to_output(item)],
+          })
+          .collect();
+
+        let max_cols =
+          rows.iter().map(|r| r.len()).max().unwrap_or(0);
+
+        // Determine the width of each column
+        let mut col_widths = vec![0usize; max_cols];
+        for row in &rows {
+          for (j, cell) in row.iter().enumerate() {
+            col_widths[j] = col_widths[j].max(cell.len());
+          }
+        }
+
+        // Format each row with right-aligned, space-padded columns
+        rows
+          .iter()
+          .map(|row| {
+            row
+              .iter()
+              .enumerate()
+              .map(|(j, cell)| {
+                format!("{:>width$}", cell, width = col_widths[j])
+              })
+              .collect::<Vec<_>>()
+              .join("\t")
+          })
+          .collect::<Vec<_>>()
+          .join("\n")
+      } else {
+        // 1D table: each element on its own line
+        items
+          .iter()
+          .map(expr_to_output)
+          .collect::<Vec<_>>()
+          .join("\n")
+      }
+    }
+    // Non-list: just display the element
+    _ => expr_to_output(expr),
   }
 }
 
