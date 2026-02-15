@@ -436,6 +436,52 @@ pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// CoefficientList[poly, var] - list of coefficients from power 0 to degree.
+pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "CoefficientList expects 2 arguments".into(),
+    ));
+  }
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CoefficientList".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Expand and combine the expression first
+  let expanded = expand_and_combine(&args[0]);
+
+  // Find the degree
+  let degree = match max_power(&expanded, var) {
+    Some(d) => d,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "CoefficientList".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Extract coefficient for each power from 0 to degree
+  let mut coeffs = Vec::new();
+  for power in 0..=degree {
+    let coeff = coefficient_ast(&[
+      args[0].clone(),
+      args[1].clone(),
+      Expr::Integer(power),
+    ])?;
+    let simplified = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+    coeffs.push(simplified);
+  }
+
+  Ok(Expr::List(coeffs))
+}
+
 /// Collect all additive terms from an expression (flattening Plus).
 fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
   match expr {

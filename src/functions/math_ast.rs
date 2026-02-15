@@ -5923,6 +5923,99 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bigint_to_expr(table[n][k].clone()))
 }
 
+/// HarmonicNumber[n] - Returns the nth harmonic number H_n = 1 + 1/2 + ... + 1/n.
+/// HarmonicNumber[n, r] - Returns the generalized harmonic number H_{n,r} = Sum[1/k^r, {k,1,n}].
+pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "HarmonicNumber expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n,
+    Some(_) => {
+      return Ok(Expr::FunctionCall {
+        name: "HarmonicNumber".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "HarmonicNumber".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let r = if args.len() == 2 {
+    match expr_to_i128(&args[1]) {
+      Some(r) => r,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "HarmonicNumber".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  if n == 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Compute as exact rational: sum of 1/k^r for k = 1 to n
+  // Use BigInt numerator and denominator
+  fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+    use num_traits::Zero;
+    let mut a = if *a < BigInt::zero() {
+      -a.clone()
+    } else {
+      a.clone()
+    };
+    let mut b = if *b < BigInt::zero() {
+      -b.clone()
+    } else {
+      b.clone()
+    };
+    while !b.is_zero() {
+      let t = b.clone();
+      b = &a % &b;
+      a = t;
+    }
+    a
+  }
+
+  let mut num = BigInt::from(0);
+  let mut den = BigInt::from(1);
+  for k in 1..=n {
+    let k_big = BigInt::from(k);
+    let k_pow = num_traits::pow::pow(k_big, r as usize);
+    // Add 1/k_pow to num/den: num/den + 1/k_pow = (num*k_pow + den) / (den*k_pow)
+    num = &num * &k_pow + &den;
+    den = &den * &k_pow;
+    // Reduce
+    let g = bigint_gcd(&num, &den);
+    use num_traits::One;
+    if g > BigInt::one() {
+      num /= &g;
+      den /= &g;
+    }
+  }
+
+  // Convert to our representation
+  if den == BigInt::from(1) {
+    Ok(bigint_to_expr(num))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![bigint_to_expr(num), bigint_to_expr(den)],
+    })
+  }
+}
+
 /// Prime[n] - Returns the nth prime number
 pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

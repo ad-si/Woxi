@@ -1648,6 +1648,8 @@ fn is_builtin_listable(name: &str) -> bool {
       | "CatalanNumber"
       | "StirlingS1"
       | "StirlingS2"
+      | "HarmonicNumber"
+      | "CoefficientList"
       | "ContinuedFraction"
       | "Boole"
       | "BitLength"
@@ -3161,6 +3163,12 @@ pub fn evaluate_function_call_ast(
     }
     "FrobeniusNumber" if args.len() == 1 => {
       return crate::functions::math_ast::frobenius_number_ast(args);
+    }
+    "HarmonicNumber" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::harmonic_number_ast(args);
+    }
+    "CoefficientList" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::coefficient_list_ast(args);
     }
 
     // AST-native boolean functions
