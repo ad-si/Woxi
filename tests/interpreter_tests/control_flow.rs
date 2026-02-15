@@ -331,3 +331,31 @@ mod check {
     assert_eq!(interpret("Check[1/0, 1 + 1]").unwrap(), "2");
   }
 }
+
+mod abort {
+  use super::*;
+
+  #[test]
+  fn abort_returns_aborted() {
+    clear_state();
+    assert_eq!(interpret("Abort[]").unwrap(), "$Aborted");
+  }
+
+  #[test]
+  fn check_abort_catches_abort() {
+    clear_state();
+    assert_eq!(interpret("CheckAbort[Abort[], caught]").unwrap(), "caught");
+  }
+
+  #[test]
+  fn check_abort_no_abort() {
+    clear_state();
+    assert_eq!(interpret("CheckAbort[2 + 3, caught]").unwrap(), "5");
+  }
+
+  #[test]
+  fn abort_stops_computation() {
+    clear_state();
+    assert_eq!(interpret("x = 1; Abort[]; x = 2; x").unwrap(), "$Aborted");
+  }
+}

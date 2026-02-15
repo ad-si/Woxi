@@ -50,6 +50,8 @@ pub enum InterpreterError {
   ContinueSignal,
   #[error("Throw")]
   ThrowValue(Box<syntax::Expr>, Option<Box<syntax::Expr>>),
+  #[error("$Aborted")]
+  Abort,
 }
 
 /// Extended result type that includes both stdout and the result
@@ -415,6 +417,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               name: "Return".to_string(),
               args: vec![*val],
             }
+          }
+          Err(InterpreterError::Abort) => {
+            return Ok("$Aborted".to_string());
           }
           other => other?,
         };
