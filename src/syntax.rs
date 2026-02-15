@@ -2604,6 +2604,18 @@ pub fn expr_to_output(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2235} ");
       }
+      // Special case: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
+      if name == "Row"
+        && (args.len() == 1 || args.len() == 2)
+        && let Some(Expr::List(items)) = args.first()
+      {
+        let parts: Vec<String> = items.iter().map(expr_to_output).collect();
+        if args.len() == 2 {
+          let sep = expr_to_output(&args[1]);
+          return parts.join(&sep);
+        }
+        return parts.concat();
+      }
       let parts: Vec<String> = args.iter().map(expr_to_output).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
