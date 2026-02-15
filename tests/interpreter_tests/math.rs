@@ -129,6 +129,47 @@ mod integer_reverse {
   }
 }
 
+mod harmonic_number {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("HarmonicNumber[5]").unwrap(), "137/60");
+    assert_eq!(interpret("HarmonicNumber[10]").unwrap(), "7381/2520");
+  }
+
+  #[test]
+  fn edge_cases() {
+    assert_eq!(interpret("HarmonicNumber[0]").unwrap(), "0");
+    assert_eq!(interpret("HarmonicNumber[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn generalized() {
+    assert_eq!(interpret("HarmonicNumber[5, 2]").unwrap(), "5269/3600");
+  }
+}
+
+mod coefficient_list {
+  use super::*;
+
+  #[test]
+  fn basic_polynomial() {
+    assert_eq!(
+      interpret("CoefficientList[x^2 + 3 x + 1, x]").unwrap(),
+      "{1, 3, 1}"
+    );
+  }
+
+  #[test]
+  fn expanded_polynomial() {
+    assert_eq!(
+      interpret("CoefficientList[(x + 1)^3, x]").unwrap(),
+      "{1, 3, 3, 1}"
+    );
+  }
+}
+
 mod integer_name {
   use super::*;
 
