@@ -2675,18 +2675,23 @@ fn table_form_output(expr: &Expr) -> String {
           }
         }
 
-        // Format each row with right-aligned, space-padded columns
+        // Format each row with left-aligned, space-padded columns
+        // separated by 3 spaces (Wolfram default TableSpacing)
         rows
           .iter()
           .map(|row| {
-            row
+            let formatted: Vec<String> = row
               .iter()
               .enumerate()
               .map(|(j, cell)| {
-                format!("{:>width$}", cell, width = col_widths[j])
+                if j < row.len() - 1 {
+                  format!("{:<width$}", cell, width = col_widths[j])
+                } else {
+                  cell.clone()
+                }
               })
-              .collect::<Vec<_>>()
-              .join("\t")
+              .collect();
+            formatted.join("   ")
           })
           .collect::<Vec<_>>()
           .join("\n")

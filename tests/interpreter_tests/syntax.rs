@@ -461,7 +461,7 @@ mod table_form {
     // TableForm[{{a, b}, {c, d}}] prints as a 2D table
     assert_eq!(
       interpret("TableForm[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
-      "1\t2\t3\n4\t5\t6"
+      "1   2   3\n4   5   6"
     );
   }
 
@@ -469,16 +469,17 @@ mod table_form {
   fn two_dimensional_symbols() {
     assert_eq!(
       interpret("TableForm[{{a, b}, {c, d}}]").unwrap(),
-      "a\tb\nc\td"
+      "a   b\nc   d"
     );
   }
 
   #[test]
   fn two_dimensional_column_alignment() {
-    // Columns are right-aligned based on the widest element
+    // Columns are left-aligned based on the widest element
+    // with 3-space separation (Wolfram default TableSpacing)
     assert_eq!(
       interpret("TableForm[{{10, 2, 300}, {4, 50000, 6}}]").unwrap(),
-      "10\t    2\t300\n 4\t50000\t  6"
+      "10   2       300\n4    50000   6"
     );
   }
 
@@ -487,7 +488,7 @@ mod table_form {
     // Rows of different lengths: short rows are not padded
     assert_eq!(
       interpret("TableForm[{{1, 2}, {3, 4, 5}}]").unwrap(),
-      "1\t2\n3\t4\t5"
+      "1   2\n3   4   5"
     );
   }
 
@@ -525,7 +526,7 @@ mod table_form {
     // TableForm[Table[{i, i^2}, {i, 3}]]
     assert_eq!(
       interpret("TableForm[Table[{i, i^2}, {i, 3}]]").unwrap(),
-      "1\t1\n2\t4\n3\t9"
+      "1   1\n2   4\n3   9"
     );
   }
 
@@ -538,7 +539,7 @@ mod table_form {
   fn single_row_two_dimensional() {
     assert_eq!(
       interpret("TableForm[{{1, 2, 3}}]").unwrap(),
-      "1\t2\t3"
+      "1   2   3"
     );
   }
 

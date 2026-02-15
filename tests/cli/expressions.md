@@ -122,17 +122,17 @@ A two-dimensional list is printed as a table:
 
 ```scrut
 $ wo 'TableForm[{{1, 2, 3}, {4, 5, 6}}]'
-1	2	3
-4	5	6
+1   2   3
+4   5   6
 ```
 
-Columns are right-aligned when they have different widths:
+Columns are left-aligned with 3-space separation:
 
 ```scrut
 $ wo 'TableForm[Table[{i, i^2}, {i, 5}]]'
-1	 1
-2	 4
-3	 9
-4	16
-5	25
+1   1
+2   4
+3   9
+4   16
+5   25
 ```
