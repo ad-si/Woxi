@@ -3334,6 +3334,14 @@ pub fn evaluate_function_call_ast(
       return apply_replace_repeated_ast(expr, rules);
     }
 
+    // Symbolic operators with no built-in meaning — just return as-is with evaluated args
+    "Therefore" | "Because" => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+
     _ => {}
   }
 
