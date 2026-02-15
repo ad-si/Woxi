@@ -2203,4 +2203,96 @@ mod im_tests {
   fn im_symbolic() {
     assert_eq!(interpret("Im[x]").unwrap(), "Im[x]");
   }
+
+  // ── Arg ──────────────────────────────────────────────────
+
+  #[test]
+  fn arg_positive_integer() {
+    assert_eq!(interpret("Arg[3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arg_negative_integer() {
+    assert_eq!(interpret("Arg[-3]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn arg_zero() {
+    assert_eq!(interpret("Arg[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arg_positive_rational() {
+    assert_eq!(interpret("Arg[1/2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arg_negative_rational() {
+    assert_eq!(interpret("Arg[-1/2]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn arg_pure_imaginary_positive() {
+    assert_eq!(interpret("Arg[I]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn arg_pure_imaginary_negative() {
+    assert_eq!(interpret("Arg[-I]").unwrap(), "-1/2*Pi");
+  }
+
+  #[test]
+  fn arg_first_quadrant() {
+    assert_eq!(interpret("Arg[1+I]").unwrap(), "Pi/4");
+  }
+
+  #[test]
+  fn arg_fourth_quadrant() {
+    assert_eq!(interpret("Arg[1-I]").unwrap(), "-1/4*Pi");
+  }
+
+  #[test]
+  fn arg_second_quadrant() {
+    assert_eq!(interpret("Arg[-1+I]").unwrap(), "(3*Pi)/4");
+  }
+
+  #[test]
+  fn arg_third_quadrant() {
+    assert_eq!(interpret("Arg[-1-I]").unwrap(), "(-3*Pi)/4");
+  }
+
+  #[test]
+  fn arg_scaled_complex() {
+    assert_eq!(interpret("Arg[2+2I]").unwrap(), "Pi/4");
+  }
+
+  #[test]
+  fn arg_non_standard_angle() {
+    assert_eq!(interpret("Arg[3-4I]").unwrap(), "-ArcTan[4/3]");
+  }
+
+  #[test]
+  fn arg_non_standard_second_quadrant() {
+    assert_eq!(interpret("Arg[-3+4I]").unwrap(), "Pi - ArcTan[4/3]");
+  }
+
+  #[test]
+  fn arg_non_standard_third_quadrant() {
+    assert_eq!(interpret("Arg[-3-4I]").unwrap(), "-Pi + ArcTan[4/3]");
+  }
+
+  #[test]
+  fn arg_positive_real() {
+    assert_eq!(interpret("Arg[5.0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arg_negative_real() {
+    assert_eq!(interpret("Arg[-2.5]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn arg_symbolic() {
+    assert_eq!(interpret("Arg[x]").unwrap(), "Arg[x]");
+  }
 }

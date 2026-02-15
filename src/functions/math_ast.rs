@@ -7165,43 +7165,184 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  match &args[0] {
-    Expr::Integer(n) => {
-      if *n > 0 {
+  // Try exact rational (pure real: integer or rational)
+  if let Some((n, d)) = expr_to_rational(&args[0]) {
+    let sign = if d > 0 { n } else { -n };
+    return if sign > 0 {
+      Ok(Expr::Integer(0))
+    } else if sign < 0 {
+      Ok(Expr::Identifier("Pi".to_string()))
+    } else {
+      Ok(Expr::Integer(0))
+    };
+  }
+
+  // Pure real float
+  if let Expr::Real(f) = &args[0] {
+    return if *f > 0.0 {
+      Ok(Expr::Integer(0))
+    } else if *f < 0.0 {
+      Ok(Expr::Identifier("Pi".to_string()))
+    } else {
+      Ok(Expr::Integer(0))
+    };
+  }
+
+  // Try exact complex extraction (handles Plus, Times, I, etc.)
+  if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
+    // Normalize signs to have positive denominators
+    let g_r = gcd(rn.abs(), rd.abs());
+    let (rn, rd) = if rd < 0 {
+      (-rn / g_r, -rd / g_r)
+    } else {
+      (rn / g_r, rd / g_r)
+    };
+    let g_i = gcd(in_.abs(), id.abs());
+    let (in_, id) = if id < 0 {
+      (-in_ / g_i, -id / g_i)
+    } else {
+      (in_ / g_i, id / g_i)
+    };
+
+    // Pure real
+    if in_ == 0 {
+      return if rn > 0 {
         Ok(Expr::Integer(0))
-      } else if *n < 0 {
+      } else if rn < 0 {
         Ok(Expr::Identifier("Pi".to_string()))
       } else {
         Ok(Expr::Integer(0))
-      }
+      };
     }
-    Expr::Real(f) => {
-      if *f > 0.0 {
-        Ok(Expr::Integer(0))
-      } else if *f < 0.0 {
-        Ok(Expr::Identifier("Pi".to_string()))
+
+    // Pure imaginary
+    if rn == 0 {
+      return if in_ > 0 {
+        Ok(make_rational_times_pi(1, 2))
       } else {
-        Ok(Expr::Integer(0))
-      }
+        Ok(make_rational_times_pi(-1, 2))
+      };
     }
-    Expr::FunctionCall { name, args: inner }
-      if name == "Complex" && inner.len() == 2 =>
-    {
-      if let (Some(re), Some(im)) =
-        (expr_to_num(&inner[0]), expr_to_num(&inner[1]))
-      {
-        Ok(Expr::Real(im.atan2(re)))
+
+    // General complex: compute ratio = |im/re| = (|in_| * rd) / (id * |rn|)
+    let ratio_n = in_.abs().checked_mul(rd);
+    let ratio_d = id.checked_mul(rn.abs());
+    if let (Some(mut ratio_n), Some(mut ratio_d)) = (ratio_n, ratio_d) {
+      let g = gcd(ratio_n.abs(), ratio_d.abs());
+      ratio_n /= g;
+      ratio_d /= g;
+
+      // Try to find exact ArcTan value as a fraction of Pi
+      // ArcTan[0] = 0, ArcTan[1] = Pi/4
+      let arctan_pi_frac: Option<(i128, i128)> = if ratio_n == 0 {
+        Some((0, 1))
+      } else if ratio_n == ratio_d {
+        // ArcTan[1] = Pi/4
+        Some((1, 4))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Arg".to_string(),
-          args: args.to_vec(),
-        })
+        None
+      };
+
+      let re_positive = (rn > 0 && rd > 0) || (rn < 0 && rd < 0);
+
+      if let Some((pi_n, pi_d)) = arctan_pi_frac {
+        // We have ArcTan[|ratio|] = (pi_n/pi_d) * Pi
+        // Now apply sign and quadrant
+        let atan_sign = if in_ > 0 { 1i128 } else { -1i128 };
+
+        if re_positive {
+          // Arg = atan_sign * (pi_n/pi_d) * Pi
+          return Ok(make_rational_times_pi(atan_sign * pi_n, pi_d));
+        } else {
+          // re < 0: Arg = atan_sign * (Pi - (pi_n/pi_d) * Pi)
+          //       = atan_sign * ((pi_d - pi_n)/pi_d) * Pi
+          let result_n = pi_d - pi_n;
+          return Ok(make_rational_times_pi(atan_sign * result_n, pi_d));
+        }
+      } else {
+        // ArcTan doesn't simplify to exact Pi fraction
+        // Build ArcTan[ratio] expression
+        let ratio_expr = make_rational(ratio_n, ratio_d);
+        let arctan_expr = Expr::FunctionCall {
+          name: "ArcTan".to_string(),
+          args: vec![ratio_expr],
+        };
+
+        let re_positive = (rn > 0 && rd > 0) || (rn < 0 && rd < 0);
+
+        if re_positive {
+          // Arg = sign * ArcTan[|ratio|]
+          if in_ > 0 {
+            return Ok(arctan_expr);
+          } else {
+            return Ok(negate_expr(arctan_expr));
+          }
+        } else {
+          // re < 0, im >= 0: Pi - ArcTan[|ratio|]
+          // re < 0, im < 0: -Pi + ArcTan[|ratio|]
+          let pi = Expr::Identifier("Pi".to_string());
+          if in_ > 0 {
+            return Ok(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(pi),
+              right: Box::new(arctan_expr),
+            });
+          } else {
+            return Ok(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(negate_expr(pi)),
+              right: Box::new(arctan_expr),
+            });
+          }
+        }
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Arg".to_string(),
-      args: args.to_vec(),
-    }),
+  }
+
+  // Try float extraction
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
+    && (im != 0.0 || re != 0.0)
+  {
+    return Ok(Expr::Real(im.atan2(re)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Arg".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Helper: create a rational multiple of Pi as an expression.
+/// make_rational_times_pi(n, d) = (n/d) * Pi
+fn make_rational_times_pi(n: i128, d: i128) -> Expr {
+  if n == 0 {
+    return Expr::Integer(0);
+  }
+  let g = gcd(n.abs(), d.abs());
+  let (n, d) = if d < 0 {
+    (-n / g, -d / g)
+  } else {
+    (n / g, d / g)
+  };
+  if d == 1 {
+    if n == 1 {
+      Expr::Identifier("Pi".to_string())
+    } else if n == -1 {
+      negate_expr(Expr::Identifier("Pi".to_string()))
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(n)),
+        right: Box::new(Expr::Identifier("Pi".to_string())),
+      }
+    }
+  } else {
+    let coeff = make_rational(n, d);
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(coeff),
+      right: Box::new(Expr::Identifier("Pi".to_string())),
+    }
   }
 }
 
