@@ -446,118 +446,39 @@ mod table_form {
   use super::*;
 
   #[test]
-  fn one_dimensional_list() {
-    // TableForm[{a, b, c}] prints each element on its own line
-    assert_eq!(interpret("TableForm[{1, 2, 3}]").unwrap(), "1\n2\n3");
-  }
-
-  #[test]
-  fn one_dimensional_symbols() {
-    assert_eq!(interpret("TableForm[{a, b, c}]").unwrap(), "a\nb\nc");
-  }
-
-  #[test]
-  fn two_dimensional_list() {
-    // TableForm[{{a, b}, {c, d}}] prints as a 2D table
+  fn returns_unevaluated() {
+    // TableForm is a display wrapper — returns unevaluated in text mode
+    // (matches wolframscript behavior)
+    assert_eq!(
+      interpret("TableForm[{1, 2, 3}]").unwrap(),
+      "TableForm[{1, 2, 3}]"
+    );
     assert_eq!(
       interpret("TableForm[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
-      "1   2   3\n4   5   6"
+      "TableForm[{{1, 2, 3}, {4, 5, 6}}]"
     );
+    assert_eq!(interpret("TableForm[5]").unwrap(), "TableForm[5]");
+    assert_eq!(interpret("TableForm[x]").unwrap(), "TableForm[x]");
   }
 
   #[test]
-  fn two_dimensional_symbols() {
+  fn evaluates_arguments() {
+    // Arguments are evaluated, but TableForm wrapper remains
     assert_eq!(
-      interpret("TableForm[{{a, b}, {c, d}}]").unwrap(),
-      "a   b\nc   d"
+      interpret("TableForm[Table[i^2, {i, 3}]]").unwrap(),
+      "TableForm[{1, 4, 9}]"
     );
-  }
-
-  #[test]
-  fn two_dimensional_column_alignment() {
-    // Columns are left-aligned based on the widest element
-    // with 3-space separation (Wolfram default TableSpacing)
     assert_eq!(
-      interpret("TableForm[{{10, 2, 300}, {4, 50000, 6}}]").unwrap(),
-      "10   2       300\n4    50000   6"
-    );
-  }
-
-  #[test]
-  fn ragged_list() {
-    // Rows of different lengths: short rows are not padded
-    assert_eq!(
-      interpret("TableForm[{{1, 2}, {3, 4, 5}}]").unwrap(),
-      "1   2\n3   4   5"
-    );
-  }
-
-  #[test]
-  fn non_list_argument() {
-    // TableForm[x] for non-list just displays the element
-    assert_eq!(interpret("TableForm[5]").unwrap(), "5");
-    assert_eq!(interpret("TableForm[x]").unwrap(), "x");
-  }
-
-  #[test]
-  fn string_elements() {
-    assert_eq!(
-      interpret(r#"TableForm[{"hello", "world"}]"#).unwrap(),
-      "hello\nworld"
-    );
-  }
-
-  #[test]
-  fn empty_list() {
-    assert_eq!(interpret("TableForm[{}]").unwrap(), "");
-  }
-
-  #[test]
-  fn with_table_function() {
-    // TableForm combined with Table
-    assert_eq!(
-      interpret("TableForm[Table[i^2, {i, 4}]]").unwrap(),
-      "1\n4\n9\n16"
-    );
-  }
-
-  #[test]
-  fn with_table_two_dimensional() {
-    // TableForm[Table[{i, i^2}, {i, 3}]]
-    assert_eq!(
-      interpret("TableForm[Table[{i, i^2}, {i, 3}]]").unwrap(),
-      "1   1\n2   4\n3   9"
-    );
-  }
-
-  #[test]
-  fn single_element_list() {
-    assert_eq!(interpret("TableForm[{42}]").unwrap(), "42");
-  }
-
-  #[test]
-  fn single_row_two_dimensional() {
-    assert_eq!(
-      interpret("TableForm[{{1, 2, 3}}]").unwrap(),
-      "1   2   3"
-    );
-  }
-
-  #[test]
-  fn nested_expressions() {
-    // Elements can be complex expressions
-    assert_eq!(
-      interpret("TableForm[{x^2, Sin[x], 1/2}]").unwrap(),
-      "x^2\nSin[x]\n1/2"
+      interpret("TableForm[{1 + 1, 2 + 2}]").unwrap(),
+      "TableForm[{2, 4}]"
     );
   }
 
   #[test]
   fn postfix_notation() {
-    // TableForm can be used with postfix //
     assert_eq!(
       interpret("{1, 2, 3} // TableForm").unwrap(),
-      "1\n2\n3"
+      "TableForm[{1, 2, 3}]"
     );
   }
 }
