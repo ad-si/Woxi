@@ -718,6 +718,22 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           Err(e) => return Err(e),
         }
       }
+      // Special handling for Check[expr, failexpr]
+      if name == "Check" && args.len() == 2 {
+        let warnings_before = crate::get_captured_warnings().len();
+        match evaluate_expr_to_expr(&args[0]) {
+          Ok(result) => {
+            let warnings_after = crate::get_captured_warnings().len();
+            if warnings_after > warnings_before {
+              return evaluate_expr_to_expr(&args[1]);
+            }
+            return Ok(result);
+          }
+          Err(_) => {
+            return evaluate_expr_to_expr(&args[1]);
+          }
+        }
+      }
       // Special handling for Switch - lazy evaluation of branches
       if name == "Switch" && args.len() >= 3 {
         return crate::functions::control_flow_ast::switch_ast(args);

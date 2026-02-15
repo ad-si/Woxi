@@ -309,3 +309,25 @@ mod prepend_to {
     );
   }
 }
+
+mod check {
+  use super::*;
+
+  #[test]
+  fn check_no_error() {
+    clear_state();
+    assert_eq!(interpret("Check[2 + 3, failed]").unwrap(), "5");
+  }
+
+  #[test]
+  fn check_with_error() {
+    clear_state();
+    assert_eq!(interpret("Check[1/0, failed]").unwrap(), "failed");
+  }
+
+  #[test]
+  fn check_failexpr_is_evaluated() {
+    clear_state();
+    assert_eq!(interpret("Check[1/0, 1 + 1]").unwrap(), "2");
+  }
+}
