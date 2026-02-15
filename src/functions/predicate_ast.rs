@@ -347,6 +347,42 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(!contains_form(&args[0], &form_str)))
 }
 
+/// PalindromeQ[expr] - Tests if expr is a palindrome
+/// Works with strings, lists, and integers
+pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PalindromeQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::String(s) => {
+      let is_palindrome = s.chars().eq(s.chars().rev());
+      Ok(bool_expr(is_palindrome))
+    }
+    Expr::List(items) => {
+      let is_palindrome = items.iter().zip(items.iter().rev()).all(|(a, b)| {
+        crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+      });
+      Ok(bool_expr(is_palindrome))
+    }
+    Expr::Integer(n) => {
+      let s = n.to_string();
+      let is_palindrome = s.chars().eq(s.chars().rev());
+      Ok(bool_expr(is_palindrome))
+    }
+    Expr::BigInteger(n) => {
+      let s = n.to_string();
+      let is_palindrome = s.chars().eq(s.chars().rev());
+      Ok(bool_expr(is_palindrome))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "PalindromeQ".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// Divisible[n, m] - Tests if n is divisible by m
 /// Returns unevaluated if arguments are not exact numbers (non-integer Reals)
 pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
