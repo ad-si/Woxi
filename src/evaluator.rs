@@ -3378,6 +3378,32 @@ pub fn evaluate_function_call_ast(
     "UnitStep" if !args.is_empty() => {
       return crate::functions::math_ast::unit_step_ast(args);
     }
+    "DirectedInfinity" if args.len() <= 1 => {
+      if args.is_empty() {
+        // DirectedInfinity[] = ComplexInfinity
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      match &args[0] {
+        Expr::Integer(1) => {
+          return Ok(Expr::Identifier("Infinity".to_string()));
+        }
+        Expr::Integer(-1) => {
+          return Ok(Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(Expr::Identifier("Infinity".to_string())),
+          });
+        }
+        Expr::Integer(0) => {
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "DirectedInfinity".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
 
     // Echo[expr] - prints ">> expr" and returns expr
     // Echo[expr, label] - prints ">> label expr" and returns expr

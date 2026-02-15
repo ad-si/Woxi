@@ -246,18 +246,82 @@ fn is_numeric_function(name: &str) -> bool {
 }
 
 /// PositiveQ[x] - Tests if x is a positive number
+/// Check if an expression is known to be strictly positive.
+fn is_known_positive(expr: &Expr) -> Option<bool> {
+  match expr {
+    Expr::Integer(n) => Some(*n > 0),
+    Expr::BigInteger(n) => Some(*n > num_bigint::BigInt::from(0)),
+    Expr::Real(f) => Some(*f > 0.0),
+    Expr::Constant(c) => match c.as_str() {
+      "Pi" | "E" | "Degree" => Some(true),
+      _ => None,
+    },
+    Expr::Identifier(name) => match name.as_str() {
+      "Infinity" => Some(true),
+      _ => None,
+    },
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_known_positive(operand).map(|p| !p),
+    // Times[-1, x] is negative of x (e.g. -Pi parses as Times[-1, Pi])
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(-1)) =>
+    {
+      is_known_positive(&args[1]).map(|p| !p)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => {
+      is_known_positive(right).map(|p| !p)
+    }
+    _ => None,
+  }
+}
+
+/// Check if an expression is known to be strictly negative.
+fn is_known_negative(expr: &Expr) -> Option<bool> {
+  match expr {
+    Expr::Integer(n) => Some(*n < 0),
+    Expr::BigInteger(n) => Some(*n < num_bigint::BigInt::from(0)),
+    Expr::Real(f) => Some(*f < 0.0),
+    Expr::Constant(_) => Some(false), // Pi, E, Degree are all positive
+    Expr::Identifier(name) => match name.as_str() {
+      "Infinity" => Some(false),
+      _ => None,
+    },
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_known_positive(operand),
+    // Times[-1, x] is negative of x (e.g. -Pi parses as Times[-1, Pi])
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(-1)) =>
+    {
+      is_known_positive(&args[1])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => is_known_positive(right),
+    _ => None,
+  }
+}
+
 pub fn positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "PositiveQ expects exactly 1 argument".into(),
     ));
   }
-  let is_positive = match &args[0] {
-    Expr::Integer(n) => *n > 0,
-    Expr::BigInteger(n) => *n > num_bigint::BigInt::from(0),
-    Expr::Real(f) => *f > 0.0,
-    _ => false,
-  };
+  let is_positive = is_known_positive(&args[0]).unwrap_or(false);
   Ok(bool_expr(is_positive))
 }
 
@@ -268,12 +332,7 @@ pub fn negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NegativeQ expects exactly 1 argument".into(),
     ));
   }
-  let is_negative = match &args[0] {
-    Expr::Integer(n) => *n < 0,
-    Expr::BigInteger(n) => *n < num_bigint::BigInt::from(0),
-    Expr::Real(f) => *f < 0.0,
-    _ => false,
-  };
+  let is_negative = is_known_negative(&args[0]).unwrap_or(false);
   Ok(bool_expr(is_negative))
 }
 
@@ -284,12 +343,9 @@ pub fn non_positive_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NonPositiveQ expects exactly 1 argument".into(),
     ));
   }
-  let is_non_positive = match &args[0] {
-    Expr::Integer(n) => *n <= 0,
-    Expr::BigInteger(n) => *n <= num_bigint::BigInt::from(0),
-    Expr::Real(f) => *f <= 0.0,
-    _ => false,
-  };
+  // NonPositive: x <= 0, i.e. negative or zero
+  let is_non_positive =
+    is_known_negative(&args[0]).unwrap_or(false) || is_zero(&args[0]);
   Ok(bool_expr(is_non_positive))
 }
 
@@ -300,13 +356,14 @@ pub fn non_negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NonNegativeQ expects exactly 1 argument".into(),
     ));
   }
-  let is_non_negative = match &args[0] {
-    Expr::Integer(n) => *n >= 0,
-    Expr::BigInteger(n) => *n >= num_bigint::BigInt::from(0),
-    Expr::Real(f) => *f >= 0.0,
-    _ => false,
-  };
+  // NonNegative: x >= 0, i.e. positive or zero
+  let is_non_negative =
+    is_known_positive(&args[0]).unwrap_or(false) || is_zero(&args[0]);
   Ok(bool_expr(is_non_negative))
+}
+
+fn is_zero(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(0)) || matches!(expr, Expr::Real(f) if *f == 0.0)
 }
 
 /// PrimeQ[n] - Tests if n is a prime number

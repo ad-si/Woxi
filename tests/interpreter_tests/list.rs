@@ -1012,6 +1012,20 @@ mod unit_step {
       "{0, 0, 1, 1, 1}"
     );
   }
+
+  #[test]
+  fn constant_positive() {
+    assert_eq!(interpret("UnitStep[Pi]").unwrap(), "1");
+    assert_eq!(interpret("UnitStep[E]").unwrap(), "1");
+    assert_eq!(interpret("UnitStep[Infinity]").unwrap(), "1");
+  }
+
+  #[test]
+  fn constant_negative() {
+    assert_eq!(interpret("UnitStep[-Pi]").unwrap(), "0");
+    assert_eq!(interpret("UnitStep[-E]").unwrap(), "0");
+    assert_eq!(interpret("UnitStep[-Infinity]").unwrap(), "0");
+  }
 }
 
 mod nest_while_list {

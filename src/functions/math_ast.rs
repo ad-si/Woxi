@@ -9301,6 +9301,58 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(n) => Ok(Expr::Integer(if *n >= 0 { 1 } else { 0 })),
     Expr::Real(f) => Ok(Expr::Integer(if *f >= 0.0 { 1 } else { 0 })),
+    Expr::Constant(c) => match c.as_str() {
+      "Pi" | "E" | "Degree" => Ok(Expr::Integer(1)),
+      _ => Ok(Expr::FunctionCall {
+        name: "UnitStep".to_string(),
+        args: args.to_vec(),
+      }),
+    },
+    Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => match operand.as_ref() {
+      Expr::Constant(c) if matches!(c.as_str(), "Pi" | "E" | "Degree") => {
+        Ok(Expr::Integer(0))
+      }
+      Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(0)),
+      _ => Ok(Expr::FunctionCall {
+        name: "UnitStep".to_string(),
+        args: args.to_vec(),
+      }),
+    },
+    // Times[-1, x] pattern (e.g. -Pi parses as Times[-1, Pi])
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times"
+        && fargs.len() == 2
+        && matches!(fargs[0], Expr::Integer(-1)) =>
+    {
+      match &fargs[1] {
+        Expr::Constant(c) if matches!(c.as_str(), "Pi" | "E" | "Degree") => {
+          Ok(Expr::Integer(0))
+        }
+        Expr::Identifier(n) if n == "Infinity" => Ok(Expr::Integer(0)),
+        _ => Ok(Expr::FunctionCall {
+          name: "UnitStep".to_string(),
+          args: args.to_vec(),
+        }),
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => match right.as_ref() {
+      Expr::Constant(c) if matches!(c.as_str(), "Pi" | "E" | "Degree") => {
+        Ok(Expr::Integer(0))
+      }
+      Expr::Identifier(n) if n == "Infinity" => Ok(Expr::Integer(0)),
+      _ => Ok(Expr::FunctionCall {
+        name: "UnitStep".to_string(),
+        args: args.to_vec(),
+      }),
+    },
     Expr::List(items) => {
       let results: Result<Vec<Expr>, InterpreterError> =
         items.iter().map(|x| unit_step_ast(&[x.clone()])).collect();
