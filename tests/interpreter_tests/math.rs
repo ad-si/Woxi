@@ -2295,4 +2295,41 @@ mod im_tests {
   fn arg_symbolic() {
     assert_eq!(interpret("Arg[x]").unwrap(), "Arg[x]");
   }
+
+  // ── RealValuedNumberQ ────────────────────────────────────
+
+  #[test]
+  fn real_valued_number_q_integer() {
+    assert_eq!(interpret("RealValuedNumberQ[10]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_valued_number_q_real() {
+    assert_eq!(interpret("RealValuedNumberQ[4.0]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_valued_number_q_rational() {
+    assert_eq!(interpret("RealValuedNumberQ[3/4]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_valued_number_q_complex() {
+    assert_eq!(interpret("RealValuedNumberQ[1+I]").unwrap(), "False");
+  }
+
+  #[test]
+  fn real_valued_number_q_zero_times_i() {
+    assert_eq!(interpret("RealValuedNumberQ[0*I]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_valued_number_q_pi() {
+    assert_eq!(interpret("RealValuedNumberQ[Pi]").unwrap(), "False");
+  }
+
+  #[test]
+  fn real_valued_number_q_symbol() {
+    assert_eq!(interpret("RealValuedNumberQ[x]").unwrap(), "False");
+  }
 }

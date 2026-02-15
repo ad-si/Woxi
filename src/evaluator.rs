@@ -2637,6 +2637,9 @@ pub fn evaluate_function_call_ast(
     "NumberQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::number_q_ast(args);
     }
+    "RealValuedNumberQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::real_valued_number_q_ast(args);
+    }
     "IntegerQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::integer_q_ast(args);
     }
