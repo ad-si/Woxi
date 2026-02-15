@@ -718,6 +718,55 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(calc_depth(&args[0])))
 }
 
+/// LeafCount[expr] - counts the number of atoms in the expression tree (including heads)
+pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LeafCount expects exactly 1 argument".into(),
+    ));
+  }
+
+  fn count_leaves(expr: &Expr) -> i128 {
+    match expr {
+      // Atoms: count as 1
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::Constant(_) => 1,
+      // List: 1 for the List head + sum of all elements
+      Expr::List(items) => 1 + items.iter().map(count_leaves).sum::<i128>(),
+      // FunctionCall: 1 for the head + sum of all args
+      Expr::FunctionCall { args, .. } => {
+        1 + args.iter().map(count_leaves).sum::<i128>()
+      }
+      // BinaryOp: 1 for the operator head + left + right
+      Expr::BinaryOp { left, right, .. } => {
+        1 + count_leaves(left) + count_leaves(right)
+      }
+      // UnaryOp: 1 for the operator head + operand
+      Expr::UnaryOp { operand, .. } => 1 + count_leaves(operand),
+      // Comparison: 1 for each operator + each operand
+      Expr::Comparison { operands, .. } => {
+        operands.iter().map(count_leaves).sum::<i128>()
+      }
+      // Association: 1 for head + entries
+      Expr::Association(items) => {
+        1 + items
+          .iter()
+          .map(|(k, v)| 1 + count_leaves(k) + count_leaves(v))
+          .sum::<i128>()
+      }
+      // Anything else: treat as atom
+      _ => 1,
+    }
+  }
+
+  Ok(Expr::Integer(count_leaves(&args[0])))
+}
+
 /// Helper to format a real number
 fn format_real_helper(f: f64) -> String {
   if f.fract() == 0.0 && f.abs() < 1e15 {
