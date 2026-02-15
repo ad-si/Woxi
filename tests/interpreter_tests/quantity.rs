@@ -607,3 +607,82 @@ fn unit_convert_meters_per_second_squared() {
     "Quantity[10, Meters/Seconds^2]"
   );
 }
+
+// ─── Electrical & energy units ───────────────────────────────────────────
+
+#[test]
+fn unit_convert_joules_to_millijoules() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Joules\"], \"Millijoules\"]").unwrap(),
+    "Quantity[1000, Millijoules]"
+  );
+}
+
+#[test]
+fn unit_convert_kwh_to_joules() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"KilowattHours\"], \"Joules\"]")
+      .unwrap(),
+    "Quantity[3600000, Joules]"
+  );
+}
+
+#[test]
+fn unit_convert_microfarads_volts_squared_to_millijoules() {
+  assert_eq!(
+    interpret(
+      "c = Quantity[100, \"Microfarads\"]; u = Quantity[6.0, \"Volts\"]; energy = 1/2 * c * u^2; UnitConvert[energy, \"Millijoules\"]"
+    ).unwrap(),
+    "Quantity[1.8, Millijoules]"
+  );
+}
+
+#[test]
+fn unit_convert_amps_times_volts_to_watts() {
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[5, \"Amperes\"] * Quantity[10, \"Volts\"], \"Watts\"]"
+    ).unwrap(),
+    "Quantity[50, Watts]"
+  );
+}
+
+#[test]
+fn compatible_unit_q_energy_units() {
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Microfarads\"*\"Volts\"^2], Quantity[1, \"Joules\"]]"
+    ).unwrap(),
+    "True"
+  );
+}
+
+#[test]
+fn unit_convert_kilowatts_hours_to_joules() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kilowatts\"*\"Hours\"], \"Joules\"]")
+      .unwrap(),
+    "Quantity[3600000, Joules]"
+  );
+}
+
+#[test]
+fn unit_convert_volts_amps_to_watts() {
+  // V * A = W (Ohm's law power)
+  assert_eq!(
+    interpret("UnitConvert[Quantity[220, \"Volts\"*\"Amperes\"], \"Watts\"]")
+      .unwrap(),
+    "Quantity[220, Watts]"
+  );
+}
+
+#[test]
+fn quantity_ohms_law() {
+  // V = I * R → Quantity[5, "Amperes"] * Quantity[100, "Ohms"] = Quantity[500, Volts]
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[5, \"Amperes\"] * Quantity[100, \"Ohms\"], \"Volts\"]"
+    ).unwrap(),
+    "Quantity[500, Volts]"
+  );
+}
