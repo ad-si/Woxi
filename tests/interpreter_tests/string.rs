@@ -343,6 +343,11 @@ mod upper_case_q {
   fn all_lower() {
     assert_eq!(interpret("UpperCaseQ[\"abc\"]").unwrap(), "False");
   }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(interpret("UpperCaseQ[\"\"]").unwrap(), "True");
+  }
 }
 
 mod lower_case_q {
@@ -361,6 +366,11 @@ mod lower_case_q {
   #[test]
   fn all_upper() {
     assert_eq!(interpret("LowerCaseQ[\"ABC\"]").unwrap(), "False");
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(interpret("LowerCaseQ[\"\"]").unwrap(), "True");
   }
 }
 
@@ -914,5 +924,69 @@ mod palindrome_q {
   #[test]
   fn list_with_symbols() {
     assert_eq!(interpret("PalindromeQ[{a, b, a}]").unwrap(), "True");
+  }
+}
+
+mod string_drop_list_spec {
+  use super::*;
+
+  #[test]
+  fn drop_single_char() {
+    assert_eq!(interpret(r#"StringDrop["abcde", {2}]"#).unwrap(), "acde");
+  }
+
+  #[test]
+  fn drop_range() {
+    assert_eq!(interpret(r#"StringDrop["abcde", {2,3}]"#).unwrap(), "ade");
+  }
+
+  #[test]
+  fn drop_reversed_range() {
+    assert_eq!(interpret(r#"StringDrop["abcd",{3,2}]"#).unwrap(), "abcd");
+  }
+
+  #[test]
+  fn drop_zero() {
+    assert_eq!(interpret(r#"StringDrop["abcd",0]"#).unwrap(), "abcd");
+  }
+}
+
+mod string_take_extended {
+  use super::*;
+
+  #[test]
+  fn take_zero() {
+    assert_eq!(interpret(r#"StringTake["abcde", 0]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn take_with_step() {
+    assert_eq!(
+      interpret(r#"StringTake["abcdefgh", {1, 5, 2}]"#).unwrap(),
+      "ace"
+    );
+  }
+
+  #[test]
+  fn take_list_of_strings() {
+    assert_eq!(
+      interpret(r#"StringTake[{"abcdef", "stuv", "xyzw"}, -2]"#).unwrap(),
+      "{ef, uv, zw}"
+    );
+  }
+
+  #[test]
+  fn take_all() {
+    assert_eq!(interpret(r#"StringTake["abcdef", All]"#).unwrap(), "abcdef");
+  }
+
+  #[test]
+  fn take_single_char() {
+    assert_eq!(interpret(r#"StringTake["abcde", {2}]"#).unwrap(), "b");
+  }
+
+  #[test]
+  fn take_range() {
+    assert_eq!(interpret(r#"StringTake["abcd", {2,3}]"#).unwrap(), "bc");
   }
 }
