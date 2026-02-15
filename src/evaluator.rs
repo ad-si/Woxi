@@ -2593,6 +2593,9 @@ pub fn evaluate_function_call_ast(
     "PalindromeQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::palindrome_q_ast(args);
     }
+    "SquareFreeQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::square_free_q_ast(args);
+    }
     "ListQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::list_q_ast(args);
     }

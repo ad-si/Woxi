@@ -347,6 +347,84 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(!contains_form(&args[0], &form_str)))
 }
 
+/// SquareFreeQ[n] - Tests if an integer has no repeated prime factors
+pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "SquareFreeQ expects exactly 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(n) => {
+      let n = *n;
+      if n == 0 {
+        return Ok(bool_expr(false));
+      }
+      let mut num = n.unsigned_abs();
+      // Check factor of 2
+      let mut count = 0;
+      while num % 2 == 0 {
+        count += 1;
+        num /= 2;
+        if count > 1 {
+          return Ok(bool_expr(false));
+        }
+      }
+      // Check odd factors
+      let mut i: u128 = 3;
+      while i * i <= num {
+        count = 0;
+        while num % i == 0 {
+          count += 1;
+          num /= i;
+          if count > 1 {
+            return Ok(bool_expr(false));
+          }
+        }
+        i += 2;
+      }
+      Ok(bool_expr(true))
+    }
+    Expr::BigInteger(n) => {
+      use num_traits::Zero;
+      let mut num = if n < &num_bigint::BigInt::from(0) {
+        -n.clone()
+      } else {
+        n.clone()
+      };
+      if num.is_zero() {
+        return Ok(bool_expr(false));
+      }
+      let two = num_bigint::BigInt::from(2);
+      let mut count = 0;
+      while &num % &two == num_bigint::BigInt::from(0) {
+        count += 1;
+        num /= &two;
+        if count > 1 {
+          return Ok(bool_expr(false));
+        }
+      }
+      let mut i = num_bigint::BigInt::from(3);
+      while &i * &i <= num {
+        count = 0;
+        while &num % &i == num_bigint::BigInt::from(0) {
+          count += 1;
+          num /= &i;
+          if count > 1 {
+            return Ok(bool_expr(false));
+          }
+        }
+        i += 2;
+      }
+      Ok(bool_expr(true))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "SquareFreeQ".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// PalindromeQ[expr] - Tests if expr is a palindrome
 /// Works with strings, lists, and integers
 pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
