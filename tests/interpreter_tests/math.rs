@@ -1418,6 +1418,65 @@ mod composition {
   }
 }
 
+mod therefore {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("Therefore[a, b]").unwrap(), "a \u{2234} b");
+  }
+
+  #[test]
+  fn three_args() {
+    assert_eq!(
+      interpret("Therefore[a, b, c]").unwrap(),
+      "a \u{2234} b \u{2234} c"
+    );
+  }
+
+  #[test]
+  fn one_arg() {
+    assert_eq!(interpret("Therefore[a]").unwrap(), "Therefore[a]");
+  }
+
+  #[test]
+  fn zero_args() {
+    assert_eq!(interpret("Therefore[]").unwrap(), "Therefore[]");
+  }
+
+  #[test]
+  fn args_evaluated() {
+    assert_eq!(interpret("Therefore[1+2, 3]").unwrap(), "3 \u{2234} 3");
+  }
+}
+
+mod because {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("Because[a, b]").unwrap(), "a \u{2235} b");
+  }
+
+  #[test]
+  fn three_args() {
+    assert_eq!(
+      interpret("Because[a, b, c]").unwrap(),
+      "a \u{2235} b \u{2235} c"
+    );
+  }
+
+  #[test]
+  fn one_arg() {
+    assert_eq!(interpret("Because[a]").unwrap(), "Because[a]");
+  }
+
+  #[test]
+  fn args_evaluated() {
+    assert_eq!(interpret("Because[1+2, 3]").unwrap(), "3 \u{2235} 3");
+  }
+}
+
 mod gcd {
   use super::*;
 
