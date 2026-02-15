@@ -1065,3 +1065,39 @@ mod array_predicates {
     assert_eq!(interpret("VectorQ[{{1}, {2}}]").unwrap(), "False");
   }
 }
+
+mod dimensions_extended {
+  use super::*;
+
+  #[test]
+  fn function_call_head() {
+    assert_eq!(interpret("Dimensions[f[f[a, b, c]]]").unwrap(), "{1, 3}");
+  }
+}
+
+mod transpose_extended {
+  use super::*;
+
+  #[test]
+  fn one_d_list() {
+    assert_eq!(interpret("Transpose[{a, b, c}]").unwrap(), "{a, b, c}");
+  }
+}
+
+mod product_extended {
+  use super::*;
+
+  #[test]
+  fn symbolic_body() {
+    assert_eq!(
+      interpret("Product[f[i], {i, 1, 7}]").unwrap(),
+      "f[1]*f[2]*f[3]*f[4]*f[5]*f[6]*f[7]"
+    );
+  }
+
+  #[test]
+  fn with_step() {
+    // Product[k, {k, 1, 6, 2}] = 1 * 3 * 5 = 15
+    assert_eq!(interpret("Product[k, {k, 1, 6, 2}]").unwrap(), "15");
+  }
+}

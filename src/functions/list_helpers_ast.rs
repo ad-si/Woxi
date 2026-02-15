@@ -2167,6 +2167,11 @@ pub fn transpose_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![]));
   }
 
+  // If it's a 1D list (no sub-lists), return it unchanged
+  if !rows.iter().any(|r| matches!(r, Expr::List(_))) {
+    return Ok(list.clone());
+  }
+
   // Get dimensions
   let num_rows = rows.len();
   let num_cols = match &rows[0] {
@@ -2797,24 +2802,59 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         let (min, max) = bounds.unwrap();
 
-        let mut product = 1.0;
-        for i in min..=max {
+        let step = if items.len() >= 4 {
+          expr_to_i128(&items[3]).unwrap_or(1)
+        } else {
+          1
+        };
+
+        // Collect evaluated values for each iteration
+        let mut values: Vec<Expr> = Vec::new();
+        let mut i = min;
+        while (step > 0 && i <= max) || (step < 0 && i >= max) {
           let substituted = crate::syntax::substitute_variable(
             body,
             &var_name,
             &Expr::Integer(i),
           );
           let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
-          if let Some(n) = expr_to_f64(&val) {
-            product *= n;
+          values.push(val);
+          i += step;
+        }
+
+        // Try numeric product first
+        let mut numeric_product = 1.0;
+        let mut all_numeric = true;
+        for val in &values {
+          if let Some(n) = expr_to_f64(val) {
+            numeric_product *= n;
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "Product".to_string(),
-              args: args.to_vec(),
-            });
+            all_numeric = false;
+            break;
           }
         }
-        return Ok(f64_to_expr(product));
+
+        if all_numeric {
+          return Ok(f64_to_expr(numeric_product));
+        }
+
+        // For symbolic values, build a Times expression
+        if values.is_empty() {
+          return Ok(Expr::Integer(1));
+        }
+        if values.len() == 1 {
+          return Ok(values.into_iter().next().unwrap());
+        }
+        // Fold into nested Times
+        let mut result = values.remove(0);
+        for val in values {
+          result = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(result),
+            right: Box::new(val),
+          };
+        }
+        return crate::evaluator::evaluate_expr_to_expr(&result);
       }
       _ => {}
     }
@@ -4623,10 +4663,28 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) => {
         let mut dims = vec![items.len() as i128];
         if !items.is_empty() {
-          // Check if all sub-elements are lists of the same length
+          // Check if all sub-elements have the same dimensions
           let sub_dims: Vec<Vec<i128>> =
             items.iter().map(get_dimensions).collect();
           if !sub_dims.is_empty() && sub_dims.iter().all(|d| d == &sub_dims[0])
+          {
+            dims.extend(sub_dims[0].iter());
+          }
+        }
+        dims
+      }
+      Expr::FunctionCall { name, args } => {
+        let mut dims = vec![args.len() as i128];
+        if !args.is_empty() {
+          // Check if all sub-elements are function calls with the same head and dimensions
+          let sub_dims: Vec<Vec<i128>> =
+            args.iter().map(get_dimensions).collect();
+          if !sub_dims.is_empty()
+            && sub_dims.iter().all(|d| d == &sub_dims[0])
+            && args.iter().all(|a| {
+              matches!(a, Expr::FunctionCall { name: n, .. } if n == name)
+                || matches!(a, Expr::List(_))
+            })
           {
             dims.extend(sub_dims[0].iter());
           }
