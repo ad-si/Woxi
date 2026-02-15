@@ -482,3 +482,61 @@ mod table_form {
     );
   }
 }
+
+mod row {
+  use super::*;
+
+  #[test]
+  fn no_separator() {
+    // Row[{exprs...}] concatenates elements with no separator
+    assert_eq!(interpret("Row[{1, 2, 3}]").unwrap(), "123");
+    assert_eq!(interpret("Row[{a, b, c}]").unwrap(), "abc");
+  }
+
+  #[test]
+  fn with_separator() {
+    // Row[{exprs...}, sep] joins elements with sep between them
+    assert_eq!(interpret(r#"Row[{1, 2, 3}, ", "]"#).unwrap(), "1, 2, 3");
+    assert_eq!(interpret(r#"Row[{a, b, c}, "+"]"#).unwrap(), "a+b+c");
+    assert_eq!(interpret(r#"Row[{x, y, z}, " | "]"#).unwrap(), "x | y | z");
+  }
+
+  #[test]
+  fn evaluates_arguments() {
+    // Arguments inside the list are evaluated before display
+    assert_eq!(interpret("Row[{1 + 1, 2 + 2}]").unwrap(), "24");
+    assert_eq!(interpret(r#"Row[{1 + 1, 2 + 2}, " "]"#).unwrap(), "2 4");
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("Row[{42}]").unwrap(), "42");
+    assert_eq!(interpret(r#"Row[{42}, ", "]"#).unwrap(), "42");
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("Row[{}]").unwrap(), "");
+    assert_eq!(interpret(r#"Row[{}, ", "]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn with_strings() {
+    assert_eq!(
+      interpret(r#"Row[{"Hello", " ", "World"}]"#).unwrap(),
+      "Hello World"
+    );
+  }
+
+  #[test]
+  fn postfix_notation() {
+    assert_eq!(interpret("{1, 2, 3} // Row").unwrap(), "123");
+  }
+
+  #[test]
+  fn non_list_arg_stays_symbolic() {
+    // Row[x] where x is not a list stays unevaluated
+    assert_eq!(interpret("Row[x]").unwrap(), "Row[x]");
+    assert_eq!(interpret("Row[5]").unwrap(), "Row[5]");
+  }
+}
