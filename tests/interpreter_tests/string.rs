@@ -857,3 +857,62 @@ mod string_riffle_extended {
     );
   }
 }
+
+mod palindrome_q {
+  use super::*;
+
+  #[test]
+  fn string_palindrome() {
+    assert_eq!(interpret(r#"PalindromeQ["racecar"]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn string_not_palindrome() {
+    assert_eq!(interpret(r#"PalindromeQ["hello"]"#).unwrap(), "False");
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(interpret(r#"PalindromeQ[""]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn single_char_string() {
+    assert_eq!(interpret(r#"PalindromeQ["a"]"#).unwrap(), "True");
+  }
+
+  #[test]
+  fn list_palindrome() {
+    assert_eq!(interpret("PalindromeQ[{1, 2, 3, 2, 1}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn list_not_palindrome() {
+    assert_eq!(interpret("PalindromeQ[{1, 2, 3}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("PalindromeQ[{}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn integer_palindrome() {
+    assert_eq!(interpret("PalindromeQ[12321]").unwrap(), "True");
+  }
+
+  #[test]
+  fn integer_not_palindrome() {
+    assert_eq!(interpret("PalindromeQ[12345]").unwrap(), "False");
+  }
+
+  #[test]
+  fn single_digit() {
+    assert_eq!(interpret("PalindromeQ[7]").unwrap(), "True");
+  }
+
+  #[test]
+  fn list_with_symbols() {
+    assert_eq!(interpret("PalindromeQ[{a, b, a}]").unwrap(), "True");
+  }
+}
