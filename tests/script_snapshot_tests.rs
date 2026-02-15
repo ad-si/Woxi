@@ -229,6 +229,7 @@ script_test!(
 );
 script_test!(script_levenshtein_distance, "levenshtein_distance.wls");
 script_test!(script_100_doors, "100_doors.wls");
+script_test!(script_table_form, "table_form.wls");
 
 #[test]
 fn script_cli_args() {
