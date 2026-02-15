@@ -904,6 +904,60 @@ mod sign_predicates {
     assert_eq!(interpret("NonNegative[0]").unwrap(), "True");
     assert_eq!(interpret("NonNegative[-3]").unwrap(), "False");
   }
+
+  #[test]
+  fn positive_constants() {
+    assert_eq!(interpret("Positive[Pi]").unwrap(), "True");
+    assert_eq!(interpret("Positive[E]").unwrap(), "True");
+    assert_eq!(interpret("Positive[Infinity]").unwrap(), "True");
+    assert_eq!(interpret("Positive[-Pi]").unwrap(), "False");
+    assert_eq!(interpret("Positive[-E]").unwrap(), "False");
+  }
+
+  #[test]
+  fn negative_constants() {
+    assert_eq!(interpret("Negative[-Pi]").unwrap(), "True");
+    assert_eq!(interpret("Negative[-E]").unwrap(), "True");
+    assert_eq!(interpret("Negative[Pi]").unwrap(), "False");
+    assert_eq!(interpret("Negative[E]").unwrap(), "False");
+    assert_eq!(interpret("Negative[Infinity]").unwrap(), "False");
+  }
+
+  #[test]
+  fn non_positive_constants() {
+    assert_eq!(interpret("NonPositive[-Pi]").unwrap(), "True");
+    assert_eq!(interpret("NonPositive[Pi]").unwrap(), "False");
+  }
+
+  #[test]
+  fn non_negative_constants() {
+    assert_eq!(interpret("NonNegative[Pi]").unwrap(), "True");
+    assert_eq!(interpret("NonNegative[-Pi]").unwrap(), "False");
+  }
+}
+
+mod directed_infinity {
+  use super::*;
+
+  #[test]
+  fn positive() {
+    assert_eq!(interpret("DirectedInfinity[1]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("DirectedInfinity[-1]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("DirectedInfinity[0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn no_arg() {
+    assert_eq!(interpret("DirectedInfinity[]").unwrap(), "ComplexInfinity");
+  }
 }
 
 mod chop {
