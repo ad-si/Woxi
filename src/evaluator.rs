@@ -718,6 +718,20 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           Err(e) => return Err(e),
         }
       }
+      // Special handling for Abort[] - abort computation
+      if name == "Abort" && args.is_empty() {
+        return Err(InterpreterError::Abort);
+      }
+      // Special handling for CheckAbort[expr, failexpr]
+      if name == "CheckAbort" && args.len() == 2 {
+        match evaluate_expr_to_expr(&args[0]) {
+          Ok(result) => return Ok(result),
+          Err(InterpreterError::Abort) => {
+            return evaluate_expr_to_expr(&args[1]);
+          }
+          Err(e) => return Err(e),
+        }
+      }
       // Special handling for Check[expr, failexpr]
       if name == "Check" && args.len() == 2 {
         let warnings_before = crate::get_captured_warnings().len();
