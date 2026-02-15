@@ -2291,7 +2291,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Quotient: division by zero".into(),
         ))
       } else {
-        Ok(Expr::Integer(a / b))
+        Ok(Expr::Integer(floor_div(*a, *b)))
       }
     }
     _ => {

@@ -2853,6 +2853,11 @@ pub fn evaluate_function_call_ast(
     "Quotient" if args.len() == 2 => {
       return crate::functions::math_ast::quotient_ast(args);
     }
+    "QuotientRemainder" if args.len() == 2 => {
+      let q = crate::functions::math_ast::quotient_ast(args)?;
+      let r = crate::functions::math_ast::mod_ast(args)?;
+      return Ok(Expr::List(vec![q, r]));
+    }
     "GCD" => {
       return crate::functions::math_ast::gcd_ast(args);
     }
