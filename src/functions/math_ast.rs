@@ -1138,6 +1138,29 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(base.clone());
   }
 
+  // x^0 -> 1 (for non-zero x; 0^0 is Indeterminate, handled below)
+  if matches!(exp, Expr::Integer(0))
+    && !matches!(base, Expr::Integer(0))
+    && !matches!(base, Expr::Real(f) if *f == 0.0)
+  {
+    return Ok(Expr::Integer(1));
+  }
+
+  // I^n cycles with period 4: I^0=1, I^1=I, I^2=-1, I^3=-I
+  if let Expr::Identifier(name) = base
+    && name == "I"
+    && let Expr::Integer(n) = exp
+  {
+    let r = ((*n % 4) + 4) % 4; // always non-negative mod
+    return Ok(match r {
+      0 => Expr::Integer(1),
+      1 => Expr::Identifier("I".to_string()),
+      2 => Expr::Integer(-1),
+      3 => negate_expr(Expr::Identifier("I".to_string())),
+      _ => unreachable!(),
+    });
+  }
+
   // Special case: 0^0 is Indeterminate (matches Wolfram)
   let base_is_zero = matches!(base, Expr::Integer(0))
     || matches!(base, Expr::Real(f) if *f == 0.0);
