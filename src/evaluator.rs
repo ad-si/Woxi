@@ -2640,6 +2640,27 @@ pub fn evaluate_function_call_ast(
     "IntegerQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::integer_q_ast(args);
     }
+    "O" if args.len() == 1 || args.len() == 2 => {
+      // O[x] → SeriesData[x, 0, {}, 1, 1, 1]
+      // O[x, x0] → SeriesData[x, x0, {}, 1, 1, 1]
+      let var = args[0].clone();
+      let center = if args.len() == 2 {
+        args[1].clone()
+      } else {
+        Expr::Integer(0)
+      };
+      return Ok(Expr::FunctionCall {
+        name: "SeriesData".to_string(),
+        args: vec![
+          var,
+          center,
+          Expr::List(vec![]),
+          Expr::Integer(1),
+          Expr::Integer(1),
+          Expr::Integer(1),
+        ],
+      });
+    }
     "EvenQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::even_q_ast(args);
     }
