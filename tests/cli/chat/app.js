@@ -40,12 +40,21 @@ const sendBtns = document.querySelectorAll(".send-btn")
 const sendIcons = document.querySelectorAll(".send-icon")
 const stopIcons = document.querySelectorAll(".stop-icon")
 const providerToggles = document.querySelectorAll(".provider-toggle")
+const attachBtns = document.querySelectorAll(".attach-btn")
+const fileInputs = document.querySelectorAll(".file-input")
 
 // --- State ---
 let activeConvId = null
 let abortController = null
 let isSending = false
 let selectedProvider = "openai"
+let pendingAttachments = []
+
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"])
+const IMAGE_MIME_MAP = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+}
 
 const PROVIDER_LABELS = { openai: "GPT 5.2 Codex", anthropic: "Claude Opus 4.6" }
 const MAX_TOOL_CALLS_PER_TURN = 10
@@ -55,6 +64,99 @@ function activeInput() {
   return welcomeEl.classList.contains("hidden")
     ? document.getElementById("input-chat")
     : document.getElementById("input-welcome")
+}
+
+/** Read a File object into an attachment record */
+function readFileAsAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const ext = file.name.split(".").pop().toLowerCase()
+    const isImage = IMAGE_EXTENSIONS.has(ext)
+
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
+
+    if (isImage) {
+      reader.onload = () => {
+        const dataUrl = reader.result
+        const base64 = dataUrl.split(",")[1]
+        resolve({
+          name: file.name,
+          type: "image",
+          mediaType: IMAGE_MIME_MAP[ext] || file.type,
+          data: base64,
+        })
+      }
+      reader.readAsDataURL(file)
+    } else {
+      reader.onload = () => {
+        resolve({ name: file.name, type: "text", content: reader.result })
+      }
+      reader.readAsText(file)
+    }
+  })
+}
+
+/** Render pending attachment chips into all .attachment-preview containers */
+function renderPendingAttachments() {
+  document.querySelectorAll(".attachment-preview").forEach((container) => {
+    container.innerHTML = ""
+    if (pendingAttachments.length === 0) {
+      container.classList.add("hidden")
+      return
+    }
+    container.classList.remove("hidden")
+
+    pendingAttachments.forEach((att, i) => {
+      const chip = document.createElement("div")
+      chip.className = "attachment-chip"
+
+      if (att.type === "image") {
+        const thumb = document.createElement("img")
+        thumb.className = "chip-thumb"
+        thumb.src = `data:${att.mediaType};base64,${att.data}`
+        thumb.alt = att.name
+        chip.appendChild(thumb)
+      } else {
+        const icon = document.createElement("svg")
+        icon.setAttribute("class", "w-3.5 h-3.5 chip-icon")
+        icon.setAttribute("fill", "none")
+        icon.setAttribute("stroke", "currentColor")
+        icon.setAttribute("stroke-width", "2")
+        icon.setAttribute("viewBox", "0 0 24 24")
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>'
+        chip.appendChild(icon)
+      }
+
+      const name = document.createElement("span")
+      name.className = "chip-name"
+      name.textContent = att.name
+      chip.appendChild(name)
+
+      const removeBtn = document.createElement("button")
+      removeBtn.className = "chip-remove"
+      removeBtn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>'
+      removeBtn.addEventListener("click", () => {
+        pendingAttachments.splice(i, 1)
+        renderPendingAttachments()
+      })
+      chip.appendChild(removeBtn)
+
+      container.appendChild(chip)
+    })
+  })
+}
+
+/** Handle files selected/dropped */
+async function handleFiles(files) {
+  for (const file of files) {
+    try {
+      const att = await readFileAsAttachment(file)
+      pendingAttachments.push(att)
+    } catch (e) {
+      showToast(e.message)
+    }
+  }
+  renderPendingAttachments()
 }
 
 // --- Init ---
@@ -250,6 +352,8 @@ function handleNewChat() {
   const conv = createConversation()
   clearState()
   activeConvId = conv.id
+  pendingAttachments = []
+  renderPendingAttachments()
   renderConversationList()
   messagesEl.innerHTML = ""
   showWelcome()
@@ -298,7 +402,7 @@ function updateInputState() {
 async function handleSend() {
   const input = activeInput()
   const text = input.value.trim()
-  if (!text || isSending) return
+  if ((!text && pendingAttachments.length === 0) || isSending) return
 
   if (!hasApiKey()) {
     openSettings(true)
@@ -315,8 +419,13 @@ async function handleSend() {
   // Switch to chat view before appending message
   showChatView()
 
-  // Append user message
+  // Append user message (with attachments if any)
   const userMsg = { role: "user", content: text }
+  if (pendingAttachments.length > 0) {
+    userMsg.attachments = pendingAttachments
+    pendingAttachments = []
+    renderPendingAttachments()
+  }
   appendMessage(activeConvId, userMsg)
   renderConversationList()
   const msgIndex = getMessages(activeConvId).length - 1
@@ -519,7 +628,43 @@ providerToggles.forEach((btn) => {
 document.querySelectorAll(".input-container").forEach((container) => {
   container.addEventListener("click", (e) => {
     if (e.target.closest("button")) return
+    if (e.target.closest("input")) return
     container.querySelector("textarea")?.focus()
+  })
+
+  // Drag-and-drop
+  container.addEventListener("dragover", (e) => {
+    e.preventDefault()
+    container.classList.add("drag-over")
+  })
+  container.addEventListener("dragleave", () => {
+    container.classList.remove("drag-over")
+  })
+  container.addEventListener("drop", (e) => {
+    e.preventDefault()
+    container.classList.remove("drag-over")
+    if (e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files)
+    }
+  })
+})
+
+// Paperclip buttons
+attachBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const container = btn.closest(".input-container")
+    const fileInput = container.querySelector(".file-input")
+    fileInput.click()
+  })
+})
+
+// File input change handlers
+fileInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (input.files.length > 0) {
+      handleFiles(input.files)
+    }
+    input.value = ""
   })
 })
 
@@ -868,6 +1013,8 @@ function handleEditMessage(msgIndex) {
 
     truncateMessages(activeConvId, msgIndex)
     const userMsg = { role: "user", content: newText }
+    // Preserve original attachments
+    if (msg.attachments) userMsg.attachments = msg.attachments
     appendMessage(activeConvId, userMsg)
     renderMessages()
     scrollToBottom()
@@ -894,6 +1041,7 @@ function handleRetryMessage(msgIndex) {
   truncateMessages(activeConvId, msgIndex)
 
   const userMsg = { role: "user", content: msg.content }
+  if (msg.attachments) userMsg.attachments = msg.attachments
   appendMessage(activeConvId, userMsg)
   renderMessages()
   scrollToBottom()
