@@ -105,3 +105,34 @@ Build a curried function:
 $ wo 'Fold[Construct, f, {a, b, c}]'
 f[a][b][c]
 ```
+
+
+## `TableForm` - Formats data as a table
+
+A one-dimensional list is printed as a column:
+
+```scrut
+$ wo 'TableForm[{a, b, c}]'
+a
+b
+c
+```
+
+A two-dimensional list is printed as a table:
+
+```scrut
+$ wo 'TableForm[{{1, 2, 3}, {4, 5, 6}}]'
+1   2   3
+4   5   6
+```
+
+Columns are left-aligned with 3-space separation:
+
+```scrut
+$ wo 'TableForm[Table[{i, i^2}, {i, 5}]]'
+1   1
+2   4
+3   9
+4   16
+5   25
+```

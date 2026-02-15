@@ -3342,6 +3342,14 @@ pub fn evaluate_function_call_ast(
       });
     }
 
+    // Display wrapper — keeps evaluated args, formatting handled by expr_to_output
+    "TableForm" => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+
     _ => {}
   }
 
