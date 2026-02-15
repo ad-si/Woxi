@@ -404,6 +404,46 @@ mod big_integer {
   }
 
   #[test]
+  fn square_free_q_true() {
+    assert_eq!(interpret("SquareFreeQ[10]").unwrap(), "True");
+  }
+
+  #[test]
+  fn square_free_q_false() {
+    assert_eq!(interpret("SquareFreeQ[12]").unwrap(), "False");
+  }
+
+  #[test]
+  fn square_free_q_one() {
+    assert_eq!(interpret("SquareFreeQ[1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn square_free_q_zero() {
+    assert_eq!(interpret("SquareFreeQ[0]").unwrap(), "False");
+  }
+
+  #[test]
+  fn square_free_q_negative() {
+    assert_eq!(interpret("SquareFreeQ[-12]").unwrap(), "False");
+  }
+
+  #[test]
+  fn square_free_q_prime() {
+    assert_eq!(interpret("SquareFreeQ[7]").unwrap(), "True");
+  }
+
+  #[test]
+  fn square_free_q_product_of_distinct_primes() {
+    assert_eq!(interpret("SquareFreeQ[30]").unwrap(), "True");
+  }
+
+  #[test]
+  fn square_free_q_perfect_square() {
+    assert_eq!(interpret("SquareFreeQ[49]").unwrap(), "False");
+  }
+
+  #[test]
   fn odd_q_big_integer() {
     assert_eq!(interpret("OddQ[2^128 + 1]").unwrap(), "True");
   }
