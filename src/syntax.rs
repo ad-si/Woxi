@@ -1703,16 +1703,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
           } else {
             inner
           };
-          return format!(
-            "({}*{})/{}",
-            if *n < 0 {
-              format!("({})", n)
-            } else {
-              n.to_string()
-            },
-            inner_str,
-            d
-          );
+          return format!("({}*{})/{}", n, inner_str, d);
         }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
@@ -2002,16 +1993,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
         } else {
           inner
         };
-        return format!(
-          "({}*{})/{}",
-          if *num < 0 {
-            format!("({})", num)
-          } else {
-            num.to_string()
-          },
-          inner_str,
-          den
-        );
+        return format!("({}*{})/{}", num, inner_str, den);
       }
 
       // Special case: Times[-1, expr] should display as -expr
