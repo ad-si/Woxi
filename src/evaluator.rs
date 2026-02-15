@@ -458,6 +458,43 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
         }
       } else {
+        #[cfg(not(target_arch = "wasm32"))]
+        if name == "Now" {
+          use chrono::Local;
+          let now = Local::now();
+          let seconds = now
+            .format("%S%.f")
+            .to_string()
+            .parse::<f64>()
+            .unwrap_or(0.0);
+          let tz_offset_hours = now.offset().local_minus_utc() as f64 / 3600.0;
+          return Ok(Expr::FunctionCall {
+            name: "DateObject".to_string(),
+            args: vec![
+              Expr::List(vec![
+                Expr::Integer(
+                  now.format("%Y").to_string().parse::<i128>().unwrap(),
+                ),
+                Expr::Integer(
+                  now.format("%m").to_string().parse::<i128>().unwrap(),
+                ),
+                Expr::Integer(
+                  now.format("%d").to_string().parse::<i128>().unwrap(),
+                ),
+                Expr::Integer(
+                  now.format("%H").to_string().parse::<i128>().unwrap(),
+                ),
+                Expr::Integer(
+                  now.format("%M").to_string().parse::<i128>().unwrap(),
+                ),
+                Expr::Real(seconds),
+              ]),
+              Expr::Identifier("Instant".to_string()),
+              Expr::Identifier("Gregorian".to_string()),
+              Expr::Real(tz_offset_hours),
+            ],
+          });
+        }
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
       }
@@ -2453,8 +2490,10 @@ pub fn evaluate_function_call_ast(
       return match args.len() {
         0 => Ok(Expr::String(current_time.format(default_format).to_string())),
         1 => {
-          // DateString[Now] or DateString["format"]
-          if matches!(&args[0], Expr::Identifier(s) if s == "Now") {
+          // DateString[Now] or DateString[DateObject[...]] or DateString["format"]
+          if matches!(&args[0], Expr::Identifier(s) if s == "Now")
+            || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "DateObject")
+          {
             Ok(Expr::String(current_time.format(default_format).to_string()))
           } else if let Expr::String(format_str) = &args[0] {
             let fmt = match format_str.as_str() {
@@ -2467,8 +2506,10 @@ pub fn evaluate_function_call_ast(
           }
         }
         2 => {
-          // DateString[Now, "format"]
-          if !matches!(&args[0], Expr::Identifier(s) if s == "Now") {
+          // DateString[Now, "format"] or DateString[DateObject[...], "format"]
+          if !matches!(&args[0], Expr::Identifier(s) if s == "Now")
+            && !matches!(&args[0], Expr::FunctionCall { name, .. } if name == "DateObject")
+          {
             return Err(InterpreterError::EvaluationError(
               "DateString: First argument currently must be Now.".into(),
             ));
@@ -5146,6 +5187,25 @@ fn extract_part_ast(
         Ok(items[actual_idx as usize].clone())
       } else {
         // Print warning to stderr and return unevaluated Part expression
+        let expr_str = crate::syntax::expr_to_string(expr);
+        eprintln!();
+        eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
+        Ok(Expr::Part {
+          expr: Box::new(expr.clone()),
+          index: Box::new(index.clone()),
+        })
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      if idx == 0 {
+        // Part[f[...], 0] returns the head
+        return Ok(Expr::Identifier(name.clone()));
+      }
+      let len = args.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(args[actual_idx as usize].clone())
+      } else {
         let expr_str = crate::syntax::expr_to_string(expr);
         eprintln!();
         eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
