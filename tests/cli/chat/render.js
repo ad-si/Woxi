@@ -147,9 +147,9 @@ function createUserMessage(msg, index) {
 
 function createAssistantMessage(msg, index) {
   const wrapper = document.createElement("div")
-  const isTextOnly = msg.content && !msg.tool_calls
-  wrapper.className = isTextOnly ? "assistant-message-row px-4 py-3" : "px-4 py-3"
-  if (isTextOnly && index !== undefined) wrapper.dataset.msgIndex = index
+  const hasText = msg.content
+  wrapper.className = hasText ? "assistant-message-row px-4 py-3" : "px-4 py-3"
+  if (hasText && index !== undefined) wrapper.dataset.msgIndex = index
 
   const inner = document.createElement("div")
   inner.className = "max-w-3xl mx-auto"
@@ -172,8 +172,8 @@ function createAssistantMessage(msg, index) {
     }
   }
 
-  // Action buttons for text-only assistant messages (final responses)
-  if (isTextOnly) {
+  // Action buttons for assistant messages with text content
+  if (hasText) {
     const actions = document.createElement("div")
     actions.className = "assistant-msg-actions"
     actions.innerHTML = `
@@ -338,10 +338,9 @@ export function finalizeStreamingMessage(msgIndex) {
   if (!wrapper) return
   wrapper.removeAttribute("id")
 
-  // Text-only messages (no tool cards) get copy/retry actions
-  const hasToolCards = wrapper.querySelector(".tool-card")
+  // Messages with text content get copy/retry actions
   const hasText = el && el._rawText
-  if (msgIndex !== undefined && hasText && !hasToolCards) {
+  if (msgIndex !== undefined && hasText) {
     wrapper.classList.add("assistant-message-row")
     wrapper.dataset.msgIndex = msgIndex
     const inner = wrapper.querySelector(".max-w-3xl")
