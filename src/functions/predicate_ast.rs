@@ -1253,3 +1253,47 @@ pub fn match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::list_helpers_ast::matches_pattern_ast(&args[0], &args[1]);
   Ok(bool_expr(matches))
 }
+
+/// SubsetQ[list1, list2] - Tests if list2 is a subset of list1
+pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SubsetQ expects exactly 2 arguments".into(),
+    ));
+  }
+  match (&args[0], &args[1]) {
+    (Expr::List(superset), Expr::List(subset)) => {
+      // Check that every element in subset appears in superset
+      let superset_strs: Vec<String> =
+        superset.iter().map(crate::syntax::expr_to_string).collect();
+      for elem in subset {
+        let s = crate::syntax::expr_to_string(elem);
+        if !superset_strs.contains(&s) {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+      }
+      Ok(Expr::Identifier("True".to_string()))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "SubsetQ".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// OptionQ[expr] - Tests if expr is a Rule or RuleDelayed or a list thereof
+pub fn option_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "OptionQ expects exactly 1 argument".into(),
+    ));
+  }
+  fn is_option(expr: &Expr) -> bool {
+    match expr {
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+      Expr::List(items) => items.iter().all(is_option),
+      _ => false,
+    }
+  }
+  Ok(bool_expr(is_option(&args[0])))
+}

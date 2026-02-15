@@ -428,6 +428,36 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Check for Infinity + (-Infinity) → Indeterminate
+  {
+    let mut has_pos_inf = false;
+    let mut has_neg_inf = false;
+    for arg in &flat_args {
+      match arg {
+        Expr::Identifier(name) if name == "Infinity" => has_pos_inf = true,
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand,
+        } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
+          has_neg_inf = true
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Integer(-1))
+          && matches!(right.as_ref(), Expr::Identifier(n) if n == "Infinity") =>
+        {
+          has_neg_inf = true
+        }
+        _ => {}
+      }
+    }
+    if has_pos_inf && has_neg_inf {
+      return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+  }
+
   // Check for list threading
   let has_list = flat_args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {

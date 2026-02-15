@@ -2682,3 +2682,124 @@ mod unsame_q_multi {
     assert_eq!(interpret("UnsameQ[1, 2, 3]").unwrap(), "True");
   }
 }
+
+mod conditional_expression {
+  use super::*;
+
+  #[test]
+  fn true_condition() {
+    assert_eq!(
+      interpret("ConditionalExpression[x^2, True]").unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
+  fn false_condition() {
+    assert_eq!(
+      interpret("ConditionalExpression[x^2, False]").unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
+  fn symbolic_condition() {
+    assert_eq!(
+      interpret("ConditionalExpression[x^2, x > 0]").unwrap(),
+      "ConditionalExpression[x^2, x > 0]"
+    );
+  }
+}
+
+mod infinity_arithmetic {
+  use super::*;
+
+  #[test]
+  fn infinity_plus_neg_infinity() {
+    assert_eq!(
+      interpret("Infinity + (-Infinity)").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn directed_infinity_add() {
+    assert_eq!(
+      interpret("DirectedInfinity[1] + DirectedInfinity[-1]").unwrap(),
+      "Indeterminate"
+    );
+  }
+}
+
+mod attributes {
+  use super::*;
+
+  #[test]
+  fn plus() {
+    assert_eq!(
+      interpret("Attributes[Plus]").unwrap(),
+      "{Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}"
+    );
+  }
+
+  #[test]
+  fn hold() {
+    assert_eq!(
+      interpret("Attributes[Hold]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+
+  #[test]
+  fn if_func() {
+    assert_eq!(
+      interpret("Attributes[If]").unwrap(),
+      "{HoldRest, Protected}"
+    );
+  }
+
+  #[test]
+  fn set_func() {
+    assert_eq!(
+      interpret("Attributes[Set]").unwrap(),
+      "{HoldFirst, Protected, SequenceHold}"
+    );
+  }
+
+  #[test]
+  fn and_func() {
+    assert_eq!(
+      interpret("Attributes[And]").unwrap(),
+      "{Flat, HoldAll, OneIdentity, Protected}"
+    );
+  }
+
+  #[test]
+  fn constant_e() {
+    assert_eq!(
+      interpret("Attributes[E]").unwrap(),
+      "{Constant, Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn sin_func() {
+    assert_eq!(
+      interpret("Attributes[Sin]").unwrap(),
+      "{Listable, NumericFunction, Protected}"
+    );
+  }
+
+  #[test]
+  fn unknown_func() {
+    assert_eq!(interpret("Attributes[unknownfunc]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn string_arg() {
+    assert_eq!(
+      interpret("Attributes[\"Plus\"]").unwrap(),
+      "{Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}"
+    );
+  }
+}
