@@ -27,6 +27,32 @@ pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(is_number))
 }
 
+/// RealValuedNumberQ[expr] - Tests if the expression is a real-valued number
+/// Returns True for Integer, BigInteger, Rational, Real, BigFloat
+/// Returns False for Complex, symbolic expressions, etc.
+pub fn real_valued_number_q_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RealValuedNumberQ expects exactly 1 argument".into(),
+    ));
+  }
+  let is_real = match &args[0] {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      true
+    }
+    _ => false,
+  };
+  Ok(bool_expr(is_real))
+}
+
 /// IntegerQ[expr] - Tests if the expression is an integer (not a real like 3.0)
 pub fn integer_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
