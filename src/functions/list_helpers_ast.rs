@@ -4163,17 +4163,66 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if args.len() >= 2 {
-    // Subsets[list, {k}] - subsets of specific size
     match &args[1] {
+      // Subsets[list, {k}] - subsets of exactly size k
       Expr::List(spec) if spec.len() == 1 => {
-        if let Expr::Integer(k) = &spec[0] {
-          let k = *k as usize;
+        if let Some(k) = expr_to_i128(&spec[0]) {
+          let k = k.max(0) as usize;
           let mut result = Vec::new();
           generate_combinations(&items, k, 0, &mut vec![], &mut result);
+          // Handle optional max count argument
+          if args.len() >= 3
+            && let Some(max) = expr_to_i128(&args[2])
+          {
+            result.truncate(max.max(0) as usize);
+          }
           return Ok(Expr::List(result));
         }
       }
-      _ => {}
+      // Subsets[list, {min, max}] - subsets of sizes min through max
+      Expr::List(spec) if spec.len() == 2 => {
+        if let (Some(min), Some(max)) =
+          (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
+        {
+          let min = min.max(0) as usize;
+          let max = max.min(items.len() as i128).max(0) as usize;
+          let mut result = Vec::new();
+          for k in min..=max {
+            generate_combinations(&items, k, 0, &mut vec![], &mut result);
+          }
+          return Ok(Expr::List(result));
+        }
+      }
+      // Subsets[list, {min, max, step}] - subsets of sizes min, min+step, ...
+      Expr::List(spec) if spec.len() == 3 => {
+        if let (Some(min), Some(max), Some(step)) = (
+          expr_to_i128(&spec[0]),
+          expr_to_i128(&spec[1]),
+          expr_to_i128(&spec[2]),
+        ) {
+          let min = min.max(0) as usize;
+          let max = max.min(items.len() as i128).max(0) as usize;
+          let step = step.max(1) as usize;
+          let mut result = Vec::new();
+          let mut k = min;
+          while k <= max {
+            generate_combinations(&items, k, 0, &mut vec![], &mut result);
+            k += step;
+          }
+          return Ok(Expr::List(result));
+        }
+      }
+      // Subsets[list, n] - all subsets up to size n
+      _ => {
+        if let Some(max_k) = expr_to_i128(&args[1]) {
+          let max_k = max_k.min(items.len() as i128).max(0) as usize;
+          let mut result = Vec::new();
+          for k in 0..=max_k {
+            generate_combinations(&items, k, 0, &mut vec![], &mut result);
+          }
+          return Ok(Expr::List(result));
+        }
+      }
     }
   }
 

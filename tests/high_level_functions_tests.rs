@@ -573,6 +573,13 @@ mod high_level_functions_tests {
       assert_eq!(interpret("StirlingS1[3, 0]").unwrap(), "0");
       assert_eq!(interpret("StirlingS1[3, 4]").unwrap(), "0");
     }
+    #[test]
+    fn test_stirling_s1_large() {
+      assert_eq!(
+        interpret("StirlingS1[50, 1]").unwrap(),
+        "-608281864034267560872252163321295376887552831379210240000000000"
+      );
+    }
   }
 
   mod stirling_s2_tests {

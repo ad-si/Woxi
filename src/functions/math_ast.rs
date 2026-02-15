@@ -5860,15 +5860,18 @@ pub fn stirling_s1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // s(n,k) = s(n-1,k-1) - (n-1)*s(n-1,k) (signed Stirling S1)
-  // Use DP table
-  let mut table = vec![vec![0i128; k + 1]; n + 1];
-  table[0][0] = 1;
+  // Use DP table with BigInt to avoid overflow
+  let zero = BigInt::from(0);
+  let one = BigInt::from(1);
+  let mut table = vec![vec![zero.clone(); k + 1]; n + 1];
+  table[0][0] = one;
   for i in 1..=n {
     for j in 1..=k.min(i) {
-      table[i][j] = table[i - 1][j - 1] - (i as i128 - 1) * table[i - 1][j];
+      table[i][j] =
+        &table[i - 1][j - 1] - BigInt::from(i - 1) * &table[i - 1][j];
     }
   }
-  Ok(Expr::Integer(table[n][k]))
+  Ok(bigint_to_expr(table[n][k].clone()))
 }
 
 /// StirlingS2[n, k] - Stirling number of the second kind
@@ -5908,14 +5911,16 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // S(n,k) = k*S(n-1,k) + S(n-1,k-1)
-  let mut table = vec![vec![0i128; k + 1]; n + 1];
-  table[0][0] = 1;
+  let zero = BigInt::from(0);
+  let one = BigInt::from(1);
+  let mut table = vec![vec![zero.clone(); k + 1]; n + 1];
+  table[0][0] = one;
   for i in 1..=n {
     for j in 1..=k.min(i) {
-      table[i][j] = j as i128 * table[i - 1][j] + table[i - 1][j - 1];
+      table[i][j] = BigInt::from(j) * &table[i - 1][j] + &table[i - 1][j - 1];
     }
   }
-  Ok(Expr::Integer(table[n][k]))
+  Ok(bigint_to_expr(table[n][k].clone()))
 }
 
 /// Prime[n] - Returns the nth prime number

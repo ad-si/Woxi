@@ -2028,7 +2028,7 @@ pub fn evaluate_function_call_ast(
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
       return list_helpers_ast::permutations_ast(args);
     }
-    "Subsets" if !args.is_empty() && args.len() <= 2 => {
+    "Subsets" if !args.is_empty() && args.len() <= 3 => {
       return list_helpers_ast::subsets_ast(args);
     }
     "Subsequences" if !args.is_empty() && args.len() <= 2 => {

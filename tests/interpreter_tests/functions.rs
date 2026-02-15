@@ -862,3 +862,47 @@ mod free_q {
     assert_eq!(interpret("FreeQ[{1, 2, 3}, 2]").unwrap(), "False");
   }
 }
+
+mod subsets {
+  use super::*;
+
+  #[test]
+  fn all_subsets() {
+    assert_eq!(
+      interpret("Subsets[{a, b, c}]").unwrap(),
+      "{{}, {a}, {b}, {c}, {a, b}, {a, c}, {b, c}, {a, b, c}}"
+    );
+  }
+
+  #[test]
+  fn max_size_integer() {
+    assert_eq!(
+      interpret("Subsets[{a, b, c, d}, 2]").unwrap(),
+      "{{}, {a}, {b}, {c}, {d}, {a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}}"
+    );
+  }
+
+  #[test]
+  fn exact_size() {
+    assert_eq!(
+      interpret("Subsets[{a, b, c, d}, {2}]").unwrap(),
+      "{{a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}}"
+    );
+  }
+
+  #[test]
+  fn exact_size_with_max_count() {
+    assert_eq!(
+      interpret("Subsets[{a, b, c, d, e}, {3}, 5]").unwrap(),
+      "{{a, b, c}, {a, b, d}, {a, b, e}, {a, c, d}, {a, c, e}}"
+    );
+  }
+
+  #[test]
+  fn size_range_with_step() {
+    assert_eq!(
+      interpret("Subsets[{a, b, c, d}, {0, 4, 2}]").unwrap(),
+      "{{}, {a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}, {a, b, c, d}}"
+    );
+  }
+}
