@@ -96,6 +96,37 @@ mod integer_length {
     assert_eq!(interpret("IntegerLength[255, 2]").unwrap(), "8");
     assert_eq!(interpret("IntegerLength[12345, 2]").unwrap(), "14");
   }
+
+  #[test]
+  fn integer_length_big_integer() {
+    assert_eq!(interpret("IntegerLength[10^10000]").unwrap(), "10001");
+    assert_eq!(interpret("IntegerLength[-10^1000]").unwrap(), "1001");
+    assert_eq!(interpret("IntegerLength[10^100]").unwrap(), "101");
+  }
+}
+
+mod integer_reverse {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("IntegerReverse[1234]").unwrap(), "4321");
+  }
+
+  #[test]
+  fn base_2() {
+    assert_eq!(interpret("IntegerReverse[1022, 2]").unwrap(), "511");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("IntegerReverse[-123]").unwrap(), "321");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("IntegerReverse[0]").unwrap(), "0");
+  }
 }
 
 mod integer_name {
@@ -2420,10 +2451,7 @@ mod exponent {
 
   #[test]
   fn min_form() {
-    assert_eq!(
-      interpret("Exponent[(x^2 + 1)^3 - 1, x, Min]").unwrap(),
-      "2"
-    );
+    assert_eq!(interpret("Exponent[(x^2 + 1)^3 - 1, x, Min]").unwrap(), "2");
   }
 }
 
@@ -2432,7 +2460,10 @@ mod implicit_multiply_power_precedence {
 
   #[test]
   fn b_y_cubed() {
-    assert_eq!(interpret("FullForm[b y^3]").unwrap(), "Times[b, Power[y, 3]]");
+    assert_eq!(
+      interpret("FullForm[b y^3]").unwrap(),
+      "Times[b, Power[y, 3]]"
+    );
   }
 
   #[test]

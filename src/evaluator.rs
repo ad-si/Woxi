@@ -2020,9 +2020,14 @@ pub fn evaluate_function_call_ast(
     "MapThread" if args.len() == 2 => {
       return list_helpers_ast::map_thread_ast(&args[0], &args[1]);
     }
-    "Partition" if args.len() == 2 => {
+    "Partition" if args.len() == 2 || args.len() == 3 => {
       if let Some(n) = expr_to_i128(&args[1]) {
-        return list_helpers_ast::partition_ast(&args[0], n);
+        let d = if args.len() == 3 {
+          expr_to_i128(&args[2])
+        } else {
+          None
+        };
+        return list_helpers_ast::partition_ast(&args[0], n, d);
       }
     }
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
@@ -2054,11 +2059,21 @@ pub fn evaluate_function_call_ast(
       // For other expressions, Normal is identity
       return Ok(args[0].clone());
     }
-    "First" if args.len() == 1 => {
-      return list_helpers_ast::first_ast(&args[0]);
+    "First" if args.len() == 1 || args.len() == 2 => {
+      let default = if args.len() == 2 {
+        Some(&args[1])
+      } else {
+        None
+      };
+      return list_helpers_ast::first_ast(&args[0], default);
     }
-    "Last" if args.len() == 1 => {
-      return list_helpers_ast::last_ast(&args[0]);
+    "Last" if args.len() == 1 || args.len() == 2 => {
+      let default = if args.len() == 2 {
+        Some(&args[1])
+      } else {
+        None
+      };
+      return list_helpers_ast::last_ast(&args[0], default);
     }
     "Rest" if args.len() == 1 => {
       return list_helpers_ast::rest_ast(&args[0]);
@@ -2233,6 +2248,15 @@ pub fn evaluate_function_call_ast(
     }
     "ArrayDepth" if args.len() == 1 => {
       return list_helpers_ast::array_depth_ast(&args[0]);
+    }
+    "ArrayQ" if args.len() == 1 => {
+      return list_helpers_ast::array_q_ast(&args[0]);
+    }
+    "VectorQ" if args.len() == 1 => {
+      return list_helpers_ast::vector_q_ast(&args[0]);
+    }
+    "MatrixQ" if args.len() == 1 => {
+      return list_helpers_ast::matrix_q_ast(&args[0]);
     }
     "TakeWhile" if args.len() == 2 => {
       return list_helpers_ast::take_while_ast(&args[0], &args[1]);
@@ -2891,6 +2915,9 @@ pub fn evaluate_function_call_ast(
     }
     "IntegerLength" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::integer_length_ast(args);
+    }
+    "IntegerReverse" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::math_ast::integer_reverse_ast(args);
     }
     "Rescale" if !args.is_empty() && args.len() <= 3 => {
       return crate::functions::math_ast::rescale_ast(args);
