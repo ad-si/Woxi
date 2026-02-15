@@ -2775,6 +2775,31 @@ fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       let results: Result<Vec<Expr>, _> = items.iter().map(n_eval).collect();
       Ok(Expr::List(results?))
     }
+    Expr::BigInteger(n) => Ok(Expr::Real(
+      n.to_string().parse::<f64>().unwrap_or(f64::INFINITY),
+    )),
+    Expr::FunctionCall { name, args } => {
+      // First try to evaluate the whole expression to a number
+      if let Some(v) = try_eval_to_f64(expr) {
+        return Ok(Expr::Real(v));
+      }
+      // Otherwise, recursively apply N to arguments
+      let new_args: Result<Vec<Expr>, _> = args.iter().map(n_eval).collect();
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args?,
+      })
+    }
+    Expr::BinaryOp { op, left, right } => {
+      if let Some(v) = try_eval_to_f64(expr) {
+        return Ok(Expr::Real(v));
+      }
+      Ok(Expr::BinaryOp {
+        op: *op,
+        left: Box::new(n_eval(left)?),
+        right: Box::new(n_eval(right)?),
+      })
+    }
     _ => {
       if let Some(v) = try_eval_to_f64(expr) {
         Ok(Expr::Real(v))

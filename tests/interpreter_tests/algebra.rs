@@ -877,3 +877,40 @@ mod solve {
     assert_eq!(interpret("Solve[2*x - 1 == 0, x]").unwrap(), "{{x -> 1/2}}");
   }
 }
+
+mod replace {
+  use super::*;
+
+  #[test]
+  fn simple_match() {
+    assert_eq!(interpret("Replace[x, x -> 2]").unwrap(), "2");
+  }
+
+  #[test]
+  fn with_rule_list() {
+    assert_eq!(interpret("Replace[x, {x -> 2}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn no_subexpression_match() {
+    assert_eq!(interpret("Replace[1 + x, {x -> 2}]").unwrap(), "1 + x");
+  }
+
+  #[test]
+  fn multiple_rule_sets() {
+    assert_eq!(
+      interpret("Replace[x, {{x -> 1}, {x -> 2}}]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn first_matching_rule() {
+    assert_eq!(interpret("Replace[x, {x -> 10, y -> 20}]").unwrap(), "10");
+  }
+
+  #[test]
+  fn pattern_match() {
+    assert_eq!(interpret("Replace[42, n_Integer -> n + 1]").unwrap(), "43");
+  }
+}

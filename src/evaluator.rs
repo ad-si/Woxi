@@ -1666,8 +1666,6 @@ fn is_builtin_listable(name: &str) -> bool {
       | "MixedFractionParts"
       | "Precision"
       | "Accuracy"
-      | "Gudermannian"
-      | "InverseGudermannian"
   )
 }
 
@@ -3555,6 +3553,9 @@ pub fn evaluate_function_call_ast(
       let rules = &args[1];
       return apply_replace_repeated_ast(expr, rules);
     }
+    "Replace" if args.len() == 2 => {
+      return apply_replace_ast(&args[0], &args[1]);
+    }
 
     // Symbolic operators with no built-in meaning — just return as-is with evaluated args
     "Therefore" | "Because" | "TableForm" | "Row" | "In" => {
@@ -4712,6 +4713,96 @@ fn extract_pattern_and_condition(pattern: &Expr) -> (Expr, Option<String>) {
       (pattern.clone(), None)
     }
     _ => (pattern.clone(), None),
+  }
+}
+
+/// Apply Replace operation on AST - only matches at the top level (not subexpressions)
+/// Replace[expr, rules] tries to apply rules only to the entire expression
+/// Replace[expr, {{rule1}, {rule2}}] returns a list of results
+fn apply_replace_ast(
+  expr: &Expr,
+  rules: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Check if rules is a list of rule-lists: Replace[x, {{x -> 1}, {x -> 2}}]
+  if let Expr::List(outer_items) = rules
+    && !outer_items.is_empty()
+    && outer_items.iter().all(|item| matches!(item, Expr::List(_)))
+  {
+    // Each inner list is a set of rules to try
+    let results: Result<Vec<Expr>, _> = outer_items
+      .iter()
+      .map(|rule_set| apply_replace_ast(expr, rule_set))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
+  // Try to apply single rule or list of rules at top level only
+  match rules {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      // Try structural pattern matching first
+      let (pat_expr, condition) = extract_pattern_and_condition(pattern);
+      if contains_pattern(&pat_expr) {
+        if let Some(result) = try_ast_pattern_replace_single(
+          expr,
+          &pat_expr,
+          replacement,
+          condition.as_deref(),
+        )? {
+          return Ok(result);
+        }
+        return Ok(expr.clone());
+      }
+      // Simple string-based matching at top level
+      let expr_str = expr_to_string(expr);
+      let pattern_str = expr_to_string(pattern);
+      if expr_str == pattern_str {
+        return Ok((**replacement).clone());
+      }
+      Ok(expr.clone())
+    }
+    Expr::List(items) if !items.is_empty() => {
+      // Multiple rules - try each in order, use first match
+      for rule in items {
+        match rule {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => {
+            let (pat_expr, condition) = extract_pattern_and_condition(pattern);
+            if contains_pattern(&pat_expr) {
+              if let Some(result) = try_ast_pattern_replace_single(
+                expr,
+                &pat_expr,
+                replacement,
+                condition.as_deref(),
+              )? {
+                return Ok(result);
+              }
+              continue;
+            }
+            let expr_str = expr_to_string(expr);
+            let pattern_str = expr_to_string(pattern);
+            if expr_str == pattern_str {
+              return Ok((**replacement).clone());
+            }
+          }
+          _ => {}
+        }
+      }
+      Ok(expr.clone())
+    }
+    _ => Ok(expr.clone()),
   }
 }
 
