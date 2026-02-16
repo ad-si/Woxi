@@ -259,6 +259,70 @@ mod flat_and_orderless {
   }
 }
 
+mod one_identity_attribute {
+  use super::*;
+
+  #[test]
+  fn one_identity_basic_match() {
+    // With OneIdentity, a /. f[x_:0, u_] -> {u} matches a as f[0, a]
+    assert_eq!(
+      interpret("SetAttributes[f, OneIdentity]; a /. f[x_:0, u_] -> {u}")
+        .unwrap(),
+      "{a}"
+    );
+  }
+
+  #[test]
+  fn one_identity_with_default_binding() {
+    // The default value should be bound to the optional pattern variable
+    assert_eq!(
+      interpret("SetAttributes[f, OneIdentity]; a /. f[x_:0, u_] -> {x, u}")
+        .unwrap(),
+      "{0, a}"
+    );
+  }
+
+  #[test]
+  fn one_identity_no_match_without_attribute() {
+    // Without OneIdentity, the pattern should not match
+    assert_eq!(interpret("a /. f[x_:0, u_] -> {u}").unwrap(), "a");
+  }
+
+  #[test]
+  fn one_identity_direct_function_call_still_matches() {
+    // Direct function calls should still match normally
+    assert_eq!(
+      interpret(
+        "SetAttributes[f, OneIdentity]; f[3, a] /. f[x_:0, u_] -> {x, u}"
+      )
+      .unwrap(),
+      "{3, a}"
+    );
+  }
+}
+
+mod replace_all_top_level {
+  use super::*;
+
+  #[test]
+  fn replace_all_matches_whole_list_first() {
+    // ReplaceAll should match the whole expression first before descending
+    assert_eq!(interpret("{a, b, c} /. x_ -> {x}").unwrap(), "{{a, b, c}}");
+  }
+
+  #[test]
+  fn replace_all_descends_when_top_level_fails() {
+    // When the top-level doesn't match a specific pattern, descend into elements
+    assert_eq!(interpret("{1, 2, 3} /. 2 -> x").unwrap(), "{1, x, 3}");
+  }
+
+  #[test]
+  fn replace_all_descends_into_function_args() {
+    // Should replace inside function call arguments
+    assert_eq!(interpret("f[a, b, c] /. b -> x").unwrap(), "f[a, x, c]");
+  }
+}
+
 mod attributes_assignment {
   use super::*;
 

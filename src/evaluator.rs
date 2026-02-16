@@ -5752,7 +5752,7 @@ fn split_association_items(s: &str) -> Vec<String> {
 /// Check if a pattern Expr contains any Expr::Pattern nodes (named blanks like n_).
 fn contains_pattern(expr: &Expr) -> bool {
   match expr {
-    Expr::Pattern { .. } => true,
+    Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
     Expr::BinaryOp { left, right, .. } => {
       contains_pattern(left) || contains_pattern(right)
     }
@@ -5776,14 +5776,21 @@ fn try_ast_pattern_replace(
     return Ok(None);
   }
 
+  // First try matching the entire expression (top-level match)
+  if let Some(result) =
+    try_ast_pattern_replace_single(expr, pattern, replacement, condition)?
+  {
+    return Ok(Some(result));
+  }
+
+  // If top-level didn't match, recurse into sub-expressions
   match expr {
     Expr::List(items) => {
-      // Apply structural pattern matching to each list element
       let mut results = Vec::new();
       let mut any_matched = false;
       for item in items {
         if let Some(result) =
-          try_ast_pattern_replace_single(item, pattern, replacement, condition)?
+          try_ast_pattern_replace(item, pattern, replacement, condition)?
         {
           results.push(result);
           any_matched = true;
@@ -5797,8 +5804,87 @@ fn try_ast_pattern_replace(
         Ok(None)
       }
     }
-    _ => try_ast_pattern_replace_single(expr, pattern, replacement, condition),
+    Expr::FunctionCall { name, args } => {
+      let mut new_args = Vec::new();
+      let mut any_matched = false;
+      for arg in args {
+        if let Some(result) =
+          try_ast_pattern_replace(arg, pattern, replacement, condition)?
+        {
+          new_args.push(result);
+          any_matched = true;
+        } else {
+          new_args.push(arg.clone());
+        }
+      }
+      if any_matched {
+        Ok(Some(Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args,
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    _ => Ok(None),
   }
+}
+
+/// Check if a function has the OneIdentity attribute (builtin or user-defined).
+fn has_one_identity(name: &str) -> bool {
+  let builtin = get_builtin_attributes(name);
+  if builtin.contains(&"OneIdentity") {
+    return true;
+  }
+  crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.contains(&"OneIdentity".to_string()))
+  })
+}
+
+/// Try OneIdentity matching: when a pattern is f[args...] and f has OneIdentity,
+/// match a non-f expression by filling in defaults for PatternOptional args
+/// and matching the expression against the remaining required pattern slot.
+fn try_one_identity_match(
+  expr: &Expr,
+  pat_name: &str,
+  pat_args: &[Expr],
+) -> Option<Vec<(String, Expr)>> {
+  if !has_one_identity(pat_name) {
+    return None;
+  }
+
+  // Separate args into optional (with defaults) and required patterns
+  let mut required_indices = Vec::new();
+  let mut bindings = Vec::new();
+
+  for (i, arg) in pat_args.iter().enumerate() {
+    match arg {
+      Expr::PatternOptional { name, default, .. } => {
+        // Bind optional pattern to its default value
+        bindings.push((name.clone(), *default.clone()));
+      }
+      Expr::Pattern { .. } | Expr::Identifier(_) => {
+        required_indices.push(i);
+      }
+      _ => {
+        required_indices.push(i);
+      }
+    }
+  }
+
+  // OneIdentity: if there's exactly one required (non-optional) pattern slot,
+  // try matching the expression against it
+  if required_indices.len() == 1 {
+    let req_pat = &pat_args[required_indices[0]];
+    if let Some(mut req_bindings) = match_pattern(expr, req_pat) {
+      req_bindings.extend(bindings);
+      return Some(req_bindings);
+    }
+  }
+
+  None
 }
 
 /// Try to match a single expression against a structural pattern.
@@ -5808,7 +5894,24 @@ fn try_ast_pattern_replace_single(
   replacement: &Expr,
   condition: Option<&str>,
 ) -> Result<Option<Expr>, InterpreterError> {
-  if let Some(bindings) = match_pattern(value, pattern) {
+  // First try normal structural match
+  let bindings_opt = match match_pattern(value, pattern) {
+    Some(bindings) => Some(bindings),
+    None => {
+      // Try OneIdentity matching as fallback
+      if let Expr::FunctionCall {
+        name: pat_name,
+        args: pat_args,
+      } = pattern
+      {
+        try_one_identity_match(value, pat_name, pat_args)
+      } else {
+        None
+      }
+    }
+  };
+
+  if let Some(bindings) = bindings_opt {
     // Check condition if present
     if let Some(cond_str) = condition {
       // Substitute bindings into condition and evaluate
@@ -6283,6 +6386,16 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
   match pattern {
     Expr::Pattern { name, head } => {
       // Check head constraint if present
+      if let Some(h) = head {
+        let expr_head = get_expr_head(expr);
+        if expr_head != *h {
+          return None;
+        }
+      }
+      Some(vec![(name.clone(), expr.clone())])
+    }
+    Expr::PatternOptional { name, head, .. } => {
+      // When a value is present, PatternOptional matches like a regular Pattern
       if let Some(h) = head {
         let expr_head = get_expr_head(expr);
         if expr_head != *h {
