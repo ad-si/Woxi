@@ -2805,6 +2805,49 @@ mod conditional_expression {
   }
 }
 
+mod assuming {
+  use super::*;
+
+  #[test]
+  fn assuming_matching_condition_simplifies() {
+    assert_eq!(
+      interpret("Assuming[y>0, ConditionalExpression[y x^2, y>0]//Simplify]")
+        .unwrap(),
+      "x^2*y"
+    );
+  }
+
+  #[test]
+  fn assuming_negated_condition_gives_undefined() {
+    assert_eq!(
+      interpret(
+        "Assuming[Not[y>0], ConditionalExpression[y x^2, y>0]//Simplify]"
+      )
+      .unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
+  fn simplify_conditional_without_assumptions() {
+    assert_eq!(
+      interpret("ConditionalExpression[y x ^ 2, y > 0]//Simplify").unwrap(),
+      "ConditionalExpression[x^2*y, y > 0]"
+    );
+  }
+
+  #[test]
+  fn assuming_returns_body_value() {
+    assert_eq!(interpret("Assuming[x > 0, 1 + 2]").unwrap(), "3");
+  }
+
+  #[test]
+  fn assumptions_restored_after_assuming() {
+    assert_eq!(interpret("Assuming[x > 0, $Assumptions]").unwrap(), "x > 0");
+    assert_eq!(interpret("$Assumptions").unwrap(), "True");
+  }
+}
+
 mod infinity_arithmetic {
   use super::*;
 

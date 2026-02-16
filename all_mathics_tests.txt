@@ -91,30 +91,6 @@ EXPECTED:
 = {operator_string}x
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: Assuming
-LINE: 188
-TYPE: >>
-INPUT: Assuming[y>0, ConditionalExpression[y x^2, y>0]//Simplify]
-EXPECTED:
-= x ^ 2 y
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Assuming
-LINE: 190
-TYPE: >>
-INPUT: Assuming[Not[y>0], ConditionalExpression[y x^2, y>0]//Simplify]
-EXPECTED:
-= Undefined
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Assuming
-LINE: 192
-TYPE: >>
-INPUT: ConditionalExpression[y x ^ 2, y > 0]//Simplify
-EXPECTED:
-= ConditionalExpression[x ^ 2 y, y > 0]
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: Complex_
 LINE: 279
 TYPE: >>

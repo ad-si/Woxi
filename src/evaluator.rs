@@ -568,12 +568,15 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           });
         }
       }
-      // Special handling for Module/Block - don't evaluate args (body needs local bindings first)
+      // Special handling for Module/Block/Assuming - don't evaluate args (body needs local bindings first)
       if name == "Module" {
         return module_ast(args);
       }
       if name == "Block" {
         return block_ast(args);
+      }
+      if name == "Assuming" && args.len() == 2 {
+        return assuming_ast(args);
       }
       // Special handling for Set - first arg must be identifier or Part, second gets evaluated
       if name == "Set" && args.len() == 2 {
@@ -1873,6 +1876,7 @@ pub fn evaluate_function_call_ast(
     }
     "Module" => return module_ast(args),
     "Block" => return block_ast(args),
+    "Assuming" if args.len() == 2 => return assuming_ast(args),
     "With" if args.len() == 2 => return with_ast(args),
     "Set" if args.len() == 2 => {
       return set_ast(&args[0], &args[1]);
@@ -4521,6 +4525,44 @@ fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   result
 }
 
+/// AST-based Assuming: Assuming[assum, body]
+/// Evaluates body with $Assumptions set to assum.
+fn assuming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Assuming expects 2 arguments; {} given",
+      args.len()
+    )));
+  }
+
+  let assumption = evaluate_expr_to_expr(&args[0])?;
+
+  // Save current $Assumptions
+  let prev = ENV.with(|e| e.borrow().get("$Assumptions").cloned());
+
+  // Set $Assumptions to the assumption
+  let val = expr_to_string(&assumption);
+  ENV.with(|e| {
+    e.borrow_mut()
+      .insert("$Assumptions".to_string(), StoredValue::Raw(val))
+  });
+
+  // Evaluate the body expression
+  let result = evaluate_expr_to_expr(&args[1]);
+
+  // Restore previous $Assumptions (even if body returned an error)
+  ENV.with(|e| {
+    let mut env = e.borrow_mut();
+    if let Some(v) = prev {
+      env.insert("$Assumptions".to_string(), v);
+    } else {
+      env.remove("$Assumptions");
+    }
+  });
+
+  result
+}
+
 /// AST-based For loop: For[init, test, incr, body]
 fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 || args.len() > 4 {
@@ -6824,9 +6866,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldComplete" | "Table" | "Do" | "While" | "For"
-    | "Module" | "Block" | "With" | "Trace" | "Defer" | "Unevaluated"
-    | "Compile" | "CompoundExpression" | "Switch" | "Which" | "Catch"
-    | "Throw" => {
+    | "Module" | "Block" | "With" | "Assuming" | "Trace" | "Defer"
+    | "Unevaluated" | "Compile" | "CompoundExpression" | "Switch" | "Which"
+    | "Catch" | "Throw" => {
       vec!["HoldAll", "Protected"]
     }
 
