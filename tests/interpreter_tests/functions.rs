@@ -214,6 +214,57 @@ mod flat_and_orderless {
   }
 }
 
+mod attributes_assignment {
+  use super::*;
+
+  #[test]
+  fn set_attributes_via_assignment() {
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[f]; Attributes[f] = {Listable}; Attributes[f]")
+        .unwrap(),
+      "{Listable}"
+    );
+  }
+
+  #[test]
+  fn set_attributes_via_set_delayed() {
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[f]; Attributes[f] := {Flat}; Attributes[f]").unwrap(),
+      "{Flat}"
+    );
+  }
+
+  #[test]
+  fn set_attributes_with_symbol() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ClearAll[f]; Attributes[f] = Symbol[\"Listable\"]; Attributes[f]"
+      )
+      .unwrap(),
+      "{Listable}"
+    );
+  }
+
+  #[test]
+  fn set_attributes_invalid_returns_failed() {
+    clear_state();
+    assert_eq!(interpret("Attributes[f] := {a + b}").unwrap(), "$Failed");
+  }
+
+  #[test]
+  fn set_attributes_replaces_existing() {
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[f]; Attributes[f] = {Flat}; Attributes[f] = {Listable}; Attributes[f]")
+        .unwrap(),
+      "{Listable}"
+    );
+  }
+}
+
 mod anonymous_function_call {
   use super::*;
 
