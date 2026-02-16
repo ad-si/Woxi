@@ -1211,6 +1211,24 @@ mod e_constant {
   }
 
   #[test]
+  fn numeric_q_downvalue_true() {
+    clear_state();
+    assert_eq!(
+      interpret("NumericQ[a]=True; NumericQ[Sqrt[a]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn numeric_q_downvalue_false() {
+    clear_state();
+    assert_eq!(
+      interpret("NumericQ[a]=False; NumericQ[Sqrt[a]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
   fn e_plus_e() {
     assert_eq!(interpret("E + E").unwrap(), "2*E");
   }
