@@ -569,6 +569,30 @@ mod subtract_function {
   fn subtract_negative_result() {
     assert_eq!(interpret("Subtract[2, 5]").unwrap(), "-3");
   }
+
+  #[test]
+  fn subtract_distributes_minus_over_plus() {
+    // a - (b - c) should distribute: a + (-b) + c
+    assert_eq!(interpret("a - (b - c)").unwrap(), "a - b + c");
+  }
+
+  #[test]
+  fn subtract_distributes_minus_over_sum() {
+    // x - (a + b + c) = x - a - b - c
+    assert_eq!(interpret("x - (a + b + c)").unwrap(), "-a - b - c + x");
+  }
+
+  #[test]
+  fn negate_sum() {
+    // -(a + b) = -a - b
+    assert_eq!(interpret("-(a + b)").unwrap(), "-a - b");
+  }
+
+  #[test]
+  fn subtract_nested() {
+    // a - (b - (c - d)) = a - b + c - d
+    assert_eq!(interpret("a - (b - (c - d))").unwrap(), "a - b + c - d");
+  }
 }
 
 mod multiplication_formatting {

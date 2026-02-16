@@ -115,8 +115,8 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "E" => Some(std::f64::consts::E),
       "Degree" => Some(std::f64::consts::PI / 180.0),
       "EulerGamma" => Some(0.5772156649015329),
-      "Catalan" => Some(0.9159655941772190),
-      "GoldenRatio" => Some(1.6180339887498949),
+      "Catalan" => Some(0.915_965_594_177_219),
+      "GoldenRatio" => Some(1.618_033_988_749_895),
       "Glaisher" => Some(1.2824271291006226),
       "Khinchin" => Some(2.6854520010653064),
       "MachinePrecision" => Some(15.954589770191003),
@@ -1005,6 +1005,50 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // Handle Infinity in symbolic args: n * Infinity = ±Infinity
+  if symbolic_args.len() == 1 {
+    let is_pos_inf =
+      matches!(&symbolic_args[0], Expr::Identifier(s) if s == "Infinity");
+    let is_neg_inf = match &symbolic_args[0] {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity"),
+      _ => false,
+    };
+    if is_pos_inf || is_neg_inf {
+      let coeff_positive = combined_numer > 0;
+      // Positive * Infinity or Negative * (-Infinity) → Infinity
+      // Negative * Infinity or Positive * (-Infinity) → -Infinity
+      let result_positive = coeff_positive == is_pos_inf;
+      if result_positive {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      } else {
+        return Ok(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(Expr::Identifier("Infinity".to_string())),
+        });
+      }
+    }
+  }
+
+  // Times[-1, Plus[args...]] distributes: -1*(a+b+c) → (-a)+(-b)+(-c)
+  // This only applies when coefficient is exactly -1 and the sole symbolic arg is Plus
+  if matches!(&coeff, Expr::Integer(-1))
+    && symbolic_args.len() == 1
+    && matches!(&symbolic_args[0], Expr::FunctionCall { name, .. } if name == "Plus")
+    && let Expr::FunctionCall {
+      name: _,
+      args: plus_args,
+    } = &symbolic_args[0]
+  {
+    let negated: Result<Vec<Expr>, InterpreterError> = plus_args
+      .iter()
+      .map(|a| times_ast(&[Expr::Integer(-1), a.clone()]))
+      .collect();
+    return plus_ast(&negated?);
+  }
+
   // Build final args: coefficient (if not 1) + sorted symbolic terms
   sort_symbolic_factors(&mut symbolic_args);
   let mut final_args: Vec<Expr> = Vec::new();
@@ -1029,21 +1073,8 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// (use Subtract for that)
 pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
-    // Unary minus - handle BigInteger and large Integer directly
-    match &args[0] {
-      Expr::Integer(n) => return Ok(Expr::Integer(-n)),
-      Expr::BigInteger(n) => return Ok(bigint_to_expr(-n)),
-      Expr::Real(f) => return Ok(Expr::Real(-f)),
-      _ => {}
-    }
-    if let Some(n) = expr_to_num(&args[0]) {
-      Ok(num_to_expr(-n))
-    } else {
-      Ok(Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
-        operand: Box::new(args[0].clone()),
-      })
-    }
+    // Use times_ast for proper distribution: -(a+b) → -a - b
+    times_ast(&[Expr::Integer(-1), args[0].clone()])
   } else {
     // Wrong arity - print error to stderr and return unevaluated expression
     eprintln!();
@@ -3835,6 +3866,18 @@ fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
       {
         return Some(reduce(k, n));
       }
+      // Times[n, BinaryOp::Divide(Pi, d)] or Times[n, BinaryOp::Divide(n2*Pi, d)]
+      if let Some(n) = as_int(&args[0])
+        && let Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: num,
+          right: den,
+        } = &args[1]
+        && is_pi(num)
+        && let Some(d) = as_int(den)
+      {
+        return Some(reduce(n, d));
+      }
       None
     }
 
@@ -4931,6 +4974,13 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(name) if name == "Indeterminate" => {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
+    }
+    // -Infinity (as UnaryOp)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
+      return Ok(negative_pi_over_2());
     }
     // -Infinity (as BinaryOp)
     Expr::BinaryOp {
