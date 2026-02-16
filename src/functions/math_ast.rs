@@ -110,6 +110,18 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "-Degree" => Some(-std::f64::consts::PI / 180.0),
       _ => None,
     },
+    Expr::Identifier(name) => match name.as_str() {
+      "Pi" => Some(std::f64::consts::PI),
+      "E" => Some(std::f64::consts::E),
+      "Degree" => Some(std::f64::consts::PI / 180.0),
+      "EulerGamma" => Some(0.5772156649015329),
+      "Catalan" => Some(0.9159655941772190),
+      "GoldenRatio" => Some(1.6180339887498949),
+      "Glaisher" => Some(1.2824271291006226),
+      "Khinchin" => Some(2.6854520010653064),
+      "MachinePrecision" => Some(15.954589770191003),
+      _ => None,
+    },
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,

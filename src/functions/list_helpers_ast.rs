@@ -2379,8 +2379,9 @@ pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based RotateLeft: rotate list left by n positions.
 pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, head_name): (&[Expr], Option<&str>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "RotateLeft".to_string(),
@@ -2390,7 +2391,13 @@ pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   };
 
   if items.is_empty() {
-    return Ok(Expr::List(vec![]));
+    return match head_name {
+      Some(name) => Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: vec![],
+      }),
+      None => Ok(Expr::List(vec![])),
+    };
   }
 
   let len = items.len() as i128;
@@ -2400,7 +2407,13 @@ pub fn rotate_left_ast(list: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   let mut result = items[shift_usize..].to_vec();
   result.extend_from_slice(&items[..shift_usize]);
 
-  Ok(Expr::List(result))
+  match head_name {
+    Some(name) => Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: result,
+    }),
+    None => Ok(Expr::List(result)),
+  }
 }
 
 /// AST-based RotateRight: rotate list right by n positions.
