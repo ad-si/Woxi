@@ -2978,52 +2978,117 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         // If bounds are symbolic, try to compute symbolic product
         if bounds.is_none() {
-          // Check for special case: Product[i^k, {i, 1, n}] = n!^k
-          // where k is a constant and n is symbolic
-          let min_is_one = if items.len() == 2 {
-            true // {i, n} implies min = 1
+          let min_concrete = if items.len() == 2 {
+            Some(1i128) // {i, n} implies min = 1
           } else {
-            matches!(&items[1], Expr::Integer(1))
+            expr_to_i128(&items[1])
+          };
+          let max_concrete = if items.len() == 2 {
+            expr_to_i128(&items[1])
+          } else {
+            expr_to_i128(&items[2])
+          };
+          let max_expr = if items.len() == 2 {
+            &items[1]
+          } else {
+            &items[2]
+          };
+          let min_expr = if items.len() == 2 {
+            &Expr::Integer(1)
+          } else {
+            &items[1]
           };
 
-          if min_is_one {
-            let n_expr = if items.len() == 2 {
-              &items[1]
-            } else {
-              &items[2]
-            };
-
-            // Check if body is i^k where i is the variable and k is a constant
-            match body {
-              Expr::BinaryOp {
-                op: crate::syntax::BinaryOperator::Power,
-                left,
-                right,
-              } => {
-                if matches!(left.as_ref(), Expr::Identifier(name) if name == &var_name)
-                {
-                  // Product[i^k, {i, 1, n}] = n!^k
-                  if let Some(k) = expr_to_i128(right) {
-                    // Return n!^k
-                    return Ok(Expr::BinaryOp {
-                      op: crate::syntax::BinaryOperator::Power,
-                      left: Box::new(Expr::FunctionCall {
-                        name: "Factorial".to_string(),
-                        args: vec![n_expr.clone()],
-                      }),
-                      right: Box::new(Expr::Integer(k)),
-                    });
-                  }
-                }
-              }
-              Expr::Identifier(name) if name == &var_name => {
-                // Product[i, {i, 1, n}] = n!
-                return Ok(Expr::FunctionCall {
+          // Body is the iteration variable itself: Product[k, {k, ...}]
+          if matches!(body, Expr::Identifier(name) if name == &var_name) {
+            if let Some(min_val) = min_concrete {
+              if max_concrete.is_none() {
+                // Product[k, {k, concrete_min, symbolic_max}]
+                // = max! / (min-1)!
+                let n_factorial = Expr::FunctionCall {
                   name: "Factorial".to_string(),
-                  args: vec![n_expr.clone()],
+                  args: vec![max_expr.clone()],
+                };
+                if min_val == 1 {
+                  return Ok(n_factorial);
+                }
+                // Compute (min-1)! as a concrete integer
+                let mut denom: i128 = 1;
+                for j in 2..min_val {
+                  denom *= j;
+                }
+                return Ok(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Divide,
+                  left: Box::new(n_factorial),
+                  right: Box::new(Expr::Integer(denom)),
                 });
               }
-              _ => {}
+            } else if max_concrete.is_none() {
+              // Product[k, {k, sym_min, sym_max}]
+              // = Pochhammer[min, 1 - min + max]
+              return Ok(Expr::FunctionCall {
+                name: "Pochhammer".to_string(),
+                args: vec![
+                  min_expr.clone(),
+                  // 1 - min + max
+                  Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Plus,
+                    left: Box::new(Expr::BinaryOp {
+                      op: crate::syntax::BinaryOperator::Minus,
+                      left: Box::new(Expr::Integer(1)),
+                      right: Box::new(min_expr.clone()),
+                    }),
+                    right: Box::new(max_expr.clone()),
+                  },
+                ],
+              });
+            }
+          }
+
+          // Body is c^var: Product[c^i, {i, 1, n}] = c^(n*(1+n)/2)
+          if let Some(1) = min_concrete
+            && max_concrete.is_none()
+            && let Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: base,
+              right: exp,
+            } = body
+          {
+            if matches!(exp.as_ref(), Expr::Identifier(name) if name == &var_name)
+            {
+              // Product[c^i, {i, 1, n}] = c^((n*(1+n))/2)
+              let n = max_expr.clone();
+              let exponent = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(n.clone()),
+                  right: Box::new(Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Plus,
+                    left: Box::new(Expr::Integer(1)),
+                    right: Box::new(n),
+                  }),
+                }),
+                right: Box::new(Expr::Integer(2)),
+              };
+              return Ok(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: base.clone(),
+                right: Box::new(exponent),
+              });
+            }
+
+            // Product[i^k, {i, 1, n}] = n!^k
+            if matches!(base.as_ref(), Expr::Identifier(name) if name == &var_name)
+            {
+              return Ok(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(Expr::FunctionCall {
+                  name: "Factorial".to_string(),
+                  args: vec![max_expr.clone()],
+                }),
+                right: exp.clone(),
+              });
             }
           }
 

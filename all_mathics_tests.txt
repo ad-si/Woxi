@@ -91,39 +91,6 @@ EXPECTED:
 = {operator_string}x
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: Product
-LINE: 738
-TYPE: >>
-INPUT: Product[k, {k, i, n}]
-EXPECTED:
-= n! / (-1 + i)!
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Product
-LINE: 750
-TYPE: >>
-INPUT: Product[k, {k, 3, n}]
-EXPECTED:
-= n! / 2
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Product
-LINE: 757
-TYPE: >>
-INPUT: Product[2 ^ i, {i, 1, n}]
-EXPECTED:
-= 2 ^ (n / 2 + n ^ 2 / 2)
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Re
-LINE: 862
-TYPE: >>
-INPUT: Plot[{Cos[a], Re[E^(I a)]}, {a, 0, 2 Pi}]
-EXPECTED:
-= -Graphics-
----
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: RealValuedNumberQ
 LINE: 923
 TYPE: >>

@@ -1299,6 +1299,27 @@ mod symbolic_product {
     assert_eq!(interpret("Factorial[n]").unwrap(), "n!");
     assert_eq!(interpret("Factorial[5]").unwrap(), "120");
   }
+
+  #[test]
+  fn product_symbolic_lower_bound() {
+    assert_eq!(
+      interpret("Product[k, {k, i, n}]").unwrap(),
+      "Pochhammer[i, 1 - i + n]"
+    );
+  }
+
+  #[test]
+  fn product_concrete_lower_symbolic_upper() {
+    assert_eq!(interpret("Product[k, {k, 3, n}]").unwrap(), "n!/2");
+  }
+
+  #[test]
+  fn product_power_symbolic() {
+    assert_eq!(
+      interpret("Product[2 ^ i, {i, 1, n}]").unwrap(),
+      "2^((n*(1 + n))/2)"
+    );
+  }
 }
 
 mod minus_wrong_arity {
