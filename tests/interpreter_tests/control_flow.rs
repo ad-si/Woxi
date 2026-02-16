@@ -481,6 +481,19 @@ mod not_logical {
     clear_state();
     assert_eq!(interpret("Not[a && b]").unwrap(), "!(a && b)");
   }
+
+  #[test]
+  fn prefix_not_true() {
+    clear_state();
+    // !True should parse as Not[True] and evaluate to False
+    assert_eq!(interpret("Not[True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn prefix_not_false() {
+    clear_state();
+    assert_eq!(interpret("Not[False]").unwrap(), "True");
+  }
 }
 
 mod nand_logical {

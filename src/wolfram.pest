@@ -108,8 +108,11 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // Only matches when NOT followed by a digit (so -3 still parses as negative Integer)
 // Handled in parse_expression as a synthetic 0 - expr with proper precedence
 LeadingMinus = { "-" ~ !ASCII_DIGIT }
+// LeadingNot marks prefix "!" as Not[expr]: !True, !x, !(a && b), etc.
+// Must not be followed by "=" (which would be != operator)
+LeadingNot = { "!" ~ !"=" }
 Expression = {
-    (LeadingMinus ~ Term | Term) ~ (Operator ~ Term)*
+    (LeadingNot ~ Term | LeadingMinus ~ Term | Term) ~ (Operator ~ Term)*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
@@ -216,7 +219,7 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingMinus ~ TermNoImplicit | TermNoImplicit) ~ (Operator ~ TermNoImplicit)*
+    (LeadingNot ~ TermNoImplicit | LeadingMinus ~ TermNoImplicit | TermNoImplicit) ~ (Operator ~ TermNoImplicit)*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
@@ -228,7 +231,7 @@ PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
-    (LeadingMinus ~ Term | Term) ~ (ConditionOp ~ Term)*
+    (LeadingNot ~ Term | LeadingMinus ~ Term | Term) ~ (ConditionOp ~ Term)*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 ConditionOp = {
