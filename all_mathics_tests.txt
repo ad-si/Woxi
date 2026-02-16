@@ -1,12 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: Orderless
-LINE: 498
-TYPE: >>
-INPUT: f[a, b, c] /. f[a, c] -> d
-EXPECTED:
-= f[b, d]
----
-FILE: mathics/builtin/attributes.py
 CLASS: Protect
 LINE: 520
 TYPE: >>

@@ -6041,6 +6041,80 @@ fn apply_replace_ast(
   }
 }
 
+/// Find a subset of `sub_len` arguments from `args` at `indices` that matches the pattern args
+/// when wrapped in a function call. Returns the matched indices and bindings.
+fn find_orderless_subset_match(
+  func_name: &str,
+  args: &[Expr],
+  indices: &[usize],
+  pat_args: &[Expr],
+  sub_len: usize,
+) -> Option<(Vec<usize>, Vec<(String, Expr)>)> {
+  // Generate all combinations of sub_len indices from the available indices
+  let combos = combinations(indices, sub_len);
+  for combo in combos {
+    let sub_args: Vec<Expr> = combo.iter().map(|&i| args[i].clone()).collect();
+    // Try all permutations of the selected subset against pattern args
+    let perms = permutations(&sub_args);
+    for perm in perms {
+      let sub_expr = Expr::FunctionCall {
+        name: func_name.to_string(),
+        args: perm,
+      };
+      if let Some(bindings) = match_pattern(
+        &sub_expr,
+        &Expr::FunctionCall {
+          name: func_name.to_string(),
+          args: pat_args.to_vec(),
+        },
+      ) {
+        return Some((combo, bindings));
+      }
+    }
+  }
+  None
+}
+
+/// Generate all combinations of k elements from the slice.
+fn combinations(items: &[usize], k: usize) -> Vec<Vec<usize>> {
+  if k == 0 {
+    return vec![vec![]];
+  }
+  if items.len() < k {
+    return vec![];
+  }
+  let mut result = Vec::new();
+  for (i, &item) in items.iter().enumerate() {
+    let rest = &items[i + 1..];
+    for mut combo in combinations(rest, k - 1) {
+      combo.insert(0, item);
+      result.push(combo);
+    }
+  }
+  result
+}
+
+/// Generate all permutations of a slice.
+fn permutations(items: &[Expr]) -> Vec<Vec<Expr>> {
+  if items.len() <= 1 {
+    return vec![items.to_vec()];
+  }
+  let mut result = Vec::new();
+  for i in 0..items.len() {
+    let rest: Vec<Expr> = items
+      .iter()
+      .enumerate()
+      .filter(|&(j, _)| j != i)
+      .map(|(_, e)| e.clone())
+      .collect();
+    for mut perm in permutations(&rest) {
+      perm.insert(0, items[i].clone());
+      result.push(perm);
+    }
+  }
+  result
+}
+
 /// Try Flat subsequence replacement. For a Flat function f, matches f[a,b] within f[a,b,c]
 /// by trying contiguous subsequences. Recursively applies to subexpressions.
 fn try_flat_replace_all(
@@ -6064,17 +6138,28 @@ fn try_flat_replace_all(
         && pat_name == name
         && pat_args.len() < args.len()
       {
-        let sub_len = pat_args.len();
-        for start in 0..=(args.len() - sub_len) {
-          let sub_expr = Expr::FunctionCall {
-            name: name.clone(),
-            args: args[start..start + sub_len].to_vec(),
-          };
-          if let Some(bindings) = match_pattern(&sub_expr, pattern) {
+        let has_orderless = is_builtin_orderless(name)
+          || crate::FUNC_ATTRS.with(|m| {
+            m.borrow()
+              .get(name.as_str())
+              .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
+          });
+
+        if has_orderless {
+          // For Flat+Orderless: try all combinations of sub_len args
+          let sub_len = pat_args.len();
+          let indices: Vec<usize> = (0..args.len()).collect();
+          if let Some((matched_indices, bindings)) =
+            find_orderless_subset_match(name, args, &indices, pat_args, sub_len)
+          {
             let replaced = apply_bindings(replacement, &bindings)?;
-            let mut new_args = args[..start].to_vec();
+            let mut new_args: Vec<Expr> = args
+              .iter()
+              .enumerate()
+              .filter(|(i, _)| !matched_indices.contains(i))
+              .map(|(_, a)| a.clone())
+              .collect();
             new_args.push(replaced);
-            new_args.extend_from_slice(&args[start + sub_len..]);
             if new_args.len() == 1 {
               return Ok(Some(new_args.into_iter().next().unwrap()));
             }
@@ -6082,6 +6167,28 @@ fn try_flat_replace_all(
               name: name.clone(),
               args: new_args,
             }));
+          }
+        } else {
+          // For Flat only: try contiguous subsequences
+          let sub_len = pat_args.len();
+          for start in 0..=(args.len() - sub_len) {
+            let sub_expr = Expr::FunctionCall {
+              name: name.clone(),
+              args: args[start..start + sub_len].to_vec(),
+            };
+            if let Some(bindings) = match_pattern(&sub_expr, pattern) {
+              let replaced = apply_bindings(replacement, &bindings)?;
+              let mut new_args = args[..start].to_vec();
+              new_args.push(replaced);
+              new_args.extend_from_slice(&args[start + sub_len..]);
+              if new_args.len() == 1 {
+                return Ok(Some(new_args.into_iter().next().unwrap()));
+              }
+              return Ok(Some(Expr::FunctionCall {
+                name: name.clone(),
+                args: new_args,
+              }));
+            }
           }
         }
       }
