@@ -304,6 +304,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains(".{")
       && !trimmed.contains('^')
       && !trimmed.contains('.')
+      && !trimmed.contains('=')
     // Reals may need scientific notation formatting
     {
       // Simple list with no function calls or operators - return as-is

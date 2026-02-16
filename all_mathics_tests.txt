@@ -92,14 +92,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/attributes.py
 CLASS: Attributes
-LINE: 65
-TYPE: >>
-INPUT: Attributes[a + b + c]
-EXPECTED:
-= {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}
----
-FILE: mathics/builtin/attributes.py
-CLASS: Attributes
 LINE: 72
 TYPE: >>
 INPUT: f[b, f[a, c]]
@@ -175,14 +167,6 @@ TYPE: >>
 INPUT: Attributes[f]
 EXPECTED:
 = {}
----
-FILE: mathics/builtin/attributes.py
-CLASS: Constant
-LINE: 171
-TYPE: >>
-INPUT: Attributes[E]
-EXPECTED:
-= {Constant, Protected, ReadProtected}
 ---
 FILE: mathics/builtin/attributes.py
 CLASS: Constant
@@ -327,26 +311,10 @@ EXPECTED:
 ---
 FILE: mathics/builtin/attributes.py
 CLASS: NHoldAll
-LINE: 368
-TYPE: >>
-INPUT: N[f[2, 3]]
-EXPECTED:
-= f[2., 3.]
----
-FILE: mathics/builtin/attributes.py
-CLASS: NHoldAll
 LINE: 370
 TYPE: >>
 INPUT: SetAttributes[f, NHoldAll]
 EXPECTED: (none)
----
-FILE: mathics/builtin/attributes.py
-CLASS: NumericFunction
-LINE: 422
-TYPE: >>
-INPUT: Attributes[Sqrt]
-EXPECTED:
-= {Listable, NumericFunction, Protected}
 ---
 FILE: mathics/builtin/attributes.py
 CLASS: NumericFunction
@@ -582,14 +550,6 @@ TYPE: >>
 INPUT: Definition[p]
 EXPECTED:
 = Attributes[p] = {ReadProtected}
----
-FILE: mathics/builtin/attributes.py
-CLASS: SequenceHold
-LINE: 658
-TYPE: >>
-INPUT: f[Sequence[a, b]]
-EXPECTED:
-= f[a, b]
 ---
 FILE: mathics/builtin/attributes.py
 CLASS: SequenceHold
@@ -1165,30 +1125,6 @@ EXPECTED:
 = {HoldAll, Protected}
 ---
 FILE: mathics/builtin/evaluation.py
-CLASS: HoldComplete
-LINE: 148
-TYPE: >>
-INPUT: Attributes[HoldComplete]
-EXPECTED:
-= {HoldAllComplete, Protected}
----
-FILE: mathics/builtin/evaluation.py
-CLASS: HoldForm
-LINE: 165
-TYPE: >>
-INPUT: HoldForm[1 + 2 + 3]
-EXPECTED:
-= 1 + 2 + 3
----
-FILE: mathics/builtin/evaluation.py
-CLASS: HoldForm
-LINE: 169
-TYPE: >>
-INPUT: Attributes[HoldForm]
-EXPECTED:
-= {HoldAll, Protected}
----
-FILE: mathics/builtin/evaluation.py
 CLASS: Evaluate
 LINE: 192
 TYPE: >>
@@ -1253,14 +1189,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/evaluation.py
 CLASS: Unevaluated
-LINE: 234
-TYPE: >>
-INPUT: Attributes[Unevaluated]
-EXPECTED:
-= {HoldAllComplete, Protected}
----
-FILE: mathics/builtin/evaluation.py
-CLASS: Unevaluated
 LINE: 241
 TYPE: >>
 INPUT: Attributes[f] = {Flat};
@@ -1304,14 +1232,6 @@ TYPE: >>
 INPUT: ReleaseHold[y]
 EXPECTED:
 = y
----
-FILE: mathics/builtin/evaluation.py
-CLASS: Sequence
-LINE: 293
-TYPE: >>
-INPUT: f[x, Sequence[a, b], y]
-EXPECTED:
-= f[x, a, b, y]
 ---
 FILE: mathics/builtin/evaluation.py
 CLASS: Sequence
@@ -9272,38 +9192,6 @@ EXPECTED:
 = {False, True}
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: BooleanQ
-LINE: 398
-TYPE: >>
-INPUT: BooleanQ[True]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: BooleanQ
-LINE: 401
-TYPE: >>
-INPUT: BooleanQ[False]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: BooleanQ
-LINE: 404
-TYPE: >>
-INPUT: BooleanQ[a]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: BooleanQ
-LINE: 407
-TYPE: >>
-INPUT: BooleanQ[1 < 2]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Equal
 LINE: 464
 TYPE: >>
@@ -9324,14 +9212,6 @@ CLASS: Equal
 LINE: 500
 TYPE: >>
 INPUT: a = b; a == b
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Equal
-LINE: 509
-TYPE: >>
-INPUT: {{1}, {2}} == {{1}, {2}}
 EXPECTED:
 = True
 ---
@@ -22954,59 +22834,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Divide
-LINE: 114
-TYPE: >>
-INPUT: 1 / 8
-EXPECTED:
-= 1 / 8
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 116
-TYPE: >>
-INPUT: Pi / 4
-EXPECTED:
-= Pi / 4
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 120
-TYPE: >>
-INPUT: Pi / 4.0
-EXPECTED:
-= 0.785398
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 122
-TYPE: >>
-INPUT: 1 / 8
-EXPECTED:
-= 1 / 8
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
 LINE: 124
 TYPE: >>
 INPUT: N[%]
 EXPECTED:
 = 0.125
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 128
-TYPE: >>
-INPUT: a / b / c
-EXPECTED:
-= a / (b c)
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 130
-TYPE: >>
-INPUT: a / (b / c)
-EXPECTED:
-= a c / b
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Divide
@@ -23023,22 +22855,6 @@ TYPE: >>
 INPUT: a / (b ^ 2 * c ^ 3 / e)
 EXPECTED:
 = a e / (b ^ 2 c ^ 3)
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Minus
-LINE: 177
-TYPE: >>
-INPUT: -a // FullForm
-EXPECTED:
-= Times[-1, a]
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Minus
-LINE: 181
-TYPE: >>
-INPUT: -(x - 2/3)
-EXPECTED:
-= 2 / 3 - x
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Minus

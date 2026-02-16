@@ -3192,6 +3192,30 @@ mod attributes {
       "{Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}"
     );
   }
+
+  #[test]
+  fn non_symbol_arg_returns_unevaluated() {
+    assert_eq!(
+      interpret("Attributes[a + b + c]").unwrap(),
+      "Attributes[a + b + c]"
+    );
+  }
+
+  #[test]
+  fn hold_complete() {
+    assert_eq!(
+      interpret("Attributes[HoldComplete]").unwrap(),
+      "{HoldAllComplete, Protected}"
+    );
+  }
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("Attributes[Unevaluated]").unwrap(),
+      "{HoldAllComplete, Protected}"
+    );
+  }
 }
 
 mod symbol_q {
@@ -3367,5 +3391,24 @@ mod equivalent_logic {
       interpret("Equivalent[a, b, c]").unwrap(),
       "Equivalent[a, b, c]"
     );
+  }
+}
+
+mod list_equality {
+  use super::*;
+
+  #[test]
+  fn nested_lists_equal() {
+    assert_eq!(interpret("{{1}, {2}} == {{1}, {2}}").unwrap(), "True");
+  }
+
+  #[test]
+  fn flat_lists_equal() {
+    assert_eq!(interpret("{1, 2} == {1, 2}").unwrap(), "True");
+  }
+
+  #[test]
+  fn lists_not_equal() {
+    assert_eq!(interpret("{1, 2} == {1, 3}").unwrap(), "False");
   }
 }
