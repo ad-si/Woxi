@@ -1189,24 +1189,26 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     return Expr::Raw(String::new());
   }
 
-  // Check for AnonymousFunctionSuffix (lowest precedence, always at very end)
-  let anon_func_suffix = if inner
-    .last()
-    .is_some_and(|p| p.as_rule() == Rule::AnonymousFunctionSuffix)
-  {
-    let suffix = inner.pop().unwrap();
-    // Collect optional BracketArgs for direct calls like (# + 1 /. x -> 2 &)[5]
+  // Find AnonymousFunctionSuffix position (if any) to split pre-& and post-& parts
+  let anon_idx = inner
+    .iter()
+    .position(|p| p.as_rule() == Rule::AnonymousFunctionSuffix);
+
+  // Split off continuation operators/postfix AFTER & (if any)
+  let (anon_func_suffix, post_anon_pairs) = if let Some(idx) = anon_idx {
+    let suffix = inner.remove(idx);
+    let post_pairs: Vec<Pair<Rule>> = inner.drain(idx..).collect();
     let bracket_args: Vec<Vec<Expr>> = suffix
       .into_inner()
       .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
       .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
       .collect();
-    Some(bracket_args)
+    (Some(bracket_args), post_pairs)
   } else {
-    None
+    (None, Vec::new())
   };
 
-  // Collect trailing PostfixFunction pairs (lowest precedence, always at end)
+  // Collect trailing PostfixFunction pairs from pre-& part
   let mut postfix_funcs: Vec<Pair<Rule>> = Vec::new();
   while inner
     .last()
@@ -1378,6 +1380,47 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         func: Box::new(result),
         args,
       };
+    }
+
+    // Apply continuation operators after & (e.g., #^2& @ 3)
+    if !post_anon_pairs.is_empty() {
+      let mut post_terms: Vec<Expr> = Vec::new();
+      let mut post_ops: Vec<String> = Vec::new();
+      let mut post_postfix: Vec<Pair<Rule>> = Vec::new();
+
+      // Collect postfix functions from the end of post-& pairs
+      let mut post_pairs = post_anon_pairs;
+      while post_pairs
+        .last()
+        .is_some_and(|p| p.as_rule() == Rule::PostfixFunction)
+      {
+        post_postfix.push(post_pairs.pop().unwrap());
+      }
+      post_postfix.reverse();
+
+      // Parse continuation as operator-term pairs
+      post_terms.push(result);
+      let mut iter = post_pairs.into_iter();
+      while let Some(op_pair) = iter.next() {
+        if op_pair.as_rule() == Rule::Operator {
+          post_ops.push(op_pair.as_str().to_string());
+          if let Some(term_pair) = iter.next() {
+            post_terms.push(pair_to_expr(term_pair));
+          }
+        }
+      }
+
+      // Build expression tree with precedence
+      result = build_binary_tree(post_terms, post_ops);
+
+      // Apply post-& postfix functions
+      for func_pair in post_postfix {
+        let func = parse_postfix_function(func_pair);
+        result = Expr::Postfix {
+          expr: Box::new(result),
+          func: Box::new(func),
+        };
+      }
     }
   }
 

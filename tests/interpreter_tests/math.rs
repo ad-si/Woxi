@@ -3559,3 +3559,72 @@ mod curried_call_preservation {
     assert_eq!(interpret("{f, g}[x]").unwrap(), "{f, g}[x]");
   }
 }
+
+mod anonymous_function_precedence {
+  use super::*;
+
+  #[test]
+  fn ampersand_captures_full_expression() {
+    assert_eq!(interpret("#1+#2&[4, 5]").unwrap(), "9");
+  }
+
+  #[test]
+  fn ampersand_with_operator_after() {
+    assert_eq!(interpret("#^2& @ 3").unwrap(), "9");
+  }
+
+  #[test]
+  fn slot2_standalone() {
+    assert_eq!(interpret("#2&[4, 5]").unwrap(), "5");
+  }
+}
+
+mod diagonal {
+  use super::*;
+
+  #[test]
+  fn main_diagonal() {
+    assert_eq!(
+      interpret("Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "{1, 5, 9}"
+    );
+  }
+
+  #[test]
+  fn superdiagonal() {
+    assert_eq!(
+      interpret("Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]").unwrap(),
+      "{2, 6}"
+    );
+  }
+
+  #[test]
+  fn subdiagonal() {
+    assert_eq!(
+      interpret("Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, -1]").unwrap(),
+      "{4, 8}"
+    );
+  }
+
+  #[test]
+  fn rectangular() {
+    assert_eq!(
+      interpret("Diagonal[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{1, 5}"
+    );
+  }
+}
+
+mod apply_head_replacement {
+  use super::*;
+
+  #[test]
+  fn apply_replaces_plus_head() {
+    assert_eq!(interpret("f @@ (a + b + c)").unwrap(), "f[a, b, c]");
+  }
+
+  #[test]
+  fn apply_operator_form() {
+    assert_eq!(interpret("Apply[f][a + b + c]").unwrap(), "f[a, b, c]");
+  }
+}

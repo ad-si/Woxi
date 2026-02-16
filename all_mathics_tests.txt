@@ -5237,38 +5237,6 @@ INPUT: DiskMatrix[3]
 EXPECTED:
 = {{0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}}
 ---
-FILE: mathics/builtin/matrices/partmatrix.py
-CLASS: Diagonal
-LINE: 29
-TYPE: >>
-INPUT: Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]
-EXPECTED:
-= {1, 5, 9}
----
-FILE: mathics/builtin/matrices/partmatrix.py
-CLASS: Diagonal
-LINE: 33
-TYPE: >>
-INPUT: Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]
-EXPECTED:
-= {2, 6}
----
-FILE: mathics/builtin/matrices/partmatrix.py
-CLASS: Diagonal
-LINE: 37
-TYPE: >>
-INPUT: Diagonal[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, -1]
-EXPECTED:
-= {4, 8}
----
-FILE: mathics/builtin/matrices/partmatrix.py
-CLASS: Diagonal
-LINE: 41
-TYPE: >>
-INPUT: Diagonal[{{1, 2, 3}, {4, 5, 6}}]
-EXPECTED:
-= {1, 5}
----
 FILE: mathics/builtin/no_meaning/infix_extra.py
 CLASS: DirectedEdge
 LINE: 31
@@ -6431,14 +6399,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/application.py
 CLASS: Function
-LINE: 46
-TYPE: X>
-INPUT: #1+#2&[4, 5]
-EXPECTED:
-= 9
----
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
 LINE: 54
 TYPE: >>
 INPUT: Function[{x}, Function[{y}, f[x, y]]][y]
@@ -6458,14 +6418,6 @@ CLASS: Function
 LINE: 58
 TYPE: >>
 INPUT: Function[y, Function[x, y^x]][x][y]
-EXPECTED:
-= x ^ y
----
-FILE: mathics/builtin/functional/application.py
-CLASS: Function
-LINE: 60
-TYPE: >>
-INPUT: Function[x, Function[y, x^y]][x][y]
 EXPECTED:
 = x ^ y
 ---
@@ -6538,22 +6490,6 @@ TYPE: >>
 INPUT: FullForm[##]
 EXPECTED:
 = SlotSequence[1]
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Apply
-LINE: 53
-TYPE: >>
-INPUT: f @@ (a + b + c)
-EXPECTED:
-= f[a, b, c]
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Apply
-LINE: 57
-TYPE: >>
-INPUT: Apply[f][a + b + c]
-EXPECTED:
-= f[a, b, c]
 ---
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: Apply
