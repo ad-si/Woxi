@@ -1745,6 +1745,43 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // Handle Take[list, {start, end}] and Take[list, {start, end, step}]
+  if let Expr::List(spec) = n {
+    if spec.len() == 1 {
+      if let Some(idx) = expr_to_i128(&spec[0]) {
+        let len = items.len() as i128;
+        let real_idx = if idx < 0 { len + idx + 1 } else { idx };
+        if real_idx >= 1 && real_idx <= len {
+          return Ok(Expr::List(vec![items[(real_idx - 1) as usize].clone()]));
+        }
+      }
+    } else if spec.len() >= 2 {
+      let len = items.len() as i128;
+      if let (Some(start), Some(end)) = (expr_to_i128(&spec[0]), expr_to_i128(&spec[1])) {
+        let step = if spec.len() == 3 {
+          expr_to_i128(&spec[2]).unwrap_or(1)
+        } else {
+          1
+        };
+        let real_start = if start < 0 { len + start + 1 } else { start };
+        let real_end = if end < 0 { len + end + 1 } else { end };
+        if real_start >= 1 && real_end >= 1 && real_start <= len && real_end <= len && step != 0 {
+          let mut result = Vec::new();
+          let mut i = real_start;
+          while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {
+            result.push(items[(i - 1) as usize].clone());
+            i += step;
+          }
+          return Ok(Expr::List(result));
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Take".to_string(),
+      args: vec![list.clone(), n.clone()],
+    });
+  }
+
   let count = match expr_to_i128(n) {
     Some(i) => i,
     None => {
