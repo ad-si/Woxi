@@ -1252,7 +1252,24 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Real(total));
     }
     if total == 0.0 {
-      return Ok(Expr::Integer(0));
+      // Check if any remaining symbolic arg involves I (imaginary unit)
+      let has_imag = symbolic_args
+        .iter()
+        .any(|a| matches!(a, Expr::Identifier(s) if s == "I"));
+      if has_imag {
+        // 0.0 * I → 0. + 0.*I (Complex form)
+        return Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(Expr::Real(0.0)),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Real(0.0)),
+            right: Box::new(Expr::Identifier("I".to_string())),
+          }),
+        });
+      }
+      // 0.0 * x → 0. (approximate zero, not exact)
+      return Ok(Expr::Real(0.0));
     }
     symbolic_args = combine_like_bases(symbolic_args)?;
     sort_symbolic_factors(&mut symbolic_args);
