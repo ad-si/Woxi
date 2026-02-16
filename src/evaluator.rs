@@ -2295,6 +2295,27 @@ pub fn evaluate_function_call_ast(
     "Differences" if args.len() == 1 => {
       return list_helpers_ast::differences_ast(&args[0]);
     }
+    "Ratios" if args.len() == 1 => {
+      if let Expr::List(items) = &args[0] {
+        if items.len() < 2 {
+          return Ok(Expr::List(vec![]));
+        }
+        let mut result = Vec::with_capacity(items.len() - 1);
+        for i in 1..items.len() {
+          let ratio = evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(items[i].clone()),
+            right: Box::new(items[i - 1].clone()),
+          })?;
+          result.push(ratio);
+        }
+        return Ok(Expr::List(result));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Ratios".to_string(),
+        args: args.to_vec(),
+      });
+    }
     "Scan" if args.len() == 2 => {
       return list_helpers_ast::scan_ast(&args[0], &args[1]);
     }
