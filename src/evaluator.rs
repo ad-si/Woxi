@@ -2757,6 +2757,45 @@ pub fn evaluate_function_call_ast(
     "NumericQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::numeric_q_ast(args);
     }
+    "ExactNumberQ" if args.len() == 1 => {
+      let is_exact = match &args[0] {
+        Expr::Integer(_) | Expr::BigInteger(_) => true,
+        Expr::FunctionCall {
+          name: fname,
+          args: rargs,
+        } if fname == "Rational"
+          && rargs.len() == 2
+          && matches!(rargs[0], Expr::Integer(_))
+          && matches!(rargs[1], Expr::Integer(_)) =>
+        {
+          true
+        }
+        _ => false,
+      };
+      return Ok(Expr::Identifier(
+        if is_exact { "True" } else { "False" }.to_string(),
+      ));
+    }
+    "InexactNumberQ" if args.len() == 1 => {
+      let is_inexact = matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _));
+      return Ok(Expr::Identifier(
+        if is_inexact { "True" } else { "False" }.to_string(),
+      ));
+    }
+    "LevelQ" if args.len() == 1 => {
+      let is_valid = match &args[0] {
+        Expr::Integer(_) => true,
+        Expr::Identifier(name) if name == "Infinity" => true,
+        Expr::List(items) => items.iter().all(|item| {
+          matches!(item, Expr::Integer(_))
+            || matches!(item, Expr::Identifier(n) if n == "Infinity")
+        }),
+        _ => false,
+      };
+      return Ok(Expr::Identifier(
+        if is_valid { "True" } else { "False" }.to_string(),
+      ));
+    }
     "Positive" | "PositiveQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::positive_q_ast(args);
     }
@@ -2832,6 +2871,14 @@ pub fn evaluate_function_call_ast(
 
     "LeafCount" if args.len() == 1 => {
       return crate::functions::predicate_ast::leaf_count_ast(args);
+    }
+
+    // Introspection functions - return {} for symbols without stored definitions
+    "Messages" | "UpValues" | "DownValues" | "OwnValues" | "SubValues"
+    | "NValues" | "FormatValues" | "DefaultValues"
+      if args.len() == 1 =>
+    {
+      return Ok(Expr::List(vec![]));
     }
 
     // FullForm - returns full form representation (unevaluated)

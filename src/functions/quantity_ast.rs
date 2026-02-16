@@ -1046,6 +1046,14 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(make_quantity(Expr::Integer(1), unit))
     }
     2 => {
+      // Thread over lists: Quantity[{a, b}, unit] → {Quantity[a, unit], Quantity[b, unit]}
+      if let Expr::List(items) = &args[0] {
+        let results: Vec<Expr> = items
+          .iter()
+          .map(|item| make_quantity(item.clone(), args[1].clone()))
+          .collect();
+        return Ok(Expr::List(results));
+      }
       let magnitude = args[0].clone();
       let unit = args[1].clone();
       Ok(make_quantity(magnitude, unit))
