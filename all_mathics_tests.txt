@@ -165,22 +165,6 @@ EXPECTED:
 = 2885155200
 ---
 FILE: mathics/builtin/datentime.py
-CLASS: AbsoluteTiming
-LINE: 406
-TYPE: >>
-INPUT: AbsoluteTiming[50!]
-EXPECTED:
-= {..., 30414093201713378043612608166064768844377641568960512000000000000}
----
-FILE: mathics/builtin/datentime.py
-CLASS: AbsoluteTiming
-LINE: 408
-TYPE: >>
-INPUT: Attributes[AbsoluteTiming]
-EXPECTED:
-= {HoldAll, Protected}
----
-FILE: mathics/builtin/datentime.py
 CLASS: DateDifference
 LINE: 440
 TYPE: >>

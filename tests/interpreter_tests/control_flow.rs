@@ -551,3 +551,25 @@ mod nor_logical {
     assert_eq!(interpret("Nor[a, False, b]").unwrap(), "Nor[a, b]");
   }
 }
+
+mod absolute_timing {
+  use super::*;
+
+  #[test]
+  fn absolute_timing_returns_list() {
+    clear_state();
+    // AbsoluteTiming returns {time, result}
+    let result = interpret("AbsoluteTiming[1 + 1]").unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.ends_with('}'));
+    assert!(result.contains(", 2}"));
+  }
+
+  #[test]
+  fn timing_returns_list() {
+    clear_state();
+    let result = interpret("Timing[2 + 3]").unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.contains(", 5}"));
+  }
+}
