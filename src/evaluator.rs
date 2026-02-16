@@ -105,7 +105,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         }
       }
       // Functions with HoldAll: pass args unevaluated
-      if name == "Function" {
+      if name == "Function" || name == "Protect" || name == "Unprotect" {
         let result = evaluate_function_call_ast(name, args)?;
         return Ok(expr_to_string(&result));
       }
@@ -837,6 +837,11 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           .map(evaluate_expr_to_expr)
           .collect::<Result<_, _>>()?;
         return association_nested_access(name, &evaluated_args);
+      }
+
+      // HoldAll functions: pass args unevaluated
+      if name == "Protect" || name == "Unprotect" {
+        return evaluate_function_call_ast(name, args);
       }
 
       // Evaluate arguments
@@ -2050,6 +2055,60 @@ pub fn evaluate_function_call_ast(
         });
         return Ok(Expr::Identifier("Null".to_string()));
       }
+    }
+    "Protect" => {
+      let mut protected_syms = Vec::new();
+      for arg in args {
+        if let Expr::Identifier(sym) = arg {
+          crate::FUNC_ATTRS.with(|m| {
+            let mut attrs = m.borrow_mut();
+            let entry = attrs.entry(sym.clone()).or_insert_with(Vec::new);
+            if !entry.contains(&"Protected".to_string()) {
+              entry.push("Protected".to_string());
+            }
+          });
+          protected_syms.push(Expr::Identifier(sym.clone()));
+        }
+      }
+      return Ok(Expr::List(protected_syms));
+    }
+    "Unprotect" => {
+      let mut unprotected_syms = Vec::new();
+      for arg in args {
+        if let Expr::Identifier(sym) = arg {
+          // Check if symbol is Locked (either builtin or user-defined)
+          let is_locked = {
+            let builtin = get_builtin_attributes(sym);
+            if builtin.contains(&"Locked") {
+              true
+            } else {
+              crate::FUNC_ATTRS.with(|m| {
+                m.borrow()
+                  .get(sym.as_str())
+                  .is_some_and(|attrs| attrs.contains(&"Locked".to_string()))
+              })
+            }
+          };
+          if is_locked {
+            eprintln!("Protect::locked: Symbol {} is locked.", sym);
+            continue;
+          }
+          let was_protected = crate::FUNC_ATTRS.with(|m| {
+            let mut attrs = m.borrow_mut();
+            if let Some(entry) = attrs.get_mut(sym) {
+              let before_len = entry.len();
+              entry.retain(|a| a != "Protected");
+              before_len != entry.len()
+            } else {
+              false
+            }
+          });
+          if was_protected {
+            unprotected_syms.push(Expr::Identifier(sym.clone()));
+          }
+        }
+      }
+      return Ok(Expr::List(unprotected_syms));
     }
     "ClearAll" => {
       for arg in args {
@@ -5258,6 +5317,13 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       }
     };
 
+    // Check Protected attribute
+    if is_symbol_protected(&var_name) {
+      let rhs_value = evaluate_expr_to_expr(rhs)?;
+      eprintln!("Part::wrsym: Symbol {} is Protected.", var_name);
+      return Ok(rhs_value);
+    }
+
     // Evaluate indices
     let mut eval_indices = Vec::new();
     for idx in &indices {
@@ -5334,6 +5400,12 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Identifier(var_name) = lhs {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
+    // Check Protected attribute
+    if is_symbol_protected(var_name) {
+      eprintln!("Set::wrsym: Symbol {} is Protected.", var_name);
+      return Ok(rhs_value);
+    }
+
     // Check if RHS is an association
     if let Expr::Association(items) = &rhs_value {
       let pairs: Vec<(String, String)> = items
@@ -5395,6 +5467,18 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   {
     let rhs_value = evaluate_expr_to_expr(rhs)?;
 
+    // Check user-defined Protected attribute for DownValues
+    // (builtin Protected is not checked for DownValues, matching wolframscript behavior)
+    let is_user_protected = crate::FUNC_ATTRS.with(|m| {
+      m.borrow()
+        .get(func_name.as_str())
+        .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
+    });
+    if is_user_protected {
+      eprintln!("Set::wrsym: Symbol {} is Protected.", func_name);
+      return Ok(rhs_value);
+    }
+
     // Build param names and conditions for each argument
     let mut params = Vec::new();
     let mut conditions: Vec<Option<Expr>> = Vec::new();
@@ -5451,6 +5535,17 @@ fn set_delayed_ast(lhs: &Expr, body: &Expr) -> Result<Expr, InterpreterError> {
     args: lhs_args,
   } = lhs
   {
+    // Check user-defined Protected attribute for DownValues
+    let is_user_protected = crate::FUNC_ATTRS.with(|m| {
+      m.borrow()
+        .get(func_name.as_str())
+        .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
+    });
+    if is_user_protected {
+      eprintln!("SetDelayed::wrsym: Symbol {} is Protected.", func_name);
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
+
     let mut params = Vec::new();
     let mut conditions: Vec<Option<Expr>> = Vec::new();
     let mut defaults: Vec<Option<Expr>> = Vec::new();
@@ -5831,6 +5926,19 @@ fn try_ast_pattern_replace(
 }
 
 /// Check if a function has the OneIdentity attribute (builtin or user-defined).
+/// Check if a symbol has the Protected attribute (builtin or user-defined).
+fn is_symbol_protected(name: &str) -> bool {
+  let builtin = get_builtin_attributes(name);
+  if builtin.contains(&"Protected") {
+    return true;
+  }
+  crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
+  })
+}
+
 fn has_one_identity(name: &str) -> bool {
   let builtin = get_builtin_attributes(name);
   if builtin.contains(&"OneIdentity") {
