@@ -1498,6 +1498,25 @@ mod sum {
   fn sum_k_symbolic_both_bounds() {
     assert_eq!(interpret("Sum[k, {k, n, 2 n}]").unwrap(), "(3*n*(1 + n))/2");
   }
+
+  #[test]
+  fn sum_real_upper_bound() {
+    assert_eq!(interpret("Sum[i, {i, 1, 2.5}]").unwrap(), "3");
+  }
+
+  #[test]
+  fn sum_real_both_bounds() {
+    assert_eq!(interpret("Sum[i, {i, 1.1, 2.5}]").unwrap(), "3.2");
+  }
+
+  #[test]
+  fn sum_squared_symbolic_identity() {
+    assert_eq!(
+      interpret("Sum[x ^ 2, {x, 1, y}] - y * (y + 1) * (2 * y + 1) / 6")
+        .unwrap(),
+      "0"
+    );
+  }
 }
 
 mod n_arbitrary_precision {

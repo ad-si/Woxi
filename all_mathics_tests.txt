@@ -116,30 +116,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: Sum
-LINE: 1008
-TYPE: >>
-INPUT: Sum[x ^ 2, {x, 1, y}] - y * (y + 1) * (2 * y + 1) / 6
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
-LINE: 1012
-TYPE: >>
-INPUT: Sum[i, {i, 1, 2.5}]
-EXPECTED:
-= 3
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
-LINE: 1014
-TYPE: >>
-INPUT: Sum[i, {i, 1.1, 2.5}]
-EXPECTED:
-= 3.2
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
 LINE: 1016
 TYPE: >>
 INPUT: Sum[k, {k, I, I + 1.5}]
