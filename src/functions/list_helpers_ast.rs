@@ -354,43 +354,167 @@ pub fn group_by_ast(
 /// For strings: case-insensitive first, then lowercase before uppercase for ties.
 /// For numbers: numeric comparison.
 /// Mixed: numbers before strings.
-fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
-  let sa = crate::syntax::expr_to_string(a);
-  let sb = crate::syntax::expr_to_string(b);
-  // Try numeric comparison first
-  if let (Ok(na), Ok(nb)) = (sa.parse::<f64>(), sb.parse::<f64>()) {
-    return na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal);
+/// Extract (real, imaginary) parts from a numeric expression for sorting.
+/// Returns None for non-numeric expressions.
+fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
+  use crate::functions::math_ast::try_eval_to_f64;
+  // Pure real number
+  if let Some(v) = try_eval_to_f64(e) {
+    return Some((v, 0.0));
   }
-  // If one is numeric and the other isn't, numbers come first
-  if sa.parse::<f64>().is_ok() {
-    return std::cmp::Ordering::Less;
+  // Check if expression contains I (complex unit)
+  let s = crate::syntax::expr_to_string(e);
+  if !s.contains('I') {
+    return None;
   }
-  if sb.parse::<f64>().is_ok() {
-    return std::cmp::Ordering::Greater;
-  }
-  // String comparison: case-insensitive first, then lowercase before uppercase
-  let la = sa.to_lowercase();
-  let lb = sb.to_lowercase();
-  match la.cmp(&lb) {
-    std::cmp::Ordering::Equal => {
-      // Tiebreak: lowercase letters sort before uppercase
-      // Compare char-by-char: lowercase < uppercase
-      for (ca, cb) in sa.chars().zip(sb.chars()) {
-        if ca != cb {
-          // If both same letter different case, lowercase comes first
-          if ca.to_lowercase().eq(cb.to_lowercase()) {
-            if ca.is_lowercase() {
-              return std::cmp::Ordering::Less;
-            } else {
-              return std::cmp::Ordering::Greater;
-            }
-          }
-          return ca.cmp(&cb);
+  match e {
+    // Pure imaginary: n*I (BinaryOp form)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if matches!(right.as_ref(), Expr::Identifier(name) if name == "I") {
+        if let Some(im) = try_eval_to_f64(left) {
+          return Some((0.0, im));
         }
       }
-      sa.len().cmp(&sb.len())
+      if matches!(left.as_ref(), Expr::Identifier(name) if name == "I") {
+        if let Some(im) = try_eval_to_f64(right) {
+          return Some((0.0, im));
+        }
+      }
+      None
     }
-    other => other,
+    // a + b*I (BinaryOp form)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      if let Some(re) = try_eval_to_f64(left) {
+        if let Some((_, im)) = expr_to_complex_parts(right) {
+          return Some((re, im));
+        }
+      }
+      None
+    }
+    // a - b*I (BinaryOp form)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      if let Some(re) = try_eval_to_f64(left) {
+        if let Some((_, im)) = expr_to_complex_parts(right) {
+          return Some((re, -im));
+        }
+      }
+      None
+    }
+    // FunctionCall Plus[re, Times[im, I]]
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
+      if let Some(re) = try_eval_to_f64(&args[0]) {
+        if let Some((_, im)) = expr_to_complex_parts(&args[1]) {
+          return Some((re, im));
+        }
+      }
+      if let Some(re) = try_eval_to_f64(&args[1]) {
+        if let Some((_, im)) = expr_to_complex_parts(&args[0]) {
+          return Some((0.0 + im, re)); // im is imaginary coefficient
+        }
+      }
+      None
+    }
+    // FunctionCall Times[n, I]
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      if matches!(&args[1], Expr::Identifier(n) if n == "I") {
+        if let Some(im) = try_eval_to_f64(&args[0]) {
+          return Some((0.0, im));
+        }
+      }
+      if matches!(&args[0], Expr::Identifier(n) if n == "I") {
+        if let Some(im) = try_eval_to_f64(&args[1]) {
+          return Some((0.0, im));
+        }
+      }
+      None
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      if let (Some(re), Some(im)) =
+        (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+      {
+        return Some((re, im));
+      }
+      None
+    }
+    // Just I
+    Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
+    // Negated: -I, -(a+bI)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      if let Some((re, im)) = expr_to_complex_parts(operand) {
+        return Some((-re, -im));
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Try numeric comparison (including complex numbers)
+  let a_num = expr_to_complex_parts(a);
+  let b_num = expr_to_complex_parts(b);
+
+  match (a_num, b_num) {
+    (Some((a_re, a_im)), Some((b_re, b_im))) => {
+      // Both numeric: compare by real part first, then imaginary part
+      match a_re.partial_cmp(&b_re).unwrap_or(std::cmp::Ordering::Equal) {
+        std::cmp::Ordering::Equal => {
+          // Same real part: pure reals (im=0) come first
+          if a_im == 0.0 && b_im != 0.0 {
+            return std::cmp::Ordering::Less;
+          }
+          if a_im != 0.0 && b_im == 0.0 {
+            return std::cmp::Ordering::Greater;
+          }
+          a_im.partial_cmp(&b_im).unwrap_or(std::cmp::Ordering::Equal)
+        }
+        other => other,
+      }
+    }
+    (Some(_), None) => std::cmp::Ordering::Less, // numbers before non-numbers
+    (None, Some(_)) => std::cmp::Ordering::Greater,
+    (None, None) => {
+      // Non-numeric: string comparison
+      let sa = crate::syntax::expr_to_string(a);
+      let sb = crate::syntax::expr_to_string(b);
+      let la = sa.to_lowercase();
+      let lb = sb.to_lowercase();
+      match la.cmp(&lb) {
+        std::cmp::Ordering::Equal => {
+          for (ca, cb) in sa.chars().zip(sb.chars()) {
+            if ca != cb {
+              if ca.to_lowercase().eq(cb.to_lowercase()) {
+                if ca.is_lowercase() {
+                  return std::cmp::Ordering::Less;
+                } else {
+                  return std::cmp::Ordering::Greater;
+                }
+              }
+              return ca.cmp(&cb);
+            }
+          }
+          sa.len().cmp(&sb.len())
+        }
+        other => other,
+      }
+    }
   }
 }
 

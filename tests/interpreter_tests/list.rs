@@ -478,6 +478,27 @@ mod sort_canonical {
       "{1, 1, 3, 4, 5, 9}"
     );
   }
+
+  #[test]
+  fn sort_mixed_with_complex() {
+    assert_eq!(
+      interpret("Sort[{4, 1.0, a, 3+I}]").unwrap(),
+      "{1., 3 + I, 4, a}"
+    );
+  }
+
+  #[test]
+  fn sort_complex_same_real_part() {
+    assert_eq!(
+      interpret("Sort[{3+I, 3, 3-I}]").unwrap(),
+      "{3, 3 - I, 3 + I}"
+    );
+  }
+
+  #[test]
+  fn sort_pure_imaginary() {
+    assert_eq!(interpret("Sort[{I, -I, 1, -1}]").unwrap(), "{-1, -I, I, 1}");
+  }
 }
 
 mod complement {

@@ -5671,6 +5671,13 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(-1) => {
+      return Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      });
+    }
     Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(f.atanh())),
     _ => {}
   }
@@ -5680,7 +5687,111 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCot expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(pi_over_n(2)), // Pi/2
+    Expr::Integer(1) => return Ok(pi_over_n(4)), // Pi/4
+    Expr::Integer(-1) => {
+      // -Pi/4
+      return Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(pi_over_n(4)),
+      });
+    }
+    Expr::Real(f) => return Ok(Expr::Real((1.0 / f).atan())),
+    _ => {}
+  }
+  if let Some(f) = try_eval_to_f64(&args[0]) {
+    return Ok(Expr::Real((1.0 / f).atan()));
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcCot".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCsc expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(1) => return Ok(pi_over_n(2)), // Pi/2
+    Expr::Integer(-1) => return Ok(negative_pi_over_2()), // -Pi/2
+    _ => {}
+  }
+  if let Some(f) = try_eval_to_f64(&args[0]) {
+    if f.abs() >= 1.0 {
+      return Ok(Expr::Real((1.0 / f).asin()));
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcCsc".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcSec expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(1) => return Ok(Expr::Integer(0)),
+    Expr::Integer(-1) => return Ok(Expr::Identifier("Pi".to_string())),
+    _ => {}
+  }
+  if let Some(f) = try_eval_to_f64(&args[0]) {
+    if f.abs() >= 1.0 {
+      return Ok(Expr::Real((1.0 / f).acos()));
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcSec".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCsch expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    }
+    _ => {}
+  }
+  if let Some(f) = try_eval_to_f64(&args[0]) {
+    if f != 0.0 {
+      return Ok(Expr::Real((1.0 / f).asinh()));
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcCsch".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Helper to construct -Pi/2 matching wolframscript output format
+/// Construct Pi/n as an AST expression
+fn pi_over_n(n: i128) -> Expr {
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::Constant("Pi".to_string())),
+    right: Box::new(Expr::Integer(n)),
+  }
+}
+
 fn negative_pi_over_2() -> Expr {
   Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Times,

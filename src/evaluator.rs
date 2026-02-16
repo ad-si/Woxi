@@ -3878,6 +3878,18 @@ pub fn evaluate_function_call_ast(
     "ArcTanh" if args.len() == 1 => {
       return crate::functions::math_ast::arctanh_ast(args);
     }
+    "ArcCot" if args.len() == 1 => {
+      return crate::functions::math_ast::arccot_ast(args);
+    }
+    "ArcCsc" if args.len() == 1 => {
+      return crate::functions::math_ast::arccsc_ast(args);
+    }
+    "ArcSec" if args.len() == 1 => {
+      return crate::functions::math_ast::arcsec_ast(args);
+    }
+    "ArcCsch" if args.len() == 1 => {
+      return crate::functions::math_ast::arccsch_ast(args);
+    }
     "Gudermannian" if args.len() == 1 => {
       return crate::functions::math_ast::gudermannian_ast(args);
     }
