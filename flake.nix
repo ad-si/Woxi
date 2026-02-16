@@ -21,6 +21,7 @@
             bash
             cargo
             cargo-insta
+            cargo-nextest
             clippy
             coreutils # cat
             gnumake
