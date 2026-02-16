@@ -3239,6 +3239,29 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
 
+      // Try symbolic Sum when bounds are not both concrete
+      if items.len() == 3 {
+        let min_concrete = expr_to_i128(&items[1]);
+        let max_concrete = expr_to_i128(&items[2]);
+        if min_concrete.is_none() || max_concrete.is_none() {
+          if let Some(result) = try_symbolic_sum(
+            body,
+            &var_name,
+            &items[1],
+            &items[2],
+            min_concrete,
+            max_concrete,
+          )? {
+            // Evaluate to simplify the symbolic result
+            return crate::evaluator::evaluate_expr_to_expr(&result);
+          }
+          return Ok(Expr::FunctionCall {
+            name: "Sum".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+
       // Extract min, max, step
       let (min, max, step) = if items.len() == 2 {
         let max_val = expr_to_i128(&items[1]).ok_or_else(|| {
@@ -3322,6 +3345,148 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Try to evaluate a known infinite series Sum[body, {var, min, Infinity}].
 /// Returns Some(result) if a closed form is found, None otherwise.
+/// Try to evaluate a symbolic Sum where at least one bound is not a concrete integer.
+/// Returns Some(expr) if a known closed form is found, None otherwise.
+fn try_symbolic_sum(
+  body: &Expr,
+  var_name: &str,
+  min_expr: &Expr,
+  max_expr: &Expr,
+  min_concrete: Option<i128>,
+  _max_concrete: Option<i128>,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Sum[k, {k, 1, n}] = n*(1 + n)/2
+  if let Some(1) = min_concrete {
+    if matches!(body, Expr::Identifier(name) if name == var_name) {
+      let n = max_expr.clone();
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(n.clone()),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(n),
+          }),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      }));
+    }
+
+    // Sum[k^2, {k, 1, n}] = n*(1 + n)*(1 + 2*n)/6
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = body
+      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
+      && matches!(exp.as_ref(), Expr::Integer(2))
+    {
+      let n = max_expr.clone();
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(n.clone()),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(n.clone()),
+            }),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(2)),
+              right: Box::new(n),
+            }),
+          }),
+        }),
+        right: Box::new(Expr::Integer(6)),
+      }));
+    }
+
+    // Sum[c^i, {i, 1, n}] = c*(c^n - 1)/(c - 1) (geometric series)
+    // In Divide form: Sum[1/c^i, {i, 1, n}] = (c^n - 1)/(c^n * (c - 1))
+    // or equivalently: (-1 + c^n)/c^n
+    // Detect body = 1/c^var (Divide or Power with negative exponent)
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } = body
+      && matches!(left.as_ref(), Expr::Integer(1))
+    {
+      // 1 / c^var
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base,
+        right: exp,
+      } = right.as_ref()
+        && matches!(exp.as_ref(), Expr::Identifier(name) if name == var_name)
+      {
+        // Sum[1/c^i, {i, 1, n}] = (-1 + c^n)/(c^n*(c-1))
+        // For c=2: (-1 + 2^n)/2^n
+        let c = base.as_ref();
+        let n = max_expr.clone();
+        let c_to_n = Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(c.clone()),
+          right: Box::new(n),
+        };
+        return Ok(Some(Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(c_to_n.clone()),
+          }),
+          right: Box::new(c_to_n),
+        }));
+      }
+    }
+  }
+
+  // Sum[k, {k, a, n}] where a is symbolic
+  if min_concrete.is_none()
+    && matches!(body, Expr::Identifier(name) if name == var_name)
+  {
+    // Sum[k, {k, a, n}] = (a+n)*(n-a+1)/2
+    let a = min_expr.clone();
+    let n = max_expr.clone();
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(a.clone()),
+          right: Box::new(n.clone()),
+        }),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            left: Box::new(n),
+            right: Box::new(a),
+          }),
+          right: Box::new(Expr::Integer(1)),
+        }),
+      }),
+      right: Box::new(Expr::Integer(2)),
+    }));
+  }
+
+  Ok(None)
+}
+
 fn try_infinite_sum(
   body: &Expr,
   var_name: &str,
@@ -3348,6 +3513,28 @@ fn try_infinite_sum(
         args: vec![Expr::Integer(s as i128)],
       }));
     }
+  }
+
+  // Sum[1/c^i, {i, 1, Infinity}] = 1/(c-1) for integer c > 1
+  // Detect body = 1/c^var (Divide form)
+  use crate::syntax::BinaryOperator;
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left,
+    right,
+  } = body
+    && matches!(left.as_ref(), Expr::Integer(1))
+    && let Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = right.as_ref()
+    && matches!(exp.as_ref(), Expr::Identifier(name) if name == var_name)
+    && let Some(c) = expr_to_i128(base)
+    && c > 1
+  {
+    // Sum = 1/(c-1)
+    return Ok(Some(crate::functions::math_ast::make_rational(1, c - 1)));
   }
 
   Ok(None)

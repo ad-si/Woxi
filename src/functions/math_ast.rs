@@ -364,7 +364,7 @@ pub fn make_rational_pub(numer: i128, denom: i128) -> Expr {
   make_rational(numer, denom)
 }
 
-fn make_rational(numer: i128, denom: i128) -> Expr {
+pub fn make_rational(numer: i128, denom: i128) -> Expr {
   if denom == 0 {
     // Division by zero - shouldn't reach here but be safe
     return Expr::FunctionCall {
@@ -859,14 +859,25 @@ fn term_priority(e: &Expr) -> i32 {
   }
 }
 
-/// Sub-priority for Times factor ordering: identifiers before function calls.
-/// This ensures I sorts before Conjugate[x], matching Wolfram behavior.
+/// Sub-priority for Times factor ordering: identifiers before compound expressions.
+/// This ensures simple symbols sort before sums/products, matching Wolfram behavior.
 fn times_factor_subpriority(e: &Expr) -> i32 {
   match e {
     Expr::Identifier(_) | Expr::Constant(_) => 0,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } => times_factor_subpriority(left),
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      ..
+    } => 1,
     Expr::FunctionCall { name, .. } => match name.as_str() {
-      "Times" | "Power" | "Plus" | "Rational" => 0,
-      _ => 1,
+      "Times" | "Power" | "Rational" => 0,
+      "Plus" => 1,
+      _ => 2,
     },
     _ => 0,
   }
