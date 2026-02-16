@@ -30,6 +30,13 @@ pub fn get_graphics() -> String {
   crate::get_captured_graphics().unwrap_or_default()
 }
 
+/// Return the captured GraphicsBox expression from the last `evaluate()` call.
+/// Returns an empty string when there is no graphics output.
+#[wasm_bindgen]
+pub fn get_graphicsbox() -> String {
+  crate::get_captured_graphicsbox().unwrap_or_default()
+}
+
 /// Return warnings from the last `evaluate()` call as newline-separated text.
 /// Returns an empty string when there are no warnings.
 #[wasm_bindgen]

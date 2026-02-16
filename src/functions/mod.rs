@@ -6,6 +6,7 @@ pub mod calculus_ast;
 pub mod cellular_automaton_ast;
 pub mod control_flow_ast;
 pub mod graphics;
+pub mod graphicsbox;
 pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
 pub mod math_ast;

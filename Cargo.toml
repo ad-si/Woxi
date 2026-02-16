@@ -32,6 +32,8 @@ dirs = { version = "6.0.0", optional = true }
 getrandom = { version = "0.2", features = ["js"], optional = true }
 jupyter-protocol = { git = "https://github.com/runtimed/runtimed", optional = true }
 astro-float = "0.9"
+base64 = "0.22"
+flate2 = "1.0"
 num-bigint = "0.4.6"
 num-prime = "0.4"
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series"] }
