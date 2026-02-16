@@ -986,6 +986,56 @@ pub fn position_ast(
   Ok(Expr::List(positions))
 }
 
+/// FirstPosition[list, pattern] - finds the position of the first element matching pattern
+/// Returns {index} or Missing["NotFound"] if not found
+pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FirstPosition expects at least 2 arguments".into(),
+    ));
+  }
+  let default = if args.len() >= 3 {
+    args[2].clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Missing".to_string(),
+      args: vec![Expr::String("NotFound".to_string())],
+    }
+  };
+
+  fn find_first(
+    expr: &Expr,
+    pattern: &Expr,
+    path: &mut Vec<i128>,
+  ) -> Option<Vec<i128>> {
+    let pattern_str = crate::syntax::expr_to_string(pattern);
+    let expr_str = crate::syntax::expr_to_string(expr);
+    if matches_pattern_simple(&expr_str, &pattern_str)
+      || matches_pattern_ast(expr, pattern)
+    {
+      return Some(path.clone());
+    }
+    if let Expr::List(items) = expr {
+      for (i, item) in items.iter().enumerate() {
+        path.push((i + 1) as i128);
+        if let Some(result) = find_first(item, pattern, path) {
+          return Some(result);
+        }
+        path.pop();
+      }
+    }
+    None
+  }
+
+  let mut path = Vec::new();
+  match find_first(&args[0], &args[1], &mut path) {
+    Some(indices) => {
+      Ok(Expr::List(indices.into_iter().map(Expr::Integer).collect()))
+    }
+    None => Ok(default),
+  }
+}
+
 /// AST-based MapIndexed: apply function with index to each element.
 /// MapIndexed[f, {a, b, c}] -> {f[a, {1}], f[b, {2}], f[c, {3}]}
 pub fn map_indexed_ast(
@@ -4043,6 +4093,40 @@ pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
 }
 
+/// Split[list, test] - splits list where consecutive elements satisfy test function
+pub fn split_with_test_ast(
+  list: &Expr,
+  test: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Split".to_string(),
+        args: vec![list.clone(), test.clone()],
+      });
+    }
+  };
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+  let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
+  for item in items.iter().skip(1) {
+    let last_item = groups.last().unwrap().last().unwrap();
+    let test_result = apply_func_to_two_args(test, last_item, item)?;
+    let passes = matches!(
+      &test_result,
+      Expr::Identifier(name) if name == "True"
+    );
+    if passes {
+      groups.last_mut().unwrap().push(item.clone());
+    } else {
+      groups.push(vec![item.clone()]);
+    }
+  }
+  Ok(Expr::List(groups.into_iter().map(Expr::List).collect()))
+}
+
 /// SplitBy[list, f] - splits into sublists of consecutive elements with same f value
 pub fn split_by_ast(
   func: &Expr,
@@ -4125,9 +4209,10 @@ pub fn catenate_ast(list_of_lists: &Expr) -> Result<Expr, InterpreterError> {
 pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items.clone(),
+    Expr::FunctionCall { args, .. } => args.clone(),
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "Apply expects a list as second argument".into(),
+        "Apply expects a list or expression as second argument".into(),
       ));
     }
   };
