@@ -263,6 +263,26 @@ mod attributes_assignment {
       "{Listable}"
     );
   }
+
+  #[test]
+  fn clear_attributes_list_form() {
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[f]; SetAttributes[f, Flat]; ClearAttributes[{f}, {Flat}]; Attributes[f]")
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn set_attributes_list_form() {
+    clear_state();
+    assert_eq!(
+      interpret("ClearAll[f]; SetAttributes[{f}, {Flat}]; Attributes[f]")
+        .unwrap(),
+      "{Flat}"
+    );
+  }
 }
 
 mod anonymous_function_call {
