@@ -3653,6 +3653,14 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
+    // Constants (E, Pi, Degree) are not valid variables
+    Expr::Constant(name) => {
+      eprintln!("Solve::ivar: {} is not a valid variable.", name);
+      return Ok(Expr::FunctionCall {
+        name: "Solve".to_string(),
+        args: args.to_vec(),
+      });
+    }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
@@ -3660,6 +3668,20 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
+
+  // Check if variable has Constant attribute (user-defined constants)
+  let is_constant = crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(var)
+      .is_some_and(|attrs| attrs.contains(&"Constant".to_string()))
+  });
+  if is_constant {
+    eprintln!("Solve::ivar: {} is not a valid variable.", var);
+    return Ok(Expr::FunctionCall {
+      name: "Solve".to_string(),
+      args: args.to_vec(),
+    });
+  }
 
   // Extract equation: lhs == rhs → lhs - rhs
   let poly = match &args[0] {
