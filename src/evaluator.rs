@@ -495,6 +495,12 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
             ],
           });
         }
+        // Handle system $ variables
+        if name.starts_with('$') {
+          if let Some(val) = get_system_variable(name) {
+            return Ok(val);
+          }
+        }
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
       }
@@ -1736,6 +1742,25 @@ fn thread_listable(
 /// Flatten Sequence[...] arguments into the parent function's argument list.
 /// In Wolfram Language, Sequence[a, b] appearing as an argument to f produces f[..., a, b, ...].
 /// Functions with the SequenceHold attribute suppress this.
+/// Look up system $ variables
+fn get_system_variable(name: &str) -> Option<Expr> {
+  match name {
+    "$RecursionLimit" => Some(Expr::Integer(256)),
+    "$IterationLimit" => Some(Expr::Integer(4096)),
+    "$MachinePrecision" => Some(Expr::Real(15.954589770191003)),
+    "$MachineEpsilon" => Some(Expr::Real(2.220446049250313e-16)),
+    "$MaxMachineNumber" => Some(Expr::Real(1.7976931348623157e308)),
+    "$MinMachineNumber" => Some(Expr::Real(5e-324)),
+    "$Assumptions" => Some(Expr::Identifier("True".to_string())),
+    "$Context" => Some(Expr::String("Global`".to_string())),
+    "$ContextPath" => Some(Expr::List(vec![
+      Expr::String("System`".to_string()),
+      Expr::String("Global`".to_string()),
+    ])),
+    _ => None,
+  }
+}
+
 fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
   // Check for SequenceHold attribute
   let has_sequence_hold = matches!(
@@ -1929,6 +1954,10 @@ pub fn evaluate_function_call_ast(
           return evaluate_expr_to_expr(other);
         }
       }
+    }
+    // Evaluate[expr] - forces evaluation (identity outside Hold)
+    "Evaluate" if args.len() == 1 => {
+      return Ok(args[0].clone());
     }
     // Inert symbolic head — evaluates to itself (used as argument to StringSplit etc.)
     "RegularExpression" if args.len() == 1 => {
