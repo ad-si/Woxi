@@ -3411,4 +3411,70 @@ mod list_equality {
   fn lists_not_equal() {
     assert_eq!(interpret("{1, 2} == {1, 3}").unwrap(), "False");
   }
+
+  #[test]
+  fn different_length_lists() {
+    assert_eq!(interpret("{1, 2} == {1, 2, 3}").unwrap(), "False");
+  }
+}
+
+mod equal_edge_cases {
+  use super::*;
+
+  #[test]
+  fn equal_zero_args() {
+    assert_eq!(interpret("Equal[]").unwrap(), "True");
+  }
+
+  #[test]
+  fn equal_one_arg() {
+    assert_eq!(interpret("Equal[x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn equal_one_arg_list() {
+    assert_eq!(
+      interpret("{Equal[x], Equal[1], Equal[\"a\"]}").unwrap(),
+      "{True, True, True}"
+    );
+  }
+}
+
+mod rational_power {
+  use super::*;
+
+  #[test]
+  fn negative_rational_negative_power() {
+    assert_eq!(interpret("(-2/3)^(-3)").unwrap(), "-27/8");
+  }
+
+  #[test]
+  fn rational_positive_power() {
+    assert_eq!(interpret("(2/3)^3").unwrap(), "8/27");
+  }
+
+  #[test]
+  fn rational_power_simplifies() {
+    assert_eq!(interpret("(1/2)^4").unwrap(), "1/16");
+  }
+}
+
+mod max_min_flatten {
+  use super::*;
+
+  #[test]
+  fn max_flattens_nested_lists() {
+    assert_eq!(
+      interpret("Max[{1,2},3,{-3,3.5,-Infinity},{{1/2}}]").unwrap(),
+      "3.5"
+    );
+  }
+
+  #[test]
+  fn min_flattens_nested_lists() {
+    assert_eq!(
+      interpret("Min[{1,2},3,{-3,3.5,-Infinity},{{1/2}}]").unwrap(),
+      "-Infinity"
+    );
+  }
 }

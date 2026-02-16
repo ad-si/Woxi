@@ -1771,6 +1771,34 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Special case: Rational^Integer -> exact rational result
+  if let Expr::FunctionCall {
+    name: rname,
+    args: rargs,
+  } = base
+    && rname == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(num), Expr::Integer(den)) = (&rargs[0], &rargs[1])
+    && let Expr::Integer(e) = exp
+  {
+    if *e > 0 {
+      let pe = *e as u32;
+      if let (Some(new_num), Some(new_den)) =
+        (num.checked_pow(pe), den.checked_pow(pe))
+      {
+        return Ok(make_rational(new_num, new_den));
+      }
+    } else if *e < 0 {
+      // (a/b)^(-n) = (b/a)^n = b^n / a^n
+      let pe = (-*e) as u32;
+      if let (Some(new_num), Some(new_den)) =
+        (den.checked_pow(pe), num.checked_pow(pe))
+      {
+        return Ok(make_rational(new_num, new_den));
+      }
+    }
+  }
+
   // Special case: Integer^Rational — keep symbolic unless result is exact integer
   if let Expr::Integer(b) = base
     && let Expr::FunctionCall { name, args: rargs } = exp
@@ -2014,33 +2042,49 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   plus_ast(&[args[0].clone(), negated_b])
 }
 
+/// Recursively flatten all List arguments for Max/Min
+fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
+  let mut result = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::List(items) => result.extend(flatten_lists(items)),
+      _ => result.push(arg),
+    }
+  }
+  result
+}
+
+/// Like try_eval_to_f64 but also handles Infinity/-Infinity (for Max/Min)
+fn try_eval_to_f64_with_infinity(expr: &Expr) -> Option<f64> {
+  // Check by string representation for Infinity forms
+  let s = crate::syntax::expr_to_string(expr);
+  if s == "Infinity" {
+    return Some(f64::INFINITY);
+  }
+  if s == "-Infinity" {
+    return Some(f64::NEG_INFINITY);
+  }
+  try_eval_to_f64(expr)
+}
+
 /// Max[args...] or Max[list] - Maximum value
 pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Identifier("-Infinity".to_string()));
   }
 
-  // Flatten if single list argument
-  let items: Vec<&Expr> = if args.len() == 1 {
-    match &args[0] {
-      Expr::List(items) => {
-        if items.is_empty() {
-          return Ok(Expr::Identifier("-Infinity".to_string()));
-        }
-        items.iter().collect()
-      }
-      _ => args.iter().collect(),
-    }
-  } else {
-    args.iter().collect()
-  };
+  // Flatten all nested lists
+  let items = flatten_lists(args);
+  if items.is_empty() {
+    return Ok(Expr::Identifier("-Infinity".to_string()));
+  }
 
   // Separate numeric and symbolic arguments
   let mut best_val: Option<f64> = None;
   let mut best_expr: Option<&Expr> = None;
   let mut symbolic: Vec<Expr> = Vec::new();
   for item in &items {
-    if let Some(n) = try_eval_to_f64(item) {
+    if let Some(n) = try_eval_to_f64_with_infinity(item) {
       match best_val {
         Some(m) if n > m => {
           best_val = Some(n);
@@ -2087,27 +2131,18 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Infinity".to_string()));
   }
 
-  // Flatten if single list argument
-  let items: Vec<&Expr> = if args.len() == 1 {
-    match &args[0] {
-      Expr::List(items) => {
-        if items.is_empty() {
-          return Ok(Expr::Identifier("Infinity".to_string()));
-        }
-        items.iter().collect()
-      }
-      _ => args.iter().collect(),
-    }
-  } else {
-    args.iter().collect()
-  };
+  // Flatten all nested lists
+  let items = flatten_lists(args);
+  if items.is_empty() {
+    return Ok(Expr::Identifier("Infinity".to_string()));
+  }
 
   // Separate numeric and symbolic arguments
   let mut best_val: Option<f64> = None;
   let mut best_expr: Option<&Expr> = None;
   let mut symbolic: Vec<Expr> = Vec::new();
   for item in &items {
-    if let Some(n) = try_eval_to_f64(item) {
+    if let Some(n) = try_eval_to_f64_with_infinity(item) {
       match best_val {
         Some(m) if n < m => {
           best_val = Some(n);

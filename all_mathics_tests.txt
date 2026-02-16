@@ -9217,14 +9217,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Equal
-LINE: 511
-TYPE: >>
-INPUT: {1, 2} == {1, 2, 3}
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Equal
 LINE: 523
 TYPE: >>
 INPUT: g[1] == g[2] != g[3]
@@ -9238,22 +9230,6 @@ TYPE: >>
 INPUT: g[1] == g[2] <= g[3]
 EXPECTED:
 = g[1] == g[2] && g[2] <= g[3]
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Equal
-LINE: 530
-TYPE: >>
-INPUT: Equal[] == True
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Equal
-LINE: 534
-TYPE: >>
-INPUT: {Equal[x], Equal[1], Equal["a"]}
-EXPECTED:
-= {True, True, True}
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Greater
@@ -9281,14 +9257,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Max
-LINE: 713
-TYPE: >>
-INPUT: Max[{1,2},3,{-3,3.5,-Infinity},{{1/2}}]
-EXPECTED:
-= 3.5
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Max
 LINE: 719
 TYPE: >>
 INPUT: Max[5, x, -3, y, 40]
@@ -9305,27 +9273,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Min
-LINE: 751
-TYPE: >>
-INPUT: Min[{1,2},3,{-3,3.5,-Infinity},{{1/2}}]
-EXPECTED:
-= -Infinity
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Min
 LINE: 757
 TYPE: >>
 INPUT: Min[5, x, -3, y, 40]
 EXPECTED:
 = Min[-3, x, y]
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: SameQ
-LINE: 796
-TYPE: >>
-INPUT: SameQ[a] === SameQ[] === True
-EXPECTED:
-= True
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: SameQ
@@ -9361,14 +9313,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Unequal
-LINE: 894
-TYPE: >>
-INPUT: {1} != {2}
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Unequal
 LINE: 896
 TYPE: >>
 INPUT: {1, 2} != {1, 2}
@@ -9390,14 +9334,6 @@ TYPE: >>
 INPUT: {Unequal[], Unequal[x], Unequal[1]}
 EXPECTED:
 = {True, True, True}
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: UnsameQ
-LINE: 932
-TYPE: >>
-INPUT: 1 =!= 1.
-EXPECTED:
-= True
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: UnsameQ
@@ -9722,27 +9658,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: CoprimeQ
-LINE: 54
-TYPE: >>
-INPUT: CoprimeQ[2, 3, 5]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: CoprimeQ
 LINE: 58
 TYPE: >>
 INPUT: CoprimeQ[2, 4, 5]
 EXPECTED:
 = False
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: ExactNumberQ
-LINE: 116
-TYPE: >>
-INPUT: ExactNumberQ[10]
-EXPECTED:
-= True
 ---
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: ExactNumberQ
@@ -22839,22 +22759,6 @@ TYPE: >>
 INPUT: N[%]
 EXPECTED:
 = 0.125
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 132
-TYPE: >>
-INPUT: a / b / (c / (d / e))
-EXPECTED:
-= a d / (b c e)
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Divide
-LINE: 134
-TYPE: >>
-INPUT: a / (b ^ 2 * c ^ 3 / e)
-EXPECTED:
-= a e / (b ^ 2 c ^ 3)
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Minus
