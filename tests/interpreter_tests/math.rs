@@ -2834,6 +2834,24 @@ mod complex_number {
   fn pure_imaginary_multiplication() {
     assert_eq!(interpret("(2*I)*(3*I)").unwrap(), "-6");
   }
+
+  #[test]
+  fn exp_complex() {
+    // E^(I*0.5) should give cos(0.5) + I*sin(0.5)
+    let result = interpret("E^(I*0.5)").unwrap();
+    assert!(result.contains("0.8775825618903728"));
+    assert!(result.contains("0.479425538604203"));
+  }
+
+  #[test]
+  fn im_exp_complex() {
+    assert_eq!(interpret("Im[E^(I*0.5)]").unwrap(), "0.479425538604203");
+  }
+
+  #[test]
+  fn re_exp_complex() {
+    assert_eq!(interpret("Re[E^(I*0.5)]").unwrap(), "0.8775825618903728");
+  }
 }
 
 mod element {
