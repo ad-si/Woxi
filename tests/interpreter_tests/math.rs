@@ -2819,6 +2819,21 @@ mod complex_number {
   fn abs_complex() {
     assert_eq!(interpret("Abs[Complex[3, 4]]").unwrap(), "5");
   }
+
+  #[test]
+  fn complex_conjugate_product() {
+    assert_eq!(interpret("(3+I)*(3-I)").unwrap(), "10");
+  }
+
+  #[test]
+  fn complex_multiplication() {
+    assert_eq!(interpret("(2+3*I)*(4+5*I)").unwrap(), "-7 + 22*I");
+  }
+
+  #[test]
+  fn pure_imaginary_multiplication() {
+    assert_eq!(interpret("(2*I)*(3*I)").unwrap(), "-6");
+  }
 }
 
 mod conditional_expression {
