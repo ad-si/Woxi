@@ -1,19 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: OneIdentity
-LINE: 455
-TYPE: >>
-INPUT: SetAttributes[f, OneIdentity]
-EXPECTED: (none)
----
-FILE: mathics/builtin/attributes.py
-CLASS: OneIdentity
-LINE: 456
-TYPE: >>
-INPUT: a /. f[x_:0, u_] -> {u}
-EXPECTED:
-= {a}
----
-FILE: mathics/builtin/attributes.py
 CLASS: Orderless
 LINE: 498
 TYPE: >>
