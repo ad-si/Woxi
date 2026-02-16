@@ -2836,6 +2836,48 @@ mod complex_number {
   }
 }
 
+mod element {
+  use super::*;
+
+  #[test]
+  fn integer_in_integers() {
+    assert_eq!(interpret("Element[3, Integers]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_not_in_integers() {
+    assert_eq!(interpret("Element[3.5, Integers]").unwrap(), "False");
+  }
+
+  #[test]
+  fn alternatives_with_known_member() {
+    assert_eq!(
+      interpret("Element[3 | a, Integers]").unwrap(),
+      "Element[a, Integers]"
+    );
+  }
+
+  #[test]
+  fn symbolic_in_reals() {
+    assert_eq!(interpret("Element[a, Reals]").unwrap(), "Element[a, Reals]");
+  }
+
+  #[test]
+  fn integer_in_reals() {
+    assert_eq!(interpret("Element[5, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn prime_in_primes() {
+    assert_eq!(interpret("Element[7, Primes]").unwrap(), "True");
+  }
+
+  #[test]
+  fn non_prime_in_primes() {
+    assert_eq!(interpret("Element[4, Primes]").unwrap(), "False");
+  }
+}
+
 mod conditional_expression {
   use super::*;
 

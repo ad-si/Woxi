@@ -91,22 +91,6 @@ EXPECTED:
 = {operator_string}x
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: Element
-LINE: 563
-TYPE: >>
-INPUT: Element[3 | a, Integers]
-EXPECTED:
-= Element[a, Integers]
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Element
-LINE: 570
-TYPE: >>
-INPUT: Element[a, Real]
-EXPECTED:
-: The second argument Real of Element should be one of: Primes, Integers, \
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: Im
 LINE: 673
 TYPE: >>

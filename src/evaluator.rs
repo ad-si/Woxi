@@ -2931,6 +2931,9 @@ pub fn evaluate_function_call_ast(
     "RealValuedNumberQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::real_valued_number_q_ast(args);
     }
+    "Element" if args.len() == 2 => {
+      return element_ast(&args[0], &args[1]);
+    }
     "IntegerQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::integer_q_ast(args);
     }
@@ -4632,6 +4635,202 @@ fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   result
+}
+
+/// Valid domain names for Element[]
+const VALID_DOMAINS: &[&str] = &[
+  "Primes",
+  "Integers",
+  "Rationals",
+  "Algebraics",
+  "Reals",
+  "Complexes",
+  "Booleans",
+];
+
+/// Check if an expression is a member of a given domain
+fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
+  match domain {
+    "Integers" => match expr {
+      Expr::Integer(_) | Expr::BigInteger(_) => Some(true),
+      Expr::Real(f) => Some(*f == f.floor() && f.is_finite()),
+      _ => None,
+    },
+    "Primes" => match expr {
+      Expr::Integer(n) => Some(*n >= 2 && is_prime_simple(*n)),
+      _ => None,
+    },
+    "Rationals" => match expr {
+      Expr::Integer(_) | Expr::BigInteger(_) => Some(true),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        Some(true)
+      }
+      _ => None,
+    },
+    "Reals" => match expr {
+      Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => Some(true),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        Some(true)
+      }
+      Expr::Identifier(name) if name == "I" => Some(false),
+      _ => {
+        // Check for complex numbers with nonzero imaginary part
+        if let Some((_, (im, _))) =
+          crate::functions::math_ast::try_extract_complex_exact(expr)
+          && im != 0
+        {
+          return Some(false);
+        }
+        None
+      }
+    },
+    "Complexes" => match expr {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _) => Some(true),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        Some(true)
+      }
+      Expr::Identifier(name) if name == "I" => Some(true),
+      _ => {
+        if crate::functions::math_ast::try_extract_complex_exact(expr).is_some()
+        {
+          Some(true)
+        } else {
+          None
+        }
+      }
+    },
+    "Booleans" => match expr {
+      Expr::Identifier(name) if name == "True" || name == "False" => Some(true),
+      _ => Some(false),
+    },
+    "Algebraics" => match expr {
+      Expr::Integer(_) | Expr::BigInteger(_) => Some(true),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        Some(true)
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Simple primality check for small numbers
+fn is_prime_simple(n: i128) -> bool {
+  if n < 2 {
+    return false;
+  }
+  if n < 4 {
+    return true;
+  }
+  if n % 2 == 0 || n % 3 == 0 {
+    return false;
+  }
+  let mut i = 5i128;
+  while i * i <= n {
+    if n % i == 0 || n % (i + 2) == 0 {
+      return false;
+    }
+    i += 6;
+  }
+  true
+}
+
+/// Element[x, domain] - Test or assert domain membership
+fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
+  let domain_name = match domain {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Element".to_string(),
+        args: vec![x.clone(), domain.clone()],
+      });
+    }
+  };
+
+  // Validate domain name
+  if !VALID_DOMAINS.contains(&domain_name) {
+    eprintln!();
+    eprintln!(
+      "Element::bset: The second argument {} of Element should be one of: Primes, Integers, Rationals, Algebraics, Reals, Complexes or Booleans.",
+      domain_name
+    );
+    return Ok(Expr::FunctionCall {
+      name: "Element".to_string(),
+      args: vec![x.clone(), domain.clone()],
+    });
+  }
+
+  // Handle Alternatives: Element[a | b | c, dom]
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Alternatives,
+    ..
+  } = x
+  {
+    let alts = collect_alternatives(x);
+    let mut remaining = Vec::new();
+    for alt in &alts {
+      match is_member_of_domain(alt, domain_name) {
+        Some(true) => {} // Known member, skip
+        Some(false) => {
+          return Ok(Expr::Identifier("False".to_string()));
+        }
+        None => remaining.push(alt.clone()),
+      }
+    }
+    if remaining.is_empty() {
+      return Ok(Expr::Identifier("True".to_string()));
+    }
+    // Rebuild Alternatives from remaining
+    let alt_expr = remaining
+      .into_iter()
+      .reduce(|acc, e| Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Alternatives,
+        left: Box::new(acc),
+        right: Box::new(e),
+      })
+      .unwrap();
+    return Ok(Expr::FunctionCall {
+      name: "Element".to_string(),
+      args: vec![alt_expr, domain.clone()],
+    });
+  }
+
+  // Simple case: check single element
+  match is_member_of_domain(x, domain_name) {
+    Some(true) => Ok(Expr::Identifier("True".to_string())),
+    Some(false) => Ok(Expr::Identifier("False".to_string())),
+    None => Ok(Expr::FunctionCall {
+      name: "Element".to_string(),
+      args: vec![x.clone(), domain.clone()],
+    }),
+  }
+}
+
+/// Collect all alternatives from a nested Alternatives expression
+fn collect_alternatives(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Alternatives,
+      left,
+      right,
+    } => {
+      let mut result = collect_alternatives(left);
+      result.extend(collect_alternatives(right));
+      result
+    }
+    _ => vec![expr.clone()],
+  }
 }
 
 /// AST-based Assuming: Assuming[assum, body]
