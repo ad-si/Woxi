@@ -39,6 +39,8 @@ ParenAnonymousFunction = { "(" ~ (CompoundExpression | Expression) ~ ")" ~ "&" ~
 // ListAnonymousFunction handles {expr1, expr2, ...}& - for expressions like {#1, #2}&
 // Optional BracketArgs allow direct calls: {#, #^2}&[3]
 ListAnonymousFunction = { List ~ "&" ~ !"&" ~ BracketArgs* }
+// ListCall handles List used as a function head: {f, g}[x] → applies each element to args
+ListCall = { List ~ BracketArgs+ }
 // PartAnonymousFunction handles PartExtract& - for expressions like #[[2]]& or #[[1]] + #[[2]]&
 // Only for non-FunctionCall bases (List/Slot/Identifier). FC-based handled by FunctionCallExtended.
 // Optional BracketArgs allow direct calls: #[[2]]&[{3, 4, 5}]
@@ -152,6 +154,7 @@ Term = _{
   | Constant
   | String
   | ListAnonymousFunction
+  | ListCall
   | List
   | ParenAnonymousFunction
   | FunctionCallExtended
@@ -192,6 +195,7 @@ TermNoImplicit = _{
   | Constant
   | String
   | ListAnonymousFunction
+  | ListCall
   | List
   | ParenAnonymousFunction
   | FunctionCallExtended

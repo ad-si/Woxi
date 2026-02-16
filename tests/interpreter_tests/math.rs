@@ -3490,3 +3490,72 @@ mod mixed_coefficient_combining {
     );
   }
 }
+
+mod through {
+  use super::*;
+
+  #[test]
+  fn through_list_head() {
+    assert_eq!(interpret("Through[{f, g}[x]]").unwrap(), "{f[x], g[x]}");
+  }
+
+  #[test]
+  fn through_list_head_multiple_args() {
+    assert_eq!(
+      interpret("Through[{f, g}[x, y]]").unwrap(),
+      "{f[x, y], g[x, y]}"
+    );
+  }
+
+  #[test]
+  fn through_function_head() {
+    assert_eq!(interpret("Through[f[g][x]]").unwrap(), "f[g[x]]");
+  }
+
+  #[test]
+  fn through_plus_head() {
+    assert_eq!(interpret("Through[Plus[f, g][x]]").unwrap(), "f[x] + g[x]");
+  }
+
+  #[test]
+  fn through_times_head() {
+    assert_eq!(interpret("Through[Times[f, g][x]]").unwrap(), "f[x]*g[x]");
+  }
+
+  #[test]
+  fn through_simple_call_unevaluated() {
+    assert_eq!(interpret("Through[f[x]]").unwrap(), "Through[f[x]]");
+  }
+
+  #[test]
+  fn through_non_call_unevaluated() {
+    assert_eq!(interpret("Through[x]").unwrap(), "Through[x]");
+  }
+
+  #[test]
+  fn through_with_matching_head_filter() {
+    assert_eq!(
+      interpret("Through[{f, g}[x], List]").unwrap(),
+      "{f[x], g[x]}"
+    );
+  }
+
+  #[test]
+  fn through_with_non_matching_head_filter() {
+    assert_eq!(interpret("Through[{f, g}[x], Plus]").unwrap(), "{f, g}[x]");
+  }
+}
+
+mod curried_call_preservation {
+  use super::*;
+
+  #[test]
+  fn symbolic_curried_call_stays() {
+    assert_eq!(interpret("f[g][x]").unwrap(), "f[g][x]");
+  }
+
+  #[test]
+  fn list_head_stays() {
+    assert_eq!(interpret("{f, g}[x]").unwrap(), "{f, g}[x]");
+  }
+}

@@ -3981,15 +3981,71 @@ pub fn thread_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Through: apply multiple functions.
 /// Through[{f, g}[x]] -> {f[x], g[x]}
-pub fn through_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+/// Through[f[g][x]] -> f[g[x]]
+/// Through[Plus[f, g][x]] -> f[x] + g[x]
+pub fn through_ast(
+  expr: &Expr,
+  head_filter: Option<&str>,
+) -> Result<Expr, InterpreterError> {
+  // Through operates on CurriedCall: h[f1, f2, ...][args...]
+  // It threads the args through each fi, wrapping the result in h.
   match expr {
-    Expr::FunctionCall { name: _, args } if !args.is_empty() => {
-      // Check if first "name" is actually a list
-      // Through[{f, g}[x]] is parsed as FunctionCall with name "{f, g}"
-      // This is tricky - we need to handle this case specially
-      Ok(expr.clone()) // Simplified for now
+    Expr::CurriedCall { func, args } => {
+      // func is the head expression, e.g. f[g], {f, g}, Plus[f, g]
+      // args are the outer arguments to thread through
+      let (head_name, functions) = match func.as_ref() {
+        Expr::FunctionCall { name, args: fns } => {
+          (name.as_str(), fns.as_slice())
+        }
+        Expr::List(items) => ("List", items.as_slice()),
+        _ => {
+          // Not a compound head - return unevaluated
+          return Ok(Expr::FunctionCall {
+            name: "Through".to_string(),
+            args: vec![expr.clone()],
+          });
+        }
+      };
+
+      // Check head filter if provided
+      if let Some(filter) = head_filter
+        && head_name != filter
+      {
+        // Head doesn't match filter - return the inner expression unchanged
+        return Ok(expr.clone());
+      }
+
+      // Thread: apply each function to the outer args
+      let threaded: Vec<Expr> = functions
+        .iter()
+        .map(|f| Expr::FunctionCall {
+          name: crate::syntax::expr_to_string(f),
+          args: args.clone(),
+        })
+        .collect();
+
+      // Wrap in the head
+      if head_name == "List" {
+        Ok(Expr::List(threaded))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: head_name.to_string(),
+          args: threaded,
+        })
+      }
     }
-    _ => Ok(expr.clone()),
+    _ => {
+      if head_filter.is_some() {
+        // With head filter and non-CurriedCall: return expression as-is
+        Ok(expr.clone())
+      } else {
+        // Not a curried call - return unevaluated
+        Ok(Expr::FunctionCall {
+          name: "Through".to_string(),
+          args: vec![expr.clone()],
+        })
+      }
+    }
   }
 }
 

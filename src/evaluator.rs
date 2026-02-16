@@ -2459,12 +2459,12 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::thread_ast(&args[0]);
     }
     "Through" if args.len() == 1 => {
-      return list_helpers_ast::through_ast(&args[0]);
+      return list_helpers_ast::through_ast(&args[0], None);
     }
     "Through" if args.len() == 2 => {
       // Through[expr, h] - only apply if head of expr matches h
-      // For a list like {f, g}, the head is List, so Through[{f, g}, 0] returns {f, g}
-      return Ok(args[0].clone());
+      let head_filter = crate::syntax::expr_to_string(&args[1]);
+      return list_helpers_ast::through_ast(&args[0], Some(&head_filter));
     }
     "TakeLargest" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
@@ -6534,12 +6534,26 @@ fn apply_curried_call(
           result = vec![intermediate];
         }
         Ok(result.into_iter().next().unwrap())
-      } else {
-        // Standard curried call: append args
+      } else if name == "Derivative" {
+        // Derivative[n][f][x] → Derivative[n, f, x] (always flatten)
         let mut new_args = func_args.clone();
         new_args.extend(args.iter().cloned());
         evaluate_function_call_ast(name, &new_args)
+      } else {
+        // Unknown/symbolic curried call: preserve the CurriedCall form
+        // e.g. f[g][x] stays as f[g][x], not f[g, x]
+        Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        })
       }
+    }
+    Expr::List(_) => {
+      // {f, g}[x] stays unevaluated as a CurriedCall in Wolfram Language
+      Ok(Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      })
     }
     _ => {
       // Fallback: try to convert to string and evaluate
