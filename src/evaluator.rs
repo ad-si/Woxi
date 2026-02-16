@@ -5132,6 +5132,44 @@ fn set_part_deep(
   }
 }
 
+/// Helper for Attributes[f] = value / Attributes[f] := value
+/// Extracts attribute symbols from value, validates, and sets them on the symbol.
+fn set_attributes_from_value(
+  sym_name: &str,
+  rhs_value: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Extract attribute names from the value
+  let attr_exprs = match rhs_value {
+    Expr::List(items) => items.clone(),
+    Expr::Identifier(_) => vec![rhs_value.clone()],
+    _ => vec![rhs_value.clone()],
+  };
+
+  let mut valid_attrs = Vec::new();
+  let mut has_error = false;
+  for attr_expr in &attr_exprs {
+    if let Expr::Identifier(attr_name) = attr_expr {
+      valid_attrs.push(attr_name.clone());
+    } else {
+      // Non-symbol attribute — emit warning
+      let attr_str = expr_to_string(attr_expr);
+      eprintln!("Attributes::attnf: {} is not a known attribute.", attr_str);
+      has_error = true;
+    }
+  }
+
+  if has_error {
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+
+  // Replace all user-defined attributes for this symbol
+  crate::FUNC_ATTRS.with(|m| {
+    m.borrow_mut().insert(sym_name.to_string(), valid_attrs);
+  });
+
+  Ok(rhs_value.clone())
+}
+
 /// AST-based Set implementation to handle Part assignment on associations and lists
 fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // Handle Part assignment: var[[indices]] = value
@@ -5269,6 +5307,19 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(rhs_value);
   }
 
+  // Handle Attributes[f] = value — set attributes on symbol f
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "Attributes"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    return set_attributes_from_value(sym_name, &rhs_value);
+  }
+
   // Handle DownValues: f[val1, val2, ...] = rhs
   // Store as a function definition with literal-match conditions
   if let Expr::FunctionCall {
@@ -5315,6 +5366,20 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 /// This handles cases that the PEG FunctionDefinition rule doesn't parse,
 /// such as list-pattern arguments: f[{x_Integer, y_Integer}] := body.
 fn set_delayed_ast(lhs: &Expr, body: &Expr) -> Result<Expr, InterpreterError> {
+  // Handle Attributes[f] := value — set attributes on symbol f
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "Attributes"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    // SetDelayed still evaluates the RHS for Attributes
+    let rhs_value = evaluate_expr_to_expr(body)?;
+    return set_attributes_from_value(sym_name, &rhs_value);
+  }
+
   if let Expr::FunctionCall {
     name: func_name,
     args: lhs_args,

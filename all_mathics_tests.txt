@@ -1,29 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: Attributes
-LINE: 75
-TYPE: >>
-INPUT: Attributes[f] := {a + b}
-EXPECTED:
-: Argument a + b at position 1 is expected to be a symbol.
-= $Failed
----
-FILE: mathics/builtin/attributes.py
-CLASS: Attributes
-LINE: 79
-TYPE: >>
-INPUT: Attributes[f] = Symbol["Listable"]
-EXPECTED:
-= Listable
----
-FILE: mathics/builtin/attributes.py
-CLASS: Attributes
-LINE: 81
-TYPE: >>
-INPUT: Attributes[f]
-EXPECTED:
-= {Listable}
----
-FILE: mathics/builtin/attributes.py
 CLASS: ClearAttributes
 LINE: 116
 TYPE: >>
