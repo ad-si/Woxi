@@ -3109,6 +3109,9 @@ pub fn evaluate_function_call_ast(
     "Normalize" if args.len() == 1 => {
       return crate::functions::math_ast::normalize_ast(args);
     }
+    "Norm" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::math_ast::norm_ast(args);
+    }
     "Factorial" if args.len() == 1 => {
       return crate::functions::math_ast::factorial_ast(args);
     }
@@ -3289,8 +3292,11 @@ pub fn evaluate_function_call_ast(
     "PrimePi" if args.len() == 1 => {
       return crate::functions::math_ast::prime_pi_ast(args);
     }
-    "NextPrime" if args.len() == 1 => {
+    "NextPrime" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::next_prime_ast(args);
+    }
+    "ModularInverse" if args.len() == 2 => {
+      return crate::functions::math_ast::modular_inverse_ast(args);
     }
     "BitLength" if args.len() == 1 => {
       return crate::functions::math_ast::bit_length_ast(args);

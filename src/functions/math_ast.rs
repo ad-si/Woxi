@@ -8191,19 +8191,72 @@ pub fn is_prime_bigint(n: &num_bigint::BigInt) -> bool {
 /// NextPrime[n] - Returns the smallest prime greater than n
 /// Negative primes (-2, -3, -5, ...) are included in the search space.
 pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "NextPrime expects exactly 1 argument".into(),
+      "NextPrime expects 1 or 2 arguments".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(n) => Ok(Expr::Integer(next_prime_after(*n))),
-    Expr::Real(f) => Ok(Expr::Integer(next_prime_after(f.floor() as i128))),
-    Expr::BigInteger(n) => Ok(bigint_to_expr(next_prime_after_bigint(n))),
-    _ => Ok(Expr::FunctionCall {
+
+  let k: i128 = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(k) => *k,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "NextPrime".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    1
+  };
+
+  // Handle BigInteger separately (only supports k=1 / forward)
+  if let Expr::BigInteger(n) = &args[0] {
+    if k == 1 {
+      return Ok(bigint_to_expr(next_prime_after_bigint(n)));
+    } else if k > 1 {
+      let mut current = next_prime_after_bigint(n);
+      for _ in 1..k {
+        current = next_prime_after_bigint(&current);
+      }
+      return Ok(bigint_to_expr(current));
+    }
+    return Ok(Expr::FunctionCall {
       name: "NextPrime".to_string(),
       args: args.to_vec(),
-    }),
+    });
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) => *n,
+    Expr::Real(f) => f.floor() as i128,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NextPrime".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if k > 0 {
+    let mut current = n;
+    for _ in 0..k {
+      current = next_prime_after(current);
+    }
+    Ok(Expr::Integer(current))
+  } else if k < 0 {
+    let mut current = n;
+    for _ in 0..(-k) {
+      current = prev_prime_before(current);
+    }
+    Ok(Expr::Integer(current))
+  } else {
+    // k == 0: return unevaluated
+    Ok(Expr::FunctionCall {
+      name: "NextPrime".to_string(),
+      args: args.to_vec(),
+    })
   }
 }
 
@@ -8229,6 +8282,36 @@ fn next_prime_after(n: i128) -> i128 {
   }
   // No negative prime found > n, or n is -2, -1, or 0: smallest positive prime is 2
   2
+}
+
+/// Find the largest prime < n (including negative primes).
+/// The prime sequence is: ..., -7, -5, -3, -2, 2, 3, 5, 7, 11, ...
+fn prev_prime_before(n: i128) -> i128 {
+  // For n > 2: search downward among positive primes
+  if n > 2 {
+    let mut candidate = n - 1;
+    while candidate >= 2 {
+      if crate::is_prime(candidate as usize) {
+        return candidate;
+      }
+      candidate -= 1;
+    }
+    // No positive prime found < n, so previous is -2
+    return -2;
+  }
+  // For n == 2 or n == 1 or n == 0 or n == -1: previous prime is -2
+  if n > -2 {
+    return -2;
+  }
+  // For n == -2: previous prime is -3
+  // For n < -2: search downward among negative primes
+  let mut candidate = n - 1;
+  loop {
+    if crate::is_prime((-candidate) as usize) {
+      return candidate;
+    }
+    candidate -= 1;
+  }
 }
 
 /// Find the smallest prime > n for BigInt values.
@@ -8266,6 +8349,74 @@ fn next_prime_after_bigint(n: &num_bigint::BigInt) -> num_bigint::BigInt {
   }
 
   unreachable!()
+}
+
+// ─── ModularInverse ────────────────────────────────────────────────
+
+/// ModularInverse[a, m] - the modular inverse of a modulo m.
+/// Returns k such that a*k ≡ 1 (mod m), or returns unevaluated if no inverse exists.
+pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ModularInverse expects exactly 2 arguments".into(),
+    ));
+  }
+  let a = match expr_to_bigint(&args[0]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "ModularInverse".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let m = match expr_to_bigint(&args[1]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "ModularInverse".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  use num_traits::{One, Zero};
+
+  if m.is_zero() {
+    return Ok(Expr::FunctionCall {
+      name: "ModularInverse".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Extended Euclidean algorithm
+  let m_abs = if m < BigInt::zero() {
+    -m.clone()
+  } else {
+    m.clone()
+  };
+  let (gcd, x, _) = extended_gcd(&a, &m_abs);
+  if !gcd.is_one() && gcd != -BigInt::one() {
+    // Not coprime, no inverse exists - return unevaluated
+    return Ok(Expr::FunctionCall {
+      name: "ModularInverse".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Normalize result to be in range [0, |m|-1]
+  let result = ((x % &m_abs) + &m_abs) % &m_abs;
+  Ok(bigint_to_expr(result))
+}
+
+/// Extended GCD: returns (gcd, x, y) such that a*x + b*y = gcd
+fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
+  use num_traits::Zero;
+  if a.is_zero() {
+    return (b.clone(), BigInt::zero(), BigInt::from(1));
+  }
+  let (g, x, y) = extended_gcd(&(b % a), a);
+  (g, y - (b / a) * &x, x)
 }
 
 // ─── BitLength ─────────────────────────────────────────────────────
@@ -9246,6 +9397,97 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Normalize[v] - normalizes a vector to unit length
 /// Normalize[{3, 4}] => {3/5, 4/5}
 /// Normalize[{0, 0, 0}] => {0, 0, 0}
+/// Norm[v] - Euclidean norm (L2) of a vector
+/// Norm[v, p] - Lp norm
+pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Norm expects 1 or 2 arguments".into(),
+    ));
+  }
+  let p = if args.len() == 2 {
+    match try_eval_to_f64(&args[1]) {
+      Some(v) => v,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "Norm".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    2.0 // Default L2 norm
+  };
+
+  match &args[0] {
+    Expr::List(items) => {
+      let mut vals = Vec::new();
+      let mut all_numeric = true;
+      for item in items {
+        match try_eval_to_f64(item) {
+          Some(v) => vals.push(v),
+          None => {
+            all_numeric = false;
+            break;
+          }
+        }
+      }
+      if !all_numeric {
+        return Ok(Expr::FunctionCall {
+          name: "Norm".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      if p == 1.0 {
+        // L1 norm: sum of absolute values
+        let result: f64 = vals.iter().map(|x| x.abs()).sum();
+        return Ok(num_to_expr(result));
+      }
+      if p == f64::INFINITY {
+        // L∞ norm: max absolute value
+        let result = vals.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+        return Ok(num_to_expr(result));
+      }
+      // Lp norm
+      let sum: f64 = vals.iter().map(|x| x.abs().powf(p)).sum();
+      let result = sum.powf(1.0 / p);
+      // For L2 norm with integers, try exact Sqrt
+      if p == 2.0 && items.iter().all(|i| matches!(i, Expr::Integer(_))) {
+        let sum_sq: i128 = items
+          .iter()
+          .filter_map(|i| {
+            if let Expr::Integer(n) = i {
+              Some(n * n)
+            } else {
+              None
+            }
+          })
+          .sum();
+        let root = (sum_sq as f64).sqrt() as i128;
+        if root * root == sum_sq {
+          return Ok(Expr::Integer(root));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::Integer(sum_sq)],
+        });
+      }
+      Ok(num_to_expr(result))
+    }
+    // Norm of a scalar
+    _ => {
+      if let Some(v) = try_eval_to_f64(&args[0]) {
+        Ok(num_to_expr(v.abs()))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Norm".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
 pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
