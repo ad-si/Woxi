@@ -257,6 +257,32 @@ mod flat_and_orderless {
       "f[a, d]"
     );
   }
+
+  #[test]
+  fn orderless_subset_replace_all() {
+    clear_state();
+    // With Flat+Orderless, f[a, c] matches non-contiguous subset of f[a, b, c]
+    assert_eq!(
+      interpret(
+        "SetAttributes[f, {Flat, Orderless}]; f[a, b, c] /. f[a, c] -> d"
+      )
+      .unwrap(),
+      "f[b, d]"
+    );
+  }
+
+  #[test]
+  fn orderless_subset_replace_all_reversed() {
+    clear_state();
+    // Pattern f[c, a] should also match (Orderless allows reordering)
+    assert_eq!(
+      interpret(
+        "SetAttributes[f, {Flat, Orderless}]; f[a, b, c] /. f[c, a] -> d"
+      )
+      .unwrap(),
+      "f[b, d]"
+    );
+  }
 }
 
 mod one_identity_attribute {
