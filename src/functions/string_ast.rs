@@ -351,9 +351,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map_err(|e| {
           InterpreterError::EvaluationError(format!("Regex error: {}", e))
         })?;
-      re.split(&s).map(|p| Expr::String(p.to_string())).collect()
+      re.split(&s)
+        .filter(|p| !p.is_empty())
+        .map(|p| Expr::String(p.to_string()))
+        .collect()
     } else {
       s.split(&delims[0])
+        .filter(|p| !p.is_empty())
         .map(|p| Expr::String(p.to_string()))
         .collect()
     }
@@ -608,8 +612,34 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let s = expr_to_str(&args[0])?;
-  let pattern = expr_to_str(&args[1])?;
 
+  // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
+  if let Some(regex_str) = string_pattern_to_regex(&args[1]) {
+    let full_regex = format!("^(?:{})$", regex_str);
+    let re = regex::Regex::new(&full_regex).map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Invalid string pattern: {}",
+        e
+      ))
+    })?;
+    return Ok(Expr::Identifier(
+      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+    ));
+  }
+
+  // Try RegularExpression pattern
+  if let Some(pat) = extract_regex_pattern(&args[1]) {
+    let full_regex = format!("^(?:{})$", pat);
+    let re = regex::Regex::new(&full_regex).map_err(|e| {
+      InterpreterError::EvaluationError(format!("Invalid regex: {}", e))
+    })?;
+    return Ok(Expr::Identifier(
+      if re.is_match(&s) { "True" } else { "False" }.to_string(),
+    ));
+  }
+
+  // Fall back to string-based wildcard matching
+  let pattern = expr_to_str(&args[1])?;
   let matches = wildcard_match(&s, &pattern);
   Ok(Expr::Identifier(
     if matches { "True" } else { "False" }.to_string(),
@@ -702,12 +732,23 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     // Character class patterns
     Expr::Identifier(name) => match name.as_str() {
       "DigitCharacter" => Some("[0-9]".to_string()),
-      "LetterCharacter" => Some("[a-zA-Z]".to_string()),
+      "LetterCharacter" => Some("[a-zA-Z\\p{L}]".to_string()),
       "WhitespaceCharacter" => Some("\\s".to_string()),
-      "WordCharacter" => Some("[a-zA-Z0-9]".to_string()),
+      "Whitespace" => Some("\\s+".to_string()),
+      "WordCharacter" => Some("[a-zA-Z0-9\\p{L}]".to_string()),
       "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
+      "NumberString" => Some("[0-9]+(?:\\.[0-9]*)?".to_string()),
       _ => None,
     },
+
+    // Alternatives[pat1, pat2, ...] = pat1 | pat2 | ...
+    Expr::FunctionCall { name, args }
+      if name == "Alternatives" && !args.is_empty() =>
+    {
+      let parts: Option<Vec<String>> =
+        args.iter().map(string_pattern_to_regex).collect();
+      parts.map(|ps| ps.join("|"))
+    }
 
     // Repeated[pat] = pat.. (one or more)
     Expr::FunctionCall { name, args }
@@ -1053,7 +1094,7 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let is_negative = n < 0;
+  // IntegerString uses absolute value (drops sign)
   let abs_n = n.unsigned_abs();
 
   let mut result = String::new();
@@ -1070,18 +1111,17 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result = result.chars().rev().collect();
   }
 
-  if is_negative {
-    result.insert(0, '-');
-  }
-
-  // If length is specified, pad with zeros on the left
+  // If length is specified, pad or truncate
   if args.len() == 3 {
     let target_len = expr_to_int(&args[2])? as usize;
-    let current_len = result.len();
-    if current_len < target_len {
+    if result.len() < target_len {
+      // Pad with zeros on the left
       let padding: String =
-        std::iter::repeat_n('0', target_len - current_len).collect();
+        std::iter::repeat_n('0', target_len - result.len()).collect();
       result = format!("{}{}", padding, result);
+    } else if result.len() > target_len {
+      // Truncate from the left (keep rightmost digits)
+      result = result[result.len() - target_len..].to_string();
     }
   }
 

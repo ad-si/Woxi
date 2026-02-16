@@ -1255,31 +1255,55 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use std::collections::HashSet;
 
-  // Get elements to exclude from all lists after the first
-  let mut exclude: HashSet<String> = HashSet::new();
-  for list in lists.iter().skip(1) {
-    let items = match list {
-      Expr::List(items) => items,
-      _ => continue,
-    };
-    for item in items {
-      exclude.insert(crate::syntax::expr_to_string(item));
+  // Extract items from any expression (List or FunctionCall)
+  fn get_items(expr: &Expr) -> Option<(&[Expr], Option<&str>)> {
+    match expr {
+      Expr::List(items) => Some((items.as_slice(), None)),
+      Expr::FunctionCall { name, args } => {
+        Some((args.as_slice(), Some(name.as_str())))
+      }
+      _ => None,
     }
   }
 
-  // Filter first list
-  let first_items = match &lists[0] {
-    Expr::List(items) => items,
-    _ => return Ok(Expr::List(vec![])),
+  let (first_items, head_name) = match get_items(&lists[0]) {
+    Some(r) => r,
+    None => return Ok(Expr::List(vec![])),
   };
 
-  let result: Vec<Expr> = first_items
+  // Get elements to exclude from all lists after the first
+  let mut exclude: HashSet<String> = HashSet::new();
+  for list in lists.iter().skip(1) {
+    if let Some((items, _)) = get_items(list) {
+      for item in items {
+        exclude.insert(crate::syntax::expr_to_string(item));
+      }
+    }
+  }
+
+  // Filter first list, also remove duplicates and sort
+  let mut seen = HashSet::new();
+  let mut result: Vec<Expr> = first_items
     .iter()
-    .filter(|item| !exclude.contains(&crate::syntax::expr_to_string(item)))
+    .filter(|item| {
+      let s = crate::syntax::expr_to_string(item);
+      !exclude.contains(&s) && seen.insert(s)
+    })
     .cloned()
     .collect();
 
-  Ok(Expr::List(result))
+  // Sort by string representation (Wolfram sorts Complement output)
+  result.sort_by(|a, b| {
+    crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+  });
+
+  match head_name {
+    Some(name) => Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: result,
+    }),
+    None => Ok(Expr::List(result)),
+  }
 }
 
 /// AST-based Table: generate a table of values.

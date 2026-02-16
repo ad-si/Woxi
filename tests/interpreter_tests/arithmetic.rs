@@ -783,3 +783,61 @@ mod exact_value_returns {
     assert_eq!(interpret("QuotientRemainder[23, -7]").unwrap(), "{-4, -5}");
   }
 }
+
+mod infinity_arithmetic {
+  use super::*;
+
+  #[test]
+  fn infinity_plus_finite() {
+    assert_eq!(interpret("Infinity + 100").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn neg_infinity_plus_finite() {
+    assert_eq!(interpret("-Infinity + 100").unwrap(), "-Infinity");
+  }
+}
+
+mod length_atoms {
+  use super::*;
+
+  #[test]
+  fn rational_length_zero() {
+    assert_eq!(interpret("Length[1/3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_length_zero() {
+    assert_eq!(interpret("Length[42]").unwrap(), "0");
+  }
+}
+
+mod complement_tests {
+  use super::*;
+
+  #[test]
+  fn complement_with_function_head() {
+    assert_eq!(
+      interpret("Complement[f[z, y, x, w], f[x], f[x, z]]").unwrap(),
+      "f[w, y]"
+    );
+  }
+}
+
+mod negative_symbolic {
+  use super::*;
+
+  #[test]
+  fn negative_symbolic_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("Negative[a + b]").unwrap(),
+      "Negative[a + b]"
+    );
+  }
+
+  #[test]
+  fn negative_known_value() {
+    assert_eq!(interpret("Negative[-5]").unwrap(), "True");
+  }
+}

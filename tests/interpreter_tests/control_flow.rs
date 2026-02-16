@@ -359,3 +359,101 @@ mod abort {
     assert_eq!(interpret("x = 1; Abort[]; x = 2; x").unwrap(), "$Aborted");
   }
 }
+
+mod implies {
+  use super::*;
+
+  #[test]
+  fn true_implies_symbolic() {
+    clear_state();
+    assert_eq!(interpret("Implies[True, a]").unwrap(), "a");
+  }
+
+  #[test]
+  fn false_implies_anything() {
+    clear_state();
+    assert_eq!(interpret("Implies[False, a]").unwrap(), "True");
+  }
+
+  #[test]
+  fn true_implies_true() {
+    clear_state();
+    assert_eq!(interpret("Implies[True, True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn true_implies_false() {
+    clear_state();
+    assert_eq!(interpret("Implies[True, False]").unwrap(), "False");
+  }
+}
+
+mod which {
+  use super::*;
+
+  #[test]
+  fn symbolic_condition_returns_remaining() {
+    clear_state();
+    assert_eq!(
+      interpret("Which[False, a, x, b, True, c]").unwrap(),
+      "Which[x, b, True, c]"
+    );
+  }
+
+  #[test]
+  fn all_false_returns_null() {
+    clear_state();
+    assert_eq!(interpret("Which[False, a, False, b]").unwrap(), "Null");
+  }
+}
+
+mod or_logical {
+  use super::*;
+
+  #[test]
+  fn simplifies_with_false() {
+    clear_state();
+    assert_eq!(interpret("Or[a, False, b]").unwrap(), "a || b");
+  }
+
+  #[test]
+  fn true_short_circuits() {
+    clear_state();
+    assert_eq!(interpret("Or[False, True, a]").unwrap(), "True");
+  }
+
+  #[test]
+  fn all_false() {
+    clear_state();
+    assert_eq!(interpret("Or[False, False]").unwrap(), "False");
+  }
+}
+
+mod and_logical {
+  use super::*;
+
+  #[test]
+  fn simplifies_with_true() {
+    clear_state();
+    assert_eq!(interpret("And[a, True, b]").unwrap(), "a && b");
+  }
+
+  #[test]
+  fn false_short_circuits() {
+    clear_state();
+    assert_eq!(interpret("And[True, False, a]").unwrap(), "False");
+  }
+}
+
+mod xor_logical {
+  use super::*;
+
+  #[test]
+  fn simplifies_with_false() {
+    clear_state();
+    assert_eq!(
+      interpret("Xor[a, False, b]").unwrap(),
+      "a \\[Xor] b"
+    );
+  }
+}

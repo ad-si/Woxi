@@ -1678,6 +1678,21 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{2235} ");
       }
+      // Special case: Or[a, b, ...] displays as a || b || ...
+      if name == "Or" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" || ");
+      }
+      // Special case: And[a, b, ...] displays as a && b && ...
+      if name == "And" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" && ");
+      }
+      // Special case: Xor[a, b, ...] displays as a \[Xor] b \[Xor] ...
+      if name == "Xor" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \\[Xor] ");
+      }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
         // Handle Times[Rational[1, d], expr] as "expr/d"
@@ -2605,6 +2620,21 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "Because" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2235} ");
+      }
+      // Special case: Or[a, b, ...] displays as a || b || ...
+      if name == "Or" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" || ");
+      }
+      // Special case: And[a, b, ...] displays as a && b && ...
+      if name == "And" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" && ");
+      }
+      // Special case: Xor[a, b, ...] displays as a \[Xor] b \[Xor] ...
+      if name == "Xor" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \\[Xor] ");
       }
       // Special case: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
       if name == "Row"
