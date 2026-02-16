@@ -1826,8 +1826,10 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args.iter().collect()
   };
 
+  // Separate numeric and symbolic arguments
   let mut best_val: Option<f64> = None;
   let mut best_expr: Option<&Expr> = None;
+  let mut symbolic: Vec<Expr> = Vec::new();
   for item in &items {
     if let Some(n) = try_eval_to_f64(item) {
       match best_val {
@@ -1842,17 +1844,31 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {}
       }
     } else {
-      // Non-numeric, return symbolic
-      return Ok(Expr::FunctionCall {
-        name: "Max".to_string(),
-        args: args.to_vec(),
-      });
+      symbolic.push((*item).clone());
     }
   }
 
-  match best_expr {
-    Some(expr) => Ok((*expr).clone()),
-    None => Ok(num_to_expr(f64::NEG_INFINITY)),
+  if symbolic.is_empty() {
+    // All numeric
+    match best_expr {
+      Some(expr) => Ok((*expr).clone()),
+      None => Ok(num_to_expr(f64::NEG_INFINITY)),
+    }
+  } else {
+    // Mixed: keep max numeric and all symbolic args
+    let mut result_args: Vec<Expr> = Vec::new();
+    if let Some(expr) = best_expr {
+      result_args.push((*expr).clone());
+    }
+    result_args.extend(symbolic);
+    if result_args.len() == 1 {
+      Ok(result_args.remove(0))
+    } else {
+      Ok(Expr::FunctionCall {
+        name: "Max".to_string(),
+        args: result_args,
+      })
+    }
   }
 }
 
@@ -1877,8 +1893,10 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args.iter().collect()
   };
 
+  // Separate numeric and symbolic arguments
   let mut best_val: Option<f64> = None;
   let mut best_expr: Option<&Expr> = None;
+  let mut symbolic: Vec<Expr> = Vec::new();
   for item in &items {
     if let Some(n) = try_eval_to_f64(item) {
       match best_val {
@@ -1893,16 +1911,31 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {}
       }
     } else {
-      return Ok(Expr::FunctionCall {
-        name: "Min".to_string(),
-        args: args.to_vec(),
-      });
+      symbolic.push((*item).clone());
     }
   }
 
-  match best_expr {
-    Some(expr) => Ok((*expr).clone()),
-    None => Ok(num_to_expr(f64::INFINITY)),
+  if symbolic.is_empty() {
+    // All numeric
+    match best_expr {
+      Some(expr) => Ok((*expr).clone()),
+      None => Ok(num_to_expr(f64::INFINITY)),
+    }
+  } else {
+    // Mixed: keep min numeric and all symbolic args
+    let mut result_args: Vec<Expr> = Vec::new();
+    if let Some(expr) = best_expr {
+      result_args.push((*expr).clone());
+    }
+    result_args.extend(symbolic);
+    if result_args.len() == 1 {
+      Ok(result_args.remove(0))
+    } else {
+      Ok(Expr::FunctionCall {
+        name: "Min".to_string(),
+        args: result_args,
+      })
+    }
   }
 }
 

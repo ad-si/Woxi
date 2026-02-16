@@ -610,3 +610,51 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   }
 }
+
+/// Equivalent[expr1, expr2, ...] - True if all args have the same truth value
+pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Equivalent expects at least 2 arguments".into(),
+    ));
+  }
+
+  let mut has_true = false;
+  let mut has_false = false;
+  let mut remaining = Vec::new();
+
+  for arg in args {
+    let evaluated = evaluate_expr_to_expr(arg)?;
+    match as_bool(&evaluated) {
+      Some(true) => has_true = true,
+      Some(false) => has_false = true,
+      None => remaining.push(evaluated),
+    }
+  }
+
+  // If we have both True and False, it's False
+  if has_true && has_false {
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  // If all are known and the same value, it's True
+  if remaining.is_empty() {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // If some symbolic: keep them with any known value
+  let mut result = remaining;
+  if has_true {
+    result.insert(0, Expr::Identifier("True".to_string()));
+  }
+  if has_false {
+    result.insert(0, Expr::Identifier("False".to_string()));
+  }
+  if result.len() == 1 {
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+  Ok(Expr::FunctionCall {
+    name: "Equivalent".to_string(),
+    args: result,
+  })
+}
