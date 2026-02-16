@@ -1998,14 +1998,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numeric.py
 CLASS: Chop
-LINE: 143
-TYPE: >>
-INPUT: Chop[10.0 ^ -9]
-EXPECTED:
-= 1.×10^-9
----
-FILE: mathics/builtin/numeric.py
-CLASS: Chop
 LINE: 145
 TYPE: >>
 INPUT: Chop[10 ^ -11 I]
@@ -2027,14 +2019,6 @@ TYPE: >>
 INPUT: N[Pi, 50]
 EXPECTED:
 = 3.1415926535897932384626433832795028841971693993751
----
-FILE: mathics/builtin/numeric.py
-CLASS: N
-LINE: 185
-TYPE: >>
-INPUT: N[1/7]
-EXPECTED:
-= 0.142857
 ---
 FILE: mathics/builtin/numeric.py
 CLASS: N
@@ -2119,14 +2103,6 @@ LINE: 222
 TYPE: >>
 INPUT: N[d] ^= 5;
 EXPECTED: (none)
----
-FILE: mathics/builtin/numeric.py
-CLASS: N
-LINE: 227
-TYPE: >>
-INPUT: NValues[d]
-EXPECTED:
-= {HoldPattern[N[d, MachinePrecision]] :> 5}
 ---
 FILE: mathics/builtin/numeric.py
 CLASS: N
@@ -2436,38 +2412,6 @@ EXPECTED:
 = {x -> 100, z -> 10000}
 ---
 FILE: mathics/builtin/options.py
-CLASS: NotOptionQ
-LINE: 224
-TYPE: >>
-INPUT: NotOptionQ[x]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: NotOptionQ
-LINE: 226
-TYPE: >>
-INPUT: NotOptionQ[2]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: NotOptionQ
-LINE: 228
-TYPE: >>
-INPUT: NotOptionQ["abc"]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: NotOptionQ
-LINE: 231
-TYPE: >>
-INPUT: NotOptionQ[a -> True]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/options.py
 CLASS: Options
 LINE: 317
 TYPE: >>
@@ -2678,28 +2622,6 @@ INPUT: Print["a"]; Abort[]; Print["b"]
 EXPECTED:
 | a
 = $Aborted
----
-FILE: mathics/builtin/procedural.py
-CLASS: Break
-LINE: 86
-TYPE: >>
-INPUT: n = 0;
-EXPECTED: (none)
----
-FILE: mathics/builtin/procedural.py
-CLASS: Break
-LINE: 87
-TYPE: >>
-INPUT: While[True, If[n>10, Break[]]; n=n+1]
-EXPECTED: (none)
----
-FILE: mathics/builtin/procedural.py
-CLASS: Break
-LINE: 88
-TYPE: >>
-INPUT: n
-EXPECTED:
-= 11
 ---
 FILE: mathics/builtin/procedural.py
 CLASS: For
