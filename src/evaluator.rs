@@ -3194,7 +3194,6 @@ pub fn evaluate_function_call_ast(
         Expr::Identifier(name) => name.as_str(),
         Expr::Constant(name) => name.as_str(),
         Expr::String(name) => name.as_str(),
-        Expr::FunctionCall { name, .. } => name.as_str(),
         _ => {
           return Ok(Expr::FunctionCall {
             name: "Attributes".to_string(),
@@ -7172,11 +7171,15 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Listable", "Protected"]
     }
 
+    // HoldAllComplete + Protected
+    "HoldComplete" | "Unevaluated" => {
+      vec!["HoldAllComplete", "Protected"]
+    }
+
     // HoldAll + Protected
-    "Hold" | "HoldForm" | "HoldComplete" | "Table" | "Do" | "While" | "For"
-    | "Module" | "Block" | "With" | "Assuming" | "Trace" | "Defer"
-    | "Unevaluated" | "Compile" | "CompoundExpression" | "Switch" | "Which"
-    | "Catch" | "Throw" => {
+    "Hold" | "HoldForm" | "Table" | "Do" | "While" | "For" | "Module"
+    | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
+    | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw" => {
       vec!["HoldAll", "Protected"]
     }
 
