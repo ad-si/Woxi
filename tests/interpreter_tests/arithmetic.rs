@@ -953,3 +953,81 @@ mod rotate_nonlist {
     );
   }
 }
+
+mod exp_function {
+  use super::*;
+
+  #[test]
+  fn exp_zero() {
+    assert_eq!(interpret("Exp[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn exp_one() {
+    assert_eq!(interpret("Exp[1]").unwrap(), "E");
+  }
+
+  #[test]
+  fn exp_integer() {
+    assert_eq!(interpret("Exp[2]").unwrap(), "E^2");
+  }
+
+  #[test]
+  fn exp_negative_integer() {
+    assert_eq!(interpret("Exp[-1]").unwrap(), "E^(-1)");
+  }
+
+  #[test]
+  fn exp_symbol() {
+    assert_eq!(interpret("Exp[x]").unwrap(), "E^x");
+  }
+
+  #[test]
+  fn exp_sum() {
+    assert_eq!(interpret("Exp[y + z]").unwrap(), "E^(y + z)");
+  }
+
+  #[test]
+  fn exp_real() {
+    assert_eq!(interpret("Exp[1.0]").unwrap(), "2.718281828459045");
+  }
+}
+
+mod power_of_power {
+  use super::*;
+
+  #[test]
+  fn power_of_power_both_positive_integers() {
+    assert_eq!(interpret("(y^2)^3").unwrap(), "y^6");
+  }
+
+  #[test]
+  fn power_of_power_negative_outer() {
+    assert_eq!(interpret("(x^3)^(-2)").unwrap(), "x^(-6)");
+  }
+
+  #[test]
+  fn power_of_power_negative_inner() {
+    assert_eq!(interpret("(x^(-1))^3").unwrap(), "x^(-3)");
+  }
+
+  #[test]
+  fn power_of_power_both_negative() {
+    assert_eq!(interpret("(x^(-2))^(-3)").unwrap(), "x^6");
+  }
+
+  #[test]
+  fn power_of_power_outer_zero() {
+    assert_eq!(interpret("(x^2)^0").unwrap(), "1");
+  }
+
+  #[test]
+  fn power_of_power_outer_one() {
+    assert_eq!(interpret("(x^2)^1").unwrap(), "x^2");
+  }
+
+  #[test]
+  fn power_of_power_numeric_base() {
+    assert_eq!(interpret("(2^3)^2").unwrap(), "64");
+  }
+}

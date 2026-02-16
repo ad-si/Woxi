@@ -1229,6 +1229,18 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // (base^exp1)^exp2 -> base^(exp1*exp2) when both exponents are integers
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left: inner_base,
+    right: inner_exp,
+  } = base
+    && let (Expr::Integer(e1), Expr::Integer(e2)) = (inner_exp.as_ref(), exp)
+  {
+    let combined = *e1 * *e2;
+    return power_two(inner_base, &Expr::Integer(combined));
+  }
+
   // I^n cycles with period 4: I^0=1, I^1=I, I^2=-1, I^3=-I
   if let Expr::Identifier(name) = base
     && name == "I"
@@ -4419,10 +4431,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => Ok(Expr::Integer(1)),
     Expr::Integer(1) => Ok(Expr::Constant("E".to_string())),
     Expr::Real(f) => Ok(Expr::Real(f.exp())),
-    _ => Ok(Expr::FunctionCall {
-      name: "Exp".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => power_two(&Expr::Constant("E".to_string()), &args[0]),
   }
 }
 
