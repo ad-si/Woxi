@@ -1855,6 +1855,20 @@ pub fn evaluate_function_call_ast(
         }
       }
     }
+    "Rational" if args.len() == 2 => {
+      // Rational[n, d] with integer arguments: simplify via make_rational_pub
+      if let (Some(n), Some(d)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
+        if d == 0 {
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        }
+        return Ok(crate::functions::math_ast::make_rational_pub(n, d));
+      }
+      // Non-integer arguments: return unevaluated
+      return Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: args.to_vec(),
+      });
+    }
     "Module" => return module_ast(args),
     "Block" => return block_ast(args),
     "With" if args.len() == 2 => return with_ast(args),

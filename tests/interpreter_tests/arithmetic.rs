@@ -1249,4 +1249,25 @@ mod division_flattening {
   fn reciprocal() {
     assert_eq!(interpret("1/x").unwrap(), "1/x");
   }
+
+  #[test]
+  fn rational_direct_evaluation() {
+    // Already simplified
+    assert_eq!(interpret("Rational[4, 3]").unwrap(), "4/3");
+    // GCD simplification
+    assert_eq!(interpret("Rational[6, 4]").unwrap(), "3/2");
+    // Integer when denom = 1
+    assert_eq!(interpret("Rational[4, 2]").unwrap(), "2");
+    // Zero numerator
+    assert_eq!(interpret("Rational[0, 5]").unwrap(), "0");
+    // Sign normalization
+    assert_eq!(interpret("Rational[-3, -5]").unwrap(), "3/5");
+    // Division by zero
+    assert_eq!(interpret("Rational[3, 0]").unwrap(), "ComplexInfinity");
+    // Identity cases
+    assert_eq!(interpret("Rational[1, 1]").unwrap(), "1");
+    assert_eq!(interpret("Rational[-7, 1]").unwrap(), "-7");
+    // Arithmetic with direct Rational
+    assert_eq!(interpret("Rational[1, 3] + Rational[1, 6]").unwrap(), "1/2");
+  }
 }
