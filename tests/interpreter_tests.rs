@@ -10,6 +10,7 @@ mod interpreter_tests {
   mod cellular_automaton;
   mod control_flow;
   mod functions;
+  mod graphics;
   mod io;
   mod linear_algebra;
   mod list;

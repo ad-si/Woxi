@@ -802,6 +802,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "ValueQ"
         || name == "Reap"
         || name == "Plot"
+        || name == "Graphics"
       {
         // Flatten Sequence even in held args (unless SequenceHold)
         let args = flatten_sequences(name, args);
@@ -2882,6 +2883,9 @@ pub fn evaluate_function_call_ast(
     "Plot" if args.len() >= 2 => {
       return crate::functions::plot::plot_ast(args);
     }
+    "Graphics" if !args.is_empty() => {
+      return crate::functions::graphics::graphics_ast(args);
+    }
     "Print" => {
       // 0 args → just output a newline and return Null
       if args.is_empty() {
@@ -4252,6 +4256,21 @@ pub fn evaluate_function_call_ast(
         other => other,
       };
     }
+  }
+
+  // Graphics primitives and style directives: return as symbolic (unevaluated)
+  match name {
+    "RGBColor" | "Hue" | "GrayLevel" | "Opacity" | "Thickness"
+    | "PointSize" | "Dashing" | "EdgeForm" | "FaceForm" | "Darker"
+    | "Lighter" | "Directive" | "Point" | "Line" | "Circle" | "Disk"
+    | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
+    | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset" => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+    _ => {}
   }
 
   // Check if the function is a known but unimplemented Wolfram Language function

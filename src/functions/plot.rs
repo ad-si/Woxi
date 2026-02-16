@@ -236,7 +236,7 @@ fn generate_svg(
 /// Parse ImageSize option value into (width, height, full_width).
 /// Supports: integer, {w, h}, and named sizes (Tiny, Small, Medium, Large, Full).
 /// Full uses a 720px render resolution but emits `width="100%"` in SVG.
-fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
+pub(crate) fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
   match value {
     Expr::Integer(n) if *n > 0 => {
       let w = *n as u32;
