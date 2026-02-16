@@ -1,4 +1,5 @@
 use crate::InterpreterError;
+use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::parse_image_size;
 use crate::syntax::Expr;
@@ -462,7 +463,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
             color: None,
             thickness: None,
           };
-          for a in args {
+          // Unwrap a single List argument: EdgeForm[{GrayLevel[0, 0.5]}]
+          let directives: &[Expr] =
+            if args.len() == 1 && matches!(&args[0], Expr::List(_)) {
+              if let Expr::List(items) = &args[0] {
+                items
+              } else {
+                args
+              }
+            } else {
+              args
+            };
+          for a in directives {
             if let Some(c) = parse_color(a) {
               ef.color = Some(c);
             } else if let Expr::FunctionCall { name: n2, args: a2 } = a {
@@ -946,17 +958,27 @@ fn render_primitive(
         (None, 0.0)
       };
       let stroke_attr = if let Some(sc) = stroke_color {
+        let so = if sc.a < 1.0 {
+          format!(" stroke-opacity=\"{}\"", sc.a)
+        } else {
+          String::new()
+        };
         format!(
-          " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"",
+          " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"{so}",
           sc.to_svg_rgb()
         )
+      } else {
+        String::new()
+      };
+      let fill_opacity = if color.a < 1.0 {
+        format!(" fill-opacity=\"{}\"", color.a)
       } else {
         String::new()
       };
       out.push_str(&format!(
         "<ellipse cx=\"{scx:.2}\" cy=\"{scy:.2}\" rx=\"{srx:.2}\" ry=\"{sry:.2}\" fill=\"{}\"{}{}/>\n",
         color.to_svg_rgb(),
-        color.opacity_attr(),
+        fill_opacity,
         stroke_attr,
       ));
     }
@@ -984,17 +1006,27 @@ fn render_primitive(
         (None, 0.0)
       };
       let stroke_attr = if let Some(sc) = stroke_color {
+        let so = if sc.a < 1.0 {
+          format!(" stroke-opacity=\"{}\"", sc.a)
+        } else {
+          String::new()
+        };
         format!(
-          " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"",
+          " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"{so}",
           sc.to_svg_rgb()
         )
+      } else {
+        String::new()
+      };
+      let fill_opacity = if color.a < 1.0 {
+        format!(" fill-opacity=\"{}\"", color.a)
       } else {
         String::new()
       };
       out.push_str(&format!(
         "<rect x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" fill=\"{}\"{}{}/>\n",
         color.to_svg_rgb(),
-        color.opacity_attr(),
+        fill_opacity,
         stroke_attr,
       ));
     }
@@ -1018,10 +1050,20 @@ fn render_primitive(
         (None, 0.0)
       };
       let stroke_attr = if let Some(sc) = stroke_color {
+        let so = if sc.a < 1.0 {
+          format!(" stroke-opacity=\"{}\"", sc.a)
+        } else {
+          String::new()
+        };
         format!(
-          " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"",
+          " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"{so}",
           sc.to_svg_rgb()
         )
+      } else {
+        String::new()
+      };
+      let fill_opacity = if color.a < 1.0 {
+        format!(" fill-opacity=\"{}\"", color.a)
       } else {
         String::new()
       };
@@ -1029,7 +1071,7 @@ fn render_primitive(
         "<polygon points=\"{}\" fill=\"{}\"{}{}/>\n",
         pts.join(" "),
         color.to_svg_rgb(),
-        color.opacity_attr(),
+        fill_opacity,
         stroke_attr,
       ));
     }
@@ -1272,26 +1314,36 @@ fn parse_background(expr: &Expr) -> Option<Color> {
 
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // First arg is the content (primitives + directives)
+  // Evaluate it so that Table/Map/etc. produce concrete lists
   // Remaining args are options as Rule expressions
-  let content = &args[0];
+  let content = evaluate_expr_to_expr(&args[0])?;
 
   // Parse options
   let mut svg_width: u32 = 360;
   let mut svg_height: u32 = 225;
+  let mut explicit_height = false;
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
 
-  for opt in &args[1..] {
+  for raw_opt in &args[1..] {
+    let opt =
+      evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
     if let Expr::Rule {
       pattern,
       replacement,
-    } = opt
+    } = &opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
       match name.as_str() {
         "ImageSize" => {
+          // Check if {w, h} form was used (explicit height)
+          if let Expr::List(items) = replacement.as_ref()
+            && items.len() == 2
+          {
+            explicit_height = true;
+          }
           if let Some((w, h, fw)) = parse_image_size(replacement) {
             svg_width = w;
             svg_height = h;
@@ -1315,7 +1367,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Collect primitives
   let mut style = StyleState::default();
   let mut primitives = Vec::new();
-  collect_primitives(content, &mut style, &mut primitives);
+  collect_primitives(&content, &mut style, &mut primitives);
 
   // Compute bounding box
   let mut bb = BBox::empty();
@@ -1344,6 +1396,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((lo, hi)) = plot_range_y {
     bb.y_min = lo;
     bb.y_max = hi;
+  }
+
+  // Adjust aspect ratio to match data unless explicitly set via ImageSize -> {w, h}
+  if !explicit_height {
+    let data_aspect = bb.height() / bb.width();
+    if data_aspect.is_finite() && data_aspect > 0.0 {
+      svg_height = (svg_width as f64 * data_aspect).round() as u32;
+    }
   }
 
   // Generate SVG
