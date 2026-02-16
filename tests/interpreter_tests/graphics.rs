@@ -369,5 +369,99 @@ mod graphics {
         "-Graphics-"
       );
     }
+
+    #[test]
+    fn graphics_evaluates_table_content() {
+      // Graphics should evaluate its content (e.g. Table) before rendering
+      assert_eq!(
+        interpret("Graphics[Table[Disk[{i, 0}, 0.5], {i, 3}]]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      // Should have 3 disks
+      assert_eq!(svg.matches("ellipse").count(), 3);
+    }
+
+    #[test]
+    fn graphics_nested_table() {
+      // 2D Table produces nested lists — Graphics should handle them
+      assert_eq!(
+        interpret("Graphics[Table[Disk[{r*Cos[2 Pi q/4], r*Sin[2 Pi q/4]}, 0.3], {r, 1, 2}, {q, 4}]]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert_eq!(svg.matches("ellipse").count(), 8);
+    }
+
+    #[test]
+    fn edgeform_with_list_arg() {
+      // EdgeForm[{GrayLevel[0, 0.5]}] — list-wrapped directive
+      assert_eq!(
+        interpret("Graphics[{EdgeForm[{GrayLevel[0, 0.5]}], Disk[]}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("stroke=\"rgb(0,0,0)\""));
+      assert!(svg.contains("stroke-opacity=\"0.5\""));
+    }
+
+    #[test]
+    fn hue_with_alpha_fill_opacity() {
+      // Hue[h, s, b, alpha] should produce fill-opacity, not opacity
+      assert_eq!(
+        interpret("Graphics[{Hue[0, 1, 1, 0.6], Disk[]}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("fill-opacity=\"0.6\""), "SVG: {}", svg);
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "SVG: {}", svg);
+    }
+
+    #[test]
+    fn separate_fill_and_stroke_opacity() {
+      // Fill and stroke should have separate opacities
+      assert_eq!(
+        interpret(
+          "Graphics[{EdgeForm[{GrayLevel[0, 0.5]}], Hue[0, 1, 1, 0.6], Disk[]}]"
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("fill-opacity=\"0.6\""), "SVG: {}", svg);
+      assert!(svg.contains("stroke-opacity=\"0.5\""), "SVG: {}", svg);
+    }
+
+    #[test]
+    fn square_aspect_ratio_for_symmetric_data() {
+      // Symmetric data should produce a square SVG
+      assert_eq!(
+        interpret("Graphics[{Disk[{1, 0}, 0.5], Disk[{-1, 0}, 0.5], Disk[{0, 1}, 0.5], Disk[{0, -1}, 0.5]}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      // Should have equal width and height
+      assert!(
+        svg.contains("width=\"360\" height=\"360\""),
+        "SVG header: {}",
+        &svg[..100]
+      );
+    }
+
+    #[test]
+    fn full_hue_rings_expression() {
+      // The target expression from the issue
+      assert_eq!(
+        interpret("Graphics[Table[{EdgeForm[{GrayLevel[0, 0.5]}], Hue[(-11+q+10r)/72, 1, 1, 0.6], Disk[(8-r){Cos[2Pi q/12], Sin[2Pi q/12]}, (8-r)/3]}, {r, 6}, {q, 12}]]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      // 6 rings × 12 disks = 72 ellipses
+      assert_eq!(svg.matches("ellipse").count(), 72);
+      // All should have stroke from EdgeForm
+      assert_eq!(svg.matches("stroke=\"rgb(0,0,0)\"").count(), 72);
+      // All should have fill-opacity from Hue alpha
+      assert_eq!(svg.matches("fill-opacity=\"0.6\"").count(), 72);
+    }
   }
 }
