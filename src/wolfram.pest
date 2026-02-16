@@ -46,7 +46,7 @@ PartAnonymousFunction = { PartExtract ~ (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ Br
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
-BaseFunctionCall = { Identifier ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
+BaseFunctionCall = { Identifier ~ DerivativePrime? ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 Operator = {
     "/@"     // keep first
@@ -123,6 +123,12 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
 CompoundExpression = { Expression ~ (";" ~ Expression)+ ~ ";"? | Expression ~ ";" }
 
+// DerivativePrime: one or more ' characters after a function name (e.g. f', f'', f''')
+// Transforms f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
+DerivativePrime = @{ "'"+ }
+// DerivativeIdentifier: standalone f' or f'' without brackets → Derivative[n][f]
+DerivativeIdentifier = { Identifier ~ DerivativePrime }
+
 // FunctionCallExtended: merges FunctionCall, FunctionCall-based PartExtract,
 // FunctionAnonymousFunction, and FunctionCall-based PartAnonymousFunction
 // into a single rule. This parses the function call ONCE, then checks for
@@ -133,7 +139,7 @@ CompoundExpression = { Expression ~ (";" ~ Expression)+ ~ ";"? | Expression ~ ";
 FunctionCallAnonSuffix = { "&" ~ !"&" ~ BracketArgs* }
 FunctionCallPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 FunctionCallExtended = {
-    (Identifier | SimpleAnonymousFunction) ~ BracketArgs+
+    (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+
     ~ (
         PartIndexSuffix ~ FunctionCallPartAnonSuffix?
       | FunctionCallAnonSuffix
@@ -159,6 +165,7 @@ Term = _{
   | Increment
   | Decrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
+  | DerivativeIdentifier
   | Identifier
   | Slot
   | Association
@@ -170,6 +177,7 @@ Term = _{
 SimpleTerm = _{
     UnsignedNumericValue
   | FunctionCall
+  | DerivativeIdentifier
   | Identifier
   | Slot
   | "(" ~ Expression ~ ")"
@@ -196,6 +204,7 @@ TermNoImplicit = _{
   | Increment
   | Decrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
+  | DerivativeIdentifier
   | Identifier
   | Slot
   | Association
@@ -258,7 +267,7 @@ Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>
 FunctionArg = _{ RuleAnonymousFunction | ReplacementRule | CompoundExpression | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
-FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ BracketArgs+ }
+FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
 FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple }

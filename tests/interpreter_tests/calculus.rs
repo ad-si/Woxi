@@ -133,6 +133,77 @@ mod differentiate_plus_times {
   fn d_log_one_plus_t() {
     assert_eq!(interpret("D[Log[1 + t], t]").unwrap(), "1/(1 + t)");
   }
+
+  #[test]
+  fn d_times_three_factors() {
+    // D[4*(3 + 2*x)*x, x] should work with 3-factor Times
+    assert_eq!(interpret("D[4*(3 + 2*x)*x, x]").unwrap(), "4*(3 + 4*x)");
+  }
+}
+
+mod derivative_prime_notation {
+  use super::*;
+
+  #[test]
+  fn derivative_simple_polynomial() {
+    assert_eq!(interpret("f[x_] := x^2; f'[x]").unwrap(), "2*x");
+  }
+
+  #[test]
+  fn derivative_second_order() {
+    assert_eq!(interpret("f[x_] := x^3; f''[x]").unwrap(), "6*x");
+  }
+
+  #[test]
+  fn derivative_third_order() {
+    assert_eq!(interpret("f[x_] := x^3; f'''[x]").unwrap(), "6");
+  }
+
+  #[test]
+  fn derivative_fourth_order_vanishes() {
+    assert_eq!(interpret("f[x_] := x^3; f''''[x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn derivative_sin() {
+    assert_eq!(interpret("g[x_] := Sin[x]; g'[x]").unwrap(), "Cos[x]");
+  }
+
+  #[test]
+  fn derivative_sin_at_zero() {
+    assert_eq!(interpret("g[x_] := Sin[x]; g'[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn derivative_cos_second() {
+    assert_eq!(interpret("h[x_] := Cos[x]; h''[x]").unwrap(), "-Cos[x]");
+  }
+
+  #[test]
+  fn standalone_derivative_symbolic() {
+    // f' without brackets returns Derivative[1][f]
+    assert_eq!(interpret("f'").unwrap(), "Derivative[1][f]");
+  }
+
+  #[test]
+  fn standalone_derivative_double() {
+    assert_eq!(interpret("f''").unwrap(), "Derivative[2][f]");
+  }
+
+  #[test]
+  fn derivative_in_list() {
+    // {f'[x], f''[x]} with f defined
+    assert_eq!(
+      interpret("f[x_] := x^2; {f'[x], f''[x]}").unwrap(),
+      "{2*x, 2}"
+    );
+  }
+
+  #[test]
+  fn derivative_undefined_function() {
+    // Derivative of an undefined function stays symbolic
+    assert_eq!(interpret("h'[x]").unwrap(), "Derivative[1][h][x]");
+  }
 }
 
 mod series {
