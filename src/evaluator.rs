@@ -109,6 +109,13 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         let result = evaluate_function_call_ast(name, args)?;
         return Ok(expr_to_string(&result));
       }
+      // AbsoluteTiming/Timing: HoldAll, evaluate and measure time
+      if (name == "AbsoluteTiming" || name == "Timing") && args.len() == 1 {
+        let start = std::time::Instant::now();
+        let result = evaluate_expr(&args[0])?;
+        let elapsed = start.elapsed().as_secs_f64();
+        return Ok(format!("{{{}, {}}}", format_real_result(elapsed), result));
+      }
       // Evaluate using AST path to avoid interpret() recursion
       let evaluated_args: Vec<Expr> = args
         .iter()
@@ -842,6 +849,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       // HoldAll functions: pass args unevaluated
       if name == "Protect" || name == "Unprotect" {
         return evaluate_function_call_ast(name, args);
+      }
+
+      // AbsoluteTiming[expr]: evaluate and measure wall-clock time
+      if (name == "AbsoluteTiming" || name == "Timing") && args.len() == 1 {
+        let start = std::time::Instant::now();
+        let result = evaluate_expr_to_expr(&args[0])?;
+        let elapsed = start.elapsed().as_secs_f64();
+        return Ok(Expr::List(vec![Expr::Real(elapsed), result]));
       }
 
       // Evaluate arguments
@@ -8091,8 +8106,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Attributes"
     | "Context"
     | "Contexts"
-    | "Timing"
-    | "AbsoluteTiming"
     | "Pause"
     | "DateList"
     | "DateString"
