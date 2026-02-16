@@ -2561,6 +2561,23 @@ mod im_tests {
     assert_eq!(interpret("RealValuedNumberQ[x]").unwrap(), "False");
   }
 
+  #[test]
+  fn real_valued_number_q_approx_zero_times_i() {
+    // 0.0 * I → Complex, not real-valued
+    assert_eq!(interpret("RealValuedNumberQ[0.0 * I]").unwrap(), "False");
+  }
+
+  #[test]
+  fn real_valued_number_q_underflow_overflow() {
+    assert_eq!(
+      interpret(
+        "{RealValuedNumberQ[Underflow[]], RealValuedNumberQ[Overflow[]]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   // ── Exp ──────────────────────────────────────────────────
 
   #[test]

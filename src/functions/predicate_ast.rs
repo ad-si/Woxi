@@ -48,6 +48,11 @@ pub fn real_valued_number_q_ast(
     {
       true
     }
+    Expr::FunctionCall { name, args }
+      if (name == "Underflow" || name == "Overflow") && args.is_empty() =>
+    {
+      true
+    }
     _ => false,
   };
   Ok(bool_expr(is_real))
@@ -761,14 +766,42 @@ fn is_complex_number(expr: &Expr) -> bool {
   // Check exact complex extraction (integer/rational components)
   if let Some((_, (im_num, _))) =
     super::math_ast::try_extract_complex_exact(expr)
+    && im_num != 0
   {
-    return im_num != 0;
+    return true;
   }
   // Check float complex extraction
-  if let Some((_, im)) = super::math_ast::try_extract_complex_float(expr) {
-    return im != 0.0;
+  if let Some((_, im)) = super::math_ast::try_extract_complex_float(expr)
+    && im != 0.0
+  {
+    return true;
   }
-  false
+  // Check structural presence of I (e.g. 0. + 0.*I)
+  expr_contains_i(expr)
+}
+
+/// Check if an expression structurally contains the imaginary unit I
+/// in a multiplication context (e.g. Times[0., I]).
+fn expr_contains_i(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => expr_contains_i(left) || expr_contains_i(right),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Identifier(s) if s == "I")
+        || matches!(right.as_ref(), Expr::Identifier(s) if s == "I")
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => args
+      .iter()
+      .any(|a| matches!(a, Expr::Identifier(s) if s == "I")),
+    _ => false,
+  }
 }
 
 /// Head[expr] - Returns the head of an expression

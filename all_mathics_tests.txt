@@ -91,22 +91,6 @@ EXPECTED:
 = {operator_string}x
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: RealValuedNumberQ
-LINE: 923
-TYPE: >>
-INPUT: RealValuedNumberQ[0.0 * I]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: RealValuedNumberQ
-LINE: 927
-TYPE: >>
-INPUT: {RealValuedNumberQ[Underflow[]], RealValuedNumberQ[Overflow[]]}
-EXPECTED:
-= {True, True}
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: Sum
 LINE: 970
 TYPE: >>
