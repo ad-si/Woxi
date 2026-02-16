@@ -1475,6 +1475,29 @@ mod sum {
     // Sum[{a, b, c}] is invalid in Wolfram — requires 2+ args
     assert_eq!(interpret("Sum[{a, b, c}]").unwrap(), "Sum[{a, b, c}]");
   }
+
+  #[test]
+  fn sum_k_symbolic() {
+    assert_eq!(interpret("Sum[k, {k, 1, n}]").unwrap(), "(n*(1 + n))/2");
+  }
+
+  #[test]
+  fn sum_geometric_symbolic() {
+    assert_eq!(
+      interpret("Sum[1 / 2 ^ i, {i, 1, k}]").unwrap(),
+      "(-1 + 2^k)/2^k"
+    );
+  }
+
+  #[test]
+  fn sum_geometric_infinite() {
+    assert_eq!(interpret("Sum[1 / 2 ^ i, {i, 1, Infinity}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn sum_k_symbolic_both_bounds() {
+    assert_eq!(interpret("Sum[k, {k, n, 2 n}]").unwrap(), "(3*n*(1 + n))/2");
+  }
 }
 
 mod n_arbitrary_precision {

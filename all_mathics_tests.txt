@@ -92,30 +92,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: Sum
-LINE: 970
-TYPE: >>
-INPUT: Sum[k, {k, 1, n}]
-EXPECTED:
-= n (1 + n) / 2
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
-LINE: 974
-TYPE: >>
-INPUT: Sum[1 / 2 ^ i, {i, 1, k}]
-EXPECTED:
-= 1 - 2 ^ (-k)
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
-LINE: 978
-TYPE: >>
-INPUT: Sum[1 / 2 ^ i, {i, 1, Infinity}]
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
 LINE: 982
 TYPE: >>
 INPUT: Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]
@@ -129,14 +105,6 @@ TYPE: >>
 INPUT: Sum[1 / k ^ 2, {k, 1, n}]
 EXPECTED:
 = HarmonicNumber[n, 2]
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
-LINE: 994
-TYPE: >>
-INPUT: Sum[k, {k, n, 2 n}]
-EXPECTED:
-= 3 n (1 + n) / 2
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: Sum
