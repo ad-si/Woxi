@@ -1568,3 +1568,49 @@ mod between {
     assert_eq!(interpret("Between[10, {4, 10}]").unwrap(), "True");
   }
 }
+
+mod alternatives {
+  use super::*;
+
+  #[test]
+  fn replace_all_with_alternatives() {
+    assert_eq!(
+      interpret("a + b + c + d /. (a | b) -> t").unwrap(),
+      "2*t + c + d"
+    );
+  }
+
+  #[test]
+  fn replace_all_single_match() {
+    assert_eq!(interpret("{a, b, c} /. (a | c) -> x").unwrap(), "{x, b, x}");
+  }
+
+  #[test]
+  fn match_q_with_alternatives() {
+    assert_eq!(interpret("MatchQ[5, _Integer | _String]").unwrap(), "True");
+  }
+
+  #[test]
+  fn match_q_no_match() {
+    assert_eq!(
+      interpret("MatchQ[5.0, _Integer | _String]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn cases_with_alternatives() {
+    assert_eq!(
+      interpret("Cases[{1, \"a\", 2, \"b\", 3}, _Integer | _String]").unwrap(),
+      "{1, a, 2, b, 3}"
+    );
+  }
+
+  #[test]
+  fn replace_with_three_alternatives() {
+    assert_eq!(
+      interpret("{a, b, c, d} /. (a | b | c) -> x").unwrap(),
+      "{x, x, x, d}"
+    );
+  }
+}

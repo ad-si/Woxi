@@ -2122,14 +2122,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/numeric.py
 CLASS: N
-LINE: 225
-TYPE: >>
-INPUT: UpValues[d]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/numeric.py
-CLASS: N
 LINE: 227
 TYPE: >>
 INPUT: NValues[d]
@@ -2303,14 +2295,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numeric.py
 CLASS: RealAbs
-LINE: 567
-TYPE: >>
-INPUT: RealAbs[-3.]
-EXPECTED:
-= 3.
----
-FILE: mathics/builtin/numeric.py
-CLASS: RealAbs
 LINE: 570
 TYPE: >>
 INPUT: RealAbs[2. + 3. I]
@@ -2468,14 +2452,6 @@ EXPECTED:
 = {x -> 100, z -> 10000}
 ---
 FILE: mathics/builtin/options.py
-CLASS: None_
-LINE: 203
-TYPE: >>
-INPUT: Plot3D[{x^2 + y^2, -x^2 - y^2}, {x, -2, 2}, {y, -2, 2}, BoxRatios-> Automatic, Mesh->None]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/options.py
 CLASS: NotOptionQ
 LINE: 224
 TYPE: >>
@@ -2504,70 +2480,6 @@ CLASS: NotOptionQ
 LINE: 231
 TYPE: >>
 INPUT: NotOptionQ[a -> True]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 263
-TYPE: >>
-INPUT: OptionQ[a -> True]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 265
-TYPE: >>
-INPUT: OptionQ[a :> True]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 267
-TYPE: >>
-INPUT: OptionQ[{a -> True}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 269
-TYPE: >>
-INPUT: OptionQ[{a :> True}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 273
-TYPE: >>
-INPUT: OptionQ[{a -> True, {b->1, "c"->2}}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 275
-TYPE: >>
-INPUT: OptionQ[{a -> True, {b->1, c}}]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 277
-TYPE: >>
-INPUT: OptionQ[{a -> True, F[b->1,c->2]}]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/options.py
-CLASS: OptionQ
-LINE: 282
-TYPE: >>
-INPUT: OptionQ[x]
 EXPECTED:
 = False
 ---
@@ -2623,29 +2535,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/options.py
 CLASS: Options
-LINE: 336
-TYPE: >>
-INPUT: Options[f] = {a}
-EXPECTED:
-: {a} is not a valid list of option rules.
-= {a}
----
-FILE: mathics/builtin/options.py
-CLASS: Options
 LINE: 342
 TYPE: >>
 INPUT: Options[f]
 EXPECTED:
 = {a :> b}
----
-FILE: mathics/builtin/options.py
-CLASS: Options
-LINE: 345
-TYPE: >>
-INPUT: Options[a + b] = {a -> b}
-EXPECTED:
-: Argument a + b at position 1 is expected to be a symbol.
-= {a -> b}
 ---
 FILE: mathics/builtin/options.py
 CLASS: OptionValue
@@ -3006,15 +2900,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/procedural.py
 CLASS: Switch
-LINE: 592
-TYPE: >>
-INPUT: Switch[2, 1]
-EXPECTED:
-: Switch called with 2 arguments. Switch must be called with an odd number of arguments.
-= Switch[2, 1]
----
-FILE: mathics/builtin/procedural.py
-CLASS: Switch
 LINE: 599
 TYPE: >>
 INPUT: a:=(Print["a->p"];p); b:=(Print["b->q"];q);
@@ -3088,23 +2973,6 @@ LINE: 703
 TYPE: >>
 INPUT: Which[False, a]
 EXPECTED: (none)
----
-FILE: mathics/builtin/procedural.py
-CLASS: Which
-LINE: 708
-TYPE: >>
-INPUT: Which[False, a, x, b, True, c]
-EXPECTED:
-= Which[x, b, True, c]
----
-FILE: mathics/builtin/procedural.py
-CLASS: Which
-LINE: 712
-TYPE: >>
-INPUT: Which[a, b, c]
-EXPECTED:
-: Which called with 3 arguments.
-= Which[a, b, c]
 ---
 FILE: mathics/builtin/procedural.py
 CLASS: While
@@ -3341,32 +3209,6 @@ EXPECTED:
 = {12, 10}
 ---
 FILE: mathics/builtin/scoping.py
-CLASS: Block
-LINE: 179
-TYPE: >>
-INPUT: Block[{x + y}, x]
-EXPECTED:
-: Local variable specification contains x + y, which is not a symbol or an assignment to a symbol.
-= x
----
-FILE: mathics/builtin/scoping.py
-CLASS: Block
-LINE: 184
-TYPE: >>
-INPUT: Block[{x, x}, x]
-EXPECTED:
-: Duplicate local variable x found in local variable specification.
-= x
----
-FILE: mathics/builtin/scoping.py
-CLASS: Context_
-LINE: 219
-TYPE: >>
-INPUT: $Context
-EXPECTED:
-= Global`
----
-FILE: mathics/builtin/scoping.py
 CLASS: Contexts
 LINE: 249
 TYPE: >>
@@ -3475,15 +3317,6 @@ TYPE: S>
 INPUT: GetEnvironment[{"HOME", "USER"}]
 EXPECTED:
 = ...
----
-FILE: mathics/builtin/system.py
-CLASS: GetEnvironment
-LINE: 200
-TYPE: S>
-INPUT: GetEnvironment[HOME]
-EXPECTED:
-: HOME is not ALL or a string or a list of strings.
-= GetEnvironment[HOME]
 ---
 FILE: mathics/builtin/system.py
 CLASS: Language
@@ -3926,14 +3759,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: Transpose
-LINE: 355
-TYPE: >>
-INPUT: square = {{1, 2, 3}, {4, 5, 6}}; Transpose[square]
-EXPECTED:
-= {{1, 4}, {2, 5}, {3, 6}}
----
-FILE: mathics/builtin/tensors.py
-CLASS: Transpose
 LINE: 358
 TYPE: >>
 INPUT: MatrixForm[%]
@@ -3953,14 +3778,6 @@ EXPECTED:
 = 1   3   5
 . 
 . 2   4   6
----
-FILE: mathics/builtin/tensors.py
-CLASS: Transpose
-LINE: 370
-TYPE: >>
-INPUT: matrix3D = {{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}; Transpose[matrix3D]
-EXPECTED:
-= {{{1, 2}, {5, 6}}, {{3, 4}, {7, 8}}}
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: Transpose
@@ -4085,29 +3902,6 @@ EXPECTED:
 = x ^ 2
 ---
 FILE: mathics/builtin/trace.py
-CLASS: TraceBuiltinsVariable
-LINE: 344
-TYPE: X>
-INPUT: PrintTrace[]
-EXPECTED: (none)
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceBuiltinsVariable
-LINE: 347
-TYPE: X>
-INPUT: ClearTrace[]
-EXPECTED: (none)
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceBuiltinsVariable
-LINE: 350
-TYPE: >>
-INPUT: $TraceBuiltins = x
-EXPECTED:
-: x should be True or False.
-= x
----
-FILE: mathics/builtin/trace.py
 CLASS: TraceEvaluation
 LINE: 401
 TYPE: >>
@@ -4151,58 +3945,6 @@ INPUT: TraceEvaluation[BesselK[0, 0], ShowEvaluation-> False]
 EXPECTED:
 | ...
 = ...
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluationVariable
-LINE: 487
-TYPE: >>
-INPUT: $TraceEvaluation = True
-EXPECTED:
-| ...
-= True
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluationVariable
-LINE: 491
-TYPE: >>
-INPUT: a + a
-EXPECTED:
-| ...
-= 2 a
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluationVariable
-LINE: 496
-TYPE: >>
-INPUT: $TraceEvaluation = False
-EXPECTED:
-| ...
-= False
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluationVariable
-LINE: 499
-TYPE: >>
-INPUT: $TraceEvaluation
-EXPECTED:
-= False
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluationVariable
-LINE: 502
-TYPE: >>
-INPUT: a + a
-EXPECTED:
-= 2 a
----
-FILE: mathics/builtin/trace.py
-CLASS: TraceEvaluationVariable
-LINE: 505
-TYPE: >>
-INPUT: $TraceEvaluation = x
-EXPECTED:
-: x should be True or False.
-= x
 ---
 FILE: mathics/builtin/exp_structure/general.py
 CLASS: Depth
@@ -4323,14 +4065,6 @@ INPUT: ""
 EXPECTED:
 = #<--#
 ---
-FILE: mathics/builtin/exp_structure/general.py
-CLASS: SortBy
-LINE: 249
-TYPE: >>
-INPUT: SortBy[Total][{{5, 1}, {10, -9}}]
-EXPECTED:
-= {{10, -9}, {5, 1}}
----
 FILE: mathics/builtin/exp_structure/head_related.py
 CLASS: Operate
 LINE: 25
@@ -4402,14 +4136,6 @@ TYPE: >>
 INPUT: LeafCount[Sqrt[2]]
 EXPECTED:
 = 5
----
-FILE: mathics/builtin/exp_structure/size_and_sig.py
-CLASS: LeafCount
-LINE: 167
-TYPE: >>
-INPUT: LeafCount[100!]
-EXPECTED:
-= 1
 ---
 FILE: mathics/builtin/fileformats/htmlformat.py
 CLASS: HTMLGetString
@@ -4633,14 +4359,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: Decrement
-LINE: 95
-TYPE: >>
-INPUT: a = 5; a--
-EXPECTED:
-= 5
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: Decrement
 LINE: 97
 TYPE: >>
 INPUT: a
@@ -4688,27 +4406,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: Increment
-LINE: 168
-TYPE: >>
-INPUT: a = 1; a++
-EXPECTED:
-= 1
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: Increment
 LINE: 170
 TYPE: >>
 INPUT: a
 EXPECTED:
 = 2
----
-FILE: mathics/builtin/assignments/assign_binaryop.py
-CLASS: Increment
-LINE: 175
-TYPE: >>
-INPUT: a = 1.5; a++
-EXPECTED:
-= 1.5
 ---
 FILE: mathics/builtin/assignments/assign_binaryop.py
 CLASS: Increment
@@ -5045,14 +4747,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: SetDelayed
-LINE: 163
-TYPE: >>
-INPUT: Attributes[SetDelayed]
-EXPECTED:
-= {HoldAll, Protected, SequenceHold}
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: SetDelayed
 LINE: 167
 TYPE: >>
 INPUT: x := a
@@ -5151,14 +4845,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: TagSet
-LINE: 245
-TYPE: >>
-INPUT: DownValues[square]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: TagSet
 LINE: 248
 TYPE: >>
 INPUT: UpValues[square]
@@ -5197,14 +4883,6 @@ EXPECTED: (none)
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: UpSet
-LINE: 341
-TYPE: >>
-INPUT: DownValues[a]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: UpSet
 LINE: 343
 TYPE: >>
 INPUT: UpValues[b]
@@ -5225,14 +4903,6 @@ TYPE: >>
 INPUT: r
 EXPECTED:
 = custom
----
-FILE: mathics/builtin/assignments/assignment.py
-CLASS: UpSet
-LINE: 351
-TYPE: >>
-INPUT: UpValues[r]
-EXPECTED:
-= {}
 ---
 FILE: mathics/builtin/assignments/assignment.py
 CLASS: UpSetDelayed
@@ -5370,14 +5040,6 @@ LINE: 151
 TYPE: >>
 INPUT: ClearAll[r]
 EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/clear.py
-CLASS: ClearAll
-LINE: 152
-TYPE: >>
-INPUT: Attributes[r]
-EXPECTED:
-= {}
 ---
 FILE: mathics/builtin/assignments/clear.py
 CLASS: ClearAll
@@ -5592,26 +5254,10 @@ EXPECTED:
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: NValues
-LINE: 104
-TYPE: >>
-INPUT: NValues[a]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: NValues
 LINE: 106
 TYPE: >>
 INPUT: N[a] = 3;
 EXPECTED: (none)
----
-FILE: mathics/builtin/assignments/types.py
-CLASS: NValues
-LINE: 107
-TYPE: >>
-INPUT: NValues[a]
-EXPECTED:
-= {HoldPattern[N[a, MachinePrecision]] :> 3}
 ---
 FILE: mathics/builtin/assignments/types.py
 CLASS: NValues
@@ -5992,22 +5638,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/composition.py
 CLASS: Composition
-LINE: 45
-TYPE: >>
-INPUT: Composition[]
-EXPECTED:
-= Identity
----
-FILE: mathics/builtin/functional/composition.py
-CLASS: Composition
-LINE: 47
-TYPE: >>
-INPUT: Composition[][x]
-EXPECTED:
-= x
----
-FILE: mathics/builtin/functional/composition.py
-CLASS: Composition
 LINE: 49
 TYPE: >>
 INPUT: Attributes[Composition]
@@ -6083,14 +5713,6 @@ EXPECTED:
 = -Graphics-
 ---
 FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: FoldList
-LINE: 198
-TYPE: >>
-INPUT: FoldList[Times, {1, 2, 3}]
-EXPECTED:
-= {1, 2, 6}
----
-FILE: mathics/builtin/functional/functional_iteration.py
 CLASS: Nest
 LINE: 223
 TYPE: >>
@@ -6119,30 +5741,6 @@ TYPE: >>
 INPUT: Graphics[Point[points], ImageSize->Small]
 EXPECTED:
 = -Graphics-
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: NestWhile
-LINE: 307
-TYPE: >>
-INPUT: NestWhile[Total[IntegerDigits[#]^3] &, 5, UnsameQ, All]
-EXPECTED:
-= 371
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: NestWhile
-LINE: 311
-TYPE: >>
-INPUT: NestWhile[Total[IntegerDigits[#]^3] &, 5, (Print[{##}]; UnsameQ[##]) &, All]
-EXPECTED:
-| {5}
-| {5, 125}
-| {5, 125, 134}
-| {5, 125, 134, 92}
-| {5, 125, 134, 92, 737}
-| {5, 125, 134, 92, 737, 713}
-| {5, 125, 134, 92, 737, 713, 371}
-| {5, 125, 134, 92, 737, 713, 371, 371}
-= 371
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Input_
@@ -8016,15 +7614,6 @@ EXPECTED:
 = 0
 ---
 FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: SixJSymbol
-LINE: 176
-TYPE: >>
-INPUT: SixJSymbol[{0.5, 0.5, 1.1},{0.5, 0.5, 1.1}]
-EXPECTED:
-: SixJSymbol values {0.5, 0.5, 1.1} {0.5, 0.5, 1.1} must be integer or half integer and fulfill the triangle relation
-= SixJSymbol[{0.5, 0.5, 1.1}, {0.5, 0.5, 1.1}]
----
-FILE: mathics/builtin/quantum_mechanics/angular.py
 CLASS: ThreeJSymbol
 LINE: 235
 TYPE: >>
@@ -8080,15 +7669,6 @@ INPUT: ThreeJSymbol[{1, 2}, {3, 4}, {5, 12}]
 EXPECTED:
 = 0
 ---
-FILE: mathics/builtin/quantum_mechanics/angular.py
-CLASS: ThreeJSymbol
-LINE: 262
-TYPE: >>
-INPUT: ThreeJSymbol[{2.1, 6}, {4, 0}, {0, 0}]
-EXPECTED:
-: ThreeJSymbol values {2.1, 6}, {4, 0}, {0, 0} must be integer or half integer
-= ThreeJSymbol[{2.1, 6}, {4, 0}, {0, 0}]
----
 FILE: mathics/builtin/binary/bytearray.py
 CLASS: ByteArray_
 LINE: 29
@@ -8128,15 +7708,6 @@ TYPE: >>
 INPUT: ByteArray["ARkD"]
 EXPECTED:
 = ByteArray[<3>]
----
-FILE: mathics/builtin/binary/bytearray.py
-CLASS: ByteArray_
-LINE: 39
-TYPE: >>
-INPUT: B=ByteArray["asy"]
-EXPECTED:
-: The argument at position 1 in ByteArray[asy] should be a vector of unsigned byte values or a Base64-encoded string.
-= ByteArray[asy]
 ---
 FILE: mathics/builtin/binary/bytearray.py
 CLASS: ByteArray_
@@ -8436,14 +8007,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Equal
-LINE: 500
-TYPE: >>
-INPUT: a = b; a == b
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Equal
 LINE: 523
 TYPE: >>
 INPUT: g[1] == g[2] != g[3]
@@ -8483,30 +8046,6 @@ EXPECTED:
 = a > b && b <= c
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Max
-LINE: 719
-TYPE: >>
-INPUT: Max[5, x, -3, y, 40]
-EXPECTED:
-= Max[40, x, y]
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Max
-LINE: 727
-TYPE: >>
-INPUT: Max[-1.37, 2, "a", b]
-EXPECTED:
-= Max[2, a, b]
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Min
-LINE: 757
-TYPE: >>
-INPUT: Min[5, x, -3, y, 40]
-EXPECTED:
-= Min[-3, x, y]
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: SameQ
 LINE: 801
 TYPE: >>
@@ -8538,54 +8077,6 @@ INPUT: .2222222`6 === .222`3
 EXPECTED:
 = False
 ---
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Unequal
-LINE: 896
-TYPE: >>
-INPUT: {1, 2} != {1, 2}
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Unequal
-LINE: 898
-TYPE: >>
-INPUT: {a} != {a}
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Unequal
-LINE: 907
-TYPE: >>
-INPUT: {Unequal[], Unequal[x], Unequal[1]}
-EXPECTED:
-= {True, True, True}
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: UnsameQ
-LINE: 941
-TYPE: >>
-INPUT: 1 =!= 2 =!= 1 =!= 4
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: UnsameQ
-LINE: 945
-TYPE: >>
-INPUT: UnsameQ[]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: UnsameQ
-LINE: 947
-TYPE: >>
-INPUT: UnsameQ[expr]
-EXPECTED:
-= True
----
 FILE: mathics/builtin/testing_expressions/expression_tests.py
 CLASS: MatchQ
 LINE: 53
@@ -8593,15 +8084,6 @@ TYPE: >>
 INPUT: MatchQ[_Integer][123]
 EXPECTED:
 = True
----
-FILE: mathics/builtin/testing_expressions/expression_tests.py
-CLASS: MatchQ
-LINE: 55
-TYPE: >>
-INPUT: MatchQ[3, Pattern[3]]
-EXPECTED:
-: First element in pattern Pattern[3] is not a valid pattern name.
-= False
 ---
 FILE: mathics/builtin/testing_expressions/expression_tests.py
 CLASS: PatternsOrderedQ
@@ -8634,70 +8116,6 @@ TYPE: >>
 INPUT: ArrayQ[{{a, b}, {c, d}}, 2, SymbolQ]
 EXPECTED:
 = True
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 112
-TYPE: >>
-INPUT: LevelQ[2]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 114
-TYPE: >>
-INPUT: LevelQ[{2, 4}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 116
-TYPE: >>
-INPUT: LevelQ[Infinity]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 118
-TYPE: >>
-INPUT: LevelQ[a + b]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 124
-TYPE: >>
-INPUT: MyMap[f_, expr_, Pattern[levelspec, _?LevelQ]] := Map[f, expr, levelspec]
-EXPECTED: (none)
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 126
-TYPE: >>
-INPUT: MyMap[f, {{a, b}, {c, d}}, {2}]
-EXPECTED:
-= {{f[a], f[b]}, {f[c], f[d]}}
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 129
-TYPE: >>
-INPUT: Map[f, {{a, b}, {c, d}}, {2}]
-EXPECTED:
-= {{f[a], f[b]}, {f[c], f[d]}}
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: LevelQ
-LINE: 136
-TYPE: >>
-INPUT: Map[f, {{a, b}, {c, d}}, x]
-EXPECTED:
-: Level specification x is not of the form n, {n}, or {m, n}.
-= Map[f, {{a, b}, {c, d}}, x]
 ---
 FILE: mathics/builtin/testing_expressions/list_oriented.py
 CLASS: MatrixQ
@@ -8763,54 +8181,6 @@ INPUT: D[Sin[2 x], x]
 EXPECTED:
 = 2 Cos[2 x]
 ---
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: SubsetQ
-LINE: 270
-TYPE: >>
-INPUT: SubsetQ[{1, 2, 3}, {3, 1}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: SubsetQ
-LINE: 274
-TYPE: >>
-INPUT: SubsetQ[{}, {}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: SubsetQ
-LINE: 277
-TYPE: >>
-INPUT: SubsetQ[{1, 2, 3}, {}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: SubsetQ
-LINE: 281
-TYPE: >>
-INPUT: SubsetQ[{1, 2, 3}, {1, 2, 3}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: And
-LINE: 87
-TYPE: >>
-INPUT: a && b && True && c
-EXPECTED:
-= a && b && c
----
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Equivalent
-LINE: 199
-TYPE: >>
-INPUT: Equivalent[True, True, False]
-EXPECTED:
-= False
----
 FILE: mathics/builtin/testing_expressions/logic.py
 CLASS: Equivalent
 LINE: 204
@@ -8829,51 +8199,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/testing_expressions/logic.py
 CLASS: Implies
-LINE: 269
-TYPE: >>
-INPUT: Implies[True, a]
-EXPECTED:
-= a
----
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Implies
 LINE: 274
 TYPE: >>
 INPUT: Implies[a, Implies[b, Implies[True, c]]]
 EXPECTED:
 = a Implies b Implies c
----
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Or
-LINE: 346
-TYPE: >>
-INPUT: a || False || b
-EXPECTED:
-= a || b
----
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Not
-LINE: 431
-TYPE: >>
-INPUT: !True
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Not
-LINE: 433
-TYPE: >>
-INPUT: !False
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Not
-LINE: 435
-TYPE: >>
-INPUT: !b
-EXPECTED:
-= !b
 ---
 FILE: mathics/builtin/testing_expressions/logic.py
 CLASS: Xor
@@ -8882,94 +8212,6 @@ TYPE: >>
 INPUT: Xor[a, False, b]
 EXPECTED:
 = a \\[Xor] b
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: CoprimeQ
-LINE: 58
-TYPE: >>
-INPUT: CoprimeQ[2, 4, 5]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: ExactNumberQ
-LINE: 120
-TYPE: >>
-INPUT: ExactNumberQ[10.0]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: ExactNumberQ
-LINE: 124
-TYPE: >>
-INPUT: ExactNumberQ[I]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: ExactNumberQ
-LINE: 127
-TYPE: >>
-INPUT: ExactNumberQ[1 + I]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: ExactNumberQ
-LINE: 131
-TYPE: >>
-INPUT: ExactNumberQ[1. + I]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: ExactNumberQ
-LINE: 136
-TYPE: >>
-INPUT: ExactNumberQ[5/6]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: ExactNumberQ
-LINE: 139
-TYPE: >>
-INPUT: ExactNumberQ[4 * I + 5/6]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: InexactNumberQ
-LINE: 168
-TYPE: >>
-INPUT: InexactNumberQ[a]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: InexactNumberQ
-LINE: 170
-TYPE: >>
-INPUT: InexactNumberQ[3.0]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: InexactNumberQ
-LINE: 172
-TYPE: >>
-INPUT: InexactNumberQ[2/3]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: InexactNumberQ
-LINE: 177
-TYPE: >>
-INPUT: InexactNumberQ[4.0+I]
-EXPECTED:
-= True
 ---
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: MachineNumberQ
@@ -8996,77 +8238,12 @@ EXPECTED:
 = False
 ---
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: Negative
-LINE: 258
-TYPE: >>
-INPUT: Negative[a + b]
-EXPECTED:
-= Negative[a + b]
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: NumberQ
 LINE: 324
 TYPE: >>
 INPUT: NumberQ[3+I]
 EXPECTED:
 = True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: NumberQ
-LINE: 326
-TYPE: >>
-INPUT: NumberQ[5!]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: NumericQ
-LINE: 359
-TYPE: >>
-INPUT: NumericQ[a]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: NumericQ
-LINE: 361
-TYPE: >>
-INPUT: NumericQ[Sin[a]]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: NumericQ
-LINE: 366
-TYPE: >>
-INPUT: Clear[a]; NumericQ[a]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: NumericQ
-LINE: 368
-TYPE: >>
-INPUT: ClearAll[a]; NumericQ[a]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: NumericQ
-LINE: 370
-TYPE: >>
-INPUT: NumericQ[a]=False; NumericQ[a]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/numerical_properties.py
-CLASS: NumericQ
-LINE: 373
-TYPE: >>
-INPUT: NumericQ[a] = 37
-EXPECTED:
-: Cannot set NumericQ[a] to 37; the lhs argument must be a symbol and the rhs must be True or False.
-= 37
 ---
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: PossibleZeroQ
@@ -9177,14 +8354,6 @@ CLASS: StringMatchQ
 LINE: 166
 TYPE: >>
 INPUT: StringMatchQ["15a94xcZ6", (DigitCharacter | LetterCharacter)..]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/string_tests.py
-CLASS: StringMatchQ
-LINE: 170
-TYPE: >>
-INPUT: StringMatchQ[LetterCharacter]["a"]
 EXPECTED:
 = True
 ---
@@ -9407,14 +8576,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/operations.py
 CLASS: StringSplit
-LINE: 739
-TYPE: >>
-INPUT: StringSplit["x", "x"]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/string/operations.py
-CLASS: StringSplit
 LINE: 743
 TYPE: >>
 INPUT: StringSplit["12312123", "12"..]
@@ -9436,22 +8597,6 @@ TYPE: >>
 INPUT: StringTrim["ababaxababyaabab", RegularExpression["(ab)+"]]
 EXPECTED:
 = axababya
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: DigitCharacter
-LINE: 25
-TYPE: >>
-INPUT: StringMatchQ["1", DigitCharacter]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: DigitCharacter
-LINE: 32
-TYPE: >>
-INPUT: StringMatchQ["123245", DigitCharacter..]
-EXPECTED:
-= True
 ---
 FILE: mathics/builtin/string/patterns.py
 CLASS: EndOfLine
@@ -9490,14 +8635,6 @@ INPUT: StringReplace["aab\nabb", "b" ~~ EndOfString -> "c"]
 EXPECTED:
 = aab
 . abc
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: LetterCharacter
-LINE: 96
-TYPE: >>
-INPUT: StringMatchQ[#, LetterCharacter] & /@ {"a", "1", "A", " ", "."}
-EXPECTED:
-= {True, False, True, False, False}
 ---
 FILE: mathics/builtin/string/patterns.py
 CLASS: LetterCharacter
@@ -9602,22 +8739,6 @@ EXPECTED:
 = {10, 20}
 ---
 FILE: mathics/builtin/string/patterns.py
-CLASS: StringCases
-LINE: 197
-TYPE: >>
-INPUT: StringCases["a#ä_123", WordCharacter]
-EXPECTED:
-= {a, ä, 1, 2, 3}
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: StringCases
-LINE: 200
-TYPE: >>
-INPUT: StringCases["a#ä_123", LetterCharacter]
-EXPECTED:
-= {a, ä}
----
-FILE: mathics/builtin/string/patterns.py
 CLASS: StringExpression
 LINE: 234
 TYPE: >>
@@ -9626,52 +8747,12 @@ EXPECTED:
 = "ab"
 ---
 FILE: mathics/builtin/string/patterns.py
-CLASS: WhitespaceCharacter
-LINE: 265
-TYPE: >>
-INPUT: StringMatchQ["\n", WhitespaceCharacter]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: WhitespaceCharacter
-LINE: 268
-TYPE: >>
-INPUT: StringSplit["a\nb\r\nc\rd", WhitespaceCharacter]
-EXPECTED:
-= {a, b, , c, d}
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: WhitespaceCharacter
-LINE: 274
-TYPE: >>
-INPUT: StringMatchQ[" \n", Whitespace]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/string/patterns.py
 CLASS: WordBoundary
 LINE: 291
 TYPE: >>
 INPUT: StringReplace["apple banana orange artichoke", "e" ~~ WordBoundary -> "E"]
 EXPECTED:
 = applE banana orangE artichokE
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: WordCharacter
-LINE: 308
-TYPE: >>
-INPUT: StringMatchQ[#, WordCharacter] &/@ {"1", "a", "A", ",", " "}
-EXPECTED:
-= {True, True, True, False, False}
----
-FILE: mathics/builtin/string/patterns.py
-CLASS: WordCharacter
-LINE: 312
-TYPE: >>
-INPUT: StringMatchQ["abc123DEF", WordCharacter..]
-EXPECTED:
-= True
 ---
 FILE: mathics/builtin/box/layout.py
 CLASS: GridBox
@@ -9899,37 +8980,6 @@ INPUT: Mod[5, 0]
 EXPECTED:
 : The argument 0 should be nonzero.
 = Mod[5, 0]
----
-FILE: mathics/builtin/intfns/divlike.py
-CLASS: ModularInverse
-LINE: 215
-TYPE: >>
-INPUT: ModularInverse[2, 3]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/intfns/divlike.py
-CLASS: ModularInverse
-LINE: 219
-TYPE: >>
-INPUT: k = 2; n = 3; Mod[ModularInverse[k, n] * k, n] == 1
-EXPECTED:
-= True
----
-FILE: mathics/builtin/intfns/divlike.py
-CLASS: ModularInverse
-LINE: 223
-TYPE: >>
-INPUT: ModularInverse[k, k]
-EXPECTED:
-= ModularInverse[2, 2]
----
-FILE: mathics/builtin/intfns/divlike.py
-CLASS: ModularInverse
-LINE: 226
-TYPE: #>
-INPUT: Clear[k, n]
-EXPECTED: (none)
 ---
 FILE: mathics/builtin/intfns/divlike.py
 CLASS: PowerMod
@@ -14264,14 +13314,6 @@ TYPE: >>
 INPUT: f[1, 2, 3] /. f[x__] -> x
 EXPECTED:
 = Sequence[1, 2, 3]
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Alternatives
-LINE: 47
-TYPE: >>
-INPUT: a+b+c+d/.(a|b)->t
-EXPECTED:
-= c + d + 2 t
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Alternatives
