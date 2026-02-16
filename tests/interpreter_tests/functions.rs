@@ -349,6 +349,83 @@ mod replace_all_top_level {
   }
 }
 
+mod protect_unprotect {
+  use super::*;
+
+  #[test]
+  fn protect_blocks_simple_assignment() {
+    clear_state();
+    assert_eq!(interpret("Protect[p]; p = 2; p").unwrap(), "p");
+  }
+
+  #[test]
+  fn protect_blocks_part_assignment() {
+    clear_state();
+    assert_eq!(
+      interpret("A = {1, 2, 3}; Protect[A]; A[[2]] = 4; A").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn protect_returns_symbol_list() {
+    clear_state();
+    assert_eq!(interpret("Protect[x]").unwrap(), "{x}");
+  }
+
+  #[test]
+  fn unprotect_removes_protection() {
+    clear_state();
+    assert_eq!(
+      interpret("Protect[x]; Unprotect[x]; x = 5; x").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn unprotect_returns_symbol_if_was_protected() {
+    clear_state();
+    assert_eq!(interpret("Protect[x]; Unprotect[x]").unwrap(), "{x}");
+  }
+
+  #[test]
+  fn unprotect_returns_empty_if_not_protected() {
+    clear_state();
+    assert_eq!(interpret("Unprotect[x]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn protected_via_attributes_assignment() {
+    clear_state();
+    assert_eq!(
+      interpret("Attributes[p] = {Protected}; p = 2; p").unwrap(),
+      "p"
+    );
+  }
+
+  #[test]
+  fn set_attributes_on_protected_symbol() {
+    clear_state();
+    // SetAttributes can add attributes even when symbol is Protected
+    assert_eq!(
+      interpret(
+        "Attributes[p] = {Protected}; SetAttributes[p, Flat]; Attributes[p]"
+      )
+      .unwrap(),
+      "{Flat, Protected}"
+    );
+  }
+
+  #[test]
+  fn unprotect_blocked_by_locked() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[p, {Protected, Locked}]; Unprotect[p]").unwrap(),
+      "{}"
+    );
+  }
+}
+
 mod attributes_assignment {
   use super::*;
 
