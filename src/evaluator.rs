@@ -3718,7 +3718,7 @@ pub fn evaluate_function_call_ast(
     "While" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::boolean_ast::while_ast(args);
     }
-    "Equal" if args.len() >= 2 => {
+    "Equal" => {
       return crate::functions::boolean_ast::equal_ast(args);
     }
     "Unequal" if args.len() >= 2 => {

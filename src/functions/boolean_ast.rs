@@ -249,10 +249,9 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns True if all args are identical, False if all are numeric and differ,
 /// or stays symbolic (unevaluated) if args contain symbols and aren't identical.
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "Equal expects at least 2 arguments".into(),
-    ));
+    return Ok(Expr::Identifier("True".to_string()));
   }
 
   use crate::functions::math_ast::try_eval_to_f64;
