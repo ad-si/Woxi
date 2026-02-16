@@ -14,7 +14,7 @@ const RESOLUTION_SCALE: u32 = 10;
 const NUM_SAMPLES: usize = 500;
 
 /// Substitute all occurrences of a variable with a value in an expression
-fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
+pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   match expr {
     Expr::Identifier(name) if name == var => value.clone(),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
@@ -68,7 +68,7 @@ fn split_into_segments(points: &[(f64, f64)]) -> Vec<Vec<(f64, f64)>> {
 }
 
 /// Compute a "nice" major tick step given the axis range and desired label count.
-fn nice_step(range: f64, target_labels: usize) -> f64 {
+pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
   let raw = range / target_labels as f64;
   let mag = 10_f64.powf(raw.abs().log10().floor());
   let norm = raw / mag;
@@ -94,7 +94,7 @@ fn is_major_tick(v: f64, step: f64) -> bool {
 }
 
 /// Format a tick value, dropping the trailing ".0" for integers.
-fn format_tick(v: f64) -> String {
+pub(crate) fn format_tick(v: f64) -> String {
   if (v - v.round()).abs() < 1e-9 {
     format!("{}", v.round() as i64)
   } else {
