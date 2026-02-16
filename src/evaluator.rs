@@ -5904,6 +5904,94 @@ fn apply_replace_ast(
   }
 }
 
+/// Try Flat subsequence replacement. For a Flat function f, matches f[a,b] within f[a,b,c]
+/// by trying contiguous subsequences. Recursively applies to subexpressions.
+fn try_flat_replace_all(
+  expr: &Expr,
+  pattern: &Expr,
+  replacement: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      let has_flat = is_builtin_flat(name)
+        || crate::FUNC_ATTRS.with(|m| {
+          m.borrow()
+            .get(name.as_str())
+            .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+        });
+      if has_flat
+        && let Expr::FunctionCall {
+          name: pat_name,
+          args: pat_args,
+        } = pattern
+        && pat_name == name
+        && pat_args.len() < args.len()
+      {
+        let sub_len = pat_args.len();
+        for start in 0..=(args.len() - sub_len) {
+          let sub_expr = Expr::FunctionCall {
+            name: name.clone(),
+            args: args[start..start + sub_len].to_vec(),
+          };
+          if let Some(bindings) = match_pattern(&sub_expr, pattern) {
+            let replaced = apply_bindings(replacement, &bindings)?;
+            let mut new_args = args[..start].to_vec();
+            new_args.push(replaced);
+            new_args.extend_from_slice(&args[start + sub_len..]);
+            if new_args.len() == 1 {
+              return Ok(Some(new_args.into_iter().next().unwrap()));
+            }
+            return Ok(Some(Expr::FunctionCall {
+              name: name.clone(),
+              args: new_args,
+            }));
+          }
+        }
+      }
+      // Recurse into subexpressions
+      let mut changed = false;
+      let mut new_args = Vec::with_capacity(args.len());
+      for arg in args {
+        if let Some(new_arg) = try_flat_replace_all(arg, pattern, replacement)?
+        {
+          new_args.push(new_arg);
+          changed = true;
+        } else {
+          new_args.push(arg.clone());
+        }
+      }
+      if changed {
+        Ok(Some(Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args,
+        }))
+      } else {
+        Ok(None)
+      }
+    }
+    Expr::List(items) => {
+      let mut changed = false;
+      let mut new_items = Vec::with_capacity(items.len());
+      for item in items {
+        if let Some(new_item) =
+          try_flat_replace_all(item, pattern, replacement)?
+        {
+          new_items.push(new_item);
+          changed = true;
+        } else {
+          new_items.push(item.clone());
+        }
+      }
+      if changed {
+        Ok(Some(Expr::List(new_items)))
+      } else {
+        Ok(None)
+      }
+    }
+    _ => Ok(None),
+  }
+}
+
 /// Apply ReplaceAll operation on AST (expr /. rules)
 /// Uses AST-based structural pattern matching for patterns containing blanks (n_, x_Head, etc.),
 /// falls back to string-based matching for simple patterns.
@@ -5934,6 +6022,20 @@ fn apply_replace_all_ast(
       }
     }
     _ => {}
+  }
+
+  // Try Flat subsequence matching at AST level
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  }
+  | Expr::RuleDelayed {
+    pattern,
+    replacement,
+  } = rules
+    && let Some(result) = try_flat_replace_all(expr, pattern, replacement)?
+  {
+    return Ok(result);
   }
 
   // Extract pattern and replacement strings for string-based matching
@@ -6083,6 +6185,47 @@ fn apply_rules_once(
       Ok(Expr::List(new_items?))
     }
     Expr::FunctionCall { name, args } => {
+      // For Flat functions, try subsequence matching before recursing
+      let has_flat = is_builtin_flat(name)
+        || crate::FUNC_ATTRS.with(|m| {
+          m.borrow()
+            .get(name.as_str())
+            .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+        });
+      if has_flat {
+        for (pattern, replacement) in rules {
+          if let Expr::FunctionCall {
+            name: pat_name,
+            args: pat_args,
+          } = pattern
+            && pat_name == name
+            && pat_args.len() < args.len()
+          {
+            // Try matching contiguous subsequences of args
+            let sub_len = pat_args.len();
+            for start in 0..=(args.len() - sub_len) {
+              let sub_expr = Expr::FunctionCall {
+                name: name.clone(),
+                args: args[start..start + sub_len].to_vec(),
+              };
+              if let Some(bindings) = match_pattern(&sub_expr, pattern) {
+                let replaced = apply_bindings(replacement, &bindings)?;
+                let mut new_args = args[..start].to_vec();
+                new_args.push(replaced);
+                new_args.extend_from_slice(&args[start + sub_len..]);
+                if new_args.len() == 1 {
+                  return Ok(new_args.into_iter().next().unwrap());
+                }
+                return Ok(Expr::FunctionCall {
+                  name: name.clone(),
+                  args: new_args,
+                });
+              }
+            }
+          }
+        }
+      }
+
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
         .map(|arg| apply_rules_once(arg, rules))

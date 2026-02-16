@@ -212,6 +212,24 @@ mod flat_and_orderless {
       "f[a, b, c]"
     );
   }
+
+  #[test]
+  fn flat_subsequence_replace_all() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Flat]; f[a, b, c] /. f[a, b] -> d").unwrap(),
+      "f[d, c]"
+    );
+  }
+
+  #[test]
+  fn flat_subsequence_replace_all_end() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Flat]; f[a, b, c] /. f[b, c] -> d").unwrap(),
+      "f[a, d]"
+    );
+  }
 }
 
 mod attributes_assignment {
