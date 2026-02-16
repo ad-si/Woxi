@@ -873,12 +873,11 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
               Ok(num_to_expr(l - r))
             }
           } else if matches!(&left_val, Expr::Integer(0)) {
-            // 0 - x => -x (Times[-1, x])
-            Ok(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(-1)),
-              right: Box::new(right_val),
-            })
+            // 0 - x => -x via times_ast for proper distribution
+            crate::functions::math_ast::times_ast(&[
+              Expr::Integer(-1),
+              right_val,
+            ])
           } else if crate::functions::quantity_ast::is_quantity(&left_val)
             .is_some()
             || crate::functions::quantity_ast::is_quantity(&right_val).is_some()
@@ -886,11 +885,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
             // Quantity subtraction: delegate to subtract_ast → Plus[a, Times[-1, b]]
             crate::functions::math_ast::subtract_ast(&[left_val, right_val])
           } else {
-            Ok(Expr::BinaryOp {
-              op: *op,
-              left: Box::new(left_val),
-              right: Box::new(right_val),
-            })
+            // Use subtract_ast for proper distribution of -1 over Plus
+            crate::functions::math_ast::subtract_ast(&[left_val, right_val])
           }
         }
         BinaryOperator::Times => {
@@ -938,14 +934,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       let val = evaluate_expr_to_expr(operand)?;
       match op {
         UnaryOperator::Minus => {
-          if let Some(n) = expr_to_number(&val) {
-            Ok(num_to_expr(-n))
-          } else {
-            Ok(Expr::UnaryOp {
-              op: *op,
-              operand: Box::new(val),
-            })
-          }
+          // Use times_ast for proper distribution: -(a+b) → -a - b
+          crate::functions::math_ast::times_ast(&[Expr::Integer(-1), val])
         }
         UnaryOperator::Not => {
           if matches!(&val, Expr::Identifier(s) if s == "True") {
@@ -2544,11 +2534,11 @@ pub fn evaluate_function_call_ast(
     "Composition" if args.len() >= 2 => {
       let mut flat = Vec::new();
       for arg in args {
-        if let Expr::FunctionCall { name: n, args: a } = arg {
-          if n == "Composition" {
-            flat.extend(a.iter().cloned());
-            continue;
-          }
+        if let Expr::FunctionCall { name: n, args: a } = arg
+          && n == "Composition"
+        {
+          flat.extend(a.iter().cloned());
+          continue;
         }
         flat.push(arg.clone());
       }

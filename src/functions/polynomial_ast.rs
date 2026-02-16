@@ -2945,6 +2945,15 @@ fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               num_factors.push(arg.clone());
             }
           }
+          // BinaryOp::Divide inside Times: split into num/den
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left,
+            right,
+          } => {
+            num_factors.push(*left.clone());
+            den_factors.push(*right.clone());
+          }
           _ => num_factors.push(arg.clone()),
         }
       }

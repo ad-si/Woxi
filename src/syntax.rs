@@ -1899,7 +1899,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
         } else {
           base_str
         };
-        // Wrap exponent in parens if it's a Plus, or negative
+        // Wrap exponent in parens if it's a Plus, negative, or Times with negative coefficient
         let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
           || matches!(
             &args[1],
@@ -1915,7 +1915,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
               op: UnaryOperator::Minus,
               ..
             }
-          ) {
+          )
+          || matches!(&args[1], Expr::FunctionCall { name: tname, args: targs } if tname == "Times" && !targs.is_empty() && matches!(&targs[0], Expr::Integer(n) if *n < 0))
+        {
           format!("({})", exp_str)
         } else {
           exp_str
@@ -2156,6 +2158,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
             ..
           }
         ) || matches!(e, Expr::Integer(n) if *n < 0)
+          || matches!(e, Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() && matches!(&args[0], Expr::Integer(n) if *n < 0))
       };
       let needs_right_parens = (is_multiplicative && is_additive(right))
         || (matches!(op, BinaryOperator::Divide)
@@ -2514,7 +2517,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
                 || matches!(
                   &args[1],
                   Expr::BinaryOp {
-                    op: BinaryOperator::Times,
+                    op: BinaryOperator::Times | BinaryOperator::Divide,
                     ..
                   }
                 )));
@@ -2562,7 +2565,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
         } else {
           base_str
         };
-        // Wrap exponent in parens if it's a Plus, or negative
+        // Wrap exponent in parens if it's a Plus, negative, or Times with negative coefficient
         let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
           || matches!(
             &args[1],
@@ -2578,7 +2581,9 @@ pub fn expr_to_output(expr: &Expr) -> String {
               op: UnaryOperator::Minus,
               ..
             }
-          ) {
+          )
+          || matches!(&args[1], Expr::FunctionCall { name: tname, args: targs } if tname == "Times" && !targs.is_empty() && matches!(&targs[0], Expr::Integer(n) if *n < 0))
+        {
           format!("({})", exp_str)
         } else {
           exp_str

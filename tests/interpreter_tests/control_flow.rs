@@ -451,9 +451,6 @@ mod xor_logical {
   #[test]
   fn simplifies_with_false() {
     clear_state();
-    assert_eq!(
-      interpret("Xor[a, False, b]").unwrap(),
-      "a \\[Xor] b"
-    );
+    assert_eq!(interpret("Xor[a, False, b]").unwrap(), "a \\[Xor] b");
   }
 }

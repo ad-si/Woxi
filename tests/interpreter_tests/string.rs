@@ -1013,7 +1013,8 @@ mod string_match_q_patterns {
   #[test]
   fn word_character_repeated() {
     assert_eq!(
-      interpret(r#"StringMatchQ["abc123DEF", Repeated[WordCharacter]]"#).unwrap(),
+      interpret(r#"StringMatchQ["abc123DEF", Repeated[WordCharacter]]"#)
+        .unwrap(),
       "True"
     );
   }
@@ -1036,18 +1037,12 @@ mod string_split_edge {
 
   #[test]
   fn split_x_by_x() {
-    assert_eq!(
-      interpret(r#"StringSplit["x", "x"]"#).unwrap(),
-      "{}"
-    );
+    assert_eq!(interpret(r#"StringSplit["x", "x"]"#).unwrap(), "{}");
   }
 
   #[test]
   fn split_filters_empty() {
-    assert_eq!(
-      interpret(r#"StringSplit["xxax", "x"]"#).unwrap(),
-      "{a}"
-    );
+    assert_eq!(interpret(r#"StringSplit["xxax", "x"]"#).unwrap(), "{a}");
   }
 }
 
