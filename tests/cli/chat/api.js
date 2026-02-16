@@ -1,29 +1,27 @@
 const TOOL_DEFINITION = {
   type: "function",
-  function: {
-    name: "evaluate_wolfram",
-    description:
-      "Evaluate Wolfram Language code using the Woxi interpreter. " +
-      "State persists across calls within this conversation. " +
-      "Use this to compute mathematical expressions, manipulate lists, " +
-      "do symbolic algebra, solve equations, etc.",
-    parameters: {
-      type: "object",
-      properties: {
-        code: {
-          type: "string",
-          description: "Wolfram Language code to evaluate",
-        },
+  name: "evaluate_wolfram",
+  description:
+    "Evaluate Wolfram Language code using the Woxi interpreter. " +
+    "State persists across calls within this conversation. " +
+    "Use this to compute mathematical expressions, manipulate lists, " +
+    "do symbolic algebra, solve equations, etc.",
+  parameters: {
+    type: "object",
+    properties: {
+      code: {
+        type: "string",
+        description: "Wolfram Language code to evaluate",
       },
-      required: ["code"],
     },
+    required: ["code"],
   },
 }
 
 const ANTHROPIC_TOOL = {
-  name: "evaluate_wolfram",
-  description: TOOL_DEFINITION.function.description,
-  input_schema: TOOL_DEFINITION.function.parameters,
+  name: TOOL_DEFINITION.name,
+  description: TOOL_DEFINITION.description,
+  input_schema: TOOL_DEFINITION.parameters,
 }
 
 /**
@@ -48,29 +46,27 @@ export async function sendMessage(messages, opts) {
 
 // --- OpenAI ---
 
-/** Build OpenAI-format content for a message, handling attachments */
-function toOpenAIContent(msg) {
-  if (!msg.attachments || msg.attachments.length === 0) return msg.content
-
+/** Build Responses API content parts for a user message with attachments */
+function toResponsesContent(msg) {
   const parts = []
 
   // Build text: prepend text file contents, then user text
   const textParts = []
-  for (const att of msg.attachments) {
+  for (const att of (msg.attachments || [])) {
     if (att.type === "text") {
       textParts.push(`File: ${att.name}\n\`\`\`\n${att.content}\n\`\`\``)
     }
   }
   if (msg.content) textParts.push(msg.content)
   const text = textParts.join("\n\n")
-  if (text) parts.push({ type: "text", text })
+  if (text) parts.push({ type: "input_text", text })
 
   // Add images
-  for (const att of msg.attachments) {
+  for (const att of (msg.attachments || [])) {
     if (att.type === "image") {
       parts.push({
-        type: "image_url",
-        image_url: { url: `data:${att.mediaType};base64,${att.data}` },
+        type: "input_image",
+        image_url: `data:${att.mediaType};base64,${att.data}`,
       })
     }
   }
@@ -78,90 +74,136 @@ function toOpenAIContent(msg) {
   return parts
 }
 
+/** Convert internal messages (OpenAI chat format) to Responses API input array */
+function toResponsesInput(messages) {
+  const input = []
+  for (const msg of messages) {
+    if (msg.role === "system") continue // handled via instructions
+
+    if (msg.role === "user") {
+      if (msg.attachments && msg.attachments.length > 0) {
+        input.push({ type: "message", role: "user", content: toResponsesContent(msg) })
+      } else {
+        input.push({ type: "message", role: "user", content: msg.content })
+      }
+      continue
+    }
+
+    if (msg.role === "assistant") {
+      // Text content
+      if (msg.content) {
+        input.push({ type: "message", role: "assistant", content: msg.content })
+      }
+      // Tool calls become function_call items
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          const args = typeof tc.function.arguments === "string"
+            ? tc.function.arguments
+            : JSON.stringify(tc.function.arguments)
+          input.push({
+            type: "function_call",
+            call_id: tc.id,
+            name: tc.function.name,
+            arguments: args,
+          })
+        }
+      }
+      continue
+    }
+
+    if (msg.role === "tool") {
+      input.push({
+        type: "function_call_output",
+        call_id: msg.tool_call_id,
+        output: msg.content,
+      })
+    }
+  }
+  return input
+}
+
 async function sendOpenAI(messages, { apiKey, onToken, onToolCall, onDone, onError, signal }) {
   try {
-    const apiMessages = messages.map((msg) => {
-      if (msg.role === "user" && msg.attachments) {
-        return { ...msg, content: toOpenAIContent(msg), attachments: undefined }
-      }
-      return msg
-    })
+    const systemMsg = messages.find((m) => m.role === "system")
+    const input = toResponsesInput(messages)
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const body = {
+      model: "gpt-5.2-codex",
+      input,
+      tools: [TOOL_DEFINITION],
+      stream: true,
+    }
+    if (systemMsg?.content) {
+      body.instructions = systemMsg.content
+    }
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: "gpt-5.2-codex",
-        messages: apiMessages,
-        tools: [TOOL_DEFINITION],
-        stream: true,
-      }),
+      body: JSON.stringify(body),
       signal,
     })
 
     if (!response.ok) {
-      const body = await response.text()
-      throw new Error(`OpenAI API error ${response.status}: ${body}`)
+      const text = await response.text()
+      throw new Error(`OpenAI API error ${response.status}: ${text}`)
     }
 
     let textContent = ""
     let toolCalls = []
     let currentToolCall = null
+    let currentToolArgs = ""
 
     await parseSSE(response.body, (data) => {
-      if (data === "[DONE]") return
+      const event = JSON.parse(data)
 
-      const chunk = JSON.parse(data)
-      const delta = chunk.choices?.[0]?.delta
-      const finishReason = chunk.choices?.[0]?.finish_reason
-
-      if (!delta) return
-
-      // Text content
-      if (delta.content) {
-        textContent += delta.content
-        onToken(delta.content)
-      }
-
-      // Tool call deltas
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          if (tc.id) {
-            // New tool call
-            currentToolCall = { id: tc.id, name: tc.function?.name || "", arguments: "" }
-            toolCalls.push(currentToolCall)
-          }
-          if (tc.function?.name && currentToolCall) {
-            currentToolCall.name = tc.function.name
-          }
-          if (tc.function?.arguments && currentToolCall) {
-            currentToolCall.arguments += tc.function.arguments
-          }
+      // New output item (message or function_call)
+      if (event.type === "response.output_item.added") {
+        const item = event.item
+        if (item.type === "function_call") {
+          currentToolCall = { id: item.call_id || item.id, name: item.name }
+          currentToolArgs = ""
         }
       }
 
-      if (finishReason === "tool_calls") {
-        for (const tc of toolCalls) {
+      // Text delta
+      if (event.type === "response.output_text.delta") {
+        textContent += event.delta
+        onToken(event.delta)
+      }
+
+      // Function call arguments delta
+      if (event.type === "response.function_call_arguments.delta") {
+        currentToolArgs += event.delta
+      }
+
+      // Function call arguments done
+      if (event.type === "response.function_call_arguments.done") {
+        if (currentToolCall) {
           try {
-            const args = JSON.parse(tc.arguments)
-            onToolCall({ id: tc.id, name: tc.name, arguments: args })
+            const args = JSON.parse(event.arguments || currentToolArgs)
+            const tc = { id: currentToolCall.id, name: currentToolCall.name, arguments: args }
+            toolCalls.push(tc)
+            onToolCall(tc)
           } catch (e) {
-            onError(new Error(`Failed to parse tool arguments: ${tc.arguments}`))
+            onError(new Error(`Failed to parse tool arguments: ${currentToolArgs}`))
           }
+          currentToolCall = null
+          currentToolArgs = ""
         }
       }
     })
 
-    // Build the complete assistant message
+    // Build the complete assistant message in internal (OpenAI chat) format
     const msg = { role: "assistant", content: textContent || null }
     if (toolCalls.length > 0) {
       msg.tool_calls = toolCalls.map((tc) => ({
         id: tc.id,
         type: "function",
-        function: { name: tc.name, arguments: tc.arguments },
+        function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
       }))
     }
     onDone(msg)
