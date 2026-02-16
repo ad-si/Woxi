@@ -516,6 +516,14 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               }),
               right: Box::new(df),
             }))
+          } else if matches!(left.as_ref(), Expr::Constant(c) if c == "E") {
+            // d/dx[E^g(x)] = E^g(x) * g'(x)  (since Log[E] = 1)
+            let dg = differentiate(right, var)?;
+            Ok(simplify(Expr::BinaryOp {
+              op: Times,
+              left: Box::new(expr.clone()),
+              right: Box::new(dg),
+            }))
           } else if is_constant_wrt(left, var) {
             // d/dx[a^g(x)] = a^g(x) * ln(a) * g'(x)
             let dg = differentiate(right, var)?;
@@ -1074,6 +1082,25 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               }),
               right: Box::new(new_exp),
             });
+          }
+          // ∫ E^x dx = E^x, ∫ E^(a*x) dx = E^(a*x)/a,
+          // ∫ E^(-a*x^2) dx = Gaussian integral
+          if matches!(left.as_ref(), Expr::Constant(c) if c == "E") {
+            let exp_arg = right.as_ref();
+            // ∫ E^x dx = E^x
+            if let Expr::Identifier(n) = exp_arg
+              && n == var
+            {
+              return Some(expr.clone());
+            }
+            // ∫ E^(a*x) dx = E^(a*x)/a
+            if let Some(coeff) = try_match_linear_arg(exp_arg, var) {
+              return Some(make_divided(expr.clone(), coeff));
+            }
+            // ∫ E^(-a*x^2) dx = Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]
+            if let Some(coeff) = match_neg_a_x_squared(exp_arg, var) {
+              return Some(make_gaussian_antiderivative(var, &coeff));
+            }
           }
           // ∫ Sin[x]^2 dx = x/2 - Sin[2*x]/4
           // ∫ Cos[x]^2 dx = x/2 + Sin[2*x]/4
