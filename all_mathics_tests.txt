@@ -5016,22 +5016,6 @@ INPUT: Operate[p, f[a][b][c], 0]
 EXPECTED:
 = p[f[a][b][c]]
 ---
-FILE: mathics/builtin/exp_structure/head_related.py
-CLASS: Through
-LINE: 88
-TYPE: >>
-INPUT: Through[f[g][x]]
-EXPECTED:
-= f[g[x]]
----
-FILE: mathics/builtin/exp_structure/head_related.py
-CLASS: Through
-LINE: 90
-TYPE: >>
-INPUT: Through[p[f, g][x]]
-EXPECTED:
-= p[f[x], g[x]]
----
 FILE: mathics/builtin/exp_structure/size_and_sig.py
 CLASS: Hash
 LINE: 82
@@ -25679,30 +25663,6 @@ FUNCTION: test_sort
 LINE: 81
 INPUT: y+x y^(1/2)
 EXPECTED: x Sqrt[y] + y
----
-FILE: test/test_structure.py
-FUNCTION: test_through
-LINE: 93
-INPUT: Through[p[f, g][x, y]]
-EXPECTED: p[f[x, y], g[x, y]]
----
-FILE: test/test_structure.py
-FUNCTION: test_through
-LINE: 94
-INPUT: Through[p[f, g][]]
-EXPECTED: p[f[], g[]]
----
-FILE: test/test_structure.py
-FUNCTION: test_through
-LINE: 95
-INPUT: Through[p[f, g]]
-EXPECTED: Through[p[f, g]]
----
-FILE: test/test_structure.py
-FUNCTION: test_through
-LINE: 96
-INPUT: Through[f[][x]]
-EXPECTED: f[]
 ---
 FILE: test/timings/test_uniform_tables.py
 FUNCTION: None
