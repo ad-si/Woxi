@@ -179,7 +179,38 @@ fn is_numeric_q(expr: &Expr) -> bool {
     | Expr::Real(_)
     | Expr::BigFloat(_, _) => true,
     Expr::Constant(_) => true,
-    Expr::Identifier(name) => name == "I" || name == "Infinity",
+    Expr::Identifier(name) => {
+      if name == "I" || name == "Infinity" {
+        return true;
+      }
+      // Check for user-defined NumericQ downvalue (e.g., NumericQ[a] = True)
+      // FUNC_DEFS stores (params, conditions, defaults, heads, body)
+      crate::FUNC_DEFS.with(|m| {
+        let defs = m.borrow();
+        if let Some(overloads) = defs.get("NumericQ") {
+          for (params, conditions, _defaults, _heads, body) in overloads {
+            if params.len() == 1 {
+              // Try to match this symbol against the DownValue conditions
+              if let Some(Some(cond)) = conditions.first()
+                && let Expr::Comparison {
+                  operands,
+                  operators,
+                } = cond
+                && operators.len() == 1
+                && operators[0] == crate::syntax::ComparisonOp::SameQ
+                && operands.len() == 2
+                && let Expr::Identifier(cond_val) = &operands[1]
+                && cond_val == name
+              {
+                let body_str = crate::syntax::expr_to_string(body);
+                return body_str == "True";
+              }
+            }
+          }
+        }
+        false
+      })
+    }
     Expr::FunctionCall { name, args, .. } => {
       is_numeric_function(name) && args.iter().all(is_numeric_q)
     }
@@ -247,7 +278,11 @@ fn is_numeric_function(name: &str) -> bool {
       | "BernoulliB"
       | "Zeta"
       | "N"
-  )
+  ) || crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.contains(&"NumericFunction".to_string()))
+  })
 }
 
 /// PositiveQ[x] - Tests if x is a positive number

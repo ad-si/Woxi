@@ -1,20 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: NumericFunction
-LINE: 429
-TYPE: >>
-INPUT: NumericQ[a]=True; NumericQ[Sqrt[a]]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/attributes.py
-CLASS: NumericFunction
-LINE: 431
-TYPE: >>
-INPUT: NumericQ[a]=False; NumericQ[Sqrt[a]]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/attributes.py
 CLASS: OneIdentity
 LINE: 455
 TYPE: >>
