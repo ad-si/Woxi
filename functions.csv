@@ -1689,7 +1689,7 @@ DependentVariables,,,
 Deploy,,,
 Deployed,,,
 DepthFirstScan,,,
-Derivative,,,
+Derivative,Represents the derivative of a function,✅,pure
 DerivativeFilter,,,
 DerivativePDETerm,,,
 DerivedKey,,,

@@ -439,6 +439,19 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::String(result)
     }
     Rule::Identifier => Expr::Identifier(pair.as_str().to_string()),
+    Rule::DerivativeIdentifier => {
+      // Standalone f' → Derivative[1][f], f'' → Derivative[2][f], etc.
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let name = inner_pairs[0].as_str().to_string();
+      let order = inner_pairs[1].as_str().len();
+      Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "Derivative".to_string(),
+          args: vec![Expr::Integer(order as i128)],
+        }),
+        args: vec![Expr::Identifier(name)],
+      }
+    }
     Rule::Slot => {
       let s = pair.as_str();
       // # is slot 1, #1 is slot 1, #2 is slot 2, etc.
@@ -464,16 +477,23 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::FunctionCallExtended => {
       // Merged rule: FunctionCall + optional Part extraction + optional anonymous function suffix
-      // Inner pairs: (Identifier|SimpleAnonymousFunction) BracketArgs+ [PartIndexSuffix [FunctionCallPartAnonSuffix] | FunctionCallAnonSuffix]
+      // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ [PartIndexSuffix [FunctionCallPartAnonSuffix] | FunctionCallAnonSuffix]
       let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
       let full_str = pair.as_str();
 
       let name_pair = &inner_pairs[0];
 
+      // Check for derivative prime notation (f', f'', f''')
+      let derivative_order = inner_pairs
+        .iter()
+        .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+        .map(|p| p.as_str().len());
+
       // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
       let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
         .iter()
         .skip(1) // skip Identifier/SimpleAnonymousFunction
+        .skip_while(|p| matches!(p.as_rule(), Rule::DerivativePrime)) // skip optional DerivativePrime
         .take_while(|p| matches!(p.as_rule(), Rule::BracketArgs))
         .map(|bracket| bracket.clone().into_inner().map(pair_to_expr).collect())
         .collect();
@@ -505,6 +525,25 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
             args: fc_bracket_args[0].clone(),
           };
           for args in fc_bracket_args.iter().skip(1) {
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args: args.clone(),
+            };
+          }
+          result
+        } else if let Some(order) = derivative_order {
+          // f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
+          let name = name_pair.as_str().to_string();
+          // Derivative[n][f]
+          let mut result = Expr::CurriedCall {
+            func: Box::new(Expr::FunctionCall {
+              name: "Derivative".to_string(),
+              args: vec![Expr::Integer(order as i128)],
+            }),
+            args: vec![Expr::Identifier(name)],
+          };
+          // Apply bracket args: Derivative[n][f][x], then any further chained calls
+          for args in fc_bracket_args.iter() {
             result = Expr::CurriedCall {
               func: Box::new(result),
               args: args.clone(),
@@ -628,13 +667,20 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::FunctionCall => {
-      let mut inner = pair.into_inner();
-      let name_pair = inner.next().unwrap();
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let name_pair = &inner_pairs[0];
+      // Check for derivative prime notation
+      let derivative_order = inner_pairs
+        .iter()
+        .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+        .map(|p| p.as_str().len());
       // Collect bracket sequences separately for proper chained call handling
-      let bracket_sequences: Vec<Vec<Expr>> = inner
+      let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
+        .iter()
         .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
         .map(|bracket| {
           bracket
+            .clone()
             .into_inner()
             .filter(|p| {
               p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
@@ -645,7 +691,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         .collect();
       // Check if the function head is an anonymous function
       if matches!(name_pair.as_rule(), Rule::SimpleAnonymousFunction) {
-        let anon_expr = pair_to_expr(name_pair);
+        let anon_expr = pair_to_expr(name_pair.clone());
         // Build curried calls: (#&)[1] or (#^2&)[{1,2,3}]
         let mut result = Expr::CurriedCall {
           func: Box::new(anon_expr),
@@ -655,6 +701,23 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           result = Expr::CurriedCall {
             func: Box::new(result),
             args,
+          };
+        }
+        result
+      } else if let Some(order) = derivative_order {
+        // f'[x] → Derivative[1][f][x]
+        let name = name_pair.as_str().to_string();
+        let mut result = Expr::CurriedCall {
+          func: Box::new(Expr::FunctionCall {
+            name: "Derivative".to_string(),
+            args: vec![Expr::Integer(order as i128)],
+          }),
+          args: vec![Expr::Identifier(name)],
+        };
+        for args in bracket_sequences.iter() {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args: args.clone(),
           };
         }
         result
@@ -685,14 +748,36 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::BaseFunctionCall => {
-      let mut inner = pair.into_inner();
-      let name_pair = inner.next().unwrap();
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let name_pair = &inner_pairs[0];
       let name = name_pair.as_str().to_string();
-      let args: Vec<Expr> = inner
-        .filter(|p| p.as_str() != ",")
-        .map(pair_to_expr)
+      let derivative_order = inner_pairs
+        .iter()
+        .find(|p| matches!(p.as_rule(), Rule::DerivativePrime))
+        .map(|p| p.as_str().len());
+      let args: Vec<Expr> = inner_pairs
+        .iter()
+        .skip(1)
+        .filter(|p| {
+          !matches!(p.as_rule(), Rule::DerivativePrime) && p.as_str() != ","
+        })
+        .map(|p| pair_to_expr(p.clone()))
         .collect();
-      Expr::FunctionCall { name, args }
+      if let Some(order) = derivative_order {
+        // f'[x] → Derivative[n][f][x]
+        Expr::CurriedCall {
+          func: Box::new(Expr::CurriedCall {
+            func: Box::new(Expr::FunctionCall {
+              name: "Derivative".to_string(),
+              args: vec![Expr::Integer(order as i128)],
+            }),
+            args: vec![Expr::Identifier(name)],
+          }),
+          args,
+        }
+      } else {
+        Expr::FunctionCall { name, args }
+      }
     }
     Rule::LeadingMinus => {
       // LeadingMinus is handled in parse_expression, not here directly
@@ -1924,6 +2009,17 @@ pub fn expr_to_string(expr: &Expr) -> String {
         };
         return format!("{}^{}", base, exp);
       }
+      // Special case: Derivative[n, f, x] displays as Derivative[n][f][x]
+      // and Derivative[n, f] displays as Derivative[n][f]
+      if name == "Derivative" && args.len() >= 2 {
+        let n_str = expr_to_string(&args[0]);
+        let f_str = expr_to_string(&args[1]);
+        if args.len() == 3 {
+          let x_str = expr_to_string(&args[2]);
+          return format!("Derivative[{}][{}][{}]", n_str, f_str, x_str);
+        }
+        return format!("Derivative[{}][{}]", n_str, f_str);
+      }
       let parts: Vec<String> = args.iter().map(expr_to_string).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
@@ -2666,6 +2762,16 @@ pub fn expr_to_output(expr: &Expr) -> String {
           return parts.join(&sep);
         }
         return parts.concat();
+      }
+      // Special case: Derivative[n, f, x] displays as Derivative[n][f][x]
+      if name == "Derivative" && args.len() >= 2 {
+        let n_str = expr_to_output(&args[0]);
+        let f_str = expr_to_output(&args[1]);
+        if args.len() == 3 {
+          let x_str = expr_to_output(&args[2]);
+          return format!("Derivative[{}][{}][{}]", n_str, f_str, x_str);
+        }
+        return format!("Derivative[{}][{}]", n_str, f_str);
       }
       let parts: Vec<String> = args.iter().map(expr_to_output).collect();
       format!("{}[{}]", name, parts.join(", "))

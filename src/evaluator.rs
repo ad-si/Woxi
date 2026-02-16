@@ -3755,6 +3755,53 @@ pub fn evaluate_function_call_ast(
     }
 
     // Use AST-native calculus functions
+    // Derivative[n, f, x] - nth derivative of user-defined function f evaluated at x
+    // Comes from f'[x], f''[x], etc. syntax (parsed as curried Derivative[n][f][x],
+    // then flattened by apply_curried_call)
+    "Derivative" if args.len() == 3 => {
+      if let (Expr::Integer(n), Expr::Identifier(func_name)) =
+        (&args[0], &args[1])
+      {
+        let n = *n as usize;
+        // Look up the user-defined function
+        let overloads = crate::FUNC_DEFS.with(|m| {
+          let defs = m.borrow();
+          defs.get(func_name).cloned()
+        });
+        if let Some(overloads) = overloads {
+          // Find the first single-parameter overload
+          for (params, _conditions, _defaults, _heads, body_expr) in &overloads
+          {
+            if params.len() == 1 {
+              let param = &params[0];
+              // Differentiate body n times with respect to param
+              let mut deriv = body_expr.clone();
+              for _ in 0..n {
+                deriv = crate::functions::calculus_ast::differentiate_expr(
+                  &deriv, param,
+                )?;
+              }
+              // Substitute the actual argument for the param
+              let substituted =
+                crate::syntax::substitute_variable(&deriv, param, &args[2]);
+              return evaluate_expr_to_expr(&substituted);
+            }
+          }
+        }
+      }
+      // Return symbolic as flat FunctionCall (formatted as curried in expr_to_string)
+      return Ok(Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    // Derivative[n, f] or Derivative[n] - return symbolic
+    "Derivative" if args.len() <= 2 => {
+      return Ok(Expr::FunctionCall {
+        name: "Derivative".to_string(),
+        args: args.to_vec(),
+      });
+    }
     "D" if args.len() == 2 => {
       return crate::functions::calculus_ast::d_ast(args);
     }

@@ -410,6 +410,14 @@ pub fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
 }
 
 /// Differentiate an expression with respect to a variable
+/// Public wrapper for differentiate - used by Derivative[n][f][x] evaluation
+pub fn differentiate_expr(
+  expr: &Expr,
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  differentiate(expr, var)
+}
+
 fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   match expr {
     // Constants
@@ -711,22 +719,31 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           Ok(result)
         }
-        // Handle evaluated Times[a, b] (FunctionCall form of *)
-        "Times" if args.len() == 2 => {
-          // Product rule: d/dx[a * b] = a' * b + a * b'
-          let da = differentiate(&args[0], var)?;
-          let db = differentiate(&args[1], var)?;
+        // Handle evaluated Times[a, b, ...] (FunctionCall form of *)
+        "Times" if args.len() >= 2 => {
+          // For n factors, treat as a * rest and apply product rule recursively
+          let a = &args[0];
+          let rest = if args.len() == 2 {
+            args[1].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: args[1..].to_vec(),
+            }
+          };
+          let da = differentiate(a, var)?;
+          let drest = differentiate(&rest, var)?;
           Ok(simplify(Expr::BinaryOp {
             op: crate::syntax::BinaryOperator::Plus,
             left: Box::new(Expr::BinaryOp {
               op: crate::syntax::BinaryOperator::Times,
               left: Box::new(da),
-              right: Box::new(args[1].clone()),
+              right: Box::new(rest.clone()),
             }),
             right: Box::new(Expr::BinaryOp {
               op: crate::syntax::BinaryOperator::Times,
-              left: Box::new(args[0].clone()),
-              right: Box::new(db),
+              left: Box::new(a.clone()),
+              right: Box::new(drest),
             }),
           }))
         }
