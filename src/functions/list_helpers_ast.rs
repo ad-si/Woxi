@@ -71,8 +71,10 @@ pub fn select_ast(
   pred: &Expr,
   n: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  // Select works on any expression with arguments, preserving the head
+  let (items, head_name): (&[Expr], Option<String>) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.clone())),
     _ => {
       let mut args = vec![list.clone(), pred.clone()];
       if let Some(limit) = n {
@@ -106,7 +108,11 @@ pub fn select_ast(
     }
   }
 
-  Ok(Expr::List(kept))
+  // Preserve the original head
+  match head_name {
+    Some(name) => Ok(Expr::FunctionCall { name, args: kept }),
+    None => Ok(Expr::List(kept)),
+  }
 }
 
 /// AST-based AllTrue: check if predicate is true for all elements.
@@ -1757,7 +1763,9 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       }
     } else if spec.len() >= 2 {
       let len = items.len() as i128;
-      if let (Some(start), Some(end)) = (expr_to_i128(&spec[0]), expr_to_i128(&spec[1])) {
+      if let (Some(start), Some(end)) =
+        (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
+      {
         let step = if spec.len() == 3 {
           expr_to_i128(&spec[2]).unwrap_or(1)
         } else {
@@ -1765,7 +1773,12 @@ pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         };
         let real_start = if start < 0 { len + start + 1 } else { start };
         let real_end = if end < 0 { len + end + 1 } else { end };
-        if real_start >= 1 && real_end >= 1 && real_start <= len && real_end <= len && step != 0 {
+        if real_start >= 1
+          && real_end >= 1
+          && real_start <= len
+          && real_end <= len
+          && step != 0
+        {
           let mut result = Vec::new();
           let mut i = real_start;
           while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {

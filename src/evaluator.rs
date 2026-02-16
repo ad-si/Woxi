@@ -496,10 +496,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           });
         }
         // Handle system $ variables
-        if name.starts_with('$') {
-          if let Some(val) = get_system_variable(name) {
-            return Ok(val);
-          }
+        if name.starts_with('$')
+          && let Some(val) = get_system_variable(name)
+        {
+          return Ok(val);
         }
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
@@ -1955,6 +1955,10 @@ pub fn evaluate_function_call_ast(
         }
       }
     }
+    // TimeRemaining[] → Infinity (no time limit)
+    "TimeRemaining" if args.is_empty() => {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
     // Evaluate[expr] - forces evaluation (identity outside Hold)
     "Evaluate" if args.len() == 1 => {
       return Ok(args[0].clone());
@@ -2836,6 +2840,48 @@ pub fn evaluate_function_call_ast(
     }
     "IntegerQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::integer_q_ast(args);
+    }
+    "BooleanQ" if args.len() == 1 => {
+      return Ok(match &args[0] {
+        Expr::Identifier(name) if name == "True" || name == "False" => {
+          Expr::Identifier("True".to_string())
+        }
+        _ => Expr::Identifier("False".to_string()),
+      });
+    }
+    "Boole" if args.len() == 1 => {
+      return Ok(match &args[0] {
+        Expr::Identifier(name) if name == "True" => Expr::Integer(1),
+        Expr::Identifier(name) if name == "False" => Expr::Integer(0),
+        _ => Expr::FunctionCall {
+          name: "Boole".to_string(),
+          args: args.to_vec(),
+        },
+      });
+    }
+    "DigitQ" if args.len() == 1 => {
+      return Ok(match &args[0] {
+        Expr::String(s) => {
+          if !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) {
+            Expr::Identifier("True".to_string())
+          } else {
+            Expr::Identifier("False".to_string())
+          }
+        }
+        _ => Expr::Identifier("False".to_string()),
+      });
+    }
+    "LetterQ" if args.len() == 1 => {
+      return Ok(match &args[0] {
+        Expr::String(s) => {
+          if !s.is_empty() && s.chars().all(|c| c.is_alphabetic()) {
+            Expr::Identifier("True".to_string())
+          } else {
+            Expr::Identifier("False".to_string())
+          }
+        }
+        _ => Expr::Identifier("False".to_string()),
+      });
     }
     "Precision" if args.len() == 1 => {
       return crate::functions::math_ast::precision_ast(args);
