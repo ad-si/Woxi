@@ -1,13 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: Constant
-LINE: 176
-TYPE: >>
-INPUT: Solve[x + E == 0, E]
-EXPECTED:
-: E is not a valid variable.
-= Solve[x + E == 0, E]
----
-FILE: mathics/builtin/attributes.py
 CLASS: Flat
 LINE: 199
 TYPE: >>

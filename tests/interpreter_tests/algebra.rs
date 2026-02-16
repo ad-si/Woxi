@@ -904,6 +904,14 @@ mod solve {
   fn rational_solution() {
     assert_eq!(interpret("Solve[2*x - 1 == 0, x]").unwrap(), "{{x -> 1/2}}");
   }
+
+  #[test]
+  fn constant_variable_rejected() {
+    assert_eq!(
+      interpret("Solve[x + E == 0, E]").unwrap(),
+      "Solve[E + x == 0, E]"
+    );
+  }
 }
 
 mod replace {
