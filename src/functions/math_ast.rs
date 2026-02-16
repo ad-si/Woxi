@@ -830,6 +830,120 @@ fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
   });
 }
 
+/// Extract (base, exponent) from an expression for power combining in Times.
+/// x → (x, 1), x^n → (x, n), Sqrt[x] → (x, 1/2)
+fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => (*left.clone(), *right.clone()),
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      (args[0].clone(), make_rational(1, 2))
+    }
+    _ => (expr.clone(), Expr::Integer(1)),
+  }
+}
+
+/// Combine like bases in a list of symbolic factors: x^a * x^b → x^(a+b)
+fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
+  if args.len() <= 1 {
+    return Ok(args);
+  }
+
+  // Use string representation of base as grouping key
+  let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new(); // (base_key, base, exponents)
+  let mut non_combinable: Vec<Expr> = Vec::new();
+
+  for arg in &args {
+    // Don't combine Plus, Times, or complex expressions - only identifiers, constants, and powers thereof
+    let (base, exp) = extract_base_exponent(arg);
+    let combinable = match &base {
+      Expr::Identifier(_) | Expr::Constant(_) => true,
+      Expr::FunctionCall { name, .. } => {
+        matches!(name.as_str(), "Sqrt" | "Log" | "Sin" | "Cos")
+      }
+      _ => false,
+    };
+    if !combinable {
+      non_combinable.push(arg.clone());
+      continue;
+    }
+    let base_key = crate::syntax::expr_to_string(&base);
+    if let Some(group) = groups.iter_mut().find(|(k, _, _)| *k == base_key) {
+      group.2.push(exp);
+    } else {
+      groups.push((base_key, base, vec![exp]));
+    }
+  }
+
+  let mut result: Vec<Expr> = Vec::new();
+  for (_key, base, exponents) in groups {
+    if exponents.len() == 1 {
+      // Single occurrence — no combining needed, reconstruct original form
+      if matches!(&exponents[0], Expr::Integer(1)) {
+        result.push(base);
+      } else {
+        result.push(power_two(&base, &exponents[0])?);
+      }
+    } else {
+      // Multiple occurrences — add exponents
+      let combined_exp = plus_ast(&exponents)?;
+      if matches!(&combined_exp, Expr::Integer(0)) {
+        // x^0 = 1, skip (will be absorbed into coefficient)
+        continue;
+      }
+      result.push(power_two(&base, &combined_exp)?);
+    }
+  }
+  result.extend(non_combinable);
+
+  // Second pass: combine numeric bases with the same fractional exponent
+  // e.g. Sqrt[2] * Sqrt[3] = 2^(1/2) * 3^(1/2) → 6^(1/2) = Sqrt[6]
+  let mut combined: Vec<Expr> = Vec::new();
+  let mut used = vec![false; result.len()];
+  for i in 0..result.len() {
+    if used[i] {
+      continue;
+    }
+    let (base_i, exp_i) = extract_base_exponent(&result[i]);
+    // Only combine integer bases with rational exponents
+    let is_numeric_base =
+      matches!(&base_i, Expr::Integer(_) | Expr::BigInteger(_));
+    let is_rational_exp = matches!(
+      &exp_i,
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
+    );
+    if !is_numeric_base || !is_rational_exp {
+      combined.push(result[i].clone());
+      continue;
+    }
+    let exp_key = crate::syntax::expr_to_string(&exp_i);
+    let mut bases_to_multiply = vec![base_i];
+    for j in (i + 1)..result.len() {
+      if used[j] {
+        continue;
+      }
+      let (base_j, exp_j) = extract_base_exponent(&result[j]);
+      if crate::syntax::expr_to_string(&exp_j) == exp_key
+        && matches!(&base_j, Expr::Integer(_) | Expr::BigInteger(_))
+      {
+        bases_to_multiply.push(base_j);
+        used[j] = true;
+      }
+    }
+    if bases_to_multiply.len() == 1 {
+      combined.push(result[i].clone());
+    } else {
+      let product = times_ast(&bases_to_multiply)?;
+      combined.push(power_two(&product, &exp_i)?);
+    }
+  }
+
+  Ok(combined)
+}
+
 /// Times[args...] - Product of arguments, with list threading
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
@@ -901,6 +1015,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(0));
     }
 
+    symbolic_args = combine_like_bases(symbolic_args)?;
     sort_symbolic_factors(&mut symbolic_args);
     let mut final_args: Vec<Expr> = Vec::new();
     if big_product != BigInt::from(1) {
@@ -969,6 +1084,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if total == 0.0 {
       return Ok(Expr::Integer(0));
     }
+    symbolic_args = combine_like_bases(symbolic_args)?;
     sort_symbolic_factors(&mut symbolic_args);
     let mut final_args: Vec<Expr> = Vec::new();
     if total != 1.0 {
@@ -1047,6 +1163,14 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|a| times_ast(&[Expr::Integer(-1), a.clone()]))
       .collect();
     return plus_ast(&negated?);
+  }
+
+  // Combine like bases: x^a * x^b → x^(a+b)
+  symbolic_args = combine_like_bases(symbolic_args)?;
+
+  // If all symbolic args canceled (e.g. x^2 * x^(-2)), return coefficient
+  if symbolic_args.is_empty() {
+    return Ok(coeff);
   }
 
   // Build final args: coefficient (if not 1) + sorted symbolic terms
@@ -1229,6 +1353,19 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // Sqrt[x]^n → x^(n/2)
+  if let Expr::FunctionCall { name, args: fargs } = base
+    && name == "Sqrt"
+    && fargs.len() == 1
+    && let Expr::Integer(n) = exp
+  {
+    if *n == 2 {
+      return Ok(fargs[0].clone());
+    }
+    // Sqrt[x]^n = x^(n/2)
+    return power_two(&fargs[0], &make_rational(*n, 2));
+  }
+
   // (base^exp1)^exp2 -> base^(exp1*exp2) when both exponents are integers
   if let Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Power,
@@ -1303,6 +1440,13 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if result.fract() == 0.0 && result.is_finite() {
       return Ok(Expr::Integer(result as i128));
     }
+    // If exponent is 1/2, display as Sqrt[base]
+    if *numer == 1 && *denom == 2 {
+      return Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![base.clone()],
+      });
+    }
     // Not exact — keep symbolic
     return Ok(Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -1342,11 +1486,25 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         Ok(num_to_expr(result))
       }
     }
-    _ => Ok(Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
-      left: Box::new(base.clone()),
-      right: Box::new(exp.clone()),
-    }),
+    _ => {
+      // x^(1/2) → Sqrt[x]
+      if let Expr::FunctionCall { name, args: rargs } = exp
+        && name == "Rational"
+        && rargs.len() == 2
+        && matches!(&rargs[0], Expr::Integer(1))
+        && matches!(&rargs[1], Expr::Integer(2))
+      {
+        return Ok(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![base.clone()],
+        });
+      }
+      Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(exp.clone()),
+      })
+    }
   }
 }
 
@@ -2078,6 +2236,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Sqrt".to_string(),
         args: args.to_vec(),
       })
+    }
+    // Sqrt[-n] for negative integer → I * Sqrt[n]
+    Expr::Integer(n) if *n < 0 => {
+      let pos = -*n;
+      let sqrt_pos = sqrt_ast(&[Expr::Integer(pos)])?;
+      times_ast(&[Expr::Identifier("I".to_string()), sqrt_pos])
     }
     Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
     _ => Ok(Expr::FunctionCall {

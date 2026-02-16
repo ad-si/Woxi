@@ -721,6 +721,22 @@ fn expand_expr(expr: &Expr) -> Expr {
           {
             return expand_power(&left_exp, *n);
           }
+          // Try to simplify Power (e.g. I^2 → -1, Sqrt[x]^2 → x)
+          if let Ok(simplified) = crate::functions::math_ast::power_ast(&[
+            left_exp.clone(),
+            right_exp.clone(),
+          ]) {
+            // Only use simplified result if it actually simplified
+            if !matches!(
+              &simplified,
+              Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                ..
+              }
+            ) {
+              return simplified;
+            }
+          }
           Expr::BinaryOp {
             op: BinaryOperator::Power,
             left: Box::new(left_exp),
@@ -899,11 +915,18 @@ fn combine_product_factors(factors: Vec<Expr>) -> Expr {
     } else if matches!(&exp, Expr::Integer(1)) {
       result_factors.push(base);
     } else {
-      result_factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base),
-        right: Box::new(exp),
-      });
+      // Try to evaluate the power (e.g. I^2 → -1)
+      if let Ok(simplified) =
+        crate::functions::math_ast::power_ast(&[base.clone(), exp.clone()])
+      {
+        result_factors.push(simplified);
+      } else {
+        result_factors.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(base),
+          right: Box::new(exp),
+        });
+      }
     }
   }
 
