@@ -309,6 +309,30 @@ mod attributes_assignment {
       "{Flat}"
     );
   }
+
+  #[test]
+  fn locked_prevents_modification() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ClearAll[lock]; Attributes[lock] = {Flat, Locked}; Attributes[lock]"
+      )
+      .unwrap(),
+      "{Flat, Locked}"
+    );
+  }
+
+  #[test]
+  fn locked_assignment_returns_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ClearAll[lock]; Attributes[lock] = {Flat, Locked}; Attributes[lock] = {}"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
 }
 
 mod anonymous_function_call {
