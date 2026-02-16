@@ -259,6 +259,16 @@
     </div>
   </div>
 
+  <!-- Image preview modal -->
+  <div id="image-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+    <button id="image-modal-close" class="absolute top-4 right-4 p-2 text-white/70 hover:text-white transition-colors">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+    <img id="image-modal-img" class="max-w-[90vw] max-h-[90vh] rounded-lg" src="" alt="Preview">
+  </div>
+
   <!-- Toast container -->
   <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
 

@@ -103,6 +103,7 @@ function createUserMessage(msg, index) {
         img.className = "msg-attachment-thumb"
         img.src = `data:${att.mediaType};base64,${att.data}`
         img.alt = att.name
+        img.addEventListener("click", () => openImageModal(img.src))
         bubble.appendChild(img)
       }
     }
@@ -129,7 +130,7 @@ function createUserMessage(msg, index) {
   bubble.appendChild(textNode)
 
   el.appendChild(bubble)
-  el.innerHTML += `
+  el.insertAdjacentHTML("beforeend", `
     <div class="user-msg-actions">
       <button class="msg-action-btn" data-action="copy" title="Copy">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>
@@ -141,7 +142,7 @@ function createUserMessage(msg, index) {
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 4v6h6"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
       </button>
     </div>
-  `
+  `)
   return el
 }
 
@@ -391,3 +392,29 @@ export function scrollToBottom() {
   const el = document.getElementById("messages")
   el.scrollTop = el.scrollHeight
 }
+
+/* Image preview modal */
+function openImageModal(src) {
+  const modal = document.getElementById("image-modal")
+  const img = document.getElementById("image-modal-img")
+  img.src = src
+  modal.classList.remove("hidden")
+}
+
+function closeImageModal() {
+  const modal = document.getElementById("image-modal")
+  modal.classList.add("hidden")
+  document.getElementById("image-modal-img").src = ""
+}
+
+document.getElementById("image-modal-close").addEventListener("click", closeImageModal)
+
+document.getElementById("image-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeImageModal()
+})
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !document.getElementById("image-modal").classList.contains("hidden")) {
+    closeImageModal()
+  }
+})
