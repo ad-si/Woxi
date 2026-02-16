@@ -725,14 +725,70 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Decompose a term into (numeric_coefficient, base_expression).
-/// E.g. `3*x` → (3, 1, x), `x` → (1, 1, x), `-x` → (-1, 1, x),
-/// `Rational[3,4]*x` → (3, 4, x).
-/// Returns (numer, denom, base).
-fn decompose_term(e: &Expr) -> (i128, i128, Expr) {
+/// Coefficient: either exact rational or approximate real
+#[derive(Clone)]
+enum Coeff {
+  Exact(i128, i128), // (numer, denom)
+  Real(f64),
+}
+
+impl Coeff {
+  fn is_zero(&self) -> bool {
+    match self {
+      Coeff::Exact(n, _) => *n == 0,
+      Coeff::Real(f) => *f == 0.0,
+    }
+  }
+  fn is_one(&self) -> bool {
+    match self {
+      Coeff::Exact(n, d) => *n == 1 && *d == 1,
+      Coeff::Real(f) => *f == 1.0,
+    }
+  }
+  fn to_f64(&self) -> f64 {
+    match self {
+      Coeff::Exact(n, d) => *n as f64 / *d as f64,
+      Coeff::Real(f) => *f,
+    }
+  }
+  fn add(&self, other: &Coeff) -> Coeff {
+    match (self, other) {
+      (Coeff::Exact(n1, d1), Coeff::Exact(n2, d2)) => {
+        let mut sn = n1 * d2 + n2 * d1;
+        let mut sd = d1 * d2;
+        let g = gcd(sn, sd);
+        sn /= g;
+        sd /= g;
+        if sd < 0 {
+          sn = -sn;
+          sd = -sd;
+        }
+        Coeff::Exact(sn, sd)
+      }
+      _ => Coeff::Real(self.to_f64() + other.to_f64()),
+    }
+  }
+  fn negate(&self) -> Coeff {
+    match self {
+      Coeff::Exact(n, d) => Coeff::Exact(-n, *d),
+      Coeff::Real(f) => Coeff::Real(-f),
+    }
+  }
+  fn to_expr(&self) -> Expr {
+    match self {
+      Coeff::Exact(n, d) => make_rational(*n, *d),
+      Coeff::Real(f) => Expr::Real(*f),
+    }
+  }
+}
+
+/// Decompose a term into (coefficient, base_expression).
+/// E.g. `3*x` → (Exact(3,1), x), `x` → (Exact(1,1), x), `-x` → (Exact(-1,1), x),
+/// `1.5*x` → (Real(1.5), x), `Rational[3,4]*x` → (Exact(3,4), x).
+fn decompose_term(e: &Expr) -> (Coeff, Expr) {
   match e {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
-      // Check if first arg is a numeric coefficient
+      // Check if first arg is a numeric coefficient (integer/rational)
       if let Some((n, d)) = expr_to_rational(&args[0]) {
         let base = if args.len() == 2 {
           args[1].clone()
@@ -742,7 +798,19 @@ fn decompose_term(e: &Expr) -> (i128, i128, Expr) {
             args: args[1..].to_vec(),
           }
         };
-        return (n, d, base);
+        return (Coeff::Exact(n, d), base);
+      }
+      // Check if first arg is a Real coefficient
+      if let Expr::Real(f) = &args[0] {
+        let base = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: args[1..].to_vec(),
+          }
+        };
+        return (Coeff::Real(*f), base);
       }
     }
     Expr::BinaryOp {
@@ -751,19 +819,22 @@ fn decompose_term(e: &Expr) -> (i128, i128, Expr) {
       right,
     } => {
       if let Some((n, d)) = expr_to_rational(left) {
-        return (n, d, *right.clone());
+        return (Coeff::Exact(n, d), *right.clone());
+      }
+      if let Expr::Real(f) = left.as_ref() {
+        return (Coeff::Real(*f), *right.clone());
       }
     }
     Expr::UnaryOp {
       op: crate::syntax::UnaryOperator::Minus,
       operand,
     } => {
-      let (n, d, base) = decompose_term(operand);
-      return (-n, d, base);
+      let (c, base) = decompose_term(operand);
+      return (c.negate(), base);
     }
     _ => {}
   }
-  (1, 1, e.clone())
+  (Coeff::Exact(1, 1), e.clone())
 }
 
 /// Collect like terms: group symbolic terms by their base expression
@@ -771,41 +842,32 @@ fn decompose_term(e: &Expr) -> (i128, i128, Expr) {
 fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   use std::collections::BTreeMap;
 
-  // Group by string representation of base → sum of coefficients (numer, denom)
-  let mut groups: Vec<(String, Expr, i128, i128)> = Vec::new();
+  // Group by string representation of base → sum of coefficients
+  let mut groups: Vec<(String, Expr, Coeff)> = Vec::new();
   let mut index: BTreeMap<String, usize> = BTreeMap::new();
 
   for term in terms {
-    let (n, d, base) = decompose_term(term);
+    let (c, base) = decompose_term(term);
     let key = crate::syntax::expr_to_string(&base);
     if let Some(&idx) = index.get(&key) {
-      // Add rational coefficients: a/b + n/d = (a*d + n*b) / (b*d)
-      let (_, _, ref mut sum_n, ref mut sum_d) = groups[idx];
-      *sum_n = *sum_n * d + n * *sum_d;
-      *sum_d *= d;
-      let g = gcd(*sum_n, *sum_d);
-      *sum_n /= g;
-      *sum_d /= g;
-      if *sum_d < 0 {
-        *sum_n = -*sum_n;
-        *sum_d = -*sum_d;
-      }
+      let (_, _, ref mut sum_c) = groups[idx];
+      *sum_c = sum_c.add(&c);
     } else {
       index.insert(key.clone(), groups.len());
-      groups.push((key, base, n, d));
+      groups.push((key, base, c));
     }
   }
 
   let mut result = Vec::new();
-  for (_, base, n, d) in groups {
-    if n == 0 {
+  for (_, base, c) in groups {
+    if c.is_zero() {
       continue; // terms cancelled
     }
-    if n == 1 && d == 1 {
+    if c.is_one() {
       result.push(base);
     } else {
       // Reconstruct as flat Times[coefficient, base_args...] to preserve formatting
-      let coeff = make_rational(n, d);
+      let coeff = c.to_expr();
       let mut times_args = vec![coeff];
       // Flatten base if it's already a Times
       match &base {

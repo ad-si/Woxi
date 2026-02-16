@@ -22761,30 +22761,6 @@ EXPECTED:
 = 0.125
 ---
 FILE: mathics/builtin/arithfns/basic.py
-CLASS: Minus
-LINE: 185
-TYPE: >>
-INPUT: -Range[10]
-EXPECTED:
-= {-1, -2, -3, -4, -5, -6, -7, -8, -9, -10}
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Plus
-LINE: 236
-TYPE: >>
-INPUT: a + b + a
-EXPECTED:
-= 2 a + b
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Plus
-LINE: 238
-TYPE: >>
-INPUT: a + a + 3 * a
-EXPECTED:
-= 5 a
----
-FILE: mathics/builtin/arithfns/basic.py
 CLASS: Plus
 LINE: 240
 TYPE: >>
@@ -22818,43 +22794,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Power
-LINE: 310
-TYPE: >>
-INPUT: 4 ^ (1/3)
-EXPECTED:
-= 2 ^ (2 / 3)
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
-LINE: 315
-TYPE: >>
-INPUT: (y ^ 2) ^ (1/2)
-EXPECTED:
-= Sqrt[y ^ 2]
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
-LINE: 317
-TYPE: >>
-INPUT: (y ^ 2) ^ 3
-EXPECTED:
-= y ^ 6
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
 LINE: 320
 TYPE: >>
 INPUT: Plot[Evaluate[Table[x^y, {y, 1, 5}]], {x, -1.5, 1.5}, AspectRatio -> 1]
 EXPECTED:
 = -Graphics-
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
-LINE: 324
-TYPE: >>
-INPUT: 4.0 ^ (1/3)
-EXPECTED:
-= 1.5874
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Power
@@ -22890,67 +22834,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Sqrt
-LINE: 445
-TYPE: >>
-INPUT: Sqrt[a]^2
-EXPECTED:
-= a
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Sqrt
-LINE: 449
-TYPE: >>
-INPUT: Sqrt[-4]
-EXPECTED:
-= 2 I
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Sqrt
-LINE: 451
-TYPE: >>
-INPUT: I == Sqrt[-1]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Sqrt
 LINE: 454
 TYPE: >>
 INPUT: Plot[Sqrt[a^2], {a, -2, 2}]
 EXPECTED:
 = -Graphics-
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Subtract
-LINE: 493
-TYPE: >>
-INPUT: a - (b - c)
-EXPECTED:
-= a - b + c
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Times
-LINE: 532
-TYPE: >>
-INPUT: a * a
-EXPECTED:
-= a ^ 2
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Times
-LINE: 534
-TYPE: >>
-INPUT: x ^ 10 * x ^ -2
-EXPECTED:
-= x ^ 8
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Times
-LINE: 540
-TYPE: >>
-INPUT: IntegerLength[Times@@Range[5000]]
-EXPECTED:
-= 16326
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Times
