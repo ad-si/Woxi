@@ -1517,6 +1517,14 @@ mod sum {
       "0"
     );
   }
+
+  #[test]
+  fn sum_leibniz_formula() {
+    assert_eq!(
+      interpret("Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]").unwrap(),
+      "Pi/4"
+    );
+  }
 }
 
 mod n_arbitrary_precision {

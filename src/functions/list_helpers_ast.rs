@@ -3517,12 +3517,52 @@ fn try_symbolic_sum(
   Ok(None)
 }
 
+/// Check if a body expression matches the Leibniz series: (-1)^k / (2k+1).
+/// We verify by evaluating at k=0,1,2,3,4 and checking against expected values.
+fn is_leibniz_body(body: &Expr, var_name: &str) -> bool {
+  // Expected values: f(0)=1, f(1)=-1/3, f(2)=1/5, f(3)=-1/7, f(4)=1/9
+  let expected: [(i128, f64); 5] = [
+    (0, 1.0),
+    (1, -1.0 / 3.0),
+    (2, 1.0 / 5.0),
+    (3, -1.0 / 7.0),
+    (4, 1.0 / 9.0),
+  ];
+  for (k, exp_val) in &expected {
+    let substituted =
+      crate::syntax::substitute_variable(body, var_name, &Expr::Integer(*k));
+    if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&substituted) {
+      if let Some(val) = crate::functions::math_ast::try_eval_to_f64(&result) {
+        if (val - exp_val).abs() > 1e-12 {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+  true
+}
+
 fn try_infinite_sum(
   body: &Expr,
   var_name: &str,
   min: i128,
 ) -> Result<Option<Expr>, InterpreterError> {
-  // Only handle sums starting at 1 for now
+  // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
+  if min == 0 {
+    if is_leibniz_body(body, var_name) {
+      return Ok(Some(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Constant("Pi".to_string())),
+        right: Box::new(Expr::Integer(4)),
+      }));
+    }
+    return Ok(None);
+  }
+
   if min != 1 {
     return Ok(None);
   }
