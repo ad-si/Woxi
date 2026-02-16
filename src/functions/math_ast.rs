@@ -17,6 +17,7 @@ fn expr_to_num(expr: &Expr) -> Option<f64> {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(f) => Some(*f),
     Expr::Constant(name) => constant_to_f64(name),
+    Expr::Identifier(name) => constant_to_f64(name),
     // Handle Rational[numer, denom]
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
@@ -1033,6 +1034,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Separate into: integers, rationals, reals, and symbolic arguments
   let mut int_product: i128 = 1;
+  let mut int_overflow = false;
   let mut has_int = false;
   let mut rat_numer: i128 = 1;
   let mut rat_denom: i128 = 1;
@@ -1044,7 +1046,11 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for arg in args {
     match arg {
       Expr::Integer(n) => {
-        int_product *= n;
+        if let Some(result) = int_product.checked_mul(*n) {
+          int_product = result;
+        } else {
+          int_overflow = true;
+        }
         has_int = true;
       }
       Expr::Real(f) => {
@@ -1055,8 +1061,14 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" && rargs.len() == 2 =>
       {
         if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
-          rat_numer *= n;
-          rat_denom *= d;
+          if let (Some(rn), Some(rd)) =
+            (rat_numer.checked_mul(*n), rat_denom.checked_mul(*d))
+          {
+            rat_numer = rn;
+            rat_denom = rd;
+          } else {
+            int_overflow = true;
+          }
           has_rational = true;
         } else {
           symbolic_args.push(arg.clone());
@@ -1073,8 +1085,52 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // If any Real, compute everything as float
+  // If overflow detected, fall back to BigInt arithmetic
+  if int_overflow {
+    use num_bigint::BigInt;
+    let mut big_product = BigInt::from(1);
+    let mut sym_args: Vec<Expr> = Vec::new();
+    for arg in args {
+      match arg {
+        Expr::Integer(n) => big_product *= BigInt::from(*n),
+        Expr::BigInteger(n) => big_product *= n,
+        _ => sym_args.push(arg.clone()),
+      }
+    }
+    if sym_args.is_empty() {
+      return Ok(bigint_to_expr(big_product));
+    }
+    if big_product == BigInt::from(0) {
+      return Ok(Expr::Integer(0));
+    }
+    sym_args = combine_like_bases(sym_args)?;
+    sort_symbolic_factors(&mut sym_args);
+    let mut final_args: Vec<Expr> = Vec::new();
+    if big_product != BigInt::from(1) {
+      final_args.push(bigint_to_expr(big_product));
+    }
+    final_args.extend(sym_args);
+    if final_args.len() == 1 {
+      return Ok(final_args.remove(0));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: final_args,
+    });
+  }
+
+  // If any Real, try to convert symbolic constants (Pi, E, etc.) to floats
   if any_real {
+    let mut remaining_symbolic: Vec<Expr> = Vec::new();
+    for arg in symbolic_args.drain(..) {
+      if let Some(f) = try_eval_to_f64(&arg) {
+        real_product *= f;
+      } else {
+        remaining_symbolic.push(arg);
+      }
+    }
+    symbolic_args = remaining_symbolic;
+
     let total = (int_product as f64)
       * (rat_numer as f64 / rat_denom as f64)
       * real_product;
@@ -1298,7 +1354,14 @@ fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   // For reals, perform floating-point division
-  match (expr_to_num(a), expr_to_num(b)) {
+  // Use try_eval_to_f64 when at least one operand is Real to handle constants like Pi/4.0
+  let has_real = matches!(a, Expr::Real(_)) || matches!(b, Expr::Real(_));
+  let eval_fn = if has_real {
+    |e: &Expr| try_eval_to_f64(e)
+  } else {
+    |e: &Expr| expr_to_num(e)
+  };
+  match (eval_fn(a), eval_fn(b)) {
     (Some(x), Some(y)) => {
       if y == 0.0 {
         Err(InterpreterError::EvaluationError("Division by zero".into()))
@@ -1306,11 +1369,82 @@ fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
         Ok(Expr::Real(x / y))
       }
     }
-    _ => Ok(Expr::BinaryOp {
+    _ => {
+      // Flatten nested divisions: (a/b)/c → a/(b*c), a/(b/c) → (a*c)/b
+      let (num, den) = flatten_division(a, b);
+      Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(num),
+        right: Box::new(den),
+      })
+    }
+  }
+}
+
+/// Flatten nested divisions into a single numerator and denominator.
+/// (a/b)/c → (a, b*c), a/(b/c) → (a*c, b), (a/b)/(c/d) → (a*d, b*c)
+fn flatten_division(a: &Expr, b: &Expr) -> (Expr, Expr) {
+  // Extract (numerator, denominator) from each side
+  let (a_num, a_den) = extract_num_den(a);
+  let (b_num, b_den) = extract_num_den(b);
+
+  // a/b = (a_num/a_den) / (b_num/b_den) = (a_num * b_den) / (a_den * b_num)
+  let num = if a_den.is_none() && b_den.is_none() {
+    a_num.clone()
+  } else if let Some(bd) = &b_den {
+    // a_num * b_den
+    build_times_simple(&a_num, bd)
+  } else {
+    a_num.clone()
+  };
+
+  let den = if a_den.is_none() && b_den.is_none() {
+    b_num.clone()
+  } else if let Some(ad) = &a_den {
+    if b_den.is_some() {
+      // a_den * b_num
+      build_times_simple(ad, &b_num)
+    } else {
+      // a_den * b_num (b has no denominator)
+      build_times_simple(ad, &b_num)
+    }
+  } else {
+    // a has no denominator, b has denominator
+    b_num.clone()
+  };
+
+  (num, den)
+}
+
+/// Extract numerator and optional denominator from an expression.
+fn extract_num_den(e: &Expr) -> (Expr, Option<Expr>) {
+  match e {
+    Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    }),
+      left,
+      right,
+    } => (*left.clone(), Some(*right.clone())),
+    _ => (e.clone(), None),
+  }
+}
+
+/// Build Times[a, b] without full evaluation (just structural)
+fn build_times_simple(a: &Expr, b: &Expr) -> Expr {
+  // For simple integer multiplication, compute directly
+  if let (Expr::Integer(x), Expr::Integer(y)) = (a, b) {
+    return Expr::Integer(x * y);
+  }
+  // For 1 * x, just return x
+  if matches!(a, Expr::Integer(1)) {
+    return b.clone();
+  }
+  if matches!(b, Expr::Integer(1)) {
+    return a.clone();
+  }
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(a.clone()),
+    right: Box::new(b.clone()),
   }
 }
 
@@ -7514,35 +7648,43 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(result as i128))
 }
 
-/// CoprimeQ[a, b] - Tests if two integers are coprime
+/// CoprimeQ[a, b, ...] - Tests if integers are pairwise coprime
 pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "CoprimeQ expects exactly 2 arguments".into(),
+      "CoprimeQ expects at least 2 arguments".into(),
     ));
   }
 
-  let (a, b) = match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
-    (Some(a), Some(b)) => (a.unsigned_abs(), b.unsigned_abs()),
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "CoprimeQ".to_string(),
-        args: args.to_vec(),
-      });
-    }
-  };
+  // Extract all integer values
+  let nums: Vec<u128> = args
+    .iter()
+    .filter_map(|a| expr_to_i128(a).map(|n| n.unsigned_abs()))
+    .collect();
 
-  // GCD using Euclidean algorithm
-  let (mut a, mut b) = (a.max(1), b.max(1));
-  while b != 0 {
-    let temp = b;
-    b = a % b;
-    a = temp;
+  if nums.len() != args.len() {
+    return Ok(Expr::FunctionCall {
+      name: "CoprimeQ".to_string(),
+      args: args.to_vec(),
+    });
   }
 
-  Ok(Expr::Identifier(
-    if a == 1 { "True" } else { "False" }.to_string(),
-  ))
+  // Check all pairs are coprime
+  for i in 0..nums.len() {
+    for j in (i + 1)..nums.len() {
+      let (mut a, mut b) = (nums[i].max(1), nums[j].max(1));
+      while b != 0 {
+        let temp = b;
+        b = a % b;
+        a = temp;
+      }
+      if a != 1 {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+    }
+  }
+
+  Ok(Expr::Identifier("True".to_string()))
 }
 
 /// Re[z] - Real part of a complex number (for real numbers, returns the number itself)
@@ -8085,8 +8227,14 @@ fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
 
   for _ in 0..50 {
     let ai = xi.floor() as i64;
-    let p2 = ai * p1 + p0;
-    let q2 = ai * q1 + q0;
+    let p2 = match ai.checked_mul(p1).and_then(|v| v.checked_add(p0)) {
+      Some(v) => v,
+      None => break, // overflow, stop iterating
+    };
+    let q2 = match ai.checked_mul(q1).and_then(|v| v.checked_add(q0)) {
+      Some(v) => v,
+      None => break, // overflow, stop iterating
+    };
 
     if q2 == 0 || q2 > max_denom {
       break;

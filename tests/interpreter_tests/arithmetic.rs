@@ -1221,3 +1221,32 @@ mod radical_simplification {
     assert_eq!(interpret("6^(1/3)").unwrap(), "6^(1/3)");
   }
 }
+
+mod division_flattening {
+  use super::*;
+
+  #[test]
+  fn nested_division_flattens() {
+    assert_eq!(interpret("a/b/c").unwrap(), "a/(b*c)");
+  }
+
+  #[test]
+  fn division_by_division() {
+    assert_eq!(interpret("a/(b/c)").unwrap(), "(a*c)/b");
+  }
+
+  #[test]
+  fn simple_symbolic_division() {
+    assert_eq!(interpret("a/b").unwrap(), "a/b");
+  }
+
+  #[test]
+  fn numeric_division_unchanged() {
+    assert_eq!(interpret("2/3").unwrap(), "2/3");
+  }
+
+  #[test]
+  fn reciprocal() {
+    assert_eq!(interpret("1/x").unwrap(), "1/x");
+  }
+}

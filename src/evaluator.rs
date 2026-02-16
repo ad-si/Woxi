@@ -2538,6 +2538,14 @@ pub fn evaluate_function_call_ast(
     "Identity" if args.len() == 1 => {
       return list_helpers_ast::identity_ast(&args[0]);
     }
+    // Composition[] → Identity
+    "Composition" if args.is_empty() => {
+      return Ok(Expr::Identifier("Identity".to_string()));
+    }
+    // Composition[f] → f
+    "Composition" if args.len() == 1 => {
+      return Ok(args[0].clone());
+    }
     // Composition[f, Composition[g, h], k] → Composition[f, g, h, k]
     "Composition" if args.len() >= 2 => {
       let mut flat = Vec::new();
@@ -2907,6 +2915,12 @@ pub fn evaluate_function_call_ast(
         Expr::Identifier(name) if name == "True" || name == "False" => {
           Expr::Identifier("True".to_string())
         }
+        _ => Expr::Identifier("False".to_string()),
+      });
+    }
+    "SymbolQ" if args.len() == 1 => {
+      return Ok(match &args[0] {
+        Expr::Identifier(_) => Expr::Identifier("True".to_string()),
         _ => Expr::Identifier("False".to_string()),
       });
     }
@@ -3524,7 +3538,7 @@ pub fn evaluate_function_call_ast(
     "EulerPhi" if args.len() == 1 => {
       return crate::functions::math_ast::euler_phi_ast(args);
     }
-    "CoprimeQ" if args.len() == 2 => {
+    "CoprimeQ" if args.len() >= 2 => {
       return crate::functions::math_ast::coprime_q_ast(args);
     }
     "Re" if args.len() == 1 => {
@@ -3663,10 +3677,10 @@ pub fn evaluate_function_call_ast(
       };
       return Err(InterpreterError::ReturnValue(Box::new(val)));
     }
-    "SameQ" if args.len() >= 2 => {
+    "SameQ" => {
       return crate::functions::boolean_ast::same_q_ast(args);
     }
-    "UnsameQ" if args.len() >= 2 => {
+    "UnsameQ" => {
       return crate::functions::boolean_ast::unsame_q_ast(args);
     }
     "Which" if args.len() >= 2 && args.len().is_multiple_of(2) => {
