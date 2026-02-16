@@ -3478,3 +3478,15 @@ mod max_min_flatten {
     );
   }
 }
+
+mod mixed_coefficient_combining {
+  use super::*;
+
+  #[test]
+  fn real_and_integer_coefficients() {
+    assert_eq!(
+      interpret("a + b + 4.5 + a + b + a + 2 + 1.5 b").unwrap(),
+      "6.5 + 3*a + 3.5*b"
+    );
+  }
+}
