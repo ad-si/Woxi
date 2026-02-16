@@ -2683,6 +2683,44 @@ mod unsame_q_multi {
   }
 }
 
+mod real_abs {
+  use super::*;
+
+  #[test]
+  fn real_negative() {
+    assert_eq!(interpret("RealAbs[-3.]").unwrap(), "3.");
+  }
+
+  #[test]
+  fn integer_negative() {
+    assert_eq!(interpret("RealAbs[-3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("RealAbs[x]").unwrap(), "RealAbs[x]");
+  }
+}
+
+mod abs_infinity {
+  use super::*;
+
+  #[test]
+  fn infinity() {
+    assert_eq!(interpret("Abs[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn neg_infinity() {
+    assert_eq!(interpret("Abs[-Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn complex_infinity() {
+    assert_eq!(interpret("Abs[ComplexInfinity]").unwrap(), "Infinity");
+  }
+}
+
 mod conditional_expression {
   use super::*;
 

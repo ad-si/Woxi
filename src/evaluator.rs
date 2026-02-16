@@ -1918,8 +1918,23 @@ pub fn evaluate_function_call_ast(
     "NoneTrue" if args.len() == 2 => {
       return list_helpers_ast::none_true_ast(&args[0], &args[1]);
     }
-    "Fold" if args.len() == 3 => {
-      return list_helpers_ast::fold_ast(&args[0], &args[1], &args[2]);
+    "Fold" if args.len() == 2 || args.len() == 3 => {
+      if args.len() == 3 {
+        return list_helpers_ast::fold_ast(&args[0], &args[1], &args[2]);
+      }
+      // Fold[f, {a, b, c, ...}] = Fold[f, a, {b, c, ...}]
+      if let Expr::List(items) = &args[1] {
+        if items.is_empty() {
+          return Ok(Expr::List(vec![]));
+        }
+        let init = items[0].clone();
+        let rest = Expr::List(items[1..].to_vec());
+        return list_helpers_ast::fold_ast(&args[0], &init, &rest);
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Fold".to_string(),
+        args: args.to_vec(),
+      });
     }
     "CountBy" if args.len() == 2 => {
       return list_helpers_ast::count_by_ast(&args[0], &args[1]);
@@ -2123,8 +2138,23 @@ pub fn evaluate_function_call_ast(
     "Scan" if args.len() == 2 => {
       return list_helpers_ast::scan_ast(&args[0], &args[1]);
     }
-    "FoldList" if args.len() == 3 => {
-      return list_helpers_ast::fold_list_ast(&args[0], &args[1], &args[2]);
+    "FoldList" if args.len() == 2 || args.len() == 3 => {
+      if args.len() == 3 {
+        return list_helpers_ast::fold_list_ast(&args[0], &args[1], &args[2]);
+      }
+      // FoldList[f, {a, b, c, ...}] = FoldList[f, a, {b, c, ...}]
+      if let Expr::List(items) = &args[1] {
+        if items.is_empty() {
+          return Ok(Expr::List(vec![]));
+        }
+        let init = items[0].clone();
+        let rest = Expr::List(items[1..].to_vec());
+        return list_helpers_ast::fold_list_ast(&args[0], &init, &rest);
+      }
+      return Ok(Expr::FunctionCall {
+        name: "FoldList".to_string(),
+        args: args.to_vec(),
+      });
     }
     "FixedPointList" if args.len() >= 2 => {
       let max_iter = if args.len() == 3 {
@@ -2897,6 +2927,23 @@ pub fn evaluate_function_call_ast(
     }
     "Abs" if args.len() == 1 => {
       return crate::functions::math_ast::abs_ast(args);
+    }
+    "RealAbs" if args.len() == 1 => {
+      // RealAbs is same as Abs for real-valued arguments
+      match &args[0] {
+        Expr::Real(f) => return Ok(Expr::Real(f.abs())),
+        Expr::Integer(n) => return Ok(Expr::Integer(n.abs())),
+        _ => {
+          if let Some(n) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+          {
+            return Ok(crate::functions::math_ast::num_to_expr(n.abs()));
+          }
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "RealAbs".to_string(),
+        args: args.to_vec(),
+      });
     }
     "Sign" if args.len() == 1 => {
       return crate::functions::math_ast::sign_ast(args);
