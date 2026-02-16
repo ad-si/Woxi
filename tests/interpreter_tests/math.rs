@@ -1533,6 +1533,16 @@ mod sum {
       "Pi/4"
     );
   }
+
+  #[test]
+  fn sum_complex_bounds() {
+    assert_eq!(interpret("Sum[k, {k, I, I + 1}]").unwrap(), "1 + 2*I");
+  }
+
+  #[test]
+  fn sum_complex_bounds_real_range() {
+    assert_eq!(interpret("Sum[k, {k, I, I + 1.5}]").unwrap(), "1 + 2*I");
+  }
 }
 
 mod n_arbitrary_precision {

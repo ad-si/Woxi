@@ -1513,6 +1513,22 @@ fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Complex number division: (a + b*I) / integer → simplify
+  if let Expr::Integer(d) = b
+    && *d != 0
+    && let Some(((re_n, re_d), (im_n, im_d))) = try_extract_complex_exact(a)
+    && im_n != 0
+  {
+    // (re + im*I) / d = re/d + (im/d)*I
+    let new_re_n = re_n;
+    let new_re_d = re_d * *d;
+    let new_im_n = im_n;
+    let new_im_d = im_d * *d;
+    return Ok(complex_rational_to_expr(
+      new_re_n, new_re_d, new_im_n, new_im_d,
+    ));
+  }
+
   // For reals, perform floating-point division
   // Use try_eval_to_f64 when at least one operand is Real to handle constants like Pi/4.0
   let has_real = matches!(a, Expr::Real(_)) || matches!(b, Expr::Real(_));
