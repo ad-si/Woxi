@@ -505,13 +505,21 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     Expr::Constant(name) => Ok(Expr::Constant(name.clone())),
     Expr::List(items) => {
-      let evaluated: Vec<Expr> = items
-        .iter()
-        .map(evaluate_expr_to_expr)
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .filter(|e| !matches!(e, Expr::Identifier(s) if s == "Nothing"))
-        .collect();
+      let mut evaluated: Vec<Expr> = Vec::with_capacity(items.len());
+      for item in items {
+        let val = evaluate_expr_to_expr(item)?;
+        if matches!(&val, Expr::Identifier(s) if s == "Nothing") {
+          continue;
+        }
+        // Flatten Sequence in lists
+        if let Expr::FunctionCall { name, args } = &val
+          && name == "Sequence"
+        {
+          evaluated.extend(args.iter().cloned());
+          continue;
+        }
+        evaluated.push(val);
+      }
       Ok(Expr::List(evaluated))
     }
     Expr::FunctionCall { name, args } => {
@@ -766,13 +774,17 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "For"
         || name == "While"
         || name == "ClearAll"
+        || name == "Hold"
         || name == "HoldForm"
+        || name == "HoldComplete"
         || name == "ValueQ"
         || name == "Reap"
         || name == "Plot"
       {
+        // Flatten Sequence even in held args (unless SequenceHold)
+        let args = flatten_sequences(name, args);
         // Pass unevaluated args to the function dispatcher
-        return evaluate_function_call_ast(name, args);
+        return evaluate_function_call_ast(name, &args);
       }
       // Check if name is a variable holding a callable value (Function, FunctionCall like Composition)
       let var_val = ENV.with(|e| e.borrow().get(name).cloned());
@@ -805,6 +817,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         .iter()
         .map(evaluate_expr_to_expr)
         .collect::<Result<_, _>>()?;
+      // Flatten Sequence arguments (unless function has SequenceHold attribute)
+      let evaluated_args = flatten_sequences(name, &evaluated_args);
       // Dispatch to function implementation
       evaluate_function_call_ast(name, &evaluated_args)
     }
@@ -1719,6 +1733,42 @@ fn thread_listable(
   Ok(Some(Expr::List(results)))
 }
 
+/// Flatten Sequence[...] arguments into the parent function's argument list.
+/// In Wolfram Language, Sequence[a, b] appearing as an argument to f produces f[..., a, b, ...].
+/// Functions with the SequenceHold attribute suppress this.
+fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
+  // Check for SequenceHold attribute
+  let has_sequence_hold = matches!(
+    name,
+    "Set" | "SetDelayed" | "RuleDelayed" | "HoldComplete" | "MakeBoxes"
+  ) || crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(name)
+      .is_some_and(|attrs| attrs.contains(&"SequenceHold".to_string()))
+  });
+
+  if has_sequence_hold {
+    return args.to_vec();
+  }
+
+  let mut result = Vec::with_capacity(args.len());
+  let mut had_sequence = false;
+  for arg in args {
+    if let Expr::FunctionCall {
+      name: seq_name,
+      args: seq_args,
+    } = arg
+      && seq_name == "Sequence"
+    {
+      result.extend(seq_args.iter().cloned());
+      had_sequence = true;
+      continue;
+    }
+    result.push(arg.clone());
+  }
+  if had_sequence { result } else { args.to_vec() }
+}
+
 pub fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
@@ -1830,6 +1880,55 @@ pub fn evaluate_function_call_ast(
         name: "HoldForm".to_string(),
         args: args.to_vec(),
       });
+    }
+    "Hold" if !args.is_empty() => {
+      return Ok(Expr::FunctionCall {
+        name: "Hold".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    "HoldComplete" if !args.is_empty() => {
+      return Ok(Expr::FunctionCall {
+        name: "HoldComplete".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    "ReleaseHold" if args.len() == 1 => {
+      // ReleaseHold removes Hold, HoldForm, HoldPattern wrappers and evaluates the result
+      match &args[0] {
+        Expr::FunctionCall {
+          name: hold_name,
+          args: hold_args,
+        } if (hold_name == "Hold"
+          || hold_name == "HoldForm"
+          || hold_name == "HoldPattern")
+          && hold_args.len() == 1 =>
+        {
+          return evaluate_expr_to_expr(&hold_args[0]);
+        }
+        Expr::FunctionCall {
+          name: hold_name,
+          args: hold_args,
+        } if (hold_name == "Hold"
+          || hold_name == "HoldForm"
+          || hold_name == "HoldPattern")
+          && hold_args.len() > 1 =>
+        {
+          // ReleaseHold[Hold[a, b, c]] → Sequence[a, b, c] then evaluate
+          let evaluated: Vec<Expr> = hold_args
+            .iter()
+            .map(evaluate_expr_to_expr)
+            .collect::<Result<_, _>>()?;
+          return Ok(Expr::FunctionCall {
+            name: "Sequence".to_string(),
+            args: evaluated,
+          });
+        }
+        other => {
+          // If not wrapped in Hold/HoldForm, evaluate the argument
+          return evaluate_expr_to_expr(other);
+        }
+      }
     }
     // Inert symbolic head — evaluates to itself (used as argument to StringSplit etc.)
     "RegularExpression" if args.len() == 1 => {
