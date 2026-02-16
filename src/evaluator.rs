@@ -181,14 +181,30 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           }
         }
         BinaryOperator::And => {
-          let l = left_val == "True";
-          let r = right_val == "True";
-          Ok(if l && r { "True" } else { "False" }.to_string())
+          if left_val == "False" || right_val == "False" {
+            Ok("False".to_string())
+          } else if left_val == "True" && right_val == "True" {
+            Ok("True".to_string())
+          } else if left_val == "True" {
+            Ok(right_val)
+          } else if right_val == "True" {
+            Ok(left_val)
+          } else {
+            Ok(format!("{} && {}", left_val, right_val))
+          }
         }
         BinaryOperator::Or => {
-          let l = left_val == "True";
-          let r = right_val == "True";
-          Ok(if l || r { "True" } else { "False" }.to_string())
+          if left_val == "True" || right_val == "True" {
+            Ok("True".to_string())
+          } else if left_val == "False" && right_val == "False" {
+            Ok("False".to_string())
+          } else if left_val == "False" {
+            Ok(right_val)
+          } else if right_val == "False" {
+            Ok(left_val)
+          } else {
+            Ok(format!("{} || {}", left_val, right_val))
+          }
         }
         BinaryOperator::StringJoin => {
           // Remove quotes if present
@@ -902,18 +918,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           crate::functions::math_ast::power_ast(&[left_val, right_val])
         }
         BinaryOperator::And => {
-          let l = matches!(&left_val, Expr::Identifier(s) if s == "True");
-          let r = matches!(&right_val, Expr::Identifier(s) if s == "True");
-          Ok(Expr::Identifier(
-            if l && r { "True" } else { "False" }.to_string(),
-          ))
+          crate::functions::boolean_ast::and_ast(&[left_val, right_val])
         }
         BinaryOperator::Or => {
-          let l = matches!(&left_val, Expr::Identifier(s) if s == "True");
-          let r = matches!(&right_val, Expr::Identifier(s) if s == "True");
-          Ok(Expr::Identifier(
-            if l || r { "True" } else { "False" }.to_string(),
-          ))
+          crate::functions::boolean_ast::or_ast(&[left_val, right_val])
         }
         BinaryOperator::StringJoin => {
           let l = expr_to_raw_string(&left_val);

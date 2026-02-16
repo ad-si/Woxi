@@ -2040,6 +2040,24 @@ pub fn sort_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Extract a rational (numerator, denominator) from an Expr.
+/// Returns Some((n, d)) for Integer, Rational, None for anything else.
+fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 /// AST-based Range: generate a range of numbers.
 /// Range[n] -> {1, 2, ..., n}
 /// Range[min, max] -> {min, ..., max}
@@ -2052,6 +2070,85 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Try exact rational arithmetic first
+  let all_rational = args.iter().all(|a| expr_to_rational(a).is_some());
+
+  if all_rational {
+    let (min_n, min_d, max_n, max_d, step_n, step_d) = if args.len() == 1 {
+      let (mn, md) = expr_to_rational(&args[0]).unwrap();
+      (1_i128, 1_i128, mn, md, 1_i128, 1_i128)
+    } else if args.len() == 2 {
+      let (min_n, min_d) = expr_to_rational(&args[0]).unwrap();
+      let (max_n, max_d) = expr_to_rational(&args[1]).unwrap();
+      (min_n, min_d, max_n, max_d, 1_i128, 1_i128)
+    } else {
+      let (min_n, min_d) = expr_to_rational(&args[0]).unwrap();
+      let (max_n, max_d) = expr_to_rational(&args[1]).unwrap();
+      let (step_n, step_d) = expr_to_rational(&args[2]).unwrap();
+      (min_n, min_d, max_n, max_d, step_n, step_d)
+    };
+
+    if step_n == 0 {
+      return Err(InterpreterError::EvaluationError(
+        "Range: step cannot be zero".into(),
+      ));
+    }
+
+    let mut results = Vec::new();
+    // Current value as (numerator, denominator)
+    let mut cur_n = min_n;
+    let mut cur_d = min_d;
+    let step_positive = (step_n > 0) == (step_d > 0);
+
+    loop {
+      // Compare cur vs max: cur_n/cur_d vs max_n/max_d
+      // cur_n * max_d vs max_n * cur_d (careful with sign of denominators)
+      let lhs = cur_n * max_d;
+      let rhs = max_n * cur_d;
+      let denom_sign = (cur_d > 0) == (max_d > 0);
+
+      if step_positive {
+        // For positive step: stop when cur > max
+        if denom_sign && lhs > rhs {
+          break;
+        }
+        if !denom_sign && lhs < rhs {
+          break;
+        }
+      } else {
+        // For negative step: stop when cur < max
+        if denom_sign && lhs < rhs {
+          break;
+        }
+        if !denom_sign && lhs > rhs {
+          break;
+        }
+      }
+
+      results.push(crate::functions::math_ast::make_rational_pub(cur_n, cur_d));
+
+      // cur += step: cur_n/cur_d + step_n/step_d = (cur_n*step_d + step_n*cur_d) / (cur_d*step_d)
+      cur_n = cur_n * step_d + step_n * cur_d;
+      cur_d *= step_d;
+
+      // Simplify to avoid overflow
+      let g = gcd_i128(cur_n.abs(), cur_d.abs());
+      if g > 1 {
+        cur_n /= g;
+        cur_d /= g;
+      }
+
+      if results.len() > 1_000_000 {
+        return Err(InterpreterError::EvaluationError(
+          "Range: result too large".into(),
+        ));
+      }
+    }
+
+    return Ok(Expr::List(results));
+  }
+
+  // Fallback to f64 for Real arguments
   let (min, max, step) = if args.len() == 1 {
     let max_val = expr_to_f64(&args[0]).ok_or_else(|| {
       InterpreterError::EvaluationError(

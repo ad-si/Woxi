@@ -80,10 +80,14 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let evaluated = evaluate_expr_to_expr(&args[0])?;
-  let val = as_bool(&evaluated).unwrap_or(false);
-  Ok(Expr::Identifier(
-    if val { "False" } else { "True" }.to_string(),
-  ))
+  match as_bool(&evaluated) {
+    Some(true) => Ok(Expr::Identifier("False".to_string())),
+    Some(false) => Ok(Expr::Identifier("True".to_string())),
+    None => Ok(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Not,
+      operand: Box::new(evaluated),
+    }),
+  }
 }
 
 /// Xor[expr1, expr2, ...] - Logical XOR
@@ -559,13 +563,25 @@ pub fn nand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    if !as_bool(&evaluated).unwrap_or(false) {
-      return Ok(Expr::Identifier("True".to_string()));
+    match as_bool(&evaluated) {
+      Some(false) => return Ok(Expr::Identifier("True".to_string())),
+      Some(true) => {} // Skip True values
+      None => remaining.push(evaluated),
     }
   }
-  Ok(Expr::Identifier("False".to_string()))
+  if remaining.is_empty() {
+    // All were True → Nand is False
+    Ok(Expr::Identifier("False".to_string()))
+  } else {
+    // Some symbolic: Nand[remaining...]
+    Ok(Expr::FunctionCall {
+      name: "Nand".to_string(),
+      args: remaining,
+    })
+  }
 }
 
 /// Nor[expr1, expr2, ...] - Logical NOR (Not Or)
@@ -576,11 +592,23 @@ pub fn nor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    if as_bool(&evaluated).unwrap_or(false) {
-      return Ok(Expr::Identifier("False".to_string()));
+    match as_bool(&evaluated) {
+      Some(true) => return Ok(Expr::Identifier("False".to_string())),
+      Some(false) => {} // Skip False values
+      None => remaining.push(evaluated),
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  if remaining.is_empty() {
+    // All were False → Nor is True
+    Ok(Expr::Identifier("True".to_string()))
+  } else {
+    // Some symbolic: Nor[remaining...]
+    Ok(Expr::FunctionCall {
+      name: "Nor".to_string(),
+      args: remaining,
+    })
+  }
 }

@@ -1592,3 +1592,53 @@ mod quantile {
     );
   }
 }
+
+mod range {
+  use super::*;
+
+  #[test]
+  fn range_single() {
+    assert_eq!(interpret("Range[5]").unwrap(), "{1, 2, 3, 4, 5}");
+  }
+
+  #[test]
+  fn range_min_max() {
+    assert_eq!(interpret("Range[3, 7]").unwrap(), "{3, 4, 5, 6, 7}");
+  }
+
+  #[test]
+  fn range_with_step() {
+    assert_eq!(interpret("Range[1, 10, 2]").unwrap(), "{1, 3, 5, 7, 9}");
+  }
+
+  #[test]
+  fn range_negative_step() {
+    assert_eq!(interpret("Range[5, 1, -1]").unwrap(), "{5, 4, 3, 2, 1}");
+  }
+
+  #[test]
+  fn range_rational_step() {
+    assert_eq!(
+      interpret("Range[0, 2, 1/3]").unwrap(),
+      "{0, 1/3, 2/3, 1, 4/3, 5/3, 2}"
+    );
+  }
+
+  #[test]
+  fn range_rational_step_half() {
+    assert_eq!(
+      interpret("Range[0, 2, 1/2]").unwrap(),
+      "{0, 1/2, 1, 3/2, 2}"
+    );
+  }
+
+  #[test]
+  fn range_from_zero() {
+    assert_eq!(interpret("Range[0]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn range_negative_to_positive() {
+    assert_eq!(interpret("Range[-2, 2]").unwrap(), "{-2, -1, 0, 1, 2}");
+  }
+}

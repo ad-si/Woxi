@@ -2192,8 +2192,21 @@ pub fn expr_to_string(expr: &Expr) -> String {
         UnaryOperator::Not => "!",
       };
       let inner = expr_to_string(operand);
-      let needs_parens = matches!(op, UnaryOperator::Minus)
-        && (matches!(
+      let needs_parens = if matches!(op, UnaryOperator::Not) {
+        // Not needs parens around compound expressions: !(a && b), !(a || b)
+        matches!(
+          operand.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::And | BinaryOperator::Or,
+            ..
+          }
+        ) || matches!(
+          operand.as_ref(),
+          Expr::FunctionCall { name, .. } if name == "And" || name == "Or"
+        )
+      } else {
+        // Minus needs parens around Plus, Minus, Times, Divide
+        matches!(
           operand.as_ref(),
           Expr::BinaryOp {
             op: BinaryOperator::Plus
@@ -2205,7 +2218,8 @@ pub fn expr_to_string(expr: &Expr) -> String {
         ) || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
-        ));
+        )
+      };
       if needs_parens {
         format!("{}({})", op_str, inner)
       } else {
