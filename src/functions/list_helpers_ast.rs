@@ -5643,10 +5643,98 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   if b_num.is_some() {
     return -1;
   }
-  // Wolfram canonical string ordering: case-insensitive first, then lowercase < uppercase
-  let a_str = crate::syntax::expr_to_string(a);
-  let b_str = crate::syntax::expr_to_string(b);
-  wolfram_string_order(&a_str, &b_str)
+
+  // Wolfram canonical ordering: symbols and compounds are compared structurally
+  let a_is_atom = is_atom_expr(a);
+  let b_is_atom = is_atom_expr(b);
+
+  match (a_is_atom, b_is_atom) {
+    (true, true) => {
+      // Both atoms: alphabetical comparison
+      let a_str = crate::syntax::expr_to_string(a);
+      let b_str = crate::syntax::expr_to_string(b);
+      wolfram_string_order(&a_str, &b_str)
+    }
+    (true, false) => {
+      // Atom vs compound: compare atom with compound's sort key
+      let b_key = expr_sort_key(b);
+      let a_str = crate::syntax::expr_to_string(a);
+      let cmp = wolfram_string_order(&a_str, &b_key);
+      if cmp == 0 {
+        1 // atom comes before compound with same key
+      } else {
+        cmp
+      }
+    }
+    (false, true) => {
+      // Compound vs atom: reverse of above
+      let a_key = expr_sort_key(a);
+      let b_str = crate::syntax::expr_to_string(b);
+      let cmp = wolfram_string_order(&a_key, &b_str);
+      if cmp == 0 {
+        -1 // compound comes after atom with same key
+      } else {
+        cmp
+      }
+    }
+    (false, false) => {
+      // Both compounds: compare sort keys, then by full string
+      let a_key = expr_sort_key(a);
+      let b_key = expr_sort_key(b);
+      let cmp = wolfram_string_order(&a_key, &b_key);
+      if cmp != 0 {
+        return cmp;
+      }
+      let a_str = crate::syntax::expr_to_string(a);
+      let b_str = crate::syntax::expr_to_string(b);
+      wolfram_string_order(&a_str, &b_str)
+    }
+  }
+}
+
+/// Check if an expression is an atomic (non-compound) expression
+fn is_atom_expr(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_))
+}
+
+/// Extract the sort key for a compound expression.
+/// For Plus/Times: the last (largest) symbolic argument
+/// For Power: the base
+/// For other functions: the last argument, or the function name
+fn expr_sort_key(e: &Expr) -> String {
+  match e {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      // For Orderless functions (Plus, Times), use the last argument as sort key
+      if let Some(last) = args.last()
+        && is_atom_expr(last)
+      {
+        return crate::syntax::expr_to_string(last);
+      }
+      // Fallback: use function name
+      name.clone()
+    }
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator;
+      match op {
+        BinaryOperator::Power => {
+          // Power: sort key is the base
+          crate::syntax::expr_to_string(left)
+        }
+        BinaryOperator::Plus | BinaryOperator::Times => {
+          // For binary plus/times: use the "larger" operand
+          let l = crate::syntax::expr_to_string(left);
+          let r = crate::syntax::expr_to_string(right);
+          if wolfram_string_order(&l, &r) >= 0 {
+            r
+          } else {
+            l
+          }
+        }
+        _ => crate::syntax::expr_to_string(e),
+      }
+    }
+    _ => crate::syntax::expr_to_string(e),
+  }
 }
 
 /// Wolfram canonical string ordering: case-insensitive alphabetical, then lowercase < uppercase

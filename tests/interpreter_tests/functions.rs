@@ -207,6 +207,25 @@ mod orderless_attribute {
     clear_state();
     assert_eq!(interpret("g[c, a, b]").unwrap(), "g[c, a, b]");
   }
+
+  #[test]
+  fn orderless_compound_expressions_after_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Orderless]; f[c, a, b, a + b, 3, 1.0]")
+        .unwrap(),
+      "f[1., 3, a, b, a + b, c]"
+    );
+  }
+
+  #[test]
+  fn orderless_equality() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Orderless]; f[a, b] == f[b, a]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod flat_and_orderless {
