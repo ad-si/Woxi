@@ -1266,8 +1266,8 @@ fn simplify_expr(expr: &Expr) -> Expr {
       op: BinaryOperator::Plus | BinaryOperator::Minus,
       ..
     } => {
-      // Collect terms, combine like terms
-      expand_and_combine(expr)
+      let combined = expand_and_combine(expr);
+      apply_trig_identities(&combined)
     }
 
     Expr::UnaryOp { op, operand } => {
@@ -1280,7 +1280,10 @@ fn simplify_expr(expr: &Expr) -> Expr {
 
     // Handle FunctionCall forms of Plus, Times, Power
     Expr::FunctionCall { name, args } => match name.as_str() {
-      "Plus" => expand_and_combine(expr),
+      "Plus" => {
+        let combined = expand_and_combine(expr);
+        apply_trig_identities(&combined)
+      }
       "Times" if args.len() == 2 => {
         let l = simplify_expr(&args[0]);
         let r = simplify_expr(&args[1]);
@@ -1300,6 +1303,113 @@ fn simplify_expr(expr: &Expr) -> Expr {
     },
 
     _ => simplify(expr.clone()),
+  }
+}
+
+/// Apply trigonometric identities to a sum expression.
+/// Detects a*Sin[x]^2 + a*Cos[x]^2 → a and similar patterns.
+fn apply_trig_identities(expr: &Expr) -> Expr {
+  let terms = collect_additive_terms(expr);
+  if terms.len() < 2 {
+    return expr.clone();
+  }
+
+  // Look for pairs: coeff*Sin[arg]^2 + coeff*Cos[arg]^2 → coeff
+  let mut used = vec![false; terms.len()];
+  let mut result_terms: Vec<Expr> = Vec::new();
+
+  for i in 0..terms.len() {
+    if used[i] {
+      continue;
+    }
+    if let Some((coeff_i, arg_i, is_sin_i)) = extract_trig_squared(&terms[i]) {
+      // Look for matching pair
+      for j in (i + 1)..terms.len() {
+        if used[j] {
+          continue;
+        }
+        if let Some((coeff_j, arg_j, is_sin_j)) =
+          extract_trig_squared(&terms[j])
+          && is_sin_i != is_sin_j
+          && expr_to_string(&arg_i) == expr_to_string(&arg_j)
+          && expr_to_string(&coeff_i) == expr_to_string(&coeff_j)
+        {
+          // Found matching pair: coeff*Sin[x]^2 + coeff*Cos[x]^2 = coeff
+          result_terms.push(coeff_i.clone());
+          used[i] = true;
+          used[j] = true;
+          break;
+        }
+      }
+    }
+    if !used[i] {
+      result_terms.push(terms[i].clone());
+    }
+  }
+
+  if result_terms.len() == terms.len() {
+    // No simplification happened
+    return expr.clone();
+  }
+
+  // Re-combine to simplify (e.g. 1 + 1 → 2)
+  if let Ok(result) = crate::functions::math_ast::plus_ast(&result_terms) {
+    result
+  } else {
+    build_sum(result_terms)
+  }
+}
+
+/// Try to extract (coefficient, argument, is_sin) from a term like coeff*Sin[arg]^2 or coeff*Cos[arg]^2.
+fn extract_trig_squared(term: &Expr) -> Option<(Expr, Expr, bool)> {
+  // Pattern: Sin[arg]^2 or Cos[arg]^2 (coefficient = 1)
+  if let Some((func, arg)) = match_trig_squared(term) {
+    return Some((Expr::Integer(1), arg, func == "Sin"));
+  }
+
+  // Pattern: coeff * Sin[arg]^2 or coeff * Cos[arg]^2
+  let factors = collect_multiplicative_factors(term);
+  if factors.len() < 2 {
+    return None;
+  }
+
+  // Find the trig^2 factor
+  for (idx, f) in factors.iter().enumerate() {
+    if let Some((func, arg)) = match_trig_squared(f) {
+      let mut coeff_factors: Vec<Expr> = Vec::new();
+      for (j, g) in factors.iter().enumerate() {
+        if j != idx {
+          coeff_factors.push(g.clone());
+        }
+      }
+      let coeff = if coeff_factors.len() == 1 {
+        coeff_factors.remove(0)
+      } else {
+        build_product(coeff_factors)
+      };
+      return Some((coeff, arg, func == "Sin"));
+    }
+  }
+  None
+}
+
+/// Match Sin[arg]^2 or Cos[arg]^2, returning ("Sin"/"Cos", arg).
+fn match_trig_squared(expr: &Expr) -> Option<(&str, Expr)> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(2)) => {
+      if let Expr::FunctionCall { name, args } = left.as_ref()
+        && (name == "Sin" || name == "Cos")
+        && args.len() == 1
+      {
+        return Some((name.as_str(), args[0].clone()));
+      }
+      None
+    }
+    _ => None,
   }
 }
 
@@ -1608,7 +1718,29 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if factors.is_empty() {
     result_factors.push(coeffs_to_expr(&reduced_coeffs, &var));
   } else {
-    result_factors.extend(factors);
+    // Group identical factors: (1+x)*(1+x) → (1+x)^2
+    let mut grouped: Vec<(Expr, i128)> = Vec::new();
+    for f in &factors {
+      let key = expr_to_string(f);
+      if let Some(entry) =
+        grouped.iter_mut().find(|(e, _)| expr_to_string(e) == key)
+      {
+        entry.1 += 1;
+      } else {
+        grouped.push((f.clone(), 1));
+      }
+    }
+    for (factor, count) in grouped {
+      if count == 1 {
+        result_factors.push(factor);
+      } else {
+        result_factors.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(factor),
+          right: Box::new(Expr::Integer(count)),
+        });
+      }
+    }
   }
 
   if result_factors.len() == 1 {
