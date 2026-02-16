@@ -91,31 +91,6 @@ EXPECTED:
 = {operator_string}x
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: DirectedInfinity
-LINE: 441
-TYPE: >>
-INPUT: DirectedInfinity[1 + I]
-EXPECTED:
-= (1 / 2 + I / 2) Sqrt[2] Infinity
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: DirectedInfinity
-LINE: 444
-TYPE: >>
-INPUT: 1 / DirectedInfinity[1 + I]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: DirectedInfinity
-LINE: 446
-TYPE: >>
-INPUT: DirectedInfinity[1] + DirectedInfinity[-1]
-EXPECTED:
-: Indeterminate expression -Infinity + Infinity encountered.
-= Indeterminate
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: Element
 LINE: 563
 TYPE: >>

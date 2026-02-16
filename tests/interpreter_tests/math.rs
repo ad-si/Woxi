@@ -2910,6 +2910,34 @@ mod infinity_arithmetic {
       "Indeterminate"
     );
   }
+
+  #[test]
+  fn directed_infinity_normalization() {
+    assert_eq!(
+      interpret("DirectedInfinity[1 + I]").unwrap(),
+      "DirectedInfinity[(1 + I)/Sqrt[2]]"
+    );
+  }
+
+  #[test]
+  fn finite_divided_by_directed_infinity() {
+    assert_eq!(interpret("1 / DirectedInfinity[1 + I]").unwrap(), "0");
+  }
+
+  #[test]
+  fn finite_divided_by_infinity() {
+    assert_eq!(interpret("1 / Infinity").unwrap(), "0");
+  }
+
+  #[test]
+  fn directed_infinity_positive_real() {
+    assert_eq!(interpret("DirectedInfinity[5]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn directed_infinity_negative_real() {
+    assert_eq!(interpret("DirectedInfinity[-3]").unwrap(), "-Infinity");
+  }
 }
 
 mod attributes {

@@ -1287,8 +1287,26 @@ pub fn divide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   divide_two(&args[0], &args[1])
 }
 
+/// Check if an expression represents an infinite quantity
+fn is_infinity_like(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name) => name == "Infinity" || name == "ComplexInfinity",
+    Expr::FunctionCall { name, .. } => name == "DirectedInfinity",
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity"),
+    _ => false,
+  }
+}
+
 /// Helper for division of two arguments
 fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  // finite / Infinity or finite / DirectedInfinity[z] → 0
+  if is_infinity_like(b) && !is_infinity_like(a) {
+    return Ok(Expr::Integer(0));
+  }
+
   // Handle Quantity division
   if let Some(result) =
     crate::functions::quantity_ast::try_quantity_divide(a, b)
