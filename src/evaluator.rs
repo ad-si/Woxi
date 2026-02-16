@@ -1977,6 +1977,9 @@ pub fn evaluate_function_call_ast(
     "Position" if args.len() == 2 => {
       return list_helpers_ast::position_ast(&args[0], &args[1]);
     }
+    "FirstPosition" if args.len() >= 2 => {
+      return list_helpers_ast::first_position_ast(args);
+    }
     "MapIndexed" if args.len() == 2 => {
       return list_helpers_ast::map_indexed_ast(&args[0], &args[1]);
     }
@@ -2338,8 +2341,11 @@ pub fn evaluate_function_call_ast(
     "GatherBy" if args.len() == 2 => {
       return list_helpers_ast::gather_by_ast(&args[1], &args[0]);
     }
-    "Split" if args.len() == 1 => {
-      return list_helpers_ast::split_ast(&args[0]);
+    "Split" if args.len() == 1 || args.len() == 2 => {
+      if args.len() == 1 {
+        return list_helpers_ast::split_ast(&args[0]);
+      }
+      return list_helpers_ast::split_with_test_ast(&args[0], &args[1]);
     }
     "SplitBy" if args.len() == 2 => {
       return list_helpers_ast::split_by_ast(&args[1], &args[0]);
@@ -2971,6 +2977,49 @@ pub fn evaluate_function_call_ast(
     }
     "Min" => {
       return crate::functions::math_ast::min_ast(args);
+    }
+    "RankedMax" if args.len() == 2 => {
+      if let Expr::List(items) = &args[0] {
+        let mut sorted = items.clone();
+        sorted.sort_by(|a, b| {
+          let fa = crate::functions::math_ast::try_eval_to_f64(a);
+          let fb = crate::functions::math_ast::try_eval_to_f64(b);
+          fb.partial_cmp(&fa).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        if let Some(k) = expr_to_i128(&args[1]) {
+          let idx = (k - 1) as usize;
+          if idx < sorted.len() {
+            return Ok(sorted[idx].clone());
+          }
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "RankedMax".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    "RankedMin" if args.len() == 2 => {
+      if let Expr::List(items) = &args[0] {
+        let mut sorted = items.clone();
+        sorted.sort_by(|a, b| {
+          let fa = crate::functions::math_ast::try_eval_to_f64(a);
+          let fb = crate::functions::math_ast::try_eval_to_f64(b);
+          fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        if let Some(k) = expr_to_i128(&args[1]) {
+          let idx = (k - 1) as usize;
+          if idx < sorted.len() {
+            return Ok(sorted[idx].clone());
+          }
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "RankedMin".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    "Quantile" if args.len() == 2 => {
+      return crate::functions::math_ast::quantile_ast(args);
     }
     "Abs" if args.len() == 1 => {
       return crate::functions::math_ast::abs_ast(args);

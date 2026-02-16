@@ -10068,3 +10068,80 @@ fn rational_ceil(num: i128, den: i128) -> i128 {
     num / den
   }
 }
+
+/// Quantile[list, q] - the q-th quantile of the list
+/// Quantile[list, {q1, q2, ...}] - multiple quantiles
+pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Quantile expects exactly 2 arguments".into(),
+    ));
+  }
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Quantile".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Sort the items numerically
+  let mut sorted: Vec<&Expr> = items.iter().collect();
+  sorted.sort_by(|a, b| {
+    let fa = try_eval_to_f64(a);
+    let fb = try_eval_to_f64(b);
+    fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  // Handle list of quantiles
+  if let Expr::List(qs) = &args[1] {
+    let results: Result<Vec<Expr>, _> =
+      qs.iter().map(|q| quantile_single(&sorted, q)).collect();
+    return Ok(Expr::List(results?));
+  }
+
+  quantile_single(&sorted, &args[1])
+}
+
+fn quantile_single(
+  sorted: &[&Expr],
+  q: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = sorted.len();
+  // Default Quantile uses Type 1 (inverse of CDF)
+  // Index = Ceiling[q * n]
+  let q_val = match q {
+    Expr::Integer(n) => *n as f64,
+    Expr::Real(f) => *f,
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(num), Expr::Integer(den)) = (&rargs[0], &rargs[1]) {
+        *num as f64 / *den as f64
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Quantile".to_string(),
+          args: vec![
+            Expr::List(sorted.iter().cloned().cloned().collect()),
+            q.clone(),
+          ],
+        });
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Quantile".to_string(),
+        args: vec![
+          Expr::List(sorted.iter().cloned().cloned().collect()),
+          q.clone(),
+        ],
+      });
+    }
+  };
+
+  let idx = (q_val * n as f64).ceil() as usize;
+  let idx = idx.max(1).min(n);
+  Ok(sorted[idx - 1].clone())
+}

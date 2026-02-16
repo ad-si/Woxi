@@ -1515,3 +1515,80 @@ mod fold_list {
     assert_eq!(interpret("Fold[Plus, {1, 2, 3, 4}]").unwrap(), "10");
   }
 }
+
+mod split_with_test {
+  use super::*;
+
+  #[test]
+  fn less() {
+    assert_eq!(
+      interpret("Split[{1, 5, 6, 3, 6, 1, 6, 3, 4, 5, 4}, Less]").unwrap(),
+      "{{1, 5, 6}, {3, 6}, {1, 6}, {3, 4, 5}, {4}}"
+    );
+  }
+}
+
+mod first_position {
+  use super::*;
+
+  #[test]
+  fn simple() {
+    assert_eq!(interpret("FirstPosition[{a, b, c, d}, c]").unwrap(), "{3}");
+  }
+
+  #[test]
+  fn nested() {
+    assert_eq!(
+      interpret("FirstPosition[{{a, a, b}, {b, a, a}, {a, b, a}}, b]").unwrap(),
+      "{1, 3}"
+    );
+  }
+
+  #[test]
+  fn not_found() {
+    assert_eq!(
+      interpret("FirstPosition[{a, b, c}, z]").unwrap(),
+      "Missing[NotFound]"
+    );
+  }
+}
+
+mod ranked {
+  use super::*;
+
+  #[test]
+  fn ranked_max() {
+    assert_eq!(
+      interpret("RankedMax[{482, 17, 181, -12}, 2]").unwrap(),
+      "181"
+    );
+  }
+
+  #[test]
+  fn ranked_min() {
+    assert_eq!(
+      interpret("RankedMin[{482, 17, 181, -12}, 2]").unwrap(),
+      "17"
+    );
+  }
+}
+
+mod quantile {
+  use super::*;
+
+  #[test]
+  fn single() {
+    assert_eq!(
+      interpret("Quantile[{1, 2, 3, 4, 5, 6, 7}, 1/4]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn multiple() {
+    assert_eq!(
+      interpret("Quantile[{1, 2, 3, 4, 5, 6, 7}, {1/4, 3/4}]").unwrap(),
+      "{2, 6}"
+    );
+  }
+}
