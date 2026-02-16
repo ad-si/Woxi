@@ -2777,6 +2777,50 @@ mod abs_infinity {
   }
 }
 
+mod complex_number {
+  use super::*;
+
+  #[test]
+  fn head_of_complex() {
+    assert_eq!(interpret("Head[2 + 3*I]").unwrap(), "Complex");
+  }
+
+  #[test]
+  fn head_of_i() {
+    assert_eq!(interpret("Head[I]").unwrap(), "Complex");
+  }
+
+  #[test]
+  fn head_of_pure_imaginary() {
+    assert_eq!(interpret("Head[3 I]").unwrap(), "Complex");
+  }
+
+  #[test]
+  fn complex_constructor() {
+    assert_eq!(interpret("Complex[1, 2/3]").unwrap(), "1 + (2*I)/3");
+  }
+
+  #[test]
+  fn complex_constructor_zero_imag() {
+    assert_eq!(interpret("Complex[5, 0]").unwrap(), "5");
+  }
+
+  #[test]
+  fn complex_constructor_zero_real() {
+    assert_eq!(interpret("Complex[0, 3]").unwrap(), "3*I");
+  }
+
+  #[test]
+  fn complex_constructor_i() {
+    assert_eq!(interpret("Complex[0, 1]").unwrap(), "I");
+  }
+
+  #[test]
+  fn abs_complex() {
+    assert_eq!(interpret("Abs[Complex[3, 4]]").unwrap(), "5");
+  }
+}
+
 mod conditional_expression {
   use super::*;
 

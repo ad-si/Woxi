@@ -1942,7 +1942,7 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Try to extract exact complex parts (re, im) from an expression as rational tuples (num, den).
 /// Returns Some(((re_num, re_den), (im_num, im_den))) if the expression is a numeric complex number.
 /// Handles patterns like: a + b*I, a - b*I, b*I, I, and plain reals.
-fn try_extract_complex_exact(
+pub fn try_extract_complex_exact(
   expr: &Expr,
 ) -> Option<((i128, i128), (i128, i128))> {
   use crate::syntax::BinaryOperator;
@@ -2070,7 +2070,7 @@ fn try_extract_complex_exact(
 
 /// Try to extract float complex parts (re, im) from an expression.
 /// Returns Some((re, im)) if the expression contains float components with I.
-fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
+pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
   use crate::syntax::{BinaryOperator, UnaryOperator};
   match expr {
     Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),

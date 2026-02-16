@@ -91,30 +91,6 @@ EXPECTED:
 = {operator_string}x
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: Complex_
-LINE: 279
-TYPE: >>
-INPUT: Head[2 + 3*I]
-EXPECTED:
-= Complex
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Complex_
-LINE: 281
-TYPE: >>
-INPUT: Complex[1, 2/3]
-EXPECTED:
-= 1 + 2 I / 3
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Complex_
-LINE: 283
-TYPE: >>
-INPUT: Abs[Complex[3, 4]]
-EXPECTED:
-= 5
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: ConditionalExpression
 LINE: 311
 TYPE: >>
