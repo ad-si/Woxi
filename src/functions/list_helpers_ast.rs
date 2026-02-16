@@ -3443,6 +3443,16 @@ fn try_symbolic_sum(
       }));
     }
 
+    // Sum[1/k^s, {k, 1, n}] = HarmonicNumber[n, s]
+    if let Some(s) = match_reciprocal_power(body, var_name)
+      && s >= 1
+    {
+      return Ok(Some(Expr::FunctionCall {
+        name: "HarmonicNumber".to_string(),
+        args: vec![max_expr.clone(), Expr::Integer(s as i128)],
+      }));
+    }
+
     // Sum[c^i, {i, 1, n}] = c*(c^n - 1)/(c - 1) (geometric series)
     // In Divide form: Sum[1/c^i, {i, 1, n}] = (c^n - 1)/(c^n * (c - 1))
     // or equivalently: (-1 + c^n)/c^n

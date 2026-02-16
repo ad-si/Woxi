@@ -1519,6 +1519,14 @@ mod sum {
   }
 
   #[test]
+  fn sum_harmonic_number() {
+    assert_eq!(
+      interpret("Sum[1 / k ^ 2, {k, 1, n}]").unwrap(),
+      "HarmonicNumber[n, 2]"
+    );
+  }
+
+  #[test]
   fn sum_leibniz_formula() {
     assert_eq!(
       interpret("Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]").unwrap(),
