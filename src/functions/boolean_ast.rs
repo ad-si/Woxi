@@ -129,10 +129,9 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// SameQ[expr1, expr2] - Tests whether expressions are identical
 pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // SameQ[] and SameQ[x] return True (vacuously true)
   if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "SameQ expects at least 2 arguments".into(),
-    ));
+    return Ok(Expr::Identifier("True".to_string()));
   }
 
   let first = evaluate_expr_to_expr(&args[0])?;
@@ -150,10 +149,9 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// UnsameQ[expr1, expr2] - Tests whether expressions are not identical
 pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // UnsameQ[] and UnsameQ[x] return True (vacuously true)
   if args.len() < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "UnsameQ expects at least 2 arguments".into(),
-    ));
+    return Ok(Expr::Identifier("True".to_string()));
   }
 
   // Evaluate all arguments and get string representations

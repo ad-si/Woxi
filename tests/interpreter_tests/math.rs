@@ -2897,3 +2897,115 @@ mod attributes {
     );
   }
 }
+
+mod symbol_q {
+  use super::*;
+
+  #[test]
+  fn symbol_is_true() {
+    assert_eq!(interpret("SymbolQ[a]").unwrap(), "True");
+  }
+
+  #[test]
+  fn integer_is_false() {
+    assert_eq!(interpret("SymbolQ[1]").unwrap(), "False");
+  }
+
+  #[test]
+  fn expr_is_false() {
+    assert_eq!(interpret("SymbolQ[a + b]").unwrap(), "False");
+  }
+
+  #[test]
+  fn string_is_false() {
+    assert_eq!(interpret("SymbolQ[\"abc\"]").unwrap(), "False");
+  }
+}
+
+mod coprime_q {
+  use super::*;
+
+  #[test]
+  fn three_coprime() {
+    assert_eq!(interpret("CoprimeQ[2, 3, 5]").unwrap(), "True");
+  }
+
+  #[test]
+  fn three_not_coprime() {
+    assert_eq!(interpret("CoprimeQ[2, 4, 5]").unwrap(), "False");
+  }
+}
+
+mod same_q_unsame_q {
+  use super::*;
+
+  #[test]
+  fn same_q_empty() {
+    assert_eq!(interpret("SameQ[]").unwrap(), "True");
+  }
+
+  #[test]
+  fn same_q_single() {
+    assert_eq!(interpret("SameQ[a]").unwrap(), "True");
+  }
+
+  #[test]
+  fn unsame_q_empty() {
+    assert_eq!(interpret("UnsameQ[]").unwrap(), "True");
+  }
+
+  #[test]
+  fn unsame_q_single() {
+    assert_eq!(interpret("UnsameQ[a]").unwrap(), "True");
+  }
+}
+
+mod constant_real_arithmetic {
+  use super::*;
+
+  #[test]
+  fn pi_divided_by_real() {
+    assert_eq!(interpret("Pi / 4.0").unwrap(), "0.7853981633974483");
+  }
+
+  #[test]
+  fn pi_times_real() {
+    assert_eq!(interpret("Pi * 2.0").unwrap(), "6.283185307179586");
+  }
+
+  #[test]
+  fn pi_times_integer_stays_symbolic() {
+    assert_eq!(interpret("2 * Pi").unwrap(), "2*Pi");
+  }
+}
+
+mod overflow_safety {
+  use super::*;
+
+  #[test]
+  fn large_product_no_panic() {
+    let result = interpret("IntegerLength[Times@@Range[5000]]");
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), "16326");
+  }
+
+  #[test]
+  fn rationalize_no_panic() {
+    let result = interpret("Rationalize[N[Pi], 0]");
+    assert!(result.is_ok());
+  }
+}
+
+mod composition_edge_cases {
+  use super::*;
+
+  #[test]
+  fn empty_is_identity() {
+    assert_eq!(interpret("Composition[]").unwrap(), "Identity");
+  }
+
+  #[test]
+  fn single_is_function() {
+    assert_eq!(interpret("Composition[f]").unwrap(), "f");
+  }
+}
