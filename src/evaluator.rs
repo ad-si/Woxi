@@ -762,6 +762,22 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "Abort" && args.is_empty() {
         return Err(InterpreterError::Abort);
       }
+      // Interrupt[] behaves like Abort[] in batch mode
+      if name == "Interrupt" && args.is_empty() {
+        return Err(InterpreterError::Abort);
+      }
+      // Pause[n] - sleep for n seconds and return Null
+      if name == "Pause" && args.len() == 1 {
+        if let Ok(val) = evaluate_expr_to_expr(&args[0]) {
+          if let Some(secs) = crate::functions::math_ast::try_eval_to_f64(&val)
+          {
+            if secs > 0.0 {
+              std::thread::sleep(std::time::Duration::from_secs_f64(secs));
+            }
+          }
+        }
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
       // Special handling for CheckAbort[expr, failexpr]
       if name == "CheckAbort" && args.len() == 2 {
         match evaluate_expr_to_expr(&args[0]) {
@@ -2719,6 +2735,21 @@ pub fn evaluate_function_call_ast(
     }
     "Do" if args.len() == 2 => {
       return list_helpers_ast::do_ast(&args[0], &args[1]);
+    }
+    "Do" if args.len() > 2 => {
+      // Multi-iterator Do: Do[body, {i, ...}, {j, ...}, ...]
+      // Nest the iterators: outermost is first iterator, innermost is last
+      // Build a nested Do: Do[Do[body, last_iter], ..., first_iter]
+      let body = &args[0];
+      let iters = &args[1..];
+      let mut nested = body.clone();
+      for iter in iters.iter().rev() {
+        nested = Expr::FunctionCall {
+          name: "Do".to_string(),
+          args: vec![nested, iter.clone()],
+        };
+      }
+      return evaluate_expr_to_expr(&nested);
     }
     "For" if args.len() == 3 || args.len() == 4 => {
       return for_ast(args);
@@ -8241,10 +8272,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Attributes"
     | "Context"
     | "Contexts"
-    | "Pause"
     | "DateList"
     | "DateString"
     | "Abort"
+    | "Interrupt"
+    | "Pause"
     | "Check"
     | "CheckAbort"
     | "Quiet"
