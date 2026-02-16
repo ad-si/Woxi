@@ -1,49 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: ClearAttributes
-LINE: 116
-TYPE: >>
-INPUT: SetAttributes[f, Flat]
-EXPECTED: (none)
----
-FILE: mathics/builtin/attributes.py
-CLASS: ClearAttributes
-LINE: 117
-TYPE: >>
-INPUT: Attributes[f]
-EXPECTED:
-= {Flat}
----
-FILE: mathics/builtin/attributes.py
-CLASS: ClearAttributes
-LINE: 119
-TYPE: >>
-INPUT: ClearAttributes[f, Flat]
-EXPECTED: (none)
----
-FILE: mathics/builtin/attributes.py
-CLASS: ClearAttributes
-LINE: 120
-TYPE: >>
-INPUT: Attributes[f]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/attributes.py
-CLASS: ClearAttributes
-LINE: 123
-TYPE: >>
-INPUT: ClearAttributes[{f}, {Flat}]
-EXPECTED: (none)
----
-FILE: mathics/builtin/attributes.py
-CLASS: ClearAttributes
-LINE: 124
-TYPE: >>
-INPUT: Attributes[f]
-EXPECTED:
-= {}
----
-FILE: mathics/builtin/attributes.py
 CLASS: Constant
 LINE: 176
 TYPE: >>

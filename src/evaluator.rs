@@ -1944,27 +1944,43 @@ pub fn evaluate_function_call_ast(
       return set_ast(&args[0], &args[1]);
     }
     "SetAttributes" if args.len() == 2 => {
-      if let Expr::Identifier(func_name) = &args[0] {
-        let attr = match &args[1] {
-          Expr::Identifier(a) => vec![a.clone()],
-          Expr::List(items) => items
-            .iter()
-            .filter_map(|item| {
-              if let Expr::Identifier(a) = item {
-                Some(a.clone())
-              } else {
-                None
-              }
-            })
-            .collect(),
-          _ => vec![],
-        };
+      let func_names: Vec<String> = match &args[0] {
+        Expr::Identifier(name) => vec![name.clone()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|item| {
+            if let Expr::Identifier(n) = item {
+              Some(n.clone())
+            } else {
+              None
+            }
+          })
+          .collect(),
+        _ => vec![],
+      };
+      let attr: Vec<String> = match &args[1] {
+        Expr::Identifier(a) => vec![a.clone()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|item| {
+            if let Expr::Identifier(a) = item {
+              Some(a.clone())
+            } else {
+              None
+            }
+          })
+          .collect(),
+        _ => vec![],
+      };
+      if !func_names.is_empty() {
         crate::FUNC_ATTRS.with(|m| {
           let mut attrs = m.borrow_mut();
-          let entry = attrs.entry(func_name.clone()).or_insert_with(Vec::new);
-          for a in attr {
-            if !entry.contains(&a) {
-              entry.push(a);
+          for func_name in &func_names {
+            let entry = attrs.entry(func_name.clone()).or_insert_with(Vec::new);
+            for a in &attr {
+              if !entry.contains(a) {
+                entry.push(a.clone());
+              }
             }
           }
         });
@@ -1972,25 +1988,41 @@ pub fn evaluate_function_call_ast(
       }
     }
     "ClearAttributes" if args.len() == 2 => {
-      if let Expr::Identifier(func_name) = &args[0] {
-        let to_remove = match &args[1] {
-          Expr::Identifier(a) => vec![a.clone()],
-          Expr::List(items) => items
-            .iter()
-            .filter_map(|item| {
-              if let Expr::Identifier(a) = item {
-                Some(a.clone())
-              } else {
-                None
-              }
-            })
-            .collect(),
-          _ => vec![],
-        };
+      let func_names: Vec<String> = match &args[0] {
+        Expr::Identifier(name) => vec![name.clone()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|item| {
+            if let Expr::Identifier(n) = item {
+              Some(n.clone())
+            } else {
+              None
+            }
+          })
+          .collect(),
+        _ => vec![],
+      };
+      let to_remove: Vec<String> = match &args[1] {
+        Expr::Identifier(a) => vec![a.clone()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|item| {
+            if let Expr::Identifier(a) = item {
+              Some(a.clone())
+            } else {
+              None
+            }
+          })
+          .collect(),
+        _ => vec![],
+      };
+      if !func_names.is_empty() {
         crate::FUNC_ATTRS.with(|m| {
           let mut attrs = m.borrow_mut();
-          if let Some(entry) = attrs.get_mut(func_name) {
-            entry.retain(|a| !to_remove.contains(a));
+          for func_name in &func_names {
+            if let Some(entry) = attrs.get_mut(func_name) {
+              entry.retain(|a| !to_remove.contains(a));
+            }
           }
         });
         return Ok(Expr::Identifier("Null".to_string()));
