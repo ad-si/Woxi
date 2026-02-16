@@ -1440,8 +1440,113 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if result.fract() == 0.0 && result.is_finite() {
       return Ok(Expr::Integer(result as i128));
     }
+    // Simplify n^(p/q) by prime factorization
+    // n = p1^k1 * p2^k2 * ...
+    // n^(p/q) = product of p_i^(k_i*p/q)
+    // Each p_i^(k_i*p/q) = p_i^floor_i * p_i^(rem_i/q)
+    if *numer > 0 && *denom > 0 && *b > 0 {
+      let d = *denom as u64;
+      let n = *numer as u64;
+      let mut outside: i128 = 1;
+      // Collect (prime, remainder_exponent) pairs for the radical part
+      let mut radical_factors: Vec<(i128, u64)> = Vec::new();
+      let mut remaining = *b as u64;
+      let mut factor = 2u64;
+      while factor * factor <= remaining {
+        let mut count = 0u64;
+        while remaining.is_multiple_of(factor) {
+          remaining /= factor;
+          count += 1;
+        }
+        if count > 0 {
+          let total = count * n;
+          let extracted = total / d;
+          let leftover = total % d;
+          if extracted > 0 {
+            outside *= (factor as i128).pow(extracted as u32);
+          }
+          if leftover > 0 {
+            radical_factors.push((factor as i128, leftover));
+          }
+        }
+        factor += 1;
+      }
+      if remaining > 1 {
+        let total = n; // count=1
+        let extracted = total / d;
+        let leftover = total % d;
+        if extracted > 0 {
+          outside *= (remaining as i128).pow(extracted as u32);
+        }
+        if leftover > 0 {
+          radical_factors.push((remaining as i128, leftover));
+        }
+      }
+
+      let has_radical = !radical_factors.is_empty();
+      let has_outside = outside > 1;
+
+      if !has_radical {
+        // Fully simplified
+        return Ok(Expr::Integer(outside));
+      }
+
+      // Only simplify if we actually extracted something outside,
+      // or if the radical has fewer prime factors than the original
+      // (prevents infinite recursion: 6^(1/3) → 2^(1/3)*3^(1/3) → 6^(1/3) ...)
+      if !has_outside && radical_factors.len() > 1 {
+        // No simplification possible, keep original form
+        if *numer == 1 && *denom == 2 {
+          return Ok(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![base.clone()],
+          });
+        }
+        return Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(base.clone()),
+          right: Box::new(exp.clone()),
+        });
+      }
+
+      // Build radical part: product of p_i^(rem_i/q)
+      let mut rad_parts: Vec<Expr> = Vec::new();
+      for (prime, rem_exp) in &radical_factors {
+        let g = gcd_i128(*rem_exp as i128, d as i128);
+        let reduced_num = *rem_exp as i128 / g;
+        let reduced_den = d as i128 / g;
+        if reduced_den == 1 {
+          // Integer power
+          rad_parts.push(Expr::Integer(prime.pow(reduced_num as u32)));
+        } else if reduced_num == 1 && reduced_den == 2 {
+          rad_parts.push(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(*prime)],
+          });
+        } else {
+          rad_parts.push(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Integer(*prime)),
+            right: Box::new(make_rational(reduced_num, reduced_den)),
+          });
+        }
+      }
+
+      // Combine: outside * rad_parts
+      let mut all_factors: Vec<Expr> = Vec::new();
+      if has_outside {
+        all_factors.push(Expr::Integer(outside));
+      }
+      all_factors.extend(rad_parts);
+
+      if all_factors.len() == 1 {
+        return Ok(all_factors.remove(0));
+      }
+      return times_ast(&all_factors);
+    }
+
     // If exponent is 1/2, display as Sqrt[base]
-    if *numer == 1 && *denom == 2 {
+    if *numer == 1 && *denom == 2 && *b > 0 {
       return Ok(Expr::FunctionCall {
         name: "Sqrt".to_string(),
         args: vec![base.clone()],

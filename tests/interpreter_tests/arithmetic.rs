@@ -1177,3 +1177,47 @@ mod expand_complex {
     assert_eq!(interpret("Expand[(1+I)^2]").unwrap(), "2*I");
   }
 }
+
+mod radical_simplification {
+  use super::*;
+
+  #[test]
+  fn cube_root_4() {
+    assert_eq!(interpret("4^(1/3)").unwrap(), "2^(2/3)");
+  }
+
+  #[test]
+  fn cube_root_8() {
+    assert_eq!(interpret("8^(1/3)").unwrap(), "2");
+  }
+
+  #[test]
+  fn cube_root_27() {
+    assert_eq!(interpret("27^(1/3)").unwrap(), "3");
+  }
+
+  #[test]
+  fn sqrt_12() {
+    assert_eq!(interpret("12^(1/2)").unwrap(), "2*Sqrt[3]");
+  }
+
+  #[test]
+  fn sqrt_18() {
+    assert_eq!(interpret("18^(1/2)").unwrap(), "3*Sqrt[2]");
+  }
+
+  #[test]
+  fn sqrt_72() {
+    assert_eq!(interpret("72^(1/2)").unwrap(), "6*Sqrt[2]");
+  }
+
+  #[test]
+  fn fifth_root_32() {
+    assert_eq!(interpret("32^(1/5)").unwrap(), "2");
+  }
+
+  #[test]
+  fn sixth_root_irreducible() {
+    assert_eq!(interpret("6^(1/3)").unwrap(), "6^(1/3)");
+  }
+}
