@@ -332,8 +332,13 @@ pub fn negative_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NegativeQ expects exactly 1 argument".into(),
     ));
   }
-  let is_negative = is_known_negative(&args[0]).unwrap_or(false);
-  Ok(bool_expr(is_negative))
+  match is_known_negative(&args[0]) {
+    Some(val) => Ok(bool_expr(val)),
+    None => Ok(Expr::FunctionCall {
+      name: "Negative".to_string(),
+      args: args.to_vec(),
+    }),
+  }
 }
 
 /// NonPositiveQ[x] - Tests if x is <= 0
@@ -807,11 +812,17 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let len = match &args[0] {
     Expr::List(items) => items.len() as i128,
     Expr::Association(items) => items.len() as i128,
+    // Rational[n, d] and Complex[re, im] are atoms with length 0
+    Expr::FunctionCall { name, .. }
+      if name == "Rational" || name == "Complex" =>
+    {
+      0
+    }
     Expr::FunctionCall { args, .. } => args.len() as i128,
     Expr::BinaryOp { .. } => 2,
     Expr::UnaryOp { .. } => 1,
     Expr::Comparison { operands, .. } => operands.len() as i128,
-    // Atoms: Integer, Real, String, Identifier, Rational, BigFloat, BigInteger, etc.
+    // Atoms: Integer, Real, String, Identifier, BigFloat, BigInteger, etc.
     _ => 0,
   };
   Ok(Expr::Integer(len))

@@ -456,6 +456,16 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if has_pos_inf && has_neg_inf {
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
+    // Infinity + finite terms → Infinity, -Infinity + finite terms → -Infinity
+    if has_pos_inf {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    if has_neg_inf {
+      return Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      });
+    }
   }
 
   // Check for list threading

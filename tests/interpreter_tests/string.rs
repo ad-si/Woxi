@@ -990,3 +990,77 @@ mod string_take_extended {
     assert_eq!(interpret(r#"StringTake["abcd", {2,3}]"#).unwrap(), "bc");
   }
 }
+
+mod string_match_q_patterns {
+  use super::*;
+
+  #[test]
+  fn digit_character() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["1", DigitCharacter]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn repeated_digit_character() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["123245", Repeated[DigitCharacter]]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn word_character_repeated() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["abc123DEF", Repeated[WordCharacter]]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn number_string() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["1234", NumberString]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["1234.5", NumberString]"#).unwrap(),
+      "True"
+    );
+  }
+}
+
+mod string_split_edge {
+  use super::*;
+
+  #[test]
+  fn split_x_by_x() {
+    assert_eq!(
+      interpret(r#"StringSplit["x", "x"]"#).unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn split_filters_empty() {
+    assert_eq!(
+      interpret(r#"StringSplit["xxax", "x"]"#).unwrap(),
+      "{a}"
+    );
+  }
+}
+
+mod integer_string_tests {
+  use super::*;
+
+  #[test]
+  fn negative_drops_sign() {
+    assert_eq!(interpret("IntegerString[-500]").unwrap(), "500");
+  }
+
+  #[test]
+  fn truncate_to_length() {
+    assert_eq!(interpret("IntegerString[12345, 10, 3]").unwrap(), "345");
+  }
+}

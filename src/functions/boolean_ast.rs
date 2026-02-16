@@ -23,13 +23,23 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    if !as_bool(&evaluated).unwrap_or(false) {
-      return Ok(Expr::Identifier("False".to_string()));
+    match as_bool(&evaluated) {
+      Some(false) => return Ok(Expr::Identifier("False".to_string())),
+      Some(true) => {} // Skip True values
+      None => remaining.push(evaluated),
     }
   }
-  Ok(Expr::Identifier("True".to_string()))
+  match remaining.len() {
+    0 => Ok(Expr::Identifier("True".to_string())),
+    1 => Ok(remaining.into_iter().next().unwrap()),
+    _ => Ok(Expr::FunctionCall {
+      name: "And".to_string(),
+      args: remaining,
+    }),
+  }
 }
 
 /// Or[expr1, expr2, ...] - Logical OR
@@ -40,13 +50,23 @@ pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    if as_bool(&evaluated).unwrap_or(false) {
-      return Ok(Expr::Identifier("True".to_string()));
+    match as_bool(&evaluated) {
+      Some(true) => return Ok(Expr::Identifier("True".to_string())),
+      Some(false) => {} // Skip False values
+      None => remaining.push(evaluated),
     }
   }
-  Ok(Expr::Identifier("False".to_string()))
+  match remaining.len() {
+    0 => Ok(Expr::Identifier("False".to_string())),
+    1 => Ok(remaining.into_iter().next().unwrap()),
+    _ => Ok(Expr::FunctionCall {
+      name: "Or".to_string(),
+      args: remaining,
+    }),
+  }
 }
 
 /// Not[expr] - Logical NOT
@@ -75,11 +95,28 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let mut true_count = 0;
+  let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    if as_bool(&evaluated).unwrap_or(false) {
-      true_count += 1;
+    match as_bool(&evaluated) {
+      Some(true) => true_count += 1,
+      Some(false) => {} // Skip False
+      None => remaining.push(evaluated),
     }
+  }
+  // If there are symbolic args, combine: known true values flip parity
+  if !remaining.is_empty() {
+    // If odd number of True values, add True to remaining
+    if true_count % 2 == 1 {
+      remaining.insert(0, Expr::Identifier("True".to_string()));
+    }
+    return match remaining.len() {
+      1 => Ok(remaining.into_iter().next().unwrap()),
+      _ => Ok(Expr::FunctionCall {
+        name: "Xor".to_string(),
+        args: remaining,
+      }),
+    };
   }
   Ok(Expr::Identifier(
     if true_count % 2 == 1 { "True" } else { "False" }.to_string(),
@@ -143,8 +180,20 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for i in (0..args.len()).step_by(2) {
     let test = evaluate_expr_to_expr(&args[i])?;
-    if let Some(true) = as_bool(&test) {
-      return evaluate_expr_to_expr(&args[i + 1]);
+    match as_bool(&test) {
+      Some(true) => return evaluate_expr_to_expr(&args[i + 1]),
+      Some(false) => {} // Skip this pair
+      None => {
+        // Non-boolean condition: return Which with remaining pairs
+        let mut remaining = vec![test, args[i + 1].clone()];
+        for j in ((i + 2)..args.len()).step_by(1) {
+          remaining.push(args[j].clone());
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Which".to_string(),
+          args: remaining,
+        });
+      }
     }
   }
 
@@ -488,14 +537,12 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(false) => Ok(Expr::Identifier("True".to_string())), // False implies anything
     Some(true) => {
       let b = evaluate_expr_to_expr(&args[1])?;
-      Ok(Expr::Identifier(
-        if as_bool(&b).unwrap_or(false) {
-          "True"
-        } else {
-          "False"
-        }
-        .to_string(),
-      ))
+      match as_bool(&b) {
+        Some(val) => Ok(Expr::Identifier(
+          if val { "True" } else { "False" }.to_string(),
+        )),
+        None => Ok(b), // True implies symbolic expr → return the expr
+      }
     }
     None => Ok(Expr::FunctionCall {
       name: "Implies".to_string(),
