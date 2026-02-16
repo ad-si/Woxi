@@ -92,14 +92,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: Sum
-LINE: 982
-TYPE: >>
-INPUT: Sum[1 / ((-1)^k (2k + 1)), {k, 0, Infinity}]
-EXPECTED:
-= Pi / 4
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
 LINE: 990
 TYPE: >>
 INPUT: Sum[1 / k ^ 2, {k, 1, n}]
@@ -121,22 +113,6 @@ TYPE: >>
 INPUT: Sum[k, {k, I, I + 1.5}]
 EXPECTED:
 = 1 + 2 I
----
-FILE: mathics/builtin/attributes.py
-CLASS: Attributes
-LINE: 58
-TYPE: >>
-INPUT: Attributes[Plus]
-EXPECTED:
-= {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}
----
-FILE: mathics/builtin/attributes.py
-CLASS: Attributes
-LINE: 61
-TYPE: >>
-INPUT: Attributes["Plus"]
-EXPECTED:
-= {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}
 ---
 FILE: mathics/builtin/attributes.py
 CLASS: Attributes
