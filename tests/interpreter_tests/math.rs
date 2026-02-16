@@ -615,6 +615,62 @@ mod next_prime {
     assert_eq!(interpret("PrimeQ[-1]").unwrap(), "False");
     assert_eq!(interpret("PrimeQ[-4]").unwrap(), "False");
   }
+
+  #[test]
+  fn two_arg_positive_k() {
+    assert_eq!(interpret("NextPrime[10, 2]").unwrap(), "13");
+    assert_eq!(interpret("NextPrime[7, 1]").unwrap(), "11");
+    assert_eq!(interpret("NextPrime[1, 1]").unwrap(), "2");
+  }
+
+  #[test]
+  fn two_arg_negative_k() {
+    assert_eq!(interpret("NextPrime[10, -1]").unwrap(), "7");
+    assert_eq!(interpret("NextPrime[10, -2]").unwrap(), "5");
+    assert_eq!(interpret("NextPrime[3, -1]").unwrap(), "2");
+  }
+
+  #[test]
+  fn two_arg_crossing_zero() {
+    assert_eq!(interpret("NextPrime[2, -1]").unwrap(), "-2");
+    assert_eq!(interpret("NextPrime[1, -1]").unwrap(), "-2");
+    assert_eq!(interpret("NextPrime[-2, 1]").unwrap(), "2");
+    assert_eq!(interpret("NextPrime[-2, -1]").unwrap(), "-3");
+    assert_eq!(interpret("NextPrime[-3, -1]").unwrap(), "-5");
+  }
+}
+
+mod modular_inverse {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("ModularInverse[3, 7]").unwrap(), "5");
+  }
+
+  #[test]
+  fn negative_base() {
+    assert_eq!(interpret("ModularInverse[-3, 7]").unwrap(), "2");
+  }
+
+  #[test]
+  fn not_invertible() {
+    assert_eq!(
+      interpret("ModularInverse[2, 10]").unwrap(),
+      "ModularInverse[2, 10]"
+    );
+    assert_eq!(
+      interpret("ModularInverse[0, 5]").unwrap(),
+      "ModularInverse[0, 5]"
+    );
+  }
+
+  #[test]
+  fn various() {
+    assert_eq!(interpret("ModularInverse[2, 7]").unwrap(), "4");
+    assert_eq!(interpret("ModularInverse[1, 100]").unwrap(), "1");
+    assert_eq!(interpret("ModularInverse[17, 19]").unwrap(), "9");
+  }
 }
 
 mod bit_length {
