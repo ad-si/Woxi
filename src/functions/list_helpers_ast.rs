@@ -3239,7 +3239,37 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
       }
 
-      // Try symbolic Sum when bounds are not both concrete
+      // Try real-valued iteration when bounds are numeric but not integers
+      if items.len() == 3 {
+        let min_int = expr_to_i128(&items[1]);
+        let max_int = expr_to_i128(&items[2]);
+        if min_int.is_none() || max_int.is_none() {
+          // Check if bounds are numeric reals
+          let min_f = crate::functions::math_ast::try_eval_to_f64(&items[1]);
+          let max_f = crate::functions::math_ast::try_eval_to_f64(&items[2]);
+          if let (Some(min_val), Some(max_val)) = (min_f, max_f) {
+            // Iterate with step=1, substituting real values
+            let mut acc = Expr::Integer(0);
+            let mut i = min_val;
+            while i <= max_val + 1e-10 {
+              let sub_val =
+                if (i - i.round()).abs() < 1e-10 && min_int.is_some() {
+                  Expr::Integer(i.round() as i128)
+                } else {
+                  Expr::Real(i)
+                };
+              let substituted =
+                crate::syntax::substitute_variable(body, &var_name, &sub_val);
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+              i += 1.0;
+            }
+            return Ok(acc);
+          }
+        }
+      }
+
+      // Try symbolic Sum when bounds are not both concrete integers
       if items.len() == 3 {
         let min_concrete = expr_to_i128(&items[1]);
         let max_concrete = expr_to_i128(&items[2]);
