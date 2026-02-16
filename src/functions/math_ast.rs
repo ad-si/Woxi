@@ -1659,6 +1659,39 @@ fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // E^(complex) → Euler's formula: E^(a + b*I) = E^a * (Cos[b] + I*Sin[b])
+  if matches!(base, Expr::Constant(c) if c == "E") {
+    // Try float complex extraction for the exponent
+    if let Some((re, im)) = try_extract_complex_float(exp)
+      && im != 0.0
+    {
+      let mag = re.exp();
+      let cos_val = im.cos();
+      let sin_val = im.sin();
+      let real_part = mag * cos_val;
+      let imag_part = mag * sin_val;
+      if imag_part == 0.0 {
+        return Ok(Expr::Real(real_part));
+      }
+      if real_part == 0.0 {
+        return Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Real(imag_part)),
+          right: Box::new(Expr::Identifier("I".to_string())),
+        });
+      }
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(Expr::Real(real_part)),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Real(imag_part)),
+          right: Box::new(Expr::Identifier("I".to_string())),
+        }),
+      });
+    }
+  }
+
   // Special case: 0^0 is Indeterminate (matches Wolfram)
   let base_is_zero = matches!(base, Expr::Integer(0))
     || matches!(base, Expr::Real(f) if *f == 0.0);

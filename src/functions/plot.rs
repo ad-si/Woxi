@@ -102,10 +102,21 @@ fn format_tick(v: f64) -> String {
   }
 }
 
+/// Default Wolfram plot color palette (ColorData[97]).
+const PLOT_COLORS: [(u8, u8, u8); 6] = [
+  (0x5E, 0x81, 0xB5), // blue
+  (0xE0, 0x93, 0x2C), // orange
+  (0x8F, 0xB0, 0x32), // green
+  (0xD9, 0x51, 0x19), // red
+  (0x6B, 0x48, 0x9D), // purple
+  (0x8E, 0xB1, 0xCC), // light blue
+];
+
 /// Generate SVG for a 2D plot using plotters.
 /// When `full_width` is true, the SVG uses `width="100%"` to fill its container.
+/// Accepts multiple series of points, each drawn in a different color.
 fn generate_svg(
-  points: &[(f64, f64)],
+  all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
   y_range: (f64, f64),
   svg_width: u32,
@@ -195,16 +206,21 @@ fn generate_svg(
         .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
     }
 
-    let wolfram_blue = RGBColor(0x5E, 0x81, 0xB5);
-    let segments = split_into_segments(points);
+    for (series_idx, points) in all_points.iter().enumerate() {
+      let (r, g, b) = PLOT_COLORS[series_idx % PLOT_COLORS.len()];
+      let color = RGBColor(r, g, b);
+      let segments = split_into_segments(points);
 
-    for segment in &segments {
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          segment.clone(),
-          wolfram_blue.stroke_width(15), // 1.5px at display size
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+      for segment in &segments {
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            segment.clone(),
+            color.stroke_width(15), // 1.5px at display size
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Plot: {e}"))
+          })?;
+      }
     }
 
     root
@@ -363,22 +379,33 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Sample the function
-  let mut points = Vec::with_capacity(NUM_SAMPLES);
-  let step = (x_max - x_min) / (NUM_SAMPLES - 1) as f64;
+  // Collect function bodies: single function or list of functions
+  let bodies: Vec<&Expr> = match body {
+    Expr::List(items) => items.iter().collect(),
+    _ => vec![body],
+  };
 
-  for i in 0..NUM_SAMPLES {
-    let x = x_min + i as f64 * step;
-    if let Some(y) = evaluate_at_point(body, &var_name, x) {
-      points.push((x, y));
-    } else {
-      points.push((x, f64::NAN));
+  // Sample each function
+  let step = (x_max - x_min) / (NUM_SAMPLES - 1) as f64;
+  let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
+
+  for func_body in &bodies {
+    let mut points = Vec::with_capacity(NUM_SAMPLES);
+    for i in 0..NUM_SAMPLES {
+      let x = x_min + i as f64 * step;
+      if let Some(y) = evaluate_at_point(func_body, &var_name, x) {
+        points.push((x, y));
+      } else {
+        points.push((x, f64::NAN));
+      }
     }
+    all_points.push(points);
   }
 
-  // Compute Y range from finite values
-  let finite_ys: Vec<f64> = points
+  // Compute Y range from finite values across all series
+  let finite_ys: Vec<f64> = all_points
     .iter()
+    .flat_map(|pts| pts.iter())
     .filter(|(_, y)| y.is_finite())
     .map(|(_, y)| *y)
     .collect();
@@ -404,7 +431,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Generate SVG
   let svg = generate_svg(
-    &points,
+    &all_points,
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
@@ -416,13 +443,23 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::capture_graphics(&svg);
 
   // Generate GraphicsBox expression for .nb export
-  let segments = split_into_segments(&points);
+  let rgb_values = [
+    "0.24, 0.6, 0.8",
+    "0.88, 0.58, 0.17",
+    "0.56, 0.69, 0.20",
+    "0.85, 0.32, 0.10",
+    "0.42, 0.28, 0.61",
+    "0.56, 0.69, 0.80",
+  ];
   let mut box_elements = Vec::new();
-  // Wolfram blue color matching Plot default
-  box_elements.push("RGBColor[0.24, 0.6, 0.8]".to_string());
-  box_elements.push("AbsoluteThickness[2]".to_string());
-  box_elements.push("Opacity[1.]".to_string());
-  box_elements.extend(crate::functions::graphicsbox::line_box(&segments));
+  for (i, points) in all_points.iter().enumerate() {
+    let rgb = rgb_values[i % rgb_values.len()];
+    box_elements.push(format!("RGBColor[{rgb}]"));
+    box_elements.push("AbsoluteThickness[2]".to_string());
+    box_elements.push("Opacity[1.]".to_string());
+    let segments = split_into_segments(points);
+    box_elements.extend(crate::functions::graphicsbox::line_box(&segments));
+  }
   let graphicsbox = crate::functions::graphicsbox::graphics_box(&box_elements);
   crate::capture_graphicsbox(&graphicsbox);
 

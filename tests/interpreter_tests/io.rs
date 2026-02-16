@@ -334,6 +334,34 @@ mod plot {
   }
 
   #[test]
+  fn plot_list_of_functions() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn plot_list_of_three_functions() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Plot[{Sin[x], Cos[x], x^2 / 10}, {x, -Pi, Pi}]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn plot_list_with_complex_exp() {
+    clear_state();
+    assert_eq!(
+      interpret("Plot[{Sin[a], Im[E^(I a)]}, {a, 0, 2 Pi}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
   fn export_plot_to_svg() {
     clear_state();
     let path = "/tmp/woxi_test_export_plot.svg";

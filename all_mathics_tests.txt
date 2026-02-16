@@ -91,14 +91,6 @@ EXPECTED:
 = {operator_string}x
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: Im
-LINE: 673
-TYPE: >>
-INPUT: Plot[{Sin[a], Im[E^(I a)]}, {a, 0, 2 Pi}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: Product
 LINE: 738
 TYPE: >>
