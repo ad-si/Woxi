@@ -1273,6 +1273,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut terms: Vec<Expr> = Vec::new();
   let mut operators: Vec<String> = Vec::new();
   let mut leading_minus = false;
+  let mut leading_not = false;
 
   for item in inner {
     match item.as_rule() {
@@ -1280,6 +1281,10 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
         // Insert synthetic 0 and "-" operator so that -x^2 becomes 0 - x^2
         // This ensures ^ binds tighter than unary minus
         leading_minus = true;
+      }
+      Rule::LeadingNot => {
+        // !expr becomes Not[expr]
+        leading_not = true;
       }
       Rule::Operator | Rule::ConditionOp => {
         operators.push(item.as_str().trim().to_string());
@@ -1290,7 +1295,16 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
           operators.push("-".to_string());
           leading_minus = false;
         }
-        terms.push(pair_to_expr(item));
+        let expr = pair_to_expr(item);
+        if leading_not {
+          terms.push(Expr::FunctionCall {
+            name: "Not".to_string(),
+            args: vec![expr],
+          });
+          leading_not = false;
+        } else {
+          terms.push(expr);
+        }
       }
     }
   }
