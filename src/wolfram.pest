@@ -113,7 +113,7 @@ Expression = {
     ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ AnonymousFunctionSuffix?                 // Function: expr & (lowest precedence)
+    ~ (AnonymousFunctionSuffix ~ (Operator ~ Term)* ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -141,7 +141,7 @@ DerivativeIdentifier = { Identifier ~ DerivativePrime }
 FunctionCallAnonSuffix = { "&" ~ !"&" ~ BracketArgs* }
 FunctionCallPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
 FunctionCallExtended = {
-    (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+
+    Identifier ~ DerivativePrime? ~ BracketArgs+
     ~ (
         PartIndexSuffix ~ FunctionCallPartAnonSuffix?
       | FunctionCallAnonSuffix
@@ -158,7 +158,6 @@ Term = _{
   | List
   | ParenAnonymousFunction
   | FunctionCallExtended
-  | SimpleAnonymousFunction
   | ImplicitTimes
   | NumericValue
   | AddTo
@@ -199,7 +198,6 @@ TermNoImplicit = _{
   | List
   | ParenAnonymousFunction
   | FunctionCallExtended
-  | SimpleAnonymousFunction
   | ImplicitTimes
   | NumericValue
   | AddTo
@@ -222,7 +220,7 @@ ExpressionNoImplicit = {
     ~ (RepeatedNullSuffix | RepeatedSuffix)?
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
-    ~ AnonymousFunctionSuffix?
+    ~ (AnonymousFunctionSuffix ~ (Operator ~ TermNoImplicit)* ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default

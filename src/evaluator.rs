@@ -2369,6 +2369,34 @@ pub fn evaluate_function_call_ast(
     "Transpose" if args.len() == 1 => {
       return list_helpers_ast::transpose_ast(&args[0]);
     }
+    "Diagonal" if args.len() == 1 || args.len() == 2 => {
+      let offset = if args.len() == 2 {
+        match &args[1] {
+          Expr::Integer(n) => *n as i64,
+          _ => {
+            return Ok(Expr::FunctionCall {
+              name: "Diagonal".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      } else {
+        0
+      };
+      if let Expr::List(rows) = &args[0] {
+        let mut result = Vec::new();
+        let nrows = rows.len() as i64;
+        for (i, row) in rows.iter().enumerate() {
+          if let Expr::List(cols) = row {
+            let j = i as i64 + offset;
+            if j >= 0 && (j as usize) < cols.len() && (i as i64) < nrows {
+              result.push(cols[j as usize].clone());
+            }
+          }
+        }
+        return Ok(Expr::List(result));
+      }
+    }
     "Riffle" if args.len() == 2 => {
       return list_helpers_ast::riffle_ast(&args[0], &args[1]);
     }
@@ -6161,8 +6189,10 @@ fn apply_map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
 fn apply_apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items.clone(),
+    // Apply replaces the head of any expression: f @@ Plus[a, b, c] → f[a, b, c]
+    Expr::FunctionCall { args, .. } => args.clone(),
     _ => {
-      // Not a list, return unevaluated
+      // Not a list or function call, return unevaluated
       return Ok(Expr::Apply {
         func: Box::new(func.clone()),
         list: Box::new(list.clone()),
@@ -6520,6 +6550,16 @@ fn apply_curried_call(
           | "StringMatchQ"
           | "MemberQ"
           | "Select"
+          | "SortBy"
+          | "GroupBy"
+          | "CountsBy"
+          | "MaximalBy"
+          | "MinimalBy"
+          | "Cases"
+          | "DeleteCases"
+          | "Position"
+          | "FreeQ"
+          | "Count"
       ) && func_args.len() == 1
         && args.len() == 1
       {
@@ -6534,8 +6574,19 @@ fn apply_curried_call(
           result = vec![intermediate];
         }
         Ok(result.into_iter().next().unwrap())
-      } else if name == "Derivative" {
-        // Derivative[n][f][x] → Derivative[n, f, x] (always flatten)
+      } else if matches!(
+        name.as_str(),
+        "Derivative"
+          | "Apply"
+          | "Map"
+          | "MapThread"
+          | "Scan"
+          | "Append"
+          | "Prepend"
+          | "Take"
+          | "Drop"
+      ) {
+        // Known operator-form functions: flatten curried call
         let mut new_args = func_args.clone();
         new_args.extend(args.iter().cloned());
         evaluate_function_call_ast(name, &new_args)
