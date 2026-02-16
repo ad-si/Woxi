@@ -117,7 +117,11 @@ export function appendMessage(convId, message) {
     message.role === "user" &&
     conv.messages.filter((m) => m.role === "user").length === 1
   ) {
-    conv.title = message.content.slice(0, 40)
+    let title = message.content.slice(0, 40)
+    if (!title && message.attachments && message.attachments.length > 0) {
+      title = message.attachments.map((a) => a.name).join(", ").slice(0, 40)
+    }
+    conv.title = title || "New conversation"
     const index = getConversationIndex()
     const entry = index.find((c) => c.id === convId)
     if (entry) {
