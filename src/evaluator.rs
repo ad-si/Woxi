@@ -2540,6 +2540,23 @@ pub fn evaluate_function_call_ast(
     "Identity" if args.len() == 1 => {
       return list_helpers_ast::identity_ast(&args[0]);
     }
+    // Composition[f, Composition[g, h], k] → Composition[f, g, h, k]
+    "Composition" if args.len() >= 2 => {
+      let mut flat = Vec::new();
+      for arg in args {
+        if let Expr::FunctionCall { name: n, args: a } = arg {
+          if n == "Composition" {
+            flat.extend(a.iter().cloned());
+            continue;
+          }
+        }
+        flat.push(arg.clone());
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Composition".to_string(),
+        args: flat,
+      });
+    }
     "Outer" if args.len() == 3 => {
       return list_helpers_ast::outer_ast(&args[0], &args[1], &args[2]);
     }
@@ -2976,6 +2993,26 @@ pub fn evaluate_function_call_ast(
     }
     "StringQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::string_q_ast(args);
+    }
+    // Symbol["name"] - Convert string to symbol identifier
+    "Symbol" if args.len() == 1 => {
+      if let Expr::String(name) = &args[0] {
+        return Ok(Expr::Identifier(name.clone()));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Symbol".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    // SymbolName[sym] - Get the name of a symbol as a string
+    "SymbolName" if args.len() == 1 => {
+      if let Expr::Identifier(name) = &args[0] {
+        return Ok(Expr::String(name.clone()));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "SymbolName".to_string(),
+        args: args.to_vec(),
+      });
     }
     "AtomQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::atom_q_ast(args);

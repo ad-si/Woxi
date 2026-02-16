@@ -830,14 +830,102 @@ mod negative_symbolic {
   #[test]
   fn negative_symbolic_stays_unevaluated() {
     clear_state();
-    assert_eq!(
-      interpret("Negative[a + b]").unwrap(),
-      "Negative[a + b]"
-    );
+    assert_eq!(interpret("Negative[a + b]").unwrap(), "Negative[a + b]");
   }
 
   #[test]
   fn negative_known_value() {
     assert_eq!(interpret("Negative[-5]").unwrap(), "True");
+  }
+}
+
+mod n_constants {
+  use super::*;
+
+  #[test]
+  fn euler_gamma() {
+    let r = interpret("N[EulerGamma]").unwrap();
+    assert!(r.starts_with("0.577215"), "got: {}", r);
+  }
+
+  #[test]
+  fn golden_ratio() {
+    let r = interpret("N[GoldenRatio]").unwrap();
+    assert!(r.starts_with("1.61803"), "got: {}", r);
+  }
+
+  #[test]
+  fn catalan() {
+    let r = interpret("N[Catalan]").unwrap();
+    assert!(r.starts_with("0.91596"), "got: {}", r);
+  }
+
+  #[test]
+  fn glaisher() {
+    let r = interpret("N[Glaisher]").unwrap();
+    assert!(r.starts_with("1.28242"), "got: {}", r);
+  }
+
+  #[test]
+  fn khinchin() {
+    let r = interpret("N[Khinchin]").unwrap();
+    assert!(r.starts_with("2.68545"), "got: {}", r);
+  }
+
+  #[test]
+  fn machine_precision() {
+    let r = interpret("N[MachinePrecision]").unwrap();
+    assert!(r.starts_with("15.9545"), "got: {}", r);
+  }
+}
+
+mod symbol_function {
+  use super::*;
+
+  #[test]
+  fn symbol_creates_identifier() {
+    clear_state();
+    assert_eq!(interpret("Symbol[\"x\"] + Symbol[\"x\"]").unwrap(), "2*x");
+  }
+
+  #[test]
+  fn symbol_name() {
+    clear_state();
+    assert_eq!(interpret("SymbolName[x]").unwrap(), "x");
+  }
+}
+
+mod composition_flatten {
+  use super::*;
+
+  #[test]
+  fn flatten_nested() {
+    clear_state();
+    assert_eq!(
+      interpret("Composition[f, Composition[g, h]]").unwrap(),
+      "f @* g @* h"
+    );
+  }
+}
+
+mod rotate_nonlist {
+  use super::*;
+
+  #[test]
+  fn rotate_right_function_head() {
+    clear_state();
+    assert_eq!(
+      interpret("RotateRight[x[a, b, c], 2]").unwrap(),
+      "x[b, c, a]"
+    );
+  }
+
+  #[test]
+  fn rotate_left_function_head() {
+    clear_state();
+    assert_eq!(
+      interpret("RotateLeft[x[a, b, c], 1]").unwrap(),
+      "x[b, c, a]"
+    );
   }
 }
