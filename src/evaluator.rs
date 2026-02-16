@@ -1439,6 +1439,12 @@ fn thread_binary_op(
     r: &Expr,
     op: BinaryOperator,
   ) -> Result<Expr, InterpreterError> {
+    // Recursively thread over nested lists
+    let has_nested_list =
+      matches!(l, Expr::List(_)) || matches!(r, Expr::List(_));
+    if has_nested_list {
+      return thread_binary_op(l, r, op);
+    }
     // Check if BigInt arithmetic is needed
     if (needs_bigint(l) || needs_bigint(r))
       && let (Some(lb), Some(rb)) = (expr_to_bigint(l), expr_to_bigint(r))

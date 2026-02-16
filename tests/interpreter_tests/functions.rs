@@ -134,6 +134,14 @@ mod set_attributes {
       "6"
     );
   }
+
+  #[test]
+  fn listable_nested_lists() {
+    assert_eq!(
+      interpret("{{1, 2}, {3, 4}} + {5, 6}").unwrap(),
+      "{{6, 7}, {9, 10}}"
+    );
+  }
 }
 
 mod flat_attribute {
