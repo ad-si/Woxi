@@ -394,6 +394,64 @@ fn make_rational(numer: i128, denom: i128) -> Expr {
   }
 }
 
+/// Convert complex rational components to an Expr.
+/// Given (re_num/re_den) + (im_num/im_den)*I, produce the canonical expression.
+fn complex_rational_to_expr(
+  re_n: i128,
+  re_d: i128,
+  im_n: i128,
+  im_d: i128,
+) -> Expr {
+  let real_part = make_rational(re_n, re_d);
+  let imag_part = make_rational(im_n, im_d);
+
+  // Pure real
+  if im_n == 0 {
+    return real_part;
+  }
+
+  // Pure imaginary
+  let i_expr = Expr::Identifier("I".to_string());
+  if re_n == 0 {
+    if matches!(&imag_part, Expr::Integer(1)) {
+      return i_expr;
+    }
+    if matches!(&imag_part, Expr::Integer(-1)) {
+      return Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(i_expr),
+      };
+    }
+    return Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(imag_part),
+      right: Box::new(i_expr),
+    };
+  }
+
+  // General complex: real + imag*I
+  let imag_term = if matches!(&imag_part, Expr::Integer(1)) {
+    i_expr
+  } else if matches!(&imag_part, Expr::Integer(-1)) {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(i_expr),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(imag_part),
+      right: Box::new(i_expr),
+    }
+  };
+
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(real_part),
+    right: Box::new(imag_term),
+  }
+}
+
 /// Multiply a numeric scalar (Integer, Rational, or Real) by an expression.
 /// Handles identity (1 * x = x) and zero (0 * x = 0).
 fn multiply_scalar_by_expr(
@@ -971,6 +1029,62 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let args = &flat_args;
+
+  // Try complex multiplication: if all args can be extracted as exact complex
+  // numbers (and at least one has nonzero imaginary part), multiply them.
+  if args.len() >= 2 {
+    let complex_parts: Vec<_> =
+      args.iter().map(try_extract_complex_exact).collect();
+    if complex_parts.iter().all(|c| c.is_some()) {
+      let has_imaginary = complex_parts.iter().any(|c| {
+        if let Some((_, (im, _))) = c {
+          *im != 0
+        } else {
+          false
+        }
+      });
+      if has_imaginary {
+        // Multiply all complex parts
+        let mut re_n: i128 = complex_parts[0].unwrap().0.0;
+        let mut re_d: i128 = complex_parts[0].unwrap().0.1;
+        let mut im_n: i128 = complex_parts[0].unwrap().1.0;
+        let mut im_d: i128 = complex_parts[0].unwrap().1.1;
+        let mut ok = true;
+        for cp in &complex_parts[1..] {
+          let ((cn, cd), (dn, dd)) = cp.unwrap();
+          // (re + im*i) * (cn/cd + dn/dd*i)
+          let new_re = (|| {
+            let a = re_n.checked_mul(cn)?.checked_mul(im_d)?.checked_mul(dd)?;
+            let b = im_n.checked_mul(dn)?.checked_mul(re_d)?.checked_mul(cd)?;
+            let num = a.checked_sub(b)?;
+            let den =
+              re_d.checked_mul(cd)?.checked_mul(im_d)?.checked_mul(dd)?;
+            Some((num, den))
+          })();
+          let new_im = (|| {
+            let a = re_n.checked_mul(dn)?.checked_mul(im_d)?.checked_mul(cd)?;
+            let b = im_n.checked_mul(cn)?.checked_mul(re_d)?.checked_mul(dd)?;
+            let num = a.checked_add(b)?;
+            let den =
+              re_d.checked_mul(dd)?.checked_mul(im_d)?.checked_mul(cd)?;
+            Some((num, den))
+          })();
+          if let (Some((rn, rd)), Some((in_, id))) = (new_re, new_im) {
+            re_n = rn;
+            re_d = rd;
+            im_n = in_;
+            im_d = id;
+          } else {
+            ok = false;
+            break;
+          }
+        }
+        if ok {
+          return Ok(complex_rational_to_expr(re_n, re_d, im_n, im_d));
+        }
+      }
+    }
+  }
 
   // Check for list threading
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));

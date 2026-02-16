@@ -107,14 +107,6 @@ EXPECTED:
 : The second argument Real of Element should be one of: Primes, Integers, \
 ---
 FILE: mathics/builtin/arithmetic.py
-CLASS: I_
-LINE: 630
-TYPE: >>
-INPUT: (3+I)*(3-I)
-EXPECTED:
-= 10
----
-FILE: mathics/builtin/arithmetic.py
 CLASS: Im
 LINE: 673
 TYPE: >>
