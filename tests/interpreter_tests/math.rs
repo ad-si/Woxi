@@ -1319,6 +1319,22 @@ mod symbolic_product {
   }
 
   #[test]
+  fn factorial_suffix_syntax() {
+    // n! suffix syntax should parse as Factorial[n]
+    assert_eq!(interpret("Factorial[5]").unwrap(), "120");
+    assert_eq!(
+      interpret("Factorial[50]").unwrap(),
+      "30414093201713378043612608166064768844377641568960512000000000000"
+    );
+  }
+
+  #[test]
+  fn factorial_with_arithmetic() {
+    // 2 + 3! should be 2 + 6 = 8 (factorial binds tighter)
+    assert_eq!(interpret("2 + Factorial[3]").unwrap(), "8");
+  }
+
+  #[test]
   fn product_symbolic_lower_bound() {
     assert_eq!(
       interpret("Product[k, {k, i, n}]").unwrap(),

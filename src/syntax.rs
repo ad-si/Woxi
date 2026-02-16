@@ -1289,6 +1289,20 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       Rule::Operator | Rule::ConditionOp => {
         operators.push(item.as_str().trim().to_string());
       }
+      Rule::FactorialSuffix => {
+        // n! → Factorial[n], n!! → Factorial2[n]
+        if let Some(last) = terms.pop() {
+          let func_name = if item.as_str() == "!!" {
+            "Factorial2"
+          } else {
+            "Factorial"
+          };
+          terms.push(Expr::FunctionCall {
+            name: func_name.to_string(),
+            args: vec![last],
+          });
+        }
+      }
       _ => {
         if leading_minus {
           terms.push(Expr::Integer(0));
