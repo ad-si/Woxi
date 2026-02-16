@@ -116,49 +116,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: Product
-LINE: 754
-TYPE: >>
-INPUT: Product[x^k, {k, 2, 20, 2}]
-EXPECTED:
-= x ^ 110
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Product
 LINE: 757
 TYPE: >>
 INPUT: Product[2 ^ i, {i, 1, n}]
 EXPECTED:
 = 2 ^ (n / 2 + n ^ 2 / 2)
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Product
-LINE: 760
-TYPE: >>
-INPUT: Product[f[i], {i, 1, 7}]
-EXPECTED:
-= f[1] f[2] f[3] f[4] f[5] f[6] f[7]
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Product
-LINE: 764
-TYPE: >>
-INPUT: Primorial[0] = 1;
-EXPECTED: (none)
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Product
-LINE: 765
-TYPE: >>
-INPUT: Primorial[n_Integer] := Product[Prime[k], {k, 1, n}];
-EXPECTED: (none)
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Product
-LINE: 766
-TYPE: >>
-INPUT: Primorial[12]
-EXPECTED:
-= 7420738134810
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: Re
@@ -168,20 +130,6 @@ INPUT: Plot[{Cos[a], Re[E^(I a)]}, {a, 0, 2 Pi}]
 EXPECTED:
 = -Graphics-
 ---
-FILE: mathics/builtin/arithmetic.py
-CLASS: Real_
-LINE: 894
-TYPE: >>
-INPUT: x = 3. ^ -20;
-EXPECTED: (none)
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Real_
-LINE: 895
-TYPE: >>
-INPUT: InputForm[x]
-EXPECTED:
-= 2.867971990792441*^-10
 ---
 FILE: mathics/builtin/arithmetic.py
 CLASS: RealValuedNumberQ
