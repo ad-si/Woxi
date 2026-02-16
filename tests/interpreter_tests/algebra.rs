@@ -180,6 +180,21 @@ mod simplify {
     assert_eq!(interpret("Simplify[5]").unwrap(), "5");
     assert_eq!(interpret("Simplify[x]").unwrap(), "x");
   }
+
+  #[test]
+  fn pythagorean_identity() {
+    assert_eq!(interpret("Simplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn pythagorean_with_coefficient() {
+    assert_eq!(interpret("Simplify[2*Sin[x]^2 + 2*Cos[x]^2]").unwrap(), "2");
+  }
+
+  #[test]
+  fn pythagorean_with_extra_terms() {
+    assert_eq!(interpret("Simplify[Sin[y]^2 + Cos[y]^2 + 1]").unwrap(), "2");
+  }
 }
 
 mod factor {
@@ -258,6 +273,19 @@ mod factor {
     assert_eq!(
       interpret("Factor[x^4 - 1]").unwrap(),
       "(-1 + x)*(1 + x)*(1 + x^2)"
+    );
+  }
+
+  #[test]
+  fn repeated_root_squared() {
+    assert_eq!(interpret("Factor[x^2 + 2*x + 1]").unwrap(), "(1 + x)^2");
+  }
+
+  #[test]
+  fn repeated_root_cubed() {
+    assert_eq!(
+      interpret("Factor[x^3 + 3*x^2 + 3*x + 1]").unwrap(),
+      "(1 + x)^3"
     );
   }
 }
