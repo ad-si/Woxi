@@ -3269,6 +3269,45 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
+      // Try iterating when the difference between bounds is real
+      // (handles complex bounds like {k, I, I+1})
+      if items.len() == 3 {
+        let diff = crate::functions::math_ast::plus_ast(&[
+          items[2].clone(),
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(items[1].clone()),
+          },
+        ]);
+        if let Ok(diff_expr) = diff {
+          let diff_eval = crate::evaluator::evaluate_expr_to_expr(&diff_expr);
+          if let Ok(ref de) = diff_eval
+            && let Some(range) = crate::functions::math_ast::try_eval_to_f64(de)
+            && (0.0..10000.0).contains(&range)
+          {
+            let n_iters = range.floor() as i128 + 1;
+            let min_eval = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+            let mut acc = Expr::Integer(0);
+            for j in 0..n_iters {
+              let iter_val = if j == 0 {
+                min_eval.clone()
+              } else {
+                crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Plus,
+                  left: Box::new(min_eval.clone()),
+                  right: Box::new(Expr::Integer(j)),
+                })?
+              };
+              let substituted =
+                crate::syntax::substitute_variable(body, &var_name, &iter_val);
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+            }
+            return Ok(acc);
+          }
+        }
+      }
+
       // Try symbolic Sum when bounds are not both concrete integers
       if items.len() == 3 {
         let min_concrete = expr_to_i128(&items[1]);

@@ -90,22 +90,6 @@ INPUT: \[{operator_name}]x
 EXPECTED:
 = {operator_string}x
 ---
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
-LINE: 998
-TYPE: >>
-INPUT: Sum[k, {k, I, I + 1}]
-EXPECTED:
-= 1 + 2 I
----
-FILE: mathics/builtin/arithmetic.py
-CLASS: Sum
-LINE: 1016
-TYPE: >>
-INPUT: Sum[k, {k, I, I + 1.5}]
-EXPECTED:
-= 1 + 2 I
----
 FILE: mathics/builtin/attributes.py
 CLASS: Attributes
 LINE: 65
