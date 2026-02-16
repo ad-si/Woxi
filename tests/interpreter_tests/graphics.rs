@@ -588,3 +588,138 @@ mod graphics {
     }
   }
 }
+
+mod plot3d {
+  use super::*;
+
+  mod basic {
+    use super::*;
+
+    #[test]
+    fn returns_graphics3d_placeholder() {
+      assert_eq!(
+        interpret("Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}]").unwrap(),
+        "-Graphics3D-"
+      );
+    }
+
+    #[test]
+    fn trig_function() {
+      assert_eq!(
+        interpret("Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]")
+          .unwrap(),
+        "-Graphics3D-"
+      );
+    }
+
+    #[test]
+    fn constant_function() {
+      assert_eq!(
+        interpret("Plot3D[5, {x, -1, 1}, {y, -1, 1}]").unwrap(),
+        "-Graphics3D-"
+      );
+    }
+
+    #[test]
+    fn multiple_functions() {
+      assert_eq!(
+        interpret("Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]").unwrap(),
+        "-Graphics3D-"
+      );
+    }
+
+    #[test]
+    fn nan_handling() {
+      // 1/(x^2+y^2) has a singularity at origin but should still produce a plot
+      assert_eq!(
+        interpret("Plot3D[1/(x^2 + y^2), {x, -1, 1}, {y, -1, 1}]").unwrap(),
+        "-Graphics3D-"
+      );
+    }
+  }
+
+  mod svg_capture {
+    use super::*;
+
+    #[test]
+    fn captures_svg_with_polygons() {
+      interpret("Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}]").unwrap();
+      let svg = woxi::get_captured_graphics();
+      assert!(svg.is_some(), "SVG should be captured for Plot3D");
+      let svg = svg.unwrap();
+      assert!(svg.starts_with("<svg"), "Should be an SVG");
+      assert!(svg.contains("<polygon"), "Should contain polygon elements");
+      assert!(svg.contains("</svg>"), "Should be a complete SVG");
+    }
+  }
+
+  mod options {
+    use super::*;
+
+    #[test]
+    fn image_size_integer() {
+      assert_eq!(
+        interpret("Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, ImageSize -> 200]")
+          .unwrap(),
+        "-Graphics3D-"
+      );
+    }
+
+    #[test]
+    fn mesh_none() {
+      interpret("Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, Mesh -> None]").unwrap();
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(
+        svg.contains("stroke=\"none\""),
+        "Mesh -> None should disable mesh stroke"
+      );
+    }
+
+    #[test]
+    fn plot_range() {
+      assert_eq!(
+        interpret(
+          "Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, PlotRange -> {0, 4}]"
+        )
+        .unwrap(),
+        "-Graphics3D-"
+      );
+    }
+  }
+
+  mod errors {
+    use super::*;
+
+    #[test]
+    fn too_few_args() {
+      // With fewer than 3 args, Plot3D returns unevaluated (not an error)
+      let result = interpret("Plot3D[x^2, {x, -1, 1}]").unwrap();
+      assert!(
+        result.contains("Plot3D"),
+        "Should return unevaluated: {}",
+        result
+      );
+    }
+
+    #[test]
+    fn invalid_iterator() {
+      assert!(interpret("Plot3D[x^2, {x, -1, 1}, 5]").is_err());
+    }
+  }
+
+  mod export {
+    use super::*;
+
+    #[test]
+    fn export_svg() {
+      let result = interpret(
+        "Export[\"/tmp/test_plot3d.svg\", Plot3D[x + y, {x, -1, 1}, {y, -1, 1}]]",
+      );
+      assert!(result.is_ok());
+      let content = std::fs::read_to_string("/tmp/test_plot3d.svg").unwrap();
+      assert!(content.starts_with("<svg"));
+      assert!(content.contains("<polygon"));
+      std::fs::remove_file("/tmp/test_plot3d.svg").ok();
+    }
+  }
+}

@@ -805,6 +805,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "ValueQ"
         || name == "Reap"
         || name == "Plot"
+        || name == "Plot3D"
         || name == "Graphics"
       {
         // Flatten Sequence even in held args (unless SequenceHold)
@@ -2790,7 +2791,7 @@ pub fn evaluate_function_call_ast(
       // The second argument has already been evaluated, which triggers
       // capture_graphics() for Plot expressions.  Grab the SVG.
       let content = match &args[1] {
-        Expr::Identifier(s) if s == "-Graphics-" => {
+        Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
           crate::get_captured_graphics().ok_or_else(|| {
             InterpreterError::EvaluationError(
               "Export: no graphics to export".into(),
@@ -2930,6 +2931,9 @@ pub fn evaluate_function_call_ast(
     }
     "Plot" if args.len() >= 2 => {
       return crate::functions::plot::plot_ast(args);
+    }
+    "Plot3D" if args.len() >= 3 => {
+      return crate::functions::plot3d::plot3d_ast(args);
     }
     "Graphics" if !args.is_empty() => {
       return crate::functions::graphics::graphics_ast(args);

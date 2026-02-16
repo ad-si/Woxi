@@ -11,6 +11,7 @@ pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
 pub mod math_ast;
 pub mod plot;
+pub mod plot3d;
 pub mod polynomial_ast;
 pub mod predicate_ast;
 pub mod quantity_ast;
