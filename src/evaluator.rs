@@ -1979,9 +1979,17 @@ pub fn evaluate_function_call_ast(
         _ => vec![],
       };
       if !func_names.is_empty() {
+        let mut locked = false;
         crate::FUNC_ATTRS.with(|m| {
           let mut attrs = m.borrow_mut();
           for func_name in &func_names {
+            if let Some(existing) = attrs.get(func_name)
+              && existing.contains(&"Locked".to_string())
+            {
+              eprintln!("Attributes::locked: Symbol {} is locked.", func_name);
+              locked = true;
+              continue;
+            }
             let entry = attrs.entry(func_name.clone()).or_insert_with(Vec::new);
             for a in &attr {
               if !entry.contains(a) {
@@ -1990,6 +1998,9 @@ pub fn evaluate_function_call_ast(
             }
           }
         });
+        if locked {
+          return Ok(Expr::Identifier("Null".to_string()));
+        }
         return Ok(Expr::Identifier("Null".to_string()));
       }
     }
@@ -2026,6 +2037,12 @@ pub fn evaluate_function_call_ast(
         crate::FUNC_ATTRS.with(|m| {
           let mut attrs = m.borrow_mut();
           for func_name in &func_names {
+            if let Some(existing) = attrs.get(func_name)
+              && existing.contains(&"Locked".to_string())
+            {
+              eprintln!("Attributes::locked: Symbol {} is locked.", func_name);
+              continue;
+            }
             if let Some(entry) = attrs.get_mut(func_name) {
               entry.retain(|a| !to_remove.contains(a));
             }
@@ -5176,6 +5193,17 @@ fn set_attributes_from_value(
   sym_name: &str,
   rhs_value: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Check if symbol is locked
+  let is_locked = crate::FUNC_ATTRS.with(|m| {
+    m.borrow()
+      .get(sym_name)
+      .is_some_and(|attrs| attrs.contains(&"Locked".to_string()))
+  });
+  if is_locked {
+    eprintln!("Attributes::locked: Symbol {} is locked.", sym_name);
+    return Ok(rhs_value.clone());
+  }
+
   // Extract attribute names from the value
   let attr_exprs = match rhs_value {
     Expr::List(items) => items.clone(),

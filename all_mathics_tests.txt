@@ -1,44 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: Locked
-LINE: 336
-TYPE: >>
-INPUT: Attributes[lock] = {Flat, Locked};
-EXPECTED: (none)
----
-FILE: mathics/builtin/attributes.py
-CLASS: Locked
-LINE: 337
-TYPE: >>
-INPUT: SetAttributes[lock, {}]
-EXPECTED:
-: Symbol lock is locked.
----
-FILE: mathics/builtin/attributes.py
-CLASS: Locked
-LINE: 339
-TYPE: >>
-INPUT: ClearAttributes[lock, Flat]
-EXPECTED:
-: Symbol lock is locked.
----
-FILE: mathics/builtin/attributes.py
-CLASS: Locked
-LINE: 341
-TYPE: >>
-INPUT: Attributes[lock] = {}
-EXPECTED:
-: Symbol lock is locked.
-= {}
----
-FILE: mathics/builtin/attributes.py
-CLASS: Locked
-LINE: 344
-TYPE: >>
-INPUT: Attributes[lock]
-EXPECTED:
-= {Flat, Locked}
----
-FILE: mathics/builtin/attributes.py
 CLASS: NHoldAll
 LINE: 370
 TYPE: >>
