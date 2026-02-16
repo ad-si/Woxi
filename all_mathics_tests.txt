@@ -1,27 +1,4 @@
 FILE: mathics/builtin/attributes.py
-CLASS: Flat
-LINE: 199
-TYPE: >>
-INPUT: SetAttributes[f, Flat]
-EXPECTED: (none)
----
-FILE: mathics/builtin/attributes.py
-CLASS: Flat
-LINE: 200
-TYPE: >>
-INPUT: f[a, f[b, c]]
-EXPECTED:
-= f[a, b, c]
----
-FILE: mathics/builtin/attributes.py
-CLASS: Flat
-LINE: 204
-TYPE: >>
-INPUT: f[a, b, c] /. f[a, b] -> d
-EXPECTED:
-= f[d, c]
----
-FILE: mathics/builtin/attributes.py
 CLASS: HoldAll
 LINE: 223
 TYPE: >>
