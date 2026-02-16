@@ -1890,6 +1890,31 @@ pub fn evaluate_function_call_ast(
         return Ok(Expr::Identifier("Null".to_string()));
       }
     }
+    "ClearAttributes" if args.len() == 2 => {
+      if let Expr::Identifier(func_name) = &args[0] {
+        let to_remove = match &args[1] {
+          Expr::Identifier(a) => vec![a.clone()],
+          Expr::List(items) => items
+            .iter()
+            .filter_map(|item| {
+              if let Expr::Identifier(a) = item {
+                Some(a.clone())
+              } else {
+                None
+              }
+            })
+            .collect(),
+          _ => vec![],
+        };
+        crate::FUNC_ATTRS.with(|m| {
+          let mut attrs = m.borrow_mut();
+          if let Some(entry) = attrs.get_mut(func_name) {
+            entry.retain(|a| !to_remove.contains(a));
+          }
+        });
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+    }
     "ClearAll" => {
       for arg in args {
         if let Expr::Identifier(sym) = arg {
@@ -3080,9 +3105,22 @@ pub fn evaluate_function_call_ast(
           });
         }
       };
-      let attrs = get_builtin_attributes(sym_name);
+      // Check user-defined attributes first, then combine with built-in
+      let user_attrs =
+        crate::FUNC_ATTRS.with(|m| m.borrow().get(sym_name).cloned());
+      let builtin = get_builtin_attributes(sym_name);
+      let mut all_attr_strs: Vec<String> =
+        builtin.iter().map(|a| a.to_string()).collect();
+      if let Some(user) = user_attrs {
+        for a in user {
+          if !all_attr_strs.contains(&a) {
+            all_attr_strs.push(a);
+          }
+        }
+        all_attr_strs.sort();
+      }
       return Ok(Expr::List(
-        attrs
+        all_attr_strs
           .iter()
           .map(|a| Expr::Identifier(a.to_string()))
           .collect(),
