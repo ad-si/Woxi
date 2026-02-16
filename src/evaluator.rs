@@ -1692,6 +1692,14 @@ fn is_builtin_listable(name: &str) -> bool {
   )
 }
 
+fn is_builtin_flat(name: &str) -> bool {
+  matches!(name, "Plus" | "Times" | "Max" | "Min" | "And" | "Or")
+}
+
+fn is_builtin_orderless(name: &str) -> bool {
+  matches!(name, "Plus" | "Times" | "Max" | "Min")
+}
+
 /// Thread a Listable function over list arguments.
 /// Returns Some(result) if threading was applied, None otherwise.
 fn thread_listable(
@@ -1813,6 +1821,59 @@ pub fn evaluate_function_call_ast(
   if is_listable && let Some(result) = thread_listable(name, args)? {
     return Ok(result);
   }
+
+  // Apply Flat attribute: flatten nested calls of the same function
+  let has_flat = is_builtin_flat(name)
+    || crate::FUNC_ATTRS.with(|m| {
+      m.borrow()
+        .get(name)
+        .is_some_and(|attrs| attrs.contains(&"Flat".to_string()))
+    });
+  let args_after_flat;
+  let args = if has_flat {
+    let mut flat_args: Vec<Expr> = Vec::new();
+    for arg in args {
+      match arg {
+        Expr::FunctionCall {
+          name: inner_name,
+          args: inner_args,
+        } if inner_name == name => {
+          flat_args.extend(inner_args.clone());
+        }
+        _ => flat_args.push(arg.clone()),
+      }
+    }
+    args_after_flat = flat_args;
+    &args_after_flat[..]
+  } else {
+    args
+  };
+
+  // Apply Orderless attribute: sort arguments into canonical order
+  let has_orderless = is_builtin_orderless(name)
+    || crate::FUNC_ATTRS.with(|m| {
+      m.borrow()
+        .get(name)
+        .is_some_and(|attrs| attrs.contains(&"Orderless".to_string()))
+    });
+  let args_after_sort;
+  let args = if has_orderless {
+    let mut sorted_args = args.to_vec();
+    sorted_args.sort_by(|a, b| {
+      let ord = list_helpers_ast::compare_exprs(a, b);
+      if ord > 0 {
+        std::cmp::Ordering::Less
+      } else if ord < 0 {
+        std::cmp::Ordering::Greater
+      } else {
+        std::cmp::Ordering::Equal
+      }
+    });
+    args_after_sort = sorted_args;
+    &args_after_sort[..]
+  } else {
+    args
+  };
 
   // Handle functions that would call interpret() if dispatched through evaluate_expression
   // These must be handled natively to avoid infinite recursion

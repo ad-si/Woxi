@@ -136,6 +136,84 @@ mod set_attributes {
   }
 }
 
+mod flat_attribute {
+  use super::*;
+
+  #[test]
+  fn flat_flattens_nested_calls() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Flat]; f[a, f[b, c]]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn flat_flattens_left_nested() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Flat]; f[f[a, b], c]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn flat_no_effect_without_attribute() {
+    clear_state();
+    assert_eq!(interpret("g[a, g[b, c]]").unwrap(), "g[a, g[b, c]]");
+  }
+}
+
+mod orderless_attribute {
+  use super::*;
+
+  #[test]
+  fn orderless_sorts_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Orderless]; f[c, a, b]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn orderless_sorts_numbers() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Orderless]; f[3, 1, 2]").unwrap(),
+      "f[1, 2, 3]"
+    );
+  }
+
+  #[test]
+  fn orderless_numbers_before_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, Orderless]; f[b, 1, a, 3]").unwrap(),
+      "f[1, 3, a, b]"
+    );
+  }
+
+  #[test]
+  fn orderless_no_effect_without_attribute() {
+    clear_state();
+    assert_eq!(interpret("g[c, a, b]").unwrap(), "g[c, a, b]");
+  }
+}
+
+mod flat_and_orderless {
+  use super::*;
+
+  #[test]
+  fn flat_orderless_combined() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[f, {Flat, Orderless}]; f[b, f[a, c]]").unwrap(),
+      "f[a, b, c]"
+    );
+  }
+}
+
 mod anonymous_function_call {
   use super::*;
 
