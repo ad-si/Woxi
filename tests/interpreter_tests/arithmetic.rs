@@ -1031,3 +1031,149 @@ mod power_of_power {
     assert_eq!(interpret("(2^3)^2").unwrap(), "64");
   }
 }
+
+mod power_combining {
+  use super::*;
+
+  #[test]
+  fn same_base_add_exponents() {
+    assert_eq!(interpret("x^2 * x^3").unwrap(), "x^5");
+  }
+
+  #[test]
+  fn bare_times_bare() {
+    assert_eq!(interpret("x * x").unwrap(), "x^2");
+  }
+
+  #[test]
+  fn bare_times_power() {
+    assert_eq!(interpret("x * x^2").unwrap(), "x^3");
+  }
+
+  #[test]
+  fn negative_exponent_combining() {
+    assert_eq!(interpret("x^(-1) * x^2").unwrap(), "x");
+  }
+
+  #[test]
+  fn exponents_cancel_to_zero() {
+    assert_eq!(interpret("x^3 * x^(-3)").unwrap(), "1");
+  }
+
+  #[test]
+  fn three_factors_same_base() {
+    assert_eq!(interpret("x * x^2 * x^3").unwrap(), "x^6");
+  }
+
+  #[test]
+  fn different_bases_no_combining() {
+    assert_eq!(interpret("x^2 * y^3").unwrap(), "x^2*y^3");
+  }
+
+  #[test]
+  fn mixed_bases_partial_combining() {
+    assert_eq!(interpret("x^2 * y * x^3").unwrap(), "x^5*y");
+  }
+
+  #[test]
+  fn sqrt_combining_numeric() {
+    assert_eq!(interpret("Sqrt[2] * Sqrt[3]").unwrap(), "Sqrt[6]");
+  }
+
+  #[test]
+  fn sqrt_same_base_gives_base() {
+    assert_eq!(interpret("Sqrt[x] * Sqrt[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn sqrt_display_from_power() {
+    assert_eq!(interpret("6^(1/2)").unwrap(), "Sqrt[6]");
+  }
+
+  #[test]
+  fn cube_root_combining_numeric() {
+    assert_eq!(interpret("2^(1/3) * 3^(1/3)").unwrap(), "6^(1/3)");
+  }
+
+  #[test]
+  fn sqrt_of_perfect_square_simplifies() {
+    assert_eq!(interpret("Sqrt[4]").unwrap(), "2");
+  }
+
+  #[test]
+  fn coefficient_times_power() {
+    assert_eq!(interpret("3 * x^2 * x^3").unwrap(), "3*x^5");
+  }
+}
+
+mod sqrt_negative {
+  use super::*;
+
+  #[test]
+  fn sqrt_neg_1() {
+    assert_eq!(interpret("Sqrt[-1]").unwrap(), "I");
+  }
+
+  #[test]
+  fn sqrt_neg_4() {
+    assert_eq!(interpret("Sqrt[-4]").unwrap(), "2*I");
+  }
+
+  #[test]
+  fn sqrt_neg_9() {
+    assert_eq!(interpret("Sqrt[-9]").unwrap(), "3*I");
+  }
+
+  #[test]
+  fn sqrt_neg_2() {
+    assert_eq!(interpret("Sqrt[-2]").unwrap(), "I*Sqrt[2]");
+  }
+
+  #[test]
+  fn sqrt_neg_12() {
+    assert_eq!(interpret("Sqrt[-12]").unwrap(), "2*I*Sqrt[3]");
+  }
+
+  #[test]
+  fn sqrt_equals_i() {
+    assert_eq!(interpret("I == Sqrt[-1]").unwrap(), "True");
+  }
+}
+
+mod sqrt_power {
+  use super::*;
+
+  #[test]
+  fn sqrt_squared() {
+    assert_eq!(interpret("Sqrt[a]^2").unwrap(), "a");
+  }
+
+  #[test]
+  fn sqrt_cubed() {
+    assert_eq!(interpret("Sqrt[3]^2").unwrap(), "3");
+  }
+
+  #[test]
+  fn sqrt_to_fourth() {
+    assert_eq!(interpret("Sqrt[2]^4").unwrap(), "4");
+  }
+
+  #[test]
+  fn sqrt_neg1_squared() {
+    assert_eq!(interpret("Sqrt[-1]^2").unwrap(), "-1");
+  }
+}
+
+mod expand_complex {
+  use super::*;
+
+  #[test]
+  fn expand_conjugate_product() {
+    assert_eq!(interpret("Expand[(3+I)*(3-I)]").unwrap(), "10");
+  }
+
+  #[test]
+  fn expand_i_squared() {
+    assert_eq!(interpret("Expand[(1+I)^2]").unwrap(), "2*I");
+  }
+}
