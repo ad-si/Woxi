@@ -1345,10 +1345,48 @@ fn simplify_expr(expr: &Expr) -> Expr {
         })
       }
       "Rational" if args.len() == 2 => expr.clone(),
+      "ConditionalExpression" if args.len() == 2 => {
+        simplify_conditional_expression(&args[0], &args[1])
+      }
       _ => expr.clone(),
     },
 
     _ => simplify(expr.clone()),
+  }
+}
+
+/// Simplify ConditionalExpression[value, cond] under current $Assumptions.
+/// If cond matches $Assumptions → return Simplify[value]
+/// If $Assumptions negates cond → return Undefined
+/// Otherwise → ConditionalExpression[Simplify[value], cond]
+fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
+  let cond_str = expr_to_string(cond);
+
+  // Get $Assumptions from environment (default: "True")
+  let assumptions_str = crate::ENV
+    .with(|e| {
+      e.borrow().get("$Assumptions").map(|sv| match sv {
+        crate::StoredValue::Raw(s) => s.clone(),
+        crate::StoredValue::ExprVal(e) => expr_to_string(e),
+        _ => "True".to_string(),
+      })
+    })
+    .unwrap_or_else(|| "True".to_string());
+
+  if cond_str == assumptions_str {
+    // Condition matches assumptions → strip ConditionalExpression
+    simplify_expr(value)
+  } else if assumptions_str == format!("!{}", cond_str)
+    || assumptions_str == format!("Not[{}]", cond_str)
+  {
+    // Assumptions negate the condition → Undefined
+    Expr::Identifier("Undefined".to_string())
+  } else {
+    // Keep ConditionalExpression with simplified value
+    Expr::FunctionCall {
+      name: "ConditionalExpression".to_string(),
+      args: vec![simplify_expr(value), cond.clone()],
+    }
   }
 }
 
