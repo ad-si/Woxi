@@ -540,3 +540,79 @@ mod row {
     assert_eq!(interpret("Row[5]").unwrap(), "Row[5]");
   }
 }
+
+mod sequence {
+  use super::*;
+
+  #[test]
+  fn basic_flattening() {
+    assert_eq!(interpret("f[Sequence[a, b]]").unwrap(), "f[a, b]");
+  }
+
+  #[test]
+  fn in_middle_of_args() {
+    assert_eq!(
+      interpret("f[x, Sequence[a, b], y]").unwrap(),
+      "f[x, a, b, y]"
+    );
+  }
+
+  #[test]
+  fn in_list() {
+    assert_eq!(interpret("{a, Sequence[b, c], d}").unwrap(), "{a, b, c, d}");
+  }
+
+  #[test]
+  fn empty_sequence() {
+    assert_eq!(interpret("f[a, Sequence[], b]").unwrap(), "f[a, b]");
+  }
+
+  #[test]
+  fn hold_flattens_sequence() {
+    assert_eq!(
+      interpret("Hold[a, Sequence[b, c], d]").unwrap(),
+      "Hold[a, b, c, d]"
+    );
+  }
+}
+
+mod hold {
+  use super::*;
+
+  #[test]
+  fn hold_prevents_evaluation() {
+    assert_eq!(interpret("Hold[1 + 2]").unwrap(), "Hold[1 + 2]");
+  }
+
+  #[test]
+  fn hold_form_prevents_evaluation() {
+    assert_eq!(
+      interpret("HoldForm[1 + 2 + 3]").unwrap(),
+      "HoldForm[1 + 2 + 3]"
+    );
+  }
+
+  #[test]
+  fn hold_complete_prevents_evaluation() {
+    assert_eq!(
+      interpret("HoldComplete[Evaluate[1 + 2]]").unwrap(),
+      "HoldComplete[Evaluate[1 + 2]]"
+    );
+  }
+
+  #[test]
+  fn release_hold_basic() {
+    assert_eq!(interpret("ReleaseHold[Hold[1 + 2]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn release_hold_form() {
+    assert_eq!(interpret("ReleaseHold[HoldForm[1 + 2]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn release_hold_non_hold() {
+    assert_eq!(interpret("ReleaseHold[5]").unwrap(), "5");
+    assert_eq!(interpret("ReleaseHold[x]").unwrap(), "x");
+  }
+}
