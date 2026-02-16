@@ -50,11 +50,23 @@ fn bool_expr(b: bool) -> Expr {
 
 /// PolynomialQ[expr, var] - Tests if expr is a polynomial in var
 pub fn polynomial_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "PolynomialQ expects exactly 2 arguments".into(),
+      "PolynomialQ expects 1 or 2 arguments".into(),
     ));
   }
+
+  if args.len() == 1 {
+    // 1-arg form: check if expr is a polynomial in all its variables
+    let mut vars = std::collections::HashSet::new();
+    collect_poly_vars(&args[0], &mut vars);
+    if vars.is_empty() {
+      // A constant is a polynomial
+      return Ok(bool_expr(true));
+    }
+    return Ok(bool_expr(vars.iter().all(|v| is_polynomial(&args[0], v))));
+  }
+
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -64,6 +76,40 @@ pub fn polynomial_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   Ok(bool_expr(is_polynomial(&args[0], var)))
+}
+
+/// Collect variables that appear in polynomial context only (not inside functions like Sin)
+fn collect_poly_vars(
+  expr: &Expr,
+  vars: &mut std::collections::HashSet<String>,
+) {
+  match expr {
+    Expr::Identifier(name)
+      if name != "True"
+        && name != "False"
+        && name != "Null"
+        && name != "I"
+        && name != "Pi"
+        && name != "E"
+        && name != "Infinity" =>
+    {
+      vars.insert(name.clone());
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_poly_vars(left, vars);
+      collect_poly_vars(right, vars);
+    }
+    Expr::UnaryOp { operand, .. } => collect_poly_vars(operand, vars),
+    Expr::FunctionCall { name, args } => {
+      if name == "Plus" || name == "Times" || name == "Power" {
+        for a in args {
+          collect_poly_vars(a, vars);
+        }
+      }
+      // For other functions like Sin[x], don't collect x as a polynomial variable
+    }
+    _ => {}
+  }
 }
 
 /// Recursively check whether an expression is a polynomial in `var`.

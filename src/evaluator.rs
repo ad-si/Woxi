@@ -3669,6 +3669,9 @@ pub fn evaluate_function_call_ast(
     "Xor" if args.len() >= 2 => {
       return crate::functions::boolean_ast::xor_ast(args);
     }
+    "Equivalent" if args.len() >= 2 => {
+      return crate::functions::boolean_ast::equivalent_ast(args);
+    }
     "Return" => {
       let val = if args.is_empty() {
         Expr::Identifier("Null".to_string())
@@ -3739,7 +3742,7 @@ pub fn evaluate_function_call_ast(
     "Exponent" if args.len() >= 2 && args.len() <= 3 => {
       return crate::functions::polynomial_ast::exponent_ast(args);
     }
-    "PolynomialQ" if args.len() == 2 => {
+    "PolynomialQ" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::polynomial_ast::polynomial_q_ast(args);
     }
     "Solve" if args.len() == 2 => {

@@ -3009,3 +3009,67 @@ mod composition_edge_cases {
     assert_eq!(interpret("Composition[f]").unwrap(), "f");
   }
 }
+
+mod max_symbolic {
+  use super::*;
+
+  #[test]
+  fn filters_numeric_keeps_symbolic() {
+    assert_eq!(interpret("Max[5, x, -3, y, 40]").unwrap(), "Max[40, x, y]");
+  }
+
+  #[test]
+  fn all_numeric() {
+    assert_eq!(interpret("Max[5, 3, 8, 1]").unwrap(), "8");
+  }
+}
+
+mod min_symbolic {
+  use super::*;
+
+  #[test]
+  fn filters_numeric_keeps_symbolic() {
+    assert_eq!(interpret("Min[5, x, -3, y, 40]").unwrap(), "Min[-3, x, y]");
+  }
+}
+
+mod polynomial_q_1arg {
+  use super::*;
+
+  #[test]
+  fn polynomial_expr() {
+    assert_eq!(interpret("PolynomialQ[x^2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("PolynomialQ[2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn non_polynomial() {
+    assert_eq!(interpret("PolynomialQ[x^2 + x/y]").unwrap(), "False");
+  }
+}
+
+mod equivalent_logic {
+  use super::*;
+
+  #[test]
+  fn all_true() {
+    assert_eq!(interpret("Equivalent[True, True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn mixed_true_false() {
+    assert_eq!(interpret("Equivalent[True, True, False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("Equivalent[a, b, c]").unwrap(),
+      "Equivalent[a, b, c]"
+    );
+  }
+}
