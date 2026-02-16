@@ -454,3 +454,87 @@ mod xor_logical {
     assert_eq!(interpret("Xor[a, False, b]").unwrap(), "a \\[Xor] b");
   }
 }
+
+mod not_logical {
+  use super::*;
+
+  #[test]
+  fn not_true() {
+    clear_state();
+    assert_eq!(interpret("Not[True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn not_false() {
+    clear_state();
+    assert_eq!(interpret("Not[False]").unwrap(), "True");
+  }
+
+  #[test]
+  fn not_symbolic() {
+    clear_state();
+    assert_eq!(interpret("Not[a]").unwrap(), "!a");
+  }
+
+  #[test]
+  fn not_symbolic_expr() {
+    clear_state();
+    assert_eq!(interpret("Not[a && b]").unwrap(), "!(a && b)");
+  }
+}
+
+mod nand_logical {
+  use super::*;
+
+  #[test]
+  fn all_true() {
+    clear_state();
+    assert_eq!(interpret("Nand[True, True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn one_false() {
+    clear_state();
+    assert_eq!(interpret("Nand[True, False]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_stays() {
+    clear_state();
+    assert_eq!(interpret("Nand[a, b]").unwrap(), "Nand[a, b]");
+  }
+
+  #[test]
+  fn symbolic_with_true() {
+    clear_state();
+    assert_eq!(interpret("Nand[a, True, b]").unwrap(), "Nand[a, b]");
+  }
+}
+
+mod nor_logical {
+  use super::*;
+
+  #[test]
+  fn all_false() {
+    clear_state();
+    assert_eq!(interpret("Nor[False, False]").unwrap(), "True");
+  }
+
+  #[test]
+  fn one_true() {
+    clear_state();
+    assert_eq!(interpret("Nor[False, True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn symbolic_stays() {
+    clear_state();
+    assert_eq!(interpret("Nor[a, b]").unwrap(), "Nor[a, b]");
+  }
+
+  #[test]
+  fn symbolic_with_false() {
+    clear_state();
+    assert_eq!(interpret("Nor[a, False, b]").unwrap(), "Nor[a, b]");
+  }
+}
