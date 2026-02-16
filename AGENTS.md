@@ -1,7 +1,16 @@
 ## Scope
 
-- Woxi is a re-implementation of a subset of the Wolfram Language
-- Woxi is a computer algebra system and therefore all computations must be solved symbolically
+This repo contains several related sub-projects:
+
+- Woxi
+    - Interpreter for a subset of the Wolfram Language
+    - Is a computer algebra system (CAS) and therefore all computations must be solved symbolically
+- Woxi Playground
+    - A simple playground to try out Woxi in the browser (tests/cli/playground)
+- Woxi JupyterLite
+    - JupyterLite instance with an integrated Woxi kernel (tests/cli/jupyterlite)
+- Woxi Chat
+    - AI assistant with a direct integration of Woxi to evaluate code (tests/cli/chat)
 
 
 ## Development

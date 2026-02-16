@@ -685,6 +685,27 @@ inputEls.forEach((el) => {
       handleSend()
     }
   })
+  el.addEventListener("paste", (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const imageFiles = []
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile()
+        if (file) {
+          // Clipboard files may lack a meaningful name; assign one from MIME type
+          const ext = file.type.split("/")[1]?.replace("jpeg", "jpg") || "png"
+          const named = new File([file], file.name && file.name !== "image.png"
+            ? file.name : `pasted-image.${ext}`, { type: file.type })
+          imageFiles.push(named)
+        }
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault()
+      handleFiles(imageFiles)
+    }
+  })
 })
 
 document.querySelectorAll(".example-prompt").forEach((btn) => {
