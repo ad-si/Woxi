@@ -269,7 +269,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
 }
 
 /// Helper to create numeric result (Integer if whole, Real otherwise)
-fn num_to_expr(n: f64) -> Expr {
+pub fn num_to_expr(n: f64) -> Expr {
   if n.fract() == 0.0 && n.abs() < i128::MAX as f64 {
     Expr::Integer(n as i128)
   } else {
@@ -1770,6 +1770,30 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Abs expects exactly 1 argument".into(),
     ));
+  }
+  // Handle Infinity, -Infinity, ComplexInfinity
+  match &args[0] {
+    Expr::Identifier(name)
+      if name == "Infinity" || name == "ComplexInfinity" =>
+    {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1))
+      && matches!(right.as_ref(), Expr::Identifier(n) if n == "Infinity") =>
+    {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    _ => {}
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     return Ok(num_to_expr(n.abs()));

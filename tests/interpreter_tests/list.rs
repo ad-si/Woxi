@@ -1490,3 +1490,28 @@ mod option_q {
     assert_eq!(interpret("OptionQ[3]").unwrap(), "False");
   }
 }
+
+mod fold_list {
+  use super::*;
+
+  #[test]
+  fn two_arg_times() {
+    assert_eq!(
+      interpret("FoldList[Times, {1, 2, 3}]").unwrap(),
+      "{1, 2, 6}"
+    );
+  }
+
+  #[test]
+  fn two_arg_plus() {
+    assert_eq!(
+      interpret("FoldList[Plus, {1, 2, 3, 4}]").unwrap(),
+      "{1, 3, 6, 10}"
+    );
+  }
+
+  #[test]
+  fn two_arg_fold() {
+    assert_eq!(interpret("Fold[Plus, {1, 2, 3, 4}]").unwrap(), "10");
+  }
+}
