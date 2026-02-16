@@ -110,9 +110,12 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 LeadingMinus = { "-" ~ !ASCII_DIGIT }
 // LeadingNot marks prefix "!" as Not[expr]: !True, !x, !(a && b), etc.
 // Must not be followed by "=" (which would be != operator)
-LeadingNot = { "!" ~ !"=" }
+LeadingNot = { "!" ~ !"=" ~ !"!" }
+// FactorialSuffix: n! or n!! (Factorial / Factorial2)
+// Must not be followed by "=" (which would be != operator)
+FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 Expression = {
-    (LeadingNot ~ Term | LeadingMinus ~ Term | Term) ~ (Operator ~ Term)*
+    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (Operator ~ Term ~ FactorialSuffix?)*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
@@ -219,7 +222,7 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit | LeadingMinus ~ TermNoImplicit | TermNoImplicit) ~ (Operator ~ TermNoImplicit)*
+    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?) ~ (Operator ~ TermNoImplicit ~ FactorialSuffix?)*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
@@ -231,7 +234,7 @@ PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
-    (LeadingNot ~ Term | LeadingMinus ~ Term | Term) ~ (ConditionOp ~ Term)*
+    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (ConditionOp ~ Term ~ FactorialSuffix?)*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 ConditionOp = {
