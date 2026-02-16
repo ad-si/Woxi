@@ -4000,6 +4000,76 @@ pub fn evaluate_function_call_ast(
           return Ok(Expr::Identifier("ComplexInfinity".to_string()));
         }
         _ => {
+          // Try to normalize: DirectedInfinity[z] → DirectedInfinity[z/Abs[z]]
+          if let Some(((re_n, re_d), (im_n, im_d))) =
+            crate::functions::math_ast::try_extract_complex_exact(&args[0])
+          {
+            if im_n == 0 {
+              // Pure real: just check sign
+              if re_n > 0 {
+                return Ok(Expr::Identifier("Infinity".to_string()));
+              } else if re_n < 0 {
+                return Ok(Expr::UnaryOp {
+                  op: crate::syntax::UnaryOperator::Minus,
+                  operand: Box::new(Expr::Identifier("Infinity".to_string())),
+                });
+              } else {
+                return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+              }
+            }
+            // Compute magnitude squared: (re_n/re_d)^2 + (im_n/im_d)^2
+            let mag_sq_num = re_n
+              .checked_mul(re_n)
+              .and_then(|a| {
+                im_d.checked_mul(im_d).and_then(|b| a.checked_mul(b))
+              })
+              .and_then(|a| {
+                im_n
+                  .checked_mul(im_n)
+                  .and_then(|c| {
+                    re_d.checked_mul(re_d).and_then(|d| c.checked_mul(d))
+                  })
+                  .and_then(|b| a.checked_add(b))
+              });
+            let mag_sq_den = re_d.checked_mul(re_d).and_then(|a| {
+              im_d.checked_mul(im_d).and_then(|b| a.checked_mul(b))
+            });
+
+            if let (Some(msn), Some(msd)) = (mag_sq_num, mag_sq_den) {
+              // Build z/Abs[z] = z / Sqrt[msn/msd]
+              let sqrt_arg = if msd == 1 {
+                Expr::Integer(msn)
+              } else {
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(msn), Expr::Integer(msd)],
+                }
+              };
+              let normalized = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(args[0].clone()),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Sqrt".to_string(),
+                  args: vec![sqrt_arg],
+                }),
+              };
+              let normalized = evaluate_expr_to_expr(&normalized)?;
+              // Check if normalized reduced to 1 or -1
+              if matches!(&normalized, Expr::Integer(1)) {
+                return Ok(Expr::Identifier("Infinity".to_string()));
+              }
+              if matches!(&normalized, Expr::Integer(-1)) {
+                return Ok(Expr::UnaryOp {
+                  op: crate::syntax::UnaryOperator::Minus,
+                  operand: Box::new(Expr::Identifier("Infinity".to_string())),
+                });
+              }
+              return Ok(Expr::FunctionCall {
+                name: "DirectedInfinity".to_string(),
+                args: vec![normalized],
+              });
+            }
+          }
           return Ok(Expr::FunctionCall {
             name: "DirectedInfinity".to_string(),
             args: args.to_vec(),
