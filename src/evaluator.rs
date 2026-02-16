@@ -3341,6 +3341,67 @@ pub fn evaluate_function_call_ast(
     "AssociationQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::association_q_ast(args);
     }
+    "Between" if args.len() == 2 => {
+      use crate::functions::math_ast::try_eval_to_f64;
+      // Normalize arg order: Between[x, range] or Between[range, x] (from operator form)
+      let (x, range_expr) = if matches!(&args[0], Expr::List(_))
+        && !matches!(&args[1], Expr::List(_))
+      {
+        (&args[1], &args[0])
+      } else {
+        (&args[0], &args[1])
+      };
+      // Between[x, {min, max}] or Between[x, {{min1, max1}, {min2, max2}, ...}]
+      if let Expr::List(range) = range_expr {
+        // Check if it's a list of ranges (all elements are lists)
+        let is_list_of_ranges =
+          !range.is_empty() && range.iter().all(|r| matches!(r, Expr::List(_)));
+        if range.len() == 2 && !is_list_of_ranges {
+          // Single range: Between[x, {min, max}]
+          if let (Some(xv), Some(lo), Some(hi)) = (
+            try_eval_to_f64(x),
+            try_eval_to_f64(&range[0]),
+            try_eval_to_f64(&range[1]),
+          ) {
+            return Ok(Expr::Identifier(
+              if lo <= xv && xv <= hi {
+                "True"
+              } else {
+                "False"
+              }
+              .to_string(),
+            ));
+          }
+        } else if is_list_of_ranges {
+          // Multiple ranges: Between[x, {{min1, max1}, ...}]
+          if let Some(xv) = try_eval_to_f64(x) {
+            for r in range {
+              if let Expr::List(pair) = r
+                && pair.len() == 2
+                && let (Some(lo), Some(hi)) =
+                  (try_eval_to_f64(&pair[0]), try_eval_to_f64(&pair[1]))
+                && lo <= xv
+                && xv <= hi
+              {
+                return Ok(Expr::Identifier("True".to_string()));
+              }
+            }
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+        }
+      }
+    }
+    "Between" if args.len() == 1 => {
+      // Operator form: Between[{min, max}] returns itself (handled by curried call)
+      if let Expr::List(range) = &args[0]
+        && range.len() == 2
+      {
+        return Ok(Expr::FunctionCall {
+          name: "Between".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
 
     // AST-native association functions
     "Keys" if args.len() == 1 => {
@@ -3570,6 +3631,50 @@ pub fn evaluate_function_call_ast(
         name: "RealAbs".to_string(),
         args: args.to_vec(),
       });
+    }
+    "RealSign" if args.len() == 1 => {
+      match &args[0] {
+        Expr::Real(f) => {
+          return Ok(Expr::Integer(if *f > 0.0 {
+            1
+          } else if *f < 0.0 {
+            -1
+          } else {
+            0
+          }));
+        }
+        Expr::Integer(n) => {
+          return Ok(Expr::Integer(if *n > 0 {
+            1
+          } else if *n < 0 {
+            -1
+          } else {
+            0
+          }));
+        }
+        Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } if rname == "Rational" && rargs.len() == 2 => {
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
+            let sign = if (*n > 0 && *d > 0) || (*n < 0 && *d < 0) {
+              1
+            } else if *n == 0 {
+              0
+            } else {
+              -1
+            };
+            return Ok(Expr::Integer(sign));
+          }
+        }
+        _ => {
+          // Stay symbolic for complex or symbolic args
+          return Ok(Expr::FunctionCall {
+            name: "RealSign".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
     }
     "Sign" if args.len() == 1 => {
       return crate::functions::math_ast::sign_ast(args);
@@ -7267,6 +7372,7 @@ fn apply_curried_call(
           | "Prepend"
           | "Take"
           | "Drop"
+          | "Between"
       ) {
         // Known operator-form functions: flatten curried call
         let mut new_args = func_args.clone();

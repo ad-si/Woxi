@@ -1486,3 +1486,85 @@ mod product_extended {
     assert_eq!(interpret("Product[k, {k, 1, 6, 2}]").unwrap(), "15");
   }
 }
+
+mod real_sign {
+  use super::*;
+
+  #[test]
+  fn negative_real() {
+    assert_eq!(interpret("RealSign[-3.]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn positive_integer() {
+    assert_eq!(interpret("RealSign[5]").unwrap(), "1");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("RealSign[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_integer() {
+    assert_eq!(interpret("RealSign[-7]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("RealSign[3/4]").unwrap(), "1");
+  }
+
+  #[test]
+  fn complex_stays_symbolic() {
+    assert_eq!(
+      interpret("RealSign[2. + 3. I]").unwrap(),
+      "RealSign[2. + 3.*I]"
+    );
+  }
+
+  #[test]
+  fn symbolic_stays() {
+    assert_eq!(interpret("RealSign[x]").unwrap(), "RealSign[x]");
+  }
+}
+
+mod between {
+  use super::*;
+
+  #[test]
+  fn basic_in_range() {
+    assert_eq!(interpret("Between[6, {4, 10}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn out_of_range() {
+    assert_eq!(interpret("Between[2, {4, 10}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn operator_form() {
+    assert_eq!(interpret("Between[{4, 10}][6]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_constants() {
+    assert_eq!(interpret("Between[2, {E, Pi}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn multiple_ranges() {
+    assert_eq!(interpret("Between[5, {{1, 2}, {4, 6}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn multiple_ranges_no_match() {
+    assert_eq!(interpret("Between[3, {{1, 2}, {4, 6}}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn boundary_values() {
+    assert_eq!(interpret("Between[4, {4, 10}]").unwrap(), "True");
+    assert_eq!(interpret("Between[10, {4, 10}]").unwrap(), "True");
+  }
+}
