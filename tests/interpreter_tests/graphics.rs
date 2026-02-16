@@ -449,6 +449,67 @@ mod graphics {
     }
 
     #[test]
+    fn circle_has_equal_radii() {
+      // Graphics[Circle[]] must produce a round circle (equal rx and ry)
+      assert_eq!(interpret("Graphics[Circle[]]").unwrap(), "-Graphics-");
+      let svg = woxi::get_captured_graphics().unwrap();
+      // SVG should be square for symmetric data
+      assert!(
+        svg.contains("width=\"360\" height=\"360\""),
+        "SVG should be square for Circle[]. Got: {}",
+        &svg[..svg.find('>').unwrap_or(100) + 1]
+      );
+      // The ellipse rx and ry should be equal
+      let rx_start = svg.find("rx=\"").unwrap() + 4;
+      let rx_end = rx_start + svg[rx_start..].find('"').unwrap();
+      let ry_start = svg.find("ry=\"").unwrap() + 4;
+      let ry_end = ry_start + svg[ry_start..].find('"').unwrap();
+      assert_eq!(
+        &svg[rx_start..rx_end],
+        &svg[ry_start..ry_end],
+        "Circle rx and ry must be equal"
+      );
+    }
+
+    #[test]
+    fn circle_round_with_explicit_image_size() {
+      // Even with non-square ImageSize, circles should be round
+      assert_eq!(
+        interpret("Graphics[Circle[], ImageSize -> {400, 200}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      // SVG should have the explicit dimensions
+      assert!(
+        svg.contains("width=\"400\" height=\"200\""),
+        "SVG should use explicit ImageSize. Got: {}",
+        &svg[..svg.find('>').unwrap_or(100) + 1]
+      );
+      let rx_start = svg.find("rx=\"").unwrap() + 4;
+      let rx_end = rx_start + svg[rx_start..].find('"').unwrap();
+      let ry_start = svg.find("ry=\"").unwrap() + 4;
+      let ry_end = ry_start + svg[ry_start..].find('"').unwrap();
+      assert_eq!(
+        &svg[rx_start..rx_end],
+        &svg[ry_start..ry_end],
+        "Circle rx and ry must be equal even with explicit ImageSize. SVG: {}",
+        svg
+      );
+    }
+
+    #[test]
+    fn preserves_aspect_ratio_attribute() {
+      // SVG should include preserveAspectRatio for robust rendering
+      assert_eq!(interpret("Graphics[Circle[]]").unwrap(), "-Graphics-");
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(
+        svg.contains("preserveAspectRatio=\"xMidYMid meet\""),
+        "SVG should have preserveAspectRatio. Got: {}",
+        &svg[..svg.find('>').unwrap_or(100) + 1]
+      );
+    }
+
+    #[test]
     fn full_hue_rings_expression() {
       // The target expression from the issue
       assert_eq!(
@@ -462,6 +523,68 @@ mod graphics {
       assert_eq!(svg.matches("stroke=\"rgb(0,0,0)\"").count(), 72);
       // All should have fill-opacity from Hue alpha
       assert_eq!(svg.matches("fill-opacity=\"0.6\"").count(), 72);
+    }
+  }
+
+  mod graphicsbox_capture {
+    use super::*;
+
+    #[test]
+    fn captures_graphicsbox_for_disk() {
+      woxi::interpret("Graphics[{Red, Disk[{0, 0}]}]").unwrap();
+      let gbox = woxi::get_captured_graphicsbox();
+      assert!(gbox.is_some(), "GraphicsBox should be captured");
+      let gbox = gbox.unwrap();
+      assert!(
+        gbox.starts_with("GraphicsBox["),
+        "Should start with GraphicsBox[, got: {}",
+        &gbox[..40.min(gbox.len())]
+      );
+      assert!(
+        gbox.contains("RGBColor[1, 0, 0]"),
+        "Should contain RGBColor for Red"
+      );
+      assert!(gbox.contains("DiskBox[{0, 0}]"), "Should contain DiskBox");
+    }
+
+    /// Mimics the exact WASM evaluate flow: interpret_with_stdout then get_captured_graphicsbox
+    #[test]
+    fn captures_graphicsbox_via_interpret_with_stdout() {
+      let result =
+        woxi::interpret_with_stdout("Graphics[{Red, Disk[{0, 0}]}]").unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      let gbox = woxi::get_captured_graphicsbox();
+      assert!(
+        gbox.is_some(),
+        "GraphicsBox should survive after interpret_with_stdout"
+      );
+      let gbox = gbox.unwrap();
+      assert!(
+        gbox.contains("DiskBox"),
+        "Should contain DiskBox, got: {}",
+        gbox
+      );
+    }
+
+    #[test]
+    fn captures_graphicsbox_for_rectangle() {
+      woxi::interpret("Graphics[{Blue, Rectangle[{0, 0}, {2, 3}]}]").unwrap();
+      let gbox = woxi::get_captured_graphicsbox().unwrap();
+      assert!(gbox.contains("RGBColor[0, 0, 1]"));
+      assert!(gbox.contains("RectangleBox[{0, 0}, {2, 3}]"));
+    }
+
+    #[test]
+    fn captures_graphicsbox_for_plot() {
+      woxi::interpret("Plot[Sin[x], {x, -10, 10}]").unwrap();
+      let gbox = woxi::get_captured_graphicsbox();
+      assert!(gbox.is_some(), "GraphicsBox should be captured for Plot");
+      let gbox = gbox.unwrap();
+      assert!(gbox.starts_with("GraphicsBox["));
+      assert!(
+        gbox.contains("LineBox[CompressedData["),
+        "Plot should use CompressedData for line points"
+      );
     }
   }
 }

@@ -505,7 +505,7 @@ async function runAssistantTurn() {
       if (pendingToolCalls.length > 0) {
         for (const tc of pendingToolCalls) {
           toolCallCount++
-          let result, isError = false, graphics = ""
+          let result, isError = false, graphics = "", graphicsbox = ""
 
           let warnings = ""
           if (!isReady()) {
@@ -516,6 +516,7 @@ async function runAssistantTurn() {
               const evalResult = await evaluateCode(tc.arguments.code)
               result = evalResult.result
               graphics = evalResult.graphics || ""
+              graphicsbox = evalResult.graphicsbox || ""
               warnings = evalResult.warnings || ""
               isError = result.startsWith("Error:")
                 || warnings.includes("not yet implemented")
@@ -531,6 +532,7 @@ async function runAssistantTurn() {
           const content = warnings ? `${result}\n\nWarning: ${warnings}` : result
           const toolMsg = { role: "tool", tool_call_id: tc.id, content }
           if (graphics) toolMsg.graphics = graphics
+          if (graphicsbox) toolMsg.graphicsbox = graphicsbox
           appendMessage(activeConvId, toolMsg)
         }
 
@@ -721,6 +723,7 @@ const menuBtn = document.getElementById("menu-btn")
 const menuDropdown = document.getElementById("menu-dropdown")
 const exportChatBtn = document.getElementById("export-chat-btn")
 const exportNotebookBtn = document.getElementById("export-notebook-btn")
+const exportMmaBtn = document.getElementById("export-mma-btn")
 
 menuBtn.addEventListener("click", (e) => {
   e.stopPropagation()
@@ -868,6 +871,122 @@ exportNotebookBtn.addEventListener("click", () => {
   URL.revokeObjectURL(url)
 })
 
+exportMmaBtn.addEventListener("click", () => {
+  menuDropdown.classList.add("hidden")
+
+  if (!activeConvId) {
+    showToast("No conversation to export", "info")
+    return
+  }
+
+  const conv = getConversation(activeConvId)
+  if (!conv) {
+    showToast("Conversation not found", "info")
+    return
+  }
+
+  const blob = new Blob([conversationToNb(conv)], { type: "application/vnd.wolfram.mathematica" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `${exportTimestamp()}-woxi-chat-${conv.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}.nb`
+  a.click()
+  URL.revokeObjectURL(url)
+})
+
+/** Escape a string for use inside a Wolfram Language "..." literal */
+function nbEscapeString(s) {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+}
+
+/** Convert multi-line code to a BoxData-compatible string with \[IndentingNewLine] */
+function nbFormatCode(code) {
+  return code.split("\n").join("\\[IndentingNewLine]")
+}
+
+/**
+ * Convert a conversation to a Mathematica Notebook (.nb) file string.
+ * Produces valid Notebook[] expression that Mathematica can open.
+ */
+function conversationToNb(conv) {
+  const cells = []
+  const messages = conv.messages
+  let execCount = 1
+
+  // Title cell
+  cells.push(`Cell["${nbEscapeString(conv.title || "Woxi Chat")}", "Title"]`)
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+
+    if (msg.role === "system") continue
+
+    if (msg.role === "user") {
+      const text = msg.content || ""
+      if (text) {
+        cells.push(`Cell[TextData[{"User: ", "${nbEscapeString(text)}"}], "Text"]`)
+      }
+    } else if (msg.role === "assistant") {
+      if (msg.content) {
+        cells.push(`Cell[TextData[{"Assistant: ", "${nbEscapeString(msg.content)}"}], "Text"]`)
+      }
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          const args = typeof tc.function.arguments === "string"
+            ? JSON.parse(tc.function.arguments)
+            : tc.function.arguments
+          const toolResult = messages.find(
+            (m, j) => j > i && m.role === "tool" && m.tool_call_id === tc.id
+          )
+          const n = execCount++
+          const code = nbFormatCode(nbEscapeString(args.code))
+
+          const inputCell = `Cell[BoxData["${code}"], "Input",\n CellLabel->"In[${n}]:="]`
+
+          let outputCell = null
+          if (toolResult?.graphicsbox) {
+            // Use native GraphicsBox for graphics — renders without re-evaluation
+            outputCell = `Cell[BoxData[\n ${toolResult.graphicsbox}], "Output",\n CellLabel->"Out[${n}]="]`
+          } else if (toolResult?.content && toolResult.content !== "-Graphics-") {
+            const result = nbEscapeString(toolResult.content)
+            outputCell = `Cell[BoxData["${nbFormatCode(result)}"], "Output",\n CellLabel->"Out[${n}]="]`
+          }
+
+          if (outputCell) {
+            cells.push(`Cell[CellGroupData[{\n${inputCell},\n${outputCell}\n}, Open  ]]`)
+          } else {
+            cells.push(inputCell)
+          }
+        }
+      }
+    }
+    // Skip tool messages — handled above
+  }
+
+  const cellBlock = cells.join(",\n\n")
+
+  return `(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Woxi' *)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+${cellBlock}
+
+},
+WindowSize->{808, 911},
+WindowMargins->{{Automatic, Automatic}, {Automatic, Automatic}},
+FrontEndVersion->"14.0 for Mac OS X ARM (64-bit) (December 12, 2023)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+`
+}
+
 /** Return a timestamp like "2026-02-13t1537" */
 function exportTimestamp() {
   const d = new Date()
@@ -921,6 +1040,7 @@ messagesEl.addEventListener("click", async (e) => {
     const evalResult = await evaluateCode(code)
     const result = evalResult.result
     const graphics = evalResult.graphics || ""
+    const graphicsbox = evalResult.graphicsbox || ""
     const warnings = evalResult.warnings || ""
     const isError = result.startsWith("Error:")
 
@@ -939,7 +1059,7 @@ messagesEl.addEventListener("click", async (e) => {
     // Persist updated result to localStorage
     if (activeConvId) {
       const content = warnings ? `${result}\n\nWarning: ${warnings}` : result
-      updateToolMessage(activeConvId, card.dataset.toolCallId, content, graphics)
+      updateToolMessage(activeConvId, card.dataset.toolCallId, content, graphics, graphicsbox)
     }
   } catch (err) {
     updateToolCard(card.dataset.toolCallId, "Error: " + err.message, true, "", "")
@@ -1039,6 +1159,7 @@ messagesEl.addEventListener("click", (e) => {
       const evalResult = await evaluateCode(newCode)
       const result = evalResult.result
       const graphics = evalResult.graphics || ""
+      const graphicsbox = evalResult.graphicsbox || ""
       const warnings = evalResult.warnings || ""
       const isError = result.startsWith("Error:") || warnings.includes("not yet implemented")
 
@@ -1057,7 +1178,7 @@ messagesEl.addEventListener("click", (e) => {
       if (activeConvId) {
         updateToolCallCode(activeConvId, card.dataset.toolCallId, newCode)
         const content = warnings ? `${result}\n\nWarning: ${warnings}` : result
-        updateToolMessage(activeConvId, card.dataset.toolCallId, content, graphics)
+        updateToolMessage(activeConvId, card.dataset.toolCallId, content, graphics, graphicsbox)
       }
     } catch (err) {
       const spinner = header.querySelector(".spinner")

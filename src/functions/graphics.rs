@@ -1310,6 +1310,114 @@ fn parse_background(expr: &Expr) -> Option<Color> {
   parse_color(expr)
 }
 
+// ── GraphicsBox generation ───────────────────────────────────────────────
+
+use crate::functions::graphicsbox as gbox;
+
+/// Track style changes and emit corresponding box directives.
+struct BoxStyleTracker {
+  current_color: (f64, f64, f64),
+  current_opacity: f64,
+  current_thickness: f64,
+}
+
+impl Default for BoxStyleTracker {
+  fn default() -> Self {
+    Self {
+      current_color: (0.0, 0.0, 0.0), // Black
+      current_opacity: 1.0,
+      current_thickness: 0.004,
+    }
+  }
+}
+
+impl BoxStyleTracker {
+  /// Emit directives needed to switch to the given style, returning any new directives.
+  fn emit_style_changes(&mut self, style: &StyleState) -> Vec<String> {
+    let mut directives = Vec::new();
+    let new_color = (style.color.r, style.color.g, style.color.b);
+    if (new_color.0 - self.current_color.0).abs() > 1e-6
+      || (new_color.1 - self.current_color.1).abs() > 1e-6
+      || (new_color.2 - self.current_color.2).abs() > 1e-6
+    {
+      directives.push(gbox::rgbcolor_box(
+        new_color.0,
+        new_color.1,
+        new_color.2,
+      ));
+      self.current_color = new_color;
+    }
+    if (style.opacity - self.current_opacity).abs() > 1e-6 {
+      directives.push(gbox::opacity_box(style.opacity));
+      self.current_opacity = style.opacity;
+    }
+    if (style.thickness - self.current_thickness).abs() > 1e-6 {
+      directives.push(gbox::abs_thickness_box(style.thickness));
+      self.current_thickness = style.thickness;
+    }
+    directives
+  }
+}
+
+/// Convert a list of primitives into GraphicsBox element strings.
+fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
+  let mut elements = Vec::new();
+  let mut tracker = BoxStyleTracker::default();
+
+  for prim in primitives {
+    match prim {
+      Primitive::PointSingle { x, y, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::point_box(*x, *y));
+      }
+      Primitive::PointMulti { points, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::point_box_multi(points));
+      }
+      Primitive::Line { segments, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.extend(gbox::line_box(segments));
+      }
+      Primitive::CircleArc { cx, cy, r, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::circle_box(*cx, *cy, *r));
+      }
+      Primitive::Disk { cx, cy, r, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::disk_box(*cx, *cy, *r));
+      }
+      Primitive::RectPrim {
+        x_min,
+        y_min,
+        x_max,
+        y_max,
+        style,
+      } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::rectangle_box(*x_min, *y_min, *x_max, *y_max));
+      }
+      Primitive::PolygonPrim { points, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::polygon_box(points));
+      }
+      Primitive::ArrowPrim { points, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::arrow_box(points));
+      }
+      Primitive::TextPrim { text, x, y, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::inset_box(text, *x, *y));
+      }
+      Primitive::BezierCurvePrim { points, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::bezier_curve_box(points));
+      }
+    }
+  }
+
+  elements
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────
 
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1410,16 +1518,41 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg_w = svg_width as f64;
   let svg_h = svg_height as f64;
 
+  // Ensure uniform scaling: expand the bounding box so that
+  // bb.width()/bb.height() == svg_w/svg_h.  This guarantees that
+  // 1 data-unit maps to the same number of pixels in both x and y,
+  // so circles are always rendered round.
+  let svg_aspect = svg_w / svg_h;
+  let data_aspect_wh = bb.width() / bb.height();
+  if svg_aspect.is_finite()
+    && data_aspect_wh.is_finite()
+    && (svg_aspect - data_aspect_wh).abs() > 1e-9
+  {
+    if svg_aspect > data_aspect_wh {
+      // SVG is wider than data: expand bb width, centering horizontally
+      let new_width = bb.height() * svg_aspect;
+      let extra = new_width - bb.width();
+      bb.x_min -= extra / 2.0;
+      bb.x_max += extra / 2.0;
+    } else {
+      // SVG is taller than data: expand bb height, centering vertically
+      let new_height = bb.width() / svg_aspect;
+      let extra = new_height - bb.height();
+      bb.y_min -= extra / 2.0;
+      bb.y_max += extra / 2.0;
+    }
+  }
+
   let mut svg = String::with_capacity(4096);
 
   if full_width {
     svg.push_str(&format!(
-      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
       svg_width, svg_height
     ));
   } else {
     svg.push_str(&format!(
-      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
       svg_width, svg_height, svg_width, svg_height
     ));
   }
@@ -1443,6 +1576,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Store the SVG for capture by Jupyter/Export
   crate::capture_graphics(&svg);
+
+  // Generate and store GraphicsBox expression for .nb export
+  let box_elements = primitives_to_box_elements(&primitives);
+  let graphicsbox = gbox::graphics_box(&box_elements);
+  crate::capture_graphicsbox(&graphicsbox);
 
   Ok(Expr::Identifier("-Graphics-".to_string()))
 }

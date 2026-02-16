@@ -217,12 +217,12 @@ fn generate_svg(
   if let Some(pos) = buf.find('>') {
     let new_header = if full_width {
       format!(
-        "<svg width=\"100%\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\"",
+        "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\"",
         render_width, render_height,
       )
     } else {
       format!(
-        "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\"",
+        "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\"",
         svg_width, svg_height, render_width, render_height,
       )
     };
@@ -414,6 +414,17 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Store the SVG for capture by the Jupyter kernel
   crate::capture_graphics(&svg);
+
+  // Generate GraphicsBox expression for .nb export
+  let segments = split_into_segments(&points);
+  let mut box_elements = Vec::new();
+  // Wolfram blue color matching Plot default
+  box_elements.push("RGBColor[0.24, 0.6, 0.8]".to_string());
+  box_elements.push("AbsoluteThickness[2]".to_string());
+  box_elements.push("Opacity[1.]".to_string());
+  box_elements.extend(crate::functions::graphicsbox::line_box(&segments));
+  let graphicsbox = crate::functions::graphicsbox::graphics_box(&box_elements);
+  crate::capture_graphicsbox(&graphicsbox);
 
   // Return -Graphics- as the text representation
   Ok(Expr::Identifier("-Graphics-".to_string()))

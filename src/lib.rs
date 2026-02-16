@@ -88,6 +88,11 @@ thread_local! {
     static CAPTURED_GRAPHICS: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
+// Captured GraphicsBox expression (Mathematica .nb format) from Graphics/Plot
+thread_local! {
+    static CAPTURED_GRAPHICSBOX: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
 // Captured unimplemented function calls (e.g. "Quantity[13.77, \"BillionYears\"]")
 thread_local! {
     static UNIMPLEMENTED_CALLS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -183,6 +188,25 @@ pub fn get_captured_graphics() -> Option<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().clone())
 }
 
+/// Clears the captured GraphicsBox buffer
+fn clear_captured_graphicsbox() {
+  CAPTURED_GRAPHICSBOX.with(|buffer| {
+    *buffer.borrow_mut() = None;
+  });
+}
+
+/// Stores a GraphicsBox expression string for .nb export
+pub fn capture_graphicsbox(expr: &str) {
+  CAPTURED_GRAPHICSBOX.with(|buffer| {
+    *buffer.borrow_mut() = Some(expr.to_string());
+  });
+}
+
+/// Gets the captured GraphicsBox expression
+pub fn get_captured_graphicsbox() -> Option<String> {
+  CAPTURED_GRAPHICSBOX.with(|buffer| buffer.borrow().clone())
+}
+
 // Re-export evaluate_expr from evaluator module
 pub use evaluator::evaluate_expr;
 
@@ -213,6 +237,7 @@ pub fn clear_state() {
   SOW_STACK.with(|s| s.borrow_mut().clear());
   clear_captured_stdout();
   clear_captured_graphics();
+  clear_captured_graphicsbox();
 }
 
 /// Set the $ScriptCommandLine variable from command-line arguments
@@ -761,6 +786,7 @@ pub fn interpret_with_stdout(
   // Clear the capture buffers
   clear_captured_stdout();
   clear_captured_graphics();
+  clear_captured_graphicsbox();
   clear_captured_warnings();
 
   // Perform the standard interpretation

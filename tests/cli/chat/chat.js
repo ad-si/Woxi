@@ -145,7 +145,7 @@ export function getMessages(convId) {
   return conv.messages
 }
 
-export function updateToolMessage(convId, toolCallId, content, graphics) {
+export function updateToolMessage(convId, toolCallId, content, graphics, graphicsbox) {
   const conv = getConversation(convId)
   if (!conv) return
   const msg = conv.messages.find(
@@ -155,6 +155,8 @@ export function updateToolMessage(convId, toolCallId, content, graphics) {
   msg.content = content
   if (graphics) msg.graphics = graphics
   else delete msg.graphics
+  if (graphicsbox) msg.graphicsbox = graphicsbox
+  else delete msg.graphicsbox
   conv.updatedAt = Date.now()
   saveConversation(conv)
 }
