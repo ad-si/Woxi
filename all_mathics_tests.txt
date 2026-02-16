@@ -2326,38 +2326,6 @@ EXPECTED:
 = 2 x ^ 3 / RealAbs[x ^ 2]
 ---
 FILE: mathics/builtin/numeric.py
-CLASS: RealSign
-LINE: 609
-TYPE: >>
-INPUT: RealSign[-3.]
-EXPECTED:
-= -1
----
-FILE: mathics/builtin/numeric.py
-CLASS: RealSign
-LINE: 612
-TYPE: >>
-INPUT: RealSign[2. + 3. I]
-EXPECTED:
-= RealSign[2. + 3. I]
----
-FILE: mathics/builtin/numeric.py
-CLASS: RealSign
-LINE: 615
-TYPE: >>
-INPUT: D[RealSign[x^2],x]
-EXPECTED:
-= 2 x Piecewise[{{0, x ^ 2 != 0}}, Indeterminate]
----
-FILE: mathics/builtin/numeric.py
-CLASS: RealSign
-LINE: 617
-TYPE: >>
-INPUT: Integrate[RealSign[u],{u,0,x}]
-EXPECTED:
-= RealAbs[x]
----
-FILE: mathics/builtin/numeric.py
 CLASS: Round
 LINE: 677
 TYPE: >>
@@ -8449,38 +8417,6 @@ LINE: 588
 TYPE: >>
 INPUT: DeleteFile[Close[%]];
 EXPECTED: (none)
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Between
-LINE: 358
-TYPE: >>
-INPUT: Between[6, {4, 10}]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Between
-LINE: 362
-TYPE: >>
-INPUT: Between[{4, 10}][6]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Between
-LINE: 366
-TYPE: >>
-INPUT: Between[2, {E, Pi}]
-EXPECTED:
-= False
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: Between
-LINE: 372
-TYPE: >>
-INPUT: {Between[3, {1, 2}, {4, 6}], Between[5, {1, 2}, {4, 6}]}
-EXPECTED:
-= {False, True}
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: Equal
