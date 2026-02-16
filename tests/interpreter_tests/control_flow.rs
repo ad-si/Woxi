@@ -552,6 +552,75 @@ mod nor_logical {
   }
 }
 
+mod interrupt {
+  use super::*;
+
+  #[test]
+  fn interrupt_returns_aborted() {
+    clear_state();
+    assert_eq!(interpret("Interrupt[]").unwrap(), "$Aborted");
+  }
+
+  #[test]
+  fn interrupt_stops_computation() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Print[\"a\"]; Interrupt[]; Print[\"b\"]").unwrap();
+    assert_eq!(result.stdout, "a\n");
+    assert_eq!(result.result, "$Aborted");
+  }
+}
+
+mod pause {
+  use super::*;
+
+  #[test]
+  fn pause_returns_null() {
+    clear_state();
+    assert_eq!(interpret("Pause[0.01]").unwrap(), "Null");
+  }
+}
+
+mod do_multi_iterator {
+  use super::*;
+
+  #[test]
+  fn two_iterators() {
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("Do[Print[{i, j}], {i, 1, 2}, {j, 3, 5}]")
+        .unwrap()
+        .stdout,
+      "{1, 3}\n{1, 4}\n{1, 5}\n{2, 3}\n{2, 4}\n{2, 5}\n"
+    );
+  }
+
+  #[test]
+  fn three_iterators() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = 0; Do[s += i * j * k, {i, 1, 2}, {j, 1, 2}, {k, 1, 2}]; s"
+      )
+      .unwrap(),
+      "27"
+    );
+  }
+
+  #[test]
+  fn with_break() {
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout(
+        "Do[If[i > 10, Break[], If[Mod[i, 2] == 0, Continue[]]; Print[i]], {i, 5, 20}]"
+      )
+      .unwrap()
+      .stdout,
+      "5\n7\n9\n"
+    );
+  }
+}
+
 mod absolute_timing {
   use super::*;
 
