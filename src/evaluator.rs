@@ -1177,7 +1177,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::ReplaceAll { expr: e, rules } => {
       let evaluated_expr = evaluate_expr_to_expr(e)?;
       let evaluated_rules = evaluate_expr_to_expr(rules)?;
-      apply_replace_all_ast(&evaluated_expr, &evaluated_rules)
+      let result = apply_replace_all_ast(&evaluated_expr, &evaluated_rules)?;
+      evaluate_expr_to_expr(&result)
     }
     Expr::ReplaceRepeated { expr: e, rules } => {
       let evaluated_expr = evaluate_expr_to_expr(e)?;
@@ -5968,6 +5969,11 @@ fn split_association_items(s: &str) -> Vec<String> {
 fn contains_pattern(expr: &Expr) -> bool {
   match expr {
     Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Alternatives,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } if name == "Alternatives" => true,
     Expr::BinaryOp { left, right, .. } => {
       contains_pattern(left) || contains_pattern(right)
     }
@@ -6813,6 +6819,18 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
     Expr::FunctionCall {
       name: pat_name,
       args: pat_args,
+    } if pat_name == "Alternatives" && !pat_args.is_empty() => {
+      // Alternatives as FunctionCall: try each alternative
+      for alt in pat_args {
+        if let Some(b) = match_pattern(expr, alt) {
+          return Some(b);
+        }
+      }
+      None
+    }
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
     } => {
       if let Expr::FunctionCall {
         name: expr_name,
@@ -6834,6 +6852,17 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
       } else {
         None
       }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Alternatives,
+      left: alt_left,
+      right: alt_right,
+    } => {
+      // Alternatives pattern: try each alternative
+      if let Some(b) = match_pattern(expr, alt_left) {
+        return Some(b);
+      }
+      match_pattern(expr, alt_right)
     }
     Expr::BinaryOp {
       op: pat_op,
