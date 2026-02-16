@@ -751,12 +751,36 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Check if an expression represents a complex number (has nonzero imaginary part).
+/// In Wolfram Language, I, 3*I, 2+3*I, Complex[a,b] are all Complex atoms.
+fn is_complex_number(expr: &Expr) -> bool {
+  // I itself is Complex[0, 1]
+  if let Expr::Identifier(name) = expr {
+    return name == "I";
+  }
+  // Check exact complex extraction (integer/rational components)
+  if let Some((_, (im_num, _))) =
+    super::math_ast::try_extract_complex_exact(expr)
+  {
+    return im_num != 0;
+  }
+  // Check float complex extraction
+  if let Some((_, im)) = super::math_ast::try_extract_complex_float(expr) {
+    return im != 0.0;
+  }
+  false
+}
+
 /// Head[expr] - Returns the head of an expression
 pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Head expects exactly 1 argument".into(),
     ));
+  }
+  // Check for complex number patterns before the general match
+  if is_complex_number(&args[0]) {
+    return Ok(Expr::Identifier("Complex".to_string()));
   }
   let head = match &args[0] {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer",

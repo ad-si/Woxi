@@ -3928,6 +3928,45 @@ pub fn evaluate_function_call_ast(
     "UnitStep" if !args.is_empty() => {
       return crate::functions::math_ast::unit_step_ast(args);
     }
+    "Complex" if args.len() == 2 => {
+      // Complex[a, b] → a + b*I
+      let real = &args[0];
+      let imag = &args[1];
+      // If imaginary part is 0, return just the real part
+      if matches!(imag, Expr::Integer(0)) {
+        return Ok(real.clone());
+      }
+      // If real part is 0 and imaginary is 1, return I
+      if matches!(real, Expr::Integer(0)) && matches!(imag, Expr::Integer(1)) {
+        return Ok(Expr::Identifier("I".to_string()));
+      }
+      // If real part is 0, return b*I
+      if matches!(real, Expr::Integer(0)) {
+        return Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(imag.clone()),
+          right: Box::new(Expr::Identifier("I".to_string())),
+        });
+      }
+      // If imaginary is 1, return a + I
+      if matches!(imag, Expr::Integer(1)) {
+        return Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(real.clone()),
+          right: Box::new(Expr::Identifier("I".to_string())),
+        });
+      }
+      // General case: a + b*I
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(real.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(imag.clone()),
+          right: Box::new(Expr::Identifier("I".to_string())),
+        }),
+      });
+    }
     "ConditionalExpression" if args.len() == 2 => match &args[1] {
       Expr::Identifier(name) if name == "True" => {
         return Ok(args[0].clone());
