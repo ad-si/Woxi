@@ -999,11 +999,18 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       let head = &s[1..];
       get_expr_head_str(expr) == head
     }
-    // Except[pattern] - matches anything that doesn't match the inner pattern
+    // Except[c] - matches anything that doesn't match c
+    // Except[c, pattern] - matches pattern but not c
     Expr::FunctionCall { name, args }
-      if name == "Except" && args.len() == 1 =>
+      if name == "Except" && (args.len() == 1 || args.len() == 2) =>
     {
-      !matches_pattern_ast(expr, &args[0])
+      if args.len() == 2 {
+        // Except[c, pattern] - matches pattern but not c
+        matches_pattern_ast(expr, &args[1])
+          && !matches_pattern_ast(expr, &args[0])
+      } else {
+        !matches_pattern_ast(expr, &args[0])
+      }
     }
     // Alternatives: a | b - matches if either side matches
     Expr::BinaryOp {
@@ -5137,7 +5144,6 @@ pub fn delete_cases_with_count_ast(
     }
   };
 
-  let pattern_str = crate::syntax::expr_to_string(pattern);
   let mut removed = 0i128;
   let result: Vec<Expr> = items
     .iter()
@@ -5147,8 +5153,7 @@ pub fn delete_cases_with_count_ast(
       {
         return true; // keep remaining items
       }
-      let item_str = crate::syntax::expr_to_string(item);
-      if matches_pattern_simple(&item_str, &pattern_str) {
+      if matches_pattern_ast(item, pattern) {
         removed += 1;
         false
       } else {

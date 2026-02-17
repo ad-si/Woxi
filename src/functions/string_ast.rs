@@ -1280,8 +1280,68 @@ pub fn string_insert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StringInsert expects exactly 3 arguments".into(),
     ));
   }
+
+  // Handle list of strings as first argument
+  if let Expr::List(strings) = &args[0] {
+    let mut results = Vec::new();
+    for s_expr in strings {
+      let new_args = vec![s_expr.clone(), args[1].clone(), args[2].clone()];
+      results.push(string_insert_ast(&new_args)?);
+    }
+    return Ok(Expr::List(results));
+  }
+
   let s = expr_to_str(&args[0])?;
   let insert = expr_to_str(&args[1])?;
+
+  // Handle list of positions
+  if let Expr::List(positions) = &args[2] {
+    let mut pos_list: Vec<i128> = Vec::new();
+    for p in positions {
+      pos_list.push(expr_to_int(p)?);
+    }
+
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len() as i128;
+
+    // Convert all positions to 0-based indices, accounting for
+    // the fact that earlier insertions shift later positions
+    let mut abs_positions: Vec<usize> = Vec::new();
+    for &n in &pos_list {
+      let pos = if n > 0 {
+        (n - 1).min(len) as usize
+      } else if n < 0 {
+        let p = len + 1 + n;
+        p.max(0) as usize
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "StringInsert: position cannot be 0".into(),
+        ));
+      };
+      abs_positions.push(pos);
+    }
+
+    // Sort positions in ascending order
+    abs_positions.sort();
+
+    // Build result by inserting at each position, adjusting for previous insertions
+    let mut result = String::new();
+    let mut last = 0;
+    for (i, &pos) in abs_positions.iter().enumerate() {
+      let adjusted_pos = pos;
+      if adjusted_pos > last {
+        result.extend(&chars[last..adjusted_pos.min(chars.len())]);
+      }
+      result.push_str(&insert);
+      last = adjusted_pos;
+      let _ = i;
+    }
+    if last < chars.len() {
+      result.extend(&chars[last..]);
+    }
+    return Ok(Expr::String(result));
+  }
+
   let n = expr_to_int(&args[2])?;
 
   let chars: Vec<char> = s.chars().collect();

@@ -3785,6 +3785,31 @@ pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(n) = expr_to_i128(&args[0]) {
     if n < -1 {
+      // Negative odd integers: n!! = (n+2)!! / (n+2)
+      // (-1)!! = 1, (-3)!! = -1, (-5)!! = 1/3, (-7)!! = -1/15, ...
+      if n % 2 != 0 {
+        // Compute by working from -1 down
+        let mut numer: i128 = 1;
+        let mut denom: i128 = 1;
+        let mut k = -1i128;
+        while k > n {
+          k -= 2;
+          // (k)!! = (k+2)!! / (k+2)
+          denom *= k + 2;
+          // Simplify
+          let g = gcd_i128(numer.abs(), denom.abs());
+          numer /= g;
+          denom /= g;
+        }
+        if denom < 0 {
+          numer = -numer;
+          denom = -denom;
+        }
+        if denom == 1 {
+          return Ok(Expr::Integer(numer));
+        }
+        return Ok(make_rational(numer, denom));
+      }
       return Ok(Expr::FunctionCall {
         name: "Factorial2".to_string(),
         args: args.to_vec(),
@@ -12763,6 +12788,54 @@ pub fn euclidean_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[args[0].clone(), args[1].clone()],
       )?;
       crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
+    }
+  }
+}
+
+/// SquaredEuclideanDistance[u, v] - squared Euclidean distance
+pub fn squared_euclidean_distance_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SquaredEuclideanDistance expects exactly 2 arguments".into(),
+    ));
+  }
+
+  match (&args[0], &args[1]) {
+    (Expr::List(u), Expr::List(v)) => {
+      if u.len() != v.len() {
+        return Err(InterpreterError::EvaluationError(
+          "SquaredEuclideanDistance: vectors must have the same length".into(),
+        ));
+      }
+      let mut sum_args = Vec::new();
+      for (ui, vi) in u.iter().zip(v.iter()) {
+        let diff = crate::evaluator::evaluate_function_call_ast(
+          "Subtract",
+          &[ui.clone(), vi.clone()],
+        )?;
+        let abs_diff =
+          crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
+        let sq = crate::evaluator::evaluate_function_call_ast(
+          "Power",
+          &[abs_diff, Expr::Integer(2)],
+        )?;
+        sum_args.push(sq);
+      }
+      crate::evaluator::evaluate_function_call_ast("Plus", &sum_args)
+    }
+    _ => {
+      let diff = crate::evaluator::evaluate_function_call_ast(
+        "Subtract",
+        &[args[0].clone(), args[1].clone()],
+      )?;
+      let abs_diff =
+        crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
+      crate::evaluator::evaluate_function_call_ast(
+        "Power",
+        &[abs_diff, Expr::Integer(2)],
+      )
     }
   }
 }

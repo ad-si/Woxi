@@ -4127,6 +4127,9 @@ pub fn evaluate_function_call_ast(
     "ManhattanDistance" if args.len() == 2 => {
       return crate::functions::math_ast::manhattan_distance_ast(args);
     }
+    "SquaredEuclideanDistance" if args.len() == 2 => {
+      return crate::functions::math_ast::squared_euclidean_distance_ast(args);
+    }
     "Factorial" if args.len() == 1 => {
       return crate::functions::math_ast::factorial_ast(args);
     }
