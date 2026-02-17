@@ -1868,16 +1868,29 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       if items.is_empty() {
         Err(InterpreterError::EvaluationError(
-          "Rest: list is empty".into(),
+          "Cannot take Rest of expression {} with length zero.".into(),
         ))
       } else {
         Ok(Expr::List(items[1..].to_vec()))
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Rest".to_string(),
-      args: vec![list.clone()],
-    }),
+    Expr::FunctionCall { name, args } => {
+      if args.is_empty() {
+        Err(InterpreterError::EvaluationError(format!(
+          "Cannot take Rest of expression {}[] with length zero.",
+          name
+        )))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: name.clone(),
+          args: args[1..].to_vec(),
+        })
+      }
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "Nonatomic expression expected at position 1 in Rest[{}].",
+      crate::syntax::expr_to_string(list)
+    ))),
   }
 }
 
@@ -6509,4 +6522,98 @@ pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result: Vec<Expr> =
     with_keys.into_iter().take(n).map(|(_, v)| v).collect();
   Ok(Expr::List(result))
+}
+
+/// Pick[list, sel] - pick elements where selector is True
+/// Pick[list, sel, pattern] - pick elements where selector matches pattern
+pub fn pick_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Pick expects 2 or 3 arguments".into(),
+    ));
+  }
+  let list = &args[0];
+  let sel = &args[1];
+  let pattern = if args.len() == 3 {
+    Some(&args[2])
+  } else {
+    None
+  };
+
+  pick_recursive(list, sel, pattern)
+}
+
+fn pick_recursive(
+  list: &Expr,
+  sel: &Expr,
+  pattern: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  match (list, sel) {
+    (
+      Expr::FunctionCall {
+        name,
+        args: list_args,
+      },
+      Expr::List(sel_items),
+    ) if list_args.len() == sel_items.len() => {
+      let mut result = Vec::new();
+      for (item, s) in list_args.iter().zip(sel_items.iter()) {
+        if let (Expr::List(_), Expr::List(_)) = (item, s) {
+          let picked = pick_recursive(item, s, pattern)?;
+          result.push(picked);
+        } else if let (Expr::FunctionCall { .. }, Expr::List(_)) = (item, s) {
+          let picked = pick_recursive(item, s, pattern)?;
+          result.push(picked);
+        } else if matches_selector(s, pattern) {
+          result.push(item.clone());
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: result,
+      })
+    }
+    (Expr::List(list_items), Expr::List(sel_items))
+      if list_items.len() == sel_items.len() =>
+    {
+      let mut result = Vec::new();
+      for (item, s) in list_items.iter().zip(sel_items.iter()) {
+        if let (Expr::List(_), Expr::List(_)) = (item, s) {
+          let picked = pick_recursive(item, s, pattern)?;
+          result.push(picked);
+        } else if let (Expr::FunctionCall { .. }, Expr::List(_)) = (item, s) {
+          let picked = pick_recursive(item, s, pattern)?;
+          result.push(picked);
+        } else if matches_selector(s, pattern) {
+          result.push(item.clone());
+        }
+      }
+      Ok(Expr::List(result))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Pick".to_string(),
+      args: if let Some(p) = pattern {
+        vec![list.clone(), sel.clone(), p.clone()]
+      } else {
+        vec![list.clone(), sel.clone()]
+      },
+    }),
+  }
+}
+
+fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {
+  match pattern {
+    None => {
+      matches!(sel, Expr::Identifier(s) if s == "True")
+    }
+    Some(pat) => {
+      match crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "MatchQ".to_string(),
+        args: vec![sel.clone(), pat.clone()],
+      }) {
+        Ok(Expr::Identifier(s)) => s == "True",
+        _ => false,
+      }
+    }
+  }
 }

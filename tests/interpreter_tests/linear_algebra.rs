@@ -383,3 +383,73 @@ mod box_matrix {
     assert_eq!(interpret("BoxMatrix[0]").unwrap(), "{{1}}");
   }
 }
+
+mod row_reduce {
+  use super::*;
+
+  #[test]
+  fn row_reduce_2x3() {
+    assert_eq!(
+      interpret("RowReduce[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "{{1, 0, -1}, {0, 1, 2}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn row_reduce_symbolic() {
+    assert_eq!(
+      interpret("RowReduce[{{1, 0, a}, {1, 1, b}}]").unwrap(),
+      "{{1, 0, a}, {0, 1, -a + b}}"
+    );
+  }
+
+  #[test]
+  fn row_reduce_identity() {
+    assert_eq!(
+      interpret("RowReduce[{{1, 0}, {0, 1}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+  }
+}
+
+mod matrix_rank {
+  use super::*;
+
+  #[test]
+  fn rank_3x3_deficient() {
+    assert_eq!(
+      interpret("MatrixRank[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn rank_3x3_full() {
+    assert_eq!(
+      interpret("MatrixRank[{{1, 1, 0}, {1, 0, 1}, {0, 1, 1}}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn rank_symbolic() {
+    assert_eq!(interpret("MatrixRank[{{a, b}, {3 a, 3 b}}]").unwrap(), "1");
+  }
+}
+
+mod null_space {
+  use super::*;
+
+  #[test]
+  fn null_space_3x3() {
+    assert_eq!(
+      interpret("NullSpace[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "{{1, -2, 1}}"
+    );
+  }
+
+  #[test]
+  fn null_space_full_rank() {
+    assert_eq!(interpret("NullSpace[{{1, 0}, {0, 1}}]").unwrap(), "{}");
+  }
+}

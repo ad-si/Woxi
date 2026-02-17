@@ -1746,3 +1746,52 @@ mod take_smallest_by {
     );
   }
 }
+
+mod pick {
+  use super::*;
+
+  #[test]
+  fn pick_basic() {
+    assert_eq!(
+      interpret("Pick[{a, b, c}, {False, True, False}]").unwrap(),
+      "{b}"
+    );
+  }
+
+  #[test]
+  fn pick_nested() {
+    assert_eq!(
+      interpret("Pick[f[g[1, 2], h[3, 4]], {{True, False}, {False, True}}]")
+        .unwrap(),
+      "f[g[1], h[4]]"
+    );
+  }
+
+  #[test]
+  fn pick_with_pattern() {
+    assert_eq!(
+      interpret("Pick[{a, b, c, d, e}, {1, 2, 3.5, 4, 5.5}, _Integer]")
+        .unwrap(),
+      "{a, b, d}"
+    );
+  }
+}
+
+mod rest_nonlist {
+  use super::*;
+
+  #[test]
+  fn rest_plus() {
+    assert_eq!(interpret("Rest[a + b + c]").unwrap(), "b + c");
+  }
+
+  #[test]
+  fn rest_error_atomic() {
+    assert!(interpret("Rest[x]").is_err());
+  }
+
+  #[test]
+  fn rest_error_empty() {
+    assert!(interpret("Rest[{}]").is_err());
+  }
+}

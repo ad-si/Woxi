@@ -2416,6 +2416,9 @@ pub fn evaluate_function_call_ast(
     "ContainsOnly" if args.len() == 2 => {
       return list_helpers_ast::contains_only_ast(args);
     }
+    "Pick" if args.len() == 2 || args.len() == 3 => {
+      return list_helpers_ast::pick_ast(args);
+    }
     "LengthWhile" if args.len() == 2 => {
       return list_helpers_ast::length_while_ast(args);
     }
@@ -4202,6 +4205,12 @@ pub fn evaluate_function_call_ast(
     "Chop" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::chop_ast(args);
     }
+    "PowerExpand" if args.len() == 1 => {
+      return crate::functions::math_ast::power_expand_ast(args);
+    }
+    "Variables" if args.len() == 1 => {
+      return crate::functions::math_ast::variables_ast(args);
+    }
     "CubeRoot" if args.len() == 1 => {
       return crate::functions::math_ast::cube_root_ast(args);
     }
@@ -4452,6 +4461,15 @@ pub fn evaluate_function_call_ast(
     }
     "Eigenvalues" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::eigenvalues_ast(args);
+    }
+    "RowReduce" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::row_reduce_ast(args);
+    }
+    "MatrixRank" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::matrix_rank_ast(args);
+    }
+    "NullSpace" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::null_space_ast(args);
     }
     "ConjugateTranspose" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::conjugate_transpose_ast(
@@ -8550,6 +8568,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "LinearSolve"
     | "Eigenvalues"
     | "Eigenvectors"
+    | "RowReduce"
+    | "MatrixRank"
+    | "NullSpace"
     | "IdentityMatrix"
     | "DiagonalMatrix"
     | "ConstantArray"
@@ -8577,7 +8598,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ContainsOnly"
     | "LengthWhile"
     | "TakeLargestBy"
-    | "TakeSmallestBy" => {
+    | "TakeSmallestBy"
+    | "Pick"
+    | "PowerExpand"
+    | "Variables" => {
       vec!["Protected"]
     }
 
