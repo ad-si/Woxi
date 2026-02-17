@@ -6782,27 +6782,6 @@ pub fn level_ast(
   Ok(Expr::List(results))
 }
 
-/// Calculate the Mathematica Depth of an expression.
-/// Depth[atom] = 1, Depth[f[x1,...]] = 1 + max(Depth[xi])
-fn mathematica_depth(expr: &Expr) -> i64 {
-  match expr {
-    Expr::List(items) => {
-      1 + items.iter().map(mathematica_depth).max().unwrap_or(0)
-    }
-    Expr::FunctionCall { args, .. } => {
-      1 + args.iter().map(mathematica_depth).max().unwrap_or(0)
-    }
-    Expr::CurriedCall { args, .. } => {
-      1 + args.iter().map(mathematica_depth).max().unwrap_or(0)
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      1 + mathematica_depth(left).max(mathematica_depth(right))
-    }
-    Expr::UnaryOp { operand, .. } => 1 + mathematica_depth(operand),
-    _ => 1, // atoms have depth 1
-  }
-}
-
 /// Check if a node matches the level spec.
 /// pos_level: distance from root (0 = root itself)
 /// neg_level: -Depth[node] (-1 for atoms, -2 for f[atom], etc.)
