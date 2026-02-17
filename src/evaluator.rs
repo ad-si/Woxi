@@ -3319,55 +3319,20 @@ pub fn evaluate_function_call_ast(
         Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
       };
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    "AbsoluteTime" => {
+      return crate::functions::datetime_ast::absolute_time_ast(args);
+    }
+    "DateList" => {
+      return crate::functions::datetime_ast::date_list_ast(args);
+    }
+    "DatePlus" if args.len() == 2 => {
+      return crate::functions::datetime_ast::date_plus_ast(args);
+    }
+    "DateDifference" if args.len() >= 2 => {
+      return crate::functions::datetime_ast::date_difference_ast(args);
+    }
     "DateString" => {
-      use chrono::Local;
-      let current_time = Local::now();
-      let default_format = "%a, %d %b %Y %H:%M:%S";
-
-      return match args.len() {
-        0 => Ok(Expr::String(current_time.format(default_format).to_string())),
-        1 => {
-          // DateString[Now] or DateString[DateObject[...]] or DateString["format"]
-          if matches!(&args[0], Expr::Identifier(s) if s == "Now")
-            || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "DateObject")
-          {
-            Ok(Expr::String(current_time.format(default_format).to_string()))
-          } else if let Expr::String(format_str) = &args[0] {
-            let fmt = match format_str.as_str() {
-              "ISODateTime" => "%Y-%m-%dT%H:%M:%S",
-              _ => format_str.as_str(),
-            };
-            Ok(Expr::String(current_time.format(fmt).to_string()))
-          } else {
-            Ok(Expr::String(current_time.format(default_format).to_string()))
-          }
-        }
-        2 => {
-          // DateString[Now, "format"] or DateString[DateObject[...], "format"]
-          if !matches!(&args[0], Expr::Identifier(s) if s == "Now")
-            && !matches!(&args[0], Expr::FunctionCall { name, .. } if name == "DateObject")
-          {
-            return Err(InterpreterError::EvaluationError(
-              "DateString: First argument currently must be Now.".into(),
-            ));
-          }
-          if let Expr::String(format_str) = &args[1] {
-            let fmt = match format_str.as_str() {
-              "ISODateTime" => "%Y-%m-%dT%H:%M:%S",
-              _ => format_str.as_str(),
-            };
-            Ok(Expr::String(current_time.format(fmt).to_string()))
-          } else {
-            Err(InterpreterError::EvaluationError(
-              "DateString: Second argument must be a format string.".into(),
-            ))
-          }
-        }
-        _ => Err(InterpreterError::EvaluationError(
-          "DateString: Called with invalid number of arguments. Expected 0, 1, or 2.".into(),
-        )),
-      };
+      return crate::functions::datetime_ast::date_string_ast(args);
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Run" if args.len() == 1 => {
@@ -8780,8 +8745,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Attributes"
     | "Context"
     | "Contexts"
-    | "DateList"
-    | "DateString"
     | "Abort"
     | "Interrupt"
     | "Pause"
