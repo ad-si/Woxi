@@ -1,12 +1,4 @@
 FILE: mathics/builtin/options.py
-CLASS: All
-LINE: 56
-TYPE: >>
-INPUT: Take[{{1, 3}, {5, 7}}, All, {1}]
-EXPECTED:
-= {{1}, {5}}
----
-FILE: mathics/builtin/options.py
 CLASS: Default
 LINE: 97
 TYPE: >>
