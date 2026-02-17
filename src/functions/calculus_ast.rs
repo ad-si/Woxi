@@ -24,32 +24,32 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Handle D[expr, {var, n}] for higher-order derivatives
-  if let Expr::List(items) = &args[1] {
-    if items.len() == 2 {
-      let var_name = match &items[0] {
-        Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "Variable specification in D must be a symbol".into(),
-          ));
-        }
-      };
-      let n = match &items[1] {
-        Expr::Integer(n) if *n >= 0 => *n as usize,
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "Derivative order in D must be a non-negative integer".into(),
-          ));
-        }
-      };
-      // Apply differentiation n times
-      let mut result = args[0].clone();
-      for _ in 0..n {
-        result = differentiate(&result, &var_name)?;
-        result = simplify(result);
+  if let Expr::List(items) = &args[1]
+    && items.len() == 2
+  {
+    let var_name = match &items[0] {
+      Expr::Identifier(name) => name.clone(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Variable specification in D must be a symbol".into(),
+        ));
       }
-      return Ok(result);
+    };
+    let n = match &items[1] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Derivative order in D must be a non-negative integer".into(),
+        ));
+      }
+    };
+    // Apply differentiation n times
+    let mut result = args[0].clone();
+    for _ in 0..n {
+      result = differentiate(&result, &var_name)?;
+      result = simplify(result);
     }
+    return Ok(result);
   }
 
   // Get the variable name

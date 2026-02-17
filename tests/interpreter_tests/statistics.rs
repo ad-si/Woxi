@@ -445,6 +445,22 @@ mod normalize {
       "{1/3, 2/3, 2/3}"
     );
   }
+
+  #[test]
+  fn normalize_symbolic() {
+    assert_eq!(
+      interpret("Normalize[{a, b}]").unwrap(),
+      "{a/Sqrt[a^2 + b^2], b/Sqrt[a^2 + b^2]}"
+    );
+  }
+
+  #[test]
+  fn normalize_symbolic_evaluates_numerically() {
+    assert_eq!(
+      interpret("(Normalize[{a, b}] /. a -> 3) /. b -> 4").unwrap(),
+      "{3/5, 4/5}"
+    );
+  }
 }
 
 mod mean {

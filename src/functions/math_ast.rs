@@ -5648,31 +5648,31 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Log[base, x] — integer base and argument
       if let (Some(base), Some(x)) =
         (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+        && base > 1
+        && x > 0
       {
-        if base > 1 && x > 0 {
-          // Check if x is an exact power of base
-          let mut val = x;
-          let mut exp = 0i128;
-          while val > 1 && val % base == 0 {
-            val /= base;
-            exp += 1;
-          }
-          if val == 1 {
-            return Ok(Expr::Integer(exp));
-          }
-          // Return Log[x]/Log[base] symbolically
-          return Ok(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: Box::new(Expr::FunctionCall {
-              name: "Log".to_string(),
-              args: vec![args[1].clone()],
-            }),
-            right: Box::new(Expr::FunctionCall {
-              name: "Log".to_string(),
-              args: vec![args[0].clone()],
-            }),
-          });
+        // Check if x is an exact power of base
+        let mut val = x;
+        let mut exp = 0i128;
+        while val > 1 && val % base == 0 {
+          val /= base;
+          exp += 1;
         }
+        if val == 1 {
+          return Ok(Expr::Integer(exp));
+        }
+        // Return Log[x]/Log[base] symbolically
+        return Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::FunctionCall {
+            name: "Log".to_string(),
+            args: vec![args[1].clone()],
+          }),
+          right: Box::new(Expr::FunctionCall {
+            name: "Log".to_string(),
+            args: vec![args[0].clone()],
+          }),
+        });
       }
       // Log[base, x] — evaluate for Real args
       if let (Expr::Real(base), Expr::Real(x)) = (&args[0], &args[1])
@@ -7572,16 +7572,15 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Handle real/float argument: H(x) = digamma(x+1) + EulerGamma
-  if args.len() == 1 {
-    if let Some(x) = expr_to_num(&args[0]) {
-      if expr_to_i128(&args[0]).is_none() {
-        // Real input - use digamma approximation
-        // Euler-Mascheroni constant
-        const EULER_GAMMA: f64 = 0.5772156649015329;
-        let result = digamma(x + 1.0) + EULER_GAMMA;
-        return Ok(Expr::Real(result));
-      }
-    }
+  if args.len() == 1
+    && let Some(x) = expr_to_num(&args[0])
+    && expr_to_i128(&args[0]).is_none()
+  {
+    // Real input - use digamma approximation
+    // Euler-Mascheroni constant
+    const EULER_GAMMA: f64 = 0.5772156649015329;
+    let result = digamma(x + 1.0) + EULER_GAMMA;
+    return Ok(Expr::Real(result));
   }
 
   let n = match expr_to_i128(&args[0]) {
@@ -11352,10 +11351,37 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             all_int = false;
           }
           _ => {
-            return Ok(Expr::FunctionCall {
-              name: "Normalize".to_string(),
-              args: args.to_vec(),
-            });
+            // Symbolic case: return {elem/Sqrt[sum_of_squares], ...}
+            // like Mathematica does for Normalize[{a, b}] → {a/Sqrt[a^2+b^2], b/Sqrt[a^2+b^2]}
+            let squared_terms: Vec<Expr> = items
+              .iter()
+              .map(|e| Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(e.clone()),
+                right: Box::new(Expr::Integer(2)),
+              })
+              .collect();
+            let sum_of_squares = if squared_terms.len() == 1 {
+              squared_terms.into_iter().next().unwrap()
+            } else {
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: squared_terms,
+              }
+            };
+            let norm_expr = Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![sum_of_squares],
+            };
+            let result: Vec<Expr> = items
+              .iter()
+              .map(|e| Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(e.clone()),
+                right: Box::new(norm_expr.clone()),
+              })
+              .collect();
+            return Ok(Expr::List(result));
           }
         }
       }

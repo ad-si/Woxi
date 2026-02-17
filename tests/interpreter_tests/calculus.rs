@@ -672,10 +672,7 @@ mod big_o {
   // D threading over lists
   #[test]
   fn d_list_simple() {
-    assert_eq!(
-      interpret("D[{x^2, x^3}, x]").unwrap(),
-      "{2*x, 3*x^2}"
-    );
+    assert_eq!(interpret("D[{x^2, x^3}, x]").unwrap(), "{2*x, 3*x^2}");
   }
 
   #[test]
@@ -693,18 +690,12 @@ mod big_o {
 
   #[test]
   fn d_list_higher_order() {
-    assert_eq!(
-      interpret("D[{x^3, x^4}, {x, 2}]").unwrap(),
-      "{6*x, 12*x^2}"
-    );
+    assert_eq!(interpret("D[{x^3, x^4}, {x, 2}]").unwrap(), "{6*x, 12*x^2}");
   }
 
   #[test]
   fn d_list_nested() {
     // D should thread over the outer list
-    assert_eq!(
-      interpret("D[{x, x^2, x^3}, x]").unwrap(),
-      "{1, 2*x, 3*x^2}"
-    );
+    assert_eq!(interpret("D[{x, x^2, x^3}, x]").unwrap(), "{1, 2*x, 3*x^2}");
   }
 }
