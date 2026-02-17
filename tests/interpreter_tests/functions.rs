@@ -1730,3 +1730,58 @@ mod quartiles {
     );
   }
 }
+
+mod compile {
+  use super::*;
+
+  #[test]
+  fn compile_basic() {
+    clear_state();
+    assert_eq!(
+      interpret("cf = Compile[{x, y}, x + 2 y]; cf[2.5, 4.3]").unwrap(),
+      "11.1"
+    );
+  }
+
+  #[test]
+  fn compile_with_typed_specs() {
+    clear_state();
+    assert_eq!(
+      interpret("cf = Compile[{{x, _Real}}, Sin[x]]; cf[1.4]").unwrap(),
+      "0.9854497299884601"
+    );
+  }
+
+  #[test]
+  fn compile_complex_body() {
+    clear_state();
+    assert_eq!(
+      interpret("cf = Compile[{{x, _Real}, {y, _Integer}}, If[x == 0.0 && y <= 0, 0.0, Sin[x ^ y] + 1 / Min[x, 0.5]] + 0.5]; cf[3.5, 2]").unwrap(),
+      "2.1888806450188727"
+    );
+  }
+
+  #[test]
+  fn compile_forces_numerical() {
+    clear_state();
+    // Compile forces numerical evaluation even for integer inputs
+    assert_eq!(interpret("sqr = Compile[{x}, x x]; sqr[2]").unwrap(), "4.");
+  }
+
+  #[test]
+  fn compile_head() {
+    clear_state();
+    assert_eq!(
+      interpret("sqr = Compile[{x}, x x]; Head[sqr]").unwrap(),
+      "CompiledFunction"
+    );
+  }
+
+  #[test]
+  fn compile_display() {
+    clear_state();
+    // CompiledFunction display should show the variable list and body
+    let result = interpret("Compile[{x, y}, x + y]").unwrap();
+    assert!(result.starts_with("CompiledFunction["));
+  }
+}

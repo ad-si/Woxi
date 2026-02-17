@@ -1954,6 +1954,41 @@ pub fn evaluate_function_call_ast(
         }
       }
     }
+    "Compile" if args.len() == 2 => {
+      // Compile[{x, y, ...}, body] or Compile[{{x, _Real}, {y, _Integer}}, body]
+      // Returns CompiledFunction[{x, y, ...}, body]
+      let vars = match &args[0] {
+        Expr::List(items) => {
+          let mut var_names = Vec::new();
+          for item in items {
+            match item {
+              Expr::Identifier(name) => var_names.push(name.clone()),
+              // {x, _Real} or {x, _Integer} — extract just the variable name
+              Expr::List(inner) if !inner.is_empty() => {
+                if let Expr::Identifier(name) = &inner[0] {
+                  var_names.push(name.clone());
+                }
+              }
+              _ => {}
+            }
+          }
+          var_names
+        }
+        Expr::Identifier(name) => vec![name.clone()],
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Compile".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let var_exprs: Vec<Expr> =
+        vars.iter().map(|v| Expr::Identifier(v.clone())).collect();
+      return Ok(Expr::FunctionCall {
+        name: "CompiledFunction".to_string(),
+        args: vec![Expr::List(var_exprs), args[1].clone()],
+      });
+    }
     "Rational" if args.len() == 2 => {
       // Rational[n, d] with integer arguments: simplify via make_rational_pub
       if let (Some(n), Some(d)) =
@@ -3192,11 +3227,12 @@ pub fn evaluate_function_call_ast(
         Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
           crate::get_captured_graphics().unwrap_or_default()
         }
-        Expr::FunctionCall { name: grid_name, args: grid_args }
-          if grid_name == "Grid" && !grid_args.is_empty() =>
-        {
+        Expr::FunctionCall {
+          name: grid_name,
+          args: grid_args,
+        } if grid_name == "Grid" && !grid_args.is_empty() => {
           // Grid[...] → render as SVG table
-          if let Ok(_) = crate::functions::graphics::grid_ast(grid_args) {
+          if crate::functions::graphics::grid_ast(grid_args).is_ok() {
             crate::get_captured_graphics().unwrap_or_default()
           } else {
             String::new()
@@ -3207,13 +3243,15 @@ pub fn evaluate_function_call_ast(
           let markup = crate::functions::graphics::expr_to_svg_markup(other);
           let char_width = 8.4_f64;
           let font_size = 14_usize;
-          let display_width = crate::functions::graphics::estimate_display_width(other);
+          let display_width =
+            crate::functions::graphics::estimate_display_width(other);
           let width = (display_width * char_width).ceil() as usize;
-          let (height, text_y) = if crate::functions::graphics::has_fraction(other) {
-            (32_usize, 18_usize)
-          } else {
-            (font_size + 4, font_size)
-          };
+          let (height, text_y) =
+            if crate::functions::graphics::has_fraction(other) {
+              (32_usize, 18_usize)
+            } else {
+              (font_size + 4, font_size)
+            };
           format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
              <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
@@ -7787,6 +7825,50 @@ fn apply_curried_call(
           crate::syntax::substitute_variable(&substituted, param, arg);
       }
       evaluate_expr_to_expr(&substituted)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "CompiledFunction" && func_args.len() == 2 => {
+      // CompiledFunction[{x, y, ...}, body][args...] — substitute and evaluate numerically
+      let params: Vec<String> = match &func_args[0] {
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|item| {
+            if let Expr::Identifier(n) = item {
+              Some(n.clone())
+            } else {
+              None
+            }
+          })
+          .collect(),
+        Expr::Identifier(n) => vec![n.clone()],
+        _ => vec![],
+      };
+      let body = &func_args[1];
+      // Convert all arguments to Real (compiled functions work numerically)
+      let num_args: Vec<Expr> = args
+        .iter()
+        .map(|a| match a {
+          Expr::Integer(n) => Expr::Real(*n as f64),
+          Expr::BigInteger(n) => {
+            use std::str::FromStr;
+            Expr::Real(f64::from_str(&n.to_string()).unwrap_or(f64::NAN))
+          }
+          other => other.clone(),
+        })
+        .collect();
+      let mut substituted = body.clone();
+      for (param, arg) in params.iter().zip(num_args.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      let result = evaluate_expr_to_expr(&substituted)?;
+      // Ensure the result is numerical
+      match &result {
+        Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
+        _ => Ok(result),
+      }
     }
     Expr::FunctionCall {
       name,
