@@ -1737,11 +1737,21 @@ fn coeffs_to_expr(coeffs: &[i128], var: &str) -> Expr {
 // ─── Factor ─────────────────────────────────────────────────────────
 
 /// Factor[expr] - Factor a polynomial expression
+/// Threads over List.
 pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Factor expects exactly 1 argument".into(),
     ));
+  }
+
+  // Thread over List
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| factor_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
   }
 
   // First expand to canonical form
@@ -3099,11 +3109,18 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // ─── Together ───────────────────────────────────────────────────────
 
 /// Together[expr] - Combines fractions over a common denominator
+/// Threads over List.
 pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Together expects exactly 1 argument".into(),
     ));
+  }
+  // Thread over List
+  if let Expr::List(items) = &args[0] {
+    let results: Vec<Expr> =
+      items.iter().map(|item| together_expr(item)).collect();
+    return Ok(Expr::List(results));
   }
   Ok(together_expr(&args[0]))
 }

@@ -1021,13 +1021,9 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
 
         let result = match op {
           ComparisonOp::SameQ => {
-            if let (Some(l), Some(r)) =
-              (try_eval_to_f64(left), try_eval_to_f64(right))
-            {
-              l == r
-            } else {
-              expr_to_string(left) == expr_to_string(right)
-            }
+            // SameQ tests structural identity, not numeric equality.
+            // Integer[1] !== Real[1.] even though they are numerically equal.
+            expr_to_string(left) == expr_to_string(right)
           }
           ComparisonOp::Equal => {
             if let (Some(l), Some(r)) =
@@ -1051,13 +1047,8 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
             }
           }
           ComparisonOp::UnsameQ => {
-            if let (Some(l), Some(r)) =
-              (try_eval_to_f64(left), try_eval_to_f64(right))
-            {
-              l != r
-            } else {
-              expr_to_string(left) != expr_to_string(right)
-            }
+            // UnsameQ tests structural non-identity, not numeric inequality.
+            expr_to_string(left) != expr_to_string(right)
           }
           ComparisonOp::NotEqual => {
             if let (Some(l), Some(r)) =
@@ -3989,6 +3980,21 @@ pub fn evaluate_function_call_ast(
     }
     "RootMeanSquare" if args.len() == 1 => {
       return crate::functions::math_ast::root_mean_square_ast(args);
+    }
+    "Covariance" if args.len() == 2 => {
+      return crate::functions::math_ast::covariance_ast(args);
+    }
+    "Correlation" if args.len() == 2 => {
+      return crate::functions::math_ast::correlation_ast(args);
+    }
+    "CentralMoment" if args.len() == 2 => {
+      return crate::functions::math_ast::central_moment_ast(args);
+    }
+    "Kurtosis" if args.len() == 1 => {
+      return crate::functions::math_ast::kurtosis_ast(args);
+    }
+    "Skewness" if args.len() == 1 => {
+      return crate::functions::math_ast::skewness_ast(args);
     }
     "IntegerLength" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::integer_length_ast(args);

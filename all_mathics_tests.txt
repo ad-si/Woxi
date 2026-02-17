@@ -16529,78 +16529,6 @@ INPUT: White
 EXPECTED:
 = GrayLevel[1]
 ---
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: Correlation
-LINE: 48
-TYPE: >>
-INPUT: Correlation[{10, 8, 13, 9, 11, 14, 6, 4, 12, 7, 5}, {8.04, 6.95, 7.58, 8.81, 8.33, 9.96, 7.24, 4.26, 10.84, 4.82, 5.68}]
-EXPECTED:
-= 0.816421
----
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: Covariance
-LINE: 85
-TYPE: >>
-INPUT: Covariance[{0.2, 0.3, 0.1}, {0.3, 0.3, -0.2}]
-EXPECTED:
-= 0.025
----
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: StandardDeviation
-LINE: 136
-TYPE: >>
-INPUT: StandardDeviation[{a, a}]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: StandardDeviation
-LINE: 139
-TYPE: >>
-INPUT: StandardDeviation[{{1, 10}, {-1, 20}}]
-EXPECTED:
-= {Sqrt[2], 5 Sqrt[2]}
----
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: Variance
-LINE: 186
-TYPE: >>
-INPUT: Variance[{1 + 2I, 3 - 10I}]
-EXPECTED:
-= 74
----
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: Variance
-LINE: 189
-TYPE: >>
-INPUT: Variance[{a, a}]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: Variance
-LINE: 192
-TYPE: >>
-INPUT: Variance[{{1, 3, 5}, {4, 10, 100}}]
-EXPECTED:
-= {9 / 2, 49 / 2, 9025 / 2}
----
-FILE: mathics/builtin/statistics/general.py
-CLASS: CentralMoment
-LINE: 26
-TYPE: >>
-INPUT: CentralMoment[{1.1, 1.2, 1.4, 2.1, 2.4}, 4]
-EXPECTED:
-= 0.100845
----
-FILE: mathics/builtin/statistics/location.py
-CLASS: Mean
-LINE: 32
-TYPE: >>
-INPUT: Mean[{a, b}]
-EXPECTED:
-= (a + b) / 2
----
 FILE: mathics/builtin/statistics/location.py
 CLASS: Median
 LINE: 61
@@ -16648,22 +16576,6 @@ TYPE: >>
 INPUT: TakeLargest[{-8, 150, Missing[abc]}, 2, ExcludedForms -> {}]
 EXPECTED:
 = {Missing[abc], 150}
----
-FILE: mathics/builtin/statistics/shape.py
-CLASS: Kurtosis
-LINE: 18
-TYPE: >>
-INPUT: Kurtosis[{1.1, 1.2, 1.4, 2.1, 2.4}]
-EXPECTED:
-= 1.42098
----
-FILE: mathics/builtin/statistics/shape.py
-CLASS: Skewness
-LINE: 37
-TYPE: >>
-INPUT: Skewness[{1.1, 1.2, 1.4, 2.1, 2.4}]
-EXPECTED:
-= 0.407041
 ---
 FILE: mathics/builtin/forms/data.py
 CLASS: BaseForm
