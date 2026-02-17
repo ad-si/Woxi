@@ -1,4 +1,4 @@
-n = 8;
+n = 6;
 cnt = 1;
 per = Permutations[Range[n], {n}];  (* All permutations of length n *)
 
