@@ -4143,6 +4143,9 @@ pub fn evaluate_function_call_ast(
     "Fibonacci" if args.len() == 1 => {
       return crate::functions::math_ast::fibonacci_ast(args);
     }
+    "LinearRecurrence" if args.len() == 3 => {
+      return crate::functions::math_ast::linear_recurrence_ast(args);
+    }
     "IntegerDigits" if !args.is_empty() && args.len() <= 3 => {
       return crate::functions::math_ast::integer_digits_ast(args);
     }

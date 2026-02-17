@@ -212,15 +212,21 @@ pub fn atom_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "AtomQ expects exactly 1 argument".into(),
     ));
   }
-  let is_atom = matches!(
-    &args[0],
+  let is_atom = match &args[0] {
     Expr::Integer(_)
-      | Expr::BigInteger(_)
-      | Expr::Real(_)
-      | Expr::String(_)
-      | Expr::Identifier(_)
-      | Expr::Constant(_)
-  );
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => true,
+    // Rational[n, d] and Complex[re, im] are atoms in Mathematica
+    Expr::FunctionCall { name, .. }
+      if name == "Rational" || name == "Complex" =>
+    {
+      true
+    }
+    _ => false,
+  };
   Ok(bool_expr(is_atom))
 }
 
