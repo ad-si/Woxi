@@ -1663,3 +1663,86 @@ mod range {
     assert_eq!(interpret("Range[-2, 2]").unwrap(), "{-2, -1, 0, 1, 2}");
   }
 }
+
+mod intersection_sorting {
+  use super::*;
+
+  #[test]
+  fn intersection_sorts_result() {
+    assert_eq!(interpret("Intersection[{c, b, a}]").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn intersection_sorts_numeric() {
+    assert_eq!(
+      interpret("Intersection[{1000, 100, 10, 1}, {1, 5, 10, 15}]").unwrap(),
+      "{1, 10}"
+    );
+  }
+}
+
+mod contains_only {
+  use super::*;
+
+  #[test]
+  fn contains_only_true() {
+    assert_eq!(
+      interpret("ContainsOnly[{1, 2, 3}, {1, 2, 3, 4}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn contains_only_false() {
+    assert_eq!(
+      interpret("ContainsOnly[{1, 2, 3}, {1, 2}]").unwrap(),
+      "False"
+    );
+  }
+}
+
+mod length_while {
+  use super::*;
+
+  #[test]
+  fn length_while_basic() {
+    assert_eq!(
+      interpret("LengthWhile[{1, 2, 3, 4, 5}, # < 3 &]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn length_while_none() {
+    assert_eq!(interpret("LengthWhile[{1, 2, 3}, # > 5 &]").unwrap(), "0");
+  }
+
+  #[test]
+  fn length_while_all() {
+    assert_eq!(interpret("LengthWhile[{1, 2, 3}, # < 5 &]").unwrap(), "3");
+  }
+}
+
+mod take_largest_by {
+  use super::*;
+
+  #[test]
+  fn take_largest_by_abs() {
+    assert_eq!(
+      interpret("TakeLargestBy[{-1, -2, -3, 4, 5}, Abs, 2]").unwrap(),
+      "{5, 4}"
+    );
+  }
+}
+
+mod take_smallest_by {
+  use super::*;
+
+  #[test]
+  fn take_smallest_by_abs() {
+    assert_eq!(
+      interpret("TakeSmallestBy[{-1, -2, -3, 4, 5}, Abs, 2]").unwrap(),
+      "{-1, -2}"
+    );
+  }
+}

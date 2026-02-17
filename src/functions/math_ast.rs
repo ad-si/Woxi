@@ -3679,6 +3679,106 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Factorial2[n] - Double factorial: n!! = n * (n-2) * (n-4) * ...
+pub fn factorial2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Factorial2 expects exactly 1 argument".into(),
+    ));
+  }
+  if let Some(n) = expr_to_i128(&args[0]) {
+    if n < -1 {
+      return Ok(Expr::FunctionCall {
+        name: "Factorial2".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    if n == -1 || n == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    let mut result = BigInt::from(1);
+    let mut i = n;
+    while i >= 2 {
+      result *= i;
+      i -= 2;
+    }
+    Ok(bigint_to_expr(result))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Factorial2".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// Subfactorial[n] - Count of derangements: !n = n! * Sum[(-1)^k/k!, {k, 0, n}]
+pub fn subfactorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Subfactorial expects exactly 1 argument".into(),
+    ));
+  }
+  if let Some(n) = expr_to_i128(&args[0]) {
+    if n < 0 {
+      return Ok(Expr::FunctionCall {
+        name: "Subfactorial".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    if n == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    // Use recurrence: !n = (n-1) * (!(n-1) + !(n-2))
+    let mut prev2 = BigInt::from(1); // !0 = 1
+    let mut prev1 = BigInt::from(0); // !1 = 0
+    if n == 1 {
+      return Ok(Expr::Integer(0));
+    }
+    for i in 2..=n {
+      let current = BigInt::from(i - 1) * (&prev1 + &prev2);
+      prev2 = prev1;
+      prev1 = current;
+    }
+    Ok(bigint_to_expr(prev1))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Subfactorial".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
+/// Pochhammer[a, n] - Rising factorial (Pochhammer symbol): a * (a+1) * ... * (a+n-1)
+pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Pochhammer expects exactly 2 arguments".into(),
+    ));
+  }
+  if let (Some(a), Some(n)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
+    if n == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    if n < 0 {
+      // Pochhammer[a, -n] = 1/((a-1)(a-2)...(a-n))
+      return Ok(Expr::FunctionCall {
+        name: "Pochhammer".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    let mut result = BigInt::from(1);
+    for i in 0..n {
+      result *= BigInt::from(a + i);
+    }
+    Ok(bigint_to_expr(result))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Pochhammer".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
 /// Gamma[n] - Gamma function: Gamma[n] = (n-1)! for positive integers
 pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

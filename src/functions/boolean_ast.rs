@@ -92,10 +92,14 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Xor[expr1, expr2, ...] - Logical XOR
 pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "Xor expects at least 2 arguments".into(),
+      "Xor expects at least 1 argument".into(),
     ));
+  }
+  // Single argument: Xor[x] => x
+  if args.len() == 1 {
+    return evaluate_expr_to_expr(&args[0]);
   }
 
   let mut true_count = 0;
