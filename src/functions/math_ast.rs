@@ -8109,24 +8109,37 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut result = BigInt::from(0);
-  for item in items {
-    if let Some(d) = expr_to_i128(item) {
-      if d < 0 || d >= base {
-        return Err(InterpreterError::EvaluationError(format!(
-          "FromDigits: invalid digit {} for base {}",
-          d, base
-        )));
-      }
+  // Check if all items are numeric
+  let all_numeric = items.iter().all(|item| expr_to_i128(item).is_some());
+
+  if all_numeric {
+    let mut result = BigInt::from(0);
+    for item in items {
+      let d = expr_to_i128(item).unwrap();
       result = result * &big_base + BigInt::from(d);
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "FromDigits".to_string(),
-        args: args.to_vec(),
-      });
     }
+    Ok(bigint_to_expr(result))
+  } else {
+    // Symbolic: build expression base*(base*(...) + d1) + d2
+    // i.e., Horner form: ((d0 * base + d1) * base + d2) * base + ...
+    let base_expr = Expr::Integer(base);
+    let mut result = items[0].clone();
+    for item in &items[1..] {
+      // result = result * base + item
+      result = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![base_expr.clone(), result],
+          },
+          item.clone(),
+        ],
+      };
+      result = crate::evaluator::evaluate_expr_to_expr(&result)?;
+    }
+    Ok(result)
   }
-  Ok(bigint_to_expr(result))
 }
 
 /// FactorInteger[n] - Returns the prime factorization of n
@@ -9467,10 +9480,61 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
     (Some(n), Some(k)) => Ok(Expr::Integer(binomial_coeff(n, k))),
-    _ => Ok(Expr::FunctionCall {
-      name: "Binomial".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {
+      // Try Real evaluation using Gamma function
+      let n_f64 = match &args[0] {
+        Expr::Real(f) => Some(*f),
+        Expr::Integer(n) => Some(*n as f64),
+        _ => None,
+      };
+      let k_f64 = match &args[1] {
+        Expr::Real(f) => Some(*f),
+        Expr::Integer(n) => Some(*n as f64),
+        _ => None,
+      };
+      if let (Some(n), Some(k)) = (n_f64, k_f64) {
+        // Binomial[n, k] = Gamma[n+1] / (Gamma[k+1] * Gamma[n-k+1])
+        // Use log-gamma for better precision
+        fn lgamma(x: f64) -> f64 {
+          // Lanczos approximation for log-gamma
+          if x < 0.5 {
+            let reflection =
+              (std::f64::consts::PI / (std::f64::consts::PI * x).sin()).ln();
+            reflection - lgamma(1.0 - x)
+          } else {
+            let x = x - 1.0;
+            let g = 7.0_f64;
+            let c = [
+              0.999_999_999_999_809_9,
+              676.5203681218851,
+              -1259.1392167224028,
+              771.323_428_777_653_1,
+              -176.615_029_162_140_6,
+              12.507343278686905,
+              -0.13857109526572012,
+              9.984_369_578_019_572e-6,
+              1.5056327351493116e-7,
+            ];
+            let mut sum = c[0];
+            for (i, &ci) in c.iter().enumerate().skip(1) {
+              sum += ci / (x + i as f64);
+            }
+            let t = x + g + 0.5;
+            0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t
+              + sum.ln()
+          }
+        }
+        let log_result =
+          lgamma(n + 1.0) - lgamma(k + 1.0) - lgamma(n - k + 1.0);
+        let result = log_result.exp();
+        Ok(Expr::Real(result))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Binomial".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
   }
 }
 

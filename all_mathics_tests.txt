@@ -2157,22 +2157,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: Apply
-LINE: 61
-TYPE: >>
-INPUT: Apply[f, {a + b, g[c, d, e * f], 3}, {1}]
-EXPECTED:
-= {f[a, b], f[c, d, e f], 3}
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Apply
-LINE: 64
-TYPE: >>
-INPUT: Apply[f, {a, b, c}, {0}]
-EXPECTED:
-= f[a, b, c]
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Apply
 LINE: 68
 TYPE: >>
 INPUT: Apply[f, {{{{{a}}}}}, {2, -3}]
@@ -2274,22 +2258,6 @@ TYPE: >>
 INPUT: Attributes[Composition]
 EXPECTED:
 = {Flat, OneIdentity, Protected}
----
-FILE: mathics/builtin/functional/composition.py
-CLASS: Composition
-LINE: 51
-TYPE: >>
-INPUT: Composition[f, Composition[g, h]]
-EXPECTED:
-= Composition[f, g, h]
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: FixedPointList
-LINE: 102
-TYPE: >>
-INPUT: FixedPointList[Cos, 1.0, 4]
-EXPECTED:
-= {1., 0.540302, 0.857553, 0.65429, 0.79348}
 ---
 FILE: mathics/builtin/functional/functional_iteration.py
 CLASS: FixedPointList
@@ -5107,22 +5075,6 @@ EXPECTED:
 = x + 15 x ^ 2 + 25 x ^ 3 + 10 x ^ 4 + x ^ 5
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: Binomial
-LINE: 145
-TYPE: >>
-INPUT: Binomial[10.5,3.2]
-EXPECTED:
-= 165.286
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: Binomial
-LINE: 151
-TYPE: >>
-INPUT: Binomial[-10.5, -3.5]
-EXPECTED:
-= 0.
----
-FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: DiceDissimilarity
 LINE: 216
 TYPE: >>
@@ -7627,14 +7579,6 @@ TYPE: >>
 INPUT: Floor[1.5 + 2.7 I]
 EXPECTED:
 = 1 + 2 I
----
-FILE: mathics/builtin/numbers/integer.py
-CLASS: FromDigits
-LINE: 246
-TYPE: >>
-INPUT: FromDigits[{a, b, c}, 5]
-EXPECTED:
-= c + 5 (5 a + b)
 ---
 FILE: mathics/builtin/numbers/integer.py
 CLASS: FromDigits
@@ -10253,14 +10197,6 @@ EXPECTED:
 = {True, True, True, False, False, False, False, False, True}
 ---
 FILE: mathics/builtin/atomic/strings.py
-CLASS: StringRepeat
-LINE: 679
-TYPE: >>
-INPUT: StringRepeat["abc", 10, 7]
-EXPECTED:
-= abcabca
----
-FILE: mathics/builtin/atomic/strings.py
 CLASS: SystemCharacterEncoding
 LINE: 728
 TYPE: >>
@@ -11888,14 +11824,6 @@ TYPE: >>
 INPUT: Cases[{b, 6, \[Pi]}, _Symbol, Heads -> True]
 EXPECTED:
 = {List, b, Pi}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Count
-LINE: 274
-TYPE: >>
-INPUT: Count[{{a, a}, {a, a, a}, a}, a, {2}]
-EXPECTED:
-= 5
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Delete
@@ -16112,22 +16040,6 @@ TYPE: >>
 INPUT: (a + b + c)[[0]]
 EXPECTED:
 = Plus
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 537
-TYPE: >>
-INPUT: Apply[f, {{1, 2}, {3, 4}}, {1}]
-EXPECTED:
-= {f[1, 2], f[3, 4]}
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 541
-TYPE: >>
-INPUT: Apply[f, {{1, 2}, {3, 4}}, {0, 2}]
-EXPECTED:
-= f[f[1, 2], f[3, 4]]
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc

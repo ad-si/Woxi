@@ -2211,4 +2211,33 @@ mod join_non_list {
       "{{{0, 0, 0}, {0, 0, 1}, {0, -1, 0}}, {{0, 0, -1}, {0, 0, 0}, {1, 0, 0}}, {{0, 1, 0}, {-1, 0, 0}, {0, 0, 0}}}"
     );
   }
+
+  #[test]
+  fn count_at_level() {
+    assert_eq!(
+      interpret("Count[{{a, a}, {a, a, a}, a}, a, {2}]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn apply_at_level_0() {
+    assert_eq!(interpret("Apply[f, {a, b, c}, {0}]").unwrap(), "f[a, b, c]");
+  }
+
+  #[test]
+  fn apply_at_level_1() {
+    assert_eq!(
+      interpret("Apply[f, {{1, 2}, {3, 4}}, {1}]").unwrap(),
+      "{f[1, 2], f[3, 4]}"
+    );
+  }
+
+  #[test]
+  fn apply_at_level_1_mixed() {
+    assert_eq!(
+      interpret("Apply[f, {a + b, g[c, d, e * f], 3}, {1}]").unwrap(),
+      "{f[a, b], f[c, d, e*f], 3}"
+    );
+  }
 }
