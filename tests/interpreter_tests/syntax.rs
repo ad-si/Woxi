@@ -665,61 +665,68 @@ mod grid {
 
   #[test]
   fn basic_2x2() {
-    // Grid is graphical output, returns unevaluated in CLI
+    clear_state();
     assert_eq!(
       interpret("Grid[{{a, b}, {c, d}}]").unwrap(),
-      "Grid[{{a, b}, {c, d}}]"
+      "-Graphics-"
     );
   }
 
   #[test]
   fn one_dimensional_list() {
-    assert_eq!(interpret("Grid[{a, b, c}]").unwrap(), "Grid[{a, b, c}]");
+    clear_state();
+    assert_eq!(interpret("Grid[{a, b, c}]").unwrap(), "-Graphics-");
   }
 
   #[test]
   fn arguments_are_evaluated() {
+    clear_state();
     assert_eq!(
       interpret("Grid[{{1+1, 2+2}, {3+3, 4+4}}]").unwrap(),
-      "Grid[{{2, 4}, {6, 8}}]"
+      "-Graphics-"
     );
   }
 
   #[test]
   fn with_options() {
+    clear_state();
     assert_eq!(
       interpret("Grid[{{1, 2}, {3, 4}}, Alignment -> Center]").unwrap(),
-      "Grid[{{1, 2}, {3, 4}}, Alignment -> Center]"
+      "-Graphics-"
     );
   }
 
   #[test]
   fn single_element() {
-    assert_eq!(interpret("Grid[{{x}}]").unwrap(), "Grid[{{x}}]");
+    clear_state();
+    assert_eq!(interpret("Grid[{{x}}]").unwrap(), "-Graphics-");
   }
 
   #[test]
   fn postfix_form() {
+    clear_state();
     assert_eq!(
       interpret("{{a, b}, {c, d}} // Grid").unwrap(),
-      "Grid[{{a, b}, {c, d}}]"
+      "-Graphics-"
     );
   }
 
   #[test]
   fn frame_all() {
+    clear_state();
     assert_eq!(
       interpret("Grid[{{a, b, c}, {x, y^2, z^3}}, Frame -> All]").unwrap(),
-      "Grid[{{a, b, c}, {x, y^2, z^3}}, Frame -> All]"
+      "-Graphics-"
     );
   }
 
   #[test]
   fn frame_all_with_other_options() {
+    clear_state();
     assert_eq!(
       interpret("Grid[{{1, 2}, {3, 4}}, Alignment -> Center, Frame -> All]")
         .unwrap(),
-      "Grid[{{1, 2}, {3, 4}}, Alignment -> Center, Frame -> All]"
+      "-Graphics-"
     );
   }
 }

@@ -244,6 +244,21 @@ button {
   margin: 0;
 }
 
+#graphics {
+  display: none;
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 2px solid var(--output-border);
+  border-radius: 4px;
+  background: var(--surface);
+  text-align: center;
+}
+
+#graphics svg {
+  max-width: 100%;
+  height: auto;
+}
+
 .status {
   position: fixed;
   top: 1rem;
