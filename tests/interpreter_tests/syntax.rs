@@ -616,3 +616,37 @@ mod hold {
     assert_eq!(interpret("ReleaseHold[x]").unwrap(), "x");
   }
 }
+
+mod deeply_nested_lists {
+  use super::*;
+
+  #[test]
+  fn nested_list_in_function_in_list() {
+    // Regression test: deeply nested lists inside function calls inside lists
+    // previously caused exponential backtracking in the PEG parser
+    assert_eq!(interpret("{f[{1, {{{1}}}}]}").unwrap(), "{f[{1, {{{1}}}}]}");
+  }
+
+  #[test]
+  fn deeply_nested_braces() {
+    assert_eq!(
+      interpret("{f[{1, {{{{{{1}}}}}}}]}").unwrap(),
+      "{f[{1, {{{{{{1}}}}}}}]}"
+    );
+  }
+
+  #[test]
+  fn nested_lists_still_evaluate() {
+    // Ensure lists still evaluate correctly after grammar optimization
+    assert_eq!(interpret("{1 + 1, {2 + 2}}").unwrap(), "{2, {4}}");
+    assert_eq!(interpret("{{1, 2}, {3, 4}}[[1]]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("{#, #^2}&[3]").unwrap(), "{3, 9}");
+  }
+
+  #[test]
+  fn replacement_rules_in_lists() {
+    // Ensure replacement rules still work in lists after grammar optimization
+    assert_eq!(interpret("{x -> 1, y -> 2}").unwrap(), "{x -> 1, y -> 2}");
+    assert_eq!(interpret("x /. {x -> 5}").unwrap(), "5");
+  }
+}

@@ -1647,6 +1647,7 @@ fn expr_to_i128(expr: &Expr) -> Option<i128> {
 pub fn map_thread_ast(
   func: &Expr,
   lists: &Expr,
+  level: Option<usize>,
 ) -> Result<Expr, InterpreterError> {
   let outer_items = match lists {
     Expr::List(items) => items,
@@ -1685,15 +1686,29 @@ pub fn map_thread_ast(
     }
   }
 
-  // Apply function to corresponding elements
-  let mut results = Vec::new();
-  for i in 0..len {
-    let args: Vec<Expr> = sublists.iter().map(|sl| sl[i].clone()).collect();
-    let result = apply_func_to_n_args(func, &args)?;
-    results.push(result);
-  }
+  let depth = level.unwrap_or(1);
 
-  Ok(Expr::List(results))
+  if depth <= 1 {
+    // Apply function to corresponding elements
+    let mut results = Vec::new();
+    for i in 0..len {
+      let args: Vec<Expr> = sublists.iter().map(|sl| sl[i].clone()).collect();
+      let result = apply_func_to_n_args(func, &args)?;
+      results.push(result);
+    }
+    Ok(Expr::List(results))
+  } else {
+    // Recurse: thread at this level, then recurse into sublists
+    let mut results = Vec::new();
+    for i in 0..len {
+      let inner_lists: Vec<Expr> =
+        sublists.iter().map(|sl| sl[i].clone()).collect();
+      let inner_arg = Expr::List(inner_lists);
+      let result = map_thread_ast(func, &inner_arg, Some(depth - 1))?;
+      results.push(result);
+    }
+    Ok(Expr::List(results))
+  }
 }
 
 /// Apply a function to n arguments.
@@ -5009,62 +5024,44 @@ pub fn identity_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   Ok(arg.clone())
 }
 
-/// Outer[f, list1, list2] - generalized outer product
+/// Outer[f, list1, list2, ...] - generalized outer product
 pub fn outer_ast(
   func: &Expr,
-  list1: &Expr,
-  list2: &Expr,
+  lists: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let items1 = match list1 {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Outer expects lists as arguments".into(),
-      ));
-    }
-  };
-  let items2 = match list2 {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Outer expects lists as arguments".into(),
-      ));
-    }
-  };
-  let mut result = Vec::new();
-  for a in items1 {
-    let mut row = Vec::new();
-    for b in items2 {
-      let val = match func {
-        Expr::Identifier(name) => crate::evaluator::evaluate_function_call_ast(
-          name,
-          &[a.clone(), b.clone()],
-        )?,
-        Expr::Function { body } => {
-          let substituted =
-            crate::syntax::substitute_slots(body, &[a.clone(), b.clone()]);
-          crate::evaluator::evaluate_expr_to_expr(&substituted)?
-        }
-        Expr::NamedFunction { params, body } => {
-          let mut substituted = (**body).clone();
-          let args_vec = [a, b];
-          for (param, arg) in params.iter().zip(args_vec.iter()) {
-            substituted =
-              crate::syntax::substitute_variable(&substituted, param, arg);
-          }
-          crate::evaluator::evaluate_expr_to_expr(&substituted)?
-        }
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "Outer: first argument must be a function".into(),
-          ));
-        }
-      };
-      row.push(val);
-    }
-    result.push(Expr::List(row));
+  if lists.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Outer expects at least one list argument".into(),
+    ));
   }
-  Ok(Expr::List(result))
+  outer_impl(func, &lists[0], &lists[1..], &[])
+}
+
+fn outer_impl(
+  func: &Expr,
+  current: &Expr,
+  remaining: &[Expr],
+  accumulated: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = current {
+    // Thread through list elements
+    let mut results = Vec::new();
+    for item in items {
+      results.push(outer_impl(func, item, remaining, accumulated)?);
+    }
+    Ok(Expr::List(results))
+  } else {
+    // Atomic element: add to accumulated args
+    let mut new_acc = accumulated.to_vec();
+    new_acc.push(current.clone());
+    if remaining.is_empty() {
+      // All lists consumed: apply f to accumulated args
+      apply_func_to_n_args(func, &new_acc)
+    } else {
+      // Move to next list
+      outer_impl(func, &remaining[0], &remaining[1..], &new_acc)
+    }
+  }
 }
 
 /// Inner[f, list1, list2, g] - generalized inner product
@@ -5074,65 +5071,135 @@ pub fn inner_ast(
   list2: &Expr,
   g: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items1 = match list1 {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Inner expects lists as arguments".into(),
-      ));
-    }
-  };
-  let items2 = match list2 {
-    Expr::List(items) => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Inner expects lists as arguments".into(),
-      ));
-    }
-  };
-  if items1.len() != items2.len() {
-    return Err(InterpreterError::EvaluationError(
-      "Inner: lists must have the same length".into(),
-    ));
-  }
-  // Apply f pairwise, then apply g to combine
-  let mut products = Vec::new();
-  for (a, b) in items1.iter().zip(items2.iter()) {
-    let val = match f {
-      Expr::Identifier(name) => crate::evaluator::evaluate_function_call_ast(
-        name,
-        &[a.clone(), b.clone()],
-      )?,
-      Expr::Function { body } => {
-        let substituted =
-          crate::syntax::substitute_slots(body, &[a.clone(), b.clone()]);
-        crate::evaluator::evaluate_expr_to_expr(&substituted)?
-      }
-      Expr::NamedFunction { params, body } => {
-        let mut substituted = (**body).clone();
-        let args_vec = [a, b];
-        for (param, arg) in params.iter().zip(args_vec.iter()) {
-          substituted =
-            crate::syntax::substitute_variable(&substituted, param, arg);
-        }
-        crate::evaluator::evaluate_expr_to_expr(&substituted)?
-      }
+  inner_recursive(f, list1, list2, g)
+}
+
+fn inner_recursive(
+  f: &Expr,
+  a: &Expr,
+  b: &Expr,
+  g: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let a_depth = list_depth(a);
+  let b_depth = list_depth(b);
+
+  if a_depth == 1 && b_depth == 1 {
+    // Base case: both are flat lists - do pairwise f then combine with g
+    let items_a = match a {
+      Expr::List(items) => items,
       _ => {
         return Err(InterpreterError::EvaluationError(
-          "Inner: first argument must be a function".into(),
+          "Inner expects lists as arguments".into(),
         ));
       }
     };
-    products.push(val);
-  }
-  // Apply g to combine all products
-  match g {
-    Expr::Identifier(name) => {
-      crate::evaluator::evaluate_function_call_ast(name, &products)
+    let items_b = match b {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Inner expects lists as arguments".into(),
+        ));
+      }
+    };
+    if items_a.len() != items_b.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Inner: incompatible dimensions".into(),
+      ));
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Inner: fourth argument must be a function".into(),
-    )),
+    let mut products = Vec::new();
+    for (x, y) in items_a.iter().zip(items_b.iter()) {
+      let val = apply_func_to_two_args(f, x, y)?;
+      products.push(val);
+    }
+    apply_func_to_n_args(g, &products)
+  } else if a_depth > 1 {
+    // Map over the first dimension of a
+    let items_a = match a {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Inner expects lists as arguments".into(),
+        ));
+      }
+    };
+    let mut results = Vec::new();
+    for row in items_a {
+      results.push(inner_recursive(f, row, b, g)?);
+    }
+    Ok(Expr::List(results))
+  } else {
+    // a_depth == 1, b_depth > 1
+    // Contract a (vector) with first dimension of b
+    // Need to iterate over the inner structure of b
+    let items_a = match a {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Inner expects lists as arguments".into(),
+        ));
+      }
+    };
+    let items_b = match b {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Inner expects lists as arguments".into(),
+        ));
+      }
+    };
+    if items_a.len() != items_b.len() {
+      return Err(InterpreterError::EvaluationError(
+        "Inner: incompatible dimensions".into(),
+      ));
+    }
+    // Each items_b[k] should be a list. Extract their elements column-wise.
+    let inner_len = match &items_b[0] {
+      Expr::List(inner) => inner.len(),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Inner: incompatible dimensions".into(),
+        ));
+      }
+    };
+    let mut results = Vec::new();
+    for j in 0..inner_len {
+      // Build a "column" vector from b: [b[0][j], b[1][j], ...]
+      let mut col = Vec::new();
+      for bk in items_b {
+        match bk {
+          Expr::List(inner) => {
+            if j < inner.len() {
+              col.push(inner[j].clone());
+            } else {
+              return Err(InterpreterError::EvaluationError(
+                "Inner: incompatible dimensions".into(),
+              ));
+            }
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(
+              "Inner: incompatible dimensions".into(),
+            ));
+          }
+        }
+      }
+      let col_expr = Expr::List(col);
+      results.push(inner_recursive(f, a, &col_expr, g)?);
+    }
+    Ok(Expr::List(results))
+  }
+}
+
+fn list_depth(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => {
+      if items.is_empty() {
+        1
+      } else {
+        1 + items.iter().map(list_depth).min().unwrap_or(0)
+      }
+    }
+    _ => 0,
   }
 }
 
@@ -5453,14 +5520,66 @@ pub fn sparse_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Tuples[list, n] - Generate all n-tuples from elements of list (Cartesian product).
 pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1 {
+    // Tuples[{list1, list2, ...}] - Cartesian product of multiple lists
+    // Each element can be a List or a FunctionCall (extract args as elements)
+    let outer_items = match &args[0] {
+      Expr::List(items) => items,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Tuples".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+
+    // Extract elements from each sublist/expression
+    let mut lists: Vec<Vec<Expr>> = Vec::new();
+    for item in outer_items {
+      match item {
+        Expr::List(items) => lists.push(items.clone()),
+        Expr::FunctionCall { args: fc_args, .. } => {
+          lists.push(fc_args.clone());
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Tuples".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+
+    // Cartesian product of all lists
+    let mut result: Vec<Vec<Expr>> = vec![vec![]];
+    for list in &lists {
+      let mut new_result = Vec::new();
+      for tuple in &result {
+        for item in list {
+          let mut new_tuple = tuple.clone();
+          new_tuple.push(item.clone());
+          new_result.push(new_tuple);
+        }
+      }
+      result = new_result;
+    }
+
+    return Ok(Expr::List(result.into_iter().map(Expr::List).collect()));
+  }
+
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "Tuples expects exactly 2 arguments".into(),
+      "Tuples expects 1 or 2 arguments".into(),
     ));
   }
 
-  let items = match &args[0] {
-    Expr::List(items) => items,
+  // Tuples[list, n] or Tuples[f[a,b,...], n]
+  let (items, head_name): (Vec<Expr>, Option<String>) = match &args[0] {
+    Expr::List(items) => (items.clone(), None),
+    Expr::FunctionCall {
+      name,
+      args: fc_args,
+    } => (fc_args.clone(), Some(name.clone())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Tuples".to_string(),
@@ -5480,7 +5599,15 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if n == 0 {
-    return Ok(Expr::List(vec![Expr::List(vec![])]));
+    let empty = if let Some(ref h) = head_name {
+      Expr::FunctionCall {
+        name: h.clone(),
+        args: vec![],
+      }
+    } else {
+      Expr::List(vec![])
+    };
+    return Ok(Expr::List(vec![empty]));
   }
 
   // Iterative Cartesian product
@@ -5489,7 +5616,7 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for _ in 0..n {
     let mut new_result = Vec::new();
     for tuple in &result {
-      for item in items {
+      for item in &items {
         let mut new_tuple = tuple.clone();
         new_tuple.push(item.clone());
         new_result.push(new_tuple);
@@ -5498,7 +5625,18 @@ pub fn tuples_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result = new_result;
   }
 
-  Ok(Expr::List(result.into_iter().map(Expr::List).collect()))
+  let wrap = |elems: Vec<Expr>| -> Expr {
+    if let Some(ref h) = head_name {
+      Expr::FunctionCall {
+        name: h.clone(),
+        args: elems,
+      }
+    } else {
+      Expr::List(elems)
+    }
+  };
+
+  Ok(Expr::List(result.into_iter().map(wrap).collect()))
 }
 
 /// Dimensions[list] - Returns the dimensions of a nested list

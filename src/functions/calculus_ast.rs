@@ -2360,3 +2360,93 @@ fn adaptive_simpson_rec(
     Some(left_result + right_result)
   }
 }
+
+/// Curl[{f1, f2}, {x1, x2}] - 2D curl (scalar)
+/// Curl[{f1, f2, f3}, {x1, x2, x3}] - 3D curl (vector)
+pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Curl expects exactly 2 arguments".into(),
+    ));
+  }
+  let field = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Curl".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let vars = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Curl".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if field.len() == 2 && vars.len() == 2 {
+    // 2D curl: dF2/dx1 - dF1/dx2
+    let var1 = match &vars[0] {
+      Expr::Identifier(s) => s,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Curl".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let var2 = match &vars[1] {
+      Expr::Identifier(s) => s,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Curl".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let df2_dx1 = differentiate_expr(&field[1], var1)?;
+    let df1_dx2 = differentiate_expr(&field[0], var2)?;
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(df2_dx1),
+      right: Box::new(df1_dx2),
+    };
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else if field.len() == 3 && vars.len() == 3 {
+    // 3D curl: {dF3/dx2 - dF2/dx3, dF1/dx3 - dF3/dx1, dF2/dx1 - dF1/dx2}
+    let var_names: Vec<&str> = vars
+      .iter()
+      .map(|v| match v {
+        Expr::Identifier(s) => Ok(s.as_str()),
+        _ => Err(InterpreterError::EvaluationError(
+          "Curl: variables must be symbols".into(),
+        )),
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+
+    let mut components = Vec::new();
+    // Curl component i = dF_{(i+2)%3}/dx_{(i+1)%3} - dF_{(i+1)%3}/dx_{(i+2)%3}
+    for i in 0..3 {
+      let j = (i + 1) % 3;
+      let k = (i + 2) % 3;
+      let d1 = differentiate_expr(&field[k], var_names[j])?;
+      let d2 = differentiate_expr(&field[j], var_names[k])?;
+      let comp = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(d1),
+        right: Box::new(d2),
+      };
+      components.push(crate::evaluator::evaluate_expr_to_expr(&comp)?);
+    }
+    Ok(Expr::List(components))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Curl".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}

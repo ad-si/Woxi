@@ -546,6 +546,64 @@ pub fn composite_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bool_expr(n_gt_1 && !is_prime))
 }
 
+/// PrimePowerQ[n] - Tests if n is a power of a prime
+pub fn prime_power_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PrimePowerQ expects exactly 1 argument".into(),
+    ));
+  }
+  let n = match &args[0] {
+    Expr::Integer(n) => n.unsigned_abs(),
+    Expr::BigInteger(n) => {
+      use num_traits::Signed;
+      let abs_n = n.abs();
+      // Check if it's a prime power via factorization
+      // For BigInteger, convert to u128 if possible
+      match abs_n.clone().try_into() {
+        Ok(v) => v,
+        Err(_) => {
+          // Too large, check if it's prime itself
+          return Ok(bool_expr(crate::functions::math_ast::is_prime_bigint(
+            &abs_n,
+          )));
+        }
+      }
+    }
+    _ => return Ok(bool_expr(false)),
+  };
+  if n <= 1 {
+    return Ok(bool_expr(false));
+  }
+  // Find a prime factor and check if n is a power of it
+  let mut p: u128 = 0;
+  let mut m = n;
+  if m % 2 == 0 {
+    p = 2;
+    while m % 2 == 0 {
+      m /= 2;
+    }
+  } else {
+    let mut i: u128 = 3;
+    while i * i <= m {
+      if m % i == 0 {
+        p = i;
+        while m % i == 0 {
+          m /= i;
+        }
+        break;
+      }
+      i += 2;
+    }
+    if p == 0 {
+      // n itself is prime (no factor found)
+      return Ok(bool_expr(true));
+    }
+  }
+  // n is a prime power iff m == 1 after dividing out the single prime factor
+  Ok(bool_expr(m == 1 && p > 0))
+}
+
 /// AssociationQ[expr] - Tests if the expression is an association
 pub fn association_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

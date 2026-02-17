@@ -4,9 +4,10 @@ COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 // Part extraction suffix: [[expr, ...]] for indexing
 PartIndexSuffix = { ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
 
-// PartExtract for non-FunctionCall bases only (List, Slot, Identifier)
+// PartExtract for non-FunctionCall bases only (Slot, Identifier)
 // FunctionCall-based Part extraction is handled by FunctionCallExtended
-PartExtract = { (List | Slot | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
+// List-based Part extraction is handled by ListExtended
+PartExtract = { (Slot | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)? }
@@ -41,6 +42,20 @@ ParenAnonymousFunction = { "(" ~ (CompoundExpression | Expression) ~ ")" ~ "&" ~
 ListAnonymousFunction = { List ~ "&" ~ !"&" ~ BracketArgs* }
 // ListCall handles List used as a function head: {f, g}[x] → applies each element to args
 ListCall = { List ~ BracketArgs+ }
+// ListExtended merges List, ListAnonymousFunction, ListCall, and List-based
+// PartExtract/PartAnonymousFunction into a single rule to avoid exponential
+// backtracking. Parses List ONCE, then checks for optional suffixes.
+// Named suffix rules for pair_to_expr detection.
+ListAnonSuffix = { "&" ~ !"&" ~ BracketArgs* }
+ListCallSuffix = { BracketArgs+ }
+ListPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
+ListExtended = {
+    List ~ (
+        PartIndexSuffix ~ ListPartAnonSuffix?   // List[[...]] or List[[...]]& (PartExtract/PartAnonymousFunction)
+      | ListAnonSuffix                           // List& (ListAnonymousFunction)
+      | ListCallSuffix                           // List[...] (ListCall)
+    )?
+}
 // PartAnonymousFunction handles PartExtract& - for expressions like #[[2]]& or #[[1]] + #[[2]]&
 // Only for non-FunctionCall bases (List/Slot/Identifier). FC-based handled by FunctionCallExtended.
 // Optional BracketArgs allow direct calls: #[[2]]&[{3, 4, 5}]
@@ -129,7 +144,8 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // CompoundExpression: multiple expressions separated by ;
 // The result is the value of the last expression (like Wolfram's CompoundExpression)
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
-CompoundExpression = { Expression ~ (";" ~ Expression)+ ~ ";"? | Expression ~ ";" }
+// Uses single alternative to avoid parsing Expression twice for non-compound inputs.
+CompoundExpression = { Expression ~ (";" ~ Expression?)+ }
 
 // DerivativePrime: one or more ' characters after a function name (e.g. f', f'', f''')
 // Transforms f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
@@ -159,9 +175,7 @@ Term = _{
   | PartExtract
   | Constant
   | String
-  | ListAnonymousFunction
-  | ListCall
-  | List
+  | ListExtended
   | ParenAnonymousFunction
   | FunctionCallExtended
   | ImplicitTimes
@@ -199,9 +213,7 @@ TermNoImplicit = _{
   | PartExtract
   | Constant
   | String
-  | ListAnonymousFunction
-  | ListCall
-  | List
+  | ListExtended
   | ParenAnonymousFunction
   | FunctionCallExtended
   | ImplicitTimes
@@ -263,17 +275,41 @@ ReplaceAllExpr = { Term ~ "/." ~ (List | ReplacementRule) }
 ReplaceRepeatedExpr = { Term ~ "//." ~ (List | ReplacementRule) }
 
 List = { "{" ~ (ListItem ~ ("," ~ ListItem)*)? ~ "}" }
-// ListItem can be a ReplacementRule (for rule lists) or an Expression
+// ListItem can be a ReplacementRule (with optional & suffix) or an Expression
 // ReplacementRule must be tried first because x_ -> y looks like Expression x_ followed by -> operator
-ListItem = _{ RuleAnonymousFunction | ReplacementRule | Expression }
+// RuleAnonymousFunction is merged with ReplacementRule to avoid parsing content twice.
+// HasRuleOperator is a zero-width lookahead that scans for -> or :> at the current
+// nesting depth. This avoids exponential backtracking for deeply nested lists by
+// skipping the ReplacementRule attempt when no rule operator exists.
+RuleAnonSuffix = { "&" ~ !"&" }
+ListItemRule = { ReplacementRule ~ RuleAnonSuffix? }
+// Scan forward looking for -> or :> at the current nesting depth
+NestedContent = _{ (
+    "{" ~ NestedContent ~ "}"
+  | "[" ~ NestedContent ~ "]"
+  | "(" ~ NestedContent ~ ")"
+  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | !("{" | "}" | "[" | "]" | "(" | ")" | "\"") ~ ANY
+)* }
+HasRuleOperator = _{ (
+    "{" ~ NestedContent ~ "}"
+  | "[" ~ NestedContent ~ "]"
+  | "(" ~ NestedContent ~ ")"
+  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | !("->" | ":>" | "}" | "," | "]" | ")" | "\"") ~ ANY
+)* ~ ("->" | ":>") }
+ListItem = _{ &HasRuleOperator ~ ListItemRule | Expression }
 
 AssociationItem = { ConditionExpr ~ "->" ~ ConditionExpr }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
 
 // Function calls (supports chained calls like f[x][y])
 // Simplified: Just use Expression for most args - patterns and compound expressions via Expression's Term
-// FunctionArg can be a ReplacementRule, CompoundExpression, or Expression
-FunctionArg = _{ RuleAnonymousFunction | ReplacementRule | CompoundExpression | Expression }
+// FunctionArg: ReplacementRule (with optional & suffix), CompoundExpression, or Expression
+// Merged RuleAnonymousFunction with ReplacementRule to reduce backtracking.
+// Uses HasRuleOperator lookahead to skip rule parsing when no rule operator exists.
+FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? }
+FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | CompoundExpression | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ }

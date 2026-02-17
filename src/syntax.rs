@@ -475,6 +475,171 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         .collect();
       Expr::List(items)
     }
+    Rule::ListExtended => {
+      // Merged rule: List + optional suffix (PartIndexSuffix, ListAnonSuffix, ListCallSuffix)
+      // Eliminates exponential backtracking for deeply nested lists.
+      let inner_pairs: Vec<_> = pair.clone().into_inner().collect();
+      let full_str = pair.as_str();
+
+      // First inner pair is always List
+      let list_expr = pair_to_expr(inner_pairs[0].clone());
+
+      // Check for suffix types
+      let has_part_index = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::PartIndexSuffix));
+      let has_list_anon = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::ListAnonSuffix));
+      let has_list_call = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::ListCallSuffix));
+      let has_part_anon = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::ListPartAnonSuffix));
+
+      if has_part_index && has_part_anon {
+        // List[[...]] with anonymous function suffix: {a,b}[[1]] op ... &
+        let part_indices: Vec<Expr> = inner_pairs
+          .iter()
+          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+          .collect();
+        let mut part_result = list_expr;
+        for idx in &part_indices {
+          part_result = Expr::Part {
+            expr: Box::new(part_result),
+            index: Box::new(idx.clone()),
+          };
+        }
+        // Parse the full body (everything before &) as anonymous function body
+        let body_str = {
+          let s = full_str.trim();
+          if let Some(amp_pos) = s.rfind('&') {
+            if amp_pos == 0 || s.as_bytes()[amp_pos - 1] != b'&' {
+              s[..amp_pos].trim()
+            } else {
+              s
+            }
+          } else {
+            s
+          }
+        };
+        let body = parse_anonymous_body(body_str);
+        let suffix_pair = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::ListPartAnonSuffix))
+          .unwrap();
+        let anon_brackets: Vec<Vec<Expr>> = suffix_pair
+          .clone()
+          .into_inner()
+          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+          .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+          .collect();
+        let anon_func = Expr::Function {
+          body: Box::new(body),
+        };
+        if anon_brackets.is_empty() {
+          anon_func
+        } else {
+          let mut result = Expr::CurriedCall {
+            func: Box::new(anon_func),
+            args: anon_brackets[0].clone(),
+          };
+          for args in anon_brackets.into_iter().skip(1) {
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args,
+            };
+          }
+          result
+        }
+      } else if has_part_index {
+        // List[[...]]: PartExtract with List base
+        let part_indices: Vec<Expr> = inner_pairs
+          .iter()
+          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+          .collect();
+        let mut result = list_expr;
+        for idx in &part_indices {
+          result = Expr::Part {
+            expr: Box::new(result),
+            index: Box::new(idx.clone()),
+          };
+        }
+        result
+      } else if has_list_anon {
+        // List& : ListAnonymousFunction
+        let body_str = {
+          let s = full_str.trim();
+          if let Some(amp_pos) = s.rfind('&') {
+            if amp_pos == 0 || s.as_bytes()[amp_pos - 1] != b'&' {
+              s[..amp_pos].trim()
+            } else {
+              s
+            }
+          } else {
+            s
+          }
+        };
+        let body = parse_anonymous_body(body_str);
+        let suffix_pair = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::ListAnonSuffix))
+          .unwrap();
+        let anon_brackets: Vec<Vec<Expr>> = suffix_pair
+          .clone()
+          .into_inner()
+          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+          .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+          .collect();
+        let anon_func = Expr::Function {
+          body: Box::new(body),
+        };
+        if anon_brackets.is_empty() {
+          anon_func
+        } else {
+          let mut result = Expr::CurriedCall {
+            func: Box::new(anon_func),
+            args: anon_brackets[0].clone(),
+          };
+          for args in anon_brackets.into_iter().skip(1) {
+            result = Expr::CurriedCall {
+              func: Box::new(result),
+              args,
+            };
+          }
+          result
+        }
+      } else if has_list_call {
+        // List[...]: ListCall
+        let suffix_pair = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::ListCallSuffix))
+          .unwrap();
+        let bracket_sequences: Vec<Vec<Expr>> = suffix_pair
+          .clone()
+          .into_inner()
+          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+          .map(|bracket| bracket.into_inner().map(pair_to_expr).collect())
+          .collect();
+        let mut result = Expr::CurriedCall {
+          func: Box::new(list_expr),
+          args: bracket_sequences[0].clone(),
+        };
+        for args in bracket_sequences.into_iter().skip(1) {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
+        result
+      } else {
+        // Plain List
+        list_expr
+      }
+    }
     Rule::FunctionCallExtended => {
       // Merged rule: FunctionCall + optional Part extraction + optional anonymous function suffix
       // Inner pairs: (Identifier|SimpleAnonymousFunction) DerivativePrime? BracketArgs+ [PartIndexSuffix [FunctionCallPartAnonSuffix] | FunctionCallAnonSuffix]
@@ -1007,6 +1172,21 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let body = pair_to_expr(inner);
       Expr::Function {
         body: Box::new(body),
+      }
+    }
+    Rule::ListItemRule | Rule::FunctionArgRule => {
+      // Combined ReplacementRule + optional anonymous function suffix (&)
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let rule_expr = pair_to_expr(inner_pairs[0].clone());
+      let has_anon = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::RuleAnonSuffix));
+      if has_anon {
+        Expr::Function {
+          body: Box::new(rule_expr),
+        }
+      } else {
+        rule_expr
       }
     }
     Rule::PartExtract => {
