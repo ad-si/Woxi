@@ -3033,6 +3033,12 @@ pub fn evaluate_function_call_ast(
     "StringDrop" if args.len() == 2 => {
       return crate::functions::string_ast::string_drop_ast(args);
     }
+    "Compress" if args.len() == 1 => {
+      return crate::functions::string_ast::compress_ast(args);
+    }
+    "Uncompress" if args.len() == 1 => {
+      return crate::functions::string_ast::uncompress_ast(args);
+    }
     "StringJoin" => {
       return crate::functions::string_ast::string_join_ast(args);
     }

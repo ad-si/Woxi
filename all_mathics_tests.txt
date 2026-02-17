@@ -1,35 +1,3 @@
-FILE: mathics/builtin/compress.py
-CLASS: Compress
-LINE: 25
-TYPE: >>
-INPUT: Compress[N[Pi, 10]]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/compress.py
-CLASS: Uncompress
-LINE: 62
-TYPE: >>
-INPUT: Compress["Mathics3 is cool"]
-EXPECTED:
-= ...
----
-FILE: mathics/builtin/compress.py
-CLASS: Uncompress
-LINE: 64
-TYPE: >>
-INPUT: Uncompress[%]
-EXPECTED:
-= Mathics3 is cool
----
-FILE: mathics/builtin/compress.py
-CLASS: Uncompress
-LINE: 69
-TYPE: >>
-INPUT: Uncompress[b]
-EXPECTED:
-= x ^ 2 + y Sin[x] + 10 Log[15]
----
 FILE: mathics/builtin/datentime.py
 CLASS: AbsoluteTime
 LINE: 358

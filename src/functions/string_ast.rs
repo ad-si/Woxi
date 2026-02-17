@@ -1691,3 +1691,87 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 }
+
+/// Compress[expr] — compresses an expression into a base64-encoded string
+pub fn compress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Compress expects 1 argument, got {}",
+      args.len()
+    )));
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let repr = crate::syntax::expr_to_string(&evaluated);
+
+  use flate2::Compression;
+  use flate2::write::ZlibEncoder;
+  use std::io::Write;
+
+  let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+  encoder.write_all(repr.as_bytes()).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Compress failed: {}", e))
+  })?;
+  let compressed = encoder.finish().map_err(|e| {
+    InterpreterError::EvaluationError(format!("Compress failed: {}", e))
+  })?;
+
+  use base64::Engine;
+  let encoded = base64::engine::general_purpose::STANDARD.encode(&compressed);
+  Ok(Expr::String(format!("1:eJx{}", encoded)))
+}
+
+/// Uncompress[str] — decompresses a string produced by Compress
+pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Uncompress expects 1 argument, got {}",
+      args.len()
+    )));
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  let s = match &evaluated {
+    Expr::String(s) => s.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Uncompress".to_string(),
+        args: vec![evaluated],
+      });
+    }
+  };
+
+  // Strip the version prefix "1:eJx"
+  let data = if let Some(rest) = s.strip_prefix("1:eJx") {
+    rest
+  } else {
+    return Err(InterpreterError::EvaluationError(
+      "Uncompress: invalid compressed data".to_string(),
+    ));
+  };
+
+  use base64::Engine;
+  let decoded = base64::engine::general_purpose::STANDARD
+    .decode(data)
+    .map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "Uncompress decode failed: {}",
+        e
+      ))
+    })?;
+
+  use flate2::read::ZlibDecoder;
+  use std::io::Read;
+
+  let mut decoder = ZlibDecoder::new(&decoded[..]);
+  let mut decompressed = String::new();
+  decoder.read_to_string(&mut decompressed).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Uncompress decompress failed: {}",
+      e
+    ))
+  })?;
+
+  // Parse the decompressed string back into an expression
+  crate::syntax::string_to_expr(&decompressed).map_err(|e| {
+    InterpreterError::EvaluationError(format!("Uncompress parse failed: {}", e))
+  })
+}
