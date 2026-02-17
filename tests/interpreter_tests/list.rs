@@ -2112,3 +2112,32 @@ mod matrix_constructors {
     );
   }
 }
+
+mod part_list_index {
+  use super::*;
+
+  #[test]
+  fn part_with_list_index() {
+    assert_eq!(interpret("{a, b, c, d}[[{1, 3, 3}]]").unwrap(), "{a, c, c}");
+  }
+
+  #[test]
+  fn part_with_list_index_function_call() {
+    assert_eq!(
+      interpret("Part[{a, b, c, d}, {1, 3, 3}]").unwrap(),
+      "{a, c, c}"
+    );
+  }
+}
+
+mod join_non_list {
+  use super::*;
+
+  #[test]
+  fn join_plus_heads() {
+    assert_eq!(
+      interpret("Join[a + b, c + d, e + f]").unwrap(),
+      "a + b + c + d + e + f"
+    );
+  }
+}
