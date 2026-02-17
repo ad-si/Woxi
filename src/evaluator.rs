@@ -2413,6 +2413,18 @@ pub fn evaluate_function_call_ast(
     "ComposeList" if args.len() == 2 => {
       return list_helpers_ast::compose_list_ast(args);
     }
+    "ContainsOnly" if args.len() == 2 => {
+      return list_helpers_ast::contains_only_ast(args);
+    }
+    "LengthWhile" if args.len() == 2 => {
+      return list_helpers_ast::length_while_ast(args);
+    }
+    "TakeLargestBy" if args.len() == 3 => {
+      return list_helpers_ast::take_largest_by_ast(args);
+    }
+    "TakeSmallestBy" if args.len() == 3 => {
+      return list_helpers_ast::take_smallest_by_ast(args);
+    }
 
     // Additional AST-native list functions
     "Table" if args.len() == 2 => {
@@ -3956,6 +3968,15 @@ pub fn evaluate_function_call_ast(
     "Factorial" if args.len() == 1 => {
       return crate::functions::math_ast::factorial_ast(args);
     }
+    "Factorial2" if args.len() == 1 => {
+      return crate::functions::math_ast::factorial2_ast(args);
+    }
+    "Subfactorial" if args.len() == 1 => {
+      return crate::functions::math_ast::subfactorial_ast(args);
+    }
+    "Pochhammer" if args.len() == 2 => {
+      return crate::functions::math_ast::pochhammer_ast(args);
+    }
     "Gamma" if args.len() == 1 => {
       return crate::functions::math_ast::gamma_ast(args);
     }
@@ -4249,7 +4270,7 @@ pub fn evaluate_function_call_ast(
         io::stdout().flush().ok();
       }
     }
-    "Xor" if args.len() >= 2 => {
+    "Xor" if !args.is_empty() => {
       return crate::functions::boolean_ast::xor_ast(args);
     }
     "Equivalent" if args.len() >= 2 => {
@@ -4417,11 +4438,25 @@ pub fn evaluate_function_call_ast(
     "IdentityMatrix" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::identity_matrix_ast(args);
     }
+    "BoxMatrix" if args.len() == 1 => {
+      if let Some(n) = expr_to_i128(&args[0])
+        && n >= 0
+      {
+        let size = (2 * n + 1) as usize;
+        let row = Expr::List(vec![Expr::Integer(1); size]);
+        return Ok(Expr::List(vec![row; size]));
+      }
+    }
     "DiagonalMatrix" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::diagonal_matrix_ast(args);
     }
     "Eigenvalues" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::eigenvalues_ast(args);
+    }
+    "ConjugateTranspose" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::conjugate_transpose_ast(
+        args,
+      );
     }
     "Cross" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::linear_algebra_ast::cross_ast(args);
@@ -8288,6 +8323,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Gamma"
     | "Factorial"
     | "Factorial2"
+    | "Subfactorial"
+    | "Pochhammer"
     | "Erf"
     | "Erfc"
     | "Beta"
@@ -8504,6 +8541,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Dot"
     | "Cross"
     | "Projection"
+    | "ConjugateTranspose"
+    | "BoxMatrix"
     | "Transpose"
     | "Inverse"
     | "Det"
@@ -8534,7 +8573,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FilterRules"
     | "Operate"
     | "ReverseSort"
-    | "Quartiles" => {
+    | "Quartiles"
+    | "ContainsOnly"
+    | "LengthWhile"
+    | "TakeLargestBy"
+    | "TakeSmallestBy" => {
       vec!["Protected"]
     }
 

@@ -3,6 +3,7 @@
 //! Dot, Det, Inverse, Tr, IdentityMatrix, DiagonalMatrix, Cross, Eigenvalues.
 
 use crate::InterpreterError;
+use crate::evaluator::evaluate_expr_to_expr;
 use crate::syntax::Expr;
 
 /// Helper: extract a matrix (list of lists) from an Expr.
@@ -507,6 +508,61 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     eval_sub(&eval_mul(&va[2], &vb[0]), &eval_mul(&va[0], &vb[2])),
     eval_sub(&eval_mul(&va[0], &vb[1]), &eval_mul(&va[1], &vb[0])),
   ]))
+}
+
+/// ConjugateTranspose[matrix] - transpose and conjugate each element
+pub fn conjugate_transpose_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ConjugateTranspose expects exactly 1 argument".into(),
+    ));
+  }
+  let rows = match &args[0] {
+    Expr::List(rows) => rows,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ConjugateTranspose".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Get dimensions
+  let nrows = rows.len();
+  if nrows == 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  let ncols = match &rows[0] {
+    Expr::List(cols) => cols.len(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ConjugateTranspose".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Transpose and conjugate
+  let mut result = Vec::with_capacity(ncols);
+  for j in 0..ncols {
+    let mut row = Vec::with_capacity(nrows);
+    for item in rows.iter().take(nrows) {
+      if let Expr::List(cols) = item
+        && j < cols.len()
+      {
+        // Apply Conjugate
+        let conj = evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Conjugate".to_string(),
+          args: vec![cols[j].clone()],
+        })?;
+        row.push(conj);
+      }
+    }
+    result.push(Expr::List(row));
+  }
+  Ok(Expr::List(result))
 }
 
 /// Projection[u, v] - project vector u onto vector v

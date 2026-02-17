@@ -346,3 +346,40 @@ mod eigenvalues {
     );
   }
 }
+
+mod conjugate_transpose {
+  use super::*;
+
+  #[test]
+  fn conjugate_transpose_complex() {
+    assert_eq!(
+      interpret("ConjugateTranspose[{{0, I}, {0, 0}}]").unwrap(),
+      "{{0, 0}, {-I, 0}}"
+    );
+  }
+
+  #[test]
+  fn conjugate_transpose_real() {
+    assert_eq!(
+      interpret("ConjugateTranspose[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+  }
+}
+
+mod box_matrix {
+  use super::*;
+
+  #[test]
+  fn box_matrix_1() {
+    assert_eq!(
+      interpret("BoxMatrix[1]").unwrap(),
+      "{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn box_matrix_0() {
+    assert_eq!(interpret("BoxMatrix[0]").unwrap(), "{{1}}");
+  }
+}

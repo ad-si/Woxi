@@ -1361,12 +1361,26 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     common = common.intersection(&list_set).cloned().collect();
   }
 
-  // Preserve order from first list
-  let result: Vec<Expr> = first_items
+  // Collect matching elements and sort canonically (like Mathematica)
+  let mut result: Vec<Expr> = first_items
     .iter()
     .filter(|item| common.contains(&crate::syntax::expr_to_string(item)))
     .cloned()
     .collect();
+  result.sort_by(|a, b| {
+    let ord = compare_exprs(a, b);
+    // compare_exprs returns 1 if a precedes b (canonical order), -1 if b precedes a
+    if ord > 0 {
+      std::cmp::Ordering::Less
+    } else if ord < 0 {
+      std::cmp::Ordering::Greater
+    } else {
+      std::cmp::Ordering::Equal
+    }
+  });
+  result.dedup_by(|a, b| {
+    crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  });
 
   Ok(Expr::List(result))
 }
@@ -6318,4 +6332,181 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(edges),
     Expr::List(counts.into_iter().map(Expr::Integer).collect()),
   ]))
+}
+
+/// ContainsOnly[list, elems] - True if every element of list is in elems
+pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ContainsOnly expects exactly 2 arguments".into(),
+    ));
+  }
+  let list = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ContainsOnly".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let elems = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ContainsOnly".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  use std::collections::HashSet;
+  let allowed: HashSet<String> =
+    elems.iter().map(crate::syntax::expr_to_string).collect();
+
+  for item in list {
+    if !allowed.contains(&crate::syntax::expr_to_string(item)) {
+      return Ok(Expr::Identifier("False".to_string()));
+    }
+  }
+  Ok(Expr::Identifier("True".to_string()))
+}
+
+/// LengthWhile[list, crit] - gives the number of contiguous elements at the start that satisfy crit
+pub fn length_while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LengthWhile expects exactly 2 arguments".into(),
+    ));
+  }
+  let list = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LengthWhile".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let crit = &args[1];
+  let mut count: i128 = 0;
+  for item in list {
+    let test = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![crit.clone(), Expr::List(vec![item.clone()])],
+    })?;
+    match &test {
+      Expr::Identifier(s) if s == "True" => count += 1,
+      _ => break,
+    }
+  }
+  Ok(Expr::Integer(count))
+}
+
+/// TakeLargestBy[list, f, n] - take the n largest elements sorted by f
+pub fn take_largest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "TakeLargestBy expects exactly 3 arguments".into(),
+    ));
+  }
+  let list = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeLargestBy".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let f = &args[1];
+  let n = match &args[2] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeLargestBy".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Compute f[item] for each item
+  let mut with_keys: Vec<(Expr, Expr)> = Vec::new();
+  for item in list {
+    let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![f.clone(), Expr::List(vec![item.clone()])],
+    })?;
+    with_keys.push((key, item.clone()));
+  }
+  // Sort descending by key (largest first)
+  // compare_exprs returns 1 if first < second in canonical order
+  with_keys.sort_by(|a, b| {
+    let ord = compare_exprs(&a.0, &b.0);
+    // ord > 0 means a.key < b.key, so b should come first (descending)
+    if ord > 0 {
+      std::cmp::Ordering::Greater
+    } else if ord < 0 {
+      std::cmp::Ordering::Less
+    } else {
+      std::cmp::Ordering::Equal
+    }
+  });
+  let result: Vec<Expr> =
+    with_keys.into_iter().take(n).map(|(_, v)| v).collect();
+  Ok(Expr::List(result))
+}
+
+/// TakeSmallestBy[list, f, n] - take the n smallest elements sorted by f
+pub fn take_smallest_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "TakeSmallestBy expects exactly 3 arguments".into(),
+    ));
+  }
+  let list = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeSmallestBy".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let f = &args[1];
+  let n = match &args[2] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TakeSmallestBy".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Compute f[item] for each item
+  let mut with_keys: Vec<(Expr, Expr)> = Vec::new();
+  for item in list {
+    let key = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![f.clone(), Expr::List(vec![item.clone()])],
+    })?;
+    with_keys.push((key, item.clone()));
+  }
+  // Sort ascending by key (smallest first)
+  // compare_exprs returns 1 if first < second in canonical order
+  with_keys.sort_by(|a, b| {
+    let ord = compare_exprs(&a.0, &b.0);
+    // ord > 0 means a.key < b.key, so a should come first (ascending)
+    if ord > 0 {
+      std::cmp::Ordering::Less
+    } else if ord < 0 {
+      std::cmp::Ordering::Greater
+    } else {
+      std::cmp::Ordering::Equal
+    }
+  });
+  let result: Vec<Expr> =
+    with_keys.into_iter().take(n).map(|(_, v)| v).collect();
+  Ok(Expr::List(result))
 }

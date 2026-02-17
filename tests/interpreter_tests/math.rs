@@ -3730,3 +3730,60 @@ mod apply_head_replacement {
     assert_eq!(interpret("Apply[f][a + b + c]").unwrap(), "f[a, b, c]");
   }
 }
+
+mod factorial2 {
+  use super::*;
+
+  #[test]
+  fn double_factorial_odd() {
+    assert_eq!(interpret("Factorial2[5]").unwrap(), "15");
+    assert_eq!(interpret("Factorial2[7]").unwrap(), "105");
+  }
+
+  #[test]
+  fn double_factorial_even() {
+    assert_eq!(interpret("Factorial2[6]").unwrap(), "48");
+    assert_eq!(interpret("Factorial2[10]").unwrap(), "3840");
+  }
+
+  #[test]
+  fn double_factorial_edge() {
+    assert_eq!(interpret("Factorial2[0]").unwrap(), "1");
+    assert_eq!(interpret("Factorial2[-1]").unwrap(), "1");
+    assert_eq!(interpret("Factorial2[1]").unwrap(), "1");
+  }
+}
+
+mod subfactorial {
+  use super::*;
+
+  #[test]
+  fn subfactorial_basic() {
+    assert_eq!(interpret("Subfactorial[0]").unwrap(), "1");
+    assert_eq!(interpret("Subfactorial[1]").unwrap(), "0");
+    assert_eq!(interpret("Subfactorial[2]").unwrap(), "1");
+    assert_eq!(interpret("Subfactorial[3]").unwrap(), "2");
+    assert_eq!(interpret("Subfactorial[5]").unwrap(), "44");
+  }
+}
+
+mod pochhammer {
+  use super::*;
+
+  #[test]
+  fn pochhammer_basic() {
+    assert_eq!(interpret("Pochhammer[4, 8]").unwrap(), "6652800");
+    assert_eq!(interpret("Pochhammer[1, 5]").unwrap(), "120");
+    assert_eq!(interpret("Pochhammer[3, 0]").unwrap(), "1");
+  }
+}
+
+mod xor_single {
+  use super::*;
+
+  #[test]
+  fn xor_single_arg() {
+    assert_eq!(interpret("Xor[True]").unwrap(), "True");
+    assert_eq!(interpret("Xor[False]").unwrap(), "False");
+  }
+}
