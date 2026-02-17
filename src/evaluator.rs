@@ -4154,6 +4154,18 @@ pub fn evaluate_function_call_ast(
     "BitLength" if args.len() == 1 => {
       return crate::functions::math_ast::bit_length_ast(args);
     }
+    "BitAnd" if !args.is_empty() => {
+      return crate::functions::math_ast::bit_and_ast(args);
+    }
+    "BitOr" if !args.is_empty() => {
+      return crate::functions::math_ast::bit_or_ast(args);
+    }
+    "BitXor" if !args.is_empty() => {
+      return crate::functions::math_ast::bit_xor_ast(args);
+    }
+    "BitNot" if args.len() == 1 => {
+      return crate::functions::math_ast::bit_not_ast(args);
+    }
     "IntegerExponent" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::integer_exponent_ast(args);
     }
@@ -4411,8 +4423,11 @@ pub fn evaluate_function_call_ast(
     "Eigenvalues" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::eigenvalues_ast(args);
     }
-    "Cross" if args.len() == 2 => {
+    "Cross" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::linear_algebra_ast::cross_ast(args);
+    }
+    "Projection" if args.len() == 2 => {
+      return crate::functions::linear_algebra_ast::projection_ast(args);
     }
 
     // CellularAutomaton
@@ -7635,6 +7650,7 @@ fn apply_curried_call(
           | "DeleteCases"
           | "Position"
           | "FreeQ"
+          | "MatchQ"
           | "Count"
       ) && func_args.len() == 1
         && args.len() == 1
@@ -8296,7 +8312,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FresnelS"
     | "ProductLog"
     | "DigitCount"
-    | "BitLength" => {
+    | "BitLength"
+    | "BitAnd"
+    | "BitOr"
+    | "BitXor"
+    | "BitNot" => {
       vec!["Listable", "NumericFunction", "Protected"]
     }
 
@@ -8483,6 +8503,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "SeedRandom"
     | "Dot"
     | "Cross"
+    | "Projection"
     | "Transpose"
     | "Inverse"
     | "Det"

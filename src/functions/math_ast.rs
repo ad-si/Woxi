@@ -9546,6 +9546,108 @@ pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── Bitwise operations ──────────────────────────────────────────
+
+/// BitAnd[n1, n2, ...] - bitwise AND
+pub fn bit_and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut result: Option<BigInt> = None;
+  for arg in args {
+    match expr_to_bigint(arg) {
+      Some(n) => {
+        result = Some(match result {
+          Some(r) => r & &n,
+          None => n,
+        });
+      }
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "BitAnd".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+  match result {
+    Some(n) => Ok(bigint_to_expr(n)),
+    None => Ok(Expr::FunctionCall {
+      name: "BitAnd".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// BitOr[n1, n2, ...] - bitwise OR
+pub fn bit_or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut result: Option<BigInt> = None;
+  for arg in args {
+    match expr_to_bigint(arg) {
+      Some(n) => {
+        result = Some(match result {
+          Some(r) => r | &n,
+          None => n,
+        });
+      }
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "BitOr".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+  match result {
+    Some(n) => Ok(bigint_to_expr(n)),
+    None => Ok(Expr::FunctionCall {
+      name: "BitOr".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// BitXor[n1, n2, ...] - bitwise XOR
+pub fn bit_xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut result: Option<BigInt> = None;
+  for arg in args {
+    match expr_to_bigint(arg) {
+      Some(n) => {
+        result = Some(match result {
+          Some(r) => r ^ &n,
+          None => n,
+        });
+      }
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "BitXor".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+  match result {
+    Some(n) => Ok(bigint_to_expr(n)),
+    None => Ok(Expr::FunctionCall {
+      name: "BitXor".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// BitNot[n] - bitwise NOT (complement)
+pub fn bit_not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "BitNot expects exactly 1 argument".into(),
+    ));
+  }
+  match expr_to_bigint(&args[0]) {
+    Some(n) => Ok(bigint_to_expr(!n)),
+    None => Ok(Expr::FunctionCall {
+      name: "BitNot".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 // ─── IntegerExponent ──────────────────────────────────────────────
 
 /// IntegerExponent[n, b] - largest power of b that divides n

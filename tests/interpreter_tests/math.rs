@@ -694,6 +694,34 @@ mod bit_length {
   }
 }
 
+mod bitwise_ops {
+  use super::*;
+
+  #[test]
+  fn bit_and() {
+    assert_eq!(interpret("BitAnd[5, 3]").unwrap(), "1");
+    assert_eq!(interpret("BitAnd[15, 6, 3]").unwrap(), "2");
+  }
+
+  #[test]
+  fn bit_or() {
+    assert_eq!(interpret("BitOr[5, 3]").unwrap(), "7");
+    assert_eq!(interpret("BitOr[1, 2, 4]").unwrap(), "7");
+  }
+
+  #[test]
+  fn bit_xor() {
+    assert_eq!(interpret("BitXor[5, 3]").unwrap(), "6");
+    assert_eq!(interpret("BitXor[7, 3]").unwrap(), "4");
+  }
+
+  #[test]
+  fn bit_not() {
+    assert_eq!(interpret("BitNot[5]").unwrap(), "-6");
+    assert_eq!(interpret("BitNot[0]").unwrap(), "-1");
+  }
+}
+
 mod integer_part {
   use super::*;
 

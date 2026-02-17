@@ -551,6 +551,12 @@ mod match_q {
     assert_eq!(interpret("MatchQ[x, x]").unwrap(), "True");
     assert_eq!(interpret("MatchQ[x, y]").unwrap(), "False");
   }
+
+  #[test]
+  fn operator_form() {
+    assert_eq!(interpret("MatchQ[_Integer][123]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[_String][123]").unwrap(), "False");
+  }
 }
 
 mod replace_all_after_operators {
