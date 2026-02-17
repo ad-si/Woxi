@@ -2480,16 +2480,27 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Check if any input is Real - if so, all outputs should be Real
+  let any_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
+
   let mut results = Vec::new();
   let mut val = min;
   if step > 0.0 {
     while val <= max + f64::EPSILON {
-      results.push(f64_to_expr(val));
+      results.push(if any_real {
+        Expr::Real(val)
+      } else {
+        f64_to_expr(val)
+      });
       val += step;
     }
   } else {
     while val >= max - f64::EPSILON {
-      results.push(f64_to_expr(val));
+      results.push(if any_real {
+        Expr::Real(val)
+      } else {
+        f64_to_expr(val)
+      });
       val += step;
     }
   }
@@ -5095,6 +5106,17 @@ pub fn extract_ast(
   match index {
     Expr::Integer(_) | Expr::BigInteger(_) => part_ast(list, index),
     Expr::List(indices) => {
+      // Check if this is a list of position specs (list of lists)
+      let all_lists = !indices.is_empty()
+        && indices.iter().all(|i| matches!(i, Expr::List(_)));
+      if all_lists {
+        // Multiple positions: Extract[expr, {{p1}, {p2, p3}, ...}]
+        let mut results = Vec::new();
+        for pos_spec in indices {
+          results.push(extract_ast(list, pos_spec)?);
+        }
+        return Ok(Expr::List(results));
+      }
       // Nested extraction: Extract[expr, {i, j, ...}]
       let mut current = list.clone();
       for idx in indices {
@@ -5843,60 +5865,126 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if let Expr::List(items) = &args[0] {
-    // Collect positions to delete
-    let positions: Vec<i128> = match &args[1] {
-      Expr::Integer(_) | Expr::BigInteger(_) => match expr_to_i128(&args[1]) {
-        Some(n) => vec![n],
-        None => return Ok(args[0].clone()),
-      },
-      Expr::List(pos_list) => pos_list
-        .iter()
-        .filter_map(|p| {
-          if let Expr::List(inner) = p
-            && inner.len() == 1
-          {
-            return expr_to_i128(&inner[0]);
-          }
-          expr_to_i128(p).map(|n| n)
-        })
-        .collect(),
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Delete: invalid position".into(),
-        ));
-      }
-    };
-
-    // Convert to 0-based indices, handling negative indices
-    let len = items.len() as i128;
-    let mut indices_to_remove: Vec<usize> = positions
-      .iter()
-      .filter_map(|&pos| {
-        let idx = if pos > 0 {
-          (pos - 1) as usize
-        } else if pos < 0 {
-          (len + pos) as usize
-        } else {
-          return None;
+    match &args[1] {
+      // Delete[list, n] - delete at position n
+      Expr::Integer(_) | Expr::BigInteger(_) => {
+        let pos = match expr_to_i128(&args[1]) {
+          Some(n) => n,
+          None => return Ok(args[0].clone()),
         };
-        if idx < items.len() { Some(idx) } else { None }
-      })
-      .collect();
-    indices_to_remove.sort();
-    indices_to_remove.dedup();
+        return delete_at_position(items, pos);
+      }
+      Expr::List(pos_list) => {
+        // Determine if this is a multi-part position {i, j, ...} or multiple positions {{p1}, {p2}, ...}
+        let is_multiple_positions =
+          pos_list.iter().all(|p| matches!(p, Expr::List(_)));
 
-    let result: Vec<Expr> = items
-      .iter()
-      .enumerate()
-      .filter(|(i, _)| !indices_to_remove.contains(i))
-      .map(|(_, item)| item.clone())
-      .collect();
-    Ok(Expr::List(result))
+        if is_multiple_positions && !pos_list.is_empty() {
+          // Multiple positions: Delete[list, {{p1}, {p2}, ...}]
+          let mut positions: Vec<Vec<i128>> = Vec::new();
+          for p in pos_list {
+            if let Expr::List(inner) = p {
+              let pos: Vec<i128> =
+                inner.iter().filter_map(expr_to_i128).collect();
+              if pos.len() == inner.len() {
+                positions.push(pos);
+              }
+            }
+          }
+          // For single-element position lists, collect flat indices
+          let mut result = args[0].clone();
+          // Sort positions in reverse to avoid index shifting issues
+          // For multi-part positions, we need to handle them one at a time
+          for pos in positions.iter().rev() {
+            if pos.len() == 1 {
+              if let Expr::List(items) = &result {
+                result = delete_at_position(items, pos[0])?;
+              }
+            } else {
+              result = delete_at_deep_position(&result, pos)?;
+            }
+          }
+          return Ok(result);
+        } else {
+          // Multi-part position: Delete[list, {i, j, ...}]
+          let pos: Vec<i128> =
+            pos_list.iter().filter_map(expr_to_i128).collect();
+          if pos.len() == pos_list.len() {
+            if pos.len() == 1 {
+              return delete_at_position(items, pos[0]);
+            } else {
+              return delete_at_deep_position(&args[0], &pos);
+            }
+          }
+        }
+      }
+      _ => {}
+    }
+
+    Ok(Expr::FunctionCall {
+      name: "Delete".to_string(),
+      args: args.to_vec(),
+    })
   } else {
     Ok(Expr::FunctionCall {
       name: "Delete".to_string(),
       args: args.to_vec(),
     })
+  }
+}
+
+/// Delete element at a single flat position in a list
+fn delete_at_position(
+  items: &[Expr],
+  pos: i128,
+) -> Result<Expr, InterpreterError> {
+  let len = items.len() as i128;
+  let idx = if pos > 0 {
+    (pos - 1) as usize
+  } else if pos < 0 {
+    (len + pos) as usize
+  } else {
+    return Ok(Expr::List(items.to_vec()));
+  };
+  if idx >= items.len() {
+    return Ok(Expr::List(items.to_vec()));
+  }
+  let mut result = items.to_vec();
+  result.remove(idx);
+  Ok(Expr::List(result))
+}
+
+/// Delete element at a deep multi-part position {i, j, ...}
+fn delete_at_deep_position(
+  expr: &Expr,
+  pos: &[i128],
+) -> Result<Expr, InterpreterError> {
+  if pos.is_empty() {
+    return Ok(expr.clone());
+  }
+  if let Expr::List(items) = expr {
+    let len = items.len() as i128;
+    let idx = if pos[0] > 0 {
+      (pos[0] - 1) as usize
+    } else if pos[0] < 0 {
+      (len + pos[0]) as usize
+    } else {
+      return Ok(expr.clone());
+    };
+    if idx >= items.len() {
+      return Ok(expr.clone());
+    }
+    if pos.len() == 1 {
+      let mut result = items.to_vec();
+      result.remove(idx);
+      Ok(Expr::List(result))
+    } else {
+      let mut result = items.to_vec();
+      result[idx] = delete_at_deep_position(&items[idx], &pos[1..])?;
+      Ok(Expr::List(result))
+    }
+  } else {
+    Ok(expr.clone())
   }
 }
 

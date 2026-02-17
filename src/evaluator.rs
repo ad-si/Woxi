@@ -4578,6 +4578,12 @@ pub fn evaluate_function_call_ast(
     "DiagonalMatrix" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::diagonal_matrix_ast(args);
     }
+    "DiamondMatrix" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::diamond_matrix_ast(args);
+    }
+    "DiskMatrix" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::disk_matrix_ast(args);
+    }
     "Eigenvalues" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::eigenvalues_ast(args);
     }

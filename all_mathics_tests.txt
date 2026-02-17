@@ -805,14 +805,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: Outer
-LINE: 185
-TYPE: >>
-INPUT: Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]
-EXPECTED:
-= {{{{a, 2 a}, {3 a, 4 a}}, {{b, 2 b}, {3 b, 4 b}}}, {{{c, 2 c}, {3 c, 4 c}}, {{d, 2 d}, {3 d, 4 d}}}}
----
-FILE: mathics/builtin/tensors.py
-CLASS: Outer
 LINE: 189
 TYPE: >>
 INPUT: Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], SparseArray[{{1, 2} -> c, {2, 1} -> d}]]
@@ -834,14 +826,6 @@ TYPE: >>
 INPUT: Outer[Times, SparseArray[{{1, 2} -> a, {2, 1} -> b}], {c, d}]
 EXPECTED:
 = {{{0, 0}, {a c, a d}}, {{b c, b d}, {0, 0}}}
----
-FILE: mathics/builtin/tensors.py
-CLASS: Outer
-LINE: 204
-TYPE: >>
-INPUT: Outer[Times, {{1, 2}}, {{a, b}, {c, d, e}}]
-EXPECTED:
-= {{{{a, b}, {c, d, e}}, {{2 a, 2 b}, {2 c, 2 d, 2 e}}}}
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: Outer
@@ -1281,22 +1265,6 @@ EXPECTED:
 . 0   2   0
 . 
 . 0   0   3
----
-FILE: mathics/builtin/matrices/constrmatrix.py
-CLASS: DiamondMatrix
-LINE: 97
-TYPE: >>
-INPUT: DiamondMatrix[3]
-EXPECTED:
-= {{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 0, 0, 1, 0, 0, 0}}
----
-FILE: mathics/builtin/matrices/constrmatrix.py
-CLASS: DiskMatrix
-LINE: 134
-TYPE: >>
-INPUT: DiskMatrix[3]
-EXPECTED:
-= {{0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}}
 ---
 FILE: mathics/builtin/no_meaning/infix_extra.py
 CLASS: DirectedEdge
@@ -12010,22 +11978,6 @@ EXPECTED:
 = 1 + x + x ^ 2 / 2 + x ^ 3 / 6 + x ^ 4 / 24 + x ^ 5 / 120
 ---
 FILE: mathics/builtin/list/constructing.py
-CLASS: Range
-LINE: 239
-TYPE: >>
-INPUT: Range[1.0, 2.3]
-EXPECTED:
-= {1., 2.}
----
-FILE: mathics/builtin/list/constructing.py
-CLASS: Range
-LINE: 245
-TYPE: >>
-INPUT: Range[1.0, 2.3, .5]
-EXPECTED:
-= {1., 1.5, 2.}
----
-FILE: mathics/builtin/list/constructing.py
 CLASS: Permutations
 LINE: 325
 TYPE: >>
@@ -12155,14 +12107,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Delete
-LINE: 313
-TYPE: >>
-INPUT: Delete[{{a, b}, {c, d}}, {2, 1}]
-EXPECTED:
-= {{a, b}, {d}}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Delete
 LINE: 317
 TYPE: >>
 INPUT: Delete[{a, b, c}, 0]
@@ -12243,14 +12187,6 @@ TYPE: >>
 INPUT: Drop[A, {2, 3}, {2, 3}]
 EXPECTED:
 = {{11, 14}, {41, 44}}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Extract
-LINE: 631
-TYPE: >>
-INPUT: Extract[{{a, b}, {c, d}}, {{1}, {2, 2}}]
-EXPECTED:
-= {{a, b}, d}
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: First
