@@ -2538,8 +2538,8 @@ pub fn evaluate_function_call_ast(
     "Most" if args.len() == 1 => {
       return list_helpers_ast::most_ast(&args[0]);
     }
-    "Take" if args.len() == 2 => {
-      return list_helpers_ast::take_ast(&args[0], &args[1]);
+    "Take" if args.len() >= 2 => {
+      return list_helpers_ast::take_multi_ast(&args[0], &args[1..]);
     }
     "Drop" if args.len() == 2 => {
       return list_helpers_ast::drop_ast(&args[0], &args[1]);

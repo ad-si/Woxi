@@ -944,6 +944,34 @@ mod take_out_of_bounds {
   }
 }
 
+mod take_multi_dim {
+  use super::*;
+
+  #[test]
+  fn take_all() {
+    assert_eq!(
+      interpret("Take[{1, 2, 3, 4, 5}, All]").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn take_all_column() {
+    assert_eq!(
+      interpret("Take[{{1, 3}, {5, 7}}, All, {1}]").unwrap(),
+      "{{1}, {5}}"
+    );
+  }
+
+  #[test]
+  fn take_multi_dim_range() {
+    assert_eq!(
+      interpret("Take[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 2, {1, 2}]").unwrap(),
+      "{{1, 2}, {4, 5}}"
+    );
+  }
+}
+
 mod constant_array {
   use super::*;
 

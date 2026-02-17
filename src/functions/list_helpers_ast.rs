@@ -2017,7 +2017,41 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 
 /// AST-based Take: take first n elements.
 /// Returns unevaluated if n exceeds list length (to let fallback handle error).
+/// Multi-dimensional Take: Take[list, spec1, spec2, ...]
+pub fn take_multi_ast(
+  list: &Expr,
+  specs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if specs.is_empty() {
+    return Ok(list.clone());
+  }
+
+  // Apply the first spec at this level
+  let result = take_ast(list, &specs[0])?;
+
+  // If there are more specs, apply them recursively to each element
+  if specs.len() == 1 {
+    return Ok(result);
+  }
+
+  match result {
+    Expr::List(items) => {
+      let mut new_items = Vec::new();
+      for item in &items {
+        new_items.push(take_multi_ast(item, &specs[1..])?);
+      }
+      Ok(Expr::List(new_items))
+    }
+    _ => Ok(result),
+  }
+}
+
 pub fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
+  // Handle All: return the list unchanged
+  if matches!(n, Expr::Identifier(name) if name == "All") {
+    return Ok(list.clone());
+  }
+
   let items = match list {
     Expr::List(items) => items,
     _ => {
