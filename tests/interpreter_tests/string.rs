@@ -1059,3 +1059,51 @@ mod integer_string_tests {
     assert_eq!(interpret("IntegerString[12345, 10, 3]").unwrap(), "345");
   }
 }
+
+mod compress {
+  use super::*;
+
+  #[test]
+  fn compress_returns_string() {
+    let result = interpret("Compress[42]").unwrap();
+    assert!(result.starts_with("1:eJx"));
+  }
+
+  #[test]
+  fn uncompress_roundtrip_integer() {
+    assert_eq!(interpret("Uncompress[Compress[42]]").unwrap(), "42");
+  }
+
+  #[test]
+  fn uncompress_roundtrip_string() {
+    assert_eq!(
+      interpret("Uncompress[Compress[\"hello world\"]]").unwrap(),
+      "hello world"
+    );
+  }
+
+  #[test]
+  fn uncompress_roundtrip_list() {
+    assert_eq!(
+      interpret("Uncompress[Compress[{1, 2, 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn uncompress_roundtrip_symbolic() {
+    assert_eq!(
+      interpret("Uncompress[Compress[x^2 + y Sin[x] + 10 Log[15]]]").unwrap(),
+      "10*Log[15] + x^2 + y*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn uncompress_via_variable() {
+    clear_state();
+    assert_eq!(
+      interpret("c = Compress[\"Mathics3 is cool\"]; Uncompress[c]").unwrap(),
+      "Mathics3 is cool"
+    );
+  }
+}
