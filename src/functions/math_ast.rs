@@ -2565,6 +2565,107 @@ fn build_complex_expr(
   }
 }
 
+/// Try to extract complex parts as (re: f64, im: f64) from an expression.
+/// Handles Real, Integer, I, Plus, Times, Minus, Complex, and FunctionCall variants.
+pub fn try_extract_complex_f64(expr: &Expr) -> Option<(f64, f64)> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (r, i) = try_extract_complex_f64(operand)?;
+      Some((-r, -i))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (ar, ai) = try_extract_complex_f64(left)?;
+      let (br, bi) = try_extract_complex_f64(right)?;
+      Some((ar * br - ai * bi, ar * bi + ai * br))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let (ar, ai) = try_extract_complex_f64(left)?;
+      let (br, bi) = try_extract_complex_f64(right)?;
+      Some((ar + br, ai + bi))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let (ar, ai) = try_extract_complex_f64(left)?;
+      let (br, bi) = try_extract_complex_f64(right)?;
+      Some((ar - br, ai - bi))
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut re = 0.0;
+      let mut im = 0.0;
+      for arg in args {
+        let (r, i) = try_extract_complex_f64(arg)?;
+        re += r;
+        im += i;
+      }
+      Some((re, im))
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut re = 1.0;
+      let mut im = 0.0;
+      for arg in args {
+        let (r, i) = try_extract_complex_f64(arg)?;
+        let new_re = re * r - im * i;
+        let new_im = re * i + im * r;
+        re = new_re;
+        im = new_im;
+      }
+      Some((re, im))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      let r = try_eval_to_f64(&args[0])?;
+      let i = try_eval_to_f64(&args[1])?;
+      Some((r, i))
+    }
+    _ => {
+      // Try as pure real
+      let v = try_eval_to_f64(expr)?;
+      Some((v, 0.0))
+    }
+  }
+}
+
+/// Check if an expression contains Infinity (used for Abs)
+fn contains_infinity(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name)
+      if name == "Infinity" || name == "ComplexInfinity" =>
+    {
+      true
+    }
+    Expr::UnaryOp { operand, .. } => contains_infinity(operand),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_infinity(left) || contains_infinity(right)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" || name == "Plus" => {
+      args.iter().any(contains_infinity)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DirectedInfinity" && !args.is_empty() =>
+    {
+      true
+    }
+    _ => false,
+  }
+}
+
 /// Abs[x] - Absolute value
 pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -2572,34 +2673,14 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Abs expects exactly 1 argument".into(),
     ));
   }
-  // Handle Infinity, -Infinity, ComplexInfinity
-  match &args[0] {
-    Expr::Identifier(name)
-      if name == "Infinity" || name == "ComplexInfinity" =>
-    {
-      return Ok(Expr::Identifier("Infinity".to_string()));
-    }
-    Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
-      operand,
-    } if matches!(operand.as_ref(), Expr::Identifier(n) if n == "Infinity") => {
-      return Ok(Expr::Identifier("Infinity".to_string()));
-    }
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
-      left,
-      right,
-    } if matches!(left.as_ref(), Expr::Integer(-1))
-      && matches!(right.as_ref(), Expr::Identifier(n) if n == "Infinity") =>
-    {
-      return Ok(Expr::Identifier("Infinity".to_string()));
-    }
-    _ => {}
+  // Handle any expression containing Infinity → Infinity
+  if contains_infinity(&args[0]) {
+    return Ok(Expr::Identifier("Infinity".to_string()));
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     return Ok(num_to_expr(n.abs()));
   }
-  // Handle complex numbers: Abs[a + b*I] = Sqrt[a^2 + b^2]
+  // Handle exact complex numbers: Abs[a + b*I] = Sqrt[a^2 + b^2]
   if let Some(((rn, rd), (in_, id))) = try_extract_complex_exact(&args[0]) {
     let g_r = gcd(rn, rd);
     let (rn, rd) = if rd < 0 {
@@ -2643,6 +2724,12 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: vec![make_rational(num2, den2)],
       });
     }
+  }
+  // Handle floating-point complex numbers: Abs[3.0 + I] = sqrt(10)
+  if let Some((re, im)) = try_extract_complex_f64(&args[0])
+    && im != 0.0
+  {
+    return Ok(num_to_expr((re * re + im * im).sqrt()));
   }
   Ok(Expr::FunctionCall {
     name: "Abs".to_string(),
@@ -5726,10 +5813,10 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => return Ok(negative_pi_over_2()), // -Pi/2
     _ => {}
   }
-  if let Some(f) = try_eval_to_f64(&args[0]) {
-    if f.abs() >= 1.0 {
-      return Ok(Expr::Real((1.0 / f).asin()));
-    }
+  if let Some(f) = try_eval_to_f64(&args[0])
+    && f.abs() >= 1.0
+  {
+    return Ok(Expr::Real((1.0 / f).asin()));
   }
   Ok(Expr::FunctionCall {
     name: "ArcCsc".to_string(),
@@ -5748,10 +5835,10 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => return Ok(Expr::Identifier("Pi".to_string())),
     _ => {}
   }
-  if let Some(f) = try_eval_to_f64(&args[0]) {
-    if f.abs() >= 1.0 {
-      return Ok(Expr::Real((1.0 / f).acos()));
-    }
+  if let Some(f) = try_eval_to_f64(&args[0])
+    && f.abs() >= 1.0
+  {
+    return Ok(Expr::Real((1.0 / f).acos()));
   }
   Ok(Expr::FunctionCall {
     name: "ArcSec".to_string(),
@@ -5765,16 +5852,13 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcCsch expects 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(0) => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
-    }
-    _ => {}
+  if let Expr::Integer(0) = &args[0] {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
   }
-  if let Some(f) = try_eval_to_f64(&args[0]) {
-    if f != 0.0 {
-      return Ok(Expr::Real((1.0 / f).asinh()));
-    }
+  if let Some(f) = try_eval_to_f64(&args[0])
+    && f != 0.0
+  {
+    return Ok(Expr::Real((1.0 / f).asinh()));
   }
   Ok(Expr::FunctionCall {
     name: "ArcCsch".to_string(),

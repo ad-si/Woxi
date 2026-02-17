@@ -488,14 +488,6 @@ EXPECTED:
 = $Aborted
 ---
 FILE: mathics/builtin/evaluation.py
-CLASS: Hold
-LINE: 130
-TYPE: >>
-INPUT: Attributes[Hold]
-EXPECTED:
-= {HoldAll, Protected}
----
-FILE: mathics/builtin/evaluation.py
 CLASS: Evaluate
 LINE: 192
 TYPE: >>
@@ -525,14 +517,6 @@ TYPE: >>
 INPUT: Hold[Evaluate[1 + 2]]
 EXPECTED:
 = Hold[3]
----
-FILE: mathics/builtin/evaluation.py
-CLASS: Evaluate
-LINE: 203
-TYPE: >>
-INPUT: HoldComplete[Evaluate[1 + 2]]
-EXPECTED:
-= HoldComplete[Evaluate[1 + 2]]
 ---
 FILE: mathics/builtin/evaluation.py
 CLASS: Evaluate
@@ -597,14 +581,6 @@ EXPECTED:
 = 3
 ---
 FILE: mathics/builtin/evaluation.py
-CLASS: ReleaseHold
-LINE: 271
-TYPE: >>
-INPUT: ReleaseHold[y]
-EXPECTED:
-= y
----
-FILE: mathics/builtin/evaluation.py
 CLASS: Sequence
 LINE: 295
 TYPE: >>
@@ -641,14 +617,6 @@ TYPE: >>
 INPUT: f[Sequence @@ list]
 EXPECTED:
 = f[1, 2, 3]
----
-FILE: mathics/builtin/evaluation.py
-CLASS: Sequence
-LINE: 308
-TYPE: >>
-INPUT: Hold[a, Sequence[b, c], d]
-EXPECTED:
-= Hold[a, b, c, d]
 ---
 FILE: mathics/builtin/graphics.py
 CLASS: Show
@@ -1973,30 +1941,6 @@ EXPECTED:
 : "1.5`" cannot be followed by "`" (line 1 of "<test-Syntax-4>").
 ---
 FILE: mathics/builtin/numeric.py
-CLASS: Abs
-LINE: 99
-TYPE: >>
-INPUT: Plot[Abs[x], {x, -4, 4}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/numeric.py
-CLASS: Abs
-LINE: 105
-TYPE: >>
-INPUT: Abs[3.0 + I]
-EXPECTED:
-= 3.16228
----
-FILE: mathics/builtin/numeric.py
-CLASS: Abs
-LINE: 110
-TYPE: >>
-INPUT: Abs[Infinity] == Abs[I Infinity] == Abs[ComplexInfinity]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/numeric.py
 CLASS: Chop
 LINE: 145
 TYPE: >>
@@ -2255,14 +2199,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numeric.py
 CLASS: RealAbs
-LINE: 570
-TYPE: >>
-INPUT: RealAbs[2. + 3. I]
-EXPECTED:
-= RealAbs[2. + 3. I]
----
-FILE: mathics/builtin/numeric.py
-CLASS: RealAbs
 LINE: 572
 TYPE: >>
 INPUT: D[RealAbs[x ^ 2], x]
@@ -2317,14 +2253,6 @@ INPUT: Round[1 + 2 I, 2 I]
 EXPECTED:
 = 2 I
 ---
-FILE: mathics/builtin/numeric.py
-CLASS: UnitStep
-LINE: 833
-TYPE: >>
-INPUT: Plot[UnitStep[x], {x, -4, 4}]
-EXPECTED:
-= -Graphics-
----
 FILE: mathics/builtin/optimization.py
 CLASS: Maximize
 LINE: 47
@@ -2348,14 +2276,6 @@ TYPE: >>
 INPUT: Take[{{1, 3}, {5, 7}}, All, {1}]
 EXPECTED:
 = {{1}, {5}}
----
-FILE: mathics/builtin/options.py
-CLASS: All
-LINE: 67
-TYPE: >>
-INPUT: Plot[x^2, {x, -1, 1}, MaxRecursion->5, Mesh->All]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/options.py
 CLASS: Default
@@ -2394,22 +2314,6 @@ TYPE: >>
 INPUT: h[] /. h[___, ___, x_., y_., ___] -> {x, y}
 EXPECTED:
 = {{3, 5}, {4, 5}}
----
-FILE: mathics/builtin/options.py
-CLASS: FilterRules
-LINE: 147
-TYPE: >>
-INPUT: FilterRules[{x -> 100, y -> 1000}, x]
-EXPECTED:
-= {x -> 100}
----
-FILE: mathics/builtin/options.py
-CLASS: FilterRules
-LINE: 150
-TYPE: >>
-INPUT: FilterRules[{x -> 100, y -> 1000, z -> 10000}, {a, b, x, z}]
-EXPECTED:
-= {x -> 100, z -> 10000}
 ---
 FILE: mathics/builtin/options.py
 CLASS: Options
@@ -2638,22 +2542,6 @@ INPUT: For[i=1, i<=10, i=i+1, n = n * i]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/procedural.py
-CLASS: For
-LINE: 342
-TYPE: >>
-INPUT: n
-EXPECTED:
-= 3628800
----
-FILE: mathics/builtin/procedural.py
-CLASS: For
-LINE: 344
-TYPE: >>
-INPUT: n == 10!
-EXPECTED:
-= True
----
-FILE: mathics/builtin/procedural.py
 CLASS: Return
 LINE: 553
 TYPE: >>
@@ -2662,28 +2550,6 @@ EXPECTED:
 | 1
 | 2
 | 3
----
-FILE: mathics/builtin/procedural.py
-CLASS: Return
-LINE: 559
-TYPE: >>
-INPUT: g[x_] := (Do[If[x < 0, Return[0]], {i, {2, 1, 0, -1}}]; x)
-EXPECTED: (none)
----
-FILE: mathics/builtin/procedural.py
-CLASS: Return
-LINE: 560
-TYPE: >>
-INPUT: g[-1]
-EXPECTED:
-= -1
----
-FILE: mathics/builtin/procedural.py
-CLASS: Switch
-LINE: 599
-TYPE: >>
-INPUT: a:=(Print["a->p"];p); b:=(Print["b->q"];q);
-EXPECTED: (none)
 ---
 FILE: mathics/builtin/procedural.py
 CLASS: Switch
@@ -2700,15 +2566,6 @@ LINE: 603
 TYPE: >>
 INPUT: a=.; b=.;
 EXPECTED: (none)
----
-FILE: mathics/builtin/procedural.py
-CLASS: Throw
-LINE: 655
-TYPE: >>
-INPUT: Throw[1]
-EXPECTED:
-: Uncaught Throw[1] returned to top level.
-= Hold[Throw[1]]
 ---
 FILE: mathics/builtin/procedural.py
 CLASS: While
@@ -2763,22 +2620,6 @@ TYPE: >>
 INPUT: Quantity["Kilogram"]
 EXPECTED:
 = 1 kilogram
----
-FILE: mathics/builtin/quantities.py
-CLASS: Quantity
-LINE: 82
-TYPE: >>
-INPUT: Quantity[10, "Meters"]
-EXPECTED:
-= 10 meter
----
-FILE: mathics/builtin/quantities.py
-CLASS: Quantity
-LINE: 86
-TYPE: >>
-INPUT: Quantity[{10, 20}, "Meters"]
-EXPECTED:
-= {10 meter, 20 meter}
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: Quantity
@@ -2838,14 +2679,6 @@ TYPE: >>
 INPUT: QuantityUnit[Quantity["Kilogram"]]
 EXPECTED:
 = kilogram
----
-FILE: mathics/builtin/quantities.py
-CLASS: QuantityUnit
-LINE: 363
-TYPE: >>
-INPUT: QuantityUnit[Quantity[10, "Meters"]]
-EXPECTED:
-= meter
 ---
 FILE: mathics/builtin/quantities.py
 CLASS: QuantityUnit
@@ -2929,22 +2762,6 @@ EXPECTED:
 = Global`
 ---
 FILE: mathics/builtin/scoping.py
-CLASS: Block
-LINE: 168
-TYPE: >>
-INPUT: n
-EXPECTED:
-= 10
----
-FILE: mathics/builtin/scoping.py
-CLASS: Block
-LINE: 175
-TYPE: >>
-INPUT: Block[{x = n+2, n}, {x, n}]
-EXPECTED:
-= {12, 10}
----
-FILE: mathics/builtin/scoping.py
 CLASS: Contexts
 LINE: 249
 TYPE: >>
@@ -3006,21 +2823,6 @@ TYPE: >>
 INPUT: M=SparseArray[{{0, a}, {b, 0}}]
 EXPECTED:
 = SparseArray[Automatic, {2, 2}, 0, {{1, 2} -> a, {2, 1} -> b}]
----
-FILE: mathics/builtin/sparse.py
-CLASS: SparseArray
-LINE: 46
-TYPE: >>
-INPUT: M //Normal
-EXPECTED:
-= {{0, a}, {b, 0}}
----
-FILE: mathics/builtin/system.py
-CLASS: Breakpoint
-LINE: 102
-TYPE: X>
-INPUT: SetEnvironment["PYTHONBREAKPOINT" -> "mathics.disabled_breakpoint"];
-EXPECTED: (none)
 ---
 FILE: mathics/builtin/system.py
 CLASS: CommandLine
@@ -3342,30 +3144,6 @@ EXPECTED:
 = -1
 ---
 FILE: mathics/builtin/tensors.py
-CLASS: Dot
-LINE: 105
-TYPE: >>
-INPUT: {a, b, c} . {x, y, z}
-EXPECTED:
-= a x + b y + c z
----
-FILE: mathics/builtin/tensors.py
-CLASS: Dot
-LINE: 108
-TYPE: >>
-INPUT: {{a, b}, {c, d}} . {x, y}
-EXPECTED:
-= {a x + b y, c x + d y}
----
-FILE: mathics/builtin/tensors.py
-CLASS: Dot
-LINE: 111
-TYPE: >>
-INPUT: {{a, b}, {c, d}} . {{r, s}, {t, u}}
-EXPECTED:
-= {{a r + b t, a s + b u}, {c r + d t, c s + d u}}
----
-FILE: mathics/builtin/tensors.py
 CLASS: Inner
 LINE: 144
 TYPE: >>
@@ -3439,14 +3217,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: Outer
-LINE: 212
-TYPE: >>
-INPUT: trigs = Outer[Composition, {Sin, Cos, Tan}, {ArcSin, ArcCos, ArcTan}]
-EXPECTED:
-= {{Composition[Sin, ArcSin], Composition[Sin, ArcCos], Composition[Sin, ArcTan]}, {Composition[Cos, ArcSin], Composition[Cos, ArcCos], Composition[Cos, ArcTan]}, {Composition[Tan, ArcSin], Composition[Tan, ArcCos], Composition[Tan, ArcTan]}}
----
-FILE: mathics/builtin/tensors.py
-CLASS: Outer
 LINE: 215
 TYPE: >>
 INPUT: Map[#[0] &, trigs, {2}]
@@ -3479,14 +3249,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: TranslationTransform
-LINE: 326
-TYPE: >>
-INPUT: t[{x, y}]
-EXPECTED:
-= {x + x0, y + y0}
----
-FILE: mathics/builtin/tensors.py
-CLASS: TranslationTransform
 LINE: 332
 TYPE: >>
 INPUT: Show[Graphics[Table[Polygon[TranslationTransform[{Sqrt[3] (i - j/2), 3 j/2}] /@ {{Sqrt[3]/2, -1/2}, {0, 1}, {-Sqrt[3]/2, -1/2}}], {i, 7}, {j, i}]]]
@@ -3504,32 +3266,6 @@ EXPECTED:
 . 2   5
 . 
 . 3   6
----
-FILE: mathics/builtin/tensors.py
-CLASS: Transpose
-LINE: 365
-TYPE: >>
-INPUT: matrix = {{1, 2}, {3, 4}, {5, 6}}; MatrixForm[Transpose[matrix]]
-EXPECTED:
-= 1   3   5
-. 
-. 2   4   6
----
-FILE: mathics/builtin/tensors.py
-CLASS: Transpose
-LINE: 376
-TYPE: >>
-INPUT: Transpose[Transpose[matrix]] == matrix
-EXPECTED:
-= True
----
-FILE: mathics/builtin/tensors.py
-CLASS: Transpose
-LINE: 379
-TYPE: >>
-INPUT: Transpose[Transpose[matrix3D]] == matrix3D
-EXPECTED:
-= True
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: Transpose
@@ -16139,14 +15875,6 @@ CLASS: Plot
 LINE: 167
 TYPE: >>
 INPUT: Plot[Tan[x], {x, -6, 6}, Mesh->Full]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: Plot
-LINE: 170
-TYPE: >>
-INPUT: Plot[x^2, {x, -1, 1}, MaxRecursion->5, Mesh->All]
 EXPECTED:
 = -Graphics-
 ---

@@ -2286,6 +2286,25 @@ mod abs_complex_tests {
   fn abs_negative_complex() {
     assert_eq!(interpret("Abs[-3 - 4*I]").unwrap(), "5");
   }
+
+  #[test]
+  fn abs_float_complex() {
+    assert_eq!(interpret("Abs[3.0 + I]").unwrap(), "3.1622776601683795");
+  }
+
+  #[test]
+  fn abs_i_infinity() {
+    assert_eq!(interpret("Abs[I Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn abs_infinity_equality() {
+    assert_eq!(
+      interpret("Abs[Infinity] == Abs[I Infinity] == Abs[ComplexInfinity]")
+        .unwrap(),
+      "True"
+    );
+  }
 }
 
 #[cfg(test)]

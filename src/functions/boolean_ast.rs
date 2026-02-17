@@ -223,6 +223,7 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Ok(_) => {}
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
+            Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
             Err(e) => return Err(e),
           }
         }

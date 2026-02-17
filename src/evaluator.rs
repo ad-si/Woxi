@@ -768,13 +768,11 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Pause[n] - sleep for n seconds and return Null
       if name == "Pause" && args.len() == 1 {
-        if let Ok(val) = evaluate_expr_to_expr(&args[0]) {
-          if let Some(secs) = crate::functions::math_ast::try_eval_to_f64(&val)
-          {
-            if secs > 0.0 {
-              std::thread::sleep(std::time::Duration::from_secs_f64(secs));
-            }
-          }
+        if let Ok(val) = evaluate_expr_to_expr(&args[0])
+          && let Some(secs) = crate::functions::math_ast::try_eval_to_f64(&val)
+          && secs > 0.0
+        {
+          std::thread::sleep(std::time::Duration::from_secs_f64(secs));
         }
         return Ok(Expr::Identifier("Null".to_string()));
       }
@@ -3457,6 +3455,9 @@ pub fn evaluate_function_call_ast(
     "KeyValueMap" if args.len() == 2 => {
       return crate::functions::association_ast::key_value_map_ast(args);
     }
+    "FilterRules" if args.len() == 2 => {
+      return filter_rules_ast(&args[0], &args[1]);
+    }
 
     "MemberQ" if args.len() == 2 => {
       return crate::functions::predicate_ast::member_q_ast(args);
@@ -5241,6 +5242,48 @@ fn assuming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   result
 }
 
+/// FilterRules[{rules...}, keys] - filter rules by matching keys
+fn filter_rules_ast(
+  rules: &Expr,
+  keys: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let rule_list = match rules {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FilterRules".to_string(),
+        args: vec![rules.clone(), keys.clone()],
+      });
+    }
+  };
+
+  // Build set of key names to keep
+  let key_names: Vec<String> = match keys {
+    Expr::List(items) => items.iter().map(expr_to_string).collect(),
+    _ => vec![expr_to_string(keys)],
+  };
+
+  let mut result = Vec::new();
+  for rule in rule_list {
+    let rule_key = match rule {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        expr_to_string(pattern)
+      }
+      Expr::FunctionCall { name, args }
+        if (name == "Rule" || name == "RuleDelayed") && !args.is_empty() =>
+      {
+        expr_to_string(&args[0])
+      }
+      _ => continue,
+    };
+    if key_names.contains(&rule_key) {
+      result.push(rule.clone());
+    }
+  }
+
+  Ok(Expr::List(result))
+}
+
 /// AST-based For loop: For[init, test, incr, body]
 fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 || args.len() > 4 {
@@ -5276,6 +5319,7 @@ fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(_) => {}
         Err(InterpreterError::BreakSignal) => break,
         Err(InterpreterError::ContinueSignal) => {}
+        Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
         Err(e) => return Err(e),
       }
     }
@@ -8292,7 +8336,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Check"
     | "CheckAbort"
     | "Quiet"
-    | "Message" => {
+    | "Message"
+    | "FilterRules" => {
       vec!["Protected"]
     }
 
