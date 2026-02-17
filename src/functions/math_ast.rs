@@ -1608,6 +1608,10 @@ fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {
+      // x / x → 1 for identical symbolic expressions
+      if crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b) {
+        return Ok(Expr::Integer(1));
+      }
       // Flatten nested divisions: (a/b)/c → a/(b*c), a/(b/c) → (a*c)/b
       let (num, den) = flatten_division(a, b);
       Ok(Expr::BinaryOp {
@@ -11638,4 +11642,234 @@ fn quantile_single(
   let idx = (q_val * n as f64).ceil() as usize;
   let idx = idx.max(1).min(n);
   Ok(sorted[idx - 1].clone())
+}
+
+// ─── PowerExpand ──────────────────────────────────────────────────────
+
+/// PowerExpand[expr] - expand powers of products and powers
+/// Rules: (a^b)^c -> a^(b*c), (a*b)^c -> a^c * b^c
+pub fn power_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PowerExpand expects exactly 1 argument".into(),
+    ));
+  }
+  Ok(power_expand_recursive(&args[0]))
+}
+
+fn power_expand_recursive(expr: &Expr) -> Expr {
+  // Helper to extract (base, exponent) from any Power representation
+  let extract_power = |e: &Expr| -> Option<(Expr, Expr)> {
+    match e {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => Some((*left.clone(), *right.clone())),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((args[0].clone(), args[1].clone()))
+      }
+      // Sqrt[x] = Power[x, 1/2]
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
+      {
+        Some((
+          args[0].clone(),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)],
+          },
+        ))
+      }
+      _ => None,
+    }
+  };
+
+  // Helper to extract Times factors
+  let extract_times = |e: &Expr| -> Option<Vec<Expr>> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() >= 2 =>
+      {
+        Some(args.clone())
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => Some(vec![*left.clone(), *right.clone()]),
+      _ => None,
+    }
+  };
+
+  match expr {
+    _ if extract_power(expr).is_some() => {
+      let (raw_base, raw_exp) = extract_power(expr).unwrap();
+      let base = power_expand_recursive(&raw_base);
+      let exp = power_expand_recursive(&raw_exp);
+
+      // (a^b)^c -> a^(b*c)
+      if let Some((inner_base, inner_exp)) = extract_power(&base) {
+        let new_exp = match times_ast(&[inner_exp.clone(), exp.clone()]) {
+          Ok(r) => r,
+          Err(_) => Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(inner_exp),
+            right: Box::new(exp),
+          },
+        };
+        return match crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(inner_base),
+          right: Box::new(new_exp),
+        }) {
+          Ok(r) => r,
+          Err(_) => expr.clone(),
+        };
+      }
+
+      // (a*b*...)^c -> a^c * b^c * ...
+      if let Some(factors) = extract_times(&base) {
+        let expanded: Vec<Expr> = factors
+          .iter()
+          .map(|factor| Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(factor.clone()),
+            right: Box::new(exp.clone()),
+          })
+          .collect();
+        return match times_ast(&expanded) {
+          Ok(r) => r,
+          Err(_) => Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: expanded,
+          },
+        };
+      }
+
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(exp),
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> =
+        args.iter().map(power_expand_recursive).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(power_expand_recursive(left)),
+      right: Box::new(power_expand_recursive(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(power_expand_recursive(operand)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(power_expand_recursive).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
+// ─── Variables ──────────────────────────────────────────────────────
+
+/// Variables[expr] - list of variables in a polynomial expression
+pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Variables expects exactly 1 argument".into(),
+    ));
+  }
+  let mut vars = Vec::new();
+  collect_variables(&args[0], &mut vars);
+  // Sort canonically and deduplicate
+  vars.sort_by(|a, b| {
+    let ord = crate::functions::list_helpers_ast::compare_exprs(a, b);
+    if ord > 0 {
+      std::cmp::Ordering::Less
+    } else if ord < 0 {
+      std::cmp::Ordering::Greater
+    } else {
+      std::cmp::Ordering::Equal
+    }
+  });
+  vars.dedup_by(|a, b| {
+    crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  });
+  Ok(Expr::List(vars))
+}
+
+fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
+  match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => {}
+    Expr::Identifier(s) => {
+      // Skip built-in constants
+      if !matches!(
+        s.as_str(),
+        "True"
+          | "False"
+          | "Null"
+          | "Pi"
+          | "E"
+          | "I"
+          | "Infinity"
+          | "ComplexInfinity"
+          | "Indeterminate"
+      ) {
+        vars.push(expr.clone());
+      }
+    }
+    Expr::List(items) => {
+      for item in items {
+        collect_variables(item, vars);
+      }
+    }
+    Expr::BinaryOp { op, left, right } => {
+      match op {
+        crate::syntax::BinaryOperator::Plus
+        | crate::syntax::BinaryOperator::Minus
+        | crate::syntax::BinaryOperator::Times
+        | crate::syntax::BinaryOperator::Power
+        | crate::syntax::BinaryOperator::Divide => {
+          collect_variables(left, vars);
+          collect_variables(right, vars);
+        }
+        _ => {
+          // Treat as atomic variable-like term
+          vars.push(expr.clone());
+        }
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      match name.as_str() {
+        "Plus" | "Times" | "Power" | "Rational" => {
+          for arg in args {
+            collect_variables(arg, vars);
+          }
+        }
+        _ => {
+          // Non-polynomial function (like Sin, Cos) — treat as variable
+          vars.push(expr.clone());
+        }
+      }
+    }
+    Expr::UnaryOp { op: _, operand } => {
+      collect_variables(operand, vars);
+    }
+    _ => {
+      vars.push(expr.clone());
+    }
+  }
 }

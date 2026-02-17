@@ -1008,3 +1008,211 @@ fn find_polynomial_roots(coeffs: &[i128]) -> Vec<Expr> {
 
   roots
 }
+
+/// RowReduce[matrix] - Gaussian elimination to reduced row echelon form
+pub fn row_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RowReduce expects exactly 1 argument".into(),
+    ));
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "RowReduce".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  Ok(matrix_to_expr(row_reduce_impl(&matrix)))
+}
+
+/// Simplify expression via the evaluator (with Simplify for symbolic)
+fn simplify_expr(e: &Expr) -> Expr {
+  let evaluated = match evaluate_expr_to_expr(e) {
+    Ok(r) => r,
+    Err(_) => return e.clone(),
+  };
+  // For symbolic expressions, also try Simplify
+  match &evaluated {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::Identifier(_) => evaluated,
+    _ => {
+      match evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Simplify".to_string(),
+        args: vec![evaluated.clone()],
+      }) {
+        Ok(r) => r,
+        Err(_) => evaluated,
+      }
+    }
+  }
+}
+
+/// Internal row reduction (Gauss-Jordan elimination) that works symbolically.
+/// Uses fraction-free approach: instead of dividing by pivot immediately,
+/// we compute row[j] = row[j]*pivot - factor*pivot_row[j] to avoid symbolic division issues,
+/// then normalize at the end.
+fn row_reduce_impl(matrix: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
+  let nrows = matrix.len();
+  if nrows == 0 {
+    return vec![];
+  }
+  let ncols = matrix[0].len();
+  let mut m: Vec<Vec<Expr>> = matrix.to_vec();
+
+  let mut pivot_row = 0;
+  let mut pivot_cols = Vec::new();
+
+  for col in 0..ncols {
+    if pivot_row >= nrows {
+      break;
+    }
+    // Find a non-zero pivot in this column
+    let mut found = None;
+    for row in pivot_row..nrows {
+      if !is_zero_expr(&m[row][col]) {
+        found = Some(row);
+        break;
+      }
+    }
+    let Some(swap_row) = found else { continue };
+    if swap_row != pivot_row {
+      m.swap(pivot_row, swap_row);
+    }
+
+    let pivot = m[pivot_row][col].clone();
+    pivot_cols.push((pivot_row, col));
+
+    // Eliminate all other rows using fraction-free approach
+    for row in 0..nrows {
+      if row == pivot_row {
+        continue;
+      }
+      let factor = m[row][col].clone();
+      if !is_zero_expr(&factor) {
+        // new_row[j] = pivot * row[j] - factor * pivot_row[j]
+        for j in 0..ncols {
+          let term1 = eval_mul(&pivot, &m[row][j]);
+          let term2 = eval_mul(&factor, &m[pivot_row][j]);
+          let result = eval_sub(&term1, &term2);
+          m[row][j] = simplify_expr(&result);
+        }
+      }
+    }
+    pivot_row += 1;
+  }
+
+  // Now normalize: scale each pivot row so pivot element is 1
+  for &(row, col) in &pivot_cols {
+    let pivot = m[row][col].clone();
+    if !is_one_expr(&pivot) && !is_zero_expr(&pivot) {
+      for j in 0..ncols {
+        if !is_zero_expr(&m[row][j]) {
+          m[row][j] = simplify_expr(&eval_divide(&m[row][j], &pivot));
+        }
+      }
+    }
+  }
+
+  m
+}
+
+/// Check if an expression is zero
+fn is_zero_expr(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(0))
+    || matches!(e, Expr::Real(x) if *x == 0.0)
+    || matches!(e, Expr::BigInteger(n) if n == &num_bigint::BigInt::from(0))
+}
+
+/// Check if an expression is one
+fn is_one_expr(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(1))
+    || matches!(e, Expr::Real(x) if *x == 1.0)
+    || matches!(e, Expr::BigInteger(n) if n == &num_bigint::BigInt::from(1))
+}
+
+/// MatrixRank[matrix] - rank of a matrix
+pub fn matrix_rank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "MatrixRank expects exactly 1 argument".into(),
+    ));
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "MatrixRank".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let rref = row_reduce_impl(&matrix);
+  // Count non-zero rows
+  let rank = rref
+    .iter()
+    .filter(|row| row.iter().any(|e| !is_zero_expr(e)))
+    .count();
+  Ok(Expr::Integer(rank as i128))
+}
+
+/// NullSpace[matrix] - find null space basis vectors
+pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "NullSpace expects exactly 1 argument".into(),
+    ));
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      // Return empty list for non-matrix (symbolic matrix)
+      return Ok(Expr::List(vec![]));
+    }
+  };
+  let nrows = matrix.len();
+  if nrows == 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  let ncols = matrix[0].len();
+
+  let rref = row_reduce_impl(&matrix);
+
+  // Find pivot columns
+  let mut pivot_cols = Vec::new();
+  let mut pivot_row_for_col = vec![None; ncols];
+  let mut current_row = 0;
+  for col in 0..ncols {
+    if current_row >= nrows {
+      break;
+    }
+    if is_one_expr(&rref[current_row][col]) {
+      pivot_cols.push(col);
+      pivot_row_for_col[col] = Some(current_row);
+      current_row += 1;
+    }
+  }
+
+  // Free columns are non-pivot columns
+  let free_cols: Vec<usize> =
+    (0..ncols).filter(|c| !pivot_cols.contains(c)).collect();
+
+  // Build null space basis vectors
+  let mut basis = Vec::new();
+  for &free_col in &free_cols {
+    let mut vec = vec![Expr::Integer(0); ncols];
+    vec[free_col] = Expr::Integer(1);
+    for &pivot_col in &pivot_cols {
+      if let Some(row) = pivot_row_for_col[pivot_col] {
+        // Negate the entry from rref
+        vec[pivot_col] = eval_sub(&Expr::Integer(0), &rref[row][free_col]);
+      }
+    }
+    basis.push(Expr::List(vec));
+  }
+  Ok(Expr::List(basis))
+}

@@ -3787,3 +3787,47 @@ mod xor_single {
     assert_eq!(interpret("Xor[False]").unwrap(), "False");
   }
 }
+
+mod power_expand {
+  use super::*;
+
+  #[test]
+  fn power_of_power() {
+    assert_eq!(interpret("PowerExpand[(a ^ b) ^ c]").unwrap(), "a^(b*c)");
+  }
+
+  #[test]
+  fn power_of_product() {
+    assert_eq!(interpret("PowerExpand[(a * b) ^ c]").unwrap(), "a^c*b^c");
+  }
+
+  #[test]
+  fn sqrt_of_square() {
+    assert_eq!(interpret("PowerExpand[(x ^ 2) ^ (1/2)]").unwrap(), "x");
+  }
+}
+
+mod variables {
+  use super::*;
+
+  #[test]
+  fn variables_polynomial() {
+    assert_eq!(
+      interpret("Variables[a x^2 + b x + c]").unwrap(),
+      "{a, b, c, x}"
+    );
+  }
+
+  #[test]
+  fn variables_list() {
+    assert_eq!(
+      interpret("Variables[{a + b x, c y^2 + x/2}]").unwrap(),
+      "{a, b, c, x, y}"
+    );
+  }
+
+  #[test]
+  fn variables_with_function() {
+    assert_eq!(interpret("Variables[x + Sin[y]]").unwrap(), "{x, Sin[y]}");
+  }
+}

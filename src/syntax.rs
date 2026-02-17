@@ -2371,7 +2371,8 @@ pub fn expr_to_string(expr: &Expr) -> String {
               op: BinaryOperator::Divide,
               ..
             }
-          ) || is_negative_expr(right)));
+          ) || is_right_multiplicative(right)
+            || is_negative_expr(right)));
       let right_formatted = if needs_right_parens {
         format!("({})", right_str)
       } else {
