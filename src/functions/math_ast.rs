@@ -9183,9 +9183,12 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (num, denom) = find_rational(x, tolerance, max_denom);
 
   // Verify the approximation is within tolerance
-  let approx = num as f64 / denom as f64;
-  if (approx - x).abs() >= tolerance {
-    return Ok(num_to_expr(x));
+  // When tolerance is 0, we want the best possible rational approximation
+  if tolerance > 0.0 {
+    let approx = num as f64 / denom as f64;
+    if (approx - x).abs() >= tolerance {
+      return Ok(num_to_expr(x));
+    }
   }
 
   if denom == 1 {
@@ -9231,8 +9234,15 @@ fn find_rational(x: f64, tolerance: f64, max_denom: i64) -> (i64, i64) {
     }
 
     let approx = p2 as f64 / q2 as f64;
-    if (approx - x).abs() < tolerance {
-      return (sign * p2, q2);
+    if tolerance > 0.0 {
+      if (approx - x).abs() < tolerance {
+        return (sign * p2, q2);
+      }
+    } else {
+      // tolerance == 0: stop when the approximation exactly equals x as a float
+      if approx == x {
+        return (sign * p2, q2);
+      }
     }
 
     let frac = xi - ai as f64;

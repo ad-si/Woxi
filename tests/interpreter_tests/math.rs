@@ -3424,6 +3424,14 @@ mod overflow_safety {
     let result = interpret("Rationalize[N[Pi], 0]");
     assert!(result.is_ok());
   }
+
+  #[test]
+  fn rationalize_zero_tolerance() {
+    assert_eq!(
+      interpret("Rationalize[N[Pi], 0]").unwrap(),
+      "245850922/78256779"
+    );
+  }
 }
 
 mod composition_edge_cases {
