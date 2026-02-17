@@ -447,10 +447,30 @@ pub fn string_contains_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// StringReplace[s, pattern -> replacement] - replaces occurrences
 /// StringReplace[s, {rule1, rule2, ...}] - applies multiple rules
 pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringReplace expects exactly 2 arguments".into(),
+      "StringReplace expects 2 or 3 arguments".into(),
     ));
+  }
+
+  let max_replacements = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(n) => Some(*n as usize),
+      _ => None,
+    }
+  } else {
+    None
+  };
+
+  // Handle list of strings as first arg
+  if let Expr::List(strings) = &args[0] {
+    let mut results = Vec::new();
+    for s_expr in strings {
+      let mut new_args = vec![s_expr.clone()];
+      new_args.extend_from_slice(&args[1..]);
+      results.push(string_replace_ast(&new_args)?);
+    }
+    return Ok(Expr::List(results));
   }
 
   let s = expr_to_str(&args[0])?;
@@ -472,20 +492,60 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  match &args[1] {
-    Expr::List(rules) => {
-      let mut result = s;
-      for rule in rules {
-        let (pattern, replacement) = extract_rule(rule)?;
-        result = result.replace(&pattern, &replacement);
+  // Collect all rules into a vec
+  let rules: Vec<(String, String)> = match &args[1] {
+    Expr::List(rule_list) => {
+      let mut v = Vec::new();
+      for rule in rule_list {
+        v.push(extract_rule(rule)?);
       }
-      Ok(Expr::String(result))
+      v
     }
-    rule => {
-      let (pattern, replacement) = extract_rule(rule)?;
-      Ok(Expr::String(s.replace(&pattern, &replacement)))
+    rule => vec![extract_rule(rule)?],
+  };
+
+  // Scan-based replacement: scan left-to-right, at each position try each rule
+  fn scan_replace(
+    s: &str,
+    rules: &[(String, String)],
+    max: Option<usize>,
+  ) -> String {
+    let mut result = String::new();
+    let mut count = 0usize;
+    let mut i = 0;
+    let bytes = s.as_bytes();
+    while i < s.len() {
+      if max.is_some() && count >= max.unwrap() {
+        // Limit reached, append the rest
+        result.push_str(&s[i..]);
+        break;
+      }
+      let mut matched = false;
+      for (pattern, replacement) in rules {
+        if pattern.is_empty() {
+          continue;
+        }
+        if i + pattern.len() <= bytes.len()
+          && &s[i..i + pattern.len()] == pattern.as_str()
+        {
+          result.push_str(replacement);
+          i += pattern.len();
+          count += 1;
+          matched = true;
+          break;
+        }
+      }
+      if !matched {
+        // Advance by one character
+        let ch = s[i..].chars().next().unwrap();
+        result.push(ch);
+        i += ch.len_utf8();
+      }
     }
+    result
   }
+
+  Ok(Expr::String(scan_replace(&s, &rules, max_replacements)))
 }
 
 /// ToUpperCase[s] - converts string to uppercase

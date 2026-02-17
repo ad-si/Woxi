@@ -12721,3 +12721,85 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some((nmin, nmax)) => Ok(Expr::List(seq[nmin - 1..nmax].to_vec())),
   }
 }
+
+/// EuclideanDistance[u, v] - Euclidean distance between two points
+pub fn euclidean_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "EuclideanDistance expects exactly 2 arguments".into(),
+    ));
+  }
+
+  match (&args[0], &args[1]) {
+    (Expr::List(u), Expr::List(v)) => {
+      if u.len() != v.len() {
+        return Err(InterpreterError::EvaluationError(
+          "EuclideanDistance: vectors must have the same length".into(),
+        ));
+      }
+      // Build Sqrt[Sum[Abs[u_i - v_i]^2]]
+      let mut sum_args = Vec::new();
+      for (ui, vi) in u.iter().zip(v.iter()) {
+        let diff = crate::evaluator::evaluate_function_call_ast(
+          "Subtract",
+          &[ui.clone(), vi.clone()],
+        )?;
+        let abs_diff =
+          crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
+        let sq = crate::evaluator::evaluate_function_call_ast(
+          "Power",
+          &[abs_diff, Expr::Integer(2)],
+        )?;
+        sum_args.push(sq);
+      }
+      let sum =
+        crate::evaluator::evaluate_function_call_ast("Plus", &sum_args)?;
+      crate::evaluator::evaluate_function_call_ast("Sqrt", &[sum])
+    }
+    _ => {
+      // Scalar distance: Abs[u - v]
+      let diff = crate::evaluator::evaluate_function_call_ast(
+        "Subtract",
+        &[args[0].clone(), args[1].clone()],
+      )?;
+      crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
+    }
+  }
+}
+
+/// ManhattanDistance[u, v] - Manhattan (L1) distance between two points
+pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ManhattanDistance expects exactly 2 arguments".into(),
+    ));
+  }
+
+  match (&args[0], &args[1]) {
+    (Expr::List(u), Expr::List(v)) => {
+      if u.len() != v.len() {
+        return Err(InterpreterError::EvaluationError(
+          "ManhattanDistance: vectors must have the same length".into(),
+        ));
+      }
+      let mut abs_diffs = Vec::new();
+      for (ui, vi) in u.iter().zip(v.iter()) {
+        let diff = crate::evaluator::evaluate_function_call_ast(
+          "Subtract",
+          &[ui.clone(), vi.clone()],
+        )?;
+        let abs = crate::evaluator::evaluate_function_call_ast("Abs", &[diff])?;
+        abs_diffs.push(abs);
+      }
+      crate::evaluator::evaluate_function_call_ast("Plus", &abs_diffs)
+    }
+    _ => {
+      // Scalar distance: Abs[u - v]
+      let diff = crate::evaluator::evaluate_function_call_ast(
+        "Subtract",
+        &[args[0].clone(), args[1].clone()],
+      )?;
+      crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
+    }
+  }
+}
