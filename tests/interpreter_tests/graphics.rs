@@ -534,6 +534,14 @@ mod graphics {
       // All should have fill-opacity from Hue alpha
       assert_eq!(svg.matches("fill-opacity=\"0.6\"").count(), 72);
     }
+
+    #[test]
+    fn hue_accepts_leading_dot_real_literals() {
+      assert_eq!(
+        interpret("Graphics[Table[{Hue[t/15, 1, .9, .3], Disk[{Cos[2 Pi t/15], Sin[2 Pi t/15]}]}, {t, 15}]]").unwrap(),
+        "-Graphics-"
+      );
+    }
   }
 
   mod graphicsbox_capture {

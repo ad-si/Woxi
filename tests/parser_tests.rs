@@ -96,4 +96,11 @@ mod tests {
     let expression = program.into_inner().next().unwrap();
     assert_eq!(expression.as_rule(), Rule::Expression);
   }
+
+  #[test]
+  fn test_parse_leading_dot_real_literal() {
+    let input = "Hue[.9, .3]";
+    let pair = parse(input).unwrap().next().unwrap();
+    assert_eq!(pair.as_rule(), Rule::Program);
+  }
 }
