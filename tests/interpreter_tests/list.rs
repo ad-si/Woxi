@@ -1877,3 +1877,73 @@ mod rest_nonlist {
     assert!(interpret("Rest[{}]").is_err());
   }
 }
+
+mod level {
+  use super::*;
+
+  #[test]
+  fn level_atoms() {
+    assert_eq!(
+      interpret("Level[a + b ^ 3 * f[2 x ^ 2], {-1}]").unwrap(),
+      "{a, b, 3, 2, x, 2}"
+    );
+  }
+
+  #[test]
+  fn level_positive() {
+    assert_eq!(
+      interpret("Level[{{{{a}}}}, 3]").unwrap(),
+      "{{a}, {{a}}, {{{a}}}}"
+    );
+  }
+
+  #[test]
+  fn level_negative() {
+    assert_eq!(interpret("Level[{{{{a}}}}, -4]").unwrap(), "{{{{a}}}}");
+  }
+
+  #[test]
+  fn level_negative_empty() {
+    assert_eq!(interpret("Level[{{{{a}}}}, -5]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn level_range_with_zero() {
+    assert_eq!(
+      interpret("Level[h0[h1[h2[h3[a]]]], {0, -1}]").unwrap(),
+      "{a, h3[a], h2[h3[a]], h1[h2[h3[a]]], h0[h1[h2[h3[a]]]]}"
+    );
+  }
+
+  #[test]
+  fn level_heads_list() {
+    assert_eq!(
+      interpret("Level[{{{{a}}}}, 3, Heads -> True]").unwrap(),
+      "{List, List, List, {a}, {{a}}, {{{a}}}}"
+    );
+  }
+
+  #[test]
+  fn level_heads_expr() {
+    assert_eq!(
+      interpret("Level[x^2 + y^3, 3, Heads -> True]").unwrap(),
+      "{Plus, Power, x, 2, x^2, Power, y, 3, y^3}"
+    );
+  }
+
+  #[test]
+  fn level_curried_heads() {
+    assert_eq!(
+      interpret("Level[f[g[h]][x], {-1}, Heads -> True]").unwrap(),
+      "{f, g, h, x}"
+    );
+  }
+
+  #[test]
+  fn level_curried_heads_range() {
+    assert_eq!(
+      interpret("Level[f[g[h]][x], {-2, -1}, Heads -> True]").unwrap(),
+      "{f, g, h, g[h], x, f[g[h]][x]}"
+    );
+  }
+}
