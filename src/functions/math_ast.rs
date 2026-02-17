@@ -3638,10 +3638,23 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Ok(num_to_expr(sum / items.len() as f64))
       } else {
-        // Non-numeric elements
-        Ok(Expr::FunctionCall {
-          name: "Mean".to_string(),
-          args: args.to_vec(),
+        // Check for list-of-lists (matrix) → compute column-wise mean
+        if items.iter().all(|item| matches!(item, Expr::List(_))) {
+          return mean_columnwise(items);
+        }
+        // Non-numeric elements - compute symbolically: Total[list] / Length[list]
+        // Evaluate the sum first, then wrap in division (don't distribute)
+        let sum_expr = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: items.clone(),
+        };
+        let evaluated_sum = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
+        let n = items.len() as i128;
+        // Use BinaryOp::Divide to represent (sum) / n without distributing
+        Ok(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(evaluated_sum),
+          right: Box::new(Expr::Integer(n)),
         })
       }
     }
@@ -3650,6 +3663,45 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: args.to_vec(),
     }),
   }
+}
+
+/// Mean of columns in a list-of-lists (matrix)
+fn mean_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
+  let row_vecs: Vec<&Vec<Expr>> = rows
+    .iter()
+    .filter_map(|r| {
+      if let Expr::List(items) = r {
+        Some(items)
+      } else {
+        None
+      }
+    })
+    .collect();
+  if row_vecs.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Mean".to_string(),
+      args: vec![Expr::List(rows.to_vec())],
+    });
+  }
+  let ncols = row_vecs[0].len();
+  let nrows = row_vecs.len();
+  let mut col_means = Vec::new();
+  for col in 0..ncols {
+    let col_items: Vec<Expr> = row_vecs
+      .iter()
+      .map(|r| {
+        if col < r.len() {
+          r[col].clone()
+        } else {
+          Expr::Integer(0)
+        }
+      })
+      .collect();
+    let mean_result = mean_ast(&[Expr::List(col_items)])?;
+    col_means.push(mean_result);
+  }
+  let _ = nrows; // used indirectly through mean_ast
+  Ok(Expr::List(col_means))
 }
 
 /// Helper function to compute GCD
@@ -8474,10 +8526,11 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let n = match expr_to_i128(&args[0]) {
+    Some(0) => return Ok(Expr::Integer(0)),
     Some(n) if n >= 1 => n as u128,
     _ => {
       return Err(InterpreterError::EvaluationError(
-        "EulerPhi: argument must be a positive integer".into(),
+        "EulerPhi: argument must be a non-negative integer".into(),
       ));
     }
   };
@@ -10286,23 +10339,30 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(make_rational(numer, denom));
       }
       if has_real || !all_int {
-        // Float path
+        // Try float path first
         let mut vals = Vec::new();
+        let mut all_numeric = true;
         for item in items {
           if let Some(v) = expr_to_num(item) {
             vals.push(v);
           } else {
-            return Ok(Expr::FunctionCall {
-              name: "Variance".to_string(),
-              args: args.to_vec(),
-            });
+            all_numeric = false;
+            break;
           }
         }
-        let n = vals.len() as f64;
-        let mean = vals.iter().sum::<f64>() / n;
-        let var =
-          vals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-        return Ok(num_to_expr(var));
+        if all_numeric && !vals.is_empty() {
+          let n = vals.len() as f64;
+          let mean = vals.iter().sum::<f64>() / n;
+          let var =
+            vals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+          return Ok(num_to_expr(var));
+        }
+        // Check for list-of-lists → compute column-wise
+        if items.iter().all(|item| matches!(item, Expr::List(_))) {
+          return variance_columnwise(items);
+        }
+        // Symbolic/complex path: compute Variance = Sum[Abs[xi - mean]^2] / (n-1)
+        return variance_symbolic(items);
       }
       Ok(Expr::FunctionCall {
         name: "Variance".to_string(),
@@ -10316,6 +10376,97 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Compute variance symbolically
+fn variance_symbolic(items: &[Expr]) -> Result<Expr, InterpreterError> {
+  let n = items.len();
+  if n < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Variance: need at least 2 elements".into(),
+    ));
+  }
+  // Compute mean symbolically
+  let mean = mean_ast(&[Expr::List(items.to_vec())])?;
+  // Compute Sum[Abs[xi - mean]^2] / (n-1)
+  let mut sum_sq_terms = Vec::new();
+  for item in items {
+    // (xi - mean)
+    let diff = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        item.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), mean.clone()],
+        },
+      ],
+    };
+    // Abs[xi - mean]^2
+    let abs_sq = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Abs".to_string(),
+          args: vec![diff],
+        },
+        Expr::Integer(2),
+      ],
+    };
+    sum_sq_terms.push(abs_sq);
+  }
+  let sum_sq = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: sum_sq_terms,
+  };
+  let result = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      sum_sq,
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![Expr::Integer((n - 1) as i128), Expr::Integer(-1)],
+      },
+    ],
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Variance of columns in a list-of-lists (matrix)
+fn variance_columnwise(rows: &[Expr]) -> Result<Expr, InterpreterError> {
+  let row_vecs: Vec<&Vec<Expr>> = rows
+    .iter()
+    .filter_map(|r| {
+      if let Expr::List(items) = r {
+        Some(items)
+      } else {
+        None
+      }
+    })
+    .collect();
+  if row_vecs.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Variance".to_string(),
+      args: vec![Expr::List(rows.to_vec())],
+    });
+  }
+  let ncols = row_vecs[0].len();
+  let mut col_vars = Vec::new();
+  for col in 0..ncols {
+    let col_items: Vec<Expr> = row_vecs
+      .iter()
+      .map(|r| {
+        if col < r.len() {
+          r[col].clone()
+        } else {
+          Expr::Integer(0)
+        }
+      })
+      .collect();
+    let var_result = variance_ast(&[Expr::List(col_items)])?;
+    col_vars.push(var_result);
+  }
+  Ok(Expr::List(col_vars))
+}
+
 /// StandardDeviation[list] - Sample standard deviation (Sqrt of Variance)
 /// StandardDeviation[{1, 2, 3}] => 1
 /// StandardDeviation[{1.0, 2.0, 3.0}] => 1.0
@@ -10325,12 +10476,20 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "StandardDeviation expects exactly 1 argument".into(),
     ));
   }
+  // For list-of-lists, the variance returns a list of column variances
   let var = variance_ast(args)?;
   match &var {
+    Expr::List(items) => {
+      // Apply Sqrt to each element
+      let mut results = Vec::new();
+      for item in items {
+        results.push(sqrt_ast(&[item.clone()])?);
+      }
+      Ok(Expr::List(results))
+    }
     Expr::Integer(_) | Expr::Real(_) | Expr::FunctionCall { .. } => {
       sqrt_ast(&[var.clone()])
     }
-    // If variance returned symbolic, wrap in StandardDeviation
     _ => Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
       args: args.to_vec(),
@@ -10472,6 +10631,192 @@ pub fn harmonic_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(Expr::FunctionCall {
       name: "HarmonicMean".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Covariance[list1, list2] - Sample covariance of two numeric lists
+pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "Covariance".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let (xs, ys) = match (&args[0], &args[1]) {
+    (Expr::List(xs), Expr::List(ys))
+      if xs.len() == ys.len() && xs.len() >= 2 =>
+    {
+      (xs, ys)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Covariance".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let mut x_vals = Vec::new();
+  let mut y_vals = Vec::new();
+  for (x, y) in xs.iter().zip(ys.iter()) {
+    match (expr_to_num(x), expr_to_num(y)) {
+      (Some(xv), Some(yv)) => {
+        x_vals.push(xv);
+        y_vals.push(yv);
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Covariance".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+  let n = x_vals.len() as f64;
+  let mean_x = x_vals.iter().sum::<f64>() / n;
+  let mean_y = y_vals.iter().sum::<f64>() / n;
+  let cov: f64 = x_vals
+    .iter()
+    .zip(y_vals.iter())
+    .map(|(x, y)| (x - mean_x) * (y - mean_y))
+    .sum::<f64>()
+    / (n - 1.0);
+  Ok(num_to_expr(cov))
+}
+
+/// Correlation[list1, list2] - Pearson correlation coefficient
+pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "Correlation".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let (xs, ys) = match (&args[0], &args[1]) {
+    (Expr::List(xs), Expr::List(ys))
+      if xs.len() == ys.len() && xs.len() >= 2 =>
+    {
+      (xs, ys)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Correlation".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let mut x_vals = Vec::new();
+  let mut y_vals = Vec::new();
+  for (x, y) in xs.iter().zip(ys.iter()) {
+    match (expr_to_num(x), expr_to_num(y)) {
+      (Some(xv), Some(yv)) => {
+        x_vals.push(xv);
+        y_vals.push(yv);
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Correlation".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+  let n = x_vals.len() as f64;
+  let mean_x = x_vals.iter().sum::<f64>() / n;
+  let mean_y = y_vals.iter().sum::<f64>() / n;
+  let cov: f64 = x_vals
+    .iter()
+    .zip(y_vals.iter())
+    .map(|(x, y)| (x - mean_x) * (y - mean_y))
+    .sum::<f64>();
+  let var_x: f64 = x_vals.iter().map(|x| (x - mean_x).powi(2)).sum::<f64>();
+  let var_y: f64 = y_vals.iter().map(|y| (y - mean_y).powi(2)).sum::<f64>();
+  let denom = (var_x * var_y).sqrt();
+  if denom == 0.0 {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+  Ok(num_to_expr(cov / denom))
+}
+
+/// CentralMoment[list, r] - r-th central moment of a numeric list
+pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "CentralMoment".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "CentralMoment".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let r = match expr_to_num(&args[1]) {
+    Some(r) => r as i32,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "CentralMoment".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let mut vals = Vec::new();
+  for item in items {
+    if let Some(v) = expr_to_num(item) {
+      vals.push(v);
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "CentralMoment".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  }
+  let n = vals.len() as f64;
+  let mean = vals.iter().sum::<f64>() / n;
+  let moment: f64 = vals.iter().map(|x| (x - mean).powi(r)).sum::<f64>() / n;
+  Ok(num_to_expr(moment))
+}
+
+/// Kurtosis[list] - CentralMoment[list, 4] / CentralMoment[list, 2]^2
+pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "Kurtosis".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let m4 = central_moment_ast(&[args[0].clone(), Expr::Integer(4)])?;
+  let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
+  match (expr_to_num(&m4), expr_to_num(&m2)) {
+    (Some(m4v), Some(m2v)) if m2v != 0.0 => Ok(num_to_expr(m4v / (m2v * m2v))),
+    _ => Ok(Expr::FunctionCall {
+      name: "Kurtosis".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Skewness[list] - CentralMoment[list, 3] / CentralMoment[list, 2]^(3/2)
+pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "Skewness".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let m3 = central_moment_ast(&[args[0].clone(), Expr::Integer(3)])?;
+  let m2 = central_moment_ast(&[args[0].clone(), Expr::Integer(2)])?;
+  match (expr_to_num(&m3), expr_to_num(&m2)) {
+    (Some(m3v), Some(m2v)) if m2v != 0.0 => {
+      Ok(num_to_expr(m3v / m2v.powf(1.5)))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Skewness".to_string(),
       args: args.to_vec(),
     }),
   }

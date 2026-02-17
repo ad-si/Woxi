@@ -446,3 +446,137 @@ mod normalize {
     );
   }
 }
+
+mod mean {
+  use super::*;
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(interpret("Mean[{a, b}]").unwrap(), "(a + b)/2");
+  }
+
+  #[test]
+  fn mean_integers() {
+    assert_eq!(interpret("Mean[{1, 2, 3}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn mean_rationals() {
+    assert_eq!(interpret("Mean[{1/2, 1/3, 1/6}]").unwrap(), "1/3");
+  }
+}
+
+mod variance_extended {
+  use super::*;
+
+  #[test]
+  fn variance_complex() {
+    assert_eq!(interpret("Variance[{1 + 2I, 3 - 10I}]").unwrap(), "74");
+  }
+
+  #[test]
+  fn variance_symbolic_equal() {
+    assert_eq!(interpret("Variance[{a, a}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn variance_matrix() {
+    assert_eq!(
+      interpret("Variance[{{1, 3, 5}, {4, 10, 100}}]").unwrap(),
+      "{9/2, 49/2, 9025/2}"
+    );
+  }
+}
+
+mod stddev_extended {
+  use super::*;
+
+  #[test]
+  fn stddev_symbolic_equal() {
+    assert_eq!(interpret("StandardDeviation[{a, a}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn stddev_matrix() {
+    assert_eq!(
+      interpret("StandardDeviation[{{1, 10}, {-1, 20}}]").unwrap(),
+      "{Sqrt[2], 5*Sqrt[2]}"
+    );
+  }
+}
+
+mod covariance {
+  use super::*;
+
+  #[test]
+  fn covariance_reals() {
+    assert_eq!(
+      interpret("Covariance[{0.2, 0.3, 0.1}, {0.3, 0.3, -0.2}]").unwrap(),
+      "0.025"
+    );
+  }
+
+  #[test]
+  fn covariance_integers() {
+    assert_eq!(interpret("Covariance[{1, 2, 3}, {4, 5, 6}]").unwrap(), "1");
+  }
+}
+
+mod correlation {
+  use super::*;
+
+  #[test]
+  fn correlation_reals() {
+    assert_eq!(
+      interpret("Correlation[{10, 8, 13, 9, 11, 14, 6, 4, 12, 7, 5}, {8.04, 6.95, 7.58, 8.81, 8.33, 9.96, 7.24, 4.26, 10.84, 4.82, 5.68}]").unwrap(),
+      "0.81642051634484"
+    );
+  }
+
+  #[test]
+  fn correlation_perfect() {
+    assert_eq!(interpret("Correlation[{1, 2, 3}, {2, 4, 6}]").unwrap(), "1");
+  }
+}
+
+mod central_moment {
+  use super::*;
+
+  #[test]
+  fn central_moment_fourth() {
+    assert_eq!(
+      interpret("CentralMoment[{1.1, 1.2, 1.4, 2.1, 2.4}, 4]").unwrap(),
+      "0.10084511999999998"
+    );
+  }
+
+  #[test]
+  fn central_moment_second() {
+    // Second central moment = variance * (n-1)/n
+    assert_eq!(interpret("CentralMoment[{1, 2, 3, 4, 5}, 2]").unwrap(), "2");
+  }
+}
+
+mod kurtosis {
+  use super::*;
+
+  #[test]
+  fn kurtosis_reals() {
+    assert_eq!(
+      interpret("Kurtosis[{1.1, 1.2, 1.4, 2.1, 2.4}]").unwrap(),
+      "1.4209750290831373"
+    );
+  }
+}
+
+mod skewness {
+  use super::*;
+
+  #[test]
+  fn skewness_reals() {
+    assert_eq!(
+      interpret("Skewness[{1.1, 1.2, 1.4, 2.1, 2.4}]").unwrap(),
+      "0.4070412816074878"
+    );
+  }
+}
