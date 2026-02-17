@@ -2733,6 +2733,9 @@ pub fn evaluate_function_call_ast(
       if let Some(n) = expr_to_i128(&args[1]) {
         return list_helpers_ast::rotate_left_ast(&args[0], n);
       }
+      if let Expr::List(shifts) = &args[1] {
+        return list_helpers_ast::rotate_multi_ast(&args[0], shifts, true);
+      }
     }
     "RotateLeft" if args.len() == 1 => {
       return list_helpers_ast::rotate_left_ast(&args[0], 1);
@@ -2740,6 +2743,9 @@ pub fn evaluate_function_call_ast(
     "RotateRight" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
         return list_helpers_ast::rotate_right_ast(&args[0], n);
+      }
+      if let Expr::List(shifts) = &args[1] {
+        return list_helpers_ast::rotate_multi_ast(&args[0], shifts, false);
       }
     }
     "RotateRight" if args.len() == 1 => {
@@ -2813,7 +2819,13 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::sum_ast(args);
     }
     "Thread" if args.len() == 1 => {
-      return list_helpers_ast::thread_ast(&args[0]);
+      return list_helpers_ast::thread_ast(&args[0], None);
+    }
+    "Thread" if args.len() == 2 => {
+      if let Expr::Identifier(head) = &args[1] {
+        return list_helpers_ast::thread_ast(&args[0], Some(head));
+      }
+      return list_helpers_ast::thread_ast(&args[0], None);
     }
     "Through" if args.len() == 1 => {
       return list_helpers_ast::through_ast(&args[0], None);
@@ -4586,6 +4598,13 @@ pub fn evaluate_function_call_ast(
     }
     "DiskMatrix" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::disk_matrix_ast(args);
+    }
+    "LeviCivitaTensor" if args.len() == 2 => {
+      if matches!(&args[1], Expr::Identifier(h) if h == "List") {
+        return crate::functions::linear_algebra_ast::levi_civita_tensor_ast(
+          &args[..1],
+        );
+      }
     }
     "Eigenvalues" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::eigenvalues_ast(args);

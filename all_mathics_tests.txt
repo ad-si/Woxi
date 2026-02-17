@@ -887,28 +887,12 @@ INPUT: Clear[matrix, matrix3D, square]
 EXPECTED: (none)
 ---
 FILE: mathics/builtin/tensors.py
-CLASS: ConjugateTranspose
-LINE: 428
-TYPE: >>
-INPUT: ConjugateTranspose[{{1, 2 I, 3}, {3 + 4 I, 5, I}}]
-EXPECTED:
-= {{1, 3 - 4 I}, {-2 I, 5}, {3, -I}}
----
-FILE: mathics/builtin/tensors.py
 CLASS: LeviCivitaTensor
 LINE: 448
 TYPE: >>
 INPUT: LeviCivitaTensor[3]
 EXPECTED:
 = SparseArray[Automatic, {3, 3, 3}, 0, {{1, 2, 3} -> 1, {1, 3, 2} -> -1, {2, 1, 3} -> -1, {2, 3, 1} -> 1, {3, 1, 2} -> 1, {3, 2, 1} -> -1}]
----
-FILE: mathics/builtin/tensors.py
-CLASS: LeviCivitaTensor
-LINE: 451
-TYPE: >>
-INPUT: LeviCivitaTensor[3, List]
-EXPECTED:
-= {{{0, 0, 0}, {0, 0, 1}, {0, -1, 0}}, {{0, 0, -1}, {0, 0, 0}, {1, 0, 0}}, {{0, 1, 0}, {-1, 0, 0}, {0, 0, 0}}}
 ---
 FILE: mathics/builtin/trace.py
 CLASS: ClearTrace
@@ -1260,27 +1244,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/no_meaning/infix_extra.py
 CLASS: DirectedEdge
-LINE: 31
-TYPE: >>
-INPUT: DirectedEdge[x, y, z]
-EXPECTED:
-= x → y → z
----
-FILE: mathics/builtin/no_meaning/infix_extra.py
-CLASS: DirectedEdge
 LINE: 33
 TYPE: >>
 INPUT: a \[DirectedEdge] b
 EXPECTED:
 = a → b
----
-FILE: mathics/builtin/no_meaning/infix_extra.py
-CLASS: UndirectedEdge
-LINE: 66
-TYPE: >>
-INPUT: UndirectedEdge[x, y, z]
-EXPECTED:
-= x ↔ y ↔ z
 ---
 FILE: mathics/builtin/no_meaning/infix_extra.py
 CLASS: UndirectedEdge
@@ -2237,14 +2205,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: MapAt
-LINE: 224
-TYPE: >>
-INPUT: MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]
-EXPECTED:
-= {{1, 1}, {0, 1}}
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: MapAt
 LINE: 242
 TYPE: >>
 INPUT: MapAt[f, -1][{a, b, c}]
@@ -2306,14 +2266,6 @@ TYPE: >>
 INPUT: MapIndexed[Extract[expr, #2] &, listified, {-1}, Heads -> True]
 EXPECTED:
 = a + b f[g] c ^ e
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Thread
-LINE: 510
-TYPE: >>
-INPUT: Thread[f[a + b + c], Plus]
-EXPECTED:
-= f[a] + f[b] + f[c]
 ---
 FILE: mathics/builtin/functional/composition.py
 CLASS: Composition
@@ -2377,14 +2329,6 @@ TYPE: >>
 INPUT: Nest[Subsuperscript[#,#,#]&,0,5]
 EXPECTED:
 = ...
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: NestList
-LINE: 261
-TYPE: >>
-INPUT: Graphics[Point[points], ImageSize->Small]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/files_io/files.py
 CLASS: Input_
@@ -3825,14 +3769,6 @@ EXPECTED:
 . 4,
 ---
 FILE: mathics/builtin/files_io/importexport.py
-CLASS: ExportString
-LINE: 1889
-TYPE: >>
-INPUT: ExportString[Integrate[f[x],{x,0,2}], "SVG"]//Head
-EXPECTED:
-= String
----
-FILE: mathics/builtin/files_io/importexport.py
 CLASS: FileFormat
 LINE: 2057
 TYPE: >>
@@ -4449,14 +4385,6 @@ TYPE: >>
 INPUT: Inequality[a, Greater, b, LessEqual, c]
 EXPECTED:
 = a > b && b <= c
----
-FILE: mathics/builtin/testing_expressions/equality_inequality.py
-CLASS: SameQ
-LINE: 801
-TYPE: >>
-INPUT: {1==1., 1===1.}
-EXPECTED:
-= {True, False}
 ---
 FILE: mathics/builtin/testing_expressions/equality_inequality.py
 CLASS: SameQ
@@ -5391,22 +5319,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/intfns/recurrence.py
 CLASS: LinearRecurrence
-LINE: 110
-TYPE: >>
-INPUT: LinearRecurrence[{1, 1}, {1, 1}, 10]
-EXPECTED:
-= {1, 1, 2, 3, 5, 8, 13, 21, 34, 55}
----
-FILE: mathics/builtin/intfns/recurrence.py
-CLASS: LinearRecurrence
-LINE: 114
-TYPE: >>
-INPUT: LinearRecurrence[{1, 1}, {1, 1}, {3, 5}]
-EXPECTED:
-= {2, 3, 5}
----
-FILE: mathics/builtin/intfns/recurrence.py
-CLASS: LinearRecurrence
 LINE: 118
 TYPE: >>
 INPUT: LinearRecurrence[{1, 1}, {1, 1}, {6}]
@@ -6223,22 +6135,6 @@ TYPE: >>
 INPUT: D[Sin[Cos[x]], x]
 EXPECTED:
 = -Cos[Cos[x]] Sin[x]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
-LINE: 143
-TYPE: >>
-INPUT: D[Sin[x], {x, 2}]
-EXPECTED:
-= -Sin[x]
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
-LINE: 145
-TYPE: >>
-INPUT: D[Cos[t], {t, 2}]
-EXPECTED:
-= -Cos[t]
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: D
@@ -8103,14 +7999,6 @@ TYPE: >>
 INPUT: EulerPhi[-11] == EulerPhi[11]
 EXPECTED:
 = True
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: EulerPhi
-LINE: 252
-TYPE: >>
-INPUT: EulerPhi[0]
-EXPECTED:
-= 0
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: EulerPhi
@@ -11079,14 +10967,6 @@ EXPECTED:
 = -Graphics3D-
 ---
 FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Background
-LINE: 99
-TYPE: >>
-INPUT: Plot[{Sin[x], Cos[x], x / 3}, {x, -Pi, Pi}, Background -> RGBColor[0.5, .5, .5, 0.1]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
 CLASS: Bottom
 LINE: 116
 TYPE: >>
@@ -11139,14 +11019,6 @@ CLASS: Mesh
 LINE: 279
 TYPE: >>
 INPUT: DensityPlot[Sin[x y], {x, -2, 2}, {y, -2, 2}, Mesh->Full]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: PlotRange
-LINE: 333
-TYPE: >>
-INPUT: Graphics[Disk[], PlotRange -> {{-.5, .5}, {0, 1.5}}]
 EXPECTED:
 = -Graphics-
 ---
@@ -11683,14 +11555,6 @@ EXPECTED:
 =
 ---
 FILE: mathics/builtin/drawing/splines.py
-CLASS: BezierFunction
-LINE: 65
-TYPE: >>
-INPUT: Module[{p={{0, 0},{1, 1},{2, -1},{4, 0}}}, Graphics[{BezierCurve[p], Red, Point[Table[BezierFunction[p][x], {x, 0, 1, 0.1}]]}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierCurve
 LINE: 93
 TYPE: >>
@@ -11700,35 +11564,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierCurve
-LINE: 96
-TYPE: >>
-INPUT: Graphics[{Line[pts], Red, Point[pts]}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/splines.py
-CLASS: BezierCurve
-LINE: 100
-TYPE: >>
-INPUT: Graphics[{BezierCurve[pts], Blue, Line[pts], Red, Point[pts]}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/splines.py
-CLASS: BezierCurve
 LINE: 104
 TYPE: >>
 INPUT: pts = {{0, 0}, {1, 1}, {2, -1}, {3, 0}, {5, 2}, {6, -1}, {7, 3}};
 EXPECTED:
 =
----
-FILE: mathics/builtin/drawing/splines.py
-CLASS: BezierCurve
-LINE: 108
-TYPE: >>
-INPUT: Graphics[{BezierCurve[pts], Blue, Line[pts], Red, Point[pts]}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/drawing/splines.py
 CLASS: BezierCurve
@@ -12165,14 +12005,6 @@ INPUT: Last[{}]
 EXPECTED:
 : {} has zero length and no last element.
 = Last[{}]
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Most
-LINE: 1060
-TYPE: >>
-INPUT: Most[a + b + c]
-EXPECTED:
-= a + b
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
@@ -12629,30 +12461,6 @@ TYPE: >>
 INPUT: Reverse[{{1, 2}, {3, 4}}, {1, 2}]
 EXPECTED:
 = {{4, 3}, {2, 1}}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: Riffle
-LINE: 1166
-TYPE: >>
-INPUT: Riffle[{a, b, c, d, e, f}, {x, y, z}]
-EXPECTED:
-= {a, x, b, y, c, z, d, x, e, y, f}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: RotateLeft
-LINE: 1207
-TYPE: >>
-INPUT: RotateLeft[{{a, b, c}, {d, e, f}, {g, h, i}}, {1, 2}]
-EXPECTED:
-= {{f, d, e}, {i, g, h}, {c, a, b}}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: RotateRight
-LINE: 1238
-TYPE: >>
-INPUT: RotateRight[{{a, b, c}, {d, e, f}, {g, h, i}}, {1, 2}]
-EXPECTED:
-= {{h, i, g}, {b, c, a}, {e, f, d}}
 ---
 FILE: mathics/builtin/list/rearrange.py
 CLASS: Split
@@ -14312,36 +14120,12 @@ EXPECTED:
 = {1.0495, 1.27455}
 ---
 FILE: mathics/builtin/colors/color_directives.py
-CLASS: Hue
-LINE: 508
-TYPE: >>
-INPUT: Graphics[Table[{EdgeForm[Gray], Hue[h, s], Disk[{12h, 8s}]}, {h, 0, 1, 1/6}, {s, 0, 1, 1/4}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/colors/color_directives.py
-CLASS: Opacity
-LINE: 623
-TYPE: >>
-INPUT: Graphics[{Blue, Disk[{.5, 1}, 1], Opacity[.4], Red, Disk[], Opacity[.2], Green, Disk[{-.5, 1}, 1]}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/colors/color_directives.py
 CLASS: Opacity
 LINE: 625
 TYPE: >>
 INPUT: Graphics3D[{Blue, Sphere[], Opacity[.4], Red, Cuboid[]}]
 EXPECTED:
 = -Graphics3D-
----
-FILE: mathics/builtin/colors/color_directives.py
-CLASS: Opacity
-LINE: 628
-TYPE: >>
-INPUT: Graphics[{Blue, Disk[], RGBColor[1,0,0,1],Opacity[.2], Rectangle[{0,0},{1,1}]}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/colors/color_directives.py
 CLASS: RGBColor
@@ -14385,22 +14169,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: Blend
-LINE: 55
-TYPE: >>
-INPUT: Graphics[Table[{Blend[{Red, Green, Blue}, x], Rectangle[{10 x, 0}]}, {x, 0, 1, 1/10}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Blend
-LINE: 58
-TYPE: >>
-INPUT: Graphics[Table[{Blend[{RGBColor[1, 0.5, 0, 0.5], RGBColor[0, 0, 1, 0.5]}, x], Disk[{5x, 0}]}, {x, 0, 1, 1/10}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Blend
 LINE: 61
 TYPE: #>
 INPUT: Blend[{Red, Green, Blue}, {1, 0.5}]
@@ -14431,14 +14199,6 @@ TYPE: >>
 INPUT: Graphics3D[{Darker[Green], Sphere[]}]
 EXPECTED:
 = -Graphics3D-
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Darker
-LINE: 267
-TYPE: >>
-INPUT: Graphics[Table[{Darker[Yellow, x], Disk[{12x, 0}]}, {x, 0, 1, 1/6}]]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: DominantColors
@@ -14519,14 +14279,6 @@ TYPE: >>
 INPUT: Lighter[Orange, 1/4]
 EXPECTED:
 = RGBColor[1., 0.625, 0.25]
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Lighter
-LINE: 481
-TYPE: >>
-INPUT: Graphics[Table[{Lighter[Orange, x], Disk[{12x, 0}]}, {x, 0, 1, 1/6}]]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/colors/named_colors.py
 CLASS: _ColorObject
@@ -16395,14 +16147,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 582
-TYPE: >>
-INPUT: 3 === 3.0
-EXPECTED:
-= False
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 596
 TYPE: >>
 INPUT: f[3]
@@ -16488,14 +16232,6 @@ TYPE: >>
 INPUT: 3 // h
 EXPECTED:
 = 9
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 741
-TYPE: >>
-INPUT: x = 3; Which[x < 2, a, x > 4, b, x < 5, c]
-EXPECTED:
-= c
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
@@ -16842,14 +16578,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1038
-TYPE: >>
-INPUT: Graphics[Table[{Hue[h, s], Disk[{12h, 8s}]}, {h, 0, 1, 1/6}, {s, 0, 1, 1/4}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1057
 TYPE: >>
 INPUT: Head[ToBoxes[Graphics[{Circle[]}]]]
@@ -16879,22 +16607,6 @@ TYPE: >>
 INPUT: Head[ToBoxes[Graphics3D[{Polygon[]}]]]
 EXPECTED:
 = Graphics3DBox
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1090
-TYPE: >>
-INPUT: Plot[Sin[x], {x, 0, 2 Pi}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1093
-TYPE: >>
-INPUT: Plot[{Sin[x], Cos[x], x ^ 2}, {x, -1, 1}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
@@ -25866,5 +25578,4 @@ FILE: examples/symbolic_logic/gries_schneider/GS3.m
 LINE: 1740
 ACTUAL (expression): p
 EXPECTED (should equal): neqv[q
----
 ---
