@@ -463,11 +463,25 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matrix))
 }
 
+/// Cross[{x, y}] - 2D cross product (perpendicular vector)
 /// Cross[a, b] - cross product of two 3-vectors
 pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1 {
+    // Cross[{x, y}] = {-y, x}
+    if let Expr::List(items) = &args[0]
+      && items.len() == 2
+    {
+      let neg_y = eval_sub(&Expr::Integer(0), &items[1]);
+      return Ok(Expr::List(vec![neg_y, items[0].clone()]));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Cross".to_string(),
+      args: args.to_vec(),
+    });
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "Cross expects exactly 2 arguments".into(),
+      "Cross expects 1 or 2 arguments".into(),
     ));
   }
   let va = match &args[0] {
@@ -493,6 +507,53 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     eval_sub(&eval_mul(&va[2], &vb[0]), &eval_mul(&va[0], &vb[2])),
     eval_sub(&eval_mul(&va[0], &vb[1]), &eval_mul(&va[1], &vb[0])),
   ]))
+}
+
+/// Projection[u, v] - project vector u onto vector v
+/// Formula: (u.v / v.v) * v
+pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Projection expects exactly 2 arguments".into(),
+    ));
+  }
+  let u = match &args[0] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Projection".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let v = match &args[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Projection".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  if u.len() != v.len() {
+    return Err(InterpreterError::EvaluationError(
+      "Projection: vectors have incompatible lengths".into(),
+    ));
+  }
+  // Compute u.v
+  let mut uv = Expr::Integer(0);
+  for (a, b) in u.iter().zip(v.iter()) {
+    uv = eval_add(&uv, &eval_mul(a, b));
+  }
+  // Compute v.v
+  let mut vv = Expr::Integer(0);
+  for b in v.iter() {
+    vv = eval_add(&vv, &eval_mul(b, b));
+  }
+  // Compute (u.v / v.v) * v
+  let scalar = eval_divide(&uv, &vv);
+  let result: Vec<Expr> = v.iter().map(|vi| eval_mul(&scalar, vi)).collect();
+  Ok(Expr::List(result))
 }
 
 // ─── Eigenvalues ────────────────────────────────────────────────────────

@@ -244,6 +244,41 @@ mod cross {
       "Cross[{1, 2}, {3, 4}]"
     );
   }
+
+  #[test]
+  fn cross_2d() {
+    assert_eq!(interpret("Cross[{x, y}]").unwrap(), "{-y, x}");
+  }
+
+  #[test]
+  fn cross_2d_numeric() {
+    assert_eq!(interpret("Cross[{3, 4}]").unwrap(), "{-4, 3}");
+  }
+
+  #[test]
+  fn cross_2d_sqrt() {
+    assert_eq!(interpret("Cross[{1, Sqrt[3]}]").unwrap(), "{-Sqrt[3], 1}");
+  }
+}
+
+mod projection {
+  use super::*;
+
+  #[test]
+  fn projection_basic() {
+    assert_eq!(
+      interpret("Projection[{5, 6, 7}, {1, 0, 0}]").unwrap(),
+      "{5, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn projection_2d() {
+    assert_eq!(
+      interpret("Projection[{2, 3}, {1, 2}]").unwrap(),
+      "{8/5, 16/5}"
+    );
+  }
 }
 
 mod eigenvalues {
