@@ -17,14 +17,77 @@ pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumberQ expects exactly 1 argument".into(),
     ));
   }
-  let is_number = matches!(
-    &args[0],
-    Expr::Integer(_)
-      | Expr::BigInteger(_)
-      | Expr::Real(_)
-      | Expr::BigFloat(_, _)
-  );
+  let is_number = is_numeric_expr(&args[0]);
   Ok(bool_expr(is_number))
+}
+
+/// Check if an expression is a numeric quantity (Integer, Real, Rational, Complex)
+fn is_numeric_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    // Rational[n, d]
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      is_numeric_expr(&args[0]) && is_numeric_expr(&args[1])
+    }
+    // Complex[re, im]
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      is_numeric_expr(&args[0]) && is_numeric_expr(&args[1])
+    }
+    // I alone
+    Expr::Identifier(name) if name == "I" => true,
+    // n * I or I * n
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let has_i = matches!(left.as_ref(), Expr::Identifier(n) if n == "I")
+        || matches!(right.as_ref(), Expr::Identifier(n) if n == "I");
+      if has_i {
+        let other = if matches!(left.as_ref(), Expr::Identifier(n) if n == "I")
+        {
+          right
+        } else {
+          left
+        };
+        is_numeric_expr(other)
+      } else {
+        is_numeric_expr(left) && is_numeric_expr(right)
+      }
+    }
+    // a + b*I or a - b*I
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      left,
+      right,
+    } => is_numeric_expr(left) && is_numeric_expr(right),
+    // Times[...] or Plus[...] with all numeric parts
+    Expr::FunctionCall { name, args }
+      if (name == "Times" || name == "Plus") && !args.is_empty() =>
+    {
+      args.iter().all(is_numeric_expr)
+    }
+    // Unary minus
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_numeric_expr(operand),
+    // a / b where both are numeric
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => is_numeric_expr(left) && is_numeric_expr(right),
+    _ => false,
+  }
 }
 
 /// RealValuedNumberQ[expr] - Tests if the expression is a real-valued number

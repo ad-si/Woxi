@@ -466,7 +466,7 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   }
 }
 
-fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Try numeric comparison (including complex numbers)
   let a_num = expr_to_complex_parts(a);
   let b_num = expr_to_complex_parts(b);
