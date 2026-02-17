@@ -9,6 +9,7 @@ mod interpreter_tests {
   mod calculus;
   mod cellular_automaton;
   mod control_flow;
+  mod datetime;
   mod functions;
   mod graphics;
   mod io;
