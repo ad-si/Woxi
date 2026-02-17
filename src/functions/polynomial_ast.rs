@@ -3118,8 +3118,7 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Thread over List
   if let Expr::List(items) = &args[0] {
-    let results: Vec<Expr> =
-      items.iter().map(|item| together_expr(item)).collect();
+    let results: Vec<Expr> = items.iter().map(together_expr).collect();
     return Ok(Expr::List(results));
   }
   Ok(together_expr(&args[0]))

@@ -2700,7 +2700,7 @@ GreaterThan,,,
 GreaterTilde,,,
 Green,,,
 GreenFunction,,,
-Grid,,,
+Grid,,✅,pure
 GridBox,,,
 GridDefaultElement,,,
 GridGraph,,,

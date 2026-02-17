@@ -1564,8 +1564,7 @@ pub fn table_ast(
 
         // Get step (default is 1)
         let step_expr = if items.len() >= 4 {
-          let step_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
-          step_expr
+          crate::evaluator::evaluate_expr_to_expr(&items[3])?
         } else {
           Expr::Integer(1)
         };
@@ -1660,12 +1659,11 @@ pub fn table_ast(
             );
             let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
             results.push(val);
-            current_expr = crate::evaluator::evaluate_expr_to_expr(
-              &Expr::FunctionCall {
+            current_expr =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
                 name: "Plus".to_string(),
                 args: vec![current_expr, step_expr.clone()],
-              },
-            )?;
+              })?;
             safety_counter += 1;
             if safety_counter > 1_000_000 {
               return Err(InterpreterError::EvaluationError(
@@ -1692,12 +1690,11 @@ pub fn table_ast(
             );
             let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
             results.push(val);
-            current_expr = crate::evaluator::evaluate_expr_to_expr(
-              &Expr::FunctionCall {
+            current_expr =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
                 name: "Plus".to_string(),
                 args: vec![current_expr, step_expr.clone()],
-              },
-            )?;
+              })?;
             safety_counter += 1;
             if safety_counter > 1_000_000 {
               return Err(InterpreterError::EvaluationError(
@@ -6931,9 +6928,9 @@ fn level_value(expr: &Expr) -> Result<i64, InterpreterError> {
         ))
       }
     }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "Invalid level specification"
-    ))),
+    _ => Err(InterpreterError::EvaluationError(
+      "Invalid level specification".to_string(),
+    )),
   }
 }
 
@@ -7052,7 +7049,7 @@ fn level_traverse(
       if matches_level(pos_level, -depth, min_level, max_level) {
         results.push(expr.clone());
       }
-      return depth;
+      depth
     }
     Expr::UnaryOp { op, operand } => {
       let head = match op {

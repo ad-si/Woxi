@@ -4885,7 +4885,7 @@ pub fn evaluate_function_call_ast(
     }
 
     // Symbolic operators with no built-in meaning — just return as-is with evaluated args
-    "Therefore" | "Because" | "TableForm" | "Row" | "In" => {
+    "Therefore" | "Because" | "TableForm" | "Row" | "In" | "Grid" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
