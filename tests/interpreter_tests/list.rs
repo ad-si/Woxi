@@ -633,6 +633,21 @@ mod count {
   fn count_symbol() {
     assert_eq!(interpret("Count[{a, b, a, c, a}, a]").unwrap(), "3");
   }
+
+  #[test]
+  fn count_with_head_pattern() {
+    assert_eq!(interpret("Count[{1, a, 2, b, 3}, _Integer]").unwrap(), "3");
+  }
+
+  #[test]
+  fn count_with_symbol_pattern() {
+    assert_eq!(interpret("Count[{1, a, 2, b, 3}, _Symbol]").unwrap(), "2");
+  }
+
+  #[test]
+  fn count_with_blank() {
+    assert_eq!(interpret("Count[{1, 2, 3}, _]").unwrap(), "3");
+  }
 }
 
 mod counts {
@@ -1944,6 +1959,54 @@ mod level {
     assert_eq!(
       interpret("Level[f[g[h]][x], {-2, -1}, Heads -> True]").unwrap(),
       "{f, g, h, g[h], x, f[g[h]][x]}"
+    );
+  }
+}
+
+mod median_extended {
+  use super::*;
+
+  #[test]
+  fn median_matrix() {
+    assert_eq!(
+      interpret("Median[{{100, 1, 10, 50}, {-1, 1, -2, 2}}]").unwrap(),
+      "{99/2, 1, 4, 26}"
+    );
+  }
+}
+
+mod linear_recurrence {
+  use super::*;
+
+  #[test]
+  fn fibonacci_sequence() {
+    assert_eq!(
+      interpret("LinearRecurrence[{1, 1}, {1, 1}, 10]").unwrap(),
+      "{1, 1, 2, 3, 5, 8, 13, 21, 34, 55}"
+    );
+  }
+
+  #[test]
+  fn range_slice() {
+    assert_eq!(
+      interpret("LinearRecurrence[{1, 1}, {1, 1}, {3, 5}]").unwrap(),
+      "{2, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(
+      interpret("LinearRecurrence[{1, 1}, {1, 1}, {6}]").unwrap(),
+      "{8}"
+    );
+  }
+
+  #[test]
+  fn tribonacci() {
+    assert_eq!(
+      interpret("LinearRecurrence[{1, 1, 1}, {1, 1, 1}, 8]").unwrap(),
+      "{1, 1, 1, 3, 5, 9, 17, 31}"
     );
   }
 }

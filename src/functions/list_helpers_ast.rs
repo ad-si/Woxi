@@ -2875,6 +2875,32 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Check for list-of-lists (matrix) input → columnwise median
+  if items.iter().all(|item| matches!(item, Expr::List(_))) {
+    let rows: Vec<&Vec<Expr>> = items
+      .iter()
+      .filter_map(|item| {
+        if let Expr::List(row) = item {
+          Some(row)
+        } else {
+          None
+        }
+      })
+      .collect();
+    if !rows.is_empty() {
+      let ncols = rows[0].len();
+      if rows.iter().all(|r| r.len() == ncols) {
+        let mut result = Vec::new();
+        for col in 0..ncols {
+          let column: Vec<Expr> = rows.iter().map(|r| r[col].clone()).collect();
+          let col_median = median_ast(&Expr::List(column))?;
+          result.push(col_median);
+        }
+        return Ok(Expr::List(result));
+      }
+    }
+  }
+
   // Check if all items are integers
   let all_integers = items.iter().all(|i| matches!(i, Expr::Integer(_)));
 
@@ -2965,10 +2991,9 @@ pub fn count_ast(
     }
   };
 
-  let pattern_str = crate::syntax::expr_to_string(pattern);
   let count = items
     .iter()
-    .filter(|item| crate::syntax::expr_to_string(item) == pattern_str)
+    .filter(|item| matches_pattern_ast(item, pattern))
     .count();
 
   Ok(Expr::Integer(count as i128))

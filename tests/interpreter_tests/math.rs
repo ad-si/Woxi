@@ -148,6 +148,14 @@ mod harmonic_number {
   fn generalized() {
     assert_eq!(interpret("HarmonicNumber[5, 2]").unwrap(), "5269/3600");
   }
+
+  #[test]
+  fn real_argument() {
+    assert_eq!(
+      interpret("HarmonicNumber[3.8]").unwrap(),
+      "2.0380634056306492"
+    );
+  }
 }
 
 mod coefficient_list {
@@ -1200,7 +1208,7 @@ mod e_constant {
 
   #[test]
   fn log_e_power_symbolic() {
-    assert_eq!(interpret("Log[E^n]").unwrap(), "n");
+    assert_eq!(interpret("Log[E^n]").unwrap(), "Log[E^n]");
   }
 
   #[test]
@@ -3915,6 +3923,58 @@ mod curl {
     assert_eq!(
       interpret("Curl[{y, -x, 2 z}, {x, y, z}]").unwrap(),
       "{0, 0, -2}"
+    );
+  }
+}
+
+mod log {
+  use super::*;
+
+  #[test]
+  fn log_zero() {
+    assert_eq!(interpret("Log[0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn log_two_arg_exact() {
+    assert_eq!(interpret("Log[2, 8]").unwrap(), "3");
+    assert_eq!(interpret("Log[2, 16]").unwrap(), "4");
+    assert_eq!(interpret("Log[3, 9]").unwrap(), "2");
+  }
+
+  #[test]
+  fn log_two_arg_symbolic() {
+    assert_eq!(interpret("Log[2, 5]").unwrap(), "Log[5]/Log[2]");
+  }
+}
+
+mod atom_q {
+  use super::*;
+
+  #[test]
+  fn atom_q_rational() {
+    assert_eq!(interpret("AtomQ[1/2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn atom_q_integer() {
+    assert_eq!(interpret("AtomQ[5]").unwrap(), "True");
+  }
+
+  #[test]
+  fn atom_q_expression() {
+    assert_eq!(interpret("AtomQ[x + y]").unwrap(), "False");
+  }
+}
+
+mod linear_recurrence {
+  use super::*;
+
+  #[test]
+  fn fibonacci_via_recurrence() {
+    assert_eq!(
+      interpret("LinearRecurrence[{1, 1}, {1, 1}, 10]").unwrap(),
+      "{1, 1, 2, 3, 5, 8, 13, 21, 34, 55}"
     );
   }
 }

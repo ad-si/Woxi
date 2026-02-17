@@ -5593,6 +5593,13 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     1 => {
+      // Log[0] = -Infinity
+      if matches!(&args[0], Expr::Integer(0)) {
+        return Ok(Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(Expr::Constant("Infinity".to_string())),
+        });
+      }
       // Log[1] = 0
       if matches!(&args[0], Expr::Integer(1)) {
         return Ok(Expr::Integer(0));
@@ -5601,13 +5608,14 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(&args[0], Expr::Constant(c) if c == "E") {
         return Ok(Expr::Integer(1));
       }
-      // Log[E^n] = n
+      // Log[E^n] = n only when n is a concrete integer
       if let Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Power,
         left,
         right,
       } = &args[0]
         && matches!(left.as_ref(), Expr::Constant(c) if c == "E")
+        && matches!(right.as_ref(), Expr::Integer(_) | Expr::BigInteger(_))
       {
         return Ok(*right.clone());
       }
@@ -5618,6 +5626,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && name == "Power"
         && pow_args.len() == 2
         && matches!(&pow_args[0], Expr::Constant(c) if c == "E")
+        && matches!(&pow_args[1], Expr::Integer(_) | Expr::BigInteger(_))
       {
         return Ok(pow_args[1].clone());
       }
@@ -5636,7 +5645,36 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
     2 => {
-      // Log[base, x] — evaluate only for Real args
+      // Log[base, x] — integer base and argument
+      if let (Some(base), Some(x)) =
+        (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+      {
+        if base > 1 && x > 0 {
+          // Check if x is an exact power of base
+          let mut val = x;
+          let mut exp = 0i128;
+          while val > 1 && val % base == 0 {
+            val /= base;
+            exp += 1;
+          }
+          if val == 1 {
+            return Ok(Expr::Integer(exp));
+          }
+          // Return Log[x]/Log[base] symbolically
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![args[1].clone()],
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![args[0].clone()],
+            }),
+          });
+        }
+      }
+      // Log[base, x] — evaluate for Real args
       if let (Expr::Real(base), Expr::Real(x)) = (&args[0], &args[1])
         && *base > 0.0
         && *base != 1.0
@@ -7492,6 +7530,38 @@ pub fn stirling_s2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bigint_to_expr(table[n][k].clone()))
 }
 
+/// Digamma function approximation using the asymptotic series.
+/// ψ(x) for x > 0 using recurrence and Stirling-like expansion.
+fn digamma(mut x: f64) -> f64 {
+  let mut result = 0.0;
+  // Use recurrence ψ(x+1) = ψ(x) + 1/x to shift x to large values
+  while x < 20.0 {
+    result -= 1.0 / x;
+    x += 1.0;
+  }
+  // Asymptotic expansion: ψ(x) ~ ln(x) - 1/(2x) - Σ B_{2k}/(2k·x^{2k})
+  result += x.ln() - 0.5 / x;
+  let x2 = x * x;
+  let mut xpow = x2;
+  // B_2/(2·x^2), B_4/(4·x^4), B_6/(6·x^6), ...
+  let coeffs = [
+    1.0 / 12.0,      // B_2/2 = 1/12
+    1.0 / 120.0,     // B_4/4 = -1/30 / 4 => but sign alternates
+    1.0 / 252.0,     // B_6/6
+    1.0 / 240.0,     // B_8/8
+    5.0 / 660.0,     // B_10/10
+    691.0 / 32760.0, // B_12/12
+    7.0 / 12.0,      // B_14/14
+  ];
+  // Signs: -, +, -, +, -, +, -
+  let signs = [-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+  for i in 0..coeffs.len() {
+    result += signs[i] * coeffs[i] / xpow;
+    xpow *= x2;
+  }
+  result
+}
+
 /// HarmonicNumber[n] - Returns the nth harmonic number H_n = 1 + 1/2 + ... + 1/n.
 /// HarmonicNumber[n, r] - Returns the generalized harmonic number H_{n,r} = Sum[1/k^r, {k,1,n}].
 pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -7499,6 +7569,19 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "HarmonicNumber expects 1 or 2 arguments".into(),
     ));
+  }
+
+  // Handle real/float argument: H(x) = digamma(x+1) + EulerGamma
+  if args.len() == 1 {
+    if let Some(x) = expr_to_num(&args[0]) {
+      if expr_to_i128(&args[0]).is_none() {
+        // Real input - use digamma approximation
+        // Euler-Mascheroni constant
+        const EULER_GAMMA: f64 = 0.5772156649015329;
+        let result = digamma(x + 1.0) + EULER_GAMMA;
+        return Ok(Expr::Real(result));
+      }
+    }
   }
 
   let n = match expr_to_i128(&args[0]) {
@@ -12370,5 +12453,99 @@ fn collect_variables(expr: &Expr, vars: &mut Vec<Expr>) {
     _ => {
       vars.push(expr.clone());
     }
+  }
+}
+
+/// LinearRecurrence[ker, init, n] - generates a linear recurrence sequence of length n.
+/// LinearRecurrence[ker, init, {nmin, nmax}] - returns elements nmin through nmax.
+/// LinearRecurrence[ker, init, {n}] - returns the list containing only the nth element.
+pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "LinearRecurrence".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let kernel = match &args[0] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LinearRecurrence".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let init = match &args[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LinearRecurrence".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Parse the third argument: n, {n}, or {nmin, nmax}
+  let (total_n, range) = match &args[2] {
+    Expr::Integer(n) => (*n as usize, None),
+    Expr::List(items) if items.len() == 1 => {
+      if let Some(n) = expr_to_i128(&items[0]) {
+        (n as usize, Some((n as usize, n as usize)))
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "LinearRecurrence".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+    Expr::List(items) if items.len() == 2 => {
+      if let (Some(nmin), Some(nmax)) =
+        (expr_to_i128(&items[0]), expr_to_i128(&items[1]))
+      {
+        (nmax as usize, Some((nmin as usize, nmax as usize)))
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "LinearRecurrence".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LinearRecurrence".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let k = kernel.len();
+  let mut seq = init.clone();
+
+  // Extend sequence to total_n elements
+  while seq.len() < total_n {
+    let mut next = Expr::Integer(0);
+    for (i, coeff) in kernel.iter().enumerate() {
+      let idx = seq.len() - 1 - i;
+      let term = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(coeff.clone()),
+        right: Box::new(seq[idx].clone()),
+      };
+      next = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(next),
+        right: Box::new(term),
+      };
+    }
+    // Evaluate the expression to simplify
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&next)?;
+    seq.push(evaluated);
+  }
+
+  match range {
+    None => Ok(Expr::List(seq[..total_n].to_vec())),
+    Some((nmin, nmax)) => Ok(Expr::List(seq[nmin - 1..nmax].to_vec())),
   }
 }
