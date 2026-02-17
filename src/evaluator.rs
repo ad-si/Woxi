@@ -2789,6 +2789,13 @@ pub fn evaluate_function_call_ast(
     "Count" if args.len() == 2 => {
       return list_helpers_ast::count_ast(&args[0], &args[1]);
     }
+    "Count" if args.len() == 3 => {
+      return list_helpers_ast::count_ast_level(
+        &args[0],
+        &args[1],
+        Some(&args[2]),
+      );
+    }
     "ConstantArray" if args.len() == 2 => {
       return list_helpers_ast::constant_array_ast(&args[0], &args[1]);
     }
@@ -2995,6 +3002,11 @@ pub fn evaluate_function_call_ast(
     "Apply" if args.len() == 2 => {
       return list_helpers_ast::apply_ast(&args[0], &args[1]);
     }
+    "Apply" if args.len() == 3 => {
+      return list_helpers_ast::apply_at_level_ast(
+        &args[0], &args[1], &args[2],
+      );
+    }
     "Identity" if args.len() == 1 => {
       return list_helpers_ast::identity_ast(&args[0]);
     }
@@ -3090,7 +3102,7 @@ pub fn evaluate_function_call_ast(
     "StringReverse" if args.len() == 1 => {
       return crate::functions::string_ast::string_reverse_ast(args);
     }
-    "StringRepeat" if args.len() == 2 => {
+    "StringRepeat" if args.len() == 2 || args.len() == 3 => {
       return crate::functions::string_ast::string_repeat_ast(args);
     }
     "StringTrim" if !args.is_empty() && args.len() <= 2 => {

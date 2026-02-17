@@ -689,9 +689,9 @@ pub fn string_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StringRepeat[s, n] - repeat string n times
 pub fn string_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringRepeat expects exactly 2 arguments".into(),
+      "StringRepeat expects 2 or 3 arguments".into(),
     ));
   }
   let s = expr_to_str(&args[0])?;
@@ -701,7 +701,15 @@ pub fn string_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Second argument of StringRepeat must be non-negative".into(),
     ));
   }
-  Ok(Expr::String(s.repeat(n as usize)))
+  let repeated = s.repeat(n as usize);
+  if args.len() == 3 {
+    // Third argument is max length
+    let max_len = expr_to_int(&args[2])? as usize;
+    let truncated: String = repeated.chars().take(max_len).collect();
+    Ok(Expr::String(truncated))
+  } else {
+    Ok(Expr::String(repeated))
+  }
 }
 
 /// StringTrim[s] or StringTrim[s, patt] - trim whitespace or pattern

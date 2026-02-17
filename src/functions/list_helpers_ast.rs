@@ -3263,22 +3263,83 @@ pub fn count_ast(
   list: &Expr,
   pattern: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  count_ast_level(list, pattern, None)
+}
+
+pub fn count_ast_level(
+  list: &Expr,
+  pattern: &Expr,
+  level_spec: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
   let items = match list {
     Expr::List(items) => items,
     _ => {
+      let mut args = vec![list.clone(), pattern.clone()];
+      if let Some(ls) = level_spec {
+        args.push(ls.clone());
+      }
       return Ok(Expr::FunctionCall {
         name: "Count".to_string(),
-        args: vec![list.clone(), pattern.clone()],
+        args,
       });
     }
   };
 
-  let count = items
-    .iter()
-    .filter(|item| matches_pattern_ast(item, pattern))
-    .count();
+  // Parse level spec
+  let (min_level, max_level) = match level_spec {
+    None => (1, 1), // Default: level 1 only
+    Some(Expr::Integer(n)) => (1, *n as usize), // n means levels 1 through n
+    Some(Expr::List(levels)) => {
+      if levels.len() == 1 {
+        if let Some(n) = expr_to_i128(&levels[0]) {
+          (n as usize, n as usize) // {n} means exactly level n
+        } else {
+          (1, 1)
+        }
+      } else if levels.len() == 2 {
+        let min = expr_to_i128(&levels[0]).unwrap_or(1) as usize;
+        let max = expr_to_i128(&levels[1]).unwrap_or(1) as usize;
+        (min, max)
+      } else {
+        (1, 1)
+      }
+    }
+    _ => (1, 1),
+  };
 
+  let count = count_at_level(items, pattern, 1, min_level, max_level);
   Ok(Expr::Integer(count as i128))
+}
+
+fn count_at_level(
+  items: &[Expr],
+  pattern: &Expr,
+  current_level: usize,
+  min_level: usize,
+  max_level: usize,
+) -> usize {
+  let mut count = 0;
+  for item in items {
+    if current_level >= min_level
+      && current_level <= max_level
+      && matches_pattern_ast(item, pattern)
+    {
+      count += 1;
+    }
+    // Recurse into sublists if we haven't reached max_level
+    if current_level < max_level
+      && let Expr::List(sub_items) = item
+    {
+      count += count_at_level(
+        sub_items,
+        pattern,
+        current_level + 1,
+        min_level,
+        max_level,
+      );
+    }
+  }
+  count
 }
 
 /// AST-based ConstantArray: create array filled with constant.
@@ -5380,6 +5441,105 @@ pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
     }
     Expr::Function { body } => {
       let substituted = crate::syntax::substitute_slots(body, &items);
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    Expr::NamedFunction { params, body } => {
+      let mut substituted = (**body).clone();
+      for (param, arg) in params.iter().zip(items.iter()) {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&substituted)
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Apply: first argument must be a function".into(),
+    )),
+  }
+}
+
+/// Apply[f, expr, levelspec] - replace heads at specified levels.
+pub fn apply_at_level_ast(
+  func: &Expr,
+  expr: &Expr,
+  level_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Parse level spec
+  let (min_level, max_level) = match level_spec {
+    Expr::Integer(n) => (0, *n as usize),
+    Expr::List(levels) => {
+      if levels.len() == 1 {
+        if let Some(n) = expr_to_i128(&levels[0]) {
+          (n as usize, n as usize)
+        } else {
+          (1, 1)
+        }
+      } else if levels.len() == 2 {
+        let min = expr_to_i128(&levels[0]).unwrap_or(0) as usize;
+        let max = expr_to_i128(&levels[1]).unwrap_or(1) as usize;
+        (min, max)
+      } else {
+        (1, 1)
+      }
+    }
+    _ => (1, 1),
+  };
+
+  apply_at_level_recursive(func, expr, 0, min_level, max_level)
+}
+
+fn apply_at_level_recursive(
+  func: &Expr,
+  expr: &Expr,
+  current_level: usize,
+  min_level: usize,
+  max_level: usize,
+) -> Result<Expr, InterpreterError> {
+  let (items, is_list) = match expr {
+    Expr::List(items) => (items.clone(), true),
+    Expr::FunctionCall { args, .. } => (args.clone(), false),
+    _ => return Ok(expr.clone()),
+  };
+
+  // Recurse into children first if we haven't reached max_level
+  let new_items: Vec<Expr> = if current_level < max_level {
+    items
+      .iter()
+      .map(|item| {
+        apply_at_level_recursive(
+          func,
+          item,
+          current_level + 1,
+          min_level,
+          max_level,
+        )
+      })
+      .collect::<Result<Vec<_>, _>>()?
+  } else {
+    items
+  };
+
+  // Replace head at this level if in range
+  if current_level >= min_level && current_level <= max_level {
+    apply_func_as_head(func, &new_items)
+  } else if is_list {
+    Ok(Expr::List(new_items))
+  } else if let Expr::FunctionCall { name, .. } = expr {
+    crate::evaluator::evaluate_function_call_ast(name, &new_items)
+  } else {
+    Ok(expr.clone())
+  }
+}
+
+fn apply_func_as_head(
+  func: &Expr,
+  items: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  match func {
+    Expr::Identifier(name) => {
+      crate::evaluator::evaluate_function_call_ast(name, items)
+    }
+    Expr::Function { body } => {
+      let substituted = crate::syntax::substitute_slots(body, items);
       crate::evaluator::evaluate_expr_to_expr(&substituted)
     }
     Expr::NamedFunction { params, body } => {

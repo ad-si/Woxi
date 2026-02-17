@@ -1339,4 +1339,26 @@ mod expand_threading {
       "{4*x + 4*y, 2*x + 2*y -> 4*x + 4*y}"
     );
   }
+
+  #[test]
+  fn from_digits_symbolic() {
+    assert_eq!(
+      interpret("FromDigits[{a, b, c}, 5]").unwrap(),
+      "5*(5*a + b) + c"
+    );
+  }
+
+  #[test]
+  fn binomial_real() {
+    let result = interpret("Binomial[10.5, 3.2]").unwrap();
+    assert!(result.starts_with("165.286"));
+  }
+
+  #[test]
+  fn string_repeat_max_length() {
+    assert_eq!(
+      interpret("StringRepeat[\"abc\", 10, 7]").unwrap(),
+      "abcabca"
+    );
+  }
 }
