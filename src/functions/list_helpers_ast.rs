@@ -2898,10 +2898,29 @@ pub fn pad_right_ast(
 
 /// AST-based Join: join multiple lists.
 pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
+  if lists.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Determine the common head
+  let head: Option<&str> = match &lists[0] {
+    Expr::List(_) => None, // List head
+    Expr::FunctionCall { name, .. } => Some(name.as_str()),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Join".to_string(),
+        args: lists.to_vec(),
+      });
+    }
+  };
+
   let mut result = Vec::new();
   for list in lists {
-    match list {
-      Expr::List(items) => result.extend(items.iter().cloned()),
+    match (list, head) {
+      (Expr::List(items), None) => result.extend(items.iter().cloned()),
+      (Expr::FunctionCall { name, args }, Some(h)) if name == h => {
+        result.extend(args.iter().cloned());
+      }
       _ => {
         return Ok(Expr::FunctionCall {
           name: "Join".to_string(),
@@ -2910,7 +2929,14 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  Ok(Expr::List(result))
+
+  match head {
+    None => Ok(Expr::List(result)),
+    Some(h) => {
+      // Re-evaluate to allow simplification (e.g., Plus combines terms)
+      crate::evaluator::evaluate_function_call_ast(h, &result)
+    }
+  }
 }
 
 /// AST-based Append: append element to list.

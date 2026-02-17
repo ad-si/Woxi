@@ -7646,6 +7646,14 @@ fn extract_part_ast(
       }
     }
     Expr::Real(f) => *f as i64,
+    Expr::List(indices) => {
+      // Part[expr, {i1, i2, ...}] → {Part[expr, i1], Part[expr, i2], ...}
+      let mut results = Vec::new();
+      for idx_expr in indices {
+        results.push(extract_part_ast(expr, idx_expr)?);
+      }
+      return Ok(Expr::List(results));
+    }
     _ => {
       return Ok(Expr::Part {
         expr: Box::new(expr.clone()),

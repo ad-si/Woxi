@@ -829,14 +829,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/tensors.py
 CLASS: Outer
-LINE: 208
-TYPE: >>
-INPUT: Outer[StringJoin, {"", "re", "un"}, {"cover", "draw", "wind"}, {"", "ing", "s"}] // InputForm
-EXPECTED:
-= {{{"cover", "covering", "covers"}, {"draw", "drawing", "draws"}, {"wind", "winding", "winds"}}, {{"recover", "recovering", "recovers"}, {"redraw", "redrawing", "redraws"}, {"rewind", "rewinding", "rewinds"}}, {{"uncover", "uncovering", "uncovers"}, {"undraw", "undrawing", "undraws"}, {"unwind", "unwinding", "unwinds"}}}
----
-FILE: mathics/builtin/tensors.py
-CLASS: Outer
 LINE: 215
 TYPE: >>
 INPUT: Map[#[0] &, trigs, {2}]
@@ -12272,14 +12264,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Part
-LINE: 1115
-TYPE: >>
-INPUT: {a, b, c, d}[[{1, 3, 3}]]
-EXPECTED:
-= {a, c, c}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Part
 LINE: 1120
 TYPE: >>
 INPUT: B[[;;, 2]]
@@ -12580,14 +12564,6 @@ TYPE: >>
 INPUT: GatherBy[{{1, 2}, {2, 1}, {3, 5}, {5, 1}, {2, 2, 2}}, {Total, Length}]
 EXPECTED:
 = {{{{1, 2}, {2, 1}}}, {{{3, 5}}}, {{{5, 1}}, {{2, 2, 2}}}}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: Join
-LINE: 867
-TYPE: >>
-INPUT: Join[a + b, c + d, e + f]
-EXPECTED:
-= a + b + c + d + e + f
 ---
 FILE: mathics/builtin/list/rearrange.py
 CLASS: Join
