@@ -1311,3 +1311,32 @@ mod round_with_step {
     assert_eq!(interpret("Round[10, Pi]").unwrap(), "3*Pi");
   }
 }
+
+mod logistic_sigmoid {
+  use super::*;
+
+  #[test]
+  fn logistic_sigmoid_real() {
+    assert_eq!(
+      interpret("LogisticSigmoid[0.5]").unwrap(),
+      "0.6224593312018546"
+    );
+  }
+
+  #[test]
+  fn logistic_sigmoid_zero() {
+    assert_eq!(interpret("LogisticSigmoid[0]").unwrap(), "1/2");
+  }
+}
+
+mod expand_threading {
+  use super::*;
+
+  #[test]
+  fn expand_over_list() {
+    assert_eq!(
+      interpret("Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]").unwrap(),
+      "{4*x + 4*y, 2*x + 2*y -> 4*x + 4*y}"
+    );
+  }
+}
