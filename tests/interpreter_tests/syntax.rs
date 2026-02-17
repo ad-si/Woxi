@@ -235,6 +235,15 @@ mod subtraction_without_spaces {
   }
 
   #[test]
+  fn implicit_times_then_minus_constant_fraction() {
+    // Regression: `2 Pi - Pi/4` must parse as subtraction, not implicit multiplication by -Pi.
+    assert_eq!(
+      interpret("FullForm[2 Pi - Pi/4]").unwrap(),
+      "Plus[Times[-1, Times[Pi, Power[4, -1]]], Times[2, Pi]]"
+    );
+  }
+
+  #[test]
   fn tostring_input_form() {
     // ToString[expr, InputForm] — strings are quoted, fractions single-line
     assert_eq!(

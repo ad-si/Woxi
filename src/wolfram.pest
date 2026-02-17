@@ -13,11 +13,12 @@ Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{ ("-")? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)? }
 UnsignedInteger = @{ ASCII_DIGIT+ }
 UnsignedReal = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)? }
+UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 // Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010)
 BasePrefix = @{ ASCII_DIGIT+ ~ "^^" ~ (ASCII_ALPHANUMERIC)+ }
 Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 NumericValue = { BasePrefix | Real | Integer | Constant }
-UnsignedNumericValue = { BasePrefix | UnsignedReal | UnsignedInteger | Constant }
+UnsignedNumericValue = { BasePrefix | UnsignedReal | UnsignedInteger | UnsignedConstant }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores

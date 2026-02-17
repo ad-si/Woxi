@@ -394,6 +394,16 @@ mod graphics {
     }
 
     #[test]
+    fn graphics_table_with_symbolic_pi_step() {
+      assert_eq!(
+        interpret("Graphics[{Yellow, Disk[{0, 0}, 0.3], Pink, Table[Disk[{Cos[θ], Sin[θ]}, 0.25], {θ, 0, 2 Pi - Pi/4, Pi/4}]}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert_eq!(svg.matches("ellipse").count(), 9);
+    }
+
+    #[test]
     fn edgeform_with_list_arg() {
       // EdgeForm[{GrayLevel[0, 0.5]}] — list-wrapped directive
       assert_eq!(
