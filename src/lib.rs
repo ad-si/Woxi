@@ -60,6 +60,7 @@ pub struct InterpretResult {
   pub stdout: String,
   pub result: String,
   pub graphics: Option<String>,
+  pub output_svg: Option<String>,
   pub warnings: Vec<String>,
 }
 
@@ -91,6 +92,11 @@ thread_local! {
 // Captured GraphicsBox expression (Mathematica .nb format) from Graphics/Plot
 thread_local! {
     static CAPTURED_GRAPHICSBOX: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+// Captured SVG rendering of the text output (always generated, with superscripts etc.)
+thread_local! {
+    static CAPTURED_OUTPUT_SVG: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 // Captured unimplemented function calls (e.g. "Quantity[13.77, \"BillionYears\"]")
@@ -205,6 +211,25 @@ pub fn capture_graphicsbox(expr: &str) {
 /// Gets the captured GraphicsBox expression
 pub fn get_captured_graphicsbox() -> Option<String> {
   CAPTURED_GRAPHICSBOX.with(|buffer| buffer.borrow().clone())
+}
+
+/// Clears the captured output SVG buffer
+fn clear_captured_output_svg() {
+  CAPTURED_OUTPUT_SVG.with(|buffer| {
+    *buffer.borrow_mut() = None;
+  });
+}
+
+/// Stores an SVG rendering of the text output
+fn capture_output_svg(svg: &str) {
+  CAPTURED_OUTPUT_SVG.with(|buffer| {
+    *buffer.borrow_mut() = Some(svg.to_string());
+  });
+}
+
+/// Gets the captured output SVG
+pub fn get_captured_output_svg() -> Option<String> {
+  CAPTURED_OUTPUT_SVG.with(|buffer| buffer.borrow().clone())
 }
 
 // Re-export evaluate_expr from evaluator module
@@ -449,6 +474,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           }
           other => other?,
         };
+        // If the result is a Grid expression, render it as SVG
+        let result_expr = render_grid_if_needed(result_expr);
+        // Generate SVG rendering of the result for playground display
+        generate_output_svg(&result_expr);
         // Convert to output string (strips quotes from strings for display)
         last_result = Some(syntax::expr_to_output(&result_expr));
         any_nonempty = true;
@@ -480,6 +509,52 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   } else {
     Err(InterpreterError::EmptyInput)
   }
+}
+
+/// If `expr` is a Grid[…] call (possibly nested in a list), render it as SVG
+/// and return `-Graphics-`. Grid stays symbolic during evaluation so that
+/// part-assignment works; rendering only happens at the output stage.
+fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args } if name == "Grid" && !args.is_empty() => {
+      match functions::graphics::grid_ast(args) {
+        Ok(result) => result,
+        Err(_) => expr,
+      }
+    }
+    syntax::Expr::List(items) => {
+      let new_items: Vec<syntax::Expr> =
+        items.iter().cloned().map(render_grid_if_needed).collect();
+      syntax::Expr::List(new_items)
+    }
+    _ => expr,
+  }
+}
+
+/// Generate an SVG rendering of the result expression and capture it.
+/// This is used by the playground to display all results with proper formatting.
+fn generate_output_svg(expr: &syntax::Expr) {
+  // Skip for Graphics results (they already have captured SVG)
+  if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-") {
+    return;
+  }
+  let markup = functions::graphics::expr_to_svg_markup(expr);
+  let char_width = 8.4_f64;
+  let font_size = 14_usize;
+  let display_width = functions::graphics::estimate_display_width(expr);
+  let width = (display_width * char_width).ceil().max(1.0) as usize;
+  let (height, text_y) = if functions::graphics::has_fraction(expr) {
+    (32_usize, 18_usize) // taller SVG with adjusted baseline for stacked fractions
+  } else {
+    (font_size + 4, font_size)
+  };
+  let svg = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
+     <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
+     </svg>",
+    width, height
+  );
+  capture_output_svg(&svg);
 }
 
 /// Insert semicolons at top-level newline boundaries so the parser treats
@@ -789,6 +864,7 @@ pub fn interpret_with_stdout(
   clear_captured_graphics();
   clear_captured_graphicsbox();
   clear_captured_warnings();
+  clear_captured_output_svg();
 
   // Perform the standard interpretation
   let result = interpret(input)?;
@@ -796,6 +872,7 @@ pub fn interpret_with_stdout(
   // Get the captured output
   let stdout = get_captured_stdout();
   let graphics = get_captured_graphics();
+  let output_svg = get_captured_output_svg();
   let warnings = get_captured_warnings();
 
   // Return stdout, result, and any graphical output
@@ -803,6 +880,7 @@ pub fn interpret_with_stdout(
     stdout,
     result,
     graphics,
+    output_svg,
     warnings,
   })
 }

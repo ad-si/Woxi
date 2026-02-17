@@ -125,7 +125,7 @@ function initWorker() {
   worker = new Worker("worker.js", { type: "module" })
 
   worker.onmessage = (e) => {
-    const { type, success, message, result, warnings } = e.data
+    const { type, success, message, result, warnings, graphics, outputSvg } = e.data
 
     if (type === "init") {
       if (success) {
@@ -139,15 +139,53 @@ function initWorker() {
     else if (type === "result") {
       hideSpinner("runSpinner")
       document.getElementById("runBtn").disabled = false
+      const graphicsEl = document.getElementById("graphics")
+      const outputEl = document.getElementById("output")
 
       if (success) {
         let output = ""
         if (warnings) output += warnings + "\n"
-        output += result
-        document.getElementById("output").textContent = output
+
+        if (graphics) {
+          // Graphics/Plot/Grid: show the captured SVG
+          graphicsEl.innerHTML = graphics
+          graphicsEl.style.display = "block"
+          // Strip "-Graphics-" from text output when SVG is shown
+          output += result
+          output = output.replace(/-Graphics-/g, "").trim()
+          if (output) {
+            outputEl.textContent = output
+            outputEl.style.display = "block"
+          } else {
+            outputEl.textContent = ""
+            outputEl.style.display = "none"
+          }
+        } else if (outputSvg) {
+          // Non-graphics: render the result as SVG (with superscripts etc.)
+          graphicsEl.innerHTML = ""
+          graphicsEl.style.display = "none"
+          // Show Print output (stdout) as plain text, result as SVG
+          const stdout = output.trim()
+          if (stdout) {
+            outputEl.textContent = stdout
+          } else {
+            outputEl.textContent = ""
+          }
+          outputEl.innerHTML = (stdout ? outputEl.innerHTML + "\n" : "")
+            + outputSvg
+          outputEl.style.display = "block"
+        } else {
+          graphicsEl.innerHTML = ""
+          graphicsEl.style.display = "none"
+          output += result
+          outputEl.textContent = output
+          outputEl.style.display = "block"
+        }
       }
       else {
-        document.getElementById("output").textContent = message
+        outputEl.textContent = message
+        graphicsEl.innerHTML = ""
+        graphicsEl.style.display = "none"
       }
     }
   }
@@ -169,6 +207,8 @@ document.getElementById("runBtn").addEventListener("click", () => {
   document.getElementById("runBtn").disabled = true
   showSpinner("runSpinner")
   document.getElementById("output").textContent = ""
+  document.getElementById("graphics").innerHTML = ""
+  document.getElementById("graphics").style.display = "none"
 
   worker.postMessage({ type: "evaluate", code: code })
 })
@@ -177,6 +217,8 @@ document.getElementById("runBtn").addEventListener("click", () => {
 document.getElementById("clearBtn").addEventListener("click", () => {
   setEditorContent("")
   document.getElementById("output").textContent = ""
+  document.getElementById("graphics").innerHTML = ""
+  document.getElementById("graphics").style.display = "none"
 
   if (worker) {
     worker.postMessage({ type: "clear" })

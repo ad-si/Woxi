@@ -44,6 +44,13 @@ pub fn get_warnings() -> String {
   crate::get_captured_warnings().join("\n")
 }
 
+/// Return SVG rendering of the last text result (with superscripts etc.).
+/// Returns an empty string when there is no output SVG (e.g. for Graphics results).
+#[wasm_bindgen]
+pub fn get_output_svg() -> String {
+  crate::get_captured_output_svg().unwrap_or_default()
+}
+
 /// Clear all interpreter state (variables and function definitions).
 #[wasm_bindgen]
 pub fn clear() {

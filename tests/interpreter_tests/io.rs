@@ -562,3 +562,333 @@ mod unimplemented_warnings {
     );
   }
 }
+
+mod export_string {
+  use super::*;
+
+  #[test]
+  fn export_string_graphics_returns_svg_string() {
+    clear_state();
+    let result = interpret("ExportString[Graphics[{Disk[]}], \"SVG\"]").unwrap();
+    assert!(
+      result.starts_with("<svg"),
+      "Expected SVG string starting with <svg, got: {}",
+      &result[..result.len().min(100)]
+    );
+    assert!(result.contains("</svg>"));
+  }
+
+  #[test]
+  fn export_string_plot_returns_svg() {
+    clear_state();
+    let result =
+      interpret("ExportString[Plot[Sin[x], {x, 0, 2 Pi}], \"SVG\"]").unwrap();
+    assert!(result.starts_with("<svg"));
+    assert!(result.contains("</svg>"));
+  }
+
+  #[test]
+  fn export_string_number() {
+    clear_state();
+    let result = interpret("ExportString[42, \"SVG\"]").unwrap();
+    assert!(result.contains("<svg"));
+    assert!(result.contains("42"));
+    assert!(result.contains("</svg>"));
+  }
+
+  #[test]
+  fn export_string_symbolic() {
+    clear_state();
+    let result = interpret("ExportString[x^2 + 1, \"SVG\"]").unwrap();
+    assert!(result.contains("<svg"));
+    assert!(result.contains("</svg>"));
+  }
+
+  #[test]
+  fn export_string_string() {
+    clear_state();
+    let result = interpret("ExportString[\"hello\", \"SVG\"]").unwrap();
+    assert!(result.contains("<svg"));
+    assert!(result.contains("hello"));
+    assert!(result.contains("</svg>"));
+  }
+
+  #[test]
+  fn export_string_list() {
+    clear_state();
+    let result = interpret("ExportString[{1, 2, 3}, \"SVG\"]").unwrap();
+    assert!(result.contains("<svg"));
+    assert!(result.contains("{1, 2, 3}"));
+    assert!(result.contains("</svg>"));
+  }
+
+  #[test]
+  fn export_string_head_is_string() {
+    clear_state();
+    let result = interpret("Head[ExportString[42, \"SVG\"]]").unwrap();
+    assert_eq!(result, "String");
+  }
+
+  #[test]
+  fn export_string_contains_svg_tag() {
+    clear_state();
+    let result = interpret("ExportString[42, \"SVG\"]").unwrap();
+    assert!(result.contains("xmlns=\"http://www.w3.org/2000/svg\""));
+  }
+
+  #[test]
+  fn export_string_unsupported_format() {
+    clear_state();
+    let result = interpret("ExportString[42, \"PDF\"]").unwrap();
+    assert_eq!(result, "ExportString[42, PDF]");
+  }
+}
+
+mod grid_graphics {
+  use super::*;
+
+  #[test]
+  fn grid_returns_graphics() {
+    clear_state();
+    assert_eq!(
+      interpret("Grid[{{a, b}, {c, d}}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn grid_produces_svg() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{a, b}, {c, d}}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("</svg>"));
+  }
+
+  #[test]
+  fn grid_svg_contains_cell_text() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{a, b}, {c, d}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
+    assert!(svg.contains(">c</text>"));
+    assert!(svg.contains(">d</text>"));
+  }
+
+  #[test]
+  fn grid_frame_all_produces_lines() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{1, 2}, {3, 4}}, Frame -> All]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<line"), "Frame -> All should produce <line> elements");
+  }
+
+  #[test]
+  fn grid_no_frame_no_lines() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{1, 2}, {3, 4}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("<line"), "Without Frame -> All, no <line> elements");
+  }
+
+  #[test]
+  fn grid_1d_list() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{a, b, c}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
+    assert!(svg.contains(">c</text>"));
+  }
+
+  #[test]
+  fn grid_evaluated_cells() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{1+1, 2+2}, {3+3, 4+4}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">2</text>"));
+    assert!(svg.contains(">4</text>"));
+    assert!(svg.contains(">6</text>"));
+    assert!(svg.contains(">8</text>"));
+  }
+
+  #[test]
+  fn grid_symbolic_cells() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{x, y^2}, {z^3, w}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">x</text>"));
+    assert!(svg.contains(">w</text>"));
+    // Power expressions should render with tspan superscripts
+    assert!(
+      svg.contains("baseline-shift=\"super\""),
+      "Power expressions should use tspan superscripts"
+    );
+  }
+
+  #[test]
+  fn grid_superscript_rendering() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{y^2, z^3}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    // y^2 should render as y<tspan baseline-shift="super" font-size="70%">2</tspan>
+    assert!(
+      svg.contains("y<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"),
+      "y^2 should render with superscript tspan, got: {}",
+      svg
+    );
+    assert!(
+      svg.contains("z<tspan baseline-shift=\"super\" font-size=\"70%\">3</tspan>"),
+      "z^3 should render with superscript tspan"
+    );
+  }
+
+  #[test]
+  fn grid_superscript_in_list_cell() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{{x, y^2, z^3}}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    // List cell should recursively render Power with superscripts
+    assert!(
+      svg.contains("y<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"),
+      "y^2 inside list cell should render with superscript"
+    );
+    assert!(
+      svg.contains("{x, y"),
+      "List braces and non-power items should be preserved"
+    );
+  }
+
+  #[test]
+  fn grid_superscript_in_expression() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{x^2 + y^3, Sin[x^2]}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    // Power in Plus should get superscripts
+    assert!(
+      svg.contains("x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan> + y<tspan baseline-shift=\"super\" font-size=\"70%\">3</tspan>"),
+      "x^2 + y^3 should render with superscripts on both terms"
+    );
+    // Power inside function arguments should get superscripts
+    assert!(
+      svg.contains("Sin[x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>]"),
+      "Sin[x^2] should render with superscript inside function call"
+    );
+  }
+
+  #[test]
+  fn output_svg_for_non_graphics() {
+    clear_state();
+    let result =
+      interpret_with_stdout("{x^3, x^4, 5/7}").unwrap();
+    assert!(result.output_svg.is_some(), "output_svg should be set for non-graphics results");
+    let svg = result.output_svg.unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("<tspan baseline-shift=\"super\""));
+    // 5/7 is now rendered as a stacked fraction with tspan elements
+    assert!(
+      svg.contains("dy=\"-4\">5</tspan>"),
+      "5/7 numerator should be rendered as stacked fraction"
+    );
+    assert!(
+      svg.contains("dy=\"6\">7</tspan>"),
+      "5/7 denominator should be rendered as stacked fraction"
+    );
+  }
+
+  #[test]
+  fn output_svg_not_set_for_graphics() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{a, b}}]").unwrap();
+    assert!(result.output_svg.is_none(), "output_svg should be None for Graphics results");
+    assert!(result.graphics.is_some(), "graphics should be set for Grid");
+  }
+
+  #[test]
+  fn grid_stacked_fraction() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{5/7, x}, {a, 3/11}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    // 5/7 rendered as stacked fraction: numerator 5 shifted up, bar, denominator 7
+    assert!(
+      svg.contains("dy=\"-4\">5</tspan>"),
+      "5/7 numerator should be shifted up in stacked fraction"
+    );
+    assert!(
+      svg.contains("dy=\"6\">7</tspan>"),
+      "5/7 denominator should be shifted down in stacked fraction"
+    );
+    // 3/11 also stacked
+    assert!(
+      svg.contains("dy=\"-4\">3</tspan>"),
+      "3/11 numerator should be in stacked fraction"
+    );
+    assert!(
+      svg.contains("dy=\"6\">11</tspan>"),
+      "3/11 denominator should be in stacked fraction"
+    );
+    // Fraction bar character
+    assert!(
+      svg.contains("\u{2500}"),
+      "stacked fraction should contain box-drawing bar character"
+    );
+  }
+
+  #[test]
+  fn output_svg_stacked_fraction_height() {
+    clear_state();
+    let result =
+      interpret_with_stdout("5/7").unwrap();
+    let svg = result.output_svg.unwrap();
+    // SVG should have increased height for fractions
+    assert!(
+      svg.contains("height=\"32\""),
+      "output SVG should be taller for stacked fractions"
+    );
+  }
+
+  #[test]
+  fn grid_export_string_svg() {
+    clear_state();
+    let result =
+      interpret("ExportString[Grid[{{1, 2}, {3, 4}}, Frame -> All], \"SVG\"]")
+        .unwrap();
+    assert!(result.starts_with("<svg"));
+    assert!(result.contains("</svg>"));
+    assert!(result.contains("<line"));
+  }
+
+  #[test]
+  fn grid_svg_has_monospace_font() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{a, b}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("monospace"));
+  }
+
+  #[test]
+  fn grid_postfix_form() {
+    clear_state();
+    let result =
+      interpret_with_stdout("{{1, 2}, {3, 4}} // Grid").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+}

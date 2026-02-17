@@ -866,7 +866,7 @@ fn dash_attr(dashing: &Option<Vec<f64>>, bb: &BBox, svg_w: f64) -> String {
   }
 }
 
-fn svg_escape(s: &str) -> String {
+pub(crate) fn svg_escape(s: &str) -> String {
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
     .replace('>', "&gt;")
@@ -1581,6 +1581,692 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let box_elements = primitives_to_box_elements(&primitives);
   let graphicsbox = gbox::graphics_box(&box_elements);
   crate::capture_graphicsbox(&graphicsbox);
+
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+// ── Grid SVG rendering ──────────────────────────────────────────────────
+
+/// Extract the base and exponent from a Power expression (either BinaryOp or FunctionCall form).
+fn as_power(expr: &Expr) -> Option<(&Expr, &Expr)> {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    _ => None,
+  }
+}
+
+/// Check if expression is an additive form (Plus/Minus) for parenthesization.
+fn is_additive_expr(e: &Expr) -> bool {
+  use crate::syntax::BinaryOperator;
+  matches!(
+    e,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+}
+
+/// Render a stacked fraction (numerator over denominator) as SVG tspan markup.
+/// Uses `<tspan>` elements with `dy`/`dx` positioning:
+/// numerator shifted up, fraction bar (─ characters), denominator shifted down,
+/// all at 70% font-size, then baseline reset.
+fn stacked_fraction_svg(
+  num_markup: &str,
+  den_markup: &str,
+  num_w: f64,
+  den_w: f64,
+) -> String {
+  let frac_chars = num_w.max(den_w).ceil() as usize;
+  let frac_chars = frac_chars.max(1);
+
+  let char_px = 5.88_f64; // 8.4 * 0.7 (monospace char width at 70% font-size)
+  let num_px = num_w * char_px;
+  let den_px = den_w * char_px;
+  let bar_px = frac_chars as f64 * char_px;
+
+  // Center offsets for numerator and denominator
+  let num_center = (bar_px - num_px) / 2.0;
+  let den_center = (bar_px - den_px) / 2.0;
+
+  // dx offsets for positioning
+  let back_from_num = -(num_center + num_px); // go back to start after numerator
+  let dx_den = den_center - bar_px; // center denominator after bar
+  let advance = den_center; // advance cursor to fraction end
+
+  // Fraction bar using box-drawing character
+  let bar: String = "\u{2500}".repeat(frac_chars);
+
+  format!(
+    "<tspan font-size=\"70%\">\
+     <tspan dx=\"{num_center:.1}\" dy=\"-4\">{num_markup}</tspan>\
+     <tspan dx=\"{back_from_num:.1}\" dy=\"6\">{bar}</tspan>\
+     <tspan dx=\"{dx_den:.1}\" dy=\"6\">{den_markup}</tspan>\
+     </tspan>\
+     <tspan dx=\"{advance:.1}\" dy=\"-8\" font-size=\"1\"> </tspan>"
+  )
+}
+
+/// Estimate the display width of a stacked fraction in parent character units.
+fn stacked_fraction_width(num_w: f64, den_w: f64) -> f64 {
+  let frac_chars = num_w.max(den_w).ceil().max(1.0);
+  frac_chars * 0.7 + 0.5
+}
+
+/// Check if an expression contains a Rational (stacked fraction),
+/// which requires extra vertical space.
+pub fn has_fraction(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => true,
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational" && ra.len() == 2
+            && matches!(&ra[0], Expr::Integer(1))
+            && matches!(&ra[1], Expr::Integer(d) if *d > 0)) =>
+    {
+      true
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(has_fraction),
+    Expr::List(items) => items.iter().any(has_fraction),
+    Expr::BinaryOp { left, right, .. } => {
+      has_fraction(left) || has_fraction(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_fraction(operand),
+    Expr::Comparison {
+      operands, ..
+    } => operands.iter().any(has_fraction),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => has_fraction(pattern) || has_fraction(replacement),
+    Expr::Association(pairs) => {
+      pairs.iter().any(|(k, v)| has_fraction(k) || has_fraction(v))
+    }
+    _ => false,
+  }
+}
+
+/// Convert an `Expr` into SVG text markup (inner content of a `<text>` element).
+/// Recursively handles all expression types so that Power expressions
+/// anywhere in the tree are rendered with `<tspan>` superscripts.
+pub fn expr_to_svg_markup(expr: &Expr) -> String {
+  use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, expr_to_output};
+
+  // Power → superscript (handles both BinaryOp and FunctionCall forms)
+  if let Some((base, exp)) = as_power(expr) {
+    let base_markup = expr_to_svg_markup(base);
+    let exp_markup = expr_to_svg_markup(exp);
+    return format!(
+      "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+      base_markup, exp_markup
+    );
+  }
+
+  match expr {
+    // ── Atoms ──
+    Expr::String(s) => svg_escape(s),
+    Expr::Identifier(s) => svg_escape(s),
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(..)
+    | Expr::Constant(_)
+    | Expr::Slot(_) => svg_escape(&expr_to_output(expr)),
+
+    // ── List → {a, b, c} ──
+    Expr::List(items) => {
+      let parts: Vec<String> =
+        items.iter().map(expr_to_svg_markup).collect();
+      format!("{{{}}}", parts.join(", "))
+    }
+
+    // ── UnaryOp ──
+    Expr::UnaryOp { op, operand } => {
+      let inner = expr_to_svg_markup(operand);
+      match op {
+        UnaryOperator::Minus => format!("-{}", inner),
+        UnaryOperator::Not => format!("!{}", inner),
+      }
+    }
+
+    // ── BinaryOp (Power already handled above) ──
+    Expr::BinaryOp { op, left, right } => {
+      let (op_str, needs_space) = match op {
+        BinaryOperator::Plus => ("+", true),
+        BinaryOperator::Minus => ("-", true),
+        BinaryOperator::Times => ("*", false),
+        BinaryOperator::Divide => ("/", false),
+        BinaryOperator::Power => unreachable!(),
+        BinaryOperator::And => ("&amp;&amp;", true),
+        BinaryOperator::Or => ("||", true),
+        BinaryOperator::StringJoin => ("&lt;&gt;", false),
+        BinaryOperator::Alternatives => ("|", true),
+      };
+      let is_mult = matches!(
+        op,
+        BinaryOperator::Times | BinaryOperator::Divide
+      );
+      let left_str = expr_to_svg_markup(left);
+      let right_str = expr_to_svg_markup(right);
+      let left_fmt = if is_mult && is_additive_expr(left) {
+        format!("({})", left_str)
+      } else {
+        left_str
+      };
+      let right_fmt =
+        if is_mult && is_additive_expr(right.as_ref()) {
+          format!("({})", right_str)
+        } else {
+          right_str
+        };
+      if needs_space {
+        format!("{} {} {}", left_fmt, op_str, right_fmt)
+      } else {
+        format!("{}{}{}", left_fmt, op_str, right_fmt)
+      }
+    }
+
+    // ── Comparison → a == b, a < b, etc. ──
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let mut result = expr_to_svg_markup(&operands[0]);
+      for (i, op) in operators.iter().enumerate() {
+        let op_str = match op {
+          ComparisonOp::Equal => " == ",
+          ComparisonOp::NotEqual => " != ",
+          ComparisonOp::Less => " &lt; ",
+          ComparisonOp::LessEqual => " &lt;= ",
+          ComparisonOp::Greater => " &gt; ",
+          ComparisonOp::GreaterEqual => " &gt;= ",
+          ComparisonOp::SameQ => " === ",
+          ComparisonOp::UnsameQ => " =!= ",
+        };
+        result.push_str(op_str);
+        result.push_str(&expr_to_svg_markup(&operands[i + 1]));
+      }
+      result
+    }
+
+    // ── Rule → pattern -> replacement ──
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      format!(
+        "{} -&gt; {}",
+        expr_to_svg_markup(pattern),
+        expr_to_svg_markup(replacement)
+      )
+    }
+
+    // ── Association → <|k1 -> v1, ...|> ──
+    Expr::Association(items) => {
+      let parts: Vec<String> = items
+        .iter()
+        .map(|(k, v)| {
+          format!(
+            "{} -&gt; {}",
+            expr_to_svg_markup(k),
+            expr_to_svg_markup(v)
+          )
+        })
+        .collect();
+      format!("&lt;|{}|&gt;", parts.join(", "))
+    }
+
+    // ── FunctionCall ──
+    Expr::FunctionCall { name, args } => {
+      match name.as_str() {
+        // Plus[a, b, ...] with negative-term handling
+        "Plus" if args.len() >= 2 => {
+          let mut result = expr_to_svg_markup(&args[0]);
+          for arg in &args[1..] {
+            if let Expr::UnaryOp {
+              op: UnaryOperator::Minus,
+              operand,
+            } = arg
+            {
+              result.push_str(" - ");
+              result.push_str(&expr_to_svg_markup(operand));
+            } else if let Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left,
+              right,
+            } = arg
+              && matches!(left.as_ref(), Expr::Integer(-1))
+            {
+              result.push_str(" - ");
+              result.push_str(&expr_to_svg_markup(right));
+            } else if let Expr::FunctionCall {
+              name: fn_name,
+              args: fn_args,
+            } = arg
+              && fn_name == "Times"
+              && fn_args.len() >= 2
+              && matches!(&fn_args[0], Expr::Integer(-1))
+            {
+              result.push_str(" - ");
+              if fn_args.len() == 2 {
+                result.push_str(&expr_to_svg_markup(&fn_args[1]));
+              } else {
+                result.push_str(&expr_to_svg_markup(
+                  &Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: fn_args[1..].to_vec(),
+                  },
+                ));
+              }
+            } else if let Expr::Integer(n) = arg
+              && *n < 0
+            {
+              result.push_str(" - ");
+              result
+                .push_str(&expr_to_svg_markup(&Expr::Integer(-n)));
+            } else {
+              result.push_str(" + ");
+              result.push_str(&expr_to_svg_markup(arg));
+            }
+          }
+          result
+        }
+
+        // Times[a, b, ...] with -1 coefficient and Rational handling
+        "Times" if args.len() >= 2 => {
+          // Times[Rational[1, d], expr] → stacked fraction expr/d
+          if args.len() == 2 {
+            if let Expr::FunctionCall {
+              name: rname,
+              args: rargs,
+            } = &args[0]
+              && rname == "Rational"
+              && rargs.len() == 2
+              && matches!(&rargs[0], Expr::Integer(1))
+              && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
+            {
+              let num_markup = expr_to_svg_markup(&args[1]);
+              let den_markup = expr_to_svg_markup(&rargs[1]);
+              let num_w = estimate_display_width(&args[1]);
+              let den_w = estimate_display_width(&rargs[1]);
+              return stacked_fraction_svg(
+                &num_markup,
+                &den_markup,
+                num_w,
+                den_w,
+              );
+            }
+          }
+          // Times[-1, x, ...] → -x*...
+          if matches!(&args[0], Expr::Integer(-1)) {
+            let rest: Vec<String> = args[1..]
+              .iter()
+              .map(|a| {
+                let s = expr_to_svg_markup(a);
+                if is_additive_expr(a) {
+                  format!("({})", s)
+                } else {
+                  s
+                }
+              })
+              .collect();
+            return format!("-{}", rest.join("*"));
+          }
+          // General: a*b*c
+          args
+            .iter()
+            .map(|a| {
+              let s = expr_to_svg_markup(a);
+              if is_additive_expr(a) {
+                format!("({})", s)
+              } else {
+                s
+              }
+            })
+            .collect::<Vec<_>>()
+            .join("*")
+        }
+
+        // Rational[n, d] → stacked fraction
+        "Rational" if args.len() == 2 => {
+          let num_markup = expr_to_svg_markup(&args[0]);
+          let den_markup = expr_to_svg_markup(&args[1]);
+          let num_w = estimate_display_width(&args[0]);
+          let den_w = estimate_display_width(&args[1]);
+          stacked_fraction_svg(&num_markup, &den_markup, num_w, den_w)
+        }
+
+        // General FunctionCall: name[arg1, arg2, ...]
+        _ => {
+          let parts: Vec<String> =
+            args.iter().map(expr_to_svg_markup).collect();
+          if args.is_empty() {
+            format!("{}[]", svg_escape(name))
+          } else {
+            format!("{}[{}]", svg_escape(name), parts.join(", "))
+          }
+        }
+      }
+    }
+
+    // ── Everything else → fallback to expr_to_output ──
+    _ => svg_escape(&expr_to_output(expr)),
+  }
+}
+
+/// Estimate the display width of an expression in character units,
+/// accounting for superscript sizing (exponents rendered at ~70% width).
+/// Recursively mirrors `expr_to_svg_markup` structure.
+pub fn estimate_display_width(expr: &Expr) -> f64 {
+  use crate::syntax::{BinaryOperator, expr_to_output};
+
+  if let Some((base, exp)) = as_power(expr) {
+    return estimate_display_width(base)
+      + estimate_display_width(exp) * 0.7;
+  }
+
+  match expr {
+    // Atoms
+    Expr::String(s) => s.len() as f64,
+    Expr::Identifier(s) => s.len() as f64,
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(..)
+    | Expr::Constant(_)
+    | Expr::Slot(_) => expr_to_output(expr).len() as f64,
+
+    // List → {a, b, c}: 2 for braces + items + separators
+    Expr::List(items) => {
+      let inner: f64 =
+        items.iter().map(estimate_display_width).sum();
+      let seps = if items.len() > 1 {
+        (items.len() - 1) as f64 * 2.0
+      } else {
+        0.0
+      };
+      2.0 + inner + seps
+    }
+
+    // UnaryOp: 1 char prefix + operand
+    Expr::UnaryOp { operand, .. } => {
+      1.0 + estimate_display_width(operand)
+    }
+
+    // BinaryOp
+    Expr::BinaryOp { op, left, right } => {
+      let op_len: f64 = match op {
+        BinaryOperator::Plus | BinaryOperator::Minus => 3.0,
+        BinaryOperator::Times | BinaryOperator::Divide => 1.0,
+        BinaryOperator::Power => unreachable!(),
+        BinaryOperator::And => 4.0,
+        BinaryOperator::Or => 4.0,
+        BinaryOperator::StringJoin => 2.0,
+        BinaryOperator::Alternatives => 3.0,
+      };
+      estimate_display_width(left) + op_len
+        + estimate_display_width(right)
+    }
+
+    // Comparison: operands + operators
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let ops_width: f64 = operators
+        .iter()
+        .map(|_| 4.0_f64) // approximate: " == ", " < ", etc.
+        .sum();
+      let operands_width: f64 =
+        operands.iter().map(estimate_display_width).sum();
+      operands_width + ops_width
+    }
+
+    // Rule: pattern -> replacement (4 chars for " -> ")
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      estimate_display_width(pattern) + 4.0
+        + estimate_display_width(replacement)
+    }
+
+    // Association: <|...|> (4 chars overhead + items)
+    Expr::Association(items) => {
+      let inner: f64 = items
+        .iter()
+        .map(|(k, v)| {
+          estimate_display_width(k) + 4.0
+            + estimate_display_width(v)
+        })
+        .sum();
+      let seps = if items.len() > 1 {
+        (items.len() - 1) as f64 * 2.0
+      } else {
+        0.0
+      };
+      4.0 + inner + seps
+    }
+
+    // FunctionCall
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" if args.len() >= 2 => {
+        let terms: f64 =
+          args.iter().map(estimate_display_width).sum();
+        terms + (args.len() - 1) as f64 * 3.0
+      }
+      "Times" if args.len() >= 2 => {
+        // Times[Rational[1, d], expr] → stacked fraction expr/d
+        if args.len() == 2 {
+          if let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+            && rname == "Rational"
+            && rargs.len() == 2
+            && matches!(&rargs[0], Expr::Integer(1))
+            && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
+          {
+            return stacked_fraction_width(
+              estimate_display_width(&args[1]),
+              estimate_display_width(&rargs[1]),
+            );
+          }
+        }
+        if matches!(&args[0], Expr::Integer(-1)) {
+          let rest: f64 =
+            args[1..].iter().map(estimate_display_width).sum();
+          let seps = if args.len() > 2 {
+            (args.len() - 2) as f64
+          } else {
+            0.0
+          };
+          1.0 + rest + seps
+        } else {
+          let factors: f64 =
+            args.iter().map(estimate_display_width).sum();
+          factors + (args.len() - 1) as f64
+        }
+      }
+      "Rational" if args.len() == 2 => {
+        stacked_fraction_width(
+          estimate_display_width(&args[0]),
+          estimate_display_width(&args[1]),
+        )
+      }
+      _ => {
+        let args_width: f64 =
+          args.iter().map(estimate_display_width).sum();
+        let seps = if args.len() > 1 {
+          (args.len() - 1) as f64 * 2.0
+        } else {
+          0.0
+        };
+        name.len() as f64 + 2.0 + args_width + seps
+      }
+    },
+
+    // Fallback
+    _ => expr_to_output(expr).len() as f64,
+  }
+}
+
+pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Extract rows from args[0]
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let rows: Vec<Vec<Expr>> = match &data {
+    Expr::List(items) => {
+      // Check if it's a list of lists (matrix) or a flat list (single row)
+      if items.iter().all(|item| matches!(item, Expr::List(_))) {
+        items
+          .iter()
+          .map(|row| {
+            if let Expr::List(cells) = row {
+              cells.clone()
+            } else {
+              vec![row.clone()]
+            }
+          })
+          .collect()
+      } else {
+        // 1D list → single row
+        vec![items.clone()]
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Grid".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Parse options from remaining args
+  let mut frame_all = false;
+  for raw_opt in &args[1..] {
+    let opt =
+      evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = &opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "Frame"
+    {
+      if let Expr::Identifier(val) = replacement.as_ref() {
+        if val == "All" {
+          frame_all = true;
+        }
+      }
+    }
+  }
+
+  // Convert cells to text
+  let num_rows = rows.len();
+  let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  if num_cols == 0 {
+    return Ok(Expr::FunctionCall {
+      name: "Grid".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Compute column widths based on estimated display width
+  let char_width: f64 = 8.4; // approximate monospace char width at font-size 14
+  let font_size: f64 = 14.0;
+  let pad_x: f64 = 12.0; // horizontal padding per cell (each side = 6)
+  let pad_y: f64 = 8.0; // vertical padding per cell (each side = 4)
+  let base_row_height = font_size + pad_y;
+  let frac_row_height = font_size + pad_y + 10.0; // taller for stacked fractions
+
+  let mut col_widths: Vec<f64> = vec![0.0; num_cols];
+  for row in &rows {
+    for (j, cell) in row.iter().enumerate() {
+      let w = estimate_display_width(cell) * char_width + pad_x;
+      if w > col_widths[j] {
+        col_widths[j] = w;
+      }
+    }
+  }
+
+  // Compute per-row heights (taller when a row contains a fraction)
+  let row_heights: Vec<f64> = rows
+    .iter()
+    .map(|row| {
+      if row.iter().any(has_fraction) {
+        frac_row_height
+      } else {
+        base_row_height
+      }
+    })
+    .collect();
+
+  let total_width: f64 = col_widths.iter().sum();
+  let total_height: f64 = row_heights.iter().sum();
+
+  // Build SVG
+  let svg_w = total_width.ceil() as u32;
+  let svg_h = total_height.ceil() as u32;
+  let mut svg = String::with_capacity(2048);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    svg_w, svg_h, svg_w, svg_h
+  ));
+
+  // Draw cell text
+  let mut y_offset: f64 = 0.0;
+  for (i, row) in rows.iter().enumerate() {
+    let rh = row_heights[i];
+    let mut x_offset: f64 = 0.0;
+    for (j, cell) in row.iter().enumerate() {
+      let col_w = col_widths[j];
+      let cx = x_offset + col_w / 2.0;
+      let cy = y_offset + rh / 2.0;
+      svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+        expr_to_svg_markup(cell)
+      ));
+      x_offset += col_w;
+    }
+    y_offset += rh;
+  }
+
+  // Draw frame lines if Frame -> All
+  if frame_all {
+    // Horizontal lines (num_rows + 1 lines)
+    let mut y = 0.0_f64;
+    for i in 0..=num_rows {
+      svg.push_str(&format!(
+        "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"black\" stroke-width=\"1\"/>\n"
+      ));
+      if i < num_rows {
+        y += row_heights[i];
+      }
+    }
+    // Vertical lines (num_cols + 1 lines)
+    let mut x_offset: f64 = 0.0;
+    for j in 0..=num_cols {
+      svg.push_str(&format!(
+        "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"black\" stroke-width=\"1\"/>\n"
+      ));
+      if j < num_cols {
+        x_offset += col_widths[j];
+      }
+    }
+  }
+
+  svg.push_str("</svg>");
+
+  crate::capture_graphics(&svg);
 
   Ok(Expr::Identifier("-Graphics-".to_string()))
 }

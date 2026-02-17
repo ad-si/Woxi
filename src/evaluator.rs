@@ -3169,6 +3169,61 @@ pub fn evaluate_function_call_ast(
       })?;
       return Ok(Expr::String(filename));
     }
+    "ExportString" if args.len() == 2 => {
+      // ExportString[expr, "SVG"] - return SVG string representation
+      let format_str = match &args[1] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          // Return unevaluated for non-string format
+          return Ok(Expr::FunctionCall {
+            name: "ExportString".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      if format_str != "SVG" {
+        // Only SVG supported for now; return unevaluated for other formats
+        return Ok(Expr::FunctionCall {
+          name: "ExportString".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      let svg = match &args[0] {
+        Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
+          crate::get_captured_graphics().unwrap_or_default()
+        }
+        Expr::FunctionCall { name: grid_name, args: grid_args }
+          if grid_name == "Grid" && !grid_args.is_empty() =>
+        {
+          // Grid[...] → render as SVG table
+          if let Ok(_) = crate::functions::graphics::grid_ast(grid_args) {
+            crate::get_captured_graphics().unwrap_or_default()
+          } else {
+            String::new()
+          }
+        }
+        other => {
+          // Non-graphics: render expression as SVG text with superscripts
+          let markup = crate::functions::graphics::expr_to_svg_markup(other);
+          let char_width = 8.4_f64;
+          let font_size = 14_usize;
+          let display_width = crate::functions::graphics::estimate_display_width(other);
+          let width = (display_width * char_width).ceil() as usize;
+          let (height, text_y) = if crate::functions::graphics::has_fraction(other) {
+            (32_usize, 18_usize)
+          } else {
+            (font_size + 4, font_size)
+          };
+          format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
+             <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
+             </svg>",
+            width, height
+          )
+        }
+      };
+      return Ok(Expr::String(svg));
+    }
     #[cfg(not(target_arch = "wasm32"))]
     "Find" if args.len() == 2 => {
       // Find[stream_or_file, "text"] - find first line containing text
