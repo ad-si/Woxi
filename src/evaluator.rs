@@ -2548,8 +2548,27 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::flatten_ast(&args[0]);
     }
     "Flatten" if args.len() == 2 => {
+      // Flatten[expr, n] or Flatten[expr, Infinity, head]
+      if let Expr::Identifier(id) = &args[1] {
+        if id == "Infinity" {
+          // Flatten[expr, Infinity] same as Flatten[expr]
+          return list_helpers_ast::flatten_ast(&args[0]);
+        }
+        // Flatten[expr, head] — treat identifier as head
+        return list_helpers_ast::flatten_head_ast(&args[0], i128::MAX, id);
+      }
       if let Some(n) = expr_to_i128(&args[1]) {
         return list_helpers_ast::flatten_level_ast(&args[0], n);
+      }
+    }
+    "Flatten" if args.len() == 3 => {
+      // Flatten[expr, depth, head]
+      let depth = match &args[1] {
+        Expr::Identifier(id) if id == "Infinity" => i128::MAX,
+        _ => expr_to_i128(&args[1]).unwrap_or(i128::MAX),
+      };
+      if let Expr::Identifier(head) = &args[2] {
+        return list_helpers_ast::flatten_head_ast(&args[0], depth, head);
       }
     }
     "Level" if args.len() == 2 => {
@@ -2578,6 +2597,9 @@ pub fn evaluate_function_call_ast(
     }
     "Reverse" if args.len() == 1 => {
       return list_helpers_ast::reverse_ast(&args[0]);
+    }
+    "Reverse" if args.len() == 2 => {
+      return list_helpers_ast::reverse_level_ast(&args[0], &args[1]);
     }
     "Sort" if args.len() == 1 => {
       return list_helpers_ast::sort_ast(&args[0]);
@@ -3078,7 +3100,7 @@ pub fn evaluate_function_call_ast(
     "StringContainsQ" if args.len() == 2 => {
       return crate::functions::string_ast::string_contains_q_ast(args);
     }
-    "StringReplace" if args.len() == 2 => {
+    "StringReplace" if args.len() == 2 || args.len() == 3 => {
       return crate::functions::string_ast::string_replace_ast(args);
     }
     "ToUpperCase" if args.len() == 1 => {
@@ -4098,6 +4120,12 @@ pub fn evaluate_function_call_ast(
     }
     "Norm" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::norm_ast(args);
+    }
+    "EuclideanDistance" if args.len() == 2 => {
+      return crate::functions::math_ast::euclidean_distance_ast(args);
+    }
+    "ManhattanDistance" if args.len() == 2 => {
+      return crate::functions::math_ast::manhattan_distance_ast(args);
     }
     "Factorial" if args.len() == 1 => {
       return crate::functions::math_ast::factorial_ast(args);

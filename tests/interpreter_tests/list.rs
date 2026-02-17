@@ -2240,4 +2240,60 @@ mod join_non_list {
       "{f[a, b], f[c, d, e*f], 3}"
     );
   }
+
+  #[test]
+  fn reverse_level_1() {
+    assert_eq!(
+      interpret("Reverse[{{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{{3, 4}, {1, 2}}"
+    );
+  }
+
+  #[test]
+  fn reverse_level_2() {
+    assert_eq!(
+      interpret("Reverse[{{1, 2}, {3, 4}}, 2]").unwrap(),
+      "{{2, 1}, {4, 3}}"
+    );
+  }
+
+  #[test]
+  fn reverse_level_1_2() {
+    assert_eq!(
+      interpret("Reverse[{{1, 2}, {3, 4}}, {1, 2}]").unwrap(),
+      "{{4, 3}, {2, 1}}"
+    );
+  }
+
+  #[test]
+  fn pad_left_non_list_head() {
+    assert_eq!(
+      interpret("PadLeft[x[a, b, c], 5]").unwrap(),
+      "x[0, 0, a, b, c]"
+    );
+  }
+
+  #[test]
+  fn pad_right_non_list_head() {
+    assert_eq!(
+      interpret("PadRight[x[a, b, c], 5]").unwrap(),
+      "x[a, b, c, 0, 0]"
+    );
+  }
+
+  #[test]
+  fn flatten_with_head() {
+    assert_eq!(
+      interpret("Flatten[f[a, f[b, f[c, d]], e], Infinity, f]").unwrap(),
+      "f[a, b, c, d, e]"
+    );
+  }
+
+  #[test]
+  fn permutations_up_to_length() {
+    assert_eq!(
+      interpret("Permutations[{1, 2, 3}, 2]").unwrap(),
+      "{{}, {1}, {2}, {3}, {1, 2}, {1, 3}, {2, 1}, {2, 3}, {3, 1}, {3, 2}}"
+    );
+  }
 }

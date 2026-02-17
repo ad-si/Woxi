@@ -2343,6 +2343,60 @@ pub fn flatten_level_ast(
   }
 }
 
+/// Flatten[expr, n, head] - flatten expressions with a specific head
+pub fn flatten_head_ast(
+  list: &Expr,
+  depth: i128,
+  head: &str,
+) -> Result<Expr, InterpreterError> {
+  fn flatten_with_head(
+    expr: &Expr,
+    depth: i128,
+    head: &str,
+    result: &mut Vec<Expr>,
+  ) {
+    if depth <= 0 {
+      result.push(expr.clone());
+      return;
+    }
+    match expr {
+      Expr::FunctionCall { name, args } if name == head => {
+        for item in args {
+          flatten_with_head(item, depth - 1, head, result);
+        }
+      }
+      Expr::List(items) if head == "List" => {
+        for item in items {
+          flatten_with_head(item, depth - 1, head, result);
+        }
+      }
+      _ => result.push(expr.clone()),
+    }
+  }
+
+  // The outer expression must also have the matching head
+  match list {
+    Expr::FunctionCall { name, args } if name == head => {
+      let mut result = Vec::new();
+      for item in args {
+        flatten_with_head(item, depth, head, &mut result);
+      }
+      Ok(Expr::FunctionCall {
+        name: head.to_string(),
+        args: result,
+      })
+    }
+    Expr::List(items) if head == "List" => {
+      let mut result = Vec::new();
+      for item in items {
+        flatten_with_head(item, depth, head, &mut result);
+      }
+      Ok(Expr::List(result))
+    }
+    _ => Ok(list.clone()),
+  }
+}
+
 /// AST-based Reverse: reverse a list.
 pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
@@ -2371,6 +2425,58 @@ pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
       args: vec![list.clone()],
     }),
   }
+}
+
+/// Reverse[list, n] - reverse at specific levels
+pub fn reverse_level_ast(
+  list: &Expr,
+  level_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Parse level spec: integer n means reverse at level n,
+  // {n1, n2} means reverse at levels n1 through n2
+  let (min_level, max_level) = match level_spec {
+    Expr::Integer(n) => (*n as usize, *n as usize),
+    Expr::List(items) if items.len() == 1 => {
+      let n = expr_to_i128(&items[0]).unwrap_or(1) as usize;
+      (n, n)
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let min = expr_to_i128(&items[0]).unwrap_or(1) as usize;
+      let max = expr_to_i128(&items[1]).unwrap_or(1) as usize;
+      (min, max)
+    }
+    _ => (1, 1),
+  };
+
+  fn reverse_at_levels(
+    expr: &Expr,
+    current_level: usize,
+    min_level: usize,
+    max_level: usize,
+  ) -> Expr {
+    match expr {
+      Expr::List(items) => {
+        // First recurse into children
+        let children: Vec<Expr> = items
+          .iter()
+          .map(|item| {
+            reverse_at_levels(item, current_level + 1, min_level, max_level)
+          })
+          .collect();
+        // Then reverse at this level if it's in range
+        if current_level >= min_level && current_level <= max_level {
+          let mut reversed = children;
+          reversed.reverse();
+          Expr::List(reversed)
+        } else {
+          Expr::List(children)
+        }
+      }
+      _ => expr.clone(),
+    }
+  }
+
+  Ok(reverse_at_levels(list, 1, min_level, max_level))
 }
 
 /// AST-based Sort: sort a list.
@@ -2950,8 +3056,9 @@ pub fn pad_left_ast(
   n: i128,
   pad: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, head_name) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PadLeft".to_string(),
@@ -2960,26 +3067,34 @@ pub fn pad_left_ast(
     }
   };
 
-  let len = items.len() as i128;
   if n <= 0 {
-    return Ok(Expr::List(vec![]));
+    return match head_name {
+      Some(h) => Ok(Expr::FunctionCall {
+        name: h.to_string(),
+        args: vec![],
+      }),
+      None => Ok(Expr::List(vec![])),
+    };
   }
 
-  if n < len {
-    // Truncate from the left
+  let len = items.len() as i128;
+
+  let result_items = if n < len {
     let skip = (len - n) as usize;
-    return Ok(Expr::List(items[skip..].to_vec()));
+    items[skip..].to_vec()
+  } else if n == len {
+    items.to_vec()
+  } else {
+    let needed = (n - len) as usize;
+    let mut result = vec![pad.clone(); needed];
+    result.extend(items.iter().cloned());
+    result
+  };
+
+  match head_name {
+    Some(h) => crate::evaluator::evaluate_function_call_ast(h, &result_items),
+    None => Ok(Expr::List(result_items)),
   }
-
-  if n == len {
-    return Ok(list.clone());
-  }
-
-  let needed = (n - len) as usize;
-  let mut result = vec![pad.clone(); needed];
-  result.extend(items.iter().cloned());
-
-  Ok(Expr::List(result))
 }
 
 /// AST-based PadRight: pad list on the right to length n.
@@ -2989,8 +3104,9 @@ pub fn pad_right_ast(
   n: i128,
   pad: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
+  let (items, head_name) = match list {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "PadRight".to_string(),
@@ -2999,25 +3115,33 @@ pub fn pad_right_ast(
     }
   };
 
-  let len = items.len() as i128;
   if n <= 0 {
-    return Ok(Expr::List(vec![]));
+    return match head_name {
+      Some(h) => Ok(Expr::FunctionCall {
+        name: h.to_string(),
+        args: vec![],
+      }),
+      None => Ok(Expr::List(vec![])),
+    };
   }
 
-  if n < len {
-    // Truncate from the right
-    return Ok(Expr::List(items[..n as usize].to_vec()));
+  let len = items.len() as i128;
+
+  let result_items = if n < len {
+    items[..n as usize].to_vec()
+  } else if n == len {
+    items.to_vec()
+  } else {
+    let needed = (n - len) as usize;
+    let mut result = items.to_vec();
+    result.extend(vec![pad.clone(); needed]);
+    result
+  };
+
+  match head_name {
+    Some(h) => crate::evaluator::evaluate_function_call_ast(h, &result_items),
+    None => Ok(Expr::List(result_items)),
   }
-
-  if n == len {
-    return Ok(list.clone());
-  }
-
-  let needed = (n - len) as usize;
-  let mut result = items.clone();
-  result.extend(vec![pad.clone(); needed]);
-
-  Ok(Expr::List(result))
 }
 
 /// AST-based Join: join multiple lists.
@@ -5804,31 +5928,55 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let k = if args.len() >= 2 {
-    // Second arg should be {k} — a list with one integer
-    match &args[1] {
-      Expr::List(spec) if spec.len() == 1 => {
-        expr_to_i128(&spec[0]).unwrap_or(items.len() as i128) as usize
-      }
-      Expr::Integer(_) | Expr::BigInteger(_) => {
-        expr_to_i128(&args[1]).unwrap_or(items.len() as i128) as usize
-      }
-      _ => items.len(),
-    }
-  } else {
-    items.len()
-  };
-
   let n = items.len();
-  if k > n {
-    return Ok(Expr::List(vec![]));
+
+  if args.len() >= 2 {
+    match &args[1] {
+      // {k} means exactly k-permutations
+      Expr::List(spec) if spec.len() == 1 => {
+        let k = expr_to_i128(&spec[0]).unwrap_or(n as i128) as usize;
+        if k > n {
+          return Ok(Expr::List(vec![]));
+        }
+        let mut result = Vec::new();
+        let indices: Vec<usize> = (0..n).collect();
+        generate_k_permutations(
+          &indices,
+          k,
+          &mut vec![],
+          &mut vec![false; n],
+          &items,
+          &mut result,
+        );
+        return Ok(Expr::List(result));
+      }
+      // Plain integer k means all permutations of length 0 through k
+      _ => {
+        let max_k = expr_to_i128(&args[1]).unwrap_or(n as i128) as usize;
+        let max_k = max_k.min(n);
+        let mut result = Vec::new();
+        let indices: Vec<usize> = (0..n).collect();
+        for k in 0..=max_k {
+          generate_k_permutations(
+            &indices,
+            k,
+            &mut vec![],
+            &mut vec![false; n],
+            &items,
+            &mut result,
+          );
+        }
+        return Ok(Expr::List(result));
+      }
+    }
   }
 
+  // Default: full permutations (length n)
   let mut result = Vec::new();
   let indices: Vec<usize> = (0..n).collect();
   generate_k_permutations(
     &indices,
-    k,
+    n,
     &mut vec![],
     &mut vec![false; n],
     &items,

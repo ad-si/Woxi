@@ -1361,4 +1361,56 @@ mod expand_threading {
       "abcabca"
     );
   }
+
+  #[test]
+  fn euclidean_distance_scalar() {
+    assert_eq!(interpret("EuclideanDistance[-7, 5]").unwrap(), "12");
+  }
+
+  #[test]
+  fn euclidean_distance_vector() {
+    assert_eq!(
+      interpret("EuclideanDistance[{-1, -1}, {1, 1}]").unwrap(),
+      "2*Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn manhattan_distance_scalar() {
+    assert_eq!(interpret("ManhattanDistance[-7, 5]").unwrap(), "12");
+  }
+
+  #[test]
+  fn manhattan_distance_vector() {
+    assert_eq!(interpret("ManhattanDistance[{1, 2}, {3, 4}]").unwrap(), "4");
+  }
+
+  #[test]
+  fn string_replace_with_limit() {
+    assert_eq!(
+      interpret("StringReplace[\"xyxyxyyyxxxyyxy\", \"xy\" -> \"A\", 2]")
+        .unwrap(),
+      "AAxyyyxxxyyxy"
+    );
+  }
+
+  #[test]
+  fn string_replace_rule_list_with_limit() {
+    assert_eq!(
+      interpret("StringReplace[\"abba\", {\"a\" -> \"A\", \"b\" -> \"B\"}, 2]")
+        .unwrap(),
+      "ABba"
+    );
+  }
+
+  #[test]
+  fn string_replace_list_of_strings() {
+    assert_eq!(
+      interpret(
+        "StringReplace[{\"xyxyxxy\", \"yxyxyxxxyyxy\"}, \"xy\" -> \"A\"]"
+      )
+      .unwrap(),
+      "{AAxA, yAAxxAyA}"
+    );
+  }
 }
