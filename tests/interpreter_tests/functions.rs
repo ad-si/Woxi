@@ -1643,3 +1643,90 @@ mod filter_rules {
     );
   }
 }
+
+mod operate {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("Operate[p, f[a, b]]").unwrap(), "p[f][a, b]");
+  }
+
+  #[test]
+  fn level_1() {
+    assert_eq!(interpret("Operate[p, f[a, b], 1]").unwrap(), "p[f][a, b]");
+  }
+
+  #[test]
+  fn level_0() {
+    assert_eq!(
+      interpret("Operate[p, f[a][b][c], 0]").unwrap(),
+      "p[f[a][b][c]]"
+    );
+  }
+}
+
+mod reverse_sort {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("ReverseSort[{c, b, d, a}]").unwrap(),
+      "{d, c, b, a}"
+    );
+  }
+
+  #[test]
+  fn with_less() {
+    assert_eq!(
+      interpret("ReverseSort[{1, 2, 0, 3}, Less]").unwrap(),
+      "{3, 2, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn with_greater() {
+    assert_eq!(
+      interpret("ReverseSort[{1, 2, 0, 3}, Greater]").unwrap(),
+      "{0, 1, 2, 3}"
+    );
+  }
+}
+
+mod sort_with_comparator {
+  use super::*;
+
+  #[test]
+  fn greater() {
+    assert_eq!(
+      interpret("Sort[{1, 2, 0, 3}, Greater]").unwrap(),
+      "{3, 2, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn less() {
+    assert_eq!(interpret("Sort[{3, 1, 2}, Less]").unwrap(), "{1, 2, 3}");
+  }
+}
+
+mod quartiles {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("Quartiles[Range[25]]").unwrap(),
+      "{27/4, 13, 77/4}"
+    );
+  }
+
+  #[test]
+  fn small_list() {
+    assert_eq!(
+      interpret("Quartiles[{1, 2, 3, 4, 5}]").unwrap(),
+      "{7/4, 3, 17/4}"
+    );
+  }
+}

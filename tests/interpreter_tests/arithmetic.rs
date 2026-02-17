@@ -454,6 +454,22 @@ mod big_integer {
   }
 
   #[test]
+  fn number_q_complex() {
+    assert_eq!(interpret("NumberQ[3 + 2 I]").unwrap(), "True");
+    assert_eq!(interpret("NumberQ[I]").unwrap(), "True");
+  }
+
+  #[test]
+  fn number_q_rational() {
+    assert_eq!(interpret("NumberQ[3/4]").unwrap(), "True");
+  }
+
+  #[test]
+  fn number_q_symbolic() {
+    assert_eq!(interpret("NumberQ[x]").unwrap(), "False");
+  }
+
+  #[test]
   fn divisible_big_integer() {
     assert_eq!(interpret("Divisible[2^128, 4]").unwrap(), "True");
     assert_eq!(interpret("Divisible[2^128 + 1, 2]").unwrap(), "False");

@@ -2507,6 +2507,54 @@ pub fn evaluate_function_call_ast(
     "Sort" if args.len() == 1 => {
       return list_helpers_ast::sort_ast(&args[0]);
     }
+    "Sort" if args.len() == 2 => {
+      // Sort[list, p] - sort using comparator p
+      // p[a, b] returns True if a should come before b
+      if let Expr::List(items) = &args[0] {
+        let cmp_name = crate::syntax::expr_to_string(&args[1]);
+        let mut sorted = items.clone();
+        match cmp_name.as_str() {
+          "Greater" => {
+            sorted
+              .sort_by(|a, b| list_helpers_ast::canonical_cmp(a, b).reverse());
+            return Ok(Expr::List(sorted));
+          }
+          "Less" => {
+            sorted.sort_by(list_helpers_ast::canonical_cmp);
+            return Ok(Expr::List(sorted));
+          }
+          _ => {
+            // Custom comparator: evaluate p[a, b] for each comparison
+            sorted.sort_by(|a, b| {
+              let result = evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: cmp_name.clone(),
+                args: vec![a.clone(), b.clone()],
+              });
+              match result {
+                Ok(Expr::Identifier(s)) if s == "True" => {
+                  std::cmp::Ordering::Less
+                }
+                _ => std::cmp::Ordering::Greater,
+              }
+            });
+            return Ok(Expr::List(sorted));
+          }
+        }
+      }
+    }
+    "ReverseSort" if args.len() == 1 || args.len() == 2 => {
+      // ReverseSort[list] sorts then reverses
+      // ReverseSort[list, p] sorts by p then reverses
+      let sorted = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Sort".to_string(),
+        args: args.to_vec(),
+      })?;
+      if let Expr::List(mut items) = sorted {
+        items.reverse();
+        return Ok(Expr::List(items));
+      }
+      return Ok(sorted);
+    }
     "List" => {
       // List[a, b, c] is equivalent to {a, b, c}
       return Ok(Expr::List(args.to_vec()));
@@ -2699,6 +2747,61 @@ pub fn evaluate_function_call_ast(
       // Through[expr, h] - only apply if head of expr matches h
       let head_filter = crate::syntax::expr_to_string(&args[1]);
       return list_helpers_ast::through_ast(&args[0], Some(&head_filter));
+    }
+    "Operate" if args.len() == 2 || args.len() == 3 => {
+      let p = &args[0];
+      let expr = &args[1];
+      let n = if args.len() == 3 {
+        expr_to_i128(&args[2]).unwrap_or(1)
+      } else {
+        1
+      };
+      if n == 0 {
+        return Ok(Expr::FunctionCall {
+          name: "".to_string(),
+          args: vec![expr.clone()],
+        })
+        .map(|_| Expr::FunctionCall {
+          name: crate::syntax::expr_to_string(p),
+          args: vec![expr.clone()],
+        });
+      }
+      // For n >= 1, we need to wrap the head at depth n
+      // For n == 1 (default): f[a, b] -> p[f][a, b]
+      fn wrap_head_at_depth(expr: &Expr, p: &Expr, depth: i128) -> Expr {
+        if depth == 0 {
+          Expr::FunctionCall {
+            name: crate::syntax::expr_to_string(p),
+            args: vec![expr.clone()],
+          }
+        } else {
+          match expr {
+            Expr::FunctionCall { name, args } => {
+              let wrapped_head = wrap_head_at_depth(
+                &Expr::Identifier(name.clone()),
+                p,
+                depth - 1,
+              );
+              Expr::CurriedCall {
+                func: Box::new(wrapped_head),
+                args: args.clone(),
+              }
+            }
+            Expr::CurriedCall { func, args } => {
+              let wrapped_func = wrap_head_at_depth(func, p, depth - 1);
+              Expr::CurriedCall {
+                func: Box::new(wrapped_func),
+                args: args.clone(),
+              }
+            }
+            _ => Expr::FunctionCall {
+              name: crate::syntax::expr_to_string(p),
+              args: vec![expr.clone()],
+            },
+          }
+        }
+      }
+      return Ok(wrap_head_at_depth(expr, p, n));
     }
     "TakeLargest" if args.len() == 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
@@ -3644,6 +3747,76 @@ pub fn evaluate_function_call_ast(
     }
     "Quantile" if args.len() == 2 => {
       return crate::functions::math_ast::quantile_ast(args);
+    }
+    "Quartiles" if args.len() == 1 => {
+      // Quartiles uses Quantile with parameters {{1/2, 0}, {0, 1}}
+      // Formula: pos = 1/2 + n*q, then linear interpolation
+      if let Expr::List(items) = &args[0] {
+        if items.is_empty() {
+          return Ok(Expr::FunctionCall {
+            name: "Quartiles".to_string(),
+            args: args.to_vec(),
+          });
+        }
+        // Sort numerically
+        let mut sorted = items.clone();
+        sorted.sort_by(|a, b| {
+          let fa = crate::functions::math_ast::try_eval_to_f64(a);
+          let fb = crate::functions::math_ast::try_eval_to_f64(b);
+          fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let n = sorted.len() as i128;
+        let mut results = Vec::new();
+        for (qn, qd) in [(1i128, 4i128), (1, 2), (3, 4)] {
+          // pos = 1/2 + n * q = 1/2 + n*qn/qd
+          // pos = (qd + 2*n*qn) / (2*qd)
+          let pos_num = qd + 2 * n * qn;
+          let pos_den = 2 * qd;
+          let j = pos_num / pos_den; // Floor
+          let frac_num = pos_num - j * pos_den; // remainder
+          // frac = frac_num / pos_den
+          if frac_num == 0 {
+            // Exact position
+            results.push(sorted[(j - 1) as usize].clone());
+          } else {
+            // Interpolate: (1 - frac)*sorted[j-1] + frac*sorted[j]
+            // = ((pos_den - frac_num)*sorted[j-1] + frac_num*sorted[j]) / pos_den
+            let lo = &sorted[(j - 1) as usize];
+            let hi = &sorted[j as usize];
+            let w_lo = pos_den - frac_num;
+            let w_hi = frac_num;
+            // Try integer arithmetic
+            if let (Some(lo_v), Some(hi_v)) = (
+              crate::functions::math_ast::try_eval_to_f64(lo),
+              crate::functions::math_ast::try_eval_to_f64(hi),
+            ) {
+              let lo_i = lo_v as i128;
+              let hi_i = hi_v as i128;
+              if lo_i as f64 == lo_v && hi_i as f64 == hi_v {
+                // Exact rational: (w_lo*lo_i + w_hi*hi_i) / pos_den
+                let num = w_lo * lo_i + w_hi * hi_i;
+                results.push(crate::functions::math_ast::make_rational(
+                  num, pos_den,
+                ));
+              } else {
+                results.push(crate::functions::math_ast::num_to_expr(
+                  (w_lo as f64 * lo_v + w_hi as f64 * hi_v) / pos_den as f64,
+                ));
+              }
+            } else {
+              // Symbolic fallback
+              results.push(Expr::FunctionCall {
+                name: "Quartiles".to_string(),
+                args: args.to_vec(),
+              });
+              break;
+            }
+          }
+        }
+        if results.len() == 3 {
+          return Ok(Expr::List(results));
+        }
+      }
     }
     "Abs" if args.len() == 1 => {
       return crate::functions::math_ast::abs_ast(args);
@@ -8337,7 +8510,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "CheckAbort"
     | "Quiet"
     | "Message"
-    | "FilterRules" => {
+    | "FilterRules"
+    | "Operate"
+    | "ReverseSort"
+    | "Quartiles" => {
       vec!["Protected"]
     }
 

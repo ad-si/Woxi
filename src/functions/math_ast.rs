@@ -2883,7 +2883,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: args.to_vec(),
       })
     }
-    // Sqrt[Rational[a, b]] — evaluate for perfect squares
+    // Sqrt[Rational[a, b]] — simplify by extracting perfect square factors
     Expr::FunctionCall { name, args: rargs }
       if name == "Rational" && rargs.len() == 2 =>
     {
@@ -2891,10 +2891,73 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && *n >= 0
         && *d > 0
       {
-        let nr = (*n as f64).sqrt();
-        let dr = (*d as f64).sqrt();
-        if nr.fract() == 0.0 && dr.fract() == 0.0 {
-          return Ok(make_rational(nr as i128, dr as i128));
+        // Extract perfect square factors from numerator and denominator
+        let extract_square_factor = |val: u64| -> (u64, u64) {
+          let mut outside = 1u64;
+          let mut inside = val;
+          let mut factor = 2u64;
+          while factor * factor <= inside {
+            while inside.is_multiple_of(factor * factor) {
+              outside *= factor;
+              inside /= factor * factor;
+            }
+            factor += 1;
+          }
+          (outside, inside)
+        };
+        let (n_out, n_in) = extract_square_factor(*n as u64);
+        let (d_out, d_in) = extract_square_factor(*d as u64);
+        // Result: (n_out / d_out) * Sqrt[n_in / d_in]
+        if n_in == 1 && d_in == 1 {
+          // Perfect square: just a rational
+          return Ok(make_rational(n_out as i128, d_out as i128));
+        }
+        if d_in == 1 {
+          // Result: (n_out / d_out) * Sqrt[n_in]
+          let sqrt_part = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(n_in as i128)],
+          };
+          if n_out == 1 && d_out == 1 {
+            return Ok(sqrt_part);
+          }
+          let coeff = make_rational(n_out as i128, d_out as i128);
+          return times_ast(&[coeff, sqrt_part]);
+        } else if n_in == 1 {
+          // Result: n_out / (d_out * Sqrt[d_in])
+          let denom = if d_out == 1 {
+            Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::Integer(d_in as i128)],
+            }
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                Expr::Integer(d_out as i128),
+                Expr::FunctionCall {
+                  name: "Sqrt".to_string(),
+                  args: vec![Expr::Integer(d_in as i128)],
+                },
+              ],
+            }
+          };
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Integer(n_out as i128)),
+            right: Box::new(denom),
+          });
+        } else {
+          // General case: (n_out / d_out) * Sqrt[n_in / d_in]
+          let sqrt_part = Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![make_rational(n_in as i128, d_in as i128)],
+          };
+          if n_out == 1 && d_out == 1 {
+            return Ok(sqrt_part);
+          }
+          let coeff = make_rational(n_out as i128, d_out as i128);
+          return times_ast(&[coeff, sqrt_part]);
         }
       }
       Ok(Expr::FunctionCall {
@@ -9904,55 +9967,10 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let var = variance_ast(args)?;
   match &var {
-    Expr::Integer(n) => {
-      // StandardDeviation is Sqrt[Variance]
-      let v = *n;
-      if v == 0 {
-        return Ok(Expr::Integer(0));
-      }
-      if v == 1 {
-        return Ok(Expr::Integer(1));
-      }
-      // Check if it's a perfect square
-      let root = (v as f64).sqrt() as i128;
-      for candidate in [root - 1, root, root + 1] {
-        if candidate >= 0 && candidate * candidate == v {
-          return Ok(Expr::Integer(candidate));
-        }
-      }
-      // Return Sqrt[n] symbolically
-      Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![Expr::Integer(v)],
-      })
+    Expr::Integer(_) | Expr::Real(_) | Expr::FunctionCall { .. } => {
+      sqrt_ast(&[var.clone()])
     }
-    Expr::Real(f) => Ok(num_to_expr(f.sqrt())),
-    Expr::FunctionCall { name, args: fargs }
-      if name == "Rational" && fargs.len() == 2 =>
-    {
-      // Sqrt[p/q] - try to simplify
-      if let (Expr::Integer(p), Expr::Integer(q)) = (&fargs[0], &fargs[1]) {
-        let fval = (*p as f64) / (*q as f64);
-        if fval >= 0.0 {
-          // Check if both are perfect squares
-          let p_root = (*p as f64).sqrt() as i128;
-          let q_root = (*q as f64).sqrt() as i128;
-          if p_root * p_root == *p && q_root * q_root == *q {
-            return Ok(make_rational(p_root, q_root));
-          }
-        }
-        // Return Sqrt[Rational[p, q]] symbolically
-        return Ok(Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![var.clone()],
-        });
-      }
-      Ok(Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![var],
-      })
-    }
-    // If variance returned symbolic, wrap in Sqrt
+    // If variance returned symbolic, wrap in StandardDeviation
     _ => Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
       args: args.to_vec(),

@@ -3537,30 +3537,6 @@ INPUT: ""
 EXPECTED:
 = #<--#
 ---
-FILE: mathics/builtin/exp_structure/head_related.py
-CLASS: Operate
-LINE: 25
-TYPE: >>
-INPUT: Operate[p, f[a, b]]
-EXPECTED:
-= p[f][a, b]
----
-FILE: mathics/builtin/exp_structure/head_related.py
-CLASS: Operate
-LINE: 29
-TYPE: >>
-INPUT: Operate[p, f[a, b], 1]
-EXPECTED:
-= p[f][a, b]
----
-FILE: mathics/builtin/exp_structure/head_related.py
-CLASS: Operate
-LINE: 33
-TYPE: >>
-INPUT: Operate[p, f[a][b][c], 0]
-EXPECTED:
-= p[f[a][b][c]]
----
 FILE: mathics/builtin/exp_structure/size_and_sig.py
 CLASS: Hash
 LINE: 82
@@ -7677,14 +7653,6 @@ INPUT: Implies[a, Implies[b, Implies[True, c]]]
 EXPECTED:
 = a Implies b Implies c
 ---
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Xor
-LINE: 486
-TYPE: >>
-INPUT: Xor[a, False, b]
-EXPECTED:
-= a \\[Xor] b
----
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: MachineNumberQ
 LINE: 227
@@ -8601,13 +8569,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/vectors/math_ops.py
 CLASS: Curl
-LINE: 106
-TYPE: >>
-INPUT: v[x_, y_] := {Cos[x] Sin[y], Cos[y] Sin[x]}
-EXPECTED: (none)
----
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Curl
 LINE: 107
 TYPE: >>
 INPUT: Curl[v[x, y], {x, y}]
@@ -8636,22 +8597,6 @@ TYPE: >>
 INPUT: Norm[{x, y, z}]
 EXPECTED:
 = Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2 + Abs[z] ^ 2]
----
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Norm
-LINE: 158
-TYPE: >>
-INPUT: Norm[{3, 4}, 2]
-EXPECTED:
-= 5
----
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Norm
-LINE: 162
-TYPE: >>
-INPUT: Norm[{10, 100, 200}, 1]
-EXPECTED:
-= 310
 ---
 FILE: mathics/builtin/vectors/math_ops.py
 CLASS: Norm
@@ -9322,14 +9267,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Simplify
-LINE: 1545
-TYPE: >>
-INPUT: Simplify[2*Sin[x]^2 + 2*Cos[x]^2]
-EXPECTED:
-= 2
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Simplify
 LINE: 1554
 TYPE: >>
 INPUT: $Assumptions={a <= 0};
@@ -9429,30 +9366,6 @@ TYPE: >>
 INPUT: MinimalPolynomial[Sqrt[I + Sqrt[6]], x]
 EXPECTED:
 = 49 - 10 x ^ 4 + x ^ 8
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: PolynomialQ
-LINE: 1776
-TYPE: >>
-INPUT: PolynomialQ[x^2]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: PolynomialQ
-LINE: 1780
-TYPE: >>
-INPUT: PolynomialQ[2]
-EXPECTED:
-= True
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: PolynomialQ
-LINE: 1785
-TYPE: >>
-INPUT: PolynomialQ[x^2 + x/y]
-EXPECTED:
-= False
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: PolynomialQ
@@ -9733,13 +9646,6 @@ TYPE: >>
 INPUT: Derivative[0,0,0][a+b+c]
 EXPECTED:
 = a + b + c
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Derivative
-LINE: 400
-TYPE: >>
-INPUT: f[x_] := x ^ 2
-EXPECTED: (none)
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Derivative
@@ -10595,14 +10501,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: ComplexInfinity
-LINE: 268
-TYPE: >>
-INPUT: 1 / ComplexInfinity
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: ComplexInfinity
 LINE: 271
 TYPE: >>
 INPUT: ComplexInfinity * Infinity
@@ -10699,44 +10597,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Indeterminate
-LINE: 472
-TYPE: >>
-INPUT: 0^0
-EXPECTED:
-: Indeterminate expression 0 ^ 0 encountered.
-= Indeterminate
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Indeterminate
 LINE: 476
 TYPE: >>
 INPUT: Tan[Indeterminate]
 EXPECTED:
 = Indeterminate
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Infinity
-LINE: 504
-TYPE: >>
-INPUT: Precision[1]
-EXPECTED:
-= Infinity
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Infinity
-LINE: 508
-TYPE: >>
-INPUT: 1 / Infinity
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Infinity
-LINE: 511
-TYPE: >>
-INPUT: Infinity + 100
-EXPECTED:
-= Infinity
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Infinity
@@ -10845,22 +10710,6 @@ EXPECTED:
 = 3.1415...
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: Pi
-LINE: 684
-TYPE: >>
-INPUT: Attributes[Pi]
-EXPECTED:
-= {Constant, Protected, ReadProtected}
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Undefined
-LINE: 706
-TYPE: >>
-INPUT: ConditionalExpression[a, False]
-EXPECTED:
-= Undefined
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: Undefined
 LINE: 708
 TYPE: >>
@@ -10957,22 +10806,6 @@ EXPECTED:
 = 22026.5
 ---
 FILE: mathics/builtin/numbers/exp.py
-CLASS: Exp
-LINE: 175
-TYPE: >>
-INPUT: Exp[x] // FullForm
-EXPECTED:
-= Power[E, x]
----
-FILE: mathics/builtin/numbers/exp.py
-CLASS: Exp
-LINE: 178
-TYPE: >>
-INPUT: Plot[Exp[x], {x, 0, 3}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/numbers/exp.py
 CLASS: Log
 LINE: 201
 TYPE: >>
@@ -10987,14 +10820,6 @@ TYPE: >>
 INPUT: Log[0.]
 EXPECTED:
 = Indeterminate
----
-FILE: mathics/builtin/numbers/exp.py
-CLASS: Log
-LINE: 205
-TYPE: >>
-INPUT: Plot[Log[x], {x, 0, 5}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/numbers/exp.py
 CLASS: Log2
@@ -11221,14 +11046,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: Gudermannian
-LINE: 375
-TYPE: >>
-INPUT: Plot[Gudermannian[x], {x, -10, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: InverseGudermannian
 LINE: 412
 TYPE: >>
@@ -11291,22 +11108,6 @@ TYPE: >>
 INPUT: FromDigits["a0"]
 EXPECTED:
 = 100
----
-FILE: mathics/builtin/numbers/integer.py
-CLASS: IntegerString
-LINE: 410
-TYPE: >>
-INPUT: IntegerString[-500]
-EXPECTED:
-= 500
----
-FILE: mathics/builtin/numbers/integer.py
-CLASS: IntegerString
-LINE: 414
-TYPE: >>
-INPUT: IntegerString[12345, 10, 3]
-EXPECTED:
-= 345
 ---
 FILE: mathics/builtin/numbers/linalg.py
 CLASS: DesignMatrix
@@ -11862,30 +11663,6 @@ TYPE: >>
 INPUT: Table[MersennePrimeExponent[n], {n, 10}]
 EXPECTED:
 = {2, 3, 5, 7, 13, 17, 19, 31, 61, 89}
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: NextPrime
-LINE: 752
-TYPE: >>
-INPUT: NextPrime[100.5, 2]
-EXPECTED:
-= 103
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: NextPrime
-LINE: 760
-TYPE: >>
-INPUT: NextPrime[100, -1]
-EXPECTED:
-= 97
----
-FILE: mathics/builtin/numbers/numbertheory.py
-CLASS: NextPrime
-LINE: 764
-TYPE: >>
-INPUT: NextPrime[2, -1]
-EXPECTED:
-= -2
 ---
 FILE: mathics/builtin/numbers/numbertheory.py
 CLASS: PartitionsP
@@ -19618,14 +19395,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/statistics/dependency.py
 CLASS: Variance
-LINE: 183
-TYPE: >>
-INPUT: Variance[{7, -5, 101, 3}]
-EXPECTED:
-= 7475 / 3
----
-FILE: mathics/builtin/statistics/dependency.py
-CLASS: Variance
 LINE: 186
 TYPE: >>
 INPUT: Variance[{1 + 2I, 3 - 10I}]
@@ -19658,14 +19427,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/statistics/location.py
 CLASS: Mean
-LINE: 29
-TYPE: >>
-INPUT: Mean[{1, 1, 2, 3, 5, 8}]
-EXPECTED:
-= 10 / 3
----
-FILE: mathics/builtin/statistics/location.py
-CLASS: Mean
 LINE: 32
 TYPE: >>
 INPUT: Mean[{a, b}]
@@ -19674,91 +19435,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/statistics/location.py
 CLASS: Median
-LINE: 57
-TYPE: >>
-INPUT: Median[{-11, 38, 501, 1183}]
-EXPECTED:
-= 539 / 2
----
-FILE: mathics/builtin/statistics/location.py
-CLASS: Median
 LINE: 61
 TYPE: >>
 INPUT: Median[{{100, 1, 10, 50}, {-1, 1, -2, 2}}]
 EXPECTED:
 = {99 / 2, 1, 4, 26}
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: Quantile
-LINE: 76
-TYPE: >>
-INPUT: Quantile[Range[11], 1/3]
-EXPECTED:
-= 4
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: Quantile
-LINE: 79
-TYPE: >>
-INPUT: Quantile[Range[16], 1/4]
-EXPECTED:
-= 4
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: Quantile
-LINE: 82
-TYPE: >>
-INPUT: Quantile[{1, 2, 3, 4, 5, 6, 7}, {1/4, 3/4}]
-EXPECTED:
-= {2, 6}
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: Quartiles
-LINE: 183
-TYPE: >>
-INPUT: Quartiles[Range[25]]
-EXPECTED:
-= {27 / 4, 13, 77 / 4}
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: RankedMax
-LINE: 204
-TYPE: >>
-INPUT: RankedMax[{482, 17, 181, -12}, 2]
-EXPECTED:
-= 181
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: RankedMin
-LINE: 242
-TYPE: >>
-INPUT: RankedMin[{482, 17, 181, -12}, 2]
-EXPECTED:
-= 17
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: ReverseSort
-LINE: 279
-TYPE: >>
-INPUT: ReverseSort[{c, b, d, a}]
-EXPECTED:
-= {d, c, b, a}
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: ReverseSort
-LINE: 283
-TYPE: >>
-INPUT: ReverseSort[{1, 2, 0, 3}, Less]
-EXPECTED:
-= {3, 2, 1, 0}
----
-FILE: mathics/builtin/statistics/orderstats.py
-CLASS: ReverseSort
-LINE: 287
-TYPE: >>
-INPUT: ReverseSort[{1, 2, 0, 3}, Greater]
-EXPECTED:
-= {0, 1, 2, 3}
 ---
 FILE: mathics/builtin/statistics/orderstats.py
 CLASS: Sort

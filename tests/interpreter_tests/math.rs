@@ -2308,6 +2308,27 @@ mod abs_complex_tests {
 }
 
 #[cfg(test)]
+mod sqrt_rational {
+  use woxi::interpret;
+
+  #[test]
+  fn perfect_square_denominator() {
+    // Sqrt[13297/4] should simplify to Sqrt[13297]/2
+    assert_eq!(interpret("Sqrt[13297/4]").unwrap(), "Sqrt[13297]/2");
+  }
+
+  #[test]
+  fn both_perfect_squares() {
+    assert_eq!(interpret("Sqrt[9/4]").unwrap(), "3/2");
+  }
+
+  #[test]
+  fn perfect_square_numerator() {
+    assert_eq!(interpret("Sqrt[4/7]").unwrap(), "2/Sqrt[7]");
+  }
+}
+
+#[cfg(test)]
 mod conjugate_tests {
   use woxi::interpret;
 
