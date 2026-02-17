@@ -1278,3 +1278,59 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::List(basis))
 }
+
+/// Compute the sign of a permutation (Levi-Civita symbol).
+/// Returns 1 for even permutations, -1 for odd, 0 if any indices repeat.
+fn permutation_sign(perm: &[usize]) -> i128 {
+  let n = perm.len();
+  // Check for duplicates
+  let mut seen = vec![false; n];
+  for &p in perm {
+    if p >= n || seen[p] {
+      return 0;
+    }
+    seen[p] = true;
+  }
+  // Count inversions
+  let mut inversions = 0;
+  for i in 0..n {
+    for j in i + 1..n {
+      if perm[i] > perm[j] {
+        inversions += 1;
+      }
+    }
+  }
+  if inversions % 2 == 0 { 1 } else { -1 }
+}
+
+/// LeviCivitaTensor[n, List] - produces an n-dimensional tensor with the Levi-Civita symbol values.
+pub fn levi_civita_tensor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 1 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LeviCivitaTensor".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Build the n-dimensional tensor recursively
+  fn build_tensor(n: usize, depth: usize, indices: &mut Vec<usize>) -> Expr {
+    if depth == n {
+      let sign = permutation_sign(indices);
+      Expr::Integer(sign)
+    } else {
+      let mut items = Vec::new();
+      for i in 0..n {
+        indices.push(i);
+        items.push(build_tensor(n, depth + 1, indices));
+        indices.pop();
+      }
+      Expr::List(items)
+    }
+  }
+
+  let mut indices = Vec::new();
+  Ok(build_tensor(n, 0, &mut indices))
+}

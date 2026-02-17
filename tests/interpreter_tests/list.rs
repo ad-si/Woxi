@@ -2140,4 +2140,75 @@ mod join_non_list {
       "a + b + c + d + e + f"
     );
   }
+
+  #[test]
+  fn most_non_list_head() {
+    assert_eq!(interpret("Most[a + b + c]").unwrap(), "a + b");
+  }
+
+  #[test]
+  fn riffle_cycling_separator() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c, d, e, f}, {x, y, z}]").unwrap(),
+      "{a, x, b, y, c, z, d, x, e, y, f}"
+    );
+  }
+
+  #[test]
+  fn riffle_same_length_lists() {
+    assert_eq!(
+      interpret("Riffle[{a, b, c}, {x, y, z}]").unwrap(),
+      "{a, x, b, y, c, z}"
+    );
+  }
+
+  #[test]
+  fn thread_with_head() {
+    assert_eq!(
+      interpret("Thread[f[a + b + c], Plus]").unwrap(),
+      "f[a] + f[b] + f[c]"
+    );
+  }
+
+  #[test]
+  fn map_at_deep_position() {
+    assert_eq!(
+      interpret("MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]").unwrap(),
+      "{{1, 1}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn map_at_multiple_deep_positions() {
+    assert_eq!(
+      interpret("MapAt[f, {a, {b, c}}, {{2, 1}}]").unwrap(),
+      "{a, {f[b], c}}"
+    );
+  }
+
+  #[test]
+  fn rotate_left_multi_dim() {
+    assert_eq!(
+      interpret("RotateLeft[{{a, b, c}, {d, e, f}, {g, h, i}}, {1, 2}]")
+        .unwrap(),
+      "{{f, d, e}, {i, g, h}, {c, a, b}}"
+    );
+  }
+
+  #[test]
+  fn rotate_right_multi_dim() {
+    assert_eq!(
+      interpret("RotateRight[{{a, b, c}, {d, e, f}, {g, h, i}}, {1, 2}]")
+        .unwrap(),
+      "{{h, i, g}, {b, c, a}, {e, f, d}}"
+    );
+  }
+
+  #[test]
+  fn levi_civita_tensor_list() {
+    assert_eq!(
+      interpret("LeviCivitaTensor[3, List]").unwrap(),
+      "{{{0, 0, 0}, {0, 0, 1}, {0, -1, 0}}, {{0, 0, -1}, {0, 0, 0}, {1, 0, 0}}, {{0, 1, 0}, {-1, 0, 0}, {0, 0, 0}}}"
+    );
+  }
 }

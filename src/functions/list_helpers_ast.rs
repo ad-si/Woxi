@@ -712,6 +712,42 @@ pub fn maximal_by_ast(
 
 /// MapAt[f, list, pos] - Apply function at specific positions
 /// Supports single integer, list of integers, and negative indices
+/// Helper to apply a function at a deep position within an expression.
+fn map_at_deep(
+  func: &Expr,
+  expr: &Expr,
+  path: &[i128],
+) -> Result<Expr, InterpreterError> {
+  if path.is_empty() {
+    return apply_func_ast(func, expr);
+  }
+
+  let pos = path[0];
+  let rest = &path[1..];
+
+  let items = match expr {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(expr.clone());
+    }
+  };
+
+  let len = items.len() as i128;
+  let idx = if pos < 0 {
+    (len + pos) as usize
+  } else {
+    (pos - 1) as usize
+  };
+
+  if idx >= items.len() {
+    return Ok(expr.clone());
+  }
+
+  let mut new_items = items.clone();
+  new_items[idx] = map_at_deep(func, &items[idx], rest)?;
+  Ok(Expr::List(new_items))
+}
+
 pub fn map_at_ast(
   func: &Expr,
   list: &Expr,
@@ -729,72 +765,84 @@ pub fn map_at_ast(
 
   let len = items.len() as i128;
 
-  // Collect positions to modify
-  // Wolfram uses {{1}, {3}} for multiple positions (list of single-element lists)
-  let positions: Vec<i128> = match pos_spec {
-    Expr::Integer(n) => vec![*n],
-    Expr::BigInteger(_) => match expr_to_i128(pos_spec) {
-      Some(n) => vec![n],
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "MapAt".to_string(),
-          args: vec![func.clone(), list.clone(), pos_spec.clone()],
-        });
+  match pos_spec {
+    Expr::Integer(n) => {
+      // Single flat position
+      let idx = if *n < 0 {
+        (len + *n) as usize
+      } else {
+        (*n - 1) as usize
+      };
+      let mut new_items = items.clone();
+      if idx < new_items.len() {
+        new_items[idx] = apply_func_ast(func, &items[idx])?;
       }
-    },
-    Expr::List(pos_list) => {
-      // Each element must be a single-element list like {1}
-      let mut positions = Vec::new();
-      for p in pos_list {
-        match p {
-          Expr::List(inner) if inner.len() == 1 => {
-            if let Some(n) = expr_to_i128(&inner[0]) {
-              positions.push(n);
-            }
-          }
-          _ => {
-            return Ok(Expr::FunctionCall {
-              name: "MapAt".to_string(),
-              args: vec![func.clone(), list.clone(), pos_spec.clone()],
-            });
-          }
-        }
-      }
-      positions
+      Ok(Expr::List(new_items))
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
+    Expr::BigInteger(_) => match expr_to_i128(pos_spec) {
+      Some(n) => {
+        let idx = if n < 0 {
+          (len + n) as usize
+        } else {
+          (n - 1) as usize
+        };
+        let mut new_items = items.clone();
+        if idx < new_items.len() {
+          new_items[idx] = apply_func_ast(func, &items[idx])?;
+        }
+        Ok(Expr::List(new_items))
+      }
+      None => Ok(Expr::FunctionCall {
         name: "MapAt".to_string(),
         args: vec![func.clone(), list.clone(), pos_spec.clone()],
-      });
-    }
-  };
-
-  let mut indices = std::collections::HashSet::new();
-  for p in positions {
-    let idx = if p < 0 {
-      (len + p) as usize
-    } else {
-      (p - 1) as usize
-    };
-    if idx < items.len() {
-      indices.insert(idx);
-    }
-  }
-
-  let result: Result<Vec<Expr>, _> = items
-    .iter()
-    .enumerate()
-    .map(|(i, item)| {
-      if indices.contains(&i) {
-        apply_func_ast(func, item)
-      } else {
-        Ok(item.clone())
+      }),
+    },
+    Expr::List(pos_list) => {
+      if pos_list.is_empty() {
+        return Ok(list.clone());
       }
-    })
-    .collect();
+      // Check if all elements are lists (multiple position specs) or all integers (deep position)
+      let all_lists = pos_list.iter().all(|p| matches!(p, Expr::List(_)));
+      let all_ints = pos_list.iter().all(|p| expr_to_i128(p).is_some());
 
-  Ok(Expr::List(result?))
+      if all_ints {
+        // Deep position: {2, 1} means position 1 within position 2
+        let path: Vec<i128> =
+          pos_list.iter().filter_map(expr_to_i128).collect();
+        return map_at_deep(func, list, &path);
+      }
+
+      if all_lists {
+        // Multiple positions: {{1}, {3}} or {{2,1}, {1,2}}
+        let mut result = list.clone();
+        for p in pos_list {
+          if let Expr::List(inner) = p {
+            if inner.len() == 1 {
+              if let Some(n) = expr_to_i128(&inner[0]) {
+                result = map_at_deep(func, &result, &[n])?;
+              }
+            } else {
+              let path: Vec<i128> =
+                inner.iter().filter_map(expr_to_i128).collect();
+              if path.len() == inner.len() {
+                result = map_at_deep(func, &result, &path)?;
+              }
+            }
+          }
+        }
+        return Ok(result);
+      }
+
+      Ok(Expr::FunctionCall {
+        name: "MapAt".to_string(),
+        args: vec![func.clone(), list.clone(), pos_spec.clone()],
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "MapAt".to_string(),
+      args: vec![func.clone(), list.clone(), pos_spec.clone()],
+    }),
+  }
 }
 
 /// AST-based Nest: apply a function n times.
@@ -2008,6 +2056,19 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         Ok(Expr::List(items[..items.len() - 1].to_vec()))
       }
     }
+    Expr::FunctionCall { name, args } => {
+      if args.is_empty() {
+        Err(InterpreterError::EvaluationError(format!(
+          "Cannot take Most of expression {}[] with length zero.",
+          name
+        )))
+      } else {
+        crate::evaluator::evaluate_function_call_ast(
+          name,
+          &args[..args.len() - 1],
+        )
+      }
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Most".to_string(),
       args: vec![list.clone()],
@@ -2749,13 +2810,27 @@ pub fn riffle_ast(list: &Expr, sep: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![]));
   }
 
-  // If sep is a list, interleave element-wise: Riffle[{a,b,c}, {x,y,z}] -> {a,x,b,y,c,z}
+  // If sep is a list, interleave with cycling
+  // If sep has same length as items: full interleave {a1,s1,a2,s2,...,an,sn}
+  // Otherwise: insert n-1 separators cycling: {a1,s1,a2,s2,...,an}
   if let Expr::List(sep_items) = sep {
+    if sep_items.is_empty() {
+      return Ok(list.clone());
+    }
     let mut result = Vec::new();
-    for (i, item) in items.iter().enumerate() {
-      result.push(item.clone());
-      if i < sep_items.len() {
+    if sep_items.len() == items.len() {
+      // Full interleave
+      for (i, item) in items.iter().enumerate() {
+        result.push(item.clone());
         result.push(sep_items[i].clone());
+      }
+    } else {
+      // Insert n-1 separators, cycling through sep list
+      for (i, item) in items.iter().enumerate() {
+        result.push(item.clone());
+        if i < items.len() - 1 {
+          result.push(sep_items[i % sep_items.len()].clone());
+        }
       }
     }
     return Ok(Expr::List(result));
@@ -2817,6 +2892,55 @@ pub fn rotate_right_ast(
   n: i128,
 ) -> Result<Expr, InterpreterError> {
   rotate_left_ast(list, -n)
+}
+
+/// Multi-dimensional RotateLeft/RotateRight: rotate at each level.
+/// RotateLeft[matrix, {r, c}] rotates rows by r, then each row by c.
+pub fn rotate_multi_ast(
+  list: &Expr,
+  shifts: &[Expr],
+  left: bool,
+) -> Result<Expr, InterpreterError> {
+  if shifts.is_empty() {
+    return Ok(list.clone());
+  }
+
+  let first_shift = match expr_to_i128(&shifts[0]) {
+    Some(n) => {
+      if left {
+        n
+      } else {
+        -n
+      }
+    }
+    None => {
+      let fn_name = if left { "RotateLeft" } else { "RotateRight" };
+      return Ok(Expr::FunctionCall {
+        name: fn_name.to_string(),
+        args: vec![list.clone(), Expr::List(shifts.to_vec())],
+      });
+    }
+  };
+
+  // Rotate the top level
+  let rotated = rotate_left_ast(list, first_shift)?;
+
+  // If there are more shifts, apply them to each sublist
+  if shifts.len() > 1 {
+    let rest_shifts = &shifts[1..];
+    match rotated {
+      Expr::List(items) => {
+        let mut new_items = Vec::new();
+        for item in &items {
+          new_items.push(rotate_multi_ast(item, rest_shifts, left)?);
+        }
+        Ok(Expr::List(new_items))
+      }
+      _ => Ok(rotated),
+    }
+  } else {
+    Ok(rotated)
+  }
 }
 
 /// AST-based PadLeft: pad list on the left to length n.
@@ -4272,15 +4396,51 @@ fn gcd_i128(a: i128, b: i128) -> i128 {
 
 /// AST-based Thread: thread a function over lists.
 /// Thread[f[{a, b}, {c, d}]] -> {f[a, c], f[b, d]}
-pub fn thread_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+pub fn thread_ast(
+  expr: &Expr,
+  thread_head: Option<&str>,
+) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::FunctionCall { name, args } => {
-      // Find which args are lists
+      // Find which args contain the target head (List by default, or specified head)
       let mut list_indices: Vec<usize> = Vec::new();
       let mut list_len: Option<usize> = None;
 
       for (i, arg) in args.iter().enumerate() {
-        if let Expr::List(items) = arg {
+        let matching_items: Option<&Vec<Expr>> = match thread_head {
+          None => {
+            // Default: thread over List
+            if let Expr::List(items) = arg {
+              Some(items)
+            } else {
+              None
+            }
+          }
+          Some(head) => {
+            // Thread over specified head
+            if let Expr::FunctionCall {
+              name: arg_name,
+              args: arg_args,
+            } = arg
+            {
+              if arg_name == head {
+                Some(arg_args)
+              } else {
+                None
+              }
+            } else if head == "List" {
+              if let Expr::List(items) = arg {
+                Some(items)
+              } else {
+                None
+              }
+            } else {
+              None
+            }
+          }
+        };
+
+        if let Some(items) = matching_items {
           if let Some(len) = list_len {
             if items.len() != len {
               return Err(InterpreterError::EvaluationError(
@@ -4307,10 +4467,23 @@ pub fn thread_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
           .enumerate()
           .map(|(i, arg)| {
             if list_indices.contains(&i) {
-              if let Expr::List(items) = arg {
-                items[j].clone()
-              } else {
-                arg.clone()
+              match thread_head {
+                None => {
+                  if let Expr::List(items) = arg {
+                    items[j].clone()
+                  } else {
+                    arg.clone()
+                  }
+                }
+                Some(_) => {
+                  if let Expr::FunctionCall { args: arg_args, .. } = arg {
+                    arg_args[j].clone()
+                  } else if let Expr::List(items) = arg {
+                    items[j].clone()
+                  } else {
+                    arg.clone()
+                  }
+                }
               }
             } else {
               arg.clone()
@@ -4322,7 +4495,17 @@ pub fn thread_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
         results.push(result);
       }
 
-      Ok(Expr::List(results))
+      // Wrap result in the thread head
+      match thread_head {
+        None => Ok(Expr::List(results)),
+        Some(head) => {
+          if head == "List" {
+            Ok(Expr::List(results))
+          } else {
+            crate::evaluator::evaluate_function_call_ast(head, &results)
+          }
+        }
+      }
     }
     _ => Ok(expr.clone()),
   }
