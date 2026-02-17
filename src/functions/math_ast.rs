@@ -3136,13 +3136,54 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if args.len() == 2 {
     // Round[x, a] - round x to nearest multiple of a
-    if let (Some(x), Some(a)) =
-      (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+    let eval_a = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
+    let eval_x = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+
+    // Check if a is a Rational (n/d)
+    if let Expr::FunctionCall { name, args: rargs } = &eval_a
+      && name == "Rational"
+      && rargs.len() == 2
+      && let (Some(x_val), Some(a_val)) =
+        (try_eval_to_f64(&eval_x), try_eval_to_f64(&eval_a))
+      && a_val != 0.0
     {
-      if a == 0.0 {
-        return Ok(args[0].clone());
+      let n = (x_val / a_val).round() as i128;
+      // Return n * (num/den) as a rational
+      if let (Some(num), Some(den)) =
+        (expr_to_i128(&rargs[0]), expr_to_i128(&rargs[1]))
+      {
+        return Ok(make_rational_pub(n * num, den));
       }
-      let rounded = (x / a).round() * a;
+    }
+
+    // Check if a is symbolic (like Pi) — return n * a
+    if let (Some(x_val), Some(a_val)) =
+      (try_eval_to_f64(&eval_x), try_eval_to_f64(&eval_a))
+    {
+      if a_val == 0.0 {
+        return Ok(eval_x);
+      }
+      let n = (x_val / a_val).round() as i128;
+      // If a is not a plain number, return n * a symbolically
+      let a_is_real = matches!(&eval_a, Expr::Real(_));
+      let a_is_int = matches!(&eval_a, Expr::Integer(_));
+      if !a_is_real && !a_is_int {
+        // Symbolic: return n * a
+        return crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(n)),
+          right: Box::new(eval_a),
+        });
+      }
+      let rounded = n as f64 * a_val;
+      // When the step a is Real, result should be Real
+      let x_is_real = matches!(&eval_x, Expr::Real(_));
+      if (a_is_real || x_is_real)
+        && rounded.fract() == 0.0
+        && rounded.abs() < i128::MAX as f64
+      {
+        return Ok(Expr::Real(rounded));
+      }
       if rounded.fract() == 0.0 && rounded.abs() < i128::MAX as f64 {
         return Ok(Expr::Integer(rounded as i128));
       }

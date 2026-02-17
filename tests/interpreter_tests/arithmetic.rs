@@ -1287,3 +1287,27 @@ mod division_flattening {
     assert_eq!(interpret("Rational[1, 3] + Rational[1, 6]").unwrap(), "1/2");
   }
 }
+
+mod round_with_step {
+  use super::*;
+
+  #[test]
+  fn round_real_step_gives_real() {
+    assert_eq!(interpret("Round[0.04, 0.1]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn round_pi_real_step() {
+    assert_eq!(interpret("Round[Pi, .5]").unwrap(), "3.");
+  }
+
+  #[test]
+  fn round_rational_step() {
+    assert_eq!(interpret("Round[2.6, 1/3]").unwrap(), "8/3");
+  }
+
+  #[test]
+  fn round_symbolic_step() {
+    assert_eq!(interpret("Round[10, Pi]").unwrap(), "3*Pi");
+  }
+}
