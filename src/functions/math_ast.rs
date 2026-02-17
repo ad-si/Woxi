@@ -12520,7 +12520,6 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let k = kernel.len();
   let mut seq = init.clone();
 
   // Extend sequence to total_n elements

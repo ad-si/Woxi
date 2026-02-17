@@ -527,8 +527,6 @@ mod graphics {
   }
 
   mod graphicsbox_capture {
-    use super::*;
-
     #[test]
     fn captures_graphicsbox_for_disk() {
       woxi::interpret("Graphics[{Red, Disk[{0, 0}]}]").unwrap();
