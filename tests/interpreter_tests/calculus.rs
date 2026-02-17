@@ -668,4 +668,43 @@ mod big_o {
       "SeriesData[x, 1, {}, 1, 1, 1]"
     );
   }
+
+  // D threading over lists
+  #[test]
+  fn d_list_simple() {
+    assert_eq!(
+      interpret("D[{x^2, x^3}, x]").unwrap(),
+      "{2*x, 3*x^2}"
+    );
+  }
+
+  #[test]
+  fn d_list_trig() {
+    assert_eq!(
+      interpret("D[{Cos[x] + Sin[x], Sin[x]}, x]").unwrap(),
+      "{-Sin[x] + Cos[x], Cos[x]}"
+    );
+  }
+
+  #[test]
+  fn d_list_single_element() {
+    assert_eq!(interpret("D[{x^2}, x]").unwrap(), "{2*x}");
+  }
+
+  #[test]
+  fn d_list_higher_order() {
+    assert_eq!(
+      interpret("D[{x^3, x^4}, {x, 2}]").unwrap(),
+      "{6*x, 12*x^2}"
+    );
+  }
+
+  #[test]
+  fn d_list_nested() {
+    // D should thread over the outer list
+    assert_eq!(
+      interpret("D[{x, x^2, x^3}, x]").unwrap(),
+      "{1, 2*x, 3*x^2}"
+    );
+  }
 }

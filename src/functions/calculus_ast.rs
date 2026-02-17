@@ -14,6 +14,15 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Thread over lists in the first argument: D[{f1, f2, ...}, var] -> {D[f1, var], D[f2, var], ...}
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|item| d_ast(&[item.clone(), args[1].clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
   // Handle D[expr, {var, n}] for higher-order derivatives
   if let Expr::List(items) = &args[1] {
     if items.len() == 2 {
