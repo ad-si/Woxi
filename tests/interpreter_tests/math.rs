@@ -3831,3 +3831,90 @@ mod variables {
     assert_eq!(interpret("Variables[x + Sin[y]]").unwrap(), "{x, Sin[y]}");
   }
 }
+
+mod bell_b {
+  use super::*;
+
+  #[test]
+  fn bell_10() {
+    assert_eq!(interpret("BellB[10]").unwrap(), "115975");
+  }
+
+  #[test]
+  fn bell_0() {
+    assert_eq!(interpret("BellB[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn bell_1() {
+    assert_eq!(interpret("BellB[1]").unwrap(), "1");
+  }
+}
+
+mod pauli_matrix {
+  use super::*;
+
+  #[test]
+  fn pauli_1() {
+    assert_eq!(interpret("PauliMatrix[1]").unwrap(), "{{0, 1}, {1, 0}}");
+  }
+
+  #[test]
+  fn pauli_2() {
+    assert_eq!(interpret("PauliMatrix[2]").unwrap(), "{{0, -I}, {I, 0}}");
+  }
+
+  #[test]
+  fn pauli_3() {
+    assert_eq!(interpret("PauliMatrix[3]").unwrap(), "{{1, 0}, {0, -1}}");
+  }
+
+  #[test]
+  fn pauli_table() {
+    assert_eq!(
+      interpret("Table[PauliMatrix[i], {i, 1, 3}]").unwrap(),
+      "{{{0, 1}, {1, 0}}, {{0, -I}, {I, 0}}, {{1, 0}, {0, -1}}}"
+    );
+  }
+}
+
+mod prime_power_q {
+  use super::*;
+
+  #[test]
+  fn prime_power_9() {
+    assert_eq!(interpret("PrimePowerQ[9]").unwrap(), "True");
+  }
+
+  #[test]
+  fn prime_power_52142() {
+    assert_eq!(interpret("PrimePowerQ[52142]").unwrap(), "False");
+  }
+
+  #[test]
+  fn prime_power_neg8() {
+    assert_eq!(interpret("PrimePowerQ[-8]").unwrap(), "True");
+  }
+
+  #[test]
+  fn prime_power_371293() {
+    assert_eq!(interpret("PrimePowerQ[371293]").unwrap(), "True");
+  }
+}
+
+mod curl {
+  use super::*;
+
+  #[test]
+  fn curl_2d() {
+    assert_eq!(interpret("Curl[{y, -x}, {x, y}]").unwrap(), "-2");
+  }
+
+  #[test]
+  fn curl_3d() {
+    assert_eq!(
+      interpret("Curl[{y, -x, 2 z}, {x, y, z}]").unwrap(),
+      "{0, 0, -2}"
+    );
+  }
+}

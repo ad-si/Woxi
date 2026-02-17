@@ -7160,6 +7160,160 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(make_rational(num, den))
 }
 
+/// BellB[n] - nth Bell number
+/// BellB[n, x] - nth Bell polynomial
+pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BellB expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BellB".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if args.len() == 1 {
+    // Bell number B_n via the Bell triangle
+    if n == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    // Compute using the Bell triangle (first column of each row)
+    let mut row = vec![1i128];
+    for _ in 1..=n {
+      let mut new_row = vec![*row.last().unwrap()];
+      for j in 1..=row.len() {
+        let val = new_row[j - 1] + row[j - 1];
+        new_row.push(val);
+      }
+      row = new_row;
+    }
+    Ok(Expr::Integer(row[0]))
+  } else {
+    // Bell polynomial B_n(x) = sum_{k=0}^{n} S(n,k) * x^k
+    // where S(n,k) is the Stirling number of the second kind
+    if n == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    // Compute Stirling numbers of the second kind for all k
+    let mut stirling = vec![vec![0i128; n + 1]; n + 1];
+    stirling[0][0] = 1;
+    for i in 1..=n {
+      for k in 1..=i {
+        stirling[i][k] =
+          k as i128 * stirling[i - 1][k] + stirling[i - 1][k - 1];
+      }
+    }
+    // Build polynomial: sum_{k=0}^{n} S(n,k) * x^k
+    let x = &args[1];
+    let mut terms = Vec::new();
+    for k in 0..=n {
+      let s = stirling[n][k];
+      if s == 0 {
+        continue;
+      }
+      let coeff = Expr::Integer(s);
+      let term = if k == 0 {
+        coeff
+      } else if k == 1 {
+        if s == 1 {
+          x.clone()
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(coeff),
+            right: Box::new(x.clone()),
+          }
+        }
+      } else {
+        let power = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(x.clone()),
+          right: Box::new(Expr::Integer(k as i128)),
+        };
+        if s == 1 {
+          power
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(coeff),
+            right: Box::new(power),
+          }
+        }
+      };
+      terms.push(term);
+    }
+    if terms.is_empty() {
+      return Ok(Expr::Integer(0));
+    }
+    // Build sum of terms
+    let mut result = terms[0].clone();
+    for term in &terms[1..] {
+      result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(result),
+        right: Box::new(term.clone()),
+      };
+    }
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  }
+}
+
+/// PauliMatrix[k] - kth Pauli matrix (k=0,1,2,3)
+pub fn pauli_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PauliMatrix expects exactly 1 argument".into(),
+    ));
+  }
+  let k = match expr_to_i128(&args[0]) {
+    Some(k) => k,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PauliMatrix".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let i_expr = Expr::Identifier("I".to_string());
+  let neg_i = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(Expr::Integer(-1)),
+    right: Box::new(i_expr.clone()),
+  };
+  match k {
+    0 => Ok(Expr::List(vec![
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]),
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(1)]),
+    ])),
+    1 => Ok(Expr::List(vec![
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(1)]),
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]),
+    ])),
+    2 => {
+      let neg_i_eval = crate::evaluator::evaluate_expr_to_expr(&neg_i)?;
+      Ok(Expr::List(vec![
+        Expr::List(vec![Expr::Integer(0), neg_i_eval]),
+        Expr::List(vec![i_expr, Expr::Integer(0)]),
+      ]))
+    }
+    3 => Ok(Expr::List(vec![
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]),
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(-1)]),
+    ])),
+    _ => Ok(Expr::FunctionCall {
+      name: "PauliMatrix".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// CatalanNumber[n] - nth Catalan number = C(2n,n)/(n+1)
 pub fn catalan_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

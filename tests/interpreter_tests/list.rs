@@ -174,6 +174,88 @@ mod tuples {
   }
 }
 
+mod tuples_extended {
+  use super::*;
+
+  #[test]
+  fn list_of_lists() {
+    assert_eq!(
+      interpret("Tuples[{{a, b}, {1, 2, 3}}]").unwrap(),
+      "{{a, 1}, {a, 2}, {a, 3}, {b, 1}, {b, 2}, {b, 3}}"
+    );
+  }
+
+  #[test]
+  fn function_head() {
+    assert_eq!(
+      interpret("Tuples[f[a, b, c], 2]").unwrap(),
+      "{f[a, a], f[a, b], f[a, c], f[b, a], f[b, b], f[b, c], f[c, a], f[c, b], f[c, c]}"
+    );
+  }
+
+  #[test]
+  fn list_of_function_heads() {
+    assert_eq!(
+      interpret("Tuples[{f[a, b], g[c, d]}]").unwrap(),
+      "{{a, c}, {a, d}, {b, c}, {b, d}}"
+    );
+  }
+}
+
+mod map_thread_extended {
+  use super::*;
+
+  #[test]
+  fn with_level() {
+    assert_eq!(
+      interpret("MapThread[f, {{{a, b}, {c, d}}, {{e, f}, {g, h}}}, 2]")
+        .unwrap(),
+      "{{f[a, e], f[b, f]}, {f[c, g], f[d, h]}}"
+    );
+  }
+}
+
+mod inner_extended {
+  use super::*;
+
+  #[test]
+  fn matrix_and_or() {
+    assert_eq!(
+      interpret("Inner[And, {{False, False}, {False, True}}, {{True, False}, {True, True}}, Or]")
+        .unwrap(),
+      "{{False, False}, {True, True}}"
+    );
+  }
+
+  #[test]
+  fn nested_lists() {
+    assert_eq!(
+      interpret("Inner[f, {{{a, b}}, {{c, d}}}, {{1}, {2}}, g]").unwrap(),
+      "{{{g[f[a, 1], f[b, 2]]}}, {{g[f[c, 1], f[d, 2]]}}}"
+    );
+  }
+}
+
+mod outer_extended {
+  use super::*;
+
+  #[test]
+  fn matrix_times() {
+    assert_eq!(
+      interpret("Outer[Times, {{a, b}, {c, d}}, {{1, 2}, {3, 4}}]").unwrap(),
+      "{{{{a, 2*a}, {3*a, 4*a}}, {{b, 2*b}, {3*b, 4*b}}}, {{{c, 2*c}, {3*c, 4*c}}, {{d, 2*d}, {3*d, 4*d}}}}"
+    );
+  }
+
+  #[test]
+  fn three_lists() {
+    assert_eq!(
+      interpret("Outer[f, {a, b}, {x, y, z}, {1, 2}]").unwrap(),
+      "{{{f[a, x, 1], f[a, x, 2]}, {f[a, y, 1], f[a, y, 2]}, {f[a, z, 1], f[a, z, 2]}}, {{f[b, x, 1], f[b, x, 2]}, {f[b, y, 1], f[b, y, 2]}, {f[b, z, 1], f[b, z, 2]}}}"
+    );
+  }
+}
+
 mod ordering {
   use super::*;
 

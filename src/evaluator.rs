@@ -1711,6 +1711,8 @@ fn is_builtin_listable(name: &str) -> bool {
       | "MoebiusMu"
       | "DivisorSigma"
       | "BernoulliB"
+      | "BellB"
+      | "PrimePowerQ"
       | "CatalanNumber"
       | "StirlingS1"
       | "StirlingS2"
@@ -2438,8 +2440,16 @@ pub fn evaluate_function_call_ast(
       // Nest from innermost to outermost
       return list_helpers_ast::table_multi_ast(&args[0], &args[1..]);
     }
-    "MapThread" if args.len() == 2 => {
-      return list_helpers_ast::map_thread_ast(&args[0], &args[1]);
+    "MapThread" if args.len() == 2 || args.len() == 3 => {
+      let level = if args.len() == 3 {
+        match &args[2] {
+          Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+          _ => None,
+        }
+      } else {
+        None
+      };
+      return list_helpers_ast::map_thread_ast(&args[0], &args[1], level);
     }
     "Partition" if args.len() == 2 || args.len() == 3 => {
       if let Some(n) = expr_to_i128(&args[1]) {
@@ -2951,8 +2961,8 @@ pub fn evaluate_function_call_ast(
         args: flat,
       });
     }
-    "Outer" if args.len() == 3 => {
-      return list_helpers_ast::outer_ast(&args[0], &args[1], &args[2]);
+    "Outer" if args.len() >= 3 => {
+      return list_helpers_ast::outer_ast(&args[0], &args[1..]);
     }
     "Inner" if args.len() == 4 => {
       return list_helpers_ast::inner_ast(
@@ -3485,6 +3495,9 @@ pub fn evaluate_function_call_ast(
     }
     "CompositeQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::composite_q_ast(args);
+    }
+    "PrimePowerQ" if args.len() == 1 => {
+      return crate::functions::predicate_ast::prime_power_q_ast(args);
     }
     "AssociationQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::association_q_ast(args);
@@ -4241,6 +4254,12 @@ pub fn evaluate_function_call_ast(
     "BernoulliB" if args.len() == 1 => {
       return crate::functions::math_ast::bernoulli_b_ast(args);
     }
+    "BellB" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::math_ast::bell_b_ast(args);
+    }
+    "PauliMatrix" if args.len() == 1 => {
+      return crate::functions::math_ast::pauli_matrix_ast(args);
+    }
     "CatalanNumber" if args.len() == 1 => {
       return crate::functions::math_ast::catalan_number_ast(args);
     }
@@ -4363,7 +4382,7 @@ pub fn evaluate_function_call_ast(
     }
 
     // AST-native list generation
-    "Tuples" if args.len() == 2 => {
+    "Tuples" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::list_helpers_ast::tuples_ast(args);
     }
 
@@ -4417,6 +4436,9 @@ pub fn evaluate_function_call_ast(
     }
     "D" if args.len() == 2 => {
       return crate::functions::calculus_ast::d_ast(args);
+    }
+    "Curl" if args.len() == 2 => {
+      return crate::functions::calculus_ast::curl_ast(args);
     }
     "Integrate" if args.len() == 2 => {
       return crate::functions::calculus_ast::integrate_ast(args);
@@ -8601,7 +8623,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "TakeSmallestBy"
     | "Pick"
     | "PowerExpand"
-    | "Variables" => {
+    | "Variables"
+    | "PauliMatrix"
+    | "Curl"
+    | "PrimePowerQ"
+    | "BellB" => {
       vec!["Protected"]
     }
 
