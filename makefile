@@ -86,11 +86,6 @@ wasm-build:
 		--features wasm
 
 
-.PHONY: chat-build
-chat-build: wasm-build
-	rsync -a --delete tests/cli/playground/pkg/ tests/cli/chat/pkg/
-
-
 .PHONY: jupyterlite-kernel-build
 jupyterlite-kernel-build:
 	cd jupyterlite-woxi-kernel && jlpm install && jlpm build:prod
@@ -109,12 +104,12 @@ jupyterlite-build: wasm-build jupyterlite-kernel-build
 
 
 .PHONY: docs/serve
-docs/serve: jupyterlite-build chat-build
+docs/serve: jupyterlite-build
 	mdbook serve --port 5501 ./tests
 
 
 .PHONY: docs/build
-docs/build: jupyterlite-build chat-build
+docs/build: jupyterlite-build
 	mdbook build ./tests
 
 

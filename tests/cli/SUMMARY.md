@@ -18,5 +18,4 @@
 - [Resources](resources.md)
 - [Related](related.md)
 - [Playground](playground/index.html)
-- [Chat](chat/index.html)
 - [JupyterLite](jupyterlite-showcase.html)

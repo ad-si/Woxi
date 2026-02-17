@@ -9,8 +9,6 @@ This repo contains several related sub-projects:
     - A simple playground to try out Woxi in the browser (tests/cli/playground)
 - Woxi JupyterLite
     - JupyterLite instance with an integrated Woxi kernel (tests/cli/jupyterlite)
-- Woxi Chat
-    - AI assistant with a direct integration of Woxi to evaluate code (tests/cli/chat)
 
 
 ## Development
