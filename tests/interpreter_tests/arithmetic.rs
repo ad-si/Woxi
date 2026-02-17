@@ -1413,4 +1413,67 @@ mod expand_threading {
       "{AAxA, yAAxxAyA}"
     );
   }
+
+  #[test]
+  fn squared_euclidean_distance_scalar() {
+    assert_eq!(interpret("SquaredEuclideanDistance[-7, 5]").unwrap(), "144");
+  }
+
+  #[test]
+  fn squared_euclidean_distance_vector() {
+    assert_eq!(
+      interpret("SquaredEuclideanDistance[{-1, -1}, {1, 1}]").unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn factorial2_negative_odd() {
+    assert_eq!(interpret("Factorial2[-1]").unwrap(), "1");
+    assert_eq!(interpret("Factorial2[-3]").unwrap(), "-1");
+    assert_eq!(interpret("Factorial2[-5]").unwrap(), "1/3");
+    assert_eq!(interpret("Factorial2[-7]").unwrap(), "-1/15");
+  }
+
+  #[test]
+  fn cases_except_two_arg() {
+    assert_eq!(
+      interpret("Cases[{a, 0, b, 1, c, 2, 3}, Except[1, _Integer]]").unwrap(),
+      "{0, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn delete_cases_symbol() {
+    assert_eq!(
+      interpret("DeleteCases[{a, b, 1, c, 2, 3}, _Symbol]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn delete_cases_alternatives() {
+    assert_eq!(
+      interpret("DeleteCases[{a, 1, 2.5, \"string\"}, _Integer|_Real]")
+        .unwrap(),
+      "{a, string}"
+    );
+  }
+
+  #[test]
+  fn string_insert_list_positions() {
+    assert_eq!(
+      interpret("StringInsert[\"adac\", \"he\", {1, 5}]").unwrap(),
+      "headache"
+    );
+  }
+
+  #[test]
+  fn string_insert_list_strings() {
+    assert_eq!(
+      interpret("StringInsert[{\"something\", \"sometimes\"}, \" \", 5]")
+        .unwrap(),
+      "{some thing, some times}"
+    );
+  }
 }

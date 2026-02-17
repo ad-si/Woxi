@@ -4733,22 +4733,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/operations.py
 CLASS: StringInsert
-LINE: 190
-TYPE: >>
-INPUT: StringInsert["adac", "he", {1, 5}]
-EXPECTED:
-= headache
----
-FILE: mathics/builtin/string/operations.py
-CLASS: StringInsert
-LINE: 193
-TYPE: >>
-INPUT: StringInsert[{"something", "sometimes"}, " ", 5]
-EXPECTED:
-= {some thing, some times}
----
-FILE: mathics/builtin/string/operations.py
-CLASS: StringInsert
 LINE: 197
 TYPE: >>
 INPUT: StringInsert["1234567890123456", ".", Range[-16, -4, 3]]
@@ -8725,14 +8709,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/patterns/composite.py
 CLASS: Except
-LINE: 135
-TYPE: >>
-INPUT: Cases[{a, 0, b, 1, c, 2, 3}, Except[1, _Integer]]
-EXPECTED:
-= {0, 2, 3}
----
-FILE: mathics/builtin/patterns/composite.py
-CLASS: Except
 LINE: 139
 TYPE: >>
 INPUT: StringReplace["Hello world!", Except[LetterCharacter] -> ""]
@@ -9459,22 +9435,6 @@ TYPE: >>
 INPUT: CosineDistance[1+2I, 5]
 EXPECTED:
 = 1 - (1 / 5 + 2 I / 5) Sqrt[5]
----
-FILE: mathics/builtin/distance/numeric.py
-CLASS: SquaredEuclideanDistance
-LINE: 296
-TYPE: >>
-INPUT: SquaredEuclideanDistance[-7, 5]
-EXPECTED:
-= 144
----
-FILE: mathics/builtin/distance/numeric.py
-CLASS: SquaredEuclideanDistance
-LINE: 299
-TYPE: >>
-INPUT: SquaredEuclideanDistance[{-1, -1}, {1, 1}]
-EXPECTED:
-= 8
 ---
 FILE: mathics/builtin/distance/stringdata.py
 CLASS: DamerauLevenshteinDistance
@@ -11813,22 +11773,6 @@ EXPECTED:
 = Delete[{a, b, c, d}, {1, n}]
 ---
 FILE: mathics/builtin/list/eol.py
-CLASS: DeleteCases
-LINE: 452
-TYPE: >>
-INPUT: DeleteCases[{a, 1, 2.5, "string"}, _Integer|_Real]
-EXPECTED:
-= {a, string}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: DeleteCases
-LINE: 455
-TYPE: >>
-INPUT: DeleteCases[{a, b, 1, c, 2, 3}, _Symbol]
-EXPECTED:
-= {1, 2, 3}
----
-FILE: mathics/builtin/list/eol.py
 CLASS: Drop
 LINE: 570
 TYPE: >>
@@ -13173,14 +13117,6 @@ TYPE: >>
 INPUT: 5!!
 EXPECTED:
 = 15.
----
-FILE: mathics/builtin/specialfns/gamma.py
-CLASS: Factorial2
-LINE: 205
-TYPE: >>
-INPUT: Factorial2[-3]
-EXPECTED:
-= -1.
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Factorial2
