@@ -464,6 +464,68 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matrix))
 }
 
+/// DiamondMatrix[n] - creates (2n+1)x(2n+1) matrix where entry (i,j) is 1 if
+/// the Manhattan distance from center <= n.
+pub fn diamond_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DiamondMatrix".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let size = 2 * n + 1;
+  let mut matrix = Vec::with_capacity(size);
+  for i in 0..size {
+    let mut row = Vec::with_capacity(size);
+    for j in 0..size {
+      let dist = (i as i128 - n as i128).unsigned_abs()
+        + (j as i128 - n as i128).unsigned_abs();
+      row.push(if dist <= n as u128 {
+        Expr::Integer(1)
+      } else {
+        Expr::Integer(0)
+      });
+    }
+    matrix.push(Expr::List(row));
+  }
+  Ok(Expr::List(matrix))
+}
+
+/// DiskMatrix[n] - creates (2n+1)x(2n+1) matrix where entry (i,j) is 1 if
+/// the Euclidean distance from center <= n.
+pub fn disk_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "DiskMatrix".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let size = 2 * n + 1;
+  // Threshold is (n + 0.5)^2 = n^2 + n + 0.25; for integer comparisons, n^2 + n
+  let threshold = (n * n + n) as i128;
+  let mut matrix = Vec::with_capacity(size);
+  for i in 0..size {
+    let mut row = Vec::with_capacity(size);
+    for j in 0..size {
+      let di = i as i128 - n as i128;
+      let dj = j as i128 - n as i128;
+      row.push(if di * di + dj * dj <= threshold {
+        Expr::Integer(1)
+      } else {
+        Expr::Integer(0)
+      });
+    }
+    matrix.push(Expr::List(row));
+  }
+  Ok(Expr::List(matrix))
+}
+
 /// Cross[{x, y}] - 2D cross product (perpendicular vector)
 /// Cross[a, b] - cross product of two 3-vectors
 pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

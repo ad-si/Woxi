@@ -2046,3 +2046,69 @@ mod linear_recurrence {
     );
   }
 }
+
+mod range_real {
+  use super::*;
+
+  #[test]
+  fn range_real_start() {
+    assert_eq!(interpret("Range[1.0, 2.3]").unwrap(), "{1., 2.}");
+  }
+
+  #[test]
+  fn range_real_step() {
+    assert_eq!(interpret("Range[1.0, 2.3, .5]").unwrap(), "{1., 1.5, 2.}");
+  }
+}
+
+mod delete_deep {
+  use super::*;
+
+  #[test]
+  fn delete_multi_part_index() {
+    assert_eq!(
+      interpret("Delete[{{a, b}, {c, d}}, {2, 1}]").unwrap(),
+      "{{a, b}, {d}}"
+    );
+  }
+
+  #[test]
+  fn delete_multiple_positions() {
+    assert_eq!(
+      interpret("Delete[{a, b, c, d}, {{1}, {3}}]").unwrap(),
+      "{b, d}"
+    );
+  }
+}
+
+mod extract_multi {
+  use super::*;
+
+  #[test]
+  fn extract_multiple_positions() {
+    assert_eq!(
+      interpret("Extract[{{a, b}, {c, d}}, {{1}, {2, 2}}]").unwrap(),
+      "{{a, b}, d}"
+    );
+  }
+}
+
+mod matrix_constructors {
+  use super::*;
+
+  #[test]
+  fn diamond_matrix_2() {
+    assert_eq!(
+      interpret("DiamondMatrix[2]").unwrap(),
+      "{{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn disk_matrix_2() {
+    assert_eq!(
+      interpret("DiskMatrix[2]").unwrap(),
+      "{{0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}}"
+    );
+  }
+}
