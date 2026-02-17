@@ -2526,6 +2526,30 @@ pub fn evaluate_function_call_ast(
         return list_helpers_ast::flatten_level_ast(&args[0], n);
       }
     }
+    "Level" if args.len() == 2 => {
+      return list_helpers_ast::level_ast(&args[0], &args[1], false);
+    }
+    "Level" if args.len() == 3 => {
+      // Extract Heads option
+      let include_heads = match &args[2] {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => {
+          if let Expr::Identifier(name) = pattern.as_ref() {
+            if name == "Heads" {
+              matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+            } else {
+              false
+            }
+          } else {
+            false
+          }
+        }
+        _ => false,
+      };
+      return list_helpers_ast::level_ast(&args[0], &args[1], include_heads);
+    }
     "Reverse" if args.len() == 1 => {
       return list_helpers_ast::reverse_ast(&args[0]);
     }

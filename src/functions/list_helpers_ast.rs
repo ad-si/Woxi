@@ -6739,6 +6739,251 @@ fn pick_recursive(
   }
 }
 
+/// Level[expr, levelspec] - gives a list of all subexpressions at the specified levels.
+/// Level[expr, levelspec, Heads -> True] - also includes heads.
+///
+/// Each node has a positive level (distance from root) and a negative level (-Depth[node]).
+/// Level specs: n means {1,n}, {n} means exactly n, {n1,n2} means range.
+/// Positive level values refer to positive level, negative values refer to negative level.
+pub fn level_ast(
+  expr: &Expr,
+  level_spec: &Expr,
+  include_heads: bool,
+) -> Result<Expr, InterpreterError> {
+  let (min_level, max_level) = parse_level_spec(level_spec)?;
+
+  let mut results = Vec::new();
+  level_traverse(expr, 0, min_level, max_level, include_heads, &mut results);
+  Ok(Expr::List(results))
+}
+
+/// Calculate the Mathematica Depth of an expression.
+/// Depth[atom] = 1, Depth[f[x1,...]] = 1 + max(Depth[xi])
+fn mathematica_depth(expr: &Expr) -> i64 {
+  match expr {
+    Expr::List(items) => {
+      1 + items.iter().map(mathematica_depth).max().unwrap_or(0)
+    }
+    Expr::FunctionCall { args, .. } => {
+      1 + args.iter().map(mathematica_depth).max().unwrap_or(0)
+    }
+    Expr::CurriedCall { args, .. } => {
+      1 + args.iter().map(mathematica_depth).max().unwrap_or(0)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      1 + mathematica_depth(left).max(mathematica_depth(right))
+    }
+    Expr::UnaryOp { operand, .. } => 1 + mathematica_depth(operand),
+    _ => 1, // atoms have depth 1
+  }
+}
+
+/// Check if a node matches the level spec.
+/// pos_level: distance from root (0 = root itself)
+/// neg_level: -Depth[node] (-1 for atoms, -2 for f[atom], etc.)
+fn matches_level(
+  pos_level: i64,
+  neg_level: i64,
+  min_level: i64,
+  max_level: i64,
+) -> bool {
+  // Check min condition
+  let min_ok = if min_level >= 0 {
+    pos_level >= min_level
+  } else {
+    neg_level >= min_level
+  };
+
+  // Check max condition
+  let max_ok = if max_level >= 0 {
+    pos_level <= max_level
+  } else {
+    neg_level <= max_level
+  };
+
+  min_ok && max_ok
+}
+
+/// Parse level spec into (min, max) raw values (positive or negative).
+fn parse_level_spec(spec: &Expr) -> Result<(i64, i64), InterpreterError> {
+  match spec {
+    Expr::List(items) if items.len() == 1 => {
+      let n = level_value(&items[0])?;
+      Ok((n, n))
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let n1 = level_value(&items[0])?;
+      let n2 = level_value(&items[1])?;
+      Ok((n1, n2))
+    }
+    Expr::Identifier(s) if s == "Infinity" => Ok((1, i64::MAX)),
+    _ => {
+      let n = level_value(spec)?;
+      Ok((1, n))
+    }
+  }
+}
+
+fn level_value(expr: &Expr) -> Result<i64, InterpreterError> {
+  match expr {
+    Expr::Integer(n) => Ok(*n as i64),
+    Expr::Identifier(s) if s == "Infinity" => Ok(i64::MAX),
+    Expr::FunctionCall { name, args } if name == "Minus" && args.len() == 1 => {
+      if let Expr::Integer(n) = &args[0] {
+        Ok(-(*n as i64))
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "Invalid level specification".into(),
+        ))
+      }
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "Invalid level specification"
+    ))),
+  }
+}
+
+/// Get head name for a BinaryOperator
+fn binary_op_head(op: &crate::syntax::BinaryOperator) -> &'static str {
+  use crate::syntax::BinaryOperator;
+  match op {
+    BinaryOperator::Plus | BinaryOperator::Minus => "Plus",
+    BinaryOperator::Times | BinaryOperator::Divide => "Times",
+    BinaryOperator::Power => "Power",
+    BinaryOperator::And => "And",
+    BinaryOperator::Or => "Or",
+    BinaryOperator::StringJoin => "StringJoin",
+    BinaryOperator::Alternatives => "Alternatives",
+  }
+}
+
+/// Traverse expression tree in post-order, collecting matching elements.
+/// Returns the Mathematica Depth of the expression.
+fn level_traverse(
+  expr: &Expr,
+  pos_level: i64,
+  min_level: i64,
+  max_level: i64,
+  include_heads: bool,
+  results: &mut Vec<Expr>,
+) -> i64 {
+  // Helper: traverse children, emit head first if applicable, return max child depth
+  let traverse_compound = |head_name: &str,
+                           children: &[&Expr],
+                           pos_level: i64,
+                           results: &mut Vec<Expr>|
+   -> i64 {
+    // Head symbol is an atom (depth 1, neg_level = -1)
+    if include_heads && matches_level(pos_level + 1, -1, min_level, max_level) {
+      results.push(Expr::Identifier(head_name.to_string()));
+    }
+
+    let mut max_child_depth: i64 = 0;
+    for child in children {
+      let child_depth = level_traverse(
+        child,
+        pos_level + 1,
+        min_level,
+        max_level,
+        include_heads,
+        results,
+      );
+      max_child_depth = max_child_depth.max(child_depth);
+    }
+    max_child_depth
+  };
+
+  match expr {
+    Expr::List(items) => {
+      let children: Vec<&Expr> = items.iter().collect();
+      let max_child_depth =
+        traverse_compound("List", &children, pos_level, results);
+      let depth = 1 + max_child_depth;
+      if matches_level(pos_level, -depth, min_level, max_level) {
+        results.push(expr.clone());
+      }
+      depth
+    }
+    Expr::FunctionCall { name, args, .. } => {
+      let children: Vec<&Expr> = args.iter().collect();
+      let max_child_depth =
+        traverse_compound(name, &children, pos_level, results);
+      let depth = 1 + max_child_depth;
+      if matches_level(pos_level, -depth, min_level, max_level) {
+        results.push(expr.clone());
+      }
+      depth
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let head = binary_op_head(op);
+      let children = [left.as_ref(), right.as_ref()];
+      let max_child_depth =
+        traverse_compound(head, &children, pos_level, results);
+      let depth = 1 + max_child_depth;
+      if matches_level(pos_level, -depth, min_level, max_level) {
+        results.push(expr.clone());
+      }
+      depth
+    }
+    Expr::CurriedCall { func, args } => {
+      // CurriedCall: head is the func expr, children are the args
+      // For Heads->True, the head (func) is traversed as a sub-expression
+      if include_heads {
+        // Traverse the head expression (func) for matching sub-parts
+        let _head_depth = level_traverse(
+          func,
+          pos_level + 1,
+          min_level,
+          max_level,
+          include_heads,
+          results,
+        );
+      }
+
+      // Depth of CurriedCall is based on args only (not head), matching Mathematica behavior
+      let mut max_child_depth: i64 = 0;
+      for arg in args {
+        let child_depth = level_traverse(
+          arg,
+          pos_level + 1,
+          min_level,
+          max_level,
+          include_heads,
+          results,
+        );
+        max_child_depth = max_child_depth.max(child_depth);
+      }
+
+      let depth = 1 + max_child_depth;
+      if matches_level(pos_level, -depth, min_level, max_level) {
+        results.push(expr.clone());
+      }
+      return depth;
+    }
+    Expr::UnaryOp { op, operand } => {
+      let head = match op {
+        crate::syntax::UnaryOperator::Minus => "Times",
+        crate::syntax::UnaryOperator::Not => "Not",
+      };
+      let children = [operand.as_ref()];
+      let max_child_depth =
+        traverse_compound(head, &children, pos_level, results);
+      let depth = 1 + max_child_depth;
+      if matches_level(pos_level, -depth, min_level, max_level) {
+        results.push(expr.clone());
+      }
+      depth
+    }
+    _ => {
+      // Atom: depth 1, neg_level = -1
+      if matches_level(pos_level, -1, min_level, max_level) {
+        results.push(expr.clone());
+      }
+      1
+    }
+  }
+}
+
 fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {
   match pattern {
     None => {
