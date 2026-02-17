@@ -1614,3 +1614,32 @@ mod alternatives {
     );
   }
 }
+
+mod filter_rules {
+  use super::*;
+
+  #[test]
+  fn single_key() {
+    assert_eq!(
+      interpret("FilterRules[{x -> 100, y -> 1000}, x]").unwrap(),
+      "{x -> 100}"
+    );
+  }
+
+  #[test]
+  fn key_list() {
+    assert_eq!(
+      interpret("FilterRules[{x -> 100, y -> 1000, z -> 10000}, {a, b, x, z}]")
+        .unwrap(),
+      "{x -> 100, z -> 10000}"
+    );
+  }
+
+  #[test]
+  fn no_match() {
+    assert_eq!(
+      interpret("FilterRules[{x -> 1, y -> 2}, {a, b}]").unwrap(),
+      "{}"
+    );
+  }
+}

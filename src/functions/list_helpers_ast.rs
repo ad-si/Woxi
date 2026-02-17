@@ -374,15 +374,15 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
       left,
       right,
     } => {
-      if matches!(right.as_ref(), Expr::Identifier(name) if name == "I") {
-        if let Some(im) = try_eval_to_f64(left) {
-          return Some((0.0, im));
-        }
+      if matches!(right.as_ref(), Expr::Identifier(name) if name == "I")
+        && let Some(im) = try_eval_to_f64(left)
+      {
+        return Some((0.0, im));
       }
-      if matches!(left.as_ref(), Expr::Identifier(name) if name == "I") {
-        if let Some(im) = try_eval_to_f64(right) {
-          return Some((0.0, im));
-        }
+      if matches!(left.as_ref(), Expr::Identifier(name) if name == "I")
+        && let Some(im) = try_eval_to_f64(right)
+      {
+        return Some((0.0, im));
       }
       None
     }
@@ -392,10 +392,10 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
       left,
       right,
     } => {
-      if let Some(re) = try_eval_to_f64(left) {
-        if let Some((_, im)) = expr_to_complex_parts(right) {
-          return Some((re, im));
-        }
+      if let Some(re) = try_eval_to_f64(left)
+        && let Some((_, im)) = expr_to_complex_parts(right)
+      {
+        return Some((re, im));
       }
       None
     }
@@ -405,38 +405,38 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
       left,
       right,
     } => {
-      if let Some(re) = try_eval_to_f64(left) {
-        if let Some((_, im)) = expr_to_complex_parts(right) {
-          return Some((re, -im));
-        }
+      if let Some(re) = try_eval_to_f64(left)
+        && let Some((_, im)) = expr_to_complex_parts(right)
+      {
+        return Some((re, -im));
       }
       None
     }
     // FunctionCall Plus[re, Times[im, I]]
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
-      if let Some(re) = try_eval_to_f64(&args[0]) {
-        if let Some((_, im)) = expr_to_complex_parts(&args[1]) {
-          return Some((re, im));
-        }
+      if let Some(re) = try_eval_to_f64(&args[0])
+        && let Some((_, im)) = expr_to_complex_parts(&args[1])
+      {
+        return Some((re, im));
       }
-      if let Some(re) = try_eval_to_f64(&args[1]) {
-        if let Some((_, im)) = expr_to_complex_parts(&args[0]) {
-          return Some((0.0 + im, re)); // im is imaginary coefficient
-        }
+      if let Some(re) = try_eval_to_f64(&args[1])
+        && let Some((_, im)) = expr_to_complex_parts(&args[0])
+      {
+        return Some((0.0 + im, re)); // im is imaginary coefficient
       }
       None
     }
     // FunctionCall Times[n, I]
     Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      if matches!(&args[1], Expr::Identifier(n) if n == "I") {
-        if let Some(im) = try_eval_to_f64(&args[0]) {
-          return Some((0.0, im));
-        }
+      if matches!(&args[1], Expr::Identifier(n) if n == "I")
+        && let Some(im) = try_eval_to_f64(&args[0])
+      {
+        return Some((0.0, im));
       }
-      if matches!(&args[0], Expr::Identifier(n) if n == "I") {
-        if let Some(im) = try_eval_to_f64(&args[1]) {
-          return Some((0.0, im));
-        }
+      if matches!(&args[0], Expr::Identifier(n) if n == "I")
+        && let Some(im) = try_eval_to_f64(&args[1])
+      {
+        return Some((0.0, im));
       }
       None
     }
@@ -4399,6 +4399,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           Ok(_) => {}
           Err(InterpreterError::BreakSignal) => break,
           Err(InterpreterError::ContinueSignal) => {}
+          Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
           Err(e) => return Err(e),
         }
       }
@@ -4417,6 +4418,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           Ok(_) => {}
           Err(InterpreterError::BreakSignal) => break,
           Err(InterpreterError::ContinueSignal) => {}
+          Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
           Err(e) => return Err(e),
         }
       }
@@ -4488,6 +4490,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
             Ok(_) => {}
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
+            Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
             Err(e) => return Err(e),
           }
           i += step;
@@ -4503,6 +4506,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
             Ok(_) => {}
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}
+            Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
             Err(e) => return Err(e),
           }
           i += step;

@@ -642,3 +642,43 @@ mod absolute_timing {
     assert!(result.contains(", 5}"));
   }
 }
+
+mod return_in_loops {
+  use super::*;
+
+  #[test]
+  fn return_in_do() {
+    clear_state();
+    assert_eq!(interpret("Do[If[True, Return[42]], {1}]").unwrap(), "42");
+  }
+
+  #[test]
+  fn return_stops_do_loop() {
+    clear_state();
+    assert_eq!(interpret("Do[If[i > 3, Return[i]], {i, 10}]").unwrap(), "4");
+  }
+
+  #[test]
+  fn return_no_arg_in_do() {
+    clear_state();
+    assert_eq!(
+      interpret("Do[If[i > 3, Return[]]; Print[i], {i, 10}]").unwrap(),
+      "Null"
+    );
+  }
+
+  #[test]
+  fn return_in_while() {
+    clear_state();
+    assert_eq!(interpret("While[True, Return[99]]").unwrap(), "99");
+  }
+
+  #[test]
+  fn return_in_for() {
+    clear_state();
+    assert_eq!(
+      interpret("For[i=1, i<=10, i++, If[i==5, Return[i]]]").unwrap(),
+      "5"
+    );
+  }
+}
