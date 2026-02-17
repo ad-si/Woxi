@@ -462,7 +462,9 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       };
       Expr::Slot(num)
     }
-    Rule::Constant => Expr::Constant(pair.as_str().trim().to_string()),
+    Rule::Constant | Rule::UnsignedConstant => {
+      Expr::Constant(pair.as_str().trim().to_string())
+    }
     Rule::NumericValue | Rule::UnsignedNumericValue => {
       let inner = pair.into_inner().next().unwrap();
       pair_to_expr(inner)

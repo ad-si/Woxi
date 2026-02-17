@@ -1561,59 +1561,149 @@ pub fn table_ast(
         // {i, min, max} or {i, min, max, step} form
         let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
-        let min_val = expr_to_i128(&min_expr).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Table: iterator bound must be an integer".into(),
-          )
-        })?;
-        let max_val = expr_to_i128(&max_expr).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Table: iterator bound must be an integer".into(),
-          )
-        })?;
 
         // Get step (default is 1)
-        let step_val = if items.len() >= 4 {
+        let step_expr = if items.len() >= 4 {
           let step_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
-          expr_to_i128(&step_expr).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Table: step must be an integer".into(),
-            )
-          })?
+          step_expr
         } else {
-          1
+          Expr::Integer(1)
         };
 
-        if step_val == 0 {
+        // Keep exact integer iteration behavior when possible.
+        if let (Some(min_val), Some(max_val), Some(step_val)) = (
+          expr_to_i128(&min_expr),
+          expr_to_i128(&max_expr),
+          expr_to_i128(&step_expr),
+        ) {
+          if step_val == 0 {
+            return Err(InterpreterError::EvaluationError(
+              "Table: step cannot be zero".into(),
+            ));
+          }
+
+          let mut results = Vec::new();
+          let mut i = min_val;
+          if step_val > 0 {
+            while i <= max_val {
+              let substituted = crate::syntax::substitute_variable(
+                body,
+                &var_name,
+                &Expr::Integer(i),
+              );
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              results.push(val);
+              i += step_val;
+            }
+          } else {
+            // Negative step
+            while i >= max_val {
+              let substituted = crate::syntax::substitute_variable(
+                body,
+                &var_name,
+                &Expr::Integer(i),
+              );
+              let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+              results.push(val);
+              i += step_val;
+            }
+          }
+          return Ok(Expr::List(results));
+        }
+
+        // Fallback: numeric iteration for symbolic numeric bounds/step (e.g. Pi/4).
+        crate::functions::math_ast::try_eval_to_f64(&min_expr).ok_or_else(
+          || {
+            InterpreterError::EvaluationError(
+              "Table: iterator bound must be numeric".into(),
+            )
+          },
+        )?;
+        let max_num = crate::functions::math_ast::try_eval_to_f64(&max_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Table: iterator bound must be numeric".into(),
+            )
+          })?;
+        let step_num = crate::functions::math_ast::try_eval_to_f64(&step_expr)
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Table: step must be numeric".into(),
+            )
+          })?;
+
+        if step_num.abs() <= f64::EPSILON {
           return Err(InterpreterError::EvaluationError(
             "Table: step cannot be zero".into(),
           ));
         }
 
         let mut results = Vec::new();
-        let mut i = min_val;
-        if step_val > 0 {
-          while i <= max_val {
+        let mut current_expr = min_expr.clone();
+        let mut safety_counter: usize = 0;
+        if step_num > 0.0 {
+          loop {
+            let current_num =
+              crate::functions::math_ast::try_eval_to_f64(&current_expr)
+                .ok_or_else(|| {
+                  InterpreterError::EvaluationError(
+                    "Table: iterator value became non-numeric".into(),
+                  )
+                })?;
+            if current_num > max_num + f64::EPSILON {
+              break;
+            }
             let substituted = crate::syntax::substitute_variable(
               body,
               &var_name,
-              &Expr::Integer(i),
+              &current_expr,
             );
             let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
             results.push(val);
-            i += step_val;
+            current_expr = crate::evaluator::evaluate_expr_to_expr(
+              &Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![current_expr, step_expr.clone()],
+              },
+            )?;
+            safety_counter += 1;
+            if safety_counter > 1_000_000 {
+              return Err(InterpreterError::EvaluationError(
+                "Table: iterator exceeded maximum iterations".into(),
+              ));
+            }
           }
         } else {
-          // Negative step
-          while i >= max_val {
+          loop {
+            let current_num =
+              crate::functions::math_ast::try_eval_to_f64(&current_expr)
+                .ok_or_else(|| {
+                  InterpreterError::EvaluationError(
+                    "Table: iterator value became non-numeric".into(),
+                  )
+                })?;
+            if current_num < max_num - f64::EPSILON {
+              break;
+            }
             let substituted = crate::syntax::substitute_variable(
               body,
               &var_name,
-              &Expr::Integer(i),
+              &current_expr,
             );
             let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
             results.push(val);
-            i += step_val;
+            current_expr = crate::evaluator::evaluate_expr_to_expr(
+              &Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![current_expr, step_expr.clone()],
+              },
+            )?;
+            safety_counter += 1;
+            if safety_counter > 1_000_000 {
+              return Err(InterpreterError::EvaluationError(
+                "Table: iterator exceeded maximum iterations".into(),
+              ));
+            }
           }
         }
         return Ok(Expr::List(results));

@@ -87,6 +87,14 @@ mod table_with_step {
   fn table_step_of_three() {
     assert_eq!(interpret("Table[i, {i, 0, 9, 3}]").unwrap(), "{0, 3, 6, 9}");
   }
+
+  #[test]
+  fn table_symbolic_pi_step() {
+    assert_eq!(
+      interpret("Table[θ, {θ, 0, 2 Pi - Pi/4, Pi/4}]").unwrap(),
+      "{0, Pi/4, 2*Pi/4, 3*Pi/4, 4*Pi/4, 5*Pi/4, 6*Pi/4, 7*Pi/4}"
+    );
+  }
 }
 
 mod union_sorting {
