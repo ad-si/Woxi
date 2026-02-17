@@ -4201,6 +4201,9 @@ pub fn evaluate_function_call_ast(
     "InverseGudermannian" if args.len() == 1 => {
       return crate::functions::math_ast::inverse_gudermannian_ast(args);
     }
+    "LogisticSigmoid" if args.len() == 1 => {
+      return crate::functions::math_ast::logistic_sigmoid_ast(args);
+    }
     "Prime" if args.len() == 1 => {
       return crate::functions::math_ast::prime_ast(args);
     }

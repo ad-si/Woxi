@@ -5858,14 +5858,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Expand
-LINE: 1162
-TYPE: >>
-INPUT: Expand[{4 (x + y), 2 (x + y) -> 4 (x + y)}]
-EXPECTED:
-= {4 x + 4 y, 2 x + 2 y -> 4 x + 4 y}
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Expand
 LINE: 1166
 TYPE: >>
 INPUT: Expand[Sin[x + y], Trig -> True]
@@ -7494,14 +7486,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/exp.py
 CLASS: Log2
-LINE: 246
-TYPE: >>
-INPUT: Log2[5.6]
-EXPECTED:
-= 2.48543
----
-FILE: mathics/builtin/numbers/exp.py
-CLASS: Log2
 LINE: 248
 TYPE: >>
 INPUT: Log2[E ^ 2]
@@ -7510,27 +7494,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/exp.py
 CLASS: Log10
-LINE: 271
-TYPE: >>
-INPUT: Log10[{2., 5.}]
-EXPECTED:
-= {0.30103, 0.69897}
----
-FILE: mathics/builtin/numbers/exp.py
-CLASS: Log10
 LINE: 273
 TYPE: >>
 INPUT: Log10[E ^ 3]
 EXPECTED:
 = 3 / Log[10]
----
-FILE: mathics/builtin/numbers/exp.py
-CLASS: LogisticSigmoid
-LINE: 294
-TYPE: >>
-INPUT: LogisticSigmoid[0.5]
-EXPECTED:
-= 0.622459
 ---
 FILE: mathics/builtin/numbers/exp.py
 CLASS: LogisticSigmoid
@@ -12072,14 +12040,6 @@ TYPE: >>
 INPUT: Cases[_Complex][{1, 2I, 3, 4-I, 5}]
 EXPECTED:
 = {2 I, 4 - I}
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Cases
-LINE: 190
-TYPE: >>
-INPUT: Cases[{b, 6, \[Pi]}, _Symbol]
-EXPECTED:
-= {b, Pi}
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Cases

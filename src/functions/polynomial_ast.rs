@@ -724,6 +724,27 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Expand expects exactly 1 argument".into(),
     ));
   }
+  // Thread over Lists
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| expand_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+  // Thread over Rules
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = &args[0]
+  {
+    let expanded_pattern = expand_and_combine(pattern);
+    let expanded_replacement = expand_and_combine(replacement);
+    return Ok(Expr::Rule {
+      pattern: Box::new(expanded_pattern),
+      replacement: Box::new(expanded_replacement),
+    });
+  }
   Ok(expand_and_combine(&args[0]))
 }
 

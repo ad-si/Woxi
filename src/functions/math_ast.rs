@@ -6279,6 +6279,38 @@ pub fn inverse_gudermannian_ast(
   })
 }
 
+/// LogisticSigmoid[x] = 1 / (1 + Exp[-x])
+pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LogisticSigmoid expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => {
+      // LogisticSigmoid[0] = 1/2
+      return Ok(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      });
+    }
+    Expr::Real(f) => {
+      let result = 1.0 / (1.0 + (-f).exp());
+      return Ok(Expr::Real(result));
+    }
+    Expr::Integer(n) => {
+      let f = *n as f64;
+      let result = 1.0 / (1.0 + (-f).exp());
+      return Ok(Expr::Real(result));
+    }
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "LogisticSigmoid".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 // ─── Number Theory Functions ─────────────────────────────────────
 
 /// DigitCount[n] - counts of each digit 1-9,0 in base 10
