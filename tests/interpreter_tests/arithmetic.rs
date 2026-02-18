@@ -1546,4 +1546,67 @@ mod expand_threading {
   fn mod_zero_modulus() {
     assert_eq!(interpret("Mod[5, 0]").unwrap(), "Indeterminate");
   }
+
+  #[test]
+  fn coth_zero() {
+    assert_eq!(interpret("Coth[0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn arccosh_zero() {
+    assert_eq!(interpret("ArcCosh[0]").unwrap(), "I*Pi/2");
+  }
+
+  #[test]
+  fn arccosh_one() {
+    assert_eq!(interpret("ArcCosh[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arccoth_zero() {
+    assert_eq!(interpret("ArcCoth[0]").unwrap(), "I*Pi/2");
+  }
+
+  #[test]
+  fn arccoth_one() {
+    assert_eq!(interpret("ArcCoth[1]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn arcsech_zero() {
+    assert_eq!(interpret("ArcSech[0]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn arcsech_one() {
+    assert_eq!(interpret("ArcSech[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn arcsech_half() {
+    assert_eq!(interpret("ArcSech[0.5]").unwrap(), "1.3169578969248166");
+  }
+
+  #[test]
+  fn arccoth_half() {
+    assert_eq!(
+      interpret("ArcCoth[0.5]").unwrap(),
+      "0.5493061443340549 - 1.5707963267948966*I"
+    );
+  }
+
+  #[test]
+  fn complex_iterated_i() {
+    assert_eq!(interpret("Complex[1, Complex[0, 1]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn complex_iterated_one_plus_i() {
+    assert_eq!(interpret("Complex[1, Complex[1, 1]]").unwrap(), "I");
+  }
+
+  #[test]
+  fn complex_negative_imag() {
+    assert_eq!(interpret("Complex[1, -2]").unwrap(), "1 - 2*I");
+  }
 }

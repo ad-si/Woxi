@@ -1440,6 +1440,18 @@ fn needs_bigint(expr: &Expr) -> bool {
   }
 }
 
+/// Check if an expression contains the imaginary unit I
+fn contains_i(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) if s == "I" => true,
+    Expr::BinaryOp { left, right, .. } => contains_i(left) || contains_i(right),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_i),
+    Expr::List(items) => items.iter().any(contains_i),
+    Expr::UnaryOp { operand, .. } => contains_i(operand),
+    _ => false,
+  }
+}
+
 /// Apply a binary operation when at least one operand is a BigInteger or large Integer
 fn bigint_binary_op<F>(left: &Expr, right: &Expr, op: F) -> Option<Expr>
 where
@@ -4347,6 +4359,12 @@ pub fn evaluate_function_call_ast(
     "ArcTanh" if args.len() == 1 => {
       return crate::functions::math_ast::arctanh_ast(args);
     }
+    "ArcCoth" if args.len() == 1 => {
+      return crate::functions::math_ast::arccoth_ast(args);
+    }
+    "ArcSech" if args.len() == 1 => {
+      return crate::functions::math_ast::arcsech_ast(args);
+    }
     "ArcCot" if args.len() == 1 => {
       return crate::functions::math_ast::arccot_ast(args);
     }
@@ -4843,10 +4861,10 @@ pub fn evaluate_function_call_ast(
       return crate::functions::math_ast::unit_step_ast(args);
     }
     "Complex" if args.len() == 2 => {
-      // Complex[a, b] → a + b*I
+      // Complex[a, b] → a + b*I, evaluated to simplify iterated Complex
       let real = &args[0];
       let imag = &args[1];
-      // If imaginary part is 0, return just the real part
+      // If imaginary part is 0 (integer), return just the real part
       if matches!(imag, Expr::Integer(0)) {
         return Ok(real.clone());
       }
@@ -4854,32 +4872,84 @@ pub fn evaluate_function_call_ast(
       if matches!(real, Expr::Integer(0)) && matches!(imag, Expr::Integer(1)) {
         return Ok(Expr::Identifier("I".to_string()));
       }
-      // If real part is 0, return b*I
-      if matches!(real, Expr::Integer(0)) {
-        return Ok(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
-          left: Box::new(imag.clone()),
-          right: Box::new(Expr::Identifier("I".to_string())),
-        });
-      }
-      // If imaginary is 1, return a + I
-      if matches!(imag, Expr::Integer(1)) {
+      // Check if both parts are purely real numbers (no I involved) for non-evaluated path
+      let imag_has_i = contains_i(imag);
+      if !imag_has_i {
+        // If real part is 0, return b*I
+        if matches!(real, Expr::Integer(0)) {
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(imag.clone()),
+            right: Box::new(Expr::Identifier("I".to_string())),
+          });
+        }
+        // If imaginary is 1, return a + I
+        if matches!(imag, Expr::Integer(1)) {
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(real.clone()),
+            right: Box::new(Expr::Identifier("I".to_string())),
+          });
+        }
+        // General case without I in imag: a + b*I (or a - |b|*I if b < 0)
+        // Check if imag is negative to format as subtraction
+        let (is_neg, abs_imag) = match imag {
+          Expr::Real(f) if *f < 0.0 => (true, Expr::Real(-f)),
+          Expr::Integer(n) if *n < 0 => (true, Expr::Integer(-n)),
+          _ => (false, imag.clone()),
+        };
+        if is_neg {
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(real.clone()),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(abs_imag),
+              right: Box::new(Expr::Identifier("I".to_string())),
+            }),
+          });
+        }
         return Ok(Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Plus,
           left: Box::new(real.clone()),
-          right: Box::new(Expr::Identifier("I".to_string())),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(imag.clone()),
+            right: Box::new(Expr::Identifier("I".to_string())),
+          }),
         });
       }
-      // General case: a + b*I
-      return Ok(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Plus,
-        left: Box::new(real.clone()),
-        right: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Times,
-          left: Box::new(imag.clone()),
-          right: Box::new(Expr::Identifier("I".to_string())),
-        }),
-      });
+      // Imaginary part contains I (iterated Complex), evaluate algebraically
+      // Complex[a, b] where b has form (re_b + im_b*I):
+      // a + (re_b + im_b*I)*I = a + re_b*I + im_b*I^2 = (a - im_b) + re_b*I
+      // Try to extract complex components from imag
+      if let Some((re_b, im_b)) =
+        crate::functions::math_ast::try_extract_complex_float(imag)
+      {
+        // Both a and components are numeric
+        if let Some(a) = crate::functions::math_ast::try_eval_to_f64(real) {
+          let new_re = a - im_b;
+          let new_im = re_b;
+          // Reconstruct as Complex[new_re, new_im]
+          let re_expr = if new_re == (new_re as i128 as f64) {
+            Expr::Integer(new_re as i128)
+          } else {
+            Expr::Real(new_re)
+          };
+          let im_expr = if new_im == (new_im as i128 as f64) {
+            Expr::Integer(new_im as i128)
+          } else {
+            Expr::Real(new_im)
+          };
+          return evaluate_function_call_ast("Complex", &[re_expr, im_expr]);
+        }
+      }
+      // Fallback: build a + b*I expression and evaluate
+      let bi = evaluate_function_call_ast(
+        "Times",
+        &[imag.clone(), Expr::Identifier("I".to_string())],
+      )?;
+      return evaluate_function_call_ast("Plus", &[real.clone(), bi]);
     }
     "ConditionalExpression" if args.len() == 2 => match &args[1] {
       Expr::Identifier(name) if name == "True" => {

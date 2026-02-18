@@ -7168,83 +7168,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ArcCosh
-LINE: 49
-TYPE: >>
-INPUT: ArcCosh[0]
-EXPECTED:
-= I / 2 Pi
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcCosh
-LINE: 51
-TYPE: >>
-INPUT: ArcCosh[0.]
-EXPECTED:
-= 0. + 1.5708 I
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcCosh
 LINE: 53
 TYPE: >>
 INPUT: ArcCosh[0.00000000000000000000000000000000000000]
 EXPECTED:
 = 1.5707963267948966192313216916397514421 I
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcCoth
-LINE: 87
-TYPE: >>
-INPUT: ArcCoth[0]
-EXPECTED:
-= I / 2 Pi
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcCoth
-LINE: 89
-TYPE: >>
-INPUT: ArcCoth[1]
-EXPECTED:
-= Infinity
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcCoth
-LINE: 91
-TYPE: >>
-INPUT: ArcCoth[0.0]
-EXPECTED:
-= 0. + 1.5708 I
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcCoth
-LINE: 93
-TYPE: >>
-INPUT: ArcCoth[0.5]
-EXPECTED:
-= 0.549306 - 1.5708 I
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcSech
-LINE: 159
-TYPE: >>
-INPUT: ArcSech[0]
-EXPECTED:
-= Infinity
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcSech
-LINE: 161
-TYPE: >>
-INPUT: ArcSech[1]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: ArcSech
-LINE: 163
-TYPE: >>
-INPUT: ArcSech[0.5]
-EXPECTED:
-= 1.31696
 ---
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: ArcTanh
@@ -7309,14 +7237,6 @@ TYPE: >>
 INPUT: ComplexExpand[Re[2 z^3 - z + 1], z]
 EXPECTED:
 = 1 - Re[z] + 2 Re[z] ^ 3 - 6 Im[z] ^ 2 Re[z]
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: Coth
-LINE: 340
-TYPE: >>
-INPUT: Coth[0]
-EXPECTED:
-= ComplexInfinity
 ---
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: Gudermannian
@@ -11323,28 +11243,12 @@ EXPECTED:
 = False
 ---
 FILE: mathics/builtin/list/associations.py
-CLASS: Keys
-LINE: 202
-TYPE: >>
-INPUT: Keys[{<|a -> x, b -> y|>, {w -> z, {}}}]
-EXPECTED:
-= {{a, b}, {w, {}}}
----
-FILE: mathics/builtin/list/associations.py
 CLASS: Missing
 LINE: 276
 TYPE: >>
 INPUT: ElementData["Meitnerium","MeltingPoint"]
 EXPECTED:
 = Missing[NotAvailable]
----
-FILE: mathics/builtin/list/associations.py
-CLASS: Values
-LINE: 302
-TYPE: >>
-INPUT: Values[{<|a -> x, b -> y|>, {c -> z, {}}}]
-EXPECTED:
-= {{x, y}, {z, {}}}
 ---
 FILE: mathics/builtin/list/constructing.py
 CLASS: Normal
@@ -19197,48 +19101,6 @@ MESSAGE: Power associativity for real powers
 ---
 FILE: test/builtin/arithmetic/test_basic.py
 FUNCTION: test_power
-LINE: 298
-INPUT: Complex[1, Complex[0, 1]]
-EXPECTED: 0
-MESSAGE: Iterated Complex (1 , I)
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
-LINE: 299
-INPUT: Complex[1, Complex[1, 0]]
-EXPECTED: 1 + I
-MESSAGE: Iterated Complex  (1, 1)
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
-LINE: 300
-INPUT: Complex[1, Complex[1, 1]]
-EXPECTED: I
-MESSAGE: Iterated Complex, (1, 1 + I)
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
-LINE: 301
-INPUT: Complex[0., 0.]
-EXPECTED: 0. + 0. I
-MESSAGE: build complex 0.+0. I
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
-LINE: 302
-INPUT: Complex[10, 0.]
-EXPECTED: 10. + 0. I
-MESSAGE: build complex
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
-LINE: 303
-INPUT: Complex[10, 0]
-EXPECTED: 10
-MESSAGE: build complex
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_power
 LINE: 309
 INPUT: 0. + 0. I//FullForm
 EXPECTED: Complex[0.`, 0.`]
@@ -21319,48 +21181,6 @@ LINE: 186
 INPUT: (a^(.3))^3.
 EXPECTED: a ^ 0.9
 MESSAGE: Power associativity for real powers
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
-INPUT: Complex[1, Complex[0, 1]]
-EXPECTED: 0
-MESSAGE: Iterated Complex (1 , I)
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
-INPUT: Complex[1, Complex[1, 0]]
-EXPECTED: 1 + I
-MESSAGE: Iterated Complex  (1, 1)
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
-INPUT: Complex[1, Complex[1, 1]]
-EXPECTED: I
-MESSAGE: Iterated Complex, (1, 1 + I)
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
-INPUT: Complex[0., 0.]
-EXPECTED: 0. + 0. I
-MESSAGE: build complex 0.+0. I
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
-INPUT: Complex[10, 0.]
-EXPECTED: 10. + 0. I
-MESSAGE: build complex
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 289
-INPUT: Complex[10, 0]
-EXPECTED: 10
-MESSAGE: build complex
 ---
 FILE: test/builtin/arithmetic/test_basic.py
 FUNCTION: test_complex
