@@ -8062,6 +8062,11 @@ fn apply_curried_call(
           result = vec![intermediate];
         }
         Ok(result.into_iter().next().unwrap())
+      } else if name == "MapAt" && func_args.len() == 2 && args.len() == 1 {
+        // MapAt[f, pos][expr] -> MapAt[f, expr, pos]
+        let new_args =
+          vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
+        evaluate_function_call_ast(name, &new_args)
       } else if matches!(
         name.as_str(),
         "Derivative"

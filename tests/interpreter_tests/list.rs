@@ -2462,4 +2462,58 @@ mod join_non_list {
       "{f[{f[a], f[b]}], f[{f[c], f[d], f[e]}]}"
     );
   }
+
+  #[test]
+  fn replace_part_deep() {
+    assert_eq!(
+      interpret("ReplacePart[{{a, b}, {c, d}}, {2, 1} -> t]").unwrap(),
+      "{{a, b}, {t, d}}"
+    );
+  }
+
+  #[test]
+  fn replace_part_head() {
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, 0 -> Times]").unwrap(),
+      "a*b*c"
+    );
+  }
+
+  #[test]
+  fn replace_part_multiple_rules() {
+    assert_eq!(
+      interpret("ReplacePart[{{a, b}, {c, d}}, {{2, 1} -> t, {1, 1} -> t}]")
+        .unwrap(),
+      "{{t, b}, {t, d}}"
+    );
+  }
+
+  #[test]
+  fn replace_part_multiple_positions() {
+    assert_eq!(
+      interpret("ReplacePart[{a, b, c}, {{1}, {2}} -> t]").unwrap(),
+      "{t, t, c}"
+    );
+  }
+
+  #[test]
+  fn replace_part_rule_delayed() {
+    assert_eq!(
+      interpret("n = 0; ReplacePart[{a, b, c, d}, {{1}, {3}} :> n++]").unwrap(),
+      "{0, b, 1, d}"
+    );
+  }
+
+  #[test]
+  fn map_at_operator_form() {
+    assert_eq!(
+      interpret("MapAt[f, -1][{a, b, c}]").unwrap(),
+      "{a, b, f[c]}"
+    );
+  }
+
+  #[test]
+  fn normalize_complex() {
+    assert_eq!(interpret("Normalize[1 + I]").unwrap(), "(1 + I)/Sqrt[2]");
+  }
 }
