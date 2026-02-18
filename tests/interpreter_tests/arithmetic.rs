@@ -1510,4 +1510,40 @@ mod expand_threading {
       "cities"
     );
   }
+
+  #[test]
+  fn ceiling_complex() {
+    assert_eq!(interpret("Ceiling[1.3 + 0.7 I]").unwrap(), "2 + I");
+  }
+
+  #[test]
+  fn floor_complex() {
+    assert_eq!(interpret("Floor[1.5 + 2.7 I]").unwrap(), "1 + 2*I");
+  }
+
+  #[test]
+  fn integer_length_negative_base() {
+    assert_eq!(
+      interpret("IntegerLength[3, -2]").unwrap(),
+      "IntegerLength[3, -2]"
+    );
+  }
+
+  #[test]
+  fn power_mod_zero_modulus() {
+    assert_eq!(interpret("PowerMod[5, 2, 0]").unwrap(), "PowerMod[5, 2, 0]");
+  }
+
+  #[test]
+  fn power_mod_non_invertible() {
+    assert_eq!(
+      interpret("PowerMod[0, -1, 2]").unwrap(),
+      "PowerMod[0, -1, 2]"
+    );
+  }
+
+  #[test]
+  fn mod_zero_modulus() {
+    assert_eq!(interpret("Mod[5, 0]").unwrap(), "Indeterminate");
+  }
 }

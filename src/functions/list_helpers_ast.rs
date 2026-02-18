@@ -2077,9 +2077,13 @@ pub fn first_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          Err(InterpreterError::EvaluationError(
-            "First: list is empty".into(),
-          ))
+          let expr_str = crate::syntax::expr_to_string(list);
+          eprintln!();
+          eprintln!("{} has zero length and no first element.", expr_str);
+          Ok(Expr::FunctionCall {
+            name: "First".to_string(),
+            args: vec![list.clone()],
+          })
         }
       } else {
         Ok(items[0].clone())
@@ -2090,9 +2094,13 @@ pub fn first_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          Err(InterpreterError::EvaluationError(
-            "First: expression has no elements".into(),
-          ))
+          let expr_str = crate::syntax::expr_to_string(list);
+          eprintln!();
+          eprintln!("{} has zero length and no first element.", expr_str);
+          Ok(Expr::FunctionCall {
+            name: "First".to_string(),
+            args: vec![list.clone()],
+          })
         }
       } else {
         Ok(args[0].clone())
@@ -2123,9 +2131,13 @@ pub fn last_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          Err(InterpreterError::EvaluationError(
-            "Last: list is empty".into(),
-          ))
+          let expr_str = crate::syntax::expr_to_string(list);
+          eprintln!();
+          eprintln!("{} has zero length and no last element.", expr_str);
+          Ok(Expr::FunctionCall {
+            name: "Last".to_string(),
+            args: vec![list.clone()],
+          })
         }
       } else {
         Ok(items[items.len() - 1].clone())
@@ -2136,9 +2148,13 @@ pub fn last_ast(
         if let Some(d) = default {
           Ok(d.clone())
         } else {
-          Err(InterpreterError::EvaluationError(
-            "Last: expression has no elements".into(),
-          ))
+          let expr_str = crate::syntax::expr_to_string(list);
+          eprintln!();
+          eprintln!("{} has zero length and no last element.", expr_str);
+          Ok(Expr::FunctionCall {
+            name: "Last".to_string(),
+            args: vec![list.clone()],
+          })
         }
       } else {
         Ok(args[args.len() - 1].clone())
@@ -2162,19 +2178,32 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
     Expr::List(items) => {
       if items.is_empty() {
-        Err(InterpreterError::EvaluationError(
-          "Cannot take Rest of expression {} with length zero.".into(),
-        ))
+        let expr_str = crate::syntax::expr_to_string(list);
+        eprintln!();
+        eprintln!(
+          "Cannot take Rest of expression {} with length zero.",
+          expr_str
+        );
+        Ok(Expr::FunctionCall {
+          name: "Rest".to_string(),
+          args: vec![list.clone()],
+        })
       } else {
         Ok(Expr::List(items[1..].to_vec()))
       }
     }
     Expr::FunctionCall { name, args } => {
       if args.is_empty() {
-        Err(InterpreterError::EvaluationError(format!(
-          "Cannot take Rest of expression {}[] with length zero.",
-          name
-        )))
+        let expr_str = crate::syntax::expr_to_string(list);
+        eprintln!();
+        eprintln!(
+          "Cannot take Rest of expression {} with length zero.",
+          expr_str
+        );
+        Ok(Expr::FunctionCall {
+          name: "Rest".to_string(),
+          args: vec![list.clone()],
+        })
       } else {
         Ok(Expr::FunctionCall {
           name: name.clone(),

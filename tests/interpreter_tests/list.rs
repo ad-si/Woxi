@@ -1925,7 +1925,7 @@ mod rest_nonlist {
 
   #[test]
   fn rest_error_empty() {
-    assert!(interpret("Rest[{}]").is_err());
+    assert_eq!(interpret("Rest[{}]").unwrap(), "Rest[{}]");
   }
 }
 
@@ -2515,5 +2515,46 @@ mod join_non_list {
   #[test]
   fn normalize_complex() {
     assert_eq!(interpret("Normalize[1 + I]").unwrap(), "(1 + I)/Sqrt[2]");
+  }
+
+  #[test]
+  fn keys_list_of_rules() {
+    assert_eq!(interpret("Keys[{a -> x, b -> y}]").unwrap(), "{a, b}");
+  }
+
+  #[test]
+  fn keys_list_of_rules_order() {
+    assert_eq!(
+      interpret("Keys[{c -> z, b -> y, a -> x}]").unwrap(),
+      "{c, b, a}"
+    );
+  }
+
+  #[test]
+  fn values_list_of_rules() {
+    assert_eq!(interpret("Values[{a -> x, b -> y}]").unwrap(), "{x, y}");
+  }
+
+  #[test]
+  fn values_list_of_rules_order() {
+    assert_eq!(
+      interpret("Values[{c -> z, b -> y, a -> x}]").unwrap(),
+      "{z, y, x}"
+    );
+  }
+
+  #[test]
+  fn first_empty_list() {
+    assert_eq!(interpret("First[{}]").unwrap(), "First[{}]");
+  }
+
+  #[test]
+  fn last_empty_list() {
+    assert_eq!(interpret("Last[{}]").unwrap(), "Last[{}]");
+  }
+
+  #[test]
+  fn rest_empty_list() {
+    assert_eq!(interpret("Rest[{}]").unwrap(), "Rest[{}]");
   }
 }

@@ -516,7 +516,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
 /// part-assignment works; rendering only happens at the output stage.
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
-    syntax::Expr::FunctionCall { name, args } if name == "Grid" && !args.is_empty() => {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Grid" && !args.is_empty() =>
+    {
       match functions::graphics::grid_ast(args) {
         Ok(result) => result,
         Err(_) => expr,
@@ -535,7 +537,8 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// This is used by the playground to display all results with proper formatting.
 fn generate_output_svg(expr: &syntax::Expr) {
   // Skip for Graphics results (they already have captured SVG)
-  if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-") {
+  if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-")
+  {
     return;
   }
   let markup = functions::graphics::expr_to_svg_markup(expr);
@@ -777,9 +780,9 @@ fn try_fast_function_call(
       let inner = &list_str[1..list_str.len() - 1];
       let elems = split_args(inner);
       if elems.is_empty() {
-        return Some(Err(InterpreterError::EvaluationError(
-          "First called on empty list".into(),
-        )));
+        eprintln!();
+        eprintln!("{} has zero length and no first element.", list_str);
+        return Some(Ok("First[{}]".to_string()));
       }
       Some(Ok(elems[0].trim().to_string()))
     }
@@ -813,9 +816,9 @@ fn try_fast_function_call(
       let inner = &list_str[1..list_str.len() - 1];
       let elems = split_args(inner);
       if elems.is_empty() {
-        return Some(Err(InterpreterError::EvaluationError(
-          "Rest called on empty list".into(),
-        )));
+        eprintln!();
+        eprintln!("Cannot take Rest of expression {{}} with length zero.");
+        return Some(Ok("Rest[{}]".to_string()));
       }
       let rest: Vec<_> = elems.iter().skip(1).map(|s| s.trim()).collect();
       Some(Ok(format!("{{{}}}", rest.join(", "))))

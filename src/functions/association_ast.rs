@@ -5,7 +5,85 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
-/// Keys[assoc] - Returns a list of keys from an association
+/// Helper to extract key from a rule expression
+fn extract_rule_key(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::Rule { pattern, .. } => Some(*pattern.clone()),
+    Expr::RuleDelayed { pattern, .. } => Some(*pattern.clone()),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      Some(args[0].clone())
+    }
+    _ => None,
+  }
+}
+
+/// Helper to extract value from a rule expression
+fn extract_rule_value(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::Rule { replacement, .. } => Some(*replacement.clone()),
+    Expr::RuleDelayed { replacement, .. } => Some(*replacement.clone()),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      Some(args[1].clone())
+    }
+    _ => None,
+  }
+}
+
+/// Recursively extract keys from an expression (handles nested lists/associations)
+fn keys_recursive(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Association(items) => {
+      let keys: Vec<Expr> = items.iter().map(|(k, _)| k.clone()).collect();
+      Expr::List(keys)
+    }
+    Expr::List(items) => {
+      let results: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          if let Some(k) = extract_rule_key(item) {
+            k
+          } else {
+            // Recurse into nested structures
+            keys_recursive(item)
+          }
+        })
+        .collect();
+      Expr::List(results)
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Recursively extract values from an expression (handles nested lists/associations)
+fn values_recursive(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Association(items) => {
+      let values: Vec<Expr> = items.iter().map(|(_, v)| v.clone()).collect();
+      Expr::List(values)
+    }
+    Expr::List(items) => {
+      let results: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          if let Some(v) = extract_rule_value(item) {
+            v
+          } else {
+            // Recurse into nested structures
+            values_recursive(item)
+          }
+        })
+        .collect();
+      Expr::List(results)
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Keys[assoc] - Returns a list of keys from an association or list of rules
 pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -17,13 +95,14 @@ pub fn keys_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let keys: Vec<Expr> = items.iter().map(|(k, _)| k.clone()).collect();
       Ok(Expr::List(keys))
     }
+    Expr::List(_) => Ok(keys_recursive(&args[0])),
     _ => Err(InterpreterError::EvaluationError(
       "Keys expects an association".into(),
     )),
   }
 }
 
-/// Values[assoc] - Returns a list of values from an association
+/// Values[assoc] - Returns a list of values from an association or list of rules
 pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -35,6 +114,7 @@ pub fn values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let values: Vec<Expr> = items.iter().map(|(_, v)| v.clone()).collect();
       Ok(Expr::List(values))
     }
+    Expr::List(_) => Ok(values_recursive(&args[0])),
     _ => Err(InterpreterError::EvaluationError(
       "Values expects an association".into(),
     )),
