@@ -2402,4 +2402,27 @@ mod join_non_list {
       "{abc, def}"
     );
   }
+
+  #[test]
+  fn accumulate_symbolic() {
+    assert_eq!(
+      interpret("Accumulate[{a, b, c}]").unwrap(),
+      "{a, a + b, a + b + c}"
+    );
+  }
+
+  #[test]
+  fn differences_higher_order() {
+    assert_eq!(
+      interpret("Differences[{1, 4, 9, 16, 25}, 2]").unwrap(),
+      "{2, 2, 2}"
+    );
+  }
+
+  #[test]
+  fn clip_three_args() {
+    assert_eq!(interpret("Clip[0.5, {0, 1}, {-1, 1}]").unwrap(), "0.5");
+    assert_eq!(interpret("Clip[-0.5, {0, 1}, {-1, 1}]").unwrap(), "-1");
+    assert_eq!(interpret("Clip[1.5, {0, 1}, {-1, 1}]").unwrap(), "1");
+  }
 }

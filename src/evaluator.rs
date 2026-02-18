@@ -2697,6 +2697,11 @@ pub fn evaluate_function_call_ast(
     "Differences" if args.len() == 1 => {
       return list_helpers_ast::differences_ast(&args[0]);
     }
+    "Differences" if args.len() == 2 => {
+      if let Some(n) = expr_to_i128(&args[1]) {
+        return list_helpers_ast::differences_n_ast(&args[0], n as usize);
+      }
+    }
     "Ratios" if args.len() == 1 => {
       if let Expr::List(items) = &args[0] {
         if items.len() < 2 {
@@ -4250,7 +4255,7 @@ pub fn evaluate_function_call_ast(
     "RandomVariate" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::random_variate_ast(args);
     }
-    "Clip" if !args.is_empty() && args.len() <= 2 => {
+    "Clip" if !args.is_empty() && args.len() <= 3 => {
       return crate::functions::math_ast::clip_ast(args);
     }
     "Sin" if args.len() == 1 => {

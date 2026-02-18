@@ -2860,34 +2860,54 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Check if any element is Real - result should preserve Real type
-  let has_real = items.iter().any(|item| matches!(item, Expr::Real(_)));
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
 
-  let mut sum = 0.0;
-  let mut results = Vec::new();
-  for item in items {
-    if let Some(n) = expr_to_f64(item) {
-      sum += n;
+  // Try numeric accumulation first
+  let all_numeric = items.iter().all(|item| expr_to_f64(item).is_some());
+
+  if all_numeric {
+    let has_real = items.iter().any(|item| matches!(item, Expr::Real(_)));
+    let mut sum = 0.0;
+    let mut results = Vec::new();
+    for item in items {
+      sum += expr_to_f64(item).unwrap();
       if has_real {
         results.push(Expr::Real(sum));
       } else {
         results.push(f64_to_expr(sum));
       }
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "Accumulate".to_string(),
-        args: vec![list.clone()],
-      });
     }
+    Ok(Expr::List(results))
+  } else {
+    // Symbolic accumulation using Plus
+    let mut results = Vec::new();
+    let mut running_sum = items[0].clone();
+    results.push(running_sum.clone());
+    for item in &items[1..] {
+      running_sum = crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[running_sum, item.clone()],
+      )?;
+      results.push(running_sum.clone());
+    }
+    Ok(Expr::List(results))
   }
-
-  Ok(Expr::List(results))
 }
 
 /// AST-based Differences: successive differences.
 pub fn differences_ast(list: &Expr) -> Result<Expr, InterpreterError> {
+  differences_n_ast(list, 1)
+}
+
+/// Differences[list, n] - n-th order differences
+pub fn differences_n_ast(
+  list: &Expr,
+  n: usize,
+) -> Result<Expr, InterpreterError> {
   let items = match list {
-    Expr::List(items) => items,
+    Expr::List(items) => items.clone(),
     _ => {
       return Ok(Expr::FunctionCall {
         name: "Differences".to_string(),
@@ -2896,25 +2916,23 @@ pub fn differences_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  if items.len() <= 1 {
-    return Ok(Expr::List(vec![]));
-  }
-
-  let mut results = Vec::new();
-  for i in 1..items.len() {
-    if let (Some(a), Some(b)) =
-      (expr_to_f64(&items[i - 1]), expr_to_f64(&items[i]))
-    {
-      results.push(f64_to_expr(b - a));
-    } else {
-      return Ok(Expr::FunctionCall {
-        name: "Differences".to_string(),
-        args: vec![list.clone()],
-      });
+  let mut current = items;
+  for _ in 0..n {
+    if current.len() <= 1 {
+      return Ok(Expr::List(vec![]));
     }
+    let mut next = Vec::new();
+    for i in 1..current.len() {
+      let diff = crate::evaluator::evaluate_function_call_ast(
+        "Subtract",
+        &[current[i].clone(), current[i - 1].clone()],
+      )?;
+      next.push(diff);
+    }
+    current = next;
   }
 
-  Ok(Expr::List(results))
+  Ok(Expr::List(current))
 }
 
 /// AST-based Scan: apply function to each element for side effects.
