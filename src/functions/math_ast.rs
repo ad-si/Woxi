@@ -3029,6 +3029,27 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(Expr::Integer(n.floor() as i128))
+  } else if let Some((re, im)) = try_extract_complex_float(&args[0]) {
+    if im == 0.0 {
+      Ok(Expr::Integer(re.floor() as i128))
+    } else {
+      // Floor[a + b*I] = Floor[a] + Floor[b]*I
+      let floor_re = re.floor() as i128;
+      let floor_im = im.floor() as i128;
+      crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[
+          Expr::Integer(floor_re),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(floor_im),
+              Expr::Identifier("I".to_string()),
+            ],
+          },
+        ],
+      )
+    }
   } else {
     Ok(Expr::FunctionCall {
       name: "Floor".to_string(),
@@ -3049,6 +3070,27 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
     Ok(Expr::Integer(n.ceil() as i128))
+  } else if let Some((re, im)) = try_extract_complex_float(&args[0]) {
+    if im == 0.0 {
+      Ok(Expr::Integer(re.ceil() as i128))
+    } else {
+      // Ceiling[a + b*I] = Ceiling[a] + Ceiling[b]*I
+      let ceil_re = re.ceil() as i128;
+      let ceil_im = im.ceil() as i128;
+      crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[
+          Expr::Integer(ceil_re),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(ceil_im),
+              Expr::Identifier("I".to_string()),
+            ],
+          },
+        ],
+      )
+    }
   } else {
     Ok(Expr::FunctionCall {
       name: "Ceiling".to_string(),
@@ -9654,9 +9696,16 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (Some(base), Some(exp), Some(modulus)) => {
       use num_traits::Zero;
       if modulus.is_zero() {
-        return Err(InterpreterError::EvaluationError(
-          "PowerMod: modulus cannot be zero".into(),
-        ));
+        eprintln!();
+        eprintln!(
+          "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
+          crate::syntax::expr_to_string(&args[0]),
+          crate::syntax::expr_to_string(&args[1])
+        );
+        return Ok(Expr::FunctionCall {
+          name: "PowerMod".to_string(),
+          args: args.to_vec(),
+        });
       }
       if exp < BigInt::from(0) {
         // Negative exponent: need modular inverse
@@ -9670,9 +9719,16 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 mod_pow_unsigned(inv as u128, pos_exp, m.unsigned_abs());
               Ok(Expr::Integer(result as i128))
             } else {
-              Err(InterpreterError::EvaluationError(
-                "PowerMod: modular inverse does not exist".into(),
-              ))
+              eprintln!();
+              eprintln!(
+                "PowerMod::ninv: {} is not invertible modulo {}.",
+                crate::syntax::expr_to_string(&args[0]),
+                crate::syntax::expr_to_string(&args[2])
+              );
+              Ok(Expr::FunctionCall {
+                name: "PowerMod".to_string(),
+                args: args.to_vec(),
+              })
             }
           }
           _ => Ok(Expr::FunctionCall {
@@ -11191,10 +11247,16 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let base_i128 = if args.len() == 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
-      Some(_) => {
-        return Err(InterpreterError::EvaluationError(
-          "IntegerLength: base must be at least 2".into(),
-        ));
+      Some(b) => {
+        eprintln!();
+        eprintln!(
+          "IntegerLength::ibase: Base {} is not an integer greater than 1.",
+          b
+        );
+        return Ok(Expr::FunctionCall {
+          name: "IntegerLength".to_string(),
+          args: args.to_vec(),
+        });
       }
       None => {
         return Ok(Expr::FunctionCall {
