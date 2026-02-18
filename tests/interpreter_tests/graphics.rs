@@ -341,6 +341,13 @@ mod graphics {
     }
 
     #[test]
+    fn hue_two_args() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[Table[{Hue[h, s], Disk[{12h, 8s}]}, {h, 0, 1, 1/6}, {s, 0, 1, 1/4}]]"
+      ));
+    }
+
+    #[test]
     fn directive_compound() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Directive[Red, Thickness[0.01]], Line[{{0, 0}, {1, 1}}]}]"
