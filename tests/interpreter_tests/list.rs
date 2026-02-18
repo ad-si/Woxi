@@ -2346,4 +2346,60 @@ mod join_non_list {
       "{{4, 6}, {9, 11}}"
     );
   }
+
+  #[test]
+  fn array_multi_dim() {
+    assert_eq!(
+      interpret("Array[f, {2, 3}]").unwrap(),
+      "{{f[1, 1], f[1, 2], f[1, 3]}, {f[2, 1], f[2, 2], f[2, 3]}}"
+    );
+  }
+
+  #[test]
+  fn array_multi_dim_offset() {
+    assert_eq!(
+      interpret("Array[f, {2, 3}, 3]").unwrap(),
+      "{{f[3, 3], f[3, 4], f[3, 5]}, {f[4, 3], f[4, 4], f[4, 5]}}"
+    );
+  }
+
+  #[test]
+  fn array_multi_dim_per_dim_offset() {
+    assert_eq!(
+      interpret("Array[f, {2, 3}, {4, 6}]").unwrap(),
+      "{{f[4, 6], f[4, 7], f[4, 8]}, {f[5, 6], f[5, 7], f[5, 8]}}"
+    );
+  }
+
+  #[test]
+  fn array_multi_dim_with_head() {
+    assert_eq!(
+      interpret("Array[f, {2, 3}, 1, Plus]").unwrap(),
+      "f[1, 1] + f[1, 2] + f[1, 3] + f[2, 1] + f[2, 2] + f[2, 3]"
+    );
+  }
+
+  #[test]
+  fn array_plus_multi_dim() {
+    assert_eq!(
+      interpret("Array[Plus, {3, 2}]").unwrap(),
+      "{{2, 3}, {3, 4}, {4, 5}}"
+    );
+  }
+
+  #[test]
+  fn to_character_code_list() {
+    assert_eq!(
+      interpret("ToCharacterCode[{\"ab\", \"c\"}]").unwrap(),
+      "{{97, 98}, {99}}"
+    );
+  }
+
+  #[test]
+  fn from_character_code_nested() {
+    assert_eq!(
+      interpret("FromCharacterCode[{{97, 98, 99}, {100, 101, 102}}]").unwrap(),
+      "{abc, def}"
+    );
+  }
 }
