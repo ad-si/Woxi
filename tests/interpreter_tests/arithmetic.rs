@@ -1654,4 +1654,33 @@ mod expand_threading {
   fn complex_negative_imag() {
     assert_eq!(interpret("Complex[1, -2]").unwrap(), "1 - 2*I");
   }
+
+  #[test]
+  fn indeterminate_propagation() {
+    assert_eq!(interpret("Sin[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Cos[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Tan[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Exp[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Log[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Sqrt[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Sinh[Indeterminate]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Cosh[Indeterminate]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn complex_infinity_trig() {
+    assert_eq!(interpret("Sin[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Cos[ComplexInfinity]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Tan[ComplexInfinity]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn log_zero_real() {
+    assert_eq!(interpret("Log[0.]").unwrap(), "Indeterminate");
+  }
+
+  #[test]
+  fn log_negative_real() {
+    assert_eq!(interpret("Log[-1.]").unwrap(), "0. + 3.141592653589793*I");
+  }
 }
