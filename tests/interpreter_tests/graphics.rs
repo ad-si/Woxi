@@ -738,4 +738,82 @@ mod plot3d {
       std::fs::remove_file("/tmp/test_plot3d.svg").ok();
     }
   }
+
+  mod graphics3d {
+    use super::*;
+
+    #[test]
+    fn graphics3d_returns_marker() {
+      assert_eq!(interpret("Graphics3D[Sphere[]]").unwrap(), "-Graphics3D-");
+      assert_eq!(
+        interpret("Graphics3D[{Arrow[{{0,0,0},{1,0,1}}]}, Background -> Red]")
+          .unwrap(),
+        "-Graphics3D-"
+      );
+      assert_eq!(
+        interpret("Graphics3D[Polygon[{{0,0,0}, {0,1,1}, {1,0,0}}]]").unwrap(),
+        "-Graphics3D-"
+      );
+    }
+  }
+
+  mod plotting_stubs {
+    use super::*;
+
+    #[test]
+    fn list_plot_returns_graphics() {
+      assert_eq!(interpret("ListPlot[{1, 4, 9}]").unwrap(), "-Graphics-");
+      assert_eq!(
+        interpret("ListPlot[{1, 4, 9}, Joined->True]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn list_line_plot_returns_graphics() {
+      assert_eq!(interpret("ListLinePlot[{1, 2, 3}]").unwrap(), "-Graphics-");
+    }
+
+    #[test]
+    fn density_plot_returns_graphics() {
+      assert_eq!(
+        interpret("DensityPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn pie_chart_returns_graphics() {
+      assert_eq!(interpret("PieChart[{30, 20, 10}]").unwrap(), "-Graphics-");
+    }
+
+    #[test]
+    fn bar_chart_returns_graphics() {
+      assert_eq!(interpret("BarChart[{1, 2, 3}]").unwrap(), "-Graphics-");
+    }
+
+    #[test]
+    fn histogram_returns_graphics() {
+      assert_eq!(
+        interpret("Histogram[{1, 2, 2, 3, 3, 3}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn contour_plot_returns_graphics() {
+      assert_eq!(
+        interpret("ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn plot_unevaluatable_returns_graphics() {
+      assert_eq!(
+        interpret("Plot[LucasL[1/2, x], {x, -5, 5}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+  }
 }

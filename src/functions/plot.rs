@@ -411,9 +411,8 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   if finite_ys.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "Plot: function produced no finite values in the given range".into(),
-    ));
+    // Wolfram returns -Graphics- even when no finite values are produced
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
 
   let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
