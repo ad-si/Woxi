@@ -27,25 +27,84 @@ fn extract_values(arg: &Expr) -> Result<Vec<f64>, InterpreterError> {
   }
 }
 
-/// Parse ImageSize from options.
-fn parse_chart_options(args: &[Expr]) -> (u32, u32, bool) {
-  let mut svg_width = DEFAULT_WIDTH;
-  let mut svg_height = DEFAULT_HEIGHT;
-  let mut full_width = false;
+/// Parsed chart options.
+pub(crate) struct ChartOptions {
+  pub svg_width: u32,
+  pub svg_height: u32,
+  pub full_width: bool,
+  pub chart_labels: Vec<String>,
+  pub plot_label: Option<String>,
+  pub axes_label: Option<(String, String)>,
+}
+
+/// Extract a string from an Expr (Identifier or String).
+fn expr_to_label(e: &Expr) -> Option<String> {
+  match e {
+    Expr::String(s) => Some(s.clone()),
+    Expr::Identifier(s) => Some(s.clone()),
+    _ => None,
+  }
+}
+
+/// Parse options from chart arguments.
+fn parse_chart_options(args: &[Expr]) -> ChartOptions {
+  let mut opts = ChartOptions {
+    svg_width: DEFAULT_WIDTH,
+    svg_height: DEFAULT_HEIGHT,
+    full_width: false,
+    chart_labels: Vec::new(),
+    plot_label: None,
+    axes_label: None,
+  };
   for opt in &args[1..] {
     if let Expr::Rule {
       pattern,
       replacement,
     } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Expr::Identifier(name) = pattern.as_ref()
     {
-      svg_width = w;
-      svg_height = h;
-      full_width = fw;
+      match name.as_str() {
+        "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            opts.svg_width = w;
+            opts.svg_height = h;
+            opts.full_width = fw;
+          }
+        }
+        "ChartLabels" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::List(items) = &val {
+            for item in items {
+              if let Some(s) = expr_to_label(item) {
+                opts.chart_labels.push(s);
+              }
+            }
+          }
+        }
+        "PlotLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Some(s) = expr_to_label(&val) {
+            opts.plot_label = Some(s);
+          }
+        }
+        "AxesLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::List(items) = &val
+            && items.len() >= 2
+          {
+            let x = expr_to_label(&items[0]).unwrap_or_default();
+            let y = expr_to_label(&items[1]).unwrap_or_default();
+            opts.axes_label = Some((x, y));
+          }
+        }
+        _ => {}
+      }
     }
   }
-  (svg_width, svg_height, full_width)
+  opts
 }
 
 fn svg_header(w: u32, h: u32, full_width: bool) -> String {
@@ -69,9 +128,20 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
     return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
-  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let opts = parse_chart_options(args);
 
-  let svg = generate_bar_svg(&values, svg_width, svg_height, full_width)?;
+  let svg = generate_bar_svg(
+    &values,
+    opts.svg_width,
+    opts.svg_height,
+    opts.full_width,
+    &opts.chart_labels,
+    opts.plot_label.as_deref(),
+    opts
+      .axes_label
+      .as_ref()
+      .map(|(x, y)| (x.as_str(), y.as_str())),
+  )?;
   crate::capture_graphics(&svg);
   Ok(Expr::Identifier("-Graphics-".to_string()))
 }
@@ -83,7 +153,9 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
     return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
-  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
 
   let w = svg_width as f64;
   let h = svg_height as f64;
@@ -130,7 +202,9 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
     return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
-  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
 
   let svg = generate_histogram_svg(&values, svg_width, svg_height, full_width)?;
   crate::capture_graphics(&svg);
@@ -216,7 +290,9 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
     return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
-  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
 
   // Sort each dataset and compute stats
   let mut all_stats = Vec::new();
@@ -346,7 +422,9 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
 
-  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
   let w = svg_width as f64;
   let h = svg_height as f64;
   let margin = 50.0;
@@ -437,7 +515,9 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
 
-  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
   let w = svg_width as f64;
   let h = svg_height as f64;
   let cx = w / 2.0;
@@ -517,7 +597,9 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("-Graphics-".to_string()));
   }
 
-  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
 
   // Use plotters-based generate_svg for line plot
   let all_series = vec![points];
