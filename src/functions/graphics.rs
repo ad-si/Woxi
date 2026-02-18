@@ -341,6 +341,10 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
             1.0
           };
           Some(Color::from_hue(h, s, b).with_alpha(a))
+        } else if args.len() == 2 {
+          let h = expr_to_f64(&args[0])?;
+          let s = expr_to_f64(&args[1])?;
+          Some(Color::from_hue(h, s, 1.0))
         } else if args.len() == 1 {
           let h = expr_to_f64(&args[0])?;
           Some(Color::from_hue(h, 1.0, 1.0))

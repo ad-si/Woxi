@@ -1,0 +1,41 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[Table[{Hue[h, s], Disk[{12h, 8s}]}, {h, 0, 1, 1/6}, {s, 0, 1, 1/4}]]\")"
+---
+<svg width="360" height="257" viewBox="0 0 360 257" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="37.22" cy="223.69" rx="23.80" ry="23.80" fill="rgb(255,255,255)"/>
+<ellipse cx="37.22" cy="176.09" rx="23.80" ry="23.80" fill="rgb(255,191,191)"/>
+<ellipse cx="37.22" cy="128.50" rx="23.80" ry="23.80" fill="rgb(255,128,128)"/>
+<ellipse cx="37.22" cy="80.91" rx="23.80" ry="23.80" fill="rgb(255,64,64)"/>
+<ellipse cx="37.22" cy="33.31" rx="23.80" ry="23.80" fill="rgb(255,0,0)"/>
+<ellipse cx="84.81" cy="223.69" rx="23.80" ry="23.80" fill="rgb(255,255,255)"/>
+<ellipse cx="84.81" cy="176.09" rx="23.80" ry="23.80" fill="rgb(255,255,191)"/>
+<ellipse cx="84.81" cy="128.50" rx="23.80" ry="23.80" fill="rgb(255,255,128)"/>
+<ellipse cx="84.81" cy="80.91" rx="23.80" ry="23.80" fill="rgb(255,255,64)"/>
+<ellipse cx="84.81" cy="33.31" rx="23.80" ry="23.80" fill="rgb(255,255,0)"/>
+<ellipse cx="132.41" cy="223.69" rx="23.80" ry="23.80" fill="rgb(255,255,255)"/>
+<ellipse cx="132.41" cy="176.09" rx="23.80" ry="23.80" fill="rgb(191,255,191)"/>
+<ellipse cx="132.41" cy="128.50" rx="23.80" ry="23.80" fill="rgb(128,255,128)"/>
+<ellipse cx="132.41" cy="80.91" rx="23.80" ry="23.80" fill="rgb(64,255,64)"/>
+<ellipse cx="132.41" cy="33.31" rx="23.80" ry="23.80" fill="rgb(0,255,0)"/>
+<ellipse cx="180.00" cy="223.69" rx="23.80" ry="23.80" fill="rgb(255,255,255)"/>
+<ellipse cx="180.00" cy="176.09" rx="23.80" ry="23.80" fill="rgb(191,255,255)"/>
+<ellipse cx="180.00" cy="128.50" rx="23.80" ry="23.80" fill="rgb(128,255,255)"/>
+<ellipse cx="180.00" cy="80.91" rx="23.80" ry="23.80" fill="rgb(64,255,255)"/>
+<ellipse cx="180.00" cy="33.31" rx="23.80" ry="23.80" fill="rgb(0,255,255)"/>
+<ellipse cx="227.59" cy="223.69" rx="23.80" ry="23.80" fill="rgb(255,255,255)"/>
+<ellipse cx="227.59" cy="176.09" rx="23.80" ry="23.80" fill="rgb(191,191,255)"/>
+<ellipse cx="227.59" cy="128.50" rx="23.80" ry="23.80" fill="rgb(128,128,255)"/>
+<ellipse cx="227.59" cy="80.91" rx="23.80" ry="23.80" fill="rgb(64,64,255)"/>
+<ellipse cx="227.59" cy="33.31" rx="23.80" ry="23.80" fill="rgb(0,0,255)"/>
+<ellipse cx="275.19" cy="223.69" rx="23.80" ry="23.80" fill="rgb(255,255,255)"/>
+<ellipse cx="275.19" cy="176.09" rx="23.80" ry="23.80" fill="rgb(255,191,255)"/>
+<ellipse cx="275.19" cy="128.50" rx="23.80" ry="23.80" fill="rgb(255,128,255)"/>
+<ellipse cx="275.19" cy="80.91" rx="23.80" ry="23.80" fill="rgb(255,64,255)"/>
+<ellipse cx="275.19" cy="33.31" rx="23.80" ry="23.80" fill="rgb(255,0,255)"/>
+<ellipse cx="322.78" cy="223.69" rx="23.80" ry="23.80" fill="rgb(255,255,255)"/>
+<ellipse cx="322.78" cy="176.09" rx="23.80" ry="23.80" fill="rgb(255,191,191)"/>
+<ellipse cx="322.78" cy="128.50" rx="23.80" ry="23.80" fill="rgb(255,128,128)"/>
+<ellipse cx="322.78" cy="80.91" rx="23.80" ry="23.80" fill="rgb(255,64,64)"/>
+<ellipse cx="322.78" cy="33.31" rx="23.80" ry="23.80" fill="rgb(255,0,0)"/>
+</svg>
