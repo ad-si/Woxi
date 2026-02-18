@@ -1503,6 +1503,115 @@ mod random_variate {
   }
 }
 
+mod seed_random {
+  use super::*;
+
+  #[test]
+  fn deterministic_integer() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a = interpret("RandomInteger[100]").unwrap();
+    let _ = interpret("SeedRandom[42]");
+    let b = interpret("RandomInteger[100]").unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn deterministic_real() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a = interpret("RandomReal[]").unwrap();
+    let _ = interpret("SeedRandom[42]");
+    let b = interpret("RandomReal[]").unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn deterministic_sequence() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[123]");
+    let a1 = interpret("RandomInteger[1000]").unwrap();
+    let a2 = interpret("RandomInteger[1000]").unwrap();
+    let a3 = interpret("RandomReal[]").unwrap();
+
+    let _ = interpret("SeedRandom[123]");
+    let b1 = interpret("RandomInteger[1000]").unwrap();
+    let b2 = interpret("RandomInteger[1000]").unwrap();
+    let b3 = interpret("RandomReal[]").unwrap();
+
+    assert_eq!(a1, b1);
+    assert_eq!(a2, b2);
+    assert_eq!(a3, b3);
+  }
+
+  #[test]
+  fn different_seeds_differ() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[1]");
+    let a = interpret("RandomInteger[{1, 1000000}]").unwrap();
+    let _ = interpret("SeedRandom[2]");
+    let b = interpret("RandomInteger[{1, 1000000}]").unwrap();
+    assert_ne!(a, b);
+  }
+
+  #[test]
+  fn returns_null() {
+    woxi::clear_state();
+    assert_eq!(interpret("SeedRandom[42]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn unseed_resets() {
+    woxi::clear_state();
+    // After SeedRandom[], results should no longer be deterministic
+    // (in practice we just check it doesn't error)
+    assert_eq!(interpret("SeedRandom[]").unwrap(), "Null");
+    // Should still produce valid results
+    let result: f64 = interpret("RandomReal[]").unwrap().parse().unwrap();
+    assert!(result >= 0.0 && result < 1.0);
+  }
+
+  #[test]
+  fn deterministic_choice() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a = interpret("RandomChoice[{a, b, c, d, e}]").unwrap();
+    let _ = interpret("SeedRandom[42]");
+    let b = interpret("RandomChoice[{a, b, c, d, e}]").unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn deterministic_sample() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a = interpret("RandomSample[{1, 2, 3, 4, 5}]").unwrap();
+    let _ = interpret("SeedRandom[42]");
+    let b = interpret("RandomSample[{1, 2, 3, 4, 5}]").unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn deterministic_integer_list() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a = interpret("RandomInteger[100, 10]").unwrap();
+    let _ = interpret("SeedRandom[42]");
+    let b = interpret("RandomInteger[100, 10]").unwrap();
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn deterministic_variate() {
+    woxi::clear_state();
+    let _ = interpret("SeedRandom[42]");
+    let a = interpret("RandomVariate[UniformDistribution[{0, 1}]]").unwrap();
+    let _ = interpret("SeedRandom[42]");
+    let b = interpret("RandomVariate[UniformDistribution[{0, 1}]]").unwrap();
+    assert_eq!(a, b);
+  }
+}
+
 mod select {
   use super::*;
 

@@ -1886,6 +1886,7 @@ dependencies = [
  "pest_derive",
  "plotters",
  "rand",
+ "rand_chacha",
  "rand_distr",
  "regex",
  "runtimelib",
