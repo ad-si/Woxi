@@ -40,9 +40,23 @@ const runKeymap = keymap.of([{
   },
 }])
 
+const STORAGE_KEY = "woxi-playground-code"
+const STORAGE_KEY_OUTPUT = "woxi-playground-output"
+const STORAGE_KEY_GRAPHICS = "woxi-playground-graphics"
+const DEFAULT_CODE = "Select[Range[30], PrimeQ]"
+
+function saveEditorContent() {
+  const content = editorView.state.doc.toString()
+  localStorage.setItem(STORAGE_KEY, content)
+}
+
+const persistenceListener = EditorView.updateListener.of((update) => {
+  if (update.docChanged) saveEditorContent()
+})
+
 // Initialize CodeMirror editor
 editorView = new EditorView({
-  doc: "Select[Range[30], PrimeQ]",
+  doc: localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CODE,
   extensions: [
     lineNumbers(),
     highlightSpecialChars(),
@@ -58,6 +72,7 @@ editorView = new EditorView({
       ...historyKeymap,
     ]),
     runKeymap,
+    persistenceListener,
     EditorView.lineWrapping,
     themeConfig.of(getThemeExtension()),
   ],
@@ -114,6 +129,38 @@ function setEditorContent(text) {
     },
   })
 }
+
+function saveOutput() {
+  const outputEl = document.getElementById("output")
+  const graphicsEl = document.getElementById("graphics")
+  localStorage.setItem(STORAGE_KEY_OUTPUT, JSON.stringify({
+    html: outputEl.innerHTML,
+    display: outputEl.style.display,
+  }))
+  localStorage.setItem(STORAGE_KEY_GRAPHICS, JSON.stringify({
+    html: graphicsEl.innerHTML,
+    display: graphicsEl.style.display,
+  }))
+}
+
+function restoreOutput() {
+  try {
+    const output = JSON.parse(localStorage.getItem(STORAGE_KEY_OUTPUT))
+    const graphics = JSON.parse(localStorage.getItem(STORAGE_KEY_GRAPHICS))
+    if (output) {
+      const el = document.getElementById("output")
+      el.innerHTML = output.html
+      el.style.display = output.display
+    }
+    if (graphics) {
+      const el = document.getElementById("graphics")
+      el.innerHTML = graphics.html
+      el.style.display = graphics.display
+    }
+  } catch (_) { /* ignore corrupt data */ }
+}
+
+restoreOutput()
 
 function initWorker() {
   showStatus("Loading Woxi WebAssembly module ...", "info")
@@ -183,6 +230,7 @@ function initWorker() {
         graphicsEl.innerHTML = ""
         graphicsEl.style.display = "none"
       }
+      saveOutput()
     }
   }
 
@@ -212,6 +260,9 @@ document.getElementById("runBtn").addEventListener("click", () => {
 // Clear button
 document.getElementById("clearBtn").addEventListener("click", () => {
   setEditorContent("")
+  localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem(STORAGE_KEY_OUTPUT)
+  localStorage.removeItem(STORAGE_KEY_GRAPHICS)
   document.getElementById("output").textContent = ""
   document.getElementById("graphics").innerHTML = ""
   document.getElementById("graphics").style.display = "none"
@@ -225,6 +276,12 @@ document.getElementById("clearBtn").addEventListener("click", () => {
 document.querySelectorAll(".example-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     setEditorContent(btn.dataset.code)
+    localStorage.removeItem(STORAGE_KEY_OUTPUT)
+    localStorage.removeItem(STORAGE_KEY_GRAPHICS)
+    document.getElementById("output").textContent = ""
+    document.getElementById("output").style.display = "none"
+    document.getElementById("graphics").innerHTML = ""
+    document.getElementById("graphics").style.display = "none"
   })
 })
 
