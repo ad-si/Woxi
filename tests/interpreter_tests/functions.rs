@@ -847,6 +847,46 @@ mod pattern_matching {
         "{0, 2, 0, 4}"
       );
     }
+
+    #[test]
+    fn anonymous_blank_pattern_test() {
+      // _?EvenQ without a named variable
+      assert_eq!(interpret("Count[{1, 2, 3, 4, 5}, _?EvenQ]").unwrap(), "2");
+    }
+
+    #[test]
+    fn anonymous_blank_pattern_test_with_anonymous_function() {
+      // _?(func &) with parenthesized anonymous function
+      assert_eq!(
+        interpret("Count[{1, 2, 3, 4, 5}, _?(MemberQ[{2, 3, 5}, #] &)]")
+          .unwrap(),
+        "3"
+      );
+    }
+
+    #[test]
+    fn pattern_test_cases() {
+      assert_eq!(
+        interpret("Cases[{1, \"a\", 2, \"b\", 3}, _?StringQ]").unwrap(),
+        "{a, b}"
+      );
+    }
+
+    #[test]
+    fn pattern_test_anonymous_function_replace_all() {
+      assert_eq!(
+        interpret("{1, 2, 3, 4, 5} /. x_?(# > 3 &) -> 0").unwrap(),
+        "{1, 2, 3, 0, 0}"
+      );
+    }
+
+    #[test]
+    fn pattern_test_named_with_anonymous_function() {
+      assert_eq!(
+        interpret("{1, 2, 3, 4} /. x_?(EvenQ[#] &) :> x^2").unwrap(),
+        "{1, 4, 3, 16}"
+      );
+    }
   }
 
   mod multiple_rules {

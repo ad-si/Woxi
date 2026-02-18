@@ -323,6 +323,8 @@ pub enum Expr {
     head: Option<String>,
     default: Box<Expr>,
   },
+  /// PatternTest: _?test or x_?test — matches if test[x] is True
+  PatternTest { name: String, test: Box<Expr> },
   /// Constant like Pi, E, etc.
   Constant(String),
   /// Raw unparsed text (fallback)
@@ -1065,7 +1067,24 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         default: Box::new(default),
       }
     }
-    Rule::PatternTest | Rule::PatternCondition => {
+    Rule::PatternTest => {
+      // PatternTest: x_?test or _?test or _?(expr) or x_?(expr)
+      let mut inner = pair.into_inner();
+      // PatternName is optional; if present it's the first child
+      let first = inner.next().unwrap();
+      let (name, test_pair) = if first.as_rule() == Rule::PatternName {
+        (first.as_str().to_string(), inner.next().unwrap())
+      } else {
+        // No PatternName — anonymous blank; first child is the test expression
+        (String::new(), first)
+      };
+      let test = pair_to_expr(test_pair);
+      Expr::PatternTest {
+        name,
+        test: Box::new(test),
+      }
+    }
+    Rule::PatternCondition => {
       // Store the full pattern string as Raw to preserve test/condition info
       // The string-based pattern matching in apply_replace_all_direct handles these
       Expr::Raw(pair.as_str().to_string())
@@ -2738,6 +2757,16 @@ pub fn expr_to_string(expr: &Expr) -> String {
         format!("{}_:{}", name, expr_to_string(default))
       }
     }
+    Expr::PatternTest { name, test } => {
+      let test_str = expr_to_string(test);
+      // If test is a simple identifier, use x_?Test form; otherwise wrap in parens
+      let needs_parens = !matches!(test.as_ref(), Expr::Identifier(_));
+      if needs_parens {
+        format!("{}_?({})", name, test_str)
+      } else {
+        format!("{}_?{}", name, test_str)
+      }
+    }
     Expr::Constant(s) => s.clone(),
     Expr::Raw(s) => s.clone(),
     Expr::CurriedCall { func, args } => {
@@ -3340,6 +3369,10 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
       head: head.clone(),
       default: Box::new(substitute_slots(default, values)),
     },
+    Expr::PatternTest { name, test } => Expr::PatternTest {
+      name: name.clone(),
+      test: Box::new(substitute_slots(test, values)),
+    },
     // Atoms that don't contain slots
     _ => expr.clone(),
   }
@@ -3482,6 +3515,10 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
       name: name.clone(),
       head: head.clone(),
       default: Box::new(substitute_variable(default, var_name, value)),
+    },
+    Expr::PatternTest { name, test } => Expr::PatternTest {
+      name: name.clone(),
+      test: Box::new(substitute_variable(test, var_name, value)),
     },
     // Atoms that don't contain the variable
     _ => expr.clone(),

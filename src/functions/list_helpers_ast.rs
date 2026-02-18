@@ -1131,6 +1131,40 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       name: _,
       head: Some(h),
     } => get_expr_head_str(expr) == h,
+    // PatternTest: _?test or x_?test — matches if test[expr] is True
+    Expr::PatternTest { name: _, test } => {
+      let test_result = match test.as_ref() {
+        Expr::Identifier(func_name) => {
+          let call = Expr::FunctionCall {
+            name: func_name.clone(),
+            args: vec![expr.clone()],
+          };
+          crate::evaluator::evaluate_expr_to_expr(&call).ok()
+        }
+        Expr::Function { body } => {
+          // Anonymous function: substitute slots in the body (not the Function wrapper)
+          let substituted =
+            crate::syntax::substitute_slots(body, &[expr.clone()]);
+          crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
+        }
+        _ => {
+          // General expression used as function: call (test)[expr]
+          let call_str = format!(
+            "({})[{}]",
+            crate::syntax::expr_to_string(test),
+            crate::syntax::expr_to_string(expr)
+          );
+          crate::interpret(&call_str).ok().map(|r| {
+            if r == "True" {
+              Expr::Identifier("True".to_string())
+            } else {
+              Expr::Identifier("False".to_string())
+            }
+          })
+        }
+      };
+      matches!(test_result, Some(Expr::Identifier(ref s)) if s == "True")
+    }
     // Identifier patterns like "_", "_Integer", "_List", etc.
     Expr::Identifier(s) if s == "_" => true,
     Expr::Identifier(s) if s.starts_with('_') => {
