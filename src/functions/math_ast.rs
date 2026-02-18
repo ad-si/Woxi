@@ -11663,10 +11663,23 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vals.iter().map(|x| num_to_expr(x / norm)).collect();
       Ok(Expr::List(result))
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Normalize".to_string(),
-      args: args.to_vec(),
-    }),
+    _ => {
+      // Scalar: Normalize[x] = x / Norm[x]
+      let norm_val = norm_ast(args)?;
+      // If norm is 0, return the original
+      let is_zero = match &norm_val {
+        Expr::Integer(0) => true,
+        Expr::Real(f) if *f == 0.0 => true,
+        _ => false,
+      };
+      if is_zero {
+        return Ok(args[0].clone());
+      }
+      crate::evaluator::evaluate_function_call_ast(
+        "Divide",
+        &[args[0].clone(), norm_val],
+      )
+    }
   }
 }
 

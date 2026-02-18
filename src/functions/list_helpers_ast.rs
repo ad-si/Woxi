@@ -6297,51 +6297,205 @@ fn list_depth(expr: &Expr) -> usize {
 
 /// ReplacePart[list, n -> val] - replaces element at position n
 pub fn replace_part_ast(
-  list: &Expr,
+  expr: &Expr,
   rule: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ReplacePart expects a list as first argument".into(),
-      ));
+  // Handle list of rules: ReplacePart[expr, {pos1 -> val1, pos2 -> val2}]
+  if let Expr::List(rules) = rule
+    && rules
+      .iter()
+      .all(|r| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. }) || matches!(r, Expr::FunctionCall { name, .. } if name == "Rule" || name == "RuleDelayed"))
+    {
+      let mut result = expr.clone();
+      for r in rules {
+        result = replace_part_ast(&result, r)?;
+      }
+      return Ok(result);
     }
-  };
-  let (pos, val) = match rule {
+
+  // Extract position and value from the rule
+  let (pos, val, is_delayed) = match rule {
     Expr::Rule {
       pattern,
       replacement,
-    } => (pattern.as_ref(), replacement.as_ref()),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ReplacePart expects a rule as second argument".into(),
-      ));
-    }
-  };
-  let idx = match expr_to_i128(pos) {
-    Some(n) => {
-      let len = items.len() as i128;
-      if n > 0 && n <= len {
-        (n - 1) as usize
-      } else if n < 0 && -n <= len {
-        (len + n) as usize
-      } else {
-        return Err(InterpreterError::EvaluationError(format!(
-          "ReplacePart: position {} out of range",
-          n
-        )));
-      }
+    } => (pattern.as_ref(), replacement.as_ref(), false),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref(), true),
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
+      (&args[0], &args[1], name == "RuleDelayed")
     }
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "ReplacePart: position must be an integer".into(),
-      ));
+      return Ok(Expr::FunctionCall {
+        name: "ReplacePart".to_string(),
+        args: vec![expr.clone(), rule.clone()],
+      });
     }
   };
-  let mut result = items;
+  // For RuleDelayed, evaluate the replacement each time it's used
+  let eval_val = |v: &Expr| -> Result<Expr, InterpreterError> {
+    if is_delayed {
+      crate::evaluator::evaluate_expr_to_expr(v)
+    } else {
+      Ok(v.clone())
+    }
+  };
+
+  // Handle multiple positions: ReplacePart[expr, {{1}, {3}} -> val]
+  if let Expr::List(pos_list) = pos
+    && !pos_list.is_empty()
+    && pos_list.iter().all(|p| matches!(p, Expr::List(_)))
+  {
+    let mut result = expr.clone();
+    for p in pos_list {
+      let ev = eval_val(val)?;
+      let sub_rule = Expr::Rule {
+        pattern: Box::new(p.clone()),
+        replacement: Box::new(ev),
+      };
+      result = replace_part_ast(&result, &sub_rule)?;
+    }
+    return Ok(result);
+  }
+
+  // Determine the position specification
+  let positions: Vec<i128> = match pos {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      vec![expr_to_i128(pos).unwrap_or(0)]
+    }
+    Expr::List(indices) => indices.iter().filter_map(expr_to_i128).collect(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ReplacePart".to_string(),
+        args: vec![expr.clone(), rule.clone()],
+      });
+    }
+  };
+
+  if positions.is_empty() {
+    return Ok(expr.clone());
+  }
+
+  let ev = eval_val(val)?;
+
+  // Single flat position
+  if positions.len() == 1 {
+    let p = positions[0];
+    return replace_at_position(expr, p, &ev);
+  }
+
+  // Multi-part position {i, j, ...}
+  replace_at_deep_pos(expr, &positions, &ev)
+}
+
+/// Replace at a single position in an expression
+fn replace_at_position(
+  expr: &Expr,
+  pos: i128,
+  val: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let (items, head_name) = match expr {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ReplacePart".to_string(),
+        args: vec![
+          expr.clone(),
+          Expr::Rule {
+            pattern: Box::new(Expr::Integer(pos)),
+            replacement: Box::new(val.clone()),
+          },
+        ],
+      });
+    }
+  };
+
+  if pos == 0 {
+    // Replace the head
+    let new_head = match val {
+      Expr::Identifier(s) => s.clone(),
+      Expr::FunctionCall { name, .. } => name.clone(),
+      _ => crate::syntax::expr_to_string(val),
+    };
+    return Ok(Expr::FunctionCall {
+      name: new_head,
+      args: items.to_vec(),
+    });
+  }
+
+  let len = items.len() as i128;
+  let idx = if pos > 0 && pos <= len {
+    (pos - 1) as usize
+  } else if pos < 0 && -pos <= len {
+    (len + pos) as usize
+  } else {
+    return Ok(Expr::FunctionCall {
+      name: "ReplacePart".to_string(),
+      args: vec![
+        expr.clone(),
+        Expr::Rule {
+          pattern: Box::new(Expr::Integer(pos)),
+          replacement: Box::new(val.clone()),
+        },
+      ],
+    });
+  };
+
+  let mut result = items.to_vec();
   result[idx] = val.clone();
-  Ok(Expr::List(result))
+  match head_name {
+    Some(h) => Ok(Expr::FunctionCall {
+      name: h.to_string(),
+      args: result,
+    }),
+    None => Ok(Expr::List(result)),
+  }
+}
+
+/// Replace at a deep multi-part position {i, j, ...}
+fn replace_at_deep_pos(
+  expr: &Expr,
+  positions: &[i128],
+  val: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if positions.is_empty() {
+    return Ok(val.clone());
+  }
+
+  let pos = positions[0];
+  let (items, head_name) = match expr {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
+    _ => return Ok(expr.clone()),
+  };
+
+  if pos == 0 {
+    // For position 0 at intermediate level, this doesn't make sense
+    return Ok(expr.clone());
+  }
+
+  let len = items.len() as i128;
+  let idx = if pos > 0 && pos <= len {
+    (pos - 1) as usize
+  } else if pos < 0 && -pos <= len {
+    (len + pos) as usize
+  } else {
+    return Ok(expr.clone());
+  };
+
+  let mut result = items.to_vec();
+  result[idx] = replace_at_deep_pos(&items[idx], &positions[1..], val)?;
+  match head_name {
+    Some(h) => Ok(Expr::FunctionCall {
+      name: h.to_string(),
+      args: result,
+    }),
+    None => Ok(Expr::List(result)),
+  }
 }
 
 /// AST-based Permutations: generate all permutations of a list.
