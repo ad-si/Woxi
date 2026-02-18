@@ -1038,6 +1038,17 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ToCharacterCode expects exactly 1 argument".into(),
     ));
   }
+  // Handle list of strings
+  if let Expr::List(items) = &args[0] {
+    let mut results = Vec::new();
+    for item in items {
+      let s = expr_to_str(item)?;
+      let codes: Vec<Expr> =
+        s.chars().map(|c| Expr::Integer(c as i128)).collect();
+      results.push(Expr::List(codes));
+    }
+    return Ok(Expr::List(results));
+  }
   let s = expr_to_str(&args[0])?;
   let codes: Vec<Expr> = s.chars().map(|c| Expr::Integer(c as i128)).collect();
   Ok(Expr::List(codes))
@@ -1080,6 +1091,15 @@ pub fn from_character_code_ast(
       Ok(Expr::String(c.to_string()))
     }
     Expr::List(items) => {
+      // Check if this is a list of lists (nested)
+      if !items.is_empty() && matches!(&items[0], Expr::List(_)) {
+        let mut results = Vec::new();
+        for item in items {
+          let sub_result = from_character_code_ast(&[item.clone()])?;
+          results.push(sub_result);
+        }
+        return Ok(Expr::List(results));
+      }
       let mut result = String::new();
       for item in items {
         let code = match item {

@@ -3077,9 +3077,14 @@ pub fn evaluate_function_call_ast(
     "Insert" if args.len() == 3 => {
       return list_helpers_ast::insert_ast(&args[0], &args[1], &args[2]);
     }
-    "Array" if args.len() == 2 => {
-      if let Some(n) = expr_to_i128(&args[1]) {
+    "Array" if args.len() >= 2 && args.len() <= 4 => {
+      if args.len() == 2
+        && let Some(n) = expr_to_i128(&args[1])
+      {
         return list_helpers_ast::array_ast(&args[0], n);
+      }
+      if matches!(&args[1], Expr::List(_)) || args.len() > 2 {
+        return list_helpers_ast::array_multi_ast(args);
       }
     }
     "Gather" if args.len() == 1 => {

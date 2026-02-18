@@ -4684,14 +4684,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/string/charcodes.py
 CLASS: ToCharacterCode
-LINE: 57
-TYPE: >>
-INPUT: ToCharacterCode[{"ab", "c"}]
-EXPECTED:
-= {{97, 98}, {99}}
----
-FILE: mathics/builtin/string/charcodes.py
-CLASS: ToCharacterCode
 LINE: 60
 TYPE: >>
 INPUT: ToCharacterCode[{"ab", x}]
@@ -4722,14 +4714,6 @@ TYPE: >>
 INPUT: ToCharacterCode[%]
 EXPECTED:
 = {100, 101, 102}
----
-FILE: mathics/builtin/string/charcodes.py
-CLASS: FromCharacterCode
-LINE: 148
-TYPE: >>
-INPUT: FromCharacterCode[{{97, 98, 99}, {100, 101, 102}}]
-EXPECTED:
-= {abc, def}
 ---
 FILE: mathics/builtin/string/operations.py
 CLASS: StringJoin
@@ -11544,38 +11528,6 @@ TYPE: >>
 INPUT: Values[{c -> z, b -> y, a -> x}]
 EXPECTED:
 = {z, y, x}
----
-FILE: mathics/builtin/list/constructing.py
-CLASS: Array
-LINE: 53
-TYPE: >>
-INPUT: Array[f, {2, 3}]
-EXPECTED:
-= {{f[1, 1], f[1, 2], f[1, 3]}, {f[2, 1], f[2, 2], f[2, 3]}}
----
-FILE: mathics/builtin/list/constructing.py
-CLASS: Array
-LINE: 55
-TYPE: >>
-INPUT: Array[f, {2, 3}, 3]
-EXPECTED:
-= {{f[3, 3], f[3, 4], f[3, 5]}, {f[4, 3], f[4, 4], f[4, 5]}}
----
-FILE: mathics/builtin/list/constructing.py
-CLASS: Array
-LINE: 57
-TYPE: >>
-INPUT: Array[f, {2, 3}, {4, 6}]
-EXPECTED:
-= {{f[4, 6], f[4, 7], f[4, 8]}, {f[5, 6], f[5, 7], f[5, 8]}}
----
-FILE: mathics/builtin/list/constructing.py
-CLASS: Array
-LINE: 59
-TYPE: >>
-INPUT: Array[f, {2, 3}, 1, Plus]
-EXPECTED:
-= f[1, 1] + f[1, 2] + f[1, 3] + f[2, 1] + f[2, 2] + f[2, 3]
 ---
 FILE: mathics/builtin/list/constructing.py
 CLASS: Normal

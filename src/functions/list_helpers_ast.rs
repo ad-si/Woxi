@@ -5493,6 +5493,132 @@ pub fn array_ast(func: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result))
 }
 
+/// Array[f, {n1, n2, ...}] - multi-dimensional array
+/// Array[f, dims, origin] - with custom origin
+/// Array[f, dims, origin, head] - with custom head instead of List
+pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let func = &args[0];
+  let dims_expr = &args[1];
+
+  let dims: Vec<i128> = match dims_expr {
+    Expr::List(items) => {
+      let mut d = Vec::new();
+      for item in items {
+        if let Some(n) = expr_to_i128(item) {
+          d.push(n);
+        } else {
+          return Ok(Expr::FunctionCall {
+            name: "Array".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+      d
+    }
+    _ => {
+      if let Some(n) = expr_to_i128(dims_expr) {
+        vec![n]
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Array".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  };
+
+  // Parse origins
+  let origins: Vec<i128> = if args.len() >= 3 {
+    match &args[2] {
+      Expr::List(items) => items
+        .iter()
+        .map(|item| expr_to_i128(item).unwrap_or(1))
+        .collect(),
+      _ => {
+        let o = expr_to_i128(&args[2]).unwrap_or(1);
+        vec![o; dims.len()]
+      }
+    }
+  } else {
+    vec![1i128; dims.len()]
+  };
+
+  // Parse optional head (4th arg)
+  let head: Option<&str> = if args.len() >= 4 {
+    match &args[3] {
+      Expr::Identifier(h) => Some(h.as_str()),
+      _ => None,
+    }
+  } else {
+    None
+  };
+
+  // Build the array recursively
+  fn build_array(
+    func: &Expr,
+    dims: &[i128],
+    origins: &[i128],
+    depth: usize,
+    indices: &mut Vec<i128>,
+  ) -> Result<Expr, InterpreterError> {
+    if depth >= dims.len() {
+      // Apply function to indices
+      let index_args: Vec<Expr> =
+        indices.iter().map(|&i| Expr::Integer(i)).collect();
+      if index_args.len() == 1 {
+        apply_func_ast(func, &index_args[0])
+      } else {
+        // For multi-arg, evaluate f[i1, i2, ...]
+        match func {
+          Expr::Identifier(name) => {
+            crate::evaluator::evaluate_function_call_ast(name, &index_args)
+          }
+          _ => {
+            // For pure functions, we need to call with Sequence of args
+            // Build f[i1, i2, ...] manually
+            let func_call = Expr::FunctionCall {
+              name: crate::syntax::expr_to_string(func),
+              args: index_args,
+            };
+            crate::evaluator::evaluate_expr_to_expr(&func_call)
+          }
+        }
+      }
+    } else {
+      let n = dims[depth];
+      let origin = origins[depth];
+      let mut items = Vec::new();
+      for i in 0..n {
+        indices.push(origin + i);
+        items.push(build_array(func, dims, origins, depth + 1, indices)?);
+        indices.pop();
+      }
+      Ok(Expr::List(items))
+    }
+  }
+
+  let result = build_array(func, &dims, &origins, 0, &mut Vec::new())?;
+
+  // If head is specified, flatten and wrap with head
+  if let Some(h) = head {
+    fn collect_leaves(expr: &Expr, leaves: &mut Vec<Expr>) {
+      match expr {
+        Expr::List(items) => {
+          for item in items {
+            collect_leaves(item, leaves);
+          }
+        }
+        _ => leaves.push(expr.clone()),
+      }
+    }
+    let mut leaves = Vec::new();
+    collect_leaves(&result, &mut leaves);
+    crate::evaluator::evaluate_function_call_ast(h, &leaves)
+  } else {
+    Ok(result)
+  }
+}
+
 /// Gather[list] - gathers elements into sublists of identical elements
 pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let items = match list {
