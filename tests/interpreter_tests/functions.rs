@@ -1290,6 +1290,30 @@ mod subsets {
       "{{}, {a, b}, {a, c}, {a, d}, {b, c}, {b, d}, {c, d}, {a, b, c, d}}"
     );
   }
+
+  #[test]
+  fn all_with_max_count() {
+    assert_eq!(
+      interpret("Subsets[Range[5], All, 5]").unwrap(),
+      "{{}, {1}, {2}, {3}, {4}}"
+    );
+  }
+
+  #[test]
+  fn part_spec_single() {
+    assert_eq!(
+      interpret("Subsets[Range[5], All, {25}]").unwrap(),
+      "{{2, 4, 5}}"
+    );
+  }
+
+  #[test]
+  fn part_spec_range_reverse() {
+    assert_eq!(
+      interpret("Subsets[{a, b, c, d}, All, {15, 1, -2}]").unwrap(),
+      "{{b, c, d}, {a, b, d}, {c, d}, {b, c}, {a, c}, {d}, {b}, {}}"
+    );
+  }
 }
 
 mod append_prepend {

@@ -2833,6 +2833,7 @@ pub fn evaluate_function_call_ast(
               item,
               max_len as i128,
               &Expr::Integer(0),
+              None,
             )
             .unwrap_or_else(|_| item.clone())
           })
@@ -2842,12 +2843,17 @@ pub fn evaluate_function_call_ast(
     }
     "PadLeft" if args.len() >= 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
-        let pad = if args.len() == 3 {
+        let pad = if args.len() >= 3 {
           args[2].clone()
         } else {
           Expr::Integer(0)
         };
-        return list_helpers_ast::pad_left_ast(&args[0], n, &pad);
+        let offset = if args.len() >= 4 {
+          expr_to_i128(&args[3])
+        } else {
+          None
+        };
+        return list_helpers_ast::pad_left_ast(&args[0], n, &pad, offset);
       }
     }
     "PadRight" if args.len() == 1 => {
@@ -2868,6 +2874,7 @@ pub fn evaluate_function_call_ast(
               item,
               max_len as i128,
               &Expr::Integer(0),
+              None,
             )
             .unwrap_or_else(|_| item.clone())
           })
@@ -2877,12 +2884,17 @@ pub fn evaluate_function_call_ast(
     }
     "PadRight" if args.len() >= 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
-        let pad = if args.len() == 3 {
+        let pad = if args.len() >= 3 {
           args[2].clone()
         } else {
           Expr::Integer(0)
         };
-        return list_helpers_ast::pad_right_ast(&args[0], n, &pad);
+        let offset = if args.len() >= 4 {
+          expr_to_i128(&args[3])
+        } else {
+          None
+        };
+        return list_helpers_ast::pad_right_ast(&args[0], n, &pad, offset);
       }
     }
     "Join" => {

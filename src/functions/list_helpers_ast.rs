@@ -3387,10 +3387,25 @@ pub fn rotate_multi_ast(
 
 /// AST-based PadLeft: pad list on the left to length n.
 /// If n < len, truncates from the left.
+/// Get cyclic padding element at a given position.
+/// The padding is cyclically repeated, and the cycle is aligned so that
+/// the position right after the original list corresponds to padding[0].
+fn cyclic_pad_element(pad: &Expr, pos: i128, list_end: i128) -> Expr {
+  match pad {
+    Expr::List(items) if !items.is_empty() => {
+      let cycle_len = items.len() as i128;
+      let idx = ((pos - list_end) % cycle_len + cycle_len) % cycle_len;
+      items[idx as usize].clone()
+    }
+    _ => pad.clone(),
+  }
+}
+
 pub fn pad_left_ast(
   list: &Expr,
   n: i128,
   pad: &Expr,
+  offset: Option<i128>,
 ) -> Result<Expr, InterpreterError> {
   let (items, head_name) = match list {
     Expr::List(items) => (items.as_slice(), None),
@@ -3414,16 +3429,26 @@ pub fn pad_left_ast(
   }
 
   let len = items.len() as i128;
+  let n_usize = n as usize;
 
   let result_items = if n < len {
     let skip = (len - n) as usize;
     items[skip..].to_vec()
-  } else if n == len {
+  } else if n == len && offset.is_none() {
     items.to_vec()
   } else {
-    let needed = (n - len) as usize;
-    let mut result = vec![pad.clone(); needed];
-    result.extend(items.iter().cloned());
+    // PadLeft: original list goes at position (n - len - m) where m = offset (default 0)
+    let m = offset.unwrap_or(0).max(0);
+    let start = ((n - len - m).max(0)) as usize;
+    let list_end = start + items.len();
+    let mut result = Vec::with_capacity(n_usize);
+    for i in 0..n_usize {
+      if i >= start && i < list_end {
+        result.push(items[i - start].clone());
+      } else {
+        result.push(cyclic_pad_element(pad, i as i128, list_end as i128));
+      }
+    }
     result
   };
 
@@ -3439,6 +3464,7 @@ pub fn pad_right_ast(
   list: &Expr,
   n: i128,
   pad: &Expr,
+  offset: Option<i128>,
 ) -> Result<Expr, InterpreterError> {
   let (items, head_name) = match list {
     Expr::List(items) => (items.as_slice(), None),
@@ -3462,15 +3488,25 @@ pub fn pad_right_ast(
   }
 
   let len = items.len() as i128;
+  let n_usize = n as usize;
 
   let result_items = if n < len {
-    items[..n as usize].to_vec()
-  } else if n == len {
+    items[..n_usize].to_vec()
+  } else if n == len && offset.is_none() {
     items.to_vec()
   } else {
-    let needed = (n - len) as usize;
-    let mut result = items.to_vec();
-    result.extend(vec![pad.clone(); needed]);
+    // PadRight: original list goes at position m where m = offset (default 0)
+    let m = offset.unwrap_or(0).max(0);
+    let start = m.min(n - len).max(0) as usize;
+    let list_end = start + items.len();
+    let mut result = Vec::with_capacity(n_usize);
+    for i in 0..n_usize {
+      if i >= start && i < list_end {
+        result.push(items[i - start].clone());
+      } else {
+        result.push(cyclic_pad_element(pad, i as i128, list_end as i128));
+      }
+    }
     result
   };
 
@@ -6639,77 +6675,239 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  if args.len() >= 2 {
-    match &args[1] {
-      // Subsets[list, {k}] - subsets of exactly size k
-      Expr::List(spec) if spec.len() == 1 => {
-        if let Some(k) = expr_to_i128(&spec[0]) {
-          let k = k.max(0) as usize;
-          let mut result = Vec::new();
-          generate_combinations(&items, k, 0, &mut vec![], &mut result);
-          // Handle optional max count argument
-          if args.len() >= 3
-            && let Some(max) = expr_to_i128(&args[2])
+  // Generate all subsets based on level spec (args[1])
+  let mut result = if args.len() >= 2 {
+    let is_all = matches!(&args[1], Expr::Identifier(s) if s == "All");
+    if is_all {
+      // All subsets
+      let n = items.len();
+      let mut r = Vec::new();
+      for k in 0..=n {
+        generate_combinations(&items, k, 0, &mut vec![], &mut r);
+      }
+      r
+    } else {
+      match &args[1] {
+        // Subsets[list, {k}] - subsets of exactly size k
+        Expr::List(spec) if spec.len() == 1 => {
+          if let Some(k) = expr_to_i128(&spec[0]) {
+            let k = k.max(0) as usize;
+            let mut r = Vec::new();
+            generate_combinations(&items, k, 0, &mut vec![], &mut r);
+            r
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Subsets".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        // Subsets[list, {min, max}] - subsets of sizes min through max
+        Expr::List(spec) if spec.len() == 2 => {
+          if let (Some(min), Some(max)) =
+            (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
           {
-            result.truncate(max.max(0) as usize);
+            let min = min.max(0) as usize;
+            let max = max.min(items.len() as i128).max(0) as usize;
+            let mut r = Vec::new();
+            for k in min..=max {
+              generate_combinations(&items, k, 0, &mut vec![], &mut r);
+            }
+            r
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Subsets".to_string(),
+              args: args.to_vec(),
+            });
           }
-          return Ok(Expr::List(result));
+        }
+        // Subsets[list, {min, max, step}] - subsets of sizes min, min+step, ...
+        Expr::List(spec) if spec.len() == 3 => {
+          if let (Some(min), Some(max), Some(step)) = (
+            expr_to_i128(&spec[0]),
+            expr_to_i128(&spec[1]),
+            expr_to_i128(&spec[2]),
+          ) {
+            let min = min.max(0) as usize;
+            let max = max.min(items.len() as i128).max(0) as usize;
+            let step = step.max(1) as usize;
+            let mut r = Vec::new();
+            let mut k = min;
+            while k <= max {
+              generate_combinations(&items, k, 0, &mut vec![], &mut r);
+              k += step;
+            }
+            r
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Subsets".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        // Subsets[list, n] - all subsets up to size n
+        _ => {
+          if let Some(max_k) = expr_to_i128(&args[1]) {
+            let max_k = max_k.min(items.len() as i128).max(0) as usize;
+            let mut r = Vec::new();
+            for k in 0..=max_k {
+              generate_combinations(&items, k, 0, &mut vec![], &mut r);
+            }
+            r
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: "Subsets".to_string(),
+              args: args.to_vec(),
+            });
+          }
         }
       }
-      // Subsets[list, {min, max}] - subsets of sizes min through max
-      Expr::List(spec) if spec.len() == 2 => {
-        if let (Some(min), Some(max)) =
-          (expr_to_i128(&spec[0]), expr_to_i128(&spec[1]))
-        {
-          let min = min.max(0) as usize;
-          let max = max.min(items.len() as i128).max(0) as usize;
-          let mut result = Vec::new();
-          for k in min..=max {
-            generate_combinations(&items, k, 0, &mut vec![], &mut result);
-          }
-          return Ok(Expr::List(result));
-        }
+    }
+  } else {
+    // Subsets[list] - all subsets
+    let n = items.len();
+    let mut r = Vec::new();
+    for k in 0..=n {
+      generate_combinations(&items, k, 0, &mut vec![], &mut r);
+    }
+    r
+  };
+
+  // Apply 3rd argument: plain integer = max count, list = Part specification
+  if args.len() >= 3 {
+    match &args[2] {
+      Expr::List(_) => {
+        // Part specification like {25} or {15, 1, -2}
+        result = apply_part_spec(&result, &args[2])?;
       }
-      // Subsets[list, {min, max, step}] - subsets of sizes min, min+step, ...
-      Expr::List(spec) if spec.len() == 3 => {
-        if let (Some(min), Some(max), Some(step)) = (
-          expr_to_i128(&spec[0]),
-          expr_to_i128(&spec[1]),
-          expr_to_i128(&spec[2]),
-        ) {
-          let min = min.max(0) as usize;
-          let max = max.min(items.len() as i128).max(0) as usize;
-          let step = step.max(1) as usize;
-          let mut result = Vec::new();
-          let mut k = min;
-          while k <= max {
-            generate_combinations(&items, k, 0, &mut vec![], &mut result);
-            k += step;
-          }
-          return Ok(Expr::List(result));
-        }
-      }
-      // Subsets[list, n] - all subsets up to size n
       _ => {
-        if let Some(max_k) = expr_to_i128(&args[1]) {
-          let max_k = max_k.min(items.len() as i128).max(0) as usize;
-          let mut result = Vec::new();
-          for k in 0..=max_k {
-            generate_combinations(&items, k, 0, &mut vec![], &mut result);
-          }
-          return Ok(Expr::List(result));
+        // Plain integer = max count (take first n subsets)
+        if let Some(n) = expr_to_i128(&args[2]) {
+          let n = n.max(0) as usize;
+          result.truncate(n);
         }
       }
     }
   }
 
-  // Subsets[list] - all subsets
-  let n = items.len();
-  let mut result = Vec::new();
-  for k in 0..=n {
-    generate_combinations(&items, k, 0, &mut vec![], &mut result);
-  }
   Ok(Expr::List(result))
+}
+
+/// Apply a Part specification to select elements from a list of subsets.
+/// Spec can be: {i} for single element, {start, end} for range, {start, end, step} for stepped range.
+fn apply_part_spec(
+  items: &[Expr],
+  spec: &Expr,
+) -> Result<Vec<Expr>, InterpreterError> {
+  match spec {
+    Expr::List(indices) if indices.len() == 1 => {
+      // {i} - take single element (1-indexed)
+      if let Some(i) = expr_to_i128(&indices[0]) {
+        let idx = if i > 0 {
+          (i - 1) as usize
+        } else if i < 0 {
+          let len = items.len() as i128;
+          (len + i) as usize
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Part: index 0 is not valid".into(),
+          ));
+        };
+        if idx < items.len() {
+          Ok(vec![items[idx].clone()])
+        } else {
+          Ok(vec![])
+        }
+      } else {
+        Ok(items.to_vec())
+      }
+    }
+    Expr::List(indices) if indices.len() == 2 => {
+      // {start, end} - range (1-indexed)
+      if let (Some(start), Some(end)) =
+        (expr_to_i128(&indices[0]), expr_to_i128(&indices[1]))
+      {
+        let len = items.len() as i128;
+        let s = if start > 0 { start - 1 } else { len + start };
+        let e = if end > 0 { end - 1 } else { len + end };
+        let mut selected = Vec::new();
+        if s <= e {
+          for i in s..=e {
+            if i >= 0 && (i as usize) < items.len() {
+              selected.push(items[i as usize].clone());
+            }
+          }
+        } else {
+          // Reverse range
+          let mut i = s;
+          while i >= e {
+            if i >= 0 && (i as usize) < items.len() {
+              selected.push(items[i as usize].clone());
+            }
+            i -= 1;
+          }
+        }
+        Ok(selected)
+      } else {
+        Ok(items.to_vec())
+      }
+    }
+    Expr::List(indices) if indices.len() == 3 => {
+      // {start, end, step} - stepped range (1-indexed)
+      if let (Some(start), Some(end), Some(step)) = (
+        expr_to_i128(&indices[0]),
+        expr_to_i128(&indices[1]),
+        expr_to_i128(&indices[2]),
+      ) {
+        let len = items.len() as i128;
+        let s = if start > 0 { start - 1 } else { len + start };
+        let e = if end > 0 { end - 1 } else { len + end };
+        let mut selected = Vec::new();
+        if step > 0 {
+          let mut i = s;
+          while i <= e {
+            if i >= 0 && (i as usize) < items.len() {
+              selected.push(items[i as usize].clone());
+            }
+            i += step;
+          }
+        } else if step < 0 {
+          let mut i = s;
+          while i >= e {
+            if i >= 0 && (i as usize) < items.len() {
+              selected.push(items[i as usize].clone());
+            }
+            i += step; // step is negative
+          }
+        }
+        Ok(selected)
+      } else {
+        Ok(items.to_vec())
+      }
+    }
+    _ => {
+      // Single integer: take element at that index
+      if let Some(i) = expr_to_i128(spec) {
+        let idx = if i > 0 {
+          (i - 1) as usize
+        } else if i < 0 {
+          let len = items.len() as i128;
+          (len + i) as usize
+        } else {
+          return Err(InterpreterError::EvaluationError(
+            "Part: index 0 is not valid".into(),
+          ));
+        };
+        if idx < items.len() {
+          Ok(vec![items[idx].clone()])
+        } else {
+          Ok(vec![])
+        }
+      } else {
+        Ok(items.to_vec())
+      }
+    }
+  }
 }
 
 /// Helper to generate combinations (subsets of size k)

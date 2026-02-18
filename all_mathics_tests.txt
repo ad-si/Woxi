@@ -4468,14 +4468,6 @@ INPUT: Equivalent[a, b, True, c]
 EXPECTED:
 = a && b && c
 ---
-FILE: mathics/builtin/testing_expressions/logic.py
-CLASS: Implies
-LINE: 274
-TYPE: >>
-INPUT: Implies[a, Implies[b, Implies[True, c]]]
-EXPECTED:
-= a Implies b Implies c
----
 FILE: mathics/builtin/testing_expressions/numerical_properties.py
 CLASS: MachineNumberQ
 LINE: 227
@@ -5092,22 +5084,6 @@ TYPE: >>
 INPUT: SokalSneathDissimilarity[{1, 0, 1, 1, 0, 1, 1}, {0, 1, 1, 0, 0, 0, 1}]
 EXPECTED:
 = 4 / 5
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: Subsets
-LINE: 579
-TYPE: >>
-INPUT: Subsets[Range[5], All, {25}]
-EXPECTED:
-= {{2, 4, 5}}
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: Subsets
-LINE: 583
-TYPE: >>
-INPUT: Subsets[{a, b, c, d}, All, {15, 1, -2}]
-EXPECTED:
-= {{b, c, d}, {a, b, d}, {c, d}, {b, c}, {a, c}, {d}, {b}, {}}
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: YuleDissimilarity
@@ -11826,27 +11802,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/rearrange.py
 CLASS: PadLeft
-LINE: 929
-TYPE: >>
-INPUT: PadLeft[{1, 2, 3}, 10, {a, b, c}, 2]
-EXPECTED:
-= {b, c, a, b, c, 1, 2, 3, a, b}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: PadLeft
 LINE: 931
 TYPE: >>
 INPUT: PadLeft[{{1, 2, 3}}, {5, 2}, x, 1]
 EXPECTED:
 = {{x, x}, {x, x}, {x, x}, {3, x}, {x, x}}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: PadRight
-LINE: 967
-TYPE: >>
-INPUT: PadRight[{1, 2, 3}, 10, {a, b, c}, 2]
-EXPECTED:
-= {b, c, 1, 2, 3, a, b, c, a, b}
 ---
 FILE: mathics/builtin/list/rearrange.py
 CLASS: PadRight
@@ -17521,20 +17481,6 @@ MESSAGE: simple chained compare
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: None
-LINE: 47
-INPUT: Equal[Equal[0, 0], True] == True
-EXPECTED: True
-MESSAGE: Issue260
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 48
-INPUT: Equal[0, 0] == True
-EXPECTED: True
-MESSAGE: Issue260
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
 LINE: 55
 INPUT: g[2]!=g[3]
 EXPECTED: g[2] != g[3]
@@ -17812,54 +17758,6 @@ LINE: 167
 INPUT: N[2/9, 4]
 EXPECTED: .222222`5
 MESSAGE: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 181
-INPUT: UnsameQ[]
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 182
-INPUT: UnsameQ[expr]
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 185
-INPUT: x =!= x
-EXPECTED: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 186
-INPUT: x =!= y
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 187
-INPUT: 1 =!= 2 =!= 3 =!= 4
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 188
-INPUT: 1 =!= 2 =!= 1 =!= 4
-EXPECTED: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 189
-INPUT: UnsameQ[10, 5, 2, 1, 0]
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 190
-INPUT: UnsameQ[10, 5, 2, 1, 0, 0]
-EXPECTED: False
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_unsameq
@@ -20350,20 +20248,6 @@ MESSAGE: simple chained compare
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
 LINE: 7
-INPUT: Equal[Equal[0, 0], True] == True
-EXPECTED: True
-MESSAGE: Issue260
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: Equal[0, 0] == True
-EXPECTED: True
-MESSAGE: Issue260
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
 INPUT: g[2]!=g[3]
 EXPECTED: g[2] != g[3]
 MESSAGE: not comparable expressions, Issue #200
@@ -20737,54 +20621,6 @@ FUNCTION: test_unsameq
 LINE: 178
 INPUT: str_expr
 EXPECTED: str_expected
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: UnsameQ[]
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: UnsameQ[expr]
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: x =!= x
-EXPECTED: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: x =!= y
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: 1 =!= 2 =!= 3 =!= 4
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: 1 =!= 2 =!= 1 =!= 4
-EXPECTED: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: UnsameQ[10, 5, 2, 1, 0]
-EXPECTED: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 178
-INPUT: UnsameQ[10, 5, 2, 1, 0, 0]
-EXPECTED: False
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_cmp1_no_pass

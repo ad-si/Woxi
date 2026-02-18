@@ -2557,4 +2557,36 @@ mod join_non_list {
   fn rest_empty_list() {
     assert_eq!(interpret("Rest[{}]").unwrap(), "Rest[{}]");
   }
+
+  #[test]
+  fn pad_left_cyclic_with_offset() {
+    assert_eq!(
+      interpret("PadLeft[{1, 2, 3}, 10, {a, b, c}, 2]").unwrap(),
+      "{b, c, a, b, c, 1, 2, 3, a, b}"
+    );
+  }
+
+  #[test]
+  fn pad_right_cyclic_with_offset() {
+    assert_eq!(
+      interpret("PadRight[{1, 2, 3}, 10, {a, b, c}, 2]").unwrap(),
+      "{b, c, 1, 2, 3, a, b, c, a, b}"
+    );
+  }
+
+  #[test]
+  fn pad_left_cyclic_no_offset() {
+    assert_eq!(
+      interpret("PadLeft[{1, 2, 3}, 9, {a, b, c}]").unwrap(),
+      "{a, b, c, a, b, c, 1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn pad_right_cyclic_no_offset() {
+    assert_eq!(
+      interpret("PadRight[{1, 2, 3}, 9, {a, b, c}]").unwrap(),
+      "{1, 2, 3, a, b, c, a, b, c}"
+    );
+  }
 }
