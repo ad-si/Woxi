@@ -917,7 +917,7 @@ fn render_primitive(
           })
           .collect();
         out.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{}{}/>\n",
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
           pts.join(" "),
           color.to_svg_rgb(),
           color.opacity_attr(),
@@ -1088,7 +1088,7 @@ fn render_primitive(
         })
         .collect();
       out.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{}{}/>\n",
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
         pts.join(" "),
         color.to_svg_rgb(),
         color.opacity_attr(),
@@ -1264,7 +1264,7 @@ fn render_primitive(
       }
 
       out.push_str(&format!(
-        "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"{}{}/>\n",
+        "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
         d,
         color.to_svg_rgb(),
         color.opacity_attr(),

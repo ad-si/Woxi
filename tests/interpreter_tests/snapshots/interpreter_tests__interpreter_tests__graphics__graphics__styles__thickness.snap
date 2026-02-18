@@ -3,5 +3,5 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[{Thickness[0.01], Line[{{0, 0}, {1, 1}}]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<polyline points="13.33,346.67 346.67,13.33" fill="none" stroke="rgb(0,0,0)" stroke-width="3.60" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="13.33,346.67 346.67,13.33" fill="none" stroke="rgb(0,0,0)" stroke-width="3.60" stroke-linejoin="round" stroke-linecap="butt"/>
 </svg>
