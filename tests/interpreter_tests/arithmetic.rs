@@ -1683,4 +1683,36 @@ mod expand_threading {
   fn log_negative_real() {
     assert_eq!(interpret("Log[-1.]").unwrap(), "0. + 3.141592653589793*I");
   }
+
+  #[test]
+  fn sin_complex_float() {
+    assert_eq!(
+      interpret("Sin[1.0 + I]").unwrap(),
+      "1.2984575814159773 + 0.6349639147847361*I"
+    );
+  }
+
+  #[test]
+  fn cos_complex_float() {
+    assert_eq!(
+      interpret("Cos[1.0 + I]").unwrap(),
+      "0.8337300251311491 - 0.9888977057628651*I"
+    );
+  }
+
+  #[test]
+  fn conjugate_real_constants() {
+    assert_eq!(interpret("Conjugate[Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("Conjugate[E]").unwrap(), "E");
+    assert_eq!(
+      interpret("{Conjugate[Pi], Conjugate[E]}").unwrap(),
+      "{Pi, E}"
+    );
+  }
+
+  #[test]
+  fn product_log_special_values() {
+    assert_eq!(interpret("ProductLog[0]").unwrap(), "0");
+    assert_eq!(interpret("ProductLog[E]").unwrap(), "1");
+  }
 }

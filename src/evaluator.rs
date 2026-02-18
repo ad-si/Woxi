@@ -4386,6 +4386,9 @@ pub fn evaluate_function_call_ast(
     "LogisticSigmoid" if args.len() == 1 => {
       return crate::functions::math_ast::logistic_sigmoid_ast(args);
     }
+    "ProductLog" if args.len() == 1 => {
+      return crate::functions::math_ast::product_log_ast(args);
+    }
     "Prime" if args.len() == 1 => {
       return crate::functions::math_ast::prime_ast(args);
     }

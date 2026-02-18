@@ -6861,14 +6861,6 @@ EXPECTED:
 = 1.618033988749894848204586834365638117720
 ---
 FILE: mathics/builtin/numbers/constants.py
-CLASS: Indeterminate
-LINE: 476
-TYPE: >>
-INPUT: Tan[Indeterminate]
-EXPECTED:
-= Indeterminate
----
-FILE: mathics/builtin/numbers/constants.py
 CLASS: Infinity
 LINE: 518
 TYPE: >>
@@ -8204,14 +8196,6 @@ TYPE: >>
 INPUT: Sec[1.]
 EXPECTED:
 = 1.85082
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: Sin
-LINE: 796
-TYPE: >>
-INPUT: Sin[1.0 + I]
-EXPECTED:
-= 1.29846 + 0.634964 I
 ---
 FILE: mathics/builtin/patterns/__init__.py
 CLASS: None
@@ -12407,22 +12391,6 @@ TYPE: >>
 INPUT: z == ProductLog[z] * E ^ ProductLog[z]
 EXPECTED:
 = True
----
-FILE: mathics/builtin/specialfns/expintegral.py
-CLASS: ProductLog
-LINE: 112
-TYPE: >>
-INPUT: ProductLog[0]
-EXPECTED:
-= 0
----
-FILE: mathics/builtin/specialfns/expintegral.py
-CLASS: ProductLog
-LINE: 114
-TYPE: >>
-INPUT: ProductLog[E]
-EXPECTED:
-= 1
 ---
 FILE: mathics/builtin/specialfns/expintegral.py
 CLASS: ProductLog
@@ -18896,13 +18864,6 @@ INPUT: 0. + 1. I//OutputForm
 EXPECTED: 0. + 1. I
 MESSAGE: Formatting 1. I
 ---
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_complex
-LINE: 337
-INPUT: {Conjugate[Pi], Conjugate[E]}
-EXPECTED: {Pi, E}
-MESSAGE: Issue #272
----
 ====================================================================================================
 SECTION 3: PYTEST PARAMETRIZED TESTS (338 tests)
 ====================================================================================================
@@ -20985,13 +20946,6 @@ LINE: 289
 INPUT: -2/3-I//FullForm
 EXPECTED: Complex[Rational[-2, 3], -1]
 MESSAGE: Adding a rational
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_miscelanea_private_tests
-LINE: 329
-INPUT: {Conjugate[Pi], Conjugate[E]}
-EXPECTED: {Pi, E}
-MESSAGE: Issue #272
 ---
 FILE: test/builtin/arithmetic/test_basic.py
 FUNCTION: test_miscelanea_private_tests

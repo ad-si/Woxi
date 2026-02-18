@@ -5456,6 +5456,17 @@ fn negate_expr(expr: Expr) -> Expr {
   }
 }
 
+/// Build a Complex float result expression from real and imaginary parts.
+fn build_complex_float_result(
+  re: f64,
+  im: f64,
+) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_function_call_ast(
+    "Complex",
+    &[Expr::Real(re), Expr::Real(im)],
+  )
+}
+
 /// Check if an argument is Indeterminate or ComplexInfinity.
 /// For periodic/trig functions, both should return Indeterminate.
 fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
@@ -5477,6 +5488,14 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Real args: evaluate numerically
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.sin()));
+  }
+  // Complex float: sin(a+bi) = sin(a)cosh(b) + i*cos(a)sinh(b)
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let sin_re = re.sin() * im.cosh();
+    let cos_re = re.cos() * im.sinh();
+    return build_complex_float_result(sin_re, cos_re);
   }
   // Try symbolic Pi-fraction: Sin[k*Pi/n]
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
@@ -5503,6 +5522,14 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.cos()));
   }
+  // Complex float: cos(a+bi) = cos(a)cosh(b) - i*sin(a)sinh(b)
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let cos_re = re.cos() * im.cosh();
+    let sin_re = -(re.sin() * im.sinh());
+    return build_complex_float_result(cos_re, sin_re);
+  }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_cos(k, n)
   {
@@ -5525,6 +5552,22 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.tan()));
+  }
+  // Complex float: tan(z) = sin(z)/cos(z)
+  if let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    // sin(a+bi)
+    let sin_re = re.sin() * im.cosh();
+    let sin_im = re.cos() * im.sinh();
+    // cos(a+bi)
+    let cos_re = re.cos() * im.cosh();
+    let cos_im = -(re.sin() * im.sinh());
+    // (sin_re + sin_im*i) / (cos_re + cos_im*i)
+    let denom = cos_re * cos_re + cos_im * cos_im;
+    let res_re = (sin_re * cos_re + sin_im * cos_im) / denom;
+    let res_im = (sin_im * cos_re - sin_re * cos_im) / denom;
+    return build_complex_float_result(res_re, res_im);
   }
   if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
     && let Some(exact) = exact_tan(k, n)
@@ -6679,6 +6722,58 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "LogisticSigmoid".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// ProductLog[z] - Lambert W function (principal branch)
+pub fn product_log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ProductLog expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    // ProductLog[0] = 0
+    Expr::Integer(0) => return Ok(Expr::Integer(0)),
+    // ProductLog[E] = 1
+    Expr::Identifier(s) if s == "E" => return Ok(Expr::Integer(1)),
+    Expr::Constant(s) if s == "E" => return Ok(Expr::Integer(1)),
+    // ProductLog[-1/E] = -1
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(-1) = left.as_ref()
+        && (matches!(right.as_ref(), Expr::Identifier(s) if s == "E")
+          || matches!(right.as_ref(), Expr::Constant(s) if s == "E"))
+      {
+        return Ok(Expr::Integer(-1));
+      }
+    }
+    // ProductLog[x.] for float
+    Expr::Real(f) => {
+      if *f >= -1.0 / std::f64::consts::E {
+        // Use iterative approximation (Halley's method)
+        let x = *f;
+        let mut w = if x < 1.0 { x } else { x.ln() };
+        for _ in 0..50 {
+          let ew = w.exp();
+          let wew = w * ew;
+          let delta = wew - x;
+          if delta.abs() < 1e-15 {
+            break;
+          }
+          w -= delta / (ew * (w + 1.0) - (w + 2.0) * delta / (2.0 * (w + 1.0)));
+        }
+        return Ok(Expr::Real(w));
+      }
+    }
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "ProductLog".to_string(),
     args: args.to_vec(),
   })
 }
@@ -9208,7 +9303,21 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Helper: check if an expression is a known real value (Integer, Real, or Rational)
 fn is_known_real(expr: &Expr) -> bool {
   match expr {
-    Expr::Integer(_) | Expr::Real(_) => true,
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => true,
+    Expr::Constant(c) if c == "Pi" || c == "E" => true,
+    Expr::Identifier(s)
+      if s == "Pi"
+        || s == "E"
+        || s == "Infinity"
+        || s == "EulerGamma"
+        || s == "GoldenRatio"
+        || s == "Catalan"
+        || s == "Degree"
+        || s == "Glaisher"
+        || s == "Khinchin" =>
+    {
+      true
+    }
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
