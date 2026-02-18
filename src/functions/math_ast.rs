@@ -6037,14 +6037,18 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Coth expects 1 argument".into(),
     ));
   }
-  if let Expr::Real(f) = &args[0] {
-    let t = f.tanh();
-    if t == 0.0 {
-      return Err(InterpreterError::EvaluationError(
-        "Coth: division by zero".into(),
-      ));
+  match &args[0] {
+    Expr::Integer(0) => {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
     }
-    return Ok(Expr::Real(1.0 / t));
+    Expr::Real(f) => {
+      let t = f.tanh();
+      if t == 0.0 {
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      return Ok(Expr::Real(1.0 / t));
+    }
+    _ => {}
   }
   Ok(Expr::FunctionCall {
     name: "Coth".to_string(),
@@ -6118,8 +6122,34 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
+    Expr::Integer(0) => {
+      // ArcCosh[0] = I*Pi/2
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          Expr::Identifier("I".to_string()),
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Constant("Pi".to_string())),
+            right: Box::new(Expr::Integer(2)),
+          },
+        ],
+      );
+    }
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
-    Expr::Real(f) if *f >= 1.0 => return Ok(Expr::Real(f.acosh())),
+    Expr::Real(f) => {
+      if *f >= 1.0 {
+        return Ok(Expr::Real(f.acosh()));
+      }
+      // For 0 <= f < 1 or f < 0, return complex result
+      // ArcCosh[x] = I*ArcCos[x] for real x in [-1,1]
+      let x = *f;
+      let acos_x = x.acos();
+      return crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(0.0), Expr::Real(acos_x)],
+      );
+    }
     _ => {}
   }
   Ok(Expr::FunctionCall {
@@ -6149,6 +6179,97 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::FunctionCall {
     name: "ArcTanh".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// ArcCoth[x] - Inverse hyperbolic cotangent
+pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcCoth expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => {
+      // ArcCoth[0] = I*Pi/2
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          Expr::Identifier("I".to_string()),
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Constant("Pi".to_string())),
+            right: Box::new(Expr::Integer(2)),
+          },
+        ],
+      );
+    }
+    Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(-1) => {
+      return Ok(Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(Expr::Identifier("Infinity".to_string())),
+      });
+    }
+    Expr::Real(f) => {
+      // ArcCoth[x] = ArcTanh[1/x]
+      // For |x| > 1: real result
+      // For |x| < 1: complex result
+      // For x == 0: I*Pi/2
+      let x = *f;
+      if x.abs() > 1.0 {
+        return Ok(Expr::Real((1.0 / x).atanh()));
+      } else if x == 0.0 {
+        return crate::evaluator::evaluate_function_call_ast(
+          "Complex",
+          &[Expr::Real(0.0), Expr::Real(std::f64::consts::FRAC_PI_2)],
+        );
+      } else {
+        // |x| <= 1 and x != 0: complex result
+        // ArcCoth[x] = (1/2) * ln((x+1)/(x-1))
+        // For |x| < 1: real part = (1/2)*ln(|(x+1)/(x-1)|), imag part = ±Pi/2
+        let re = 0.5 * ((x + 1.0) / (x - 1.0)).abs().ln();
+        let im = if x > 0.0 {
+          -std::f64::consts::FRAC_PI_2
+        } else {
+          std::f64::consts::FRAC_PI_2
+        };
+        return crate::evaluator::evaluate_function_call_ast(
+          "Complex",
+          &[Expr::Real(re), Expr::Real(im)],
+        );
+      }
+    }
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcCoth".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// ArcSech[x] - Inverse hyperbolic secant
+pub fn arcsech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ArcSech expects 1 argument".into(),
+    ));
+  }
+  match &args[0] {
+    Expr::Integer(0) => return Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(1) => return Ok(Expr::Integer(0)),
+    Expr::Real(f) => {
+      // ArcSech[x] = ArcCosh[1/x]
+      let x = *f;
+      if x > 0.0 && x <= 1.0 {
+        return Ok(Expr::Real((1.0 / x).acosh()));
+      }
+    }
+    _ => {}
+  }
+  Ok(Expr::FunctionCall {
+    name: "ArcSech".to_string(),
     args: args.to_vec(),
   })
 }
