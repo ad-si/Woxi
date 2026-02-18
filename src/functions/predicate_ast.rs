@@ -1016,6 +1016,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Part { .. } => "Part",
     Expr::Function { .. } | Expr::NamedFunction { .. } => "Function",
     Expr::Pattern { .. } => "Pattern",
+    Expr::PatternTest { .. } => "PatternTest",
     _ => "Symbol",
   };
   Ok(Expr::Identifier(head.to_string()))
@@ -1395,6 +1396,14 @@ pub fn expr_to_full_form(expr: &Expr) -> String {
         format!("Pattern[{}, Blank[]]", name)
       };
       format!("Optional[{}, {}]", pattern_part, expr_to_full_form(default))
+    }
+    Expr::PatternTest { name, test } => {
+      let blank_part = if name.is_empty() {
+        "Blank[]".to_string()
+      } else {
+        format!("Pattern[{}, Blank[]]", name)
+      };
+      format!("PatternTest[{}, {}]", blank_part, expr_to_full_form(test))
     }
     Expr::Raw(s) => s.clone(),
     Expr::CurriedCall { func, args } => {

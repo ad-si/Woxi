@@ -1063,10 +1063,31 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         defaults.push(None);
         heads.push(Some(head_name));
       }
-      Rule::PatternSimple | Rule::PatternTest => {
+      Rule::PatternTest => {
+        // PatternTest: x_?test or _?test — extract param name and test condition
+        let mut pat_inner = item.into_inner();
+        let first = pat_inner.next().unwrap();
+        let (param_name, test_pair) = if first.as_rule() == Rule::PatternName {
+          (first.as_str().to_owned(), pat_inner.next().unwrap())
+        } else {
+          // Anonymous blank _?test — generate a placeholder param name
+          (format!("__pt{}", params.len()), first)
+        };
+        let test_expr = syntax::pair_to_expr(test_pair);
+        // Build condition: testFunc[paramName]
+        let cond_expr = syntax::Expr::FunctionCall {
+          name: syntax::expr_to_string(&test_expr),
+          args: vec![syntax::Expr::Identifier(param_name.clone())],
+        };
+        params.push(param_name);
+        conditions.push(Some(cond_expr));
+        defaults.push(None);
+        heads.push(None);
+        has_any_condition = true;
+      }
+      Rule::PatternSimple => {
         // Extract parameter name from pattern (e.g., "x_" -> "x")
         let param = item.as_str().trim_end_matches('_').to_owned();
-        // Handle patterns by taking just the name part before the _
         let param = param.split('_').next().unwrap_or(&param).to_owned();
         params.push(param);
         conditions.push(None);

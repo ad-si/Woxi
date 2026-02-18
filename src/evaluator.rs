@@ -429,6 +429,12 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       head: head.clone(),
       default: default.clone(),
     })),
+    Expr::PatternTest { name, test } => {
+      Ok(expr_to_string(&Expr::PatternTest {
+        name: name.clone(),
+        test: test.clone(),
+      }))
+    }
     Expr::Raw(s) => {
       // Fallback: parse to AST and evaluate to avoid interpret() recursion
       let parsed = string_to_expr(s)?;
@@ -1336,6 +1342,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       name: name.clone(),
       head: head.clone(),
       default: default.clone(),
+    }),
+    Expr::PatternTest { name, test } => Ok(Expr::PatternTest {
+      name: name.clone(),
+      test: test.clone(),
     }),
     Expr::Raw(s) => {
       // Fallback: parse and evaluate the raw string
@@ -6766,7 +6776,9 @@ fn split_association_items(s: &str) -> Vec<String> {
 /// Check if a pattern Expr contains any Expr::Pattern nodes (named blanks like n_).
 fn contains_pattern(expr: &Expr) -> bool {
   match expr {
-    Expr::Pattern { .. } | Expr::PatternOptional { .. } => true,
+    Expr::Pattern { .. }
+    | Expr::PatternOptional { .. }
+    | Expr::PatternTest { .. } => true,
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Alternatives,
       ..
@@ -7542,6 +7554,46 @@ pub fn match_pattern(
         }
       }
       Some(vec![(name.clone(), expr.clone())])
+    }
+    Expr::PatternTest { name, test } => {
+      // _?test or x_?test — matches if test[expr] is True
+      let test_result = match test.as_ref() {
+        Expr::Identifier(func_name) => {
+          let call = Expr::FunctionCall {
+            name: func_name.clone(),
+            args: vec![expr.clone()],
+          };
+          evaluate_expr_to_expr(&call).ok()
+        }
+        Expr::Function { body } => {
+          // Anonymous function: substitute slots in the body (not the Function wrapper)
+          let substituted =
+            crate::syntax::substitute_slots(body, &[expr.clone()]);
+          evaluate_expr_to_expr(&substituted).ok()
+        }
+        _ => {
+          // General expression used as function: call (test)[expr]
+          let call_str =
+            format!("({})[{}]", expr_to_string(test), expr_to_string(expr));
+          interpret(&call_str).ok().map(|r| {
+            if r == "True" {
+              Expr::Identifier("True".to_string())
+            } else {
+              Expr::Identifier("False".to_string())
+            }
+          })
+        }
+      };
+      match test_result {
+        Some(Expr::Identifier(s)) if s == "True" => {
+          if name.is_empty() {
+            Some(vec![])
+          } else {
+            Some(vec![(name.clone(), expr.clone())])
+          }
+        }
+        _ => None,
+      }
     }
     Expr::Identifier(name) if name.ends_with('_') => {
       // Blank pattern like x_

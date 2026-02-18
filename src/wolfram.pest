@@ -250,7 +250,10 @@ ExpressionNoImplicit = {
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
-PatternTest = { PatternName ~ "_" ~ "?" ~ Identifier }
+// PatternTest: x_?test or _?test or _?(expr) or x_?(expr)
+// The test can be an Identifier or a parenthesized expression (e.g. anonymous function)
+PatternTestFunc = _{ Identifier | "(" ~ (CompoundExpression | Expression) ~ ")" }
+PatternTest = { PatternName? ~ "_" ~ "?" ~ PatternTestFunc }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
