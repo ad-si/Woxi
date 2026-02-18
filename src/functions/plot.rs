@@ -374,6 +374,9 @@ pub(crate) fn generate_bar_svg(
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
+  chart_labels: &[String],
+  plot_label: Option<&str>,
+  axes_label: Option<(&str, &str)>,
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -387,6 +390,24 @@ pub(crate) fn generate_bar_svg(
     * 1.1;
   let y_max = if y_max <= 0.0 { 1.0 } else { y_max };
 
+  let s = RESOLUTION_SCALE as i32;
+  let sf = RESOLUTION_SCALE as f64;
+
+  // Extra space for labels
+  let has_chart_labels = !chart_labels.is_empty();
+  let has_x_axis_label =
+    axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  let has_y_axis_label =
+    axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
+  let has_plot_label = plot_label.is_some_and(|s| !s.is_empty());
+
+  let top_margin = if has_plot_label { 25 * s } else { 10 * s };
+  let bottom_extra = if has_chart_labels { 15.0 * sf } else { 0.0 }
+    + if has_x_axis_label { 16.0 * sf } else { 0.0 };
+  let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
+  let left_extra = if has_y_axis_label { 18.0 * sf } else { 0.0 };
+  let y_label_area = 40 * RESOLUTION_SCALE + left_extra as u32;
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -395,14 +416,16 @@ pub(crate) fn generate_bar_svg(
       InterpreterError::EvaluationError(format!("BarChart: {e}"))
     })?;
 
-    let s = RESOLUTION_SCALE as i32;
     let tick = 4 * s;
     let dark_gray = RGBColor(0x66, 0x66, 0x66);
 
     let mut chart = ChartBuilder::on(&root)
-      .margin(10 * s)
-      .x_label_area_size(25 * RESOLUTION_SCALE)
-      .y_label_area_size(40 * RESOLUTION_SCALE)
+      .margin_top(top_margin as u32)
+      .margin_right(10 * s as u32)
+      .margin_bottom(10 * s as u32)
+      .margin_left(10 * s as u32)
+      .x_label_area_size(x_label_area)
+      .y_label_area_size(y_label_area)
       .build_cartesian_2d(0.0..(n as f64), 0.0..y_max)
       .map_err(|e| {
         InterpreterError::EvaluationError(format!("BarChart: {e}"))
@@ -425,11 +448,7 @@ pub(crate) fn generate_bar_svg(
         }
       })
       .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-      .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
-          .into_font()
-          .color(&dark_gray),
-      )
+      .label_style(("sans-serif", sf * 11.0).into_font().color(&dark_gray))
       .set_tick_mark_size(LabelAreaPosition::Left, tick)
       .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
       .draw()
@@ -437,11 +456,12 @@ pub(crate) fn generate_bar_svg(
         InterpreterError::EvaluationError(format!("BarChart: {e}"))
       })?;
 
-    // Draw bars as plotters Rectangle elements
+    // Draw bars as plotters Rectangle elements (same color for all bars, like Mathematica)
     let gap = 0.1; // gap fraction per bar
+    let (br, bg, bb) = PLOT_COLORS[0];
+    let bar_color = RGBColor(br, bg, bb);
     for (i, &val) in values.iter().enumerate() {
-      let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
-      let color = RGBColor(r, g, b);
+      let color = bar_color;
       let x0 = i as f64 + gap;
       let x1 = (i + 1) as f64 - gap;
       chart
@@ -467,7 +487,96 @@ pub(crate) fn generate_bar_svg(
     render_height,
     full_width,
   );
+
+  // Compute plot area coordinates (same logic as generate_axes_only_opts)
+  let margin_left = 10.0 * sf;
+  let margin_top = top_margin as f64;
+  let margin_right = 10.0 * sf;
+  let plot_x0 = margin_left + y_label_area as f64;
+  let plot_y0 = margin_top;
+  let plot_w =
+    render_width as f64 - margin_left - margin_right - y_label_area as f64;
+  let plot_h =
+    render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
+  let axis_y = plot_y0 + plot_h;
+
+  let font_size = sf * 11.0;
+  let title_font_size = sf * 13.0;
+
+  // Insert label SVG elements before </svg>
+  if let Some(insert_pos) = buf.rfind("</svg>") {
+    let mut labels_svg = String::new();
+
+    // ChartLabels: centered below each bar
+    if has_chart_labels {
+      let slot_w = plot_w / n as f64;
+      for (i, label) in chart_labels.iter().enumerate().take(n) {
+        let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
+        let ly = axis_y + font_size * 1.5;
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"#666\">{}</text>\n",
+          html_escape(label)
+        ));
+      }
+    }
+
+    // AxesLabel: x-axis label centered below chart labels, y-axis label rotated
+    if let Some((x_label, y_label)) = &axes_label {
+      if !x_label.is_empty() {
+        let cx = plot_x0 + plot_w / 2.0;
+        let base_y = axis_y
+          + if has_chart_labels {
+            font_size * 1.5 + font_size * 1.3
+          } else {
+            font_size * 1.5
+          };
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"#666\">{}</text>\n",
+          html_escape(x_label)
+        ));
+      }
+      if !y_label.is_empty() {
+        let cy = plot_y0 + plot_h / 2.0;
+        let lx = margin_left + font_size * 0.8;
+        labels_svg.push_str(&format!(
+          "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"#666\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+          html_escape(y_label)
+        ));
+      }
+    }
+
+    // PlotLabel: centered above the chart
+    if let Some(title) = plot_label
+      && !title.is_empty()
+    {
+      let cx = plot_x0 + plot_w / 2.0;
+      let ty = margin_top - title_font_size * 0.5;
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{title_font_size:.0}\" \
+           fill=\"#333\">{}</text>\n",
+        html_escape(title)
+      ));
+    }
+
+    buf.insert_str(insert_pos, &labels_svg);
+  }
+
   Ok(buf)
+}
+
+/// Escape special characters for SVG text content.
+fn html_escape(s: &str) -> String {
+  s.replace('&', "&amp;")
+    .replace('<', "&lt;")
+    .replace('>', "&gt;")
+    .replace('"', "&quot;")
 }
 
 /// Generate SVG for a histogram using plotters.

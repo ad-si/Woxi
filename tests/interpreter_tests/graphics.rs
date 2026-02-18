@@ -1041,6 +1041,60 @@ mod plot3d {
       let svg = woxi::get_captured_graphics().unwrap();
       assert!(svg.starts_with("<svg"));
     }
+
+    #[test]
+    fn bar_chart_chart_labels() {
+      assert_eq!(
+        interpret(
+          r#"BarChart[{5, 9, 24}, ChartLabels -> {"Anna", "Ben", "Carl"}]"#
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("Anna"), "SVG should contain chart label Anna");
+      assert!(svg.contains("Ben"), "SVG should contain chart label Ben");
+      assert!(svg.contains("Carl"), "SVG should contain chart label Carl");
+    }
+
+    #[test]
+    fn bar_chart_plot_label() {
+      assert_eq!(
+        interpret(r#"BarChart[{1, 2, 3}, PlotLabel -> "My Title"]"#).unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("My Title"), "SVG should contain plot label");
+    }
+
+    #[test]
+    fn bar_chart_axes_label() {
+      assert_eq!(
+        interpret(r#"BarChart[{1, 2, 3}, AxesLabel -> {"X Axis", "Y Axis"}]"#)
+          .unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("X Axis"), "SVG should contain x-axis label");
+      assert!(svg.contains("Y Axis"), "SVG should contain y-axis label");
+    }
+
+    #[test]
+    fn bar_chart_all_labels() {
+      assert_eq!(
+        interpret(
+          r#"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {"Anna", "Ben", "Carl", "Marc", "Sven"}, PlotLabel -> "Fruit Consumption", AxesLabel -> {"Person", "Fruits"}]"#
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("Anna"), "ChartLabels");
+      assert!(svg.contains("Sven"), "ChartLabels");
+      assert!(svg.contains("Fruit Consumption"), "PlotLabel");
+      assert!(svg.contains("Person"), "AxesLabel x");
+      assert!(svg.contains("Fruits"), "AxesLabel y");
+    }
   }
 
   mod field_plots {
