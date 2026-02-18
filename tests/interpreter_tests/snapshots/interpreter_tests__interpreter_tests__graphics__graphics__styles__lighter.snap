@@ -1,0 +1,7 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Lighter[Blue], Disk[]}]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="180.00" cy="180.00" rx="166.67" ry="166.67" fill="rgb(85,85,255)"/>
+</svg>

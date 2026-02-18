@@ -1,0 +1,31 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics3D[Cone[{{0,0,0},{0,0,1}}, 0.5]]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="360" fill="white"/>
+<polygon points="180.0,30.0 212.2,172.0 176.9,169.7" fill="rgb(46,63,89)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 176.9,169.7 141.8,172.9" fill="rgb(47,65,91)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 245.3,179.6 212.2,172.0" fill="rgb(42,58,82)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 141.8,172.9 109.3,181.4" fill="rgb(46,64,89)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 274.0,191.9 245.3,179.6" fill="rgb(37,50,70)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 109.3,181.4 81.6,194.5" fill="rgb(43,59,83)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 296.2,208.2 274.0,191.9" fill="rgb(37,50,71)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 81.6,194.5 60.7,211.4" fill="rgb(38,52,72)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 310.6,227.4 296.2,208.2" fill="rgb(45,62,87)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 60.7,211.4 47.8,230.9" fill="rgb(35,49,68)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 316.0,248.0 310.6,227.4" fill="rgb(54,75,105)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 47.8,230.9 44.0,251.7" fill="rgb(44,60,84)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 312.2,268.8 316.0,248.0" fill="rgb(63,87,122)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 44.0,251.7 49.4,272.4" fill="rgb(53,73,102)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 299.3,288.4 312.2,268.8" fill="rgb(72,99,138)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 49.4,272.4 63.8,291.5" fill="rgb(62,85,120)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 278.4,305.2 299.3,288.4" fill="rgb(79,109,152)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 63.8,291.5 86.0,307.8" fill="rgb(71,97,136)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 250.7,318.4 278.4,305.2" fill="rgb(85,116,163)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 86.0,307.8 114.7,320.2" fill="rgb(78,107,150)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 218.2,326.8 250.7,318.4" fill="rgb(88,121,169)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 114.7,320.2 147.8,327.7" fill="rgb(84,115,161)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 183.1,330.0 218.2,326.8" fill="rgb(89,122,171)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="180.0,30.0 147.8,327.7 183.1,330.0" fill="rgb(88,120,169)" stroke="#00000018" stroke-width="0.5"/>
+</svg>

@@ -1,0 +1,7 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Text[Style[\\\"Platten\\\", 12, Bold], {11.5, 3.5}]}]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<text x="180.00" y="180.00" fill="rgb(0,0,0)" font-size="12" font-weight="bold" font-style="normal" text-anchor="middle" dominant-baseline="central">Platten</text>
+</svg>

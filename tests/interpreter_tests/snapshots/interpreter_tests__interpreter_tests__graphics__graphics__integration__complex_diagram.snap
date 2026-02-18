@@ -1,0 +1,13 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{\n          Red, Disk[{0, 0}, 0.5],\n          Blue, Circle[{2, 0}, 0.8],\n          Green, Polygon[{{4, 0}, {5, 1}, {5, -1}}],\n          Black, Line[{{0, 0}, {2, 0}, {4, 0}}],\n          Orange, Arrow[{{-1, -1}, {-1, 1}}],\n          Text[\\\"Origin\\\", {0, -0.8}]\n        }, ImageSize -> 400]\")"
+---
+<svg width="400" height="133" viewBox="0 0 400 133" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="76.85" cy="66.50" rx="30.79" ry="30.79" fill="rgb(255,0,0)"/>
+<ellipse cx="200.00" cy="66.50" rx="49.26" ry="49.26" fill="none" stroke="rgb(0,0,255)" stroke-width="1.60"/>
+<polygon points="323.15,66.50 384.72,4.93 384.72,128.07" fill="rgb(0,128,0)"/>
+<polyline points="76.85,66.50 200.00,66.50 323.15,66.50" fill="none" stroke="rgb(0,0,0)" stroke-width="1.60" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="15.28,128.07 15.28,4.93" fill="none" stroke="rgb(255,128,0)" stroke-width="1.60" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="15.28,4.93 17.84,11.33 12.72,11.33" fill="rgb(255,128,0)"/>
+<text x="76.85" y="115.76" fill="rgb(255,128,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">Origin</text>
+</svg>

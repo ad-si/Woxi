@@ -1,0 +1,9 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(concat!(\"Graphics[{\",\n\"Text[Style[\\\"Platten\\\", 12, Bold], {11.5, 3.5}], \",\n\"Text[Style[\\\"Schirm\\\", 11, Italic], {17, -5.0}], \",\n\"Text[Style[\\\"Strahl\\\", 11, Italic, Blue], {10, 0.7}]\", \"}]\"))"
+---
+<svg width="360" height="437" viewBox="0 0 360 437" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<text x="84.79" y="16.19" fill="rgb(0,0,0)" font-size="12" font-weight="bold" font-style="normal" text-anchor="middle" dominant-baseline="central">Platten</text>
+<text x="346.61" y="420.81" fill="rgb(0,0,0)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central">Schirm</text>
+<text x="13.39" y="149.47" fill="rgb(0,0,255)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central">Strahl</text>
+</svg>

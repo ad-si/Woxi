@@ -1,0 +1,9 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics3D[Arrow[{{0,0,0},{1,0,1}}]]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="360" fill="white"/>
+<polyline points="30.0,269.8 330.0,90.2" fill="none" stroke="#333" stroke-width="1.5"/>
+<polygon points="330.0,90.2 324.7,96.9 321.6,91.7" fill="#333"/>
+</svg>

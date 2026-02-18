@@ -1,0 +1,55 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]\")"
+---
+<svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="499,100 499,2069 "/>
+<text x="420" y="1934" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1934 499,1934 "/>
+<text x="420" y="1745" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1745 499,1745 "/>
+<text x="420" y="1557" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1557 499,1557 "/>
+<text x="420" y="1368" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1368 499,1368 "/>
+<text x="420" y="1179" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+5
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1179 499,1179 "/>
+<text x="420" y="991" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,991 499,991 "/>
+<text x="420" y="802" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,802 499,802 "/>
+<text x="420" y="613" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,613 499,613 "/>
+<text x="420" y="425" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,425 499,425 "/>
+<text x="420" y="236" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+10
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,236 499,236 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="500,2070 3499,2070 "/>
+<line x1="2000.0" y1="2070.0" x2="2000.0" y2="2110.0" stroke="#666" stroke-width="10"/>
+<line x1="2000.0" y1="235.9" x2="2000.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
+<line x1="1550.0" y1="235.9" x2="2450.0" y2="235.9" stroke="#666" stroke-width="5.4"/>
+<line x1="1550.0" y1="1934.1" x2="2450.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
+<rect x="1100.0" y="613.3" width="1800.0" height="943.5" fill="rgb(94,129,181)" stroke="#666" stroke-width="5.4"/>
+<line x1="1100.0" y1="1085.0" x2="2900.0" y2="1085.0" stroke="white" stroke-width="8.1"/>
+</svg>

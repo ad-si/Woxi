@@ -1,0 +1,16 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"ArrayPlot[{{0, 0.5, 1}, {1, 0.5, 0}, {0.5, 1, 0.5}}]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="360" fill="white"/>
+<rect x="0.0" y="0.0" width="120.5" height="120.5" fill="rgb(255,255,255)" stroke="none"/>
+<rect x="120.0" y="0.0" width="120.5" height="120.5" fill="rgb(127,127,127)" stroke="none"/>
+<rect x="240.0" y="0.0" width="120.5" height="120.5" fill="rgb(0,0,0)" stroke="none"/>
+<rect x="0.0" y="120.0" width="120.5" height="120.5" fill="rgb(0,0,0)" stroke="none"/>
+<rect x="120.0" y="120.0" width="120.5" height="120.5" fill="rgb(127,127,127)" stroke="none"/>
+<rect x="240.0" y="120.0" width="120.5" height="120.5" fill="rgb(255,255,255)" stroke="none"/>
+<rect x="0.0" y="240.0" width="120.5" height="120.5" fill="rgb(127,127,127)" stroke="none"/>
+<rect x="120.0" y="240.0" width="120.5" height="120.5" fill="rgb(0,0,0)" stroke="none"/>
+<rect x="240.0" y="240.0" width="120.5" height="120.5" fill="rgb(127,127,127)" stroke="none"/>
+</svg>
