@@ -1,6 +1,6 @@
 import {
-  EditorView, keymap, lineNumbers, highlightSpecialChars, drawSelection,
-  highlightActiveLine, rectangularSelection, crosshairCursor,
+  EditorView, keymap, lineNumbers, highlightSpecialChars,
+  highlightActiveLine,
 } from "https://esm.sh/@codemirror/view@6"
 import { EditorState, Compartment } from "https://esm.sh/@codemirror/state@6"
 import {
@@ -47,14 +47,10 @@ editorView = new EditorView({
     lineNumbers(),
     highlightSpecialChars(),
     history(),
-    drawSelection(),
-    EditorState.allowMultipleSelections.of(true),
     wolframLanguage,
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     bracketMatching(),
     closeBrackets(),
-    rectangularSelection(),
-    crosshairCursor(),
     highlightActiveLine(),
     keymap.of([
       ...closeBracketsKeymap,
