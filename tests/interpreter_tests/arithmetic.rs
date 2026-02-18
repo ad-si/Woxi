@@ -1596,6 +1596,51 @@ mod expand_threading {
   }
 
   #[test]
+  fn arccos_half() {
+    assert_eq!(interpret("ArcCos[1/2]").unwrap(), "Pi/3");
+  }
+
+  #[test]
+  fn arccos_neg_half() {
+    assert_eq!(interpret("ArcCos[-1/2]").unwrap(), "(2*Pi)/3");
+  }
+
+  #[test]
+  fn arccos_sqrt2_over_2() {
+    assert_eq!(interpret("ArcCos[Sqrt[2]/2]").unwrap(), "Pi/4");
+  }
+
+  #[test]
+  fn arccos_neg_sqrt2_over_2() {
+    assert_eq!(interpret("ArcCos[-Sqrt[2]/2]").unwrap(), "(3*Pi)/4");
+  }
+
+  #[test]
+  fn arccos_sqrt3_over_2() {
+    assert_eq!(interpret("ArcCos[Sqrt[3]/2]").unwrap(), "Pi/6");
+  }
+
+  #[test]
+  fn arcsin_half() {
+    assert_eq!(interpret("ArcSin[1/2]").unwrap(), "Pi/6");
+  }
+
+  #[test]
+  fn arcsin_neg_half() {
+    assert_eq!(interpret("ArcSin[-1/2]").unwrap(), "-1/6*Pi");
+  }
+
+  #[test]
+  fn arcsin_sqrt2_over_2() {
+    assert_eq!(interpret("ArcSin[Sqrt[2]/2]").unwrap(), "Pi/4");
+  }
+
+  #[test]
+  fn arcsin_sqrt3_over_2() {
+    assert_eq!(interpret("ArcSin[Sqrt[3]/2]").unwrap(), "Pi/3");
+  }
+
+  #[test]
   fn complex_iterated_i() {
     assert_eq!(interpret("Complex[1, Complex[0, 1]]").unwrap(), "0");
   }

@@ -5891,11 +5891,15 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
     Expr::Integer(-1) => {
-      return Ok(negate_expr(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
-        left: Box::new(Expr::Constant("Pi".to_string())),
-        right: Box::new(Expr::Integer(2)),
-      }));
+      // -1/2*Pi = Times[Rational[-1, 2], Pi]
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-1), Expr::Integer(2)],
+        }),
+        right: Box::new(Expr::Constant("Pi".to_string())),
+      });
     }
     Expr::Real(f) => {
       if (-1.0..=1.0).contains(f) {
@@ -5903,6 +5907,12 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     _ => {}
+  }
+  // Check for special rational/irrational values via numeric comparison
+  if let Some(v) = try_eval_to_f64(&args[0])
+    && let Some(result) = arcsin_special_value(v)
+  {
+    return Ok(result);
   }
   Ok(Expr::FunctionCall {
     name: "ArcSin".to_string(),
@@ -5935,10 +5945,107 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
+  // Check for special rational/irrational values via numeric comparison
+  if let Some(v) = try_eval_to_f64(&args[0])
+    && let Some(result) = arccos_special_value(v)
+  {
+    return Ok(result);
+  }
   Ok(Expr::FunctionCall {
     name: "ArcCos".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Check if a float value matches a known ArcCos special angle
+fn arccos_special_value(v: f64) -> Option<Expr> {
+  let eps = 1e-12;
+
+  // Helper to build n*Pi/d
+  let pi_frac = |num: i128, den: i128| -> Expr {
+    if den == 1 {
+      if num == 1 {
+        Expr::Constant("Pi".to_string())
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(num)),
+          right: Box::new(Expr::Constant("Pi".to_string())),
+        }
+      }
+    } else {
+      let numerator = if num == 1 {
+        Expr::Constant("Pi".to_string())
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(num)),
+          right: Box::new(Expr::Constant("Pi".to_string())),
+        }
+      };
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(numerator),
+        right: Box::new(Expr::Integer(den)),
+      }
+    }
+  };
+
+  // ArcCos special values (value -> result as n*Pi/d)
+  let table: &[(f64, i128, i128)] = &[
+    (0.5, 1, 3),                              // ArcCos[1/2] = Pi/3
+    (-0.5, 2, 3),                             // ArcCos[-1/2] = 2*Pi/3
+    (std::f64::consts::FRAC_1_SQRT_2, 1, 4),  // ArcCos[Sqrt[2]/2] = Pi/4
+    (-std::f64::consts::FRAC_1_SQRT_2, 3, 4), // ArcCos[-Sqrt[2]/2] = 3*Pi/4
+    (0.8660254037844386, 1, 6),               // ArcCos[Sqrt[3]/2] = Pi/6
+    (-0.8660254037844386, 5, 6),              // ArcCos[-Sqrt[3]/2] = 5*Pi/6
+    (0.9659258262890682, 1, 12), // ArcCos[(1+Sqrt[3])/(2*Sqrt[2])] = Pi/12
+    (-0.9659258262890682, 11, 12), // ArcCos[-(1+Sqrt[3])/(2*Sqrt[2])] = 11*Pi/12
+  ];
+
+  for &(val, num, den) in table {
+    if (v - val).abs() < eps {
+      return Some(pi_frac(num, den));
+    }
+  }
+  None
+}
+
+/// Check if a float value matches a known ArcSin special angle
+fn arcsin_special_value(v: f64) -> Option<Expr> {
+  let eps = 1e-12;
+
+  // ArcSin special values (|value| -> Pi/d)
+  let table: &[(f64, i128)] = &[
+    (0.5, 6),                             // ArcSin[1/2] = Pi/6
+    (std::f64::consts::FRAC_1_SQRT_2, 4), // ArcSin[Sqrt[2]/2] = Pi/4
+    (0.8660254037844386, 3),              // ArcSin[Sqrt[3]/2] = Pi/3
+  ];
+
+  for &(val, den) in table {
+    if (v.abs() - val).abs() < eps {
+      if v < 0.0 {
+        // Negative: build Times[Rational[-1, den], Pi] to display as -1/den*Pi
+        return Some(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(den)],
+          }),
+          right: Box::new(Expr::Constant("Pi".to_string())),
+        });
+      } else if den == 1 {
+        return Some(Expr::Constant("Pi".to_string()));
+      } else {
+        return Some(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Constant("Pi".to_string())),
+          right: Box::new(Expr::Integer(den)),
+        });
+      }
+    }
+  }
+  None
 }
 
 /// ArcTan[x] - Inverse tangent (symbolic)
@@ -5959,11 +6066,15 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
     Expr::Integer(-1) => {
-      return Ok(negate_expr(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
-        left: Box::new(Expr::Constant("Pi".to_string())),
-        right: Box::new(Expr::Integer(4)),
-      }));
+      // -1/4*Pi = Times[Rational[-1, 4], Pi]
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-1), Expr::Integer(4)],
+        }),
+        right: Box::new(Expr::Constant("Pi".to_string())),
+      });
     }
     Expr::Real(f) => return Ok(Expr::Real(f.atan())),
     _ => {}

@@ -8247,22 +8247,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: ArcTan
-LINE: 546
-TYPE: >>
-INPUT: ArcTan[1.0]
-EXPECTED:
-= 0.785398
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: ArcTan
-LINE: 548
-TYPE: >>
-INPUT: ArcTan[-1.0]
-EXPECTED:
-= -0.785398
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: ArcTan
 LINE: 551
 TYPE: >>
 INPUT: ArcTan[1, 1]
@@ -18377,18 +18361,6 @@ EXPECTED: True
 ---
 FILE: test/builtin/numbers/test_hyperbolic.py
 FUNCTION: test_gudermannian
-LINE: 16
-INPUT: Gudermannian[Undefined]
-EXPECTED: Undefined
----
-FILE: test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_gudermannian
-LINE: 17
-INPUT: Gudermannian[0]
-EXPECTED: 0
----
-FILE: test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_gudermannian
 LINE: 18
 INPUT: Gudermannian[2 Pi I]
 EXPECTED: 0
@@ -18398,24 +18370,6 @@ FUNCTION: test_gudermannian
 LINE: 20
 INPUT: Gudermannian[6/4 Pi I]
 EXPECTED: DirectedInfinity[-I]
----
-FILE: test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_gudermannian
-LINE: 21
-INPUT: Gudermannian[Infinity]
-EXPECTED: Pi/2
----
-FILE: test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_gudermannian
-LINE: 23
-INPUT: Gudermannian[-Infinity]
-EXPECTED: -Pi/2
----
-FILE: test/builtin/numbers/test_hyperbolic.py
-FUNCTION: test_gudermannian
-LINE: 24
-INPUT: Gudermannian[ComplexInfinity]
-EXPECTED: Indeterminate
 ---
 FILE: test/builtin/numbers/test_hyperbolic.py
 FUNCTION: test_gudermannian
@@ -18455,24 +18409,6 @@ EXPECTED: I Infinity
 ---
 FILE: test/builtin/numbers/test_trig.py
 FUNCTION: test_ArcCos
-LINE: 17
-INPUT: ArcCos[0]
-EXPECTED: 1/2 Pi
----
-FILE: test/builtin/numbers/test_trig.py
-FUNCTION: test_ArcCos
-LINE: 18
-INPUT: ArcCos[1/2]
-EXPECTED: 1/3 Pi
----
-FILE: test/builtin/numbers/test_trig.py
-FUNCTION: test_ArcCos
-LINE: 19
-INPUT: ArcCos[-1/2]
-EXPECTED: 2/3 Pi
----
-FILE: test/builtin/numbers/test_trig.py
-FUNCTION: test_ArcCos
 LINE: 20
 INPUT: ArcCos[1/2 Sqrt[2]]
 EXPECTED: 1/4 Pi
@@ -18494,12 +18430,6 @@ FUNCTION: test_ArcCos
 LINE: 23
 INPUT: ArcCos[-1/2 Sqrt[3]]
 EXPECTED: 5/6 Pi
----
-FILE: test/builtin/numbers/test_trig.py
-FUNCTION: test_ArcCos
-LINE: 24
-INPUT: ArcCos[(1 + Sqrt[3]) / (2*Sqrt[2])]
-EXPECTED: 1/12 Pi
 ---
 FILE: test/builtin/calculus/test_integrate.py
 FUNCTION: test_integrate
