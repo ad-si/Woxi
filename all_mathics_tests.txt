@@ -4732,14 +4732,6 @@ EXPECTED:
 = {abc, def}
 ---
 FILE: mathics/builtin/string/operations.py
-CLASS: StringInsert
-LINE: 197
-TYPE: >>
-INPUT: StringInsert["1234567890123456", ".", Range[-16, -4, 3]]
-EXPECTED:
-= 1.234.567.890.123.456"""
----
-FILE: mathics/builtin/string/operations.py
 CLASS: StringJoin
 LINE: 312
 TYPE: >>
@@ -4763,14 +4755,6 @@ INPUT: StringLength[x]
 EXPECTED:
 : String expected.
 = StringLength[x]
----
-FILE: mathics/builtin/string/operations.py
-CLASS: StringPosition
-LINE: 392
-TYPE: >>
-INPUT: StringPosition["123ABCxyABCzzzABCABC", "ABC", 2]
-EXPECTED:
-= {{4, 6}, {9, 11}}
 ---
 FILE: mathics/builtin/string/operations.py
 CLASS: StringPosition
@@ -12118,30 +12102,6 @@ EXPECTED:
 = {3, 2, 1}
 ---
 FILE: mathics/builtin/list/rearrange.py
-CLASS: Flatten
-LINE: 649
-TYPE: >>
-INPUT: Flatten[{{a, b}, {c, d}}, {{2}, {1}}]
-EXPECTED:
-= {{a, c}, {b, d}}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: Flatten
-LINE: 652
-TYPE: >>
-INPUT: Flatten[{{a, b}, {c, d}}, {{1, 2}}]
-EXPECTED:
-= {a, b, c, d}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: Flatten
-LINE: 656
-TYPE: >>
-INPUT: Flatten[{{1, 2, 3}, {4}, {6, 7}, {8, 9, 10}}, {{2}, {1}}]
-EXPECTED:
-= {{1, 4, 6, 8}, {2, 7, 9}, {3, 10}}
----
-FILE: mathics/builtin/list/rearrange.py
 CLASS: GatherBy
 LINE: 823
 TYPE: >>
@@ -12160,14 +12120,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/list/rearrange.py
 CLASS: PadLeft
-LINE: 927
-TYPE: >>
-INPUT: PadLeft[{{}, {1, 2}, {1, 2, 3}}]
-EXPECTED:
-= {{0, 0, 0}, {0, 1, 2}, {1, 2, 3}}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: PadLeft
 LINE: 929
 TYPE: >>
 INPUT: PadLeft[{1, 2, 3}, 10, {a, b, c}, 2]
@@ -12181,14 +12133,6 @@ TYPE: >>
 INPUT: PadLeft[{{1, 2, 3}}, {5, 2}, x, 1]
 EXPECTED:
 = {{x, x}, {x, x}, {x, x}, {3, x}, {x, x}}
----
-FILE: mathics/builtin/list/rearrange.py
-CLASS: PadRight
-LINE: 965
-TYPE: >>
-INPUT: PadRight[{{}, {1, 2}, {1, 2, 3}}]
-EXPECTED:
-= {{0, 0, 0}, {1, 2, 0}, {1, 2, 3}}
 ---
 FILE: mathics/builtin/list/rearrange.py
 CLASS: PadRight

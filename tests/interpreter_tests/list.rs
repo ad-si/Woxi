@@ -2296,4 +2296,54 @@ mod join_non_list {
       "{{}, {1}, {2}, {3}, {1, 2}, {1, 3}, {2, 1}, {2, 3}, {3, 1}, {3, 2}}"
     );
   }
+
+  #[test]
+  fn flatten_dim_spec_transpose() {
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {{2}, {1}}]").unwrap(),
+      "{{a, c}, {b, d}}"
+    );
+  }
+
+  #[test]
+  fn flatten_dim_spec_merge() {
+    assert_eq!(
+      interpret("Flatten[{{a, b}, {c, d}}, {{1, 2}}]").unwrap(),
+      "{a, b, c, d}"
+    );
+  }
+
+  #[test]
+  fn flatten_dim_spec_ragged_transpose() {
+    assert_eq!(
+      interpret("Flatten[{{1, 2, 3}, {4}, {6, 7}, {8, 9, 10}}, {{2}, {1}}]")
+        .unwrap(),
+      "{{1, 4, 6, 8}, {2, 7, 9}, {3, 10}}"
+    );
+  }
+
+  #[test]
+  fn pad_left_ragged_array() {
+    assert_eq!(
+      interpret("PadLeft[{{}, {1, 2}, {1, 2, 3}}]").unwrap(),
+      "{{0, 0, 0}, {0, 1, 2}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn pad_right_ragged_array() {
+    assert_eq!(
+      interpret("PadRight[{{}, {1, 2}, {1, 2, 3}}]").unwrap(),
+      "{{0, 0, 0}, {1, 2, 0}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn string_position_with_limit() {
+    assert_eq!(
+      interpret("StringPosition[\"123ABCxyABCzzzABCABC\", \"ABC\", 2]")
+        .unwrap(),
+      "{{4, 6}, {9, 11}}"
+    );
+  }
 }
