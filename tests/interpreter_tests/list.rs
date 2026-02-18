@@ -2425,4 +2425,41 @@ mod join_non_list {
     assert_eq!(interpret("Clip[-0.5, {0, 1}, {-1, 1}]").unwrap(), "-1");
     assert_eq!(interpret("Clip[1.5, {0, 1}, {-1, 1}]").unwrap(), "1");
   }
+
+  #[test]
+  fn delete_non_list_head() {
+    assert_eq!(interpret("Delete[f[a, b, c, d], 3]").unwrap(), "f[a, b, d]");
+  }
+
+  #[test]
+  fn delete_position_zero() {
+    assert_eq!(
+      interpret("Delete[{a, b, c}, 0]").unwrap(),
+      "Sequence[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn map_level_spec() {
+    assert_eq!(
+      interpret("Map[f, {{a, b}, {c, d, e}}, {2}]").unwrap(),
+      "{{f[a], f[b]}, {f[c], f[d], f[e]}}"
+    );
+  }
+
+  #[test]
+  fn map_heads_true() {
+    assert_eq!(
+      interpret("Map[f, a + b + c, Heads->True]").unwrap(),
+      "f[Plus][f[a], f[b], f[c]]"
+    );
+  }
+
+  #[test]
+  fn map_level_range() {
+    assert_eq!(
+      interpret("Map[f, {{a, b}, {c, d, e}}, 2]").unwrap(),
+      "{f[{f[a], f[b]}], f[{f[c], f[d], f[e]}]}"
+    );
+  }
 }

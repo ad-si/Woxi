@@ -1476,4 +1476,38 @@ mod expand_threading {
       "{some thing, some times}"
     );
   }
+
+  #[test]
+  fn norm_symbolic_vector() {
+    assert_eq!(
+      interpret("Norm[{x, y, z}]").unwrap(),
+      "Sqrt[Abs[x]^2 + Abs[y]^2 + Abs[z]^2]"
+    );
+  }
+
+  #[test]
+  fn norm_infinity_symbolic() {
+    assert_eq!(
+      interpret("Norm[{x, y, z}, Infinity]").unwrap(),
+      "Max[Abs[x], Abs[y], Abs[z]]"
+    );
+  }
+
+  #[test]
+  fn norm_infinity_numeric() {
+    assert_eq!(interpret("Norm[{-100, 2, 3, 4}, Infinity]").unwrap(), "100");
+  }
+
+  #[test]
+  fn norm_complex_scalar() {
+    assert_eq!(interpret("Norm[1 + I]").unwrap(), "Sqrt[2]");
+  }
+
+  #[test]
+  fn string_replace_operator_form() {
+    assert_eq!(
+      interpret("StringReplace[\"y\" -> \"ies\"][\"city\"]").unwrap(),
+      "cities"
+    );
+  }
 }
