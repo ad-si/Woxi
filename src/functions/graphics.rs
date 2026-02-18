@@ -1664,7 +1664,11 @@ fn stacked_fraction_width(num_w: f64, den_w: f64) -> f64 {
 /// which requires extra vertical space.
 pub fn has_fraction(expr: &Expr) -> bool {
   match expr {
-    Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      true
+    }
     Expr::FunctionCall { name, args }
       if name == "Times"
         && args.len() == 2
@@ -1681,16 +1685,14 @@ pub fn has_fraction(expr: &Expr) -> bool {
       has_fraction(left) || has_fraction(right)
     }
     Expr::UnaryOp { operand, .. } => has_fraction(operand),
-    Expr::Comparison {
-      operands, ..
-    } => operands.iter().any(has_fraction),
+    Expr::Comparison { operands, .. } => operands.iter().any(has_fraction),
     Expr::Rule {
       pattern,
       replacement,
     } => has_fraction(pattern) || has_fraction(replacement),
-    Expr::Association(pairs) => {
-      pairs.iter().any(|(k, v)| has_fraction(k) || has_fraction(v))
-    }
+    Expr::Association(pairs) => pairs
+      .iter()
+      .any(|(k, v)| has_fraction(k) || has_fraction(v)),
     _ => false,
   }
 }
@@ -1699,7 +1701,9 @@ pub fn has_fraction(expr: &Expr) -> bool {
 /// Recursively handles all expression types so that Power expressions
 /// anywhere in the tree are rendered with `<tspan>` superscripts.
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
-  use crate::syntax::{BinaryOperator, ComparisonOp, UnaryOperator, expr_to_output};
+  use crate::syntax::{
+    BinaryOperator, ComparisonOp, UnaryOperator, expr_to_output,
+  };
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
   if let Some((base, exp)) = as_power(expr) {
@@ -1724,8 +1728,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
     // ── List → {a, b, c} ──
     Expr::List(items) => {
-      let parts: Vec<String> =
-        items.iter().map(expr_to_svg_markup).collect();
+      let parts: Vec<String> = items.iter().map(expr_to_svg_markup).collect();
       format!("{{{}}}", parts.join(", "))
     }
 
@@ -1751,10 +1754,8 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         BinaryOperator::StringJoin => ("&lt;&gt;", false),
         BinaryOperator::Alternatives => ("|", true),
       };
-      let is_mult = matches!(
-        op,
-        BinaryOperator::Times | BinaryOperator::Divide
-      );
+      let is_mult =
+        matches!(op, BinaryOperator::Times | BinaryOperator::Divide);
       let left_str = expr_to_svg_markup(left);
       let right_str = expr_to_svg_markup(right);
       let left_fmt = if is_mult && is_additive_expr(left) {
@@ -1762,12 +1763,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       } else {
         left_str
       };
-      let right_fmt =
-        if is_mult && is_additive_expr(right.as_ref()) {
-          format!("({})", right_str)
-        } else {
-          right_str
-        };
+      let right_fmt = if is_mult && is_additive_expr(right.as_ref()) {
+        format!("({})", right_str)
+      } else {
+        right_str
+      };
       if needs_space {
         format!("{} {} {}", left_fmt, op_str, right_fmt)
       } else {
@@ -1815,11 +1815,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       let parts: Vec<String> = items
         .iter()
         .map(|(k, v)| {
-          format!(
-            "{} -&gt; {}",
-            expr_to_svg_markup(k),
-            expr_to_svg_markup(v)
-          )
+          format!("{} -&gt; {}", expr_to_svg_markup(k), expr_to_svg_markup(v))
         })
         .collect();
       format!("&lt;|{}|&gt;", parts.join(", "))
@@ -1860,19 +1856,16 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               if fn_args.len() == 2 {
                 result.push_str(&expr_to_svg_markup(&fn_args[1]));
               } else {
-                result.push_str(&expr_to_svg_markup(
-                  &Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: fn_args[1..].to_vec(),
-                  },
-                ));
+                result.push_str(&expr_to_svg_markup(&Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: fn_args[1..].to_vec(),
+                }));
               }
             } else if let Expr::Integer(n) = arg
               && *n < 0
             {
               result.push_str(" - ");
-              result
-                .push_str(&expr_to_svg_markup(&Expr::Integer(-n)));
+              result.push_str(&expr_to_svg_markup(&Expr::Integer(-n)));
             } else {
               result.push_str(" + ");
               result.push_str(&expr_to_svg_markup(arg));
@@ -1884,27 +1877,26 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // Times[a, b, ...] with -1 coefficient and Rational handling
         "Times" if args.len() >= 2 => {
           // Times[Rational[1, d], expr] → stacked fraction expr/d
-          if args.len() == 2 {
-            if let Expr::FunctionCall {
+          if args.len() == 2
+            && let Expr::FunctionCall {
               name: rname,
               args: rargs,
             } = &args[0]
-              && rname == "Rational"
-              && rargs.len() == 2
-              && matches!(&rargs[0], Expr::Integer(1))
-              && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
-            {
-              let num_markup = expr_to_svg_markup(&args[1]);
-              let den_markup = expr_to_svg_markup(&rargs[1]);
-              let num_w = estimate_display_width(&args[1]);
-              let den_w = estimate_display_width(&rargs[1]);
-              return stacked_fraction_svg(
-                &num_markup,
-                &den_markup,
-                num_w,
-                den_w,
-              );
-            }
+            && rname == "Rational"
+            && rargs.len() == 2
+            && matches!(&rargs[0], Expr::Integer(1))
+            && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
+          {
+            let num_markup = expr_to_svg_markup(&args[1]);
+            let den_markup = expr_to_svg_markup(&rargs[1]);
+            let num_w = estimate_display_width(&args[1]);
+            let den_w = estimate_display_width(&rargs[1]);
+            return stacked_fraction_svg(
+              &num_markup,
+              &den_markup,
+              num_w,
+              den_w,
+            );
           }
           // Times[-1, x, ...] → -x*...
           if matches!(&args[0], Expr::Integer(-1)) {
@@ -1970,8 +1962,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
   use crate::syntax::{BinaryOperator, expr_to_output};
 
   if let Some((base, exp)) = as_power(expr) {
-    return estimate_display_width(base)
-      + estimate_display_width(exp) * 0.7;
+    return estimate_display_width(base) + estimate_display_width(exp) * 0.7;
   }
 
   match expr {
@@ -1987,8 +1978,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 
     // List → {a, b, c}: 2 for braces + items + separators
     Expr::List(items) => {
-      let inner: f64 =
-        items.iter().map(estimate_display_width).sum();
+      let inner: f64 = items.iter().map(estimate_display_width).sum();
       let seps = if items.len() > 1 {
         (items.len() - 1) as f64 * 2.0
       } else {
@@ -1998,9 +1988,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     }
 
     // UnaryOp: 1 char prefix + operand
-    Expr::UnaryOp { operand, .. } => {
-      1.0 + estimate_display_width(operand)
-    }
+    Expr::UnaryOp { operand, .. } => 1.0 + estimate_display_width(operand),
 
     // BinaryOp
     Expr::BinaryOp { op, left, right } => {
@@ -2013,8 +2001,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         BinaryOperator::StringJoin => 2.0,
         BinaryOperator::Alternatives => 3.0,
       };
-      estimate_display_width(left) + op_len
-        + estimate_display_width(right)
+      estimate_display_width(left) + op_len + estimate_display_width(right)
     }
 
     // Comparison: operands + operators
@@ -2036,7 +2023,8 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       pattern,
       replacement,
     } => {
-      estimate_display_width(pattern) + 4.0
+      estimate_display_width(pattern)
+        + 4.0
         + estimate_display_width(replacement)
     }
 
@@ -2045,8 +2033,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       let inner: f64 = items
         .iter()
         .map(|(k, v)| {
-          estimate_display_width(k) + 4.0
-            + estimate_display_width(v)
+          estimate_display_width(k) + 4.0 + estimate_display_width(v)
         })
         .sum();
       let seps = if items.len() > 1 {
@@ -2060,31 +2047,28 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     // FunctionCall
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Plus" if args.len() >= 2 => {
-        let terms: f64 =
-          args.iter().map(estimate_display_width).sum();
+        let terms: f64 = args.iter().map(estimate_display_width).sum();
         terms + (args.len() - 1) as f64 * 3.0
       }
       "Times" if args.len() >= 2 => {
         // Times[Rational[1, d], expr] → stacked fraction expr/d
-        if args.len() == 2 {
-          if let Expr::FunctionCall {
+        if args.len() == 2
+          && let Expr::FunctionCall {
             name: rname,
             args: rargs,
           } = &args[0]
-            && rname == "Rational"
-            && rargs.len() == 2
-            && matches!(&rargs[0], Expr::Integer(1))
-            && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
-          {
-            return stacked_fraction_width(
-              estimate_display_width(&args[1]),
-              estimate_display_width(&rargs[1]),
-            );
-          }
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!(&rargs[0], Expr::Integer(1))
+          && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
+        {
+          return stacked_fraction_width(
+            estimate_display_width(&args[1]),
+            estimate_display_width(&rargs[1]),
+          );
         }
         if matches!(&args[0], Expr::Integer(-1)) {
-          let rest: f64 =
-            args[1..].iter().map(estimate_display_width).sum();
+          let rest: f64 = args[1..].iter().map(estimate_display_width).sum();
           let seps = if args.len() > 2 {
             (args.len() - 2) as f64
           } else {
@@ -2092,20 +2076,16 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           };
           1.0 + rest + seps
         } else {
-          let factors: f64 =
-            args.iter().map(estimate_display_width).sum();
+          let factors: f64 = args.iter().map(estimate_display_width).sum();
           factors + (args.len() - 1) as f64
         }
       }
-      "Rational" if args.len() == 2 => {
-        stacked_fraction_width(
-          estimate_display_width(&args[0]),
-          estimate_display_width(&args[1]),
-        )
-      }
+      "Rational" if args.len() == 2 => stacked_fraction_width(
+        estimate_display_width(&args[0]),
+        estimate_display_width(&args[1]),
+      ),
       _ => {
-        let args_width: f64 =
-          args.iter().map(estimate_display_width).sum();
+        let args_width: f64 = args.iter().map(estimate_display_width).sum();
         let seps = if args.len() > 1 {
           (args.len() - 1) as f64 * 2.0
         } else {
@@ -2161,12 +2141,10 @@ pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = &opt
       && let Expr::Identifier(name) = pattern.as_ref()
       && name == "Frame"
+      && let Expr::Identifier(val) = replacement.as_ref()
+      && val == "All"
     {
-      if let Expr::Identifier(val) = replacement.as_ref() {
-        if val == "All" {
-          frame_all = true;
-        }
-      }
+      frame_all = true;
     }
   }
 

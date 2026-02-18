@@ -569,7 +569,8 @@ mod export_string {
   #[test]
   fn export_string_graphics_returns_svg_string() {
     clear_state();
-    let result = interpret("ExportString[Graphics[{Disk[]}], \"SVG\"]").unwrap();
+    let result =
+      interpret("ExportString[Graphics[{Disk[]}], \"SVG\"]").unwrap();
     assert!(
       result.starts_with("<svg"),
       "Expected SVG string starting with <svg, got: {}",
@@ -650,17 +651,13 @@ mod grid_graphics {
   #[test]
   fn grid_returns_graphics() {
     clear_state();
-    assert_eq!(
-      interpret("Grid[{{a, b}, {c, d}}]").unwrap(),
-      "-Graphics-"
-    );
+    assert_eq!(interpret("Grid[{{a, b}, {c, d}}]").unwrap(), "-Graphics-");
   }
 
   #[test]
   fn grid_produces_svg() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{a, b}, {c, d}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{a, b}, {c, d}}]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -671,8 +668,7 @@ mod grid_graphics {
   #[test]
   fn grid_svg_contains_cell_text() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{a, b}, {c, d}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{a, b}, {c, d}}]").unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains(">a</text>"));
     assert!(svg.contains(">b</text>"));
@@ -686,23 +682,27 @@ mod grid_graphics {
     let result =
       interpret_with_stdout("Grid[{{1, 2}, {3, 4}}, Frame -> All]").unwrap();
     let svg = result.graphics.unwrap();
-    assert!(svg.contains("<line"), "Frame -> All should produce <line> elements");
+    assert!(
+      svg.contains("<line"),
+      "Frame -> All should produce <line> elements"
+    );
   }
 
   #[test]
   fn grid_no_frame_no_lines() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{1, 2}, {3, 4}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{1, 2}, {3, 4}}]").unwrap();
     let svg = result.graphics.unwrap();
-    assert!(!svg.contains("<line"), "Without Frame -> All, no <line> elements");
+    assert!(
+      !svg.contains("<line"),
+      "Without Frame -> All, no <line> elements"
+    );
   }
 
   #[test]
   fn grid_1d_list() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{a, b, c}]").unwrap();
+    let result = interpret_with_stdout("Grid[{a, b, c}]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
     assert!(svg.contains(">a</text>"));
@@ -725,8 +725,7 @@ mod grid_graphics {
   #[test]
   fn grid_symbolic_cells() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{x, y^2}, {z^3, w}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{x, y^2}, {z^3, w}}]").unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains(">x</text>"));
     assert!(svg.contains(">w</text>"));
@@ -740,17 +739,20 @@ mod grid_graphics {
   #[test]
   fn grid_superscript_rendering() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{y^2, z^3}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{y^2, z^3}}]").unwrap();
     let svg = result.graphics.unwrap();
     // y^2 should render as y<tspan baseline-shift="super" font-size="70%">2</tspan>
     assert!(
-      svg.contains("y<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"),
+      svg.contains(
+        "y<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"
+      ),
       "y^2 should render with superscript tspan, got: {}",
       svg
     );
     assert!(
-      svg.contains("z<tspan baseline-shift=\"super\" font-size=\"70%\">3</tspan>"),
+      svg.contains(
+        "z<tspan baseline-shift=\"super\" font-size=\"70%\">3</tspan>"
+      ),
       "z^3 should render with superscript tspan"
     );
   }
@@ -758,12 +760,13 @@ mod grid_graphics {
   #[test]
   fn grid_superscript_in_list_cell() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{{x, y^2, z^3}}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{{x, y^2, z^3}}}]").unwrap();
     let svg = result.graphics.unwrap();
     // List cell should recursively render Power with superscripts
     assert!(
-      svg.contains("y<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"),
+      svg.contains(
+        "y<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"
+      ),
       "y^2 inside list cell should render with superscript"
     );
     assert!(
@@ -785,7 +788,9 @@ mod grid_graphics {
     );
     // Power inside function arguments should get superscripts
     assert!(
-      svg.contains("Sin[x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>]"),
+      svg.contains(
+        "Sin[x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>]"
+      ),
       "Sin[x^2] should render with superscript inside function call"
     );
   }
@@ -793,9 +798,11 @@ mod grid_graphics {
   #[test]
   fn output_svg_for_non_graphics() {
     clear_state();
-    let result =
-      interpret_with_stdout("{x^3, x^4, 5/7}").unwrap();
-    assert!(result.output_svg.is_some(), "output_svg should be set for non-graphics results");
+    let result = interpret_with_stdout("{x^3, x^4, 5/7}").unwrap();
+    assert!(
+      result.output_svg.is_some(),
+      "output_svg should be set for non-graphics results"
+    );
     let svg = result.output_svg.unwrap();
     assert!(svg.starts_with("<svg"));
     assert!(svg.contains("<tspan baseline-shift=\"super\""));
@@ -813,17 +820,18 @@ mod grid_graphics {
   #[test]
   fn output_svg_not_set_for_graphics() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{a, b}}]").unwrap();
-    assert!(result.output_svg.is_none(), "output_svg should be None for Graphics results");
+    let result = interpret_with_stdout("Grid[{{a, b}}]").unwrap();
+    assert!(
+      result.output_svg.is_none(),
+      "output_svg should be None for Graphics results"
+    );
     assert!(result.graphics.is_some(), "graphics should be set for Grid");
   }
 
   #[test]
   fn grid_stacked_fraction() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{5/7, x}, {a, 3/11}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{5/7, x}, {a, 3/11}}]").unwrap();
     let svg = result.graphics.unwrap();
     // 5/7 rendered as stacked fraction: numerator 5 shifted up, bar, denominator 7
     assert!(
@@ -853,8 +861,7 @@ mod grid_graphics {
   #[test]
   fn output_svg_stacked_fraction_height() {
     clear_state();
-    let result =
-      interpret_with_stdout("5/7").unwrap();
+    let result = interpret_with_stdout("5/7").unwrap();
     let svg = result.output_svg.unwrap();
     // SVG should have increased height for fractions
     assert!(
@@ -877,8 +884,7 @@ mod grid_graphics {
   #[test]
   fn grid_svg_has_monospace_font() {
     clear_state();
-    let result =
-      interpret_with_stdout("Grid[{{a, b}}]").unwrap();
+    let result = interpret_with_stdout("Grid[{{a, b}}]").unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains("monospace"));
   }
@@ -886,8 +892,7 @@ mod grid_graphics {
   #[test]
   fn grid_postfix_form() {
     clear_state();
-    let result =
-      interpret_with_stdout("{{1, 2}, {3, 4}} // Grid").unwrap();
+    let result = interpret_with_stdout("{{1, 2}, {3, 4}} // Grid").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
   }
