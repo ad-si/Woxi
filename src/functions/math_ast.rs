@@ -2849,6 +2849,9 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sqrt expects exactly 1 argument".into(),
     ));
   }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   match &args[0] {
     // Perfect squares: Sqrt[0]=0, Sqrt[1]=1, Sqrt[4]=2, etc.
     Expr::Integer(n) if *n >= 0 => {
@@ -5453,6 +5456,12 @@ fn negate_expr(expr: Expr) -> Expr {
   }
 }
 
+/// Check if an argument is Indeterminate or ComplexInfinity.
+/// For periodic/trig functions, both should return Indeterminate.
+fn is_indeterminate_or_complex_infinity(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+}
+
 /// Sin, Cos, Tan - Trigonometric functions (fully symbolic)
 /// Only evaluate to float for Real arguments. For integer/symbolic args,
 /// try exact Pi-fraction lookup, otherwise return unevaluated.
@@ -5461,6 +5470,9 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Sin expects 1 argument".into(),
     ));
+  }
+  if is_indeterminate_or_complex_infinity(&args[0]) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   // Real args: evaluate numerically
   if let Expr::Real(f) = &args[0] {
@@ -5485,6 +5497,9 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cos expects 1 argument".into(),
     ));
   }
+  if is_indeterminate_or_complex_infinity(&args[0]) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.cos()));
   }
@@ -5505,6 +5520,9 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Tan expects 1 argument".into(),
     ));
   }
+  if is_indeterminate_or_complex_infinity(&args[0]) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.tan()));
   }
@@ -5524,6 +5542,9 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Sec expects 1 argument".into(),
     ));
+  }
+  if is_indeterminate_or_complex_infinity(&args[0]) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   if let Expr::Real(f) = &args[0] {
     let c = f.cos();
@@ -5549,6 +5570,9 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Csc expects 1 argument".into(),
     ));
   }
+  if is_indeterminate_or_complex_infinity(&args[0]) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   if let Expr::Real(f) = &args[0] {
     let s = f.sin();
     if s == 0.0 {
@@ -5573,6 +5597,9 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cot expects 1 argument".into(),
     ));
   }
+  if is_indeterminate_or_complex_infinity(&args[0]) {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   if let Expr::Real(f) = &args[0] {
     let s = f.sin();
     if s == 0.0 {
@@ -5596,6 +5623,9 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Exp expects 1 argument".into(),
     ));
+  }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   match &args[0] {
     Expr::Integer(0) => Ok(Expr::Integer(1)),
@@ -5713,6 +5743,11 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if !args.is_empty()
+    && matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate")
+  {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   match args.len() {
     1 => {
       // Log[0] = -Infinity
@@ -5755,10 +5790,16 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Real(f) = &args[0] {
         if *f > 0.0 {
           return Ok(Expr::Real(f.ln()));
+        } else if *f == 0.0 {
+          return Ok(Expr::Identifier("Indeterminate".to_string()));
         } else {
-          return Err(InterpreterError::EvaluationError(
-            "Log: argument must be positive".into(),
-          ));
+          // Log of negative real: return complex result
+          let re = f.abs().ln();
+          let im = std::f64::consts::PI;
+          return crate::evaluator::evaluate_function_call_ast(
+            "Complex",
+            &[Expr::Real(re), Expr::Real(im)],
+          );
         }
       }
       Ok(Expr::FunctionCall {
@@ -6094,6 +6135,9 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sinh expects 1 argument".into(),
     ));
   }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.sinh())),
@@ -6111,6 +6155,9 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Cosh expects 1 argument".into(),
     ));
+  }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
@@ -6130,6 +6177,9 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Tanh expects 1 argument".into(),
     ));
   }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.tanh())),
@@ -6147,6 +6197,9 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Coth expects 1 argument".into(),
     ));
+  }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   match &args[0] {
     Expr::Integer(0) => {
@@ -6174,6 +6227,9 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sech expects 1 argument".into(),
     ));
   }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
     Expr::Real(f) => return Ok(Expr::Real(1.0 / f.cosh())),
@@ -6191,6 +6247,9 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Csch expects 1 argument".into(),
     ));
+  }
+  if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
   if let Expr::Real(f) = &args[0] {
     let s = f.sinh();

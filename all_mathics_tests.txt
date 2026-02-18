@@ -4444,14 +4444,6 @@ INPUT: MyD[Sin[2 x], x]
 EXPECTED:
 = 2 Cos[2 x]
 ---
-FILE: mathics/builtin/testing_expressions/list_oriented.py
-CLASS: NotListQ
-LINE: 243
-TYPE: >>
-INPUT: D[Sin[2 x], x]
-EXPECTED:
-= 2 Cos[2 x]
----
 FILE: mathics/builtin/testing_expressions/logic.py
 CLASS: Equivalent
 LINE: 204
@@ -5772,14 +5764,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/algebra.py
 CLASS: Simplify
-LINE: 1571
-TYPE: >>
-INPUT: Simplify[20 Log[2]]
-EXPECTED:
-= 20 Log[2]
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: Simplify
 LINE: 1574
 TYPE: >>
 INPUT: Simplify[20 Log[2], ComplexityFunction->LeafCount]
@@ -5851,44 +5835,12 @@ EXPECTED:
 = False
 ---
 FILE: mathics/builtin/numbers/algebra.py
-CLASS: PowerExpand
-LINE: 1867
-TYPE: >>
-INPUT: PowerExpand[(a ^ b) ^ c]
-EXPECTED:
-= a ^ (b c)
----
-FILE: mathics/builtin/numbers/algebra.py
-CLASS: PowerExpand
-LINE: 1869
-TYPE: >>
-INPUT: PowerExpand[(a * b) ^ c]
-EXPECTED:
-= a ^ c b ^ c
----
-FILE: mathics/builtin/numbers/algebra.py
 CLASS: Together
 LINE: 1904
 TYPE: >>
 INPUT: Together[{x / (y+1) + x / (y+1)^2}]
 EXPECTED:
 = {x (2 + y) / (1 + y) ^ 2}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
-LINE: 134
-TYPE: >>
-INPUT: D[x^3 + x^2, x]
-EXPECTED:
-= 2 x + 3 x ^ 2
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: D
-LINE: 137
-TYPE: >>
-INPUT: D[x^3 + x^2, {x, 2}]
-EXPECTED:
-= 2 + 6 x
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: D
@@ -6862,14 +6814,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: E
-LINE: 365
-TYPE: >>
-INPUT: N[E]
-EXPECTED:
-= 2.71828
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: E
 LINE: 367
 TYPE: >>
 INPUT: N[E, 50]
@@ -6891,14 +6835,6 @@ TYPE: >>
 INPUT: N[EulerGamma, 40]
 EXPECTED:
 = 0.5772156649015328606065120900824024310422
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Glaisher
-LINE: 421
-TYPE: >>
-INPUT: N[Glaisher]
-EXPECTED:
-= 1.28243
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Glaisher
@@ -6947,14 +6883,6 @@ TYPE: >>
 INPUT: FullForm[Infinity]
 EXPECTED:
 = DirectedInfinity[1]
----
-FILE: mathics/builtin/numbers/constants.py
-CLASS: Khinchin
-LINE: 556
-TYPE: >>
-INPUT: N[Khinchin]
-EXPECTED:
-= 2.68545
 ---
 FILE: mathics/builtin/numbers/constants.py
 CLASS: Khinchin
@@ -7111,30 +7039,6 @@ EXPECTED:
 = {{y[x, t] -> C[1][x - 2 t]}}
 ---
 FILE: mathics/builtin/numbers/exp.py
-CLASS: Exp
-LINE: 173
-TYPE: >>
-INPUT: Exp[10.0]
-EXPECTED:
-= 22026.5
----
-FILE: mathics/builtin/numbers/exp.py
-CLASS: Log
-LINE: 201
-TYPE: >>
-INPUT: Log[{0, 1, E, E * E, E ^ 3, E ^ x}]
-EXPECTED:
-= {-Infinity, 0, 1, 2, 3, Log[E ^ x]}
----
-FILE: mathics/builtin/numbers/exp.py
-CLASS: Log
-LINE: 203
-TYPE: >>
-INPUT: Log[0.]
-EXPECTED:
-= Indeterminate
----
-FILE: mathics/builtin/numbers/exp.py
 CLASS: Log2
 LINE: 248
 TYPE: >>
@@ -7240,27 +7144,11 @@ EXPECTED:
 ---
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: Gudermannian
-LINE: 367
-TYPE: >>
-INPUT: Gudermannian[4.2]
-EXPECTED:
-= 1.54081
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: Gudermannian
 LINE: 372
 TYPE: >>
 INPUT: Gudermannian[-4.2] ==  -Gudermannian[4.2]
 EXPECTED:
 = True
----
-FILE: mathics/builtin/numbers/hyperbolic.py
-CLASS: InverseGudermannian
-LINE: 412
-TYPE: >>
-INPUT: InverseGudermannian[.5]
-EXPECTED:
-= 0.522238
 ---
 FILE: mathics/builtin/numbers/hyperbolic.py
 CLASS: InverseGudermannian
@@ -8316,14 +8204,6 @@ TYPE: >>
 INPUT: Sec[1.]
 EXPECTED:
 = 1.85082
----
-FILE: mathics/builtin/numbers/trig.py
-CLASS: Sin
-LINE: 792
-TYPE: >>
-INPUT: Sin[0.5]
-EXPECTED:
-= 0.479426
 ---
 FILE: mathics/builtin/numbers/trig.py
 CLASS: Sin
@@ -14981,22 +14861,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 175
-TYPE: >>
-INPUT: Cos[0.5]
-EXPECTED:
-= 0.877583
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 181
-TYPE: >>
-INPUT: Sqrt[-4]
-EXPECTED:
-= 2 I
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 187
 TYPE: >>
 INPUT: (3 + 2 I) ^ 4
@@ -16495,24 +16359,6 @@ FUNCTION: test_sort
 LINE: 78
 INPUT: a^4 b^2 + e^3 b
 EXPECTED: a ^ 4 b ^ 2 + b e ^ 3
----
-FILE: test/test_structure.py
-FUNCTION: test_sort
-LINE: 79
-INPUT: Expand[(1+x)^3 y]
-EXPECTED: y + 3 x y + 3 x ^ 2 y + x ^ 3 y
----
-FILE: test/test_structure.py
-FUNCTION: test_sort
-LINE: 80
-INPUT: Expand[(x+y)^3]
-EXPECTED: x ^ 3 + 3 x ^ 2 y + 3 x y ^ 2 + y ^ 3
----
-FILE: test/test_structure.py
-FUNCTION: test_sort
-LINE: 81
-INPUT: y+x y^(1/2)
-EXPECTED: x Sqrt[y] + y
 ---
 FILE: test/timings/test_uniform_tables.py
 FUNCTION: None
