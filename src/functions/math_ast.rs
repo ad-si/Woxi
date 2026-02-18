@@ -5830,6 +5830,63 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(pow_args[1].clone());
       }
+      // Log[-n] for negative integers: Log[-1] = I*Pi, Log[-n] = I*Pi + Log[n]
+      if let Expr::Integer(n) = &args[0]
+        && *n < 0
+      {
+        let abs_n = -*n;
+        // I*Pi
+        let i_pi = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Identifier("I".to_string())),
+          right: Box::new(Expr::Constant("Pi".to_string())),
+        };
+        if abs_n == 1 {
+          return Ok(i_pi);
+        }
+        // I*Pi + Log[abs_n]
+        let log_n = Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![Expr::Integer(abs_n)],
+        };
+        return crate::evaluator::evaluate_function_call_ast(
+          "Plus",
+          &[i_pi, log_n],
+        );
+      }
+      // Log[-expr] for negated expressions: check for Times[-1, ...]
+      {
+        let inner = match &args[0] {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left,
+            right,
+          } if matches!(left.as_ref(), Expr::Integer(-1)) => {
+            Some(*right.clone())
+          }
+          Expr::FunctionCall { name, args: targs }
+            if name == "Times"
+              && targs.len() == 2
+              && matches!(&targs[0], Expr::Integer(-1)) =>
+          {
+            Some(targs[1].clone())
+          }
+          _ => None,
+        };
+        if let Some(inner_expr) = inner {
+          let i_pi = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Identifier("I".to_string())),
+            right: Box::new(Expr::Constant("Pi".to_string())),
+          };
+          let log_x =
+            crate::evaluator::evaluate_function_call_ast("Log", &[inner_expr])?;
+          return crate::evaluator::evaluate_function_call_ast(
+            "Plus",
+            &[i_pi, log_x],
+          );
+        }
+      }
       if let Expr::Real(f) = &args[0] {
         if *f > 0.0 {
           return Ok(Expr::Real(f.ln()));
