@@ -5470,7 +5470,8 @@ pub fn evaluate_function_call_ast(
     | "PointSize" | "Dashing" | "EdgeForm" | "FaceForm" | "Darker"
     | "Lighter" | "Directive" | "Point" | "Line" | "Circle" | "Disk"
     | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
-    | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset" => {
+    | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset"
+    | "Text" | "Style" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),

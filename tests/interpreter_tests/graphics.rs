@@ -259,6 +259,56 @@ mod graphics {
         "-Graphics-"
       );
     }
+
+    #[test]
+    fn text_with_multiple_style_directives() {
+      // Style with font size + Bold
+      assert_eq!(
+        interpret(
+          "Graphics[{Text[Style[\"Platten\", 12, Bold], {11.5, 3.5}]}]"
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn text_with_italic_and_size() {
+      assert_eq!(
+        interpret(
+          "Graphics[{Text[Style[\"Schirm\", 11, Italic], {17, -5.0}]}]"
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn text_with_italic_and_color() {
+      // Style with font size + Italic + named color
+      assert_eq!(
+        interpret(
+          "Graphics[{Text[Style[\"Strahl\", 11, Italic, Blue], {10, 0.7}]}]"
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn multiple_styled_texts_in_graphics() {
+      assert_eq!(
+        interpret(concat!(
+          "Graphics[{",
+          "Text[Style[\"Platten\", 12, Bold], {11.5, 3.5}], ",
+          "Text[Style[\"Schirm\", 11, Italic], {17, -5.0}], ",
+          "Text[Style[\"Strahl\", 11, Italic, Blue], {10, 0.7}]",
+          "}]"
+        ))
+        .unwrap(),
+        "-Graphics-"
+      );
+    }
   }
 
   mod options {
