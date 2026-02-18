@@ -689,3 +689,832 @@ fn draw_axes(
     }
   }
 }
+
+// ── Graphics3D implementation ────────────────────────────────────────
+
+/// Parse a 3D point {x, y, z} from an expression.
+fn parse_point3d(expr: &Expr) -> Option<Point3D> {
+  if let Expr::List(items) = expr
+    && items.len() == 3
+  {
+    let x = try_eval_to_f64(&evaluate_expr_to_expr(&items[0]).ok()?)?;
+    let y = try_eval_to_f64(&evaluate_expr_to_expr(&items[1]).ok()?)?;
+    let z = try_eval_to_f64(&evaluate_expr_to_expr(&items[2]).ok()?)?;
+    return Some(Point3D { x, y, z });
+  }
+  None
+}
+
+/// Parse a list of 3D points.
+fn parse_point3d_list(expr: &Expr) -> Option<Vec<Point3D>> {
+  if let Expr::List(items) = expr {
+    let pts: Vec<Point3D> = items.iter().filter_map(parse_point3d).collect();
+    if !pts.is_empty() {
+      return Some(pts);
+    }
+  }
+  None
+}
+
+/// A 3D primitive for Graphics3D
+enum Primitive3D {
+  Sphere {
+    center: Point3D,
+    radius: f64,
+  },
+  Cuboid {
+    p_min: Point3D,
+    p_max: Point3D,
+  },
+  Polygon3D {
+    points: Vec<Point3D>,
+  },
+  Line3D {
+    segments: Vec<Vec<Point3D>>,
+  },
+  Point3DPrim {
+    points: Vec<Point3D>,
+  },
+  Arrow3D {
+    points: Vec<Point3D>,
+  },
+  Cylinder {
+    p1: Point3D,
+    p2: Point3D,
+    radius: f64,
+  },
+  Cone {
+    p1: Point3D,
+    p2: Point3D,
+    radius: f64,
+  },
+}
+
+/// Collect 3D primitives from an expression.
+fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
+  match expr {
+    Expr::List(items) => {
+      for item in items {
+        collect_3d_primitives(item, prims);
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      match name.as_str() {
+        "Sphere" => {
+          let center = if !args.is_empty() {
+            parse_point3d(&args[0]).unwrap_or(Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            })
+          } else {
+            Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            }
+          };
+          let radius = if args.len() >= 2 {
+            try_eval_to_f64(
+              &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
+            )
+            .unwrap_or(1.0)
+          } else {
+            1.0
+          };
+          prims.push(Primitive3D::Sphere { center, radius });
+        }
+        "Cuboid" => {
+          let p_min = if !args.is_empty() {
+            parse_point3d(&args[0]).unwrap_or(Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            })
+          } else {
+            Point3D {
+              x: 0.0,
+              y: 0.0,
+              z: 0.0,
+            }
+          };
+          let p_max = if args.len() >= 2 {
+            parse_point3d(&args[1]).unwrap_or(Point3D {
+              x: 1.0,
+              y: 1.0,
+              z: 1.0,
+            })
+          } else {
+            Point3D {
+              x: p_min.x + 1.0,
+              y: p_min.y + 1.0,
+              z: p_min.z + 1.0,
+            }
+          };
+          prims.push(Primitive3D::Cuboid { p_min, p_max });
+        }
+        "Polygon" if !args.is_empty() => {
+          if let Some(pts) = parse_point3d_list(&args[0]) {
+            prims.push(Primitive3D::Polygon3D { points: pts });
+          }
+        }
+        "Line" if !args.is_empty() => {
+          if let Some(pts) = parse_point3d_list(&args[0]) {
+            prims.push(Primitive3D::Line3D {
+              segments: vec![pts],
+            });
+          }
+        }
+        "Point" if !args.is_empty() => {
+          if let Some(pt) = parse_point3d(&args[0]) {
+            prims.push(Primitive3D::Point3DPrim { points: vec![pt] });
+          } else if let Some(pts) = parse_point3d_list(&args[0]) {
+            prims.push(Primitive3D::Point3DPrim { points: pts });
+          }
+        }
+        "Arrow" if !args.is_empty() => {
+          if let Some(pts) = parse_point3d_list(&args[0]) {
+            prims.push(Primitive3D::Arrow3D { points: pts });
+          }
+        }
+        "Cylinder" => {
+          let (p1, p2) = if !args.is_empty() {
+            if let Expr::List(items) = &args[0] {
+              if items.len() == 2 {
+                let a = parse_point3d(&items[0]).unwrap_or(Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: -1.0,
+                });
+                let b = parse_point3d(&items[1]).unwrap_or(Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: 1.0,
+                });
+                (a, b)
+              } else {
+                (
+                  Point3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -1.0,
+                  },
+                  Point3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 1.0,
+                  },
+                )
+              }
+            } else {
+              (
+                Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: -1.0,
+                },
+                Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: 1.0,
+                },
+              )
+            }
+          } else {
+            (
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: -1.0,
+              },
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+              },
+            )
+          };
+          let radius = if args.len() >= 2 {
+            try_eval_to_f64(
+              &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
+            )
+            .unwrap_or(1.0)
+          } else {
+            1.0
+          };
+          prims.push(Primitive3D::Cylinder { p1, p2, radius });
+        }
+        "Cone" => {
+          let (p1, p2) = if !args.is_empty() {
+            if let Expr::List(items) = &args[0] {
+              if items.len() == 2 {
+                let a = parse_point3d(&items[0]).unwrap_or(Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: 0.0,
+                });
+                let b = parse_point3d(&items[1]).unwrap_or(Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: 1.0,
+                });
+                (a, b)
+              } else {
+                (
+                  Point3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                  },
+                  Point3D {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 1.0,
+                  },
+                )
+              }
+            } else {
+              (
+                Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: 0.0,
+                },
+                Point3D {
+                  x: 0.0,
+                  y: 0.0,
+                  z: 1.0,
+                },
+              )
+            }
+          } else {
+            (
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+              },
+              Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+              },
+            )
+          };
+          let radius = if args.len() >= 2 {
+            try_eval_to_f64(
+              &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
+            )
+            .unwrap_or(1.0)
+          } else {
+            1.0
+          };
+          prims.push(Primitive3D::Cone { p1, p2, radius });
+        }
+        _ => {
+          // Recurse into unknown function calls
+          for a in args {
+            collect_3d_primitives(a, prims);
+          }
+        }
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Tessellate a sphere into triangles.
+fn tessellate_sphere(
+  center: &Point3D,
+  radius: f64,
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  let n_lat = 16;
+  let n_lon = 24;
+  let mut tris = Vec::new();
+  let pi = std::f64::consts::PI;
+
+  for i in 0..n_lat {
+    let theta1 = pi * i as f64 / n_lat as f64;
+    let theta2 = pi * (i + 1) as f64 / n_lat as f64;
+    for j in 0..n_lon {
+      let phi1 = 2.0 * pi * j as f64 / n_lon as f64;
+      let phi2 = 2.0 * pi * (j + 1) as f64 / n_lon as f64;
+
+      let p = |theta: f64, phi: f64| -> Point3D {
+        Point3D {
+          x: center.x + radius * theta.sin() * phi.cos(),
+          y: center.y + radius * theta.sin() * phi.sin(),
+          z: center.z + radius * theta.cos(),
+        }
+      };
+
+      let a = p(theta1, phi1);
+      let b = p(theta2, phi1);
+      let c = p(theta2, phi2);
+      let d = p(theta1, phi2);
+
+      tris.push((a, b, c));
+      tris.push((a, c, d));
+    }
+  }
+  tris
+}
+
+/// Tessellate a cuboid into 12 triangles (2 per face).
+fn tessellate_cuboid(
+  p_min: &Point3D,
+  p_max: &Point3D,
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  let (x0, y0, z0) = (p_min.x, p_min.y, p_min.z);
+  let (x1, y1, z1) = (p_max.x, p_max.y, p_max.z);
+  let v = [
+    Point3D {
+      x: x0,
+      y: y0,
+      z: z0,
+    }, // 0
+    Point3D {
+      x: x1,
+      y: y0,
+      z: z0,
+    }, // 1
+    Point3D {
+      x: x1,
+      y: y1,
+      z: z0,
+    }, // 2
+    Point3D {
+      x: x0,
+      y: y1,
+      z: z0,
+    }, // 3
+    Point3D {
+      x: x0,
+      y: y0,
+      z: z1,
+    }, // 4
+    Point3D {
+      x: x1,
+      y: y0,
+      z: z1,
+    }, // 5
+    Point3D {
+      x: x1,
+      y: y1,
+      z: z1,
+    }, // 6
+    Point3D {
+      x: x0,
+      y: y1,
+      z: z1,
+    }, // 7
+  ];
+  vec![
+    // Bottom
+    (v[0], v[1], v[2]),
+    (v[0], v[2], v[3]),
+    // Top
+    (v[4], v[6], v[5]),
+    (v[4], v[7], v[6]),
+    // Front
+    (v[0], v[5], v[1]),
+    (v[0], v[4], v[5]),
+    // Back
+    (v[2], v[7], v[3]),
+    (v[2], v[6], v[7]),
+    // Left
+    (v[0], v[3], v[7]),
+    (v[0], v[7], v[4]),
+    // Right
+    (v[1], v[5], v[6]),
+    (v[1], v[6], v[2]),
+  ]
+}
+
+/// Tessellate a cylinder along its axis.
+fn tessellate_cylinder(
+  p1: &Point3D,
+  p2: &Point3D,
+  radius: f64,
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  let n = 24;
+  let pi = std::f64::consts::PI;
+  // Axis vector
+  let dx = p2.x - p1.x;
+  let dy = p2.y - p1.y;
+  let dz = p2.z - p1.z;
+  let len = (dx * dx + dy * dy + dz * dz).sqrt();
+  if len < 1e-15 {
+    return vec![];
+  }
+  let ax = dx / len;
+  let ay = dy / len;
+  let az = dz / len;
+
+  // Find a perpendicular vector via cross product of axis with (0,0,1) or (0,1,0)
+  let (perpx, perpy, perpz) = if az.abs() < 0.9 {
+    let cx = ay * 1.0 - az * 0.0;
+    let cy = az * 0.0 - ax * 1.0;
+    let cz = ax * 0.0 - ay * 0.0;
+    let l = (cx * cx + cy * cy + cz * cz).sqrt();
+    if l < 1e-15 {
+      (1.0, 0.0, 0.0)
+    } else {
+      (cx / l, cy / l, cz / l)
+    }
+  } else {
+    let cx = ay * 0.0 - az * 1.0;
+    let cy = az * 0.0 - ax * 0.0;
+    let cz = ax * 1.0 - ay * 0.0;
+    let l = (cx * cx + cy * cy + cz * cz).sqrt();
+    if l < 1e-15 {
+      (0.0, 1.0, 0.0)
+    } else {
+      (cx / l, cy / l, cz / l)
+    }
+  };
+  // Second perpendicular via cross product
+  let binx = ay * perpz - az * perpy;
+  let biny = az * perpx - ax * perpz;
+  let binz = ax * perpy - ay * perpx;
+
+  let mut tris = Vec::new();
+  for i in 0..n {
+    let a1 = 2.0 * pi * i as f64 / n as f64;
+    let a2 = 2.0 * pi * (i + 1) as f64 / n as f64;
+    let c1 = a1.cos();
+    let s1 = a1.sin();
+    let c2 = a2.cos();
+    let s2 = a2.sin();
+
+    let offset1 = (
+      radius * (c1 * perpx + s1 * binx),
+      radius * (c1 * perpy + s1 * biny),
+      radius * (c1 * perpz + s1 * binz),
+    );
+    let offset2 = (
+      radius * (c2 * perpx + s2 * binx),
+      radius * (c2 * perpy + s2 * biny),
+      radius * (c2 * perpz + s2 * binz),
+    );
+
+    let a = Point3D {
+      x: p1.x + offset1.0,
+      y: p1.y + offset1.1,
+      z: p1.z + offset1.2,
+    };
+    let b = Point3D {
+      x: p2.x + offset1.0,
+      y: p2.y + offset1.1,
+      z: p2.z + offset1.2,
+    };
+    let c = Point3D {
+      x: p2.x + offset2.0,
+      y: p2.y + offset2.1,
+      z: p2.z + offset2.2,
+    };
+    let d = Point3D {
+      x: p1.x + offset2.0,
+      y: p1.y + offset2.1,
+      z: p1.z + offset2.2,
+    };
+
+    tris.push((a, b, c));
+    tris.push((a, c, d));
+  }
+  tris
+}
+
+/// Tessellate a cone.
+fn tessellate_cone(
+  base: &Point3D,
+  tip: &Point3D,
+  radius: f64,
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  let n = 24;
+  let pi = std::f64::consts::PI;
+  let dx = tip.x - base.x;
+  let dy = tip.y - base.y;
+  let dz = tip.z - base.z;
+  let len = (dx * dx + dy * dy + dz * dz).sqrt();
+  if len < 1e-15 {
+    return vec![];
+  }
+  let ax = dx / len;
+  let ay = dy / len;
+  let az = dz / len;
+
+  let (perpx, perpy, perpz) = if az.abs() < 0.9 {
+    let cx = ay * 1.0 - az * 0.0;
+    let cy = az * 0.0 - ax * 1.0;
+    let cz = ax * 0.0 - ay * 0.0;
+    let l = (cx * cx + cy * cy + cz * cz).sqrt();
+    if l < 1e-15 {
+      (1.0, 0.0, 0.0)
+    } else {
+      (cx / l, cy / l, cz / l)
+    }
+  } else {
+    let cx = ay * 0.0 - az * 1.0;
+    let cy = az * 0.0 - ax * 0.0;
+    let cz = ax * 1.0 - ay * 0.0;
+    let l = (cx * cx + cy * cy + cz * cz).sqrt();
+    if l < 1e-15 {
+      (0.0, 1.0, 0.0)
+    } else {
+      (cx / l, cy / l, cz / l)
+    }
+  };
+  let binx = ay * perpz - az * perpy;
+  let biny = az * perpx - ax * perpz;
+  let binz = ax * perpy - ay * perpx;
+
+  let mut tris = Vec::new();
+  for i in 0..n {
+    let a1 = 2.0 * pi * i as f64 / n as f64;
+    let a2 = 2.0 * pi * (i + 1) as f64 / n as f64;
+    let c1 = a1.cos();
+    let s1 = a1.sin();
+    let c2 = a2.cos();
+    let s2 = a2.sin();
+
+    let b1 = Point3D {
+      x: base.x + radius * (c1 * perpx + s1 * binx),
+      y: base.y + radius * (c1 * perpy + s1 * biny),
+      z: base.z + radius * (c1 * perpz + s1 * binz),
+    };
+    let b2 = Point3D {
+      x: base.x + radius * (c2 * perpx + s2 * binx),
+      y: base.y + radius * (c2 * perpy + s2 * biny),
+      z: base.z + radius * (c2 * perpz + s2 * binz),
+    };
+
+    tris.push((*tip, b1, b2));
+  }
+  tris
+}
+
+/// Graphics3D[primitives, options...]
+pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let content = evaluate_expr_to_expr(&args[0])?;
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  for opt in &args[1..] {
+    let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = &opt_eval
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
+      && let Some((w, h, fw)) = parse_image_size(replacement)
+    {
+      svg_width = w;
+      svg_height = h;
+      full_width = fw;
+    }
+  }
+
+  // Collect primitives
+  let mut prims = Vec::new();
+  collect_3d_primitives(&content, &mut prims);
+
+  if prims.is_empty() {
+    // Even with no primitives, return the marker
+    crate::capture_graphics(&format!(
+      "<svg width=\"{svg_width}\" height=\"{svg_height}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+    ));
+    return Ok(Expr::Identifier("-Graphics3D-".to_string()));
+  }
+
+  // Tessellate all primitives into triangles
+  let camera = Camera::default();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+  let base_color = (0x5E_u8, 0x81_u8, 0xB5_u8); // Default blue
+
+  for prim in &prims {
+    let tris: Vec<(Point3D, Point3D, Point3D)> = match prim {
+      Primitive3D::Sphere { center, radius } => {
+        tessellate_sphere(center, *radius)
+      }
+      Primitive3D::Cuboid { p_min, p_max } => tessellate_cuboid(p_min, p_max),
+      Primitive3D::Cylinder { p1, p2, radius } => {
+        tessellate_cylinder(p1, p2, *radius)
+      }
+      Primitive3D::Cone { p1, p2, radius } => tessellate_cone(p1, p2, *radius),
+      Primitive3D::Polygon3D { points } => {
+        // Simple fan triangulation
+        if points.len() >= 3 {
+          (1..points.len() - 1)
+            .map(|i| (points[0], points[i], points[i + 1]))
+            .collect()
+        } else {
+          vec![]
+        }
+      }
+      // Line and Point are handled separately below
+      _ => vec![],
+    };
+
+    for (v0, v1, v2) in tris {
+      let normal = triangle_normal(v0, v1, v2);
+      let color = apply_lighting(base_color, normal);
+      let p0 = project(v0, &camera);
+      let p1 = project(v1, &camera);
+      let p2 = project(v2, &camera);
+      let center = Point3D {
+        x: (v0.x + v1.x + v2.x) / 3.0,
+        y: (v0.y + v1.y + v2.y) / 3.0,
+        z: (v0.z + v1.z + v2.z) / 3.0,
+      };
+      all_triangles.push(Triangle {
+        projected: [p0, p1, p2],
+        depth: depth(center, &camera),
+        color,
+      });
+    }
+  }
+
+  // Painter's algorithm
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  // Compute projected bounding box
+  let mut px_min = f64::INFINITY;
+  let mut px_max = f64::NEG_INFINITY;
+  let mut py_min = f64::INFINITY;
+  let mut py_max = f64::NEG_INFINITY;
+
+  for tri in &all_triangles {
+    for &(px, py) in &tri.projected {
+      px_min = px_min.min(px);
+      px_max = px_max.max(px);
+      py_min = py_min.min(py);
+      py_max = py_max.max(py);
+    }
+  }
+
+  // Also check line/point primitives
+  for prim in &prims {
+    match prim {
+      Primitive3D::Line3D { segments } => {
+        for seg in segments {
+          for pt in seg {
+            let (px, py) = project(*pt, &camera);
+            px_min = px_min.min(px);
+            px_max = px_max.max(px);
+            py_min = py_min.min(py);
+            py_max = py_max.max(py);
+          }
+        }
+      }
+      Primitive3D::Point3DPrim { points } | Primitive3D::Arrow3D { points } => {
+        for pt in points {
+          let (px, py) = project(*pt, &camera);
+          px_min = px_min.min(px);
+          px_max = px_max.max(px);
+          py_min = py_min.min(py);
+          py_max = py_max.max(py);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  if !px_min.is_finite() {
+    px_min = -1.0;
+    px_max = 1.0;
+    py_min = -1.0;
+    py_max = 1.0;
+  }
+
+  let p_width = px_max - px_min;
+  let p_height = py_max - py_min;
+  let p_width = if p_width < 1e-15 { 1.0 } else { p_width };
+  let p_height = if p_height < 1e-15 { 1.0 } else { p_height };
+
+  let margin = 30.0;
+  let draw_w = svg_width as f64 - 2.0 * margin;
+  let draw_h = svg_height as f64 - 2.0 * margin;
+  let scale = (draw_w / p_width).min(draw_h / p_height);
+  let cx = margin + draw_w / 2.0;
+  let cy = margin + draw_h / 2.0;
+  let p_cx = (px_min + px_max) / 2.0;
+  let p_cy = (py_min + py_max) / 2.0;
+
+  let to_svg = |px: f64, py: f64| -> (f64, f64) {
+    (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
+  };
+
+  let mut svg = String::with_capacity(all_triangles.len() * 120 + 1000);
+  if full_width {
+    svg.push_str(&format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height, svg_width, svg_height
+    ));
+  }
+  svg.push_str(&format!(
+    "<rect width=\"{}\" height=\"{}\" fill=\"white\"/>\n",
+    svg_width, svg_height
+  ));
+
+  // Render triangles
+  for tri in &all_triangles {
+    let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
+    let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
+    let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
+    let (r, g, b) = tri.color;
+    svg.push_str(&format!(
+      "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"rgb({},{},{})\" stroke=\"#00000018\" stroke-width=\"0.5\"/>\n",
+      x0, y0, x1, y1, x2, y2, r, g, b
+    ));
+  }
+
+  // Render lines and points
+  for prim in &prims {
+    match prim {
+      Primitive3D::Line3D { segments } => {
+        for seg in segments {
+          let pts: Vec<String> = seg
+            .iter()
+            .map(|p| {
+              let (sx, sy) =
+                to_svg(project(*p, &camera).0, project(*p, &camera).1);
+              format!("{:.1},{:.1}", sx, sy)
+            })
+            .collect();
+          svg.push_str(&format!(
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"#333\" stroke-width=\"1.5\"/>\n",
+            pts.join(" ")
+          ));
+        }
+      }
+      Primitive3D::Point3DPrim { points } => {
+        for pt in points {
+          let (sx, sy) =
+            to_svg(project(*pt, &camera).0, project(*pt, &camera).1);
+          svg.push_str(&format!(
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"#333\"/>\n",
+            sx, sy
+          ));
+        }
+      }
+      Primitive3D::Arrow3D { points } if points.len() >= 2 => {
+        let pts: Vec<String> = points
+          .iter()
+          .map(|p| {
+            let (sx, sy) =
+              to_svg(project(*p, &camera).0, project(*p, &camera).1);
+            format!("{:.1},{:.1}", sx, sy)
+          })
+          .collect();
+        svg.push_str(&format!(
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"#333\" stroke-width=\"1.5\"/>\n",
+          pts.join(" ")
+        ));
+        // Arrowhead
+        let last = points.len() - 1;
+        let (sx1, sy1) = to_svg(
+          project(points[last - 1], &camera).0,
+          project(points[last - 1], &camera).1,
+        );
+        let (sx2, sy2) = to_svg(
+          project(points[last], &camera).0,
+          project(points[last], &camera).1,
+        );
+        let dx = sx2 - sx1;
+        let dy = sy2 - sy1;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len > 1.0 {
+          let ux = dx / len;
+          let uy = dy / len;
+          let hl = 8.0;
+          let hw = 3.0;
+          let bx1 = sx2 - ux * hl + (-uy) * hw;
+          let by1 = sy2 - uy * hl + ux * hw;
+          let bx2 = sx2 - ux * hl - (-uy) * hw;
+          let by2 = sy2 - uy * hl - ux * hw;
+          svg.push_str(&format!(
+            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"#333\"/>\n",
+            sx2, sy2, bx1, by1, bx2, by2
+          ));
+        }
+      }
+      _ => {}
+    }
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics3D-".to_string()))
+}

@@ -7,24 +7,24 @@ use crate::syntax::Expr;
 // ── Color ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
-struct Color {
-  r: f64,
-  g: f64,
-  b: f64,
-  a: f64,
+pub(crate) struct Color {
+  pub(crate) r: f64,
+  pub(crate) g: f64,
+  pub(crate) b: f64,
+  pub(crate) a: f64,
 }
 
 impl Color {
-  fn new(r: f64, g: f64, b: f64) -> Self {
+  pub(crate) fn new(r: f64, g: f64, b: f64) -> Self {
     Self { r, g, b, a: 1.0 }
   }
 
-  fn with_alpha(mut self, a: f64) -> Self {
+  pub(crate) fn with_alpha(mut self, a: f64) -> Self {
     self.a = a;
     self
   }
 
-  fn to_svg_rgb(&self) -> String {
+  pub(crate) fn to_svg_rgb(&self) -> String {
     let r = (self.r.clamp(0.0, 1.0) * 255.0).round() as u8;
     let g = (self.g.clamp(0.0, 1.0) * 255.0).round() as u8;
     let b = (self.b.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -54,7 +54,7 @@ impl Color {
     .with_alpha(self.a)
   }
 
-  fn from_hue(h: f64, s: f64, b: f64) -> Self {
+  pub(crate) fn from_hue(h: f64, s: f64, b: f64) -> Self {
     // HSB to RGB conversion
     let h = ((h % 1.0) + 1.0) % 1.0;
     let i = (h * 6.0).floor() as i32;
@@ -81,7 +81,7 @@ const BLACK: Color = Color {
   a: 1.0,
 };
 
-fn named_color(name: &str) -> Option<Color> {
+pub(crate) fn named_color(name: &str) -> Option<Color> {
   Some(match name {
     "Red" => Color::new(1.0, 0.0, 0.0),
     "Blue" => Color::new(0.0, 0.0, 1.0),
@@ -307,7 +307,7 @@ fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
 
 // ── Color parsing ────────────────────────────────────────────────────────
 
-fn parse_color(expr: &Expr) -> Option<Color> {
+pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
     Expr::FunctionCall { name, args } => match name.as_str() {

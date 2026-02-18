@@ -757,62 +757,525 @@ mod plot3d {
     }
   }
 
-  mod plotting_stubs {
+  mod plot_misc {
     use super::*;
-
-    #[test]
-    fn list_plot_returns_graphics() {
-      assert_eq!(interpret("ListPlot[{1, 4, 9}]").unwrap(), "-Graphics-");
-      assert_eq!(
-        interpret("ListPlot[{1, 4, 9}, Joined->True]").unwrap(),
-        "-Graphics-"
-      );
-    }
-
-    #[test]
-    fn list_line_plot_returns_graphics() {
-      assert_eq!(interpret("ListLinePlot[{1, 2, 3}]").unwrap(), "-Graphics-");
-    }
-
-    #[test]
-    fn density_plot_returns_graphics() {
-      assert_eq!(
-        interpret("DensityPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]").unwrap(),
-        "-Graphics-"
-      );
-    }
-
-    #[test]
-    fn pie_chart_returns_graphics() {
-      assert_eq!(interpret("PieChart[{30, 20, 10}]").unwrap(), "-Graphics-");
-    }
-
-    #[test]
-    fn bar_chart_returns_graphics() {
-      assert_eq!(interpret("BarChart[{1, 2, 3}]").unwrap(), "-Graphics-");
-    }
-
-    #[test]
-    fn histogram_returns_graphics() {
-      assert_eq!(
-        interpret("Histogram[{1, 2, 2, 3, 3, 3}]").unwrap(),
-        "-Graphics-"
-      );
-    }
-
-    #[test]
-    fn contour_plot_returns_graphics() {
-      assert_eq!(
-        interpret("ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]").unwrap(),
-        "-Graphics-"
-      );
-    }
 
     #[test]
     fn plot_unevaluatable_returns_graphics() {
       assert_eq!(
         interpret("Plot[LucasL[1/2, x], {x, -5, 5}]").unwrap(),
         "-Graphics-"
+      );
+    }
+  }
+
+  mod list_plot {
+    use super::*;
+
+    #[test]
+    fn list_plot_simple_y_values() {
+      assert_eq!(interpret("ListPlot[{1, 4, 9}]").unwrap(), "-Graphics-");
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"), "Should produce SVG");
+      assert!(svg.contains("<circle"), "Scatter plot should have circles");
+    }
+
+    #[test]
+    fn list_plot_explicit_xy() {
+      assert_eq!(
+        interpret("ListPlot[{{1, 2}, {3, 5}, {7, 1}}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<circle"), "Should have scatter circles");
+    }
+
+    #[test]
+    fn list_plot_joined() {
+      assert_eq!(
+        interpret("ListPlot[{1, 4, 9}, Joined -> True]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("</svg>"), "Should be complete SVG");
+    }
+
+    #[test]
+    fn list_plot_image_size() {
+      assert_eq!(
+        interpret("ListPlot[{1, 2, 3}, ImageSize -> 200]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn list_line_plot() {
+      assert_eq!(
+        interpret("ListLinePlot[{1, 2, 3, 2, 1}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("</svg>"));
+    }
+
+    #[test]
+    fn list_step_plot() {
+      assert_eq!(
+        interpret("ListStepPlot[{1, 3, 2, 4}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+    }
+
+    #[test]
+    fn list_log_plot() {
+      assert_eq!(
+        interpret("ListLogPlot[{1, 10, 100, 1000}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+    }
+
+    #[test]
+    fn list_log_log_plot() {
+      assert_eq!(
+        interpret("ListLogLogPlot[{{1, 10}, {10, 100}, {100, 1000}}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn list_log_linear_plot() {
+      assert_eq!(
+        interpret("ListLogLinearPlot[{{1, 2}, {10, 5}, {100, 8}}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn list_polar_plot() {
+      assert_eq!(
+        interpret("ListPolarPlot[{1, 2, 3, 2, 1}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+    }
+
+    #[test]
+    fn list_plot_single_element() {
+      assert_eq!(interpret("ListPlot[{5}]").unwrap(), "-Graphics-");
+    }
+  }
+
+  mod parametric_plot {
+    use super::*;
+
+    #[test]
+    fn parametric_plot_circle() {
+      assert_eq!(
+        interpret("ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("</svg>"));
+    }
+
+    #[test]
+    fn parametric_plot_lissajous() {
+      assert_eq!(
+        interpret("ParametricPlot[{Sin[2 t], Sin[3 t]}, {t, 0, 2 Pi}]")
+          .unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn parametric_plot_image_size() {
+      assert_eq!(
+        interpret(
+          "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, ImageSize -> 200]"
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn polar_plot_cardioid() {
+      assert_eq!(
+        interpret("PolarPlot[1 + Cos[t], {t, 0, 2 Pi}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+    }
+
+    #[test]
+    fn polar_plot_rose() {
+      assert_eq!(
+        interpret("PolarPlot[Cos[3 t], {t, 0, 2 Pi}]").unwrap(),
+        "-Graphics-"
+      );
+    }
+  }
+
+  mod charts {
+    use super::*;
+
+    #[test]
+    fn bar_chart_basic() {
+      assert_eq!(interpret("BarChart[{1, 2, 3}]").unwrap(), "-Graphics-");
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<rect"), "BarChart should have rect elements");
+    }
+
+    #[test]
+    fn bar_chart_image_size() {
+      assert_eq!(
+        interpret("BarChart[{1, 2, 3}, ImageSize -> 400]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn pie_chart_basic() {
+      assert_eq!(interpret("PieChart[{30, 20, 10}]").unwrap(), "-Graphics-");
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<path"), "PieChart should have arc paths");
+    }
+
+    #[test]
+    fn pie_chart_single_slice() {
+      assert_eq!(interpret("PieChart[{100}]").unwrap(), "-Graphics-");
+    }
+
+    #[test]
+    fn histogram_basic() {
+      assert_eq!(
+        interpret("Histogram[{1, 2, 2, 3, 3, 3}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<rect"), "Histogram should have rect elements");
+    }
+
+    #[test]
+    fn histogram_single_value() {
+      assert_eq!(interpret("Histogram[{5}]").unwrap(), "-Graphics-");
+    }
+
+    #[test]
+    fn box_whisker_chart() {
+      assert_eq!(
+        interpret("BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<rect"), "Should have box rectangle");
+    }
+
+    #[test]
+    fn box_whisker_chart_multiple_datasets() {
+      assert_eq!(
+        interpret(
+          "BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}, {5, 9, 12, 15}}]"
+        )
+        .unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(
+        svg.contains("<rect"),
+        "Should have box rectangles for each dataset"
+      );
+      // Should have 3 boxes (one per dataset)
+      let rect_count = svg.matches("fill=\"rgb(").count();
+      assert!(
+        rect_count >= 3,
+        "Should have at least 3 colored elements for 3 datasets, got {rect_count}"
+      );
+    }
+
+    #[test]
+    fn bubble_chart() {
+      assert_eq!(
+        interpret("BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<circle"), "BubbleChart should have circles");
+    }
+
+    #[test]
+    fn sector_chart() {
+      assert_eq!(
+        interpret("SectorChart[{{1, 2}, {2, 3}, {3, 1}}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<path"), "SectorChart should have arc paths");
+    }
+
+    #[test]
+    fn sector_chart_simple_values() {
+      assert_eq!(interpret("SectorChart[{1, 2, 3}]").unwrap(), "-Graphics-");
+    }
+
+    #[test]
+    fn date_list_plot() {
+      assert_eq!(
+        interpret("DateListPlot[{1, 3, 2, 5, 4}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+    }
+  }
+
+  mod field_plots {
+    use super::*;
+
+    #[test]
+    fn density_plot_basic() {
+      assert_eq!(
+        interpret("DensityPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(
+        svg.contains("<rect"),
+        "DensityPlot should have colored cells"
+      );
+    }
+
+    #[test]
+    fn density_plot_image_size() {
+      assert_eq!(
+        interpret("DensityPlot[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}, ImageSize -> 200]").unwrap(),
+        "-Graphics-"
+      );
+    }
+
+    #[test]
+    fn contour_plot_basic() {
+      assert_eq!(
+        interpret("ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      // Should have both colored background and contour lines
+      assert!(svg.contains("<rect"), "Should have density background");
+      assert!(svg.contains("<line"), "Should have contour lines");
+    }
+
+    #[test]
+    fn region_plot_basic() {
+      assert_eq!(
+        interpret("RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(
+        svg.contains("<rect"),
+        "RegionPlot should have colored cells"
+      );
+    }
+
+    #[test]
+    fn vector_plot_basic() {
+      assert_eq!(
+        interpret("VectorPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<line"), "VectorPlot should have arrow lines");
+      assert!(
+        svg.contains("<polygon"),
+        "VectorPlot should have arrowheads"
+      );
+    }
+
+    #[test]
+    fn stream_plot_basic() {
+      assert_eq!(
+        interpret("StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(
+        svg.contains("<polyline"),
+        "StreamPlot should have streamlines"
+      );
+    }
+
+    #[test]
+    fn stream_density_plot_basic() {
+      assert_eq!(
+        interpret("StreamDensityPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]")
+          .unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<rect"), "Should have density background");
+      assert!(svg.contains("<polyline"), "Should have streamlines");
+    }
+
+    #[test]
+    fn array_plot_basic() {
+      assert_eq!(
+        interpret("ArrayPlot[{{0, 0.5, 1}, {1, 0.5, 0}, {0.5, 1, 0.5}}]")
+          .unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(svg.contains("<rect"), "ArrayPlot should have colored cells");
+    }
+
+    #[test]
+    fn matrix_plot_basic() {
+      assert_eq!(
+        interpret("MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+        "-Graphics-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(
+        svg.contains("<rect"),
+        "MatrixPlot should have colored cells"
+      );
+    }
+  }
+
+  mod graphics3d_primitives {
+    use super::*;
+
+    #[test]
+    fn graphics3d_sphere() {
+      assert_eq!(interpret("Graphics3D[Sphere[]]").unwrap(), "-Graphics3D-");
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.starts_with("<svg"));
+      assert!(
+        svg.contains("<polygon"),
+        "Sphere should be tessellated into polygons"
+      );
+    }
+
+    #[test]
+    fn graphics3d_cuboid() {
+      assert_eq!(
+        interpret("Graphics3D[Cuboid[{0, 0, 0}, {1, 1, 1}]]").unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<polygon"), "Cuboid should have polygon faces");
+    }
+
+    #[test]
+    fn graphics3d_polygon() {
+      assert_eq!(
+        interpret("Graphics3D[Polygon[{{0,0,0}, {1,0,0}, {0,1,0}}]]").unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<polygon"));
+    }
+
+    #[test]
+    fn graphics3d_line() {
+      assert_eq!(
+        interpret("Graphics3D[Line[{{0,0,0}, {1,1,1}}]]").unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<polyline"), "Line should produce polyline");
+    }
+
+    #[test]
+    fn graphics3d_point() {
+      assert_eq!(
+        interpret("Graphics3D[Point[{0, 0, 0}]]").unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<circle"), "Point should produce circle");
+    }
+
+    #[test]
+    fn graphics3d_arrow() {
+      assert_eq!(
+        interpret("Graphics3D[Arrow[{{0,0,0},{1,0,1}}]]").unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<polyline"), "Arrow should have shaft");
+      assert!(svg.contains("<polygon"), "Arrow should have arrowhead");
+    }
+
+    #[test]
+    fn graphics3d_cylinder() {
+      assert_eq!(
+        interpret("Graphics3D[Cylinder[{{0,0,0},{0,0,1}}, 0.5]]").unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<polygon"), "Cylinder should be tessellated");
+    }
+
+    #[test]
+    fn graphics3d_cone() {
+      assert_eq!(
+        interpret("Graphics3D[Cone[{{0,0,0},{0,0,1}}, 0.5]]").unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<polygon"), "Cone should be tessellated");
+    }
+
+    #[test]
+    fn graphics3d_multiple_primitives() {
+      assert_eq!(
+        interpret(
+          "Graphics3D[{Sphere[{0,0,0}, 0.5], Cuboid[{1,1,1}, {2,2,2}]}]"
+        )
+        .unwrap(),
+        "-Graphics3D-"
+      );
+      let svg = woxi::get_captured_graphics().unwrap();
+      assert!(svg.contains("<polygon"));
+    }
+
+    #[test]
+    fn graphics3d_image_size() {
+      assert_eq!(
+        interpret("Graphics3D[Sphere[], ImageSize -> 200]").unwrap(),
+        "-Graphics3D-"
+      );
+    }
+
+    #[test]
+    fn graphics3d_background() {
+      assert_eq!(
+        interpret("Graphics3D[{Arrow[{{0,0,0},{1,0,1}}]}, Background -> Red]")
+          .unwrap(),
+        "-Graphics3D-"
       );
     }
   }

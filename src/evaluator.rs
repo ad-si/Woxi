@@ -828,6 +828,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "Plot"
         || name == "Plot3D"
         || name == "Graphics"
+        || name == "ParametricPlot"
+        || name == "PolarPlot"
+        || name == "DensityPlot"
+        || name == "ContourPlot"
+        || name == "RegionPlot"
+        || name == "StreamPlot"
+        || name == "VectorPlot"
+        || name == "StreamDensityPlot"
       {
         // Flatten Sequence even in held args (unless SequenceHold)
         let args = flatten_sequences(name, args);
@@ -3533,17 +3541,83 @@ pub fn evaluate_function_call_ast(
       return crate::functions::graphics::graphics_ast(args);
     }
     "Graphics3D" if !args.is_empty() => {
-      return Ok(Expr::Identifier("-Graphics3D-".to_string()));
+      return crate::functions::plot3d::graphics3d_ast(args);
     }
-    "ListPlot" | "ListLinePlot" | "ListLogPlot" | "ListLogLogPlot"
-    | "ListLogLinearPlot" | "ListPolarPlot" | "ListStepPlot"
-    | "ParametricPlot" | "PolarPlot" | "RegionPlot" | "ContourPlot"
-    | "DensityPlot" | "StreamPlot" | "VectorPlot" | "StreamDensityPlot"
-    | "ArrayPlot" | "MatrixPlot" | "BarChart" | "PieChart" | "Histogram"
-    | "BoxWhiskerChart" | "BubbleChart" | "SectorChart" | "DateListPlot"
-      if !args.is_empty() =>
-    {
-      return Ok(Expr::Identifier("-Graphics-".to_string()));
+    // List-based plots
+    "ListPlot" if !args.is_empty() => {
+      return crate::functions::list_plot::list_plot_ast(args);
+    }
+    "ListLinePlot" if !args.is_empty() => {
+      return crate::functions::list_plot::list_line_plot_ast(args);
+    }
+    "ListLogPlot" if !args.is_empty() => {
+      return crate::functions::list_plot::list_log_plot_ast(args);
+    }
+    "ListLogLogPlot" if !args.is_empty() => {
+      return crate::functions::list_plot::list_log_log_plot_ast(args);
+    }
+    "ListLogLinearPlot" if !args.is_empty() => {
+      return crate::functions::list_plot::list_log_linear_plot_ast(args);
+    }
+    "ListPolarPlot" if !args.is_empty() => {
+      return crate::functions::list_plot::list_polar_plot_ast(args);
+    }
+    "ListStepPlot" if !args.is_empty() => {
+      return crate::functions::list_plot::list_step_plot_ast(args);
+    }
+    // Parametric plots
+    "ParametricPlot" if args.len() >= 2 => {
+      return crate::functions::parametric_plot::parametric_plot_ast(args);
+    }
+    "PolarPlot" if args.len() >= 2 => {
+      return crate::functions::parametric_plot::polar_plot_ast(args);
+    }
+    // Field/density plots
+    "DensityPlot" if args.len() >= 3 => {
+      return crate::functions::field_plot::density_plot_ast(args);
+    }
+    "ContourPlot" if args.len() >= 3 => {
+      return crate::functions::field_plot::contour_plot_ast(args);
+    }
+    "RegionPlot" if args.len() >= 3 => {
+      return crate::functions::field_plot::region_plot_ast(args);
+    }
+    "VectorPlot" if args.len() >= 3 => {
+      return crate::functions::field_plot::vector_plot_ast(args);
+    }
+    "StreamPlot" if args.len() >= 3 => {
+      return crate::functions::field_plot::stream_plot_ast(args);
+    }
+    "StreamDensityPlot" if args.len() >= 3 => {
+      return crate::functions::field_plot::stream_density_plot_ast(args);
+    }
+    "ArrayPlot" if !args.is_empty() => {
+      return crate::functions::field_plot::array_plot_ast(args);
+    }
+    "MatrixPlot" if !args.is_empty() => {
+      return crate::functions::field_plot::matrix_plot_ast(args);
+    }
+    // Charts
+    "BarChart" if !args.is_empty() => {
+      return crate::functions::chart::bar_chart_ast(args);
+    }
+    "PieChart" if !args.is_empty() => {
+      return crate::functions::chart::pie_chart_ast(args);
+    }
+    "Histogram" if !args.is_empty() => {
+      return crate::functions::chart::histogram_ast(args);
+    }
+    "BoxWhiskerChart" if !args.is_empty() => {
+      return crate::functions::chart::box_whisker_chart_ast(args);
+    }
+    "BubbleChart" if !args.is_empty() => {
+      return crate::functions::chart::bubble_chart_ast(args);
+    }
+    "SectorChart" if !args.is_empty() => {
+      return crate::functions::chart::sector_chart_ast(args);
+    }
+    "DateListPlot" if !args.is_empty() => {
+      return crate::functions::chart::date_list_plot_ast(args);
     }
     "Print" => {
       // 0 args → just output a newline and return Null
