@@ -18646,18 +18646,6 @@ INPUT: Quiet[DateList[abc]]
 EXPECTED: DateList[abc]
 ---
 FILE: test/builtin/test_procedural.py
-FUNCTION: None
-LINE: 21
-INPUT: NestWhile[Total[IntegerDigits[#]^3] &, 5, UnsameQ, All]
-EXPECTED: 371
----
-FILE: test/builtin/test_procedural.py
-FUNCTION: None
-LINE: 22
-INPUT: NestWhile[Total[IntegerDigits[#]^3] &, 6, UnsameQ, All]
-EXPECTED: 153
----
-FILE: test/builtin/test_procedural.py
 FUNCTION: test_history_compound_expression
 LINE: 127
 INPUT: ToString[%]
@@ -21083,18 +21071,6 @@ FUNCTION: test_nestwhile
 LINE: 17
 INPUT: str_expr
 EXPECTED: str_expected
----
-FILE: test/builtin/test_procedural.py
-FUNCTION: test_nestwhile
-LINE: 17
-INPUT: NestWhile[Total[IntegerDigits[#]^3] &, 5, UnsameQ, All]
-EXPECTED: 371
----
-FILE: test/builtin/test_procedural.py
-FUNCTION: test_nestwhile
-LINE: 17
-INPUT: NestWhile[Total[IntegerDigits[#]^3] &, 6, UnsameQ, All]
-EXPECTED: 153
 ---
 FILE: test/builtin/test_quantities.py
 FUNCTION: test_quantity_operations

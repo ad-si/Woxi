@@ -4553,9 +4553,9 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Clip[x
 pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "Clip expects 1 or 2 arguments".into(),
+      "Clip expects 1 to 3 arguments".into(),
     ));
   }
 
@@ -4569,7 +4569,7 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let (min_val, max_val) = if args.len() == 2 {
+  let (min_val, max_val) = if args.len() >= 2 {
     match &args[1] {
       Expr::List(bounds) if bounds.len() == 2 => {
         let min = expr_to_num(&bounds[0]).ok_or_else(|| {
@@ -4589,6 +4589,20 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     (-1.0, 1.0)
   };
+
+  // 3rd arg: replacement values {vMin, vMax} for out-of-range values
+  if args.len() == 3
+    && let Expr::List(replacements) = &args[2]
+    && replacements.len() == 2
+  {
+    if x < min_val {
+      return Ok(replacements[0].clone());
+    } else if x > max_val {
+      return Ok(replacements[1].clone());
+    } else {
+      return Ok(args[0].clone());
+    }
+  }
 
   let clipped = if x < min_val {
     min_val
