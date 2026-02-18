@@ -2557,6 +2557,38 @@ pub fn evaluate_function_call_ast(
         // Flatten[expr, head] — treat identifier as head
         return list_helpers_ast::flatten_head_ast(&args[0], i128::MAX, id);
       }
+      // Check for dimension spec: Flatten[list, {{2}, {1}}]
+      if let Expr::List(outer) = &args[1]
+        && !outer.is_empty()
+        && matches!(&outer[0], Expr::List(_))
+      {
+        // Parse dimension spec: each element is a list of level numbers
+        let mut dim_spec: Vec<Vec<usize>> = Vec::new();
+        let mut valid = true;
+        for item in outer {
+          if let Expr::List(levels) = item {
+            let mut group: Vec<usize> = Vec::new();
+            for level in levels {
+              if let Some(n) = expr_to_i128(level) {
+                group.push(n as usize);
+              } else {
+                valid = false;
+                break;
+              }
+            }
+            dim_spec.push(group);
+          } else {
+            valid = false;
+            break;
+          }
+          if !valid {
+            break;
+          }
+        }
+        if valid {
+          return list_helpers_ast::flatten_dims_ast(&args[0], &dim_spec);
+        }
+      }
       if let Some(n) = expr_to_i128(&args[1]) {
         return list_helpers_ast::flatten_level_ast(&args[0], n);
       }
@@ -2773,6 +2805,31 @@ pub fn evaluate_function_call_ast(
     "RotateRight" if args.len() == 1 => {
       return list_helpers_ast::rotate_right_ast(&args[0], 1);
     }
+    "PadLeft" if args.len() == 1 => {
+      // PadLeft[{{}, {1, 2}, {1, 2, 3}}] - auto-pad ragged array
+      if let Expr::List(items) = &args[0] {
+        let max_len = items
+          .iter()
+          .filter_map(|item| match item {
+            Expr::List(sub) => Some(sub.len()),
+            _ => None,
+          })
+          .max()
+          .unwrap_or(0);
+        let padded: Vec<Expr> = items
+          .iter()
+          .map(|item| {
+            list_helpers_ast::pad_left_ast(
+              item,
+              max_len as i128,
+              &Expr::Integer(0),
+            )
+            .unwrap_or_else(|_| item.clone())
+          })
+          .collect();
+        return Ok(Expr::List(padded));
+      }
+    }
     "PadLeft" if args.len() >= 2 => {
       if let Some(n) = expr_to_i128(&args[1]) {
         let pad = if args.len() == 3 {
@@ -2781,6 +2838,31 @@ pub fn evaluate_function_call_ast(
           Expr::Integer(0)
         };
         return list_helpers_ast::pad_left_ast(&args[0], n, &pad);
+      }
+    }
+    "PadRight" if args.len() == 1 => {
+      // PadRight[{{}, {1, 2}, {1, 2, 3}}] - auto-pad ragged array
+      if let Expr::List(items) = &args[0] {
+        let max_len = items
+          .iter()
+          .filter_map(|item| match item {
+            Expr::List(sub) => Some(sub.len()),
+            _ => None,
+          })
+          .max()
+          .unwrap_or(0);
+        let padded: Vec<Expr> = items
+          .iter()
+          .map(|item| {
+            list_helpers_ast::pad_right_ast(
+              item,
+              max_len as i128,
+              &Expr::Integer(0),
+            )
+            .unwrap_or_else(|_| item.clone())
+          })
+          .collect();
+        return Ok(Expr::List(padded));
       }
     }
     "PadRight" if args.len() >= 2 => {
@@ -3115,7 +3197,7 @@ pub fn evaluate_function_call_ast(
     "StringRiffle" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::string_ast::string_riffle_ast(args);
     }
-    "StringPosition" if args.len() == 2 => {
+    "StringPosition" if args.len() == 2 || args.len() == 3 => {
       return crate::functions::string_ast::string_position_ast(args);
     }
     "StringMatchQ" if args.len() == 2 => {

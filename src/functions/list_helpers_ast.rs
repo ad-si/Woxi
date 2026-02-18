@@ -2404,6 +2404,150 @@ pub fn flatten_head_ast(
   }
 }
 
+/// Flatten[list, {{n1, n2, ...}, ...}] - generalized flatten/transpose
+/// Each group specifies which levels to merge together.
+/// E.g., {{2}, {1}} transposes, {{1, 2}} merges levels 1 and 2.
+pub fn flatten_dims_ast(
+  list: &Expr,
+  dim_spec: &[Vec<usize>],
+) -> Result<Expr, InterpreterError> {
+  // Access element at given multi-index, returns None if out of bounds
+  fn access(expr: &Expr, indices: &[usize]) -> Option<Expr> {
+    if indices.is_empty() {
+      return Some(expr.clone());
+    }
+    match expr {
+      Expr::List(items) => {
+        if indices[0] < items.len() {
+          access(&items[indices[0]], &indices[1..])
+        } else {
+          None
+        }
+      }
+      _ => None,
+    }
+  }
+
+  // Get max dimension at each level (handling ragged arrays)
+  fn get_max_dim(expr: &Expr, level: usize) -> usize {
+    if level == 0 {
+      match expr {
+        Expr::List(items) => items.len(),
+        _ => 0,
+      }
+    } else {
+      match expr {
+        Expr::List(items) => items
+          .iter()
+          .map(|item| get_max_dim(item, level - 1))
+          .max()
+          .unwrap_or(0),
+        _ => 0,
+      }
+    }
+  }
+
+  let max_level = dim_spec
+    .iter()
+    .flat_map(|g| g.iter())
+    .copied()
+    .max()
+    .unwrap_or(1);
+
+  // Get max sizes at each level
+  let mut max_dims = Vec::new();
+  for level in 0..max_level {
+    max_dims.push(get_max_dim(list, level));
+  }
+
+  // Build result by iterating over the output structure.
+  // For each group in dim_spec, iterate over the corresponding dimensions.
+  // For single-level groups with ragged data, only include elements that exist.
+  fn build_result(
+    list: &Expr,
+    dim_spec: &[Vec<usize>],
+    max_dims: &[usize],
+    group_idx: usize,
+    indices_so_far: &mut Vec<(usize, usize)>,
+    max_level: usize,
+  ) -> Option<Expr> {
+    if group_idx >= dim_spec.len() {
+      let mut orig_indices = vec![0usize; max_level];
+      for &(level, idx) in indices_so_far.iter() {
+        orig_indices[level] = idx;
+      }
+      access(list, &orig_indices)
+    } else {
+      let group = &dim_spec[group_idx];
+      if group.len() == 1 {
+        let level_0based = group[0] - 1;
+        let dim_size = max_dims[level_0based];
+        let mut items: Vec<Expr> = Vec::new();
+        for i in 0..dim_size {
+          indices_so_far.push((level_0based, i));
+          if let Some(result) = build_result(
+            list,
+            dim_spec,
+            max_dims,
+            group_idx + 1,
+            indices_so_far,
+            max_level,
+          ) {
+            items.push(result);
+          }
+          indices_so_far.pop();
+        }
+        if items.is_empty() {
+          None
+        } else {
+          Some(Expr::List(items))
+        }
+      } else {
+        // Multiple levels merged: iterate over all combinations
+        let sizes: Vec<usize> =
+          group.iter().map(|&l| max_dims[l - 1]).collect();
+        let total: usize = sizes.iter().product();
+        let mut items: Vec<Expr> = Vec::new();
+        for flat_idx in 0..total {
+          let mut remainder = flat_idx;
+          let mut sub_indices = Vec::new();
+          for &s in sizes.iter().rev() {
+            sub_indices.push(remainder % s);
+            remainder /= s;
+          }
+          sub_indices.reverse();
+          for (k, &level) in group.iter().enumerate() {
+            indices_so_far.push((level - 1, sub_indices[k]));
+          }
+          if let Some(result) = build_result(
+            list,
+            dim_spec,
+            max_dims,
+            group_idx + 1,
+            indices_so_far,
+            max_level,
+          ) {
+            items.push(result);
+          }
+          for _ in 0..group.len() {
+            indices_so_far.pop();
+          }
+        }
+        if items.is_empty() {
+          None
+        } else {
+          Some(Expr::List(items))
+        }
+      }
+    }
+  }
+
+  match build_result(list, dim_spec, &max_dims, 0, &mut Vec::new(), max_level) {
+    Some(result) => Ok(result),
+    None => Ok(list.clone()),
+  }
+}
+
 /// AST-based Reverse: reverse a list.
 pub fn reverse_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   match list {

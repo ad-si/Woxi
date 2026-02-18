@@ -627,14 +627,19 @@ pub fn string_riffle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// StringPosition[s, sub] - find all positions of substring
 pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "StringPosition expects exactly 2 arguments".into(),
+      "StringPosition expects 2 or 3 arguments".into(),
     ));
   }
 
   let s = expr_to_str(&args[0])?;
   let sub = expr_to_str(&args[1])?;
+  let max_results = if args.len() == 3 {
+    expr_to_int(&args[2]).ok().map(|n| n as usize)
+  } else {
+    None
+  };
 
   if sub.is_empty() {
     return Ok(Expr::List(vec![]));
@@ -645,6 +650,11 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let sub_chars: Vec<char> = sub.chars().collect();
 
   for i in 0..=s_chars.len().saturating_sub(sub_chars.len()) {
+    if let Some(max) = max_results
+      && positions.len() >= max
+    {
+      break;
+    }
     let mut matched = true;
     for (j, &sub_char) in sub_chars.iter().enumerate() {
       if s_chars[i + j] != sub_char {
