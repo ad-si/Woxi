@@ -3986,3 +3986,25 @@ mod linear_recurrence {
     );
   }
 }
+
+mod zero_divided_by_symbolic {
+  use super::*;
+
+  #[test]
+  fn zero_over_symbolic() {
+    assert_eq!(interpret("0/x").unwrap(), "0");
+    assert_eq!(interpret("0/(2*Pi)").unwrap(), "0");
+    assert_eq!(interpret("0/Sqrt[2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn zero_real_over_symbolic() {
+    assert_eq!(interpret("0.0/x").unwrap(), "0.");
+    assert_eq!(interpret("0.0/Pi").unwrap(), "0.");
+  }
+
+  #[test]
+  fn zero_over_integer() {
+    assert_eq!(interpret("0/5").unwrap(), "0");
+  }
+}

@@ -1506,6 +1506,18 @@ fn is_infinity_like(expr: &Expr) -> bool {
 
 /// Helper for division of two arguments
 fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+  // 0 / expr → 0  (as long as denominator is not also zero)
+  let b_is_zero =
+    matches!(b, Expr::Integer(0)) || matches!(b, Expr::Real(z) if *z == 0.0);
+  if !b_is_zero {
+    if matches!(a, Expr::Integer(0)) {
+      return Ok(Expr::Integer(0));
+    }
+    if matches!(a, Expr::Real(f) if *f == 0.0) {
+      return Ok(Expr::Real(0.0));
+    }
+  }
+
   // finite / Infinity or finite / DirectedInfinity[z] → 0
   if is_infinity_like(b) && !is_infinity_like(a) {
     return Ok(Expr::Integer(0));
