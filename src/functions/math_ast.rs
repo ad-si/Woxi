@@ -11428,18 +11428,25 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Norm expects 1 or 2 arguments".into(),
     ));
   }
-  let p = if args.len() == 2 {
-    match try_eval_to_f64(&args[1]) {
-      Some(v) => v,
-      None => {
-        return Ok(Expr::FunctionCall {
-          name: "Norm".to_string(),
-          args: args.to_vec(),
-        });
-      }
-    }
+  // Determine the norm parameter p
+  let p_expr = if args.len() == 2 {
+    Some(args[1].clone())
   } else {
-    2.0 // Default L2 norm
+    None
+  };
+  let p_val = match &p_expr {
+    Some(e) => try_eval_to_f64(e),
+    None => Some(2.0),
+  };
+  // Check for Infinity norm
+  let is_infinity = match &p_expr {
+    Some(Expr::Identifier(s)) if s == "Infinity" => true,
+    Some(Expr::FunctionCall { name, args })
+      if name == "DirectedInfinity" && args.len() == 1 =>
+    {
+      true
+    }
+    _ => p_val == Some(f64::INFINITY),
   };
 
   match &args[0] {
@@ -11455,57 +11462,98 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      if !all_numeric {
-        return Ok(Expr::FunctionCall {
-          name: "Norm".to_string(),
-          args: args.to_vec(),
-        });
-      }
-      if p == 1.0 {
-        // L1 norm: sum of absolute values
-        let result: f64 = vals.iter().map(|x| x.abs()).sum();
-        return Ok(num_to_expr(result));
-      }
-      if p == f64::INFINITY {
-        // L∞ norm: max absolute value
-        let result = vals.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
-        return Ok(num_to_expr(result));
-      }
-      // Lp norm
-      let sum: f64 = vals.iter().map(|x| x.abs().powf(p)).sum();
-      let result = sum.powf(1.0 / p);
-      // For L2 norm with integers, try exact Sqrt
-      if p == 2.0 && items.iter().all(|i| matches!(i, Expr::Integer(_))) {
-        let sum_sq: i128 = items
-          .iter()
-          .filter_map(|i| {
-            if let Expr::Integer(n) = i {
-              Some(n * n)
-            } else {
-              None
-            }
-          })
-          .sum();
-        let root = (sum_sq as f64).sqrt() as i128;
-        if root * root == sum_sq {
-          return Ok(Expr::Integer(root));
+
+      let p = p_val.unwrap_or(2.0);
+
+      if all_numeric {
+        if p == 1.0 {
+          let result: f64 = vals.iter().map(|x| x.abs()).sum();
+          return Ok(num_to_expr(result));
         }
-        return Ok(Expr::FunctionCall {
-          name: "Sqrt".to_string(),
-          args: vec![Expr::Integer(sum_sq)],
-        });
+        if is_infinity {
+          let result = vals.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+          return Ok(num_to_expr(result));
+        }
+        let sum: f64 = vals.iter().map(|x| x.abs().powf(p)).sum();
+        let result = sum.powf(1.0 / p);
+        if p == 2.0 && items.iter().all(|i| matches!(i, Expr::Integer(_))) {
+          let sum_sq: i128 = items
+            .iter()
+            .filter_map(|i| {
+              if let Expr::Integer(n) = i {
+                Some(n * n)
+              } else {
+                None
+              }
+            })
+            .sum();
+          let root = (sum_sq as f64).sqrt() as i128;
+          if root * root == sum_sq {
+            return Ok(Expr::Integer(root));
+          }
+          return Ok(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(sum_sq)],
+          });
+        }
+        Ok(num_to_expr(result))
+      } else {
+        // Symbolic vector: build symbolic norm expression
+        if is_infinity {
+          // Max[Abs[x], Abs[y], ...]
+          let abs_items: Vec<Expr> = items
+            .iter()
+            .map(|item| Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![item.clone()],
+            })
+            .collect();
+          Ok(Expr::FunctionCall {
+            name: "Max".to_string(),
+            args: abs_items,
+          })
+        } else if p == 2.0 {
+          // Sqrt[Abs[x]^2 + Abs[y]^2 + ...]
+          let abs_sq_items: Vec<Expr> = items
+            .iter()
+            .map(|item| Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "Abs".to_string(),
+                  args: vec![item.clone()],
+                },
+                Expr::Integer(2),
+              ],
+            })
+            .collect();
+          let sum = if abs_sq_items.len() == 1 {
+            abs_sq_items.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: abs_sq_items,
+            }
+          };
+          Ok(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![sum],
+          })
+        } else {
+          Ok(Expr::FunctionCall {
+            name: "Norm".to_string(),
+            args: args.to_vec(),
+          })
+        }
       }
-      Ok(num_to_expr(result))
     }
-    // Norm of a scalar
+    // Norm of a scalar: Abs[x]
     _ => {
       if let Some(v) = try_eval_to_f64(&args[0]) {
         Ok(num_to_expr(v.abs()))
       } else {
-        Ok(Expr::FunctionCall {
-          name: "Norm".to_string(),
-          args: args.to_vec(),
-        })
+        // Evaluate Abs[x] (handles complex numbers etc.)
+        crate::evaluator::evaluate_function_call_ast("Abs", &[args[0].clone()])
       }
     }
   }

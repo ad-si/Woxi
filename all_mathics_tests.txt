@@ -2171,21 +2171,6 @@ INPUT: Apply[List, a + b * c ^ e * f[g], {0, Infinity}]
 EXPECTED:
 = {a, {b, {g}, {c, e}}}
 ---
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Map
-LINE: 135
-TYPE: >>
-INPUT: Map[f, {{a, b}, {c, d, e}}, {2}]
-EXPECTED:
-= {{f[a], f[b]}, {f[c], f[d], f[e]}}
----
-FILE: mathics/builtin/functional/apply_fns_to_lists.py
-CLASS: Map
-LINE: 143
-TYPE: >>
-INPUT: Map[f, a + b + c, Heads->True]
-EXPECTED:
-= f[Plus][f[a], f[b], f[c]]
 ---
 FILE: mathics/builtin/functional/apply_fns_to_lists.py
 CLASS: MapAt
@@ -4748,13 +4733,6 @@ INPUT: StringPosition[data, "uranium"]
 EXPECTED:
 = {{299, 305}, {870, 876}, {1538, 1544}, {1671, 1677}, {2300, 2306}, {2784, 2790}, {3093, 3099}}
 ---
-FILE: mathics/builtin/string/operations.py
-CLASS: StringReplace
-LINE: 543
-TYPE: >>
-INPUT: StringReplace["y" -> "ies"]["city"]
-EXPECTED:
-= cities
 ---
 FILE: mathics/builtin/string/operations.py
 CLASS: StringReplace
@@ -5251,37 +5229,6 @@ TYPE: #>
 INPUT: Clear[v];
 EXPECTED: (none)
 ---
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Norm
-LINE: 154
-TYPE: >>
-INPUT: Norm[{x, y, z}]
-EXPECTED:
-= Sqrt[Abs[x] ^ 2 + Abs[y] ^ 2 + Abs[z] ^ 2]
----
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Norm
-LINE: 165
-TYPE: >>
-INPUT: Norm[{x, y, z}, Infinity]
-EXPECTED:
-= Max[{Abs[x], Abs[y], Abs[z]}]
----
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Norm
-LINE: 168
-TYPE: >>
-INPUT: Norm[{-100, 2, 3, 4}, Infinity]
-EXPECTED:
-= 100
----
-FILE: mathics/builtin/vectors/math_ops.py
-CLASS: Norm
-LINE: 172
-TYPE: >>
-INPUT: Norm[1 + I]
-EXPECTED:
-= Sqrt[2]
 ---
 FILE: mathics/builtin/vectors/math_ops.py
 CLASS: Norm
@@ -11649,21 +11596,6 @@ INPUT: Cases[{b, 6, \[Pi]}, _Symbol, Heads -> True]
 EXPECTED:
 = {List, b, Pi}
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: Delete
-LINE: 317
-TYPE: >>
-INPUT: Delete[{a, b, c}, 0]
-EXPECTED:
-= Sequence[a, b, c]
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Delete
-LINE: 321
-TYPE: >>
-INPUT: Delete[f[a, b, c, d], 3]
-EXPECTED:
-= f[a, b, d]
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Delete
@@ -11673,13 +11605,6 @@ INPUT: Delete[f[a, b, u + v, c], {3, 0}]
 EXPECTED:
 = f[a, b, u, v, c]
 ---
-FILE: mathics/builtin/list/eol.py
-CLASS: Delete
-LINE: 328
-TYPE: >>
-INPUT: Delete[{a, b, c}, 0]
-EXPECTED:
-= Sequence[a, b, c]
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Delete

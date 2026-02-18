@@ -63,6 +63,144 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Map[f, expr, levelspec] - apply f at specified levels
+pub fn map_with_level_ast(
+  func: &Expr,
+  expr: &Expr,
+  level_spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Parse level spec: {n} = exactly level n, {min, max} = range, n = {1, n}
+  // Also handle Heads -> True option
+  let (min_level, max_level, _heads) = match level_spec {
+    Expr::Integer(n) => (1i64, *n as i64, false),
+    Expr::List(items) if items.len() == 1 => {
+      if let Some(n) = expr_to_i128(&items[0]) {
+        (n as i64, n as i64, false)
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Map".to_string(),
+          args: vec![func.clone(), expr.clone(), level_spec.clone()],
+        });
+      }
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let min = expr_to_i128(&items[0]).unwrap_or(0) as i64;
+      let max = expr_to_i128(&items[1]).unwrap_or(0) as i64;
+      (min, max, false)
+    }
+    // Heads -> True option (Expr::Rule variant from -> syntax)
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Heads")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True")
+      {
+        return map_with_heads(func, expr);
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Map".to_string(),
+        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+      });
+    }
+    // Also handle FunctionCall("Rule", ...) form
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      if let Expr::Identifier(s) = &args[0]
+        && s == "Heads"
+        && matches!(&args[1], Expr::Identifier(v) if v == "True")
+      {
+        return map_with_heads(func, expr);
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Map".to_string(),
+        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+      });
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Map".to_string(),
+        args: vec![func.clone(), expr.clone(), level_spec.clone()],
+      });
+    }
+  };
+
+  map_at_depth(func, expr, 0, min_level, max_level)
+}
+
+/// Recursively map at specified levels (bottom-up)
+fn map_at_depth(
+  func: &Expr,
+  expr: &Expr,
+  current_depth: i64,
+  min_level: i64,
+  max_level: i64,
+) -> Result<Expr, InterpreterError> {
+  let children = match expr {
+    Expr::List(items) => Some((items.as_slice(), None::<&str>)),
+    Expr::FunctionCall { name, args } => {
+      Some((args.as_slice(), Some(name.as_str())))
+    }
+    _ => None,
+  };
+
+  let result = if let Some((items, head_name)) = children {
+    // Recurse into children
+    let mapped: Result<Vec<Expr>, _> = items
+      .iter()
+      .map(|item| {
+        map_at_depth(func, item, current_depth + 1, min_level, max_level)
+      })
+      .collect();
+    let mapped = mapped?;
+    match head_name {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: mapped,
+      },
+      None => Expr::List(mapped),
+    }
+  } else {
+    expr.clone()
+  };
+
+  // Apply f at this depth if in range
+  if current_depth >= min_level && current_depth <= max_level {
+    apply_func_ast(func, &result)
+  } else {
+    Ok(result)
+  }
+}
+
+/// Map[f, expr, Heads -> True]: apply f to head and all level-1 elements
+fn map_with_heads(func: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::List(items) => {
+      let mapped: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| apply_func_ast(func, item))
+        .collect();
+      // Apply f to the head (List)
+      let new_head =
+        apply_func_ast(func, &Expr::Identifier("List".to_string()))?;
+      Ok(Expr::CurriedCall {
+        func: Box::new(new_head),
+        args: mapped?,
+      })
+    }
+    Expr::FunctionCall { name, args } => {
+      let mapped: Result<Vec<Expr>, _> =
+        args.iter().map(|item| apply_func_ast(func, item)).collect();
+      // Apply f to the head
+      let new_head = apply_func_ast(func, &Expr::Identifier(name.clone()))?;
+      Ok(Expr::CurriedCall {
+        func: Box::new(new_head),
+        args: mapped?,
+      })
+    }
+    _ => apply_func_ast(func, expr),
+  }
+}
+
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True
 /// Select[{a, b, c}, pred, n] -> first n elements where pred[elem] is True
@@ -6674,94 +6812,114 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  if let Expr::List(items) = &args[0] {
-    match &args[1] {
-      // Delete[list, n] - delete at position n
-      Expr::Integer(_) | Expr::BigInteger(_) => {
-        let pos = match expr_to_i128(&args[1]) {
-          Some(n) => n,
-          None => return Ok(args[0].clone()),
-        };
-        return delete_at_position(items, pos);
-      }
-      Expr::List(pos_list) => {
-        // Determine if this is a multi-part position {i, j, ...} or multiple positions {{p1}, {p2}, ...}
-        let is_multiple_positions =
-          pos_list.iter().all(|p| matches!(p, Expr::List(_)));
+  // Extract items and optional head name from List or FunctionCall
+  let (items, head_name) = match &args[0] {
+    Expr::List(items) => (items.as_slice(), None),
+    Expr::FunctionCall { name, args: fargs } => {
+      (fargs.as_slice(), Some(name.as_str()))
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Delete".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
 
-        if is_multiple_positions && !pos_list.is_empty() {
-          // Multiple positions: Delete[list, {{p1}, {p2}, ...}]
-          let mut positions: Vec<Vec<i128>> = Vec::new();
-          for p in pos_list {
-            if let Expr::List(inner) = p {
-              let pos: Vec<i128> =
-                inner.iter().filter_map(expr_to_i128).collect();
-              if pos.len() == inner.len() {
-                positions.push(pos);
-              }
-            }
-          }
-          // For single-element position lists, collect flat indices
-          let mut result = args[0].clone();
-          // Sort positions in reverse to avoid index shifting issues
-          // For multi-part positions, we need to handle them one at a time
-          for pos in positions.iter().rev() {
-            if pos.len() == 1 {
-              if let Expr::List(items) = &result {
-                result = delete_at_position(items, pos[0])?;
-              }
-            } else {
-              result = delete_at_deep_position(&result, pos)?;
-            }
-          }
-          return Ok(result);
-        } else {
-          // Multi-part position: Delete[list, {i, j, ...}]
-          let pos: Vec<i128> =
-            pos_list.iter().filter_map(expr_to_i128).collect();
-          if pos.len() == pos_list.len() {
-            if pos.len() == 1 {
-              return delete_at_position(items, pos[0]);
-            } else {
-              return delete_at_deep_position(&args[0], &pos);
+  match &args[1] {
+    // Delete[expr, n] - delete at position n
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      let pos = match expr_to_i128(&args[1]) {
+        Some(n) => n,
+        None => return Ok(args[0].clone()),
+      };
+      return delete_at_position_general(items, pos, head_name);
+    }
+    Expr::List(pos_list) => {
+      // Determine if this is a multi-part position {i, j, ...} or multiple positions {{p1}, {p2}, ...}
+      let is_multiple_positions =
+        pos_list.iter().all(|p| matches!(p, Expr::List(_)));
+
+      if is_multiple_positions && !pos_list.is_empty() {
+        // Multiple positions: Delete[expr, {{p1}, {p2}, ...}]
+        let mut positions: Vec<Vec<i128>> = Vec::new();
+        for p in pos_list {
+          if let Expr::List(inner) = p {
+            let pos: Vec<i128> =
+              inner.iter().filter_map(expr_to_i128).collect();
+            if pos.len() == inner.len() {
+              positions.push(pos);
             }
           }
         }
+        let mut result = args[0].clone();
+        for pos in positions.iter().rev() {
+          if pos.len() == 1 {
+            let cur_items = match &result {
+              Expr::List(items) => items.as_slice(),
+              Expr::FunctionCall { args: fargs, .. } => fargs.as_slice(),
+              _ => return Ok(result),
+            };
+            result = delete_at_position_general(cur_items, pos[0], head_name)?;
+          } else {
+            result = delete_at_deep_position(&result, pos)?;
+          }
+        }
+        return Ok(result);
+      } else {
+        // Multi-part position: Delete[expr, {i, j, ...}]
+        let pos: Vec<i128> = pos_list.iter().filter_map(expr_to_i128).collect();
+        if pos.len() == pos_list.len() {
+          if pos.len() == 1 {
+            return delete_at_position_general(items, pos[0], head_name);
+          } else {
+            return delete_at_deep_position(&args[0], &pos);
+          }
+        }
       }
-      _ => {}
     }
-
-    Ok(Expr::FunctionCall {
-      name: "Delete".to_string(),
-      args: args.to_vec(),
-    })
-  } else {
-    Ok(Expr::FunctionCall {
-      name: "Delete".to_string(),
-      args: args.to_vec(),
-    })
+    _ => {}
   }
+
+  Ok(Expr::FunctionCall {
+    name: "Delete".to_string(),
+    args: args.to_vec(),
+  })
 }
 
-/// Delete element at a single flat position in a list
-fn delete_at_position(
+/// Delete element at a single flat position in an expression
+fn delete_at_position_general(
   items: &[Expr],
   pos: i128,
+  head_name: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
+  let wrap = |result_items: Vec<Expr>| -> Expr {
+    match head_name {
+      Some(h) => Expr::FunctionCall {
+        name: h.to_string(),
+        args: result_items,
+      },
+      None => Expr::List(result_items),
+    }
+  };
   let len = items.len() as i128;
   let idx = if pos > 0 {
     (pos - 1) as usize
   } else if pos < 0 {
     (len + pos) as usize
   } else {
-    return Ok(Expr::List(items.to_vec()));
+    // Position 0 = delete the head, return Sequence[args...]
+    return Ok(Expr::FunctionCall {
+      name: "Sequence".to_string(),
+      args: items.to_vec(),
+    });
   };
   if idx >= items.len() {
-    return Ok(Expr::List(items.to_vec()));
+    return Ok(wrap(items.to_vec()));
   }
   let mut result = items.to_vec();
   result.remove(idx);
-  Ok(Expr::List(result))
+  Ok(wrap(result))
 }
 
 /// Delete element at a deep multi-part position {i, j, ...}

@@ -2310,6 +2310,11 @@ pub fn evaluate_function_call_ast(
     "Map" if args.len() == 2 => {
       return list_helpers_ast::map_ast(&args[0], &args[1]);
     }
+    "Map" if args.len() == 3 => {
+      return list_helpers_ast::map_with_level_ast(
+        &args[0], &args[1], &args[2],
+      );
+    }
     "MapAt" if args.len() == 3 => {
       return list_helpers_ast::map_at_ast(&args[0], &args[1], &args[2]);
     }
@@ -7914,6 +7919,8 @@ pub fn apply_function_to_arg(
           | "StringEndsQ"
           | "StringContainsQ"
           | "StringMatchQ"
+          | "StringReplace"
+          | "StringCases"
           | "MemberQ"
           | "Select"
       ) && args.len() == 1
@@ -8026,6 +8033,8 @@ fn apply_curried_call(
           | "StringEndsQ"
           | "StringContainsQ"
           | "StringMatchQ"
+          | "StringReplace"
+          | "StringCases"
           | "MemberQ"
           | "Select"
           | "SortBy"
