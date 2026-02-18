@@ -1,0 +1,550 @@
+use crate::InterpreterError;
+use crate::evaluator::evaluate_expr_to_expr;
+use crate::functions::math_ast::try_eval_to_f64;
+use crate::functions::plot::{
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, generate_bar_svg,
+  generate_histogram_svg, parse_image_size,
+};
+use crate::syntax::Expr;
+
+/// Extract a flat list of f64 values from the first argument.
+fn extract_values(arg: &Expr) -> Result<Vec<f64>, InterpreterError> {
+  let data = evaluate_expr_to_expr(arg)?;
+  match &data {
+    Expr::List(items) => {
+      let mut vals = Vec::with_capacity(items.len());
+      for item in items {
+        let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+        if let Some(f) = try_eval_to_f64(&v) {
+          vals.push(f);
+        }
+      }
+      Ok(vals)
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "Chart: first argument must be a list".into(),
+    )),
+  }
+}
+
+/// Parse ImageSize from options.
+fn parse_chart_options(args: &[Expr]) -> (u32, u32, bool) {
+  let mut svg_width = DEFAULT_WIDTH;
+  let mut svg_height = DEFAULT_HEIGHT;
+  let mut full_width = false;
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
+      && let Some((w, h, fw)) = parse_image_size(replacement)
+    {
+      svg_width = w;
+      svg_height = h;
+      full_width = fw;
+    }
+  }
+  (svg_width, svg_height, full_width)
+}
+
+fn svg_header(w: u32, h: u32, full_width: bool) -> String {
+  if full_width {
+    format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+       <rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\n"
+    )
+  } else {
+    format!(
+      "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+       <rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\n"
+    )
+  }
+}
+
+/// BarChart[{v1, v2, ...}]
+pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let values = extract_values(&args[0])?;
+  if values.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+
+  let svg = generate_bar_svg(&values, svg_width, svg_height, full_width)?;
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// PieChart[{v1, v2, ...}]
+pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let values = extract_values(&args[0])?;
+  if values.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+
+  let w = svg_width as f64;
+  let h = svg_height as f64;
+  let cx = w / 2.0;
+  let cy = h / 2.0;
+  let radius = (w.min(h) / 2.0) * 0.85;
+  let total: f64 = values.iter().sum();
+  if total <= 0.0 {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  let mut svg = svg_header(svg_width, svg_height, full_width);
+
+  let mut start_angle = -std::f64::consts::FRAC_PI_2; // Start at top
+  for (i, &val) in values.iter().enumerate() {
+    let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
+    let sweep = 2.0 * std::f64::consts::PI * val / total;
+    let end_angle = start_angle + sweep;
+
+    let x1 = cx + radius * start_angle.cos();
+    let y1 = cy + radius * start_angle.sin();
+    let x2 = cx + radius * end_angle.cos();
+    let y2 = cy + radius * end_angle.sin();
+    let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
+
+    svg.push_str(&format!(
+      "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{radius:.2},{radius:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
+       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"/>\n"
+    ));
+
+    start_angle = end_angle;
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// Histogram[{d1, d2, ...}]
+pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let values = extract_values(&args[0])?;
+  if values.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+
+  let svg = generate_histogram_svg(&values, svg_width, svg_height, full_width)?;
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// Compute box-whisker statistics for a sorted dataset.
+/// Uses Mathematica's quartile interpolation:
+///   Q1 at position (n+2)/4, Q2 at (n+1)/2, Q3 at (3n+2)/4 (1-indexed).
+fn box_stats(sorted: &[f64]) -> (f64, f64, f64, f64, f64) {
+  let n = sorted.len() as f64;
+  let interp = |pos: f64| -> f64 {
+    let idx = pos - 1.0; // convert to 0-indexed
+    let lo = idx.floor() as usize;
+    let hi = (idx.ceil() as usize).min(sorted.len() - 1);
+    let frac = idx - lo as f64;
+    sorted[lo] * (1.0 - frac) + sorted[hi] * frac
+  };
+  let q1 = interp((n + 2.0) / 4.0);
+  let median = interp((n + 1.0) / 2.0);
+  let q3 = interp((3.0 * n + 2.0) / 4.0);
+  (sorted[0], q1, median, q3, sorted[sorted.len() - 1])
+}
+
+/// Parse the first argument into one or more datasets (Vec<Vec<f64>>).
+/// Supports:
+/// - `{d1, d2, ...}` → single dataset
+/// - `{{d1, d2, ...}, {d3, d4, ...}}` → multiple datasets
+fn parse_datasets(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
+  let data = evaluate_expr_to_expr(arg)?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "BoxWhiskerChart: first argument must be a list".into(),
+      ));
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(vec![]);
+  }
+
+  // Check if the first element is a list (multiple datasets)
+  if let Expr::List(_) = &items[0] {
+    let mut datasets = Vec::new();
+    for item in items {
+      if let Expr::List(inner) = item {
+        let mut vals = Vec::new();
+        for v in inner {
+          let ev = evaluate_expr_to_expr(v).unwrap_or(v.clone());
+          if let Some(f) = try_eval_to_f64(&ev) {
+            vals.push(f);
+          }
+        }
+        if !vals.is_empty() {
+          datasets.push(vals);
+        }
+      }
+    }
+    Ok(datasets)
+  } else {
+    // Flat list: single dataset
+    let mut vals = Vec::new();
+    for item in items {
+      let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+      if let Some(f) = try_eval_to_f64(&ev) {
+        vals.push(f);
+      }
+    }
+    if vals.is_empty() {
+      Ok(vec![])
+    } else {
+      Ok(vec![vals])
+    }
+  }
+}
+
+/// BoxWhiskerChart[{d1, d2, ...}] or BoxWhiskerChart[{{d1,...}, {d2,...}, ...}]
+pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut datasets = parse_datasets(&args[0])?;
+  if datasets.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+
+  // Sort each dataset and compute stats
+  let mut all_stats = Vec::new();
+  let mut global_min = f64::INFINITY;
+  let mut global_max = f64::NEG_INFINITY;
+  for ds in &mut datasets {
+    ds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let (lo, q1, med, q3, hi) = box_stats(ds);
+    global_min = global_min.min(lo);
+    global_max = global_max.max(hi);
+    all_stats.push((lo, q1, med, q3, hi));
+  }
+
+  let v_range = global_max - global_min;
+  let v_pad = if v_range.abs() < f64::EPSILON {
+    1.0
+  } else {
+    v_range * 0.08
+  };
+  let v_min = global_min - v_pad;
+  let v_max = global_max + v_pad;
+
+  // Use plotters for axes
+  let n = datasets.len();
+  // One tick mark per box (centered), no labels — matches Mathematica
+  let x_tick_positions: Vec<f64> = (0..n).map(|i| i as f64 + 0.5).collect();
+  let area = crate::functions::plot::generate_axes_only_opts(
+    (0.0, n as f64),
+    (v_min, v_max),
+    svg_width,
+    svg_height,
+    full_width,
+    Some(&x_tick_positions),
+  )?;
+
+  let plot_x0 = area.plot_x0;
+  let plot_y0 = area.plot_y0;
+  let plot_w = area.plot_w;
+  let plot_h = area.plot_h;
+
+  let mut svg = area.svg;
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let map_y =
+    |v: f64| -> f64 { plot_y0 + (v_max - v) / (v_max - v_min) * plot_h };
+  let slot_w = plot_w / n as f64;
+  let stroke_w = (area.render_width as f64 / 1000.0 * 1.5).max(1.0);
+
+  for (i, &(lo, q1, med, q3, hi)) in all_stats.iter().enumerate() {
+    let (r, g, b) = PLOT_COLORS[0];
+    let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
+    let box_half_w = slot_w * 0.3;
+    let cap_half_w = box_half_w * 0.5;
+
+    // Whisker line (vertical)
+    svg.push_str(&format!(
+      "<line x1=\"{cx:.1}\" y1=\"{:.1}\" x2=\"{cx:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      map_y(hi), map_y(lo)
+    ));
+    // Top whisker cap
+    svg.push_str(&format!(
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      cx - cap_half_w, map_y(hi), cx + cap_half_w, map_y(hi)
+    ));
+    // Bottom whisker cap
+    svg.push_str(&format!(
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      cx - cap_half_w, map_y(lo), cx + cap_half_w, map_y(lo)
+    ));
+    // Box (Q1 to Q3)
+    let box_top = map_y(q3);
+    let box_bot = map_y(q1);
+    let box_h = box_bot - box_top;
+    svg.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"{box_top:.1}\" width=\"{:.1}\" height=\"{box_h:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      cx - box_half_w, box_half_w * 2.0
+    ));
+    // Median line
+    svg.push_str(&format!(
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"white\" stroke-width=\"{:.1}\"/>\n",
+      cx - box_half_w, map_y(med), cx + box_half_w, map_y(med), stroke_w * 1.5
+    ));
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// BubbleChart[{{x,y,z}, ...}]
+pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "BubbleChart: first argument must be a list of {x, y, z} triples"
+          .into(),
+      ));
+    }
+  };
+
+  let mut triples = Vec::new();
+  for item in items {
+    if let Expr::List(inner) = item
+      && inner.len() >= 3
+    {
+      let x = try_eval_to_f64(
+        &evaluate_expr_to_expr(&inner[0]).unwrap_or(inner[0].clone()),
+      );
+      let y = try_eval_to_f64(
+        &evaluate_expr_to_expr(&inner[1]).unwrap_or(inner[1].clone()),
+      );
+      let z = try_eval_to_f64(
+        &evaluate_expr_to_expr(&inner[2]).unwrap_or(inner[2].clone()),
+      );
+      if let (Some(x), Some(y), Some(z)) = (x, y, z) {
+        triples.push((x, y, z));
+      }
+    }
+  }
+
+  if triples.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let w = svg_width as f64;
+  let h = svg_height as f64;
+  let margin = 50.0;
+  let plot_w = w - 2.0 * margin;
+  let plot_h = h - 2.0 * margin;
+
+  let x_min = triples.iter().map(|t| t.0).fold(f64::INFINITY, f64::min);
+  let x_max = triples
+    .iter()
+    .map(|t| t.0)
+    .fold(f64::NEG_INFINITY, f64::max);
+  let y_min = triples.iter().map(|t| t.1).fold(f64::INFINITY, f64::min);
+  let y_max = triples
+    .iter()
+    .map(|t| t.1)
+    .fold(f64::NEG_INFINITY, f64::max);
+  let z_max = triples.iter().map(|t| t.2.abs()).fold(0.0_f64, f64::max);
+  let max_radius = 20.0;
+
+  let x_range = if (x_max - x_min).abs() < f64::EPSILON {
+    1.0
+  } else {
+    x_max - x_min
+  };
+  let y_range = if (y_max - y_min).abs() < f64::EPSILON {
+    1.0
+  } else {
+    y_max - y_min
+  };
+
+  let mut svg = svg_header(svg_width, svg_height, full_width);
+
+  for (i, &(x, y, z)) in triples.iter().enumerate() {
+    let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
+    let sx = margin + ((x - x_min) / x_range) * plot_w;
+    let sy = margin + ((y_max - y) / y_range) * plot_h;
+    let radius = if z_max > 0.0 {
+      (z.abs() / z_max) * max_radius
+    } else {
+      5.0
+    };
+    let radius = radius.max(2.0);
+    svg.push_str(&format!(
+      "<circle cx=\"{sx:.1}\" cy=\"{sy:.1}\" r=\"{radius:.1}\" fill=\"rgb({r},{g},{b})\" fill-opacity=\"0.7\"/>\n"
+    ));
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// SectorChart[{{angle, radius}, ...}] - like PieChart but with variable radius
+pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "SectorChart: first argument must be a list".into(),
+      ));
+    }
+  };
+
+  let mut sectors: Vec<(f64, f64)> = Vec::new();
+  for item in items {
+    if let Expr::List(pair) = item {
+      if pair.len() >= 2 {
+        let a = try_eval_to_f64(
+          &evaluate_expr_to_expr(&pair[0]).unwrap_or(pair[0].clone()),
+        );
+        let r = try_eval_to_f64(
+          &evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone()),
+        );
+        if let (Some(a), Some(r)) = (a, r) {
+          sectors.push((a, r));
+        }
+      }
+    } else if let Some(v) =
+      try_eval_to_f64(&evaluate_expr_to_expr(item).unwrap_or(item.clone()))
+    {
+      sectors.push((v, 1.0));
+    }
+  }
+
+  if sectors.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+  let w = svg_width as f64;
+  let h = svg_height as f64;
+  let cx = w / 2.0;
+  let cy = h / 2.0;
+  let max_radius = (w.min(h) / 2.0) * 0.85;
+  let total_angle: f64 = sectors.iter().map(|s| s.0).sum();
+  let r_max = sectors.iter().map(|s| s.1).fold(0.0_f64, f64::max);
+  let r_max = if r_max <= 0.0 { 1.0 } else { r_max };
+
+  let mut svg = svg_header(svg_width, svg_height, full_width);
+
+  let mut start_angle = -std::f64::consts::FRAC_PI_2;
+  for (i, &(angle_val, radius_val)) in sectors.iter().enumerate() {
+    let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
+    let sweep = 2.0 * std::f64::consts::PI * angle_val / total_angle;
+    let sector_r = (radius_val / r_max) * max_radius;
+    let end_angle = start_angle + sweep;
+
+    let x1 = cx + sector_r * start_angle.cos();
+    let y1 = cy + sector_r * start_angle.sin();
+    let x2 = cx + sector_r * end_angle.cos();
+    let y2 = cy + sector_r * end_angle.sin();
+    let large_arc = if sweep > std::f64::consts::PI { 1 } else { 0 };
+
+    svg.push_str(&format!(
+      "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{sector_r:.2},{sector_r:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
+       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"/>\n"
+    ));
+
+    start_angle = end_angle;
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// DateListPlot[{{date, y}, ...}] - simplified: treats dates as numeric x values
+pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "DateListPlot: first argument must be a list".into(),
+      ));
+    }
+  };
+
+  // Try to extract {x, y} pairs (treating dates as numbers)
+  let mut points = Vec::new();
+  for (i, item) in items.iter().enumerate() {
+    if let Expr::List(pair) = item
+      && pair.len() >= 2
+    {
+      let x = try_eval_to_f64(
+        &evaluate_expr_to_expr(&pair[0]).unwrap_or(pair[0].clone()),
+      );
+      let y = try_eval_to_f64(
+        &evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone()),
+      );
+      if let (Some(x), Some(y)) = (x, y) {
+        points.push((x, y));
+        continue;
+      }
+    }
+    // Fallback: treat as y value with sequential x
+    if let Some(y) =
+      try_eval_to_f64(&evaluate_expr_to_expr(item).unwrap_or(item.clone()))
+    {
+      points.push(((i + 1) as f64, y));
+    }
+  }
+
+  if points.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  let (svg_width, svg_height, full_width) = parse_chart_options(args);
+
+  // Use plotters-based generate_svg for line plot
+  let all_series = vec![points];
+  let mut x_min = f64::INFINITY;
+  let mut x_max = f64::NEG_INFINITY;
+  let mut y_min = f64::INFINITY;
+  let mut y_max = f64::NEG_INFINITY;
+  for &(x, y) in &all_series[0] {
+    x_min = x_min.min(x);
+    x_max = x_max.max(x);
+    y_min = y_min.min(y);
+    y_max = y_max.max(y);
+  }
+  let xp = (x_max - x_min) * 0.04;
+  let yp = (y_max - y_min) * 0.04;
+  let xp = if xp.abs() < f64::EPSILON { 1.0 } else { xp };
+  let yp = if yp.abs() < f64::EPSILON { 1.0 } else { yp };
+
+  let svg = crate::functions::plot::generate_svg(
+    &all_series,
+    (x_min - xp, x_max + xp),
+    (y_min - yp, y_max + yp),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
