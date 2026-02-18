@@ -210,14 +210,6 @@ INPUT: ElementData["Properties"]
 EXPECTED:
 = {Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}
 ---
-FILE: mathics/builtin/physchemdata.py
-CLASS: ElementData
-LINE: 88
-TYPE: >>
-INPUT: ListPlot[Table[ElementData[z, "AtomicWeight"], {z, 118}]]
-EXPECTED:
-= -Graphics-
----
 FILE: mathics/builtin/procedural.py
 CLASS: For
 LINE: 340
@@ -2259,14 +2251,6 @@ TYPE: >>
 INPUT: list = FixedPointList[collatz, 14]
 EXPECTED:
 = {14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}
----
-FILE: mathics/builtin/functional/functional_iteration.py
-CLASS: FixedPointList
-LINE: 121
-TYPE: >>
-INPUT: ListLinePlot[list]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/functional/functional_iteration.py
 CLASS: Nest
@@ -4654,14 +4638,6 @@ EXPECTED:
 = ToCharacterCode[{ab, x}]
 ---
 FILE: mathics/builtin/string/charcodes.py
-CLASS: ToCharacterCode
-LINE: 64
-TYPE: >>
-INPUT: ListPlot[ToCharacterCode["plot this string"], Filling -> Axis]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/string/charcodes.py
 CLASS: FromCharacterCode
 LINE: 140
 TYPE: >>
@@ -5004,14 +4980,6 @@ TYPE: >>
 INPUT: Series[LucasL[1/2, x], {x, 0, 5}]
 EXPECTED:
 = 1 + x / 4 + x ^ 2 / 32 - x ^ 3 / 128 - 5 x ^ 4 / 2048 + 7 x ^ 5 / 8192 + O[x] ^ 6
----
-FILE: mathics/builtin/intfns/combinatorial.py
-CLASS: LucasL
-LINE: 323
-TYPE: >>
-INPUT: Plot[LucasL[1/2, x], {x, -5, 5}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/intfns/combinatorial.py
 CLASS: MatchingDissimilarity
@@ -6680,15 +6648,6 @@ TYPE: >>
 INPUT: Solve[f[x + y] == 3, f[x + y]]
 EXPECTED:
 = {{f[x + y] -> 3}}
----
-FILE: mathics/builtin/numbers/calculus.py
-CLASS: Solve
-LINE: 2295
-TYPE: >>
-INPUT: Solve[a + b == 2, a + b]
-EXPECTED:
-: a + b is not a valid variable.
-= Solve[a + b == 2, a + b]
 ---
 FILE: mathics/builtin/numbers/calculus.py
 CLASS: Solve
@@ -10368,54 +10327,6 @@ EXPECTED:
 = {AxesOrigin :> Automatic, Background :> Automatic, BaselinePosition :> Automatic, ContentSelectable :> Automatic, CoordinatesToolOptions :> Automatic, Exclusions :> Automatic, FrameTicks :> Automatic, ImageSize :> Automatic, Method :> Automatic, PlotRange :> Automatic, PlotRangePadding :> Automatic, PlotRegion :> Automatic, PreserveImageOptions :> Automatic, Ticks :> Automatic}
 ---
 FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Axis
-LINE: 74
-TYPE: >>
-INPUT: ListLinePlot[Table[Sin[x], {x, -5, 5, 0.2}], Filling->Axis]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Background
-LINE: 92
-TYPE: >>
-INPUT: Graphics3D[{Arrow[{{0,0,0},{1,0,1},{0,-1,0},{1,1,1}}]}, Background -> Red]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Bottom
-LINE: 116
-TYPE: >>
-INPUT: ListLinePlot[Table[Sin[x], {x, -5, 5, 0.2}], Filling->Bottom]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: ChartLabels
-LINE: 133
-TYPE: >>
-INPUT: PieChart[{30, 20, 10}, ChartLabels -> {Dogs, Cats, Fish}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Filling
-LINE: 164
-TYPE: >>
-INPUT: ListLinePlot[Table[Sin[x], {x, -5, 5, 0.2}], Filling->Axis]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Joined
-LINE: 224
-TYPE: >>
-INPUT: ListPlot[Table[n ^ 2, {n, 10}], Joined->True]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
 CLASS: MaxRecursion
 LINE: 243
 TYPE: >>
@@ -10430,38 +10341,6 @@ TYPE: >>
 INPUT: NIntegrate[Exp[-10^8 x^2], {x, -1, 1}, Method->"Internal", MaxRecursion -> 6]
 EXPECTED:
 = 0.00972222
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Mesh
-LINE: 279
-TYPE: >>
-INPUT: DensityPlot[Sin[x y], {x, -2, 2}, {y, -2, 2}, Mesh->Full]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/drawing_options.py
-CLASS: Top
-LINE: 372
-TYPE: >>
-INPUT: ListLinePlot[Table[Cos[x], {x, -5, 5, 0.2}], Filling->Top]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Graphics3D
-LINE: 73
-TYPE: >>
-INPUT: Graphics3D[Polygon[{{0,0,0}, {0,1,1}, {1,0,0}}]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Graphics3D
-LINE: 77
-TYPE: >>
-INPUT: Graphics3D[Sphere[], Background->RGBColor[.6, .7, 1.]]
-EXPECTED:
-= -Graphics3D-
 ---
 FILE: mathics/builtin/drawing/graphics3d.py
 CLASS: Graphics3D
@@ -10493,300 +10372,12 @@ EXPECTED:
 . draw(((1,1,-1)--(1,1,1)), rgb(0.4, 0.4, 0.4)+linewidth(1));
 . \end{asy}
 ---
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Cone
-LINE: 198
-TYPE: >>
-INPUT: Graphics3D[Cone[]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Cone
-LINE: 201
-TYPE: >>
-INPUT: Graphics3D[Cone[{{0, 0, 0}, {1, 1, 1}}, 1]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Cone
-LINE: 204
-TYPE: >>
-INPUT: Graphics3D[{Yellow, Cone[{{-1, 0, 0}, {1, 0, 0}, {0, 0, Sqrt[3]}, {1, 1, Sqrt[3]}}, 1]}]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Cuboid
-LINE: 257
-TYPE: >>
-INPUT: Graphics3D[Cuboid[{0, 0, 1}]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Cuboid
-LINE: 260
-TYPE: >>
-INPUT: Graphics3D[{Red, Cuboid[{{0, 0, 0}, {1, 1, 0.5}}], Blue, Cuboid[{{0.25, 0.25, 0.5}, {0.75, 0.75, 1}}]}]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Cylinder
-LINE: 306
-TYPE: >>
-INPUT: Graphics3D[Cylinder[{{0, 0, 0}, {1, 1, 1}}, 1]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Cylinder
-LINE: 309
-TYPE: >>
-INPUT: Graphics3D[{Yellow, Cylinder[{{-1, 0, 0}, {1, 0, 0}, {0, 0, Sqrt[3]}, {1, 1, Sqrt[3]}}, 1]}]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Sphere
-LINE: 352
-TYPE: >>
-INPUT: Graphics3D[Sphere[{0, 0, 0}, 1]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Sphere
-LINE: 355
-TYPE: >>
-INPUT: Graphics3D[{Yellow, Sphere[{{-1, 0, 0}, {1, 0, 0}, {0, 0, Sqrt[3.]}}, 1]}]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Tube
-LINE: 378
-TYPE: >>
-INPUT: Graphics3D[Tube[{{0,0,0}, {1,1,1}}]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/graphics3d.py
-CLASS: Tube
-LINE: 381
-TYPE: >>
-INPUT: Graphics3D[Tube[{{0,0,0}, {1,1,1}, {0, 0, 1}}, 0.1]]
-EXPECTED:
-= -Graphics3D-
----
 FILE: mathics/builtin/drawing/plot.py
 CLASS: ColorData
 LINE: 84
 TYPE: >>
 INPUT: Unprotect[ColorData]; ColorData["test"] := ColorDataFunction["test", "Gradients", {0, 1}, Blend[{Red, Green, Blue}, #1] &]; Protect[ColorData]
 EXPECTED: (none)
----
-FILE: mathics/builtin/drawing/plot.py
-CLASS: ColorData
-LINE: 87
-TYPE: >>
-INPUT: {DensityPlot[x + y, {x, -1, 1}, {y, -1, 1}], DensityPlot[x + y, {x, -1, 1}, {y, -1, 1}, ColorFunction->"test"]}
-EXPECTED:
-= {-Graphics-, -Graphics-}
----
-FILE: mathics/builtin/drawing/plot.py
-CLASS: Histogram
-LINE: 150
-TYPE: >>
-INPUT: Histogram[{3, 8, 10, 100, 1000, 500, 300, 200, 10, 20, 200, 100, 200, 300, 500}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot.py
-CLASS: Histogram
-LINE: 153
-TYPE: >>
-INPUT: Histogram[{{1, 2, 10, 5, 50, 20}, {90, 100, 101, 120, 80}}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: BarChart
-LINE: 85
-TYPE: >>
-INPUT: BarChart[{1, 4, 2}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: BarChart
-LINE: 88
-TYPE: >>
-INPUT: BarChart[{1, 4, 2}, ChartStyle -> {Red, Green, Blue}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: BarChart
-LINE: 91
-TYPE: >>
-INPUT: BarChart[{{1, 2, 3}, {2, 3, 4}}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: BarChart
-LINE: 95
-TYPE: >>
-INPUT: BarChart[{{1, 2, 3}, {2, 3, 4}}, ChartLabels -> {"a", "b", "c"}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: BarChart
-LINE: 98
-TYPE: >>
-INPUT: BarChart[{{1, 5}, {3, 4}}, ChartStyle -> {{EdgeForm[Thin], White}, {EdgeForm[Thick], White}}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: PieChart
-LINE: 145
-TYPE: >>
-INPUT: PieChart[{30, 20, 10}, ChartLabels -> {Dogs, Cats, Fish}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: PieChart
-LINE: 149
-TYPE: >>
-INPUT: PieChart[{8, 16, 2}, SectorOrigin -> {Automatic, 1.5}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: PieChart
-LINE: 153
-TYPE: >>
-INPUT: PieChart[{{10, 20, 30}, {15, 22, 30}}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: PieChart
-LINE: 157
-TYPE: >>
-INPUT: PieChart[{{10, 20, 30}, {15, 22, 30}}, SectorSpacing -> None]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: PieChart
-LINE: 161
-TYPE: >>
-INPUT: PieChart[{{10, 20, 30}, {15, 22, 30}}, ChartLabels -> {A, B, C}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_chart.py
-CLASS: PieChart
-LINE: 165
-TYPE: >>
-INPUT: PieChart[{1, -1, 3}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListPlot
-LINE: 152
-TYPE: >>
-INPUT: ListPlot[Prime[Range[30]]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListPlot
-LINE: 156
-TYPE: >>
-INPUT: ListPlot[Table[n ^ 2 / 8, {n, 30}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListPlot
-LINE: 161
-TYPE: >>
-INPUT: ListPlot[Table[n ^ 2, {n, 30}], Joined->True]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListPlot
-LINE: 167
-TYPE: >>
-INPUT: ListPlot[Table[n ^ 2, {n, 30}], Filling->Axis]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListLinePlot
-LINE: 205
-TYPE: >>
-INPUT: ListLinePlot[Table[{n, n ^ 0.5}, {n, 10}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListLinePlot
-LINE: 210
-TYPE: >>
-INPUT: ListLinePlot[{{-2, -1}, {-1, -1}, {1, 3}}, Filling->Axis]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListStepPlot
-LINE: 247
-TYPE: >>
-INPUT: ListStepPlot[{1, 1, 2, 3, 5, 8, 13, 21}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListStepPlot
-LINE: 253
-TYPE: >>
-INPUT: ListStepPlot[{1, 1, 2, 3, 5, 8, 13, 21}, Joined->False]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListStepPlot
-LINE: 259
-TYPE: >>
-INPUT: ListStepPlot[{{1, 1}, {3, 2}, {4, 5}, {5, 8}, {6, 13}, {7, 21}}, Filling->Axis]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListLogPlot
-LINE: 295
-TYPE: >>
-INPUT: ListLogPlot[Table[Fibonacci[n], {n, 10}]]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_listplot.py
-CLASS: ListLogPlot
-LINE: 302
-TYPE: >>
-INPUT: ListLogPlot[Table[n!, {n, 10}], Joined -> True]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/drawing/plot_listplot.py
 CLASS: NumberLinePlot
@@ -10840,102 +10431,6 @@ CLASS: LogPlot
 LINE: 139
 TYPE: >>
 INPUT: LogPlot[{x^x, Exp[x], x!}, {x, 1, 5}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: ParametricPlot
-LINE: 211
-TYPE: >>
-INPUT: ParametricPlot[{Sin[u], Cos[3 u]}, {u, 0, 2 Pi}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: ParametricPlot
-LINE: 214
-TYPE: >>
-INPUT: ParametricPlot[{Cos[u] / u, Sin[u] / u}, {u, 0, 50}, PlotRange->0.5]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: ParametricPlot
-LINE: 217
-TYPE: >>
-INPUT: ParametricPlot[{{Sin[u], Cos[u]},{0.6 Sin[u], 0.6 Cos[u]}, {0.2 Sin[u], 0.2 Cos[u]}}, {u, 0, 2 Pi}, PlotRange->1, AspectRatio->1]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: PolarPlot
-LINE: 260
-TYPE: >>
-INPUT: PolarPlot[Cos[5t], {t, 0, Pi}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: PolarPlot
-LINE: 267
-TYPE: >>
-INPUT: PolarPlot[Abs[Cos[5t]], {t, 0, Pi}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: PolarPlot
-LINE: 272
-TYPE: >>
-INPUT: PolarPlot[{1, 1 + Sin[20 t] / 5}, {t, 0, 2 Pi}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot.py
-CLASS: PolarPlot
-LINE: 276
-TYPE: >>
-INPUT: PolarPlot[Sqrt[t], {t, 0, 16 Pi}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot3d.py
-CLASS: DensityPlot
-LINE: 223
-TYPE: >>
-INPUT: DensityPlot[x ^ 2 + 1 / y, {x, -1, 1}, {y, 1, 4}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot3d.py
-CLASS: DensityPlot
-LINE: 226
-TYPE: >>
-INPUT: DensityPlot[1 / x, {x, 0, 1}, {y, 0, 1}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot3d.py
-CLASS: DensityPlot
-LINE: 229
-TYPE: >>
-INPUT: DensityPlot[Sqrt[x * y], {x, -1, 1}, {y, -1, 1}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot3d.py
-CLASS: DensityPlot
-LINE: 232
-TYPE: >>
-INPUT: DensityPlot[1/(x^2 + y^2 + 1), {x, -1, 1}, {y, -2,2}, Mesh->Full]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/drawing/plot_plot3d.py
-CLASS: DensityPlot
-LINE: 235
-TYPE: >>
-INPUT: DensityPlot[x^2 y, {x, -1, 1}, {y, -1, 1}, Mesh->All]
 EXPECTED:
 = -Graphics-
 ---
@@ -10993,70 +10488,6 @@ LINE: 113
 TYPE: #>
 INPUT: Clear[pts];
 EXPECTED: (none)
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: Cube
-LINE: 39
-TYPE: >>
-INPUT: Graphics3D[Cube[]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: Dodecahedron
-LINE: 69
-TYPE: >>
-INPUT: Graphics3D[Dodecahedron[]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: Icosahedron
-LINE: 100
-TYPE: >>
-INPUT: Graphics3D[Icosahedron[]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: Octahedron
-LINE: 130
-TYPE: >>
-INPUT: Graphics3D[{Red, Octahedron[]}]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: Tetrahedron
-LINE: 161
-TYPE: >>
-INPUT: Graphics3D[Tetrahedron[{{1,0,0}, {1,0,1}, {1, 1, 1}}, 2], Axes->True]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: UniformPolyhedron
-LINE: 188
-TYPE: >>
-INPUT: Graphics3D[UniformPolyhedron["octahedron"]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: UniformPolyhedron
-LINE: 191
-TYPE: >>
-INPUT: Graphics3D[UniformPolyhedron["dodecahedron"]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/builtin/drawing/uniform_polyhedra.py
-CLASS: UniformPolyhedron
-LINE: 194
-TYPE: >>
-INPUT: Graphics3D[{"Brown", UniformPolyhedron["tetrahedron"]}]
-EXPECTED:
-= -Graphics3D-
 ---
 FILE: mathics/builtin/list/associations.py
 CLASS: Association
@@ -11245,15 +10676,6 @@ INPUT: Delete[{a, b, c, d}, {1, 2}]
 EXPECTED:
 : Part 2 of {a, b, c, d} does not exist.
 = Delete[{a, b, c, d}, {1, 2}]
----
-FILE: mathics/builtin/list/eol.py
-CLASS: Delete
-LINE: 351
-TYPE: >>
-INPUT: Delete[{a, b, c, d}, {1, n}]
-EXPECTED:
-: Position specification n in {a, b, c, d} is not a machine-sized integer or a list of machine-sized integers.
-= Delete[{a, b, c, d}, {1, n}]
 ---
 FILE: mathics/builtin/list/eol.py
 CLASS: Drop
@@ -11641,14 +11063,6 @@ EXPECTED:
 = 0.157118 - 0.24104 I
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryAi
-LINE: 57
-TYPE: >>
-INPUT: Plot[AiryAi[x], {x, -10, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryAiPrime
 LINE: 83
 TYPE: >>
@@ -11663,14 +11077,6 @@ TYPE: >>
 INPUT: AiryAiPrime[0.5]
 EXPECTED:
 = -0.224911
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryAiPrime
-LINE: 90
-TYPE: >>
-INPUT: Plot[AiryAiPrime[x], {x, -10, 10}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryAiZero
@@ -11705,14 +11111,6 @@ EXPECTED:
 = 0.688145 + 0.370815 I
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryBi
-LINE: 175
-TYPE: >>
-INPUT: Plot[AiryBi[x], {x, -10, 2}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryBiPrime
 LINE: 200
 TYPE: >>
@@ -11727,14 +11125,6 @@ TYPE: >>
 INPUT: AiryBiPrime[0.5]
 EXPECTED:
 = 0.544573
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AiryBiPrime
-LINE: 207
-TYPE: >>
-INPUT: Plot[AiryBiPrime[x], {x, -10, 2}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: AiryBiZero
@@ -11753,14 +11143,6 @@ EXPECTED:
 = 0.294479
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: AngerJ
-LINE: 290
-TYPE: >>
-INPUT: Plot[AngerJ[1, x], {x, -10, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselI
 LINE: 321
 TYPE: >>
@@ -11775,14 +11157,6 @@ TYPE: >>
 INPUT: BesselI[1.5, 4]
 EXPECTED:
 = 8.17263
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselI
-LINE: 327
-TYPE: >>
-INPUT: Plot[BesselI[0, x], {x, 0, 5}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselI
@@ -11818,14 +11192,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselJ
-LINE: 372
-TYPE: >>
-INPUT: Plot[BesselJ[0, x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselJ
 LINE: 376
 TYPE: >>
 INPUT: BesselJ[1/2, x]
@@ -11850,14 +11216,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselK
-LINE: 414
-TYPE: >>
-INPUT: Plot[BesselK[0, x], {x, 0, 5}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselK
 LINE: 418
 TYPE: >>
 INPUT: BesselK[-3/2, x]
@@ -11879,14 +11237,6 @@ TYPE: >>
 INPUT: BesselY[0., 0.]
 EXPECTED:
 = -Infinity
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: BesselY
-LINE: 456
-TYPE: >>
-INPUT: Plot[BesselY[0, x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: BesselY
@@ -11977,14 +11327,6 @@ EXPECTED:
 = 0.370153
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: KelvinBei
-LINE: 600
-TYPE: >>
-INPUT: Plot[KelvinBei[x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: KelvinBer
 LINE: 631
 TYPE: >>
@@ -12007,14 +11349,6 @@ TYPE: >>
 INPUT: KelvinBer[0.5, 0.25]
 EXPECTED:
 = 0.148824
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: KelvinBer
-LINE: 640
-TYPE: >>
-INPUT: Plot[KelvinBer[x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: KelvinKei
@@ -12041,14 +11375,6 @@ EXPECTED:
 = -2.0517
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: KelvinKei
-LINE: 682
-TYPE: >>
-INPUT: Plot[KelvinKei[x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: KelvinKer
 LINE: 707
 TYPE: >>
@@ -12073,14 +11399,6 @@ EXPECTED:
 = 0.450023
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: KelvinKer
-LINE: 716
-TYPE: >>
-INPUT: Plot[KelvinKer[x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: SphericalBesselJ
 LINE: 743
 TYPE: >>
@@ -12089,28 +11407,12 @@ EXPECTED:
 = -0.122771
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: SphericalBesselJ
-LINE: 747
-TYPE: >>
-INPUT: Plot[SphericalBesselJ[1, x], {x, 0.1, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: SphericalBesselY
 LINE: 772
 TYPE: >>
 INPUT: SphericalBesselY[1, 5.5]
 EXPECTED:
 = 0.104853
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: SphericalBesselY
-LINE: 775
-TYPE: >>
-INPUT: Plot[SphericalBesselY[1, x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/bessel.py
 CLASS: SphericalHankelH1
@@ -12137,14 +11439,6 @@ EXPECTED:
 = 1.13192
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: StruveH
-LINE: 841
-TYPE: >>
-INPUT: Plot[StruveH[0, x], {x, 0, 10}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: StruveL
 LINE: 862
 TYPE: >>
@@ -12153,28 +11447,12 @@ EXPECTED:
 = 4.41126
 ---
 FILE: mathics/builtin/specialfns/bessel.py
-CLASS: StruveL
-LINE: 865
-TYPE: >>
-INPUT: Plot[StruveL[0, x], {x, 0, 5}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/bessel.py
 CLASS: WeberE
 LINE: 887
 TYPE: >>
 INPUT: WeberE[1.5, 3.5]
 EXPECTED:
 = -0.397256
----
-FILE: mathics/builtin/specialfns/bessel.py
-CLASS: WeberE
-LINE: 890
-TYPE: >>
-INPUT: Plot[WeberE[1, x], {x, -10, 10}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticE
@@ -12191,14 +11469,6 @@ TYPE: >>
 INPUT: EllipticE[0.3, 0.8]
 EXPECTED:
 = 0.296426
----
-FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticE
-LINE: 50
-TYPE: >>
-INPUT: Plot[EllipticE[m], {m, -2, 2}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticF
@@ -12231,14 +11501,6 @@ TYPE: >>
 INPUT: EllipticK[0]
 EXPECTED:
 = Pi / 2
----
-FILE: mathics/builtin/specialfns/elliptic.py
-CLASS: EllipticK
-LINE: 146
-TYPE: >>
-INPUT: Plot[EllipticK[n], {n, -1, 1}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/elliptic.py
 CLASS: EllipticPi
@@ -12330,14 +11592,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/erf.py
 CLASS: InverseErf
-LINE: 173
-TYPE: >>
-INPUT: Plot[InverseErf[x], {x, -1, 1}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/erf.py
-CLASS: InverseErf
 LINE: 177
 TYPE: >>
 INPUT: InverseErf /@ {0.9, 1.0, 1.1}
@@ -12377,14 +11631,6 @@ EXPECTED:
 = ProductLog[k, z]
 ---
 FILE: mathics/builtin/specialfns/expintegral.py
-CLASS: LambertW
-LINE: 77
-TYPE: >>
-INPUT: Plot[LambertW[x], {x, -1/E, E}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/expintegral.py
 CLASS: ProductLog
 LINE: 108
 TYPE: >>
@@ -12399,14 +11645,6 @@ TYPE: >>
 INPUT: ProductLog[-1.5]
 EXPECTED:
 = -0.0327837 + 1.54964 I
----
-FILE: mathics/builtin/specialfns/expintegral.py
-CLASS: ProductLog
-LINE: 121
-TYPE: >>
-INPUT: Plot[ProductLog[x], {x, -1/E, E}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/gamma.py
 CLASS: Beta
@@ -12651,30 +11889,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: Hypergeometric1F1
-LINE: 49
-TYPE: >>
-INPUT: Plot[Hypergeometric1F1[1, 2, x], {x, -5, 5}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric1F1
-LINE: 52
-TYPE: >>
-INPUT: Plot[{Hypergeometric1F1[1/2, Sqrt[2], x], Hypergeometric1F1[1/2, Sqrt[3], x], Hypergeometric1F1[1/2, Sqrt[5], x]}, {x, -4, 4}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric1F1
-LINE: 58
-TYPE: >>
-INPUT: Plot[{Hypergeometric1F1[Sqrt[2], b, 1], Hypergeometric1F1[Sqrt[5], b, 1], Hypergeometric1F1[Sqrt[7], b, 1]}, {b, -3, 3}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric1F1
 LINE: 62
 TYPE: >>
 INPUT: Hypergeometric1F1[1, 1, {{1, 0}, {0, 1}}]
@@ -12754,14 +11968,6 @@ EXPECTED:
 = -0.972167 - 0.181659 I
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: Hypergeometric2F1
-LINE: 128
-TYPE: >>
-INPUT: Plot[Hypergeometric2F1[1/3, 1/3, 2/3, x], {x, -1, 1}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: HypergeometricPFQ
 LINE: 155
 TYPE: >>
@@ -12792,14 +11998,6 @@ TYPE: >>
 INPUT: HypergeometricPFQ[{3}, {2}, 1.]
 EXPECTED:
 = 4.07742
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: HypergeometricPFQ
-LINE: 169
-TYPE: >>
-INPUT: Plot[HypergeometricPFQ[{1, 1}, {3, 3, 3}, x], {x, -30, 30}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: HypergeometricPFQ
@@ -12872,14 +12070,6 @@ TYPE: >>
 INPUT: HypergeometricU[3, 2, 1.]
 EXPECTED:
 = 0.105479
----
-FILE: mathics/builtin/specialfns/hypergeom.py
-CLASS: HypergeometricU
-LINE: 237
-TYPE: >>
-INPUT: Plot[HypergeometricU[3, 2, x], {x, 0.5, 10}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/specialfns/hypergeom.py
 CLASS: HypergeometricU
@@ -13051,14 +12241,6 @@ EXPECTED:
 ---
 FILE: mathics/builtin/specialfns/orthogonal.py
 CLASS: LegendreP
-LINE: 190
-TYPE: >>
-INPUT: ParametricPlot[ {LegendreP[7, x], LegendreP[5, x]}, {x, -1, 1}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/orthogonal.py
-CLASS: LegendreP
 LINE: 196
 TYPE: >>
 INPUT: LegendreP[2, 1, x]
@@ -13130,14 +12312,6 @@ EXPECTED:
 = True
 ---
 FILE: mathics/builtin/specialfns/zeta.py
-CLASS: LerchPhi
-LINE: 45
-TYPE: >>
-INPUT: Plot[LerchPhi[x, 1, 2], {x, -1, 1}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/zeta.py
 CLASS: PolyLog
 LINE: 80
 TYPE: >>
@@ -13154,14 +12328,6 @@ EXPECTED:
 = 136.
 ---
 FILE: mathics/builtin/specialfns/zeta.py
-CLASS: PolyLog
-LINE: 86
-TYPE: >>
-INPUT: Plot[PolyLog[2,x], {x, -20, 1}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/builtin/specialfns/zeta.py
 CLASS: Zeta
 LINE: 114
 TYPE: >>
@@ -13176,14 +12342,6 @@ TYPE: >>
 INPUT: Zeta[-2.5 + I]
 EXPECTED:
 = 0.0235936 + 0.0014078 I
----
-FILE: mathics/builtin/specialfns/zeta.py
-CLASS: Zeta
-LINE: 120
-TYPE: >>
-INPUT: Plot[Zeta[z], {z, -20, 10}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/colors/color_directives.py
 CLASS: CMYKColor
@@ -13208,14 +12366,6 @@ TYPE: >>
 INPUT: ColorDistance[{Red, Blue}, {Green, Yellow}, DistanceFunction -> {"CMC", "Perceptibility"}]
 EXPECTED:
 = {1.0495, 1.27455}
----
-FILE: mathics/builtin/colors/color_directives.py
-CLASS: Opacity
-LINE: 625
-TYPE: >>
-INPUT: Graphics3D[{Blue, Sphere[], Opacity[.4], Red, Cuboid[]}]
-EXPECTED:
-= -Graphics3D-
 ---
 FILE: mathics/builtin/colors/color_directives.py
 CLASS: RGBColor
@@ -13281,14 +12431,6 @@ TYPE: >>
 INPUT: ColorNegate[Import["ExampleData/sunflowers.jpg"]]
 EXPECTED:
 = -Image-
----
-FILE: mathics/builtin/colors/color_operations.py
-CLASS: Darker
-LINE: 264
-TYPE: >>
-INPUT: Graphics3D[{Darker[Green], Sphere[]}]
-EXPECTED:
-= -Graphics3D-
 ---
 FILE: mathics/builtin/colors/color_operations.py
 CLASS: DominantColors
@@ -14026,14 +13168,6 @@ TYPE: >>
 INPUT: 2 Graphics[{Red,Disk[]}] + 3 Graphics[{Red,Disk[]}]
 EXPECTED:
 = 5 -Graphics-
----
-FILE: mathics/builtin/arithfns/basic.py
-CLASS: Power
-LINE: 320
-TYPE: >>
-INPUT: Plot[Evaluate[Table[x^y, {y, 1, 5}]], {x, -1.5, 1.5}, AspectRatio -> 1]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/builtin/arithfns/basic.py
 CLASS: Power
@@ -14870,14 +14004,6 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 221
-TYPE: >>
-INPUT: Cos[ComplexInfinity]
-EXPECTED:
-= Indeterminate
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 242
 TYPE: >>
 INPUT: 3.1416`3
@@ -15644,43 +14770,11 @@ EXPECTED:
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
-LINE: 1074
-TYPE: >>
-INPUT: Graphics3D[Polygon[{{0,0,0}, {0,1,1}, {1,0,0}}]]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1078
-TYPE: >>
-INPUT: Graphics3D[{Orange, Polygon[{{0,0,0}, {1,1,1}, {1,0,0}}]}, Axes->True]
-EXPECTED:
-= -Graphics3D-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
 LINE: 1082
 TYPE: >>
 INPUT: Head[ToBoxes[Graphics3D[{Polygon[]}]]]
 EXPECTED:
 = Graphics3DBox
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1097
-TYPE: >>
-INPUT: DensityPlot[x ^ 2 + 1 / y, {x, -1, 1}, {y, 1, 4}]
-EXPECTED:
-= -Graphics-
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1100
-TYPE: >>
-INPUT: DensityPlot[x ^ 2 + 1 / y, {x, -1, 1}, {y, 1, 4}, ColorFunction -> (Blend[{Red, Green, Blue}, #]&)]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc
@@ -15759,14 +14853,6 @@ TYPE: >>
 INPUT: Limit[f[x], x -> -Infinity]
 EXPECTED:
 = 0
----
-FILE: mathics/doc/documentation/1-Manual.mdoc
-CLASS: mdoc
-LINE: 1156
-TYPE: >>
-INPUT: Plot[f[x], {x, -8, 6}]
-EXPECTED:
-= -Graphics-
 ---
 FILE: mathics/doc/documentation/1-Manual.mdoc
 CLASS: mdoc

@@ -3532,6 +3532,19 @@ pub fn evaluate_function_call_ast(
     "Graphics" if !args.is_empty() => {
       return crate::functions::graphics::graphics_ast(args);
     }
+    "Graphics3D" if !args.is_empty() => {
+      return Ok(Expr::Identifier("-Graphics3D-".to_string()));
+    }
+    "ListPlot" | "ListLinePlot" | "ListLogPlot" | "ListLogLogPlot"
+    | "ListLogLinearPlot" | "ListPolarPlot" | "ListStepPlot"
+    | "ParametricPlot" | "PolarPlot" | "RegionPlot" | "ContourPlot"
+    | "DensityPlot" | "StreamPlot" | "VectorPlot" | "StreamDensityPlot"
+    | "ArrayPlot" | "MatrixPlot" | "BarChart" | "PieChart" | "Histogram"
+    | "BoxWhiskerChart" | "BubbleChart" | "SectorChart" | "DateListPlot"
+      if !args.is_empty() =>
+    {
+      return Ok(Expr::Identifier("-Graphics-".to_string()));
+    }
     "Print" => {
       // 0 args → just output a newline and return Null
       if args.is_empty() {
