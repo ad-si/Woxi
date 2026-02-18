@@ -1,0 +1,7 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Line[{{0, 0}, {1, 1}, {2, 0}}]}]\")"
+---
+<svg width="360" height="180" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<polyline points="13.33,173.33 180.00,6.67 346.67,173.33" fill="none" stroke="rgb(0,0,0)" stroke-width="1.44" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

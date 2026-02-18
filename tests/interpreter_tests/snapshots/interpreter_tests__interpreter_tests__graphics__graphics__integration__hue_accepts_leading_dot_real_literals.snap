@@ -1,0 +1,21 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[Table[{Hue[t/15, 1, .9, .3], Disk[{Cos[2 Pi t/15], Sin[2 Pi t/15]}]}, {t, 15}]]\")"
+---
+<svg width="360" height="361" viewBox="0 0 360 361" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="255.63" cy="146.42" rx="83.79" ry="83.79" fill="rgb(230,92,0)" fill-opacity="0.3"/>
+<ellipse cx="235.15" cy="118.23" rx="83.79" ry="83.79" fill="rgb(230,184,0)" fill-opacity="0.3"/>
+<ellipse cx="204.98" cy="100.81" rx="83.79" ry="83.79" fill="rgb(184,230,0)" fill-opacity="0.3"/>
+<ellipse cx="170.33" cy="97.17" rx="83.79" ry="83.79" fill="rgb(92,230,0)" fill-opacity="0.3"/>
+<ellipse cx="137.19" cy="107.93" rx="83.79" ry="83.79" fill="rgb(0,230,0)" fill-opacity="0.3"/>
+<ellipse cx="111.30" cy="131.25" rx="83.79" ry="83.79" fill="rgb(0,230,92)" fill-opacity="0.3"/>
+<ellipse cx="97.12" cy="163.08" rx="83.79" ry="83.79" fill="rgb(0,230,184)" fill-opacity="0.3"/>
+<ellipse cx="97.12" cy="197.92" rx="83.79" ry="83.79" fill="rgb(0,184,230)" fill-opacity="0.3"/>
+<ellipse cx="111.30" cy="229.75" rx="83.79" ry="83.79" fill="rgb(0,92,230)" fill-opacity="0.3"/>
+<ellipse cx="137.19" cy="253.07" rx="83.79" ry="83.79" fill="rgb(0,0,230)" fill-opacity="0.3"/>
+<ellipse cx="170.33" cy="263.83" rx="83.79" ry="83.79" fill="rgb(92,0,230)" fill-opacity="0.3"/>
+<ellipse cx="204.98" cy="260.19" rx="83.79" ry="83.79" fill="rgb(184,0,230)" fill-opacity="0.3"/>
+<ellipse cx="235.15" cy="242.77" rx="83.79" ry="83.79" fill="rgb(230,0,184)" fill-opacity="0.3"/>
+<ellipse cx="255.63" cy="214.58" rx="83.79" ry="83.79" fill="rgb(230,0,92)" fill-opacity="0.3"/>
+<ellipse cx="262.88" cy="180.50" rx="83.79" ry="83.79" fill="rgb(230,0,0)" fill-opacity="0.3"/>
+</svg>

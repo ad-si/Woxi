@@ -1,0 +1,10 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Disk[{1, 0}, 0.5], Disk[{-1, 0}, 0.5], Disk[{0, 1}, 0.5], Disk[{0, -1}, 0.5]}]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="291.11" cy="180.00" rx="55.56" ry="55.56" fill="rgb(0,0,0)"/>
+<ellipse cx="68.89" cy="180.00" rx="55.56" ry="55.56" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="68.89" rx="55.56" ry="55.56" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="291.11" rx="55.56" ry="55.56" fill="rgb(0,0,0)"/>
+</svg>

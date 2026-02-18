@@ -666,61 +666,79 @@ mod grid {
   #[test]
   fn basic_2x2() {
     clear_state();
-    assert_eq!(interpret("Grid[{{a, b}, {c, d}}]").unwrap(), "-Graphics-");
+    let svg =
+      interpret("ExportString[Grid[{{a, b}, {c, d}}], \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">d</text>"));
   }
 
   #[test]
   fn one_dimensional_list() {
     clear_state();
-    assert_eq!(interpret("Grid[{a, b, c}]").unwrap(), "-Graphics-");
+    let svg = interpret("ExportString[Grid[{a, b, c}], \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">c</text>"));
   }
 
   #[test]
   fn arguments_are_evaluated() {
     clear_state();
-    assert_eq!(
-      interpret("Grid[{{1+1, 2+2}, {3+3, 4+4}}]").unwrap(),
-      "-Graphics-"
-    );
+    let svg =
+      interpret("ExportString[Grid[{{1+1, 2+2}, {3+3, 4+4}}], \"SVG\"]")
+        .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">2</text>"));
+    assert!(svg.contains(">8</text>"));
   }
 
   #[test]
   fn with_options() {
     clear_state();
-    assert_eq!(
-      interpret("Grid[{{1, 2}, {3, 4}}, Alignment -> Center]").unwrap(),
-      "-Graphics-"
-    );
+    let svg = interpret(
+      "ExportString[Grid[{{1, 2}, {3, 4}}, Alignment -> Center], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
   }
 
   #[test]
   fn single_element() {
     clear_state();
-    assert_eq!(interpret("Grid[{{x}}]").unwrap(), "-Graphics-");
+    let svg = interpret("ExportString[Grid[{{x}}], \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">x</text>"));
   }
 
   #[test]
   fn postfix_form() {
     clear_state();
-    assert_eq!(interpret("{{a, b}, {c, d}} // Grid").unwrap(), "-Graphics-");
+    let svg =
+      interpret("ExportString[{{a, b}, {c, d}} // Grid, \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">a</text>"));
   }
 
   #[test]
   fn frame_all() {
     clear_state();
-    assert_eq!(
-      interpret("Grid[{{a, b, c}, {x, y^2, z^3}}, Frame -> All]").unwrap(),
-      "-Graphics-"
-    );
+    let svg = interpret(
+      "ExportString[Grid[{{a, b, c}, {x, y^2, z^3}}, Frame -> All], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("<line"), "Frame -> All should produce lines");
   }
 
   #[test]
   fn frame_all_with_other_options() {
     clear_state();
-    assert_eq!(
-      interpret("Grid[{{1, 2}, {3, 4}}, Alignment -> Center, Frame -> All]")
-        .unwrap(),
-      "-Graphics-"
-    );
+    let svg = interpret(
+      "ExportString[Grid[{{1, 2}, {3, 4}}, Alignment -> Center, Frame -> All], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("<line"), "Frame -> All should produce lines");
   }
 }

@@ -1,0 +1,8 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"PieChart[{100}]\")"
+---
+<svg width="360" height="225" viewBox="0 0 360 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="225" fill="white"/>
+<path d="M180.00,112.50 L180.00,16.88 A95.62,95.62 0 1,1 180.00,16.88 Z" fill="rgb(94,129,181)" stroke="white" stroke-width="1"/>
+</svg>

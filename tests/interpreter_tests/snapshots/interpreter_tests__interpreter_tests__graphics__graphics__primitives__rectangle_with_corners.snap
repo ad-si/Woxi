@@ -1,0 +1,7 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Rectangle[{0, 0}, {2, 3}]}]\")"
+---
+<svg width="360" height="540" viewBox="0 0 360 540" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect x="13.33" y="20.00" width="333.33" height="500.00" fill="rgb(0,0,0)"/>
+</svg>

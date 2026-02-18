@@ -1,0 +1,19 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics3D[Cuboid[{0, 0, 0}, {1, 1, 1}]]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="360" fill="white"/>
+<polygon points="306.6,233.6 143.0,30.0 143.0,180.8" fill="rgb(64,87,123)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,277.2 306.6,233.6 143.0,180.8" fill="rgb(80,109,153)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,277.2 143.0,180.8 143.0,30.0" fill="rgb(57,79,111)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="306.6,233.6 306.6,82.8 143.0,30.0" fill="rgb(64,87,123)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,277.2 217.0,330.0 306.6,233.6" fill="rgb(80,109,153)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="217.0,330.0 306.6,82.8 306.6,233.6" fill="rgb(57,79,111)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,277.2 143.0,30.0 53.4,126.4" fill="rgb(57,79,111)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,126.4 143.0,30.0 306.6,82.8" fill="rgb(80,109,153)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,277.2 217.0,179.2 217.0,330.0" fill="rgb(64,87,123)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,277.2 53.4,126.4 217.0,179.2" fill="rgb(64,87,123)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="217.0,330.0 217.0,179.2 306.6,82.8" fill="rgb(57,79,111)" stroke="#00000018" stroke-width="0.5"/>
+<polygon points="53.4,126.4 306.6,82.8 217.0,179.2" fill="rgb(80,109,153)" stroke="#00000018" stroke-width="0.5"/>
+</svg>

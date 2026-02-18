@@ -1,0 +1,8 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics3D[Polygon[{{0,0,0}, {0,1,1}, {1,0,0}}]]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="360" fill="white"/>
+<polygon points="98.2,277.2 187.7,30.0 261.8,330.0" fill="rgb(88,120,169)" stroke="#00000018" stroke-width="0.5"/>
+</svg>

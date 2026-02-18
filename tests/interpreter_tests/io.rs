@@ -153,12 +153,12 @@ mod plot {
   use super::*;
 
   #[test]
-  fn plot_returns_graphics() {
+  fn plot_returns_svg() {
     clear_state();
-    assert_eq!(
-      interpret("Plot[Sin[x], {x, 0, 2 Pi}]").unwrap(),
-      "-Graphics-"
-    );
+    let svg =
+      interpret("ExportString[Plot[Sin[x], {x, 0, 2 Pi}], \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("</svg>"));
   }
 
   #[test]
@@ -355,10 +355,12 @@ mod plot {
   #[test]
   fn plot_list_with_complex_exp() {
     clear_state();
-    assert_eq!(
-      interpret("Plot[{Sin[a], Im[E^(I a)]}, {a, 0, 2 Pi}]").unwrap(),
-      "-Graphics-"
-    );
+    let svg = interpret(
+      "ExportString[Plot[{Sin[a], Im[E^(I a)]}, {a, 0, 2 Pi}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("</svg>"));
   }
 
   #[test]
@@ -649,9 +651,13 @@ mod grid_graphics {
   use super::*;
 
   #[test]
-  fn grid_returns_graphics() {
+  fn grid_returns_svg() {
     clear_state();
-    assert_eq!(interpret("Grid[{{a, b}, {c, d}}]").unwrap(), "-Graphics-");
+    let svg =
+      interpret("ExportString[Grid[{{a, b}, {c, d}}], \"SVG\"]").unwrap();
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">d</text>"));
   }
 
   #[test]

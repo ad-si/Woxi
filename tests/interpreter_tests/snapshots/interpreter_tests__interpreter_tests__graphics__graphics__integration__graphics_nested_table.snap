@@ -1,0 +1,14 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[Table[Disk[{r*Cos[2 Pi q/4], r*Sin[2 Pi q/4]}, 0.3], {r, 1, 2}, {q, 4}]]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="180.00" cy="107.54" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="107.54" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="252.46" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="252.46" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="35.07" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="35.07" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="324.93" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="324.93" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+</svg>

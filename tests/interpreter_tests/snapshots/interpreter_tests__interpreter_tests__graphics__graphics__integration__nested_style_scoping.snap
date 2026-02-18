@@ -1,0 +1,9 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{\n          {Red, Disk[{0, 0}]},\n          {Blue, Disk[{3, 0}]},\n          Circle[{1.5, 2}]\n        }]\")"
+---
+<svg width="360" height="288" viewBox="0 0 360 288" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="80.00" cy="210.67" rx="66.67" ry="66.67" fill="rgb(255,0,0)"/>
+<ellipse cx="280.00" cy="210.67" rx="66.67" ry="66.67" fill="rgb(0,0,255)"/>
+<ellipse cx="180.00" cy="77.33" rx="66.67" ry="66.67" fill="none" stroke="rgb(0,0,0)" stroke-width="1.44"/>
+</svg>

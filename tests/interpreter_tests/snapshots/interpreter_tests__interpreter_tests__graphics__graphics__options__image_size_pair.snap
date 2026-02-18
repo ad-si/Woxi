@@ -1,0 +1,7 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Circle[]}, ImageSize -> {400, 300}]\")"
+---
+<svg width="400" height="300" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="200.00" cy="150.00" rx="138.89" ry="138.89" fill="none" stroke="rgb(0,0,0)" stroke-width="1.60"/>
+</svg>
