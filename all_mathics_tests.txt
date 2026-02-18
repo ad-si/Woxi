@@ -16035,30 +16035,6 @@ EXPECTED: 42
 ---
 FILE: test/test_control.py
 FUNCTION: test_full_form
-LINE: 103
-INPUT: FullForm[Hold[a ;]]
-EXPECTED: Hold[CompoundExpression[a, Null]]
----
-FILE: test/test_control.py
-FUNCTION: test_full_form
-LINE: 104
-INPUT: FullForm[Hold[a ; b]]
-EXPECTED: Hold[CompoundExpression[a, b]]
----
-FILE: test/test_control.py
-FUNCTION: test_full_form
-LINE: 105
-INPUT: FullForm[Hold[a ; b ;]]
-EXPECTED: Hold[CompoundExpression[a, b, Null]]
----
-FILE: test/test_control.py
-FUNCTION: test_full_form
-LINE: 106
-INPUT: FullForm[Hold[a ; b ; c]]
-EXPECTED: Hold[CompoundExpression[a, b, c]]
----
-FILE: test/test_control.py
-FUNCTION: test_full_form
 LINE: 107
 INPUT: FullForm[Hold[a ; ; c]]
 EXPECTED: Hold[CompoundExpression[a, Null, c]]
@@ -16214,24 +16190,6 @@ LINE: 116
 INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
 EXPECTED: False
 ---
-FILE: test/test_numericq.py
-FUNCTION: test_expression_numericq
-LINE: 143
-INPUT: NumericQ[a]=True; Clear[a]; NumericQ[a]
-EXPECTED: True
----
-FILE: test/test_numericq.py
-FUNCTION: test_expression_numericq
-LINE: 144
-INPUT: NumericQ[a]=True; ClearAll[a]; NumericQ[a]
-EXPECTED: True
----
-FILE: test/test_numericq.py
-FUNCTION: test_expression_numericq
-LINE: 145
-INPUT: NumericQ[a]=False
-EXPECTED: False
----
 FILE: test/test_structure.py
 FUNCTION: test_flatten
 LINE: 32
@@ -16270,12 +16228,6 @@ EXPECTED: {1, 4, 7, 2, 5, 8, 3, 6, 9}
 ---
 FILE: test/test_structure.py
 FUNCTION: test_flatten
-LINE: 48
-INPUT: Flatten[{{1, 2}, {3, {4}}}, {{1, 2}}]
-EXPECTED: {1, 2, 3, {4}}
----
-FILE: test/test_structure.py
-FUNCTION: test_flatten
 LINE: 49
 INPUT: Flatten[p[1, p[2], p[3]]]
 EXPECTED: p[1, 2, 3]
@@ -16285,12 +16237,6 @@ FUNCTION: test_flatten
 LINE: 50
 INPUT: Flatten[p[1, p[2], p[3]], 2]
 EXPECTED: p[1, 2, 3]
----
-FILE: test/test_structure.py
-FUNCTION: test_operate
-LINE: 57
-INPUT: Operate[p, f[a][b][c]]
-EXPECTED: p[f[a][b]][c]
 ---
 FILE: test/test_structure.py
 FUNCTION: test_operate
@@ -16309,12 +16255,6 @@ FUNCTION: test_operate
 LINE: 68
 INPUT: Operate[p, f]
 EXPECTED: f
----
-FILE: test/test_structure.py
-FUNCTION: test_operate
-LINE: 69
-INPUT: Operate[p, f, 0]
-EXPECTED: p[f]
 ---
 FILE: test/test_structure.py
 FUNCTION: test_sort
@@ -16339,12 +16279,6 @@ FUNCTION: None
 LINE: 24
 INPUT: MatchQ[uniformTable,{__Real}]
 EXPECTED: System`True
----
-FILE: test/timings/test_uniform_tables.py
-FUNCTION: None
-LINE: 25
-INPUT: Length[F@@uniformTable]
-EXPECTED: 0
 ---
 FILE: test/timings/test_uniform_tables.py
 FUNCTION: None
@@ -16393,13 +16327,6 @@ FUNCTION: test_object_dissimilarity
 LINE: 229
 INPUT: Integer
 EXPECTED: MachineReal
----
-FILE: test/core/test_definitions.py
-FUNCTION: None
-LINE: 23
-INPUT: A
-EXPECTED: A
-MESSAGE: ownvalues
 ---
 FILE: test/core/test_definitions.py
 FUNCTION: None
@@ -16884,31 +16811,10 @@ EXPECTED: 0
 ---
 FILE: test/builtin/test_attributes.py
 FUNCTION: None
-LINE: 28
-INPUT: MatchQ[x, F[y_]]
-EXPECTED: False
-MESSAGE: With OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: None
-LINE: 29
-INPUT: MatchQ[x, G[y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: None
 LINE: 30
 INPUT: MatchQ[x, F[x_:0,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, and Default
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: None
-LINE: 31
-INPUT: MatchQ[x, G[x_:0,y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity, and Default
 ---
 FILE: test/builtin/test_attributes.py
 FUNCTION: None
@@ -16982,31 +16888,10 @@ MESSAGE: Without OneIdentity, and Optional, default
 ---
 FILE: test/builtin/test_attributes.py
 FUNCTION: test_one_identity_still_failing
-LINE: 144
-INPUT: MatchQ[x, F[y_]]
-EXPECTED: False
-MESSAGE: With OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity_still_failing
-LINE: 145
-INPUT: MatchQ[x, G[y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity_still_failing
 LINE: 146
 INPUT: MatchQ[x, F[x_:0,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, and Default
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity_still_failing
-LINE: 147
-INPUT: MatchQ[x, G[x_:0,y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity, and Default
 ---
 FILE: test/builtin/test_attributes.py
 FUNCTION: test_one_identity_still_failing
@@ -17092,12 +16977,6 @@ EXPECTED: <Integer64, 2×2>
 ---
 FILE: test/builtin/test_binary.py
 FUNCTION: test_ByteOrdering
-LINE: 432
-INPUT: Head[NumericArray[{1,2}]]
-EXPECTED: NumericArray
----
-FILE: test/builtin/test_binary.py
-FUNCTION: test_ByteOrdering
 LINE: 433
 INPUT: AtomQ[NumericArray[{1,2}]]
 EXPECTED: True
@@ -17141,206 +17020,10 @@ MESSAGE: not comparable expressions, Issue #200
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: None
-LINE: 21
-INPUT: g[a]==g[3]
-EXPECTED: g[a] == g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 22
-INPUT: g[2]==g[a]
-EXPECTED: g[2] == g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 23
-INPUT: g[a]==g[b]
-EXPECTED: g[a] == g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 24
-INPUT: g[a]==g[a]
-EXPECTED: True
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 25
-INPUT: g[1]==g[1]
-EXPECTED: True
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 26
-INPUT: a == a == a
-EXPECTED: True
-MESSAGE: simple chained compare
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
 LINE: 55
 INPUT: g[2]!=g[3]
 EXPECTED: g[2] != g[3]
 MESSAGE: not comparable expressions, Issue #200
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 56
-INPUT: g[a]!=g[3]
-EXPECTED: g[a] != g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 57
-INPUT: g[2]!=g[a]
-EXPECTED: g[2] != g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 58
-INPUT: g[a]!=g[b]
-EXPECTED: g[a] != g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 59
-INPUT: g[a]!=g[a]
-EXPECTED: False
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 60
-INPUT: g[1]!=g[1]
-EXPECTED: False
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 65
-INPUT: g[2]<=g[3]
-EXPECTED: g[2] <= g[3]
-MESSAGE: not comparable expressions, Issue #200
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 66
-INPUT: g[a]<=g[3]
-EXPECTED: g[a] <= g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 67
-INPUT: g[2]<=g[a]
-EXPECTED: g[2] <= g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 68
-INPUT: g[a]<=g[b]
-EXPECTED: g[a] <= g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 69
-INPUT: g[a]<=g[a]
-EXPECTED: g[a] <= g[a]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 70
-INPUT: g[1]<=g[1]
-EXPECTED: g[1] <= g[1]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 73
-INPUT: {1, 2, 3} < {1, 2, 3}
-EXPECTED: {1, 2, 3} < {1, 2, 3}
-MESSAGE: Less on a list
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 74
-INPUT: g[2]<g[3]
-EXPECTED: g[2] < g[3]
-MESSAGE: not comparable expressions, Issue #200
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 75
-INPUT: g[a]<g[3]
-EXPECTED: g[a] < g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 76
-INPUT: g[2]<g[a]
-EXPECTED: g[2] < g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 77
-INPUT: g[a]<g[b]
-EXPECTED: g[a] < g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 78
-INPUT: g[a]<g[a]
-EXPECTED: g[a] < g[a]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 79
-INPUT: g[1]<g[1]
-EXPECTED: g[1] < g[1]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 90
-INPUT: a != a != b
-EXPECTED: False
-MESSAGE: Strange MMA behavior
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 91
-INPUT: a != b != a
-EXPECTED: a != b != a
-MESSAGE: incomparable values should be unchanged
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 102
-INPUT: g[1]==g[1]==g[1]
-EXPECTED: True
-MESSAGE: Equal works over several elements
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: None
-LINE: 108
-INPUT: g[1]!=g[1]==g[2]
-EXPECTED: False
-MESSAGE: This evaluates first the inequality
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
@@ -17348,13 +17031,6 @@ LINE: 128
 INPUT: A
 EXPECTED: B
 MESSAGE: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 129
-INPUT: A
-EXPECTED: A
-MESSAGE: True
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
@@ -17463,24 +17139,10 @@ MESSAGE: True
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_unsameq
-LINE: 440
-INPUT: 2 + 3*a
-EXPECTED: 2 + 3*a
-MESSAGE: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
 LINE: 441
 INPUT: Infinity
 EXPECTED: 2 + 3*a
 MESSAGE: Infinity == 2 + 3 a
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 442
-INPUT: Infinity
-EXPECTED: Infinity
-MESSAGE: True
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_unsameq
@@ -17502,13 +17164,6 @@ LINE: 445
 INPUT: -Infinity
 EXPECTED: -Infinity
 MESSAGE: True
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 446
-INPUT: Sqrt[I] Infinity
-EXPECTED: Infinity
-MESSAGE: False
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_unsameq
@@ -17558,13 +17213,6 @@ LINE: 460
 INPUT: I
 EXPECTED: a
 MESSAGE: I == a
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 463
-INPUT: I
-EXPECTED: I
-MESSAGE: True
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_unsameq
@@ -17628,13 +17276,6 @@ LINE: 503
 INPUT: Sqrt[2]
 EXPECTED: .25
 MESSAGE: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 504
-INPUT: Sqrt[2]
-EXPECTED: Sqrt[2]
-MESSAGE: True
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_unsameq
@@ -17705,13 +17346,6 @@ LINE: 515
 INPUT: BesselJ[0, 2]
 EXPECTED: Sqrt[2]
 MESSAGE: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_unsameq
-LINE: 516
-INPUT: BesselJ[0, 2]
-EXPECTED: BesselJ[0, 2]
-MESSAGE: True
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_unsameq
@@ -18037,20 +17671,6 @@ INPUT: Head[$SystemWordLength] == Integer
 EXPECTED: True
 MESSAGE: $SystemWordLength
 ---
-FILE: test/builtin/test_testing_expressions.py
-FUNCTION: test_matchq
-LINE: 198
-INPUT: Order[0.9, 1]
-EXPECTED: 1
-MESSAGE: Numeric less-than comparison between Real and Integer
----
-FILE: test/builtin/test_testing_expressions.py
-FUNCTION: test_matchq
-LINE: 204
-INPUT: Order[F[2], A[2]]
-EXPECTED: -1
-MESSAGE: Function ordering in function name
----
 FILE: test/builtin/test_trace.py
 FUNCTION: test_TraceEvaluation
 LINE: 36
@@ -18095,13 +17715,6 @@ INPUT: UpValues[h]
 EXPECTED: {HoldPattern[f[g, a + b, h]] :> 2}
 ---
 FILE: test/builtin/assignments/test_assignment.py
-FUNCTION: test_order
-LINE: 38
-INPUT: f[___]:=1;f[_,_]:=2; f[1,2]
-EXPECTED: 2
-MESSAGE: f[_,_] must have priority over f[___]
----
-FILE: test/builtin/assignments/test_assignment.py
 FUNCTION: test_assign_list
 LINE: 405
 INPUT: G[x_Real]=x^2; a={G[x]}; {x=1.; a, x=.; a}
@@ -18124,18 +17737,6 @@ FUNCTION: test_upset
 LINE: 27
 INPUT: f[g, a + b, h] ^= 2
 EXPECTED: 2
----
-FILE: test/builtin/files_io/test_files.py
-FUNCTION: test_unprotected
-LINE: 27
-INPUT: Attributes[$Path]
-EXPECTED: {}
----
-FILE: test/builtin/files_io/test_files.py
-FUNCTION: test_unprotected
-LINE: 28
-INPUT: Attributes[$InstallationDirectory]
-EXPECTED: {}
 ---
 FILE: test/builtin/numbers/test_algebra.py
 FUNCTION: test_collect
@@ -18160,12 +17761,6 @@ FUNCTION: test_polynomialq
 LINE: 292
 INPUT: PolynomialQ[1/x[1]^2]
 EXPECTED: False
----
-FILE: test/builtin/numbers/test_algebra.py
-FUNCTION: test_polynomialq
-LINE: 293
-INPUT: PolynomialQ[x[1]^2]
-EXPECTED: True
 ---
 FILE: test/builtin/numbers/test_algebra.py
 FUNCTION: test_polynomialq
@@ -18272,12 +17867,6 @@ EXPECTED: {{5, 7, 5}, 1}
 ---
 FILE: test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 54
-INPUT: RealDigits[0.004]
-EXPECTED: {{4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, -2}
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 55
 INPUT: RealDigits[1/3]
 EXPECTED: {{{3}}, 0}
@@ -18338,12 +17927,6 @@ EXPECTED: RealDigits[abc]
 ---
 FILE: test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 81
-INPUT: RealDigits[abc, 2]
-EXPECTED: RealDigits[abc, 2]
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 82
 INPUT: RealDigits[45]
 EXPECTED: {{4, 5}, 2}
@@ -18392,12 +17975,6 @@ EXPECTED: {{1}, 1}
 ---
 FILE: test/builtin/atomic/test_numbers.py
 FUNCTION: test_realdigits
-LINE: 118
-INPUT: RealDigits[0, 10, 5]
-EXPECTED: {{0, 0, 0, 0, 0}, 0}
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
 LINE: 139
 INPUT: RealDigits[220, 140]
 EXPECTED: {{1, 80}, 2}
@@ -18415,12 +17992,6 @@ INPUT: RealDigits[1]
 EXPECTED: {{1}, 1}
 ---
 FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_realdigits
-LINE: 146
-INPUT: RealDigits[0, 10, 5]
-EXPECTED: {{0, 0, 0, 0, 0}, 0}
----
-FILE: test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
 LINE: 166
 INPUT: N[Pi, Pi]
@@ -18431,12 +18002,6 @@ FUNCTION: test_n
 LINE: 167
 INPUT: N[1/9, 30]
 EXPECTED: 0.111111111111111111111111111111
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_n
-LINE: 168
-INPUT: Precision[N[1/9, 30]]
-EXPECTED: 30.
 ---
 FILE: test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
@@ -18473,12 +18038,6 @@ FUNCTION: test_n
 LINE: 175
 INPUT: N[1.012345678901234567890123, 5]
 EXPECTED: 1.0123
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_n
-LINE: 176
-INPUT: N[1.012345678901234567890123, 5] // Precision
-EXPECTED: 5.
 ---
 FILE: test/builtin/atomic/test_numbers.py
 FUNCTION: test_n
@@ -18575,46 +18134,6 @@ FUNCTION: test_accuracy
 LINE: 271
 INPUT: Im[0.5+2.3 I]
 EXPECTED: MachinePrecision
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 282
-INPUT: N[Sqrt[2], 41]//Precision
-EXPECTED: 41.
-MESSAGE: first round sqrt[2`41]
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 283
-INPUT: N[Sqrt[2], 40]//Precision
-EXPECTED: 40.
-MESSAGE: first round sqrt[2`40]
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 284
-INPUT: N[Sqrt[2], 41]//Precision
-EXPECTED: 41.
-MESSAGE: second round sqrt[2`41]
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 285
-INPUT: N[Sqrt[2], 40]//Precision
-EXPECTED: 40.
-MESSAGE: second round sqrt[2`40]
----
-FILE: test/builtin/atomic/test_strings2.py
-FUNCTION: test_digitq
-LINE: 28
-INPUT: DigitQ[1==2]
-EXPECTED: False
----
-FILE: test/builtin/atomic/test_strings2.py
-FUNCTION: test_digitq
-LINE: 29
-INPUT: DigitQ[a=1]
-EXPECTED: False
 ---
 FILE: test/builtin/drawing/test_image.py
 FUNCTION: None
@@ -18774,12 +18293,6 @@ FUNCTION: test_add
 LINE: 44
 INPUT: E^(I Pi/2)
 EXPECTED: I
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_add
-LINE: 45
-INPUT: E^1
-EXPECTED: E
 ---
 FILE: test/builtin/arithmetic/test_basic.py
 FUNCTION: test_add
@@ -19012,24 +18525,6 @@ LINE: 73
 INPUT: Simplify[1/(Sin[1]^2+Cos[1]^2-1)]
 EXPECTED: False
 ---
-FILE: test/test_numericq.py
-FUNCTION: test_assign_numericq
-LINE: 125
-INPUT: NumericQ[a]=True; Clear[a]; NumericQ[a]
-EXPECTED: True
----
-FILE: test/test_numericq.py
-FUNCTION: test_assign_numericq
-LINE: 125
-INPUT: NumericQ[a]=True; ClearAll[a]; NumericQ[a]
-EXPECTED: True
----
-FILE: test/test_numericq.py
-FUNCTION: test_assign_numericq
-LINE: 125
-INPUT: NumericQ[a]=False
-EXPECTED: False
----
 FILE: test/timings/test_uniform_tables.py
 FUNCTION: test_evaluate_benchmark
 LINE: 20
@@ -19041,12 +18536,6 @@ FUNCTION: test_evaluate_benchmark
 LINE: 20
 INPUT: MatchQ[uniformTable,{__Real}]
 EXPECTED: System`True
----
-FILE: test/timings/test_uniform_tables.py
-FUNCTION: test_evaluate_benchmark
-LINE: 20
-INPUT: Length[F@@uniformTable]
-EXPECTED: 0
 ---
 FILE: test/timings/test_uniform_tables.py
 FUNCTION: test_evaluate_benchmark
@@ -19218,13 +18707,6 @@ LINE: 12
 INPUT: pattern_str
 EXPECTED: tag
 MESSAGE: position
----
-FILE: test/core/test_definitions.py
-FUNCTION: test_get_tag_position
-LINE: 12
-INPUT: A
-EXPECTED: A
-MESSAGE: ownvalues
 ---
 FILE: test/core/test_definitions.py
 FUNCTION: test_get_tag_position
@@ -19494,30 +18976,9 @@ MESSAGE: msg
 FILE: test/builtin/test_attributes.py
 FUNCTION: test_one_identity
 LINE: 19
-INPUT: MatchQ[x, F[y_]]
-EXPECTED: False
-MESSAGE: With OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity
-LINE: 19
-INPUT: MatchQ[x, G[y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity
-LINE: 19
 INPUT: MatchQ[x, F[x_:0,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, and Default
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity
-LINE: 19
-INPUT: MatchQ[x, G[x_:0,y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity, and Default
 ---
 FILE: test/builtin/test_attributes.py
 FUNCTION: test_one_identity
@@ -19606,30 +19067,9 @@ MESSAGE: msg
 FILE: test/builtin/test_attributes.py
 FUNCTION: test_one_identity_stil_failing
 LINE: 135
-INPUT: MatchQ[x, F[y_]]
-EXPECTED: False
-MESSAGE: With OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity_stil_failing
-LINE: 135
-INPUT: MatchQ[x, G[y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity_stil_failing
-LINE: 135
 INPUT: MatchQ[x, F[x_:0,y_]]
 EXPECTED: True
 MESSAGE: With OneIdentity, and Default
----
-FILE: test/builtin/test_attributes.py
-FUNCTION: test_one_identity_stil_failing
-LINE: 135
-INPUT: MatchQ[x, G[x_:0,y_]]
-EXPECTED: False
-MESSAGE: Without OneIdentity, and Default
 ---
 FILE: test/builtin/test_attributes.py
 FUNCTION: test_one_identity_stil_failing
@@ -19749,12 +19189,6 @@ EXPECTED: <Integer64, 2×2>
 FILE: test/builtin/test_binary.py
 FUNCTION: test_basics
 LINE: 427
-INPUT: Head[NumericArray[{1,2}]]
-EXPECTED: NumericArray
----
-FILE: test/builtin/test_binary.py
-FUNCTION: test_basics
-LINE: 427
 INPUT: AtomQ[NumericArray[{1,2}]]
 EXPECTED: True
 ---
@@ -19805,205 +19239,9 @@ MESSAGE: not comparable expressions, Issue #200
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_compare_many_members
 LINE: 7
-INPUT: g[a]==g[3]
-EXPECTED: g[a] == g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]==g[a]
-EXPECTED: g[2] == g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]==g[b]
-EXPECTED: g[a] == g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]==g[a]
-EXPECTED: True
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[1]==g[1]
-EXPECTED: True
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: a == a == a
-EXPECTED: True
-MESSAGE: simple chained compare
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
 INPUT: g[2]!=g[3]
 EXPECTED: g[2] != g[3]
 MESSAGE: not comparable expressions, Issue #200
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]!=g[3]
-EXPECTED: g[a] != g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]!=g[a]
-EXPECTED: g[2] != g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]!=g[b]
-EXPECTED: g[a] != g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]!=g[a]
-EXPECTED: False
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[1]!=g[1]
-EXPECTED: False
-MESSAGE: identical expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]<=g[3]
-EXPECTED: g[2] <= g[3]
-MESSAGE: not comparable expressions, Issue #200
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]<=g[3]
-EXPECTED: g[a] <= g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]<=g[a]
-EXPECTED: g[2] <= g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]<=g[b]
-EXPECTED: g[a] <= g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]<=g[a]
-EXPECTED: g[a] <= g[a]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[1]<=g[1]
-EXPECTED: g[1] <= g[1]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: {1, 2, 3} < {1, 2, 3}
-EXPECTED: {1, 2, 3} < {1, 2, 3}
-MESSAGE: Less on a list
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]<g[3]
-EXPECTED: g[2] < g[3]
-MESSAGE: not comparable expressions, Issue #200
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]<g[3]
-EXPECTED: g[a] < g[3]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[2]<g[a]
-EXPECTED: g[2] < g[a]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]<g[b]
-EXPECTED: g[a] < g[b]
-MESSAGE: not comparable expressions
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[a]<g[a]
-EXPECTED: g[a] < g[a]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[1]<g[1]
-EXPECTED: g[1] < g[1]
-MESSAGE: not comparable expressions (like in WMA)
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: a != a != b
-EXPECTED: False
-MESSAGE: Strange MMA behavior
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: a != b != a
-EXPECTED: a != b != a
-MESSAGE: incomparable values should be unchanged
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[1]==g[1]==g[1]
-EXPECTED: True
-MESSAGE: Equal works over several elements
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_compare_many_members
-LINE: 7
-INPUT: g[1]!=g[1]==g[2]
-EXPECTED: False
-MESSAGE: This evaluates first the inequality
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_sameq
@@ -20018,13 +19256,6 @@ LINE: 125
 INPUT: A
 EXPECTED: B
 MESSAGE: False
----
-FILE: test/builtin/test_comparison.py
-FUNCTION: test_sameq
-LINE: 125
-INPUT: A
-EXPECTED: A
-MESSAGE: True
 ---
 FILE: test/builtin/test_comparison.py
 FUNCTION: test_sameq
@@ -20330,20 +19561,6 @@ INPUT: str_expr
 EXPECTED: str_expected
 MESSAGE: assert_fail_msg
 ---
-FILE: test/builtin/test_testing_expressions.py
-FUNCTION: test_order
-LINE: 180
-INPUT: Order[0.9, 1]
-EXPECTED: 1
-MESSAGE: Numeric less-than comparison between Real and Integer
----
-FILE: test/builtin/test_testing_expressions.py
-FUNCTION: test_order
-LINE: 180
-INPUT: Order[F[2], A[2]]
-EXPECTED: -1
-MESSAGE: Function ordering in function name
----
 FILE: test/builtin/assignments/test_assignment.py
 FUNCTION: test_set_and_clear
 LINE: 80
@@ -20550,12 +19767,6 @@ EXPECTED: MachinePrecision
 FILE: test/builtin/atomic/test_numbers.py
 FUNCTION: test_precision
 LINE: 232
-INPUT: 0.00000000000000000000
-EXPECTED: 0.
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_precision
-LINE: 232
 INPUT: 0.``2
 EXPECTED: 0.
 ---
@@ -20692,34 +19903,6 @@ INPUT: str_expr
 EXPECTED: str_expected
 MESSAGE: msg
 ---
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_change_prec
-LINE: 278
-INPUT: N[Sqrt[2], 41]//Precision
-EXPECTED: 41.
-MESSAGE: first round sqrt[2`41]
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_change_prec
-LINE: 278
-INPUT: N[Sqrt[2], 40]//Precision
-EXPECTED: 40.
-MESSAGE: first round sqrt[2`40]
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_change_prec
-LINE: 278
-INPUT: N[Sqrt[2], 41]//Precision
-EXPECTED: 41.
-MESSAGE: second round sqrt[2`41]
----
-FILE: test/builtin/atomic/test_numbers.py
-FUNCTION: test_change_prec
-LINE: 278
-INPUT: N[Sqrt[2], 40]//Precision
-EXPECTED: 40.
-MESSAGE: second round sqrt[2`40]
----
 FILE: test/builtin/atomic/test_strings.py
 FUNCTION: test_string
 LINE: 35
@@ -20843,12 +20026,6 @@ FUNCTION: test_exponential
 LINE: 37
 INPUT: E^(I Pi/2)
 EXPECTED: I
----
-FILE: test/builtin/arithmetic/test_basic.py
-FUNCTION: test_exponential
-LINE: 37
-INPUT: E^1
-EXPECTED: E
 ---
 FILE: test/builtin/arithmetic/test_basic.py
 FUNCTION: test_exponential

@@ -1685,6 +1685,18 @@ mod expand_threading {
   }
 
   #[test]
+  fn log_negative_integer() {
+    assert_eq!(interpret("Log[-1]").unwrap(), "I*Pi");
+    assert_eq!(interpret("Log[-2]").unwrap(), "I*Pi + Log[2]");
+    assert_eq!(interpret("Log[-3]").unwrap(), "I*Pi + Log[3]");
+  }
+
+  #[test]
+  fn log_negative_expr() {
+    assert_eq!(interpret("Log[-E]").unwrap(), "1 + I*Pi");
+  }
+
+  #[test]
   fn sin_complex_float() {
     assert_eq!(
       interpret("Sin[1.0 + I]").unwrap(),
