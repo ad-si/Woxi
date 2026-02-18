@@ -47,21 +47,8 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if `test` matches `pattern`.
-fn pattern_matches(_test: &Expr, pattern: &Expr, test_str: &str) -> bool {
-  // Blank (_) matches anything
-  if let Expr::Pattern { name, head: _ } = pattern
-    && (name == "_" || name.is_empty())
-  {
-    return true;
-  }
-  if let Expr::Identifier(name) = pattern
-    && name == "_"
-  {
-    return true;
-  }
-  // Exact match (by string comparison for now)
-  let pattern_str = crate::syntax::expr_to_string(pattern);
-  test_str == pattern_str
+fn pattern_matches(test: &Expr, pattern: &Expr, _test_str: &str) -> bool {
+  crate::evaluator::match_pattern(test, pattern).is_some()
 }
 
 /// Piecewise[{{val1, cond1}, {val2, cond2}, ...}] or

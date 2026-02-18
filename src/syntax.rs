@@ -1426,8 +1426,12 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     None
   };
 
-  // Single term case (no operators, no replace, no repeated)
-  if inner.len() == 1 && replace_rules.is_none() && repeated_suffix.is_none() {
+  // Single term case (no operators, no replace, no repeated, no post-& continuation)
+  if inner.len() == 1
+    && replace_rules.is_none()
+    && repeated_suffix.is_none()
+    && post_anon_pairs.is_empty()
+  {
     let mut result = pair_to_expr(inner.remove(0));
     for func_pair in postfix_funcs {
       let func = parse_postfix_function(func_pair);
@@ -1648,12 +1652,12 @@ fn operator_precedence(op: &str) -> u8 {
     "->" | ":>" => 6,
     "+" | "-" => 7,
     "*" | "/" => 8,
-    "<>" => 7,         // Same as + for string concatenation
-    "." => 9,          // Dot (higher than arithmetic)
-    "@@@" | "@@" => 9, // Apply/MapApply
-    "@" => 9,          // Prefix application
-    "/@" => 10,        // Map (higher than Apply)
-    "^" => 11,         // Power (highest)
+    "<>" => 7,          // Same as + for string concatenation
+    "." => 9,           // Dot (higher than arithmetic)
+    "@@@" | "@@" => 10, // Apply/MapApply
+    "/@" => 11,         // Map (higher than Apply)
+    "@" => 12,          // Prefix application (higher than Map)
+    "^" => 13,          // Power (highest)
     _ => 0,
   }
 }
@@ -1693,12 +1697,13 @@ fn build_expr_with_precedence(
       break;
     }
 
-    // For right-associative operators (like ^ and @), use prec, otherwise use prec + 1
-    let next_min_prec = if op_str == "^" || op_str == "@" {
-      prec
-    } else {
-      prec + 1
-    };
+    // For right-associative operators, use prec, otherwise use prec + 1
+    let next_min_prec =
+      if op_str == "^" || op_str == "@" || op_str == "=" || op_str == ":=" {
+        prec
+      } else {
+        prec + 1
+      };
 
     // Build the right side with higher precedence
     let right =

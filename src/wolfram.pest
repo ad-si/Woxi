@@ -117,8 +117,8 @@ ImplicitTimes = { ImplicitTimesFactor ~ ImplicitTimesFactor+ }
 // This avoids redundant parsing by checking for special operators after the main parse
 // Postfix application (//) has lowest precedence and can follow any expression form
 // ReplaceAll (/.) and ReplaceRepeated (//.) can appear after operator chains: x = y /. rules
-ReplaceAllSuffix = { "/." ~ (List | ReplacementRule) }
-ReplaceRepeatedSuffix = { "//." ~ (List | ReplacementRule) }
+ReplaceAllSuffix = { "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
+ReplaceRepeatedSuffix = { "//." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
 // Repeated (..) and RepeatedNull (...) are postfix pattern operators
 // "..." must be tried before ".." since PEG is ordered-choice
 RepeatedNullSuffix = { "..." }
@@ -279,8 +279,8 @@ Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOp
 ReplacementRule = { ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | ":>") ~ ConditionExpr }
 
 // Replacement expressions: expr /. rule or expr //. rule
-ReplaceAllExpr = { Term ~ "/." ~ (List | ReplacementRule) }
-ReplaceRepeatedExpr = { Term ~ "//." ~ (List | ReplacementRule) }
+ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
+ReplaceRepeatedExpr = { Term ~ "//." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
 
 List = { "{" ~ (ListItem ~ ("," ~ ListItem)*)? ~ "}" }
 // ListItem can be a ReplacementRule (with optional & suffix) or an Expression

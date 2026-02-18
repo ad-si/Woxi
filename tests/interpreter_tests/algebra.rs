@@ -478,6 +478,38 @@ mod switch {
   fn evaluated_expression() {
     assert_eq!(interpret("Switch[1 + 1, 1, a, 2, b, 3, c]").unwrap(), "b");
   }
+
+  #[test]
+  fn head_constrained_blank() {
+    // _Head pattern matches expressions with matching head
+    assert_eq!(
+      interpret("Switch[C[1], _C, matched, _, other]").unwrap(),
+      "matched"
+    );
+  }
+
+  #[test]
+  fn head_constrained_blank_no_match() {
+    // _Head pattern doesn't match different head
+    assert_eq!(
+      interpret("Switch[D[1], _C, matched, _, other]").unwrap(),
+      "other"
+    );
+  }
+
+  #[test]
+  fn head_constrained_blank_integer() {
+    assert_eq!(
+      interpret("Switch[42, _Integer, num, _String, str]").unwrap(),
+      "num"
+    );
+  }
+
+  #[test]
+  fn named_pattern() {
+    // x_ matches anything — Switch does NOT bind pattern variables
+    assert_eq!(interpret("Switch[42, x_, x + 1]").unwrap(), "1 + x");
+  }
 }
 
 mod piecewise {
@@ -738,6 +770,82 @@ mod replace_all_head_constraint {
       interpret("{1, 2.5, 3} /. {a_Integer :> a + 100, b_Real :> b * 10}")
         .unwrap(),
       "{101, 25., 103}"
+    );
+  }
+}
+
+mod replace_all_conditional_multi_rules {
+  use super::*;
+
+  #[test]
+  fn conditional_pattern_single_rule() {
+    assert_eq!(interpret("27 /. n_ /; OddQ[n] :> 3 n + 1").unwrap(), "82");
+  }
+
+  #[test]
+  fn conditional_pattern_multi_rules_scalar() {
+    // Multi-rule ReplaceAll with conditional patterns on a scalar
+    assert_eq!(
+      interpret("6 /. {n_ /; EvenQ[n] :> n/2, n_ /; OddQ[n] :> 3 n + 1}")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn conditional_pattern_multi_rules_list() {
+    assert_eq!(
+      interpret("{27, 6} /. {n_ /; EvenQ[n] :> n/2, n_ /; OddQ[n] :> 3 n + 1}")
+        .unwrap(),
+      "{82, 3}"
+    );
+  }
+
+  #[test]
+  fn nested_list_multi_rules() {
+    // Multi-rule ReplaceAll should recurse into nested lists
+    assert_eq!(
+      interpret("{C[1], {X, 4, Y, C[1]}} /. {X -> a, Y -> b}").unwrap(),
+      "{C[1], {a, 4, b, C[1]}}"
+    );
+  }
+
+  #[test]
+  fn nested_list_swap() {
+    assert_eq!(
+      interpret("{{a, b}, {c, d}} /. {a -> 1, d -> 4}").unwrap(),
+      "{{1, b}, {c, 4}}"
+    );
+  }
+}
+
+mod replace_all_variable_rhs {
+  use super::*;
+
+  #[test]
+  fn variable_holding_rules() {
+    clear_state();
+    assert_eq!(
+      interpret("r = {x -> 1, y -> 2}; {x, y, z} /. r").unwrap(),
+      "{1, 2, z}"
+    );
+  }
+
+  #[test]
+  fn variable_holding_conditional_rules() {
+    clear_state();
+    assert_eq!(
+      interpret("r = {x_ /; EvenQ[x] :> x/2}; Map[# /. r &, {4, 7}]").unwrap(),
+      "{2, 7}"
+    );
+  }
+
+  #[test]
+  fn variable_in_anonymous_function() {
+    clear_state();
+    assert_eq!(
+      interpret("r = {a -> b, b -> c}; Nest[# /. r &, a, 2]").unwrap(),
+      "c"
     );
   }
 }
