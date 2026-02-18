@@ -266,6 +266,39 @@ mod compound_assignment {
   }
 }
 
+mod chained_assignment {
+  use super::*;
+
+  #[test]
+  fn basic_chained_set() {
+    // s = k = {} should set both s and k to {}
+    clear_state();
+    assert_eq!(interpret("s = k = {}; {s, k}").unwrap(), "{{}, {}}");
+  }
+
+  #[test]
+  fn triple_chained_set() {
+    clear_state();
+    assert_eq!(
+      interpret("a = b = c = 42; {a, b, c}").unwrap(),
+      "{42, 42, 42}"
+    );
+  }
+
+  #[test]
+  fn chained_set_with_expression() {
+    clear_state();
+    assert_eq!(interpret("x = y = 1 + 2; {x, y}").unwrap(), "{3, 3}");
+  }
+
+  #[test]
+  fn right_associativity() {
+    // a = b = 5 should be parsed as a = (b = 5), not (a = b) = 5
+    clear_state();
+    assert_eq!(interpret("a = b = 5; b").unwrap(), "5");
+  }
+}
+
 mod append_to {
   use super::*;
 

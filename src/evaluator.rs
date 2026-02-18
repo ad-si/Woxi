@@ -858,6 +858,13 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           _ => {}
         }
       }
+      // Variable holds a symbol name (e.g. t = Flatten) — re-dispatch as that function
+      if let Some(resolved_name) = resolve_identifier_to_func_name(name) {
+        return evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: resolved_name,
+          args: args.to_vec(),
+        });
+      }
       // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
       if let Some(StoredValue::Association(_)) = var_val {
         // Evaluate arguments and perform nested access
@@ -7318,9 +7325,9 @@ fn apply_replace_all_ast(
       replacement,
     } => (expr_to_string(pattern), expr_to_string(replacement)),
     Expr::List(items) if !items.is_empty() => {
-      // Multiple rules - try each rule in order on each subexpression,
-      // using the first matching rule (Wolfram semantics: simultaneous application)
-      let rule_pairs: Vec<(String, String)> = items
+      // Multiple rules - apply at AST level for correctness and performance.
+      // Collect (pattern_expr, replacement_expr) pairs.
+      let rule_exprs: Vec<(&Expr, &Expr)> = items
         .iter()
         .filter_map(|rule| match rule {
           Expr::Rule {
@@ -7330,14 +7337,11 @@ fn apply_replace_all_ast(
           | Expr::RuleDelayed {
             pattern,
             replacement,
-          } => Some((expr_to_string(pattern), expr_to_string(replacement))),
+          } => Some((pattern.as_ref(), replacement.as_ref())),
           _ => None,
         })
         .collect();
-      let expr_str = expr_to_string(expr);
-      let result =
-        apply_replace_all_direct_multi_rules(&expr_str, &rule_pairs)?;
-      return string_to_expr(&result);
+      return apply_replace_all_multi_ast(expr, &rule_exprs);
     }
     _ => return Ok(expr.clone()),
   };
@@ -7514,7 +7518,10 @@ fn apply_rules_once(
 }
 
 /// Match a pattern against an expression, returning bindings if successful
-fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
+pub fn match_pattern(
+  expr: &Expr,
+  pattern: &Expr,
+) -> Option<Vec<(String, Expr)>> {
   match pattern {
     Expr::Pattern { name, head } => {
       // Check head constraint if present
@@ -7540,6 +7547,16 @@ fn match_pattern(expr: &Expr, pattern: &Expr) -> Option<Vec<(String, Expr)>> {
       // Blank pattern like x_
       let var_name = name.trim_end_matches('_');
       Some(vec![(var_name.to_string(), expr.clone())])
+    }
+    Expr::Identifier(name) if name.starts_with('_') && name.len() > 1 => {
+      // Head-constrained blank: _Head matches expressions with head Head
+      let head = &name[1..];
+      let expr_head = get_expr_head(expr);
+      if expr_head == head {
+        Some(vec![])
+      } else {
+        None
+      }
     }
     Expr::Integer(n) => {
       if matches!(expr, Expr::Integer(m) if m == n) {
@@ -7761,6 +7778,104 @@ fn apply_bindings(
   evaluate_expr_to_expr(&result)
 }
 
+/// Resolve an identifier to a function name if it's a variable holding a symbol.
+/// Returns Some(resolved_name) if the variable holds a different identifier or Raw symbol name.
+/// Returns None if the variable doesn't exist, holds the same name, or holds a non-identifier value.
+fn resolve_identifier_to_func_name(name: &str) -> Option<String> {
+  ENV.with(|e| {
+    let env = e.borrow();
+    match env.get(name) {
+      Some(StoredValue::ExprVal(Expr::Identifier(resolved)))
+        if resolved != name =>
+      {
+        Some(resolved.clone())
+      }
+      Some(StoredValue::Raw(s))
+        if s != name
+          && !s.is_empty()
+          && s
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '$')
+          && s
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') =>
+      {
+        Some(s.clone())
+      }
+      _ => None,
+    }
+  })
+}
+
+/// Apply ReplaceAll with multiple rules at the AST level.
+/// For each sub-expression, try each rule; the first matching rule wins.
+/// If no rule matches the whole node, recurse into children.
+fn apply_replace_all_multi_ast(
+  expr: &Expr,
+  rules: &[(&Expr, &Expr)],
+) -> Result<Expr, InterpreterError> {
+  // Try each rule against the whole expression
+  for (pattern, replacement) in rules {
+    // Handle Expr::Raw patterns (conditional patterns like n_ /; EvenQ[n])
+    if let Expr::Raw(pat_str) = pattern
+      && let Some(wolfram_pattern) = parse_wolfram_pattern(pat_str)
+    {
+      let expr_str = expr_to_string(expr);
+      let repl_str = expr_to_string(replacement);
+      if let Ok(Some(result_str)) =
+        apply_wolfram_pattern(&expr_str, &wolfram_pattern, &repl_str)
+      {
+        let evaluated = evaluate_fullform(&result_str).unwrap_or(result_str);
+        return string_to_expr(&evaluated);
+      }
+      continue;
+    }
+    if let Some(bindings) = match_pattern(expr, pattern) {
+      // Substitute bindings into the replacement
+      let mut result = (*replacement).clone();
+      for (name, val) in &bindings {
+        if !name.is_empty() {
+          result = crate::syntax::substitute_variable(&result, name, val);
+        }
+      }
+      return evaluate_expr_to_expr(&result);
+    }
+  }
+
+  // No rule matched the whole expression — recurse into sub-expressions
+  match expr {
+    Expr::List(items) => {
+      let new_items: Result<Vec<Expr>, _> = items
+        .iter()
+        .map(|item| apply_replace_all_multi_ast(item, rules))
+        .collect();
+      Ok(Expr::List(new_items?))
+    }
+    Expr::FunctionCall { name, args } => {
+      let new_args: Result<Vec<Expr>, _> = args
+        .iter()
+        .map(|arg| apply_replace_all_multi_ast(arg, rules))
+        .collect();
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args?,
+      })
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let new_left = apply_replace_all_multi_ast(left, rules)?;
+      let new_right = apply_replace_all_multi_ast(right, rules)?;
+      Ok(Expr::BinaryOp {
+        op: *op,
+        left: Box::new(new_left),
+        right: Box::new(new_right),
+      })
+    }
+    // Atoms and other nodes without children — return unchanged
+    _ => Ok(expr.clone()),
+  }
+}
+
 /// Apply Map operation on AST (func /@ list)
 fn apply_map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   match list {
@@ -7810,6 +7925,10 @@ fn apply_apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   // Apply converts List[a, b, c] to func[a, b, c]
   match func {
     Expr::Identifier(func_name) => {
+      // Resolve variable holding a function name: f = Plus; f @@ {1,2} → 3
+      if let Some(resolved) = resolve_identifier_to_func_name(func_name) {
+        return evaluate_function_call_ast(&resolved, &items);
+      }
       evaluate_function_call_ast(func_name, &items)
     }
     Expr::FunctionCall {
@@ -8066,6 +8185,19 @@ pub fn apply_function_to_arg(
 ) -> Result<Expr, InterpreterError> {
   match func {
     Expr::Identifier(name) => {
+      // Check if this identifier is a variable holding another function/value
+      let resolved = ENV.with(|e| e.borrow().get(name).cloned());
+      match &resolved {
+        Some(StoredValue::ExprVal(expr)) if !matches!(expr, Expr::Identifier(n) if n == name) =>
+        {
+          return apply_function_to_arg(expr, arg);
+        }
+        _ => {}
+      }
+      // Resolve variable holding a function name: t = Flatten; t @ x → Flatten[x]
+      if let Some(resolved_name) = resolve_identifier_to_func_name(name) {
+        return evaluate_function_call_ast(&resolved_name, &[arg.clone()]);
+      }
       // Simple function name: f applied to arg
       evaluate_function_call_ast(name, &[arg.clone()])
     }
@@ -8615,8 +8747,18 @@ fn apply_replace_all_direct_multi_rules(
 
     for elem in elements {
       let elem = elem.trim();
+      // Try matching the whole element against each rule (for Wolfram patterns etc.)
       let replaced = apply_first_matching_rule(elem, rules)?;
-      results.push(replaced);
+      if replaced != elem {
+        // Whole element matched a rule — use the replacement (don't recurse into it)
+        results.push(replaced);
+      } else if elem.starts_with('{') || elem.contains('[') {
+        // Subexpression — recurse into it to apply rules to sub-elements
+        results.push(apply_replace_all_direct_multi_rules(elem, rules)?);
+      } else {
+        // Simple atom — no match
+        results.push(elem.to_string());
+      }
     }
 
     return Ok(format!("{{{}}}", results.join(", ")));
@@ -8646,6 +8788,8 @@ fn apply_replace_all_direct_multi_rules(
 
 /// Try each rule in order on a single expression, return the result of
 /// the first matching rule. If no rule matches, return the original.
+/// This only matches the ELEMENT as a whole (exact or pattern match).
+/// It does NOT do sub-expression replacement — the caller handles recursion.
 fn apply_first_matching_rule(
   elem: &str,
   rules: &[(String, String)],
@@ -8659,13 +8803,11 @@ fn apply_first_matching_rule(
         let evaluated = evaluate_fullform(&replaced).unwrap_or(replaced);
         return Ok(evaluated);
       }
-    } else {
-      // Literal replacement - check if it matches
-      let result = replace_in_expr(elem, pattern, replacement);
-      if result != elem {
-        let evaluated = evaluate_fullform(&result).unwrap_or(result);
-        return Ok(evaluated);
-      }
+    } else if elem == pattern {
+      // Exact match of whole element against literal pattern
+      let evaluated =
+        evaluate_fullform(replacement).unwrap_or(replacement.clone());
+      return Ok(evaluated);
     }
   }
   // No rule matched

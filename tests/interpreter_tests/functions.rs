@@ -1103,6 +1103,86 @@ mod prefix_application_associativity {
   }
 }
 
+mod operator_precedence_at_map_apply {
+  use super::*;
+
+  #[test]
+  fn apply_looser_than_map() {
+    // @@ binds looser than /@ — f @@ g /@ h = Apply[f, Map[g, h]]
+    assert_eq!(
+      interpret("StringJoin @@ ToString /@ IntegerDigits[50, 2]").unwrap(),
+      "110010"
+    );
+  }
+
+  #[test]
+  fn prefix_at_tighter_than_map() {
+    // @ binds tighter than /@ — f @ g /@ h = Map[f[g], h]
+    assert_eq!(
+      interpret("FullForm[Hold[f @ g /@ h]]").unwrap(),
+      "Hold[Map[f[g], h]]"
+    );
+  }
+
+  #[test]
+  fn prefix_at_tighter_than_apply() {
+    // @ binds tighter than @@ — f @ g @@ h = Apply[f[g], h]
+    assert_eq!(
+      interpret("FullForm[Hold[f @ g @@ h]]").unwrap(),
+      "Hold[Apply[f[g], h]]"
+    );
+  }
+
+  #[test]
+  fn anon_func_map_continuation() {
+    // f & /@ {1, 2} — & then /@ should work even for single-term body
+    assert_eq!(
+      interpret("FullForm[Hold[f & /@ g @ h]]").unwrap(),
+      "Hold[Map[Function[f], g[h]]]"
+    );
+  }
+
+  #[test]
+  fn anon_func_single_term_with_map() {
+    // x & /@ {1, 2} — single identifier before & with Map continuation
+    assert_eq!(interpret("42 & /@ {1, 2, 3}").unwrap(), "{42, 42, 42}");
+  }
+}
+
+mod variable_as_function_head {
+  use super::*;
+
+  #[test]
+  fn variable_holding_function_name() {
+    clear_state();
+    assert_eq!(
+      interpret("t = Flatten; t @ {{1, 2}, {3, 4}}").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn variable_in_apply() {
+    clear_state();
+    assert_eq!(interpret("f = Plus; f @@ {1, 2, 3}").unwrap(), "6");
+  }
+
+  #[test]
+  fn variable_in_map() {
+    clear_state();
+    assert_eq!(
+      interpret("f = ToString; f /@ {1, 2, 3}").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn variable_in_function_call() {
+    clear_state();
+    assert_eq!(interpret("f = Length; f[{1, 2, 3}]").unwrap(), "3");
+  }
+}
+
 mod expression_level_anonymous_function {
   use super::*;
 
@@ -1142,6 +1222,31 @@ mod expression_level_anonymous_function {
         .unwrap(),
       "{27, 82, 41, 124, 62, 31, 94, 47, 142, 71, 214}"
     );
+  }
+
+  #[test]
+  fn replace_all_variable_rules() {
+    // # /. r & — RHS of /. is a variable holding rules
+    assert_eq!(
+      interpret("r = {x -> 1, y -> 2}; {x, y, z} /. r").unwrap(),
+      "{1, 2, z}"
+    );
+    // In anonymous function context
+    assert_eq!(
+      interpret("r = {x_ /; EvenQ[x] :> x/2}; Map[# /. r &, {4, 7}]").unwrap(),
+      "{2, 7}"
+    );
+    // Nest with variable rules
+    assert_eq!(
+      interpret("r = {a -> b, b -> c}; Nest[# /. r &, a, 2]").unwrap(),
+      "c"
+    );
+  }
+
+  #[test]
+  fn replace_repeated_variable_rules() {
+    // # //. r — RHS of //. is a variable holding rules
+    assert_eq!(interpret("r = {a -> b, b -> c}; a //. r").unwrap(), "c");
   }
 
   #[test]
