@@ -666,10 +666,7 @@ mod grid {
   #[test]
   fn basic_2x2() {
     clear_state();
-    assert_eq!(
-      interpret("Grid[{{a, b}, {c, d}}]").unwrap(),
-      "-Graphics-"
-    );
+    assert_eq!(interpret("Grid[{{a, b}, {c, d}}]").unwrap(), "-Graphics-");
   }
 
   #[test]
@@ -705,10 +702,7 @@ mod grid {
   #[test]
   fn postfix_form() {
     clear_state();
-    assert_eq!(
-      interpret("{{a, b}, {c, d}} // Grid").unwrap(),
-      "-Graphics-"
-    );
+    assert_eq!(interpret("{{a, b}, {c, d}} // Grid").unwrap(), "-Graphics-");
   }
 
   #[test]
