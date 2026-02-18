@@ -4460,10 +4460,9 @@ fn expr_to_bigfloat(
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
-  let mut rng = rand::thread_rng();
 
   match args.len() {
-    0 => Ok(Expr::Integer(rng.gen_range(0..=1))),
+    0 => Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(0..=1)))),
     1 => match &args[0] {
       Expr::Integer(max) => {
         if *max < 0 {
@@ -4471,7 +4470,8 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "RandomInteger: max must be non-negative".into(),
           ))
         } else {
-          Ok(Expr::Integer(rng.gen_range(0..=*max)))
+          let max = *max;
+          Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(0..=max))))
         }
       }
       Expr::List(items) if items.len() == 2 => {
@@ -4482,7 +4482,10 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               "RandomInteger: min must be <= max".into(),
             ))
           } else {
-            Ok(Expr::Integer(rng.gen_range(*min..=*max)))
+            let (min, max) = (*min, *max);
+            Ok(Expr::Integer(crate::with_rng(|rng| {
+              rng.gen_range(min..=max)
+            })))
           }
         } else {
           Err(InterpreterError::EvaluationError(
@@ -4531,9 +4534,11 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
-      let results: Vec<Expr> = (0..n)
-        .map(|_| Expr::Integer(rng.gen_range(min..=max)))
-        .collect();
+      let results: Vec<Expr> = crate::with_rng(|rng| {
+        (0..n)
+          .map(|_| Expr::Integer(rng.gen_range(min..=max)))
+          .collect()
+      });
       Ok(Expr::List(results))
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -4545,15 +4550,22 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// RandomReal[] or RandomReal[max] or RandomReal[{min, max}]
 pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
-  let mut rng = rand::thread_rng();
 
   match args.len() {
-    0 => Ok(Expr::Real(rng.gen_range(0.0..1.0))),
+    0 => Ok(Expr::Real(crate::with_rng(|rng| rng.gen_range(0.0..1.0)))),
     1 => match &args[0] {
       Expr::Integer(max) => {
-        Ok(Expr::Real(rng.gen_range(0.0..1.0) * *max as f64))
+        let max = *max as f64;
+        Ok(Expr::Real(crate::with_rng(|rng| {
+          rng.gen_range(0.0..1.0) * max
+        })))
       }
-      Expr::Real(max) => Ok(Expr::Real(rng.gen_range(0.0..1.0) * *max)),
+      Expr::Real(max) => {
+        let max = *max;
+        Ok(Expr::Real(crate::with_rng(|rng| {
+          rng.gen_range(0.0..1.0) * max
+        })))
+      }
       Expr::List(items) if items.len() == 2 => {
         let min = expr_to_num(&items[0]).ok_or_else(|| {
           InterpreterError::EvaluationError("RandomReal: invalid min".into())
@@ -4561,7 +4573,9 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let max = expr_to_num(&items[1]).ok_or_else(|| {
           InterpreterError::EvaluationError("RandomReal: invalid max".into())
         })?;
-        Ok(Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
+        Ok(Expr::Real(crate::with_rng(|rng| {
+          min + rng.gen_range(0.0..1.0) * (max - min)
+        })))
       }
       _ => Err(InterpreterError::EvaluationError(
         "RandomReal: invalid argument".into(),
@@ -4597,9 +4611,11 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
 
-      let results: Vec<Expr> = (0..n)
-        .map(|_| Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
-        .collect();
+      let results: Vec<Expr> = crate::with_rng(|rng| {
+        (0..n)
+          .map(|_| Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
+          .collect()
+      });
       Ok(Expr::List(results))
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -4672,10 +4688,9 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(num_to_expr(clipped))
 }
 
-/// RandomChoice[list
+/// RandomChoice[list]
 pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
-  let mut rng = rand::thread_rng();
 
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -4699,7 +4714,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if args.len() == 1 {
-    let idx = rng.gen_range(0..items.len());
+    let idx = crate::with_rng(|rng| rng.gen_range(0..items.len()));
     Ok(items[idx].clone())
   } else {
     let n = match &args[1] {
@@ -4710,17 +4725,19 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
     };
-    let result: Vec<Expr> = (0..n)
-      .map(|_| {
-        let idx = rng.gen_range(0..items.len());
-        items[idx].clone()
-      })
-      .collect();
+    let result: Vec<Expr> = crate::with_rng(|rng| {
+      (0..n)
+        .map(|_| {
+          let idx = rng.gen_range(0..items.len());
+          items[idx].clone()
+        })
+        .collect()
+    });
     Ok(Expr::List(result))
   }
 }
 
-/// RandomSample[list
+/// RandomSample[list]
 pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::seq::SliceRandom;
 
@@ -4740,11 +4757,9 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let mut rng = rand::thread_rng();
-
   if args.len() == 1 {
     let mut shuffled = items.clone();
-    shuffled.shuffle(&mut rng);
+    crate::with_rng(|rng| shuffled.shuffle(rng));
     Ok(Expr::List(shuffled))
   } else {
     let n = match &args[1] {
@@ -4763,7 +4778,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )));
     }
     let sampled: Vec<Expr> =
-      items.choose_multiple(&mut rng, n).cloned().collect();
+      crate::with_rng(|rng| items.choose_multiple(rng, n).cloned().collect());
     Ok(Expr::List(sampled))
   }
 }
@@ -4773,8 +4788,6 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::Rng;
   use rand_distr::{Distribution, Normal};
-
-  let mut rng = rand::thread_rng();
 
   let dist = &args[0];
   let n = if args.len() == 2 {
@@ -4790,8 +4803,8 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  // Extract distribution parameters
-  let sample_fn: Box<dyn FnMut() -> f64> = match dist {
+  // Determine distribution type and parameters, then sample using with_rng
+  match dist {
     Expr::FunctionCall { name, args: dargs }
       if name == "UniformDistribution" =>
     {
@@ -4808,21 +4821,33 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 "UniformDistribution: invalid max bound".into(),
               )
             })?;
-            Box::new(move || rng.gen_range(lo..hi))
+            match n {
+              None => {
+                Ok(Expr::Real(crate::with_rng(|rng| rng.gen_range(lo..hi))))
+              }
+              Some(count) => {
+                let results: Vec<Expr> = crate::with_rng(|rng| {
+                  (0..count)
+                    .map(|_| Expr::Real(rng.gen_range(lo..hi)))
+                    .collect()
+                });
+                Ok(Expr::List(results))
+              }
+            }
           } else {
-            return Err(InterpreterError::EvaluationError(
+            Err(InterpreterError::EvaluationError(
               "UniformDistribution: expected {min, max}".into(),
-            ));
+            ))
           }
         } else {
-          return Err(InterpreterError::EvaluationError(
+          Err(InterpreterError::EvaluationError(
             "UniformDistribution: expected a list {min, max}".into(),
-          ));
+          ))
         }
       } else {
-        return Err(InterpreterError::EvaluationError(
+        Err(InterpreterError::EvaluationError(
           "UniformDistribution: expected 1 argument".into(),
-        ));
+        ))
       }
     }
     Expr::FunctionCall { name, args: dargs }
@@ -4852,25 +4877,43 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let normal = Normal::new(mu, sigma).map_err(|e| {
         InterpreterError::EvaluationError(format!("NormalDistribution: {}", e))
       })?;
-      Box::new(move || normal.sample(&mut rng))
+      match n {
+        None => Ok(Expr::Real(crate::with_rng(|rng| normal.sample(rng)))),
+        Some(count) => {
+          let results: Vec<Expr> = crate::with_rng(|rng| {
+            (0..count).map(|_| Expr::Real(normal.sample(rng))).collect()
+          });
+          Ok(Expr::List(results))
+        }
+      }
     }
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "RandomVariate".to_string(),
-        args: args.to_vec(),
-      });
-    }
-  };
+    _ => Ok(Expr::FunctionCall {
+      name: "RandomVariate".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
 
-  // Generate samples
-  let mut sample_fn = sample_fn;
-  match n {
-    None => Ok(Expr::Real(sample_fn())),
-    Some(count) => {
-      let results: Vec<Expr> =
-        (0..count).map(|_| Expr::Real(sample_fn())).collect();
-      Ok(Expr::List(results))
+/// SeedRandom[n] - Seed the random number generator
+/// SeedRandom[] - Reset to non-deterministic RNG
+pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match args.len() {
+    0 => {
+      crate::unseed_rng();
+      Ok(Expr::Identifier("Null".to_string()))
     }
+    1 => match &args[0] {
+      Expr::Integer(seed) => {
+        crate::seed_rng(*seed as u64);
+        Ok(Expr::Identifier("Null".to_string()))
+      }
+      _ => Err(InterpreterError::EvaluationError(
+        "SeedRandom: seed must be an integer".into(),
+      )),
+    },
+    _ => Err(InterpreterError::EvaluationError(
+      "SeedRandom expects 0 or 1 arguments".into(),
+    )),
   }
 }
 

@@ -4371,6 +4371,9 @@ pub fn evaluate_function_call_ast(
     "RandomVariate" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::random_variate_ast(args);
     }
+    "SeedRandom" if args.len() <= 1 => {
+      return crate::functions::math_ast::seed_random_ast(args);
+    }
     "Clip" if !args.is_empty() && args.len() <= 3 => {
       return crate::functions::math_ast::clip_ast(args);
     }

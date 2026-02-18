@@ -1,6 +1,8 @@
 use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -77,6 +79,41 @@ pub fn parse(
   input: &str,
 ) -> Result<pest::iterators::Pairs<'_, Rule>, Box<pest::error::Error<Rule>>> {
   WolframParser::parse_wolfram(input)
+}
+
+// Global RNG state: None = use thread_rng(), Some = use seeded ChaCha8Rng
+thread_local! {
+    static SEEDED_RNG: RefCell<Option<ChaCha8Rng>> = const { RefCell::new(None) };
+}
+
+/// Seed the global RNG with a specific seed value (SeedRandom[n]).
+pub fn seed_rng(seed: u64) {
+  SEEDED_RNG.with(|rng| {
+    *rng.borrow_mut() = Some(ChaCha8Rng::seed_from_u64(seed));
+  });
+}
+
+/// Reset the global RNG to non-deterministic mode (SeedRandom[]).
+pub fn unseed_rng() {
+  SEEDED_RNG.with(|rng| {
+    *rng.borrow_mut() = None;
+  });
+}
+
+/// Execute a closure with a mutable reference to the current RNG.
+/// Uses the seeded RNG if set, otherwise falls back to thread_rng().
+pub fn with_rng<F, R>(f: F) -> R
+where
+  F: FnOnce(&mut dyn rand::RngCore) -> R,
+{
+  SEEDED_RNG.with(|cell| {
+    let mut borrow = cell.borrow_mut();
+    if let Some(ref mut seeded) = *borrow {
+      f(seeded)
+    } else {
+      f(&mut rand::thread_rng())
+    }
+  })
 }
 
 // Captured output from Print statements
@@ -260,6 +297,7 @@ pub fn clear_state() {
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
+  unseed_rng();
   clear_captured_stdout();
   clear_captured_graphics();
   clear_captured_graphicsbox();
