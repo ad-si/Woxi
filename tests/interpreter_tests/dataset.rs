@@ -113,10 +113,9 @@ mod dataset_ast {
   #[test]
   fn dataset_assoc_with_list_values() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Dataset[<|\"a\" -> {1, 2}, \"b\" -> {3, 4}|>]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Dataset[<|\"a\" -> {1, 2}, \"b\" -> {3, 4}|>]")
+        .unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -180,10 +179,8 @@ mod dataset_ast {
   #[test]
   fn dataset_integer_keys() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Dataset[<|1 -> \"x\", 2 -> \"y\"|>]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Dataset[<|1 -> \"x\", 2 -> \"y\"|>]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -196,10 +193,8 @@ mod dataset_ast {
   #[test]
   fn dataset_mixed_assoc_values() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Dataset[<|\"a\" -> 1, \"b\" -> \"x\"|>]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Dataset[<|\"a\" -> 1, \"b\" -> \"x\"|>]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -221,10 +216,9 @@ mod dataset_ast {
   #[test]
   fn dataset_assoc_keys_are_bold() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Dataset[<|\"Name\" -> \"John\", \"Age\" -> 30|>]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Dataset[<|\"Name\" -> \"John\", \"Age\" -> 30|>]")
+        .unwrap();
     let svg = result.graphics.unwrap();
     assert!(
       svg.contains("font-weight=\"bold\""),
@@ -235,10 +229,8 @@ mod dataset_ast {
   #[test]
   fn dataset_assoc_has_key_column_background() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Dataset[<|\"Name\" -> \"John\"|>]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Dataset[<|\"Name\" -> \"John\"|>]").unwrap();
     let svg = result.graphics.unwrap();
     assert!(
       svg.contains("<rect"),
@@ -249,10 +241,7 @@ mod dataset_ast {
   #[test]
   fn dataset_list_has_header_background() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Dataset[{<|\"X\" -> 1|>}]",
-    )
-    .unwrap();
+    let result = interpret_with_stdout("Dataset[{<|\"X\" -> 1|>}]").unwrap();
     let svg = result.graphics.unwrap();
     assert!(
       svg.contains("<rect"),
@@ -263,10 +252,7 @@ mod dataset_ast {
   #[test]
   fn output_svg_not_set_for_dataset() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Dataset[<|\"a\" -> 1|>]",
-    )
-    .unwrap();
+    let result = interpret_with_stdout("Dataset[<|\"a\" -> 1|>]").unwrap();
     assert!(
       result.output_svg.is_none(),
       "output_svg should be None for Dataset table results"

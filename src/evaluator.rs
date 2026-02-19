@@ -3989,7 +3989,7 @@ pub fn evaluate_function_call_ast(
     }
 
     // Dataset
-    "Dataset" if args.len() >= 1 => {
+    "Dataset" if !args.is_empty() => {
       return Ok(crate::functions::dataset_ast::dataset_ast(args));
     }
 

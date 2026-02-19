@@ -40,7 +40,7 @@ fn infer_list_type(items: &[Expr]) -> Expr {
     };
   }
 
-  let types: Vec<Expr> = items.iter().map(|e| infer_type(e)).collect();
+  let types: Vec<Expr> = items.iter().map(infer_type).collect();
 
   // Check if all types are the same
   let first_str = crate::syntax::expr_to_string(&types[0]);
@@ -84,7 +84,9 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
         infer_type(v)
       } else {
         match v {
-          Expr::Association(inner_pairs) => infer_assoc_type(inner_pairs, false),
+          Expr::Association(inner_pairs) => {
+            infer_assoc_type(inner_pairs, false)
+          }
           _ => infer_type(v),
         }
       }
