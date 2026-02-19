@@ -1,0 +1,8 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Arrow[{{0, 0}, {1, 0}, {1, 1}}, {0.5, 0.5}]}]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<polyline points="180.00,346.67 346.67,346.67 346.67,180.00" fill="none" stroke="rgb(0,0,0)" stroke-width="1.44" stroke-linejoin="round" stroke-linecap="butt"/>
+<polygon points="346.67,180.00 349.07,186.00 344.27,186.00" fill="rgb(0,0,0)"/>
+</svg>

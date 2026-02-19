@@ -269,6 +269,7 @@ enum Primitive {
   },
   ArrowPrim {
     points: Vec<(f64, f64)>,
+    setback: (f64, f64),
     style: StyleState,
   },
   TextPrim {
@@ -744,12 +745,28 @@ fn parse_polygon(
 }
 
 fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
-  // Arrow[{{x1,y1},{x2,y2},...}]
+  // Arrow[{{x1,y1},{x2,y2},...}] or Arrow[{{x1,y1},...}, {s1, s2}]
   if let Some(pts) = expr_to_point_list(&args[0])
     && pts.len() >= 2
   {
+    let setback = if args.len() >= 2 {
+      match &args[1] {
+        Expr::List(items) if items.len() == 2 => {
+          let s1 = expr_to_f64(&items[0]).unwrap_or(0.0);
+          let s2 = expr_to_f64(&items[1]).unwrap_or(0.0);
+          (s1, s2)
+        }
+        other => {
+          let s = expr_to_f64(other).unwrap_or(0.0);
+          (s, s)
+        }
+      }
+    } else {
+      (0.0, 0.0)
+    };
     prims.push(Primitive::ArrowPrim {
       points: pts,
+      setback,
       style: style.clone(),
     });
   }
@@ -878,8 +895,12 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
       bb.include_point(*x_min, *y_min);
       bb.include_point(*x_max, *y_max);
     }
-    Primitive::PolygonPrim { points, .. }
-    | Primitive::ArrowPrim { points, .. } => {
+    Primitive::PolygonPrim { points, .. } => {
+      for &(x, y) in points {
+        bb.include_point(x, y);
+      }
+    }
+    Primitive::ArrowPrim { points, .. } => {
       for &(x, y) in points {
         bb.include_point(x, y);
       }
@@ -889,6 +910,91 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     }
   }
   bb
+}
+
+/// Trim a polyline by `setback.0` from the start and `setback.1` from the end,
+/// measured in coordinate-space distance along the path.
+fn apply_setback(
+  points: &[(f64, f64)],
+  setback: (f64, f64),
+) -> Vec<(f64, f64)> {
+  if points.len() < 2 {
+    return points.to_vec();
+  }
+  let (s_start, s_end) = setback;
+  if s_start <= 0.0 && s_end <= 0.0 {
+    return points.to_vec();
+  }
+
+  // Compute cumulative distances
+  let n = points.len();
+  let mut cum = vec![0.0_f64; n];
+  for i in 1..n {
+    let dx = points[i].0 - points[i - 1].0;
+    let dy = points[i].1 - points[i - 1].1;
+    cum[i] = cum[i - 1] + (dx * dx + dy * dy).sqrt();
+  }
+  let total = cum[n - 1];
+
+  if s_start + s_end >= total {
+    return Vec::new();
+  }
+
+  let start_dist = s_start;
+  let end_dist = total - s_end;
+
+  let mut result = Vec::new();
+
+  // Find new start point
+  let mut start_seg = 0;
+  for i in 1..n {
+    if cum[i] >= start_dist {
+      start_seg = i;
+      break;
+    }
+  }
+  // Interpolate start point on segment [start_seg-1, start_seg]
+  let seg_len = cum[start_seg] - cum[start_seg - 1];
+  if seg_len > 0.0 {
+    let t = (start_dist - cum[start_seg - 1]) / seg_len;
+    let (x0, y0) = points[start_seg - 1];
+    let (x1, y1) = points[start_seg];
+    result.push((x0 + t * (x1 - x0), y0 + t * (y1 - y0)));
+  } else {
+    result.push(points[start_seg]);
+  }
+
+  // Add intermediate points between start and end
+  for i in start_seg..n {
+    if cum[i] > start_dist && cum[i] < end_dist {
+      result.push(points[i]);
+    }
+  }
+
+  // Find new end point
+  let mut end_seg = n - 1;
+  for i in (1..n).rev() {
+    if cum[i - 1] <= end_dist {
+      end_seg = i;
+      break;
+    }
+  }
+  // Interpolate end point on segment [end_seg-1, end_seg]
+  let seg_len = cum[end_seg] - cum[end_seg - 1];
+  if seg_len > 0.0 {
+    let t = (end_dist - cum[end_seg - 1]) / seg_len;
+    let (x0, y0) = points[end_seg - 1];
+    let (x1, y1) = points[end_seg];
+    let end_pt = (x0 + t * (x1 - x0), y0 + t * (y1 - y0));
+    // Avoid duplicate if end point equals last pushed point
+    if result.last() != Some(&end_pt) {
+      result.push(end_pt);
+    }
+  } else if result.last() != Some(&points[end_seg]) {
+    result.push(points[end_seg]);
+  }
+
+  result
 }
 
 // ── SVG generation ───────────────────────────────────────────────────────
@@ -1195,13 +1301,23 @@ fn render_primitive(
         stroke_attr,
       ));
     }
-    Primitive::ArrowPrim { points, style } => {
+    Primitive::ArrowPrim {
+      points,
+      setback,
+      style,
+    } => {
+      let trimmed = apply_setback(points, *setback);
+      if trimmed.len() < 2 {
+        // Setback consumed the entire path; nothing to draw
+        return;
+      }
+
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(&style.dashing, bb, svg_w);
 
       // Draw the line
-      let pts: Vec<String> = points
+      let pts: Vec<String> = trimmed
         .iter()
         .map(|&(x, y)| {
           format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
@@ -1216,10 +1332,10 @@ fn render_primitive(
       ));
 
       // Draw arrowhead at the end
-      if points.len() >= 2 {
-        let n = points.len();
-        let (x1, y1) = points[n - 2];
-        let (x2, y2) = points[n - 1];
+      if trimmed.len() >= 2 {
+        let n = trimmed.len();
+        let (x1, y1) = trimmed[n - 2];
+        let (x2, y2) = trimmed[n - 1];
         let sx1 = coord_x(x1, bb, svg_w);
         let sy1 = coord_y(y1, bb, svg_h);
         let sx2 = coord_x(x2, bb, svg_w);
@@ -1531,9 +1647,13 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::polygon_box(points));
       }
-      Primitive::ArrowPrim { points, style } => {
+      Primitive::ArrowPrim {
+        points,
+        setback,
+        style,
+      } => {
         elements.extend(tracker.emit_style_changes(style));
-        elements.push(gbox::arrow_box(points));
+        elements.push(gbox::arrow_box(points, *setback));
       }
       Primitive::TextPrim { text, x, y, style } => {
         elements.extend(tracker.emit_style_changes(style));
@@ -2423,10 +2543,8 @@ fn dataset_assoc_to_svg(pairs: &[(Expr, Expr)]) -> Option<String> {
   // Compute key column and value column widths
   let mut key_col_w: f64 = 0.0;
   let mut val_col_w: f64 = 0.0;
-  let keys: Vec<String> = pairs
-    .iter()
-    .map(|(k, _)| expr_to_svg_markup(k))
-    .collect();
+  let keys: Vec<String> =
+    pairs.iter().map(|(k, _)| expr_to_svg_markup(k)).collect();
   for (i, (_, v)) in pairs.iter().enumerate() {
     let kw = keys[i].len() as f64 * char_width + pad_x;
     if kw > key_col_w {
@@ -2580,7 +2698,8 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
   }
 
   let total_width: f64 = col_widths.iter().sum();
-  let total_height: f64 = header_row_height + (num_data_rows as f64) * row_height;
+  let total_height: f64 =
+    header_row_height + (num_data_rows as f64) * row_height;
 
   let svg_w = total_width.ceil() as u32;
   let svg_h = total_height.ceil() as u32;
@@ -2723,7 +2842,8 @@ pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
   let cell_size = if num_rows == 1 { 100.0 } else { 80.0 };
 
   let total_width = num_cols as f64 * cell_size + (num_cols as f64 - 1.0) * gap;
-  let total_height = num_rows as f64 * cell_size + (num_rows as f64 - 1.0) * gap;
+  let total_height =
+    num_rows as f64 * cell_size + (num_rows as f64 - 1.0) * gap;
 
   let mut svg = String::with_capacity(4096);
   svg.push_str(&format!(
