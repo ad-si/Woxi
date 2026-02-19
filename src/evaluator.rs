@@ -3636,6 +3636,9 @@ pub fn evaluate_function_call_ast(
     "DateListPlot" if !args.is_empty() => {
       return crate::functions::chart::date_list_plot_ast(args);
     }
+    "WordCloud" if !args.is_empty() => {
+      return crate::functions::chart::word_cloud_ast(args);
+    }
     "Print" => {
       // 0 args → just output a newline and return Null
       if args.is_empty() {

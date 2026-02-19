@@ -846,6 +846,25 @@ mod plot3d {
         r#"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {"Anna", "Ben", "Carl", "Marc", "Sven"}, PlotLabel -> "Fruit Consumption", AxesLabel -> {"Person", "Fruits"}]"#
       ));
     }
+
+    #[test]
+    fn word_cloud_basic() {
+      insta::assert_snapshot!(export_svg(
+        r#"WordCloud[{"hello", "world", "hello", "foo", "hello", "world"}]"#
+      ));
+    }
+
+    #[test]
+    fn word_cloud_single_word() {
+      insta::assert_snapshot!(export_svg(r#"WordCloud[{"only"}]"#));
+    }
+
+    #[test]
+    fn word_cloud_many_words() {
+      insta::assert_snapshot!(export_svg(
+        r#"WordCloud[{"Lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "dolor", "Pellentesque", "dolor", "augue", "sit"}]"#
+      ));
+    }
   }
 
   mod field_plots {

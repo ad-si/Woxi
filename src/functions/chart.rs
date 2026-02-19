@@ -630,3 +630,175 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::capture_graphics(&svg);
   Ok(Expr::Identifier("-Graphics-".to_string()))
 }
+
+/// Escape special HTML characters in text content.
+fn html_escape(s: &str) -> String {
+  s.replace('&', "&amp;")
+    .replace('<', "&lt;")
+    .replace('>', "&gt;")
+    .replace('"', "&quot;")
+}
+
+/// WordCloud[{"word1", "word2", ...}]
+pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use std::collections::HashMap;
+
+  // Extract list of strings from first argument
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let items = match &data {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "WordCloud: first argument must be a list of strings".into(),
+      ));
+    }
+  };
+
+  let mut words: Vec<String> = Vec::new();
+  for item in items {
+    let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+    if let Expr::String(s) = &ev {
+      words.push(s.clone());
+    }
+  }
+
+  if words.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  // Count word frequencies
+  let mut freq: HashMap<String, usize> = HashMap::new();
+  for w in &words {
+    *freq.entry(w.clone()).or_insert(0) += 1;
+  }
+
+  // Sort by frequency (descending), then alphabetically for stability
+  let mut sorted_words: Vec<(String, usize)> = freq.into_iter().collect();
+  sorted_words.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+  // Parse options (ImageSize)
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
+  let w = svg_width as f64;
+  let h = svg_height as f64;
+  let cx = w / 2.0;
+  let cy = h / 2.0;
+
+  // Map frequencies to font sizes (linear scaling)
+  let max_freq = sorted_words[0].1 as f64;
+  let min_freq = sorted_words.last().unwrap().1 as f64;
+  let min_font = 12.0_f64;
+  let max_font = (h * 0.2).min(60.0);
+
+  let font_size_for = |count: usize| -> f64 {
+    if (max_freq - min_freq).abs() < f64::EPSILON {
+      (min_font + max_font) / 2.0
+    } else {
+      min_font
+        + (count as f64 - min_freq) / (max_freq - min_freq)
+          * (max_font - min_font)
+    }
+  };
+
+  // Placed word bounding boxes: (x_min, y_min, x_max, y_max)
+  let mut placed: Vec<(f64, f64, f64, f64)> = Vec::new();
+
+  struct PlacedWord {
+    x: f64,
+    y: f64,
+    font_size: f64,
+    text: String,
+    color_idx: usize,
+    rotated: bool,
+  }
+  let mut placed_words: Vec<PlacedWord> = Vec::new();
+
+  let char_width_factor = 0.6;
+
+  for (i, (word, count)) in sorted_words.iter().enumerate() {
+    let font_size = font_size_for(*count);
+    let rotated = i % 3 == 1; // every third word rotated
+
+    // Estimate bounding box dimensions
+    let text_w = word.len() as f64 * char_width_factor * font_size;
+    let text_h = font_size;
+    let (box_w, box_h) = if rotated {
+      (text_h, text_w) // swap for rotation
+    } else {
+      (text_w, text_h)
+    };
+
+    // Try placing using Archimedean spiral from center
+    let max_steps = 10000;
+    let a = 1.5; // spiral spacing
+
+    let mut placed_ok = false;
+    for s in 0..max_steps {
+      let t = s as f64 * 0.04;
+      let x = cx + a * t * t.cos();
+      let y = cy + a * t * t.sin() * 0.6; // compress vertically to fit aspect ratio
+
+      // Bounding box centered at (x, y)
+      let x_min = x - box_w / 2.0;
+      let y_min = y - box_h / 2.0;
+      let x_max = x + box_w / 2.0;
+      let y_max = y + box_h / 2.0;
+
+      // Check bounds
+      if x_min < 2.0 || y_min < 2.0 || x_max > w - 2.0 || y_max > h - 2.0 {
+        continue;
+      }
+
+      // Check collision with already placed words
+      let collides = placed.iter().any(|&(px_min, py_min, px_max, py_max)| {
+        x_min < px_max && x_max > px_min && y_min < py_max && y_max > py_min
+      });
+
+      if !collides {
+        placed.push((x_min, y_min, x_max, y_max));
+        placed_words.push(PlacedWord {
+          x,
+          y,
+          font_size,
+          text: word.clone(),
+          color_idx: i,
+          rotated,
+        });
+        placed_ok = true;
+        break;
+      }
+    }
+
+    if !placed_ok {
+      continue; // skip words that can't be placed
+    }
+  }
+
+  // Generate SVG
+  let mut svg = svg_header(svg_width, svg_height, full_width);
+
+  for pw in &placed_words {
+    let (r, g, b) = PLOT_COLORS[pw.color_idx % PLOT_COLORS.len()];
+    let transform = if pw.rotated {
+      format!(
+        " transform=\"translate({:.1},{:.1}) rotate(-90)\"",
+        pw.x, pw.y
+      )
+    } else {
+      format!(" transform=\"translate({:.1},{:.1})\"", pw.x, pw.y)
+    };
+    svg.push_str(&format!(
+      "<text{transform} font-size=\"{:.1}\" fill=\"rgb({r},{g},{b})\" \
+       font-family=\"sans-serif\" text-anchor=\"middle\" \
+       dominant-baseline=\"central\">{}</text>\n",
+      pw.font_size,
+      html_escape(&pw.text)
+    ));
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}

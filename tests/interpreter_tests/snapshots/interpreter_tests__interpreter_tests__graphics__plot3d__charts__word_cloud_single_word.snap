@@ -1,0 +1,8 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(r#\"WordCloud[{\"only\"}]\"#)"
+---
+<svg width="360" height="225" viewBox="0 0 360 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="225" fill="white"/>
+<text transform="translate(180.0,112.5)" font-size="28.5" fill="rgb(94,129,181)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">only</text>
+</svg>
