@@ -6573,8 +6573,20 @@ fn set_delayed_ast(lhs: &Expr, body: &Expr) -> Result<Expr, InterpreterError> {
         // Simple pattern: x_ or x_Head
         _ => {
           let (pat_name, head) = extract_pattern_info(arg);
-          params.push(pat_name);
-          conditions.push(None);
+          if pat_name.is_empty() && head.is_none() {
+            // Literal value (not a pattern) — create a SameQ condition
+            // e.g., f[1] := ... should only match when arg === 1
+            let param_name = format!("_dv{}", i);
+            let eval_arg = evaluate_expr_to_expr(arg)?;
+            conditions.push(Some(Expr::Comparison {
+              operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+              operators: vec![crate::syntax::ComparisonOp::SameQ],
+            }));
+            params.push(param_name);
+          } else {
+            params.push(pat_name);
+            conditions.push(None);
+          }
           defaults.push(None);
           heads.push(head);
         }
@@ -6605,10 +6617,25 @@ fn set_delayed_ast(lhs: &Expr, body: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
 
+    // Check if all args are literal (non-pattern) — if so, insert at beginning
+    // for priority over general patterns (matching Mathematica specificity ordering)
+    let has_literal_conditions = conditions.iter().any(|c| {
+      if let Some(Expr::Comparison { operators, .. }) = c {
+        operators.iter().any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+      } else {
+        false
+      }
+    });
+
     crate::FUNC_DEFS.with(|m| {
       let mut defs = m.borrow_mut();
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
-      entry.push((params, conditions, defaults, heads, final_body));
+      if has_literal_conditions {
+        // Literal-match definitions go first for priority
+        entry.insert(0, (params, conditions, defaults, heads, final_body));
+      } else {
+        entry.push((params, conditions, defaults, heads, final_body));
+      }
     });
 
     return Ok(Expr::Identifier("Null".to_string()));
