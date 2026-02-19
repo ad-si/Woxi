@@ -66,12 +66,12 @@ editorView = new EditorView({
     bracketMatching(),
     closeBrackets(),
     highlightActiveLine(),
+    runKeymap,
     keymap.of([
       ...closeBracketsKeymap,
       ...defaultKeymap,
       ...historyKeymap,
     ]),
-    runKeymap,
     persistenceListener,
     EditorView.lineWrapping,
     themeConfig.of(getThemeExtension()),
