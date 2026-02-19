@@ -125,6 +125,42 @@ mod graphics {
     }
 
     #[test]
+    fn arrow_setback_zero() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Arrow[{{0, 0}, {1, 1}}, {0, 0}]}]"
+      ));
+    }
+
+    #[test]
+    fn arrow_setback_symmetric() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Arrow[{{0, 0}, {2, 0}}, {0.5, 0.5}]}]"
+      ));
+    }
+
+    #[test]
+    fn arrow_setback_scalar() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Arrow[{{0, 0}, {2, 0}}, 0.5]}]"
+      ));
+    }
+
+    #[test]
+    fn arrow_setback_exceeds_length() {
+      // Setback exceeds total path length; should produce no arrow line
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Circle[], Arrow[{{0, 0}, {1, 0}}, {0.6, 0.6}]}]"
+      ));
+    }
+
+    #[test]
+    fn arrow_setback_multipoint() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Arrow[{{0, 0}, {1, 0}, {1, 1}}, {0.5, 0.5}]}]"
+      ));
+    }
+
+    #[test]
     fn text() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Text[\"Hello\", {0, 0}]}]"
@@ -1043,10 +1079,8 @@ mod graphics_list {
   #[test]
   fn table_1d_list_of_graphics() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Table[Graphics[{Circle[]}], {i, 1, 3}]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Table[Graphics[{Circle[]}], {i, 1, 3}]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -1084,7 +1118,10 @@ mod graphics_list {
     let svg = result.graphics.unwrap();
     // TableForm transposes: 2 blocks × (2 rows × 2 cols) = 4 rows × 2 cols = 8
     let nested_count = svg.matches("<svg x=").count();
-    assert_eq!(nested_count, 8, "Expected 8 nested SVGs for transposed grid");
+    assert_eq!(
+      nested_count, 8,
+      "Expected 8 nested SVGs for transposed grid"
+    );
   }
 
   #[test]
@@ -1128,10 +1165,9 @@ mod graphics_list {
   #[test]
   fn tableform_wrapping_1d_graphics_list() {
     clear_state();
-    let result = interpret_with_stdout(
-      "TableForm[Table[Graphics[{Disk[]}], {i, 1, 4}]]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("TableForm[Table[Graphics[{Disk[]}], {i, 1, 4}]]")
+        .unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -1154,8 +1190,7 @@ mod graphics_list {
   #[test]
   fn tableform_1d_list_as_column() {
     clear_state();
-    let result =
-      interpret_with_stdout("TableForm[{10, 20, 30}]").unwrap();
+    let result = interpret_with_stdout("TableForm[{10, 20, 30}]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();

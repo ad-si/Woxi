@@ -229,13 +229,22 @@ pub fn polygon_box(points: &[(f64, f64)]) -> String {
   }
 }
 
-/// ArrowBox[{{x1,y1}, ...}]
-pub fn arrow_box(points: &[(f64, f64)]) -> String {
+/// ArrowBox[{{x1,y1}, ...}] or ArrowBox[{{x1,y1}, ...}, {s1, s2}]
+pub fn arrow_box(points: &[(f64, f64)], setback: (f64, f64)) -> String {
   let pts: Vec<String> = points
     .iter()
     .map(|(x, y)| format!("{{{}, {}}}", fmt_real(*x), fmt_real(*y)))
     .collect();
-  format!("ArrowBox[{{{}}}]", pts.join(", "))
+  if setback.0 != 0.0 || setback.1 != 0.0 {
+    format!(
+      "ArrowBox[{{{}}}, {{{}, {}}}]",
+      pts.join(", "),
+      fmt_real(setback.0),
+      fmt_real(setback.1)
+    )
+  } else {
+    format!("ArrowBox[{{{}}}]", pts.join(", "))
+  }
 }
 
 /// InsetBox[text, {x, y}]
