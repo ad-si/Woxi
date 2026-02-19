@@ -41,3 +41,5 @@ There is 3 levels of tests:
     but rather fix it right away.
 - Always execute scripts with a `timeout 20` to avoid getting stuck.
     If any of the scripts take a longer to execute, it should be considered a bug.
+- After implementing a new function, make sure to update functions.csv
+    including a description and an effect_level.
