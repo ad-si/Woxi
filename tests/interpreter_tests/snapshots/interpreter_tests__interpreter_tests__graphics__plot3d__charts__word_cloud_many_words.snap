@@ -1,0 +1,16 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(r#\"WordCloud[{\"Lorem\", \"ipsum\", \"dolor\", \"sit\", \"amet\", \"consectetur\", \"adipiscing\", \"dolor\", \"Pellentesque\", \"dolor\", \"augue\", \"sit\"}]\"#)"
+---
+<svg width="360" height="225" viewBox="0 0 360 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="225" fill="white"/>
+<text transform="translate(180.0,112.5)" font-size="45.0" fill="rgb(94,129,181)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">dolor</text>
+<text transform="translate(165.5,64.0) rotate(-90)" font-size="28.5" fill="rgb(224,147,44)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">sit</text>
+<text transform="translate(191.0,141.2)" font-size="12.0" fill="rgb(143,176,50)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Lorem</text>
+<text transform="translate(185.0,153.3)" font-size="12.0" fill="rgb(217,81,25)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Pellentesque</text>
+<text transform="translate(253.8,104.2) rotate(-90)" font-size="12.0" fill="rgb(107,72,157)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">adipiscing</text>
+<text transform="translate(194.7,80.9)" font-size="12.0" fill="rgb(142,177,204)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">amet</text>
+<text transform="translate(143.8,141.1)" font-size="12.0" fill="rgb(94,129,181)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">augue</text>
+<text transform="translate(105.7,129.6) rotate(-90)" font-size="12.0" fill="rgb(224,147,44)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">consectetur</text>
+<text transform="translate(127.8,82.9)" font-size="12.0" fill="rgb(143,176,50)" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">ipsum</text>
+</svg>
