@@ -2232,6 +2232,15 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 }
 
 pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  grid_ast_with_gaps(args, &[])
+}
+
+/// Render a grid with optional extra vertical gaps before certain rows.
+/// `group_gaps` lists row indices that should have extra spacing before them.
+pub fn grid_ast_with_gaps(
+  args: &[Expr],
+  group_gaps: &[usize],
+) -> Result<Expr, InterpreterError> {
   // Extract rows from args[0]
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows: Vec<Vec<Expr>> = match &data {
@@ -2294,6 +2303,7 @@ pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0; // horizontal padding per cell (each side = 6)
   let pad_y: f64 = 8.0; // vertical padding per cell (each side = 4)
+  let group_gap: f64 = 6.0; // extra spacing between groups
   let base_row_height = font_size + pad_y;
   let frac_row_height = font_size + pad_y + 10.0; // taller for stacked fractions
 
@@ -2320,7 +2330,8 @@ pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let total_width: f64 = col_widths.iter().sum();
-  let total_height: f64 = row_heights.iter().sum();
+  let total_gap: f64 = group_gaps.len() as f64 * group_gap;
+  let total_height: f64 = row_heights.iter().sum::<f64>() + total_gap;
 
   // Build SVG
   let svg_w = total_width.ceil() as u32;
@@ -2334,6 +2345,10 @@ pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Draw cell text
   let mut y_offset: f64 = 0.0;
   for (i, row) in rows.iter().enumerate() {
+    // Add group gap before this row if it's a group boundary
+    if group_gaps.contains(&i) {
+      y_offset += group_gap;
+    }
     let rh = row_heights[i];
     let mut x_offset: f64 = 0.0;
     for (j, cell) in row.iter().enumerate() {
@@ -2643,6 +2658,100 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
   svg.push_str(&format!(
     "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
   ));
+
+  svg.push_str("</svg>");
+  Some(svg)
+}
+
+// ── Combine multiple Graphics SVGs into a grid ─────────────────────────
+
+/// Parsed metadata from an SVG element
+struct ParsedSvg {
+  view_box: String,
+  inner_content: String,
+}
+
+/// Parse width, height, and viewBox from an SVG string
+fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
+  // Extract viewBox attribute
+  let vb_start = svg.find("viewBox=\"")?;
+  let vb_value_start = vb_start + "viewBox=\"".len();
+  let vb_end = svg[vb_value_start..].find('"')? + vb_value_start;
+  let view_box = svg[vb_value_start..vb_end].to_string();
+
+  // Parse viewBox to get dimensions: "x y w h"
+  let parts: Vec<f64> = view_box
+    .split_whitespace()
+    .filter_map(|s| s.parse().ok())
+    .collect();
+  if parts.len() < 4 {
+    return None;
+  }
+
+  // Extract inner content (everything between first > and last </svg>)
+  let inner_start = svg.find('>')? + 1;
+  // Skip past the newline after the opening tag if present
+  let inner_start = if svg[inner_start..].starts_with('\n') {
+    inner_start + 1
+  } else {
+    inner_start
+  };
+  let inner_end = svg.rfind("</svg>")?;
+  let inner_content = svg[inner_start..inner_end].to_string();
+
+  Some(ParsedSvg {
+    view_box,
+    inner_content,
+  })
+}
+
+/// Combine multiple SVG strings arranged as rows of cells into a single SVG.
+/// `rows` is a Vec of rows, each row is a Vec of SVG strings.
+pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
+  if rows.is_empty() {
+    return None;
+  }
+
+  // Determine cell size based on grid dimensions
+  let num_rows = rows.len();
+  let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  if num_cols == 0 {
+    return None;
+  }
+
+  let gap = 4.0_f64;
+  let cell_size = if num_rows == 1 { 100.0 } else { 80.0 };
+
+  let total_width = num_cols as f64 * cell_size + (num_cols as f64 - 1.0) * gap;
+  let total_height = num_rows as f64 * cell_size + (num_rows as f64 - 1.0) * gap;
+
+  let mut svg = String::with_capacity(4096);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    total_width.ceil() as u32,
+    total_height.ceil() as u32,
+    total_width.ceil() as u32,
+    total_height.ceil() as u32,
+  ));
+
+  for (i, row) in rows.iter().enumerate() {
+    for (j, cell_svg) in row.iter().enumerate() {
+      if let Some(parsed) = parse_svg_dimensions(cell_svg) {
+        let x = j as f64 * (cell_size + gap);
+        let y = i as f64 * (cell_size + gap);
+        svg.push_str(&format!(
+          "<svg x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"{}\">\n",
+          x.round() as u32,
+          y.round() as u32,
+          cell_size as u32,
+          cell_size as u32,
+          parsed.view_box,
+        ));
+        svg.push_str(&parsed.inner_content);
+        svg.push_str("</svg>\n");
+      }
+    }
+  }
 
   svg.push_str("</svg>");
   Some(svg)

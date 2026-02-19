@@ -5361,6 +5361,13 @@ pub fn evaluate_function_call_ast(
       return apply_replace_ast(&args[0], &args[1]);
     }
 
+    // Form wrappers — transparent, just return the inner expression
+    "MathMLForm" | "StandardForm" | "InputForm" | "OutputForm"
+      if !args.is_empty() =>
+    {
+      return Ok(args[0].clone());
+    }
+
     // Symbolic operators with no built-in meaning — just return as-is with evaluated args
     "Therefore" | "Because" | "TableForm" | "Row" | "In" | "Grid" => {
       return Ok(Expr::FunctionCall {
