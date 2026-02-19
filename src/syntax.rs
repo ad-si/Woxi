@@ -238,6 +238,14 @@ pub enum AST {
   CreateFile(Option<String>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageType {
+  Byte,
+  Bit16,
+  Real32,
+  Real64,
+}
+
 /// Owned expression tree for storing parsed function bodies.
 /// This avoids re-parsing function bodies on every call.
 #[derive(Debug, Clone)]
@@ -329,6 +337,14 @@ pub enum Expr {
   Constant(String),
   /// Raw unparsed text (fallback)
   Raw(String),
+  /// Image: raster image data
+  Image {
+    width: u32,
+    height: u32,
+    channels: u8,
+    data: std::sync::Arc<Vec<f64>>,
+    image_type: ImageType,
+  },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2769,6 +2785,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
     }
     Expr::Constant(s) => s.clone(),
     Expr::Raw(s) => s.clone(),
+    Expr::Image { .. } => "-Image-".to_string(),
     Expr::CurriedCall { func, args } => {
       // Display as nested calls: f[a][b, c]
       let args_str: Vec<String> = args.iter().map(expr_to_string).collect();

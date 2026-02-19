@@ -523,6 +523,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           }
           other => other?,
         };
+        // If the result is an Image, render it as a PNG <img> tag
+        let result_expr = render_image_if_needed(result_expr);
         // If the result is a Grid expression, render it as SVG
         let result_expr = render_grid_if_needed(result_expr);
         // If the result is a Dataset expression, render it as an SVG table
@@ -612,11 +614,31 @@ fn render_dataset_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// If `expr` is an Image, encode it as a base64 PNG `<img>` tag,
+/// capture it as graphics, and return `-Image-` identifier.
+fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if let syntax::Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    ..
+  } = expr
+  {
+    let html =
+      functions::image_ast::image_to_html_img(width, height, channels, data);
+    capture_graphics(&html);
+    syntax::Expr::Identifier("-Image-".to_string())
+  } else {
+    expr
+  }
+}
+
 /// Check if an expression represents a Graphics placeholder
 /// (either `-Graphics-` directly or `Style[-Graphics-, ...]`)
 fn is_graphics_placeholder(expr: &syntax::Expr) -> bool {
   match expr {
-    syntax::Expr::Identifier(s) if s == "-Graphics-" => true,
+    syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Image-" => true,
     syntax::Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
@@ -957,8 +979,8 @@ fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
 /// Generate an SVG rendering of the result expression and capture it.
 /// This is used by the playground to display all results with proper formatting.
 fn generate_output_svg(expr: &syntax::Expr) {
-  // Skip for Graphics results (they already have captured SVG)
-  if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-")
+  // Skip for Graphics/Image results (they already have captured SVG/HTML)
+  if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" || s == "-Image-")
   {
     return;
   }

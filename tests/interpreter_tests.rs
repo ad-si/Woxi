@@ -67,6 +67,7 @@ mod interpreter_tests {
   mod datetime;
   mod functions;
   mod graphics;
+  mod image;
   mod io;
   mod linear_algebra;
   mod list;

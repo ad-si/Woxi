@@ -708,10 +708,7 @@ mod set_delayed {
   fn literal_arg_priority_over_blank() {
     // f[1] := 1 (literal) should take priority over f[x_] := x + 1 (blank)
     clear_state();
-    assert_eq!(
-      interpret("f[1] := 1; f[x_] := x + 1; f[1]").unwrap(),
-      "1"
-    );
+    assert_eq!(interpret("f[1] := 1; f[x_] := x + 1; f[1]").unwrap(), "1");
     assert_eq!(interpret("f[5]").unwrap(), "6");
   }
 
@@ -720,7 +717,8 @@ mod set_delayed {
     // Literal match should take priority even when defined before PatternTest
     clear_state();
     assert_eq!(
-      interpret("g[0] := 0; g[x_ ? EvenQ] := x / 2; g[x_] := 3 x + 1; g[0]").unwrap(),
+      interpret("g[0] := 0; g[x_ ? EvenQ] := x / 2; g[x_] := 3 x + 1; g[0]")
+        .unwrap(),
       "0"
     );
     assert_eq!(interpret("g[4]").unwrap(), "2");
