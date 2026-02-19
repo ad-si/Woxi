@@ -104,6 +104,13 @@ pub(crate) fn format_tick(v: f64) -> String {
   }
 }
 
+/// Filling mode for line plots.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Filling {
+  None,
+  Axis,
+}
+
 /// Default Wolfram plot color palette (ColorData[97]).
 pub(crate) const PLOT_COLORS: [(u8, u8, u8); 6] = [
   (0x5E, 0x81, 0xB5), // blue
@@ -124,6 +131,22 @@ pub(crate) fn generate_svg(
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
+) -> Result<String, InterpreterError> {
+  generate_svg_with_filling(
+    all_points, x_range, y_range, svg_width, svg_height, full_width,
+    Filling::None,
+  )
+}
+
+/// Generate SVG for a 2D plot with optional filling.
+pub(crate) fn generate_svg_with_filling(
+  all_points: &[Vec<(f64, f64)>],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+  filling: Filling,
 ) -> Result<String, InterpreterError> {
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
@@ -212,6 +235,25 @@ pub(crate) fn generate_svg(
       let (r, g, b) = PLOT_COLORS[series_idx % PLOT_COLORS.len()];
       let color = RGBColor(r, g, b);
       let segments = split_into_segments(points);
+
+      // Draw filled area before the line so the line renders on top
+      if filling == Filling::Axis {
+        let fill_style = RGBColor(r, g, b).mix(0.2).filled();
+        for segment in &segments {
+          if segment.len() < 2 {
+            continue;
+          }
+          let mut poly_points: Vec<(f64, f64)> = segment.clone();
+          // Close the polygon along y=0 (the axis)
+          poly_points.push((segment.last().unwrap().0, 0.0));
+          poly_points.push((segment.first().unwrap().0, 0.0));
+          chart
+            .draw_series(std::iter::once(Polygon::new(poly_points, fill_style)))
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("Plot: {e}"))
+            })?;
+        }
+      }
 
       for segment in &segments {
         chart

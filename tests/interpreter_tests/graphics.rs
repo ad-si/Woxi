@@ -668,6 +668,13 @@ mod plot3d {
     }
 
     #[test]
+    fn list_line_plot_filling_axis() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[Table[Sin[x], {x, -5, 5, 0.2}], Filling -> Axis]"
+      ));
+    }
+
+    #[test]
     fn list_step_plot() {
       insta::assert_snapshot!(export_svg("ListStepPlot[{1, 3, 2, 4}]"));
     }

@@ -2,8 +2,8 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, generate_scatter_svg, generate_svg,
-  parse_image_size,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, Filling, generate_scatter_svg, generate_svg,
+  generate_svg_with_filling, parse_image_size,
 };
 use crate::syntax::Expr;
 
@@ -102,11 +102,12 @@ fn parse_list_data(
 }
 
 /// Parse common plot options from args[1..].
-fn parse_plot_options(args: &[Expr]) -> (u32, u32, bool, bool) {
+fn parse_plot_options(args: &[Expr]) -> (u32, u32, bool, bool, Filling) {
   let mut svg_width = DEFAULT_WIDTH;
   let mut svg_height = DEFAULT_HEIGHT;
   let mut full_width = false;
   let mut joined = false;
+  let mut filling = Filling::None;
   for opt in &args[1..] {
     if let Expr::Rule {
       pattern,
@@ -128,11 +129,17 @@ fn parse_plot_options(args: &[Expr]) -> (u32, u32, bool, bool) {
             joined = true;
           }
         }
+        "Filling" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Axis")
+          {
+            filling = Filling::Axis;
+          }
+        }
         _ => {}
       }
     }
   }
-  (svg_width, svg_height, full_width, joined)
+  (svg_width, svg_height, full_width, joined, filling)
 }
 
 /// Compute x/y ranges from data with 4% padding.
@@ -186,7 +193,8 @@ fn compute_ranges(all_series: &[Vec<(f64, f64)>]) -> ((f64, f64), (f64, f64)) {
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (svg_width, svg_height, full_width, joined) = parse_plot_options(args);
+  let (svg_width, svg_height, full_width, joined, _filling) =
+    parse_plot_options(args);
   let (x_range, y_range) = compute_ranges(&all_series);
 
   let svg = if joined {
@@ -216,16 +224,28 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (svg_width, svg_height, full_width, _) = parse_plot_options(args);
-  let (x_range, y_range) = compute_ranges(&all_series);
+  let (svg_width, svg_height, full_width, _, filling) =
+    parse_plot_options(args);
+  let (x_range, mut y_range) = compute_ranges(&all_series);
 
-  let svg = generate_svg(
+  // When filling to axis, ensure y=0 is included in the range
+  if filling == Filling::Axis {
+    if y_range.0 > 0.0 {
+      y_range.0 = 0.0 - (y_range.1 - 0.0) * 0.04;
+    }
+    if y_range.1 < 0.0 {
+      y_range.1 = 0.0 + (0.0 - y_range.0) * 0.04;
+    }
+  }
+
+  let svg = generate_svg_with_filling(
     &all_series,
     x_range,
     y_range,
     svg_width,
     svg_height,
     full_width,
+    filling,
   )?;
   crate::capture_graphics(&svg);
   Ok(Expr::Identifier("-Graphics-".to_string()))
@@ -234,7 +254,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListStepPlot[{y1, y2, ...}]
 pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (svg_width, svg_height, full_width, _) = parse_plot_options(args);
+  let (svg_width, svg_height, full_width, _, _) = parse_plot_options(args);
 
   // Transform each series into staircase coordinates
   let step_series: Vec<Vec<(f64, f64)>> = all_series
@@ -267,7 +287,7 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListLogPlot: y-axis is log10 scale
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (svg_width, svg_height, full_width, _) = parse_plot_options(args);
+  let (svg_width, svg_height, full_width, _, _) = parse_plot_options(args);
 
   let log_series: Vec<Vec<(f64, f64)>> = all_series
     .iter()
@@ -295,7 +315,7 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListLogLogPlot: both axes log10 scale
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (svg_width, svg_height, full_width, _) = parse_plot_options(args);
+  let (svg_width, svg_height, full_width, _, _) = parse_plot_options(args);
 
   let log_series: Vec<Vec<(f64, f64)>> = all_series
     .iter()
@@ -331,7 +351,7 @@ pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (svg_width, svg_height, full_width, _) = parse_plot_options(args);
+  let (svg_width, svg_height, full_width, _, _) = parse_plot_options(args);
 
   let log_series: Vec<Vec<(f64, f64)>> = all_series
     .iter()
@@ -359,7 +379,7 @@ pub fn list_log_linear_plot_ast(
 /// ListPolarPlot[{r1, r2, ...}]: plot data in polar coordinates
 pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
-  let (svg_width, svg_height, full_width, _) = parse_plot_options(args);
+  let (svg_width, svg_height, full_width, _, _) = parse_plot_options(args);
 
   let polar_series: Vec<Vec<(f64, f64)>> = all_series
     .iter()
