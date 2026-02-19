@@ -3097,6 +3097,169 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// AnglePath[{θ1, θ2, ...}] - path with unit steps and cumulative turning angles.
+/// AnglePath[{{r1, θ1}, {r2, θ2}, ...}] - path with specified step lengths.
+pub fn angle_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "AnglePath expects 1 argument".into(),
+    ));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "AnglePath".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Start at origin
+  let mut x = 0.0_f64;
+  let mut y = 0.0_f64;
+  let mut angle = 0.0_f64;
+  let mut points: Vec<Expr> = Vec::with_capacity(items.len() + 1);
+
+  // Check if all items are numeric (pure angles) or {step, angle} pairs
+  let is_pair_form = items
+    .first()
+    .is_some_and(|item| matches!(item, Expr::List(_)));
+
+  // Starting point {0, 0}
+  // Use Integer 0 when all inputs are exact integers, else Real
+  let all_integer = if is_pair_form {
+    items.iter().all(|item| {
+      if let Expr::List(pair) = item {
+        pair.len() == 2
+          && matches!(&pair[0], Expr::Integer(_))
+          && matches!(&pair[1], Expr::Integer(_))
+      } else {
+        matches!(item, Expr::Integer(_))
+      }
+    })
+  } else {
+    items.iter().all(|item| matches!(item, Expr::Integer(_)))
+  };
+
+  if all_integer {
+    // Symbolic mode: keep exact Cos/Sin
+    let mut cum_terms_x: Vec<Expr> = Vec::new();
+    let mut cum_terms_y: Vec<Expr> = Vec::new();
+    let mut cum_angle = Expr::Integer(0);
+
+    points.push(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]));
+
+    for item in items {
+      let (step, theta) = if is_pair_form {
+        if let Expr::List(pair) = item {
+          if pair.len() != 2 {
+            return Err(InterpreterError::EvaluationError(
+              "AnglePath: each element must be a number or {step, angle} pair"
+                .into(),
+            ));
+          }
+          (pair[0].clone(), pair[1].clone())
+        } else {
+          let theta = item.clone();
+          (Expr::Integer(1), theta)
+        }
+      } else {
+        (Expr::Integer(1), item.clone())
+      };
+
+      // cum_angle += theta
+      cum_angle = crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[cum_angle, theta],
+      )?;
+
+      // cos_term = step * Cos[cum_angle], sin_term = step * Sin[cum_angle]
+      let cos_val = crate::evaluator::evaluate_function_call_ast(
+        "Cos",
+        &[cum_angle.clone()],
+      )?;
+      let sin_val = crate::evaluator::evaluate_function_call_ast(
+        "Sin",
+        &[cum_angle.clone()],
+      )?;
+      let cos_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[step.clone(), cos_val],
+      )?;
+      let sin_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[step, sin_val],
+      )?;
+
+      cum_terms_x.push(cos_term);
+      cum_terms_y.push(sin_term);
+
+      let px = if cum_terms_x.len() == 1 {
+        cum_terms_x[0].clone()
+      } else {
+        crate::evaluator::evaluate_function_call_ast("Plus", &cum_terms_x)?
+      };
+      let py = if cum_terms_y.len() == 1 {
+        cum_terms_y[0].clone()
+      } else {
+        crate::evaluator::evaluate_function_call_ast("Plus", &cum_terms_y)?
+      };
+
+      points.push(Expr::List(vec![px, py]));
+    }
+  } else {
+    // Numeric mode
+    points.push(Expr::List(vec![Expr::Real(0.0), Expr::Real(0.0)]));
+
+    for item in items {
+      let (step, theta) = if is_pair_form {
+        if let Expr::List(pair) = item {
+          if pair.len() != 2 {
+            return Err(InterpreterError::EvaluationError(
+              "AnglePath: each element must be a number or {step, angle} pair"
+                .into(),
+            ));
+          }
+          let s = expr_to_f64(&pair[0]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "AnglePath: step must be numeric".into(),
+            )
+          })?;
+          let t = expr_to_f64(&pair[1]).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "AnglePath: angle must be numeric".into(),
+            )
+          })?;
+          (s, t)
+        } else {
+          let t = expr_to_f64(item).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "AnglePath: angle must be numeric".into(),
+            )
+          })?;
+          (1.0, t)
+        }
+      } else {
+        let t = expr_to_f64(item).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "AnglePath: angle must be numeric".into(),
+          )
+        })?;
+        (1.0, t)
+      };
+
+      angle += theta;
+      x += step * angle.cos();
+      y += step * angle.sin();
+      points.push(Expr::List(vec![Expr::Real(x), Expr::Real(y)]));
+    }
+  }
+
+  Ok(Expr::List(points))
+}
+
 /// AST-based Differences: successive differences.
 pub fn differences_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   differences_n_ast(list, 1)

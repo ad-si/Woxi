@@ -2736,6 +2736,9 @@ pub fn evaluate_function_call_ast(
     "Accumulate" if args.len() == 1 => {
       return list_helpers_ast::accumulate_ast(&args[0]);
     }
+    "AnglePath" => {
+      return list_helpers_ast::angle_path_ast(args);
+    }
     "Differences" if args.len() == 1 => {
       return list_helpers_ast::differences_ast(&args[0]);
     }
