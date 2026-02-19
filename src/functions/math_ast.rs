@@ -4498,12 +4498,26 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )),
     },
     2 => {
-      // RandomInteger[range, n] - generate n random integers
-      let n = match &args[1] {
-        Expr::Integer(n) if *n > 0 => *n as usize,
+      // RandomInteger[range, n] or RandomInteger[range, {n}] or RandomInteger[range, {n, m, ...}]
+      let dims = match &args[1] {
+        Expr::Integer(n) if *n > 0 => vec![*n as usize],
+        Expr::List(items) => {
+          let mut dims = Vec::new();
+          for item in items {
+            match item {
+              Expr::Integer(n) if *n > 0 => dims.push(*n as usize),
+              _ => {
+                return Err(InterpreterError::EvaluationError(
+                  "RandomInteger: dimension specification must contain positive integers".into(),
+                ));
+              }
+            }
+          }
+          dims
+        }
         _ => {
           return Err(InterpreterError::EvaluationError(
-            "RandomInteger: second argument must be a positive integer".into(),
+            "RandomInteger: second argument must be a positive integer or list of positive integers".into(),
           ));
         }
       };
@@ -4534,12 +4548,25 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
-      let results: Vec<Expr> = crate::with_rng(|rng| {
-        (0..n)
-          .map(|_| Expr::Integer(rng.gen_range(min..=max)))
-          .collect()
-      });
-      Ok(Expr::List(results))
+      fn make_random_int_array(dims: &[usize], min: i128, max: i128) -> Expr {
+        let n = dims[0];
+        if dims.len() == 1 {
+          let results: Vec<Expr> = crate::with_rng(|rng| {
+            (0..n)
+              .map(|_| Expr::Integer(rng.gen_range(min..=max)))
+              .collect()
+          });
+          Expr::List(results)
+        } else {
+          let inner_dims = &dims[1..];
+          let results: Vec<Expr> = (0..n)
+            .map(|_| make_random_int_array(inner_dims, min, max))
+            .collect();
+          Expr::List(results)
+        }
+      }
+
+      Ok(make_random_int_array(&dims, min, max))
     }
     _ => Err(InterpreterError::EvaluationError(
       "RandomInteger expects 0, 1, or 2 arguments".into(),
@@ -4582,12 +4609,26 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )),
     },
     2 => {
-      // RandomReal[range, n] - generate n random reals
-      let n = match &args[1] {
-        Expr::Integer(n) if *n > 0 => *n as usize,
+      // RandomReal[range, n] or RandomReal[range, {n}] or RandomReal[range, {n, m, ...}]
+      let dims = match &args[1] {
+        Expr::Integer(n) if *n > 0 => vec![*n as usize],
+        Expr::List(items) => {
+          let mut dims = Vec::new();
+          for item in items {
+            match item {
+              Expr::Integer(n) if *n > 0 => dims.push(*n as usize),
+              _ => {
+                return Err(InterpreterError::EvaluationError(
+                  "RandomReal: dimension specification must contain positive integers".into(),
+                ));
+              }
+            }
+          }
+          dims
+        }
         _ => {
           return Err(InterpreterError::EvaluationError(
-            "RandomReal: second argument must be a positive integer".into(),
+            "RandomReal: second argument must be a positive integer or list of positive integers".into(),
           ));
         }
       };
@@ -4611,12 +4652,25 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
 
-      let results: Vec<Expr> = crate::with_rng(|rng| {
-        (0..n)
-          .map(|_| Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
-          .collect()
-      });
-      Ok(Expr::List(results))
+      fn make_random_array(dims: &[usize], min: f64, max: f64) -> Expr {
+        let n = dims[0];
+        if dims.len() == 1 {
+          let results: Vec<Expr> = crate::with_rng(|rng| {
+            (0..n)
+              .map(|_| Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
+              .collect()
+          });
+          Expr::List(results)
+        } else {
+          let inner_dims = &dims[1..];
+          let results: Vec<Expr> = (0..n)
+            .map(|_| make_random_array(inner_dims, min, max))
+            .collect();
+          Expr::List(results)
+        }
+      }
+
+      Ok(make_random_array(&dims, min, max))
     }
     _ => Err(InterpreterError::EvaluationError(
       "RandomReal expects 0, 1, or 2 arguments".into(),

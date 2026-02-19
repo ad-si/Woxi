@@ -1373,6 +1373,22 @@ mod random_real {
   }
 
   #[test]
+  fn list_form_single_dim() {
+    // RandomReal[max, {n}] should work like RandomReal[max, n]
+    assert_eq!(interpret("Length[RandomReal[1, {10}]]").unwrap(), "10");
+    assert_eq!(interpret("Length[RandomReal[{0, 1}, {50}]]").unwrap(), "50");
+  }
+
+  #[test]
+  fn list_form_multi_dim() {
+    // RandomReal[max, {n, m}] should produce an n x m matrix
+    assert_eq!(
+      interpret("Dimensions[RandomReal[1, {3, 4}]]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
   fn mean_of_random_reals() {
     // Mean of RandomReal[1, 1000] should be a real number
     let result: f64 = interpret("Mean[RandomReal[1, 1000]]")
@@ -1401,6 +1417,21 @@ mod random_integer {
   #[test]
   fn list_form() {
     assert_eq!(interpret("Length[RandomInteger[10, 5]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn list_form_single_dim() {
+    // RandomInteger[max, {n}] should work like RandomInteger[max, n]
+    assert_eq!(interpret("Length[RandomInteger[10, {5}]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn list_form_multi_dim() {
+    // RandomInteger[max, {n, m}] should produce an n x m matrix
+    assert_eq!(
+      interpret("Dimensions[RandomInteger[10, {3, 4}]]").unwrap(),
+      "{3, 4}"
+    );
   }
 }
 
@@ -2696,6 +2727,53 @@ mod join_non_list {
     assert_eq!(
       interpret("PadRight[{1, 2, 3}, 9, {a, b, c}]").unwrap(),
       "{1, 2, 3, a, b, c, a, b, c}"
+    );
+  }
+}
+
+mod angle_path {
+  use super::*;
+
+  #[test]
+  fn empty() {
+    assert_eq!(interpret("AnglePath[{}]").unwrap(), "{{0, 0}}");
+  }
+
+  #[test]
+  fn numeric_angles() {
+    let result = interpret("AnglePath[{0.5, -0.3, 0.1}]").unwrap();
+    assert!(result.starts_with("{{0., 0.}, {0.877582"));
+  }
+
+  #[test]
+  fn symbolic_integer_angles() {
+    assert_eq!(
+      interpret("AnglePath[{1, 1}]").unwrap(),
+      "{{0, 0}, {Cos[1], Sin[1]}, {Cos[1] + Cos[2], Sin[1] + Sin[2]}}"
+    );
+  }
+
+  #[test]
+  fn step_angle_pairs() {
+    let result =
+      interpret("AnglePath[{{1, 0.5}, {2, -0.3}, {0.5, 0.1}}]").unwrap();
+    assert!(result.starts_with("{{0., 0.}, {0.877582"));
+  }
+
+  #[test]
+  fn length_is_n_plus_1() {
+    assert_eq!(
+      interpret("Length[AnglePath[{1.0, 2.0, 3.0}]]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn with_random_real() {
+    // The primary use case: AnglePath with RandomReal
+    assert_eq!(
+      interpret("Length[AnglePath[RandomReal[{-1, 1}, {100}]]]").unwrap(),
+      "101"
     );
   }
 }

@@ -118,7 +118,7 @@ AndersonDarlingTest,,,
 AngerJ,,,
 AngleBisector,,,
 AngleBracket,,,
-AnglePath,,,
+AnglePath,Generate 2D points by successively turning and stepping,✅,pure
 AnglePath3D,,,
 AngleVector,,,
 AngularGauge,,,
