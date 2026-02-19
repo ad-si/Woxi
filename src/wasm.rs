@@ -2,6 +2,42 @@ use wasm_bindgen::prelude::*;
 
 use crate::{clear_state, interpret, interpret_with_stdout};
 
+// Import a JS-provided function that fetches a URL and returns its content
+// as a base64-encoded string.  The host (worker.js / kernel) must supply this.
+#[wasm_bindgen]
+extern "C" {
+  #[wasm_bindgen(js_name = "__woxi_fetch_url", catch)]
+  fn woxi_fetch_url(url: &str) -> Result<String, JsValue>;
+}
+
+/// Download a URL and decode the image bytes (WASM).
+/// Returns the image as an Expr::Image.
+pub fn import_image_from_url_wasm(
+  url: &str,
+) -> Result<crate::syntax::Expr, crate::InterpreterError> {
+  let b64 = woxi_fetch_url(url).map_err(|e| {
+    crate::InterpreterError::EvaluationError(format!(
+      "Import: failed to fetch \"{}\": {:?}",
+      url, e
+    ))
+  })?;
+  if b64.is_empty() {
+    return Err(crate::InterpreterError::EvaluationError(format!(
+      "Import: empty response from \"{}\"",
+      url
+    )));
+  }
+  let bytes =
+    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &b64)
+      .map_err(|e| {
+        crate::InterpreterError::EvaluationError(format!(
+          "Import: failed to decode fetched data: {}",
+          e
+        ))
+      })?;
+  crate::functions::image_ast::import_image_from_bytes(&bytes)
+}
+
 #[wasm_bindgen(start)]
 pub fn init() {
   console_error_panic_hook::set_once();
@@ -86,7 +122,8 @@ pub fn evaluate_all(input: &str) -> String {
           let cleaned = result
             .result
             .replace("-Graphics-", "")
-            .replace("-Graphics3D-", "");
+            .replace("-Graphics3D-", "")
+            .replace("-Image-", "");
           let cleaned = cleaned.trim();
           if !cleaned.is_empty() && cleaned != "Null" && cleaned != "\0" {
             items.push(json_output_item("text", cleaned, None));

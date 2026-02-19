@@ -57,6 +57,7 @@ md-5 = "0.10"
 sha1 = "0.10"
 rand_distr = "0.4"
 rand_chacha = "0.3"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tiff"] }
 
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }

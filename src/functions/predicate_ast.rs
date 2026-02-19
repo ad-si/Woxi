@@ -1017,6 +1017,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Function { .. } | Expr::NamedFunction { .. } => "Function",
     Expr::Pattern { .. } => "Pattern",
     Expr::PatternTest { .. } => "PatternTest",
+    Expr::Image { .. } => "Image",
     _ => "Symbol",
   };
   Ok(Expr::Identifier(head.to_string()))
@@ -1406,6 +1407,7 @@ pub fn expr_to_full_form(expr: &Expr) -> String {
       format!("PatternTest[{}, {}]", blank_part, expr_to_full_form(test))
     }
     Expr::Raw(s) => s.clone(),
+    Expr::Image { .. } => "-Image-".to_string(),
     Expr::CurriedCall { func, args } => {
       // CurriedCall[f[a]][b] displays as f[a][b]
       let args_str: Vec<String> = args.iter().map(expr_to_full_form).collect();

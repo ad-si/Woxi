@@ -441,6 +441,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       let result = evaluate_expr_to_expr(&parsed)?;
       Ok(expr_to_string(&result))
     }
+    Expr::Image { .. } => Ok("-Image-".to_string()),
     Expr::CurriedCall { func, args } => {
       // Evaluate the curried call: f[a][b] -> apply f[a] to b
       let evaluated_func = evaluate_expr_to_expr(func)?;
@@ -1352,6 +1353,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       let parsed = string_to_expr(s)?;
       evaluate_expr_to_expr(&parsed)
     }
+    Expr::Image { .. } => Ok(expr.clone()),
     Expr::CurriedCall { func, args } => {
       // Evaluate the curried call: f[a][b] -> apply f[a] to args
       let evaluated_func = evaluate_expr_to_expr(func)?;
@@ -3385,7 +3387,139 @@ pub fn evaluate_function_call_ast(
       return crate::functions::string_ast::hash_ast(args);
     }
 
-    // AST-native file and date functions (not available in WASM)
+    // ── Image functions ──────────────────────────────────────────────
+    "Image" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::image_constructor_ast(args);
+    }
+    "ImageQ" if args.len() == 1 => {
+      return crate::functions::image_ast::image_q_ast(args);
+    }
+    "ImageDimensions" if args.len() == 1 => {
+      return crate::functions::image_ast::image_dimensions_ast(args);
+    }
+    "ImageChannels" if args.len() == 1 => {
+      return crate::functions::image_ast::image_channels_ast(args);
+    }
+    "ImageType" if args.len() == 1 => {
+      return crate::functions::image_ast::image_type_ast(args);
+    }
+    "ImageData" if args.len() == 1 => {
+      return crate::functions::image_ast::image_data_ast(args);
+    }
+    "ImageColorSpace" if args.len() == 1 => {
+      return crate::functions::image_ast::image_color_space_ast(args);
+    }
+    "ColorNegate" if args.len() == 1 => {
+      return crate::functions::image_ast::color_negate_ast(args);
+    }
+    "Binarize" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::binarize_ast(args);
+    }
+    "Blur" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::blur_ast(args);
+    }
+    "Sharpen" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::sharpen_ast(args);
+    }
+    "ImageAdjust" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::image_adjust_ast(args);
+    }
+    "ImageReflect" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::image_reflect_ast(args);
+    }
+    "ImageRotate" if args.len() == 2 => {
+      return crate::functions::image_ast::image_rotate_ast(args);
+    }
+    "ImageResize" if args.len() == 2 => {
+      return crate::functions::image_ast::image_resize_ast(args);
+    }
+    "ImageCrop" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::image_crop_ast(args);
+    }
+    "ImageTake" if args.len() >= 2 && args.len() <= 3 => {
+      return crate::functions::image_ast::image_take_ast(args);
+    }
+    "EdgeDetect" if args.len() == 1 => {
+      return crate::functions::image_ast::edge_detect_ast(args);
+    }
+    "DominantColors" if !args.is_empty() && args.len() <= 2 => {
+      return crate::functions::image_ast::dominant_colors_ast(args);
+    }
+    "ImageApply" if args.len() == 2 => {
+      return crate::functions::image_ast::image_apply_ast(
+        args,
+        &evaluate_expr_to_expr,
+      );
+    }
+    "ColorConvert" if args.len() == 2 => {
+      if matches!(&args[0], Expr::Image { .. }) {
+        return crate::functions::image_ast::color_convert_ast(args);
+      }
+    }
+    "ImageCompose" if args.len() == 2 => {
+      return crate::functions::image_ast::image_compose_ast(args);
+    }
+    "ImageAdd" if args.len() == 2 => {
+      return crate::functions::image_ast::image_add_ast(args);
+    }
+    "ImageSubtract" if args.len() == 2 => {
+      return crate::functions::image_ast::image_subtract_ast(args);
+    }
+    "ImageMultiply" if args.len() == 2 => {
+      return crate::functions::image_ast::image_multiply_ast(args);
+    }
+    "RandomImage" if args.len() <= 2 => {
+      return crate::functions::image_ast::random_image_ast(args);
+    }
+
+    // Import — works on both CLI and WASM (URLs), CLI-only for local files
+    "Import" if args.len() == 1 => {
+      let path = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Import".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let is_url = path.starts_with("http://") || path.starts_with("https://");
+
+      if is_url {
+        // URL import — available on both CLI and WASM
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          return crate::functions::image_ast::import_image_from_url(&path);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return crate::wasm::import_image_from_url_wasm(&path);
+        }
+      }
+
+      // Local file import — CLI only
+      #[cfg(not(target_arch = "wasm32"))]
+      {
+        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+        match ext.as_str() {
+          "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" => {
+            return crate::functions::image_ast::import_image(&path);
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(format!(
+              "Import: unsupported file format \"{}\"",
+              ext
+            )));
+          }
+        }
+      }
+      #[cfg(target_arch = "wasm32")]
+      {
+        return Err(InterpreterError::EvaluationError(
+          "Import: local file access is not available in the browser".into(),
+        ));
+      }
+    }
     #[cfg(not(target_arch = "wasm32"))]
     "Export" if args.len() >= 2 => {
       let filename = match &args[0] {
@@ -3397,6 +3531,20 @@ pub fn evaluate_function_call_ast(
           )));
         }
       };
+      // Handle Image export
+      if let Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        ..
+      } = &args[1]
+      {
+        crate::functions::image_ast::export_image(
+          &filename, *width, *height, *channels, data,
+        )?;
+        return Ok(Expr::String(filename));
+      }
       // The second argument has already been evaluated, which triggers
       // capture_graphics() for Plot expressions.  Grab the SVG.
       let content = match &args[1] {
@@ -6416,6 +6564,7 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         | Expr::String(_)
         | Expr::Function { .. }
         | Expr::NamedFunction { .. }
+        | Expr::Image { .. }
     ) {
       // Store lists, function calls, functions, and strings as ExprVal for faithful roundtrip
       ENV.with(|e| {
@@ -6621,7 +6770,9 @@ fn set_delayed_ast(lhs: &Expr, body: &Expr) -> Result<Expr, InterpreterError> {
     // for priority over general patterns (matching Mathematica specificity ordering)
     let has_literal_conditions = conditions.iter().any(|c| {
       if let Some(Expr::Comparison { operators, .. }) = c {
-        operators.iter().any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+        operators
+          .iter()
+          .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
       } else {
         false
       }

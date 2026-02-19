@@ -18,6 +18,27 @@ export class WoxiKernel extends BaseKernel implements IKernel {
   }
 
   private async _initWasm(): Promise<void> {
+    // Provide __woxi_fetch_url so Import["https://..."] works from WASM.
+    (globalThis as any).__woxi_fetch_url = function (url: string): string {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, false);
+      xhr.overrideMimeType('text/plain; charset=x-user-defined');
+      xhr.send();
+      if (xhr.status < 200 || xhr.status >= 300) {
+        throw new Error('HTTP ' + xhr.status + ' ' + xhr.statusText);
+      }
+      const text = xhr.responseText;
+      const bytes = new Uint8Array(text.length);
+      for (let i = 0; i < text.length; i++) {
+        bytes[i] = text.charCodeAt(i) & 0xff;
+      }
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    };
+
     // Resolve the WASM package URL relative to the JupyterLite root.
     // JupyterLite serves from e.g. /jupyterlite/lab/index.html,
     // and the wasm dir is at /jupyterlite/wasm/.
