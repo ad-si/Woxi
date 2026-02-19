@@ -5,22 +5,43 @@ mod dataset_ast {
 
   #[test]
   fn dataset_single_association() {
-    assert_eq!(
-      interpret("Dataset[<|\"Name\" -> \"John\", \"Age\" -> 30, \"City\" -> \"NYC\"|>]").unwrap(),
-      "Dataset[<|Name -> John, Age -> 30, City -> NYC|>, TypeSystem`Struct[{Name, Age, City}, {TypeSystem`Atom[String], TypeSystem`Atom[Integer], TypeSystem`Atom[String]}], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|\"Name\" -> \"John\", \"Age\" -> 30, \"City\" -> \"NYC\"|>]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">Name</text>"));
+    assert!(svg.contains(">Age</text>"));
+    assert!(svg.contains(">City</text>"));
+    assert!(svg.contains(">John</text>"));
+    assert!(svg.contains(">30</text>"));
+    assert!(svg.contains(">NYC</text>"));
   }
 
   #[test]
   fn dataset_list_of_associations() {
-    assert_eq!(
-      interpret("Dataset[{<|\"Name\" -> \"John\", \"Age\" -> 30|>, <|\"Name\" -> \"Jane\", \"Age\" -> 28|>}]").unwrap(),
-      "Dataset[{<|Name -> John, Age -> 30|>, <|Name -> Jane, Age -> 28|>}, TypeSystem`Vector[TypeSystem`Struct[{Name, Age}, {TypeSystem`Atom[String], TypeSystem`Atom[Integer]}], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[{<|\"Name\" -> \"John\", \"Age\" -> 30|>, <|\"Name\" -> \"Jane\", \"Age\" -> 28|>}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">Name</text>"));
+    assert!(svg.contains(">Age</text>"));
+    assert!(svg.contains(">John</text>"));
+    assert!(svg.contains(">Jane</text>"));
+    assert!(svg.contains(">30</text>"));
+    assert!(svg.contains(">28</text>"));
   }
 
   #[test]
   fn dataset_plain_list() {
+    // Plain lists (not associations) don't render as table
     assert_eq!(
       interpret("Dataset[{1, 2, 3}]").unwrap(),
       "Dataset[{1, 2, 3}, TypeSystem`Vector[TypeSystem`Atom[Integer], 3], <||>]"
@@ -77,48 +98,73 @@ mod dataset_ast {
 
   #[test]
   fn dataset_homogeneous_assoc() {
-    assert_eq!(
-      interpret("Dataset[<|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
-      "Dataset[<|a -> 1, b -> 2|>, TypeSystem`Assoc[TypeSystem`Atom[TypeSystem`Enumeration[a, b]], TypeSystem`Atom[Integer], 2], <||>]"
-    );
+    clear_state();
+    let result =
+      interpret_with_stdout("Dataset[<|\"a\" -> 1, \"b\" -> 2|>]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">2</text>"));
   }
 
   #[test]
   fn dataset_assoc_with_list_values() {
-    assert_eq!(
-      interpret("Dataset[<|\"a\" -> {1, 2}, \"b\" -> {3, 4}|>]").unwrap(),
-      "Dataset[<|a -> {1, 2}, b -> {3, 4}|>, TypeSystem`Assoc[TypeSystem`Atom[TypeSystem`Enumeration[a, b]], TypeSystem`Vector[TypeSystem`Atom[Integer], 2], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|\"a\" -> {1, 2}, \"b\" -> {3, 4}|>]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
   }
 
   #[test]
   fn dataset_nested_associations() {
-    assert_eq!(
-      interpret("Dataset[<|\"a\" -> <|\"x\" -> 1|>, \"b\" -> <|\"x\" -> 2|>|>]").unwrap(),
-      "Dataset[<|a -> <|x -> 1|>, b -> <|x -> 2|>|>, TypeSystem`Assoc[TypeSystem`Atom[String], TypeSystem`Struct[{x}, {TypeSystem`Atom[Integer]}], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|\"a\" -> <|\"x\" -> 1|>, \"b\" -> <|\"x\" -> 2|>|>]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
   }
 
   #[test]
   fn dataset_with_variable() {
-    assert_eq!(
-      interpret("assoc = <|\"Name\" -> \"John\", \"Age\" -> 30, \"City\" -> \"NYC\"|>; Dataset[assoc]").unwrap(),
-      "Dataset[<|Name -> John, Age -> 30, City -> NYC|>, TypeSystem`Struct[{Name, Age, City}, {TypeSystem`Atom[String], TypeSystem`Atom[Integer], TypeSystem`Atom[String]}], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "assoc = <|\"Name\" -> \"John\", \"Age\" -> 30, \"City\" -> \"NYC\"|>; Dataset[assoc]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
   }
 
   #[test]
   fn dataset_list_variable() {
-    assert_eq!(
-      interpret("data = {<|\"Name\" -> \"John\", \"Age\" -> 30|>, <|\"Name\" -> \"Jane\", \"Age\" -> 28|>}; Dataset[data]").unwrap(),
-      "Dataset[{<|Name -> John, Age -> 30|>, <|Name -> Jane, Age -> 28|>}, TypeSystem`Vector[TypeSystem`Struct[{Name, Age}, {TypeSystem`Atom[String], TypeSystem`Atom[Integer]}], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "data = {<|\"Name\" -> \"John\", \"Age\" -> 30|>, <|\"Name\" -> \"Jane\", \"Age\" -> 28|>}; Dataset[data]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
   }
 
   #[test]
   fn normal_dataset() {
     assert_eq!(
-      interpret("Normal[Dataset[<|\"Name\" -> \"John\", \"Age\" -> 30|>]]").unwrap(),
+      interpret("Normal[Dataset[<|\"Name\" -> \"John\", \"Age\" -> 30|>]]")
+        .unwrap(),
       "<|Name -> John, Age -> 30|>"
     );
   }
@@ -133,18 +179,34 @@ mod dataset_ast {
 
   #[test]
   fn dataset_integer_keys() {
-    assert_eq!(
-      interpret("Dataset[<|1 -> \"x\", 2 -> \"y\"|>]").unwrap(),
-      "Dataset[<|1 -> x, 2 -> y|>, TypeSystem`Assoc[TypeSystem`Atom[Integer], TypeSystem`Atom[String], 2], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|1 -> \"x\", 2 -> \"y\"|>]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">2</text>"));
+    assert!(svg.contains(">x</text>"));
+    assert!(svg.contains(">y</text>"));
   }
 
   #[test]
   fn dataset_mixed_assoc_values() {
-    assert_eq!(
-      interpret("Dataset[<|\"a\" -> 1, \"b\" -> \"x\"|>]").unwrap(),
-      "Dataset[<|a -> 1, b -> x|>, TypeSystem`Struct[{a, b}, {TypeSystem`Atom[Integer], TypeSystem`Atom[String]}], <||>]"
-    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|\"a\" -> 1, \"b\" -> \"x\"|>]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">x</text>"));
   }
 
   #[test]
@@ -153,6 +215,65 @@ mod dataset_ast {
     assert_eq!(
       interpret("Dataset[{1, 2}, foo, bar]").unwrap(),
       "Dataset[{1, 2}, foo, bar]"
+    );
+  }
+
+  #[test]
+  fn dataset_assoc_keys_are_bold() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|\"Name\" -> \"John\", \"Age\" -> 30|>]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("font-weight=\"bold\""),
+      "Key column should use bold font"
+    );
+  }
+
+  #[test]
+  fn dataset_assoc_has_key_column_background() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|\"Name\" -> \"John\"|>]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("<rect"),
+      "Should have a background rect for the key column"
+    );
+  }
+
+  #[test]
+  fn dataset_list_has_header_background() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[{<|\"X\" -> 1|>}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("<rect"),
+      "Should have a background rect for the header row"
+    );
+  }
+
+  #[test]
+  fn output_svg_not_set_for_dataset() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Dataset[<|\"a\" -> 1|>]",
+    )
+    .unwrap();
+    assert!(
+      result.output_svg.is_none(),
+      "output_svg should be None for Dataset table results"
+    );
+    assert!(
+      result.graphics.is_some(),
+      "graphics should be set for Dataset"
     );
   }
 }

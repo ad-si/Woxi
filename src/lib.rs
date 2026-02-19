@@ -514,6 +514,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         };
         // If the result is a Grid expression, render it as SVG
         let result_expr = render_grid_if_needed(result_expr);
+        // If the result is a Dataset expression, render it as an SVG table
+        let result_expr = render_dataset_if_needed(result_expr);
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);
         // Convert to output string (strips quotes from strings for display)
@@ -566,6 +568,25 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       let new_items: Vec<syntax::Expr> =
         items.iter().cloned().map(render_grid_if_needed).collect();
       syntax::Expr::List(new_items)
+    }
+    _ => expr,
+  }
+}
+
+/// If `expr` is a Dataset[data, …] call, render it as an SVG table
+/// and return `-Graphics-`.
+fn render_dataset_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Dataset" && !args.is_empty() =>
+    {
+      let data = &args[0];
+      if let Some(svg) = functions::graphics::dataset_to_svg(data) {
+        capture_graphics(&svg);
+        syntax::Expr::Identifier("-Graphics-".to_string())
+      } else {
+        expr
+      }
     }
     _ => expr,
   }
