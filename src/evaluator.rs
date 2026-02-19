@@ -2555,6 +2555,16 @@ pub fn evaluate_function_call_ast(
       {
         return list_helpers_ast::sparse_array_ast(sa_args);
       }
+      // Normal[Dataset[data, ...]] extracts the data
+      if let Expr::FunctionCall {
+        name,
+        args: ds_args,
+      } = &args[0]
+        && name == "Dataset"
+        && !ds_args.is_empty()
+      {
+        return Ok(ds_args[0].clone());
+      }
       // For other expressions, Normal is identity
       return Ok(args[0].clone());
     }
@@ -3944,6 +3954,11 @@ pub fn evaluate_function_call_ast(
     }
     "FilterRules" if args.len() == 2 => {
       return filter_rules_ast(&args[0], &args[1]);
+    }
+
+    // Dataset
+    "Dataset" if args.len() >= 1 => {
+      return Ok(crate::functions::dataset_ast::dataset_ast(args));
     }
 
     "MemberQ" if args.len() == 2 => {

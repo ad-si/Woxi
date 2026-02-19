@@ -1243,7 +1243,7 @@ DatabinUpload,,,
 DataDistribution,,,
 DataRange,,,
 DataReversed,,,
-Dataset,,,
+Dataset,Wraps data with type information for structured data handling,✅,pure
 DatasetTheme,,,
 DataStructure,,,
 DataStructureQ,,,
