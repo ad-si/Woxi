@@ -108,9 +108,13 @@ docs/serve: jupyterlite-build
 	mdbook serve --port 5501 ./tests
 
 
-.PHONY: docs/build
-docs/build: jupyterlite-build
+.PHONY: docs/mdbook
+docs/mdbook: wasm-build
 	mdbook build ./tests
+
+
+.PHONY: docs/build
+docs/build: jupyterlite-build docs/mdbook
 
 
 .PHONY: release
