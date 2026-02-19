@@ -1064,9 +1064,11 @@ fn render_primitive(
       } else {
         0
       };
-      // SVG sweep-flag=1 (clockwise in SVG y-down) corresponds to
-      // counter-clockwise in Mathematica's y-up coordinate system.
-      let sweep_flag = 1;
+      // Because we negate the sine component when computing arc points
+      // (to flip y), the arc geometry is already mirrored.  We therefore
+      // need sweep-flag=0 (counter-clockwise in SVG y-down) to trace the
+      // correct half of the ellipse.
+      let sweep_flag = 0;
       let color = style.effective_color();
       let fill_opacity = if color.a < 1.0 {
         format!(" fill-opacity=\"{}\"", color.a)
