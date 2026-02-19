@@ -31,9 +31,9 @@ function getThemeExtension() {
   return isDark() ? oneDark : []
 }
 
-// Custom keybinding: Ctrl/Cmd+Enter to run
+// Custom keybinding: Shift+Enter to run
 const runKeymap = keymap.of([{
-  key: "Mod-Enter",
+  key: "Shift-Enter",
   run: () => {
     document.getElementById("runBtn").click()
     return true
