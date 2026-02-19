@@ -1748,6 +1748,19 @@ mod fixed_point {
     // Floor[#/2]& converges to 0
     assert_eq!(interpret("FixedPoint[Floor[#/2] &, 100]").unwrap(), "0");
   }
+
+  #[test]
+  fn fixed_point_list_collatz() {
+    // Regression test: SetDelayed with literal arg (collatz[1] := 1) must
+    // take priority over general pattern (collatz[x_] := 3 x + 1)
+    assert_eq!(
+      interpret(
+        "collatz[1] := 1; collatz[x_ ? EvenQ] := x / 2; collatz[x_] := 3 x + 1; FixedPointList[collatz, 14]"
+      )
+      .unwrap(),
+      "{14, 7, 22, 11, 34, 17, 52, 26, 13, 40, 20, 10, 5, 16, 8, 4, 2, 1, 1}"
+    );
+  }
 }
 
 mod subdivide {
