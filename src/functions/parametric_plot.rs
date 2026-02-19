@@ -89,6 +89,17 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute ranges
   let (x_range, y_range) = compute_data_ranges(&all_points);
+
+  // Adjust aspect ratio to match data (so circles render round)
+  let data_w = x_range.1 - x_range.0;
+  let data_h = y_range.1 - y_range.0;
+  if data_w > 0.0 && data_h > 0.0 {
+    let data_aspect = data_h / data_w;
+    if data_aspect.is_finite() {
+      svg_height = (svg_width as f64 * data_aspect).round() as u32;
+    }
+  }
+
   let svg = generate_svg(
     &all_points,
     x_range,
@@ -158,6 +169,17 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (x_range, y_range) = compute_data_ranges(&all_points);
+
+  // Adjust aspect ratio to match data (so circles render round)
+  let data_w = x_range.1 - x_range.0;
+  let data_h = y_range.1 - y_range.0;
+  if data_w > 0.0 && data_h > 0.0 {
+    let data_aspect = data_h / data_w;
+    if data_aspect.is_finite() {
+      svg_height = (svg_width as f64 * data_aspect).round() as u32;
+    }
+  }
+
   let svg = generate_svg(
     &all_points,
     x_range,
