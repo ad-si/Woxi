@@ -57,6 +57,95 @@ pub fn clear() {
   clear_state();
 }
 
+/// Evaluate all top-level statements and return a JSON array of output items.
+/// Each item has a "type" field ("text", "graphics", "print", "warning", "error")
+/// and corresponding content fields.
+#[wasm_bindgen]
+pub fn evaluate_all(input: &str) -> String {
+  let statements = crate::split_into_statements(input);
+  let mut items = Vec::new();
+
+  for stmt in &statements {
+    match interpret_with_stdout(stmt) {
+      Ok(result) => {
+        // Print output
+        let trimmed_stdout = result.stdout.trim_end();
+        if !trimmed_stdout.is_empty() {
+          items.push(json_output_item("print", trimmed_stdout, None));
+        }
+
+        // Warnings
+        for w in &result.warnings {
+          items.push(json_output_item("warning", w, None));
+        }
+
+        // Main result
+        if let Some(ref svg) = result.graphics {
+          items.push(json_output_item("graphics", svg, None));
+          // Check for non-graphics text mixed in
+          let cleaned = result
+            .result
+            .replace("-Graphics-", "")
+            .replace("-Graphics3D-", "");
+          let cleaned = cleaned.trim();
+          if !cleaned.is_empty() && cleaned != "Null" && cleaned != "\0" {
+            items.push(json_output_item("text", cleaned, None));
+          }
+        } else if result.result != "Null" && result.result != "\0" {
+          items.push(json_output_item(
+            "text",
+            &result.result,
+            result.output_svg.as_deref(),
+          ));
+        }
+      }
+      Err(crate::InterpreterError::EmptyInput) => {
+        // Function definitions etc. produce no output
+      }
+      Err(e) => {
+        items.push(json_output_item("error", &format!("{e}"), None));
+      }
+    }
+  }
+
+  format!("[{}]", items.join(","))
+}
+
+/// Build a single JSON object string for an output item.
+fn json_output_item(kind: &str, content: &str, svg: Option<&str>) -> String {
+  let escaped_content = json_escape(content);
+  if let Some(svg_str) = svg {
+    let escaped_svg = json_escape(svg_str);
+    format!(
+      r#"{{"type":"{}","text":"{}","svg":"{}"}}"#,
+      kind, escaped_content, escaped_svg
+    )
+  } else if kind == "graphics" {
+    format!(r#"{{"type":"graphics","svg":"{}"}}"#, escaped_content)
+  } else {
+    format!(r#"{{"type":"{}","text":"{}"}}"#, kind, escaped_content)
+  }
+}
+
+/// Escape a string for safe inclusion in JSON.
+fn json_escape(s: &str) -> String {
+  let mut out = String::with_capacity(s.len() + 16);
+  for ch in s.chars() {
+    match ch {
+      '"' => out.push_str(r#"\""#),
+      '\\' => out.push_str(r"\\"),
+      '\n' => out.push_str(r"\n"),
+      '\r' => out.push_str(r"\r"),
+      '\t' => out.push_str(r"\t"),
+      c if (c as u32) < 0x20 => {
+        out.push_str(&format!(r"\u{:04x}", c as u32));
+      }
+      c => out.push(c),
+    }
+  }
+  out
+}
+
 /// Evaluate, returning only the final expression result (no Print output).
 #[wasm_bindgen]
 pub fn evaluate_expr(input: &str) -> String {

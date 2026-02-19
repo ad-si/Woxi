@@ -1085,6 +1085,122 @@ fn insert_statement_separators(input: &str) -> String {
   result
 }
 
+/// Split input into top-level statements at newline boundaries.
+/// Respects bracket nesting (newlines inside `[]`, `()`, `{}` are kept),
+/// strings, comments, and `:=` continuations.
+pub fn split_into_statements(input: &str) -> Vec<String> {
+  let trimmed = input.trim();
+  if trimmed.is_empty() {
+    return vec![String::new()];
+  }
+  if !trimmed.contains('\n') {
+    return vec![trimmed.to_string()];
+  }
+
+  let mut statements = Vec::new();
+  let mut current = String::with_capacity(trimmed.len());
+  let mut depth: i32 = 0;
+  let mut in_string = false;
+  let mut in_comment = false;
+  let mut line_has_code = false;
+  let mut last_code_char: Option<char> = None;
+  let mut prev_code_char: Option<char> = None;
+  let chars: Vec<char> = trimmed.chars().collect();
+  let len = chars.len();
+  let mut i = 0;
+
+  while i < len {
+    let ch = chars[i];
+
+    // Track comment state: (* ... *)
+    if !in_string && i + 1 < len && ch == '(' && chars[i + 1] == '*' {
+      in_comment = true;
+      current.push(ch);
+      i += 1;
+      continue;
+    }
+    if in_comment && i + 1 < len && ch == '*' && chars[i + 1] == ')' {
+      in_comment = false;
+      current.push(ch);
+      current.push(chars[i + 1]);
+      i += 2;
+      continue;
+    }
+    if in_comment {
+      current.push(ch);
+      i += 1;
+      continue;
+    }
+
+    // Track string state
+    if ch == '"' {
+      in_string = !in_string;
+      current.push(ch);
+      line_has_code = true;
+      prev_code_char = last_code_char;
+      last_code_char = Some(ch);
+      i += 1;
+      continue;
+    }
+    if in_string {
+      current.push(ch);
+      prev_code_char = last_code_char;
+      last_code_char = Some(ch);
+      i += 1;
+      continue;
+    }
+
+    // Track nesting depth
+    match ch {
+      '[' | '(' | '{' => depth += 1,
+      ']' | ')' | '}' => depth -= 1,
+      _ => {}
+    }
+
+    if ch == '\n' && depth == 0 {
+      let ends_with_set_delayed =
+        last_code_char == Some('=') && prev_code_char == Some(':');
+
+      if line_has_code && !ends_with_set_delayed {
+        let stmt = current.trim().to_string();
+        if !stmt.is_empty() {
+          statements.push(stmt);
+        }
+        current.clear();
+      } else {
+        current.push(ch);
+      }
+
+      line_has_code = false;
+      last_code_char = None;
+      prev_code_char = None;
+    } else if ch == '\n' {
+      // Newline inside nesting — just pass through
+      current.push(ch);
+    } else {
+      if !ch.is_whitespace() {
+        line_has_code = true;
+        prev_code_char = last_code_char;
+        last_code_char = Some(ch);
+      }
+      current.push(ch);
+    }
+
+    i += 1;
+  }
+
+  let stmt = current.trim().to_string();
+  if !stmt.is_empty() {
+    statements.push(stmt);
+  }
+
+  if statements.is_empty() {
+    statements.push(String::new());
+  }
+
+  statements
+}
+
 /// Try to evaluate a simple function call without full parsing.
 /// Returns Some(result) if successfully handled, None if needs full parsing.
 fn try_fast_function_call(
