@@ -528,12 +528,11 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // If the result is a Dataset expression, render it as an SVG table
         let result_expr = render_dataset_if_needed(result_expr);
         // In visual mode, render TableForm[list] as a Grid SVG
-        let result_expr =
-          if VISUAL_MODE.with(|v| *v.borrow()) {
-            render_tableform_if_needed(result_expr)
-          } else {
-            result_expr
-          };
+        let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          render_tableform_if_needed(result_expr)
+        } else {
+          result_expr
+        };
         // If the result is a list of Graphics objects, combine their SVGs
         let result_expr = render_graphics_list_if_needed(result_expr);
         // Generate SVG rendering of the result for playground display
@@ -649,9 +648,7 @@ fn is_3d_list(items: &[syntax::Expr]) -> bool {
     && items.iter().all(|item| {
       if let syntax::Expr::List(sub) = item {
         !sub.is_empty()
-          && sub
-            .iter()
-            .all(|s| matches!(s, syntax::Expr::List(_)))
+          && sub.iter().all(|s| matches!(s, syntax::Expr::List(_)))
       } else {
         false
       }
@@ -700,9 +697,9 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
                   .iter()
                   .map(|sl| {
                     if let syntax::Expr::List(v) = sl {
-                      v.get(k).cloned().unwrap_or(
-                        syntax::Expr::Identifier(String::new()),
-                      )
+                      v.get(k)
+                        .cloned()
+                        .unwrap_or(syntax::Expr::Identifier(String::new()))
                     } else {
                       sl.clone()
                     }
@@ -715,7 +712,9 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
           (syntax::Expr::List(rows), gaps)
         }
         syntax::Expr::List(items)
-          if items.iter().all(|item| matches!(item, syntax::Expr::List(_))) =>
+          if items
+            .iter()
+            .all(|item| matches!(item, syntax::Expr::List(_))) =>
         {
           (data.clone(), vec![])
         }
@@ -761,31 +760,30 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
 
   // 1D list of Graphics
   if let syntax::Expr::List(items) = inner {
-    if items.iter().all(|e| is_graphics_placeholder(e)) && items.len() > 1 {
-      if items.len() <= all_svgs.len() {
-        // Take the last N SVGs (they correspond to the list items)
-        let start = all_svgs.len() - items.len();
-        let row: Vec<String> = all_svgs[start..].to_vec();
-        if let Some(combined) =
-          functions::graphics::combine_graphics_svgs(&[row])
-        {
-          // Clear and re-capture with the combined SVG
-          clear_captured_graphics();
-          capture_graphics(&combined);
-          return syntax::Expr::Identifier("-Graphics-".to_string());
-        }
+    if items.iter().all(is_graphics_placeholder)
+      && items.len() > 1
+      && items.len() <= all_svgs.len()
+    {
+      // Take the last N SVGs (they correspond to the list items)
+      let start = all_svgs.len() - items.len();
+      let row: Vec<String> = all_svgs[start..].to_vec();
+      if let Some(combined) = functions::graphics::combine_graphics_svgs(&[row])
+      {
+        // Clear and re-capture with the combined SVG
+        clear_captured_graphics();
+        capture_graphics(&combined);
+        return syntax::Expr::Identifier("-Graphics-".to_string());
       }
     }
 
     // 2D list: list of lists of Graphics
     if items.iter().all(|e| {
       if let syntax::Expr::List(inner) = e {
-        inner.iter().all(|e2| is_graphics_placeholder(e2))
-          && !inner.is_empty()
+        inner.iter().all(is_graphics_placeholder) && !inner.is_empty()
       } else {
         false
       }
-    }) && items.len() > 0
+    }) && !items.is_empty()
     {
       let total_cells: usize = items
         .iter()
@@ -825,8 +823,7 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
       if let syntax::Expr::List(rows) = e {
         rows.iter().all(|r| {
           if let syntax::Expr::List(cols) = r {
-            cols.iter().all(|c| is_graphics_placeholder(c))
-              && !cols.is_empty()
+            cols.iter().all(is_graphics_placeholder) && !cols.is_empty()
           } else {
             false
           }
@@ -834,7 +831,7 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
       } else {
         false
       }
-    }) && items.len() > 0
+    }) && !items.is_empty()
     {
       let total_cells: usize = items
         .iter()
@@ -885,17 +882,11 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
           // stack blocks vertically
           let mut rows = Vec::new();
           for block in &svg_3d {
-            let dim3 = block
-              .iter()
-              .map(|r| r.len())
-              .max()
-              .unwrap_or(0);
+            let dim3 = block.iter().map(|r| r.len()).max().unwrap_or(0);
             for k in 0..dim3 {
               let row: Vec<String> = block
                 .iter()
-                .map(|sub| {
-                  sub.get(k).cloned().unwrap_or_default()
-                })
+                .map(|sub| sub.get(k).cloned().unwrap_or_default())
                 .collect();
               rows.push(row);
             }
