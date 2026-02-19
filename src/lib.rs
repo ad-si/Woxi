@@ -121,9 +121,15 @@ thread_local! {
     static CAPTURED_STDOUT: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
+// Visual display mode flag — set by interpret_with_stdout to enable
+// rendering of display wrappers like TableForm as SVG grids
+thread_local! {
+    static VISUAL_MODE: RefCell<bool> = const { RefCell::new(false) };
+}
+
 // Captured graphical output (SVG) from Plot and related functions
 thread_local! {
-    static CAPTURED_GRAPHICS: RefCell<Option<String>> = const { RefCell::new(None) };
+    static CAPTURED_GRAPHICS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 // Captured GraphicsBox expression (Mathematica .nb format) from Graphics/Plot
@@ -215,19 +221,24 @@ pub fn get_captured_warnings() -> Vec<String> {
 /// Clears the captured graphics buffer
 fn clear_captured_graphics() {
   CAPTURED_GRAPHICS.with(|buffer| {
-    *buffer.borrow_mut() = None;
+    buffer.borrow_mut().clear();
   });
 }
 
 /// Stores SVG graphics for capture by the Jupyter kernel
 pub fn capture_graphics(svg: &str) {
   CAPTURED_GRAPHICS.with(|buffer| {
-    *buffer.borrow_mut() = Some(svg.to_string());
+    buffer.borrow_mut().push(svg.to_string());
   });
 }
 
-/// Gets the captured graphics content
+/// Gets the last captured graphics content (backward compatible)
 pub fn get_captured_graphics() -> Option<String> {
+  CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().last().cloned())
+}
+
+/// Gets all captured graphics SVGs
+pub fn get_all_captured_graphics() -> Vec<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().clone())
 }
 
@@ -516,6 +527,15 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         let result_expr = render_grid_if_needed(result_expr);
         // If the result is a Dataset expression, render it as an SVG table
         let result_expr = render_dataset_if_needed(result_expr);
+        // In visual mode, render TableForm[list] as a Grid SVG
+        let result_expr =
+          if VISUAL_MODE.with(|v| *v.borrow()) {
+            render_tableform_if_needed(result_expr)
+          } else {
+            result_expr
+          };
+        // If the result is a list of Graphics objects, combine their SVGs
+        let result_expr = render_graphics_list_if_needed(result_expr);
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);
         // Convert to output string (strips quotes from strings for display)
@@ -551,9 +571,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
 }
 
-/// If `expr` is a Grid[…] call (possibly nested in a list), render it as SVG
-/// and return `-Graphics-`. Grid stays symbolic during evaluation so that
-/// part-assignment works; rendering only happens at the output stage.
+/// If `expr` is a Grid[…] or TableForm[…] call (possibly nested in a list),
+/// render it as SVG and return `-Graphics-`. Grid/TableForm stay symbolic
+/// during evaluation so that part-assignment works; rendering only happens
+/// at the output stage.
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
@@ -587,6 +608,356 @@ fn render_dataset_if_needed(expr: syntax::Expr) -> syntax::Expr {
       } else {
         expr
       }
+    }
+    _ => expr,
+  }
+}
+
+/// Check if an expression represents a Graphics placeholder
+/// (either `-Graphics-` directly or `Style[-Graphics-, ...]`)
+fn is_graphics_placeholder(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::Identifier(s) if s == "-Graphics-" => true,
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      is_graphics_placeholder(&args[0])
+    }
+    _ => false,
+  }
+}
+
+/// Check if an expression tree contains any Graphics placeholder
+fn contains_graphics_placeholder(expr: &syntax::Expr) -> bool {
+  if is_graphics_placeholder(expr) {
+    return true;
+  }
+  match expr {
+    syntax::Expr::List(items) => {
+      items.iter().any(contains_graphics_placeholder)
+    }
+    syntax::Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_graphics_placeholder)
+    }
+    _ => false,
+  }
+}
+
+/// Check if a list's items form a 3D structure (list of lists of lists)
+fn is_3d_list(items: &[syntax::Expr]) -> bool {
+  !items.is_empty()
+    && items.iter().all(|item| {
+      if let syntax::Expr::List(sub) = item {
+        !sub.is_empty()
+          && sub
+            .iter()
+            .all(|s| matches!(s, syntax::Expr::List(_)))
+      } else {
+        false
+      }
+    })
+}
+
+/// If `expr` is a TableForm[list] with non-graphics data, render as a Grid SVG.
+/// This is only called from `interpret_with_stdout` (visual contexts),
+/// not from plain `interpret` (where TableForm stays symbolic).
+fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "TableForm" && args.len() == 1 =>
+    {
+      let data = &args[0];
+      // Skip if content contains Graphics placeholders (handled by render_graphics_list_if_needed)
+      if contains_graphics_placeholder(data) {
+        return expr;
+      }
+      // Build grid data and optional group gap indices
+      let (grid_data, group_gaps) = match data {
+        syntax::Expr::List(items) if is_3d_list(items) => {
+          // 3D list M[dim1][dim2][dim3]:
+          // Each block M[i] is transposed (sub-lists become columns),
+          // then blocks are stacked vertically.
+          let mut rows: Vec<syntax::Expr> = Vec::new();
+          let mut gaps: Vec<usize> = Vec::new();
+          for (bi, block) in items.iter().enumerate() {
+            if let syntax::Expr::List(sub_lists) = block {
+              if bi > 0 {
+                gaps.push(rows.len());
+              }
+              let dim3 = sub_lists
+                .iter()
+                .map(|sl| {
+                  if let syntax::Expr::List(v) = sl {
+                    v.len()
+                  } else {
+                    0
+                  }
+                })
+                .max()
+                .unwrap_or(0);
+              for k in 0..dim3 {
+                let row: Vec<syntax::Expr> = sub_lists
+                  .iter()
+                  .map(|sl| {
+                    if let syntax::Expr::List(v) = sl {
+                      v.get(k).cloned().unwrap_or(
+                        syntax::Expr::Identifier(String::new()),
+                      )
+                    } else {
+                      sl.clone()
+                    }
+                  })
+                  .collect();
+                rows.push(syntax::Expr::List(row));
+              }
+            }
+          }
+          (syntax::Expr::List(rows), gaps)
+        }
+        syntax::Expr::List(items)
+          if items.iter().all(|item| matches!(item, syntax::Expr::List(_))) =>
+        {
+          (data.clone(), vec![])
+        }
+        syntax::Expr::List(items) if !items.is_empty() => {
+          // 1D list — wrap each element in a single-element list (column)
+          (
+            syntax::Expr::List(
+              items
+                .iter()
+                .map(|e| syntax::Expr::List(vec![e.clone()]))
+                .collect(),
+            ),
+            vec![],
+          )
+        }
+        _ => return expr,
+      };
+      let result = if group_gaps.is_empty() {
+        functions::graphics::grid_ast(&[grid_data])
+      } else {
+        functions::graphics::grid_ast_with_gaps(&[grid_data], &group_gaps)
+      };
+      match result {
+        Ok(result) => result,
+        Err(_) => expr,
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// If the result is a list (1D, 2D, or 3D) of `-Graphics-` items,
+/// or a `TableForm` wrapping such a list, combine captured SVGs into a grid.
+fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  // Unwrap TableForm[list] or MathMLForm[TableForm[list]] etc.
+  let has_tableform = has_form_wrapper(&expr, "TableForm");
+  let inner = unwrap_form_wrappers(&expr);
+
+  let all_svgs = get_all_captured_graphics();
+  if all_svgs.is_empty() {
+    return expr;
+  }
+
+  // 1D list of Graphics
+  if let syntax::Expr::List(items) = inner {
+    if items.iter().all(|e| is_graphics_placeholder(e)) && items.len() > 1 {
+      if items.len() <= all_svgs.len() {
+        // Take the last N SVGs (they correspond to the list items)
+        let start = all_svgs.len() - items.len();
+        let row: Vec<String> = all_svgs[start..].to_vec();
+        if let Some(combined) =
+          functions::graphics::combine_graphics_svgs(&[row])
+        {
+          // Clear and re-capture with the combined SVG
+          clear_captured_graphics();
+          capture_graphics(&combined);
+          return syntax::Expr::Identifier("-Graphics-".to_string());
+        }
+      }
+    }
+
+    // 2D list: list of lists of Graphics
+    if items.iter().all(|e| {
+      if let syntax::Expr::List(inner) = e {
+        inner.iter().all(|e2| is_graphics_placeholder(e2))
+          && !inner.is_empty()
+      } else {
+        false
+      }
+    }) && items.len() > 0
+    {
+      let total_cells: usize = items
+        .iter()
+        .map(|e| {
+          if let syntax::Expr::List(inner) = e {
+            inner.len()
+          } else {
+            0
+          }
+        })
+        .sum();
+      if total_cells <= all_svgs.len() {
+        let start = all_svgs.len() - total_cells;
+        let mut offset = start;
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        for item in items {
+          if let syntax::Expr::List(inner) = item {
+            let row: Vec<String> =
+              all_svgs[offset..offset + inner.len()].to_vec();
+            offset += inner.len();
+            rows.push(row);
+          }
+        }
+        if let Some(combined) =
+          functions::graphics::combine_graphics_svgs(&rows)
+        {
+          clear_captured_graphics();
+          capture_graphics(&combined);
+          return syntax::Expr::Identifier("-Graphics-".to_string());
+        }
+      }
+    }
+
+    // 3D list: list of lists of lists of Graphics
+    // Structure: items[dim1][dim2][dim3]
+    if items.iter().all(|e| {
+      if let syntax::Expr::List(rows) = e {
+        rows.iter().all(|r| {
+          if let syntax::Expr::List(cols) = r {
+            cols.iter().all(|c| is_graphics_placeholder(c))
+              && !cols.is_empty()
+          } else {
+            false
+          }
+        }) && !rows.is_empty()
+      } else {
+        false
+      }
+    }) && items.len() > 0
+    {
+      let total_cells: usize = items
+        .iter()
+        .map(|e| {
+          if let syntax::Expr::List(rows) = e {
+            rows
+              .iter()
+              .map(|r| {
+                if let syntax::Expr::List(cols) = r {
+                  cols.len()
+                } else {
+                  0
+                }
+              })
+              .sum()
+          } else {
+            0
+          }
+        })
+        .sum();
+      if total_cells <= all_svgs.len() {
+        let start = all_svgs.len() - total_cells;
+
+        // Collect SVGs into 3D structure [dim1][dim2][dim3]
+        let mut offset = start;
+        let mut svg_3d: Vec<Vec<Vec<String>>> = Vec::new();
+        for item in items {
+          if let syntax::Expr::List(inner_rows) = item {
+            let mut block: Vec<Vec<String>> = Vec::new();
+            for r in inner_rows {
+              if let syntax::Expr::List(cols) = r {
+                let mut row_svgs: Vec<String> = Vec::new();
+                for _ in cols {
+                  if offset < all_svgs.len() {
+                    row_svgs.push(all_svgs[offset].clone());
+                    offset += 1;
+                  }
+                }
+                block.push(row_svgs);
+              }
+            }
+            svg_3d.push(block);
+          }
+        }
+
+        let rows: Vec<Vec<String>> = if has_tableform {
+          // TableForm: transpose each block (dim3→rows, dim2→cols),
+          // stack blocks vertically
+          let mut rows = Vec::new();
+          for block in &svg_3d {
+            let dim3 = block
+              .iter()
+              .map(|r| r.len())
+              .max()
+              .unwrap_or(0);
+            for k in 0..dim3 {
+              let row: Vec<String> = block
+                .iter()
+                .map(|sub| {
+                  sub.get(k).cloned().unwrap_or_default()
+                })
+                .collect();
+              rows.push(row);
+            }
+          }
+          rows
+        } else {
+          // No TableForm: one row per dim1, flatten dim2×dim3 as columns
+          svg_3d
+            .into_iter()
+            .map(|block| block.into_iter().flatten().collect())
+            .collect()
+        };
+
+        if let Some(combined) =
+          functions::graphics::combine_graphics_svgs(&rows)
+        {
+          clear_captured_graphics();
+          capture_graphics(&combined);
+          return syntax::Expr::Identifier("-Graphics-".to_string());
+        }
+      }
+    }
+  }
+
+  expr
+}
+
+/// Check if an expression has a specific form wrapper (e.g. "TableForm")
+fn has_form_wrapper(expr: &syntax::Expr, target: &str) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(
+          name.as_str(),
+          "TableForm"
+            | "MathMLForm"
+            | "StandardForm"
+            | "InputForm"
+            | "OutputForm"
+        ) =>
+    {
+      name == target || has_form_wrapper(&args[0], target)
+    }
+    _ => false,
+  }
+}
+
+/// Unwrap form wrappers like TableForm, MathMLForm, StandardForm, etc.
+fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(
+          name.as_str(),
+          "TableForm"
+            | "MathMLForm"
+            | "StandardForm"
+            | "InputForm"
+            | "OutputForm"
+        ) =>
+    {
+      unwrap_form_wrappers(&args[0])
     }
     _ => expr,
   }
@@ -928,8 +1299,16 @@ pub fn interpret_with_stdout(
   clear_captured_warnings();
   clear_captured_output_svg();
 
+  // Enable visual mode for display wrapper rendering (e.g. TableForm → Grid SVG)
+  VISUAL_MODE.with(|v| *v.borrow_mut() = true);
+
   // Perform the standard interpretation
-  let result = interpret(input)?;
+  let result = interpret(input);
+
+  // Reset visual mode
+  VISUAL_MODE.with(|v| *v.borrow_mut() = false);
+
+  let result = result?;
 
   // Get the captured output
   let stdout = get_captured_stdout();

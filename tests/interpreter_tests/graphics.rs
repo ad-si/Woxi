@@ -1025,3 +1025,167 @@ mod plot3d {
     }
   }
 }
+
+mod graphics_list {
+  use super::*;
+
+  #[test]
+  fn single_graphics_still_works() {
+    clear_state();
+    let result = interpret_with_stdout("Graphics[{Circle[]}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("</svg>"));
+  }
+
+  #[test]
+  fn table_1d_list_of_graphics() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Table[Graphics[{Circle[]}], {i, 1, 3}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // Should be a combined SVG containing nested SVGs
+    assert!(svg.contains("<svg"));
+    // Should contain multiple nested SVG elements (one per cell)
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(nested_count, 3, "Expected 3 nested SVGs for 3-element list");
+  }
+
+  #[test]
+  fn table_2d_list_of_graphics() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Table[Graphics[{RGBColor[r, g, 0], Rectangle[]}], {r, 0, 1, 0.5}, {g, 0, 1, 0.5}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // 3 rows x 3 cols = 9 cells
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(nested_count, 9, "Expected 9 nested SVGs for 3x3 grid");
+  }
+
+  #[test]
+  fn table_3d_list_with_tableform_mathmlform() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Table[Graphics[{RGBColor[r, g, b], Rectangle[]}], {r, 0, 1, 1}, {g, 0, 1, 1}, {b, 0, 1, 1}] // TableForm // MathMLForm",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // TableForm transposes: 2 blocks × (2 rows × 2 cols) = 4 rows × 2 cols = 8
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(nested_count, 8, "Expected 8 nested SVGs for transposed grid");
+  }
+
+  #[test]
+  fn table_3d_list_without_tableform() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Table[Graphics[{RGBColor[r, g, b], Rectangle[]}], {r, 0, 1, 1}, {g, 0, 1, 1}, {b, 0, 1, 1}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // Without TableForm: dim1=2 rows, dim2×dim3=2×2=4 cols per row = 8 total
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(nested_count, 8, "Expected 8 nested SVGs for 2x4 grid");
+  }
+
+  #[test]
+  fn mathmlform_is_transparent() {
+    clear_state();
+    assert_eq!(interpret("MathMLForm[1 + 2]").unwrap(), "3");
+    assert_eq!(interpret("StandardForm[3 * 4]").unwrap(), "12");
+    assert_eq!(interpret("InputForm[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+    assert_eq!(interpret("OutputForm[42]").unwrap(), "42");
+  }
+
+  #[test]
+  fn table_with_style_wrapping_graphics() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Table[Style[Graphics[{Rectangle[]}], ImageSizeMultipliers -> {0.2, 1}], {i, 1, 2}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(nested_count, 2, "Expected 2 nested SVGs");
+  }
+
+  #[test]
+  fn tableform_wrapping_1d_graphics_list() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "TableForm[Table[Graphics[{Disk[]}], {i, 1, 4}]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(nested_count, 4, "Expected 4 nested SVGs for TableForm list");
+  }
+
+  #[test]
+  fn tableform_2d_list() {
+    clear_state();
+    let result =
+      interpret_with_stdout("TableForm[{{1, 2, 3}, {4, 5, 6}}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">6</text>"));
+  }
+
+  #[test]
+  fn tableform_1d_list_as_column() {
+    clear_state();
+    let result =
+      interpret_with_stdout("TableForm[{10, 20, 30}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">10</text>"));
+    assert!(svg.contains(">20</text>"));
+    assert!(svg.contains(">30</text>"));
+  }
+
+  #[test]
+  fn tableform_3d_list_transposed_blocks() {
+    // TableForm on 3D list: each block is transposed (sub-lists become columns),
+    // blocks stacked vertically.
+    // Input: {{{a,b,c},{d,e,f}}, {{g,h,i},{j,k,l}}}
+    // Block 1 transposed: a d / b e / c f  (3 rows × 2 cols)
+    // Block 2 transposed: g j / h k / i l  (3 rows × 2 cols)
+    // Stacked: 6 rows × 2 cols
+    clear_state();
+    let result = interpret_with_stdout(
+      "TableForm[{{{a, b, c}, {d, e, f}}, {{g, h, i}, {j, k, l}}}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // All 12 elements should appear
+    for ch in ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"] {
+      assert!(
+        svg.contains(&format!(">{ch}</text>")),
+        "Missing element {ch} in SVG"
+      );
+    }
+  }
+}
