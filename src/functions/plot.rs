@@ -133,7 +133,12 @@ pub(crate) fn generate_svg(
   full_width: bool,
 ) -> Result<String, InterpreterError> {
   generate_svg_with_filling(
-    all_points, x_range, y_range, svg_width, svg_height, full_width,
+    all_points,
+    x_range,
+    y_range,
+    svg_width,
+    svg_height,
+    full_width,
     Filling::None,
   )
 }
