@@ -1505,7 +1505,7 @@ DiscretizeRegion,,,
 Discriminant,,,
 DisjointQ,,,
 Disjunction,,,
-Disk,Represents a filled disk graphics primitive,✅,pure
+Disk,Represents a filled disk or sector graphics primitive,✅,pure
 DiskMatrix,Creates a disk-shaped matrix of ones,✅,pure
 DiskSegment,,,
 Dispatch,,,

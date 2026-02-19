@@ -140,6 +140,18 @@ pub fn disk_box(cx: f64, cy: f64, r: f64) -> String {
   }
 }
 
+/// DiskBox[{cx, cy}, r, {a1, a2}] for sectors
+pub fn disk_sector_box(cx: f64, cy: f64, r: f64, a1: f64, a2: f64) -> String {
+  format!(
+    "DiskBox[{{{}, {}}}, {}, {{{}, {}}}]",
+    fmt_real(cx),
+    fmt_real(cy),
+    fmt_real(r),
+    fmt_real(a1),
+    fmt_real(a2)
+  )
+}
+
 /// CircleBox[{cx, cy}] or CircleBox[{cx, cy}, r]
 pub fn circle_box(cx: f64, cy: f64, r: f64) -> String {
   if (r - 1.0).abs() < 1e-10 {

@@ -85,6 +85,20 @@ mod graphics {
     }
 
     #[test]
+    fn disk_sector() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Disk[{0, 0}, 1, {0, Pi}]}]"
+      ));
+    }
+
+    #[test]
+    fn disk_sector_yin_yang() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Red, Disk[{0, 0}, 2, {0, Pi}], Blue, Disk[{0, 0}, 2, {Pi, 2 Pi}], Red, Disk[{-1, 0}, 1], Blue, Disk[{1, 0}, 1]}, ImageSize -> 150]"
+      ));
+    }
+
+    #[test]
     fn rectangle_default() {
       insta::assert_snapshot!(export_svg("Graphics[{Rectangle[]}]"));
     }
