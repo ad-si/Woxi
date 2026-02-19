@@ -248,6 +248,14 @@ enum Primitive {
     r: f64,
     style: StyleState,
   },
+  DiskSector {
+    cx: f64,
+    cy: f64,
+    r: f64,
+    angle1: f64,
+    angle2: f64,
+    style: StyleState,
+  },
   RectPrim {
     x_min: f64,
     y_min: f64,
@@ -676,6 +684,20 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   } else {
     1.0
   };
+  // Disk[center, r, {angle1, angle2}] creates a sector
+  if args.len() >= 3
+    && let Some((a1, a2)) = expr_to_point(&args[2])
+  {
+    prims.push(Primitive::DiskSector {
+      cx,
+      cy,
+      r,
+      angle1: a1,
+      angle2: a2,
+      style: style.clone(),
+    });
+    return;
+  }
   prims.push(Primitive::Disk {
     cx,
     cy,
@@ -814,6 +836,37 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     | Primitive::Disk { cx, cy, r, .. } => {
       bb.include_point(cx - r, cy - r);
       bb.include_point(cx + r, cy + r);
+    }
+    Primitive::DiskSector {
+      cx,
+      cy,
+      r,
+      angle1,
+      angle2,
+      ..
+    } => {
+      // Include center point (sector always connects to center)
+      bb.include_point(*cx, *cy);
+      // Include the two endpoint arcs
+      bb.include_point(cx + r * angle1.cos(), cy + r * angle1.sin());
+      bb.include_point(cx + r * angle2.cos(), cy + r * angle2.sin());
+      // Include axis-aligned extremes if the arc crosses them
+      let mut a = *angle1 % (2.0 * std::f64::consts::PI);
+      if a < 0.0 {
+        a += 2.0 * std::f64::consts::PI;
+      }
+      let span = angle2 - angle1;
+      // Check each cardinal direction: 0, PI/2, PI, 3PI/2
+      for k in 0..4 {
+        let cardinal = k as f64 * std::f64::consts::FRAC_PI_2;
+        let mut diff = cardinal - a;
+        if diff < 0.0 {
+          diff += 2.0 * std::f64::consts::PI;
+        }
+        if diff < span {
+          bb.include_point(cx + r * cardinal.cos(), cy + r * cardinal.sin());
+        }
+      }
     }
     Primitive::RectPrim {
       x_min,
@@ -981,6 +1034,67 @@ fn render_primitive(
       };
       out.push_str(&format!(
         "<ellipse cx=\"{scx:.2}\" cy=\"{scy:.2}\" rx=\"{srx:.2}\" ry=\"{sry:.2}\" fill=\"{}\"{}{}/>\n",
+        color.to_svg_rgb(),
+        fill_opacity,
+        stroke_attr,
+      ));
+    }
+    Primitive::DiskSector {
+      cx,
+      cy,
+      r,
+      angle1,
+      angle2,
+      style,
+    } => {
+      let scx = coord_x(*cx, bb, svg_w);
+      let scy = coord_y(*cy, bb, svg_h);
+      let srx = *r / bb.width() * svg_w;
+      let sry = *r / bb.height() * svg_h;
+      // Start point of arc (in SVG coords: negate y because SVG y is flipped)
+      let x1 = scx + srx * angle1.cos();
+      let y1 = scy - sry * angle1.sin();
+      // End point of arc
+      let x2 = scx + srx * angle2.cos();
+      let y2 = scy - sry * angle2.sin();
+      // large-arc flag: 1 if arc spans more than PI
+      let sweep_angle = angle2 - angle1;
+      let large_arc = if sweep_angle.abs() > std::f64::consts::PI {
+        1
+      } else {
+        0
+      };
+      // SVG sweep-flag=1 (clockwise in SVG y-down) corresponds to
+      // counter-clockwise in Mathematica's y-up coordinate system.
+      let sweep_flag = 1;
+      let color = style.effective_color();
+      let fill_opacity = if color.a < 1.0 {
+        format!(" fill-opacity=\"{}\"", color.a)
+      } else {
+        String::new()
+      };
+      // Edge form for stroke
+      let stroke_attr = if let Some(ref ef) = style.edge_form {
+        let sc = ef.color.unwrap_or(color);
+        let sw = ef
+          .thickness
+          .map(|t| thickness_px(t, bb, svg_w).max(0.5))
+          .unwrap_or(0.5);
+        let so = if sc.a < 1.0 {
+          format!(" stroke-opacity=\"{}\"", sc.a)
+        } else {
+          String::new()
+        };
+        format!(
+          " stroke=\"{}\" stroke-width=\"{sw:.2}\"{so}",
+          sc.to_svg_rgb()
+        )
+      } else {
+        String::new()
+      };
+      // Path: move to center, line to arc start, arc to arc end, close
+      out.push_str(&format!(
+        "<path d=\"M {scx:.2},{scy:.2} L {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} {sweep_flag} {x2:.2},{y2:.2} Z\" fill=\"{}\"{}{}/>\n",
         color.to_svg_rgb(),
         fill_opacity,
         stroke_attr,
@@ -1389,6 +1503,17 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       Primitive::Disk { cx, cy, r, style } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::disk_box(*cx, *cy, *r));
+      }
+      Primitive::DiskSector {
+        cx,
+        cy,
+        r,
+        angle1,
+        angle2,
+        style,
+      } => {
+        elements.extend(tracker.emit_style_changes(style));
+        elements.push(gbox::disk_sector_box(*cx, *cy, *r, *angle1, *angle2));
       }
       Primitive::RectPrim {
         x_min,

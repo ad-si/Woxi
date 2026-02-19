@@ -1,0 +1,10 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Red, Disk[{0, 0}, 2, {0, Pi}], Blue, Disk[{0, 0}, 2, {Pi, 2 Pi}], Red, Disk[{-1, 0}, 1], Blue, Disk[{1, 0}, 1]}, ImageSize -> 150]\")"
+---
+<svg width="150" height="150" viewBox="0 0 150 150" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<path d="M 75.00,75.00 L 144.44,75.00 A 69.44,69.44 0 0 1 5.56,75.00 Z" fill="rgb(255,0,0)"/>
+<path d="M 75.00,75.00 L 5.56,75.00 A 69.44,69.44 0 0 1 144.44,75.00 Z" fill="rgb(0,0,255)"/>
+<ellipse cx="40.28" cy="75.00" rx="34.72" ry="34.72" fill="rgb(255,0,0)"/>
+<ellipse cx="109.72" cy="75.00" rx="34.72" ry="34.72" fill="rgb(0,0,255)"/>
+</svg>
