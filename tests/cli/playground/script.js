@@ -41,8 +41,7 @@ const runKeymap = keymap.of([{
 }])
 
 const STORAGE_KEY = "woxi-playground-code"
-const STORAGE_KEY_OUTPUT = "woxi-playground-output"
-const STORAGE_KEY_GRAPHICS = "woxi-playground-graphics"
+const STORAGE_KEY_OUTPUTS = "woxi-playground-outputs"
 const DEFAULT_CODE = "Select[Range[30], PrimeQ]"
 
 function saveEditorContent() {
@@ -131,36 +130,65 @@ function setEditorContent(text) {
 }
 
 function saveOutput() {
-  const outputEl = document.getElementById("output")
-  const graphicsEl = document.getElementById("graphics")
-  localStorage.setItem(STORAGE_KEY_OUTPUT, JSON.stringify({
-    html: outputEl.innerHTML,
-    display: outputEl.style.display,
-  }))
-  localStorage.setItem(STORAGE_KEY_GRAPHICS, JSON.stringify({
-    html: graphicsEl.innerHTML,
-    display: graphicsEl.style.display,
-  }))
+  const outputsEl = document.getElementById("outputs")
+  localStorage.setItem(STORAGE_KEY_OUTPUTS, outputsEl.innerHTML)
 }
 
 function restoreOutput() {
   try {
-    const output = JSON.parse(localStorage.getItem(STORAGE_KEY_OUTPUT))
-    const graphics = JSON.parse(localStorage.getItem(STORAGE_KEY_GRAPHICS))
-    if (output) {
-      const el = document.getElementById("output")
-      el.innerHTML = output.html
-      el.style.display = output.display
-    }
-    if (graphics) {
-      const el = document.getElementById("graphics")
-      el.innerHTML = graphics.html
-      el.style.display = graphics.display
+    const html = localStorage.getItem(STORAGE_KEY_OUTPUTS)
+    if (html) {
+      document.getElementById("outputs").innerHTML = html
     }
   } catch (_) { /* ignore corrupt data */ }
 }
 
 restoreOutput()
+
+function renderOutputItems(items) {
+  const outputsEl = document.getElementById("outputs")
+  outputsEl.innerHTML = ""
+
+  for (const item of items) {
+    if (item.type === "graphics") {
+      const div = document.createElement("div")
+      div.className = "output-box graphics-box"
+      div.innerHTML = item.svg
+      outputsEl.appendChild(div)
+    } else if (item.type === "text") {
+      if (item.svg) {
+        const div = document.createElement("div")
+        div.className = "output-box text-box"
+        div.innerHTML = item.svg
+        outputsEl.appendChild(div)
+      } else {
+        const pre = document.createElement("pre")
+        pre.className = "output-box text-box"
+        pre.textContent = item.text
+        outputsEl.appendChild(pre)
+      }
+    } else if (item.type === "print") {
+      const pre = document.createElement("pre")
+      pre.className = "output-box print-box"
+      pre.textContent = item.text
+      outputsEl.appendChild(pre)
+    } else if (item.type === "warning") {
+      const pre = document.createElement("pre")
+      pre.className = "output-box warning-box"
+      pre.textContent = item.text
+      outputsEl.appendChild(pre)
+    } else if (item.type === "error") {
+      const pre = document.createElement("pre")
+      pre.className = "output-box error-box"
+      pre.textContent = item.text
+      outputsEl.appendChild(pre)
+    }
+  }
+}
+
+function clearOutputs() {
+  document.getElementById("outputs").innerHTML = ""
+}
 
 function initWorker() {
   showStatus("Loading Woxi WebAssembly module ...", "info")
@@ -168,7 +196,7 @@ function initWorker() {
   worker = new Worker("worker.js", { type: "module" })
 
   worker.onmessage = (e) => {
-    const { type, success, message, result, warnings, graphics, outputSvg } = e.data
+    const { type, success, message, result } = e.data
 
     if (type === "init") {
       if (success) {
@@ -182,53 +210,17 @@ function initWorker() {
     else if (type === "result") {
       hideSpinner("runSpinner")
       document.getElementById("runBtn").disabled = false
-      const graphicsEl = document.getElementById("graphics")
-      const outputEl = document.getElementById("output")
 
       if (success) {
-        let output = ""
-        if (warnings) output += warnings + "\n"
-
-        if (graphics) {
-          // Graphics/Plot/Grid: show the captured SVG
-          graphicsEl.innerHTML = graphics
-          graphicsEl.style.display = "block"
-          // Strip "-Graphics-" from text output when SVG is shown
-          output += result
-          output = output.replace(/-Graphics-/g, "").trim()
-          if (output) {
-            outputEl.textContent = output
-            outputEl.style.display = "block"
-          } else {
-            outputEl.textContent = ""
-            outputEl.style.display = "none"
-          }
-        } else if (outputSvg) {
-          // Non-graphics: render the result as SVG (with superscripts etc.)
-          graphicsEl.innerHTML = ""
-          graphicsEl.style.display = "none"
-          // Show Print output (stdout) as plain text, result as SVG
-          const stdout = output.trim()
-          if (stdout) {
-            outputEl.textContent = stdout
-          } else {
-            outputEl.textContent = ""
-          }
-          outputEl.innerHTML = (stdout ? outputEl.innerHTML + "\n" : "")
-            + outputSvg
-          outputEl.style.display = "block"
-        } else {
-          graphicsEl.innerHTML = ""
-          graphicsEl.style.display = "none"
-          output += result
-          outputEl.textContent = output
-          outputEl.style.display = "block"
+        try {
+          const items = JSON.parse(result)
+          renderOutputItems(items)
+        } catch (_) {
+          renderOutputItems([{ type: "error", text: result }])
         }
       }
       else {
-        outputEl.textContent = message
-        graphicsEl.innerHTML = ""
-        graphicsEl.style.display = "none"
+        renderOutputItems([{ type: "error", text: message }])
       }
       saveOutput()
     }
@@ -250,9 +242,7 @@ document.getElementById("runBtn").addEventListener("click", () => {
 
   document.getElementById("runBtn").disabled = true
   showSpinner("runSpinner")
-  document.getElementById("output").textContent = ""
-  document.getElementById("graphics").innerHTML = ""
-  document.getElementById("graphics").style.display = "none"
+  clearOutputs()
 
   worker.postMessage({ type: "evaluate", code: code })
 })
@@ -261,11 +251,8 @@ document.getElementById("runBtn").addEventListener("click", () => {
 document.getElementById("clearBtn").addEventListener("click", () => {
   setEditorContent("")
   localStorage.removeItem(STORAGE_KEY)
-  localStorage.removeItem(STORAGE_KEY_OUTPUT)
-  localStorage.removeItem(STORAGE_KEY_GRAPHICS)
-  document.getElementById("output").textContent = ""
-  document.getElementById("graphics").innerHTML = ""
-  document.getElementById("graphics").style.display = "none"
+  localStorage.removeItem(STORAGE_KEY_OUTPUTS)
+  clearOutputs()
 
   if (worker) {
     worker.postMessage({ type: "clear" })
@@ -276,12 +263,8 @@ document.getElementById("clearBtn").addEventListener("click", () => {
 document.querySelectorAll(".example-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     setEditorContent(btn.dataset.code)
-    localStorage.removeItem(STORAGE_KEY_OUTPUT)
-    localStorage.removeItem(STORAGE_KEY_GRAPHICS)
-    document.getElementById("output").textContent = ""
-    document.getElementById("output").style.display = "none"
-    document.getElementById("graphics").innerHTML = ""
-    document.getElementById("graphics").style.display = "none"
+    localStorage.removeItem(STORAGE_KEY_OUTPUTS)
+    clearOutputs()
   })
 })
 
