@@ -105,7 +105,11 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         }
       }
       // Functions with HoldAll: pass args unevaluated
-      if name == "Function" || name == "Protect" || name == "Unprotect" {
+      if name == "Function"
+        || name == "Protect"
+        || name == "Unprotect"
+        || name == "Condition"
+      {
         let result = evaluate_function_call_ast(name, args)?;
         return Ok(expr_to_string(&result));
       }
@@ -904,7 +908,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
 
       // HoldAll functions: pass args unevaluated
-      if name == "Protect" || name == "Unprotect" {
+      if name == "Protect" || name == "Unprotect" || name == "Condition" {
         return evaluate_function_call_ast(name, args);
       }
 
@@ -5940,7 +5944,7 @@ pub fn evaluate_function_call_ast(
     | "Lighter" | "Directive" | "Point" | "Line" | "Circle" | "Disk"
     | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
     | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset"
-    | "Text" | "Style" | "Subscript" | "MatrixForm" | "Out" => {
+    | "Text" | "Style" | "Subscript" | "MatrixForm" | "Out" | "Condition" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9640,7 +9644,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Hold" | "HoldForm" | "Table" | "Do" | "While" | "For" | "Module"
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
-    | "Clear" | "ClearAll" => {
+    | "Clear" | "ClearAll" | "Condition" => {
       vec!["HoldAll", "Protected"]
     }
 

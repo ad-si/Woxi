@@ -988,7 +988,7 @@ Compress,Compresses an expression to a string,✅,pure,6,1611
 CompressionLevel,,,,12.1,5079
 ComputeUncertainty,,,,12,
 ConcaveHullMesh,,,,13,
-Condition,,,,1,66
+Condition,Represents a pattern with a condition test (pattern /; test),✅,pure,1,66
 ConditionalExpression,Represents an expression valid under a condition,✅,pure,8,715
 Conditioned,,,,8,1501
 Cone,,,,7,1170
