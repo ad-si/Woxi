@@ -2001,6 +2001,115 @@ fn format_real_scientific(f: f64) -> String {
   format!("{}*^{}", mantissa, exp)
 }
 
+/// If expr is Times[negative_coeff, rest...], return Some(Times[abs(coeff), rest...]).
+/// Works for both BinaryOp{Times} and FunctionCall{Times} forms.
+fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => match left.as_ref() {
+      Expr::Integer(n) if *n < 0 => {
+        if *n == -1 {
+          Some(right.as_ref().clone())
+        } else {
+          Some(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-n)),
+            right: right.clone(),
+          })
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+      {
+        let n = if let Expr::Integer(n) = &args[0] {
+          *n
+        } else {
+          return None;
+        };
+        let pos_rat = Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-n), args[1].clone()],
+        };
+        if -n == 1 {
+          // Rational[-1, d] * x → x/d
+          Some(Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: right.clone(),
+            right: Box::new(args[1].clone()),
+          })
+        } else {
+          Some(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(pos_rat),
+            right: right.clone(),
+          })
+        }
+      }
+      _ => None,
+    },
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      match &args[0] {
+        Expr::Integer(n) if *n < 0 => {
+          if *n == -1 {
+            let rest = args[1..].to_vec();
+            Some(if rest.len() == 1 {
+              rest[0].clone()
+            } else {
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: rest,
+              }
+            })
+          } else {
+            let mut new_args = vec![Expr::Integer(-n)];
+            new_args.extend_from_slice(&args[1..]);
+            Some(if new_args.len() == 1 {
+              new_args[0].clone()
+            } else {
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: new_args,
+              }
+            })
+          }
+        }
+        Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational"
+            && ra.len() == 2
+            && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
+        {
+          let n = if let Expr::Integer(n) = &ra[0] {
+            *n
+          } else {
+            return None;
+          };
+          let pos_rat = Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-n), ra[1].clone()],
+          };
+          let mut new_args = vec![pos_rat];
+          new_args.extend_from_slice(&args[1..]);
+          Some(if new_args.len() == 1 {
+            new_args[0].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: new_args,
+            }
+          })
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Convert an Expr back to a string representation
 pub fn expr_to_string(expr: &Expr) -> String {
   match expr {
@@ -2258,19 +2367,70 @@ pub fn expr_to_string(expr: &Expr) -> String {
             args: fn_args,
           } = arg
           {
-            if fn_name == "Times"
-              && fn_args.len() >= 2
-              && matches!(&fn_args[0], Expr::Integer(-1))
-            {
-              result.push_str(" - ");
-              let pos_args = fn_args[1..].to_vec();
-              if pos_args.len() == 1 {
-                result.push_str(&expr_to_string(&pos_args[0]));
+            if fn_name == "Times" && fn_args.len() >= 2 {
+              // Check if leading factor is negative
+              let neg_coeff = match &fn_args[0] {
+                Expr::Integer(n) if *n < 0 => Some(if *n == -1 {
+                  None // coefficient of -1 means just negate
+                } else {
+                  Some(Expr::Integer(-n))
+                }),
+                Expr::FunctionCall { name: rn, args: ra }
+                  if rn == "Rational"
+                    && ra.len() == 2
+                    && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
+                {
+                  if let Expr::Integer(n) = &ra[0] {
+                    if *n == -1 {
+                      // Rational[-1, d] → just Rational[1, d] = 1/d
+                      Some(Some(Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(1), ra[1].clone()],
+                      }))
+                    } else {
+                      Some(Some(Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(-n), ra[1].clone()],
+                      }))
+                    }
+                  } else {
+                    None
+                  }
+                }
+                _ => None,
+              };
+              if let Some(pos_coeff) = neg_coeff {
+                result.push_str(" - ");
+                let pos_term = match pos_coeff {
+                  None => {
+                    // Times[-1, rest...] → rest
+                    let pos_args = fn_args[1..].to_vec();
+                    if pos_args.len() == 1 {
+                      pos_args[0].clone()
+                    } else {
+                      Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: pos_args,
+                      }
+                    }
+                  }
+                  Some(new_coeff) => {
+                    let mut new_args = vec![new_coeff];
+                    new_args.extend_from_slice(&fn_args[1..]);
+                    if new_args.len() == 1 {
+                      new_args[0].clone()
+                    } else {
+                      Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: new_args,
+                      }
+                    }
+                  }
+                };
+                result.push_str(&expr_to_string(&pos_term));
               } else {
-                result.push_str(&expr_to_string(&Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: pos_args,
-                }));
+                result.push_str(" + ");
+                result.push_str(&expr_to_string(arg));
               }
             } else {
               result.push_str(" + ");
@@ -2488,18 +2648,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let operand_str = expr_to_string(operand);
         return format!("{} - {}", left_str, operand_str);
       }
-      // Special case: a + Times[-1, b] should display as a - b
-      if matches!(op, BinaryOperator::Plus)
-        && let Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: t_left,
-          right: t_right,
-        } = right.as_ref()
-        && matches!(t_left.as_ref(), Expr::Integer(-1))
-      {
-        let left_str = expr_to_string(left);
-        let right_str = expr_to_string(t_right);
-        return format!("{} - {}", left_str, right_str);
+      // Special case: a + Times[neg, ...] should display as a - abs(neg)*...
+      // Handles both BinaryOp{Times} and FunctionCall{Times} forms
+      if matches!(op, BinaryOperator::Plus) {
+        let negated_term = negate_leading_negative_in_times(right);
+        if let Some(abs_term) = negated_term {
+          let left_str = expr_to_string(left);
+          let right_str = expr_to_string(&abs_term);
+          return format!("{} - {}", left_str, right_str);
+        }
       }
 
       // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||

@@ -301,6 +301,86 @@ mod series {
       "SeriesData[x, 0, {1, 0, 1/6, 0, 7/360, 0, 31/15120}, -1, 7, 1]"
     );
   }
+
+  #[test]
+  fn series_exp_neg_x_sin_2x() {
+    assert_eq!(
+      interpret("Series[Exp[-x] Sin[2x], {x, 0, 6}]").unwrap(),
+      "SeriesData[x, 0, {2, -2, -1/3, 1, -19/60, -11/180}, 1, 7, 1]"
+    );
+  }
+
+  #[test]
+  fn series_log_1_plus_x() {
+    assert_eq!(
+      interpret("Series[Log[1 + x], {x, 0, 5}]").unwrap(),
+      "SeriesData[x, 0, {1, -1/2, 1/3, -1/4, 1/5}, 1, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn series_sin_around_pi() {
+    assert_eq!(
+      interpret("Series[Sin[x], {x, Pi, 5}]").unwrap(),
+      "SeriesData[x, Pi, {-1, 0, 1/6, 0, -1/120}, 1, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn normal_series_sin() {
+    assert_eq!(
+      interpret("Normal[Series[Sin[x], {x, 0, 7}]]").unwrap(),
+      "x - x^3/6 + x^5/120 - x^7/5040"
+    );
+  }
+
+  #[test]
+  fn normal_series_exp() {
+    assert_eq!(
+      interpret("Normal[Series[Exp[x], {x, 0, 5}]]").unwrap(),
+      "1 + x + x^2/2 + x^3/6 + x^4/24 + x^5/120"
+    );
+  }
+
+  #[test]
+  fn normal_series_cos() {
+    assert_eq!(
+      interpret("Normal[Series[Cos[x], {x, 0, 6}]]").unwrap(),
+      "1 - x^2/2 + x^4/24 - x^6/720"
+    );
+  }
+
+  #[test]
+  fn normal_series_log() {
+    assert_eq!(
+      interpret("Normal[Series[Log[1 + x], {x, 0, 5}]]").unwrap(),
+      "x - x^2/2 + x^3/3 - x^4/4 + x^5/5"
+    );
+  }
+
+  #[test]
+  fn normal_series_exp_neg_x_sin_2x() {
+    assert_eq!(
+      interpret("Normal[Series[Exp[-x] Sin[2x], {x, 0, 6}]]").unwrap(),
+      "2*x - 2*x^2 - x^3/3 + x^4 - (19*x^5)/60 - (11*x^6)/180"
+    );
+  }
+
+  #[test]
+  fn normal_series_around_pi() {
+    assert_eq!(
+      interpret("Normal[Series[Sin[x], {x, Pi, 5}]]").unwrap(),
+      "Pi - x + (-Pi + x)^3/6 - (-Pi + x)^5/120"
+    );
+  }
+
+  #[test]
+  fn normal_series_geometric() {
+    assert_eq!(
+      interpret("Normal[Series[1/(1 - x), {x, 0, 5}]]").unwrap(),
+      "1 + x + x^2 + x^3 + x^4 + x^5"
+    );
+  }
 }
 
 mod limit {
