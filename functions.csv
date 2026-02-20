@@ -4227,7 +4227,7 @@ PlotLayout,,,,8,2203
 PlotLegends,,,,9,100
 PlotMarkers,,,,6,500
 PlotPoints,,,,1,193
-PlotRange,,,,1,39
+PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,39
 PlotRangeClipping,,,,6,674
 PlotRangePadding,,,,6,359
 PlotRegion,,,,2,1875
