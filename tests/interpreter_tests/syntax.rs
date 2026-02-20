@@ -781,6 +781,50 @@ mod show_function {
   }
 }
 
+mod pattern_test_function {
+  use super::*;
+
+  #[test]
+  fn pattern_test_display_named() {
+    assert_eq!(
+      interpret("PatternTest[x_, IntegerQ]").unwrap(),
+      "(x_)?IntegerQ"
+    );
+  }
+
+  #[test]
+  fn pattern_test_display_blank() {
+    assert_eq!(
+      interpret("PatternTest[Blank[], IntegerQ]").unwrap(),
+      "_?IntegerQ"
+    );
+  }
+
+  #[test]
+  fn pattern_test_head() {
+    assert_eq!(
+      interpret("Head[PatternTest[x_, IntegerQ]]").unwrap(),
+      "PatternTest"
+    );
+  }
+
+  #[test]
+  fn pattern_test_attributes() {
+    assert_eq!(
+      interpret("Attributes[PatternTest]").unwrap(),
+      "{HoldRest, Protected}"
+    );
+  }
+
+  #[test]
+  fn pattern_test_with_cases() {
+    assert_eq!(
+      interpret("Cases[{1, 2.5, 3, \"a\"}, _?IntegerQ]").unwrap(),
+      "{1, 3}"
+    );
+  }
+}
+
 mod matrix_form {
   use super::*;
 

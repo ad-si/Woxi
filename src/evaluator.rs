@@ -104,7 +104,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           return Ok(format!("If[{}]", args_str.join(", ")));
         }
       }
-      // Functions with HoldAll: pass args unevaluated
+      // Functions with HoldAll/HoldRest: pass args unevaluated
       if name == "Function"
         || name == "Protect"
         || name == "Unprotect"
@@ -1979,6 +1979,15 @@ fn evaluate_rule_delayed_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Blank[] → _ or Blank[h] → _h
 #[inline(never)]
+/// PatternTest[pattern, test]: return as symbolic FunctionCall
+#[inline(never)]
+fn evaluate_pattern_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  Ok(Expr::FunctionCall {
+    name: "PatternTest".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => Ok(Expr::Pattern {
@@ -2083,6 +2092,7 @@ pub fn evaluate_function_call_ast(
         replacement: Box::new(args[1].clone()),
       });
     }
+    "PatternTest" if args.len() == 2 => return evaluate_pattern_test_ast(args),
     "Blank" => return evaluate_blank_ast(args),
     "Slot" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
@@ -9657,7 +9667,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "SetDelayed" => vec!["HoldAll", "Protected", "SequenceHold"],
 
     // HoldRest + Protected
-    "If" => vec!["HoldRest", "Protected"],
+    "If" | "PatternTest" => vec!["HoldRest", "Protected"],
     "Rule" => vec!["Protected", "SequenceHold"],
     "RuleDelayed" => vec!["HoldRest", "Protected", "SequenceHold"],
 

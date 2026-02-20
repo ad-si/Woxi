@@ -2176,6 +2176,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
           expr_to_string(&args[1])
         );
       }
+      if name == "PatternTest" && args.len() == 2 {
+        let pat = expr_to_string(&args[0]);
+        let test = expr_to_string(&args[1]);
+        // Simple _ doesn't need parens, everything else does
+        if pat == "_" || pat == "__" || pat == "___" {
+          return format!("{}?{}", pat, test);
+        }
+        return format!("({})?{}", pat, test);
+      }
       // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
       if name == "Minus" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
@@ -3220,6 +3229,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
           expr_to_output(&args[0]),
           expr_to_output(&args[1])
         );
+      }
+      if name == "PatternTest" && args.len() == 2 {
+        let pat = expr_to_output(&args[0]);
+        let test = expr_to_output(&args[1]);
+        if pat == "_" || pat == "__" || pat == "___" {
+          return format!("{}?{}", pat, test);
+        }
+        return format!("({})?{}", pat, test);
       }
       // Special case: Dot[a, b] displays as a . b (infix notation)
       if name == "Dot" && args.len() == 2 {
