@@ -1977,8 +1977,6 @@ fn evaluate_rule_delayed_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// Blank[] → _ or Blank[h] → _h
-#[inline(never)]
 /// PatternTest[pattern, test]: return as symbolic FunctionCall
 #[inline(never)]
 fn evaluate_pattern_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1988,6 +1986,17 @@ fn evaluate_pattern_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// BlankSequence/BlankNullSequence: return as symbolic FunctionCall
+#[inline(never)]
+fn evaluate_blank_sequence_ast(name: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
+  Ok(Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Blank[] → _ or Blank[h] → _h
+#[inline(never)]
 fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => Ok(Expr::Pattern {
@@ -2094,6 +2103,9 @@ pub fn evaluate_function_call_ast(
     }
     "PatternTest" if args.len() == 2 => return evaluate_pattern_test_ast(args),
     "Blank" => return evaluate_blank_ast(args),
+    "BlankSequence" | "BlankNullSequence" if args.len() <= 1 => {
+      return evaluate_blank_sequence_ast(name, args)
+    }
     "Slot" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         return Ok(Expr::Slot(*n as usize));
@@ -9767,6 +9779,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "All"
     | "PlotStyle"
     | "AxesLabel"
+    | "BlankNullSequence"
+    | "BlankSequence"
     | "Print"
     | "Echo"
     | "ToString"
