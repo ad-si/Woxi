@@ -109,6 +109,17 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         let result = evaluate_function_call_ast(name, args)?;
         return Ok(expr_to_string(&result));
       }
+      // CompoundExpression[e1, e2, ...]: evaluate sequentially, return last
+      if name == "CompoundExpression" {
+        if args.is_empty() {
+          return Ok("Null".to_string());
+        }
+        let mut result = String::new();
+        for arg in args {
+          result = evaluate_expr(arg)?;
+        }
+        return Ok(result);
+      }
       // AbsoluteTiming/Timing: HoldAll, evaluate and measure time
       if (name == "AbsoluteTiming" || name == "Timing") && args.len() == 1 {
         let start = std::time::Instant::now();
@@ -886,6 +897,18 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       // HoldAll functions: pass args unevaluated
       if name == "Protect" || name == "Unprotect" {
         return evaluate_function_call_ast(name, args);
+      }
+
+      // CompoundExpression[e1, e2, ...]: evaluate sequentially, return last
+      if name == "CompoundExpression" {
+        if args.is_empty() {
+          return Ok(Expr::Identifier("Null".to_string()));
+        }
+        let mut result = Expr::Identifier("Null".to_string());
+        for arg in args {
+          result = evaluate_expr_to_expr(arg)?;
+        }
+        return Ok(result);
       }
 
       // AbsoluteTiming[expr]: evaluate and measure wall-clock time
@@ -1884,6 +1907,34 @@ fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
   if had_sequence { result } else { args.to_vec() }
 }
 
+/// Blank[] → _ or Blank[h] → _h
+#[inline(never)]
+fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match args.len() {
+    0 => Ok(Expr::Pattern {
+      name: String::new(),
+      head: None,
+    }),
+    1 => {
+      if let Expr::Identifier(h) = &args[0] {
+        Ok(Expr::Pattern {
+          name: String::new(),
+          head: Some(h.clone()),
+        })
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Blank".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "Blank".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 pub fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
@@ -1954,37 +2005,21 @@ pub fn evaluate_function_call_ast(
     args
   };
 
-  // Handle functions that would call interpret() if dispatched through evaluate_expression
-  // These must be handled natively to avoid infinite recursion
+  // Handle structural conversions early
   match name {
-    // Rule[lhs, rhs] → Expr::Rule (same as lhs -> rhs)
     "Rule" if args.len() == 2 => {
       return Ok(Expr::Rule {
         pattern: Box::new(args[0].clone()),
         replacement: Box::new(args[1].clone()),
       });
     }
-    // Blank[] → _ (pattern matching any expression)
-    // Blank[h] → _h (pattern matching expressions with head h)
-    "Blank" if args.is_empty() => {
-      return Ok(Expr::Pattern {
-        name: String::new(),
-        head: None,
-      });
-    }
-    "Blank" if args.len() == 1 => {
-      if let Expr::Identifier(h) = &args[0] {
-        return Ok(Expr::Pattern {
-          name: String::new(),
-          head: Some(h.clone()),
-        });
-      }
-      // Non-identifier head: return as-is
-      return Ok(Expr::FunctionCall {
-        name: "Blank".to_string(),
-        args: args.to_vec(),
-      });
-    }
+    "Blank" => return evaluate_blank_ast(args),
+    _ => {}
+  }
+
+  // Handle functions that would call interpret() if dispatched through evaluate_expression
+  // These must be handled natively to avoid infinite recursion
+  match name {
     "Function" => {
       match args.len() {
         // Function[body] — equivalent to body &

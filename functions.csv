@@ -980,7 +980,7 @@ ComposeSeries,,,,3,3462
 CompositeQ,Tests if a number is composite,✅,pure,10,2854
 Composition,Composes multiple functions,✅,pure,2,423
 CompoundElement,,,,10.1,3972
-CompoundExpression,,,,1,8
+CompoundExpression,Evaluates expressions sequentially and returns the last result,✅,pure,1,8
 CompoundPoissonDistribution,,,,9,3636
 CompoundPoissonProcess,,,,9,3474
 CompoundRenewalProcess,,,,9,4027
