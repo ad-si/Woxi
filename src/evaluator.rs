@@ -4951,6 +4951,9 @@ pub fn evaluate_function_call_ast(
     "Gamma" if args.len() == 1 => {
       return crate::functions::math_ast::gamma_ast(args);
     }
+    "BesselJ" if args.len() == 2 => {
+      return crate::functions::math_ast::bessel_j_ast(args);
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);
     }
