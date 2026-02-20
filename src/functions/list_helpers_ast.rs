@@ -1165,6 +1165,24 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       };
       matches!(test_result, Some(Expr::Identifier(ref s)) if s == "True")
     }
+    // Blank[] or Blank[h] as FunctionCall (unevaluated form)
+    Expr::FunctionCall { name, args } if name == "Blank" => match args.len() {
+      0 => true,
+      1 => {
+        if let Expr::Identifier(h) = &args[0] {
+          get_expr_head_str(expr) == h
+        } else {
+          false
+        }
+      }
+      _ => false,
+    },
+    // Pattern[name, blank] as FunctionCall (unevaluated form)
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      matches_pattern_ast(expr, &args[1])
+    }
     // Identifier patterns like "_", "_Integer", "_List", etc.
     Expr::Identifier(s) if s == "_" => true,
     Expr::Identifier(s) if s.starts_with('_') => {

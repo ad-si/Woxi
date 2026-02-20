@@ -489,6 +489,54 @@ mod blank_function {
   }
 }
 
+mod pattern_function {
+  use super::*;
+
+  #[test]
+  fn pattern_blank_displays_as_name_underscore() {
+    assert_eq!(interpret("Pattern[x, Blank[]]").unwrap(), "x_");
+  }
+
+  #[test]
+  fn pattern_blank_head_displays_as_name_underscore_head() {
+    assert_eq!(
+      interpret("Pattern[x, Blank[Integer]]").unwrap(),
+      "x_Integer"
+    );
+    assert_eq!(interpret("Pattern[y, Blank[String]]").unwrap(), "y_String");
+  }
+
+  #[test]
+  fn pattern_head_is_pattern() {
+    assert_eq!(interpret("Head[Pattern[x, Blank[]]]").unwrap(), "Pattern");
+  }
+
+  #[test]
+  fn pattern_matchq() {
+    assert_eq!(
+      interpret("MatchQ[42, Pattern[x, Blank[Integer]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[\"hi\", Pattern[x, Blank[Integer]]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn pattern_equals_shorthand() {
+    assert_eq!(interpret("Pattern[x, Blank[]] === x_").unwrap(), "True");
+  }
+
+  #[test]
+  fn pattern_in_replace_all() {
+    assert_eq!(
+      interpret("f[a, b] /. Pattern[x, Blank[]] -> x^2").unwrap(),
+      "f[a, b]^2"
+    );
+  }
+}
+
 mod compound_expression {
   use super::*;
 

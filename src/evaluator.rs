@@ -120,6 +120,11 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         }
         return Ok(result);
       }
+      // Pattern[name, blank] → Expr::Pattern (HoldFirst: name is unevaluated)
+      if name == "Pattern" && args.len() == 2 {
+        let result = evaluate_pattern_function_ast(args)?;
+        return Ok(expr_to_string(&result));
+      }
       // AbsoluteTiming/Timing: HoldAll, evaluate and measure time
       if (name == "AbsoluteTiming" || name == "Timing") && args.len() == 1 {
         let start = std::time::Instant::now();
@@ -909,6 +914,11 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           result = evaluate_expr_to_expr(arg)?;
         }
         return Ok(result);
+      }
+
+      // Pattern[name, blank] → Expr::Pattern (HoldFirst: name is unevaluated)
+      if name == "Pattern" && args.len() == 2 {
+        return evaluate_pattern_function_ast(args);
       }
 
       // AbsoluteTiming[expr]: evaluate and measure wall-clock time
@@ -1905,6 +1915,43 @@ fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
     result.push(arg.clone());
   }
   if had_sequence { result } else { args.to_vec() }
+}
+
+/// Pattern[name, Blank[]] → name_ or Pattern[name, Blank[h]] → name_h
+#[inline(never)]
+fn evaluate_pattern_function_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "Pattern".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let pattern_name = match &args[0] {
+    Expr::Identifier(n) => n.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Pattern".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  // Evaluate the second argument (the blank part)
+  let blank = evaluate_expr_to_expr(&args[1])?;
+  match &blank {
+    Expr::Pattern {
+      name: blank_name,
+      head,
+    } if blank_name.is_empty() => Ok(Expr::Pattern {
+      name: pattern_name,
+      head: head.clone(),
+    }),
+    _ => Ok(Expr::FunctionCall {
+      name: "Pattern".to_string(),
+      args: vec![args[0].clone(), blank],
+    }),
+  }
 }
 
 /// Blank[] → _ or Blank[h] → _h
@@ -8004,6 +8051,35 @@ pub fn match_pattern(
           }
         }
         _ => None,
+      }
+    }
+    // Blank[] or Blank[h] as FunctionCall
+    Expr::FunctionCall { name, args } if name == "Blank" => match args.len() {
+      0 => Some(vec![]),
+      1 => {
+        if let Expr::Identifier(h) = &args[0] {
+          let expr_head = get_expr_head(expr);
+          if expr_head == *h { Some(vec![]) } else { None }
+        } else {
+          None
+        }
+      }
+      _ => None,
+    },
+    // Pattern[name, blank] as FunctionCall
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      let pattern_name = if let Expr::Identifier(n) = &args[0] {
+        n.clone()
+      } else {
+        return None;
+      };
+      if let Some(mut bindings) = match_pattern(expr, &args[1]) {
+        bindings.push((pattern_name, expr.clone()));
+        Some(bindings)
+      } else {
+        None
       }
     }
     Expr::Identifier(name) if name.ends_with('_') => {
