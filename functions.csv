@@ -1676,7 +1676,7 @@ EllipticK,Complete elliptic integral of the first kind,✅,pure,1,441
 EllipticLog,,,,1,2519
 EllipticNomeQ,,,,3,1415
 EllipticPi,,,,1,1362
-EllipticTheta,,,,1,551
+EllipticTheta,Jacobi theta function,✅,pure,1,551
 EllipticThetaPrime,,,,3,1375
 EmbedCode,,,,10,2079
 EmbeddedHTML,,,,10,2225

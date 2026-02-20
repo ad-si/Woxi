@@ -4412,6 +4412,112 @@ fn elliptic_k(m: f64) -> f64 {
   std::f64::consts::PI / (2.0 * a)
 }
 
+/// EllipticTheta[a, z, q] - Jacobi theta function
+/// a = 1,2,3,4 selects which theta function
+pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "EllipticTheta expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let a_val = match &args[0] {
+    Expr::Integer(n) if *n >= 1 && *n <= 4 => *n as u32,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "EllipticTheta".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let q = &args[2];
+
+  // EllipticTheta[a, z, 0]: theta1=0, theta2=0, theta3=1, theta4=1
+  if is_expr_zero(q) {
+    return match a_val {
+      1 | 2 => Ok(Expr::Integer(0)),
+      3 | 4 => Ok(Expr::Integer(1)),
+      _ => unreachable!(),
+    };
+  }
+
+  // Numeric evaluation when both z and q are numeric
+  let z = &args[1];
+  if let (Some(z_f), Some(q_f)) = (expr_to_f64(z), expr_to_f64(q)) {
+    return Ok(Expr::Real(elliptic_theta_numeric(a_val, z_f, q_f)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "EllipticTheta".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Jacobi theta function numerically via series expansion
+fn elliptic_theta_numeric(a: u32, z: f64, q: f64) -> f64 {
+  match a {
+    1 => {
+      // θ₁(z, q) = 2 Σ_{n=0}^∞ (-1)^n q^{(n+1/2)²} sin((2n+1)z)
+      let mut sum = 0.0;
+      for n in 0..100 {
+        let nf = n as f64;
+        let exp = (nf + 0.5) * (nf + 0.5);
+        let term = q.powf(exp) * ((2.0 * nf + 1.0) * z).sin();
+        let sign = if n % 2 == 0 { 1.0 } else { -1.0 };
+        sum += sign * term;
+        if term.abs() < 1e-16 {
+          break;
+        }
+      }
+      2.0 * sum
+    }
+    2 => {
+      // θ₂(z, q) = 2 Σ_{n=0}^∞ q^{(n+1/2)²} cos((2n+1)z)
+      let mut sum = 0.0;
+      for n in 0..100 {
+        let nf = n as f64;
+        let exp = (nf + 0.5) * (nf + 0.5);
+        let term = q.powf(exp) * ((2.0 * nf + 1.0) * z).cos();
+        sum += term;
+        if term.abs() < 1e-16 {
+          break;
+        }
+      }
+      2.0 * sum
+    }
+    3 => {
+      // θ₃(z, q) = 1 + 2 Σ_{n=1}^∞ q^{n²} cos(2nz)
+      let mut sum = 1.0;
+      for n in 1..100 {
+        let nf = n as f64;
+        let term = q.powf(nf * nf) * (2.0 * nf * z).cos();
+        sum += 2.0 * term;
+        if term.abs() < 1e-16 {
+          break;
+        }
+      }
+      sum
+    }
+    4 => {
+      // θ₄(z, q) = 1 + 2 Σ_{n=1}^∞ (-1)^n q^{n²} cos(2nz)
+      let mut sum = 1.0;
+      for n in 1..100 {
+        let nf = n as f64;
+        let sign = if n % 2 == 0 { 1.0 } else { -1.0 };
+        let term = q.powf(nf * nf) * (2.0 * nf * z).cos();
+        sum += 2.0 * sign * term;
+        if term.abs() < 1e-16 {
+          break;
+        }
+      }
+      sum
+    }
+    _ => unreachable!(),
+  }
+}
+
 /// Zeta[s] - Riemann zeta function
 pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
