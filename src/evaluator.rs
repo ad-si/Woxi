@@ -5196,6 +5196,9 @@ pub fn evaluate_function_call_ast(
         args,
       );
     }
+    "Fit" if args.len() == 3 => {
+      return crate::functions::linear_algebra_ast::fit_ast(args);
+    }
     "Cross" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::linear_algebra_ast::cross_ast(args);
     }
@@ -9651,7 +9654,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "PauliMatrix"
     | "Curl"
     | "PrimePowerQ"
-    | "BellB" => {
+    | "BellB"
+    | "Fit" => {
       vec!["Protected"]
     }
 

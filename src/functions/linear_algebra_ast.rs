@@ -1,9 +1,10 @@
 //! AST-native linear algebra functions.
 //!
-//! Dot, Det, Inverse, Tr, IdentityMatrix, DiagonalMatrix, Cross, Eigenvalues.
+//! Dot, Det, Inverse, Tr, IdentityMatrix, DiagonalMatrix, Cross, Eigenvalues, Fit.
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
+use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
 /// Helper: extract a matrix (list of lists) from an Expr.
@@ -672,6 +673,245 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let scalar = eval_divide(&uv, &vv);
   let result: Vec<Expr> = v.iter().map(|vi| eval_mul(&scalar, vi)).collect();
   Ok(Expr::List(result))
+}
+
+// ─── Fit (least-squares) ────────────────────────────────────────────────
+
+/// Fit[data, funs, var] — least-squares fit of data to a linear combination
+/// of the basis functions `funs` in the variable `var`.
+///
+/// `data` is either:
+///   - `{y1, y2, …}` with implicit x = 1, 2, …, n
+///   - `{{x1, y1}, {x2, y2}, …}` with explicit x-y pairs
+///
+/// Returns `c1*f1 + c2*f2 + … + cm*fm`.
+pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Fit expects exactly 3 arguments".into(),
+    ));
+  }
+
+  // Extract basis functions
+  let basis = match &args[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Fit: second argument must be a list of basis functions".into(),
+      ));
+    }
+  };
+
+  // Extract variable name
+  let var_name = match &args[2] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Fit: third argument must be a variable".into(),
+      ));
+    }
+  };
+
+  // Extract data points: either {y1, y2, ...} or {{x1, y1}, {x2, y2}, ...}
+  let data_list = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Fit: first argument must be a non-empty list".into(),
+      ));
+    }
+  };
+
+  let (x_vals, y_vals) = extract_fit_data(data_list)?;
+  let n = x_vals.len(); // number of data points
+  let m = basis.len(); // number of basis functions
+
+  // Build design matrix A (n×m) where A[i][j] = basis[j] evaluated at x = x_vals[i]
+  let mut a_matrix = vec![vec![0.0f64; m]; n];
+  for i in 0..n {
+    let x_expr = Expr::Real(x_vals[i]);
+    for j in 0..m {
+      let substituted =
+        crate::syntax::substitute_variable(&basis[j], &var_name, &x_expr);
+      let evaluated = evaluate_expr_to_expr(&substituted)?;
+      match try_eval_to_f64(&evaluated) {
+        Some(v) => a_matrix[i][j] = v,
+        None => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "Fit: could not evaluate basis function {:?} at x = {}",
+            basis[j], x_vals[i]
+          )));
+        }
+      }
+    }
+  }
+
+  // Solve normal equations: (A^T A) c = A^T y
+  // Compute A^T A (m×m)
+  let mut ata = vec![vec![0.0f64; m]; m];
+  for i in 0..m {
+    for j in 0..m {
+      let mut sum = 0.0;
+      for k in 0..n {
+        sum += a_matrix[k][i] * a_matrix[k][j];
+      }
+      ata[i][j] = sum;
+    }
+  }
+
+  // Compute A^T y (m×1)
+  let mut aty = vec![0.0f64; m];
+  for i in 0..m {
+    let mut sum = 0.0;
+    for k in 0..n {
+      sum += a_matrix[k][i] * y_vals[k];
+    }
+    aty[i] = sum;
+  }
+
+  // Solve via Gaussian elimination with partial pivoting
+  let coeffs = solve_linear_system(&mut ata, &mut aty)?;
+
+  // Build result: c[0]*basis[0] + c[1]*basis[1] + ...
+  // We construct the expression using Times and Plus function calls
+  // so the result matches Wolfram's output format.
+  let mut terms = Vec::new();
+  for (j, c) in coeffs.iter().enumerate() {
+    let coeff_expr = Expr::Real(*c);
+    // Check if basis function is just the constant 1
+    if matches!(&basis[j], Expr::Integer(1)) {
+      terms.push(coeff_expr);
+    } else {
+      terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff_expr, basis[j].clone()],
+      });
+    }
+  }
+
+  // Build Plus expression
+  if terms.len() == 1 {
+    Ok(terms.into_iter().next().unwrap())
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    })
+  }
+}
+
+/// Extract x and y values from Fit data.
+/// Handles both `{y1, y2, ...}` and `{{x1, y1}, {x2, y2}, ...}` forms.
+fn extract_fit_data(
+  data: &[Expr],
+) -> Result<(Vec<f64>, Vec<f64>), InterpreterError> {
+  // Check if first element is a list (=> {x, y} pair form)
+  if let Expr::List(first_pair) = &data[0]
+    && first_pair.len() == 2
+  {
+    // {{x1, y1}, {x2, y2}, ...} form
+    let mut xs = Vec::with_capacity(data.len());
+    let mut ys = Vec::with_capacity(data.len());
+    for item in data {
+      if let Expr::List(pair) = item {
+        if pair.len() != 2 {
+          return Err(InterpreterError::EvaluationError(
+            "Fit: data points must be {x, y} pairs of length 2".into(),
+          ));
+        }
+        let x = try_eval_to_f64(&pair[0]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Fit: could not convert x coordinate to a number".into(),
+          )
+        })?;
+        let y = try_eval_to_f64(&pair[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "Fit: could not convert y coordinate to a number".into(),
+          )
+        })?;
+        xs.push(x);
+        ys.push(y);
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "Fit: all data entries must be {x, y} pairs".into(),
+        ));
+      }
+    }
+    return Ok((xs, ys));
+  }
+
+  // {y1, y2, ...} form with implicit x = 1, 2, ..., n
+  let mut ys = Vec::with_capacity(data.len());
+  for item in data {
+    let y = try_eval_to_f64(item).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Fit: could not convert data value to a number".into(),
+      )
+    })?;
+    ys.push(y);
+  }
+  let xs: Vec<f64> = (1..=data.len()).map(|i| i as f64).collect();
+  Ok((xs, ys))
+}
+
+/// Solve a linear system Ax = b using Gaussian elimination with partial pivoting.
+/// Modifies `a` and `b` in place. Returns the solution vector.
+fn solve_linear_system(
+  a: &mut Vec<Vec<f64>>,
+  b: &mut Vec<f64>,
+) -> Result<Vec<f64>, InterpreterError> {
+  let n = a.len();
+  if n == 0 || b.len() != n {
+    return Err(InterpreterError::EvaluationError(
+      "Fit: internal error in linear solve".into(),
+    ));
+  }
+
+  // Forward elimination with partial pivoting
+  for col in 0..n {
+    // Find pivot
+    let mut max_val = a[col][col].abs();
+    let mut max_row = col;
+    for row in (col + 1)..n {
+      if a[row][col].abs() > max_val {
+        max_val = a[row][col].abs();
+        max_row = row;
+      }
+    }
+    if max_val < 1e-15 {
+      return Err(InterpreterError::EvaluationError(
+        "Fit: design matrix is singular or nearly singular".into(),
+      ));
+    }
+
+    // Swap rows
+    if max_row != col {
+      a.swap(col, max_row);
+      b.swap(col, max_row);
+    }
+
+    // Eliminate below
+    let pivot = a[col][col];
+    for row in (col + 1)..n {
+      let factor = a[row][col] / pivot;
+      for j in col..n {
+        a[row][j] -= factor * a[col][j];
+      }
+      b[row] -= factor * b[col];
+    }
+  }
+
+  // Back substitution
+  let mut x = vec![0.0f64; n];
+  for col in (0..n).rev() {
+    let mut sum = b[col];
+    for j in (col + 1)..n {
+      sum -= a[col][j] * x[j];
+    }
+    x[col] = sum / a[col][col];
+  }
+
+  Ok(x)
 }
 
 // ─── Eigenvalues ────────────────────────────────────────────────────────

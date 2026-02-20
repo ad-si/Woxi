@@ -471,3 +471,66 @@ mod null_space {
     assert_eq!(interpret("NullSpace[{{1, 0}, {0, 1}}]").unwrap(), "{}");
   }
 }
+
+mod fit {
+  use super::*;
+
+  #[test]
+  fn linear_fit_implicit_x() {
+    assert_eq!(
+      interpret("Fit[{1, 2, 3, 4, 5}, {1, x}, x]").unwrap(),
+      "0. + 1.*x"
+    );
+  }
+
+  #[test]
+  fn linear_fit_explicit_xy_pairs() {
+    assert_eq!(
+      interpret("Fit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, {1, x}, x]").unwrap(),
+      "0.1864406779661015 + 0.6949152542372882*x"
+    );
+  }
+
+  #[test]
+  fn exact_linear_fit() {
+    assert_eq!(
+      interpret("Fit[{{1, 3}, {2, 5}, {3, 7}, {4, 9}}, {1, x}, x]").unwrap(),
+      "1. + 2.*x"
+    );
+  }
+
+  #[test]
+  fn quadratic_fit() {
+    assert_eq!(
+      interpret("Fit[{1.2, 2.5, 3.7, 4.1, 5.8}, {1, x, x^2}, x]").unwrap(),
+      "0.21999999999998465 + 1.0800000000000134*x + -2.2204460492502736*^-15*x^2"
+    );
+  }
+
+  #[test]
+  fn sin_basis() {
+    assert_eq!(
+      interpret("Fit[{1, 2, 3}, {1, Sin[x]}, x]").unwrap(),
+      "3.2209730817366076 + -1.9361180115491954*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn log_factorial_fit() {
+    assert_eq!(
+      interpret("Fit[N[Log[Table[Factorial[n], {n, 1, 20}]]], {1, x, x^2}, x]")
+        .unwrap(),
+      "-2.029632664074402 + 1.179018356536366*x + 0.053116572938741884*x^2"
+    );
+  }
+
+  #[test]
+  fn single_basis_function() {
+    assert_eq!(interpret("Fit[{2, 4, 6}, {x}, x]").unwrap(), "2.*x");
+  }
+
+  #[test]
+  fn two_data_points_linear() {
+    assert_eq!(interpret("Fit[{1, 2}, {1, x}, x]").unwrap(), "0. + 1.*x");
+  }
+}
