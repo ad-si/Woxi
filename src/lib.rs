@@ -30,6 +30,8 @@ thread_local! {
     static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
+    // Function options (e.g., Options[f] = {a -> 1})
+    pub static FUNC_OPTIONS: RefCell<HashMap<String, Vec<syntax::Expr>>> = RefCell::new(HashMap::new());
     // Track Part evaluation nesting depth for Part::partd warnings
     static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
     // Reap/Sow stack: each Reap call pushes a Vec to collect (value, tag) pairs
@@ -307,6 +309,7 @@ pub fn clear_state() {
   ENV.with(|e| e.borrow_mut().clear());
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
+  FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
   unseed_rng();
   clear_captured_stdout();

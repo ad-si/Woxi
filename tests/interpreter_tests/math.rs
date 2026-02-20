@@ -3371,6 +3371,77 @@ mod attributes {
   }
 }
 
+mod options {
+  use super::*;
+
+  #[test]
+  fn set_and_get() {
+    assert_eq!(
+      interpret("Options[f] = {a -> 1, b -> 2}; Options[f]").unwrap(),
+      "{a -> 1, b -> 2}"
+    );
+  }
+
+  #[test]
+  fn get_specific_option() {
+    assert_eq!(
+      interpret("Options[f] = {a -> 1, b -> 2}; Options[f, a]").unwrap(),
+      "{a -> 1}"
+    );
+  }
+
+  #[test]
+  fn get_second_option() {
+    assert_eq!(
+      interpret("Options[f] = {a -> 1, b -> 2}; Options[f, b]").unwrap(),
+      "{b -> 2}"
+    );
+  }
+
+  #[test]
+  fn unknown_function() {
+    assert_eq!(interpret("Options[unknownfunc]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn option_not_found() {
+    assert_eq!(
+      interpret("Options[f] = {a -> 1, b -> 2}; Options[f, c]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn overwrite_options() {
+    assert_eq!(
+      interpret(
+        "Options[f] = {a -> 1}; Options[f] = {a -> 10, b -> 20}; Options[f]"
+      )
+      .unwrap(),
+      "{a -> 10, b -> 20}"
+    );
+  }
+
+  #[test]
+  fn single_rule() {
+    assert_eq!(
+      interpret("Options[g] = {x -> 42}; Options[g]").unwrap(),
+      "{x -> 42}"
+    );
+  }
+
+  #[test]
+  fn multiple_functions() {
+    assert_eq!(
+      interpret(
+        "Options[f] = {a -> 1}; Options[g] = {b -> 2}; {Options[f], Options[g]}"
+      )
+      .unwrap(),
+      "{{a -> 1}, {b -> 2}}"
+    );
+  }
+}
+
 mod symbol_q {
   use super::*;
 
