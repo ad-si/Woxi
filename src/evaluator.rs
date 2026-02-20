@@ -5018,6 +5018,9 @@ pub fn evaluate_function_call_ast(
     "Zeta" if args.len() == 1 => {
       return crate::functions::math_ast::zeta_ast(args);
     }
+    "PolyGamma" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::math_ast::polygamma_ast(args);
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);
     }

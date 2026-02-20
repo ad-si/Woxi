@@ -4281,6 +4281,99 @@ mod elliptic_k {
   }
 }
 
+mod polygamma {
+  use super::*;
+
+  #[test]
+  fn digamma_one() {
+    assert_eq!(interpret("PolyGamma[1]").unwrap(), "-EulerGamma");
+  }
+
+  #[test]
+  fn digamma_two() {
+    assert_eq!(interpret("PolyGamma[2]").unwrap(), "1 - EulerGamma");
+  }
+
+  #[test]
+  fn digamma_three() {
+    assert_eq!(interpret("PolyGamma[3]").unwrap(), "3/2 - EulerGamma");
+  }
+
+  #[test]
+  fn digamma_five() {
+    assert_eq!(interpret("PolyGamma[0, 5]").unwrap(), "25/12 - EulerGamma");
+  }
+
+  #[test]
+  fn trigamma_one() {
+    assert_eq!(interpret("PolyGamma[1, 1]").unwrap(), "Pi^2/6");
+  }
+
+  #[test]
+  fn trigamma_two() {
+    assert_eq!(interpret("PolyGamma[1, 2]").unwrap(), "-1 + Pi^2/6");
+  }
+
+  #[test]
+  fn trigamma_three() {
+    assert_eq!(interpret("PolyGamma[1, 3]").unwrap(), "-5/4 + Pi^2/6");
+  }
+
+  #[test]
+  fn tetragamma_unevaluated() {
+    assert_eq!(interpret("PolyGamma[2, 1]").unwrap(), "PolyGamma[2, 1]");
+  }
+
+  #[test]
+  fn polygamma_3_1() {
+    assert_eq!(interpret("PolyGamma[3, 1]").unwrap(), "Pi^4/15");
+  }
+
+  #[test]
+  fn polygamma_5_1() {
+    assert_eq!(interpret("PolyGamma[5, 1]").unwrap(), "(8*Pi^6)/63");
+  }
+
+  #[test]
+  fn polygamma_3_3_factored() {
+    assert_eq!(
+      interpret("PolyGamma[3, 3]").unwrap(),
+      "6*(-17/16 + Pi^4/90)"
+    );
+  }
+
+  #[test]
+  fn pole_at_zero() {
+    assert_eq!(interpret("PolyGamma[0, 0]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("PolyGamma[0, -1]").unwrap(), "ComplexInfinity");
+    assert_eq!(interpret("PolyGamma[1, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("PolyGamma[x]").unwrap(), "PolyGamma[0, x]");
+    assert_eq!(interpret("PolyGamma[1/2]").unwrap(), "PolyGamma[0, 1/2]");
+  }
+
+  #[test]
+  fn numeric_digamma() {
+    let result: f64 = interpret("PolyGamma[1.0]").unwrap().parse().unwrap();
+    assert!((result - (-0.5772156649015329)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_trigamma() {
+    let result: f64 = interpret("PolyGamma[1, 1.0]").unwrap().parse().unwrap();
+    assert!((result - 1.6449340668482264).abs() < 1e-8);
+  }
+
+  #[test]
+  fn n_evaluates_polygamma() {
+    let result: f64 = interpret("N[PolyGamma[2, 1]]").unwrap().parse().unwrap();
+    assert!((result - (-2.4041138063191885)).abs() < 1e-8);
+  }
+}
+
 mod zeta {
   use super::*;
 

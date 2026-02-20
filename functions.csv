@@ -4267,7 +4267,7 @@ PolarPlot,Creates a polar plot of a function,✅,pure,6,403
 PolarTicks,,,,7,1846
 PoleZeroMarkers,,,,8,3537
 PolyaAeppliDistribution,,,,8,3317
-PolyGamma,,,,1,489
+PolyGamma,Polygamma function (n-th derivative of digamma),✅,pure,1,489
 Polygon,Represents a polygon graphics primitive,✅,pure,1,106
 PolygonalNumber,,,,10.4,3656
 PolygonAngle,,,,12,4387
