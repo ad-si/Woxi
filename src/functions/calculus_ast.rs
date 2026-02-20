@@ -2488,3 +2488,316 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
   }
 }
+
+/// Dt[expr, var] - Total derivative
+pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Dt expects exactly 2 arguments".into(),
+    ));
+  }
+  let var = match &args[1] {
+    Expr::Identifier(s) => s.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Dt: second argument must be a variable".into(),
+      ));
+    }
+  };
+  let result = total_differentiate(&args[0], &var)?;
+  Ok(simplify(result))
+}
+
+/// Check if an expression is a true constant (number or named constant).
+/// Unlike is_constant_wrt, this does NOT consider other variables as constant.
+fn is_true_constant(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_))
+}
+
+/// Total differentiation: like differentiate but treats all symbols as potentially
+/// dependent on the differentiation variable (returns Dt[y, x] instead of 0).
+fn total_differentiate(
+  expr: &Expr,
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  use crate::syntax::BinaryOperator::*;
+
+  match expr {
+    // Constants
+    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => {
+      Ok(Expr::Integer(0))
+    }
+
+    // Variable
+    Expr::Identifier(name) => {
+      if name == var {
+        Ok(Expr::Integer(1))
+      } else {
+        // Other variables may depend on var: return Dt[y, x]
+        Ok(Expr::FunctionCall {
+          name: "Dt".to_string(),
+          args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+        })
+      }
+    }
+
+    // Binary operations
+    Expr::BinaryOp { op, left, right } => match op {
+      Plus => {
+        let da = total_differentiate(left, var)?;
+        let db = total_differentiate(right, var)?;
+        Ok(simplify(Expr::BinaryOp {
+          op: Plus,
+          left: Box::new(da),
+          right: Box::new(db),
+        }))
+      }
+      Minus => {
+        let da = total_differentiate(left, var)?;
+        let db = total_differentiate(right, var)?;
+        Ok(simplify(Expr::BinaryOp {
+          op: Minus,
+          left: Box::new(da),
+          right: Box::new(db),
+        }))
+      }
+      Times => {
+        let da = total_differentiate(left, var)?;
+        let db = total_differentiate(right, var)?;
+        Ok(simplify(Expr::BinaryOp {
+          op: Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(da),
+            right: right.clone(),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: Times,
+            left: left.clone(),
+            right: Box::new(db),
+          }),
+        }))
+      }
+      Divide => {
+        let da = total_differentiate(left, var)?;
+        let db = total_differentiate(right, var)?;
+        Ok(simplify(Expr::BinaryOp {
+          op: Divide,
+          left: Box::new(Expr::BinaryOp {
+            op: Minus,
+            left: Box::new(Expr::BinaryOp {
+              op: Times,
+              left: Box::new(da),
+              right: right.clone(),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: Times,
+              left: left.clone(),
+              right: Box::new(db),
+            }),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: Power,
+            left: right.clone(),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        }))
+      }
+      Power => {
+        if is_true_constant(right) || is_constant_wrt(right, var) {
+          // f(x)^n: n * f(x)^(n-1) * Dt[f, x]
+          let df = total_differentiate(left, var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(Expr::BinaryOp {
+              op: Times,
+              left: right.clone(),
+              right: Box::new(Expr::BinaryOp {
+                op: Power,
+                left: left.clone(),
+                right: Box::new(Expr::BinaryOp {
+                  op: Plus,
+                  left: Box::new(Expr::Integer(-1)),
+                  right: right.clone(),
+                }),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        } else if matches!(left.as_ref(), Expr::Constant(c) if c == "E") {
+          // E^g: E^g * Dt[g, x]
+          let dg = total_differentiate(right, var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(expr.clone()),
+            right: Box::new(dg),
+          }))
+        } else {
+          // General f^g: return unevaluated
+          Ok(Expr::FunctionCall {
+            name: "Dt".to_string(),
+            args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+          })
+        }
+      }
+      _ => Ok(Expr::FunctionCall {
+        name: "Dt".to_string(),
+        args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+      }),
+    },
+
+    // Unary minus
+    Expr::UnaryOp { op, operand } => {
+      use crate::syntax::UnaryOperator;
+      if matches!(op, UnaryOperator::Minus) {
+        let d = total_differentiate(operand, var)?;
+        Ok(Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: Box::new(d),
+        })
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Dt".to_string(),
+          args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+        })
+      }
+    }
+
+    // Known function calls - chain rule
+    Expr::FunctionCall { name, args } => {
+      match name.as_str() {
+        "Sin" if args.len() == 1 => {
+          let df = total_differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: args.clone(),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Cos" if args.len() == 1 => {
+          let df = total_differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::FunctionCall {
+                name: "Sin".to_string(),
+                args: args.clone(),
+              }),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Tan" if args.len() == 1 => {
+          let df = total_differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(Expr::BinaryOp {
+              op: Power,
+              left: Box::new(Expr::FunctionCall {
+                name: "Sec".to_string(),
+                args: args.clone(),
+              }),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Log" if args.len() == 1 => {
+          let df = total_differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(Expr::BinaryOp {
+              op: Power,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(-1)),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Exp" if args.len() == 1 => {
+          let df = total_differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Times,
+            left: Box::new(expr.clone()),
+            right: Box::new(df),
+          }))
+        }
+        "Sqrt" if args.len() == 1 => {
+          // d/dx[sqrt(f)] = f'/(2*sqrt(f))
+          let df = total_differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: Divide,
+            left: Box::new(df),
+            right: Box::new(Expr::BinaryOp {
+              op: Times,
+              left: Box::new(Expr::Integer(2)),
+              right: Box::new(expr.clone()),
+            }),
+          }))
+        }
+        "Plus" => {
+          // Sum rule
+          let mut terms = Vec::new();
+          for arg in args {
+            terms.push(total_differentiate(arg, var)?);
+          }
+          if terms.is_empty() {
+            return Ok(Expr::Integer(0));
+          }
+          let mut result = terms.remove(0);
+          for t in terms {
+            result = Expr::BinaryOp {
+              op: Plus,
+              left: Box::new(result),
+              right: Box::new(t),
+            };
+          }
+          Ok(simplify(result))
+        }
+        "Times" if args.len() >= 2 => {
+          // Product rule for n factors
+          let mut sum_terms = Vec::new();
+          for i in 0..args.len() {
+            let di = total_differentiate(&args[i], var)?;
+            let mut product = di;
+            for (j, arg) in args.iter().enumerate() {
+              if j != i {
+                product = Expr::BinaryOp {
+                  op: Times,
+                  left: Box::new(product),
+                  right: Box::new(arg.clone()),
+                };
+              }
+            }
+            sum_terms.push(product);
+          }
+          let mut result = sum_terms.remove(0);
+          for t in sum_terms {
+            result = Expr::BinaryOp {
+              op: Plus,
+              left: Box::new(result),
+              right: Box::new(t),
+            };
+          }
+          Ok(simplify(result))
+        }
+        _ => {
+          // Unknown function: return unevaluated
+          Ok(Expr::FunctionCall {
+            name: "Dt".to_string(),
+            args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+          })
+        }
+      }
+    }
+
+    _ => Ok(Expr::FunctionCall {
+      name: "Dt".to_string(),
+      args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+    }),
+  }
+}

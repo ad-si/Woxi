@@ -5486,6 +5486,9 @@ pub fn evaluate_function_call_ast(
     "D" if args.len() == 2 => {
       return crate::functions::calculus_ast::d_ast(args);
     }
+    "Dt" if args.len() == 2 => {
+      return crate::functions::calculus_ast::dt_ast(args);
+    }
     "Curl" if args.len() == 2 => {
       return crate::functions::calculus_ast::curl_ast(args);
     }

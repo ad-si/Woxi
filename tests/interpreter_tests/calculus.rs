@@ -839,3 +839,52 @@ mod find_minimum {
     assert!(result.starts_with("{10., {x -> 5."));
   }
 }
+
+mod dt {
+  use super::*;
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("Dt[5, x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn same_variable() {
+    assert_eq!(interpret("Dt[x, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn other_variable() {
+    assert_eq!(interpret("Dt[y, x]").unwrap(), "Dt[y, x]");
+  }
+
+  #[test]
+  fn polynomial() {
+    assert_eq!(interpret("Dt[x^2, x]").unwrap(), "2*x");
+  }
+
+  #[test]
+  fn product_with_dependent_var() {
+    assert_eq!(interpret("Dt[x*y, x]").unwrap(), "x*Dt[y, x] + y");
+  }
+
+  #[test]
+  fn sum_with_dependent_var() {
+    assert_eq!(interpret("Dt[x^2 + y^2, x]").unwrap(), "2*x + 2*y*Dt[y, x]");
+  }
+
+  #[test]
+  fn sin_of_same_var() {
+    assert_eq!(interpret("Dt[Sin[x], x]").unwrap(), "Cos[x]");
+  }
+
+  #[test]
+  fn log_of_same_var() {
+    assert_eq!(interpret("Dt[Log[x], x]").unwrap(), "x^(-1)");
+  }
+
+  #[test]
+  fn cubic_polynomial() {
+    assert_eq!(interpret("Dt[x^3 + 2*x, x]").unwrap(), "2 + 3*x^2");
+  }
+}
