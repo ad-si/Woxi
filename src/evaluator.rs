@@ -1963,8 +1963,6 @@ fn evaluate_pattern_function_ast(
   }
 }
 
-/// Blank[] → _ or Blank[h] → _h
-#[inline(never)]
 /// RuleDelayed[lhs, rhs]: evaluate lhs, hold rhs unevaluated
 #[inline(never)]
 fn evaluate_rule_delayed_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1975,6 +1973,8 @@ fn evaluate_rule_delayed_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Blank[] → _ or Blank[h] → _h
+#[inline(never)]
 fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => Ok(Expr::Pattern {

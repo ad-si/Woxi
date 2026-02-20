@@ -1874,7 +1874,7 @@ Failure,,,,10,1522
 FailureAction,,,,10,3491
 FailureDistribution,,,,9,3020
 FailureQ,,,,10.2,3636
-False,,,,1,38
+False,Boolean constant representing logical falsehood,✅,pure,1,38
 FareySequence,,,,10,3506
 FARIMAProcess,,,,9,3121
 FeatureDistance,,,,11,4387
