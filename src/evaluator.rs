@@ -2567,6 +2567,98 @@ pub fn evaluate_function_call_ast(
       {
         return Ok(ds_args[0].clone());
       }
+      // Normal[SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, den]]
+      // => sum(c_i * (x - x0)^(nmin + i), i=0..len-1) when den=1
+      if let Expr::FunctionCall {
+        name,
+        args: sd_args,
+      } = &args[0]
+        && name == "SeriesData"
+        && sd_args.len() == 6
+      {
+        let var = &sd_args[0];
+        let x0 = &sd_args[1];
+        let coeffs = match &sd_args[2] {
+          Expr::List(c) => c,
+          _ => return Ok(args[0].clone()),
+        };
+        let nmin = match &sd_args[3] {
+          Expr::Integer(n) => *n,
+          _ => return Ok(args[0].clone()),
+        };
+
+        if coeffs.is_empty() {
+          return Ok(Expr::Integer(0));
+        }
+
+        let is_zero_center = matches!(x0, Expr::Integer(0));
+
+        // Build the base expression: x or (-x0 + x)
+        let base = if is_zero_center {
+          var.clone()
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(x0.clone()),
+            }),
+            right: Box::new(var.clone()),
+          }
+        };
+
+        // Build terms: c_i * base^(nmin + i)
+        let mut terms: Vec<Expr> = Vec::new();
+        for (i, coeff) in coeffs.iter().enumerate() {
+          if matches!(coeff, Expr::Integer(0)) {
+            continue;
+          }
+          let power = nmin + i as i128;
+          // base^power
+          let base_pow = if power == 0 {
+            None
+          } else if power == 1 {
+            Some(base.clone())
+          } else {
+            Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(base.clone()),
+              right: Box::new(Expr::Integer(power)),
+            })
+          };
+
+          // Build c * x^n in Mathematica's canonical form:
+          // Rational[-a,b]*x^n => -(a*x^n)/b  which prints as -(a*x^n)/b
+          let term = match base_pow {
+            None => coeff.clone(),
+            Some(bp) => {
+              // Evaluate the Times to get canonical form
+              let t = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(coeff.clone()),
+                right: Box::new(bp),
+              };
+              evaluate_expr_to_expr(&t)?
+            }
+          };
+          terms.push(term);
+        }
+
+        if terms.is_empty() {
+          return Ok(Expr::Integer(0));
+        }
+
+        // Combine terms with Plus, preserving order (low to high power)
+        let result = terms
+          .into_iter()
+          .reduce(|acc, t| Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(acc),
+            right: Box::new(t),
+          })
+          .unwrap();
+        return Ok(result);
+      }
       // For other expressions, Normal is identity
       return Ok(args[0].clone());
     }
