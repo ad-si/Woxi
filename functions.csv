@@ -4231,7 +4231,7 @@ PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,
 PlotRangeClipping,,,,6,674
 PlotRangePadding,,,,6,359
 PlotRegion,,,,2,1875
-PlotStyle,,,,1,45
+PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1,45
 PlotTheme,,,,10,459
 Pluralize,,,,10,4527
 Plus,Adds numbers together,✅,pure,1,6

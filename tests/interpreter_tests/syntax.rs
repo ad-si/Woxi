@@ -682,6 +682,25 @@ mod all_symbol {
   }
 }
 
+mod plot_style_symbol {
+  use super::*;
+
+  #[test]
+  fn plot_style_evaluates_to_itself() {
+    assert_eq!(interpret("PlotStyle").unwrap(), "PlotStyle");
+  }
+
+  #[test]
+  fn plot_style_head_is_symbol() {
+    assert_eq!(interpret("Head[PlotStyle]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn plot_style_is_protected() {
+    assert_eq!(interpret("Attributes[PlotStyle]").unwrap(), "{Protected}");
+  }
+}
+
 mod subscript_function {
   use super::*;
 
