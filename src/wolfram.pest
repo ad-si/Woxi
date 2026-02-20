@@ -101,6 +101,10 @@ PostfixFunction = { (BaseFunctionCall | Identifier) ~ ("&" ~ !"&")? }
 Increment = { Identifier ~ "++" }
 Decrement = { Identifier ~ "--" }
 
+// PreIncrement/PreDecrement: ++x or --x (prefix operators)
+PreIncrement = { "++" ~ Identifier }
+PreDecrement = { "--" ~ Identifier }
+
 // Compound assignment: x += y, x -= y, x *= y, x /= y
 AddTo = { Identifier ~ "+=" ~ Expression }
 SubtractFrom = { Identifier ~ "-=" ~ Expression }
@@ -194,6 +198,8 @@ Term = _{
   | DivideBy
   | Increment
   | Decrement
+  | PreIncrement
+  | PreDecrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | Identifier
@@ -232,6 +238,8 @@ TermNoImplicit = _{
   | DivideBy
   | Increment
   | Decrement
+  | PreIncrement
+  | PreDecrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | Identifier

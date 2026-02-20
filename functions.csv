@@ -1295,7 +1295,7 @@ DeclareCompiledComponent,,,,13.2,
 DeclarePackage,,,,2,1997
 Decompose,,,,1,3522
 DeconvolutionLayer,,,,11,3162
-Decrement,,,,1,536
+Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1,536
 Decrypt,,,,10.1,2596
 DecryptFile,,,,11.1,4387
 DedekindEta,,,,3,1525
@@ -2760,7 +2760,7 @@ IncludeQuantities,,,,10,5486
 IncludeRelatedTables,,,,12,
 IncludeSingularSolutions,,,,13.1,
 IncludeWindowTimes,,,,10,5486
-Increment,,,,1,142
+Increment,Increments a variable by 1 and returns the old value,✅,stateful,1,142
 IndefiniteMatrixQ,,,,10,4315
 IndependenceTest,,,,9,2792
 IndependentEdgeSetQ,,,,8,4527
@@ -4325,14 +4325,14 @@ PrecedesSlantEqual,,,,3,5390
 PrecedesTilde,,,,3,4527
 Precision,Returns the number of significant decimal digits,✅,pure,1,726
 PrecisionGoal,,,,2,653
-PreDecrement,,,,1,1041
+PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1,1041
 Predict,,,,10,1081
 PredictorFunction,,,,10,4387
 PredictorMeasurements,,,,10,1388
 PredictorMeasurementsObject,,,,10.1,
 PreemptProtect,,,,7,3413
 Prefix,,,,1,3153
-PreIncrement,,,,1,955
+PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1,955
 Prepend,Adds an element to the beginning of a list,✅,pure,1,345
 PrependLayer,,,,12,5587
 PrependTo,Prepends an element to a list stored in a variable,✅,stateful,1,1054

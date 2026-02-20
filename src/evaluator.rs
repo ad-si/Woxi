@@ -673,7 +673,11 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         return set_delayed_ast(&args[0], &args[1]);
       }
       // Special handling for Increment/Decrement - x++ / x--
-      if (name == "Increment" || name == "Decrement")
+      // and PreIncrement/PreDecrement - ++x / --x
+      if (name == "Increment"
+        || name == "Decrement"
+        || name == "PreIncrement"
+        || name == "PreDecrement")
         && args.len() == 1
         && let Expr::Identifier(var_name) = &args[0]
       {
@@ -685,7 +689,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           _ => Expr::Integer(0),
         };
-        let delta = if name == "Increment" {
+        let delta = if name == "Increment" || name == "PreIncrement" {
           Expr::Integer(1)
         } else {
           Expr::Integer(-1)
@@ -701,6 +705,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
             StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
           );
         });
+        // Post-increment/decrement returns old value; pre returns new value
+        if name == "PreIncrement" || name == "PreDecrement" {
+          return Ok(new_val);
+        }
         return Ok(current_val);
       }
       // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
@@ -9696,7 +9704,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Function" => vec!["HoldAll", "Protected"],
 
     // HoldFirst + Protected
-    "MessageName" => vec!["HoldFirst", "Protected", "ReadProtected"],
+    "MessageName" | "Increment" | "Decrement" | "PreIncrement"
+    | "PreDecrement" => {
+      vec!["HoldFirst", "Protected", "ReadProtected"]
+    }
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
     "SetDelayed" => vec!["HoldAll", "Protected", "SequenceHold"],
 

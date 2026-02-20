@@ -950,6 +950,123 @@ mod plot3d_function {
   }
 }
 
+mod increment_function {
+  use super::*;
+
+  #[test]
+  fn increment_postfix_returns_old_value() {
+    assert_eq!(interpret("x = 5; x++").unwrap(), "5");
+  }
+
+  #[test]
+  fn increment_postfix_modifies_variable() {
+    assert_eq!(interpret("x = 5; x++; x").unwrap(), "6");
+  }
+
+  #[test]
+  fn increment_function_call() {
+    assert_eq!(interpret("x = 10; Increment[x]").unwrap(), "10");
+    assert_eq!(interpret("x = 10; Increment[x]; x").unwrap(), "11");
+  }
+
+  #[test]
+  fn increment_attributes() {
+    assert_eq!(
+      interpret("Attributes[Increment]").unwrap(),
+      "{HoldFirst, Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn increment_multiple_times() {
+    assert_eq!(interpret("x = 0; x++; x++; x++; x").unwrap(), "3");
+  }
+}
+
+mod decrement_function {
+  use super::*;
+
+  #[test]
+  fn decrement_postfix_returns_old_value() {
+    assert_eq!(interpret("x = 5; x--").unwrap(), "5");
+  }
+
+  #[test]
+  fn decrement_postfix_modifies_variable() {
+    assert_eq!(interpret("x = 5; x--; x").unwrap(), "4");
+  }
+
+  #[test]
+  fn decrement_function_call() {
+    assert_eq!(interpret("x = 10; Decrement[x]").unwrap(), "10");
+    assert_eq!(interpret("x = 10; Decrement[x]; x").unwrap(), "9");
+  }
+
+  #[test]
+  fn decrement_attributes() {
+    assert_eq!(
+      interpret("Attributes[Decrement]").unwrap(),
+      "{HoldFirst, Protected, ReadProtected}"
+    );
+  }
+}
+
+mod pre_increment_function {
+  use super::*;
+
+  #[test]
+  fn pre_increment_returns_new_value() {
+    assert_eq!(interpret("x = 5; ++x").unwrap(), "6");
+  }
+
+  #[test]
+  fn pre_increment_modifies_variable() {
+    assert_eq!(interpret("x = 5; ++x; x").unwrap(), "6");
+  }
+
+  #[test]
+  fn pre_increment_function_call() {
+    assert_eq!(interpret("x = 10; PreIncrement[x]").unwrap(), "11");
+    assert_eq!(interpret("x = 10; PreIncrement[x]; x").unwrap(), "11");
+  }
+
+  #[test]
+  fn pre_increment_attributes() {
+    assert_eq!(
+      interpret("Attributes[PreIncrement]").unwrap(),
+      "{HoldFirst, Protected, ReadProtected}"
+    );
+  }
+}
+
+mod pre_decrement_function {
+  use super::*;
+
+  #[test]
+  fn pre_decrement_returns_new_value() {
+    assert_eq!(interpret("x = 5; --x").unwrap(), "4");
+  }
+
+  #[test]
+  fn pre_decrement_modifies_variable() {
+    assert_eq!(interpret("x = 5; --x; x").unwrap(), "4");
+  }
+
+  #[test]
+  fn pre_decrement_function_call() {
+    assert_eq!(interpret("x = 10; PreDecrement[x]").unwrap(), "9");
+    assert_eq!(interpret("x = 10; PreDecrement[x]; x").unwrap(), "9");
+  }
+
+  #[test]
+  fn pre_decrement_attributes() {
+    assert_eq!(
+      interpret("Attributes[PreDecrement]").unwrap(),
+      "{HoldFirst, Protected, ReadProtected}"
+    );
+  }
+}
+
 mod integer_symbol {
   use super::*;
 
