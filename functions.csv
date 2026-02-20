@@ -4952,7 +4952,7 @@ ShortRightArrow,,,,3,2911
 ShortTimeFourier,,,,12,
 ShortTimeFourierData,,,,12,
 ShortUpArrow,,,,3,5390
-Show,,,,1,75
+Show,Combines multiple graphics objects into a single display,✅,pure,1,75
 ShowAutoSpellCheck,,,,11,4173
 ShowAutoStyles,,,,4,2707
 ShowCellBracket,,,,3,2015
