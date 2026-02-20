@@ -9755,6 +9755,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Automatic"
     | "All"
     | "PlotStyle"
+    | "AxesLabel"
     | "Print"
     | "Echo"
     | "ToString"

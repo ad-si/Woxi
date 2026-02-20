@@ -735,6 +735,25 @@ mod condition_function {
   }
 }
 
+mod axes_label_symbol {
+  use super::*;
+
+  #[test]
+  fn axes_label_evaluates_to_itself() {
+    assert_eq!(interpret("AxesLabel").unwrap(), "AxesLabel");
+  }
+
+  #[test]
+  fn axes_label_head_is_symbol() {
+    assert_eq!(interpret("Head[AxesLabel]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn axes_label_is_protected() {
+    assert_eq!(interpret("Attributes[AxesLabel]").unwrap(), "{Protected}");
+  }
+}
+
 mod matrix_form {
   use super::*;
 

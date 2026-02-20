@@ -375,7 +375,7 @@ AutoSpacing,,,,3,4081
 AutoSubmitting,,,,10.2,5184
 Axes,,,,1,116
 AxesEdge,,,,2,1459
-AxesLabel,,,,1,71
+AxesLabel,Option specifying labels for the axes of a plot,✅,pure,1,71
 AxesOrigin,,,,2,166
 AxesStyle,,,,2,124
 AxiomaticTheory,,,,12,3242
