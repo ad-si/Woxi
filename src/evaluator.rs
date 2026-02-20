@@ -9665,7 +9665,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Constant", "Protected", "ReadProtected"]
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "Infinity" => vec!["Protected", "ReadProtected"],
+    "Infinity" | "PlotRange" => vec!["Protected", "ReadProtected"],
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],

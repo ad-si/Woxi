@@ -641,6 +641,28 @@ mod false_symbol {
   }
 }
 
+mod plot_range_symbol {
+  use super::*;
+
+  #[test]
+  fn plot_range_evaluates_to_itself() {
+    assert_eq!(interpret("PlotRange").unwrap(), "PlotRange");
+  }
+
+  #[test]
+  fn plot_range_head_is_symbol() {
+    assert_eq!(interpret("Head[PlotRange]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn plot_range_attributes() {
+    assert_eq!(
+      interpret("Attributes[PlotRange]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
 mod subscript_function {
   use super::*;
 
