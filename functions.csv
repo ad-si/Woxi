@@ -4125,7 +4125,7 @@ PasteButton,,,,6,2174
 Path,,,,4,2260
 PathGraph,,,,8,1209
 PathGraphQ,,,,8,3765
-Pattern,,,,1,9
+Pattern,Names a pattern object for use in transformation rules,✅,pure,1,9
 PatternFilling,,,,12.1,2993
 PatternReaction,,,,13.1,
 PatternSequence,,,,6,1089
