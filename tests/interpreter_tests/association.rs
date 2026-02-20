@@ -336,6 +336,50 @@ mod value_q {
   }
 }
 
+mod clear {
+  use super::*;
+
+  #[test]
+  fn clear_variable() {
+    assert_eq!(interpret("x = 5; Clear[x]; x").unwrap(), "x");
+  }
+
+  #[test]
+  fn clear_function_definition() {
+    assert_eq!(interpret("f[x_] := x^2; Clear[f]; f[3]").unwrap(), "f[3]");
+  }
+
+  #[test]
+  fn clear_multiple() {
+    assert_eq!(
+      interpret("a = 1; b = 2; Clear[a, b]; {a, b}").unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  fn clear_preserves_others() {
+    assert_eq!(
+      interpret("a = 1; b = 2; Clear[a]; {a, b}").unwrap(),
+      "{a, 2}"
+    );
+  }
+
+  #[test]
+  fn clear_preserves_attributes() {
+    assert_eq!(
+      interpret("ClearAll[g]; SetAttributes[g, Flat]; Clear[g]; Attributes[g]")
+        .unwrap(),
+      "{Flat}"
+    );
+  }
+
+  #[test]
+  fn clear_returns_null() {
+    assert_eq!(interpret("x = 5; Clear[x]").unwrap(), "Null");
+  }
+}
+
 mod clear_all {
   use super::*;
 
