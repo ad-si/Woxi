@@ -2827,7 +2827,7 @@ Insphere,,,,10.2,2894
 Install,,,,2,1941
 InstallService,,,,6,2688
 InString,,,,2,3153
-Integer,,,,1,131
+Integer,Head type for integer numbers,✅,pure,1,131
 IntegerDigits,Returns list of digits of an integer,✅,pure,2,296
 IntegerExponent,Returns the largest power of a base dividing n,✅,pure,4,2124
 IntegerLength,Returns the number of digits in an integer,✅,pure,6,1132

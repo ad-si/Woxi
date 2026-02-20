@@ -950,6 +950,40 @@ mod plot3d_function {
   }
 }
 
+mod integer_symbol {
+  use super::*;
+
+  #[test]
+  fn integer_evaluates_to_itself() {
+    assert_eq!(interpret("Integer").unwrap(), "Integer");
+  }
+
+  #[test]
+  fn integer_attributes() {
+    assert_eq!(interpret("Attributes[Integer]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn integer_is_head_of_integers() {
+    assert_eq!(interpret("Head[5]").unwrap(), "Integer");
+    assert_eq!(interpret("Head[0]").unwrap(), "Integer");
+    assert_eq!(interpret("Head[-3]").unwrap(), "Integer");
+  }
+
+  #[test]
+  fn integer_function_call_is_inert() {
+    assert_eq!(interpret("Integer[3]").unwrap(), "Integer[3]");
+    assert_eq!(interpret("Integer[x]").unwrap(), "Integer[x]");
+  }
+
+  #[test]
+  fn match_integer_pattern() {
+    assert_eq!(interpret("MatchQ[5, _Integer]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[1/2, _Integer]").unwrap(), "False");
+    assert_eq!(interpret("MatchQ[3.0, _Integer]").unwrap(), "False");
+  }
+}
+
 mod matrix_form {
   use super::*;
 

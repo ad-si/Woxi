@@ -5988,7 +5988,7 @@ pub fn evaluate_function_call_ast(
     | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
     | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset"
     | "Text" | "Style" | "Subscript" | "MatrixForm" | "Out" | "Condition"
-    | "Show" | "MessageName" | "Plot3D" => {
+    | "Show" | "MessageName" | "Plot3D" | "Integer" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9806,6 +9806,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "AspectRatio"
     | "BlankNullSequence"
     | "BlankSequence"
+    | "Integer"
     | "Print"
     | "Echo"
     | "ToString"
