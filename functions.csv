@@ -4129,7 +4129,7 @@ Pattern,Names a pattern object for use in transformation rules,✅,pure,1,9
 PatternFilling,,,,12.1,2993
 PatternReaction,,,,13.1,
 PatternSequence,,,,6,1089
-PatternTest,,,,1,91
+PatternTest,Tests whether a pattern matches using a predicate function (pattern?test),✅,pure,1,91
 PauliMatrix,Returns a Pauli spin matrix,✅,pure,7,672
 PaulWavelet,,,,8,4006
 Pause,Pauses evaluation for a specified number of seconds,✅,effectful,2,728
