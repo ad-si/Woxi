@@ -430,7 +430,7 @@ BeginDialogPacket,,,,3,
 BeginPackage,Begins a package context (no-op in Woxi),✅,effectful,1,588
 BellB,Returns the Bell number or Bell polynomial,✅,pure,6,1463
 BellY,,,,8,1725
-Below,,,,1,1025
+Below,Symbol for below alignment,✅,pure,1,1025
 BenfordDistribution,,,,8,3916
 BeniniDistribution,,,,8,3537
 BenktanderGibratDistribution,,,,8,3803
@@ -1048,7 +1048,7 @@ ContentSize,,,,7,1679
 Context,,,,1,1029
 Contexts,,,,2,3402
 ContextToFileName,,,,3,5079
-Continue,,,,1,1072
+Continue,Continues to next loop iteration,✅,pure,1,1072
 ContinuedFraction,Returns the continued fraction representation,✅,pure,4,1381
 ContinuedFractionK,,,,7,2212
 ContinuousAction,,,,6,1155
@@ -1757,7 +1757,7 @@ EuclideanDistance,,,,6,477
 EulerAngles,,,,10.2,2491
 EulerCharacteristic,,,,12,5486
 EulerE,,,,1,3298
-EulerGamma,,,,1,868
+EulerGamma,Euler-Mascheroni constant,✅,pure,1,868
 EulerianGraphQ,,,,8,3124
 EulerMatrix,,,,10.2,2082
 EulerPhi,Returns Euler's totient function,✅,pure,1,1073
@@ -2090,7 +2090,7 @@ ForeignFunction,,,,13.3,
 ForeignFunctionLoad,,,,13.3,
 ForeignPointerLookup,,,,13.3,
 Format,,,,1,1864
-FormatType,,,,1,1227
+FormatType,Option for output format type,✅,pure,1,1227
 FormBox,,,,3,991
 FormBoxOptions,,,,4,
 FormControl,,,,11,4225
@@ -2381,7 +2381,7 @@ GompertzMakehamDistribution,,,,8,2712
 GoochShading,,,,12.1,5587
 GoodmanKruskalGamma,,,,9,4052
 GoodmanKruskalGammaTest,,,,9,4567
-Goto,,,,1,1106
+Goto,Jumps to a Label,✅,pure,1,1106
 GouraudShading,,,,13.1,
 Grad,,,,9,461
 Gradient,,,,2.2,2203
@@ -3039,7 +3039,7 @@ KuwaharaFilter,,,,8,4173
 KVertexConnectedComponents,,,,10,3862
 KVertexConnectedGraphQ,,,,10,4612
 LABColor,,,,10,1926
-Label,,,,1,1059
+Label,Label for Goto targets,✅,pure,1,1059
 Labeled,,,,6,397
 LabelingFunction,,,,7,1085
 LabelingSize,,,,11.3,3257
@@ -3942,7 +3942,7 @@ Octahedron,,,,12,3506
 OddQ,Checks if a number is odd,✅,pure,1,635
 Off,Turns off messages (no-op in Woxi),✅,effectful,1,697
 Offset,,,,3,237
-On,,,,1,1095
+On,Turns on messages (no-op in Woxi),✅,effectful,1,1095
 ONanGroupON,,,,8,5184
 Once,,,,11,3462
 OneIdentity,,,,1,1960
@@ -3974,7 +3974,7 @@ OrderedQ,Tests if a list is in canonical order,✅,pure,1,1162
 Ordering,Returns positions that would sort a list,✅,pure,4.1,545
 OrderingBy,,,,12,4262
 OrderingLayer,,,,12,5390
-Orderless,,,,1,1325
+Orderless,Attribute for commutative functions,✅,pure,1,1325
 OrderlessPatternSequence,,,,10.1,1992
 OrdinalScale,,,,13.1,
 OrnsteinUhlenbeckProcess,,,,9,2157
@@ -4823,7 +4823,7 @@ Scan,Applies a function to each element for side effects,✅,pure,1,740
 ScheduledTask,,,,10,2421
 SchrodingerPDEComponent,,,,14,
 SchurDecomposition,,,,2,3083
-ScientificForm,,,,1,983
+ScientificForm,Displays number in scientific notation,✅,pure,1,983
 ScientificNotationThreshold,,,,11.2,4315
 ScorerGi,,,,10,4881
 ScorerGiPrime,,,,10,4881
@@ -4895,7 +4895,7 @@ SequenceSplit,,,,11.3,3656
 SequenceType,,,,13.3,
 Series,Computes a power series expansion,✅,pure,1,195
 SeriesCoefficient,,,,3,680
-SeriesData,,,,1,1244
+SeriesData,Represents a power series expansion,✅,pure,1,1244
 SeriesTermGoal,,,,12.1,3070
 ServiceConnect,,,,10,1914
 ServiceDeploy,,,,12.3,
@@ -5551,7 +5551,7 @@ Tilde,,,,3,3265
 TildeEqual,,,,3,4612
 TildeFullEqual,,,,3,5390
 TildeTilde,,,,3,1509
-TimeConstrained,,,,1,1182
+TimeConstrained,Runs computation with time limit (no-op in Woxi),✅,effectful,1,1182
 TimeConstraint,,,,3,1751
 TimeDirection,,,,10,4881
 TimeDistribution,,,,14.1,
