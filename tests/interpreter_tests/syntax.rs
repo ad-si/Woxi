@@ -2729,3 +2729,57 @@ mod tag_set_delayed {
     );
   }
 }
+
+mod upset {
+  use super::*;
+
+  #[test]
+  fn basic_upset() {
+    clear_state();
+    assert_eq!(interpret("f[g] ^= 5; f[g]").unwrap(), "5");
+  }
+
+  #[test]
+  fn upset_returns_value() {
+    // UpSet returns the evaluated RHS
+    clear_state();
+    assert_eq!(interpret("f[g] ^= 1 + 2").unwrap(), "3");
+  }
+
+  #[test]
+  fn upset_evaluates_rhs() {
+    // RHS is evaluated before storing
+    clear_state();
+    assert_eq!(interpret("f[g] ^= 2 + 3; f[g]").unwrap(), "5");
+  }
+
+  #[test]
+  fn upset_multiple_symbols() {
+    // UpSet stores for all symbols in arguments
+    clear_state();
+    assert_eq!(interpret("f[g, h] ^= 10; f[g, h]").unwrap(), "10");
+  }
+
+  #[test]
+  fn upset_with_nested_function() {
+    // Tag is extracted from the head of nested function call
+    clear_state();
+    assert_eq!(interpret("f[g[x_]] ^= x^2; f[g[3]]").unwrap(), "9");
+  }
+
+  #[test]
+  fn upset_stores_upvalue() {
+    // UpValues should contain a definition
+    clear_state();
+    let result = interpret("f[g] ^= 5; UpValues[g]").unwrap();
+    assert!(result.contains(":> 5"));
+  }
+
+  #[test]
+  fn upset_attributes() {
+    assert_eq!(
+      interpret("Attributes[UpSet]").unwrap(),
+      "{HoldFirst, Protected, SequenceHold}"
+    );
+  }
+}

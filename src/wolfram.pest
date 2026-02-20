@@ -87,6 +87,7 @@ Operator = {
   | ":>"     // RuleDelayed (must be before := and >)
   | ":="
   | "->"     // Rule (must be before - and >)
+  | "^="     // UpSet (must be before ^ and =)
   | "+" | "-" | "*" | "/" | "^"
   | "." ~ !ASCII_DIGIT ~ !"."  // Dot operator (not decimal point, not .. or ...)
   | "<" | ">"

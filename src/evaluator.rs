@@ -682,6 +682,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "TagSet" && args.len() == 3 {
         return tag_set_delayed_ast(&args[0], &args[1], &args[2], true);
       }
+      // Special handling for UpSet - automatically determines tags from LHS
+      if name == "UpSet" && args.len() == 2 {
+        return upset_ast(&args[0], &args[1]);
+      }
       // Special handling for Increment/Decrement - x++ / x--
       // and PreIncrement/PreDecrement - ++x / --x
       if (name == "Increment"
@@ -7548,6 +7552,50 @@ fn tag_set_delayed_ast(
   Ok(Expr::Identifier("Null".to_string()))
 }
 
+/// UpSet[lhs, rhs] — automatically assigns upvalues to all symbols in the arguments of lhs.
+/// f[g] ^= 5 stores an upvalue for g such that f[g] evaluates to 5.
+fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
+  // LHS must be a function call
+  let (_, lhs_args) = match lhs {
+    Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "UpSet::normal: Nonatomic expression expected at position 1 in {} ^= {}",
+        crate::syntax::expr_to_string(lhs),
+        crate::syntax::expr_to_string(rhs)
+      )));
+    }
+  };
+
+  // Evaluate the RHS
+  let eval_rhs = evaluate_expr_to_expr(rhs)?;
+
+  // Find all tag symbols in the arguments
+  let mut tags = Vec::new();
+  for arg in &lhs_args {
+    match arg {
+      Expr::Identifier(s) => tags.push(s.clone()),
+      Expr::FunctionCall { name, .. } => tags.push(name.clone()),
+      _ => {} // Skip non-symbol arguments (integers, etc.)
+    }
+  }
+
+  if tags.is_empty() {
+    return Err(InterpreterError::EvaluationError(format!(
+      "UpSet::nosym: {} does not contain a symbol to attach a rule to.",
+      crate::syntax::expr_to_string(lhs)
+    )));
+  }
+
+  // Store upvalue for each tag
+  for tag in &tags {
+    tag_set_delayed_ast(&Expr::Identifier(tag.clone()), lhs, &eval_rhs, true)?;
+  }
+
+  // UpSet returns the evaluated RHS
+  Ok(eval_rhs)
+}
+
 /// Perform nested access on an association: assoc["a", "b"] -> assoc["a"]["b"]
 fn association_nested_access(
   var_name: &str,
@@ -10095,7 +10143,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "SetDelayed" | "TagSetDelayed" => {
       vec!["HoldAll", "Protected", "SequenceHold"]
     }
-    "TagSet" => vec!["HoldFirst", "Protected", "SequenceHold"],
+    "TagSet" | "UpSet" => vec!["HoldFirst", "Protected", "SequenceHold"],
 
     // HoldRest + Protected
     "If" | "PatternTest" => vec!["HoldRest", "Protected"],

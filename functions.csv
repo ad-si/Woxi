@@ -5849,7 +5849,7 @@ UpperTriangularize,,,,7,1103
 UpperTriangularMatrix,,,,13.1,
 UpperTriangularMatrixQ,,,,12,4356
 Upsample,,,,9,2528
-UpSet,,,,1,454
+UpSet,Assign upvalues to symbols appearing in the LHS,✅,side_effect,1,454
 UpSetDelayed,,,,1,992
 UpTee,,,,3,4567
 UpTeeArrow,,,,3,5390
