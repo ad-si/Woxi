@@ -1574,3 +1574,110 @@ pub fn levi_civita_tensor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut indices = Vec::new();
   Ok(build_tensor(n, 0, &mut indices))
 }
+
+/// LinearSolve[m, b] — solves the matrix equation m.x = b for x.
+/// Uses Gaussian elimination with exact rational arithmetic.
+pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LinearSolve expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "LinearSolve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let b = match &args[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LinearSolve".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = matrix.len();
+  if n == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "LinearSolve: empty matrix".into(),
+    ));
+  }
+  if matrix.iter().any(|row| row.len() != n) {
+    return Err(InterpreterError::EvaluationError(
+      "LinearSolve: matrix must be square".into(),
+    ));
+  }
+  if b.len() != n {
+    return Err(InterpreterError::EvaluationError(
+      "LinearSolve: matrix and vector dimensions must agree".into(),
+    ));
+  }
+
+  // Build augmented matrix [A | b]
+  let mut aug: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut row = matrix[i].clone();
+    row.push(b[i].clone());
+    aug.push(row);
+  }
+
+  // Forward elimination with partial pivoting
+  for col in 0..n {
+    // Find pivot: first non-zero entry in column
+    let mut pivot_row = None;
+    for row in col..n {
+      if !is_zero_expr(&aug[row][col]) {
+        pivot_row = Some(row);
+        break;
+      }
+    }
+    let pivot_row = match pivot_row {
+      Some(r) => r,
+      None => {
+        return Err(InterpreterError::EvaluationError(
+          "LinearSolve: matrix is singular".into(),
+        ));
+      }
+    };
+
+    // Swap rows if needed
+    if pivot_row != col {
+      aug.swap(col, pivot_row);
+    }
+
+    // Eliminate below pivot
+    let pivot = aug[col][col].clone();
+    for row in (col + 1)..n {
+      let factor = eval_divide(&aug[row][col], &pivot);
+      aug[row][col] = Expr::Integer(0);
+      for j in (col + 1)..=n {
+        let prod = eval_mul(&factor, &aug[col][j]);
+        aug[row][j] = eval_sub(&aug[row][j], &prod);
+        // Simplify intermediate results
+        aug[row][j] = simplify_expr(&aug[row][j]);
+      }
+    }
+  }
+
+  // Back substitution
+  let mut x = vec![Expr::Integer(0); n];
+  for i in (0..n).rev() {
+    let mut sum = aug[i][n].clone();
+    for j in (i + 1)..n {
+      let prod = eval_mul(&aug[i][j], &x[j]);
+      sum = eval_sub(&sum, &prod);
+    }
+    x[i] = eval_divide(&sum, &aug[i][i]);
+    x[i] = simplify_expr(&x[i]);
+  }
+
+  Ok(Expr::List(x))
+}

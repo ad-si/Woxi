@@ -3189,7 +3189,7 @@ LinearModelFit,,,,7,768
 LinearOffsetFunction,,,,7,3916
 LinearOptimization,,,,12,3803
 LinearRecurrence,Generates a linear recurrence sequence,✅,pure,7,1632
-LinearSolve,,,,1,437
+LinearSolve,Solves a linear system of equations using Gaussian elimination,✅,pure,1,437
 LinearSolveFunction,,,,5,4356
 LineBreakChart,,,,8,3566
 LineGraph,,,,8,2525

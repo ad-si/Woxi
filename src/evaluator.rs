@@ -5505,6 +5505,9 @@ pub fn evaluate_function_call_ast(
     "Inverse" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::inverse_ast(args);
     }
+    "LinearSolve" if args.len() == 2 => {
+      return crate::functions::linear_algebra_ast::linear_solve_ast(args);
+    }
     "Tr" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::tr_ast(args);
     }
