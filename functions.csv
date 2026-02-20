@@ -2369,7 +2369,7 @@ GeoVisibleRegionBoundary,,,,10,4291
 GeoWithinQ,,,,10,2929
 GeoZoomLevel,,,,10,2698
 GestureHandler,,,,9,4315
-Get,,,,1,283
+Get,Reads and evaluates a file returning the last result,✅,effectful,1,283
 GetEnvironment,,,,9,3717
 GibbsPointProcess,,,,12.2,5587
 Glaisher,,,,4,2509

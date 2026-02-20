@@ -3833,6 +3833,33 @@ pub fn evaluate_function_call_ast(
         ));
       }
     }
+    // Get[file] — read and evaluate a file, returning the last result
+    #[cfg(not(target_arch = "wasm32"))]
+    "Get" if args.len() == 1 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        Expr::Identifier(s) => s.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Get".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let content = match std::fs::read_to_string(&filename) {
+        Ok(c) => c,
+        Err(_) => {
+          eprintln!("Get::noopen: Cannot open {}.", filename);
+          return Ok(Expr::Identifier("$Failed".to_string()));
+        }
+      };
+      // Use interpret to evaluate the file content (handles all node types
+      // including FunctionDefinition, Expression, etc.)
+      let result_str = crate::interpret(&content)?;
+      let result = crate::syntax::string_to_expr(&result_str)
+        .unwrap_or(Expr::Identifier(result_str));
+      return Ok(result);
+    }
     #[cfg(not(target_arch = "wasm32"))]
     "Export" if args.len() >= 2 => {
       let filename = match &args[0] {
