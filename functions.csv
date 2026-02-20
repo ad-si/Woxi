@@ -583,7 +583,7 @@ BoundaryStyle,,,,6,644
 BoundedRegionQ,,,,10,2828
 BoundingRegion,,,,10.4,2286
 BoxData,,,,8,681
-Boxed,,,,1,270
+Boxed,Option for boxed axes in 3D plots,✅,pure,1,270
 Boxes,,,,6,3200
 BoxMatrix,Creates a matrix of ones with given radius,✅,pure,7,2152
 BoxObject,,,,10,4204
@@ -3092,7 +3092,7 @@ LearningRate,,,,12,4809
 LearningRateMultipliers,,,,11.1,3440
 LeastSquares,,,,6,1885
 LeastSquaresFilterKernel,,,,9,3717
-Left,,,,1,241
+Left,Symbol for left alignment,✅,pure,1,241
 LeftArrow,,,,3,2762
 LeftArrowBar,,,,3,5390
 LeftArrowRightArrow,,,,3,5390
@@ -4524,7 +4524,7 @@ ReadLine,,,,10,2889
 ReadList,,,,1,767
 ReadProtected,,,,1,1484
 ReadString,,,,10,2282
-Real,,,,1,263
+Real,Head type for real (floating-point) numbers,✅,pure,1,263
 RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
 RealBlockDiagonalForm,,,,7,5486
 RealDigits,Returns the digits of a real number,✅,pure,2,866
@@ -5544,7 +5544,7 @@ TickLabelPositioning,,,,12.3,
 TickLabels,,,,12.3,
 TickLengths,,,,12.3,
 TickPositions,,,,12.3,
-Ticks,,,,1,264
+Ticks,Option for tick marks on plot axes,✅,pure,1,264
 TicksStyle,,,,6,531
 TideData,,,,11.2,4052
 Tilde,,,,3,3265
