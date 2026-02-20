@@ -4624,3 +4624,113 @@ mod zeta {
     assert!((result - (-0.20788622497735454)).abs() < 1e-6);
   }
 }
+
+mod jacobi_dn {
+  use super::*;
+
+  #[test]
+  fn at_zero_u() {
+    assert_eq!(interpret("JacobiDN[0, m]").unwrap(), "1");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiDN[u, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiDN[u, 1]").unwrap(), "Sech[u]");
+  }
+
+  #[test]
+  fn even_symmetry() {
+    assert_eq!(interpret("JacobiDN[-u, m]").unwrap(), "JacobiDN[u, m]");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("JacobiDN[4., 2/3]").unwrap().parse().unwrap();
+    assert!((result - 0.9988832842546814).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_real_2() {
+    let result: f64 = interpret("JacobiDN[0.5, 0.3]").unwrap().parse().unwrap();
+    assert!((result - 0.9656789647459513).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiDN[u, m]").unwrap(), "JacobiDN[u, m]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[JacobiDN[1, 1/2]]").unwrap().parse().unwrap();
+    assert!((result - 0.8231610016315964).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_2() {
+    let result: f64 =
+      interpret("N[JacobiDN[2, 1/3]]").unwrap().parse().unwrap();
+    assert!((result - 0.8259983048005796).abs() < 1e-10);
+  }
+}
+
+mod jacobi_sn {
+  use super::*;
+
+  #[test]
+  fn at_zero_u() {
+    assert_eq!(interpret("JacobiSN[0, m]").unwrap(), "0");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiSN[u, 0]").unwrap(), "Sin[u]");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiSN[u, 1]").unwrap(), "Tanh[u]");
+  }
+
+  #[test]
+  fn odd_symmetry() {
+    assert_eq!(interpret("JacobiSN[-u, m]").unwrap(), "-JacobiSN[u, m]");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("JacobiSN[0.5, 0.3]").unwrap().parse().unwrap();
+    assert!((result - 0.47421562271182044).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_real_2() {
+    let result: f64 = interpret("JacobiSN[4., 2/3]").unwrap().parse().unwrap();
+    assert!((result - 0.05786429516439241).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiSN[u, m]").unwrap(), "JacobiSN[u, m]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[JacobiSN[1, 1/2]]").unwrap().parse().unwrap();
+    assert!((result - 0.8030018248956442).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_2() {
+    let result: f64 =
+      interpret("N[JacobiSN[2, 1/3]]").unwrap().parse().unwrap();
+    assert!((result - 0.9763095827654809).abs() < 1e-10);
+  }
+}
