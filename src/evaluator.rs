@@ -5416,6 +5416,12 @@ pub fn evaluate_function_call_ast(
     "FindRoot" if args.len() == 2 => {
       return crate::functions::polynomial_ast::find_root_ast(args);
     }
+    "FindMinimum" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::find_minimum_ast(args, false);
+    }
+    "FindMaximum" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::find_minimum_ast(args, true);
+    }
 
     // AST-native list generation
     "Tuples" if args.len() == 1 || args.len() == 2 => {

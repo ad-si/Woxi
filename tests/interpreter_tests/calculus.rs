@@ -779,3 +779,63 @@ mod big_o {
     assert_eq!(interpret("D[{x, x^2, x^3}, x]").unwrap(), "{1, 2*x, 3*x^2}");
   }
 }
+
+mod find_minimum {
+  use super::*;
+
+  #[test]
+  fn quadratic_minimum() {
+    clear_state();
+    let result = interpret("FindMinimum[x^2 - 4 x + 5, {x, 0}]").unwrap();
+    assert_eq!(result, "{1., {x -> 2.}}");
+  }
+
+  #[test]
+  fn sin_minimum() {
+    clear_state();
+    let result = interpret("FindMinimum[Sin[x], {x, 5}]").unwrap();
+    // Minimum of Sin near x=5 is at x = 3*Pi/2 ≈ 4.7124
+    assert!(result.starts_with("{-1., {x -> 4.71238"));
+  }
+
+  #[test]
+  fn x_cos_x_minimum() {
+    clear_state();
+    let result = interpret("FindMinimum[x Cos[x], {x, 2}]").unwrap();
+    // Should find local minimum near x ≈ 3.4256
+    assert!(result.starts_with("{-3.28837"));
+  }
+
+  #[test]
+  fn quartic_minimum() {
+    clear_state();
+    let result = interpret("FindMinimum[x^4 - 3 x^2 + 2, {x, 2}]").unwrap();
+    // Minimum near x ≈ 1.2247
+    assert!(result.starts_with("{-0.25"));
+    assert!(result.contains("x -> 1.224"));
+  }
+
+  #[test]
+  fn multivariable_minimum() {
+    clear_state();
+    let result =
+      interpret("FindMinimum[(x - 3)^2 + (y - 2)^2, {{x, 0}, {y, 0}}]")
+        .unwrap();
+    assert_eq!(result, "{0., {x -> 3., y -> 2.}}");
+  }
+
+  #[test]
+  fn find_maximum_sin() {
+    clear_state();
+    let result = interpret("FindMaximum[Sin[x], {x, 1}]").unwrap();
+    // Maximum of Sin near x=1 is at x = Pi/2 ≈ 1.5708
+    assert!(result.starts_with("{1., {x -> 1.5707"));
+  }
+
+  #[test]
+  fn find_maximum_negative_quadratic() {
+    clear_state();
+    let result = interpret("FindMaximum[-(x - 5)^2 + 10, {x, 0}]").unwrap();
+    assert!(result.starts_with("{10., {x -> 5."));
+  }
+}
