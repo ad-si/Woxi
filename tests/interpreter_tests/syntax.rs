@@ -754,6 +754,33 @@ mod axes_label_symbol {
   }
 }
 
+mod show_function {
+  use super::*;
+
+  #[test]
+  fn show_evaluates_to_itself() {
+    assert_eq!(interpret("Show").unwrap(), "Show");
+  }
+
+  #[test]
+  fn show_head_is_symbol() {
+    assert_eq!(interpret("Head[Show]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn show_attributes() {
+    assert_eq!(
+      interpret("Attributes[Show]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn show_head_with_arg() {
+    assert_eq!(interpret("Head[Show[1]]").unwrap(), "Show");
+  }
+}
+
 mod matrix_form {
   use super::*;
 
