@@ -517,7 +517,7 @@ Black,,,,5.1,113
 BlackmanHarrisWindow,,,,9,3823
 BlackmanNuttallWindow,,,,9,4173
 BlackmanWindow,,,,9,3636
-Blank,,,,1,7
+Blank,Pattern object matching any expression,✅,pure,1,7
 BlankNullSequence,,,,1,101
 BlankSequence,,,,1,126
 Blend,,,,6,258

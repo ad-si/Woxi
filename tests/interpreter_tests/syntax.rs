@@ -427,6 +427,68 @@ mod rule_display {
   }
 }
 
+mod blank_function {
+  use super::*;
+
+  #[test]
+  fn blank_no_args_displays_as_underscore() {
+    assert_eq!(interpret("Blank[]").unwrap(), "_");
+  }
+
+  #[test]
+  fn blank_with_head_displays_as_underscore_head() {
+    assert_eq!(interpret("Blank[Integer]").unwrap(), "_Integer");
+    assert_eq!(interpret("Blank[String]").unwrap(), "_String");
+    assert_eq!(interpret("Blank[List]").unwrap(), "_List");
+    assert_eq!(interpret("Blank[Symbol]").unwrap(), "_Symbol");
+  }
+
+  #[test]
+  fn blank_head_is_blank() {
+    assert_eq!(interpret("Head[Blank[]]").unwrap(), "Blank");
+    assert_eq!(interpret("Head[Blank[Integer]]").unwrap(), "Blank");
+  }
+
+  #[test]
+  fn blank_matchq_any() {
+    assert_eq!(interpret("MatchQ[42, Blank[]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[\"hello\", Blank[]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[{1, 2}, Blank[]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[f[x], Blank[]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn blank_matchq_with_head() {
+    assert_eq!(interpret("MatchQ[42, Blank[Integer]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[42, Blank[String]]").unwrap(), "False");
+    assert_eq!(
+      interpret("MatchQ[\"hello\", Blank[String]]").unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("MatchQ[symbol, Blank[Symbol]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn blank_in_cases() {
+    assert_eq!(
+      interpret("Cases[{1, \"a\", 2, \"b\"}, Blank[Integer]]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret("Cases[{1, \"a\", 2, \"b\"}, Blank[String]]").unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  fn blank_in_replace_all() {
+    assert_eq!(
+      interpret("{1, x, 2.5, \"hello\"} /. Blank[Integer] -> 0").unwrap(),
+      "{0, x, 2.5, hello}"
+    );
+  }
+}
+
 mod hold_form {
   use super::*;
 
