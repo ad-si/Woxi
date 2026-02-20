@@ -1067,6 +1067,170 @@ mod pre_decrement_function {
   }
 }
 
+mod add_to_function {
+  use super::*;
+
+  #[test]
+  fn add_to_works() {
+    assert_eq!(interpret("x = 5; x += 3; x").unwrap(), "8");
+  }
+
+  #[test]
+  fn add_to_attributes() {
+    assert_eq!(
+      interpret("Attributes[AddTo]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+  }
+}
+
+mod subtract_from_function {
+  use super::*;
+
+  #[test]
+  fn subtract_from_attributes() {
+    assert_eq!(
+      interpret("Attributes[SubtractFrom]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+  }
+}
+
+mod times_by_function {
+  use super::*;
+
+  #[test]
+  fn times_by_attributes() {
+    assert_eq!(
+      interpret("Attributes[TimesBy]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+  }
+}
+
+mod divide_by_function {
+  use super::*;
+
+  #[test]
+  fn divide_by_attributes() {
+    assert_eq!(
+      interpret("Attributes[DivideBy]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+  }
+}
+
+mod golden_ratio_symbol {
+  use super::*;
+
+  #[test]
+  fn golden_ratio_evaluates_to_itself() {
+    assert_eq!(interpret("GoldenRatio").unwrap(), "GoldenRatio");
+  }
+
+  #[test]
+  fn golden_ratio_numeric() {
+    assert!(interpret("N[GoldenRatio]").unwrap().starts_with("1.61803"));
+  }
+}
+
+mod complex_symbol {
+  use super::*;
+
+  #[test]
+  fn complex_function_call() {
+    assert_eq!(interpret("Complex[3, 4]").unwrap(), "3 + 4*I");
+  }
+
+  #[test]
+  fn complex_is_head() {
+    assert_eq!(interpret("Head[3 + 4 I]").unwrap(), "Complex");
+  }
+
+  #[test]
+  fn complex_attributes() {
+    assert_eq!(interpret("Attributes[Complex]").unwrap(), "{Protected}");
+  }
+}
+
+mod hold_all_symbol {
+  use super::*;
+
+  #[test]
+  fn hold_all_attributes() {
+    assert_eq!(interpret("Attributes[HoldAll]").unwrap(), "{Protected}");
+  }
+}
+
+mod listable_symbol {
+  use super::*;
+
+  #[test]
+  fn listable_attributes() {
+    assert_eq!(interpret("Attributes[Listable]").unwrap(), "{Protected}");
+  }
+}
+
+mod hold_first_symbol {
+  use super::*;
+
+  #[test]
+  fn hold_first_attributes() {
+    assert_eq!(interpret("Attributes[HoldFirst]").unwrap(), "{Protected}");
+  }
+}
+
+mod begin_end_package {
+  use super::*;
+
+  #[test]
+  fn begin_returns_null() {
+    assert_eq!(interpret("Begin[\"Private`\"]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn end_returns_null() {
+    assert_eq!(interpret("End[]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn begin_package_returns_null() {
+    assert_eq!(interpret("BeginPackage[\"MyPkg`\"]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn end_package_returns_null() {
+    assert_eq!(interpret("EndPackage[]").unwrap(), "Null");
+  }
+}
+
+mod break_function {
+  use super::*;
+
+  #[test]
+  fn break_attributes() {
+    assert_eq!(interpret("Attributes[Break]").unwrap(), "{Protected}");
+  }
+}
+
+mod lighting_symbol {
+  use super::*;
+
+  #[test]
+  fn lighting_attributes() {
+    assert_eq!(interpret("Attributes[Lighting]").unwrap(), "{Protected}");
+  }
+}
+
+mod modulus_symbol {
+  use super::*;
+
+  #[test]
+  fn modulus_attributes() {
+    assert_eq!(interpret("Attributes[Modulus]").unwrap(), "{Protected}");
+  }
+}
+
 mod unset_function {
   use super::*;
 

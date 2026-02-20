@@ -6005,9 +6005,14 @@ pub fn evaluate_function_call_ast(
     }
   }
 
-  // Needs: package loading - no-op in Woxi, returns Null
-  // Message: message system - no-op in Woxi, returns Null
-  if name == "Needs" || name == "Message" {
+  // Package/message functions - no-op in Woxi, returns Null
+  if name == "Needs"
+    || name == "Message"
+    || name == "Begin"
+    || name == "End"
+    || name == "BeginPackage"
+    || name == "EndPackage"
+  {
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
@@ -9770,7 +9775,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "PreDecrement" | "Unset" => {
       vec!["HoldFirst", "Protected", "ReadProtected"]
     }
-    "Message" => {
+    "Message" | "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy" => {
       vec!["HoldFirst", "Protected"]
     }
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
@@ -9913,6 +9918,17 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Top"
     | "Bottom"
     | "WorkingPrecision"
+    | "HoldAll"
+    | "Lighting"
+    | "Listable"
+    | "HoldFirst"
+    | "End"
+    | "Begin"
+    | "BeginPackage"
+    | "EndPackage"
+    | "Modulus"
+    | "Complex"
+    | "Break"
     | "Print"
     | "Echo"
     | "ToString"
