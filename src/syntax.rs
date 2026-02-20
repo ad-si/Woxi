@@ -1258,6 +1258,24 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         args: vec![var],
       }
     }
+    Rule::PreIncrement => {
+      // ++x -> PreIncrement[x]
+      let inner = pair.into_inner().next().unwrap();
+      let var = pair_to_expr(inner);
+      Expr::FunctionCall {
+        name: "PreIncrement".to_string(),
+        args: vec![var],
+      }
+    }
+    Rule::PreDecrement => {
+      // --x -> PreDecrement[x]
+      let inner = pair.into_inner().next().unwrap();
+      let var = pair_to_expr(inner);
+      Expr::FunctionCall {
+        name: "PreDecrement".to_string(),
+        args: vec![var],
+      }
+    }
     Rule::AddTo => {
       // x += y -> AddTo[x, y]
       let mut inner = pair.into_inner();
@@ -2206,6 +2224,18 @@ pub fn expr_to_string(expr: &Expr) -> String {
           return format!("{}?{}", pat, test);
         }
         return format!("({})?{}", pat, test);
+      }
+      if name == "Increment" && args.len() == 1 {
+        return format!("{}++", expr_to_string(&args[0]));
+      }
+      if name == "Decrement" && args.len() == 1 {
+        return format!("{}--", expr_to_string(&args[0]));
+      }
+      if name == "PreIncrement" && args.len() == 1 {
+        return format!("++{}", expr_to_string(&args[0]));
+      }
+      if name == "PreDecrement" && args.len() == 1 {
+        return format!("--{}", expr_to_string(&args[0]));
       }
       // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
       if name == "Minus" && args.len() >= 2 {
@@ -3281,6 +3311,18 @@ pub fn expr_to_output(expr: &Expr) -> String {
           return format!("{}?{}", pat, test);
         }
         return format!("({})?{}", pat, test);
+      }
+      if name == "Increment" && args.len() == 1 {
+        return format!("{}++", expr_to_output(&args[0]));
+      }
+      if name == "Decrement" && args.len() == 1 {
+        return format!("{}--", expr_to_output(&args[0]));
+      }
+      if name == "PreIncrement" && args.len() == 1 {
+        return format!("++{}", expr_to_output(&args[0]));
+      }
+      if name == "PreDecrement" && args.len() == 1 {
+        return format!("--{}", expr_to_output(&args[0]));
       }
       // Special case: Dot[a, b] displays as a . b (infix notation)
       if name == "Dot" && args.len() == 2 {
