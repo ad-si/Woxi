@@ -4437,6 +4437,304 @@ fn zeta_numeric(s: f64) -> f64 {
   sum
 }
 
+/// PolyGamma[z] - digamma function (equivalent to PolyGamma[0, z])
+/// PolyGamma[n, z] - n-th derivative of the digamma function
+pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (n_val, z_expr) = match args.len() {
+    1 => (0_i128, &args[0]),
+    2 => match &args[0] {
+      Expr::Integer(n) => (*n, &args[1]),
+      Expr::Real(f) => {
+        // Real n: evaluate numerically if z is also numeric
+        if let Some(z) = extract_f64(z_expr_from_args(&args[1])) {
+          return Ok(Expr::Real(polygamma_numeric(*f as usize, z)));
+        }
+        return Ok(Expr::FunctionCall {
+          name: "PolyGamma".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "PolyGamma".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    },
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "PolyGamma expects 1 or 2 arguments".into(),
+      ));
+    }
+  };
+
+  if n_val < 0 {
+    return Ok(Expr::FunctionCall {
+      name: "PolyGamma".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let n = n_val as usize;
+
+  // Check for poles: z = 0 or negative integer
+  if let Expr::Integer(z) = z_expr
+    && *z <= 0
+  {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
+  match z_expr {
+    Expr::Integer(z) if *z > 0 => {
+      let z = *z as usize;
+      if n == 0 {
+        // Digamma at positive integer: psi(z) = H_{z-1} - EulerGamma
+        return Ok(polygamma_digamma_integer(z));
+      }
+      if n % 2 == 1 {
+        // Odd n: exact result via Zeta (n+1 is even)
+        if let Some(expr) = polygamma_odd_integer(n, z) {
+          return Ok(expr);
+        }
+      }
+      // Even n >= 2: return unevaluated (involves odd Zeta values)
+      Ok(Expr::FunctionCall {
+        name: "PolyGamma".to_string(),
+        args: vec![Expr::Integer(n as i128), Expr::Integer(z as i128)],
+      })
+    }
+    Expr::Real(f) => Ok(Expr::Real(polygamma_numeric(n, *f))),
+    _ => {
+      // Symbolic: return unevaluated in 2-arg form
+      Ok(Expr::FunctionCall {
+        name: "PolyGamma".to_string(),
+        args: if args.len() == 1 {
+          vec![Expr::Integer(0), args[0].clone()]
+        } else {
+          args.to_vec()
+        },
+      })
+    }
+  }
+}
+
+fn extract_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  }
+}
+
+fn z_expr_from_args(expr: &Expr) -> &Expr {
+  expr
+}
+
+/// Build digamma at positive integer: H_{z-1} - EulerGamma
+fn polygamma_digamma_integer(z: usize) -> Expr {
+  let euler = Expr::Identifier("EulerGamma".to_string());
+  if z == 1 {
+    // H_0 = 0, so result is -EulerGamma
+    return Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(euler),
+    };
+  }
+  // Compute H_{z-1} = Σ_{k=1}^{z-1} 1/k as rational
+  let (h_num, h_den) = harmonic_rational(z - 1);
+  let h_expr = make_rational(h_num, h_den);
+  Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(h_expr),
+    right: Box::new(euler),
+  }
+}
+
+/// Compute H_n = 1 + 1/2 + ... + 1/n as (numerator, denominator)
+fn harmonic_rational(n: usize) -> (i128, i128) {
+  let mut num: i128 = 0;
+  let mut den: i128 = 1;
+  for k in 1..=n {
+    // num/den + 1/k = (num*k + den) / (den*k)
+    num = num * (k as i128) + den;
+    den *= k as i128;
+    let g = gcd(num.abs(), den.abs());
+    num /= g;
+    den /= g;
+  }
+  (num, den)
+}
+
+/// Build exact PolyGamma[n, z] for odd n >= 1 and positive integer z.
+/// Returns n! * (zeta(n+1) - partial_sum)
+fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
+  // Get zeta(n+1) as a symbolic expression (raw, not multiplied by n!)
+  let zeta_expr = zeta_positive_even(n + 1)?;
+
+  // Compute n!
+  let mut nfact: i128 = 1;
+  for i in 2..=n {
+    nfact = nfact.checked_mul(i as i128)?;
+  }
+
+  if z == 1 {
+    // No partial sum. Result = n! * zeta(n+1)
+    // Need to multiply the coefficient of zeta by n!
+    return polygamma_multiply_zeta_by_nfact(n + 1, nfact);
+  }
+
+  // Compute partial sum = Σ_{k=1}^{z-1} 1/k^{n+1}
+  let (ps_num, ps_den) = partial_sum_powers(z - 1, n + 1)?;
+
+  // Inner expression: Plus[-partial_sum, zeta(n+1)]
+  let neg_ps = make_rational(-ps_num, ps_den);
+  let inner = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![neg_ps, zeta_expr],
+  };
+
+  if nfact == 1 {
+    // n = 1: just the inner expression
+    Some(inner)
+  } else {
+    // n >= 3: Times[n!, inner]
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(nfact)),
+      right: Box::new(inner),
+    })
+  }
+}
+
+/// Multiply zeta(2n) coefficient by n! and build the expression
+fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
+  let (b_num, b_den) = bernoulli_number(two_n)?;
+  if b_num == 0 {
+    return None;
+  }
+
+  // Same as zeta_positive_even but multiply by nfact
+  let mut num = b_num.abs().checked_mul(nfact)?;
+  let mut den = b_den.abs();
+
+  // Multiply by 2^(2n-1)
+  for _ in 0..(two_n - 1) {
+    num = num.checked_mul(2)?;
+    let g = gcd(num, den);
+    num /= g;
+    den /= g;
+  }
+
+  // Divide by (2n)!
+  for k in 1..=two_n {
+    den = den.checked_mul(k as i128)?;
+    let g = gcd(num, den);
+    num /= g;
+    den /= g;
+  }
+
+  let pi_power = Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(Expr::Identifier("Pi".to_string())),
+    right: Box::new(Expr::Integer(two_n as i128)),
+  };
+
+  if num == 1 && den == 1 {
+    Some(pi_power)
+  } else if num == 1 {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(pi_power),
+      right: Box::new(Expr::Integer(den)),
+    })
+  } else if den == 1 {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(num)),
+      right: Box::new(pi_power),
+    })
+  } else {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(num)),
+        right: Box::new(pi_power),
+      }),
+      right: Box::new(Expr::Integer(den)),
+    })
+  }
+}
+
+/// Compute Σ_{k=1}^{n} 1/k^power as (numerator, denominator)
+fn partial_sum_powers(n: usize, power: usize) -> Option<(i128, i128)> {
+  let mut sum_n: i128 = 0;
+  let mut sum_d: i128 = 1;
+  for k in 1..=n {
+    let k_pow = (k as i128).checked_pow(power as u32)?;
+    let new_n = sum_n.checked_mul(k_pow)?.checked_add(sum_d)?;
+    let new_d = sum_d.checked_mul(k_pow)?;
+    let g = gcd(new_n.abs(), new_d.abs());
+    sum_n = new_n / g;
+    sum_d = new_d / g;
+  }
+  Some((sum_n, sum_d))
+}
+
+/// Compute polygamma function numerically
+fn polygamma_numeric(n: usize, mut z: f64) -> f64 {
+  if n == 0 {
+    return digamma(z);
+  }
+
+  let sign = if n.is_multiple_of(2) { -1.0 } else { 1.0 }; // (-1)^{n+1}
+  let nfact = {
+    let mut f = 1.0_f64;
+    for i in 2..=n {
+      f *= i as f64;
+    }
+    f
+  };
+
+  // Use recurrence to shift z to a large value
+  let mut shift_sum = 0.0;
+  while z < 20.0 {
+    shift_sum += 1.0 / z.powi((n + 1) as i32);
+    z += 1.0;
+  }
+
+  // Asymptotic expansion for ψ^(n)(z) at large z
+  // ψ^(n)(z) = (-1)^{n-1} * [(n-1)!/z^n + n!/(2z^{n+1})
+  //             + Σ_k B_{2k}/(2k) * prod_{j=0}^{n-1}(2k+j) / z^{n+2k}]
+  let sign_asymp = if n.is_multiple_of(2) { -1.0 } else { 1.0 }; // (-1)^{n-1}
+  let nm1_fact = nfact / n as f64;
+
+  let mut asymp = nm1_fact / z.powi(n as i32);
+  asymp += nfact / (2.0 * z.powi((n + 1) as i32));
+
+  let bernoulli = [
+    1.0 / 6.0,
+    -1.0 / 30.0,
+    1.0 / 42.0,
+    -1.0 / 30.0,
+    5.0 / 66.0,
+    -691.0 / 2730.0,
+    7.0 / 6.0,
+  ];
+  for (ki, &b2k) in bernoulli.iter().enumerate() {
+    let k = ki + 1;
+    let two_k = 2 * k;
+    let mut prod = 1.0;
+    for j in 0..n {
+      prod *= (two_k + j) as f64;
+    }
+    asymp += b2k / (two_k as f64) * prod / z.powi((n + two_k) as i32);
+  }
+
+  asymp *= sign_asymp;
+  asymp + sign * nfact * shift_sum
+}
+
 /// N[expr] or N[expr, n] - Numeric evaluation
 /// Hypergeometric2F1[a, b, c, z] - Gauss hypergeometric function
 pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
