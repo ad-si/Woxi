@@ -489,6 +489,47 @@ mod blank_function {
   }
 }
 
+mod compound_expression {
+  use super::*;
+
+  #[test]
+  fn function_form_returns_last() {
+    assert_eq!(interpret("CompoundExpression[1, 2, 3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn function_form_single_arg() {
+    assert_eq!(interpret("CompoundExpression[42]").unwrap(), "42");
+  }
+
+  #[test]
+  fn function_form_no_args_returns_null() {
+    assert_eq!(interpret("CompoundExpression[]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn function_form_with_assignments() {
+    assert_eq!(
+      interpret("CompoundExpression[a = 2, b = 3, a + b]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn semicolon_syntax() {
+    assert_eq!(interpret("a = 2; b = 3; a + b").unwrap(), "5");
+  }
+
+  #[test]
+  fn function_form_with_side_effects() {
+    // Side effects execute sequentially
+    assert_eq!(
+      interpret("CompoundExpression[x = 10, x = x + 1, x]").unwrap(),
+      "11"
+    );
+  }
+}
+
 mod hold_form {
   use super::*;
 
