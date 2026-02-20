@@ -5988,6 +5988,11 @@ pub fn evaluate_function_call_ast(
     }
   }
 
+  // Needs: package loading - no-op in Woxi, returns Null
+  if name == "Needs" {
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor" | "Hue" | "GrayLevel" | "Opacity" | "Thickness"
@@ -5996,7 +6001,8 @@ pub fn evaluate_function_call_ast(
     | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
     | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset"
     | "Text" | "Style" | "Subscript" | "MatrixForm" | "Out" | "Condition"
-    | "Show" | "MessageName" | "Plot3D" | "Integer" | "Optional" | "String" => {
+    | "Show" | "MessageName" | "Plot3D" | "Integer" | "Optional" | "String"
+    | "Scaled" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9821,6 +9827,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Optional"
     | "Mesh"
     | "String"
+    | "Scaled"
+    | "PlotPoints"
+    | "Needs"
+    | "Center"
+    | "Rational"
     | "Print"
     | "Echo"
     | "ToString"

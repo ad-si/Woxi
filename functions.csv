@@ -735,7 +735,7 @@ CellTags,,,,3,1142
 CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
 CensoredDistribution,,,,8,2587
 Censoring,,,,8,4809
-Center,,,,1,199
+Center,Symbol for centering alignment,✅,pure,1,199
 CenterArray,,,,11,3242
 CenterDot,,,,3,465
 CenteredInterval,,,,13,
@@ -3676,7 +3676,7 @@ NearestNeighborGraph,,,,10.2,1672
 NearestTo,,,,11.3,4356
 NebulaData,,,,10,4660
 NeedlemanWunschSimilarity,,,,7,4006
-Needs,,,,1,198
+Needs,Loads a package (no-op in Woxi),✅,effectful,1,198
 Negative,Tests if a number is negative,✅,pure,1,825
 NegativeBinomialDistribution,,,,6,2018
 NegativeDefiniteMatrixQ,,,,10,3134
@@ -4226,7 +4226,7 @@ PlotLabels,,,,10.4,597
 PlotLayout,,,,8,2203
 PlotLegends,,,,9,100
 PlotMarkers,,,,6,500
-PlotPoints,,,,1,193
+PlotPoints,Option for number of sample points in plots,✅,pure,1,193
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,39
 PlotRangeClipping,,,,6,674
 PlotRangePadding,,,,6,359
@@ -4499,7 +4499,7 @@ Raster,,,,2,747
 Raster3D,,,,9,2317
 Rasterize,,,,6,539
 RasterSize,,,,6,1499
-Rational,,,,1,206
+Rational,Head type for rational numbers,✅,pure,1,206
 RationalExpressionQ,,,,12.2,5486
 Rationalize,Converts a real number to a nearby rational,✅,pure,1,537
 Rationals,,,,4,1463
@@ -4810,7 +4810,7 @@ SaveDefinitions,,,,6,574
 SavitzkyGolayMatrix,,,,10,3506
 SawtoothWave,,,,7,1480
 Scale,Scales a graphics object,✅,pure,6,597
-Scaled,,,,1,183
+Scaled,Represents a scaled position or size,✅,pure,1,183
 ScaleDivisions,,,,9,2662
 ScaleOrigin,,,,9,3440
 ScalePadding,,,,9,3636

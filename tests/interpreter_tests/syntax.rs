@@ -1067,6 +1067,103 @@ mod pre_decrement_function {
   }
 }
 
+mod scaled_function {
+  use super::*;
+
+  #[test]
+  fn scaled_evaluates_to_itself() {
+    assert_eq!(interpret("Scaled").unwrap(), "Scaled");
+  }
+
+  #[test]
+  fn scaled_function_call_is_inert() {
+    assert_eq!(
+      interpret("Scaled[{0.5, 0.5}]").unwrap(),
+      "Scaled[{0.5, 0.5}]"
+    );
+  }
+
+  #[test]
+  fn scaled_attributes() {
+    assert_eq!(interpret("Attributes[Scaled]").unwrap(), "{Protected}");
+  }
+}
+
+mod plot_points_symbol {
+  use super::*;
+
+  #[test]
+  fn plot_points_evaluates_to_itself() {
+    assert_eq!(interpret("PlotPoints").unwrap(), "PlotPoints");
+  }
+
+  #[test]
+  fn plot_points_attributes() {
+    assert_eq!(interpret("Attributes[PlotPoints]").unwrap(), "{Protected}");
+  }
+}
+
+mod needs_function {
+  use super::*;
+
+  #[test]
+  fn needs_returns_null() {
+    assert_eq!(interpret("Needs[\"SomePackage`\"]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn needs_attributes() {
+    assert_eq!(interpret("Attributes[Needs]").unwrap(), "{Protected}");
+  }
+}
+
+mod center_symbol {
+  use super::*;
+
+  #[test]
+  fn center_evaluates_to_itself() {
+    assert_eq!(interpret("Center").unwrap(), "Center");
+  }
+
+  #[test]
+  fn center_attributes() {
+    assert_eq!(interpret("Attributes[Center]").unwrap(), "{Protected}");
+  }
+}
+
+mod rational_symbol {
+  use super::*;
+
+  #[test]
+  fn rational_evaluates_to_itself() {
+    assert_eq!(interpret("Rational").unwrap(), "Rational");
+  }
+
+  #[test]
+  fn rational_attributes() {
+    assert_eq!(interpret("Attributes[Rational]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn rational_is_head_of_fractions() {
+    assert_eq!(interpret("Head[1/3]").unwrap(), "Rational");
+    assert_eq!(interpret("Head[2/5]").unwrap(), "Rational");
+  }
+
+  #[test]
+  fn rational_function_call_creates_fraction() {
+    assert_eq!(interpret("Rational[1, 3]").unwrap(), "1/3");
+    assert_eq!(interpret("Rational[2, 4]").unwrap(), "1/2");
+    assert_eq!(interpret("Rational[3, 1]").unwrap(), "3");
+  }
+
+  #[test]
+  fn match_rational_pattern() {
+    assert_eq!(interpret("MatchQ[1/2, _Rational]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[5, _Rational]").unwrap(), "False");
+  }
+}
+
 mod mesh_symbol {
   use super::*;
 
