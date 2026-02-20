@@ -737,6 +737,33 @@ mod matrix_form {
   }
 }
 
+mod out_function {
+  use super::*;
+
+  #[test]
+  fn out_evaluates_to_itself() {
+    assert_eq!(interpret("Out").unwrap(), "Out");
+  }
+
+  #[test]
+  fn out_head_is_symbol() {
+    assert_eq!(interpret("Head[Out]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn out_attributes() {
+    assert_eq!(
+      interpret("Attributes[Out]").unwrap(),
+      "{Listable, NHoldFirst, Protected}"
+    );
+  }
+
+  #[test]
+  fn out_with_index_is_inert() {
+    assert_eq!(interpret("Out[1]").unwrap(), "Out[1]");
+  }
+}
+
 mod subscript_function {
   use super::*;
 
