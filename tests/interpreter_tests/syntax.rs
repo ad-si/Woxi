@@ -1067,6 +1067,189 @@ mod pre_decrement_function {
   }
 }
 
+mod max_iterations_symbol {
+  use super::*;
+
+  #[test]
+  fn max_iterations_attributes() {
+    assert_eq!(
+      interpret("Attributes[MaxIterations]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
+mod accuracy_goal_symbol {
+  use super::*;
+
+  #[test]
+  fn accuracy_goal_attributes() {
+    assert_eq!(
+      interpret("Attributes[AccuracyGoal]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
+mod general_symbol {
+  use super::*;
+
+  #[test]
+  fn general_attributes() {
+    assert_eq!(interpret("Attributes[General]").unwrap(), "{Protected}");
+  }
+}
+
+mod default_symbol {
+  use super::*;
+
+  #[test]
+  fn default_attributes() {
+    assert_eq!(interpret("Attributes[Default]").unwrap(), "{Protected}");
+  }
+}
+
+mod number_symbol {
+  use super::*;
+
+  #[test]
+  fn number_attributes() {
+    assert_eq!(interpret("Attributes[Number]").unwrap(), "{Protected}");
+  }
+}
+
+mod flat_symbol {
+  use super::*;
+
+  #[test]
+  fn flat_attributes() {
+    assert_eq!(interpret("Attributes[Flat]").unwrap(), "{Protected}");
+  }
+}
+
+mod read_protected_symbol {
+  use super::*;
+
+  #[test]
+  fn read_protected_attributes() {
+    assert_eq!(
+      interpret("Attributes[ReadProtected]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
+mod protected_symbol {
+  use super::*;
+
+  #[test]
+  fn protected_attributes() {
+    assert_eq!(interpret("Attributes[Protected]").unwrap(), "{Protected}");
+  }
+}
+
+mod hold_rest_symbol {
+  use super::*;
+
+  #[test]
+  fn hold_rest_attributes() {
+    assert_eq!(interpret("Attributes[HoldRest]").unwrap(), "{Protected}");
+  }
+}
+
+mod off_function {
+  use super::*;
+
+  #[test]
+  fn off_returns_null() {
+    assert_eq!(interpret("Off[f]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn off_attributes() {
+    assert_eq!(
+      interpret("Attributes[Off]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+}
+
+mod remove_function {
+  use super::*;
+
+  #[test]
+  fn remove_returns_null() {
+    assert_eq!(interpret("Remove[x]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn remove_attributes() {
+    assert_eq!(
+      interpret("Attributes[Remove]").unwrap(),
+      "{HoldAll, Locked, Protected}"
+    );
+  }
+}
+
+mod set_options_function {
+  use super::*;
+
+  #[test]
+  fn set_options_returns_null() {
+    assert_eq!(interpret("SetOptions[f, a -> 1]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn set_options_attributes() {
+    assert_eq!(interpret("Attributes[SetOptions]").unwrap(), "{Protected}");
+  }
+}
+
+mod clear_attributes_function {
+  use super::*;
+
+  #[test]
+  fn clear_attributes_works() {
+    assert_eq!(
+      interpret("SetAttributes[g, Listable]; ClearAttributes[g, Listable]; Attributes[g]")
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn clear_attributes_attributes() {
+    assert_eq!(
+      interpret("Attributes[ClearAttributes]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+  }
+}
+
+mod list_plot_3d_function {
+  use super::*;
+
+  #[test]
+  fn list_plot_3d_attributes() {
+    assert_eq!(
+      interpret("Attributes[ListPlot3D]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
+mod input_function {
+  use super::*;
+
+  #[test]
+  fn input_attributes() {
+    assert_eq!(
+      interpret("Attributes[Input]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
 mod add_to_function {
   use super::*;
 

@@ -22,7 +22,7 @@ AcceptanceThreshold,,,,12,3947
 AccountingForm,,,,2,1451
 Accumulate,Returns cumulative sums of a list,✅,pure,6,480
 Accuracy,Returns the number of accurate decimal digits,✅,pure,1,1422
-AccuracyGoal,,,,1,668
+AccuracyGoal,Option for accuracy goals,✅,pure,1,668
 AcousticAbsorbingValue,,,,12.2,4225
 AcousticImpedanceValue,,,,12.2,5184
 AcousticNormalVelocityValue,,,,12.2,5079
@@ -825,7 +825,7 @@ Classify,,,,10,1087
 ClassPriors,,,,10,4052
 Clear,Clears values and definitions of symbols but preserves attributes,✅,stateful,1,82
 ClearAll,Clears all values and definitions for symbols,✅,stateful,1,133
-ClearAttributes,,,,1,1665
+ClearAttributes,Removes attributes from a symbol,✅,stateful,1,1665
 ClearCookies,,,,11,4262
 ClearDistributedDefinitions,,,,14.1,
 ClearPermissions,,,,10.2,5079
@@ -1300,7 +1300,7 @@ Decrypt,,,,10.1,2596
 DecryptFile,,,,11.1,4387
 DedekindEta,,,,3,1525
 DeepSpaceProbeData,,,,10,4006
-Default,,,,1,701
+Default,Default value for optional arguments,✅,pure,1,701
 DefaultAxesStyle,,,,7,5390
 DefaultBaseStyle,,,,7,2371
 DefaultBoxStyle,,,,7,4612
@@ -2055,7 +2055,7 @@ FittedModel,,,,7,3280
 FixedOrder,,,,10.1,2157
 FixedPoint,Applies a function repeatedly until the result no longer changes,✅,pure,1,870
 FixedPointList,Returns the list of results from applying a function repeatedly until fixed point,✅,pure,2,1174
-Flat,,,,1,1379
+Flat,Attribute for associative functions,✅,pure,1,1379
 FlatShading,,,,13.1,
 Flatten,Flattens nested lists,✅,pure,1,83
 FlattenAt,,,,2,1649
@@ -2248,7 +2248,7 @@ GaussianUnitaryMatrixDistribution,,,,10.3,3462
 GaussianWindow,,,,9,4225
 GCD,Returns the greatest common divisor of integers,✅,pure,1,616
 GegenbauerC,,,,1,894
-General,,,,1,690
+General,Default message group symbol,✅,pure,1,690
 GeneralizedLinearModelFit,,,,7,2187
 GenerateAsymmetricKeyPair,,,,10.1,3326
 GenerateConditions,,,,3,1282
@@ -2580,7 +2580,7 @@ HolderModel,,,,14,
 HoldFirst,Attribute specifying first arg is held,✅,pure,1,570
 HoldForm,Holds an expression unevaluated for display,✅,pure,1,311
 HoldPattern,,,,3,384
-HoldRest,,,,1,1600
+HoldRest,Attribute holding all but first argument,✅,pure,1,1600
 HolidayCalendar,,,,9,3462
 HorizontalGauge,,,,9,2108
 HornerForm,,,,6,1682
@@ -2802,7 +2802,7 @@ Inner,Generalized inner product,✅,pure,1,845
 InnerPolygon,,,,12,4204
 InnerPolyhedron,,,,12,
 Inpaint,,,,8,2625
-Input,,,,1,642
+Input,Reads user input (inert in Woxi),✅,effectful,1,642
 InputAliases,,,,4,1930
 InputAssumptions,,,,8,4356
 InputAutoReplacements,,,,4,3317
@@ -3241,7 +3241,7 @@ ListPickerBox,,,,6,
 ListPickerBoxOptions,,,,9,
 ListPlay,,,,2,2360
 ListPlot,Plots data as a scatter plot,✅,pure,1,93
-ListPlot3D,,,,1,622
+ListPlot3D,Creates a 3D plot from data,✅,pure,1,622
 ListPointPlot3D,,,,6,694
 ListPolarPlot,Plots data in polar coordinates,✅,pure,6,1119
 ListQ,Tests if expression is a list,✅,pure,2,679
@@ -3451,7 +3451,7 @@ MaxFilter,,,,7,2525
 MaximalBy,Returns elements that maximize a criterion,✅,pure,10,1249
 Maximize,,,,5,530
 MaxItems,,,,10.1,2236
-MaxIterations,,,,1,646
+MaxIterations,Option for maximum iterations,✅,pure,1,646
 MaxLimit,,,,11.2,2889
 MaxMemoryUsed,,,,1,1085
 MaxMixtureKernels,,,,8,4225
@@ -3897,7 +3897,7 @@ NullRawPointerQ,,,,13.3,
 NullRecords,,,,2,3257
 NullSpace,Returns the null space of a matrix,✅,pure,1,771
 NullWords,,,,2,5079
-Number,,,,1,731
+Number,Head type for numbers,✅,pure,1,731
 NumberCompose,,,,10.2,4612
 NumberDecompose,,,,10.2,4225
 NumberDigit,,,,12.3,
@@ -3940,7 +3940,7 @@ ObservableModelQ,,,,8,3389
 OceanData,,,,10,1248
 Octahedron,,,,12,3506
 OddQ,Checks if a number is odd,✅,pure,1,635
-Off,,,,1,697
+Off,Turns off messages (no-op in Woxi),✅,effectful,1,697
 Offset,,,,3,237
 On,,,,1,1095
 ONanGroupON,,,,8,5184
@@ -4393,7 +4393,7 @@ PropagateAborts,,,,13.2,
 Proportion,,,,3,5390
 Proportional,,,,3,1440
 Protect,Protects symbols from modification,✅,stateful,1,721
-Protected,,,,1,1544
+Protected,Attribute preventing modification,✅,pure,1,1544
 ProteinData,,,,7,745
 Pruning,,,,8,2828
 PseudoInverse,,,,1,1543
@@ -4522,7 +4522,7 @@ Read,,,,1,1254
 ReadByteArray,,,,11.3,4437
 ReadLine,,,,10,2889
 ReadList,,,,1,767
-ReadProtected,,,,1,1484
+ReadProtected,Attribute preventing reading definitions,✅,pure,1,1484
 ReadString,,,,10,2282
 Real,Head type for real (floating-point) numbers,✅,pure,1,263
 RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
@@ -4627,7 +4627,7 @@ RemoteProviderSettings,,,,12.2,
 RemoteRun,,,,11.3,5184
 RemoteRunProcess,,,,11.3,4947
 RemovalConditions,,,,12.2,
-Remove,,,,1,514
+Remove,Removes a symbol (no-op in Woxi),✅,effectful,1,514
 RemoveAlphaChannel,,,,8,2197
 RemoveAudioStream,,,,11.2,5486
 RemoveBackground,,,,10,1332
@@ -4918,7 +4918,7 @@ SetDirectory,,,,2,715
 SetEnvironment,,,,9,3326
 SetFileDate,,,,2,4479
 SetFileFormatProperties,,,,13,
-SetOptions,,,,1,446
+SetOptions,Sets options for functions (no-op in Woxi),✅,effectful,1,446
 SetPermissions,,,,10.2,3378
 SetPrecision,,,,2,548
 SetSelectedNotebook,,,,3,2383
@@ -4943,7 +4943,7 @@ ShellRegion,,,,11,3823
 ShenCastanMatrix,,,,9,4479
 ShiftedGompertzDistribution,,,,10.3,3785
 ShiftRegisterSequence,,,,11,4104
-Short,,,,1,743
+Short,Short output format,✅,pure,1,743
 ShortDownArrow,,,,3,5390
 Shortest,,,,6,958
 ShortestPathFunction,,,,8,5587
