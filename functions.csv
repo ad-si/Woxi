@@ -82,7 +82,7 @@ Algebraics,,,,4,2468
 AlgebraicUnitQ,,,,6,4527
 Alignment,,,,6,189
 AlignmentPoint,,,,6,2294
-All,,,,1,40
+All,Symbol used as an option value meaning all elements or the entire range,✅,pure,1,40
 AllMatch,,,,14.1,
 AllowedCloudExtraParameters,,,,11.1,5390
 AllowedCloudParameterExtensions,,,,11.1,5184
