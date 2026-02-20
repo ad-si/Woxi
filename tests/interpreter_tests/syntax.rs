@@ -1067,6 +1067,56 @@ mod pre_decrement_function {
   }
 }
 
+mod slot_sequence {
+  use super::*;
+
+  #[test]
+  fn slot_sequence_display() {
+    assert_eq!(interpret("##").unwrap(), "##1");
+    assert_eq!(interpret("##2").unwrap(), "##2");
+  }
+
+  #[test]
+  fn slot_sequence_function_call_form() {
+    assert_eq!(interpret("SlotSequence[1]").unwrap(), "##1");
+    assert_eq!(interpret("SlotSequence[2]").unwrap(), "##2");
+  }
+
+  #[test]
+  fn slot_sequence_in_plus() {
+    assert_eq!(interpret("f = Plus[##] &; f[1, 2, 3]").unwrap(), "6");
+  }
+
+  #[test]
+  fn slot_sequence_in_list() {
+    assert_eq!(interpret("g = {##} &; g[a, b, c]").unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn slot_sequence_from_position() {
+    assert_eq!(
+      interpret("h = {##2} &; h[a, b, c, d]").unwrap(),
+      "{b, c, d}"
+    );
+  }
+
+  #[test]
+  fn slot_sequence_attributes() {
+    assert_eq!(
+      interpret("Attributes[SlotSequence]").unwrap(),
+      "{NHoldAll, Protected}"
+    );
+  }
+
+  #[test]
+  fn slot_sequence_with_slot() {
+    assert_eq!(
+      interpret("f = {#1, ##2} &; f[x, y, z]").unwrap(),
+      "{x, y, z}"
+    );
+  }
+}
+
 mod left_symbol {
   use super::*;
 

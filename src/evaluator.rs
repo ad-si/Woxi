@@ -163,6 +163,7 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         Ok(name.clone())
       }
     }
+    Expr::SlotSequence(n) => Ok(format!("##{}", n)),
     Expr::Slot(n) => {
       // Slots should be replaced before evaluation
       // If we get here, return as-is
@@ -611,6 +612,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Slots should be replaced before evaluation
       Ok(Expr::Slot(*n))
     }
+    Expr::SlotSequence(n) => Ok(Expr::SlotSequence(*n)),
     Expr::Constant(name) => Ok(Expr::Constant(name.clone())),
     Expr::List(items) => {
       let mut evaluated: Vec<Expr> = Vec::with_capacity(items.len());
@@ -1463,7 +1465,8 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
     | Expr::BigFloat(_, _)
     | Expr::String(_)
     | Expr::Constant(_)
-    | Expr::Slot(_) => false,
+    | Expr::Slot(_)
+    | Expr::SlotSequence(_) => false,
     Expr::List(items) => items.iter().any(has_free_symbols),
     Expr::BinaryOp { left, right, .. } => {
       has_free_symbols(left) || has_free_symbols(right)
@@ -2138,6 +2141,11 @@ pub fn evaluate_function_call_ast(
     "Slot" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         return Ok(Expr::Slot(*n as usize));
+      }
+    }
+    "SlotSequence" if args.len() == 1 => {
+      if let Expr::Integer(n) = &args[0] {
+        return Ok(Expr::SlotSequence(*n as usize));
       }
     }
     _ => {}
@@ -7988,6 +7996,7 @@ fn expr_equal(a: &Expr, b: &Expr) -> bool {
     (Expr::String(x), Expr::String(y)) => x == y,
     (Expr::Identifier(x), Expr::Identifier(y)) => x == y,
     (Expr::Slot(x), Expr::Slot(y)) => x == y,
+    (Expr::SlotSequence(x), Expr::SlotSequence(y)) => x == y,
     (Expr::Constant(x), Expr::Constant(y)) => x == y,
     (Expr::List(xs), Expr::List(ys)) => {
       xs.len() == ys.len()
@@ -9737,6 +9746,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],
+
+    // NHoldAll + Protected
+    "SlotSequence" => vec!["NHoldAll", "Protected"],
 
     // Listable + NHoldFirst + Protected
     "Out" => vec!["Listable", "NHoldFirst", "Protected"],

@@ -34,11 +34,12 @@ Identifier = @{ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTE
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
 // Anonymous function syntax: body & where body contains # slots
-Slot = @{ "#" ~ ASCII_DIGIT* }
+SlotSequence = @{ "##" ~ ASCII_DIGIT* }
+Slot = @{ "#" ~ !"#" ~ ASCII_DIGIT* }
 // SimpleAnonymousFunction is # or # op term followed by & (not &&)
 SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
 // SlotTerm is what can follow an operator in an anonymous function body
-SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Identifier | Slot | "(" ~ Expression ~ ")" }
+SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Identifier | SlotSequence | Slot | "(" ~ Expression ~ ")" }
 // FunctionAnonymousFunction is a function call (like If[...]) followed by & (not &&)
 // Optional BracketArgs allow direct calls: If[# > 0, #, 0]&[5]
 FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" ~ BracketArgs* }
@@ -203,6 +204,7 @@ Term = _{
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | Identifier
+  | SlotSequence
   | Slot
   | Association
   | "(" ~ (CompoundExpression | Expression) ~ ")"
@@ -215,6 +217,7 @@ SimpleTerm = _{
   | FunctionCall
   | DerivativeIdentifier
   | Identifier
+  | SlotSequence
   | Slot
   | List
   | "(" ~ Expression ~ ")"
@@ -243,6 +246,7 @@ TermNoImplicit = _{
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | Identifier
+  | SlotSequence
   | Slot
   | Association
   | "(" ~ (CompoundExpression | Expression) ~ ")"

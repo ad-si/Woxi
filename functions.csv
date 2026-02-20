@@ -5013,7 +5013,7 @@ SliderBoxOptions,,,,6,
 SlideShowVideo,,,,12.3,
 SlideView,,,,6,3048
 Slot,Represents the nth argument in a pure function,✅,pure,1,17
-SlotSequence,,,,1,216
+SlotSequence,Represents a sequence of arguments in a pure function,✅,pure,1,216
 Small,,,,6,368
 SmallCircle,,,,3,1938
 Smaller,,,,6,266
