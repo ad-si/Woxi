@@ -2143,6 +2143,28 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "RepeatedNull" && args.len() == 1 {
         return format!("{}...", expr_to_string(&args[0]));
       }
+      // BlankSequence[] → __, BlankSequence[h] → __h
+      if name == "BlankSequence" {
+        if args.is_empty() {
+          return "__".to_string();
+        }
+        if args.len() == 1
+          && let Expr::Identifier(h) = &args[0]
+        {
+          return format!("__{}", h);
+        }
+      }
+      // BlankNullSequence[] → ___, BlankNullSequence[h] → ___h
+      if name == "BlankNullSequence" {
+        if args.is_empty() {
+          return "___".to_string();
+        }
+        if args.len() == 1
+          && let Expr::Identifier(h) = &args[0]
+        {
+          return format!("___{}", h);
+        }
+      }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
         return format!(
@@ -2988,6 +3010,28 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // Special case: RepeatedNull[x] displays as x...
       if name == "RepeatedNull" && args.len() == 1 {
         return format!("{}...", expr_to_output(&args[0]));
+      }
+      // BlankSequence[] → __, BlankSequence[h] → __h
+      if name == "BlankSequence" {
+        if args.is_empty() {
+          return "__".to_string();
+        }
+        if args.len() == 1
+          && let Expr::Identifier(h) = &args[0]
+        {
+          return format!("__{}", h);
+        }
+      }
+      // BlankNullSequence[] → ___, BlankNullSequence[h] → ___h
+      if name == "BlankNullSequence" {
+        if args.is_empty() {
+          return "___".to_string();
+        }
+        if args.len() == 1
+          && let Expr::Identifier(h) = &args[0]
+        {
+          return format!("___{}", h);
+        }
       }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {

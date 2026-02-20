@@ -825,6 +825,44 @@ mod pattern_test_function {
   }
 }
 
+mod blank_null_sequence {
+  use super::*;
+
+  #[test]
+  fn blank_null_sequence_display() {
+    assert_eq!(interpret("BlankNullSequence[]").unwrap(), "___");
+  }
+
+  #[test]
+  fn blank_null_sequence_with_head() {
+    assert_eq!(
+      interpret("BlankNullSequence[Integer]").unwrap(),
+      "___Integer"
+    );
+  }
+
+  #[test]
+  fn blank_null_sequence_head() {
+    assert_eq!(
+      interpret("Head[BlankNullSequence[]]").unwrap(),
+      "BlankNullSequence"
+    );
+  }
+
+  #[test]
+  fn blank_null_sequence_is_protected() {
+    assert_eq!(
+      interpret("Attributes[BlankNullSequence]").unwrap(),
+      "{Protected}"
+    );
+  }
+
+  #[test]
+  fn blank_null_sequence_syntax() {
+    assert_eq!(interpret("___").unwrap(), "___");
+  }
+}
+
 mod matrix_form {
   use super::*;
 
