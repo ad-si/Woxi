@@ -6005,13 +6005,17 @@ pub fn evaluate_function_call_ast(
     }
   }
 
-  // Package/message functions - no-op in Woxi, returns Null
+  // Package/message/system functions - no-op in Woxi, returns Null
   if name == "Needs"
     || name == "Message"
     || name == "Begin"
     || name == "End"
     || name == "BeginPackage"
     || name == "EndPackage"
+    || name == "Off"
+    || name == "Remove"
+    || name == "SetOptions"
+    || name == "ClearAttributes"
   {
     return Ok(Expr::Identifier("Null".to_string()));
   }
@@ -6062,7 +6066,8 @@ pub fn evaluate_function_call_ast(
     | "Repeated"
     | "RepeatedNull"
     | "NumberForm"
-    | "Information" => {
+    | "Information"
+    | "ListPlot3D" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9763,9 +9768,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Hold" | "HoldForm" | "Table" | "Do" | "While" | "For" | "Module"
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
-    | "Clear" | "ClearAll" | "Condition" => {
+    | "Clear" | "ClearAll" | "Condition" | "Off" => {
       vec!["HoldAll", "Protected"]
     }
+    "Remove" => vec!["HoldAll", "Locked", "Protected"],
 
     // Function is HoldAll + Protected
     "Function" => vec!["HoldAll", "Protected"],
@@ -9775,7 +9781,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "PreDecrement" | "Unset" => {
       vec!["HoldFirst", "Protected", "ReadProtected"]
     }
-    "Message" | "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy" => {
+    "Message" | "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"
+    | "ClearAttributes" => {
       vec!["HoldFirst", "Protected"]
     }
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
@@ -9799,7 +9806,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
     "Infinity" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
-    | "Information" => {
+    | "Information" | "ListPlot3D" | "Input" => {
       vec!["Protected", "ReadProtected"]
     }
 
@@ -9929,6 +9936,17 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Modulus"
     | "Complex"
     | "Break"
+    | "MaxIterations"
+    | "AccuracyGoal"
+    | "General"
+    | "Default"
+    | "Number"
+    | "Short"
+    | "Flat"
+    | "ReadProtected"
+    | "Protected"
+    | "HoldRest"
+    | "SetOptions"
     | "Print"
     | "Echo"
     | "ToString"
