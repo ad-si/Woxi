@@ -2061,6 +2061,11 @@ pub fn evaluate_function_call_ast(
       });
     }
     "Blank" => return evaluate_blank_ast(args),
+    "Slot" if args.len() == 1 => {
+      if let Expr::Integer(n) = &args[0] {
+        return Ok(Expr::Slot(*n as usize));
+      }
+    }
     _ => {}
   }
 

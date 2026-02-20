@@ -1019,6 +1019,7 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Pattern { .. } => "Pattern",
     Expr::PatternTest { .. } => "PatternTest",
     Expr::Image { .. } => "Image",
+    Expr::Slot(_) => "Slot",
     _ => "Symbol",
   };
   Ok(Expr::Identifier(head.to_string()))

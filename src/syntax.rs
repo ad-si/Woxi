@@ -3442,6 +3442,18 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(|e| substitute_slots(e, values)).collect())
     }
+    Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
+      if let Expr::Integer(n) = &args[0] {
+        let index = if *n <= 0 { 0 } else { (*n as usize) - 1 };
+        if index < values.len() {
+          values[index].clone()
+        } else {
+          expr.clone()
+        }
+      } else {
+        expr.clone()
+      }
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(|e| substitute_slots(e, values)).collect(),
