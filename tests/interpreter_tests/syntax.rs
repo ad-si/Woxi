@@ -556,6 +556,59 @@ mod none_symbol {
   }
 }
 
+mod rule_delayed {
+  use super::*;
+
+  #[test]
+  fn rule_delayed_display() {
+    assert_eq!(interpret("x :> x^2").unwrap(), "x :> x^2");
+  }
+
+  #[test]
+  fn rule_delayed_function_call_form() {
+    assert_eq!(interpret("RuleDelayed[x, x^2]").unwrap(), "x :> x^2");
+  }
+
+  #[test]
+  fn rule_delayed_head() {
+    assert_eq!(interpret("Head[x :> x^2]").unwrap(), "RuleDelayed");
+    assert_eq!(
+      interpret("Head[RuleDelayed[x, x^2]]").unwrap(),
+      "RuleDelayed"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_attributes() {
+    assert_eq!(
+      interpret("Attributes[RuleDelayed]").unwrap(),
+      "{HoldRest, Protected, SequenceHold}"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_with_replace_all() {
+    assert_eq!(
+      interpret("{1, 2, 3} /. x_Integer :> x^2").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_function_call_with_replace_all() {
+    assert_eq!(
+      interpret("{1, 2, 3} /. RuleDelayed[x_Integer, x^2]").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
+
+  #[test]
+  fn rule_delayed_holds_rhs() {
+    // RuleDelayed should not evaluate the RHS prematurely
+    assert_eq!(interpret("RuleDelayed[x, 1 + 1]").unwrap(), "x :> 1 + 1");
+  }
+}
+
 mod subscript_function {
   use super::*;
 
