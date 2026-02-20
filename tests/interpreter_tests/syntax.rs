@@ -1067,6 +1067,82 @@ mod pre_decrement_function {
   }
 }
 
+mod non_commutative_multiply {
+  use super::*;
+
+  #[test]
+  fn ncm_function_call() {
+    assert_eq!(
+      interpret("NonCommutativeMultiply[a, b, c]").unwrap(),
+      "a**b**c"
+    );
+  }
+
+  #[test]
+  fn ncm_attributes() {
+    assert_eq!(
+      interpret("Attributes[NonCommutativeMultiply]").unwrap(),
+      "{Flat, OneIdentity, Protected}"
+    );
+  }
+
+  #[test]
+  fn ncm_two_args() {
+    assert_eq!(interpret("NonCommutativeMultiply[x, y]").unwrap(), "x**y");
+  }
+}
+
+mod superscript_function {
+  use super::*;
+
+  #[test]
+  fn superscript_is_inert() {
+    assert_eq!(interpret("Superscript[x, 2]").unwrap(), "Superscript[x, 2]");
+  }
+
+  #[test]
+  fn superscript_attributes() {
+    assert_eq!(
+      interpret("Attributes[Superscript]").unwrap(),
+      "{NHoldRest, ReadProtected}"
+    );
+  }
+}
+
+mod repeated_function {
+  use super::*;
+
+  #[test]
+  fn repeated_is_inert() {
+    assert_eq!(interpret("Repeated[x_, 3]").unwrap(), "Repeated[x_, 3]");
+  }
+
+  #[test]
+  fn repeated_attributes() {
+    assert_eq!(interpret("Attributes[Repeated]").unwrap(), "{Protected}");
+  }
+}
+
+mod number_form {
+  use super::*;
+
+  #[test]
+  fn number_form_is_inert() {
+    assert_eq!(
+      interpret("NumberForm[3.14159, 4]").unwrap(),
+      "NumberForm[3.14159, 4]"
+    );
+  }
+
+  #[test]
+  fn number_form_attributes() {
+    assert_eq!(
+      interpret("Attributes[NumberForm]").unwrap(),
+      "{NHoldRest, Protected}"
+    );
+  }
+}
+
 mod slot_sequence {
   use super::*;
 
