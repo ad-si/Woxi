@@ -5940,7 +5940,7 @@ pub fn evaluate_function_call_ast(
     | "Lighter" | "Directive" | "Point" | "Line" | "Circle" | "Disk"
     | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
     | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset"
-    | "Text" | "Style" | "Subscript" => {
+    | "Text" | "Style" | "Subscript" | "MatrixForm" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9665,7 +9665,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Constant", "Protected", "ReadProtected"]
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "Infinity" | "PlotRange" => vec!["Protected", "ReadProtected"],
+    "Infinity" | "PlotRange" | "MatrixForm" => {
+      vec!["Protected", "ReadProtected"]
+    }
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],

@@ -3425,7 +3425,7 @@ MathieuSPrime,,,,3,2477
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 Matrices,,,,9,1753
 MatrixExp,,,,2,807
-MatrixForm,,,,1,53
+MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1,53
 MatrixFunction,,,,9,2134
 MatrixLog,,,,9,1875
 MatrixNormalDistribution,,,,10.3,3317
