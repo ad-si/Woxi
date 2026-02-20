@@ -827,6 +827,7 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         || name == "For"
         || name == "While"
         || name == "ClearAll"
+        || name == "Clear"
         || name == "Hold"
         || name == "HoldForm"
         || name == "HoldComplete"
@@ -2206,6 +2207,15 @@ pub fn evaluate_function_call_ast(
         }
       }
       return Ok(Expr::List(unprotected_syms));
+    }
+    "Clear" => {
+      for arg in args {
+        if let Expr::Identifier(sym) = arg {
+          ENV.with(|e| e.borrow_mut().remove(sym));
+          crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
+        }
+      }
+      return Ok(Expr::Identifier("Null".to_string()));
     }
     "ClearAll" => {
       for arg in args {
@@ -9447,7 +9457,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // HoldAll + Protected
     "Hold" | "HoldForm" | "Table" | "Do" | "While" | "For" | "Module"
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
-    | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw" => {
+    | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
+    | "Clear" | "ClearAll" => {
       vec!["HoldAll", "Protected"]
     }
 
