@@ -863,6 +863,93 @@ mod blank_null_sequence {
   }
 }
 
+mod plot_label_symbol {
+  use super::*;
+
+  #[test]
+  fn plot_label_evaluates_to_itself() {
+    assert_eq!(interpret("PlotLabel").unwrap(), "PlotLabel");
+  }
+
+  #[test]
+  fn plot_label_is_protected() {
+    assert_eq!(interpret("Attributes[PlotLabel]").unwrap(), "{Protected}");
+  }
+}
+
+mod axes_symbol {
+  use super::*;
+
+  #[test]
+  fn axes_evaluates_to_itself() {
+    assert_eq!(interpret("Axes").unwrap(), "Axes");
+  }
+
+  #[test]
+  fn axes_is_protected() {
+    assert_eq!(interpret("Attributes[Axes]").unwrap(), "{Protected}");
+  }
+}
+
+mod aspect_ratio_symbol {
+  use super::*;
+
+  #[test]
+  fn aspect_ratio_evaluates_to_itself() {
+    assert_eq!(interpret("AspectRatio").unwrap(), "AspectRatio");
+  }
+
+  #[test]
+  fn aspect_ratio_is_protected() {
+    assert_eq!(interpret("Attributes[AspectRatio]").unwrap(), "{Protected}");
+  }
+}
+
+mod message_name_function {
+  use super::*;
+
+  #[test]
+  fn message_name_basic() {
+    assert_eq!(
+      interpret("MessageName[f, \"usage\"]").unwrap(),
+      "MessageName[f, usage]"
+    );
+  }
+
+  #[test]
+  fn message_name_head() {
+    assert_eq!(
+      interpret("Head[MessageName[f, \"usage\"]]").unwrap(),
+      "MessageName"
+    );
+  }
+
+  #[test]
+  fn message_name_attributes() {
+    assert_eq!(
+      interpret("Attributes[MessageName]").unwrap(),
+      "{HoldFirst, Protected, ReadProtected}"
+    );
+  }
+}
+
+mod plot3d_function {
+  use super::*;
+
+  #[test]
+  fn plot3d_evaluates_to_itself() {
+    assert_eq!(interpret("Plot3D").unwrap(), "Plot3D");
+  }
+
+  #[test]
+  fn plot3d_attributes() {
+    assert_eq!(
+      interpret("Attributes[Plot3D]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
 mod matrix_form {
   use super::*;
 

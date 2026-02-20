@@ -236,7 +236,7 @@ AskedValue,,,,10.4,4479
 AskFunction,,,,10.4,3291
 AskState,,,,11.1,5390
 AskTemplateDisplay,,,,10.4,4567
-AspectRatio,,,,1,125
+AspectRatio,Option specifying the height-to-width ratio for a plot,✅,pure,1,125
 Assert,,,,8,2483
 AssessmentFunction,,,,12.2,3678
 AssessmentResultObject,,,,12.2,
@@ -373,7 +373,7 @@ AutorunSequencing,,,,6,826
 AutoScroll,,,,3,1578
 AutoSpacing,,,,3,4081
 AutoSubmitting,,,,10.2,5184
-Axes,,,,1,116
+Axes,Option specifying whether axes should be drawn in a plot,✅,pure,1,116
 AxesEdge,,,,2,1459
 AxesLabel,Option specifying labels for the axes of a plot,✅,pure,1,71
 AxesOrigin,,,,2,166
@@ -3531,7 +3531,7 @@ MeshStyle,,,,2,527
 Message,,,,1,362
 MessageDialog,,,,6,1946
 MessageList,,,,2,4006
-MessageName,,,,1,111
+MessageName,Accesses a message associated with a symbol (sym::tag),✅,pure,1,111
 MessagePacket,,,,3,3823
 Messages,Returns the messages associated with a symbol,✅,pure,1,2503
 MetaInformation,,,,9,1855
@@ -4219,9 +4219,9 @@ Play,,,,2,840
 PlaybackSettings,,,,13.1,
 PlayRange,,,,2,3108
 Plot,Plots a function over a range,✅,effectful,1,21
-Plot3D,,,,1,115
+Plot3D,Creates a three-dimensional surface plot of a function,✅,pure,1,115
 PlotHighlighting,,,,13.3,
-PlotLabel,,,,1,104
+PlotLabel,Option specifying a label for a plot,✅,pure,1,104
 PlotLabels,,,,10.4,597
 PlotLayout,,,,8,2203
 PlotLegends,,,,9,100
