@@ -3770,7 +3770,7 @@ NoncentralStudentTDistribution,,,,6,2057
 NonCommutativeMultiply,,,,1,290
 NonConstants,,,,1,1954
 NondimensionalizationTransform,,,,11.3,4262
-None,,,,1,23
+None,Symbol representing no value or absence of an option,✅,pure,1,23
 NoneMatch,,,,14.1,
 NoneTrue,Checks if no element in a list is true,✅,pure,10,3491
 NonlinearModelFit,,,,7,496
