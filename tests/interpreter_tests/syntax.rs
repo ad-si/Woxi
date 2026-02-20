@@ -609,6 +609,38 @@ mod rule_delayed {
   }
 }
 
+mod false_symbol {
+  use super::*;
+
+  #[test]
+  fn false_evaluates_to_itself() {
+    assert_eq!(interpret("False").unwrap(), "False");
+  }
+
+  #[test]
+  fn false_head_is_symbol() {
+    assert_eq!(interpret("Head[False]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn false_is_protected() {
+    assert_eq!(interpret("Attributes[False]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn not_false_is_true() {
+    assert_eq!(interpret("Not[False]").unwrap(), "True");
+  }
+
+  #[test]
+  fn false_in_list() {
+    assert_eq!(
+      interpret("{False, True, False}").unwrap(),
+      "{False, True, False}"
+    );
+  }
+}
+
 mod subscript_function {
   use super::*;
 
