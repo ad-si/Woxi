@@ -4050,6 +4050,88 @@ fn gamma_fn(x: f64) -> f64 {
   }
 }
 
+/// BesselJ[n, z] - Bessel function of the first kind
+pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BesselJ expects exactly 2 arguments".into(),
+    ));
+  }
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  // Extract numeric values
+  let n_val = match n_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let z_val = match z_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+
+  // Special case: BesselJ[n, 0] for integer n
+  if matches!(z_expr, Expr::Integer(0))
+    && let Expr::Integer(n) = n_expr
+  {
+    return if *n == 0 {
+      Ok(Expr::Integer(1))
+    } else {
+      Ok(Expr::Integer(0))
+    };
+  }
+
+  // Numeric evaluation when both args are numeric and at least one is Real
+  let is_numeric_eval = n_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let n = n_val.unwrap();
+    let z = z_val.unwrap();
+    let result = bessel_j(n, z);
+    return Ok(Expr::Real(result));
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "BesselJ".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Bessel J_n(z) using series expansion
+fn bessel_j(n: f64, z: f64) -> f64 {
+  // Handle negative integer orders: J_{-n}(z) = (-1)^n * J_n(z)
+  if n < 0.0 && n == n.floor() {
+    let n_abs = -n;
+    let sign = if n_abs as i64 % 2 == 0 { 1.0 } else { -1.0 };
+    return sign * bessel_j(n_abs, z);
+  }
+
+  // Special case: z = 0
+  if z == 0.0 {
+    return if n == 0.0 { 1.0 } else { 0.0 };
+  }
+
+  // Series: J_n(z) = sum_{m=0}^{inf} (-1)^m / (m! * Gamma(n+m+1)) * (z/2)^(2m+n)
+  let half_z = z / 2.0;
+  let mut sum = 0.0;
+  let mut term = half_z.powf(n) / gamma_fn(n + 1.0);
+  sum += term;
+
+  for m in 1..300 {
+    term *= -half_z * half_z / (m as f64 * (n + m as f64));
+    sum += term;
+    if term.abs() < 1e-17 * sum.abs().max(1e-300) {
+      break;
+    }
+  }
+  sum
+}
+
 /// N[expr] or N[expr, n] - Numeric evaluation
 pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -4090,12 +4172,18 @@ fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
       }
-      // Otherwise, recursively apply N to arguments
+      // Otherwise, recursively apply N to arguments and re-evaluate
       let new_args: Result<Vec<Expr>, _> = args.iter().map(n_eval).collect();
-      Ok(Expr::FunctionCall {
+      let new_args = new_args?;
+      // Re-evaluate the function with numeric arguments
+      let new_expr = Expr::FunctionCall {
         name: name.clone(),
-        args: new_args?,
-      })
+        args: new_args,
+      };
+      match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
+        Ok(result) => Ok(result),
+        Err(_) => Ok(new_expr),
+      }
     }
     Expr::BinaryOp { op, left, right } => {
       if let Some(v) = try_eval_to_f64(expr) {

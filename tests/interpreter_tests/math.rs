@@ -4122,3 +4122,58 @@ mod zero_divided_by_symbolic {
     assert_eq!(interpret("0/5").unwrap(), "0");
   }
 }
+
+mod bessel_j {
+  use super::*;
+
+  #[test]
+  fn zero_order_at_origin() {
+    assert_eq!(interpret("BesselJ[0, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn nonzero_order_at_origin() {
+    assert_eq!(interpret("BesselJ[1, 0]").unwrap(), "0");
+    assert_eq!(interpret("BesselJ[2, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn zero_order_real_origin() {
+    assert_eq!(interpret("BesselJ[0, 0.]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn numeric_zero_order() {
+    let result: f64 = interpret("BesselJ[0, 5.2]").unwrap().parse().unwrap();
+    assert!((result - (-0.11029043979098728)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_first_order() {
+    let result: f64 = interpret("BesselJ[1, 3.0]").unwrap().parse().unwrap();
+    assert!((result - 0.3390589585259365).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_second_order() {
+    let result: f64 = interpret("BesselJ[2, 1.5]").unwrap().parse().unwrap();
+    assert!((result - 0.23208767214421472).abs() < 1e-10);
+  }
+
+  #[test]
+  fn negative_order() {
+    let result: f64 = interpret("BesselJ[-1, 3.0]").unwrap().parse().unwrap();
+    assert!((result - (-0.3390589585259365)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    assert_eq!(interpret("BesselJ[0, x]").unwrap(), "BesselJ[0, x]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[BesselJ[0, 5]]").unwrap().parse().unwrap();
+    assert!((result - (-0.17759677131433846)).abs() < 1e-10);
+  }
+}
