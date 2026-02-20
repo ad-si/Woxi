@@ -3506,7 +3506,7 @@ Merge,Merges associations using a combining function,✅,pure,10,1033
 MergingFunction,,,,11.1,5013
 MersennePrimeExponent,,,,10.4,3462
 MersennePrimeExponentQ,,,,10.4,4437
-Mesh,,,,1,165
+Mesh,Option for mesh lines in plots,✅,pure,1,165
 MeshCellCentroid,,,,10,3176
 MeshCellCount,,,,10,1975
 MeshCellHighlight,,,,10.2,3031
@@ -5222,7 +5222,7 @@ Streams,,,,2,2960
 StreamScale,,,,7,1278
 StreamStyle,,,,7,1304
 StrictInequalities,,,,12.2,
-String,,,,1,182
+String,Head type for string values,✅,pure,1,182
 StringApply,,,,14.1,
 StringCases,Returns substrings matching a pattern,✅,pure,5.1,566
 StringContainsQ,Tests if a string contains a substring,✅,pure,10.1,1409
