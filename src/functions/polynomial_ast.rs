@@ -4107,6 +4107,178 @@ fn simplify_sqrt_parts(n: i128) -> (i128, i128) {
   (outside, inside)
 }
 
+// ─── FindRoot ────────────────────────────────────────────────────────
+
+/// FindRoot[expr, {var, x0}] — numerically find a root using Newton's method.
+///
+/// `expr` can be an expression (finds where it equals 0) or an equation `lhs == rhs`.
+/// Returns `{var -> root_value}`.
+pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FindRoot expects 2 arguments".into(),
+    ));
+  }
+
+  // Parse second argument: {var, x0}
+  let (var, x0) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => {
+      let var_name = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "FindRoot: variable must be a symbol".into(),
+          ));
+        }
+      };
+      let x0 = find_root_eval_number(&items[1])?;
+      (var_name, x0)
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FindRoot: second argument must be {var, x0}".into(),
+      ));
+    }
+  };
+
+  // Extract the function to find root of: expr or lhs - rhs for equations
+  let func = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Equal" && fargs.len() == 2 =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(fargs[0].clone()),
+        right: Box::new(fargs[1].clone()),
+      }
+    }
+    other => other.clone(),
+  };
+
+  // Compute derivative symbolically
+  let deriv = crate::functions::calculus_ast::differentiate_expr(&func, &var)?;
+  let deriv = simplify(deriv);
+
+  // Newton's method
+  let max_iter = 100;
+  let tol = 1e-15;
+  let mut x = x0;
+
+  for _ in 0..max_iter {
+    let fx = find_root_eval_at(&func, &var, x)?;
+    if fx.abs() < tol {
+      break;
+    }
+    let fpx = find_root_eval_at(&deriv, &var, x)?;
+    if fpx.abs() < 1e-30 {
+      // Derivative too small — try secant method step
+      let h = 1e-8;
+      let fx_plus = find_root_eval_at(&func, &var, x + h)?;
+      let fpx_approx = (fx_plus - fx) / h;
+      if fpx_approx.abs() < 1e-30 {
+        return Err(InterpreterError::EvaluationError(
+          "FindRoot: derivative is zero, cannot converge".into(),
+        ));
+      }
+      x -= fx / fpx_approx;
+    } else {
+      x -= fx / fpx;
+    }
+  }
+
+  // Format the result
+  let result_val = if x == 0.0 || (x.abs() > 1e-15 && x.abs() < 1e15) {
+    Expr::Real(x)
+  } else {
+    Expr::Real(x)
+  };
+
+  // Clean up -0.0
+  let result_val = if x == 0.0 {
+    Expr::Real(0.0)
+  } else {
+    result_val
+  };
+
+  Ok(Expr::List(vec![Expr::Rule {
+    pattern: Box::new(Expr::Identifier(var)),
+    replacement: Box::new(result_val),
+  }]))
+}
+
+/// Evaluate an expression numerically at a specific value of var.
+fn find_root_eval_at(
+  expr: &Expr,
+  var: &str,
+  x: f64,
+) -> Result<f64, InterpreterError> {
+  let substituted =
+    crate::syntax::substitute_variable(expr, var, &Expr::Real(x));
+  let evaled = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+  match &evaled {
+    Expr::Integer(n) => Ok(*n as f64),
+    Expr::Real(r) => Ok(*r),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Ok(*n as f64 / *d as f64)
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression numerically".into(),
+        ))
+      }
+    }
+    _ => {
+      // Try N[] evaluation
+      let n_result = crate::functions::math_ast::n_ast(&[evaled])?;
+      match &n_result {
+        Expr::Real(r) => Ok(*r),
+        Expr::Integer(n) => Ok(*n as f64),
+        _ => Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression numerically".into(),
+        )),
+      }
+    }
+  }
+}
+
+/// Parse a number from an expression for FindRoot starting point.
+fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
+  match expr {
+    Expr::Integer(n) => Ok(*n as f64),
+    Expr::Real(r) => Ok(*r),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Ok(-find_root_eval_number(operand)?),
+    _ => {
+      // Try evaluating
+      let evaled = crate::evaluator::evaluate_expr_to_expr(expr)?;
+      match &evaled {
+        Expr::Integer(n) => Ok(*n as f64),
+        Expr::Real(r) => Ok(*r),
+        _ => Err(InterpreterError::EvaluationError(
+          "FindRoot: starting point must be numeric".into(),
+        )),
+      }
+    }
+  }
+}
+
 // ─── Reduce ──────────────────────────────────────────────────────────
 
 /// Reduce[expr, var] or Reduce[expr, {vars}] or Reduce[expr, vars, domain]

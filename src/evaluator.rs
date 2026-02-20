@@ -5289,6 +5289,9 @@ pub fn evaluate_function_call_ast(
     "Reduce" if args.len() >= 2 && args.len() <= 3 => {
       return crate::functions::polynomial_ast::reduce_ast(args);
     }
+    "FindRoot" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::find_root_ast(args);
+    }
 
     // AST-native list generation
     "Tuples" if args.len() == 1 || args.len() == 2 => {

@@ -1301,6 +1301,71 @@ mod reduce {
   }
 }
 
+mod find_root {
+  use super::*;
+
+  #[test]
+  fn polynomial_root() {
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 1}]").unwrap(),
+      "{x -> 1.4142135623730951}"
+    );
+  }
+
+  #[test]
+  fn polynomial_root_negative_start() {
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, -1}]").unwrap(),
+      "{x -> -1.4142135623730951}"
+    );
+  }
+
+  #[test]
+  fn equation_form() {
+    assert_eq!(
+      interpret("FindRoot[Cos[x] == x, {x, 0}]").unwrap(),
+      "{x -> 0.7390851332151607}"
+    );
+  }
+
+  #[test]
+  fn transcendental() {
+    assert_eq!(
+      interpret("FindRoot[Sin[x] + Exp[x], {x, 0}]").unwrap(),
+      "{x -> -0.5885327439818611}"
+    );
+  }
+
+  #[test]
+  fn cubic() {
+    assert_eq!(
+      interpret("FindRoot[x^3 - x - 1, {x, 1}]").unwrap(),
+      "{x -> 1.324717957244746}"
+    );
+  }
+
+  #[test]
+  fn exponential() {
+    assert_eq!(
+      interpret("FindRoot[Exp[x] - 2, {x, 0}]").unwrap(),
+      "{x -> 0.6931471805599453}"
+    );
+  }
+
+  #[test]
+  fn trivial() {
+    assert_eq!(interpret("FindRoot[x, {x, 5}]").unwrap(), "{x -> 0.}");
+  }
+
+  #[test]
+  fn quadratic_larger_start() {
+    assert_eq!(
+      interpret("FindRoot[x^2 - 10^5 x + 1 == 0, {x, 10^6}]").unwrap(),
+      "{x -> 99999.99999000001}"
+    );
+  }
+}
+
 mod replace {
   use super::*;
 
