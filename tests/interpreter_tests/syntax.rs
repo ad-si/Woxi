@@ -537,6 +537,42 @@ mod pattern_function {
   }
 }
 
+mod slot_function {
+  use super::*;
+
+  #[test]
+  fn slot_displays_as_hash() {
+    assert_eq!(interpret("Slot[1]").unwrap(), "#1");
+    assert_eq!(interpret("Slot[2]").unwrap(), "#2");
+  }
+
+  #[test]
+  fn slot_head() {
+    assert_eq!(interpret("Head[Slot[1]]").unwrap(), "Slot");
+    assert_eq!(interpret("Head[#]").unwrap(), "Slot");
+  }
+
+  #[test]
+  fn slot_equals_hash() {
+    assert_eq!(interpret("Slot[1] === #").unwrap(), "True");
+  }
+
+  #[test]
+  fn slot_in_function() {
+    assert_eq!(interpret("Function[Slot[1]^2][5]").unwrap(), "25");
+  }
+
+  #[test]
+  fn slot_multi_arg_function() {
+    assert_eq!(interpret("Function[Slot[1] + Slot[2]][3, 4]").unwrap(), "7");
+  }
+
+  #[test]
+  fn slot_hash_syntax() {
+    assert_eq!(interpret("#^2 &[3]").unwrap(), "9");
+  }
+}
+
 mod set_delayed {
   use super::*;
 
