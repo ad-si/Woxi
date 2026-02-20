@@ -125,6 +125,10 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         let result = evaluate_pattern_function_ast(args)?;
         return Ok(expr_to_string(&result));
       }
+      // RuleDelayed[lhs, rhs] → Expr::RuleDelayed (HoldRest: rhs is unevaluated)
+      if name == "RuleDelayed" && args.len() == 2 {
+        return Ok(expr_to_string(&evaluate_rule_delayed_ast(args)?));
+      }
       // AbsoluteTiming/Timing: HoldAll, evaluate and measure time
       if (name == "AbsoluteTiming" || name == "Timing") && args.len() == 1 {
         let start = std::time::Instant::now();
@@ -919,6 +923,11 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Pattern[name, blank] → Expr::Pattern (HoldFirst: name is unevaluated)
       if name == "Pattern" && args.len() == 2 {
         return evaluate_pattern_function_ast(args);
+      }
+
+      // RuleDelayed[lhs, rhs] → Expr::RuleDelayed (HoldRest: rhs is unevaluated)
+      if name == "RuleDelayed" && args.len() == 2 {
+        return evaluate_rule_delayed_ast(args);
       }
 
       // AbsoluteTiming[expr]: evaluate and measure wall-clock time
@@ -1956,6 +1965,16 @@ fn evaluate_pattern_function_ast(
 
 /// Blank[] → _ or Blank[h] → _h
 #[inline(never)]
+/// RuleDelayed[lhs, rhs]: evaluate lhs, hold rhs unevaluated
+#[inline(never)]
+fn evaluate_rule_delayed_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let lhs = evaluate_expr_to_expr(&args[0])?;
+  Ok(Expr::RuleDelayed {
+    pattern: Box::new(lhs),
+    replacement: Box::new(args[1].clone()),
+  })
+}
+
 fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => Ok(Expr::Pattern {
