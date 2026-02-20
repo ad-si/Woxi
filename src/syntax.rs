@@ -2237,6 +2237,16 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "PreDecrement" && args.len() == 1 {
         return format!("--{}", expr_to_string(&args[0]));
       }
+      if name == "Optional" && args.len() == 1 {
+        return format!("{}.", expr_to_string(&args[0]));
+      }
+      if name == "Optional" && args.len() == 2 {
+        return format!(
+          "{}:{}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
       // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
       if name == "Minus" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
@@ -3323,6 +3333,16 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       if name == "PreDecrement" && args.len() == 1 {
         return format!("--{}", expr_to_output(&args[0]));
+      }
+      if name == "Optional" && args.len() == 1 {
+        return format!("{}.", expr_to_output(&args[0]));
+      }
+      if name == "Optional" && args.len() == 2 {
+        return format!(
+          "{}:{}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
       }
       // Special case: Dot[a, b] displays as a . b (infix notation)
       if name == "Dot" && args.len() == 2 {

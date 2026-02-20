@@ -1067,6 +1067,36 @@ mod pre_decrement_function {
   }
 }
 
+mod optional_function {
+  use super::*;
+
+  #[test]
+  fn optional_with_default() {
+    assert_eq!(interpret("Optional[x_, 0]").unwrap(), "x_:0");
+  }
+
+  #[test]
+  fn optional_with_head_and_default() {
+    assert_eq!(interpret("Optional[x_Integer, 5]").unwrap(), "x_Integer:5");
+  }
+
+  #[test]
+  fn optional_without_default() {
+    assert_eq!(interpret("Optional[x_]").unwrap(), "x_.");
+  }
+
+  #[test]
+  fn optional_attributes() {
+    assert_eq!(interpret("Attributes[Optional]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn optional_syntax_with_colon() {
+    assert_eq!(interpret("f[x_ : 0] := x; f[]").unwrap(), "0");
+    assert_eq!(interpret("f[x_ : 0] := x; f[5]").unwrap(), "5");
+  }
+}
+
 mod integer_symbol {
   use super::*;
 
