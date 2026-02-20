@@ -5287,7 +5287,7 @@ SubPlus,,,,6,1692
 SubresultantPolynomialRemainders,,,,9,4612
 SubresultantPolynomials,,,,9,4479
 Subresultants,,,,4,3889
-Subscript,,,,1,30
+Subscript,Represents a subscripted expression for display,✅,pure,1,30
 SubscriptBox,,,,3,964
 SubscriptBoxOptions,,,,4,5390
 Subsequences,Returns all contiguous subsequences of a list,✅,pure,10.4,2632

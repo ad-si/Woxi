@@ -556,6 +556,41 @@ mod none_symbol {
   }
 }
 
+mod subscript_function {
+  use super::*;
+
+  #[test]
+  fn subscript_basic() {
+    assert_eq!(interpret("Subscript[x, 1]").unwrap(), "Subscript[x, 1]");
+  }
+
+  #[test]
+  fn subscript_head() {
+    assert_eq!(interpret("Head[Subscript[x, 1]]").unwrap(), "Subscript");
+  }
+
+  #[test]
+  fn subscript_attributes() {
+    assert_eq!(interpret("Attributes[Subscript]").unwrap(), "{NHoldRest}");
+  }
+
+  #[test]
+  fn subscript_multi_index() {
+    assert_eq!(
+      interpret("Subscript[x, 1, 2]").unwrap(),
+      "Subscript[x, 1, 2]"
+    );
+  }
+
+  #[test]
+  fn subscript_fullform() {
+    assert_eq!(
+      interpret("FullForm[Subscript[x, 1]]").unwrap(),
+      "Subscript[x, 1]"
+    );
+  }
+}
+
 mod automatic_symbol {
   use super::*;
 
