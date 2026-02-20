@@ -556,6 +556,30 @@ mod none_symbol {
   }
 }
 
+mod automatic_symbol {
+  use super::*;
+
+  #[test]
+  fn automatic_evaluates_to_itself() {
+    assert_eq!(interpret("Automatic").unwrap(), "Automatic");
+  }
+
+  #[test]
+  fn automatic_head_is_symbol() {
+    assert_eq!(interpret("Head[Automatic]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn automatic_is_protected() {
+    assert_eq!(interpret("Attributes[Automatic]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn automatic_in_list() {
+    assert_eq!(interpret("{Automatic, None}").unwrap(), "{Automatic, None}");
+  }
+}
+
 mod true_symbol {
   use super::*;
 

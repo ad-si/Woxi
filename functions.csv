@@ -364,7 +364,7 @@ AutocorrelationTest,,,,10,4173
 AutoDelete,,,,3,3121
 AutoIndent,,,,3,4437
 AutoItalicWords,,,,3,4104
-Automatic,,,,1,29
+Automatic,Symbol used as a default setting for automatically determined options,✅,pure,1,29
 AutoMultiplicationSymbol,,,,6,3972
 AutoOperatorRenderings,,,,12.3,
 AutoRefreshed,,,,10.2,5079
