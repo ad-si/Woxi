@@ -185,8 +185,8 @@ Term = _{
   | String
   | ListExtended
   | ParenAnonymousFunction
-  | FunctionCallExtended
   | ImplicitTimes
+  | FunctionCallExtended
   | NumericValue
   | AddTo
   | SubtractFrom
@@ -223,8 +223,8 @@ TermNoImplicit = _{
   | String
   | ListExtended
   | ParenAnonymousFunction
-  | FunctionCallExtended
   | ImplicitTimes
+  | FunctionCallExtended
   | NumericValue
   | AddTo
   | SubtractFrom
