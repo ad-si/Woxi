@@ -38,6 +38,103 @@ fn is_known_wolfram_function(name: &str) -> bool {
   KNOWN_WOLFRAM_FUNCTIONS.contains(name)
 }
 
+/// Early dispatch for FunctionCall in evaluate_expr — handles held functions
+/// before argument evaluation. Returns Some(result) if handled, None otherwise.
+#[inline(never)]
+fn evaluate_expr_early_dispatch(
+  name: &str,
+  args: &[Expr],
+) -> Result<Option<String>, InterpreterError> {
+  match name {
+    "If" if args.len() == 2 || args.len() == 3 => {
+      let cond = evaluate_expr(&args[0])?;
+      if cond == "True" {
+        return Ok(Some(evaluate_expr(&args[1])?));
+      } else if cond == "False" {
+        if args.len() == 3 {
+          return Ok(Some(evaluate_expr(&args[2])?));
+        } else {
+          return Ok(Some("Null".to_string()));
+        }
+      } else {
+        let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
+        return Ok(Some(format!("If[{}]", args_str.join(", "))));
+      }
+    }
+    "Function" | "Protect" | "Unprotect" | "Condition" | "MessageName" => {
+      let result = evaluate_function_call_ast(name, args)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
+    "CompoundExpression" => {
+      if args.is_empty() {
+        return Ok(Some("Null".to_string()));
+      }
+      let mut result = String::new();
+      for arg in args {
+        result = evaluate_expr(arg)?;
+      }
+      return Ok(Some(result));
+    }
+    "Pattern" if args.len() == 2 => {
+      let result = evaluate_pattern_function_ast(args)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
+    "RuleDelayed" if args.len() == 2 => {
+      return Ok(Some(expr_to_string(&evaluate_rule_delayed_ast(args)?)));
+    }
+    "AbsoluteTiming" | "Timing" if args.len() == 1 => {
+      let start = std::time::Instant::now();
+      let result = evaluate_expr(&args[0])?;
+      let elapsed = start.elapsed().as_secs_f64();
+      return Ok(Some(format!(
+        "{{{}, {}}}",
+        format_real_result(elapsed),
+        result
+      )));
+    }
+    _ => {}
+  }
+  Ok(None)
+}
+
+/// Early dispatch for FunctionCall in evaluate_expr_to_expr — handles held functions
+/// before argument evaluation. Returns Some(result) if handled, None otherwise.
+#[inline(never)]
+fn evaluate_expr_to_expr_early_dispatch(
+  name: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  match name {
+    "Protect" | "Unprotect" | "Condition" | "MessageName" => {
+      return Ok(Some(evaluate_function_call_ast(name, args)?));
+    }
+    "CompoundExpression" => {
+      if args.is_empty() {
+        return Ok(Some(Expr::Identifier("Null".to_string())));
+      }
+      let mut result = Expr::Identifier("Null".to_string());
+      for arg in args {
+        result = evaluate_expr_to_expr(arg)?;
+      }
+      return Ok(Some(result));
+    }
+    "Pattern" if args.len() == 2 => {
+      return Ok(Some(evaluate_pattern_function_ast(args)?));
+    }
+    "RuleDelayed" if args.len() == 2 => {
+      return Ok(Some(evaluate_rule_delayed_ast(args)?));
+    }
+    "AbsoluteTiming" | "Timing" if args.len() == 1 => {
+      let start = std::time::Instant::now();
+      let result = evaluate_expr_to_expr(&args[0])?;
+      let elapsed = start.elapsed().as_secs_f64();
+      return Ok(Some(Expr::List(vec![Expr::Real(elapsed), result])));
+    }
+    _ => {}
+  }
+  Ok(None)
+}
+
 /// Evaluate an Expr AST directly without re-parsing.
 /// This is the core optimization that avoids re-parsing function bodies.
 pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
@@ -87,58 +184,9 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       Ok(format!("{{{}}}", evaluated.join(", ")))
     }
     Expr::FunctionCall { name, args } => {
-      // Special handling for If - lazy evaluation of branches
-      if name == "If" && (args.len() == 2 || args.len() == 3) {
-        let cond = evaluate_expr(&args[0])?;
-        if cond == "True" {
-          return evaluate_expr(&args[1]);
-        } else if cond == "False" {
-          if args.len() == 3 {
-            return evaluate_expr(&args[2]);
-          } else {
-            return Ok("Null".to_string());
-          }
-        } else {
-          // Condition didn't evaluate to True/False - return unevaluated
-          let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
-          return Ok(format!("If[{}]", args_str.join(", ")));
-        }
-      }
-      // Functions with HoldAll/HoldRest: pass args unevaluated
-      if name == "Function"
-        || name == "Protect"
-        || name == "Unprotect"
-        || name == "Condition"
-      {
-        let result = evaluate_function_call_ast(name, args)?;
-        return Ok(expr_to_string(&result));
-      }
-      // CompoundExpression[e1, e2, ...]: evaluate sequentially, return last
-      if name == "CompoundExpression" {
-        if args.is_empty() {
-          return Ok("Null".to_string());
-        }
-        let mut result = String::new();
-        for arg in args {
-          result = evaluate_expr(arg)?;
-        }
+      // Try early dispatch for held functions
+      if let Some(result) = evaluate_expr_early_dispatch(name, args)? {
         return Ok(result);
-      }
-      // Pattern[name, blank] → Expr::Pattern (HoldFirst: name is unevaluated)
-      if name == "Pattern" && args.len() == 2 {
-        let result = evaluate_pattern_function_ast(args)?;
-        return Ok(expr_to_string(&result));
-      }
-      // RuleDelayed[lhs, rhs] → Expr::RuleDelayed (HoldRest: rhs is unevaluated)
-      if name == "RuleDelayed" && args.len() == 2 {
-        return Ok(expr_to_string(&evaluate_rule_delayed_ast(args)?));
-      }
-      // AbsoluteTiming/Timing: HoldAll, evaluate and measure time
-      if (name == "AbsoluteTiming" || name == "Timing") && args.len() == 1 {
-        let start = std::time::Instant::now();
-        let result = evaluate_expr(&args[0])?;
-        let elapsed = start.elapsed().as_secs_f64();
-        return Ok(format!("{{{}, {}}}", format_real_result(elapsed), result));
       }
       // Evaluate using AST path to avoid interpret() recursion
       let evaluated_args: Vec<Expr> = args
@@ -907,39 +955,9 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         return association_nested_access(name, &evaluated_args);
       }
 
-      // HoldAll functions: pass args unevaluated
-      if name == "Protect" || name == "Unprotect" || name == "Condition" {
-        return evaluate_function_call_ast(name, args);
-      }
-
-      // CompoundExpression[e1, e2, ...]: evaluate sequentially, return last
-      if name == "CompoundExpression" {
-        if args.is_empty() {
-          return Ok(Expr::Identifier("Null".to_string()));
-        }
-        let mut result = Expr::Identifier("Null".to_string());
-        for arg in args {
-          result = evaluate_expr_to_expr(arg)?;
-        }
+      // Try early dispatch for held functions
+      if let Some(result) = evaluate_expr_to_expr_early_dispatch(name, args)? {
         return Ok(result);
-      }
-
-      // Pattern[name, blank] → Expr::Pattern (HoldFirst: name is unevaluated)
-      if name == "Pattern" && args.len() == 2 {
-        return evaluate_pattern_function_ast(args);
-      }
-
-      // RuleDelayed[lhs, rhs] → Expr::RuleDelayed (HoldRest: rhs is unevaluated)
-      if name == "RuleDelayed" && args.len() == 2 {
-        return evaluate_rule_delayed_ast(args);
-      }
-
-      // AbsoluteTiming[expr]: evaluate and measure wall-clock time
-      if (name == "AbsoluteTiming" || name == "Timing") && args.len() == 1 {
-        let start = std::time::Instant::now();
-        let result = evaluate_expr_to_expr(&args[0])?;
-        let elapsed = start.elapsed().as_secs_f64();
-        return Ok(Expr::List(vec![Expr::Real(elapsed), result]));
       }
 
       // Evaluate arguments
@@ -1988,7 +2006,10 @@ fn evaluate_pattern_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// BlankSequence/BlankNullSequence: return as symbolic FunctionCall
 #[inline(never)]
-fn evaluate_blank_sequence_ast(name: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
+fn evaluate_blank_sequence_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   Ok(Expr::FunctionCall {
     name: name.to_string(),
     args: args.to_vec(),
@@ -2104,7 +2125,7 @@ pub fn evaluate_function_call_ast(
     "PatternTest" if args.len() == 2 => return evaluate_pattern_test_ast(args),
     "Blank" => return evaluate_blank_ast(args),
     "BlankSequence" | "BlankNullSequence" if args.len() <= 1 => {
-      return evaluate_blank_sequence_ast(name, args)
+      return evaluate_blank_sequence_ast(name, args);
     }
     "Slot" if args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
@@ -5967,7 +5988,7 @@ pub fn evaluate_function_call_ast(
     | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
     | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset"
     | "Text" | "Style" | "Subscript" | "MatrixForm" | "Out" | "Condition"
-    | "Show" => {
+    | "Show" | "MessageName" | "Plot3D" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9675,6 +9696,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Function" => vec!["HoldAll", "Protected"],
 
     // HoldFirst + Protected
+    "MessageName" => vec!["HoldFirst", "Protected", "ReadProtected"],
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
     "SetDelayed" => vec!["HoldAll", "Protected", "SequenceHold"],
 
@@ -9692,7 +9714,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Constant", "Protected", "ReadProtected"]
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "Infinity" | "PlotRange" | "MatrixForm" | "Show" => {
+    "Infinity" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D" => {
       vec!["Protected", "ReadProtected"]
     }
 
@@ -9779,6 +9801,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "All"
     | "PlotStyle"
     | "AxesLabel"
+    | "PlotLabel"
+    | "Axes"
+    | "AspectRatio"
     | "BlankNullSequence"
     | "BlankSequence"
     | "Print"
