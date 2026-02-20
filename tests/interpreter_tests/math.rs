@@ -4281,6 +4281,88 @@ mod elliptic_k {
   }
 }
 
+mod polylog {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("PolyLog[2, 0]").unwrap(), "0");
+    assert_eq!(interpret("PolyLog[3, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_one_gives_zeta() {
+    assert_eq!(interpret("PolyLog[2, 1]").unwrap(), "Pi^2/6");
+    assert_eq!(interpret("PolyLog[3, 1]").unwrap(), "Zeta[3]");
+    assert_eq!(interpret("PolyLog[4, 1]").unwrap(), "Pi^4/90");
+  }
+
+  #[test]
+  fn at_neg_one() {
+    assert_eq!(interpret("PolyLog[2, -1]").unwrap(), "-1/12*Pi^2");
+    assert_eq!(interpret("PolyLog[3, -1]").unwrap(), "(-3*Zeta[3])/4");
+    assert_eq!(interpret("PolyLog[4, -1]").unwrap(), "(-7*Pi^4)/720");
+  }
+
+  #[test]
+  fn s_one_symbolic() {
+    assert_eq!(interpret("PolyLog[1, x]").unwrap(), "-Log[1 - x]");
+  }
+
+  #[test]
+  fn s_one_rational() {
+    assert_eq!(interpret("PolyLog[1, 1/2]").unwrap(), "Log[2]");
+  }
+
+  #[test]
+  fn s_zero() {
+    assert_eq!(interpret("PolyLog[0, x]").unwrap(), "x/(1 - x)");
+    assert_eq!(interpret("PolyLog[0, 0]").unwrap(), "0");
+    assert_eq!(interpret("PolyLog[0, 1]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn negative_s() {
+    assert_eq!(interpret("PolyLog[-1, x]").unwrap(), "x/(1 - x)^2");
+    assert_eq!(interpret("PolyLog[-2, x]").unwrap(), "(x + x^2)/(1 - x)^3");
+    assert_eq!(
+      interpret("PolyLog[-3, x]").unwrap(),
+      "(x + 4*x^2 + x^3)/(1 - x)^4"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("PolyLog[2, x]").unwrap(), "PolyLog[2, x]");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("PolyLog[2, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.5822405264650125).abs() < 1e-8);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[PolyLog[3, 1/2]]").unwrap().parse().unwrap();
+    assert!((result - 0.5372131936080402).abs() < 1e-8);
+  }
+}
+
+mod log_rational_simplification {
+  use super::*;
+
+  #[test]
+  fn log_half() {
+    assert_eq!(interpret("Log[1/2]").unwrap(), "-Log[2]");
+  }
+
+  #[test]
+  fn log_two_thirds() {
+    assert_eq!(interpret("Log[2/3]").unwrap(), "-Log[3/2]");
+  }
+}
+
 mod legendre_p {
   use super::*;
 

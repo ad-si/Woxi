@@ -4279,7 +4279,7 @@ PolyhedronCoordinates,,,,12,4707
 PolyhedronData,,,,6,601
 PolyhedronDecomposition,,,,12,5390
 PolyhedronGenus,,,,12,5587
-PolyLog,,,,1,529
+PolyLog,Polylogarithm function,✅,pure,1,529
 PolynomialExpressionQ,,,,12.2,
 PolynomialExtendedGCD,,,,6,2404
 PolynomialGCD,,,,2,1611
