@@ -2606,7 +2606,7 @@ Hypergeometric0F1,,,,1,1259
 Hypergeometric0F1Regularized,,,,3,1363
 Hypergeometric1F1,,,,1,993
 Hypergeometric1F1Regularized,,,,3,1342
-Hypergeometric2F1,,,,1,413
+Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1,413
 Hypergeometric2F1Regularized,,,,3,850
 HypergeometricDistribution,,,,6,2289
 HypergeometricPFQ,,,,3,386

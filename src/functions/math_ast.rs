@@ -4133,6 +4133,64 @@ fn bessel_j(n: f64, z: f64) -> f64 {
 }
 
 /// N[expr] or N[expr, n] - Numeric evaluation
+/// Hypergeometric2F1[a, b, c, z] - Gauss hypergeometric function
+pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 4 {
+    return Err(InterpreterError::EvaluationError(
+      "Hypergeometric2F1 expects exactly 4 arguments".into(),
+    ));
+  }
+
+  // Special case: z = 0 => result is 1
+  if matches!(&args[3], Expr::Integer(0)) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Try numeric evaluation when all args are numeric and at least one is Real
+  let vals: Vec<Option<f64>> = args
+    .iter()
+    .map(|a| match a {
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Real(f) => Some(*f),
+      _ => None,
+    })
+    .collect();
+
+  let has_real = args.iter().any(|a| matches!(a, Expr::Real(_)));
+
+  if vals.iter().all(|v| v.is_some()) && has_real {
+    let a = vals[0].unwrap();
+    let b = vals[1].unwrap();
+    let c = vals[2].unwrap();
+    let z = vals[3].unwrap();
+    let result = hypergeometric2f1(a, b, c, z);
+    return Ok(Expr::Real(result));
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Hypergeometric2F1".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute 2F1(a, b; c; z) using series expansion
+fn hypergeometric2f1(a: f64, b: f64, c: f64, z: f64) -> f64 {
+  // Series: sum_{n=0}^{inf} (a)_n (b)_n / (c)_n / n! * z^n
+  let mut sum = 1.0;
+  let mut term = 1.0;
+
+  for n in 0..1000 {
+    let nf = n as f64;
+    term *= (a + nf) * (b + nf) / (c + nf) * z / (nf + 1.0);
+    sum += term;
+    if term.abs() < 1e-16 * sum.abs().max(1e-300) {
+      break;
+    }
+  }
+  sum
+}
+
 pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(

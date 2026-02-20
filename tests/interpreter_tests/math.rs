@@ -4177,3 +4177,47 @@ mod bessel_j {
     assert!((result - (-0.17759677131433846)).abs() < 1e-10);
   }
 }
+
+mod hypergeometric2f1 {
+  use super::*;
+
+  #[test]
+  fn z_zero() {
+    assert_eq!(interpret("Hypergeometric2F1[1, 2, 3, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numeric_basic() {
+    let result: f64 = interpret("Hypergeometric2F1[1, 2, 3, 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.5451774444795618).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_log_related() {
+    let result: f64 = interpret("Hypergeometric2F1[1, 1, 2, 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.38629436111989).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("Hypergeometric2F1[1, 2, 3, x]").unwrap(),
+      "Hypergeometric2F1[1, 2, 3, x]"
+    );
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[Hypergeometric2F1[1, 2, 3, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.5451774444795618).abs() < 1e-10);
+  }
+}
