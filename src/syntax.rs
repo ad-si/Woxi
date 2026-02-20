@@ -264,6 +264,8 @@ pub enum Expr {
   Identifier(String),
   /// Slot (#, #1, #2, etc.)
   Slot(usize),
+  /// SlotSequence (##, ##1, ##2, etc.) — represents a sequence of arguments
+  SlotSequence(usize),
   /// List: {e1, e2, ...}
   List(Vec<Expr>),
   /// Function call: f[e1, e2, ...]
@@ -479,6 +481,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         1
       };
       Expr::Slot(num)
+    }
+    Rule::SlotSequence => {
+      let s = pair.as_str();
+      // ## is slot sequence starting at 1, ##2 starts at 2, etc.
+      let num = if s.len() > 2 {
+        s[2..].parse().unwrap_or(1)
+      } else {
+        1
+      };
+      Expr::SlotSequence(num)
     }
     Rule::Constant | Rule::UnsignedConstant => {
       Expr::Constant(pair.as_str().trim().to_string())
@@ -2148,6 +2160,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
     Expr::Slot(n) => {
       format!("#{}", n)
     }
+    Expr::SlotSequence(n) => {
+      format!("##{}", n)
+    }
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(expr_to_string).collect();
       format!("{{{}}}", parts.join(", "))
@@ -3566,6 +3581,23 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
 
 /// Substitute slots (#, #1, #2, etc.) in an expression with values.
 /// values[0] replaces #1 (or #), values[1] replaces #2, etc.
+/// Substitute slots in a list of expressions, expanding SlotSequence into multiple args.
+fn substitute_slots_expand(exprs: &[Expr], values: &[Expr]) -> Vec<Expr> {
+  let mut result = Vec::new();
+  for e in exprs {
+    let substituted = substitute_slots(e, values);
+    // Flatten Sequence[...] into the argument list
+    if let Expr::FunctionCall { name, args } = &substituted
+      && name == "Sequence"
+    {
+      result.extend(args.iter().cloned());
+      continue;
+    }
+    result.push(substituted);
+  }
+  result
+}
+
 pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
   match expr {
     Expr::Slot(n) => {
@@ -3576,9 +3608,22 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
         expr.clone()
       }
     }
-    Expr::List(items) => {
-      Expr::List(items.iter().map(|e| substitute_slots(e, values)).collect())
+    Expr::SlotSequence(n) => {
+      let start = if *n == 0 { 0 } else { n - 1 };
+      if start < values.len() {
+        let seq: Vec<Expr> = values[start..].to_vec();
+        Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: seq,
+        }
+      } else {
+        Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: vec![],
+        }
+      }
     }
+    Expr::List(items) => Expr::List(substitute_slots_expand(items, values)),
     Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
       if let Expr::Integer(n) = &args[0] {
         let index = if *n <= 0 { 0 } else { (*n as usize) - 1 };
@@ -3591,9 +3636,30 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
         expr.clone()
       }
     }
+    Expr::FunctionCall { name, args }
+      if name == "SlotSequence" && args.len() == 1 =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        let start = if *n <= 0 { 0 } else { (*n as usize) - 1 };
+        if start < values.len() {
+          let seq: Vec<Expr> = values[start..].to_vec();
+          Expr::FunctionCall {
+            name: "Sequence".to_string(),
+            args: seq,
+          }
+        } else {
+          Expr::FunctionCall {
+            name: "Sequence".to_string(),
+            args: vec![],
+          }
+        }
+      } else {
+        expr.clone()
+      }
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args.iter().map(|e| substitute_slots(e, values)).collect(),
+      args: substitute_slots_expand(args, values),
     },
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,

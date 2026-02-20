@@ -1153,6 +1153,7 @@ pub fn expr_to_full_form(expr: &Expr) -> String {
         format!("Slot[{}]", n)
       }
     }
+    Expr::SlotSequence(n) => format!("SlotSequence[{}]", n),
     Expr::Constant(c) => c.clone(),
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(expr_to_full_form).collect();
