@@ -1067,6 +1067,74 @@ mod pre_decrement_function {
   }
 }
 
+mod left_symbol {
+  use super::*;
+
+  #[test]
+  fn left_evaluates_to_itself() {
+    assert_eq!(interpret("Left").unwrap(), "Left");
+  }
+
+  #[test]
+  fn left_attributes() {
+    assert_eq!(interpret("Attributes[Left]").unwrap(), "{Protected}");
+  }
+}
+
+mod real_symbol {
+  use super::*;
+
+  #[test]
+  fn real_evaluates_to_itself() {
+    assert_eq!(interpret("Real").unwrap(), "Real");
+  }
+
+  #[test]
+  fn real_attributes() {
+    assert_eq!(interpret("Attributes[Real]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn real_is_head_of_floats() {
+    assert_eq!(interpret("Head[3.14]").unwrap(), "Real");
+    assert_eq!(interpret("Head[0.0]").unwrap(), "Real");
+  }
+
+  #[test]
+  fn match_real_pattern() {
+    assert_eq!(interpret("MatchQ[3.14, _Real]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[5, _Real]").unwrap(), "False");
+  }
+}
+
+mod ticks_symbol {
+  use super::*;
+
+  #[test]
+  fn ticks_evaluates_to_itself() {
+    assert_eq!(interpret("Ticks").unwrap(), "Ticks");
+  }
+
+  #[test]
+  fn ticks_attributes() {
+    assert_eq!(interpret("Attributes[Ticks]").unwrap(), "{Protected}");
+  }
+}
+
+mod boxed_symbol {
+  use super::*;
+
+  #[test]
+  fn boxed_evaluates_to_itself() {
+    assert_eq!(interpret("Boxed").unwrap(), "Boxed");
+  }
+
+  #[test]
+  fn boxed_attributes() {
+    assert_eq!(interpret("Attributes[Boxed]").unwrap(), "{Protected}");
+  }
+}
+
 mod scaled_function {
   use super::*;
 
