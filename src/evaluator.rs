@@ -5021,6 +5021,9 @@ pub fn evaluate_function_call_ast(
     "PolyGamma" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::polygamma_ast(args);
     }
+    "LegendreP" if args.len() == 2 => {
+      return crate::functions::math_ast::legendre_p_ast(args);
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);
     }
@@ -10087,6 +10090,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "BesselI"
     | "BesselK"
     | "EllipticK"
+    | "LegendreP"
     | "EllipticE"
     | "Conjugate"
     | "Re"

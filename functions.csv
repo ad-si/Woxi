@@ -3121,7 +3121,7 @@ LegendLayout,,,,9,1348
 LegendMargins,,,,9,2034
 LegendMarkers,,,,9,1637
 LegendMarkerSize,,,,9,1151
-LegendreP,,,,1,515
+LegendreP,Legendre polynomial of the first kind,✅,pure,1,515
 LegendreQ,,,,1,943
 Length,Returns the number of elements in a list,✅,pure,1,44
 LengthWhile,Returns the length of the longest initial run satisfying a test,✅,pure,6,1499

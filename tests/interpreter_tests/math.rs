@@ -4281,6 +4281,76 @@ mod elliptic_k {
   }
 }
 
+mod legendre_p {
+  use super::*;
+
+  #[test]
+  fn degree_zero() {
+    assert_eq!(interpret("LegendreP[0, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn degree_one() {
+    assert_eq!(interpret("LegendreP[1, x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn degree_two() {
+    assert_eq!(interpret("LegendreP[2, x]").unwrap(), "(-1 + 3*x^2)/2");
+  }
+
+  #[test]
+  fn degree_three() {
+    assert_eq!(interpret("LegendreP[3, x]").unwrap(), "(-3*x + 5*x^3)/2");
+  }
+
+  #[test]
+  fn degree_four() {
+    assert_eq!(
+      interpret("LegendreP[4, x]").unwrap(),
+      "(3 - 30*x^2 + 35*x^4)/8"
+    );
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("LegendreP[2, 0]").unwrap(), "-1/2");
+    assert_eq!(interpret("LegendreP[3, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("LegendreP[2, 1]").unwrap(), "1");
+    assert_eq!(interpret("LegendreP[3, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("LegendreP[2, 0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.125)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn at_rational() {
+    assert_eq!(interpret("LegendreP[3, 1/2]").unwrap(), "-7/16");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[LegendreP[3, 1/2]]").unwrap().parse().unwrap();
+    assert!((result - (-0.4375)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn high_degree() {
+    assert_eq!(
+      interpret("LegendreP[10, x]").unwrap(),
+      "(-63 + 3465*x^2 - 30030*x^4 + 90090*x^6 - 109395*x^8 + 46189*x^10)/256"
+    );
+  }
+}
+
 mod polygamma {
   use super::*;
 
