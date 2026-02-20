@@ -5997,7 +5997,8 @@ pub fn evaluate_function_call_ast(
   }
 
   // Needs: package loading - no-op in Woxi, returns Null
-  if name == "Needs" {
+  // Message: message system - no-op in Woxi, returns Null
+  if name == "Needs" || name == "Message" {
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
@@ -6045,7 +6046,8 @@ pub fn evaluate_function_call_ast(
     | "NonCommutativeMultiply"
     | "Superscript"
     | "Repeated"
-    | "NumberForm" => {
+    | "NumberForm"
+    | "Information" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9758,6 +9760,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "PreDecrement" => {
       vec!["HoldFirst", "Protected", "ReadProtected"]
     }
+    "Message" => {
+      vec!["HoldFirst", "Protected"]
+    }
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
     "SetDelayed" => vec!["HoldAll", "Protected", "SequenceHold"],
 
@@ -9778,7 +9783,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Constant", "Protected", "ReadProtected"]
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "Infinity" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D" => {
+    "Infinity" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
+    | "Information" => {
       vec!["Protected", "ReadProtected"]
     }
 
@@ -9889,6 +9895,13 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Ticks"
     | "Boxed"
     | "Repeated"
+    | "ViewPoint"
+    | "BoxRatios"
+    | "DisplayFunction"
+    | "Right"
+    | "Top"
+    | "Bottom"
+    | "WorkingPrecision"
     | "Print"
     | "Echo"
     | "ToString"
@@ -9969,7 +9982,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Precision"
     | "Accuracy"
     | "MachinePrecision"
-    | "Information"
     | "Definition"
     | "Attributes"
     | "Context"
@@ -9980,7 +9992,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Check"
     | "CheckAbort"
     | "Quiet"
-    | "Message"
     | "FilterRules"
     | "Operate"
     | "ReverseSort"
