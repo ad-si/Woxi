@@ -1994,12 +1994,12 @@ FindLibrary,,,,8,3889
 FindLinearRecurrence,,,,7,2254
 FindList,,,,2,3162
 FindMatchingColor,,,,12,5390
-FindMaximum,,,,5,557
+FindMaximum,Finds a local maximum of a function numerically,✅,pure,5,557
 FindMaximumCut,,,,12.1,5486
 FindMaximumFlow,,,,9,2911
 FindMaxValue,,,,7,1668
 FindMeshDefects,,,,11,3363
-FindMinimum,,,,1,436
+FindMinimum,Finds a local minimum of a function numerically,✅,pure,1,436
 FindMinimumCostFlow,,,,9,2986
 FindMinimumCut,,,,9,4437
 FindMinValue,,,,7,2350

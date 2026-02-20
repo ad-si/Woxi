@@ -4279,6 +4279,238 @@ fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   }
 }
 
+// ─── FindMinimum / FindMaximum ───────────────────────────────────────
+
+/// FindMinimum[f, {x, x0}] — find a local minimum of f starting at x0
+/// FindMinimum[f, {{x, x0}, {y, y0}}] — multivariable
+/// Returns {min_value, {x -> x_min, ...}}
+///
+/// FindMaximum is implemented by negating f and negating the result.
+pub fn find_minimum_ast(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  let func_name = if maximize {
+    "FindMaximum"
+  } else {
+    "FindMinimum"
+  };
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{func_name} expects 2 arguments"
+    )));
+  }
+
+  let f = &args[0];
+
+  // Parse variables and starting points: {x, x0} or {{x, x0}, {y, y0}}
+  let var_specs = match &args[1] {
+    Expr::List(items)
+      if !items.is_empty() && matches!(&items[0], Expr::List(_)) =>
+    {
+      // Multivariable: {{x, x0}, {y, y0}, ...}
+      let mut specs = Vec::new();
+      for item in items {
+        if let Expr::List(pair) = item
+          && pair.len() == 2
+          && let Expr::Identifier(name) = &pair[0]
+        {
+          let x0 = find_root_eval_number(&pair[1])?;
+          specs.push((name.clone(), x0));
+        } else {
+          return Err(InterpreterError::EvaluationError(format!(
+            "{func_name}: variable spec must be {{var, start}}"
+          )));
+        }
+      }
+      specs
+    }
+    Expr::List(items) if items.len() == 2 => {
+      // Single variable: {x, x0}
+      if let Expr::Identifier(name) = &items[0] {
+        let x0 = find_root_eval_number(&items[1])?;
+        vec![(name.clone(), x0)]
+      } else {
+        return Err(InterpreterError::EvaluationError(format!(
+          "{func_name}: variable spec must be {{var, start}}"
+        )));
+      }
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "{func_name}: second argument must be {{var, start}} or {{{{x, x0}}, {{y, y0}}}}"
+      )));
+    }
+  };
+
+  let vars: Vec<String> = var_specs.iter().map(|(v, _)| v.clone()).collect();
+  let mut x: Vec<f64> = var_specs.iter().map(|(_, x0)| *x0).collect();
+  let n = vars.len();
+
+  // Compute symbolic gradients (partial derivatives)
+  let mut grad_exprs: Vec<Expr> = Vec::with_capacity(n);
+  for var in &vars {
+    let deriv = crate::functions::calculus_ast::differentiate_expr(f, var)?;
+    grad_exprs.push(simplify(deriv));
+  }
+
+  // Compute symbolic Hessian (for Newton's method in 1D, second derivative)
+  let mut hess_exprs: Vec<Vec<Expr>> = Vec::new();
+  for i in 0..n {
+    let mut row = Vec::new();
+    for j in 0..n {
+      let h = crate::functions::calculus_ast::differentiate_expr(
+        &grad_exprs[i],
+        &vars[j],
+      )?;
+      row.push(simplify(h));
+    }
+    hess_exprs.push(row);
+  }
+
+  // Evaluate expression at point
+  let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
+    let mut e = expr.clone();
+    for (i, var) in vars.iter().enumerate() {
+      e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
+    }
+    let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
+    expr_to_f64(&evaled)
+  };
+
+  let sign = if maximize { -1.0 } else { 1.0 };
+  let max_iter = 200;
+  let tol = 1e-15;
+
+  if n == 1 {
+    // Single variable: damped Newton's method on the derivative
+    // Uses line search to ensure we actually decrease/increase the function
+    for _ in 0..max_iter {
+      let gval = eval_at(&grad_exprs[0], &x)?;
+      if gval.abs() < tol {
+        break;
+      }
+      let hval = eval_at(&hess_exprs[0][0], &x)?;
+
+      // Compute Newton direction
+      let step = if hval.abs() < 1e-30 {
+        // Hessian too small — use gradient descent step
+        sign * gval * 0.1
+      } else if (maximize && hval > 0.0) || (!maximize && hval < 0.0) {
+        // Hessian has wrong sign for our goal (saddle point or max when seeking min)
+        // Use gradient descent instead
+        sign * gval * 0.1
+      } else {
+        gval / hval
+      };
+
+      // Line search along Newton direction to ensure improvement
+      let current_f = eval_at(f, &x)? * sign;
+      let mut alpha = 1.0;
+      let mut best_x = x[0] - step;
+      let mut best_f = eval_at(f, &[best_x])? * sign;
+
+      // Backtracking: reduce step if it doesn't improve
+      for _ in 0..30 {
+        if best_f < current_f {
+          break;
+        }
+        alpha *= 0.5;
+        best_x = x[0] - alpha * step;
+        best_f = eval_at(f, &[best_x])? * sign;
+      }
+      x[0] = best_x;
+    }
+  } else {
+    // Multivariable: use BFGS-like gradient descent with line search
+    for _ in 0..max_iter {
+      // Evaluate gradient
+      let mut grad = vec![0.0; n];
+      for i in 0..n {
+        grad[i] = eval_at(&grad_exprs[i], &x)?;
+      }
+
+      let grad_norm: f64 = grad.iter().map(|g| g * g).sum::<f64>().sqrt();
+      if grad_norm < tol {
+        break;
+      }
+
+      // Descent direction
+      let dir: Vec<f64> = grad.iter().map(|g| -sign * g).collect();
+
+      // Backtracking line search
+      let mut alpha = 1.0;
+      let c = 1e-4;
+      let current_f = eval_at(f, &x)? * sign;
+
+      for _ in 0..50 {
+        let x_new: Vec<f64> = x
+          .iter()
+          .zip(dir.iter())
+          .map(|(xi, di)| xi + alpha * di)
+          .collect();
+        let new_f = eval_at(f, &x_new)? * sign;
+        let decrease: f64 =
+          grad.iter().zip(dir.iter()).map(|(g, d)| g * d).sum::<f64>();
+        if new_f <= current_f + c * alpha * decrease * sign {
+          x = x_new;
+          break;
+        }
+        alpha *= 0.5;
+        if alpha < 1e-15 {
+          x = x_new;
+          break;
+        }
+      }
+    }
+  }
+
+  // Compute final function value
+  let min_val = eval_at(f, &x)?;
+  let min_val_expr = Expr::Real(min_val);
+
+  // Build result: {min_val, {x -> x_min, y -> y_min, ...}}
+  let rules: Vec<Expr> = vars
+    .iter()
+    .zip(x.iter())
+    .map(|(var, val)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.clone())),
+      replacement: Box::new(Expr::Real(*val)),
+    })
+    .collect();
+
+  Ok(Expr::List(vec![min_val_expr, Expr::List(rules)]))
+}
+
+/// Convert an evaluated expression to f64
+fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
+  match expr {
+    Expr::Integer(n) => Ok(*n as f64),
+    Expr::Real(r) => Ok(*r),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Ok(*n as f64 / *d as f64)
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "Cannot evaluate expression numerically".into(),
+        ))
+      }
+    }
+    _ => {
+      let n_result = crate::functions::math_ast::n_ast(&[expr.clone()])?;
+      match &n_result {
+        Expr::Real(r) => Ok(*r),
+        Expr::Integer(n) => Ok(*n as f64),
+        _ => Err(InterpreterError::EvaluationError(
+          "Cannot evaluate expression numerically".into(),
+        )),
+      }
+    }
+  }
+}
+
 // ─── Reduce ──────────────────────────────────────────────────────────
 
 /// Reduce[expr, var] or Reduce[expr, {vars}] or Reduce[expr, vars, domain]
