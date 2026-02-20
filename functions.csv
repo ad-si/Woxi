@@ -4913,7 +4913,7 @@ SetAlphaChannel,,,,8,1426
 SetAttributes,Sets attributes for a symbol,✅,stateful,1,333
 SetCloudDirectory,,,,10,3522
 SetCookies,,,,11,4947
-SetDelayed,,,,1,15
+SetDelayed,Defines a delayed assignment that evaluates the RHS each time,✅,stateful,1,15
 SetDirectory,,,,2,715
 SetEnvironment,,,,9,3326
 SetFileDate,,,,2,4479

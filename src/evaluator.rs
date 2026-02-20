@@ -7012,6 +7012,20 @@ fn set_delayed_ast(lhs: &Expr, body: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("Null".to_string()));
   }
 
+  // Handle simple identifier assignment: a := expr (OwnValues)
+  if let Expr::Identifier(var_name) = lhs {
+    if is_symbol_protected(var_name) {
+      eprintln!("SetDelayed::wrsym: Symbol {} is Protected.", var_name);
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
+    // Store the unevaluated body — it will be re-evaluated each time the symbol is accessed
+    ENV.with(|e| {
+      e.borrow_mut()
+        .insert(var_name.clone(), StoredValue::ExprVal(body.clone()))
+    });
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
   // Fallback: return symbolic form
   Ok(Expr::FunctionCall {
     name: "SetDelayed".to_string(),

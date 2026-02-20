@@ -537,6 +537,37 @@ mod pattern_function {
   }
 }
 
+mod set_delayed {
+  use super::*;
+
+  #[test]
+  fn function_form_defines_function() {
+    assert_eq!(interpret("SetDelayed[h[x_], x^3]; h[4]").unwrap(), "64");
+  }
+
+  #[test]
+  fn colon_equals_syntax() {
+    assert_eq!(interpret("f[x_] := x^2; f[3]").unwrap(), "9");
+  }
+
+  #[test]
+  fn function_form_simple_variable() {
+    assert_eq!(
+      interpret("Clear[myvar]; SetDelayed[myvar, 42]; myvar").unwrap(),
+      "42"
+    );
+  }
+
+  #[test]
+  fn delayed_evaluation() {
+    // SetDelayed evaluates the RHS each time
+    assert_eq!(
+      interpret("n = 0; f[x_] := (n = n + 1; x + n); {f[10], f[10]}").unwrap(),
+      "{11, 12}"
+    );
+  }
+}
+
 mod compound_expression {
   use super::*;
 
