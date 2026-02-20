@@ -9745,6 +9745,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "None"
     | "Automatic"
     | "All"
+    | "PlotStyle"
     | "Print"
     | "Echo"
     | "ToString"
