@@ -701,6 +701,40 @@ mod plot_style_symbol {
   }
 }
 
+mod condition_function {
+  use super::*;
+
+  #[test]
+  fn condition_display() {
+    assert_eq!(interpret("Condition[x_, x > 0]").unwrap(), "x_ /; x > 0");
+  }
+
+  #[test]
+  fn condition_head() {
+    assert_eq!(
+      interpret("Head[Condition[x_, x > 0]]").unwrap(),
+      "Condition"
+    );
+  }
+
+  #[test]
+  fn condition_attributes() {
+    assert_eq!(
+      interpret("Attributes[Condition]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+
+  #[test]
+  fn condition_holds_args() {
+    // Condition should not evaluate its arguments
+    assert_eq!(
+      interpret("Condition[x_, 1 + 1 == 2]").unwrap(),
+      "x_ /; 1 + 1 == 2"
+    );
+  }
+}
+
 mod matrix_form {
   use super::*;
 
