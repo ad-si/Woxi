@@ -1311,6 +1311,624 @@ fn find_polynomial_roots(coeffs: &[i128]) -> Vec<Expr> {
   roots
 }
 
+// ─── Eigenvectors ───────────────────────────────────────────────────────
+
+/// Eigenvectors[matrix] - eigenvectors of a square matrix
+pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Eigenvectors expects exactly 1 argument".into(),
+    ));
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "Eigenvectors".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let n = matrix.len();
+  if n == 0 || matrix.iter().any(|row| row.len() != n) {
+    return Err(InterpreterError::EvaluationError(
+      "Eigenvectors: argument must be a square matrix".into(),
+    ));
+  }
+
+  // 1x1
+  if n == 1 {
+    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(1)])]));
+  }
+
+  // Check if matrix is numeric (at least one Real entry)
+  let has_real = matrix
+    .iter()
+    .any(|row| row.iter().any(|e| matches!(e, Expr::Real(_))));
+  let all_numeric = matrix.iter().all(|row| {
+    row
+      .iter()
+      .all(|e| matches!(e, Expr::Integer(_) | Expr::Real(_)))
+  });
+
+  if has_real && all_numeric {
+    return numeric_eigenvectors(&matrix, n);
+  }
+
+  // Try integer matrix path
+  if let Some(int_matrix) = matrix_to_i128(&matrix) {
+    return integer_eigenvectors(&matrix, &int_matrix, n);
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Eigenvectors".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Extract rational parts (numerator, denominator) from an Expr.
+fn expr_to_rational_parts(e: &Expr) -> Option<(i128, i128)> {
+  match e {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Scale a vector of rational Exprs to integer entries (clear denominators, reduce GCD).
+fn scale_to_integers(vec: &[Expr]) -> Vec<Expr> {
+  let rationals: Vec<Option<(i128, i128)>> =
+    vec.iter().map(expr_to_rational_parts).collect();
+  if rationals.iter().any(|r| r.is_none()) {
+    return vec.to_vec();
+  }
+  let rats: Vec<(i128, i128)> =
+    rationals.into_iter().map(|r| r.unwrap()).collect();
+
+  // Find LCM of denominators
+  let lcm_den = rats.iter().fold(1i128, |acc, &(_, d)| {
+    let g = gcd_i128(acc.abs(), d.abs());
+    if g == 0 { acc } else { (acc / g) * d.abs() }
+  });
+
+  // Scale all entries
+  let scaled: Vec<i128> =
+    rats.iter().map(|&(n, d)| n * (lcm_den / d)).collect();
+
+  // Find GCD of all entries
+  let g = scaled
+    .iter()
+    .fold(0i128, |acc, &x| gcd_i128(acc.abs(), x.abs()));
+
+  if g == 0 || g == 1 {
+    scaled.iter().map(|&x| Expr::Integer(x)).collect()
+  } else {
+    scaled.iter().map(|&x| Expr::Integer(x / g)).collect()
+  }
+}
+
+/// Compute eigenvectors for an integer matrix.
+fn integer_eigenvectors(
+  matrix: &[Vec<Expr>],
+  int_matrix: &[Vec<i128>],
+  n: usize,
+) -> Result<Expr, InterpreterError> {
+  let coeffs = char_poly_coefficients(int_matrix);
+  let mut eigenvalues = find_polynomial_roots(&coeffs);
+  sort_eigenvalues(&mut eigenvalues);
+
+  // Check if all eigenvalues are integers
+  let all_integer = eigenvalues.iter().all(|e| expr_to_i128(e).is_some());
+
+  if !all_integer && n == 2 {
+    // 2x2 with symbolic eigenvalues: build eigenvectors directly
+    let vecs = eigenvectors_2x2_symbolic(int_matrix);
+    if !vecs.is_empty() {
+      return Ok(Expr::List(vecs.into_iter().map(Expr::List).collect()));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Eigenvectors".to_string(),
+      args: vec![matrix_to_expr(matrix.to_vec())],
+    });
+  }
+
+  if !all_integer {
+    // Can't handle symbolic eigenvalues for n > 2
+    return Ok(Expr::FunctionCall {
+      name: "Eigenvectors".to_string(),
+      args: vec![matrix_to_expr(matrix.to_vec())],
+    });
+  }
+
+  // All integer eigenvalues: compute null spaces
+  let mut eigenvectors: Vec<Expr> = Vec::new();
+  let mut processed: Vec<(i128, Vec<Vec<Expr>>)> = Vec::new();
+
+  for eigenvalue in &eigenvalues {
+    let lambda = expr_to_i128(eigenvalue).unwrap();
+
+    let null_vecs =
+      if let Some(entry) = processed.iter_mut().find(|(l, _)| *l == lambda) {
+        &mut entry.1
+      } else {
+        let vecs =
+          null_space_for_integer_eigenvalue(matrix, lambda, int_matrix, n);
+        processed.push((lambda, vecs));
+        &mut processed.last_mut().unwrap().1
+      };
+
+    if null_vecs.is_empty() {
+      eigenvectors.push(Expr::List(vec![Expr::Integer(0); n]));
+    } else {
+      eigenvectors.push(Expr::List(null_vecs.remove(0)));
+    }
+  }
+
+  Ok(Expr::List(eigenvectors))
+}
+
+/// Compute null space vectors for a specific integer eigenvalue.
+fn null_space_for_integer_eigenvalue(
+  matrix: &[Vec<Expr>],
+  lambda: i128,
+  int_matrix: &[Vec<i128>],
+  n: usize,
+) -> Vec<Vec<Expr>> {
+  let mut m: Vec<Vec<Expr>> = matrix.to_vec();
+  for i in 0..n {
+    m[i][i] = Expr::Integer(int_matrix[i][i] - lambda);
+  }
+
+  let rref = row_reduce_impl(&m);
+
+  // Find pivot columns
+  let mut pivot_cols = Vec::new();
+  let mut pivot_row_for_col = vec![None; n];
+  let mut current_row = 0;
+  for col in 0..n {
+    if current_row >= n {
+      break;
+    }
+    if is_one_expr(&rref[current_row][col]) {
+      pivot_cols.push(col);
+      pivot_row_for_col[col] = Some(current_row);
+      current_row += 1;
+    }
+  }
+
+  let free_cols: Vec<usize> =
+    (0..n).filter(|c| !pivot_cols.contains(c)).collect();
+
+  // Build null space basis vectors (reverse order to match Wolfram convention)
+  let mut basis = Vec::new();
+  for &free_col in free_cols.iter().rev() {
+    let mut vec = vec![Expr::Integer(0); n];
+    vec[free_col] = Expr::Integer(1);
+    for &pivot_col in &pivot_cols {
+      if let Some(row) = pivot_row_for_col[pivot_col] {
+        vec[pivot_col] = eval_sub(&Expr::Integer(0), &rref[row][free_col]);
+      }
+    }
+    let scaled = scale_to_integers(&vec);
+    basis.push(scaled);
+  }
+  basis
+}
+
+/// Build eigenvector expressions for 2x2 symbolic case (irrational eigenvalues).
+/// Returns eigenvectors in the same order as eigenvalues (sorted by absolute value).
+fn eigenvectors_2x2_symbolic(int_matrix: &[Vec<i128>]) -> Vec<Vec<Expr>> {
+  let a = int_matrix[0][0];
+  let b = int_matrix[0][1];
+  let c = int_matrix[1][0];
+  let d = int_matrix[1][1];
+
+  // Discriminant: (a-d)^2 + 4bc
+  let diff = a - d;
+  let disc = diff * diff + 4 * b * c;
+
+  if disc <= 0 {
+    // Complex eigenvalues or zero discriminant (should be handled elsewhere)
+    return vec![];
+  }
+
+  // Check if disc is a perfect square (should have been handled by integer path)
+  let sqrt_disc_approx = (disc as f64).sqrt().round() as i128;
+  if sqrt_disc_approx * sqrt_disc_approx == disc {
+    return vec![]; // Integer eigenvalues, should be handled elsewhere
+  }
+
+  // Simplify sqrt(disc)
+  let (outer, inner) = simplify_sqrt(disc.unsigned_abs());
+
+  if c != 0 {
+    // Eigenvector: {(diff ± outer*sqrt(inner)) / (2c), 1}
+    let denom = 2 * c;
+
+    // Build the two eigenvectors
+    let build_v1 = |sign: i128| -> Expr {
+      let signed_outer = sign * outer as i128;
+      // Simplify: GCD of |diff|, |signed_outer|, |denom|
+      let g = gcd_i128(gcd_i128(diff.abs(), signed_outer.abs()), denom.abs());
+      let rd = diff / g;
+      let ro = (signed_outer / g).abs();
+      let rden = denom / g;
+
+      let sqrt_expr = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Integer(inner as i128)],
+      };
+
+      let sqrt_term = if ro == 1 {
+        sqrt_expr
+      } else {
+        eval_mul(&Expr::Integer(ro), &sqrt_expr)
+      };
+
+      let numer = if rd == 0 {
+        if sign > 0 {
+          sqrt_term
+        } else {
+          eval_sub(&Expr::Integer(0), &sqrt_term)
+        }
+      } else if sign > 0 {
+        eval_add(&Expr::Integer(rd), &sqrt_term)
+      } else {
+        eval_sub(&Expr::Integer(rd), &sqrt_term)
+      };
+
+      if rden == 1 {
+        numer
+      } else if rden == -1 {
+        eval_sub(&Expr::Integer(0), &numer)
+      } else {
+        eval_divide(&numer, &Expr::Integer(rden))
+      }
+    };
+
+    let v1_plus = build_v1(1);
+    let v1_minus = build_v1(-1);
+
+    // Determine which eigenvalue is larger by absolute value
+    // λ = (a+d ± sqrt(disc)) / 2
+    let trace = a + d;
+    let sqrt_val = (disc as f64).sqrt();
+    let l_plus = (trace as f64 + sqrt_val) / 2.0;
+    let l_minus = (trace as f64 - sqrt_val) / 2.0;
+
+    if l_plus.abs() >= l_minus.abs() {
+      vec![
+        vec![v1_plus, Expr::Integer(1)],
+        vec![v1_minus, Expr::Integer(1)],
+      ]
+    } else {
+      vec![
+        vec![v1_minus, Expr::Integer(1)],
+        vec![v1_plus, Expr::Integer(1)],
+      ]
+    }
+  } else if b != 0 {
+    // c = 0, use row 0: (a-λ)*v1 + b*v2 = 0 → v = {1, (λ-a)/b}
+    // Eigenvector: {1, (λ-a)/b} = {1, (d-a ± sqrt(disc)) / (2b)}
+    // But since c=0, eigenvalues are a and d (integers), handled by integer path
+    vec![]
+  } else {
+    vec![]
+  }
+}
+
+/// Compute eigenvectors for a numeric (f64) matrix.
+fn numeric_eigenvectors(
+  matrix: &[Vec<Expr>],
+  n: usize,
+) -> Result<Expr, InterpreterError> {
+  // Convert to f64 matrix
+  let f_matrix: Vec<Vec<f64>> = matrix
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .map(|e| match e {
+          Expr::Integer(v) => *v as f64,
+          Expr::Real(v) => *v,
+          _ => 0.0,
+        })
+        .collect()
+    })
+    .collect();
+
+  // Compute eigenvalues numerically using characteristic polynomial
+  let eigenvalues = numeric_eigenvalues(&f_matrix, n);
+
+  let mut eigenvectors = Vec::new();
+  for &lambda in &eigenvalues {
+    // Build (A - λI)
+    let mut m = f_matrix.clone();
+    for i in 0..n {
+      m[i][i] -= lambda;
+    }
+
+    // Find null space via Gaussian elimination
+    let vec = numeric_null_vector(&m, n);
+
+    // Normalize to unit length
+    let norm: f64 = vec.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm > 1e-15 {
+      let normalized: Vec<Expr> =
+        vec.iter().map(|&x| Expr::Real(x / norm)).collect();
+      eigenvectors.push(Expr::List(normalized));
+    } else {
+      eigenvectors.push(Expr::List(vec![Expr::Real(0.0); n].to_vec()));
+    }
+  }
+
+  Ok(Expr::List(eigenvectors))
+}
+
+/// Compute eigenvalues of a f64 matrix numerically.
+fn numeric_eigenvalues(matrix: &[Vec<f64>], n: usize) -> Vec<f64> {
+  if n == 1 {
+    return vec![matrix[0][0]];
+  }
+  if n == 2 {
+    let tr = matrix[0][0] + matrix[1][1];
+    let det = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+    let disc = tr * tr - 4.0 * det;
+    if disc >= 0.0 {
+      let sq = disc.sqrt();
+      let l1 = (tr + sq) / 2.0;
+      let l2 = (tr - sq) / 2.0;
+      // Sort by absolute value descending
+      if l1.abs() >= l2.abs() {
+        return vec![l1, l2];
+      } else {
+        return vec![l2, l1];
+      }
+    }
+    // Complex eigenvalues - return empty
+    return vec![];
+  }
+
+  // For n >= 3: use Faddeev-LeVerrier to get characteristic polynomial,
+  // then find roots numerically
+  let coeffs = char_poly_f64(matrix, n);
+  let mut roots = find_real_roots_f64(&coeffs);
+  roots.sort_by(|a, b| {
+    b.abs()
+      .partial_cmp(&a.abs())
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  roots
+}
+
+/// Faddeev-LeVerrier for f64 matrix.
+fn char_poly_f64(a: &[Vec<f64>], n: usize) -> Vec<f64> {
+  let mut coeffs = vec![0.0f64; n + 1];
+  coeffs[n] = 1.0;
+  let mut m = a.to_vec();
+
+  for k in 1..=n {
+    let trace: f64 = (0..n).map(|i| m[i][i]).sum();
+    coeffs[n - k] = -trace / k as f64;
+
+    if k < n {
+      let c = coeffs[n - k];
+      let mut temp = m.clone();
+      for i in 0..n {
+        temp[i][i] += c;
+      }
+      let mut new_m = vec![vec![0.0; n]; n];
+      for i in 0..n {
+        for j in 0..n {
+          for p in 0..n {
+            new_m[i][j] += a[i][p] * temp[p][j];
+          }
+        }
+      }
+      m = new_m;
+    }
+  }
+  coeffs
+}
+
+/// Find real roots of a polynomial (ascending coefficients) using
+/// companion matrix eigenvalue approach (QR iteration).
+fn find_real_roots_f64(coeffs: &[f64]) -> Vec<f64> {
+  let degree = coeffs.len() - 1;
+  if degree == 0 {
+    return vec![];
+  }
+  if degree == 1 {
+    return vec![-coeffs[0] / coeffs[1]];
+  }
+  if degree == 2 {
+    let a = coeffs[2];
+    let b = coeffs[1];
+    let c = coeffs[0];
+    let disc = b * b - 4.0 * a * c;
+    if disc >= 0.0 {
+      let sq = disc.sqrt();
+      return vec![(-b + sq) / (2.0 * a), (-b - sq) / (2.0 * a)];
+    }
+    return vec![];
+  }
+
+  // Build companion matrix and use QR iteration
+  let n = degree;
+  let lc = coeffs[n];
+  let mut comp = vec![vec![0.0; n]; n];
+  for i in 1..n {
+    comp[i][i - 1] = 1.0;
+  }
+  for i in 0..n {
+    comp[i][n - 1] = -coeffs[i] / lc;
+  }
+
+  // QR iteration with shifts
+  qr_eigenvalues(&mut comp, n)
+}
+
+/// QR iteration to find eigenvalues of an upper Hessenberg matrix.
+fn qr_eigenvalues(h: &mut Vec<Vec<f64>>, n: usize) -> Vec<f64> {
+  let mut eigenvalues = Vec::new();
+  let mut size = n;
+
+  for _ in 0..1000 * n {
+    if size <= 1 {
+      if size == 1 {
+        eigenvalues.push(h[0][0]);
+      }
+      break;
+    }
+
+    // Check for deflation
+    let mut deflated = false;
+    for i in (1..size).rev() {
+      if h[i][i - 1].abs()
+        < 1e-14 * (h[i][i].abs() + h[i - 1][i - 1].abs()).max(1e-300)
+      {
+        // Deflate
+        eigenvalues.push(h[i][i]);
+        size = i;
+        deflated = true;
+        break;
+      }
+    }
+    if deflated {
+      continue;
+    }
+
+    // Wilkinson shift
+    let shift = h[size - 1][size - 1];
+
+    // Apply shift
+    for i in 0..size {
+      h[i][i] -= shift;
+    }
+
+    // QR factorization via Givens rotations
+    let mut cs = Vec::new();
+    let mut sn = Vec::new();
+    for i in 0..size - 1 {
+      let a = h[i][i];
+      let b = h[i + 1][i];
+      let r = (a * a + b * b).sqrt();
+      if r < 1e-300 {
+        cs.push(1.0);
+        sn.push(0.0);
+        continue;
+      }
+      let c = a / r;
+      let s = b / r;
+      cs.push(c);
+      sn.push(s);
+      // Apply Givens rotation to rows i, i+1
+      for j in 0..size {
+        let t1 = h[i][j];
+        let t2 = h[i + 1][j];
+        h[i][j] = c * t1 + s * t2;
+        h[i + 1][j] = -s * t1 + c * t2;
+      }
+    }
+
+    // R * Q (apply rotations from right)
+    for i in 0..size - 1 {
+      let c = cs[i];
+      let s = sn[i];
+      for j in 0..size {
+        let t1 = h[j][i];
+        let t2 = h[j][i + 1];
+        h[j][i] = c * t1 + s * t2;
+        h[j][i + 1] = -s * t1 + c * t2;
+      }
+    }
+
+    // Undo shift
+    for i in 0..size {
+      h[i][i] += shift;
+    }
+  }
+
+  if size > 0 && eigenvalues.len() < n {
+    // Remaining eigenvalues
+    for i in 0..size {
+      eigenvalues.push(h[i][i]);
+    }
+  }
+
+  eigenvalues
+}
+
+/// Find a null space vector for a numeric matrix via Gaussian elimination.
+fn numeric_null_vector(m: &[Vec<f64>], n: usize) -> Vec<f64> {
+  let mut aug: Vec<Vec<f64>> = m.to_vec();
+  let mut pivot_cols = Vec::new();
+  let mut pivot_row = 0;
+
+  for col in 0..n {
+    if pivot_row >= n {
+      break;
+    }
+    // Partial pivoting
+    let mut max_row = pivot_row;
+    let mut max_val = aug[pivot_row][col].abs();
+    for row in pivot_row + 1..n {
+      if aug[row][col].abs() > max_val {
+        max_row = row;
+        max_val = aug[row][col].abs();
+      }
+    }
+    if max_val < 1e-12 {
+      continue;
+    }
+    aug.swap(pivot_row, max_row);
+    pivot_cols.push((pivot_row, col));
+
+    let pivot = aug[pivot_row][col];
+    for row in 0..n {
+      if row == pivot_row {
+        continue;
+      }
+      let factor = aug[row][col] / pivot;
+      for j in col..n {
+        aug[row][j] -= factor * aug[pivot_row][j];
+      }
+      aug[row][col] = 0.0;
+    }
+    // Normalize pivot row
+    for j in col..n {
+      aug[pivot_row][j] /= pivot;
+    }
+    pivot_row += 1;
+  }
+
+  // Find free columns
+  let pivot_col_set: Vec<usize> = pivot_cols.iter().map(|&(_, c)| c).collect();
+  let mut free_cols: Vec<usize> =
+    (0..n).filter(|c| !pivot_col_set.contains(c)).collect();
+
+  if free_cols.is_empty() {
+    return vec![0.0; n];
+  }
+
+  // Build null vector from first free column
+  let free_col = free_cols.remove(0);
+  let mut vec = vec![0.0; n];
+  vec[free_col] = 1.0;
+  for &(row, col) in &pivot_cols {
+    vec[col] = -aug[row][free_col];
+  }
+  vec
+}
+
 /// RowReduce[matrix] - Gaussian elimination to reduced row echelon form
 pub fn row_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

@@ -589,3 +589,57 @@ mod linear_solve {
     );
   }
 }
+
+mod eigenvectors {
+  use super::*;
+
+  #[test]
+  fn matrix_1x1() {
+    assert_eq!(interpret("Eigenvectors[{{5}}]").unwrap(), "{{1}}");
+  }
+
+  #[test]
+  fn diagonal_2x2() {
+    assert_eq!(
+      interpret("Eigenvectors[{{2, 0}, {0, 3}}]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+  }
+
+  #[test]
+  fn identity_2x2() {
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 0}, {0, 1}}]").unwrap(),
+      "{{0, 1}, {1, 0}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_2x2() {
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{(-3 + Sqrt[33])/6, 1}, {(-3 - Sqrt[33])/6, 1}}"
+    );
+  }
+
+  #[test]
+  fn upper_triangular_3x3() {
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 2, 3}, {0, 4, 5}, {0, 0, 6}}]").unwrap(),
+      "{{16, 25, 10}, {2, 3, 0}, {1, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn defective_matrix() {
+    assert_eq!(
+      interpret("Eigenvectors[{{1, 1}, {0, 1}}]").unwrap(),
+      "{{1, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_variable() {
+    assert_eq!(interpret("Eigenvectors[x]").unwrap(), "Eigenvectors[x]");
+  }
+}

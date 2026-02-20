@@ -1654,7 +1654,7 @@ EffectiveInterest,,,,8,2276
 Eigensystem,,,,1,590
 Eigenvalues,Computes the eigenvalues of a matrix,✅,pure,1,275
 EigenvectorCentrality,,,,8,3215
-Eigenvectors,,,,1,450
+Eigenvectors,Eigenvectors of a square matrix,✅,pure,1,450
 ElectricCurrentDensityValue,,,,14.1,
 ElectricCurrentPDEComponent,,,,14.1,
 ElectricFluxDensityValue,,,,14,
