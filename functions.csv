@@ -1591,7 +1591,7 @@ DSolve,,,,2,88
 DSolveChangeVariables,,,,13.1,
 DSolveValue,,,,10,711
 DStabilityConditions,,,,14.1,
-Dt,,,,1,476
+Dt,Total derivative treating all variables as potentially dependent,✅,pure,1,476
 DualPlanarGraph,,,,13,
 DualPolyhedron,,,,12,4204
 DualSystemsModel,,,,8,4356
