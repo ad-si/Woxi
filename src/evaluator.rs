@@ -6003,14 +6003,49 @@ pub fn evaluate_function_call_ast(
 
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
-    "RGBColor" | "Hue" | "GrayLevel" | "Opacity" | "Thickness"
-    | "PointSize" | "Dashing" | "EdgeForm" | "FaceForm" | "Darker"
-    | "Lighter" | "Directive" | "Point" | "Line" | "Circle" | "Disk"
-    | "Rectangle" | "Polygon" | "Arrow" | "BezierCurve" | "Rotate"
-    | "Translate" | "Scale" | "Arrowheads" | "AbsoluteThickness" | "Inset"
-    | "Text" | "Style" | "Subscript" | "MatrixForm" | "Out" | "Condition"
-    | "Show" | "MessageName" | "Plot3D" | "Integer" | "Optional" | "String"
-    | "Scaled" => {
+    "RGBColor"
+    | "Hue"
+    | "GrayLevel"
+    | "Opacity"
+    | "Thickness"
+    | "PointSize"
+    | "Dashing"
+    | "EdgeForm"
+    | "FaceForm"
+    | "Darker"
+    | "Lighter"
+    | "Directive"
+    | "Point"
+    | "Line"
+    | "Circle"
+    | "Disk"
+    | "Rectangle"
+    | "Polygon"
+    | "Arrow"
+    | "BezierCurve"
+    | "Rotate"
+    | "Translate"
+    | "Scale"
+    | "Arrowheads"
+    | "AbsoluteThickness"
+    | "Inset"
+    | "Text"
+    | "Style"
+    | "Subscript"
+    | "MatrixForm"
+    | "Out"
+    | "Condition"
+    | "Show"
+    | "MessageName"
+    | "Plot3D"
+    | "Integer"
+    | "Optional"
+    | "String"
+    | "Scaled"
+    | "NonCommutativeMultiply"
+    | "Superscript"
+    | "Repeated"
+    | "NumberForm" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -9734,6 +9769,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // And / Or: Flat + HoldAll + OneIdentity + Protected
     "And" | "Or" => vec!["Flat", "HoldAll", "OneIdentity", "Protected"],
 
+    // Flat + OneIdentity + Protected
+    "NonCommutativeMultiply" => vec!["Flat", "OneIdentity", "Protected"],
+
     // Constants
     "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Catalan" | "Degree"
     | "Khinchin" | "Glaisher" => {
@@ -9746,6 +9784,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],
+    "Superscript" => vec!["NHoldRest", "ReadProtected"],
+    "NumberForm" => vec!["NHoldRest", "Protected"],
 
     // NHoldAll + Protected
     "SlotSequence" => vec!["NHoldAll", "Protected"],
@@ -9848,6 +9888,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Real"
     | "Ticks"
     | "Boxed"
+    | "Repeated"
     | "Print"
     | "Echo"
     | "ToString"

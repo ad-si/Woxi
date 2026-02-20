@@ -3767,7 +3767,7 @@ NoncentralBetaDistribution,,,,8,3717
 NoncentralChiSquareDistribution,,,,6,3059
 NoncentralFRatioDistribution,,,,6,2900
 NoncentralStudentTDistribution,,,,6,2057
-NonCommutativeMultiply,,,,1,290
+NonCommutativeMultiply,Non-commutative multiplication operator,✅,pure,1,290
 NonConstants,,,,1,1954
 NondimensionalizationTransform,,,,11.3,4262
 None,Symbol representing no value or absence of an option,✅,pure,1,23
@@ -3910,7 +3910,7 @@ NumberFieldNormRepresentatives,,,,6,4437
 NumberFieldRegulator,,,,6,4809
 NumberFieldRootsOfUnity,,,,6,4707
 NumberFieldSignature,,,,6,4315
-NumberForm,,,,1,336
+NumberForm,Displays a number with specified formatting,✅,pure,1,336
 NumberFormat,,,,2,1960
 NumberLinePlot,,,,10,913
 NumberMarks,,,,3,2734
@@ -4644,7 +4644,7 @@ RenderingOptions,,,,4,2742
 RenewalProcess,,,,9,4052
 RenkoChart,,,,8,3298
 RepairMesh,,,,11,3947
-Repeated,,,,1,299
+Repeated,Pattern that matches one or more repetitions,✅,pure,1,299
 RepeatedNull,,,,1,428
 RepeatedTiming,,,,10.1,579
 RepeatingElement,,,,10.1,3326
@@ -5328,7 +5328,7 @@ SuperDagger,,,,6,1709
 SuperMinus,,,,6,2087
 SupernovaData,,,,10,4881
 SuperPlus,,,,6,1982
-Superscript,,,,1,292
+Superscript,Inert superscript display form,✅,pure,1,292
 SuperscriptBox,,,,3,994
 SuperscriptBoxOptions,,,,4,
 Superset,,,,3,5079
