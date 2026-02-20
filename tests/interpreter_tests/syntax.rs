@@ -353,6 +353,75 @@ mod rule_display {
   }
 
   #[test]
+  fn rule_arrow_syntax() {
+    assert_eq!(interpret("a -> b").unwrap(), "a -> b");
+  }
+
+  #[test]
+  fn rule_evaluates_arguments() {
+    assert_eq!(interpret("Rule[1 + 2, 3 + 4]").unwrap(), "3 -> 7");
+  }
+
+  #[test]
+  fn rule_head() {
+    assert_eq!(interpret("Head[Rule[x, y]]").unwrap(), "Rule");
+    assert_eq!(interpret("Head[x -> y]").unwrap(), "Rule");
+  }
+
+  #[test]
+  fn rule_function_form_equals_arrow() {
+    assert_eq!(interpret("Rule[a, b] === (a -> b)").unwrap(), "True");
+  }
+
+  #[test]
+  fn rule_function_call_in_replace_all() {
+    assert_eq!(interpret("f[a, b] /. Rule[a, 1]").unwrap(), "f[1, b]");
+  }
+
+  #[test]
+  fn rule_sequence_hold() {
+    // Rule has SequenceHold: Sequence should not be spliced
+    assert_eq!(
+      interpret("Rule[Sequence[a, b], c]").unwrap(),
+      "Sequence[a, b] -> c"
+    );
+  }
+
+  #[test]
+  fn rule_in_list() {
+    assert_eq!(interpret("{a -> 1, b -> 2}").unwrap(), "{a -> 1, b -> 2}");
+  }
+
+  #[test]
+  fn rule_replace_all_with_list() {
+    assert_eq!(interpret("f[x, y] /. {x -> 1, y -> 2}").unwrap(), "f[1, 2]");
+  }
+
+  #[test]
+  fn rule_with_patterns() {
+    assert_eq!(
+      interpret("{1, 2, 3} /. x_Integer -> x^2").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
+
+  #[test]
+  fn rule_map() {
+    assert_eq!(
+      interpret("Map[Rule[#, #^2] &, {1, 2, 3}]").unwrap(),
+      "{1 -> 1, 2 -> 4, 3 -> 9}"
+    );
+  }
+
+  #[test]
+  fn rule_attributes() {
+    assert_eq!(
+      interpret("Attributes[Rule]").unwrap(),
+      "{Protected, SequenceHold}"
+    );
+  }
+
+  #[test]
   fn rule_delayed_display() {
     assert_eq!(interpret("RuleDelayed[a, b]").unwrap(), "a :> b");
   }

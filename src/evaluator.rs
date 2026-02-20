@@ -1850,7 +1850,12 @@ fn flatten_sequences(name: &str, args: &[Expr]) -> Vec<Expr> {
   // Check for SequenceHold attribute
   let has_sequence_hold = matches!(
     name,
-    "Set" | "SetDelayed" | "RuleDelayed" | "HoldComplete" | "MakeBoxes"
+    "Set"
+      | "SetDelayed"
+      | "Rule"
+      | "RuleDelayed"
+      | "HoldComplete"
+      | "MakeBoxes"
   ) || crate::FUNC_ATTRS.with(|m| {
     m.borrow()
       .get(name)
@@ -1952,6 +1957,13 @@ pub fn evaluate_function_call_ast(
   // Handle functions that would call interpret() if dispatched through evaluate_expression
   // These must be handled natively to avoid infinite recursion
   match name {
+    // Rule[lhs, rhs] → Expr::Rule (same as lhs -> rhs)
+    "Rule" if args.len() == 2 => {
+      return Ok(Expr::Rule {
+        pattern: Box::new(args[0].clone()),
+        replacement: Box::new(args[1].clone()),
+      });
+    }
     "Function" => {
       match args.len() {
         // Function[body] — equivalent to body &
@@ -9471,6 +9483,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // HoldRest + Protected
     "If" => vec!["HoldRest", "Protected"],
+    "Rule" => vec!["Protected", "SequenceHold"],
     "RuleDelayed" => vec!["HoldRest", "Protected", "SequenceHold"],
 
     // And / Or: Flat + HoldAll + OneIdentity + Protected
@@ -9562,7 +9575,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Echo"
     | "ToString"
     | "ToExpression"
-    | "Rule"
     | "List"
     | "Association"
     | "SubsetQ"
