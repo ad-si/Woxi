@@ -138,6 +138,24 @@ mod inverse {
       "{{1, 0}, {0, 1}}"
     );
   }
+
+  #[test]
+  fn inverse_rational_matrix() {
+    // Inverse of Hilbert-like matrix with rational entries must stay exact
+    assert_eq!(
+      interpret("Inverse[Table[1 / (i + j + 1), {i, 3}, {j, 3}]]").unwrap(),
+      "{{300, -900, 630}, {-900, 2880, -2100}, {630, -2100, 1575}}"
+    );
+  }
+
+  #[test]
+  fn inverse_rational_2x2() {
+    // Inverse of a 2x2 matrix with rational entries
+    assert_eq!(
+      interpret("Inverse[{{1/2, 1/3}, {1/4, 1/5}}]").unwrap(),
+      "{{12, -20}, {-15, 30}}"
+    );
+  }
 }
 
 mod tr {

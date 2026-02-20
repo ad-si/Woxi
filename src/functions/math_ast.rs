@@ -1603,6 +1603,23 @@ fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Exact rational division: Rational/Rational, Rational/Integer, Integer/Rational
+  // (a_n/a_d) / (b_n/b_d) = (a_n * b_d) / (a_d * b_n)
+  if let (Some((a_n, a_d)), Some((b_n, b_d))) =
+    (try_as_rational(a), try_as_rational(b))
+  {
+    let numer = a_n.checked_mul(b_d);
+    let denom = a_d.checked_mul(b_n);
+    if let (Some(n), Some(d)) = (numer, denom) {
+      if d == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Division by zero".into(),
+        ));
+      }
+      return Ok(make_rational(n, d));
+    }
+  }
+
   // For reals, perform floating-point division
   // Use try_eval_to_f64 when at least one operand is Real to handle constants like Pi/4.0
   let has_real = matches!(a, Expr::Real(_)) || matches!(b, Expr::Real(_));
