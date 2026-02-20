@@ -663,6 +663,25 @@ mod plot_range_symbol {
   }
 }
 
+mod all_symbol {
+  use super::*;
+
+  #[test]
+  fn all_evaluates_to_itself() {
+    assert_eq!(interpret("All").unwrap(), "All");
+  }
+
+  #[test]
+  fn all_head_is_symbol() {
+    assert_eq!(interpret("Head[All]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn all_is_protected() {
+    assert_eq!(interpret("Attributes[All]").unwrap(), "{Protected}");
+  }
+}
+
 mod subscript_function {
   use super::*;
 
