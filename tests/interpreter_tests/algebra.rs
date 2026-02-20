@@ -1028,6 +1028,279 @@ mod solve {
   }
 }
 
+mod reduce {
+  use super::*;
+
+  // ── Trivial cases ──
+
+  #[test]
+  fn reduce_true() {
+    assert_eq!(interpret("Reduce[True, x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn reduce_false() {
+    assert_eq!(interpret("Reduce[False, x]").unwrap(), "False");
+  }
+
+  // ── Linear equations ──
+
+  #[test]
+  fn linear_equation() {
+    assert_eq!(interpret("Reduce[2*x + 3 == 7, x]").unwrap(), "x == 2");
+  }
+
+  #[test]
+  fn linear_equation_negative() {
+    assert_eq!(interpret("Reduce[x - 5 == 0, x]").unwrap(), "x == 5");
+  }
+
+  #[test]
+  fn trivial_equation() {
+    assert_eq!(interpret("Reduce[x == 5, x]").unwrap(), "x == 5");
+  }
+
+  // ── Quadratic equations ──
+
+  #[test]
+  fn quadratic_integer_roots() {
+    assert_eq!(
+      interpret("Reduce[x^2 - 4 == 0, x]").unwrap(),
+      "x == -2 || x == 2"
+    );
+  }
+
+  #[test]
+  fn quadratic_two_roots() {
+    assert_eq!(
+      interpret("Reduce[x^2 + x - 6 == 0, x]").unwrap(),
+      "x == -3 || x == 2"
+    );
+  }
+
+  #[test]
+  fn quadratic_repeated_root() {
+    assert_eq!(
+      interpret("Reduce[x^2 + 2*x + 1 == 0, x]").unwrap(),
+      "x == -1"
+    );
+  }
+
+  #[test]
+  fn quadratic_irrational_roots() {
+    assert_eq!(
+      interpret("Reduce[x^2 - 3 == 0, x]").unwrap(),
+      "x == -Sqrt[3] || x == Sqrt[3]"
+    );
+  }
+
+  #[test]
+  fn quadratic_complex_roots() {
+    assert_eq!(
+      interpret("Reduce[x^2 + 1 == 0, x]").unwrap(),
+      "x == -I || x == I"
+    );
+  }
+
+  // ── Higher degree equations (via factoring) ──
+
+  #[test]
+  fn cubic_equation() {
+    assert_eq!(
+      interpret("Reduce[x^3 - 3*x^2 + 2*x == 0, x]").unwrap(),
+      "x == 0 || x == 1 || x == 2"
+    );
+  }
+
+  #[test]
+  fn cubic_factored() {
+    assert_eq!(
+      interpret("Reduce[(x - 1)*(x - 2)*(x - 3) == 0, x]").unwrap(),
+      "x == 1 || x == 2 || x == 3"
+    );
+  }
+
+  #[test]
+  fn quartic_factored() {
+    assert_eq!(
+      interpret("Reduce[x*(x - 1)*(x - 2)*(x - 3) == 0, x]").unwrap(),
+      "x == 0 || x == 1 || x == 2 || x == 3"
+    );
+  }
+
+  // ── Domain filtering ──
+
+  #[test]
+  fn complex_roots_over_reals() {
+    assert_eq!(
+      interpret("Reduce[x^2 + 1 == 0, x, Reals]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn complex_roots_over_integers() {
+    assert_eq!(
+      interpret("Reduce[x^2 + 1 == 0, x, Integers]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn real_roots_over_reals() {
+    assert_eq!(
+      interpret("Reduce[x^2 - 1 == 0, x, Reals]").unwrap(),
+      "x == -1 || x == 1"
+    );
+  }
+
+  // ── Or (disjunction) ──
+
+  #[test]
+  fn reduce_or() {
+    assert_eq!(
+      interpret("Reduce[x == 1 || x == 2, x]").unwrap(),
+      "x == 1 || x == 2"
+    );
+  }
+
+  // ── Simple inequalities ──
+
+  #[test]
+  fn simple_inequality_gt() {
+    assert_eq!(interpret("Reduce[x > 0, x]").unwrap(), "x > 0");
+  }
+
+  // ── Quadratic inequalities ──
+
+  #[test]
+  fn quadratic_inequality_less() {
+    assert_eq!(
+      interpret("Reduce[x^2 < 4, x]").unwrap(),
+      "Inequality[-2, Less, x, Less, 2]"
+    );
+  }
+
+  #[test]
+  fn quadratic_inequality_greater() {
+    assert_eq!(
+      interpret("Reduce[x^2 - 1 > 0, x]").unwrap(),
+      "x < -1 || x > 1"
+    );
+  }
+
+  #[test]
+  fn quadratic_inequality_geq() {
+    assert_eq!(
+      interpret("Reduce[x^2 - 1 >= 0, x]").unwrap(),
+      "x <= -1 || x >= 1"
+    );
+  }
+
+  #[test]
+  fn factored_inequality_less() {
+    assert_eq!(
+      interpret("Reduce[(x - 1)*(x + 2) < 0, x]").unwrap(),
+      "Inequality[-2, Less, x, Less, 1]"
+    );
+  }
+
+  #[test]
+  fn factored_inequality_leq() {
+    assert_eq!(
+      interpret("Reduce[(x - 1)*(x + 2) <= 0, x]").unwrap(),
+      "Inequality[-2, LessEqual, x, LessEqual, 1]"
+    );
+  }
+
+  #[test]
+  fn factored_inequality_greater() {
+    assert_eq!(
+      interpret("Reduce[(x - 1)*(x + 2) > 0, x]").unwrap(),
+      "x < -2 || x > 1"
+    );
+  }
+
+  // ── Always true / always false inequalities ──
+
+  #[test]
+  fn always_true_inequality() {
+    assert_eq!(
+      interpret("Reduce[x^2 + 1 > 0, x]").unwrap(),
+      "Element[x, Reals]"
+    );
+  }
+
+  #[test]
+  fn always_true_with_reals_domain() {
+    assert_eq!(interpret("Reduce[x^2 + 1 > 0, x, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn always_false_inequality() {
+    assert_eq!(interpret("Reduce[x^2 + 1 < 0, x]").unwrap(), "False");
+  }
+
+  // ── And (conjunction) ──
+
+  #[test]
+  fn equation_with_inequality_constraint() {
+    assert_eq!(interpret("Reduce[x^2 == 9 && x > 0, x]").unwrap(), "x == 3");
+  }
+
+  #[test]
+  fn combined_inequalities() {
+    assert_eq!(
+      interpret("Reduce[x > 0 && x < 5 && x > 3, x]").unwrap(),
+      "Inequality[3, Less, x, Less, 5]"
+    );
+  }
+
+  #[test]
+  fn combined_two_bounds() {
+    assert_eq!(
+      interpret("Reduce[x > 2 && x < 10, x]").unwrap(),
+      "Inequality[2, Less, x, Less, 10]"
+    );
+  }
+
+  #[test]
+  fn mixed_equation_inequality() {
+    assert_eq!(
+      interpret("Reduce[x^2 <= 4 && x > 0, x]").unwrap(),
+      "Inequality[0, Less, x, LessEqual, 2]"
+    );
+  }
+
+  // ── Multi-variable systems ──
+
+  #[test]
+  fn two_variable_linear_system() {
+    assert_eq!(
+      interpret("Reduce[x + y == 5 && x - y == 1, {x, y}]").unwrap(),
+      "x == 3 && y == 2"
+    );
+  }
+
+  #[test]
+  fn two_variable_list_input() {
+    assert_eq!(
+      interpret("Reduce[{x + y == 5, x - y == 1}, {x, y}]").unwrap(),
+      "x == 3 && y == 2"
+    );
+  }
+
+  // ── Cubic with expanded polynomial ──
+
+  #[test]
+  fn cubic_expanded() {
+    assert_eq!(
+      interpret("Reduce[x^3 - 6 x^2 + 11 x - 6 == 0, x]").unwrap(),
+      "x == 1 || x == 2 || x == 3"
+    );
+  }
+}
+
 mod replace {
   use super::*;
 

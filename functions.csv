@@ -4548,7 +4548,7 @@ RectangularRepeatingElement,,,,11.1,5486
 RecurrenceFilter,,,,9,2642
 RecurrenceTable,,,,7,534
 Red,,,,5.1,65
-Reduce,,,,1,213
+Reduce,Reduces equations and inequalities to canonical disjunctive form,✅,pure,1,213
 ReferenceAltitude,,,,14.1,
 ReferenceLineStyle,,,,8,4225
 Refine,,,,5,764
