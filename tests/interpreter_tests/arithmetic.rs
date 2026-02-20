@@ -1286,6 +1286,18 @@ mod division_flattening {
     // Arithmetic with direct Rational
     assert_eq!(interpret("Rational[1, 3] + Rational[1, 6]").unwrap(), "1/2");
   }
+
+  #[test]
+  fn rational_division() {
+    // Rational / Rational
+    assert_eq!(interpret("(1/3) / (1/4)").unwrap(), "4/3");
+    // Rational / Integer
+    assert_eq!(interpret("(2/3) / 5").unwrap(), "2/15");
+    // Integer / Rational
+    assert_eq!(interpret("5 / (2/3)").unwrap(), "15/2");
+    // Simplification
+    assert_eq!(interpret("(2/3) / (4/9)").unwrap(), "3/2");
+  }
 }
 
 mod round_with_step {
