@@ -2013,7 +2013,7 @@ FindPostmanTour,,,,9,3344
 FindProcessParameters,,,,9,2360
 FindRegionTransform,,,,13,
 FindRepeat,,,,11.2,3889
-FindRoot,,,,1,222
+FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,1,222
 FindSequenceFunction,,,,7,839
 FindSettings,,,,4,4262
 FindShortestPath,,,,8,1187
