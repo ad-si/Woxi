@@ -1964,6 +1964,27 @@ pub fn evaluate_function_call_ast(
         replacement: Box::new(args[1].clone()),
       });
     }
+    // Blank[] → _ (pattern matching any expression)
+    // Blank[h] → _h (pattern matching expressions with head h)
+    "Blank" if args.is_empty() => {
+      return Ok(Expr::Pattern {
+        name: String::new(),
+        head: None,
+      });
+    }
+    "Blank" if args.len() == 1 => {
+      if let Expr::Identifier(h) = &args[0] {
+        return Ok(Expr::Pattern {
+          name: String::new(),
+          head: Some(h.clone()),
+        });
+      }
+      // Non-identifier head: return as-is
+      return Ok(Expr::FunctionCall {
+        name: "Blank".to_string(),
+        args: args.to_vec(),
+      });
+    }
     "Function" => {
       match args.len() {
         // Function[body] — equivalent to body &

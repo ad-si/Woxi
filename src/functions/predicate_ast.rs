@@ -1015,7 +1015,13 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Apply { .. } => "Apply",
     Expr::Part { .. } => "Part",
     Expr::Function { .. } | Expr::NamedFunction { .. } => "Function",
-    Expr::Pattern { .. } => "Pattern",
+    Expr::Pattern { name, .. } => {
+      if name.is_empty() {
+        "Blank"
+      } else {
+        "Pattern"
+      }
+    }
     Expr::PatternTest { .. } => "PatternTest",
     Expr::Image { .. } => "Image",
     _ => "Symbol",
