@@ -4734,3 +4734,89 @@ mod jacobi_sn {
     assert!((result - 0.9763095827654809).abs() < 1e-10);
   }
 }
+
+mod elliptic_theta {
+  use super::*;
+
+  #[test]
+  fn theta1_at_q_zero() {
+    assert_eq!(interpret("EllipticTheta[1, z, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn theta2_at_q_zero() {
+    assert_eq!(interpret("EllipticTheta[2, z, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn theta3_at_q_zero() {
+    assert_eq!(interpret("EllipticTheta[3, z, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn theta4_at_q_zero() {
+    assert_eq!(interpret("EllipticTheta[4, z, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn theta1_numeric() {
+    let result: f64 = interpret("EllipticTheta[1, 0.5, 0.1]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.5279836054564474).abs() < 1e-10);
+  }
+
+  #[test]
+  fn theta2_numeric() {
+    let result: f64 = interpret("EllipticTheta[2, 0.5, 0.1]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.9877965496358908).abs() < 1e-10);
+  }
+
+  #[test]
+  fn theta3_numeric() {
+    let result: f64 = interpret("EllipticTheta[3, 0.5, 0.1]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.1079772298263333).abs() < 1e-10);
+  }
+
+  #[test]
+  fn theta4_numeric() {
+    let result: f64 = interpret("EllipticTheta[4, 0.5, 0.1]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.8918563114390474).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("EllipticTheta[3, z, q]").unwrap(),
+      "EllipticTheta[3, z, q]"
+    );
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[EllipticTheta[3, 0, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 2.128936827211877).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_theta1() {
+    let result: f64 = interpret("N[EllipticTheta[1, 1, 1/3]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.2529300675643478).abs() < 1e-10);
+  }
+}
