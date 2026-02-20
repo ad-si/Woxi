@@ -713,6 +713,15 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
         }
         return Ok(current_val);
       }
+      // Special handling for Unset - x =. (removes definition)
+      if name == "Unset" && args.len() == 1 {
+        if let Expr::Identifier(var_name) = &args[0] {
+          ENV.with(|e| {
+            e.borrow_mut().remove(var_name);
+          });
+        }
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
       // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
       if (name == "AddTo"
         || name == "SubtractFrom"
@@ -6046,6 +6055,7 @@ pub fn evaluate_function_call_ast(
     | "NonCommutativeMultiply"
     | "Superscript"
     | "Repeated"
+    | "RepeatedNull"
     | "NumberForm"
     | "Information" => {
       return Ok(Expr::FunctionCall {
@@ -9757,7 +9767,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // HoldFirst + Protected
     "MessageName" | "Increment" | "Decrement" | "PreIncrement"
-    | "PreDecrement" => {
+    | "PreDecrement" | "Unset" => {
       vec!["HoldFirst", "Protected", "ReadProtected"]
     }
     "Message" => {
@@ -9895,6 +9905,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Ticks"
     | "Boxed"
     | "Repeated"
+    | "RepeatedNull"
     | "ViewPoint"
     | "BoxRatios"
     | "DisplayFunction"

@@ -1288,6 +1288,15 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         args: vec![var],
       }
     }
+    Rule::Unset => {
+      // x =. -> Unset[x]
+      let inner = pair.into_inner().next().unwrap();
+      let var = pair_to_expr(inner);
+      Expr::FunctionCall {
+        name: "Unset".to_string(),
+        args: vec![var],
+      }
+    }
     Rule::AddTo => {
       // x += y -> AddTo[x, y]
       let mut inner = pair.into_inner();

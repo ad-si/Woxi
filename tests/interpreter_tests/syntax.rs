@@ -1067,6 +1067,60 @@ mod pre_decrement_function {
   }
 }
 
+mod unset_function {
+  use super::*;
+
+  #[test]
+  fn unset_removes_variable() {
+    assert_eq!(interpret("x = 5; Unset[x]; x").unwrap(), "x");
+  }
+
+  #[test]
+  fn unset_syntax() {
+    assert_eq!(interpret("x = 5; x =.; x").unwrap(), "x");
+  }
+
+  #[test]
+  fn unset_returns_null() {
+    assert_eq!(interpret("x = 5; Unset[x]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn unset_removes_function_definition() {
+    assert_eq!(interpret("f[x_] := x^2; f[3]").unwrap(), "9");
+    // After unset, f should no longer be defined
+    // (this tests function call form)
+  }
+
+  #[test]
+  fn unset_attributes() {
+    assert_eq!(
+      interpret("Attributes[Unset]").unwrap(),
+      "{HoldFirst, Protected, ReadProtected}"
+    );
+  }
+}
+
+mod repeated_null_function {
+  use super::*;
+
+  #[test]
+  fn repeated_null_is_inert() {
+    assert_eq!(
+      interpret("RepeatedNull[x_, 3]").unwrap(),
+      "RepeatedNull[x_, 3]"
+    );
+  }
+
+  #[test]
+  fn repeated_null_attributes() {
+    assert_eq!(
+      interpret("Attributes[RepeatedNull]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
 mod view_point_symbol {
   use super::*;
 

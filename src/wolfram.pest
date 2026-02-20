@@ -106,6 +106,9 @@ Decrement = { Identifier ~ "--" }
 PreIncrement = { "++" ~ Identifier }
 PreDecrement = { "--" ~ Identifier }
 
+// Unset: x =. (removes definition)
+Unset = { Identifier ~ "=." }
+
 // Compound assignment: x += y, x -= y, x *= y, x /= y
 AddTo = { Identifier ~ "+=" ~ Expression }
 SubtractFrom = { Identifier ~ "-=" ~ Expression }
@@ -193,6 +196,7 @@ Term = _{
   | ImplicitTimes
   | FunctionCallExtended
   | NumericValue
+  | Unset
   | AddTo
   | SubtractFrom
   | TimesBy
@@ -235,6 +239,7 @@ TermNoImplicit = _{
   | ImplicitTimes
   | FunctionCallExtended
   | NumericValue
+  | Unset
   | AddTo
   | SubtractFrom
   | TimesBy
