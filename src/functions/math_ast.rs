@@ -4190,6 +4190,253 @@ fn elliptic_k(m: f64) -> f64 {
   std::f64::consts::PI / (2.0 * a)
 }
 
+/// Zeta[s] - Riemann zeta function
+pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Zeta expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(n) => {
+      let n = *n;
+      if n == 1 {
+        // Zeta[1] = ComplexInfinity (pole)
+        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      }
+      if n == 0 {
+        // Zeta[0] = -1/2
+        return Ok(make_rational(-1, 2));
+      }
+      if n > 0 && n % 2 == 0 {
+        // Positive even integer: Zeta[2n] = |B_{2n}| * 2^{2n-1} * Pi^{2n} / (2n)!
+        if let Some(expr) = zeta_positive_even(n as usize) {
+          return Ok(expr);
+        }
+      }
+      if n < 0 {
+        let abs_n = (-n) as usize;
+        if abs_n.is_multiple_of(2) {
+          // Negative even integer: Zeta[-2k] = 0 (trivial zeros)
+          return Ok(Expr::Integer(0));
+        }
+        // Negative odd integer: Zeta[-n] = (-1)^n * B_{n+1} / (n+1)
+        if let Some(expr) = zeta_negative_odd(abs_n) {
+          return Ok(expr);
+        }
+      }
+      // Positive odd integer >= 3 or overflow: return unevaluated
+      Ok(Expr::FunctionCall {
+        name: "Zeta".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    Expr::Real(f) => {
+      // Numeric evaluation
+      let result = zeta_numeric(*f);
+      Ok(Expr::Real(result))
+    }
+    _ => {
+      // Symbolic argument: return unevaluated
+      Ok(Expr::FunctionCall {
+        name: "Zeta".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute Bernoulli number B_n as (numerator, denominator).
+/// Returns None if overflow occurs during computation.
+fn bernoulli_number(n: usize) -> Option<(i128, i128)> {
+  if n == 0 {
+    return Some((1, 1));
+  }
+  if n == 1 {
+    return Some((-1, 2));
+  }
+  if n % 2 == 1 {
+    return Some((0, 1));
+  }
+
+  // Compute all even Bernoulli numbers up to B_n using the recurrence:
+  // B_m = -1/(m+1) * sum_{k=0}^{m-1} C(m+1, k) * B_k
+  let mut b: Vec<(i128, i128)> = vec![(0, 1); n + 1];
+  b[0] = (1, 1);
+  b[1] = (-1, 2);
+
+  for m in (2..=n).step_by(2) {
+    let mut sum_n: i128 = 0;
+    let mut sum_d: i128 = 1;
+    let mut binom: i128 = 1; // C(m+1, 0)
+
+    for k in 0..m {
+      if k > 0 {
+        // C(m+1, k) = C(m+1, k-1) * (m+2-k) / k
+        binom = binom.checked_mul((m + 2 - k) as i128)? / (k as i128);
+      }
+      let (bk_n, bk_d) = b[k];
+      if bk_n == 0 {
+        continue;
+      }
+
+      // Add binom * B_k to sum: sum_n/sum_d + binom*bk_n/bk_d
+      let term_n = binom.checked_mul(bk_n)?;
+      let term_d = bk_d;
+
+      let new_n = sum_n
+        .checked_mul(term_d)?
+        .checked_add(term_n.checked_mul(sum_d)?)?;
+      let new_d = sum_d.checked_mul(term_d)?;
+      let g = gcd(new_n.abs(), new_d.abs());
+      sum_n = new_n / g;
+      sum_d = new_d / g;
+    }
+
+    // B_m = -sum / (m+1)
+    let bm_n = -sum_n;
+    let bm_d = sum_d.checked_mul((m + 1) as i128)?;
+    let g = gcd(bm_n.abs(), bm_d.abs());
+    b[m] = (bm_n / g, bm_d / g);
+  }
+
+  Some(b[n])
+}
+
+/// Compute Zeta[2n] for positive even integer 2n.
+/// Returns the exact expression |B_{2n}| * 2^(2n-1) * Pi^(2n) / (2n)!
+fn zeta_positive_even(two_n: usize) -> Option<Expr> {
+  let (b_num, b_den) = bernoulli_number(two_n)?;
+  if b_num == 0 {
+    return None;
+  }
+
+  // Compute coefficient: |B_{2n}| * 2^(2n-1) / (2n)!
+  let mut num = b_num.abs();
+  let mut den = b_den.abs();
+
+  // Multiply by 2^(2n-1)
+  for _ in 0..(two_n - 1) {
+    num = num.checked_mul(2)?;
+    let g = gcd(num, den);
+    num /= g;
+    den /= g;
+  }
+
+  // Divide by (2n)!
+  for k in 1..=two_n {
+    den = den.checked_mul(k as i128)?;
+    let g = gcd(num, den);
+    num /= g;
+    den /= g;
+  }
+
+  // Build: num * Pi^(2n) / den
+  let pi_power = Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(Expr::Identifier("Pi".to_string())),
+    right: Box::new(Expr::Integer(two_n as i128)),
+  };
+
+  if num == 1 && den == 1 {
+    Some(pi_power)
+  } else if num == 1 {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(pi_power),
+      right: Box::new(Expr::Integer(den)),
+    })
+  } else if den == 1 {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(num)),
+      right: Box::new(pi_power),
+    })
+  } else {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(num)),
+        right: Box::new(pi_power),
+      }),
+      right: Box::new(Expr::Integer(den)),
+    })
+  }
+}
+
+/// Compute Zeta[-n] for negative odd integer -n.
+/// Returns (-1)^n * B_{n+1} / (n+1)
+fn zeta_negative_odd(abs_n: usize) -> Option<Expr> {
+  let (b_num, b_den) = bernoulli_number(abs_n + 1)?;
+  // (-1)^n * B_{n+1} / (n+1)
+  let sign: i128 = if abs_n.is_multiple_of(2) { 1 } else { -1 };
+  let result_num = sign.checked_mul(b_num)?;
+  let result_den = b_den.checked_mul((abs_n + 1) as i128)?;
+  Some(make_rational(result_num, result_den))
+}
+
+/// Compute Zeta(s) numerically for real s using Euler-Maclaurin formula.
+fn zeta_numeric(s: f64) -> f64 {
+  use std::f64::consts::PI;
+
+  if (s - 1.0).abs() < 1e-15 {
+    return f64::INFINITY;
+  }
+
+  // For s < 0.5, use the reflection formula:
+  // zeta(s) = 2^s * pi^(s-1) * sin(pi*s/2) * Gamma(1-s) * zeta(1-s)
+  if s < 0.5 {
+    return 2.0_f64.powf(s)
+      * PI.powf(s - 1.0)
+      * (PI * s / 2.0).sin()
+      * gamma_fn(1.0 - s)
+      * zeta_numeric(1.0 - s);
+  }
+
+  // For s >= 0.5, use Euler-Maclaurin summation
+  let n: usize = 20;
+  let nf = n as f64;
+
+  // Direct sum: sum_{k=1}^{N-1} k^{-s}
+  let mut sum = 0.0;
+  for k in 1..n {
+    sum += (k as f64).powf(-s);
+  }
+
+  // Integral correction: N^{1-s} / (s-1)
+  sum += nf.powf(1.0 - s) / (s - 1.0);
+  // Endpoint correction: N^{-s} / 2
+  sum += 0.5 * nf.powf(-s);
+
+  // Bernoulli corrections: B_{2p}/(2p)! * prod_{j=0}^{2p-2}(s+j) * N^{-(s+2p-1)}
+  let bof: [f64; 10] = [
+    1.0 / 12.0,                          // B_2/2!
+    -1.0 / 720.0,                        // B_4/4!
+    1.0 / 30240.0,                       // B_6/6!
+    -1.0 / 1209600.0,                    // B_8/8!
+    1.0 / 47900160.0,                    // B_10/10!
+    -691.0 / 1307674368000.0,            // B_12/12!
+    7.0 / 523069747200.0,                // B_14/14!
+    -3617.0 / 10670622842880000.0,       // B_16/16!
+    43867.0 / 5109094217170944000.0,     // B_18/18!
+    -174611.0 / 802857662698291200000.0, // B_20/20!
+  ];
+
+  for (p_idx, &coeff) in bof.iter().enumerate() {
+    let two_p = 2 * (p_idx + 1);
+    // Rising factorial: prod_{j=0}^{2p-2} (s+j)
+    let mut rising = 1.0;
+    for j in 0..(two_p - 1) {
+      rising *= s + j as f64;
+    }
+    sum += coeff * rising * nf.powf(-(s + (two_p - 1) as f64));
+  }
+
+  sum
+}
+
 /// N[expr] or N[expr, n] - Numeric evaluation
 /// Hypergeometric2F1[a, b, c, z] - Gauss hypergeometric function
 pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

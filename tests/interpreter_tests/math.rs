@@ -4280,3 +4280,102 @@ mod elliptic_k {
     assert!((result - 1.8540746773013717).abs() < 1e-10);
   }
 }
+
+mod zeta {
+  use super::*;
+
+  #[test]
+  fn pole_at_one() {
+    assert_eq!(interpret("Zeta[1]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("Zeta[0]").unwrap(), "-1/2");
+  }
+
+  #[test]
+  fn positive_even_2() {
+    assert_eq!(interpret("Zeta[2]").unwrap(), "Pi^2/6");
+  }
+
+  #[test]
+  fn positive_even_4() {
+    assert_eq!(interpret("Zeta[4]").unwrap(), "Pi^4/90");
+  }
+
+  #[test]
+  fn positive_even_6() {
+    assert_eq!(interpret("Zeta[6]").unwrap(), "Pi^6/945");
+  }
+
+  #[test]
+  fn positive_even_12() {
+    assert_eq!(interpret("Zeta[12]").unwrap(), "(691*Pi^12)/638512875");
+  }
+
+  #[test]
+  fn positive_even_20() {
+    assert_eq!(
+      interpret("Zeta[20]").unwrap(),
+      "(174611*Pi^20)/1531329465290625"
+    );
+  }
+
+  #[test]
+  fn positive_odd_unevaluated() {
+    assert_eq!(interpret("Zeta[3]").unwrap(), "Zeta[3]");
+    assert_eq!(interpret("Zeta[5]").unwrap(), "Zeta[5]");
+  }
+
+  #[test]
+  fn negative_even_trivial_zeros() {
+    assert_eq!(interpret("Zeta[-2]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[-4]").unwrap(), "0");
+    assert_eq!(interpret("Zeta[-6]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_odd() {
+    assert_eq!(interpret("Zeta[-1]").unwrap(), "-1/12");
+    assert_eq!(interpret("Zeta[-3]").unwrap(), "1/120");
+    assert_eq!(interpret("Zeta[-5]").unwrap(), "-1/252");
+    assert_eq!(interpret("Zeta[-7]").unwrap(), "1/240");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("Zeta[x]").unwrap(), "Zeta[x]");
+    assert_eq!(interpret("Zeta[1/2]").unwrap(), "Zeta[1/2]");
+  }
+
+  #[test]
+  fn numeric_real_positive() {
+    let result: f64 = interpret("Zeta[2.0]").unwrap().parse().unwrap();
+    assert!((result - 1.6449340668482264).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_real_half() {
+    let result: f64 = interpret("Zeta[0.5]").unwrap().parse().unwrap();
+    assert!((result - (-1.460354508809588)).abs() < 1e-6);
+  }
+
+  #[test]
+  fn n_evaluates_zeta() {
+    let result: f64 = interpret("N[Zeta[2]]").unwrap().parse().unwrap();
+    assert!((result - 1.6449340668482264).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_zeta_3() {
+    let result: f64 = interpret("N[Zeta[3]]").unwrap().parse().unwrap();
+    assert!((result - 1.2020569031595942).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_real() {
+    let result: f64 = interpret("Zeta[-0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.20788622497735454)).abs() < 1e-6);
+  }
+}
