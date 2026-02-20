@@ -349,7 +349,12 @@ FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalW
 // Compound expressions in function bodies should use explicit parentheses: f[x_] := (a; b)
 FunctionDefinition = { Identifier ~ "[" ~ (FunctionDefinitionPattern ~ ("," ~ FunctionDefinitionPattern)*)? ~ "]" ~ ":=" ~ ExpressionNoImplicit }
 
-Statement = _{ FunctionDefinition | Expression }
+// TagSetDelayed: tag /: f[patterns...] := body — stores an upvalue for tag
+// TagSet: tag /: f[patterns...] = body — stores an evaluated upvalue for tag
+TagSetDelayed = { Identifier ~ "/:" ~ BaseFunctionCall ~ ":=" ~ ExpressionNoImplicit }
+TagSet = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=" ~ !("." | "=" | "!") ~ ExpressionNoImplicit }
+
+Statement = _{ TagSetDelayed | TagSet | FunctionDefinition | Expression }
 
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
 StatementSeparator = _{ ";"? }

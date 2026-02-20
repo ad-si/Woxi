@@ -674,6 +674,14 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "SetDelayed" && args.len() == 2 {
         return set_delayed_ast(&args[0], &args[1]);
       }
+      // Special handling for TagSetDelayed - stores upvalue definitions
+      if name == "TagSetDelayed" && args.len() == 3 {
+        return tag_set_delayed_ast(&args[0], &args[1], &args[2], false);
+      }
+      // Special handling for TagSet - stores evaluated upvalue definitions
+      if name == "TagSet" && args.len() == 3 {
+        return tag_set_delayed_ast(&args[0], &args[1], &args[2], true);
+      }
       // Special handling for Increment/Decrement - x++ / x--
       // and PreIncrement/PreDecrement - ++x / --x
       if (name == "Increment"
@@ -2434,6 +2442,22 @@ pub fn evaluate_function_call_ast(
           ENV.with(|e| e.borrow_mut().remove(sym));
           crate::FUNC_DEFS.with(|m| m.borrow_mut().remove(sym));
           crate::FUNC_ATTRS.with(|m| m.borrow_mut().remove(sym));
+          // Also remove upvalues owned by this symbol, and the FUNC_DEFS entries they created
+          let up_defs = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
+          if let Some(up_defs) = up_defs {
+            for (outer_func, params, _conds, _defaults, _heads, body) in
+              &up_defs
+            {
+              let body_str = expr_to_string(body);
+              crate::FUNC_DEFS.with(|m| {
+                if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
+                  entry.retain(|(p, _, _, _, b)| {
+                    !(p == params && expr_to_string(b) == body_str)
+                  });
+                }
+              });
+            }
+          }
         }
       }
       return Ok(Expr::Identifier("Null".to_string()));
@@ -4514,10 +4538,37 @@ pub fn evaluate_function_call_ast(
     }
 
     // Introspection functions - return {} for symbols without stored definitions
-    "Messages" | "UpValues" | "DownValues" | "OwnValues" | "SubValues"
-    | "NValues" | "FormatValues" | "DefaultValues"
+    "Messages" | "DownValues" | "OwnValues" | "SubValues" | "NValues"
+    | "FormatValues" | "DefaultValues"
       if args.len() == 1 =>
     {
+      return Ok(Expr::List(vec![]));
+    }
+    "UpValues" if args.len() == 1 => {
+      if let Expr::Identifier(sym) = &args[0] {
+        let up_defs = crate::UPVALUES
+          .with(|m| m.borrow().get(sym).cloned().unwrap_or_default());
+        if up_defs.is_empty() {
+          return Ok(Expr::List(vec![]));
+        }
+        // Return a list of RuleDelayed expressions
+        let rules: Vec<Expr> = up_defs
+          .iter()
+          .map(|(outer_func, _params, _conds, _defaults, _heads, body)| {
+            Expr::RuleDelayed {
+              pattern: Box::new(Expr::FunctionCall {
+                name: "HoldPattern".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: outer_func.clone(),
+                  args: vec![Expr::Identifier("__".to_string())],
+                }],
+              }),
+              replacement: Box::new(body.clone()),
+            }
+          })
+          .collect();
+        return Ok(Expr::List(rules));
+      }
       return Ok(Expr::List(vec![]));
     }
 
@@ -7353,6 +7404,135 @@ fn extract_pattern_info(expr: &Expr) -> (String, Option<String>) {
   }
 }
 
+/// Handle TagSetDelayed[tag, lhs, rhs] — stores an upvalue definition.
+/// When evaluate_rhs is true, acts as TagSet (evaluates the RHS first).
+fn tag_set_delayed_ast(
+  tag: &Expr,
+  lhs: &Expr,
+  body: &Expr,
+  evaluate_rhs: bool,
+) -> Result<Expr, InterpreterError> {
+  let tag_name = match tag {
+    Expr::Identifier(s) => s.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "TagSetDelayed: first argument must be a symbol".into(),
+      ));
+    }
+  };
+
+  let body = if evaluate_rhs {
+    evaluate_expr_to_expr(body)?
+  } else {
+    body.clone()
+  };
+
+  // Extract outer function name and args from the LHS
+  let (outer_func, lhs_args) = match lhs {
+    Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "TagSetDelayed: second argument must be a function call".into(),
+      ));
+    }
+  };
+
+  // Process each argument in the LHS to extract patterns
+  let mut params = Vec::new();
+  let mut conditions: Vec<Option<Expr>> = Vec::new();
+  let mut defaults: Vec<Option<Expr>> = Vec::new();
+  let mut heads: Vec<Option<String>> = Vec::new();
+  let mut final_body = body.clone();
+
+  for (i, arg) in lhs_args.iter().enumerate() {
+    match arg {
+      Expr::FunctionCall {
+        name: arg_func_name,
+        args: inner_args,
+      } => {
+        let param_name = format!("_up{}", i);
+        heads.push(Some(arg_func_name.clone()));
+
+        if !inner_args.is_empty() {
+          conditions.push(Some(Expr::Comparison {
+            operands: vec![
+              Expr::FunctionCall {
+                name: "Length".to_string(),
+                args: vec![Expr::Identifier(param_name.clone())],
+              },
+              Expr::Integer(inner_args.len() as i128),
+            ],
+            operators: vec![crate::syntax::ComparisonOp::SameQ],
+          }));
+        } else {
+          conditions.push(None);
+        }
+
+        for (j, inner_arg) in inner_args.iter().enumerate() {
+          let (pat_name, _pat_head) = extract_pattern_info(inner_arg);
+          if !pat_name.is_empty() {
+            let part_expr = Expr::FunctionCall {
+              name: "Part".to_string(),
+              args: vec![
+                Expr::Identifier(param_name.clone()),
+                Expr::Integer((j + 1) as i128),
+              ],
+            };
+            final_body = crate::syntax::substitute_variable(
+              &final_body,
+              &pat_name,
+              &part_expr,
+            );
+          }
+        }
+
+        params.push(param_name);
+        defaults.push(None);
+      }
+      _ => {
+        let (pat_name, head) = extract_pattern_info(arg);
+        if pat_name.is_empty() && head.is_none() {
+          let param_name = format!("_up{}", i);
+          let eval_arg = evaluate_expr_to_expr(arg)?;
+          conditions.push(Some(Expr::Comparison {
+            operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+            operators: vec![crate::syntax::ComparisonOp::SameQ],
+          }));
+          params.push(param_name);
+        } else {
+          params.push(pat_name);
+          conditions.push(None);
+        }
+        defaults.push(None);
+        heads.push(head);
+      }
+    }
+  }
+
+  // Store in UPVALUES for introspection and cleanup
+  crate::UPVALUES.with(|m| {
+    let mut defs = m.borrow_mut();
+    let entry = defs.entry(tag_name).or_insert_with(Vec::new);
+    entry.push((
+      outer_func.clone(),
+      params.clone(),
+      conditions.clone(),
+      defaults.clone(),
+      heads.clone(),
+      final_body.clone(),
+    ));
+  });
+
+  // Store in FUNC_DEFS under the outer function name
+  crate::FUNC_DEFS.with(|m| {
+    let mut defs = m.borrow_mut();
+    let entry = defs.entry(outer_func).or_insert_with(Vec::new);
+    entry.insert(0, (params, conditions, defaults, heads, final_body));
+  });
+
+  Ok(Expr::Identifier("Null".to_string()))
+}
+
 /// Perform nested access on an association: assoc["a", "b"] -> assoc["a"]["b"]
 fn association_nested_access(
   var_name: &str,
@@ -9897,7 +10077,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["HoldFirst", "Protected"]
     }
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
-    "SetDelayed" => vec!["HoldAll", "Protected", "SequenceHold"],
+    "SetDelayed" | "TagSetDelayed" => {
+      vec!["HoldAll", "Protected", "SequenceHold"]
+    }
+    "TagSet" => vec!["HoldFirst", "Protected", "SequenceHold"],
 
     // HoldRest + Protected
     "If" | "PatternTest" => vec!["HoldRest", "Protected"],

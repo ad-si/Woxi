@@ -32,6 +32,9 @@ thread_local! {
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
     // Function options (e.g., Options[f] = {a -> 1})
     pub static FUNC_OPTIONS: RefCell<HashMap<String, Vec<syntax::Expr>>> = RefCell::new(HashMap::new());
+    // UpValues: tag symbol -> Vec of (outer_func_name, params, conditions, defaults, heads, body)
+    // Stored by tag symbol; checked during evaluation when a function's arguments contain the tag as head
+    pub static UPVALUES: RefCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Track Part evaluation nesting depth for Part::partd warnings
     static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
     // Reap/Sow stack: each Reap call pushes a Vec to collect (value, tag) pairs
@@ -310,6 +313,7 @@ pub fn clear_state() {
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
+  UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
   unseed_rng();
   clear_captured_stdout();
@@ -548,6 +552,16 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       }
       Rule::FunctionDefinition => {
         store_function_definition(node)?;
+        last_result = Some("Null".to_string());
+        any_nonempty = true;
+      }
+      Rule::TagSetDelayed => {
+        store_tag_set_delayed(node, false)?;
+        last_result = Some("Null".to_string());
+        any_nonempty = true;
+      }
+      Rule::TagSet => {
+        store_tag_set_delayed(node, true)?;
         last_result = Some("Null".to_string());
         any_nonempty = true;
       }
@@ -1078,11 +1092,15 @@ pub fn insert_statement_separators(input: &str) -> String {
 
     if ch == '\n' && depth == 0 {
       // Only add `;` if the current line had actual code (not just comments/whitespace)
-      // and doesn't already end with `;` or `:=`
+      // and doesn't already end with `;` or `:=` or `/:` (TagSet continuation)
       let ends_with_set_delayed =
         last_code_char == Some('=') && prev_code_char == Some(':');
-      let needs_semi =
-        line_has_code && last_code_char != Some(';') && !ends_with_set_delayed;
+      let ends_with_tag_set =
+        last_code_char == Some(':') && prev_code_char == Some('/');
+      let needs_semi = line_has_code
+        && last_code_char != Some(';')
+        && !ends_with_set_delayed
+        && !ends_with_tag_set;
 
       if needs_semi {
         result.push(';');
@@ -1186,8 +1204,10 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
     if ch == '\n' && depth == 0 {
       let ends_with_set_delayed =
         last_code_char == Some('=') && prev_code_char == Some(':');
+      let ends_with_tag_set =
+        last_code_char == Some(':') && prev_code_char == Some('/');
 
-      if line_has_code && !ends_with_set_delayed {
+      if line_has_code && !ends_with_set_delayed && !ends_with_tag_set {
         let stmt = current.trim().to_string();
         if !stmt.is_empty() {
           statements.push(stmt);
@@ -1660,6 +1680,187 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
     entry.push((params, conditions, defaults, heads, body_expr));
   });
   Ok(())
+}
+
+/// Handle TagSetDelayed: tag /: f[args...] := body  (evaluate_rhs=false)
+/// Handle TagSet:        tag /: f[args...] = body   (evaluate_rhs=true)
+/// Stores an upvalue definition for `tag` that fires when `f` is called
+/// with arguments containing `tag` as a head.
+fn store_tag_set_delayed(
+  pair: Pair<Rule>,
+  evaluate_rhs: bool,
+) -> Result<(), InterpreterError> {
+  let mut inner = pair.into_inner();
+
+  // First child: tag identifier (e.g., "g" in "g /: f[g[x_]] := ...")
+  let tag_name = inner.next().unwrap().as_str().to_owned();
+
+  // Next children come from BaseFunctionCall: Identifier BracketArgs+
+  // We need to extract the outer function name and its arguments
+  let func_call_pair = inner.next().unwrap(); // BaseFunctionCall
+  let func_call_expr = syntax::pair_to_expr(func_call_pair);
+
+  // Remaining child: the body expression
+  let body_pair = inner.next().unwrap();
+  let body_expr = syntax::pair_to_expr(body_pair);
+  let body_expr = if evaluate_rhs {
+    evaluator::evaluate_expr_to_expr(&body_expr)?
+  } else {
+    body_expr
+  };
+
+  // Extract outer function name and args from the LHS
+  let (outer_func, lhs_args) = match &func_call_expr {
+    syntax::Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    syntax::Expr::CurriedCall { func, args } => {
+      // Chained calls like f[g[x_]][y_] - use the full expression
+      // For now, handle simple case only
+      if let syntax::Expr::FunctionCall { name, .. } = func.as_ref() {
+        (name.clone(), args.clone())
+      } else {
+        return Err(InterpreterError::EvaluationError(
+          "TagSetDelayed: LHS must be a function call".into(),
+        ));
+      }
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "TagSetDelayed: LHS must be a function call".into(),
+      ));
+    }
+  };
+
+  // Process each argument in the LHS to extract patterns
+  // Arguments that are function calls with head == tag get destructured
+  let mut params = Vec::new();
+  let mut conditions: Vec<Option<syntax::Expr>> = Vec::new();
+  let mut defaults: Vec<Option<syntax::Expr>> = Vec::new();
+  let mut heads: Vec<Option<String>> = Vec::new();
+  let mut final_body = body_expr;
+
+  for (i, arg) in lhs_args.iter().enumerate() {
+    match arg {
+      // Function call argument like g[x_] — extract inner patterns
+      syntax::Expr::FunctionCall {
+        name: arg_func_name,
+        args: inner_args,
+      } => {
+        let param_name = format!("_up{}", i);
+        heads.push(Some(arg_func_name.clone()));
+
+        // Add length condition to ensure correct number of inner args
+        if !inner_args.is_empty() {
+          conditions.push(Some(syntax::Expr::Comparison {
+            operands: vec![
+              syntax::Expr::FunctionCall {
+                name: "Length".to_string(),
+                args: vec![syntax::Expr::Identifier(param_name.clone())],
+              },
+              syntax::Expr::Integer(inner_args.len() as i128),
+            ],
+            operators: vec![syntax::ComparisonOp::SameQ],
+          }));
+        } else {
+          conditions.push(None);
+        }
+
+        // Substitute inner pattern names in the body with Part[param, index]
+        for (j, inner_arg) in inner_args.iter().enumerate() {
+          let (pat_name, _pat_head) = extract_pattern_info_from_expr(inner_arg);
+          if !pat_name.is_empty() {
+            let part_expr = syntax::Expr::FunctionCall {
+              name: "Part".to_string(),
+              args: vec![
+                syntax::Expr::Identifier(param_name.clone()),
+                syntax::Expr::Integer((j + 1) as i128),
+              ],
+            };
+            final_body =
+              syntax::substitute_variable(&final_body, &pat_name, &part_expr);
+          }
+        }
+
+        params.push(param_name);
+        defaults.push(None);
+      }
+      // Simple pattern like x_ or x_Head
+      _ => {
+        let (pat_name, head) = extract_pattern_info_from_expr(arg);
+        if pat_name.is_empty() && head.is_none() {
+          // Literal value — create SameQ condition
+          let param_name = format!("_up{}", i);
+          let eval_arg = evaluator::evaluate_expr_to_expr(arg)?;
+          conditions.push(Some(syntax::Expr::Comparison {
+            operands: vec![
+              syntax::Expr::Identifier(param_name.clone()),
+              eval_arg,
+            ],
+            operators: vec![syntax::ComparisonOp::SameQ],
+          }));
+          params.push(param_name);
+        } else {
+          params.push(pat_name);
+          conditions.push(None);
+        }
+        defaults.push(None);
+        heads.push(head);
+      }
+    }
+  }
+
+  // Store in UPVALUES for introspection and cleanup
+  UPVALUES.with(|m| {
+    let mut defs = m.borrow_mut();
+    let entry = defs.entry(tag_name).or_insert_with(Vec::new);
+    entry.push((
+      outer_func.clone(),
+      params.clone(),
+      conditions.clone(),
+      defaults.clone(),
+      heads.clone(),
+      final_body.clone(),
+    ));
+  });
+
+  // Also store in FUNC_DEFS under the outer function name so that
+  // the existing function matching infrastructure picks it up
+  FUNC_DEFS.with(|m| {
+    let mut defs = m.borrow_mut();
+    let entry = defs.entry(outer_func).or_insert_with(Vec::new);
+    // UpValue definitions go at the beginning for priority
+    entry.insert(0, (params, conditions, defaults, heads, final_body));
+  });
+
+  Ok(())
+}
+
+/// Extract pattern name and head from an Expr (for TagSetDelayed processing).
+/// Similar to extract_pattern_info in evaluator.rs but works on Expr nodes.
+fn extract_pattern_info_from_expr(
+  expr: &syntax::Expr,
+) -> (String, Option<String>) {
+  match expr {
+    syntax::Expr::Pattern { name, head } => (name.clone(), head.clone()),
+    syntax::Expr::PatternOptional { name, head, .. } => {
+      (name.clone(), head.clone())
+    }
+    syntax::Expr::PatternTest { name, .. } => (name.clone(), None),
+    syntax::Expr::Identifier(name) => {
+      // Could be "x_Integer" or "x_" in text form
+      if let Some(pos) = name.find('_') {
+        let pat_name = name[..pos].to_string();
+        let head = &name[pos + 1..];
+        if head.is_empty() {
+          (pat_name, None)
+        } else {
+          (pat_name, Some(head.to_string()))
+        }
+      } else {
+        (String::new(), None) // Not a pattern
+      }
+    }
+    _ => (String::new(), None),
+  }
 }
 
 fn nth_prime(n: usize) -> usize {
