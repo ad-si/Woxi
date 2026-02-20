@@ -4645,7 +4645,7 @@ RenewalProcess,,,,9,4052
 RenkoChart,,,,8,3298
 RepairMesh,,,,11,3947
 Repeated,Pattern that matches one or more repetitions,✅,pure,1,299
-RepeatedNull,,,,1,428
+RepeatedNull,Pattern that matches zero or more repetitions,✅,pure,1,428
 RepeatedTiming,,,,10.1,579
 RepeatingElement,,,,10.1,3326
 Replace,Applies transformation rules to an expression,✅,pure,1,227
@@ -5829,7 +5829,7 @@ Unprotect,Removes protection from symbols,✅,stateful,1,654
 UnregisterExternalEvaluator,,,,11.2,4660
 UnsameQ,Tests if expressions are not identical,✅,pure,2,205
 UnsavedVariables,,,,8,3440
-Unset,,,,1,426
+Unset,Removes a value or definition,✅,stateful,1,426
 UnsetShared,,,,7,3566
 Until,,,,13.1,
 UpArrow,,,,3,3070
