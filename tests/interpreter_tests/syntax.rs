@@ -2626,3 +2626,106 @@ mod grid {
     assert!(svg.contains("<line"), "Frame -> All should produce lines");
   }
 }
+
+mod tag_set_delayed {
+  use super::*;
+
+  #[test]
+  fn basic_upvalue() {
+    // g /: f[g[x_]] := fg[x] — defines an upvalue for g
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := fg[x]; {f[g[2]], f[h[2]]}").unwrap(),
+      "{fg[2], f[h[2]]}"
+    );
+  }
+
+  #[test]
+  fn multi_arg_upvalue() {
+    // Upvalue with multiple arguments
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_], y_] := fg[x, y]; f[g[2], 3]").unwrap(),
+      "fg[2, 3]"
+    );
+  }
+
+  #[test]
+  fn multiple_upvalues_same_tag() {
+    // Multiple upvalue definitions for the same tag
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := fg[x]; g /: h[g[x_]] := hg[x]; {f[g[3]], h[g[5]], f[5]}").unwrap(),
+      "{fg[3], hg[5], f[5]}"
+    );
+  }
+
+  #[test]
+  fn overwrite_upvalue() {
+    // Later definitions take priority
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := fg[x]; g /: f[g[x_]] := fg2[x]; {f[g[2]]}")
+        .unwrap(),
+      "{fg2[2]}"
+    );
+  }
+
+  #[test]
+  fn tag_set_evaluated_rhs() {
+    // TagSet (=) evaluates the RHS
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] = fg[x]; {f[g[2]], f[h[2]]}").unwrap(),
+      "{fg[2], f[h[2]]}"
+    );
+  }
+
+  #[test]
+  fn functional_form() {
+    // TagSetDelayed[tag, lhs, rhs] as function call
+    clear_state();
+    assert_eq!(
+      interpret("TagSetDelayed[g, f[g[x_]], fg[x]]; {f[g[2]], f[h[2]]}")
+        .unwrap(),
+      "{fg[2], f[h[2]]}"
+    );
+  }
+
+  #[test]
+  fn upvalue_non_matching_head() {
+    // The upvalue should not fire when the argument head doesn't match
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := fg[x]; f[h[2]]").unwrap(),
+      "f[h[2]]"
+    );
+  }
+
+  #[test]
+  fn upvalue_with_computation() {
+    // Upvalue body performs computation
+    clear_state();
+    assert_eq!(
+      interpret("myType /: combine[myType[x_], myType[y_]] := myType[x + y]; combine[myType[3], myType[5]]").unwrap(),
+      "myType[8]"
+    );
+  }
+
+  #[test]
+  fn upvalue_returns_null() {
+    // TagSetDelayed returns Null
+    clear_state();
+    assert_eq!(interpret("g /: f[g[x_]] := fg[x]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn clear_all_removes_upvalues() {
+    // ClearAll should remove upvalues
+    clear_state();
+    assert_eq!(
+      interpret("g /: f[g[x_]] := fg[x]; ClearAll[g]; f[g[2]]").unwrap(),
+      "f[g[2]]"
+    );
+  }
+}

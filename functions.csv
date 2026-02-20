@@ -5431,8 +5431,8 @@ TabView,,,,6,1308
 TagBox,,,,3,1012
 TagBoxOptions,,,,6,4052
 TaggingRules,,,,4,1459
-TagSet,,,,1,812
-TagSetDelayed,,,,1,431
+TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1,812
+TagSetDelayed,Defines a delayed upvalue assignment associated with a tag symbol,✅,stateful,1,431
 TagUnset,,,,1,2635
 Take,Returns the first n elements of a list,✅,pure,1,231
 TakeDrop,,,,10.2,1507
