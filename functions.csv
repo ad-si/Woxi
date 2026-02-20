@@ -3981,7 +3981,7 @@ OrnsteinUhlenbeckProcess,,,,9,2157
 Orthogonalize,,,,6,1191
 OrthogonalMatrix,,,,14,
 OrthogonalMatrixQ,,,,10,2807
-Out,,,,1,63
+Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1,63
 Outer,Generalized outer product,✅,pure,1,434
 OuterPolygon,,,,12,3636
 OuterPolyhedron,,,,12,
