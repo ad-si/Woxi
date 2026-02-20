@@ -4132,6 +4132,228 @@ fn bessel_j(n: f64, z: f64) -> f64 {
   sum
 }
 
+/// Compute Jacobi elliptic functions sn(u, m), cn(u, m), dn(u, m) numerically
+/// using the descending Landen (AGM) transformation.
+/// Parameter m is the parameter (not the modulus k; m = k^2).
+fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
+  // Edge cases
+  if m.abs() < 1e-16 {
+    // m = 0: sn = sin(u), cn = cos(u), dn = 1
+    return (u.sin(), u.cos(), 1.0);
+  }
+  if (m - 1.0).abs() < 1e-16 {
+    // m = 1: sn = tanh(u), cn = sech(u), dn = sech(u)
+    let s = u.tanh();
+    let c = 1.0 / u.cosh();
+    return (s, c, c);
+  }
+
+  // AGM iteration to compute the sequence of a_n, b_n, c_n
+  let mut a = vec![1.0];
+  let mut b = vec![(1.0 - m).sqrt()];
+  let mut c = vec![m.sqrt()];
+
+  let n_max = 50;
+  for _ in 0..n_max {
+    let a_prev = *a.last().unwrap();
+    let b_prev = *b.last().unwrap();
+    a.push((a_prev + b_prev) / 2.0);
+    b.push((a_prev * b_prev).sqrt());
+    c.push((a_prev - b_prev) / 2.0);
+
+    if c.last().unwrap().abs() < 1e-16 {
+      break;
+    }
+  }
+
+  let n = a.len() - 1;
+  // phi_N = 2^N * a_N * u
+  let mut phi = (1u64 << n as u64) as f64 * a[n] * u;
+
+  // Descend: phi_{n-1} from phi_n
+  for i in (1..=n).rev() {
+    phi = (phi + (c[i] / a[i] * phi.sin()).asin()) / 2.0;
+  }
+
+  let sn = phi.sin();
+  let cn = phi.cos();
+  let dn = (1.0 - m * sn * sn).sqrt();
+
+  (sn, cn, dn)
+}
+
+/// JacobiDN[u, m] - Jacobi elliptic function dn
+pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiDN expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let u = &args[0];
+  let m = &args[1];
+
+  // JacobiDN[0, m] = 1
+  if is_expr_zero(u) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // JacobiDN[u, 0] = 1
+  if is_expr_zero(m) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // JacobiDN[u, 1] = Sech[u]
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Sech".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  // JacobiDN[-u, m] = JacobiDN[u, m] (even function)
+  if let Some(inner) = extract_negated_expr(u) {
+    return Ok(Expr::FunctionCall {
+      name: "JacobiDN".to_string(),
+      args: vec![inner, m.clone()],
+    });
+  }
+
+  // Numeric evaluation
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (_, _, dn) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(dn));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "JacobiDN".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// JacobiSN[u, m] - Jacobi elliptic function sn
+pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiSN expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let u = &args[0];
+  let m = &args[1];
+
+  // JacobiSN[0, m] = 0
+  if is_expr_zero(u) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // JacobiSN[u, 0] = Sin[u]
+  if is_expr_zero(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  // JacobiSN[u, 1] = Tanh[u]
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Tanh".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  // JacobiSN[-u, m] = -JacobiSN[u, m] (odd function)
+  if let Some(inner) = extract_negated_expr(u) {
+    return Ok(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(Expr::FunctionCall {
+        name: "JacobiSN".to_string(),
+        args: vec![inner, m.clone()],
+      }),
+    });
+  }
+
+  // Numeric evaluation
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (sn, _, _) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(sn));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "JacobiSN".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Extract the inner expression from a negated expression like Times[-1, x] or -x
+fn extract_negated_expr(expr: &Expr) -> Option<Expr> {
+  match expr {
+    // Times[-1, x] form (FunctionCall)
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(-1)) =>
+    {
+      Some(args[1].clone())
+    }
+    // BinaryOp Times[-1, x] form
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Integer(-1)) {
+        Some(right.as_ref().clone())
+      } else if matches!(right.as_ref(), Expr::Integer(-1)) {
+        Some(left.as_ref().clone())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Check if an expression is numerically zero
+fn is_expr_zero(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(0) => true,
+    Expr::Real(f) => *f == 0.0,
+    _ => false,
+  }
+}
+
+/// Check if an expression is numerically one
+fn is_expr_one(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(1) => true,
+    Expr::Real(f) => *f == 1.0,
+    _ => false,
+  }
+}
+
+/// Extract f64 from various numeric expression types
+fn expr_to_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Real(f) => Some(*f),
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        Some(*p as f64 / *q as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
 /// EllipticK[m] - Complete elliptic integral of the first kind
 pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

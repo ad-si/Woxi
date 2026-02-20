@@ -2940,7 +2940,7 @@ JacobiCD,,,,1,919
 JacobiCN,,,,1,595
 JacobiCS,,,,1,3344
 JacobiDC,,,,1,916
-JacobiDN,,,,1,543
+JacobiDN,Jacobi elliptic function dn,✅,pure,1,543
 JacobiDS,,,,1,3427
 JacobiEpsilon,,,,12.2,4747
 JacobiNC,,,,1,3656
@@ -2949,7 +2949,7 @@ JacobiNS,,,,1,3462
 JacobiP,,,,1,962
 JacobiSC,,,,1,819
 JacobiSD,,,,1,3257
-JacobiSN,,,,1,544
+JacobiSN,Jacobi elliptic function sn,✅,pure,1,544
 JacobiSymbol,,,,1,1606
 JacobiZeta,,,,2,1494
 JacobiZN,,,,12.2,4881
