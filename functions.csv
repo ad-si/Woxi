@@ -41,7 +41,7 @@ ActivePredictionObject,,,,11.1,
 ActiveStyle,,,,7,4527
 AcyclicGraphQ,,,,8,2952
 AddSides,,,,11.3,3491
-AddTo,,,,1,550
+AddTo,Adds a value to a variable,✅,stateful,1,550
 AddToSearchIndex,,,,12,
 AddToVectorDatabase,,,,14.1,
 AddUsers,,,,10,5486
@@ -425,9 +425,9 @@ Because,Represents a because logical relation,✅,pure,3,5486
 BeckmannDistribution,,,,8,1849
 Beep,,,,6,2468
 Before,,,,3,1451
-Begin,,,,1,578
+Begin,Begins a private context (no-op in Woxi),✅,effectful,1,578
 BeginDialogPacket,,,,3,
-BeginPackage,,,,1,588
+BeginPackage,Begins a package context (no-op in Woxi),✅,effectful,1,588
 BellB,Returns the Bell number or Bell polynomial,✅,pure,6,1463
 BellY,,,,8,1725
 Below,,,,1,1025
@@ -595,7 +595,7 @@ BracketingBar,,,,3,2514
 BraKet,,,,13.3,3474
 BrayCurtisDistance,,,,6,3440
 BreadthFirstScan,,,,8,2755
-Break,,,,1,610
+Break,Exits a loop,✅,pure,1,610
 BridgeData,,,,10,4881
 BrightnessEqualize,,,,11.1,4173
 BroadcastStationData,,,,10,4881
@@ -961,7 +961,7 @@ CompleteGraph,,,,8,1062
 CompleteGraphQ,,,,8,3566
 CompleteIntegral,,,,13,
 CompleteKaryTree,,,,8,2162
-Complex,,,,1,541
+Complex,Head type for complex numbers,✅,pure,1,541
 ComplexArrayPlot,,,,12.2,4881
 ComplexContourPlot,,,,12.1,2210
 Complexes,,,,4,790
@@ -1529,7 +1529,7 @@ DistributionParameterQ,,,,8,2617
 Dithering,,,,8,3121
 Div,,,,9,736
 Divide,Divide numbers,✅,pure,1,572
-DivideBy,,,,1,1555
+DivideBy,Divides a variable by a value,✅,stateful,1,1555
 Dividers,,,,6,547
 DivideSides,,,,11.3,3008
 Divisible,Tests if one number is divisible by another,✅,pure,6,1013
@@ -1695,13 +1695,13 @@ Encode,,,,2,3717
 Encrypt,,,,10.1,2767
 EncryptedObject,,,,10.1,4809
 EncryptFile,,,,11.1,4356
-End,,,,1,571
+End,Ends a private context (no-op in Woxi),✅,effectful,1,571
 EndDialogPacket,,,,3,
 EndOfBuffer,,,,10,3059
 EndOfFile,,,,1,1852
 EndOfLine,,,,5.1,2545
 EndOfString,,,,5.1,1202
-EndPackage,,,,1,599
+EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1,599
 EngineeringForm,,,,1,2079
 English,,,,,
 EnterExpressionPacket,,,,3,4027
@@ -2376,7 +2376,7 @@ Glaisher,,,,4,2509
 GlobalClusteringCoefficient,,,,9,3233
 Glow,,,,6,1169
 GoldenAngle,,,,10.2,3344
-GoldenRatio,,,,1,469
+GoldenRatio,The golden ratio constant,✅,pure,1,469
 GompertzMakehamDistribution,,,,8,2712
 GoochShading,,,,12.1,5587
 GoodmanKruskalGamma,,,,9,4052
@@ -2573,11 +2573,11 @@ HodgeDual,,,,9,2911
 HoeffdingD,,,,9,3402
 HoeffdingDTest,,,,9,3947
 Hold,Holds its arguments unevaluated,✅,pure,1,326
-HoldAll,,,,1,502
+HoldAll,Attribute specifying all args are held,✅,pure,1,502
 HoldAllComplete,,,,3,1122
 HoldComplete,Holds arguments completely unevaluated,✅,pure,3,78
 HolderModel,,,,14,
-HoldFirst,,,,1,570
+HoldFirst,Attribute specifying first arg is held,✅,pure,1,570
 HoldForm,Holds an expression unevaluated for display,✅,pure,1,311
 HoldPattern,,,,3,384
 HoldRest,,,,1,1600
@@ -3166,7 +3166,7 @@ LightCyan,,,,6,2871
 Lighter,Makes a color lighter,✅,pure,6,402
 LightGray,,,,6,633
 LightGreen,,,,6,1140
-Lighting,,,,1,511
+Lighting,Option for 3D lighting,✅,pure,1,511
 LightingAngle,,,,6,3306
 LightMagenta,,,,6,3176
 LightOrange,,,,6,1551
@@ -3217,7 +3217,7 @@ Links,,,,3,3070
 LinkWrite,,,,3,1967
 LiouvilleLambda,,,,7,3506
 List,Represents a list of elements,✅,pure,1,1
-Listable,,,,1,568
+Listable,Attribute for automatic threading over lists,✅,pure,1,568
 ListAnimate,,,,6,926
 ListContourPlot,,,,1,902
 ListContourPlot3D,,,,6,1858
@@ -3587,7 +3587,7 @@ ModelPredictiveController,,,,13.1,
 ModularInverse,Returns the modular multiplicative inverse,✅,pure,11.1,1975
 ModularLambda,,,,3,5079
 Module,Scopes local variables with unique names,✅,pure,2,74
-Modulus,,,,1,608
+Modulus,Option for modular arithmetic,✅,pure,1,608
 MoebiusMu,Returns the Möbius function value,✅,pure,1,1235
 Molecule,,,,12,2015
 MoleculeAlign,,,,12.3,
@@ -5308,7 +5308,7 @@ SubsuperscriptBoxOptions,,,,4,
 SubtitleEncoding,,,,12.1,
 SubtitleTrackSelection,,,,12.2,
 Subtract,Subtracts one number from another,✅,pure,1,567
-SubtractFrom,,,,1,1099
+SubtractFrom,Subtracts a value from a variable,✅,stateful,1,1099
 SubtractSides,,,,11.3,2642
 SubValues,Returns the sub values of a symbol,✅,pure,2,2251
 Succeeds,,,,3,4947
@@ -5562,7 +5562,7 @@ TimeObject,,,,10,1252
 TimeObjectQ,,,,10.2,4567
 TimeRemaining,Returns the time remaining in a TimeConstrained evaluation,✅,contextual,12.1,
 Times,Multiply numbers,✅,pure,1,3
-TimesBy,,,,1,1032
+TimesBy,Multiplies a variable by a value,✅,stateful,1,1032
 TimeSeries,,,,10,1038
 TimeSeriesAggregate,,,,10,2786
 TimeSeriesForecast,,,,9,1815
