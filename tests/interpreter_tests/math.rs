@@ -2861,6 +2861,36 @@ mod implicit_multiply_power_precedence {
       "b"
     );
   }
+
+  #[test]
+  fn function_call_implicit_times() {
+    // Regression: Sin[x] Sin[y] was not parsed as implicit multiplication
+    assert_eq!(interpret("Sin[x] Cos[y]").unwrap(), "Cos[y]*Sin[x]");
+  }
+
+  #[test]
+  fn function_call_implicit_times_three_factors() {
+    assert_eq!(
+      interpret("Sin[x] Cos[y] Tan[z]").unwrap(),
+      "Cos[y]*Sin[x]*Tan[z]"
+    );
+  }
+
+  #[test]
+  fn function_call_implicit_times_with_number() {
+    assert_eq!(interpret("2 Sin[x]").unwrap(), "2*Sin[x]");
+  }
+
+  #[test]
+  fn function_call_implicit_times_with_implicit_arg() {
+    // Sin[3y] should parse 3y as implicit multiplication inside the argument
+    assert_eq!(interpret("Sin[x] Sin[3y]").unwrap(), "Sin[3*y]*Sin[x]");
+  }
+
+  #[test]
+  fn function_call_implicit_times_evaluates() {
+    assert_eq!(interpret("Sin[0] Sin[Pi/2]").unwrap(), "0");
+  }
 }
 
 mod gudermannian {
