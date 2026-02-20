@@ -5008,6 +5008,9 @@ pub fn evaluate_function_call_ast(
     "Hypergeometric2F1" if args.len() == 4 => {
       return crate::functions::math_ast::hypergeometric2f1_ast(args);
     }
+    "EllipticK" if args.len() == 1 => {
+      return crate::functions::math_ast::elliptic_k_ast(args);
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);
     }

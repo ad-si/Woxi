@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -4130,6 +4130,64 @@ fn bessel_j(n: f64, z: f64) -> f64 {
     }
   }
   sum
+}
+
+/// EllipticK[m] - Complete elliptic integral of the first kind
+pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "EllipticK expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(0) => {
+      // EllipticK[0] = Pi/2
+      Ok(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Identifier("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      })
+    }
+    Expr::Integer(1) => {
+      // EllipticK[1] = ComplexInfinity (pole)
+      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+    }
+    Expr::Real(f) => {
+      if *f == 1.0 {
+        Ok(Expr::Identifier("ComplexInfinity".to_string()))
+      } else if *f < 1.0 {
+        // Compute via arithmetic-geometric mean: K(m) = pi / (2 * AGM(1, sqrt(1 - m)))
+        Ok(Expr::Real(elliptic_k(*f)))
+      } else {
+        // m > 1 requires complex numbers, return unevaluated
+        Ok(Expr::FunctionCall {
+          name: "EllipticK".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "EllipticK".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute complete elliptic integral K(m) using the arithmetic-geometric mean
+fn elliptic_k(m: f64) -> f64 {
+  let mut a = 1.0;
+  let mut b = (1.0 - m).sqrt();
+  for _ in 0..100 {
+    let a_new = (a + b) / 2.0;
+    let b_new = (a * b).sqrt();
+    if (a_new - b_new).abs() < 1e-16 {
+      return std::f64::consts::PI / (2.0 * a_new);
+    }
+    a = a_new;
+    b = b_new;
+  }
+  std::f64::consts::PI / (2.0 * a)
 }
 
 /// N[expr] or N[expr, n] - Numeric evaluation
