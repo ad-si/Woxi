@@ -537,6 +537,25 @@ mod pattern_function {
   }
 }
 
+mod none_symbol {
+  use super::*;
+
+  #[test]
+  fn none_evaluates_to_itself() {
+    assert_eq!(interpret("None").unwrap(), "None");
+  }
+
+  #[test]
+  fn none_head_is_symbol() {
+    assert_eq!(interpret("Head[None]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn none_is_protected() {
+    assert_eq!(interpret("Attributes[None]").unwrap(), "{Protected}");
+  }
+}
+
 mod slot_function {
   use super::*;
 
