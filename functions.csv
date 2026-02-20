@@ -4774,7 +4774,7 @@ RSolveValue,,,,10,1621
 RStabilityConditions,,,,14.1,
 RudinShapiro,,,,10.2,4291
 RudvalisGroupRu,,,,8,5013
-Rule,,,,1,2
+Rule,Represents a transformation rule lhs -> rhs,✅,pure,1,2
 RuleDelayed,,,,1,35
 RulePlot,,,,11,1656
 RulerUnits,,,,4,4612
