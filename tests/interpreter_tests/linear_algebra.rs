@@ -534,3 +534,58 @@ mod fit {
     assert_eq!(interpret("Fit[{1, 2}, {1, x}, x]").unwrap(), "0. + 1.*x");
   }
 }
+
+mod linear_solve {
+  use super::*;
+
+  #[test]
+  fn solve_2x2() {
+    // LinearSolve[{{1, 2}, {3, 4}}, {5, 6}] = {-4, 9/2}
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, {5, 6}]").unwrap(),
+      "{-4, 9/2}"
+    );
+  }
+
+  #[test]
+  fn solve_diagonal() {
+    // Diagonal matrix
+    assert_eq!(
+      interpret("LinearSolve[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, {1, 1, 1}]")
+        .unwrap(),
+      "{1, 1/2, 1/3}"
+    );
+  }
+
+  #[test]
+  fn solve_3x3() {
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}, {1, 0, 0}]")
+        .unwrap(),
+      "{-2/3, -2/3, 1}"
+    );
+  }
+
+  #[test]
+  fn solve_identity() {
+    // Identity matrix returns the vector itself
+    assert_eq!(
+      interpret("LinearSolve[{{1, 0}, {0, 1}}, {3, 7}]").unwrap(),
+      "{3, 7}"
+    );
+  }
+
+  #[test]
+  fn solve_1x1() {
+    assert_eq!(interpret("LinearSolve[{{5}}, {10}]").unwrap(), "{2}");
+  }
+
+  #[test]
+  fn solve_with_rationals() {
+    // Result should be exact rational
+    assert_eq!(
+      interpret("LinearSolve[{{2, 1}, {1, 3}}, {1, 1}]").unwrap(),
+      "{2/5, 1/5}"
+    );
+  }
+}
