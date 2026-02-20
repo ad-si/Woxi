@@ -1067,6 +1067,50 @@ mod pre_decrement_function {
   }
 }
 
+mod mesh_symbol {
+  use super::*;
+
+  #[test]
+  fn mesh_evaluates_to_itself() {
+    assert_eq!(interpret("Mesh").unwrap(), "Mesh");
+  }
+
+  #[test]
+  fn mesh_attributes() {
+    assert_eq!(interpret("Attributes[Mesh]").unwrap(), "{Protected}");
+  }
+}
+
+mod string_symbol {
+  use super::*;
+
+  #[test]
+  fn string_evaluates_to_itself() {
+    assert_eq!(interpret("String").unwrap(), "String");
+  }
+
+  #[test]
+  fn string_attributes() {
+    assert_eq!(interpret("Attributes[String]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn string_is_head_of_strings() {
+    assert_eq!(interpret("Head[\"hello\"]").unwrap(), "String");
+  }
+
+  #[test]
+  fn string_function_call_is_inert() {
+    assert_eq!(interpret("String[1, 2]").unwrap(), "String[1, 2]");
+  }
+
+  #[test]
+  fn match_string_pattern() {
+    assert_eq!(interpret("MatchQ[\"hello\", _String]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[5, _String]").unwrap(), "False");
+  }
+}
+
 mod optional_function {
   use super::*;
 
