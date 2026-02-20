@@ -548,6 +548,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       }
       Rule::FunctionDefinition => {
         store_function_definition(node)?;
+        last_result = Some("Null".to_string());
         any_nonempty = true;
       }
       Rule::TrailingSemicolon => {
@@ -1010,7 +1011,7 @@ fn generate_output_svg(expr: &syntax::Expr) {
 /// each logical line as a separate statement.  Newlines inside brackets,
 /// parentheses or braces are left alone (they're part of a multiline expression).
 /// Lines that already end with `;` or `:=` are also left alone.
-fn insert_statement_separators(input: &str) -> String {
+pub fn insert_statement_separators(input: &str) -> String {
   // Fast path: no newlines means nothing to do
   if !input.contains('\n') {
     return input.to_string();

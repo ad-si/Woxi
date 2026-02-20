@@ -98,6 +98,72 @@ mod find {
   }
 }
 
+mod get {
+  use super::*;
+  use std::io::Write;
+
+  fn write_temp(name: &str, content: &str) -> String {
+    let path = format!("/tmp/woxi_test_{}.wl", name);
+    let mut f = std::fs::File::create(&path).unwrap();
+    f.write_all(content.as_bytes()).unwrap();
+    path
+  }
+
+  #[test]
+  fn evaluate_expression() {
+    let path = write_temp("get_expr", "1 + 2 + 3");
+    let result = interpret(&format!("Get[\"{path}\"]")).unwrap();
+    assert_eq!(result, "6");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn variable_assignment() {
+    let path = write_temp("get_var", "mygetvar = 42");
+    let result = interpret(&format!("Get[\"{path}\"]; mygetvar")).unwrap();
+    assert_eq!(result, "42");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn function_definition() {
+    let path = write_temp("get_func", "getfunc[x_] := x^2 + 1");
+    let result = interpret(&format!("Get[\"{path}\"]; getfunc[5]")).unwrap();
+    assert_eq!(result, "26");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn multiline_file() {
+    let path = write_temp("get_multi", "a = 10\nb = 20\na + b");
+    let result = interpret(&format!("Get[\"{path}\"]")).unwrap();
+    assert_eq!(result, "30");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn nonexistent_file() {
+    let result = interpret("Get[\"/tmp/nonexistent_woxi_file.wl\"]").unwrap();
+    assert_eq!(result, "$Failed");
+  }
+
+  #[test]
+  fn returns_last_result() {
+    let path = write_temp("get_last", "1; 2; 3");
+    let result = interpret(&format!("Get[\"{path}\"]")).unwrap();
+    assert_eq!(result, "3");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn function_definition_returns_null() {
+    let path = write_temp("get_null", "getnullfn[x_] := x + 1");
+    let result = interpret(&format!("Get[\"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    std::fs::remove_file(path).ok();
+  }
+}
+
 mod directory {
   use super::*;
 
