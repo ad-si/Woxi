@@ -1672,7 +1672,7 @@ EllipticExp,,,,1,3048
 EllipticExpPrime,,,,2,4660
 EllipticF,,,,1,1111
 EllipticFilterModel,,,,9,4387
-EllipticK,,,,1,441
+EllipticK,Complete elliptic integral of the first kind,✅,pure,1,441
 EllipticLog,,,,1,2519
 EllipticNomeQ,,,,3,1415
 EllipticPi,,,,1,1362

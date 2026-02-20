@@ -4221,3 +4221,62 @@ mod hypergeometric2f1 {
     assert!((result - 1.5451774444795618).abs() < 1e-10);
   }
 }
+
+mod elliptic_k {
+  use super::*;
+
+  #[test]
+  fn zero_arg() {
+    assert_eq!(interpret("EllipticK[0]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn one_arg() {
+    assert_eq!(interpret("EllipticK[1]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn real_one_arg() {
+    assert_eq!(interpret("EllipticK[1.0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn real_zero_arg() {
+    let result: f64 = interpret("EllipticK[0.0]").unwrap().parse().unwrap();
+    assert!((result - 1.5707963267948966).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 = interpret("EllipticK[0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.8540746773013717).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_near_one() {
+    let result: f64 = interpret("EllipticK[0.9]").unwrap().parse().unwrap();
+    assert!((result - 2.578092113348173).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative() {
+    let result: f64 = interpret("EllipticK[-0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.415737208425956).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_exact() {
+    assert_eq!(interpret("EllipticK[1/2]").unwrap(), "EllipticK[1/2]");
+  }
+
+  #[test]
+  fn symbolic_variable() {
+    assert_eq!(interpret("EllipticK[x]").unwrap(), "EllipticK[x]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[EllipticK[1/2]]").unwrap().parse().unwrap();
+    assert!((result - 1.8540746773013717).abs() < 1e-10);
+  }
+}
