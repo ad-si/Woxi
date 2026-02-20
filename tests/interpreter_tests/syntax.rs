@@ -556,6 +556,38 @@ mod none_symbol {
   }
 }
 
+mod true_symbol {
+  use super::*;
+
+  #[test]
+  fn true_evaluates_to_itself() {
+    assert_eq!(interpret("True").unwrap(), "True");
+  }
+
+  #[test]
+  fn true_head_is_symbol() {
+    assert_eq!(interpret("Head[True]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn true_is_protected() {
+    assert_eq!(interpret("Attributes[True]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn not_true_is_false() {
+    assert_eq!(interpret("Not[True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn true_in_list() {
+    assert_eq!(
+      interpret("{True, False, True}").unwrap(),
+      "{True, False, True}"
+    );
+  }
+}
+
 mod slot_function {
   use super::*;
 

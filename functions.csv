@@ -5748,7 +5748,7 @@ TrigToExp,,,,3,900
 TrimmedMean,,,,6,2693
 TrimmedVariance,,,,11.1,4081
 TropicalStormData,,,,10,4567
-True,,,,1,27
+True,Boolean constant representing logical truth,✅,pure,1,27
 TrueQ,Returns True only for the symbol True,✅,pure,1,404
 TruncatedDistribution,,,,8,1564
 TruncatedPolyhedron,,,,12,5486
