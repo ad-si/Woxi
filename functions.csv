@@ -3963,7 +3963,7 @@ OperatorApplied,,,,12.1,4262
 OptimumFlowData,,,,9,5184
 Optional,Represents a pattern with an optional default value,✅,pure,1,164
 OptionalElement,,,,10.1,4707
-Options,,,,1,232
+Options,Returns or sets the options associated with a symbol,✅,pure,1,232
 OptionsPattern,,,,6,305
 OptionValue,,,,6,268
 Or,Checks if at least one condition is true,✅,pure,1,136

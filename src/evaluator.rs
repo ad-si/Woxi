@@ -4534,6 +4534,46 @@ pub fn evaluate_function_call_ast(
       ));
     }
 
+    // Options[f] — return stored options for function f
+    // Options[f, opt] — return specific option for function f
+    "Options" if args.len() == 1 || args.len() == 2 => {
+      let func_arg = evaluate_expr_to_expr(&args[0])?;
+      let func_name = match &func_arg {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Options".to_string(),
+            args: vec![func_arg],
+          });
+        }
+      };
+      let stored =
+        crate::FUNC_OPTIONS.with(|m| m.borrow().get(&func_name).cloned());
+      let opts = stored.unwrap_or_default();
+      if args.len() == 1 {
+        return Ok(Expr::List(opts));
+      } else {
+        // Options[f, opt] — find the matching option
+        let opt_arg = evaluate_expr_to_expr(&args[1])?;
+        let opt_name = match &opt_arg {
+          Expr::Identifier(name) => name.clone(),
+          _ => {
+            return Ok(Expr::List(vec![]));
+          }
+        };
+        let matching: Vec<Expr> = opts
+          .into_iter()
+          .filter(|rule| match rule {
+            Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+              matches!(pattern.as_ref(), Expr::Identifier(n) if *n == opt_name)
+            }
+            _ => false,
+          })
+          .collect();
+        return Ok(Expr::List(matching));
+      }
+    }
+
     // Construct - creates function call f[a][b] etc.
     "Construct" if !args.is_empty() => {
       return crate::functions::predicate_ast::construct_ast(args);
@@ -6810,6 +6850,24 @@ fn set_attributes_from_value(
   Ok(rhs_value.clone())
 }
 
+/// Helper for Options[f] = value — set options for symbol f
+fn set_options_from_value(
+  sym_name: &str,
+  rhs_value: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Extract rules from the value
+  let rules = match rhs_value {
+    Expr::List(items) => items.clone(),
+    _ => vec![rhs_value.clone()],
+  };
+
+  crate::FUNC_OPTIONS.with(|m| {
+    m.borrow_mut().insert(sym_name.to_string(), rules);
+  });
+
+  Ok(rhs_value.clone())
+}
+
 /// AST-based Set implementation to handle Part assignment on associations and lists
 fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // Handle Part assignment: var[[indices]] = value
@@ -6959,6 +7017,19 @@ fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     }
 
     return Ok(rhs_value);
+  }
+
+  // Handle Options[f] = value — set options on symbol f
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "Options"
+    && lhs_args.len() == 1
+    && let Expr::Identifier(sym_name) = &lhs_args[0]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    return set_options_from_value(sym_name, &rhs_value);
   }
 
   // Handle Attributes[f] = value — set attributes on symbol f
