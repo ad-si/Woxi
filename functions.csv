@@ -3961,7 +3961,7 @@ OperatingSystem,,,,7,4612
 OperationDeclaration,,,,14.1,
 OperatorApplied,,,,12.1,4262
 OptimumFlowData,,,,9,5184
-Optional,,,,1,164
+Optional,Represents a pattern with an optional default value,✅,pure,1,164
 OptionalElement,,,,10.1,4707
 Options,,,,1,232
 OptionsPattern,,,,6,305
