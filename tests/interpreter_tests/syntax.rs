@@ -701,6 +701,42 @@ mod plot_style_symbol {
   }
 }
 
+mod matrix_form {
+  use super::*;
+
+  #[test]
+  fn matrix_form_basic() {
+    assert_eq!(
+      interpret("MatrixForm[{{1, 2}, {3, 4}}]").unwrap(),
+      "MatrixForm[{{1, 2}, {3, 4}}]"
+    );
+  }
+
+  #[test]
+  fn matrix_form_head() {
+    assert_eq!(
+      interpret("Head[MatrixForm[{{1, 2}, {3, 4}}]]").unwrap(),
+      "MatrixForm"
+    );
+  }
+
+  #[test]
+  fn matrix_form_attributes() {
+    assert_eq!(
+      interpret("Attributes[MatrixForm]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn matrix_form_single_list() {
+    assert_eq!(
+      interpret("MatrixForm[{1, 2, 3}]").unwrap(),
+      "MatrixForm[{1, 2, 3}]"
+    );
+  }
+}
+
 mod subscript_function {
   use super::*;
 
