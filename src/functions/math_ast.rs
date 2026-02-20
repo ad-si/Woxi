@@ -4735,6 +4735,278 @@ fn polygamma_numeric(n: usize, mut z: f64) -> f64 {
   asymp + sign * nfact * shift_sum
 }
 
+/// LegendreP[n, x] - Legendre polynomial of degree n
+pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LegendreP expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LegendreP".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  match &args[1] {
+    Expr::Integer(x) => {
+      // Evaluate at integer x using recurrence with rationals
+      let (num, den) = legendre_eval_rational(n, (*x, 1));
+      Ok(make_rational(num, den))
+    }
+    Expr::FunctionCall {
+      name,
+      args: rat_args,
+    } if name == "Rational" && rat_args.len() == 2 => {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
+      {
+        let (num, den) = legendre_eval_rational(n, (*p, *q));
+        Ok(make_rational(num, den))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "LegendreP".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    Expr::Real(f) => {
+      // Numeric evaluation using recurrence
+      Ok(Expr::Real(legendre_eval_f64(n, *f)))
+    }
+    _ => {
+      // Symbolic: build the polynomial expression
+      if let Some(expr) = legendre_polynomial_symbolic(n, &args[1]) {
+        Ok(expr)
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "LegendreP".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+/// Evaluate P_n(p/q) as a rational number using the recurrence
+fn legendre_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
+  let (xn, xd) = x;
+  if n == 0 {
+    return (1, 1);
+  }
+  if n == 1 {
+    return (xn, xd);
+  }
+
+  let mut prev_n: i128 = 1; // P_0 = 1/1
+  let mut prev_d: i128 = 1;
+  let mut curr_n: i128 = xn; // P_1 = x
+  let mut curr_d: i128 = xd;
+
+  for m in 1..n {
+    // P_{m+1} = ((2m+1)*x*P_m - m*P_{m-1}) / (m+1)
+    let m_i = m as i128;
+
+    // (2m+1)*x*P_m = (2m+1) * xn/xd * curr_n/curr_d
+    let term1_n = (2 * m_i + 1) * xn * curr_n;
+    let term1_d = xd * curr_d;
+
+    // m*P_{m-1} = m * prev_n/prev_d
+    let term2_n = m_i * prev_n;
+    let term2_d = prev_d;
+
+    // (term1 - term2) / (m+1)
+    let diff_n = term1_n * term2_d - term2_n * term1_d;
+    let diff_d = term1_d * term2_d * (m_i + 1);
+
+    let g = gcd(diff_n.abs(), diff_d.abs());
+    let next_n = diff_n / g;
+    let next_d = diff_d / g;
+
+    prev_n = curr_n;
+    prev_d = curr_d;
+    curr_n = next_n;
+    curr_d = next_d;
+  }
+
+  (curr_n, curr_d)
+}
+
+/// Evaluate P_n(x) numerically using the recurrence
+fn legendre_eval_f64(n: usize, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  if n == 1 {
+    return x;
+  }
+
+  let mut prev = 1.0;
+  let mut curr = x;
+  for m in 1..n {
+    let next =
+      ((2 * m + 1) as f64 * x * curr - m as f64 * prev) / (m + 1) as f64;
+    prev = curr;
+    curr = next;
+  }
+  curr
+}
+
+/// Build the symbolic Legendre polynomial expression for P_n(x)
+fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+  if n == 0 {
+    return Some(Expr::Integer(1));
+  }
+  if n == 1 {
+    return Some(x.clone());
+  }
+
+  // Compute polynomial coefficients as rationals
+  let coeffs = legendre_coefficients(n)?;
+
+  // Find LCM of all denominators
+  let mut lcm: i128 = 1;
+  for &(_, d) in &coeffs {
+    if d != 0 {
+      lcm = lcm_i128(lcm, d);
+    }
+  }
+
+  // Build integer coefficients: int_coeff[k] = coeff[k] * lcm
+  let mut int_coeffs: Vec<i128> = Vec::new();
+  for &(cn, cd) in &coeffs {
+    int_coeffs.push(cn * (lcm / cd));
+  }
+
+  // Build the polynomial sum: int_coeff_0 + int_coeff_1*x + int_coeff_2*x^2 + ...
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, &c) in int_coeffs.iter().enumerate() {
+    if c == 0 {
+      continue;
+    }
+    let term = if k == 0 {
+      Expr::Integer(c)
+    } else {
+      let x_power = if k == 1 {
+        x.clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(x.clone()),
+          right: Box::new(Expr::Integer(k as i128)),
+        }
+      };
+      if c == 1 {
+        x_power
+      } else if c == -1 {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(x_power),
+        }
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(c)),
+          right: Box::new(x_power),
+        }
+      }
+    };
+    terms.push(term);
+  }
+
+  let numerator = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    }
+  };
+
+  if lcm == 1 {
+    Some(numerator)
+  } else {
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(Expr::Integer(lcm)),
+    })
+  }
+}
+
+/// Compute Legendre polynomial coefficients using the recurrence relation.
+/// Returns coefficients [a_0, a_1, ..., a_n] as (numerator, denominator) pairs.
+fn legendre_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
+  if n == 0 {
+    return Some(vec![(1, 1)]);
+  }
+  if n == 1 {
+    return Some(vec![(0, 1), (1, 1)]);
+  }
+
+  let mut prev = vec![(1_i128, 1_i128)]; // P_0
+  let mut curr = vec![(0_i128, 1_i128), (1_i128, 1_i128)]; // P_1
+
+  for m in 1..n {
+    let m_i = m as i128;
+    let mut next = vec![(0_i128, 1_i128); m + 2];
+
+    // (2m+1)*x*P_m(x): shift curr right by 1 and multiply by (2m+1)
+    for (k, &(cn, cd)) in curr.iter().enumerate() {
+      if cn == 0 {
+        continue;
+      }
+      let term_n = (2 * m_i + 1).checked_mul(cn)?;
+      let (nn, nd) = next[k + 1];
+      let new_n = nn.checked_mul(cd)?.checked_add(term_n.checked_mul(nd)?)?;
+      let new_d = nd.checked_mul(cd)?;
+      let g = gcd(new_n.abs(), new_d.abs());
+      next[k + 1] = (new_n / g, new_d / g);
+    }
+
+    // -m*P_{m-1}(x)
+    for (k, &(cn, cd)) in prev.iter().enumerate() {
+      if cn == 0 {
+        continue;
+      }
+      let term_n = (-m_i).checked_mul(cn)?;
+      let (nn, nd) = next[k];
+      let new_n = nn.checked_mul(cd)?.checked_add(term_n.checked_mul(nd)?)?;
+      let new_d = nd.checked_mul(cd)?;
+      let g = gcd(new_n.abs(), new_d.abs());
+      next[k] = (new_n / g, new_d / g);
+    }
+
+    // Divide by (m+1)
+    for coeff in next.iter_mut() {
+      if coeff.0 == 0 {
+        continue;
+      }
+      let new_d = coeff.1.checked_mul(m_i + 1)?;
+      let g = gcd(coeff.0.abs(), new_d.abs());
+      *coeff = (coeff.0 / g, new_d / g);
+    }
+
+    prev = curr;
+    curr = next;
+  }
+
+  Some(curr)
+}
+
+fn lcm_i128(a: i128, b: i128) -> i128 {
+  let g = gcd(a.abs(), b.abs());
+  if g == 0 {
+    return 0;
+  }
+  (a.abs() / g) * b.abs()
+}
+
 /// N[expr] or N[expr, n] - Numeric evaluation
 /// Hypergeometric2F1[a, b, c, z] - Gauss hypergeometric function
 pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
