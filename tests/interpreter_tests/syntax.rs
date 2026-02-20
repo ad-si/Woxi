@@ -1067,6 +1067,119 @@ mod pre_decrement_function {
   }
 }
 
+mod view_point_symbol {
+  use super::*;
+
+  #[test]
+  fn view_point_attributes() {
+    assert_eq!(interpret("Attributes[ViewPoint]").unwrap(), "{Protected}");
+  }
+}
+
+mod box_ratios_symbol {
+  use super::*;
+
+  #[test]
+  fn box_ratios_attributes() {
+    assert_eq!(interpret("Attributes[BoxRatios]").unwrap(), "{Protected}");
+  }
+}
+
+mod display_function_symbol {
+  use super::*;
+
+  #[test]
+  fn display_function_attributes() {
+    assert_eq!(
+      interpret("Attributes[DisplayFunction]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
+mod right_symbol {
+  use super::*;
+
+  #[test]
+  fn right_evaluates_to_itself() {
+    assert_eq!(interpret("Right").unwrap(), "Right");
+  }
+
+  #[test]
+  fn right_attributes() {
+    assert_eq!(interpret("Attributes[Right]").unwrap(), "{Protected}");
+  }
+}
+
+mod top_symbol {
+  use super::*;
+
+  #[test]
+  fn top_evaluates_to_itself() {
+    assert_eq!(interpret("Top").unwrap(), "Top");
+  }
+
+  #[test]
+  fn top_attributes() {
+    assert_eq!(interpret("Attributes[Top]").unwrap(), "{Protected}");
+  }
+}
+
+mod bottom_symbol {
+  use super::*;
+
+  #[test]
+  fn bottom_evaluates_to_itself() {
+    assert_eq!(interpret("Bottom").unwrap(), "Bottom");
+  }
+
+  #[test]
+  fn bottom_attributes() {
+    assert_eq!(interpret("Attributes[Bottom]").unwrap(), "{Protected}");
+  }
+}
+
+mod working_precision_symbol {
+  use super::*;
+
+  #[test]
+  fn working_precision_attributes() {
+    assert_eq!(
+      interpret("Attributes[WorkingPrecision]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
+mod information_function {
+  use super::*;
+
+  #[test]
+  fn information_attributes() {
+    assert_eq!(
+      interpret("Attributes[Information]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
+mod message_function {
+  use super::*;
+
+  #[test]
+  fn message_returns_null() {
+    assert_eq!(interpret("Message[f, \"test\"]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn message_attributes() {
+    assert_eq!(
+      interpret("Attributes[Message]").unwrap(),
+      "{HoldFirst, Protected}"
+    );
+  }
+}
+
 mod non_commutative_multiply {
   use super::*;
 

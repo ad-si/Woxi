@@ -572,7 +572,7 @@ BooleanTable,,,,7,1464
 BooleanVariables,,,,7,3566
 BorderDimensions,,,,8,2587
 BorelTannerDistribution,,,,8,3697
-Bottom,,,,1,394
+Bottom,Symbol for bottom alignment,✅,pure,1,394
 BottomHatTransform,,,,7,4138
 BoundaryDiscretizeGraphics,,,,10,1665
 BoundaryDiscretizeRegion,,,,10,1240
@@ -587,7 +587,7 @@ Boxed,Option for boxed axes in 3D plots,✅,pure,1,270
 Boxes,,,,6,3200
 BoxMatrix,Creates a matrix of ones with given radius,✅,pure,7,2152
 BoxObject,,,,10,4204
-BoxRatios,,,,1,363
+BoxRatios,Option for 3D box aspect ratios,✅,pure,1,363
 BoxStyle,,,,2,677
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8,1002
 Bra,,,,13.3,2333
@@ -1513,7 +1513,7 @@ DispersionEstimatorFunction,,,,7,4809
 DisplayAllSteps,,,,6,2431
 DisplayEndPacket,,,,3,5390
 DisplayForm,,,,3,956
-DisplayFunction,,,,1,375
+DisplayFunction,Option controlling display output,✅,pure,1,375
 DisplayPacket,,,,3,5390
 DistanceFunction,,,,6,1171
 DistanceMatrix,,,,10.3,1806
@@ -2785,7 +2785,7 @@ Infinity,,,,,
 Infix,,,,1,2449
 InflationAdjust,,,,10,3317
 InflationMethod,,,,10,5486
-Information,,,,1,320
+Information,Displays information about a symbol,✅,pure,1,320
 Inherited,,,,6,310
 InheritScope,,,,10,3843
 InhomogeneousPoissonPointProcess,,,,12.2,5184
@@ -3528,7 +3528,7 @@ MeshRegion,,,,10,935
 MeshRegionQ,,,,10,3291
 MeshShading,,,,6,779
 MeshStyle,,,,2,527
-Message,,,,1,362
+Message,Issues a message (no-op in Woxi),✅,effectful,1,362
 MessageDialog,,,,6,1946
 MessageList,,,,2,4006
 MessageName,Accesses a message associated with a symbol (sym::tag),✅,pure,1,111
@@ -4712,7 +4712,7 @@ RiemannSiegelTheta,,,,2,1734
 RiemannSiegelZ,,,,2,1675
 RiemannXi,,,,10,4479
 Riffle,Inserts an element between each pair of elements,✅,pure,6,473
-Right,,,,1,378
+Right,Symbol for right alignment,✅,pure,1,378
 RightArrow,,,,3,235
 RightArrowBar,,,,3,4747
 RightArrowLeftArrow,,,,3,5390
@@ -5609,7 +5609,7 @@ Tooltip,,,,6,260
 TooltipDelay,,,,7,1833
 TooltipStyle,,,,8,2002
 ToonShading,,,,12.1,
-Top,,,,1,385
+Top,Symbol for top alignment,✅,pure,1,385
 TopHatTransform,,,,7,3636
 ToPolarCoordinates,,,,10.1,2374
 TopologicalSort,,,,8,3224
@@ -6012,7 +6012,7 @@ VideoTrim,,,,12.1,4612
 ViewAngle,,,,6,1005
 ViewCenter,,,,2,1838
 ViewMatrix,,,,6,2679
-ViewPoint,,,,1,360
+ViewPoint,Option for 3D viewing position,✅,pure,1,360
 ViewProjection,,,,11.2,2605
 ViewRange,,,,6,3083
 ViewVector,,,,6,1956
@@ -6154,7 +6154,7 @@ WordSeparators,,,,2,2305
 WordSpacings,,,,10.1,4204
 WordStem,,,,10.1,4138
 WordTranslation,,,,10.3,2712
-WorkingPrecision,,,,1,412
+WorkingPrecision,Option for numerical precision,✅,pure,1,412
 WrapAround,,,,10,5587
 Write,,,,1,1246
 WriteLine,,,,10,2282
