@@ -1667,7 +1667,7 @@ ElementwiseLayer,,,,11,1566
 ElidedForms,,,,10,5184
 Eliminate,,,,1,891
 Ellipsoid,,,,10,1476
-EllipticE,,,,1,879
+EllipticE,Complete elliptic integral of the second kind E(m),✅,pure,1,879
 EllipticExp,,,,1,3048
 EllipticExpPrime,,,,2,4660
 EllipticF,,,,1,1111

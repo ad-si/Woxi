@@ -5288,6 +5288,55 @@ mod hermite_h {
   }
 }
 
+mod elliptic_e {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("EllipticE[0]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("EllipticE[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 = interpret("EllipticE[0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.3506438810476753).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_quarter() {
+    let result: f64 = interpret("EllipticE[0.25]").unwrap().parse().unwrap();
+    assert!((result - 1.4674622093394272).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_point_nine() {
+    let result: f64 = interpret("EllipticE[0.9]").unwrap().parse().unwrap();
+    assert!((result - 1.1047747327040733).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_one_real() {
+    let result: f64 = interpret("EllipticE[1.0]").unwrap().parse().unwrap();
+    assert!((result - 1.0).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[EllipticE[1/2]]").unwrap().parse().unwrap();
+    assert!((result - 1.3506438810476753).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("EllipticE[x]").unwrap(), "EllipticE[x]");
+  }
+}
+
 mod chebyshev_u {
   use super::*;
 
