@@ -6526,3 +6526,93 @@ mod nsum {
     );
   }
 }
+
+mod weierstrass_p {
+  use super::*;
+
+  #[test]
+  fn weierstrass_p_at_zero() {
+    // Pole at origin
+    assert_eq!(
+      interpret("WeierstrassP[0, {1, 1}]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn weierstrass_p_numeric() {
+    // Numeric evaluation should return a real number
+    let result = interpret("WeierstrassP[0.5, {4, 0}]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(val.is_finite(), "Result should be finite: {}", val);
+  }
+
+  #[test]
+  fn weierstrass_p_even_function() {
+    // ℘ is even: ℘(-u) == ℘(u)
+    let pos = interpret("WeierstrassP[0.3, {2, 3}]").unwrap();
+    let neg = interpret("WeierstrassP[-0.3, {2, 3}]").unwrap();
+    let p: f64 = pos.parse().unwrap();
+    let n: f64 = neg.parse().unwrap();
+    assert!(
+      (p - n).abs() < 1e-10,
+      "WeierstrassP should be even: {} vs {}",
+      p,
+      n
+    );
+  }
+
+  #[test]
+  fn weierstrass_p_degenerate() {
+    // g2 = 0, g3 = 0: ℘(u) = 1/u²
+    let result = interpret("WeierstrassP[0.5, {0, 0}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(
+      (val - 4.0).abs() < 1e-10,
+      "WeierstrassP[0.5, {{0,0}}] should be 1/0.25 = 4.0, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn weierstrass_p_symbolic() {
+    // Symbolic inputs should return unevaluated
+    assert_eq!(
+      interpret("WeierstrassP[u, {g2, g3}]").unwrap(),
+      "WeierstrassP[u, {g2, g3}]"
+    );
+  }
+
+  #[test]
+  fn weierstrass_p_differential_equation() {
+    // Verify ℘ satisfies: (℘')² = 4℘³ - g₂℘ - g₃ approximately
+    // Use numerical differentiation: ℘'(u) ≈ (℘(u+h) - ℘(u-h)) / (2h)
+    let g2 = 4.0;
+    let g3 = 1.0;
+    let u = 0.4;
+    let h = 1e-6;
+    let p_u = interpret(&format!("WeierstrassP[{}, {{{}, {}}}]", u, g2, g3))
+      .unwrap()
+      .parse::<f64>()
+      .unwrap();
+    let p_plus =
+      interpret(&format!("WeierstrassP[{}, {{{}, {}}}]", u + h, g2, g3))
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    let p_minus =
+      interpret(&format!("WeierstrassP[{}, {{{}, {}}}]", u - h, g2, g3))
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    let pp = (p_plus - p_minus) / (2.0 * h); // numerical derivative
+    let lhs = pp * pp;
+    let rhs = 4.0 * p_u * p_u * p_u - g2 * p_u - g3;
+    assert!(
+      (lhs - rhs).abs() / rhs.abs().max(1.0) < 1e-4,
+      "Should satisfy (℘')² = 4℘³ - g₂℘ - g₃: lhs={}, rhs={}",
+      lhs,
+      rhs
+    );
+  }
+}
