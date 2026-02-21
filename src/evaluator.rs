@@ -5579,6 +5579,9 @@ pub fn evaluate_function_call_ast(
     "Eigenvectors" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::eigenvectors_ast(args);
     }
+    "Eigensystem" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::eigensystem_ast(args);
+    }
     "RowReduce" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::row_reduce_ast(args);
     }

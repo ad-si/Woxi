@@ -2299,3 +2299,26 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(x))
 }
+
+/// Eigensystem[matrix] - returns {eigenvalues, eigenvectors}
+pub fn eigensystem_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Eigensystem expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Check if argument is a matrix (list of lists)
+  if !matches!(&args[0], Expr::List(rows) if !rows.is_empty() && matches!(&rows[0], Expr::List(_)))
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Eigensystem".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let eigenvalues = eigenvalues_ast(args)?;
+  let eigenvectors = eigenvectors_ast(args)?;
+
+  Ok(Expr::List(vec![eigenvalues, eigenvectors]))
+}

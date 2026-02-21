@@ -1651,7 +1651,7 @@ EdgeWeightedGraphQ,,,,12,
 Editable,,,,3,1233
 EditDistance,Returns the edit distance between two strings,✅,pure,6,1921
 EffectiveInterest,,,,8,2276
-Eigensystem,,,,1,590
+Eigensystem,Eigenvalues and eigenvectors of a matrix,✅,pure,1,590
 Eigenvalues,Computes the eigenvalues of a matrix,✅,pure,1,275
 EigenvectorCentrality,,,,8,3215
 Eigenvectors,Eigenvectors of a square matrix,✅,pure,1,450

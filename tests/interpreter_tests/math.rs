@@ -4877,3 +4877,36 @@ mod exp_integral_ei {
     assert!((result - (-0.21938393439552026)).abs() < 1e-10);
   }
 }
+
+mod eigensystem {
+  use super::*;
+
+  #[test]
+  fn two_by_two() {
+    assert_eq!(
+      interpret("Eigensystem[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{(5 + Sqrt[33])/2, (5 - Sqrt[33])/2}, {{(-3 + Sqrt[33])/6, 1}, {(-3 - Sqrt[33])/6, 1}}}"
+    );
+  }
+
+  #[test]
+  fn diagonal() {
+    assert_eq!(
+      interpret("Eigensystem[{{2, 0}, {0, 3}}]").unwrap(),
+      "{{3, 2}, {{0, 1}, {1, 0}}}"
+    );
+  }
+
+  #[test]
+  fn three_by_three_diagonal() {
+    assert_eq!(
+      interpret("Eigensystem[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+      "{{3, 2, 1}, {{0, 0, 1}, {0, 1, 0}, {1, 0, 0}}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("Eigensystem[m]").unwrap(), "Eigensystem[m]");
+  }
+}
