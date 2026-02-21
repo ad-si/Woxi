@@ -1824,7 +1824,7 @@ ExpressionTree,,,,12.3,
 ExpressionUUID,,,,13,
 ExpToTrig,,,,3,749
 ExtendedEntityClass,,,,12,4356
-ExtendedGCD,,,,1,1557
+ExtendedGCD,Extended greatest common divisor with Bezout coefficients,✅,pure,1,1557
 Extension,,,,3,1693
 ExtentElementFunction,,,,8,2671
 ExtentMarkers,,,,8,3162
