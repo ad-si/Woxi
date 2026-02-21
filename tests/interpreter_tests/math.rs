@@ -6083,3 +6083,140 @@ mod bessel_y {
     assert_eq!(interpret("BesselY[0, x]").unwrap(), "BesselY[0, x]");
   }
 }
+
+mod fourier {
+  use super::*;
+
+  #[test]
+  fn basic_integer_list() {
+    assert_eq!(
+      interpret("Fourier[{1, 2, 3, 4}]").unwrap(),
+      "{5. + 0.*I, -1. - 1.*I, -1. + 0.*I, -1. + 1.*I}"
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("Fourier[{5}]").unwrap(), "{5.}");
+  }
+
+  #[test]
+  fn two_equal_elements() {
+    // All imaginary parts are exactly 0 → Real output
+    let result = interpret("Fourier[{2, 2}]").unwrap();
+    assert!(result.contains("2.828427124746190"), "got: {}", result);
+    assert!(result.contains("0."), "got: {}", result);
+    // Should not contain I (all real)
+    assert!(!result.contains("I"), "got: {}", result);
+  }
+
+  #[test]
+  fn three_elements() {
+    let result = interpret("Fourier[{1, 2, 3}]").unwrap();
+    // Should be complex since some elements have nonzero imaginary parts
+    assert!(result.contains("I"), "got: {}", result);
+  }
+
+  #[test]
+  fn complex_input() {
+    let result = interpret("Fourier[{1 + 2*I, 3 - I}]").unwrap();
+    assert!(result.contains("I"), "got: {}", result);
+  }
+
+  #[test]
+  fn fourier_parameters_signal_processing() {
+    // FourierParameters -> {1, -1} (signal processing convention)
+    assert_eq!(
+      interpret("Fourier[{1, 2, 3, 4}, FourierParameters -> {1, -1}]").unwrap(),
+      "{10. + 0.*I, -2. + 2.*I, -2. + 0.*I, -2. - 2.*I}"
+    );
+  }
+
+  #[test]
+  fn fourier_parameters_data_analysis() {
+    // FourierParameters -> {-1, 1} (data analysis convention)
+    let result =
+      interpret("Fourier[{1, 2, 3, 4}, FourierParameters -> {-1, 1}]").unwrap();
+    assert!(result.contains("I"), "got: {}", result);
+  }
+
+  #[test]
+  fn impulse_all_real() {
+    // Fourier of impulse: all results are equal and real
+    assert_eq!(
+      interpret("Fourier[{1, 0, 0, 0}]").unwrap(),
+      "{0.5, 0.5, 0.5, 0.5}"
+    );
+  }
+
+  #[test]
+  fn empty_list_returns_unevaluated() {
+    assert_eq!(interpret("Fourier[{}]").unwrap(), "Fourier[{}]");
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    assert_eq!(
+      interpret("Fourier[{a, b, c}]").unwrap(),
+      "Fourier[{a, b, c}]"
+    );
+  }
+
+  #[test]
+  fn non_list_returns_unevaluated() {
+    assert_eq!(interpret("Fourier[\"hello\"]").unwrap(), "Fourier[hello]");
+  }
+
+  #[test]
+  fn roundtrip() {
+    // InverseFourier[Fourier[x]] should return x
+    assert_eq!(
+      interpret("InverseFourier[Fourier[{1, 2, 3, 4}]]").unwrap(),
+      "{1., 2., 3., 4.}"
+    );
+  }
+}
+
+mod inverse_fourier {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret(
+        "InverseFourier[{5. + 0.*I, -1. - 1.*I, -1. + 0.*I, -1. + 1.*I}]"
+      )
+      .unwrap(),
+      "{1., 2., 3., 4.}"
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("InverseFourier[{5.}]").unwrap(), "{5.}");
+  }
+
+  #[test]
+  fn fourier_parameters() {
+    let result =
+      interpret("InverseFourier[{1, 2, 3, 4}, FourierParameters -> {1, -1}]")
+        .unwrap();
+    assert!(result.contains("I"), "got: {}", result);
+  }
+
+  #[test]
+  fn empty_list_returns_unevaluated() {
+    assert_eq!(
+      interpret("InverseFourier[{}]").unwrap(),
+      "InverseFourier[{}]"
+    );
+  }
+
+  #[test]
+  fn symbolic_returns_unevaluated() {
+    assert_eq!(
+      interpret("InverseFourier[{a, b}]").unwrap(),
+      "InverseFourier[{a, b}]"
+    );
+  }
+}

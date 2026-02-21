@@ -4934,6 +4934,12 @@ pub fn evaluate_function_call_ast(
     "Total" => {
       return crate::functions::math_ast::total_ast(args);
     }
+    "Fourier" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::math_ast::fourier_ast(args);
+    }
+    "InverseFourier" if args.len() == 1 || args.len() == 2 => {
+      return crate::functions::math_ast::inverse_fourier_ast(args);
+    }
     "Mean" if args.len() == 1 => {
       return crate::functions::math_ast::mean_ast(args);
     }
