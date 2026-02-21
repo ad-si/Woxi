@@ -5544,6 +5544,9 @@ pub fn evaluate_function_call_ast(
     "EllipticTheta" if args.len() == 3 => {
       return crate::functions::math_ast::elliptic_theta_ast(args);
     }
+    "WeierstrassP" if args.len() == 2 => {
+      return crate::functions::math_ast::weierstrass_p_ast(args);
+    }
     "JacobiAmplitude" if args.len() == 2 => {
       return crate::functions::math_ast::jacobi_amplitude_ast(args);
     }
@@ -10876,6 +10879,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ExpIntegralEi"
     | "ExpIntegralE"
     | "EllipticTheta"
+    | "WeierstrassP"
     | "JacobiDN"
     | "JacobiSN"
     | "JacobiCN"

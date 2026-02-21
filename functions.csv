@@ -6083,7 +6083,7 @@ WeierstrassHalfPeriodW3,,,,11.2,4567
 WeierstrassInvariantG2,,,,11.2,4809
 WeierstrassInvariantG3,,,,11.2,4947
 WeierstrassInvariants,,,,3,2350
-WeierstrassP,,,,1,1078
+WeierstrassP,Weierstrass elliptic function,✅,pure,1,1078
 WeierstrassPPrime,,,,1,1718
 WeierstrassSigma,,,,3,1852
 WeierstrassZeta,,,,3,1781

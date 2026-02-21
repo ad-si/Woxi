@@ -5601,6 +5601,119 @@ fn elliptic_theta_numeric(a: u32, z: f64, q: f64) -> f64 {
   }
 }
 
+/// WeierstrassP[u, {g2, g3}] - Weierstrass elliptic function ℘(u; g₂, g₃)
+pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WeierstrassP expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let u = &args[0];
+  let (g2, g3) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "WeierstrassP".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Special case: u = 0 → ComplexInfinity (pole at origin)
+  if is_expr_zero(u) {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
+  // Numeric evaluation
+  if let (Some(u_f), Some(g2_f), Some(g3_f)) =
+    (try_eval_to_f64(u), try_eval_to_f64(g2), try_eval_to_f64(g3))
+  {
+    let result = weierstrass_p_numeric(u_f, g2_f, g3_f);
+    return Ok(Expr::Real(result));
+  }
+
+  // Symbolic: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "WeierstrassP".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute WeierstrassP numerically using cubic roots + Jacobi elliptic functions
+fn weierstrass_p_numeric(u: f64, g2: f64, g3: f64) -> f64 {
+  // Solve depressed cubic: t³ - (g2/4)t - (g3/4) = 0
+  let p = -g2 / 4.0;
+  let q = -g3 / 4.0;
+
+  // Cubic discriminant: Δ = -4p³ - 27q²
+  let delta = -4.0 * p * p * p - 27.0 * q * q;
+
+  if delta >= 0.0 && p < -1e-16 {
+    // Three real roots — use trigonometric method
+    let mp3 = -p / 3.0; // > 0
+    let r = mp3.sqrt();
+    let cos_arg = (-q / (2.0 * mp3 * r)).clamp(-1.0, 1.0);
+    let alpha = cos_arg.acos();
+
+    let pi = std::f64::consts::PI;
+    let mut roots = [
+      2.0 * r * (alpha / 3.0).cos(),
+      2.0 * r * ((alpha + 2.0 * pi) / 3.0).cos(),
+      2.0 * r * ((alpha + 4.0 * pi) / 3.0).cos(),
+    ];
+    roots.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    let e1 = roots[0];
+    let e2 = roots[1];
+    let e3 = roots[2];
+
+    let denom = e1 - e3;
+    if denom.abs() < 1e-300 {
+      return weierstrass_p_laurent(u, g2, g3);
+    }
+
+    let m = (e2 - e3) / denom;
+    let z = denom.sqrt() * u;
+    let (sn, _, _) = jacobi_elliptic(z, m);
+
+    if sn.abs() < 1e-300 {
+      return f64::INFINITY;
+    }
+    e3 + denom / (sn * sn)
+  } else {
+    // One real root or degenerate — use Laurent series
+    weierstrass_p_laurent(u, g2, g3)
+  }
+}
+
+/// Laurent series fallback: ℘(u) = 1/u² + Σ cₖ u^{2k}
+fn weierstrass_p_laurent(u: f64, g2: f64, g3: f64) -> f64 {
+  let max_terms = 30;
+  let mut c = vec![0.0; max_terms];
+  if max_terms > 1 {
+    c[1] = g2 / 20.0;
+  }
+  if max_terms > 2 {
+    c[2] = g3 / 28.0;
+  }
+  for k in 3..max_terms {
+    let mut sum = 0.0;
+    for j in 1..=(k - 2) {
+      sum += c[j] * c[k - 1 - j];
+    }
+    c[k] = 3.0 / ((2 * k + 3) as f64 * (k - 1) as f64) * sum;
+  }
+
+  let u2 = u * u;
+  let mut result = 1.0 / u2;
+  let mut u_power = 1.0;
+  for k in 1..max_terms {
+    u_power *= u2;
+    result += c[k] * u_power;
+  }
+  result
+}
+
 /// ExpIntegralEi[x] - Exponential integral Ei(x)
 pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
