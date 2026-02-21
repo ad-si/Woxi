@@ -3744,6 +3744,106 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// ToRules[eqns] — converts logical combinations of equations to lists of rules.
+/// Takes output from Roots/Reduce (Or/And of equations) and converts to Solve-style rules.
+/// Discards inequalities (!=).
+pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ToRules expects exactly 1 argument".into(),
+    ));
+  }
+
+  fn eq_to_rule(expr: &Expr) -> Option<Expr> {
+    // Convert x == val to {x -> val}
+    if let Expr::Comparison {
+      operands,
+      operators,
+    } = expr
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal
+      && operands.len() == 2
+    {
+      return Some(Expr::Rule {
+        pattern: Box::new(operands[0].clone()),
+        replacement: Box::new(operands[1].clone()),
+      });
+    }
+    None
+  }
+
+  fn collect_and_rules(expr: &Expr) -> Vec<Expr> {
+    // Collect all rules from And (conjunction) of equations
+    match expr {
+      Expr::FunctionCall { name, args } if name == "And" => {
+        let mut rules = Vec::new();
+        for arg in args {
+          if let Some(rule) = eq_to_rule(arg) {
+            rules.push(rule);
+          }
+          // Discard non-equations (inequalities, etc.)
+        }
+        rules
+      }
+      _ => {
+        if let Some(rule) = eq_to_rule(expr) {
+          vec![rule]
+        } else {
+          vec![]
+        }
+      }
+    }
+  }
+
+  let input = &args[0];
+  match input {
+    // Or[x == a, x == b, ...] → {{x -> a}, {x -> b}, ...}
+    Expr::FunctionCall { name, args } if name == "Or" => {
+      let result: Vec<Expr> = args
+        .iter()
+        .map(|arg| Expr::List(collect_and_rules(arg)))
+        .filter(|list| {
+          if let Expr::List(items) = list {
+            !items.is_empty()
+          } else {
+            false
+          }
+        })
+        .collect();
+      Ok(Expr::List(result))
+    }
+    // And[x == a, y == b] → {{x -> a, y -> b}}
+    Expr::FunctionCall { name, .. } if name == "And" => {
+      let rules = collect_and_rules(input);
+      if rules.is_empty() {
+        Ok(Expr::List(vec![]))
+      } else {
+        Ok(Expr::List(vec![Expr::List(rules)]))
+      }
+    }
+    // Single equation: x == a → {{x -> a}}
+    Expr::Comparison { .. } => {
+      let rules = collect_and_rules(input);
+      if rules.is_empty() {
+        Ok(Expr::List(vec![]))
+      } else {
+        Ok(Expr::List(vec![Expr::List(rules)]))
+      }
+    }
+    // True → {{}} (trivially satisfied)
+    Expr::Identifier(s) if s == "True" => {
+      Ok(Expr::List(vec![Expr::List(vec![])]))
+    }
+    // False → {} (no solutions)
+    Expr::Identifier(s) if s == "False" => Ok(Expr::List(vec![])),
+    // Anything else: return unevaluated
+    _ => Ok(Expr::FunctionCall {
+      name: "ToRules".to_string(),
+      args: vec![input.clone()],
+    }),
+  }
+}
+
 /// Solve[equation, var] — solve a polynomial equation for a variable.
 ///
 /// Supports linear (degree 1) and quadratic (degree 2) equations.

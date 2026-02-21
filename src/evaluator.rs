@@ -5996,6 +5996,9 @@ pub fn evaluate_function_call_ast(
     "Roots" if args.len() == 2 => {
       return crate::functions::polynomial_ast::roots_ast(args);
     }
+    "ToRules" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::to_rules_ast(args);
+    }
     "Eliminate" if args.len() == 2 => {
       return crate::functions::polynomial_ast::eliminate_ast(args);
     }
