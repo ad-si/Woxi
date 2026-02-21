@@ -5009,6 +5009,9 @@ pub fn evaluate_function_call_ast(
     "BesselJ" if args.len() == 2 => {
       return crate::functions::math_ast::bessel_j_ast(args);
     }
+    "BesselY" if args.len() == 2 => {
+      return crate::functions::math_ast::bessel_y_ast(args);
+    }
     "Hypergeometric2F1" if args.len() == 4 => {
       return crate::functions::math_ast::hypergeometric2f1_ast(args);
     }

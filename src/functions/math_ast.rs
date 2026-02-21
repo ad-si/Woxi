@@ -4715,6 +4715,144 @@ fn elliptic_k(m: f64) -> f64 {
   std::f64::consts::PI / (2.0 * a)
 }
 
+/// BesselY[n, z] - Bessel function of the second kind
+pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BesselY expects exactly 2 arguments".into(),
+    ));
+  }
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  // BesselY[n, 0]: Y_0(0) = -Infinity, Y_n(0) = ComplexInfinity for n > 0
+  if matches!(z_expr, Expr::Integer(0))
+    && let Expr::Integer(n) = n_expr
+  {
+    return if *n == 0 {
+      Ok(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
+      })
+    } else {
+      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+    };
+  }
+
+  // Numeric evaluation
+  let n_val = expr_to_f64(n_expr);
+  let z_val = expr_to_f64(z_expr);
+  let is_numeric_eval = n_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let result = bessel_y(n_val.unwrap(), z_val.unwrap());
+    return Ok(Expr::Real(result));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "BesselY".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Bessel Y_n(z) (second kind)
+fn bessel_y(n: f64, z: f64) -> f64 {
+  // Handle negative integer orders: Y_{-n}(z) = (-1)^n * Y_n(z)
+  if n < 0.0 && n == n.floor() {
+    let n_abs = -n;
+    let sign = if n_abs as i64 % 2 == 0 { 1.0 } else { -1.0 };
+    return sign * bessel_y(n_abs, z);
+  }
+
+  if n == n.floor() && n >= 0.0 {
+    // Integer order: use Y_0, Y_1 from series, then recurrence
+    let n_int = n as i64;
+    let y0 = bessel_y0(z);
+    if n_int == 0 {
+      return y0;
+    }
+    let y1 = bessel_y1(z);
+    if n_int == 1 {
+      return y1;
+    }
+    // Recurrence: Y_{n+1}(z) = (2n/z) * Y_n(z) - Y_{n-1}(z)
+    let mut y_prev = y0;
+    let mut y_curr = y1;
+    for k in 1..n_int {
+      let y_next = (2.0 * k as f64 / z) * y_curr - y_prev;
+      y_prev = y_curr;
+      y_curr = y_next;
+    }
+    y_curr
+  } else {
+    // Non-integer order: Y_n(z) = (J_n(z)*cos(nπ) - J_{-n}(z)) / sin(nπ)
+    let j_n = bessel_j(n, z);
+    let j_neg_n = bessel_j(-n, z);
+    let n_pi = n * std::f64::consts::PI;
+    (j_n * n_pi.cos() - j_neg_n) / n_pi.sin()
+  }
+}
+
+/// Y_0(z) = (2/π) * (J_0(z) * (ln(z/2) + γ) + Σ (-1)^{m+1} H_m * (z/2)^{2m} / (m!)^2)
+fn bessel_y0(z: f64) -> f64 {
+  let two_over_pi = 2.0 / std::f64::consts::PI;
+  let euler_gamma = 0.5772156649015329;
+  let half_z = z / 2.0;
+
+  let j0 = bessel_j(0.0, z);
+
+  // Series part: Σ_{m=1}^{∞} (-1)^{m+1} * H_m * (z/2)^{2m} / (m!)^2
+  let mut series_sum = 0.0;
+  let mut term = 1.0; // (z/2)^{2m} / (m!)^2 starting value
+  let mut h_m = 0.0; // harmonic number H_m
+
+  for m in 1..300 {
+    let mf = m as f64;
+    h_m += 1.0 / mf;
+    term *= half_z * half_z / (mf * mf);
+    let sign = if m % 2 == 0 { -1.0 } else { 1.0 };
+    series_sum += sign * h_m * term;
+    if (h_m * term).abs() < 1e-17 * series_sum.abs().max(1e-300) {
+      break;
+    }
+  }
+
+  two_over_pi * (j0 * (half_z.ln() + euler_gamma) + series_sum)
+}
+
+/// Y_1(z) = (2/π) * (J_1(z) * ln(z/2) - 1/z + Σ ...)
+fn bessel_y1(z: f64) -> f64 {
+  let two_over_pi = 2.0 / std::f64::consts::PI;
+  let euler_gamma = 0.5772156649015329;
+  let half_z = z / 2.0;
+
+  let j1 = bessel_j(1.0, z);
+
+  // Y_1(z) = (2/π) * (J_1(z)*(ln(z/2) + γ) - 1/z - (1/2) Σ_{m=0}^∞ (-1)^m (H_m + H_{m+1}) (z/2)^{2m+1} / (m!(m+1)!))
+  let mut series_sum = 0.0;
+  let mut term = half_z; // (z/2)^{2m+1} / (m! * (m+1)!) starting with m=0: (z/2)^1 / (0! * 1!) = z/2
+  let mut h_m = 0.0; // H_0 = 0
+  let mut h_m1 = 1.0; // H_1 = 1
+
+  series_sum += (h_m + h_m1) * term; // m=0 term (sign = +1 for (-1)^0)
+
+  for m in 1..300 {
+    let mf = m as f64;
+    h_m += 1.0 / mf;
+    h_m1 += 1.0 / (mf + 1.0);
+    term *= -half_z * half_z / (mf * (mf + 1.0));
+    series_sum += (h_m + h_m1) * term;
+    if ((h_m + h_m1) * term).abs() < 1e-17 * series_sum.abs().max(1e-300) {
+      break;
+    }
+  }
+
+  two_over_pi
+    * (j1 * ((half_z).ln() + euler_gamma) - 1.0 / z - 0.5 * series_sum)
+}
+
 /// EllipticTheta[a, z, q] - Jacobi theta function
 /// a = 1,2,3,4 selects which theta function
 pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
