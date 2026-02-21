@@ -5615,7 +5615,7 @@ ToPolarCoordinates,,,,10.1,2374
 TopologicalSort,,,,8,3224
 ToRadicals,,,,3,1211
 ToRawPointer,,,,13.1,
-ToRules,,,,1,1027
+ToRules,Convert logical equation combinations to lists of rules,✅,pure,1,1027
 Torus,,,,13,
 TorusGraph,,,,13.1,
 ToSphericalCoordinates,,,,10.1,3083

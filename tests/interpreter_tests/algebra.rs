@@ -1113,6 +1113,53 @@ mod eliminate {
   }
 }
 
+mod to_rules {
+  use super::*;
+
+  #[test]
+  fn to_rules_single_equation() {
+    // x == 5 → {{x -> 5}}
+    assert_eq!(interpret("ToRules[x == 5]").unwrap(), "{{x -> 5}}");
+  }
+
+  #[test]
+  fn to_rules_or_conditions() {
+    // x == -2 || x == 2 → {{x -> -2}, {x -> 2}}
+    assert_eq!(
+      interpret("ToRules[x == -2 || x == 2]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn to_rules_from_roots() {
+    // Convert Roots output to Solve-style rules
+    assert_eq!(
+      interpret("ToRules[Roots[x^2 - 4 == 0, x]]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn to_rules_and_conditions() {
+    // x == 1 && y == 2 → {{x -> 1, y -> 2}}
+    assert_eq!(
+      interpret("ToRules[x == 1 && y == 2]").unwrap(),
+      "{{x -> 1, y -> 2}}"
+    );
+  }
+
+  #[test]
+  fn to_rules_true() {
+    assert_eq!(interpret("ToRules[True]").unwrap(), "{{}}");
+  }
+
+  #[test]
+  fn to_rules_false() {
+    assert_eq!(interpret("ToRules[False]").unwrap(), "{}");
+  }
+}
+
 mod reduce {
   use super::*;
 
