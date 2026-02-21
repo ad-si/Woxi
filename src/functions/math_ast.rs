@@ -5122,6 +5122,65 @@ fn elliptic_e(m: f64) -> f64 {
   std::f64::consts::FRAC_PI_2 * sum
 }
 
+/// EllipticF[phi, m] - Incomplete elliptic integral of the first kind
+/// F(phi, m) = integral from 0 to phi of 1/sqrt(1 - m*sin^2(theta)) dtheta
+pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "EllipticF expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let phi_expr = &args[0];
+  let m_expr = &args[1];
+
+  // EllipticF[0, m] = 0
+  if is_expr_zero(phi_expr) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation
+  let phi_val = expr_to_f64(phi_expr);
+  let m_val = expr_to_f64(m_expr);
+  let is_numeric_eval = phi_val.is_some()
+    && m_val.is_some()
+    && (matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let phi = phi_val.unwrap();
+    let m = m_val.unwrap();
+    return Ok(Expr::Real(elliptic_f(phi, m)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "EllipticF".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute incomplete elliptic integral F(phi, m) via Gauss-Legendre quadrature
+fn elliptic_f(phi: f64, m: f64) -> f64 {
+  if phi == 0.0 {
+    return 0.0;
+  }
+  // For phi = pi/2, this is the complete integral K(m)
+  // Use numerical integration with adaptive Simpson's rule
+  let n = 1000;
+  let h = phi / n as f64;
+  // Simpson's 1/3 rule
+  let f = |theta: f64| 1.0 / (1.0 - m * theta.sin().powi(2)).sqrt();
+  let mut sum = f(0.0) + f(phi);
+  for i in 1..n {
+    let theta = i as f64 * h;
+    if i % 2 == 0 {
+      sum += 2.0 * f(theta);
+    } else {
+      sum += 4.0 * f(theta);
+    }
+  }
+  sum * h / 3.0
+}
+
 /// BesselY[n, z] - Bessel function of the second kind
 pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -5441,6 +5500,127 @@ fn exp_integral_ei_numeric(x: f64) -> f64 {
       }
       sum * x.exp() / x
     }
+  }
+}
+
+/// ExpIntegralE[n, z] - Generalized exponential integral E_n(z)
+pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ExpIntegralE expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  // E_n(0): E_1(0) = ComplexInfinity, E_n(0) = 1/(n-1) for n > 1
+  if is_expr_zero(z_expr)
+    && let Expr::Integer(n) = n_expr
+  {
+    if *n == 1 {
+      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    } else if *n > 1 {
+      return Ok(make_rational(1, *n - 1));
+    }
+  }
+
+  // Numeric evaluation
+  let n_val = expr_to_f64(n_expr);
+  let z_val = expr_to_f64(z_expr);
+  let is_numeric_eval = n_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let n = n_val.unwrap();
+    let z = z_val.unwrap();
+    let result = exp_integral_en(n as i64, z);
+    return Ok(Expr::Real(result));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "ExpIntegralE".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute E_n(z) = ∫_1^∞ e^{-zt}/t^n dt
+fn exp_integral_en(n: i64, z: f64) -> f64 {
+  if n == 0 {
+    // E_0(z) = e^{-z}/z
+    return (-z).exp() / z;
+  }
+
+  // Compute E_1(z) first, then use recurrence for higher n
+  let e1 = exp_integral_e1(z);
+
+  if n == 1 {
+    return e1;
+  }
+
+  // Recurrence: E_{n+1}(z) = (e^{-z} - z*E_n(z))/n
+  let mut e_prev = e1;
+  let exp_neg_z = (-z).exp();
+  for k in 1..n {
+    let e_next = (exp_neg_z - z * e_prev) / k as f64;
+    e_prev = e_next;
+  }
+  e_prev
+}
+
+/// Compute E_1(z) via series for small z, continued fraction for large z
+fn exp_integral_e1(z: f64) -> f64 {
+  let euler_gamma = 0.5772156649015329;
+
+  if z <= 0.0 {
+    return f64::INFINITY;
+  }
+
+  if z < 1.5 {
+    // Series: E_1(z) = -γ - ln(z) + Σ_{n=1}^∞ (-1)^{n+1} z^n / (n * n!)
+    let mut sum = -euler_gamma - z.ln();
+    let mut term = 1.0;
+    for n in 1..200 {
+      let nf = n as f64;
+      term *= -z / nf;
+      sum -= term / nf;
+      if (term / nf).abs() < 1e-16 * sum.abs().max(1e-300) {
+        break;
+      }
+    }
+    sum
+  } else {
+    // Continued fraction: E_1(z) = e^{-z} * 1/(z + 1/(1 + 1/(z + 2/(1 + 2/(z + ...)))))
+    // Using Lentz-Thompson algorithm with a_i, b_i coefficients
+    // E_1(z) = e^{-z} * CF where CF = 1/(z+) 1/(1+) 1/(z+) 2/(1+) 2/(z+) 3/(1+) ...
+    // Equivalently using the modified Lentz: a_0=0, b_0=z, then alternating
+    // numerators [1, 1, 2, 2, 3, 3, ...] and denominators [1, z, 1, z, 1, z, ...]
+    let mut f = z; // b_0
+    let mut c = z;
+    let mut d = 0.0;
+
+    for i in 1..200 {
+      let a = ((i + 1) / 2) as f64; // 1, 1, 2, 2, 3, 3, ...
+      let b = if i % 2 == 1 { 1.0 } else { z };
+
+      d = b + a * d;
+      if d.abs() < 1e-30 {
+        d = 1e-30;
+      }
+      c = b + a / c;
+      if c.abs() < 1e-30 {
+        c = 1e-30;
+      }
+      d = 1.0 / d;
+      let delta = c * d;
+      f *= delta;
+      if (delta - 1.0).abs() < 1e-16 {
+        break;
+      }
+    }
+
+    (-z).exp() / f
   }
 }
 

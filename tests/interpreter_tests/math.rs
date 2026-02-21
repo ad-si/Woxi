@@ -5337,6 +5337,121 @@ mod elliptic_e {
   }
 }
 
+mod exp_integral_e {
+  use super::*;
+
+  #[test]
+  fn order_one_at_zero() {
+    assert_eq!(interpret("ExpIntegralE[1, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn order_two_at_zero() {
+    assert_eq!(interpret("ExpIntegralE[2, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn order_three_at_zero() {
+    assert_eq!(interpret("ExpIntegralE[3, 0]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn numeric_order_one() {
+    let result: f64 =
+      interpret("ExpIntegralE[1, 1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.21938393439552026).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_two() {
+    let result: f64 =
+      interpret("ExpIntegralE[2, 1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.14849550677592208).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_zero() {
+    let result: f64 =
+      interpret("ExpIntegralE[0, 1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.36787944117144233).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_three() {
+    let result: f64 =
+      interpret("ExpIntegralE[3, 1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.10969196719776013).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[ExpIntegralE[1, 1]]").unwrap().parse().unwrap();
+    assert!((result - 0.21938393439552026).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("ExpIntegralE[n, z]").unwrap(),
+      "ExpIntegralE[n, z]"
+    );
+  }
+}
+
+mod elliptic_f {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("EllipticF[0, 0.5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn numeric_one() {
+    let result: f64 =
+      interpret("EllipticF[1.0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.0832167728451683).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 =
+      interpret("EllipticF[0.5, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.5104671356280047).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_high_m() {
+    let result: f64 =
+      interpret("EllipticF[1.0, 0.9]").unwrap().parse().unwrap();
+    assert!((result - 1.1885008994681587).abs() < 1e-8);
+  }
+
+  #[test]
+  fn at_pi_half_equals_k() {
+    // EllipticF[Pi/2, m] = EllipticK[m]
+    let result: f64 = interpret("EllipticF[N[Pi/2], 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    let k: f64 = interpret("EllipticK[0.5]").unwrap().parse().unwrap();
+    assert!((result - k).abs() < 1e-8);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[EllipticF[1, 1/2]]").unwrap().parse().unwrap();
+    assert!((result - 1.0832167728451683).abs() < 1e-8);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("EllipticF[phi, m]").unwrap(), "EllipticF[phi, m]");
+  }
+}
+
 mod gegenbauer_c {
   use super::*;
 

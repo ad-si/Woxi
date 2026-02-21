@@ -1670,7 +1670,7 @@ Ellipsoid,,,,10,1476
 EllipticE,Complete elliptic integral of the second kind E(m),✅,pure,1,879
 EllipticExp,,,,1,3048
 EllipticExpPrime,,,,2,4660
-EllipticF,,,,1,1111
+EllipticF,Incomplete elliptic integral of the first kind F(phi m),✅,pure,1,1111
 EllipticFilterModel,,,,9,4387
 EllipticK,Complete elliptic integral of the first kind,✅,pure,1,441
 EllipticLog,,,,1,2519
@@ -1802,7 +1802,7 @@ ExpandFileName,,,,7,2807
 ExpandNumerator,,,,1,2605
 Expectation,,,,8,954
 ExpGammaDistribution,,,,8,3506
-ExpIntegralE,,,,1,1397
+ExpIntegralE,Generalized exponential integral E_n(z),✅,pure,1,1397
 ExpIntegralEi,Exponential integral Ei,✅,pure,1,569
 ExpirationDate,,,,11.1,5184
 Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1,829
