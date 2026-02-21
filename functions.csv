@@ -2105,7 +2105,7 @@ FortranForm,,,,1,2807
 Forward,,,,6,2986
 ForwardBackward,,,,6,2611
 ForwardCloudCredentials,,,,12.2,
-Fourier,,,,1,712
+Fourier,Discrete Fourier transform of a list,✅,pure,1,712
 FourierCoefficient,,,,7,1701
 FourierCosCoefficient,,,,7,2338
 FourierCosSeries,,,,7,1995
@@ -2879,7 +2879,7 @@ InverseDistanceTransform,,,,8,4052
 InverseEllipticNomeQ,,,,3,2212
 InverseErf,,,,3,1906
 InverseErfc,,,,3,2203
-InverseFourier,,,,1,1260
+InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1,1260
 InverseFourierCosTransform,,,,4,3537
 InverseFourierSequenceTransform,,,,7,3257
 InverseFourierSinTransform,,,,4,3121

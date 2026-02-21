@@ -17970,6 +17970,192 @@ pub fn squared_euclidean_distance_ast(
   }
 }
 
+/// Core DFT computation shared by Fourier and InverseFourier.
+/// `sign` is +1 for Fourier, -1 for InverseFourier (before applying `b`).
+/// FourierParameters {a, b}: F_s = n^((a-1)/2) * sum_{r=0}^{n-1} u_r * exp(2*pi*i*b*(r*s)/n)
+fn dft_core(
+  data: &[(f64, f64)],
+  param_a: f64,
+  param_b: f64,
+  inverse: bool,
+) -> Vec<(f64, f64)> {
+  let n = data.len();
+  if n == 0 {
+    return vec![];
+  }
+  let nf = n as f64;
+  // For Fourier: scaling = n^((a-1)/2), exponent sign from b
+  // For InverseFourier: scaling = n^((-1-a)/2), exponent sign from -b
+  let (scaling, exp_sign) = if inverse {
+    (nf.powf((-1.0 - param_a) / 2.0), -param_b)
+  } else {
+    (nf.powf((param_a - 1.0) / 2.0), param_b)
+  };
+
+  let two_pi_over_n = 2.0 * std::f64::consts::PI / nf;
+  let mut result = Vec::with_capacity(n);
+
+  for s in 0..n {
+    let mut sum_re = 0.0;
+    let mut sum_im = 0.0;
+    for r in 0..n {
+      let angle = two_pi_over_n * exp_sign * (r as f64) * (s as f64);
+      let (sin_a, cos_a) = angle.sin_cos();
+      let (ur, ui) = data[r];
+      // (ur + ui*i) * (cos_a + sin_a*i) = (ur*cos_a - ui*sin_a) + (ur*sin_a + ui*cos_a)*i
+      sum_re += ur * cos_a - ui * sin_a;
+      sum_im += ur * sin_a + ui * cos_a;
+    }
+    result.push((scaling * sum_re, scaling * sum_im));
+  }
+  result
+}
+
+/// Round a floating-point number to clean up near-integer/near-half values.
+/// This accounts for floating-point errors in DFT trig computations.
+fn fourier_round(x: f64) -> f64 {
+  if x.abs() < 1e-14 {
+    return 0.0;
+  }
+  // Check if x is very close to an integer or half-integer
+  let rounded = x.round();
+  if (x - rounded).abs() < 1e-14 {
+    return rounded;
+  }
+  // Check half-integer
+  let doubled = (x * 2.0).round();
+  if (x * 2.0 - doubled).abs() < 1e-13 {
+    return doubled / 2.0;
+  }
+  x
+}
+
+/// Build an Expr for a Fourier/InverseFourier result element.
+/// If `force_complex` is true, always output as Complex (even if im == 0).
+fn fourier_result_to_expr(re: f64, im: f64, force_complex: bool) -> Expr {
+  let re = fourier_round(re);
+  let im = fourier_round(im);
+
+  if force_complex || im != 0.0 {
+    // Build via Complex[re, im] which the evaluator will format as a + b*I
+    crate::evaluator::evaluate_function_call_ast(
+      "Complex",
+      &[Expr::Real(re), Expr::Real(im)],
+    )
+    .unwrap_or_else(|_| build_complex_float_expr(re, im))
+  } else {
+    Expr::Real(re)
+  }
+}
+
+/// Parse FourierParameters option from args, returning (a, b).
+/// Default is {0, 1}.
+fn parse_fourier_parameters(
+  args: &[Expr],
+) -> Result<(f64, f64), InterpreterError> {
+  for arg in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "FourierParameters")
+    {
+      if let Expr::List(params) = replacement.as_ref()
+        && params.len() == 2
+      {
+        let a = try_eval_to_f64(&params[0]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "FourierParameters: first parameter must be numeric".into(),
+          )
+        })?;
+        let b = try_eval_to_f64(&params[1]).ok_or_else(|| {
+          InterpreterError::EvaluationError(
+            "FourierParameters: second parameter must be numeric".into(),
+          )
+        })?;
+        return Ok((a, b));
+      }
+      return Err(InterpreterError::EvaluationError(
+        "FourierParameters must be a list of two numbers".into(),
+      ));
+    }
+  }
+  Ok((0.0, 1.0)) // default
+}
+
+/// Shared implementation for Fourier and InverseFourier
+fn fourier_impl(
+  func_name: &str,
+  args: &[Expr],
+  inverse: bool,
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{} expects 1 or 2 arguments",
+      func_name
+    )));
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      crate::capture_warning(&format!(
+        "{}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+        func_name,
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(Expr::FunctionCall {
+        name: func_name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Extract numeric values as complex pairs
+  let mut data: Vec<(f64, f64)> = Vec::with_capacity(items.len());
+  for item in items {
+    if let Some((re, im)) = try_extract_complex_float(item) {
+      data.push((re, im));
+    } else {
+      crate::capture_warning(&format!(
+        "{}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+        func_name,
+        crate::syntax::expr_to_string(&args[0])
+      ));
+      return Ok(Expr::FunctionCall {
+        name: func_name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  }
+
+  let (param_a, param_b) = parse_fourier_parameters(&args[1..])?;
+  let result = dft_core(&data, param_a, param_b, inverse);
+
+  // Determine if any element has nonzero imaginary part
+  let any_complex = result.iter().any(|(_, im)| {
+    let im_r = fourier_round(*im);
+    im_r != 0.0
+  });
+
+  let exprs: Vec<Expr> = result
+    .iter()
+    .map(|&(re, im)| fourier_result_to_expr(re, im, any_complex))
+    .collect();
+
+  Ok(Expr::List(exprs))
+}
+
+/// Fourier[list] or Fourier[list, opts] - Discrete Fourier transform
+pub fn fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  fourier_impl("Fourier", args, false)
+}
+
+/// InverseFourier[list] or InverseFourier[list, opts] - Inverse discrete Fourier transform
+pub fn inverse_fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  fourier_impl("InverseFourier", args, true)
+}
+
 /// ManhattanDistance[u, v] - Manhattan (L1) distance between two points
 pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
