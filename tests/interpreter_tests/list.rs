@@ -449,6 +449,50 @@ mod maximal_by {
   }
 }
 
+mod map_all {
+  use super::*;
+
+  #[test]
+  fn basic_expression() {
+    assert_eq!(
+      interpret("MapAll[f, a + b c]").unwrap(),
+      "f[f[a] + f[f[b]*f[c]]]"
+    );
+  }
+
+  #[test]
+  fn list() {
+    assert_eq!(
+      interpret("MapAll[f, {1, 2, 3}]").unwrap(),
+      "f[{f[1], f[2], f[3]}]"
+    );
+  }
+
+  #[test]
+  fn atom() {
+    assert_eq!(interpret("MapAll[f, x]").unwrap(), "f[x]");
+  }
+
+  #[test]
+  fn nested() {
+    assert_eq!(interpret("MapAll[f, g[h[x]]]").unwrap(), "f[g[f[h[f[x]]]]]");
+  }
+
+  #[test]
+  fn integer() {
+    assert_eq!(interpret("MapAll[f, 42]").unwrap(), "f[42]");
+  }
+
+  #[test]
+  fn pure_function() {
+    // Applies #+1 to each atom first, then to the list itself
+    assert_eq!(
+      interpret("MapAll[# + 1 &, {1, 2, 3}]").unwrap(),
+      "{3, 4, 5}"
+    );
+  }
+}
+
 mod map_at {
   use super::*;
 

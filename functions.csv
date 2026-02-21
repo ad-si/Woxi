@@ -3383,7 +3383,7 @@ MannWhitneyTest,,,,8,3306
 MantissaExponent,,,,2,2468
 Manual,,,,6,2425
 Map,Applies a function to each element of a list,✅,pure,1,28
-MapAll,,,,1,1265
+MapAll,Apply a function to every subexpression,✅,pure,1,1265
 MapApply,,,,13.1,
 MapAt,Applies a function at specific positions,✅,pure,1,498
 MapIndexed,Applies a function to each element along with its index,✅,pure,2,330
