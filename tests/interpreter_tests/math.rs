@@ -5199,3 +5199,91 @@ mod beta_fn {
     assert!((result - 0.08333333333333333).abs() < 1e-10);
   }
 }
+
+mod log_integral {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("LogIntegral[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("LogIntegral[1]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("LogIntegral[x]").unwrap(), "LogIntegral[x]");
+  }
+
+  #[test]
+  fn numeric_two() {
+    let result: f64 = interpret("LogIntegral[2.0]").unwrap().parse().unwrap();
+    assert!((result - 1.0451637801174924).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_ten() {
+    let result: f64 = interpret("LogIntegral[10.0]").unwrap().parse().unwrap();
+    assert!((result - 6.165599504787296).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 = interpret("LogIntegral[0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.37867104306108795)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[LogIntegral[2]]").unwrap().parse().unwrap();
+    assert!((result - 1.0451637801174924).abs() < 1e-10);
+  }
+}
+
+mod hermite_h {
+  use super::*;
+
+  #[test]
+  fn degree_zero() {
+    assert_eq!(interpret("HermiteH[0, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn degree_one() {
+    assert_eq!(interpret("HermiteH[1, x]").unwrap(), "2*x");
+  }
+
+  #[test]
+  fn degree_two() {
+    assert_eq!(interpret("HermiteH[2, x]").unwrap(), "-2 + 4*x^2");
+  }
+
+  #[test]
+  fn degree_three() {
+    assert_eq!(interpret("HermiteH[3, x]").unwrap(), "-12*x + 8*x^3");
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("HermiteH[4, 0]").unwrap(), "12");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("HermiteH[3, 1]").unwrap(), "-4");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("HermiteH[5, 0.3]").unwrap().parse().unwrap();
+    assert!((result - 31.757759999999998).abs() < 1e-8);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("HermiteH[n, x]").unwrap(), "HermiteH[n, x]");
+  }
+}
