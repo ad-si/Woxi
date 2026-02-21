@@ -560,17 +560,16 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
 /// Evaluate an Expr AST and return a new Expr (not a string).
 /// This is the core function for AST-based evaluation without string round-trips.
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
-  // Grow the stack if we're running low to avoid overflow on deeply
-  // recursive Wolfram programs (e.g. n-queens with n >= 6).
-  #[cfg(not(target_arch = "wasm32"))]
-  {
-    stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
-      evaluate_expr_to_expr_inner(expr)
-    })
-  }
-  #[cfg(target_arch = "wasm32")]
-  {
-    evaluate_expr_to_expr_inner(expr)
+  // Trampoline loop: tail-recursive calls return TailCall instead of
+  // recursing, so the call stack stays flat regardless of recursion depth.
+  let mut current = expr.clone();
+  loop {
+    match evaluate_expr_to_expr_inner(&current) {
+      Err(InterpreterError::TailCall(next)) => {
+        current = *next;
+      }
+      result => return result,
+    }
   }
 }
 
@@ -682,10 +681,10 @@ pub fn evaluate_expr_to_expr_inner(
       if name == "If" && (args.len() == 2 || args.len() == 3) {
         let cond = evaluate_expr_to_expr(&args[0])?;
         if matches!(&cond, Expr::Identifier(s) if s == "True") {
-          return evaluate_expr_to_expr(&args[1]);
+          return Err(InterpreterError::TailCall(Box::new(args[1].clone())));
         } else if matches!(&cond, Expr::Identifier(s) if s == "False") {
           if args.len() == 3 {
-            return evaluate_expr_to_expr(&args[2]);
+            return Err(InterpreterError::TailCall(Box::new(args[2].clone())));
           } else {
             return Ok(Expr::Identifier("Null".to_string()));
           }
@@ -962,7 +961,7 @@ pub fn evaluate_expr_to_expr_inner(
         match evaluate_expr_to_expr(&args[0]) {
           Ok(result) => return Ok(result),
           Err(InterpreterError::Abort) => {
-            return evaluate_expr_to_expr(&args[1]);
+            return Err(InterpreterError::TailCall(Box::new(args[1].clone())));
           }
           Err(e) => return Err(e),
         }
@@ -974,12 +973,14 @@ pub fn evaluate_expr_to_expr_inner(
           Ok(result) => {
             let warnings_after = crate::get_captured_warnings().len();
             if warnings_after > warnings_before {
-              return evaluate_expr_to_expr(&args[1]);
+              return Err(InterpreterError::TailCall(Box::new(
+                args[1].clone(),
+              )));
             }
             return Ok(result);
           }
           Err(_) => {
-            return evaluate_expr_to_expr(&args[1]);
+            return Err(InterpreterError::TailCall(Box::new(args[1].clone())));
           }
         }
       }
@@ -1042,10 +1043,10 @@ pub fn evaluate_expr_to_expr_inner(
       }
       // Variable holds a symbol name (e.g. t = Flatten) — re-dispatch as that function
       if let Some(resolved_name) = resolve_identifier_to_func_name(name) {
-        return evaluate_expr_to_expr(&Expr::FunctionCall {
+        return Err(InterpreterError::TailCall(Box::new(Expr::FunctionCall {
           name: resolved_name,
           args: args.to_vec(),
-        });
+        })));
       }
       // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
       if let Some(StoredValue::Association(_)) = var_val {
@@ -1372,7 +1373,7 @@ pub fn evaluate_expr_to_expr_inner(
       let evaluated_expr = evaluate_expr_to_expr(e)?;
       let evaluated_rules = evaluate_expr_to_expr(rules)?;
       let result = apply_replace_all_ast(&evaluated_expr, &evaluated_rules)?;
-      evaluate_expr_to_expr(&result)
+      Err(InterpreterError::TailCall(Box::new(result)))
     }
     Expr::ReplaceRepeated { expr: e, rules } => {
       let evaluated_expr = evaluate_expr_to_expr(e)?;
@@ -1518,7 +1519,7 @@ pub fn evaluate_expr_to_expr_inner(
     Expr::Raw(s) => {
       // Fallback: parse and evaluate the raw string
       let parsed = string_to_expr(s)?;
-      evaluate_expr_to_expr(&parsed)
+      Err(InterpreterError::TailCall(Box::new(parsed)))
     }
     Expr::Image { .. } => Ok(expr.clone()),
     Expr::CurriedCall { func, args } => {

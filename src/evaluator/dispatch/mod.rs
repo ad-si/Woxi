@@ -54,16 +54,7 @@ pub fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  #[cfg(not(target_arch = "wasm32"))]
-  {
-    stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
-      evaluate_function_call_ast_inner(name, args)
-    })
-  }
-  #[cfg(target_arch = "wasm32")]
-  {
-    evaluate_function_call_ast_inner(name, args)
-  }
+  evaluate_function_call_ast_inner(name, args)
 }
 
 /// Helper for Read: read a single value of a given type from remaining stream content.
@@ -475,11 +466,16 @@ pub fn evaluate_function_call_ast_inner(
         substituted =
           crate::syntax::substitute_variable(&substituted, param, arg);
       }
-      // Catch Return[] at the function call boundary
-      return match evaluate_expr_to_expr(&substituted) {
-        Err(InterpreterError::ReturnValue(val)) => Ok(*val),
-        other => other,
-      };
+      // Tail-call: return body for the trampoline to evaluate.
+      // Catch Return[] at the function call boundary via local trampoline.
+      let mut body = substituted;
+      loop {
+        match evaluate_expr_to_expr_inner(&body) {
+          Err(InterpreterError::TailCall(next)) => body = *next,
+          Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
+          result => return result,
+        }
+      }
     }
   }
 
@@ -499,11 +495,16 @@ pub fn evaluate_function_call_ast_inner(
     };
     if let Some(Expr::Function { body }) = &parsed {
       let substituted = crate::syntax::substitute_slots(body, args);
-      // Catch Return[] at the function call boundary
-      return match evaluate_expr_to_expr(&substituted) {
-        Err(InterpreterError::ReturnValue(val)) => Ok(*val),
-        other => other,
-      };
+      // Tail-call: return body for the trampoline to evaluate.
+      // Catch Return[] at the function call boundary via local trampoline.
+      let mut body = substituted;
+      loop {
+        match evaluate_expr_to_expr_inner(&body) {
+          Err(InterpreterError::TailCall(next)) => body = *next,
+          Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
+          result => return result,
+        }
+      }
     }
   }
 
