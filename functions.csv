@@ -680,7 +680,7 @@ CaseSensitive,,,,10.1,5486
 Cashflow,,,,8,2408
 Casoratian,,,,7,4707
 Cast,,,,13.1,
-Catalan,,,,1,1836
+Catalan,Catalan constant approximately 0.9159655,✅,pure,1,1836
 CatalanNumber,Returns the nth Catalan number,✅,pure,6,1788
 Catch,Catches a value thrown by Throw,✅,pure,1,353
 CategoricalDistribution,,,,12.1,5486

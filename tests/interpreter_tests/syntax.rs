@@ -451,6 +451,26 @@ mod constant {
   }
 }
 
+mod catalan_constant {
+  use super::*;
+
+  #[test]
+  fn catalan_standalone() {
+    assert_eq!(interpret("Catalan").unwrap(), "Catalan");
+  }
+
+  #[test]
+  fn catalan_numeric() {
+    let result: f64 = interpret("N[Catalan]").unwrap().parse().unwrap();
+    assert!((result - 0.915965594177219).abs() < 1e-10);
+  }
+
+  #[test]
+  fn catalan_head() {
+    assert_eq!(interpret("Head[Catalan]").unwrap(), "Symbol");
+  }
+}
+
 mod construct {
   use super::*;
 
