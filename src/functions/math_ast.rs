@@ -4401,6 +4401,54 @@ fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
   (sn, cn, dn)
 }
 
+/// Hypergeometric0F1[a, z] - confluent hypergeometric limit function
+/// 0F1(a; z) = Σ z^k / (k! * Pochhammer(a,k)) for k = 0, 1, 2, ...
+pub fn hypergeometric_0f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Hypergeometric0F1 expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let a_expr = &args[0];
+  let z_expr = &args[1];
+
+  // Hypergeometric0F1[a, 0] = 1
+  if is_expr_zero(z_expr) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Numeric evaluation
+  let a_val = try_eval_to_f64(a_expr);
+  let z_val = try_eval_to_f64(z_expr);
+
+  if let (Some(a), Some(z)) = (a_val, z_val)
+    && (matches!(a_expr, Expr::Real(_)) || matches!(z_expr, Expr::Real(_)))
+  {
+    return Ok(Expr::Real(hypergeometric_0f1_f64(a, z)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Hypergeometric0F1".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute 0F1(a; z) numerically via series expansion
+fn hypergeometric_0f1_f64(a: f64, z: f64) -> f64 {
+  let mut sum = 1.0;
+  let mut term = 1.0;
+  for k in 0..200 {
+    let kf = k as f64;
+    term *= z / ((kf + 1.0) * (a + kf));
+    sum += term;
+    if term.abs() < 1e-16 * sum.abs() {
+      break;
+    }
+  }
+  sum
+}
+
 /// JacobiAmplitude[u, m] - amplitude for Jacobi elliptic functions
 /// am(u, m) = arcsin(sn(u, m)), inverse of EllipticF
 pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

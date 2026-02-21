@@ -5225,6 +5225,9 @@ pub fn evaluate_function_call_ast(
     "AiryAi" if args.len() == 1 => {
       return crate::functions::math_ast::airy_ai_ast(args);
     }
+    "Hypergeometric0F1" if args.len() == 2 => {
+      return crate::functions::math_ast::hypergeometric_0f1_ast(args);
+    }
     "Hypergeometric1F1" if args.len() == 3 => {
       return crate::functions::math_ast::hypergeometric1f1_ast(args);
     }

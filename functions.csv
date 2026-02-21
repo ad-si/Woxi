@@ -2602,7 +2602,7 @@ HyperbolicDistribution,,,,8,2812
 HypercubeGraph,,,,8,2952
 HyperexponentialDistribution,,,,9,3522
 Hyperfactorial,,,,7,4612
-Hypergeometric0F1,,,,1,1259
+Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1,1259
 Hypergeometric0F1Regularized,,,,3,1363
 Hypergeometric1F1,Kummer confluent hypergeometric function 1F1(a; b; z),✅,pure,1,993
 Hypergeometric1F1Regularized,,,,3,1342
