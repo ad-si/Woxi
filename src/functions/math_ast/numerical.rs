@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::Expr;
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::Expr;
 
 pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -1795,4 +1795,3 @@ pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 }
-

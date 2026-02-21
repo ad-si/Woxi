@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::{Expr};
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::Expr;
 
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -452,4 +452,3 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )),
   }
 }
-

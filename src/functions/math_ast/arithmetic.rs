@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::Expr;
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::Expr;
 
 /// Plus[args...] - Sum of arguments, with list threading
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -509,7 +509,9 @@ pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
 }
 
 /// Combine like bases in a list of symbolic factors: x^a * x^b → x^(a+b)
-pub fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
+pub fn combine_like_bases(
+  args: Vec<Expr>,
+) -> Result<Vec<Expr>, InterpreterError> {
   if args.len() <= 1 {
     return Ok(args);
   }
@@ -1807,4 +1809,3 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 }
-

@@ -1,9 +1,9 @@
+#[allow(unused_imports)]
+use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 use num_bigint::BigInt;
 use num_traits::Signed;
-#[allow(unused_imports)]
-use super::*;
 
 /// DigitCount[n] - counts of each digit 1-9,0 in base 10
 /// DigitCount[n, b] - counts of each digit in base b
@@ -1416,4 +1416,3 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Identifier(result))
 }
-

@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::Expr;
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::Expr;
 
 /// Re[z] - Real part of a complex number (for real numbers, returns the number itself)
 pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -724,4 +724,3 @@ pub fn get_reciprocal_base(expr: &Expr) -> Option<Expr> {
 }
 
 // ─── Binomial ──────────────────────────────────────────────────────
-

@@ -2,28 +2,28 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-mod numeric_utils;
 mod arithmetic;
-mod elementary;
-mod trigonometric;
-mod special_functions;
-mod orthogonal_polynomials;
-mod number_theory;
-mod digits;
 mod complex;
-mod statistics;
+mod digits;
+mod elementary;
+mod number_theory;
+mod numeric_utils;
 mod numerical;
+mod orthogonal_polynomials;
 mod random;
+mod special_functions;
+mod statistics;
+mod trigonometric;
 
-pub use numeric_utils::*;
 pub use arithmetic::*;
-pub use elementary::*;
-pub use trigonometric::*;
-pub use special_functions::*;
-pub use orthogonal_polynomials::*;
-pub use number_theory::*;
-pub use digits::*;
 pub use complex::*;
-pub use statistics::*;
+pub use digits::*;
+pub use elementary::*;
+pub use number_theory::*;
+pub use numeric_utils::*;
 pub use numerical::*;
+pub use orthogonal_polynomials::*;
 pub use random::*;
+pub use special_functions::*;
+pub use statistics::*;
+pub use trigonometric::*;
