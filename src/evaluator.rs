@@ -6331,6 +6331,9 @@ fn evaluate_function_call_ast_inner(
     "Nor" if args.len() >= 2 => {
       return crate::functions::boolean_ast::nor_ast(args);
     }
+    "LogicalExpand" if args.len() == 1 => {
+      return crate::functions::boolean_ast::logical_expand_ast(args);
+    }
 
     // AST-native polynomial functions
     // Distribute[f[x1, x2, ...]] - distribute f over Plus

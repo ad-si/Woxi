@@ -3298,7 +3298,7 @@ Log2,Returns the base-2 logarithm of a number,✅,pure,7,904
 LogBarnesG,,,,7,4104
 LogGamma,,,,2,1116
 LogGammaDistribution,,,,8,3678
-LogicalExpand,,,,1,1501
+LogicalExpand,Expand logical expression to disjunctive normal form,✅,pure,1,1501
 LogIntegral,Logarithmic integral function Li(x) = Ei(ln(x)),✅,pure,1,727
 LogisticDistribution,,,,6,2611
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10,1409
