@@ -1364,3 +1364,97 @@ mod write {
     std::fs::remove_file(path).ok();
   }
 }
+
+mod read {
+  use super::*;
+
+  #[test]
+  fn read_word() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"abcdefg 123456\"]; r1 = Read[str, Word]; r2 = Read[str, Word]; Close[str]; {r1, r2}",
+    )
+    .unwrap();
+    assert_eq!(result, "{abcdefg, 123456}");
+  }
+
+  #[test]
+  fn read_number() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"42 3.14\"]; r1 = Read[str, Number]; r2 = Read[str, Number]; Close[str]; {r1, r2}",
+    )
+    .unwrap();
+    assert_eq!(result, "{42, 3.14}");
+  }
+
+  #[test]
+  fn read_string_lines() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"hello world\\nfoo bar\"]; r1 = Read[str, String]; r2 = Read[str, String]; Close[str]; {r1, r2}",
+    )
+    .unwrap();
+    assert_eq!(result, "{hello world, foo bar}");
+  }
+
+  #[test]
+  fn read_character() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"abc\"]; r = Read[str, Character]; Close[str]; r",
+    )
+    .unwrap();
+    assert_eq!(result, "a");
+  }
+
+  #[test]
+  fn read_expression() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"1 + 2\"]; r = Read[str, Expression]; Close[str]; r",
+    )
+    .unwrap();
+    assert_eq!(result, "3");
+  }
+
+  #[test]
+  fn read_end_of_file() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"hello\"]; r1 = Read[str, Word]; r2 = Read[str, Word]; Close[str]; {r1, r2}",
+    )
+    .unwrap();
+    assert_eq!(result, "{hello, EndOfFile}");
+  }
+
+  #[test]
+  fn read_default_type() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"hello\"]; r = Read[str]; Close[str]; r",
+    )
+    .unwrap();
+    assert_eq!(result, "hello");
+  }
+
+  #[test]
+  fn read_mixed_types() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"3.14 hello 42\"]; r1 = Read[str, Number]; r2 = Read[str, Word]; r3 = Read[str, Number]; Close[str]; {r1, r2, r3}",
+    )
+    .unwrap();
+    assert_eq!(result, "{3.14, hello, 42}");
+  }
+
+  #[test]
+  fn read_list_of_types() {
+    clear_state();
+    let result = interpret(
+      "str = StringToStream[\"a b c\"]; r = Read[str, {Word, Word, Word}]; Close[str]; r",
+    )
+    .unwrap();
+    assert_eq!(result, "{a, b, c}");
+  }
+}
