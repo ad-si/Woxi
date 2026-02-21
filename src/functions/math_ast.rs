@@ -5185,6 +5185,99 @@ fn elliptic_f(phi: f64, m: f64) -> f64 {
   sum * h / 3.0
 }
 
+/// EllipticPi[n, m] - Complete elliptic integral of the third kind
+/// EllipticPi[n, phi, m] - Incomplete elliptic integral of the third kind
+/// Pi(n|m) = integral from 0 to pi/2 of 1/((1-n*sin^2(theta))*sqrt(1-m*sin^2(theta))) dtheta
+pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 && args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "EllipticPi expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  if args.len() == 2 {
+    // Complete: EllipticPi[n, m]
+    let n_expr = &args[0];
+    let m_expr = &args[1];
+
+    // EllipticPi[0, m] = EllipticK[m]
+    if is_expr_zero(n_expr) {
+      return elliptic_k_ast(&[m_expr.clone()]);
+    }
+
+    let n_val = try_eval_to_f64(n_expr);
+    let m_val = try_eval_to_f64(m_expr);
+    let is_numeric = n_val.is_some()
+      && m_val.is_some()
+      && (matches!(n_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)));
+
+    if is_numeric {
+      let n = n_val.unwrap();
+      let m = m_val.unwrap();
+      return Ok(Expr::Real(elliptic_pi_f64(
+        n,
+        std::f64::consts::FRAC_PI_2,
+        m,
+      )));
+    }
+  } else {
+    // Incomplete: EllipticPi[n, phi, m]
+    let n_expr = &args[0];
+    let phi_expr = &args[1];
+    let m_expr = &args[2];
+
+    // EllipticPi[n, 0, m] = 0
+    if is_expr_zero(phi_expr) {
+      return Ok(Expr::Integer(0));
+    }
+
+    let n_val = try_eval_to_f64(n_expr);
+    let phi_val = try_eval_to_f64(phi_expr);
+    let m_val = try_eval_to_f64(m_expr);
+    let is_numeric = n_val.is_some()
+      && phi_val.is_some()
+      && m_val.is_some()
+      && (matches!(n_expr, Expr::Real(_))
+        || matches!(phi_expr, Expr::Real(_))
+        || matches!(m_expr, Expr::Real(_)));
+
+    if is_numeric {
+      let n = n_val.unwrap();
+      let phi = phi_val.unwrap();
+      let m = m_val.unwrap();
+      return Ok(Expr::Real(elliptic_pi_f64(n, phi, m)));
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "EllipticPi".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute incomplete elliptic integral of the third kind via Simpson's rule
+fn elliptic_pi_f64(n: f64, phi: f64, m: f64) -> f64 {
+  if phi == 0.0 {
+    return 0.0;
+  }
+  let num_steps = 1000;
+  let h = phi / num_steps as f64;
+  let f = |theta: f64| {
+    let sin2 = theta.sin().powi(2);
+    1.0 / ((1.0 - n * sin2) * (1.0 - m * sin2).sqrt())
+  };
+  let mut sum = f(0.0) + f(phi);
+  for i in 1..num_steps {
+    let theta = i as f64 * h;
+    if i % 2 == 0 {
+      sum += 2.0 * f(theta);
+    } else {
+      sum += 4.0 * f(theta);
+    }
+  }
+  sum * h / 3.0
+}
+
 /// BesselY[n, z] - Bessel function of the second kind
 pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

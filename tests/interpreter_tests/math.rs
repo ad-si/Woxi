@@ -6221,6 +6221,42 @@ mod inverse_fourier {
   }
 }
 
+mod elliptic_pi {
+  use super::*;
+
+  #[test]
+  fn complete_basic() {
+    let result = interpret("EllipticPi[0.5, 0.3]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.461255352272422).abs() < 1e-6);
+  }
+
+  #[test]
+  fn complete_zero_n_equals_elliptic_k() {
+    // EllipticPi[0, m] = EllipticK[m]
+    let pi_result = interpret("EllipticPi[0, 0.3]").unwrap();
+    let k_result = interpret("EllipticK[0.3]").unwrap();
+    assert_eq!(pi_result, k_result);
+  }
+
+  #[test]
+  fn incomplete() {
+    let result = interpret("EllipticPi[0.3, Pi/4, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.8777133738264999).abs() < 1e-6);
+  }
+
+  #[test]
+  fn incomplete_zero_phi() {
+    assert_eq!(interpret("EllipticPi[0.3, 0, 0.5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("EllipticPi[n, m]").unwrap(), "EllipticPi[n, m]");
+  }
+}
+
 mod spherical_harmonic_y {
   use super::*;
 

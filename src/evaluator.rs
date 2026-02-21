@@ -5240,6 +5240,9 @@ pub fn evaluate_function_call_ast(
     "EllipticF" if args.len() == 2 => {
       return crate::functions::math_ast::elliptic_f_ast(args);
     }
+    "EllipticPi" if args.len() == 2 || args.len() == 3 => {
+      return crate::functions::math_ast::elliptic_pi_ast(args);
+    }
     "Zeta" if args.len() == 1 => {
       return crate::functions::math_ast::zeta_ast(args);
     }
