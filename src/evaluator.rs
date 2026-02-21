@@ -751,6 +751,10 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "UpSet" && args.len() == 2 {
         return upset_ast(&args[0], &args[1]);
       }
+      // Special handling for UpSetDelayed - like UpSet but delayed (no RHS evaluation)
+      if name == "UpSetDelayed" && args.len() == 2 {
+        return upset_delayed_ast(&args[0], &args[1]);
+      }
       // Special handling for Increment/Decrement - x++ / x--
       // and PreIncrement/PreDecrement - ++x / --x
       if (name == "Increment"
@@ -8310,6 +8314,47 @@ fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   Ok(eval_rhs)
 }
 
+/// UpSetDelayed[lhs, rhs] — like UpSet but with delayed evaluation (RHS not evaluated).
+/// f[g] ^:= body stores a delayed upvalue for g such that f[g] evaluates body each time.
+fn upset_delayed_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
+  // LHS must be a function call
+  let (_, lhs_args) = match lhs {
+    Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "UpSetDelayed::normal: Nonatomic expression expected at position 1 in {} ^:= {}",
+        crate::syntax::expr_to_string(lhs),
+        crate::syntax::expr_to_string(rhs)
+      )));
+    }
+  };
+
+  // Find all tag symbols in the arguments
+  let mut tags = Vec::new();
+  for arg in &lhs_args {
+    match arg {
+      Expr::Identifier(s) => tags.push(s.clone()),
+      Expr::FunctionCall { name, .. } => tags.push(name.clone()),
+      _ => {} // Skip non-symbol arguments
+    }
+  }
+
+  if tags.is_empty() {
+    return Err(InterpreterError::EvaluationError(format!(
+      "UpSetDelayed::nosym: {} does not contain a symbol to attach a rule to.",
+      crate::syntax::expr_to_string(lhs)
+    )));
+  }
+
+  // Store delayed upvalue for each tag (evaluate_rhs=false for delayed)
+  for tag in &tags {
+    tag_set_delayed_ast(&Expr::Identifier(tag.clone()), lhs, rhs, false)?;
+  }
+
+  // UpSetDelayed returns Null
+  Ok(Expr::Identifier("Null".to_string()))
+}
+
 /// Perform nested access on an association: assoc["a", "b"] -> assoc["a"]["b"]
 fn association_nested_access(
   var_name: &str,
@@ -10882,7 +10927,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["HoldFirst", "Protected"]
     }
     "Set" => vec!["HoldFirst", "Protected", "SequenceHold"],
-    "SetDelayed" | "TagSetDelayed" => {
+    "SetDelayed" | "TagSetDelayed" | "UpSetDelayed" => {
       vec!["HoldAll", "Protected", "SequenceHold"]
     }
     "TagSet" | "UpSet" => vec!["HoldFirst", "Protected", "SequenceHold"],

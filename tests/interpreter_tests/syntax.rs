@@ -2797,3 +2797,57 @@ mod upset {
     );
   }
 }
+
+mod upset_delayed {
+  use super::*;
+
+  #[test]
+  fn upset_delayed_basic() {
+    clear_state();
+    assert_eq!(interpret("f[g] ^:= 5; f[g]").unwrap(), "5");
+  }
+
+  #[test]
+  fn upset_delayed_returns_null() {
+    // UpSetDelayed returns Null (unlike UpSet which returns evaluated RHS)
+    clear_state();
+    assert_eq!(interpret("f[g] ^:= 1 + 2").unwrap(), "Null");
+  }
+
+  #[test]
+  fn upset_delayed_does_not_evaluate_rhs() {
+    // RHS is not evaluated at definition time, but at use time
+    clear_state();
+    assert_eq!(
+      interpret("n = 0; f[g] ^:= (n = n + 1); f[g]; f[g]; n").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn upset_delayed_with_pattern() {
+    clear_state();
+    assert_eq!(interpret("f[g[x_]] ^:= x^2; f[g[4]]").unwrap(), "16");
+  }
+
+  #[test]
+  fn upset_delayed_multiple_symbols() {
+    clear_state();
+    assert_eq!(interpret("f[g, h] ^:= 10; f[g, h]").unwrap(), "10");
+  }
+
+  #[test]
+  fn upset_delayed_stores_upvalue() {
+    clear_state();
+    let result = interpret("f[g] ^:= 5; UpValues[g]").unwrap();
+    assert!(result.contains(":> 5"));
+  }
+
+  #[test]
+  fn upset_delayed_attributes() {
+    assert_eq!(
+      interpret("Attributes[UpSetDelayed]").unwrap(),
+      "{HoldAll, Protected, SequenceHold}"
+    );
+  }
+}

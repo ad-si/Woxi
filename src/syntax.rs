@@ -1885,6 +1885,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "UpSet".to_string(),
       args: vec![left.clone(), right.clone()],
     },
+    "^:=" => Expr::FunctionCall {
+      name: "UpSetDelayed".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
     ":=" => Expr::FunctionCall {
       name: "SetDelayed".to_string(),
       args: vec![left.clone(), right.clone()],
