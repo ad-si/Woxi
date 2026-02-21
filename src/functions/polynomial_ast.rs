@@ -3677,6 +3677,73 @@ fn poly_long_divide(num: &[i128], den: &[i128]) -> (Vec<i128>, Vec<i128>) {
 
 // ─── Solve ──────────────────────────────────────────────────────────
 
+/// Roots[equation, var] — find roots of a polynomial equation.
+///
+/// Returns solutions as `x == val1 || x == val2 || ...`
+pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Roots expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Roots".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Use Solve to find solutions
+  let solutions = solve_ast(args)?;
+
+  // Convert {{var -> val1}, {var -> val2}, ...} to x == val1 || x == val2 || ...
+  match solutions {
+    Expr::List(outer) => {
+      let mut conditions: Vec<Expr> = Vec::new();
+      for item in &outer {
+        if let Expr::List(inner) = item {
+          if inner.is_empty() {
+            // {{}} means all values (identity)
+            return Ok(Expr::Identifier("True".to_string()));
+          }
+          for rule in inner {
+            if let Expr::Rule { replacement, .. } = rule {
+              conditions.push(Expr::Comparison {
+                operands: vec![
+                  Expr::Identifier(var.clone()),
+                  *replacement.clone(),
+                ],
+                operators: vec![crate::syntax::ComparisonOp::Equal],
+              });
+            }
+          }
+        }
+      }
+      // Deduplicate conditions
+      conditions.dedup_by(|a, b| expr_to_string(a) == expr_to_string(b));
+      if conditions.is_empty() {
+        Ok(Expr::Identifier("False".to_string()))
+      } else if conditions.len() == 1 {
+        Ok(conditions.into_iter().next().unwrap())
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "Or".to_string(),
+          args: conditions,
+        })
+      }
+    }
+    // Solve returned unevaluated
+    _ => Ok(Expr::FunctionCall {
+      name: "Roots".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// Solve[equation, var] — solve a polynomial equation for a variable.
 ///
 /// Supports linear (degree 1) and quadratic (degree 2) equations.

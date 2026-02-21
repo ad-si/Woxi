@@ -1028,6 +1028,45 @@ mod solve {
   }
 }
 
+mod roots {
+  use super::*;
+
+  #[test]
+  fn roots_linear() {
+    assert_eq!(interpret("Roots[x == 5, x]").unwrap(), "x == 5");
+  }
+
+  #[test]
+  fn roots_quadratic_integer() {
+    let result = interpret("Roots[x^2 - 4 == 0, x]").unwrap();
+    assert_eq!(result, "x == -2 || x == 2");
+  }
+
+  #[test]
+  fn roots_quadratic_symbolic() {
+    let result = interpret("Roots[a*x^2 + b*x + c == 0, x]").unwrap();
+    assert!(result.contains("||"), "Should have two roots: {}", result);
+    assert!(result.contains("Sqrt"), "Should have Sqrt: {}", result);
+  }
+
+  #[test]
+  fn roots_no_solution() {
+    // x^2 + 1 == 0 has complex roots
+    let result = interpret("Roots[x^2 + 1 == 0, x]").unwrap();
+    assert!(
+      result.contains("||"),
+      "Should return complex roots: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn roots_quadratic_repeated() {
+    let result = interpret("Roots[x^2 - 2*x + 1 == 0, x]").unwrap();
+    assert_eq!(result, "x == 1");
+  }
+}
+
 mod eliminate {
   use super::*;
 
