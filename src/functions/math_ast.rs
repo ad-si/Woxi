@@ -6441,6 +6441,68 @@ fn lcm_i128(a: i128, b: i128) -> i128 {
   (a.abs() / g) * b.abs()
 }
 
+/// LegendreQ[n, x] - Legendre function of the second kind
+pub fn legendre_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LegendreQ expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+    Expr::Real(f) if *f >= 0.0 && *f == f.floor() => Some(*f as usize),
+    _ => None,
+  };
+
+  let n = match n {
+    Some(n) => n,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "LegendreQ".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Numeric evaluation
+  if let Some(x_f) = expr_to_f64(&args[1])
+    && (matches!(&args[1], Expr::Real(_)) || matches!(&args[0], Expr::Real(_)))
+  {
+    return Ok(Expr::Real(legendre_q_eval_f64(n, x_f)));
+  }
+
+  // Return unevaluated for symbolic
+  Ok(Expr::FunctionCall {
+    name: "LegendreQ".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Evaluate Q_n(x) numerically using recurrence
+/// Q_0(x) = (1/2)*ln((1+x)/(1-x)), Q_1(x) = x*Q_0(x) - 1
+/// (n+1)*Q_{n+1}(x) = (2n+1)*x*Q_n(x) - n*Q_{n-1}(x)
+fn legendre_q_eval_f64(n: usize, x: f64) -> f64 {
+  let q0 = 0.5 * ((1.0 + x) / (1.0 - x)).ln();
+  if n == 0 {
+    return q0;
+  }
+  let q1 = x * q0 - 1.0;
+  if n == 1 {
+    return q1;
+  }
+
+  let mut prev = q0;
+  let mut curr = q1;
+  for m in 1..n {
+    let mf = m as f64;
+    let next = ((2.0 * mf + 1.0) * x * curr - mf * prev) / (mf + 1.0);
+    prev = curr;
+    curr = next;
+  }
+  curr
+}
+
 /// ChebyshevT[n, x] - Chebyshev polynomial of the first kind
 pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -8176,6 +8238,55 @@ fn polylog_numeric(s: f64, z: f64) -> f64 {
 
 /// N[expr] or N[expr, n] - Numeric evaluation
 /// Hypergeometric2F1[a, b, c, z] - Gauss hypergeometric function
+/// Hypergeometric1F1[a, b, z] - Kummer's confluent hypergeometric function
+pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Hypergeometric1F1 expects exactly 3 arguments".into(),
+    ));
+  }
+
+  // 1F1[a, b, 0] = 1
+  if is_expr_zero(&args[2]) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Numeric evaluation
+  let a_val = expr_to_f64(&args[0]);
+  let b_val = expr_to_f64(&args[1]);
+  let z_val = expr_to_f64(&args[2]);
+
+  if let (Some(a), Some(b), Some(z)) = (a_val, b_val, z_val) {
+    let has_real = matches!(&args[0], Expr::Real(_))
+      || matches!(&args[1], Expr::Real(_))
+      || matches!(&args[2], Expr::Real(_));
+    if has_real {
+      return Ok(Expr::Real(hypergeometric_1f1(a, b, z)));
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Hypergeometric1F1".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute 1F1(a, b; z) = Σ (a)_n z^n / ((b)_n n!)
+fn hypergeometric_1f1(a: f64, b: f64, z: f64) -> f64 {
+  let mut sum = 1.0;
+  let mut term = 1.0;
+
+  for n in 0..1000 {
+    let nf = n as f64;
+    term *= (a + nf) * z / ((b + nf) * (nf + 1.0));
+    sum += term;
+    if term.abs() < 1e-16 * sum.abs().max(1e-300) {
+      break;
+    }
+  }
+  sum
+}
+
 pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 4 {
     return Err(InterpreterError::EvaluationError(

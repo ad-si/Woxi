@@ -5012,6 +5012,9 @@ pub fn evaluate_function_call_ast(
     "BesselY" if args.len() == 2 => {
       return crate::functions::math_ast::bessel_y_ast(args);
     }
+    "Hypergeometric1F1" if args.len() == 3 => {
+      return crate::functions::math_ast::hypergeometric1f1_ast(args);
+    }
     "Hypergeometric2F1" if args.len() == 4 => {
       return crate::functions::math_ast::hypergeometric2f1_ast(args);
     }
@@ -5032,6 +5035,9 @@ pub fn evaluate_function_call_ast(
     }
     "LegendreP" if args.len() == 2 => {
       return crate::functions::math_ast::legendre_p_ast(args);
+    }
+    "LegendreQ" if args.len() == 2 => {
+      return crate::functions::math_ast::legendre_q_ast(args);
     }
     "PolyLog" if args.len() == 2 => {
       return crate::functions::math_ast::polylog_ast(args);
@@ -10172,6 +10178,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Beta"
     | "Zeta"
     | "PolyGamma"
+    | "Hypergeometric1F1"
+    | "Hypergeometric2F1"
     | "BesselJ"
     | "BesselY"
     | "BesselI"
@@ -10180,6 +10188,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "EllipticE"
     | "EllipticF"
     | "LegendreP"
+    | "LegendreQ"
     | "PolyLog"
     | "ExpIntegralEi"
     | "ExpIntegralE"

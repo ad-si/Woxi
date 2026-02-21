@@ -2604,7 +2604,7 @@ HyperexponentialDistribution,,,,9,3522
 Hyperfactorial,,,,7,4612
 Hypergeometric0F1,,,,1,1259
 Hypergeometric0F1Regularized,,,,3,1363
-Hypergeometric1F1,,,,1,993
+Hypergeometric1F1,Kummer confluent hypergeometric function 1F1(a; b; z),✅,pure,1,993
 Hypergeometric1F1Regularized,,,,3,1342
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1,413
 Hypergeometric2F1Regularized,,,,3,850
@@ -3122,7 +3122,7 @@ LegendMargins,,,,9,2034
 LegendMarkers,,,,9,1637
 LegendMarkerSize,,,,9,1151
 LegendreP,Legendre polynomial of the first kind,✅,pure,1,515
-LegendreQ,,,,1,943
+LegendreQ,Legendre function of the second kind Q_n(x),✅,pure,1,943
 Length,Returns the number of elements in a list,✅,pure,1,44
 LengthWhile,Returns the length of the longest initial run satisfying a test,✅,pure,6,1499
 LerchPhi,,,,1,1108
