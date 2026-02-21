@@ -5730,6 +5730,9 @@ fn evaluate_function_call_ast_inner(
     "GCD" => {
       return crate::functions::math_ast::gcd_ast(args);
     }
+    "ExtendedGCD" if args.len() >= 2 => {
+      return crate::functions::math_ast::extended_gcd_ast(args);
+    }
     "LCM" => {
       return crate::functions::math_ast::lcm_ast(args);
     }

@@ -1950,6 +1950,62 @@ mod gcd {
   }
 }
 
+mod extended_gcd {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("ExtendedGCD[6, 10]").unwrap(), "{2, {2, -1}}");
+  }
+
+  #[test]
+  fn coprime() {
+    assert_eq!(interpret("ExtendedGCD[2, 3]").unwrap(), "{1, {-1, 1}}");
+  }
+
+  #[test]
+  fn same_divisor() {
+    assert_eq!(interpret("ExtendedGCD[12, 8]").unwrap(), "{4, {1, -1}}");
+  }
+
+  #[test]
+  fn with_zero() {
+    assert_eq!(interpret("ExtendedGCD[0, 5]").unwrap(), "{5, {0, 1}}");
+  }
+
+  #[test]
+  fn both_zero() {
+    assert_eq!(interpret("ExtendedGCD[0, 0]").unwrap(), "{0, {0, 0}}");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("ExtendedGCD[-6, 10]").unwrap(), "{2, {-2, -1}}");
+  }
+
+  #[test]
+  fn three_args() {
+    // Verify: 6*(-14) + 10*7 + 15*1 = -84 + 70 + 15 = 1
+    let result = interpret("ExtendedGCD[6, 10, 15]").unwrap();
+    assert!(result.starts_with("{1, {"));
+  }
+
+  #[test]
+  fn bezout_identity() {
+    // Verify a*s + b*t == gcd
+    assert_eq!(
+      interpret("Module[{r = ExtendedGCD[6, 10]}, 6*r[[2, 1]] + 10*r[[2, 2]]]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("ExtendedGCD[x, 5]").unwrap(), "ExtendedGCD[x, 5]");
+  }
+}
+
 mod lcm {
   use super::*;
 

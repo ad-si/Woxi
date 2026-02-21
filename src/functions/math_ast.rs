@@ -3510,6 +3510,103 @@ pub fn gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(bigint_to_expr(result.unwrap_or_else(|| BigInt::from(0))))
 }
 
+/// Extended Euclidean algorithm: returns (gcd, s, t) where a*s + b*t = gcd
+fn extended_gcd_bigint(a: &BigInt, b: &BigInt) -> (BigInt, BigInt, BigInt) {
+  use num_traits::Zero;
+  if b.is_zero() {
+    if a.is_zero() {
+      return (BigInt::from(0), BigInt::from(0), BigInt::from(0));
+    }
+    let sign = if a >= &BigInt::from(0) {
+      BigInt::from(1)
+    } else {
+      BigInt::from(-1)
+    };
+    return (a.abs(), sign, BigInt::from(0));
+  }
+  let (mut old_r, mut r) = (a.clone(), b.clone());
+  let (mut old_s, mut s) = (BigInt::from(1), BigInt::from(0));
+  let (mut old_t, mut t) = (BigInt::from(0), BigInt::from(1));
+
+  while !r.is_zero() {
+    let q = &old_r / &r;
+    let new_r = &old_r - &q * &r;
+    old_r = r;
+    r = new_r;
+    let new_s = &old_s - &q * &s;
+    old_s = s;
+    s = new_s;
+    let new_t = &old_t - &q * &t;
+    old_t = t;
+    t = new_t;
+  }
+
+  // Ensure gcd is positive
+  if old_r < BigInt::from(0) {
+    old_r = -old_r;
+    old_s = -old_s;
+    old_t = -old_t;
+  }
+  (old_r, old_s, old_t)
+}
+
+/// ExtendedGCD[a, b, ...] - Extended greatest common divisor
+pub fn extended_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ExtendedGCD expects at least 2 arguments".into(),
+    ));
+  }
+
+  // Convert all args to BigInt
+  let mut vals = Vec::new();
+  for arg in args {
+    let val = match arg {
+      Expr::Integer(n) => BigInt::from(*n),
+      Expr::BigInteger(n) => n.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "ExtendedGCD".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    vals.push(val);
+  }
+
+  if vals.len() == 2 {
+    let (g, s, t) = extended_gcd_bigint(&vals[0], &vals[1]);
+    return Ok(Expr::List(vec![
+      bigint_to_expr(g),
+      Expr::List(vec![bigint_to_expr(s), bigint_to_expr(t)]),
+    ]));
+  }
+
+  // Multi-argument: iteratively compute
+  // ExtendedGCD[a1, a2, ..., an]
+  // gcd = gcd(a1, ..., an), coefficients c_i such that sum(a_i * c_i) = gcd
+  // We compute iteratively: g = gcd(a1, a2), then gcd(g, a3), etc.
+  // At each step, track the Bézout coefficients.
+  let (mut g, s0, t0) = extended_gcd_bigint(&vals[0], &vals[1]);
+  let mut coeffs = vec![s0, t0];
+
+  for val in &vals[2..] {
+    let (new_g, s, t) = extended_gcd_bigint(&g, val);
+    // g_old = sum(a_i * coeffs[i]), so new relationship:
+    // new_g = g_old * s + val * t = sum(a_i * coeffs[i] * s) + val * t
+    for c in &mut coeffs {
+      *c = &*c * &s;
+    }
+    coeffs.push(t);
+    g = new_g;
+  }
+
+  Ok(Expr::List(vec![
+    bigint_to_expr(g),
+    Expr::List(coeffs.into_iter().map(bigint_to_expr).collect()),
+  ]))
+}
+
 /// LCM[a, b, ...] - Least common multiple
 pub fn lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
