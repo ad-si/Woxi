@@ -1540,6 +1540,20 @@ mod bottom_symbol {
   }
 }
 
+mod above_symbol {
+  use super::*;
+
+  #[test]
+  fn above_evaluates_to_itself() {
+    assert_eq!(interpret("Above").unwrap(), "Above");
+  }
+
+  #[test]
+  fn above_attributes() {
+    assert_eq!(interpret("Attributes[Above]").unwrap(), "{Protected}");
+  }
+}
+
 mod working_precision_symbol {
   use super::*;
 
