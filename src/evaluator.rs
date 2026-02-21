@@ -5039,6 +5039,9 @@ pub fn evaluate_function_call_ast(
     "JacobiSN" if args.len() == 2 => {
       return crate::functions::math_ast::jacobi_sn_ast(args);
     }
+    "JacobiCN" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_cn_ast(args);
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);
     }
@@ -10114,6 +10117,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "EllipticTheta"
     | "JacobiDN"
     | "JacobiSN"
+    | "JacobiCN"
     | "EllipticE"
     | "Conjugate"
     | "Re"

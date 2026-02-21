@@ -4289,6 +4289,59 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// JacobiCN[u, m] - Jacobi elliptic function cn
+pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiCN expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let u = &args[0];
+  let m = &args[1];
+
+  // JacobiCN[0, m] = 1
+  if is_expr_zero(u) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // JacobiCN[u, 0] = Cos[u]
+  if is_expr_zero(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  // JacobiCN[u, 1] = Sech[u]
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Sech".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  // JacobiCN[-u, m] = JacobiCN[u, m] (even function)
+  if let Some(inner) = extract_negated_expr(u) {
+    return Ok(Expr::FunctionCall {
+      name: "JacobiCN".to_string(),
+      args: vec![inner, m.clone()],
+    });
+  }
+
+  // Numeric evaluation
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (_, cn, _) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(cn));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "JacobiCN".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Extract the inner expression from a negated expression like Times[-1, x] or -x
 fn extract_negated_expr(expr: &Expr) -> Option<Expr> {
   match expr {
