@@ -446,7 +446,7 @@ BesselI,Modified Bessel function of the first kind,✅,pure,1,664
 BesselJ,Bessel function of the first kind,✅,pure,1,329
 BesselJZero,,,,6,1375
 BesselK,Modified Bessel function of the second kind,✅,pure,1,613
-BesselY,,,,1,752
+BesselY,Bessel function of the second kind Y_n(z),✅,pure,1,752
 BesselYZero,,,,6,4387
 Beta,Euler beta function,✅,pure,1,702
 BetaBinomialDistribution,,,,6,3048

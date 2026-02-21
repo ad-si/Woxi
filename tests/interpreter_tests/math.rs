@@ -5287,3 +5287,76 @@ mod hermite_h {
     assert_eq!(interpret("HermiteH[n, x]").unwrap(), "HermiteH[n, x]");
   }
 }
+
+mod bessel_y {
+  use super::*;
+
+  #[test]
+  fn at_zero_order_zero() {
+    assert_eq!(interpret("BesselY[0, 0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn at_zero_order_one() {
+    assert_eq!(interpret("BesselY[1, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn at_zero_order_two() {
+    assert_eq!(interpret("BesselY[2, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn numeric_order_zero() {
+    let result: f64 = interpret("BesselY[0, 2.5]").unwrap().parse().unwrap();
+    assert!((result - 0.49807035961523194).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_one() {
+    let result: f64 = interpret("BesselY[1, 2.5]").unwrap().parse().unwrap();
+    assert!((result - 0.14591813796678565).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_two() {
+    let result: f64 = interpret("BesselY[2, 3.0]").unwrap().parse().unwrap();
+    assert!((result - (-0.16040039348492371)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_three() {
+    let result: f64 = interpret("BesselY[3, 5.0]").unwrap().parse().unwrap();
+    assert!((result - 0.14626716269319232).abs() < 1e-10);
+  }
+
+  #[test]
+  fn negative_order() {
+    // BesselY[-1, z] = -BesselY[1, z]
+    let result: f64 = interpret("BesselY[-1, 2.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.14591813796678565)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_small_arg() {
+    let result: f64 = interpret("BesselY[0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.4445187335067067)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_large_arg() {
+    let result: f64 = interpret("BesselY[0, 10.0]").unwrap().parse().unwrap();
+    assert!((result - 0.055671167283599395).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[BesselY[0, 5/2]]").unwrap().parse().unwrap();
+    assert!((result - 0.49807035961523194).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("BesselY[0, x]").unwrap(), "BesselY[0, x]");
+  }
+}
