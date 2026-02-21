@@ -6675,3 +6675,68 @@ mod weierstrass_p {
     );
   }
 }
+
+mod hypergeometric_u {
+  use super::*;
+
+  #[test]
+  fn numeric_non_integer_b() {
+    let result: f64 = interpret("HypergeometricU[0.5, 0.5, 1.]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.7578721561413122).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_integer_b() {
+    let result: f64 = interpret("HypergeometricU[3, 2, 1.]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.10547895651520889).abs() < 1e-6);
+  }
+
+  #[test]
+  fn numeric_b_equals_1() {
+    let result: f64 = interpret("HypergeometricU[1, 1, 1.]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.596347362323194).abs() < 1e-6);
+  }
+
+  #[test]
+  fn numeric_b_equals_3() {
+    let result: f64 = interpret("HypergeometricU[2, 3, 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 4.0).abs() < 1e-6);
+  }
+
+  #[test]
+  fn numeric_u_1_2_1() {
+    let result: f64 = interpret("HypergeometricU[1, 2, 1.]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0).abs() < 1e-6);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("HypergeometricU[a, b, c]").unwrap(),
+      "HypergeometricU[a, b, c]"
+    );
+  }
+
+  #[test]
+  fn symbolic_with_variable() {
+    assert_eq!(
+      interpret("HypergeometricU[1, 2, x]").unwrap(),
+      "HypergeometricU[1, 2, x]"
+    );
+  }
+}

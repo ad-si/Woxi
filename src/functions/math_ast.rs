@@ -8887,6 +8887,80 @@ fn hypergeometric_1f1(a: f64, b: f64, z: f64) -> f64 {
   sum
 }
 
+/// HypergeometricU[a, b, z] - confluent hypergeometric function of the second kind
+pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "HypergeometricU expects exactly 3 arguments".into(),
+    ));
+  }
+
+  // Numeric evaluation when at least one argument is Real and all are numeric
+  let a_val = expr_to_f64(&args[0]);
+  let b_val = expr_to_f64(&args[1]);
+  let z_val = expr_to_f64(&args[2]);
+
+  if let (Some(a), Some(b), Some(z)) = (a_val, b_val, z_val) {
+    let has_real = matches!(&args[0], Expr::Real(_))
+      || matches!(&args[1], Expr::Real(_))
+      || matches!(&args[2], Expr::Real(_));
+    if has_real {
+      return Ok(Expr::Real(hypergeometric_u_f64(a, b, z)));
+    }
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "HypergeometricU".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute U(a, b, z) numerically using the relation:
+/// U(a,b,z) = Γ(1-b)/Γ(a+1-b) * M(a,b,z) + Γ(b-1)/Γ(a) * z^(1-b) * M(a+1-b,2-b,z)
+/// where M = 1F1. For integer b, use Richardson extrapolation on the b parameter.
+fn hypergeometric_u_f64(a: f64, b: f64, z: f64) -> f64 {
+  let b_int = b.round();
+  let is_b_integer = (b - b_int).abs() < 1e-10;
+
+  if is_b_integer {
+    // Use Richardson extrapolation: evaluate at several offsets and extrapolate
+    // to the limit b -> integer. This cancels the leading error terms.
+    let h = 0.001;
+    let u1 = hypergeometric_u_nonint(a, b + h, z);
+    let u2 = hypergeometric_u_nonint(a, b - h, z);
+    let u3 = hypergeometric_u_nonint(a, b + 2.0 * h, z);
+    let u4 = hypergeometric_u_nonint(a, b - 2.0 * h, z);
+    // Richardson extrapolation: (4 * f(h) - f(2h)) / 3
+    let avg_h = (u1 + u2) / 2.0;
+    let avg_2h = (u3 + u4) / 2.0;
+    (4.0 * avg_h - avg_2h) / 3.0
+  } else {
+    hypergeometric_u_nonint(a, b, z)
+  }
+}
+
+fn hypergeometric_u_nonint(a: f64, b: f64, z: f64) -> f64 {
+  let g1b = gamma_fn(1.0 - b);
+  let ga1b = gamma_fn(a + 1.0 - b);
+  let gb1 = gamma_fn(b - 1.0);
+  let ga = gamma_fn(a);
+
+  let term1 = if ga1b.is_infinite() || ga1b == 0.0 {
+    0.0
+  } else {
+    g1b / ga1b * hypergeometric_1f1(a, b, z)
+  };
+
+  let term2 = if ga.is_infinite() || ga == 0.0 {
+    0.0
+  } else {
+    gb1 / ga * z.powf(1.0 - b) * hypergeometric_1f1(a + 1.0 - b, 2.0 - b, z)
+  };
+
+  term1 + term2
+}
+
 pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 4 {
     return Err(InterpreterError::EvaluationError(

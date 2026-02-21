@@ -2611,7 +2611,7 @@ Hypergeometric2F1Regularized,,,,3,850
 HypergeometricDistribution,,,,6,2289
 HypergeometricPFQ,,,,3,386
 HypergeometricPFQRegularized,,,,3,791
-HypergeometricU,,,,1,1275
+HypergeometricU,Confluent hypergeometric function of the second kind,✅,pure,1,1275
 Hyperlink,,,,6,209
 HyperlinkAction,,,,12.1,5486
 Hyperplane,,,,10.2,2688
