@@ -790,6 +790,271 @@ pub fn stream_density_plot_ast(
   Ok(Expr::Identifier("-Graphics-".to_string()))
 }
 
+/// ListDensityPlot[data] - density plot from data
+/// Accepts either:
+///   - a matrix {{z11, z12, ...}, {z21, z22, ...}, ...}
+///   - a list of {x, y, z} triples {{x1,y1,z1}, {x2,y2,z2}, ...}
+pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let rows = match &data {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ListDensityPlot: first argument must be a list of data".into(),
+      ));
+    }
+  };
+
+  // Determine if input is {x,y,z} triples or a matrix
+  // It's triples if every element is a list of exactly 3 numeric items
+  let is_triples = rows.iter().all(|r| {
+    if let Expr::List(items) = r
+      && items.len() == 3
+    {
+      return items.iter().all(|item| {
+        let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+        try_eval_to_f64(&v).is_some()
+      });
+    }
+    false
+  }) && rows.len() > 1
+    && {
+      // Check that it's NOT a 3-column matrix by verifying the "x" values are not
+      // sequential 1..n (ambiguous case: treat as triples if any x or y is non-integer
+      // or doesn't match sequential indices)
+      let first_row = if let Expr::List(items) = &rows[0] {
+        items
+          .iter()
+          .filter_map(|item| {
+            let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+            try_eval_to_f64(&v)
+          })
+          .collect::<Vec<_>>()
+      } else {
+        vec![]
+      };
+      // If the first inner list has exactly 3 elements, we need to distinguish
+      // between a 3-column matrix and triples. Check if ALL inner lists have
+      // exactly 3 elements. If the outer list has more than 3 rows, treat as
+      // triples. If it has exactly 3 rows and each row has 3 elements, it's
+      // ambiguous - Mathematica treats it as a matrix.
+      // Simple heuristic: if we have more rows than columns (3), it's triples.
+      rows.len() > 3 || {
+        // For 3 rows of 3 elements, check if the values look like triples
+        // (x values not all the same, y values not all the same)
+        let mut xs = std::collections::HashSet::new();
+        let mut ys = std::collections::HashSet::new();
+        for r in rows {
+          if let Expr::List(items) = r {
+            if let Some(x) = try_eval_to_f64(
+              &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
+            ) {
+              xs.insert(x.to_bits());
+            }
+            if let Some(y) = try_eval_to_f64(
+              &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
+            ) {
+              ys.insert(y.to_bits());
+            }
+          }
+        }
+        // If x or y values are not simply 1..n, treat as triples
+        xs.len() > 1 && ys.len() > 1 && first_row[0] != 1.0
+      }
+    };
+
+  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
+
+  if is_triples {
+    list_density_plot_triples(rows, svg_width, svg_height, full_width)
+  } else {
+    list_density_plot_matrix(rows, svg_width, svg_height, full_width)
+  }
+}
+
+/// ListDensityPlot from a matrix of z-values
+fn list_density_plot_matrix(
+  rows: &[Expr],
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+) -> Result<Expr, InterpreterError> {
+  let mut matrix: Vec<Vec<f64>> = Vec::new();
+  let mut v_min = f64::INFINITY;
+  let mut v_max = f64::NEG_INFINITY;
+
+  for row in rows {
+    if let Expr::List(items) = row {
+      let vals: Vec<f64> = items
+        .iter()
+        .map(|item| {
+          let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+          try_eval_to_f64(&v).unwrap_or(f64::NAN)
+        })
+        .collect();
+      for &v in &vals {
+        if v.is_finite() {
+          v_min = v_min.min(v);
+          v_max = v_max.max(v);
+        }
+      }
+      matrix.push(vals);
+    }
+  }
+
+  if matrix.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  let n_rows = matrix.len();
+  let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
+
+  // x ranges from 1 to n_cols, y ranges from 1 to n_rows
+  let x_min = 1.0;
+  let x_max = n_cols as f64;
+  let y_min = 1.0;
+  let y_max = n_rows as f64;
+
+  let area = generate_axes_only(
+    (x_min, x_max),
+    (y_min, y_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+
+  let mut svg = area.svg;
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let cell_w = area.plot_w / n_cols as f64;
+  let cell_h = area.plot_h / n_rows as f64;
+
+  // Row 0 is the top (highest y), row n_rows-1 is the bottom (lowest y)
+  for (i, row) in matrix.iter().enumerate() {
+    for (j, &val) in row.iter().enumerate() {
+      if val.is_finite() {
+        let (r, g, b) = value_to_color(val, v_min, v_max);
+        let sx = area.plot_x0 + j as f64 * cell_w;
+        let sy = area.plot_y0 + i as f64 * cell_h;
+        svg.push_str(&format!(
+          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
+          cell_w + 0.5, cell_h + 0.5
+        ));
+      }
+    }
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// ListDensityPlot from {x, y, z} triples using inverse distance weighting
+fn list_density_plot_triples(
+  rows: &[Expr],
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+) -> Result<Expr, InterpreterError> {
+  let mut points: Vec<(f64, f64, f64)> = Vec::new();
+
+  for row in rows {
+    if let Expr::List(items) = row
+      && items.len() == 3
+    {
+      let x = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
+      );
+      let y = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
+      );
+      let z = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[2]).unwrap_or(items[2].clone()),
+      );
+      if let (Some(x), Some(y), Some(z)) = (x, y, z)
+        && x.is_finite()
+        && y.is_finite()
+        && z.is_finite()
+      {
+        points.push((x, y, z));
+      }
+    }
+  }
+
+  if points.is_empty() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  let x_min = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+  let x_max = points.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+  let y_min = points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+  let y_max = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+  let z_min = points.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
+  let z_max = points.iter().map(|p| p.2).fold(f64::NEG_INFINITY, f64::max);
+
+  let area = generate_axes_only(
+    (x_min, x_max),
+    (y_min, y_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+
+  let mut svg = area.svg;
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  // Interpolate using inverse distance weighting on a grid
+  let grid_n = FIELD_GRID;
+  let cell_w = area.plot_w / grid_n as f64;
+  let cell_h = area.plot_h / grid_n as f64;
+  let x_range = x_max - x_min;
+  let y_range = y_max - y_min;
+
+  for i in 0..grid_n {
+    let gx = x_min + (i as f64 + 0.5) / grid_n as f64 * x_range;
+    for j in 0..grid_n {
+      let gy = y_min + (j as f64 + 0.5) / grid_n as f64 * y_range;
+
+      // Inverse distance weighting
+      let mut w_sum = 0.0;
+      let mut z_sum = 0.0;
+      let mut exact = None;
+
+      for &(px, py, pz) in &points {
+        let dx = gx - px;
+        let dy = gy - py;
+        let dist_sq = dx * dx + dy * dy;
+        if dist_sq < 1e-20 {
+          exact = Some(pz);
+          break;
+        }
+        let w = 1.0 / dist_sq;
+        w_sum += w;
+        z_sum += w * pz;
+      }
+
+      let z = exact.unwrap_or_else(|| z_sum / w_sum);
+      let (r, g, b) = value_to_color(z, z_min, z_max);
+      let sx = area.plot_x0 + i as f64 * cell_w;
+      let sy = area.plot_y0 + (grid_n - 1 - j) as f64 * cell_h;
+      svg.push_str(&format!(
+        "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
+        cell_w + 0.5, cell_h + 0.5
+      ));
+    }
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
 /// ArrayPlot[{{v11, ...}, ...}] - color grid from matrix, 0=white 1=black (grayscale)
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;

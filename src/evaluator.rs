@@ -4315,6 +4315,9 @@ pub fn evaluate_function_call_ast(
     "StreamDensityPlot" if args.len() >= 3 => {
       return crate::functions::field_plot::stream_density_plot_ast(args);
     }
+    "ListDensityPlot" if !args.is_empty() => {
+      return crate::functions::field_plot::list_density_plot_ast(args);
+    }
     "ArrayPlot" if !args.is_empty() => {
       return crate::functions::field_plot::array_plot_ast(args);
     }
