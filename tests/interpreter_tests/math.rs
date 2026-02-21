@@ -6221,6 +6221,45 @@ mod inverse_fourier {
   }
 }
 
+mod hypergeometric_0f1 {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    let result = interpret("Hypergeometric0F1[1.5, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.813430203923509).abs() < 1e-10);
+  }
+
+  #[test]
+  fn zero_z() {
+    assert_eq!(interpret("Hypergeometric0F1[a, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn unit_a() {
+    let result = interpret("Hypergeometric0F1[1, 2.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 5.57162224874372).abs() < 1e-6);
+  }
+
+  #[test]
+  fn small_z() {
+    // For small z, 0F1(a; z) ≈ 1 + z/a
+    let result = interpret("Hypergeometric0F1[2.0, 0.001]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.0005).abs() < 1e-4);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("Hypergeometric0F1[a, z]").unwrap(),
+      "Hypergeometric0F1[a, z]"
+    );
+  }
+}
+
 mod jacobi_amplitude {
   use super::*;
 
