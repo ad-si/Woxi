@@ -1817,7 +1817,7 @@ Export,Exports data to a file,✅,effectful,4,357
 ExportByteArray,,,,11.2,4138
 ExportForm,,,,10,1763
 ExportString,Exports an expression to a string in a given format, ✅,pure,4,787
-Expression,,,,1,765
+Expression,Type specifier for reading expressions,✅,pure,1,765
 ExpressionCell,,,,6,1021
 ExpressionGraph,,,,12.1,2605
 ExpressionTree,,,,12.3,

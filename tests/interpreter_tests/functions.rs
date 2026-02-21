@@ -1975,3 +1975,17 @@ mod compile {
     assert!(result.starts_with("CompiledFunction["));
   }
 }
+
+mod expression {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_self() {
+    assert_eq!(interpret("Expression").unwrap(), "Expression");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Expression]").unwrap(), "Symbol");
+  }
+}
