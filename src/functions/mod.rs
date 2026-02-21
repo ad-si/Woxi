@@ -16,6 +16,7 @@ pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
 pub mod list_plot;
 pub mod math_ast;
+pub mod memory;
 pub mod parametric_plot;
 pub mod plot;
 pub mod plot3d;

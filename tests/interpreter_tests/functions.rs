@@ -540,17 +540,11 @@ mod memory {
 
   #[test]
   fn max_memory_at_least_memory_in_use() {
-    let max_mem = interpret("MaxMemoryUsed[]")
-      .unwrap()
-      .parse::<i128>()
-      .unwrap();
-    let cur_mem = interpret("MemoryInUse[]").unwrap().parse::<i128>().unwrap();
-    assert!(
-      max_mem >= cur_mem,
-      "MaxMemoryUsed ({}) should be >= MemoryInUse ({})",
-      max_mem,
-      cur_mem
-    );
+    // Evaluate MemoryInUse first, then MaxMemoryUsed second.
+    // Peak RSS can only grow, so querying it after current ensures peak >= current.
+    let result =
+      interpret("With[{c = MemoryInUse[]}, MaxMemoryUsed[] >= c]").unwrap();
+    assert_eq!(result, "True");
   }
 }
 
