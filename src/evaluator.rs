@@ -597,6 +597,21 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
 /// Evaluate an Expr AST and return a new Expr (not a string).
 /// This is the core function for AST-based evaluation without string round-trips.
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // Grow the stack if we're running low to avoid overflow on deeply
+  // recursive Wolfram programs (e.g. n-queens with n >= 6).
+  #[cfg(not(target_arch = "wasm32"))]
+  {
+    stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
+      evaluate_expr_to_expr_inner(expr)
+    })
+  }
+  #[cfg(target_arch = "wasm32")]
+  {
+    evaluate_expr_to_expr_inner(expr)
+  }
+}
+
+fn evaluate_expr_to_expr_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Integer(*n)),
     Expr::BigInteger(n) => Ok(Expr::BigInteger(n.clone())),
@@ -2168,6 +2183,22 @@ fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn evaluate_function_call_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  #[cfg(not(target_arch = "wasm32"))]
+  {
+    stacker::maybe_grow(64 * 1024, 2 * 1024 * 1024, || {
+      evaluate_function_call_ast_inner(name, args)
+    })
+  }
+  #[cfg(target_arch = "wasm32")]
+  {
+    evaluate_function_call_ast_inner(name, args)
+  }
+}
+
+fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
