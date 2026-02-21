@@ -779,7 +779,7 @@ ChatObject,,,,13.3,
 Chebyshev1FilterModel,,,,9,4356
 Chebyshev2FilterModel,,,,9,4527
 ChebyshevT,Chebyshev polynomial of the first kind,✅,pure,1,655
-ChebyshevU,,,,1,761
+ChebyshevU,Chebyshev polynomial of the second kind,✅,pure,1,761
 Check,Evaluates an expression and returns a fallback if messages are generated,✅,pure,1,804
 CheckAbort,,,,2,1991
 CheckArguments,,,,12.2,5079

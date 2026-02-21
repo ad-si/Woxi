@@ -6060,6 +6060,202 @@ fn chebyshev_t_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   Some(curr.into_iter().map(|c| (c, 1i128)).collect())
 }
 
+/// ChebyshevU[n, x] - Chebyshev polynomial of the second kind
+pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ChebyshevU expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ChebyshevU".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  match &args[1] {
+    Expr::Integer(x) => {
+      let (num, den) = chebyshev_u_eval_rational(n, (*x, 1));
+      Ok(make_rational(num, den))
+    }
+    Expr::FunctionCall {
+      name,
+      args: rat_args,
+    } if name == "Rational" && rat_args.len() == 2 => {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
+      {
+        let (num, den) = chebyshev_u_eval_rational(n, (*p, *q));
+        Ok(make_rational(num, den))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "ChebyshevU".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    Expr::Real(f) => Ok(Expr::Real(chebyshev_u_eval_f64(n, *f))),
+    _ => {
+      if let Some(expr) = chebyshev_u_polynomial_symbolic(n, &args[1]) {
+        Ok(expr)
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "ChebyshevU".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+/// Evaluate U_n(p/q) as a rational number
+/// U_0(x) = 1, U_1(x) = 2x, U_{n+1}(x) = 2x*U_n(x) - U_{n-1}(x)
+fn chebyshev_u_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
+  let (xn, xd) = x;
+  if n == 0 {
+    return (1, 1);
+  }
+  if n == 1 {
+    return (2 * xn, xd);
+  }
+
+  let mut um1 = (1i128, 1i128); // U_0
+  let mut u = (2 * xn, xd); // U_1
+
+  for _ in 2..=n {
+    // U_{k} = 2x * U_{k-1} - U_{k-2}
+    let a_n = 2i128
+      .checked_mul(xn)
+      .and_then(|v| v.checked_mul(u.0))
+      .unwrap_or(0);
+    let a_d = xd.checked_mul(u.1).unwrap_or(1);
+
+    let new_n = a_n
+      .checked_mul(um1.1)
+      .and_then(|v| v.checked_sub(um1.0.checked_mul(a_d)?))
+      .unwrap_or(0);
+    let new_d = a_d.checked_mul(um1.1).unwrap_or(1);
+
+    let g = gcd(new_n.abs(), new_d.abs());
+    um1 = u;
+    u = if g > 0 {
+      (new_n / g, new_d / g)
+    } else {
+      (new_n, new_d)
+    };
+  }
+  u
+}
+
+/// Evaluate U_n(x) numerically
+fn chebyshev_u_eval_f64(n: usize, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  if n == 1 {
+    return 2.0 * x;
+  }
+
+  let mut um1 = 1.0;
+  let mut u = 2.0 * x;
+  for _ in 2..=n {
+    let unew = 2.0 * x * u - um1;
+    um1 = u;
+    u = unew;
+  }
+  u
+}
+
+/// Build symbolic Chebyshev U polynomial
+fn chebyshev_u_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+  let coeffs = chebyshev_u_coefficients(n)?;
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, (cn, cd)) in coeffs.iter().enumerate() {
+    if *cn == 0 {
+      continue;
+    }
+    let coeff = (*cn, *cd);
+    let x_power = if k == 0 {
+      None
+    } else if k == 1 {
+      Some(x.clone())
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(k as i128)),
+      })
+    };
+
+    let term = match (coeff, x_power) {
+      ((c, 1), None) => Expr::Integer(c),
+      ((1, 1), Some(xp)) => xp,
+      ((-1, 1), Some(xp)) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), xp],
+      },
+      ((c, 1), Some(xp)) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(c)),
+        right: Box::new(xp),
+      },
+      _ => return None,
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return Some(terms.pop().unwrap());
+  }
+
+  let mut result = terms[0].clone();
+  for t in terms.iter().skip(1) {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(t.clone()),
+    };
+  }
+  Some(result)
+}
+
+/// Compute Chebyshev U coefficients
+/// U_0 = [1], U_1 = [0, 2], U_{n+1} = 2x*U_n - U_{n-1}
+fn chebyshev_u_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
+  if n == 0 {
+    return Some(vec![(1, 1)]);
+  }
+  if n == 1 {
+    return Some(vec![(0, 1), (2, 1)]);
+  }
+
+  let mut prev: Vec<i128> = vec![1]; // U_0
+  let mut curr: Vec<i128> = vec![0, 2]; // U_1
+
+  for _ in 2..=n {
+    let mut next = vec![0i128; curr.len() + 1];
+    for (j, c) in curr.iter().enumerate() {
+      next[j + 1] = next[j + 1].checked_add(2i128.checked_mul(*c)?)?;
+    }
+    for (j, c) in prev.iter().enumerate() {
+      next[j] = next[j].checked_sub(*c)?;
+    }
+
+    prev = curr;
+    curr = next;
+  }
+
+  Some(curr.into_iter().map(|c| (c, 1i128)).collect())
+}
+
 /// LaguerreL[n, x] - Laguerre polynomial
 pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
