@@ -169,6 +169,7 @@ pub struct OpenStream {
   pub name: String,
   pub kind: StreamKind,
   pub id: usize,
+  pub position: usize,
 }
 
 thread_local! {
@@ -184,7 +185,12 @@ pub fn register_stream(name: String, kind: StreamKind) -> usize {
     *counter += 1;
     id
   });
-  let stream = OpenStream { name, kind, id };
+  let stream = OpenStream {
+    name,
+    kind,
+    id,
+    position: 0,
+  };
   STREAM_REGISTRY.with(|reg| {
     reg.borrow_mut().insert(id, stream);
   });
@@ -199,6 +205,32 @@ pub fn close_stream(id: usize) -> Option<String> {
 /// Check if a stream is open
 pub fn is_stream_open(id: usize) -> bool {
   STREAM_REGISTRY.with(|reg| reg.borrow().contains_key(&id))
+}
+
+/// Get the remaining content of a stream (for reading)
+pub fn get_stream_content(id: usize) -> Option<(String, usize)> {
+  STREAM_REGISTRY.with(|reg| {
+    let registry = reg.borrow();
+    registry.get(&id).map(|s| {
+      let content = match &s.kind {
+        StreamKind::StringStream(text) => text.clone(),
+        StreamKind::FileStream(path) => {
+          std::fs::read_to_string(path).unwrap_or_default()
+        }
+      };
+      (content, s.position)
+    })
+  })
+}
+
+/// Advance the read position of a stream
+pub fn advance_stream_position(id: usize, new_position: usize) {
+  STREAM_REGISTRY.with(|reg| {
+    let mut registry = reg.borrow_mut();
+    if let Some(stream) = registry.get_mut(&id) {
+      stream.position = new_position;
+    }
+  });
 }
 
 /// Clears the captured stdout buffer

@@ -2198,6 +2198,112 @@ pub fn evaluate_function_call_ast(
   }
 }
 
+/// Helper for Read: read a single value of a given type from remaining stream content.
+/// Returns (result_expr, bytes_consumed).
+fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
+  let type_name = match read_type {
+    Expr::Identifier(s) => s.as_str(),
+    _ => "Expression",
+  };
+
+  if remaining.is_empty() {
+    return (Expr::Identifier("EndOfFile".to_string()), 0);
+  }
+
+  match type_name {
+    "Word" => {
+      // Skip leading whitespace
+      let trimmed = remaining.trim_start();
+      let skipped = remaining.len() - trimmed.len();
+      if trimmed.is_empty() {
+        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+      }
+      // Read until whitespace
+      let end = trimmed
+        .find(|c: char| c.is_whitespace())
+        .unwrap_or(trimmed.len());
+      let word = &trimmed[..end];
+      (Expr::Identifier(word.to_string()), skipped + end)
+    }
+    "Number" => {
+      // Skip leading whitespace
+      let trimmed = remaining.trim_start();
+      let skipped = remaining.len() - trimmed.len();
+      if trimmed.is_empty() {
+        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+      }
+      // Try to parse a number
+      let mut end = 0;
+      let chars: Vec<char> = trimmed.chars().collect();
+      // Optional sign
+      if end < chars.len() && (chars[end] == '+' || chars[end] == '-') {
+        end += 1;
+      }
+      // Digits before decimal
+      let start_digits = end;
+      while end < chars.len() && chars[end].is_ascii_digit() {
+        end += 1;
+      }
+      let has_int_part = end > start_digits;
+      // Decimal point and more digits
+      let mut is_real = false;
+      if end < chars.len() && chars[end] == '.' {
+        is_real = true;
+        end += 1;
+        while end < chars.len() && chars[end].is_ascii_digit() {
+          end += 1;
+        }
+      }
+      if end == 0 || (!has_int_part && !is_real) {
+        return (Expr::Identifier("$Failed".to_string()), skipped);
+      }
+      let num_str = &trimmed[..end];
+      if is_real {
+        if let Ok(f) = num_str.parse::<f64>() {
+          return (Expr::Real(f), skipped + end);
+        }
+      } else if let Ok(n) = num_str.parse::<i128>() {
+        return (Expr::Integer(n), skipped + end);
+      }
+      (Expr::Identifier("$Failed".to_string()), skipped)
+    }
+    "String" => {
+      // Read until newline
+      let end = remaining.find('\n').unwrap_or(remaining.len());
+      let line = &remaining[..end];
+      let advance = if end < remaining.len() { end + 1 } else { end };
+      (Expr::String(line.to_string()), advance)
+    }
+    "Character" => {
+      let ch = remaining.chars().next().unwrap();
+      (Expr::String(ch.to_string()), ch.len_utf8())
+    }
+    "Expression" | _ => {
+      // Read until newline and try to interpret as expression
+      let trimmed = remaining.trim_start();
+      let skipped = remaining.len() - trimmed.len();
+      if trimmed.is_empty() {
+        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+      }
+      let end = trimmed.find('\n').unwrap_or(trimmed.len());
+      let line = &trimmed[..end];
+      let advance = if skipped + end < remaining.len() {
+        skipped + end + 1
+      } else {
+        remaining.len()
+      };
+      match crate::interpret(line) {
+        Ok(result_str) => {
+          let expr = crate::syntax::string_to_expr(&result_str)
+            .unwrap_or(Expr::Identifier(result_str));
+          (expr, advance)
+        }
+        Err(_) => (Expr::Identifier("$Failed".to_string()), advance),
+      }
+    }
+  }
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -4484,6 +4590,62 @@ fn evaluate_function_call_ast_inner(
           });
         }
       }
+    }
+    // Read[stream] or Read[stream, type] — read from a stream
+    "Read" if !args.is_empty() && args.len() <= 2 => {
+      let stream = &args[0];
+      let stream_id = match stream {
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "InputStream"
+          || stream_head == "OutputStream")
+          && stream_args.len() == 2 =>
+        {
+          if let Expr::Integer(id) = &stream_args[1] {
+            Some(*id as usize)
+          } else {
+            None
+          }
+        }
+        _ => None,
+      };
+
+      if let Some(id) = stream_id
+        && let Some((content, position)) = crate::get_stream_content(id)
+      {
+        let remaining = &content[position.min(content.len())..];
+
+        // Determine the read type
+        let read_type = if args.len() == 2 {
+          &args[1]
+        } else {
+          &Expr::Identifier("Expression".to_string())
+        };
+
+        // Handle list of types: Read[stream, {type1, type2, ...}]
+        if let Expr::List(types) = read_type {
+          let mut results = Vec::new();
+          let mut current_pos = position;
+          for t in types {
+            let rem = &content[current_pos.min(content.len())..];
+            let (val, advance) = read_single_type(rem, t);
+            current_pos += advance;
+            results.push(val);
+          }
+          crate::advance_stream_position(id, current_pos);
+          return Ok(Expr::List(results));
+        }
+
+        let (result, advance) = read_single_type(remaining, read_type);
+        crate::advance_stream_position(id, position + advance);
+        return Ok(result);
+      }
+
+      return Ok(Expr::FunctionCall {
+        name: "Read".to_string(),
+        args: args.to_vec(),
+      });
     }
     // Write[stream, expr1, expr2, ...] — write expressions to a stream in OutputForm
     #[cfg(not(target_arch = "wasm32"))]
