@@ -5021,6 +5021,9 @@ pub fn evaluate_function_call_ast(
     "EllipticE" if args.len() == 1 => {
       return crate::functions::math_ast::elliptic_e_ast(args);
     }
+    "EllipticF" if args.len() == 2 => {
+      return crate::functions::math_ast::elliptic_f_ast(args);
+    }
     "Zeta" if args.len() == 1 => {
       return crate::functions::math_ast::zeta_ast(args);
     }
@@ -5035,6 +5038,9 @@ pub fn evaluate_function_call_ast(
     }
     "ExpIntegralEi" if args.len() == 1 => {
       return crate::functions::math_ast::exp_integral_ei_ast(args);
+    }
+    "ExpIntegralE" if args.len() == 2 => {
+      return crate::functions::math_ast::exp_integral_e_ast(args);
     }
     "BesselI" if args.len() == 2 => {
       return crate::functions::math_ast::bessel_i_ast(args);
@@ -10172,9 +10178,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "BesselK"
     | "EllipticK"
     | "EllipticE"
+    | "EllipticF"
     | "LegendreP"
     | "PolyLog"
     | "ExpIntegralEi"
+    | "ExpIntegralE"
     | "EllipticTheta"
     | "JacobiDN"
     | "JacobiSN"
