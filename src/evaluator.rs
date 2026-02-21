@@ -5711,6 +5711,12 @@ pub fn evaluate_function_call_ast(
     "Distribute" if !args.is_empty() && args.len() <= 3 => {
       return distribute_ast(args);
     }
+    "PolynomialRemainder" if args.len() == 3 => {
+      return crate::functions::polynomial_ast::polynomial_remainder_ast(args);
+    }
+    "PolynomialQuotient" if args.len() == 3 => {
+      return crate::functions::polynomial_ast::polynomial_quotient_ast(args);
+    }
     "Expand" if args.len() == 1 => {
       return crate::functions::polynomial_ast::expand_ast(args);
     }

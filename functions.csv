@@ -4286,10 +4286,10 @@ PolynomialGCD,,,,2,1611
 PolynomialLCM,,,,2,2533
 PolynomialMod,,,,2,939
 PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1,1167
-PolynomialQuotient,,,,1,1460
+PolynomialQuotient,Quotient of polynomial division,✅,pure,1,1460
 PolynomialQuotientRemainder,,,,6,2157
 PolynomialReduce,,,,3,1574
-PolynomialRemainder,,,,1,1353
+PolynomialRemainder,Remainder of polynomial division,✅,pure,1,1353
 PolynomialSumOfSquaresList,,,,13,
 PoolingLayer,,,,11,1737
 PopupMenu,,,,6,792

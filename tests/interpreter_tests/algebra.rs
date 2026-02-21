@@ -1463,3 +1463,59 @@ mod distribute {
     assert_eq!(interpret("Distribute[x]").unwrap(), "x");
   }
 }
+
+mod polynomial_remainder {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("PolynomialRemainder[x^3 + 2x + 1, x^2 + 1, x]").unwrap(),
+      "1 + x"
+    );
+  }
+
+  #[test]
+  fn exact_division() {
+    assert_eq!(
+      interpret("PolynomialRemainder[x (x^2 + 1), x^2 + 1, x]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    assert_eq!(
+      interpret("PolynomialRemainder[a x^2 + b x + c, x + 1, x]").unwrap(),
+      "a - b + c"
+    );
+  }
+
+  #[test]
+  fn lower_degree_dividend() {
+    assert_eq!(
+      interpret("PolynomialRemainder[x + 1, x^2, x]").unwrap(),
+      "1 + x"
+    );
+  }
+
+  #[test]
+  fn quotient_basic() {
+    assert_eq!(
+      interpret("PolynomialQuotient[x^3 + 2x + 1, x^2 + 1, x]").unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn quotient_and_remainder_consistency() {
+    // p = q * quotient + remainder
+    let q =
+      interpret("PolynomialQuotient[x^4 + 3x^2 + x, x^2 + 1, x]").unwrap();
+    let r =
+      interpret("PolynomialRemainder[x^4 + 3x^2 + x, x^2 + 1, x]").unwrap();
+    // q should be x^2 + 2, r should be x - 2
+    assert_eq!(q, "2 + x^2");
+    assert_eq!(r, "-2 + x");
+  }
+}
