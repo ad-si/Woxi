@@ -2211,6 +2211,16 @@ pub fn expr_to_string(expr: &Expr) -> String {
           return format!("___{}", h);
         }
       }
+      // Special case: BaseForm[expr, base] displays number in given base with subscript
+      if name == "BaseForm"
+        && args.len() == 2
+        && let Some(base) = expr_to_i64(&args[1])
+        && (2..=36).contains(&base)
+      {
+        let formatted = format_in_base(&args[0], base as u32);
+        let base_sub = to_subscript_digits(base as u64);
+        return format!("{}{}", formatted, base_sub);
+      }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
         return format!(
@@ -3105,6 +3115,16 @@ pub fn expr_to_output(expr: &Expr) -> String {
           return format!("___{}", h);
         }
       }
+      // Special case: BaseForm[expr, base] displays number in given base with subscript
+      if name == "BaseForm"
+        && args.len() == 2
+        && let Some(base) = expr_to_i64(&args[1])
+        && (2..=36).contains(&base)
+      {
+        let formatted = format_in_base(&args[0], base as u32);
+        let base_sub = to_subscript_digits(base as u64);
+        return format!("{}{}", formatted, base_sub);
+      }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
         return format!(
@@ -3933,4 +3953,155 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     // Atoms that don't contain the variable
     _ => expr.clone(),
   }
+}
+
+/// Convert an Expr to i64 if possible (for BaseForm base argument etc.)
+fn expr_to_i64(expr: &Expr) -> Option<i64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as i64),
+    _ => None,
+  }
+}
+
+/// Convert an integer to a string in the given base (2-36).
+fn integer_to_base_string(mut n: i128, base: u32) -> String {
+  if n == 0 {
+    return "0".to_string();
+  }
+  let negative = n < 0;
+  if negative {
+    n = -n;
+  }
+  let mut digits = Vec::new();
+  let mut val = n as u128;
+  while val > 0 {
+    let digit = (val % base as u128) as u32;
+    digits.push(char::from_digit(digit, base).unwrap());
+    val /= base as u128;
+  }
+  digits.reverse();
+  let s: String = digits.into_iter().collect();
+  if negative { format!("-{}", s) } else { s }
+}
+
+/// Convert a BigInteger to a string in the given base.
+fn bigint_to_base_string(n: &num_bigint::BigInt, base: u32) -> String {
+  use num_bigint::Sign;
+  use num_traits::Zero;
+
+  if n.is_zero() {
+    return "0".to_string();
+  }
+
+  let (sign, mut val) = (n.sign(), n.magnitude().clone());
+  let base_big = num_bigint::BigUint::from(base);
+  let mut digits = Vec::new();
+
+  while !val.is_zero() {
+    let rem = &val % &base_big;
+    use num_traits::ToPrimitive;
+    let digit = rem.to_u32().unwrap();
+    digits.push(char::from_digit(digit, base).unwrap());
+    val /= &base_big;
+  }
+
+  digits.reverse();
+  let s: String = digits.into_iter().collect();
+  if sign == Sign::Minus {
+    format!("-{}", s)
+  } else {
+    s
+  }
+}
+
+/// Convert a real number to a string in the given base.
+fn real_to_base_string(f: f64, base: u32) -> String {
+  if f == 0.0 {
+    return "0.".to_string();
+  }
+  let negative = f < 0.0;
+  let f = f.abs();
+
+  // Integer part
+  let int_part = f.floor() as u128;
+  let frac_part = f - int_part as f64;
+
+  let int_str = if int_part == 0 {
+    "0".to_string()
+  } else {
+    let mut digits = Vec::new();
+    let mut val = int_part;
+    while val > 0 {
+      let digit = (val % base as u128) as u32;
+      digits.push(char::from_digit(digit, base).unwrap());
+      val /= base as u128;
+    }
+    digits.reverse();
+    digits.into_iter().collect()
+  };
+
+  if frac_part == 0.0 {
+    return if negative {
+      format!("-{}.", int_str)
+    } else {
+      format!("{}.", int_str)
+    };
+  }
+
+  // Fractional part
+  let mut frac_digits = Vec::new();
+  let mut frac = frac_part;
+  let max_digits = 16; // enough precision for f64
+  for _ in 0..max_digits {
+    frac *= base as f64;
+    let digit = frac.floor() as u32;
+    frac_digits.push(char::from_digit(digit.min(base - 1), base).unwrap());
+    frac -= digit as f64;
+    if frac.abs() < 1e-15 {
+      break;
+    }
+  }
+
+  // Remove trailing zeros
+  while frac_digits.last() == Some(&'0') {
+    frac_digits.pop();
+  }
+
+  let frac_str: String = frac_digits.into_iter().collect();
+  if negative {
+    format!("-{}.{}", int_str, frac_str)
+  } else {
+    format!("{}.{}", int_str, frac_str)
+  }
+}
+
+/// Format an expression in the given base for BaseForm display.
+fn format_in_base(expr: &Expr, base: u32) -> String {
+  match expr {
+    Expr::Integer(n) => integer_to_base_string(*n, base),
+    Expr::BigInteger(n) => bigint_to_base_string(n, base),
+    Expr::Real(f) => real_to_base_string(*f, base),
+    Expr::List(items) => {
+      let parts: Vec<String> =
+        items.iter().map(|e| format_in_base(e, base)).collect();
+      format!("{{{}}}", parts.join(", "))
+    }
+    _ => expr_to_output(expr),
+  }
+}
+
+/// Convert a number to Unicode subscript digit characters.
+fn to_subscript_digits(mut n: u64) -> String {
+  const SUBSCRIPTS: [char; 10] =
+    ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
+  if n == 0 {
+    return "₀".to_string();
+  }
+  let mut digits = Vec::new();
+  while n > 0 {
+    digits.push(SUBSCRIPTS[(n % 10) as usize]);
+    n /= 10;
+  }
+  digits.reverse();
+  digits.into_iter().collect()
 }

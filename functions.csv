@@ -408,7 +408,7 @@ BartlettHannWindow,,,,9,4356
 BartlettWindow,,,,9,3916
 BaseDecode,,,,11.3,5390
 BaseEncode,,,,11.3,4052
-BaseForm,,,,1,789
+BaseForm,Displays numbers in a specified base with subscript notation,✅,pure,1,789
 Baseline,,,,3,509
 BaselinePosition,,,,6,619
 BaseStyle,,,,6,137
