@@ -775,3 +775,486 @@ fn quantity_power_third() {
     "Quantity[2, Meters]"
   );
 }
+
+// ─── Extended units: Time ──────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_seconds_to_milliseconds() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Seconds\"], \"Milliseconds\"]")
+      .unwrap(),
+    "Quantity[1000, Milliseconds]"
+  );
+}
+
+#[test]
+fn unit_convert_milliseconds_to_microseconds() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Milliseconds\"], \"Microseconds\"]")
+      .unwrap(),
+    "Quantity[1000, Microseconds]"
+  );
+}
+
+#[test]
+fn unit_convert_microseconds_to_nanoseconds() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Microseconds\"], \"Nanoseconds\"]")
+      .unwrap(),
+    "Quantity[1000, Nanoseconds]"
+  );
+}
+
+#[test]
+fn unit_convert_weeks_to_days() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Weeks\"], \"Days\"]").unwrap(),
+    "Quantity[7, Days]"
+  );
+}
+
+#[test]
+fn unit_convert_weeks_to_hours() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Weeks\"], \"Hours\"]").unwrap(),
+    "Quantity[168, Hours]"
+  );
+}
+
+// ─── Extended units: Length ─────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_millimeters_to_micrometers() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Millimeters\"], \"Micrometers\"]")
+      .unwrap(),
+    "Quantity[1000, Micrometers]"
+  );
+}
+
+#[test]
+fn unit_convert_micrometers_to_nanometers() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Micrometers\"], \"Nanometers\"]")
+      .unwrap(),
+    "Quantity[1000, Nanometers]"
+  );
+}
+
+#[test]
+fn unit_convert_nautical_miles_to_meters() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"NauticalMiles\"], \"Meters\"]")
+      .unwrap(),
+    "Quantity[1852, Meters]"
+  );
+}
+
+#[test]
+fn unit_convert_nautical_miles_to_kilometers() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"NauticalMiles\"], \"Kilometers\"]")
+      .unwrap(),
+    "Quantity[463/250, Kilometers]"
+  );
+}
+
+// ─── Extended units: Mass ──────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_tonnes_to_kilograms() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Tonnes\"], \"Kilograms\"]").unwrap(),
+    "Quantity[1000, Kilograms]"
+  );
+}
+
+#[test]
+fn unit_convert_pounds_to_ounces() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Pounds\"], \"Ounces\"]").unwrap(),
+    "Quantity[16, Ounces]"
+  );
+}
+
+#[test]
+fn unit_convert_ounces_to_grams() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Ounces\"], \"Grams\"]").unwrap(),
+    "Quantity[45359237/1600000, Grams]"
+  );
+}
+
+// ─── Extended units: Pressure ──────────────────────────────────────────────
+
+#[test]
+fn unit_convert_bars_to_pascals() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Bars\"], \"Pascals\"]").unwrap(),
+    "Quantity[100000, Pascals]"
+  );
+}
+
+#[test]
+fn unit_convert_atmospheres_to_pascals() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Atmospheres\"], \"Pascals\"]")
+      .unwrap(),
+    "Quantity[101325, Pascals]"
+  );
+}
+
+#[test]
+fn unit_convert_atmospheres_to_bars() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Atmospheres\"], \"Bars\"]").unwrap(),
+    "Quantity[4053/4000, Bars]"
+  );
+}
+
+// ─── Extended units: Energy ────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_calories_to_joules() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Calories\"], \"Joules\"]").unwrap(),
+    "Quantity[523/125, Joules]"
+  );
+}
+
+#[test]
+fn unit_convert_kilocalories_to_joules() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kilocalories\"], \"Joules\"]")
+      .unwrap(),
+    "Quantity[4184, Joules]"
+  );
+}
+
+#[test]
+fn unit_convert_kilocalories_to_calories() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kilocalories\"], \"Calories\"]")
+      .unwrap(),
+    "Quantity[1000, Calories]"
+  );
+}
+
+#[test]
+fn unit_convert_electronvolts_to_joules() {
+  let result =
+    interpret("UnitConvert[Quantity[1, \"ElectronVolts\"], \"Joules\"]")
+      .unwrap();
+  assert!(result.starts_with("Quantity["));
+  assert!(result.ends_with(", Joules]"));
+  // 1 eV = 1.602176634e-19 J
+  let mag_str = result
+    .strip_prefix("Quantity[")
+    .unwrap()
+    .strip_suffix(", Joules]")
+    .unwrap();
+  // It should be a rational: 1602176634/10000000000000000000000000000
+  assert!(mag_str.contains('/'), "Expected rational, got: {}", mag_str);
+}
+
+// ─── Extended units: Frequency ─────────────────────────────────────────────
+
+#[test]
+fn unit_convert_kilohertz_to_hertz() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kilohertz\"], \"Hertz\"]").unwrap(),
+    "Quantity[1000, Hertz]"
+  );
+}
+
+#[test]
+fn unit_convert_megahertz_to_hertz() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Megahertz\"], \"Hertz\"]").unwrap(),
+    "Quantity[1000000, Hertz]"
+  );
+}
+
+#[test]
+fn unit_convert_gigahertz_to_megahertz() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Gigahertz\"], \"Megahertz\"]")
+      .unwrap(),
+    "Quantity[1000, Megahertz]"
+  );
+}
+
+#[test]
+fn unit_convert_gigahertz_to_hertz() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Gigahertz\"], \"Hertz\"]").unwrap(),
+    "Quantity[1000000000, Hertz]"
+  );
+}
+
+// ─── Extended units: Magnetic flux density ─────────────────────────────────
+
+#[test]
+fn unit_convert_teslas_to_milliteslas() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Teslas\"], \"Milliteslas\"]").unwrap(),
+    "Quantity[1000, Milliteslas]"
+  );
+}
+
+#[test]
+fn unit_convert_milliteslas_to_teslas() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[500, \"Milliteslas\"], \"Teslas\"]")
+      .unwrap(),
+    "Quantity[1/2, Teslas]"
+  );
+}
+
+// ─── Extended units: Speed (Knots) ─────────────────────────────────────────
+
+#[test]
+fn unit_convert_knots_to_km_h() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Knots\"], \"Kilometers\"/\"Hours\"]")
+      .unwrap(),
+    "Quantity[463/250, Kilometers/Hours]"
+  );
+}
+
+#[test]
+fn unit_convert_km_h_to_knots() {
+  // 1 km/h = 250/463 knots
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kilometers\"/\"Hours\"], \"Knots\"]")
+      .unwrap(),
+    "Quantity[250/463, Knots]"
+  );
+}
+
+#[test]
+fn unit_convert_knots_to_m_s() {
+  // 1 knot = 1852/3600 m/s
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Knots\"], \"Meters\"/\"Seconds\"]")
+      .unwrap(),
+    "Quantity[463/900, Meters/Seconds]"
+  );
+}
+
+// ─── Extended units: Abbreviations ─────────────────────────────────────────
+
+#[test]
+fn quantity_abbreviation_ms() {
+  assert_eq!(
+    interpret("Quantity[500, \"ms\"]").unwrap(),
+    "Quantity[500, Milliseconds]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_us() {
+  assert_eq!(
+    interpret("Quantity[100, \"us\"]").unwrap(),
+    "Quantity[100, Microseconds]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_ns() {
+  assert_eq!(
+    interpret("Quantity[50, \"ns\"]").unwrap(),
+    "Quantity[50, Nanoseconds]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_um() {
+  assert_eq!(
+    interpret("Quantity[10, \"um\"]").unwrap(),
+    "Quantity[10, Micrometers]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_nm() {
+  assert_eq!(
+    interpret("Quantity[550, \"nm\"]").unwrap(),
+    "Quantity[550, Nanometers]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_nmi() {
+  assert_eq!(
+    interpret("Quantity[1, \"nmi\"]").unwrap(),
+    "Quantity[1, NauticalMiles]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_t() {
+  assert_eq!(
+    interpret("Quantity[5, \"t\"]").unwrap(),
+    "Quantity[5, Tonnes]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_oz() {
+  assert_eq!(
+    interpret("Quantity[8, \"oz\"]").unwrap(),
+    "Quantity[8, Ounces]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_bar() {
+  assert_eq!(
+    interpret("Quantity[1, \"bar\"]").unwrap(),
+    "Quantity[1, Bars]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_atm() {
+  assert_eq!(
+    interpret("Quantity[1, \"atm\"]").unwrap(),
+    "Quantity[1, Atmospheres]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_cal() {
+  assert_eq!(
+    interpret("Quantity[100, \"cal\"]").unwrap(),
+    "Quantity[100, Calories]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_kcal() {
+  assert_eq!(
+    interpret("Quantity[2, \"kcal\"]").unwrap(),
+    "Quantity[2, Kilocalories]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_ev() {
+  assert_eq!(
+    interpret("Quantity[1, \"eV\"]").unwrap(),
+    "Quantity[1, ElectronVolts]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_hz() {
+  assert_eq!(
+    interpret("Quantity[440, \"Hz\"]").unwrap(),
+    "Quantity[440, Hertz]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_khz() {
+  assert_eq!(
+    interpret("Quantity[10, \"kHz\"]").unwrap(),
+    "Quantity[10, Kilohertz]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_mhz() {
+  assert_eq!(
+    interpret("Quantity[2400, \"MHz\"]").unwrap(),
+    "Quantity[2400, Megahertz]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_ghz() {
+  assert_eq!(
+    interpret("Quantity[5, \"GHz\"]").unwrap(),
+    "Quantity[5, Gigahertz]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_tesla() {
+  assert_eq!(
+    interpret("Quantity[1, \"T\"]").unwrap(),
+    "Quantity[1, Teslas]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_mt() {
+  assert_eq!(
+    interpret("Quantity[50, \"mT\"]").unwrap(),
+    "Quantity[50, Milliteslas]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_kn() {
+  assert_eq!(
+    interpret("Quantity[30, \"kn\"]").unwrap(),
+    "Quantity[30, Knots]"
+  );
+}
+
+#[test]
+fn quantity_abbreviation_kt() {
+  assert_eq!(
+    interpret("Quantity[30, \"kt\"]").unwrap(),
+    "Quantity[30, Knots]"
+  );
+}
+
+// ─── Cross-category compatibility ──────────────────────────────────────────
+
+#[test]
+fn compatible_unit_q_hertz_inverse_seconds() {
+  // Hertz has dimension Time^-1, same as 1/Seconds
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Hertz\"], Quantity[1, 1/\"Seconds\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
+#[test]
+fn compatible_unit_q_bars_pascals() {
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Bars\"], Quantity[1, \"Pascals\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
+#[test]
+fn compatible_unit_q_calories_joules() {
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Calories\"], Quantity[1, \"Joules\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
+#[test]
+fn compatible_unit_q_knots_m_per_s() {
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Knots\"], Quantity[1, \"Meters\"/\"Seconds\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}

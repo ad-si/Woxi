@@ -71,6 +71,21 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 1143,
       to_si_denom: 1250,
     },
+    "Micrometers" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1000000,
+    },
+    "Nanometers" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1000000000,
+    },
+    "NauticalMiles" => UnitInfo {
+      dimensions: dims(&[(Length, 1)]),
+      to_si_numer: 1852,
+      to_si_denom: 1,
+    },
 
     // ── Mass → Kilograms ─────────────────────────────────────────────
     "Kilograms" => UnitInfo {
@@ -93,6 +108,16 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 45359237,
       to_si_denom: 100000000,
     },
+    "Tonnes" => UnitInfo {
+      dimensions: dims(&[(Mass, 1)]),
+      to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+    "Ounces" => UnitInfo {
+      dimensions: dims(&[(Mass, 1)]),
+      to_si_numer: 45359237,
+      to_si_denom: 1600000000,
+    },
 
     // ── Time → Seconds ───────────────────────────────────────────────
     "Seconds" => UnitInfo {
@@ -114,6 +139,26 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       dimensions: dims(&[(Time, 1)]),
       to_si_numer: 86400,
       to_si_denom: 1,
+    },
+    "Weeks" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 604800,
+      to_si_denom: 1,
+    },
+    "Milliseconds" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+    "Microseconds" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1000000,
+    },
+    "Nanoseconds" => UnitInfo {
+      dimensions: dims(&[(Time, 1)]),
+      to_si_numer: 1,
+      to_si_denom: 1000000000,
     },
 
     // ── Volume → Liters ──────────────────────────────────────────────
@@ -158,6 +203,16 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 1,
       to_si_denom: 1,
     },
+    "Bars" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
+      to_si_numer: 100000,
+      to_si_denom: 1,
+    },
+    "Atmospheres" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
+      to_si_numer: 101325,
+      to_si_denom: 1,
+    },
 
     // ── Energy: Joules = kg⋅m²/s² ────────────────────────────────────
     "Joules" => UnitInfo {
@@ -174,6 +229,21 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
       to_si_numer: 1000,
       to_si_denom: 1,
+    },
+    "Calories" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 4184,
+      to_si_denom: 1000,
+    },
+    "Kilocalories" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 4184,
+      to_si_denom: 1,
+    },
+    "ElectronVolts" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 1602176634,
+      to_si_denom: 10000000000000000000000000000,
     },
 
     // ── Power: Watts = kg⋅m²/s³ ──────────────────────────────────────
@@ -351,6 +421,47 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_denom: 1,
     },
 
+    // ── Frequency: Hertz = 1/s ──────────────────────────────────────
+    "Hertz" => UnitInfo {
+      dimensions: dims(&[(Time, -1)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Kilohertz" => UnitInfo {
+      dimensions: dims(&[(Time, -1)]),
+      to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+    "Megahertz" => UnitInfo {
+      dimensions: dims(&[(Time, -1)]),
+      to_si_numer: 1000000,
+      to_si_denom: 1,
+    },
+    "Gigahertz" => UnitInfo {
+      dimensions: dims(&[(Time, -1)]),
+      to_si_numer: 1000000000,
+      to_si_denom: 1,
+    },
+
+    // ── Magnetic flux density: Teslas = kg/(A⋅s²) ──────────────────
+    "Teslas" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (ElectricCurrent, -1), (Time, -2)]),
+      to_si_numer: 1,
+      to_si_denom: 1,
+    },
+    "Milliteslas" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (ElectricCurrent, -1), (Time, -2)]),
+      to_si_numer: 1,
+      to_si_denom: 1000,
+    },
+
+    // ── Speed (named): Knots = NauticalMiles/Hours ──────────────────
+    "Knots" => UnitInfo {
+      dimensions: dims(&[(Length, 1), (Time, -1)]),
+      to_si_numer: 1852,
+      to_si_denom: 3600,
+    },
+
     _ => return None,
   };
   Some(info)
@@ -471,6 +582,9 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "km" => "Kilometers",
     "cm" => "Centimeters",
     "mm" => "Millimeters",
+    "μm" | "um" => "Micrometers",
+    "nm" => "Nanometers",
+    "nmi" => "NauticalMiles",
     "ft" => "Feet",
     "in" => "Inches",
     "mi" => "Miles",
@@ -479,7 +593,12 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "g" => "Grams",
     "mg" => "Milligrams",
     "lb" | "lbs" => "Pounds",
+    "t" => "Tonnes",
+    "oz" => "Ounces",
     "s" => "Seconds",
+    "ms" => "Milliseconds",
+    "μs" | "us" => "Microseconds",
+    "ns" => "Nanoseconds",
     "min" => "Minutes",
     "h" | "hr" => "Hours",
     "d" => "Days",
@@ -494,6 +613,9 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "J" => "Joules",
     "mJ" => "Millijoules",
     "kJ" => "Kilojoules",
+    "cal" => "Calories",
+    "kcal" => "Kilocalories",
+    "eV" => "ElectronVolts",
     "W" => "Watts",
     "mW" => "Milliwatts",
     "kW" => "Kilowatts",
@@ -505,6 +627,8 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "C" => "Coulombs",
     "N" => "Newtons",
     "Pa" => "Pascals",
+    "bar" => "Bars",
+    "atm" => "Atmospheres",
     "Ω" => "Ohms",
     "kΩ" => "Kilohms",
     "MΩ" => "Megohms",
@@ -512,6 +636,13 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "mH" => "Millihenries",
     "Wh" => "WattHours",
     "kWh" => "KilowattHours",
+    "Hz" => "Hertz",
+    "kHz" => "Kilohertz",
+    "MHz" => "Megahertz",
+    "GHz" => "Gigahertz",
+    "T" => "Teslas",
+    "mT" => "Milliteslas",
+    "kn" | "kt" => "Knots",
     _ => "",
   };
   if !simple.is_empty() {
@@ -590,6 +721,15 @@ fn try_parse_unit_string(s: &str) -> Option<Expr> {
 /// Recursively decompose a unit Expr into a CompoundUnitInfo.
 fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
   match expr {
+    Expr::Integer(n) => {
+      // Dimensionless numeric factor (e.g. the 1 in "1/Seconds")
+      Some(CompoundUnitInfo {
+        components: vec![],
+        si_numer: *n,
+        si_denom: 1,
+        dimensions: BTreeMap::new(),
+      })
+    }
     Expr::Identifier(name) | Expr::String(name) => {
       // Try direct unit lookup
       if let Some(info) = get_unit_info(name) {
