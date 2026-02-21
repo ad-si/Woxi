@@ -409,6 +409,25 @@ mod cubics {
   }
 }
 
+mod page_width {
+  use super::*;
+
+  #[test]
+  fn page_width_standalone() {
+    assert_eq!(interpret("PageWidth").unwrap(), "PageWidth");
+  }
+
+  #[test]
+  fn page_width_head() {
+    assert_eq!(interpret("Head[PageWidth]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn page_width_as_option() {
+    assert_eq!(interpret("PageWidth -> 80").unwrap(), "PageWidth -> 80");
+  }
+}
+
 mod construct {
   use super::*;
 

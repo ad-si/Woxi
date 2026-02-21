@@ -4041,7 +4041,7 @@ PageFooters,,,,4,3344
 PageHeaders,,,,4,3191
 PageRankCentrality,,,,8,3306
 PageTheme,,,,11,3413
-PageWidth,,,,1,1701
+PageWidth,Option specifying the page width for output formatting,✅,pure,1,1701
 Pagination,,,,11,5079
 PairCorrelationG,,,,12.2,5079
 PairedBarChart,,,,8,2260

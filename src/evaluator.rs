@@ -7201,6 +7201,7 @@ fn evaluate_function_call_ast_inner(
     | "NumberForm"
     | "DigitBlock"
     | "Cubics"
+    | "PageWidth"
     | "Information"
     | "ListPlot3D"
     | "TreeForm" => {
