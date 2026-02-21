@@ -2946,7 +2946,7 @@ JacobiEpsilon,,,,12.2,4747
 JacobiNC,Jacobi elliptic function nc (1/cn),✅,pure,1,3656
 JacobiND,Jacobi elliptic function nd (1/dn),✅,pure,1,3522
 JacobiNS,Jacobi elliptic function ns (1/sn),✅,pure,1,3462
-JacobiP,,,,1,962
+JacobiP,Jacobi polynomial,✅,pure,1,962
 JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1,819
 JacobiSD,Jacobi elliptic function sd (sn/dn),✅,pure,1,3257
 JacobiSN,Jacobi elliptic function sn,✅,pure,1,544

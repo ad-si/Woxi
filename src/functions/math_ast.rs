@@ -6173,6 +6173,77 @@ fn polygamma_numeric(n: usize, mut z: f64) -> f64 {
   asymp + sign * nfact * shift_sum
 }
 
+/// JacobiP[n, a, b, x] - Jacobi polynomial P_n^{(a,b)}(x)
+/// Uses the three-term recurrence relation for numerical evaluation.
+pub fn jacobi_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 4 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiP expects exactly 4 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "JacobiP".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Try numerical evaluation
+  let a_f = try_eval_to_f64(&args[1]);
+  let b_f = try_eval_to_f64(&args[2]);
+  let x_f = try_eval_to_f64(&args[3]);
+
+  if let (Some(a), Some(b), Some(x)) = (a_f, b_f, x_f) {
+    let result = jacobi_p_f64(n, a, b, x);
+    return Ok(Expr::Real(result));
+  }
+
+  // Try rational evaluation for integer/rational a, b, x
+  // For now, return unevaluated for symbolic args
+  Ok(Expr::FunctionCall {
+    name: "JacobiP".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Evaluate the Jacobi polynomial P_n^{(a,b)}(x) numerically using
+/// the three-term recurrence relation.
+fn jacobi_p_f64(n: usize, a: f64, b: f64, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  // P_1^{(a,b)}(x) = (a - b)/2 + (a + b + 2)*x/2
+  let p1 = (a - b) / 2.0 + (a + b + 2.0) * x / 2.0;
+  if n == 1 {
+    return p1;
+  }
+
+  let mut prev = 1.0; // P_0
+  let mut curr = p1; // P_1
+
+  for k in 1..n {
+    let k_f = k as f64;
+    let n_f = k_f + 1.0; // n in recurrence (computing P_{k+1})
+    let ab = a + b;
+    let two_n = 2.0 * n_f;
+    let denom = 2.0 * n_f * (n_f + ab) * (two_n + ab - 2.0);
+    if denom.abs() < 1e-300 {
+      break;
+    }
+    let a1 = (two_n + ab - 1.0)
+      * ((two_n + ab) * (two_n + ab - 2.0) * x + a * a - b * b);
+    let a2 = 2.0 * (n_f + a - 1.0) * (n_f + b - 1.0) * (two_n + ab);
+    let next = (a1 * curr - a2 * prev) / denom;
+    prev = curr;
+    curr = next;
+  }
+  curr
+}
+
 /// LegendreP[n, x] - Legendre polynomial of degree n
 pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
