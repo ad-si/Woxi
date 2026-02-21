@@ -7203,6 +7203,7 @@ fn evaluate_function_call_ast_inner(
     | "Cubics"
     | "PageWidth"
     | "Constant"
+    | "Catalan"
     | "Information"
     | "ListPlot3D"
     | "TreeForm" => {
