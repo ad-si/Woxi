@@ -6130,6 +6130,169 @@ fn factorial_i128(n: usize) -> Option<i128> {
   Some(result)
 }
 
+/// Beta[a, b] - Euler beta function
+/// Beta[a, b] = Gamma[a] * Gamma[b] / Gamma[a + b]
+pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Beta expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // Try to evaluate for positive integer arguments
+  // Beta[m, n] = (m-1)! * (n-1)! / (m+n-1)!
+  if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1])
+    && *a > 0
+    && *b > 0
+  {
+    let a_u = (*a - 1) as usize;
+    let b_u = (*b - 1) as usize;
+    let ab_u = (*a + *b - 1) as usize;
+    if let (Some(a_fact), Some(b_fact), Some(ab_fact)) = (
+      factorial_i128(a_u),
+      factorial_i128(b_u),
+      factorial_i128(ab_u),
+    ) {
+      return Ok(make_rational(a_fact * b_fact, ab_fact));
+    }
+  }
+
+  // Try rational args for half-integer cases
+  // Beta[p/q, r/s] for half-integers involves Gamma at half-integers
+  if let (Some(a_f), Some(b_f)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
+  {
+    // Check if both are positive half-integers (n + 1/2)
+    let a_half = a_f * 2.0;
+    let b_half = b_f * 2.0;
+    if a_half == a_half.round()
+      && b_half == b_half.round()
+      && a_f > 0.0
+      && b_f > 0.0
+      && a_half.fract() == 0.0
+      && b_half.fract() == 0.0
+    {
+      let a2 = a_half as i128;
+      let b2 = b_half as i128;
+
+      // At least one must be odd (half-integer) for Pi to appear
+      if a2 % 2 != 0 || b2 % 2 != 0 {
+        // Check if both args are Real (then numeric)
+        if matches!(&args[0], Expr::Real(_))
+          || matches!(&args[1], Expr::Real(_))
+        {
+          let result = gamma_fn(a_f) * gamma_fn(b_f) / gamma_fn(a_f + b_f);
+          return Ok(Expr::Real(result));
+        }
+        // For exact half-integer arguments, compute via Gamma
+        // If sum is integer, result is rational * sqrt(pi) or rational * pi
+        let sum2 = a2 + b2;
+        if sum2 % 2 == 0 {
+          // Both half-integers or both integers, sum is integer
+          // Result involves sqrt(pi) terms that may cancel
+          // Use numeric for now unless both are half-integers with integer sum
+          // Beta[a, b] = Γ(a)Γ(b)/Γ(a+b)
+          // When a, b are half-integers, Γ(n+1/2) = (2n)! sqrt(π) / (4^n n!)
+          // So Gamma product has π, and if sum is integer, Γ(sum) is (sum-1)!
+          // Beta = Γ(a)Γ(b) / (sum-1)!
+          let sum_int = (sum2 / 2) as usize;
+          if let Some(sum_fact) = factorial_i128(sum_int - 1) {
+            // Compute Γ(a) * Γ(b) / (sum-1)! where a, b are half-integers
+            // Γ(k/2) for odd k: Γ((2m+1)/2) = (2m)! π^{1/2} / (4^m m!)
+            // For even k: Γ(k/2) = ((k/2)-1)!
+            let gamma_a = gamma_half_integer_parts(a2);
+            let gamma_b = gamma_half_integer_parts(b2);
+            if let (
+              Some((a_num, a_den, a_pi_pow)),
+              Some((b_num, b_den, b_pi_pow)),
+            ) = (gamma_a, gamma_b)
+            {
+              let total_pi_pow = a_pi_pow + b_pi_pow; // each half-integer contributes 1/2
+              let num =
+                a_num.checked_mul(b_num).unwrap_or_else(|| a_num * b_num);
+              let den = a_den
+                .checked_mul(b_den)
+                .and_then(|v| v.checked_mul(sum_fact))
+                .unwrap_or(1);
+              let g = gcd(num.abs(), den.abs());
+              let (num, den) = if g > 0 {
+                (num / g, den / g)
+              } else {
+                (num, den)
+              };
+
+              if total_pi_pow == 0 {
+                return Ok(make_rational(num, den));
+              } else if total_pi_pow == 2 {
+                // Two sqrt(Pi) factors = Pi
+                // Result is (num/den) * Pi
+                if den == 1 {
+                  if num == 1 {
+                    return Ok(Expr::Identifier("Pi".to_string()));
+                  }
+                  return Ok(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(Expr::Integer(num)),
+                    right: Box::new(Expr::Identifier("Pi".to_string())),
+                  });
+                }
+                return Ok(Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  left: Box::new(if num == 1 {
+                    Expr::Identifier("Pi".to_string())
+                  } else {
+                    Expr::BinaryOp {
+                      op: BinaryOperator::Times,
+                      left: Box::new(Expr::Integer(num)),
+                      right: Box::new(Expr::Identifier("Pi".to_string())),
+                    }
+                  }),
+                  right: Box::new(Expr::Integer(den)),
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Numeric evaluation
+  if let (Some(a_f), Some(b_f)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
+    && (matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_)))
+  {
+    let result = gamma_fn(a_f) * gamma_fn(b_f) / gamma_fn(a_f + b_f);
+    return Ok(Expr::Real(result));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
+/// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
+/// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)
+fn gamma_half_integer_parts(k2: i128) -> Option<(i128, i128, i128)> {
+  if k2 <= 0 {
+    return None;
+  }
+  if k2 % 2 == 0 {
+    // k2 = 2m, so Gamma(m) = (m-1)!
+    let m = (k2 / 2) as usize;
+    let fact = factorial_i128(m - 1)?;
+    Some((fact, 1, 0))
+  } else {
+    // k2 = 2m+1, so Gamma(m + 1/2) = (2m)! * sqrt(pi) / (4^m * m!)
+    let m = ((k2 - 1) / 2) as usize;
+    let two_m_fact = factorial_i128(2 * m)?;
+    let m_fact = factorial_i128(m)?;
+    let four_m = 4i128.checked_pow(m as u32)?;
+    Some((two_m_fact, four_m * m_fact, 1))
+  }
+}
+
 /// PolyLog[s, z] - Polylogarithm function Li_s(z)
 pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
