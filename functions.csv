@@ -1665,7 +1665,7 @@ Element,,,,4,84
 ElementData,,,,6,546
 ElementwiseLayer,,,,11,1566
 ElidedForms,,,,10,5184
-Eliminate,,,,1,891
+Eliminate,Eliminates variables from a system of equations,✅,pure,1,891
 Ellipsoid,,,,10,1476
 EllipticE,Complete elliptic integral of the second kind E(m),✅,pure,1,879
 EllipticExp,,,,1,3048

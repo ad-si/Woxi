@@ -5920,6 +5920,9 @@ pub fn evaluate_function_call_ast(
     "Solve" if args.len() == 2 => {
       return crate::functions::polynomial_ast::solve_ast(args);
     }
+    "Eliminate" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::eliminate_ast(args);
+    }
     "Reduce" if args.len() >= 2 && args.len() <= 3 => {
       return crate::functions::polynomial_ast::reduce_ast(args);
     }
@@ -11002,6 +11005,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Solve"
     | "NSolve"
     | "Reduce"
+    | "Eliminate"
     | "FindRoot"
     | "D"
     | "Integrate"
