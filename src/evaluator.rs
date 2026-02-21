@@ -6153,6 +6153,9 @@ fn evaluate_function_call_ast_inner(
     "PrimePi" if args.len() == 1 => {
       return crate::functions::math_ast::prime_pi_ast(args);
     }
+    "PartitionsP" if args.len() == 1 => {
+      return crate::functions::math_ast::partitions_p_ast(args);
+    }
     "NextPrime" if args.len() == 1 || args.len() == 2 => {
       return crate::functions::math_ast::next_prime_ast(args);
     }

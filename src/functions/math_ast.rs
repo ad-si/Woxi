@@ -19020,3 +19020,39 @@ fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
 
   sum
 }
+
+/// PartitionsP[n] - Number of unrestricted partitions of the integer n
+pub fn partitions_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PartitionsP expects exactly 1 argument".into(),
+    ));
+  }
+
+  match expr_to_i128(&args[0]) {
+    Some(n) => {
+      if n < 0 {
+        return Ok(Expr::Integer(0));
+      }
+      let n = n as usize;
+      let result = partitions_p(n);
+      Ok(bigint_to_expr(result))
+    }
+    None => Ok(Expr::FunctionCall {
+      name: "PartitionsP".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute p(n) using dynamic programming
+fn partitions_p(n: usize) -> BigInt {
+  let mut dp = vec![BigInt::from(0); n + 1];
+  dp[0] = BigInt::from(1);
+  for k in 1..=n {
+    for j in k..=n {
+      dp[j] = &dp[j] + &dp[j - k];
+    }
+  }
+  dp[n].clone()
+}
