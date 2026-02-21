@@ -5027,6 +5027,9 @@ pub fn evaluate_function_call_ast(
     "PolyLog" if args.len() == 2 => {
       return crate::functions::math_ast::polylog_ast(args);
     }
+    "ExpIntegralEi" if args.len() == 1 => {
+      return crate::functions::math_ast::exp_integral_ei_ast(args);
+    }
     "EllipticTheta" if args.len() == 3 => {
       return crate::functions::math_ast::elliptic_theta_ast(args);
     }
@@ -10104,6 +10107,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "EllipticK"
     | "LegendreP"
     | "PolyLog"
+    | "ExpIntegralEi"
     | "EllipticTheta"
     | "JacobiDN"
     | "JacobiSN"
