@@ -5288,6 +5288,75 @@ mod hermite_h {
   }
 }
 
+mod chebyshev_u {
+  use super::*;
+
+  #[test]
+  fn degree_zero() {
+    assert_eq!(interpret("ChebyshevU[0, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn degree_one() {
+    assert_eq!(interpret("ChebyshevU[1, x]").unwrap(), "2*x");
+  }
+
+  #[test]
+  fn degree_two() {
+    assert_eq!(interpret("ChebyshevU[2, x]").unwrap(), "-1 + 4*x^2");
+  }
+
+  #[test]
+  fn degree_three() {
+    assert_eq!(interpret("ChebyshevU[3, x]").unwrap(), "-4*x + 8*x^3");
+  }
+
+  #[test]
+  fn degree_four() {
+    assert_eq!(
+      interpret("ChebyshevU[4, x]").unwrap(),
+      "1 - 12*x^2 + 16*x^4"
+    );
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("ChebyshevU[3, 0]").unwrap(), "0");
+    assert_eq!(interpret("ChebyshevU[4, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("ChebyshevU[3, 1]").unwrap(), "4");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("ChebyshevU[5, 0.3]").unwrap().parse().unwrap();
+    assert!((result - 1.01376).abs() < 1e-4);
+  }
+
+  #[test]
+  fn rational_arg() {
+    let result = interpret("N[ChebyshevU[3, 1/2]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-1.0)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[ChebyshevU[2, 3/4]]").unwrap().parse().unwrap();
+    // U_2(3/4) = -1 + 4*(9/16) = -1 + 9/4 = 5/4 = 1.25
+    assert!((result - 1.25).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("ChebyshevU[n, x]").unwrap(), "ChebyshevU[n, x]");
+  }
+}
+
 mod bessel_y {
   use super::*;
 
