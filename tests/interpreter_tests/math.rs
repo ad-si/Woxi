@@ -5337,6 +5337,109 @@ mod elliptic_e {
   }
 }
 
+mod hypergeometric_1f1 {
+  use super::*;
+
+  #[test]
+  fn at_z_zero() {
+    assert_eq!(interpret("Hypergeometric1F1[2, 3, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn exp_case() {
+    // 1F1[1, 1, z] = e^z
+    let result: f64 = interpret("Hypergeometric1F1[1, 1, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - std::f64::consts::E).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_basic() {
+    let result: f64 = interpret("Hypergeometric1F1[1, 2, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.7182818284590455).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_higher() {
+    let result: f64 = interpret("Hypergeometric1F1[2, 3, 1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 2.0).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_negative_z() {
+    let result: f64 = interpret("Hypergeometric1F1[0.5, 1.5, -1.0]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 0.7468241328124272).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[Hypergeometric1F1[1, 2, 1]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.7182818284590455).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("Hypergeometric1F1[a, b, z]").unwrap(),
+      "Hypergeometric1F1[a, b, z]"
+    );
+  }
+}
+
+mod legendre_q {
+  use super::*;
+
+  #[test]
+  fn numeric_order_zero() {
+    let result: f64 = interpret("LegendreQ[0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.5493061443340543).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_one() {
+    let result: f64 = interpret("LegendreQ[1, 0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.7253469278329724)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_two() {
+    let result: f64 = interpret("LegendreQ[2, 0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.8186632680417569)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_three() {
+    let result: f64 = interpret("LegendreQ[3, 0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.19865477147948235)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[LegendreQ[1, 1/2]]").unwrap().parse().unwrap();
+    assert!((result - (-0.7253469278329724)).abs() < 1e-8);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("LegendreQ[n, x]").unwrap(), "LegendreQ[n, x]");
+  }
+}
+
 mod exp_integral_e {
   use super::*;
 
