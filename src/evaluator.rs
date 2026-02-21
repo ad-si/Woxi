@@ -4379,6 +4379,68 @@ pub fn evaluate_function_call_ast(
         }
       }
     }
+    // WriteString[stream, "text1", "text2", ...] — write strings to a stream
+    #[cfg(not(target_arch = "wasm32"))]
+    "WriteString" if args.len() >= 2 => {
+      let stream = &args[0];
+      // Extract stream info
+      let file_path = match stream {
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "OutputStream"
+          || stream_head == "InputStream")
+          && stream_args.len() == 2 =>
+        {
+          if let Expr::Integer(id) = &stream_args[1] {
+            let stream_id = *id as usize;
+            crate::STREAM_REGISTRY.with(|reg| {
+              let registry = reg.borrow();
+              registry.get(&stream_id).and_then(|s| match &s.kind {
+                crate::StreamKind::FileStream(path) => Some(path.clone()),
+                _ => None,
+              })
+            })
+          } else {
+            None
+          }
+        }
+        Expr::String(path) => Some(path.clone()),
+        _ => None,
+      };
+
+      if let Some(path) = file_path {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+          .create(true)
+          .append(true)
+          .open(&path)
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!(
+              "WriteString: cannot open {}: {}",
+              path, e
+            ))
+          })?;
+        for arg in &args[1..] {
+          let text = match arg {
+            Expr::String(s) => s.clone(),
+            other => crate::syntax::expr_to_string(other),
+          };
+          file.write_all(text.as_bytes()).map_err(|e| {
+            InterpreterError::EvaluationError(format!(
+              "WriteString: write error: {}",
+              e
+            ))
+          })?;
+        }
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+
+      return Ok(Expr::FunctionCall {
+        name: "WriteString".to_string(),
+        args: args.to_vec(),
+      });
+    }
     "AbsoluteTime" => {
       return crate::functions::datetime_ast::absolute_time_ast(args);
     }

@@ -270,6 +270,35 @@ mod streams {
       result
     );
   }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_to_file() {
+    let result = interpret(
+      r#"f = OpenWrite[CreateFile[]]; WriteString[f, "hello"]; Close[f]"#,
+    )
+    .unwrap();
+    assert!(!result.is_empty());
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_multiple_args() {
+    let result = interpret(
+      r#"file = CreateFile[]; f = OpenWrite[file]; WriteString[f, "hello", " ", "world"]; Close[f]; ReadList[file, String]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "{hello world}");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_string_returns_null() {
+    let result =
+      interpret(r#"f = OpenWrite[CreateFile[]]; WriteString[f, "test"]"#)
+        .unwrap();
+    assert_eq!(result, "Null");
+  }
 }
 
 mod run {

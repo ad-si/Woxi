@@ -6158,7 +6158,7 @@ WorkingPrecision,Option for numerical precision,✅,pure,1,412
 WrapAround,,,,10,5587
 Write,,,,1,1246
 WriteLine,,,,10,2282
-WriteString,,,,1,930
+WriteString,Write a string to an output stream,✅,effectful,1,930
 Wronskian,,,,7,876
 XMLElement,,,,4.2,481
 XMLObject,,,,4.2,2755
