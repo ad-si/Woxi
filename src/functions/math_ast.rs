@@ -4876,7 +4876,6 @@ fn exp_integral_ei_numeric(x: f64) -> f64 {
     // Asymptotic expansion for large |x|: Ei(x) ~ e^x/x * Σ n!/x^n
     // Use continued fraction for better convergence
     let mut result = 0.0;
-    let mut term = 1.0;
     for n in (1..=100).rev() {
       let nf = n as f64;
       result = nf / (1.0 + nf / (x + result));
@@ -4887,7 +4886,7 @@ fn exp_integral_ei_numeric(x: f64) -> f64 {
     } else {
       // For large negative x, Ei(x) ≈ e^x/x * (1 + 1!/x + 2!/x^2 + ...)
       let mut sum = 1.0;
-      term = 1.0;
+      let mut term = 1.0;
       for n in 1..100 {
         term *= n as f64 / x;
         sum += term;
@@ -6269,6 +6268,195 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Beta".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// LogIntegral[x] - Logarithmic integral Li(x) = Ei(ln(x))
+pub fn log_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LogIntegral expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    // LogIntegral[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // LogIntegral[1] = -Infinity (pole at x=1 since ln(1)=0)
+    Expr::Integer(1) => Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
+    }),
+    // Numeric evaluation: Li(x) = Ei(ln(x))
+    Expr::Real(x) => {
+      let result = exp_integral_ei_numeric(x.ln());
+      Ok(Expr::Real(result))
+    }
+    // Unevaluated
+    _ => Ok(Expr::FunctionCall {
+      name: "LogIntegral".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// HermiteH[n, x] - Hermite polynomial (physicist's convention)
+/// H_0(x) = 1, H_1(x) = 2x, H_{n+1}(x) = 2x*H_n(x) - 2n*H_{n-1}(x)
+pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "HermiteH expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "HermiteH".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  match &args[1] {
+    Expr::Integer(x) => {
+      // Evaluate using recurrence with exact arithmetic
+      let result = hermite_eval_i128(n, *x);
+      Ok(Expr::Integer(result))
+    }
+    Expr::Real(f) => Ok(Expr::Real(hermite_eval_f64(n, *f))),
+    _ => {
+      if let Some(expr) = hermite_polynomial_symbolic(n, &args[1]) {
+        Ok(expr)
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "HermiteH".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+/// Evaluate H_n(x) for integer x using exact i128 arithmetic
+fn hermite_eval_i128(n: usize, x: i128) -> i128 {
+  if n == 0 {
+    return 1;
+  }
+  if n == 1 {
+    return 2 * x;
+  }
+  let mut hm1: i128 = 1;
+  let mut h: i128 = 2 * x;
+  for k in 1..n {
+    let hnew = 2 * x * h - 2 * (k as i128) * hm1;
+    hm1 = h;
+    h = hnew;
+  }
+  h
+}
+
+/// Evaluate H_n(x) numerically
+fn hermite_eval_f64(n: usize, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  if n == 1 {
+    return 2.0 * x;
+  }
+  let mut hm1 = 1.0;
+  let mut h = 2.0 * x;
+  for k in 1..n {
+    let hnew = 2.0 * x * h - 2.0 * (k as f64) * hm1;
+    hm1 = h;
+    h = hnew;
+  }
+  h
+}
+
+/// Build symbolic Hermite polynomial using coefficient recurrence
+fn hermite_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+  let coeffs = hermite_coefficients(n)?;
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, c) in coeffs.iter().enumerate() {
+    if *c == 0 {
+      continue;
+    }
+    let x_power = if k == 0 {
+      None
+    } else if k == 1 {
+      Some(x.clone())
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(k as i128)),
+      })
+    };
+
+    let term = match x_power {
+      None => Expr::Integer(*c),
+      Some(xp) if *c == 1 => xp,
+      Some(xp) if *c == -1 => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), xp],
+      },
+      Some(xp) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(*c)),
+        right: Box::new(xp),
+      },
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return Some(terms.pop().unwrap());
+  }
+
+  let mut result = terms[0].clone();
+  for t in terms.iter().skip(1) {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(t.clone()),
+    };
+  }
+  Some(result)
+}
+
+/// Compute Hermite polynomial coefficients H_n(x) = Σ c_k x^k
+fn hermite_coefficients(n: usize) -> Option<Vec<i128>> {
+  if n == 0 {
+    return Some(vec![1]);
+  }
+  if n == 1 {
+    return Some(vec![0, 2]);
+  }
+
+  let mut prev: Vec<i128> = vec![1];
+  let mut curr: Vec<i128> = vec![0, 2];
+
+  for k in 1..n {
+    // H_{k+1} = 2x * H_k - 2k * H_{k-1}
+    let mut next = vec![0i128; curr.len() + 1];
+    for (j, c) in curr.iter().enumerate() {
+      next[j + 1] = next[j + 1].checked_add(2i128.checked_mul(*c)?)?;
+    }
+    let kf = k as i128;
+    for (j, c) in prev.iter().enumerate() {
+      next[j] = next[j].checked_sub(2i128.checked_mul(kf)?.checked_mul(*c)?)?;
+    }
+
+    prev = curr;
+    curr = next;
+  }
+
+  Some(curr)
 }
 
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0

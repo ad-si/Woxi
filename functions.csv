@@ -2530,7 +2530,7 @@ HeldGroupHe,,,,8,5013
 HelmholtzPDEComponent,,,,12.2,5486
 Here,,,,10,1413
 HermiteDecomposition,,,,6,3291
-HermiteH,,,,1,734
+HermiteH,Physicist's Hermite polynomial H_n(x),✅,pure,1,734
 Hermitian,,,,12.2,4707
 HermitianMatrix,,,,14,
 HermitianMatrixQ,,,,6,2587
@@ -3299,7 +3299,7 @@ LogBarnesG,,,,7,4104
 LogGamma,,,,2,1116
 LogGammaDistribution,,,,8,3678
 LogicalExpand,,,,1,1501
-LogIntegral,,,,1,727
+LogIntegral,Logarithmic integral function Li(x) = Ei(ln(x)),✅,pure,1,727
 LogisticDistribution,,,,6,2611
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10,1409
 LogitModelFit,,,,7,2541

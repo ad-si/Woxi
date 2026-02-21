@@ -5057,6 +5057,12 @@ pub fn evaluate_function_call_ast(
     "Beta" if args.len() == 2 => {
       return crate::functions::math_ast::beta_ast(args);
     }
+    "LogIntegral" if args.len() == 1 => {
+      return crate::functions::math_ast::log_integral_ast(args);
+    }
+    "HermiteH" if args.len() == 2 => {
+      return crate::functions::math_ast::hermite_h_ast(args);
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);
     }
@@ -10135,6 +10141,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "JacobiCN"
     | "ChebyshevT"
     | "LaguerreL"
+    | "LogIntegral"
+    | "HermiteH"
     | "EllipticE"
     | "Conjugate"
     | "Re"
