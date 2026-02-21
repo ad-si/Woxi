@@ -1600,14 +1600,14 @@ pub fn try_quantity_power(
     };
 
   // Try to simplify unit^exp by decomposing the unit and distributing the power
-  if let Some((p, q)) = expr_to_rational(exp) {
-    if let Some(new_unit) = power_unit_expr(unit, p, q) {
-      // If all units cancelled out, return bare magnitude
-      if matches!(&new_unit, Expr::Integer(1)) {
-        return Some(Ok(new_mag));
-      }
-      return Some(Ok(make_quantity(new_mag, new_unit)));
+  if let Some((p, q)) = expr_to_rational(exp)
+    && let Some(new_unit) = power_unit_expr(unit, p, q)
+  {
+    // If all units cancelled out, return bare magnitude
+    if matches!(&new_unit, Expr::Integer(1)) {
+      return Some(Ok(new_mag));
     }
+    return Some(Ok(make_quantity(new_mag, new_unit)));
   }
 
   // Fallback: wrap unit in Power without simplification

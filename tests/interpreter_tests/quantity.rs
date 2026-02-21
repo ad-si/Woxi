@@ -739,11 +739,21 @@ fn quantity_sqrt_free_fall() {
   "#;
   let result = interpret(code).unwrap();
   // Extract magnitude and verify it's approximately 159.46
-  assert!(result.starts_with("Quantity["), "Expected Quantity, got: {}", result);
-  assert!(result.ends_with("Kilometers/Hours]"), "Expected km/h unit, got: {}", result);
+  assert!(
+    result.starts_with("Quantity["),
+    "Expected Quantity, got: {}",
+    result
+  );
+  assert!(
+    result.ends_with("Kilometers/Hours]"),
+    "Expected km/h unit, got: {}",
+    result
+  );
   let mag_str = result
-    .strip_prefix("Quantity[").unwrap()
-    .strip_suffix(", Kilometers/Hours]").unwrap();
+    .strip_prefix("Quantity[")
+    .unwrap()
+    .strip_suffix(", Kilometers/Hours]")
+    .unwrap();
   let mag: f64 = mag_str.parse().unwrap();
   assert!((mag - 159.46).abs() < 0.1, "Expected ~159.46, got: {}", mag);
 }
