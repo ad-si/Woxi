@@ -5158,3 +5158,44 @@ mod laguerre_l {
     assert_eq!(interpret("LaguerreL[n, x]").unwrap(), "LaguerreL[n, x]");
   }
 }
+
+mod beta_fn {
+  use super::*;
+
+  #[test]
+  fn both_one() {
+    assert_eq!(interpret("Beta[1, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn positive_integers() {
+    assert_eq!(interpret("Beta[2, 3]").unwrap(), "1/12");
+  }
+
+  #[test]
+  fn positive_integers_2() {
+    assert_eq!(interpret("Beta[3, 4]").unwrap(), "1/60");
+  }
+
+  #[test]
+  fn half_half() {
+    assert_eq!(interpret("Beta[1/2, 1/2]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("Beta[1.5, 2.5]").unwrap().parse().unwrap();
+    assert!((result - 0.19634954084936207).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("Beta[a, b]").unwrap(), "Beta[a, b]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[Beta[2, 3]]").unwrap().parse().unwrap();
+    assert!((result - 0.08333333333333333).abs() < 1e-10);
+  }
+}

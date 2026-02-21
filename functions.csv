@@ -448,7 +448,7 @@ BesselJZero,,,,6,1375
 BesselK,Modified Bessel function of the second kind,✅,pure,1,613
 BesselY,,,,1,752
 BesselYZero,,,,6,4387
-Beta,,,,1,702
+Beta,Euler beta function,✅,pure,1,702
 BetaBinomialDistribution,,,,6,3048
 BetaDistribution,,,,6,1061
 BetaNegativeBinomialDistribution,,,,6,3947

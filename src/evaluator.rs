@@ -5054,6 +5054,9 @@ pub fn evaluate_function_call_ast(
     "LaguerreL" if args.len() == 2 => {
       return crate::functions::math_ast::laguerre_l_ast(args);
     }
+    "Beta" if args.len() == 2 => {
+      return crate::functions::math_ast::beta_ast(args);
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return crate::functions::math_ast::n_ast(args);
     }
