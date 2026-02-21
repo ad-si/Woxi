@@ -1402,3 +1402,64 @@ mod replace {
     assert_eq!(interpret("Replace[42, n_Integer -> n + 1]").unwrap(), "43");
   }
 }
+
+mod distribute {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("Distribute[f[a + b, c]]").unwrap(),
+      "f[a, c] + f[b, c]"
+    );
+  }
+
+  #[test]
+  fn both_sums() {
+    assert_eq!(
+      interpret("Distribute[f[a + b, c + d]]").unwrap(),
+      "f[a, c] + f[a, d] + f[b, c] + f[b, d]"
+    );
+  }
+
+  #[test]
+  fn times_over_plus() {
+    assert_eq!(
+      interpret("Distribute[(a + b)(c + d)]").unwrap(),
+      "a*c + a*d + b*c + b*d"
+    );
+  }
+
+  #[test]
+  fn three_terms() {
+    assert_eq!(
+      interpret("Distribute[f[a + b + c, d]]").unwrap(),
+      "f[a, d] + f[b, d] + f[c, d]"
+    );
+  }
+
+  #[test]
+  fn three_args() {
+    let result = interpret("Distribute[f[a + b, c + d, e + g]]").unwrap();
+    assert!(result.contains("f[a, c, e]"));
+    assert!(result.contains("f[b, d, g]"));
+  }
+
+  #[test]
+  fn no_distribution_needed() {
+    assert_eq!(interpret("Distribute[f[a, b]]").unwrap(), "f[a, b]");
+  }
+
+  #[test]
+  fn with_head_restriction() {
+    assert_eq!(
+      interpret("Distribute[(a + b)(c + d), Plus, Times]").unwrap(),
+      "a*c + a*d + b*c + b*d"
+    );
+  }
+
+  #[test]
+  fn atom_input() {
+    assert_eq!(interpret("Distribute[x]").unwrap(), "x");
+  }
+}

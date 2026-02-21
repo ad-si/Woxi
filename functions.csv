@@ -1518,7 +1518,7 @@ DisplayPacket,,,,3,5390
 DistanceFunction,,,,6,1171
 DistanceMatrix,,,,10.3,1806
 DistanceTransform,,,,7,1768
-Distribute,,,,1,1074
+Distribute,Distribute one operator over another,✅,pure,1,1074
 Distributed,,,,8,365
 DistributedContexts,,,,8,2662
 DistributeDefinitions,,,,7,1672

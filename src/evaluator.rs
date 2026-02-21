@@ -5677,6 +5677,12 @@ pub fn evaluate_function_call_ast(
     }
 
     // AST-native polynomial functions
+    // Distribute[f[x1, x2, ...]] - distribute f over Plus
+    // Distribute[expr, g] - distribute over g instead of Plus
+    // Distribute[expr, g, f] - only distribute if outer head is f
+    "Distribute" if !args.is_empty() && args.len() <= 3 => {
+      return distribute_ast(args);
+    }
     "Expand" if args.len() == 1 => {
       return crate::functions::polynomial_ast::expand_ast(args);
     }
@@ -6530,6 +6536,102 @@ pub fn evaluate_function_call_ast(
     name: name.to_string(),
     args: args.to_vec(),
   })
+}
+
+/// AST-based Distribute implementation
+/// Distribute[f[x1, x2, ...]] distributes f over Plus in the xi
+/// Distribute[expr, g] distributes over g instead of Plus
+/// Distribute[expr, g, f] only distributes if outer head is f
+fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let expr = &args[0];
+
+  // Determine the inner head to distribute over (default: Plus/addition)
+  let distribute_over = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Identifier(name) => name.clone(),
+      _ => "Plus".to_string(),
+    }
+  } else {
+    "Plus".to_string()
+  };
+
+  // Get the outer function call
+  let (outer_name, outer_args) = match expr {
+    Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    _ => {
+      // Not a function call - return as-is
+      return Ok(expr.clone());
+    }
+  };
+
+  // If 3 args provided, check that outer head matches
+  if args.len() == 3 {
+    let required_head = match &args[2] {
+      Expr::Identifier(name) => name.clone(),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Distribute".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    if outer_name != required_head {
+      return Ok(expr.clone());
+    }
+  }
+
+  // Split each argument into its parts based on distribute_over head
+  let mut arg_lists: Vec<Vec<Expr>> = Vec::new();
+  for arg in &outer_args {
+    let parts = split_by_head(arg, &distribute_over);
+    arg_lists.push(parts);
+  }
+
+  // Compute cartesian product
+  let mut combinations: Vec<Vec<Expr>> = vec![vec![]];
+  for parts in &arg_lists {
+    let mut new_combinations = Vec::new();
+    for combo in &combinations {
+      for part in parts {
+        let mut new_combo = combo.clone();
+        new_combo.push(part.clone());
+        new_combinations.push(new_combo);
+      }
+    }
+    combinations = new_combinations;
+  }
+
+  // Build result: wrap each combination in outer_name, then combine with distribute_over
+  let terms: Vec<Expr> = combinations
+    .into_iter()
+    .map(|combo| Expr::FunctionCall {
+      name: outer_name.clone(),
+      args: combo,
+    })
+    .collect();
+
+  if terms.len() == 1 {
+    return evaluate_expr_to_expr(&terms[0]);
+  }
+
+  let result = if distribute_over == "List" {
+    Expr::List(terms)
+  } else {
+    Expr::FunctionCall {
+      name: distribute_over,
+      args: terms,
+    }
+  };
+
+  evaluate_expr_to_expr(&result)
+}
+
+/// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
+fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == head => args.clone(),
+    _ => vec![expr.clone()],
+  }
 }
 
 /// AST-based Module implementation to avoid interpret() recursion
