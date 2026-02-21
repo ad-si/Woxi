@@ -2719,6 +2719,9 @@ pub fn evaluate_function_call_ast(
         &args[0], &args[1], &args[2],
       );
     }
+    "MapAll" if args.len() == 2 => {
+      return map_all_ast(&args[0], &args[1]);
+    }
     "MapAt" if args.len() == 3 => {
       return list_helpers_ast::map_at_ast(&args[0], &args[1], &args[2]);
     }
@@ -6573,6 +6576,36 @@ pub fn evaluate_function_call_ast(
     name: name.to_string(),
     args: args.to_vec(),
   })
+}
+
+/// MapAll[f, expr] - apply f to every subexpression in expr (bottom-up)
+fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
+  // First, recursively apply to subexpressions
+  let mapped = match expr {
+    Expr::FunctionCall { name, args } => {
+      // Map over the arguments
+      let new_args: Vec<Expr> = args
+        .iter()
+        .map(|a| map_all_ast(f, a))
+        .collect::<Result<Vec<_>, _>>()?;
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::List(items) => {
+      let new_items: Vec<Expr> = items
+        .iter()
+        .map(|a| map_all_ast(f, a))
+        .collect::<Result<Vec<_>, _>>()?;
+      Expr::List(new_items)
+    }
+    // Atoms: just return as-is (will be wrapped by f below)
+    _ => expr.clone(),
+  };
+
+  // Then apply f to the result
+  apply_function_to_arg(f, &mapped)
 }
 
 /// AST-based Distribute implementation
