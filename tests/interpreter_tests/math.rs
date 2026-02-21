@@ -6221,6 +6221,66 @@ mod inverse_fourier {
   }
 }
 
+mod spherical_harmonic_y {
+  use super::*;
+
+  #[test]
+  fn y00() {
+    // Y_0^0 = 1/sqrt(4*Pi)
+    let result = interpret("SphericalHarmonicY[0, 0, 0, 0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 1.0 / (4.0 * std::f64::consts::PI).sqrt();
+    assert!((val - expected).abs() < 1e-12);
+  }
+
+  #[test]
+  fn y10() {
+    // Y_1^0(0, 0) = sqrt(3/(4*Pi))
+    let result = interpret("SphericalHarmonicY[1, 0, 0, 0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = (3.0 / (4.0 * std::f64::consts::PI)).sqrt();
+    assert!((val - expected).abs() < 1e-12);
+  }
+
+  #[test]
+  fn y20_at_pi_over_3() {
+    // Y_2^0(Pi/3, 0) = sqrt(5/(4*Pi)) * P_2(cos(Pi/3))
+    let result = interpret("SphericalHarmonicY[2, 0, Pi/3, 0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let cos_theta = (std::f64::consts::PI / 3.0).cos();
+    let p2 = (3.0 * cos_theta * cos_theta - 1.0) / 2.0;
+    let expected = (5.0 / (4.0 * std::f64::consts::PI)).sqrt() * p2;
+    assert!((val - expected).abs() < 1e-12);
+  }
+
+  #[test]
+  fn m_greater_than_l() {
+    assert_eq!(interpret("SphericalHarmonicY[2, 3, Pi/4, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn complex_result() {
+    // Y_1^1(Pi/4, Pi/4) should have both real and imaginary parts
+    let result = interpret("SphericalHarmonicY[1, 1, Pi/4, Pi/4]").unwrap();
+    assert!(result.contains("I"));
+  }
+
+  #[test]
+  fn negative_m() {
+    // Y_1^{-1}(Pi/4, Pi/4) has imaginary part
+    let result = interpret("SphericalHarmonicY[1, -1, Pi/4, Pi/4]").unwrap();
+    assert!(result.contains("I"));
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[x, 0, 0, 0]").unwrap(),
+      "SphericalHarmonicY[x, 0, 0, 0]"
+    );
+  }
+}
+
 mod nsum {
   use super::*;
 

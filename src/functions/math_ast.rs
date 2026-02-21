@@ -6294,6 +6294,157 @@ fn legendre_eval_f64(n: usize, x: f64) -> f64 {
   curr
 }
 
+/// Compute the associated Legendre polynomial P_l^m(x) numerically.
+/// Uses the recurrence relation starting from P_m^m and P_{m+1}^m.
+fn associated_legendre_f64(l: i64, m: i64, x: f64) -> f64 {
+  let m_abs = m.unsigned_abs() as usize;
+  let l = l as usize;
+
+  if m_abs > l {
+    return 0.0;
+  }
+
+  // Compute P_m^m(x) = (-1)^m * (2m-1)!! * (1-x^2)^(m/2)
+  let sin_theta = (1.0 - x * x).max(0.0).sqrt();
+  let mut pmm = 1.0;
+  for i in 1..=m_abs {
+    pmm *= -(2.0 * i as f64 - 1.0) * sin_theta;
+  }
+
+  if l == m_abs {
+    if m < 0 {
+      // P_l^{-m}(x) = (-1)^m * (l-m)!/(l+m)! * P_l^m(x)
+      let sign = if m_abs.is_multiple_of(2) { 1.0 } else { -1.0 };
+      let mut ratio = 1.0;
+      for i in (l - m_abs + 1)..=(l + m_abs) {
+        ratio *= i as f64;
+      }
+      return sign * pmm / ratio;
+    }
+    return pmm;
+  }
+
+  // Compute P_{m+1}^m(x) = x * (2m+1) * P_m^m(x)
+  let mut pmm1 = x * (2.0 * m_abs as f64 + 1.0) * pmm;
+
+  if l == m_abs + 1 {
+    if m < 0 {
+      let sign = if m_abs.is_multiple_of(2) { 1.0 } else { -1.0 };
+      let mut ratio = 1.0;
+      for i in (l - m_abs + 1)..=(l + m_abs) {
+        ratio *= i as f64;
+      }
+      return sign * pmm1 / ratio;
+    }
+    return pmm1;
+  }
+
+  // Recurrence: (l-m)*P_l^m = x*(2l-1)*P_{l-1}^m - (l+m-1)*P_{l-2}^m
+  let mut result = 0.0;
+  for ll in (m_abs + 2)..=l {
+    result = (x * (2.0 * ll as f64 - 1.0) * pmm1
+      - (ll + m_abs - 1) as f64 * pmm)
+      / (ll - m_abs) as f64;
+    pmm = pmm1;
+    pmm1 = result;
+  }
+
+  if m < 0 {
+    let sign = if m_abs.is_multiple_of(2) { 1.0 } else { -1.0 };
+    let mut ratio = 1.0;
+    for i in (l - m_abs + 1)..=(l + m_abs) {
+      ratio *= i as f64;
+    }
+    result * sign / ratio
+  } else {
+    result
+  }
+}
+
+/// SphericalHarmonicY[l, m, theta, phi] - Spherical harmonic function
+pub fn spherical_harmonic_y_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 4 {
+    return Err(InterpreterError::EvaluationError(
+      "SphericalHarmonicY expects exactly 4 arguments".into(),
+    ));
+  }
+
+  // Try to get integer values for l and m
+  let l_val = match &args[0] {
+    Expr::Integer(n) => Some(*n as i64),
+    _ => None,
+  };
+  let m_val = match &args[1] {
+    Expr::Integer(n) => Some(*n as i64),
+    _ => None,
+  };
+
+  let (l, m) = match (l_val, m_val) {
+    (Some(l), Some(m)) => (l, m),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "SphericalHarmonicY".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // |m| > l → 0
+  if m.unsigned_abs() > l.unsigned_abs() {
+    return Ok(Expr::Integer(0));
+  }
+
+  // l < 0 → undefined, return unevaluated
+  if l < 0 {
+    return Ok(Expr::FunctionCall {
+      name: "SphericalHarmonicY".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Try numerical evaluation
+  let theta_f = try_eval_to_f64(&args[2]);
+  let phi_f = try_eval_to_f64(&args[3]);
+
+  if let (Some(theta), Some(phi)) = (theta_f, phi_f) {
+    let cos_theta = theta.cos();
+    let m_abs = m.unsigned_abs() as usize;
+    let l_u = l as usize;
+
+    // Normalization factor: sqrt((2l+1)/(4π) * (l-|m|)!/(l+|m|)!)
+    let mut fact_ratio = 1.0_f64;
+    for i in (l_u - m_abs + 1)..=(l_u + m_abs) {
+      fact_ratio *= i as f64;
+    }
+    let norm =
+      ((2.0 * l as f64 + 1.0) / (4.0 * std::f64::consts::PI) / fact_ratio)
+        .sqrt();
+
+    // Associated Legendre polynomial P_l^|m|(cos θ)
+    let plm = associated_legendre_f64(l, m.abs(), cos_theta);
+
+    // Condon-Shortley phase: (-1)^m for m > 0
+    let cs_phase = if m > 0 && m % 2 != 0 { -1.0 } else { 1.0 };
+
+    // Y_l^m = cs_phase * norm * P_l^|m|(cos θ) * e^(imφ)
+    let re = cs_phase * norm * plm * (m as f64 * phi).cos();
+    let im = cs_phase * norm * plm * (m as f64 * phi).sin();
+
+    if im.abs() < 1e-15 {
+      return Ok(Expr::Real(re));
+    }
+    return Ok(build_complex_float_expr(re, im));
+  }
+
+  // Return unevaluated for symbolic arguments
+  Ok(Expr::FunctionCall {
+    name: "SphericalHarmonicY".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Build the symbolic Legendre polynomial expression for P_n(x)
 fn legendre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
   if n == 0 {
