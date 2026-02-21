@@ -2043,6 +2043,66 @@ mod lcm {
   }
 }
 
+mod jacobi_symbol {
+  use super::*;
+
+  #[test]
+  fn basic_legendre() {
+    assert_eq!(interpret("JacobiSymbol[1, 5]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[2, 5]").unwrap(), "-1");
+    assert_eq!(interpret("JacobiSymbol[3, 5]").unwrap(), "-1");
+    assert_eq!(interpret("JacobiSymbol[4, 5]").unwrap(), "1");
+  }
+
+  #[test]
+  fn zero_numerator() {
+    assert_eq!(interpret("JacobiSymbol[0, 5]").unwrap(), "0");
+    assert_eq!(interpret("JacobiSymbol[0, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn denominator_one() {
+    assert_eq!(interpret("JacobiSymbol[7, 1]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[0, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative_numerator() {
+    // (-1/p) = (-1)^((p-1)/2)
+    assert_eq!(interpret("JacobiSymbol[-1, 3]").unwrap(), "-1");
+    assert_eq!(interpret("JacobiSymbol[-1, 5]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[-1, 7]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn composite_denominator() {
+    assert_eq!(interpret("JacobiSymbol[2, 15]").unwrap(), "1");
+    assert_eq!(interpret("JacobiSymbol[7, 15]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn large_values() {
+    assert_eq!(interpret("JacobiSymbol[1001, 9907]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn table_mod_5() {
+    // Complete table of Jacobi symbols for (n/5), n=0..4
+    assert_eq!(
+      interpret("Table[JacobiSymbol[n, 5], {n, 0, 4}]").unwrap(),
+      "{0, 1, -1, -1, 1}"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("JacobiSymbol[x, 5]").unwrap(),
+      "JacobiSymbol[x, 5]"
+    );
+  }
+}
+
 mod real_digits {
   use super::*;
 

@@ -6120,6 +6120,9 @@ fn evaluate_function_call_ast_inner(
     "EulerPhi" if args.len() == 1 => {
       return crate::functions::math_ast::euler_phi_ast(args);
     }
+    "JacobiSymbol" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_symbol_ast(args);
+    }
     "CoprimeQ" if args.len() >= 2 => {
       return crate::functions::math_ast::coprime_q_ast(args);
     }

@@ -14466,6 +14466,77 @@ pub fn euler_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(result as i128))
 }
 
+/// JacobiSymbol[n, m] - Compute the Jacobi symbol (n/m)
+pub fn jacobi_symbol_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiSymbol expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "JacobiSymbol".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let m = match expr_to_i128(&args[1]) {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "JacobiSymbol".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // m must be a positive odd integer
+  if m <= 0 || m % 2 == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiSymbol: second argument must be a positive odd integer".into(),
+    ));
+  }
+
+  Ok(Expr::Integer(jacobi_symbol(n, m)))
+}
+
+/// Compute the Jacobi symbol (a/n) using the standard algorithm
+fn jacobi_symbol(mut a: i128, mut n: i128) -> i128 {
+  if n == 1 {
+    return 1;
+  }
+  if a == 0 {
+    return 0;
+  }
+
+  // Reduce a mod n (keep non-negative)
+  a = ((a % n) + n) % n;
+  let mut result: i128 = 1;
+
+  while a != 0 {
+    // Factor out powers of 2
+    while a % 2 == 0 {
+      a /= 2;
+      let n_mod_8 = n % 8;
+      if n_mod_8 == 3 || n_mod_8 == 5 {
+        result = -result;
+      }
+    }
+    // Apply quadratic reciprocity
+    std::mem::swap(&mut a, &mut n);
+    if a % 4 == 3 && n % 4 == 3 {
+      result = -result;
+    }
+    a %= n;
+  }
+
+  if n == 1 { result } else { 0 }
+}
+
 /// CoprimeQ[a, b, ...] - Tests if integers are pairwise coprime
 pub fn coprime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
