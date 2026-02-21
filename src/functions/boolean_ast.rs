@@ -662,3 +662,392 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: result,
   })
 }
+
+/// LogicalExpand[expr] - expand logical expression to disjunctive normal form
+pub fn logical_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "LogicalExpand expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expr = evaluate_expr_to_expr(&args[0])?;
+  Ok(normalize_not(&to_dnf(&expr)))
+}
+
+/// Recursively convert FunctionCall("Not", [x]) to UnaryOp(Not, x)
+fn normalize_not(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Not,
+        operand: Box::new(normalize_not(&args[0])),
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> = args.iter().map(normalize_not).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Convert an expression to disjunctive normal form (DNF).
+/// Steps: eliminate compound connectives → push Not inward → distribute And over Or.
+fn to_dnf(expr: &Expr) -> Expr {
+  let eliminated = eliminate_connectives(expr);
+  let negated = push_not_inward(&eliminated);
+  distribute_and_over_or(&negated)
+}
+
+/// Step 1: Eliminate Implies, Equivalent, Xor, Nand, Nor
+fn eliminate_connectives(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      match name.as_str() {
+        "Implies" if args.len() == 2 => {
+          // Implies[a, b] → Or[Not[a], b]
+          let a = eliminate_connectives(&args[0]);
+          let b = eliminate_connectives(&args[1]);
+          Expr::FunctionCall {
+            name: "Or".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Not".to_string(),
+                args: vec![a],
+              },
+              b,
+            ],
+          }
+        }
+        "Equivalent" if args.len() >= 2 => {
+          // Equivalent[a, b] → And[Or[Not[a], b], Or[a, Not[b]]]
+          // For more args: pairwise equivalence
+          let elim_args: Vec<Expr> =
+            args.iter().map(eliminate_connectives).collect();
+          if elim_args.len() == 2 {
+            let a = &elim_args[0];
+            let b = &elim_args[1];
+            // (a && b) || (!a && !b)
+            Expr::FunctionCall {
+              name: "Or".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "And".to_string(),
+                  args: vec![a.clone(), b.clone()],
+                },
+                Expr::FunctionCall {
+                  name: "And".to_string(),
+                  args: vec![
+                    Expr::FunctionCall {
+                      name: "Not".to_string(),
+                      args: vec![a.clone()],
+                    },
+                    Expr::FunctionCall {
+                      name: "Not".to_string(),
+                      args: vec![b.clone()],
+                    },
+                  ],
+                },
+              ],
+            }
+          } else {
+            // Pairwise: And[Equivalent[a1,a2], Equivalent[a2,a3], ...]
+            let mut pairs = Vec::new();
+            for i in 0..elim_args.len() - 1 {
+              pairs.push(eliminate_connectives(&Expr::FunctionCall {
+                name: "Equivalent".to_string(),
+                args: vec![elim_args[i].clone(), elim_args[i + 1].clone()],
+              }));
+            }
+            Expr::FunctionCall {
+              name: "And".to_string(),
+              args: pairs,
+            }
+          }
+        }
+        "Xor" if args.len() >= 2 => {
+          // Xor[a, b] → Or[And[a, Not[b]], And[Not[a], b]]
+          let elim_args: Vec<Expr> =
+            args.iter().map(eliminate_connectives).collect();
+          if elim_args.len() == 2 {
+            let a = &elim_args[0];
+            let b = &elim_args[1];
+            Expr::FunctionCall {
+              name: "Or".to_string(),
+              args: vec![
+                Expr::FunctionCall {
+                  name: "And".to_string(),
+                  args: vec![
+                    a.clone(),
+                    Expr::FunctionCall {
+                      name: "Not".to_string(),
+                      args: vec![b.clone()],
+                    },
+                  ],
+                },
+                Expr::FunctionCall {
+                  name: "And".to_string(),
+                  args: vec![
+                    Expr::FunctionCall {
+                      name: "Not".to_string(),
+                      args: vec![a.clone()],
+                    },
+                    b.clone(),
+                  ],
+                },
+              ],
+            }
+          } else {
+            // Reduce: Xor[a, b, c, ...] → Xor[Xor[a, b], c, ...]
+            let mut result = elim_args[0].clone();
+            for arg in &elim_args[1..] {
+              result = eliminate_connectives(&Expr::FunctionCall {
+                name: "Xor".to_string(),
+                args: vec![result, arg.clone()],
+              });
+            }
+            result
+          }
+        }
+        "Nand" if args.len() >= 2 => {
+          // Nand[a, b] → Not[And[a, b]]
+          let elim_args: Vec<Expr> =
+            args.iter().map(eliminate_connectives).collect();
+          Expr::FunctionCall {
+            name: "Not".to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "And".to_string(),
+              args: elim_args,
+            }],
+          }
+        }
+        "Nor" if args.len() >= 2 => {
+          // Nor[a, b] → Not[Or[a, b]]
+          let elim_args: Vec<Expr> =
+            args.iter().map(eliminate_connectives).collect();
+          Expr::FunctionCall {
+            name: "Not".to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "Or".to_string(),
+              args: elim_args,
+            }],
+          }
+        }
+        "And" | "Or" | "Not" => {
+          let new_args: Vec<Expr> =
+            args.iter().map(eliminate_connectives).collect();
+          Expr::FunctionCall {
+            name: name.clone(),
+            args: new_args,
+          }
+        }
+        _ => expr.clone(),
+      }
+    }
+    // Convert UnaryOp(Not, x) to FunctionCall("Not", [x]) for uniform processing
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Not,
+      operand,
+    } => {
+      let inner = eliminate_connectives(operand);
+      Expr::FunctionCall {
+        name: "Not".to_string(),
+        args: vec![inner],
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Helper: apply Not to an inner expression and push inward
+fn apply_not_inward(inner: &Expr) -> Expr {
+  match inner {
+    // Not[Not[a]] → a (handles FunctionCall form)
+    Expr::FunctionCall {
+      name: inner_name,
+      args: inner_args,
+    } if inner_name == "Not" && inner_args.len() == 1 => {
+      push_not_inward(&inner_args[0])
+    }
+    // Not[Not[a]] → a (handles UnaryOp form)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Not,
+      operand,
+    } => push_not_inward(operand),
+    // Not[And[a, b, ...]] → Or[Not[a], Not[b], ...]
+    Expr::FunctionCall {
+      name: inner_name,
+      args: inner_args,
+    } if inner_name == "And" => {
+      let new_args: Vec<Expr> =
+        inner_args.iter().map(apply_not_inward).collect();
+      Expr::FunctionCall {
+        name: "Or".to_string(),
+        args: new_args,
+      }
+    }
+    // Not[Or[a, b, ...]] → And[Not[a], Not[b], ...]
+    Expr::FunctionCall {
+      name: inner_name,
+      args: inner_args,
+    } if inner_name == "Or" => {
+      let new_args: Vec<Expr> =
+        inner_args.iter().map(apply_not_inward).collect();
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: new_args,
+      }
+    }
+    // Not[True] → False, Not[False] → True
+    Expr::Identifier(s) if s == "True" => Expr::Identifier("False".to_string()),
+    Expr::Identifier(s) if s == "False" => Expr::Identifier("True".to_string()),
+    // Not[other] → Not[other] (keep as-is, recurse into inner)
+    other => {
+      let recurse = push_not_inward(other);
+      Expr::FunctionCall {
+        name: "Not".to_string(),
+        args: vec![recurse],
+      }
+    }
+  }
+}
+
+/// Step 2: Push Not inward using De Morgan's laws and double negation elimination
+fn push_not_inward(expr: &Expr) -> Expr {
+  match expr {
+    // Handle Not as FunctionCall
+    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+      apply_not_inward(&args[0])
+    }
+    // Handle Not as UnaryOp
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Not,
+      operand,
+    } => apply_not_inward(operand),
+    Expr::FunctionCall { name, args } => {
+      let new_args: Vec<Expr> = args.iter().map(push_not_inward).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Step 3: Distribute And over Or to achieve DNF.
+/// The result is an Or of Ands (or simpler expressions).
+fn distribute_and_over_or(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "And" => {
+      // First recursively convert all sub-expressions
+      let sub: Vec<Expr> = args.iter().map(distribute_and_over_or).collect();
+
+      // Flatten nested Ands
+      let mut and_groups: Vec<Vec<Expr>> = vec![vec![]];
+
+      for term in &sub {
+        match term {
+          Expr::FunctionCall {
+            name: tn,
+            args: targs,
+          } if tn == "Or" => {
+            // For each Or alternative, cross-product with existing groups
+            let mut new_groups = Vec::new();
+            for alt in targs {
+              let alt_literals = match alt {
+                Expr::FunctionCall {
+                  name: an,
+                  args: aargs,
+                } if an == "And" => aargs.clone(),
+                _ => vec![alt.clone()],
+              };
+              for existing in &and_groups {
+                let mut group = existing.clone();
+                group.extend(alt_literals.clone());
+                new_groups.push(group);
+              }
+            }
+            and_groups = new_groups;
+          }
+          Expr::FunctionCall {
+            name: an,
+            args: aargs,
+          } if an == "And" => {
+            // Flatten nested And
+            for group in &mut and_groups {
+              group.extend(aargs.clone());
+            }
+          }
+          _ => {
+            for group in &mut and_groups {
+              group.push(term.clone());
+            }
+          }
+        }
+      }
+
+      // Build result
+      let or_terms: Vec<Expr> = and_groups
+        .into_iter()
+        .map(|group| {
+          if group.len() == 1 {
+            group.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "And".to_string(),
+              args: group,
+            }
+          }
+        })
+        .collect();
+
+      if or_terms.len() == 1 {
+        or_terms.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Or".to_string(),
+          args: or_terms,
+        }
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Or" => {
+      // Recursively distribute in each alternative, then flatten Or
+      let mut result = Vec::new();
+      for arg in args {
+        let converted = distribute_and_over_or(arg);
+        match converted {
+          Expr::FunctionCall {
+            name: on,
+            args: oargs,
+          } if on == "Or" => {
+            result.extend(oargs);
+          }
+          _ => result.push(converted),
+        }
+      }
+      if result.len() == 1 {
+        result.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "Or".to_string(),
+          args: result,
+        }
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      // Recurse into other function calls (like Not)
+      let new_args: Vec<Expr> =
+        args.iter().map(distribute_and_over_or).collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    _ => expr.clone(),
+  }
+}

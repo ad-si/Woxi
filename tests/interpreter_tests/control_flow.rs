@@ -715,3 +715,92 @@ mod return_in_loops {
     );
   }
 }
+
+mod logical_expand {
+  use super::*;
+
+  #[test]
+  fn distribute_and_over_or() {
+    assert_eq!(
+      interpret("LogicalExpand[a && (b || c)]").unwrap(),
+      "a && b || a && c"
+    );
+  }
+
+  #[test]
+  fn de_morgan_not_and() {
+    assert_eq!(interpret("LogicalExpand[!(a && b)]").unwrap(), "!a || !b");
+  }
+
+  #[test]
+  fn de_morgan_not_or() {
+    assert_eq!(interpret("LogicalExpand[!(a || b)]").unwrap(), "!a && !b");
+  }
+
+  #[test]
+  fn double_negation() {
+    assert_eq!(interpret("LogicalExpand[Not[Not[a]]]").unwrap(), "a");
+  }
+
+  #[test]
+  fn implies_expansion() {
+    assert_eq!(
+      interpret("LogicalExpand[Implies[a, b]]").unwrap(),
+      "!a || b"
+    );
+  }
+
+  #[test]
+  fn xor_expansion() {
+    assert_eq!(
+      interpret("LogicalExpand[Xor[a, b]]").unwrap(),
+      "a && !b || !a && b"
+    );
+  }
+
+  #[test]
+  fn equivalent_expansion() {
+    assert_eq!(
+      interpret("LogicalExpand[Equivalent[a, b]]").unwrap(),
+      "a && b || !a && !b"
+    );
+  }
+
+  #[test]
+  fn nand_expansion() {
+    assert_eq!(interpret("LogicalExpand[Nand[a, b]]").unwrap(), "!a || !b");
+  }
+
+  #[test]
+  fn nor_expansion() {
+    assert_eq!(interpret("LogicalExpand[Nor[a, b]]").unwrap(), "!a && !b");
+  }
+
+  #[test]
+  fn nested_expansion() {
+    // (a || b) && (c || d) → a && c || b && c || a && d || b && d
+    assert_eq!(
+      interpret("LogicalExpand[(a || b) && (c || d)]").unwrap(),
+      "a && c || b && c || a && d || b && d"
+    );
+  }
+
+  #[test]
+  fn already_dnf() {
+    assert_eq!(
+      interpret("LogicalExpand[a || (b && c)]").unwrap(),
+      "a || b && c"
+    );
+  }
+
+  #[test]
+  fn true_false() {
+    assert_eq!(interpret("LogicalExpand[True]").unwrap(), "True");
+    assert_eq!(interpret("LogicalExpand[False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn single_symbol() {
+    assert_eq!(interpret("LogicalExpand[a]").unwrap(), "a");
+  }
+}
