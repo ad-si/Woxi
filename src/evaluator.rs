@@ -4976,6 +4976,38 @@ pub fn evaluate_function_call_ast(
       return crate::functions::predicate_ast::byte_count_ast(args);
     }
 
+    // MaxMemoryUsed[] — peak memory usage of the process
+    "MaxMemoryUsed" if args.is_empty() => {
+      // Read peak RSS from /proc/self/status on Linux
+      let peak_bytes = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+          s.lines()
+            .find(|l| l.starts_with("VmPeak:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|v| v.parse::<i128>().ok())
+            .map(|kb| kb * 1024) // convert kB to bytes
+        })
+        .unwrap_or(0);
+      return Ok(Expr::Integer(peak_bytes));
+    }
+
+    // MemoryInUse[] — current memory usage of the process
+    "MemoryInUse" if args.is_empty() => {
+      // Read current RSS from /proc/self/status on Linux
+      let rss_bytes = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+          s.lines()
+            .find(|l| l.starts_with("VmRSS:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|v| v.parse::<i128>().ok())
+            .map(|kb| kb * 1024)
+        })
+        .unwrap_or(0);
+      return Ok(Expr::Integer(rss_bytes));
+    }
+
     // Introspection functions - return {} for symbols without stored definitions
     "Messages" | "DownValues" | "OwnValues" | "SubValues" | "NValues"
     | "FormatValues" | "DefaultValues"

@@ -521,6 +521,39 @@ mod attributes_assignment {
   }
 }
 
+mod memory {
+  use super::*;
+
+  #[test]
+  fn max_memory_used_returns_positive_integer() {
+    let result = interpret("MaxMemoryUsed[]").unwrap();
+    let val: i128 = result.parse().expect("should be an integer");
+    assert!(val > 0, "MaxMemoryUsed should be positive: {}", val);
+  }
+
+  #[test]
+  fn memory_in_use_returns_positive_integer() {
+    let result = interpret("MemoryInUse[]").unwrap();
+    let val: i128 = result.parse().expect("should be an integer");
+    assert!(val > 0, "MemoryInUse should be positive: {}", val);
+  }
+
+  #[test]
+  fn max_memory_at_least_memory_in_use() {
+    let max_mem = interpret("MaxMemoryUsed[]")
+      .unwrap()
+      .parse::<i128>()
+      .unwrap();
+    let cur_mem = interpret("MemoryInUse[]").unwrap().parse::<i128>().unwrap();
+    assert!(
+      max_mem >= cur_mem,
+      "MaxMemoryUsed ({}) should be >= MemoryInUse ({})",
+      max_mem,
+      cur_mem
+    );
+  }
+}
+
 mod context {
   use super::*;
 

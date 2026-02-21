@@ -3453,7 +3453,7 @@ Maximize,,,,5,530
 MaxItems,,,,10.1,2236
 MaxIterations,Option for maximum iterations,✅,pure,1,646
 MaxLimit,,,,11.2,2889
-MaxMemoryUsed,,,,1,1085
+MaxMemoryUsed,Peak memory usage in the current session,✅,pure,1,1085
 MaxMixtureKernels,,,,8,4225
 MaxOverlapFraction,,,,12,
 MaxPlotPoints,,,,5.1,1548
@@ -3495,7 +3495,7 @@ MemberQ,Checks if a list contains a value,✅,pure,1,244
 MemoryAvailable,,,,11.2,4027
 MemoryConstrained,,,,1,2473
 MemoryConstraint,,,,10,4262
-MemoryInUse,,,,1,1117
+MemoryInUse,Current memory usage of the process,✅,pure,1,1117
 MengerMesh,,,,11.1,2533
 MenuCommandKey,,,,6,3506
 MenuPacket,,,,3,
