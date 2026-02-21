@@ -157,6 +157,50 @@ thread_local! {
     static CAPTURED_WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+// Stream registry for open streams (InputStream/OutputStream)
+#[derive(Clone, Debug)]
+pub enum StreamKind {
+  StringStream(String), // content of the string
+  FileStream(String),   // file path
+}
+
+#[derive(Clone, Debug)]
+pub struct OpenStream {
+  pub name: String,
+  pub kind: StreamKind,
+  pub id: usize,
+}
+
+thread_local! {
+    static STREAM_REGISTRY: RefCell<HashMap<usize, OpenStream>> = RefCell::new(HashMap::new());
+    static STREAM_COUNTER: RefCell<usize> = const { RefCell::new(1) };
+}
+
+/// Register a new open stream and return its ID
+pub fn register_stream(name: String, kind: StreamKind) -> usize {
+  let id = STREAM_COUNTER.with(|c| {
+    let mut counter = c.borrow_mut();
+    let id = *counter;
+    *counter += 1;
+    id
+  });
+  let stream = OpenStream { name, kind, id };
+  STREAM_REGISTRY.with(|reg| {
+    reg.borrow_mut().insert(id, stream);
+  });
+  id
+}
+
+/// Close a stream by ID, returning the stream name if it was open
+pub fn close_stream(id: usize) -> Option<String> {
+  STREAM_REGISTRY.with(|reg| reg.borrow_mut().remove(&id).map(|s| s.name))
+}
+
+/// Check if a stream is open
+pub fn is_stream_open(id: usize) -> bool {
+  STREAM_REGISTRY.with(|reg| reg.borrow().contains_key(&id))
+}
+
 /// Clears the captured stdout buffer
 fn clear_captured_stdout() {
   CAPTURED_STDOUT.with(|buffer| {
