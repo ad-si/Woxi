@@ -1199,7 +1199,7 @@ CSGRegionTree,,,,13,
 CTCLossLayer,,,,11.3,5390
 Cube,,,,12,1815
 CubeRoot,Returns the real-valued cube root,✅,pure,9,1154
-Cubics,,,,1,1688
+Cubics,Option for solving cubic equations using radical formulas,✅,pure,1,1688
 Cuboid,,,,2,561
 Cumulant,,,,8,1586
 CumulantGeneratingFunction,,,,8,3176

@@ -389,6 +389,26 @@ mod digit_block {
   }
 }
 
+mod cubics {
+  use super::*;
+
+  #[test]
+  fn cubics_standalone() {
+    assert_eq!(interpret("Cubics").unwrap(), "Cubics");
+  }
+
+  #[test]
+  fn cubics_head() {
+    assert_eq!(interpret("Head[Cubics]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn cubics_as_option() {
+    // Cubics used as an option value in a rule
+    assert_eq!(interpret("Cubics -> True").unwrap(), "Cubics -> True");
+  }
+}
+
 mod construct {
   use super::*;
 
