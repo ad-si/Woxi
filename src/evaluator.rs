@@ -4485,6 +4485,66 @@ fn evaluate_function_call_ast_inner(
         }
       }
     }
+    // Write[stream, expr1, expr2, ...] — write expressions to a stream in OutputForm
+    #[cfg(not(target_arch = "wasm32"))]
+    "Write" if args.len() >= 2 => {
+      let stream = &args[0];
+      let file_path = match stream {
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "OutputStream"
+          || stream_head == "InputStream")
+          && stream_args.len() == 2 =>
+        {
+          if let Expr::Integer(id) = &stream_args[1] {
+            let stream_id = *id as usize;
+            crate::STREAM_REGISTRY.with(|reg| {
+              let registry = reg.borrow();
+              registry.get(&stream_id).and_then(|s| match &s.kind {
+                crate::StreamKind::FileStream(path) => Some(path.clone()),
+                _ => None,
+              })
+            })
+          } else {
+            None
+          }
+        }
+        Expr::String(path) => Some(path.clone()),
+        _ => None,
+      };
+
+      if let Some(path) = file_path {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+          .create(true)
+          .append(true)
+          .open(&path)
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!(
+              "Write: cannot open {}: {}",
+              path, e
+            ))
+          })?;
+        let mut content = String::new();
+        for arg in &args[1..] {
+          content.push_str(&crate::syntax::expr_to_string(arg));
+        }
+        content.push('\n');
+        file.write_all(content.as_bytes()).map_err(|e| {
+          InterpreterError::EvaluationError(format!(
+            "Write: write error: {}",
+            e
+          ))
+        })?;
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+
+      return Ok(Expr::FunctionCall {
+        name: "Write".to_string(),
+        args: args.to_vec(),
+      });
+    }
     // WriteString[stream, "text1", "text2", ...] — write strings to a stream
     #[cfg(not(target_arch = "wasm32"))]
     "WriteString" if args.len() >= 2 => {

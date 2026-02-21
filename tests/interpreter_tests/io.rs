@@ -1295,3 +1295,72 @@ mod put_append {
     std::fs::remove_file(path).ok();
   }
 }
+
+mod write {
+  use super::*;
+
+  #[test]
+  fn write_single_expression() {
+    clear_state();
+    let path = "/tmp/woxi_test_write_single.txt";
+    let result = interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; Write[str, 42]; Close[str]"
+    ))
+    .unwrap();
+    assert_eq!(result, path);
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "42\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn write_multiple_expressions_concatenated() {
+    clear_state();
+    let path = "/tmp/woxi_test_write_concat.txt";
+    interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; Write[str, a^2, 1 + b^2]; Close[str]"
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "a^21 + b^2\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn write_multiple_calls() {
+    clear_state();
+    let path = "/tmp/woxi_test_write_multi.txt";
+    interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; Write[str, 1]; Write[str, 2]; Write[str, 3]; Close[str]"
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "1\n2\n3\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn write_list() {
+    clear_state();
+    let path = "/tmp/woxi_test_write_list.txt";
+    interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; Write[str, {{1, 2, 3}}]; Close[str]"
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "{1, 2, 3}\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn write_returns_null() {
+    clear_state();
+    let path = "/tmp/woxi_test_write_null.txt";
+    let result = interpret(&format!(
+      "str = OpenWrite[\"{path}\"]; r = Write[str, 1]; Close[str]; r"
+    ))
+    .unwrap();
+    assert_eq!(result, "Null");
+    std::fs::remove_file(path).ok();
+  }
+}
