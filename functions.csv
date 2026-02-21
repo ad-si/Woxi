@@ -4971,7 +4971,7 @@ SiegelTukeyTest,,,,8,4006
 SierpinskiCurve,,,,11.1,4006
 SierpinskiMesh,,,,11.1,2755
 Sign,Returns the sign of a number,✅,pure,1,313
-Signature,,,,1,1353
+Signature,Signature of a permutation,✅,pure,1,1353
 SignedRankTest,,,,8,3427
 SignedRegionDistance,,,,10,1926
 SignificanceLevel,,,,8,2157
