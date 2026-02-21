@@ -1436,7 +1436,7 @@ DiffusionPDETerm,,,,12.2,2944
 DiggleGatesPointProcess,,,,12.2,5587
 DiggleGrattonPointProcess,,,,12.2,5486
 DigitalSignature,,,,12,
-DigitBlock,,,,1,1481
+DigitBlock,Option for digit grouping in NumberForm,✅,pure,1,1481
 DigitCharacter,,,,5.1,870
 DigitCount,Counts occurrences of each digit in a number,✅,pure,4,1877
 DigitQ,Tests if a string consists entirely of digits,✅,pure,2,1827
