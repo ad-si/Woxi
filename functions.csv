@@ -3888,7 +3888,7 @@ NProduct,,,,1,2229
 NRoots,,,,1,2462
 NSolve,,,,2,252
 NSolveValues,,,,12.3,
-NSum,,,,1,784
+NSum,Numerical approximation of a sum using polynomial extrapolation,✅,pure,1,784
 NSurfaceIntegrate,,,,14,
 NuclearExplosionData,,,,10,4660
 NuclearReactorData,,,,10,4527

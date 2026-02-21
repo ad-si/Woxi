@@ -6220,3 +6220,76 @@ mod inverse_fourier {
     );
   }
 }
+
+mod nsum {
+  use super::*;
+
+  #[test]
+  fn finite_sum() {
+    assert_eq!(
+      interpret("NSum[1/i^2, {i, 1, 10}]").unwrap(),
+      "1.5497677311665408"
+    );
+  }
+
+  #[test]
+  fn finite_sum_simple() {
+    assert_eq!(interpret("NSum[i, {i, 1, 5}]").unwrap(), "15.");
+  }
+
+  #[test]
+  fn infinite_sum_reciprocal_squares() {
+    // Pi^2/6 ≈ 1.6449340668482264
+    let result = interpret("NSum[1/i^2, {i, 1, Infinity}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.6449340668482264).abs() < 1e-10);
+  }
+
+  #[test]
+  fn infinite_sum_factorial() {
+    // e ≈ 2.718281828459045
+    let result = interpret("NSum[1/Factorial[k], {k, 0, Infinity}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - std::f64::consts::E).abs() < 1e-10);
+  }
+
+  #[test]
+  fn infinite_sum_alternating() {
+    // ln(2) ≈ 0.6931471805599453
+    let result = interpret("NSum[(-1)^(k+1)/k, {k, 1, Infinity}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.0_f64.ln()).abs() < 1e-10);
+  }
+
+  #[test]
+  fn infinite_sum_geometric() {
+    // Σ 1/2^k from k=0 = 2
+    let result = interpret("NSum[1/2^k, {k, 0, Infinity}]").unwrap();
+    assert_eq!(result, "2.");
+  }
+
+  #[test]
+  fn infinite_sum_reciprocal_cubes() {
+    // ζ(3) ≈ 1.2020569031595943
+    let result = interpret("NSum[1/i^3, {i, 1, Infinity}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.2020569031595943).abs() < 1e-10);
+  }
+
+  #[test]
+  fn scoped_variable() {
+    // Iteration variable should be scoped locally
+    let result =
+      interpret("n = 5; NSum[1/Factorial[n], {n, 0, Infinity}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - std::f64::consts::E).abs() < 1e-10);
+  }
+
+  #[test]
+  fn unevaluated_symbolic() {
+    assert_eq!(
+      interpret("NSum[f[x], {x, 1, Infinity}]").unwrap(),
+      "NSum[f[x], {x, 1, Infinity}]"
+    );
+  }
+}
