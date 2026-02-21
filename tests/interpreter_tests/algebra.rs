@@ -1028,6 +1028,52 @@ mod solve {
   }
 }
 
+mod eliminate {
+  use super::*;
+
+  #[test]
+  fn eliminate_single_variable_linear() {
+    // Eliminate y from {x == 2 + y, y == z}
+    let result = interpret("Eliminate[{x == 2 + y, y == z}, y]").unwrap();
+    assert_eq!(result, "-2 + x == z");
+  }
+
+  #[test]
+  fn eliminate_single_from_two_linear() {
+    // Eliminate a from {x == a + b, y == a - b}
+    let result = interpret("Eliminate[{x == a + b, y == a - b}, a]").unwrap();
+    assert_eq!(result, "y == -2*b + x");
+  }
+
+  #[test]
+  fn eliminate_to_constant() {
+    // Eliminate y from {x + y == 3, x - y == 1}
+    let result = interpret("Eliminate[{x + y == 3, x - y == 1}, y]").unwrap();
+    assert_eq!(result, "-3 + 2*x == 1");
+  }
+
+  #[test]
+  fn eliminate_with_product() {
+    // Eliminate x from {a == x + y, b == x*y}
+    let result = interpret("Eliminate[{a == x + y, b == x*y}, x]").unwrap();
+    assert_eq!(result, "b == a*y - y^2");
+  }
+
+  #[test]
+  fn eliminate_variable_not_found() {
+    // If variable doesn't appear, equation is returned unchanged
+    let result = interpret("Eliminate[{x == 2}, y]").unwrap();
+    assert_eq!(result, "x == 2");
+  }
+
+  #[test]
+  fn eliminate_single_equation() {
+    // With a single equation and the variable in it, eliminating gives True
+    let result = interpret("Eliminate[{x == 2}, x]").unwrap();
+    assert_eq!(result, "True");
+  }
+}
+
 mod reduce {
   use super::*;
 
