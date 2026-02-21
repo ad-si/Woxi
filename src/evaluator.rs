@@ -2642,6 +2642,35 @@ pub fn evaluate_function_call_ast(
         args: norm_args,
       });
     }
+    "Names" if args.len() <= 1 => {
+      let all_names = crate::get_defined_names();
+      if args.is_empty() {
+        // Names[] returns all defined symbol names
+        let items: Vec<Expr> =
+          all_names.into_iter().map(Expr::String).collect();
+        return Ok(Expr::List(items));
+      }
+      // Names["pattern"] - pattern with * wildcards
+      if let Expr::String(pattern) = &args[0] {
+        let regex_pattern = format!(
+          "^{}$",
+          pattern
+            .replace('.', "\\.")
+            .replace('*', ".*")
+            .replace('@', "[a-z0-9]*")
+        );
+        let re = regex::Regex::new(&regex_pattern);
+        if let Ok(re) = re {
+          let items: Vec<Expr> = all_names
+            .into_iter()
+            .filter(|n| re.is_match(n))
+            .map(Expr::String)
+            .collect();
+          return Ok(Expr::List(items));
+        }
+      }
+      return Ok(Expr::List(vec![]));
+    }
     "ValueQ" if args.len() == 1 => {
       if let Expr::Identifier(sym) = &args[0] {
         let has_value = ENV.with(|e| e.borrow().contains_key(sym));
