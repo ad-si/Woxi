@@ -937,6 +937,28 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "Abort" && args.is_empty() {
         return Err(InterpreterError::Abort);
       }
+      // Quit[] / Exit[] - terminate the process
+      if (name == "Quit" || name == "Exit") && args.len() <= 1 {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          let code = if args.len() == 1 {
+            if let Ok(val) = evaluate_expr_to_expr(&args[0]) {
+              crate::functions::math_ast::try_eval_to_f64(&val)
+                .map(|f| f as i32)
+                .unwrap_or(0)
+            } else {
+              0
+            }
+          } else {
+            0
+          };
+          std::process::exit(code);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Err(InterpreterError::Abort);
+        }
+      }
       // Interrupt[] behaves like Abort[] in batch mode
       if name == "Interrupt" && args.is_empty() {
         return Err(InterpreterError::Abort);

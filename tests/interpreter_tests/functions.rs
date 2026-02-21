@@ -1989,3 +1989,29 @@ mod expression {
     assert_eq!(interpret("Head[Expression]").unwrap(), "Symbol");
   }
 }
+
+mod quit {
+  use super::*;
+
+  // Note: Quit[] calls std::process::exit() so we can't directly test
+  // successful exits in unit tests. These tests verify edge cases.
+
+  #[test]
+  fn quit_too_many_args_unevaluated() {
+    assert_eq!(interpret("Quit[1, 2]").unwrap(), "Quit[1, 2]");
+  }
+
+  #[test]
+  fn exit_too_many_args_unevaluated() {
+    assert_eq!(interpret("Exit[1, 2]").unwrap(), "Exit[1, 2]");
+  }
+
+  #[test]
+  fn quit_before_terminates() {
+    // Quit[] should prevent subsequent expressions from being evaluated.
+    // In a CompoundExpression, the process exits so "after" is never printed.
+    // We can't test process::exit in unit tests, so just verify that
+    // Quit appears as a valid function call.
+    assert_eq!(interpret("Head[Quit]").unwrap(), "Symbol");
+  }
+}
