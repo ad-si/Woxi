@@ -4462,6 +4462,58 @@ pub fn evaluate_function_call_ast(
         args: args.to_vec(),
       });
     }
+    // Unique[] - generate a unique symbol $nnn
+    // Unique[x] - generate a unique symbol x$nnn
+    // Unique["xxx"] - generate a unique symbol xxxnnn
+    // Unique[{x, y, ...}] - generate list of unique symbols
+    "Unique" if args.is_empty() => {
+      let sym_name = crate::functions::scoping::unique_symbol("");
+      // For Unique[], format is $nnn (just $counter)
+      return Ok(Expr::Identifier(sym_name));
+    }
+    "Unique" if args.len() == 1 => {
+      match &args[0] {
+        Expr::Identifier(name) => {
+          let sym_name = crate::functions::scoping::unique_symbol(name);
+          return Ok(Expr::Identifier(sym_name));
+        }
+        Expr::String(name) => {
+          // For strings, use sequential numbering without $
+          let sym_name =
+            crate::functions::scoping::unique_symbol_from_string(name);
+          return Ok(Expr::Identifier(sym_name));
+        }
+        Expr::List(items) => {
+          let mut result = Vec::new();
+          for item in items {
+            match item {
+              Expr::Identifier(name) => {
+                let sym_name = crate::functions::scoping::unique_symbol(name);
+                result.push(Expr::Identifier(sym_name));
+              }
+              Expr::String(name) => {
+                let sym_name =
+                  crate::functions::scoping::unique_symbol_from_string(name);
+                result.push(Expr::Identifier(sym_name));
+              }
+              _ => {
+                return Ok(Expr::FunctionCall {
+                  name: "Unique".to_string(),
+                  args: args.to_vec(),
+                });
+              }
+            }
+          }
+          return Ok(Expr::List(result));
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Unique".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
     "AtomQ" if args.len() == 1 => {
       return crate::functions::predicate_ast::atom_q_ast(args);
     }

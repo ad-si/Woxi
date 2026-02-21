@@ -5804,7 +5804,7 @@ Uninstall,,,,2,2642
 Union,Returns sorted union of lists,✅,pure,1,219
 UnionedEntityClass,,,,12.1,
 UnionPlus,,,,3,4881
-Unique,,,,1,944
+Unique,Generate a unique symbol,✅,effectful,1,944
 UniqueElements,,,,13.1,
 UnitaryMatrix,,,,14,
 UnitaryMatrixQ,,,,10,2260

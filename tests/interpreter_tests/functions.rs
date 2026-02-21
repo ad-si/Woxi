@@ -2047,3 +2047,61 @@ mod names {
     assert_eq!(interpret("a = 1; Names[\"z*\"]").unwrap(), "{}");
   }
 }
+
+mod unique {
+  use super::*;
+
+  #[test]
+  fn unique_no_args() {
+    // Unique[] generates $nnn
+    let result = interpret("Unique[]").unwrap();
+    assert!(result.starts_with('$'));
+    let num: u64 = result[1..].parse().unwrap();
+    assert!(num > 0);
+  }
+
+  #[test]
+  fn unique_with_symbol() {
+    // Unique[x] generates x$nnn
+    let result = interpret("Unique[x]").unwrap();
+    assert!(result.starts_with("x$"));
+    let num: u64 = result[2..].parse().unwrap();
+    assert!(num > 0);
+  }
+
+  #[test]
+  fn unique_with_string() {
+    // Unique["hello"] generates hellonnn
+    let result = interpret("Unique[\"hello\"]").unwrap();
+    assert!(result.starts_with("hello"));
+    let num_str = &result[5..];
+    let num: u64 = num_str.parse().unwrap();
+    assert!(num > 0);
+  }
+
+  #[test]
+  fn unique_list() {
+    // Unique[{a, b}] generates list of unique symbols
+    let result = interpret("Unique[{a, b}]").unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.contains("a$"));
+    assert!(result.contains("b$"));
+  }
+
+  #[test]
+  fn unique_successive_different() {
+    // Two calls to Unique give different symbols
+    let result = interpret("{Unique[x], Unique[x]}").unwrap();
+    // Parse the two symbols
+    let inner = &result[1..result.len() - 1]; // strip { }
+    let parts: Vec<&str> = inner.split(", ").collect();
+    assert_eq!(parts.len(), 2);
+    assert_ne!(parts[0], parts[1]);
+  }
+
+  #[test]
+  fn unique_symbolic_unevaluated() {
+    // Non-symbol, non-string, non-list args return unevaluated
+    assert_eq!(interpret("Unique[1]").unwrap(), "Unique[1]");
+  }
+}

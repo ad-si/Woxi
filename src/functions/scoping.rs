@@ -12,6 +12,13 @@ pub fn unique_symbol(base_name: &str) -> String {
   format!("{}${}", base_name, n)
 }
 
+/// Generate a unique symbol from a string prefix like "xxx1", "xxx2", etc.
+/// (no $ separator, used by Unique["xxx"])
+pub fn unique_symbol_from_string(prefix: &str) -> String {
+  let n = SYMBOL_COUNTER.fetch_add(1, Ordering::SeqCst);
+  format!("{}{}", prefix, n)
+}
+
 /// Check if an expression string contains unbound symbolic variables
 /// Returns true if there are identifiers that are not bound in the environment
 fn has_unbound_symbols(expr: &str) -> bool {
