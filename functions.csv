@@ -442,10 +442,10 @@ BernoulliProcess,,,,9,3636
 BernsteinBasis,,,,7,2034
 BesagL,,,,12.2,5184
 BesselFilterModel,,,,9,4660
-BesselI,,,,1,664
+BesselI,Modified Bessel function of the first kind,✅,pure,1,664
 BesselJ,Bessel function of the first kind,✅,pure,1,329
 BesselJZero,,,,6,1375
-BesselK,,,,1,613
+BesselK,Modified Bessel function of the second kind,✅,pure,1,613
 BesselY,,,,1,752
 BesselYZero,,,,6,4387
 Beta,,,,1,702

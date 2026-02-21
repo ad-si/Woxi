@@ -4959,3 +4959,89 @@ mod jacobi_cn {
     assert!((result - (-0.21637836906745786)).abs() < 1e-10);
   }
 }
+
+mod bessel_i {
+  use super::*;
+
+  #[test]
+  fn at_zero_order_zero() {
+    assert_eq!(interpret("BesselI[0, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn at_zero_order_nonzero() {
+    assert_eq!(interpret("BesselI[1, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn numeric_order_zero() {
+    let result: f64 = interpret("BesselI[0, 1.5]").unwrap().parse().unwrap();
+    assert!((result - 1.6467231897728904).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_one() {
+    let result: f64 = interpret("BesselI[1, 2.0]").unwrap().parse().unwrap();
+    assert!((result - 1.5906368546373288).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("BesselI[n, z]").unwrap(), "BesselI[n, z]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[BesselI[0, 1]]").unwrap().parse().unwrap();
+    assert!((result - 1.2660658777520082).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_order_two() {
+    let result: f64 = interpret("N[BesselI[2, 1]]").unwrap().parse().unwrap();
+    assert!((result - 0.13574766976703828).abs() < 1e-10);
+  }
+}
+
+mod bessel_k {
+  use super::*;
+
+  #[test]
+  fn at_zero_order_zero() {
+    assert_eq!(interpret("BesselK[0, 0]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn at_zero_order_nonzero() {
+    assert_eq!(interpret("BesselK[1, 0]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn numeric_order_zero() {
+    let result: f64 = interpret("BesselK[0, 1.5]").unwrap().parse().unwrap();
+    assert!((result - 0.2138055626475258).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_one() {
+    let result: f64 = interpret("BesselK[1, 2.0]").unwrap().parse().unwrap();
+    assert!((result - 0.13986588181652243).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("BesselK[n, z]").unwrap(), "BesselK[n, z]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[BesselK[0, 1]]").unwrap().parse().unwrap();
+    assert!((result - 0.42102443824070834).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_order_two() {
+    let result: f64 = interpret("N[BesselK[2, 1]]").unwrap().parse().unwrap();
+    assert!((result - 1.6248388986351778).abs() < 1e-10);
+  }
+}
