@@ -6740,3 +6740,55 @@ mod hypergeometric_u {
     );
   }
 }
+
+mod partitions_p {
+  use super::*;
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("PartitionsP[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn one() {
+    assert_eq!(interpret("PartitionsP[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn small_values() {
+    assert_eq!(
+      interpret("Table[PartitionsP[k], {k, 0, 12}]").unwrap(),
+      "{1, 1, 2, 3, 5, 7, 11, 15, 22, 30, 42, 56, 77}"
+    );
+  }
+
+  #[test]
+  fn fifty() {
+    assert_eq!(interpret("PartitionsP[50]").unwrap(), "204226");
+  }
+
+  #[test]
+  fn hundred() {
+    assert_eq!(interpret("PartitionsP[100]").unwrap(), "190569292");
+  }
+
+  #[test]
+  fn two_hundred() {
+    assert_eq!(interpret("PartitionsP[200]").unwrap(), "3972999029388");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("PartitionsP[-1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("PartitionsP[x]").unwrap(), "PartitionsP[x]");
+  }
+
+  #[test]
+  fn non_integer() {
+    assert_eq!(interpret("PartitionsP[1.5]").unwrap(), "PartitionsP[1.5]");
+  }
+}

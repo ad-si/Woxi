@@ -4110,7 +4110,7 @@ ParticleAcceleratorData,,,,10,4947
 ParticleData,,,,6,3280
 Partition,Partitions a list into sublists of a given length,✅,pure,1,190
 PartitionGranularity,,,,11,4081
-PartitionsP,,,,1,1488
+PartitionsP,Number of unrestricted partitions of an integer,✅,pure,1,1488
 PartitionsQ,,,,1,2380
 PartLayer,,,,11.1,3257
 PartOfSpeech,,,,10.3,4809
