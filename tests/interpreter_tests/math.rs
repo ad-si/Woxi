@@ -6281,6 +6281,64 @@ mod spherical_harmonic_y {
   }
 }
 
+mod jacobi_p {
+  use super::*;
+
+  #[test]
+  fn degree_zero() {
+    // JacobiP[0, a, b, x] = 1 for any a, b, x
+    assert_eq!(interpret("JacobiP[0, 1, 2, 0.5]").unwrap(), "1.");
+    assert_eq!(interpret("JacobiP[0, 3, 5, -0.7]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn degree_one() {
+    // P_1^{(1,2)}(0.5) = (1 - 2)/2 + (1 + 2 + 2)*0.5/2 = -0.5 + 1.25 = 0.75
+    assert_eq!(interpret("JacobiP[1, 1, 2, 0.5]").unwrap(), "0.75");
+  }
+
+  #[test]
+  fn degree_two() {
+    assert_eq!(interpret("JacobiP[2, 1, 2, 0.5]").unwrap(), "-0.1875");
+  }
+
+  #[test]
+  fn matches_legendre_p() {
+    // JacobiP[n, 0, 0, x] = LegendreP[n, x]
+    let j2 = interpret("JacobiP[2, 0, 0, 0.5]").unwrap();
+    let l2 = interpret("LegendreP[2, 0.5]").unwrap();
+    assert_eq!(j2, l2);
+
+    let j3 = interpret("JacobiP[3, 0, 0, 0.5]").unwrap();
+    let l3 = interpret("LegendreP[3, 0.5]").unwrap();
+    assert_eq!(j3, l3);
+  }
+
+  #[test]
+  fn higher_degree() {
+    let result = interpret("JacobiP[5, 2, 3, -0.3]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-0.31473093749999986)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("JacobiP[x, 1, 2, 0.5]").unwrap(),
+      "JacobiP[x, 1, 2, 0.5]"
+    );
+  }
+
+  #[test]
+  fn at_zero() {
+    // JacobiP[n, a, b, 0] should work
+    let result = interpret("JacobiP[3, 1, 1, 0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    // For a=b (Gegenbauer case), odd n at x=0 should be 0
+    assert!(val.abs() < 1e-12);
+  }
+}
+
 mod nsum {
   use super::*;
 
