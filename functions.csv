@@ -2936,10 +2936,10 @@ ItemStyle,,,,6,1431
 ItoProcess,,,,9,1659
 JaccardDissimilarity,,,,6,4104
 JacobiAmplitude,,,,1,1300
-JacobiCD,,,,1,919
+JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1,919
 JacobiCN,Jacobi elliptic function cn,✅,pure,1,595
 JacobiCS,,,,1,3344
-JacobiDC,,,,1,916
+JacobiDC,Jacobi elliptic function dc (dn/cn),✅,pure,1,916
 JacobiDN,Jacobi elliptic function dn,✅,pure,1,543
 JacobiDS,,,,1,3427
 JacobiEpsilon,,,,12.2,4747
@@ -2947,7 +2947,7 @@ JacobiNC,,,,1,3656
 JacobiND,,,,1,3522
 JacobiNS,,,,1,3462
 JacobiP,,,,1,962
-JacobiSC,,,,1,819
+JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1,819
 JacobiSD,,,,1,3257
 JacobiSN,Jacobi elliptic function sn,✅,pure,1,544
 JacobiSymbol,,,,1,1606
