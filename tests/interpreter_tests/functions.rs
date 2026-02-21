@@ -521,6 +521,44 @@ mod attributes_assignment {
   }
 }
 
+mod context {
+  use super::*;
+
+  #[test]
+  fn context_no_args() {
+    // Context[] returns current context
+    assert_eq!(interpret("Context[]").unwrap(), "Global`");
+  }
+
+  #[test]
+  fn context_builtin_symbol() {
+    // Built-in symbols are in System` context
+    assert_eq!(interpret("Context[Plus]").unwrap(), "System`");
+  }
+
+  #[test]
+  fn context_user_symbol() {
+    // User-defined symbols are in Global` context
+    assert_eq!(interpret("Context[x]").unwrap(), "Global`");
+  }
+
+  #[test]
+  fn context_string_arg() {
+    // String argument also works
+    assert_eq!(interpret("Context[\"Plus\"]").unwrap(), "System`");
+  }
+
+  #[test]
+  fn context_string_user() {
+    assert_eq!(interpret("Context[\"myVar\"]").unwrap(), "Global`");
+  }
+
+  #[test]
+  fn context_matches_dollar_context() {
+    assert_eq!(interpret("Context[] === $Context").unwrap(), "True");
+  }
+}
+
 mod anonymous_function_call {
   use super::*;
 

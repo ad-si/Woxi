@@ -5057,6 +5057,31 @@ pub fn evaluate_function_call_ast(
       ));
     }
 
+    // Context[] — return current context
+    // Context[symbol] — return context of a symbol
+    "Context" if args.is_empty() => {
+      return Ok(Expr::String("Global`".to_string()));
+    }
+    "Context" if args.len() == 1 => {
+      let sym_name = match &args[0] {
+        Expr::Identifier(name) => name.clone(),
+        Expr::String(name) => name.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Context".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      // Built-in symbols are in System` context
+      let builtin = get_builtin_attributes(&sym_name);
+      if !builtin.is_empty() {
+        return Ok(Expr::String("System`".to_string()));
+      }
+      // User-defined symbols are in Global` context
+      return Ok(Expr::String("Global`".to_string()));
+    }
+
     // Options[f] — return stored options for function f
     // Options[f, opt] — return specific option for function f
     "Options" if args.len() == 1 || args.len() == 2 => {
