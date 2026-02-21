@@ -5105,3 +5105,56 @@ mod chebyshev_t {
     assert_eq!(interpret("ChebyshevT[4, 0]").unwrap(), "1");
   }
 }
+
+mod laguerre_l {
+  use super::*;
+
+  #[test]
+  fn degree_zero() {
+    assert_eq!(interpret("LaguerreL[0, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn degree_one() {
+    assert_eq!(interpret("LaguerreL[1, x]").unwrap(), "1 - x");
+  }
+
+  #[test]
+  fn degree_two() {
+    assert_eq!(interpret("LaguerreL[2, x]").unwrap(), "(2 - 4*x + x^2)/2");
+  }
+
+  #[test]
+  fn degree_three() {
+    assert_eq!(
+      interpret("LaguerreL[3, x]").unwrap(),
+      "(6 - 18*x + 9*x^2 - x^3)/6"
+    );
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("LaguerreL[4, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("LaguerreL[3, 1]").unwrap(), "-2/3");
+  }
+
+  #[test]
+  fn at_rational() {
+    assert_eq!(interpret("LaguerreL[3, 1/2]").unwrap(), "-7/48");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("LaguerreL[5, 0.3]").unwrap().parse().unwrap();
+    assert!((result - (-0.09333274999999995)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("LaguerreL[n, x]").unwrap(), "LaguerreL[n, x]");
+  }
+}

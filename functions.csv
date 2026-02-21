@@ -3045,7 +3045,7 @@ LabelingFunction,,,,7,1085
 LabelingSize,,,,11.3,3257
 LabelStyle,,,,6,269
 LabelVisibility,,,,12,
-LaguerreL,,,,1,670
+LaguerreL,Laguerre polynomial,✅,pure,1,670
 LakeData,,,,10,4707
 LambdaComponents,,,,9,4612
 LameC,,,,12.2,3697

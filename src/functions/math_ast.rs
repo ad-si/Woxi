@@ -5923,6 +5923,213 @@ fn chebyshev_t_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   Some(curr.into_iter().map(|c| (c, 1i128)).collect())
 }
 
+/// LaguerreL[n, x] - Laguerre polynomial
+pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LaguerreL expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LaguerreL".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  match &args[1] {
+    Expr::Integer(x) => {
+      let (num, den) = laguerre_eval_rational(n, (*x, 1));
+      Ok(make_rational(num, den))
+    }
+    Expr::FunctionCall {
+      name,
+      args: rat_args,
+    } if name == "Rational" && rat_args.len() == 2 => {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
+      {
+        let (num, den) = laguerre_eval_rational(n, (*p, *q));
+        Ok(make_rational(num, den))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "LaguerreL".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    Expr::Real(f) => Ok(Expr::Real(laguerre_eval_f64(n, *f))),
+    _ => {
+      if let Some(expr) = laguerre_polynomial_symbolic(n, &args[1]) {
+        Ok(expr)
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "LaguerreL".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+/// Evaluate L_n(p/q) using recurrence
+fn laguerre_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
+  let (xn, xd) = x;
+  if n == 0 {
+    return (1, 1);
+  }
+  if n == 1 {
+    return (xd - xn, xd);
+  }
+
+  let mut lm1 = (1i128, 1i128);
+  let mut l = (xd - xn, xd);
+
+  for k in 1..n {
+    let kf = k as i128;
+    // L_{k+1} = ((2k+1-x)*L_k - k*L_{k-1}) / (k+1)
+    let coeff_n = (2 * kf + 1)
+      .checked_mul(xd)
+      .and_then(|v| v.checked_sub(xn))
+      .unwrap_or(0);
+    let coeff_d = xd;
+
+    let a_n = coeff_n.checked_mul(l.0).unwrap_or(0);
+    let a_d = coeff_d.checked_mul(l.1).unwrap_or(1);
+
+    let b_n = kf.checked_mul(lm1.0).unwrap_or(0);
+    let b_d = lm1.1;
+
+    let sub_n = a_n
+      .checked_mul(b_d)
+      .and_then(|v| v.checked_sub(b_n.checked_mul(a_d)?))
+      .unwrap_or(0);
+    let sub_d = a_d
+      .checked_mul(b_d)
+      .and_then(|v| v.checked_mul(kf + 1))
+      .unwrap_or(1);
+
+    let g = gcd(sub_n.abs(), sub_d.abs());
+    lm1 = l;
+    l = if g > 0 {
+      (sub_n / g, sub_d / g)
+    } else {
+      (sub_n, sub_d)
+    };
+  }
+  l
+}
+
+/// Evaluate L_n(x) numerically
+fn laguerre_eval_f64(n: usize, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  if n == 1 {
+    return 1.0 - x;
+  }
+
+  let mut lm1 = 1.0;
+  let mut l = 1.0 - x;
+  for k in 1..n {
+    let kf = k as f64;
+    let lnew = ((2.0 * kf + 1.0 - x) * l - kf * lm1) / (kf + 1.0);
+    lm1 = l;
+    l = lnew;
+  }
+  l
+}
+
+/// Build symbolic Laguerre polynomial L_n(x)
+/// Output as (c_0 + c_1*x + c_2*x^2 + ...) / n!
+fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+  let coeffs = laguerre_scaled_coefficients(n)?;
+  let n_fact = factorial_i128(n)?;
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, c) in coeffs.iter().enumerate() {
+    if *c == 0 {
+      continue;
+    }
+    let x_power = if k == 0 {
+      None
+    } else if k == 1 {
+      Some(x.clone())
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(k as i128)),
+      })
+    };
+
+    let term = match x_power {
+      None => Expr::Integer(*c),
+      Some(xp) if *c == 1 => xp,
+      Some(xp) if *c == -1 => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), xp],
+      },
+      Some(xp) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(*c)),
+        right: Box::new(xp),
+      },
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+
+  let mut numerator = terms[0].clone();
+  for t in terms.iter().skip(1) {
+    numerator = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(numerator),
+      right: Box::new(t.clone()),
+    };
+  }
+
+  if n_fact == 1 {
+    return Some(numerator);
+  }
+
+  Some(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(numerator),
+    right: Box::new(Expr::Integer(n_fact)),
+  })
+}
+
+/// Compute Laguerre scaled coefficients: n! * L_n(x) = Σ c_k x^k
+/// c_k = (-1)^k * C(n,k) * n! / k!
+fn laguerre_scaled_coefficients(n: usize) -> Option<Vec<i128>> {
+  let n_fact = factorial_i128(n)?;
+  let mut coeffs = vec![0i128; n + 1];
+  for k in 0..=n {
+    let k_fact = factorial_i128(k)?;
+    let nk_fact = factorial_i128(n - k)?;
+    let binom = n_fact / (k_fact * nk_fact);
+    let sign: i128 = if k % 2 == 0 { 1 } else { -1 };
+    coeffs[k] = sign * binom * n_fact / k_fact;
+  }
+  Some(coeffs)
+}
+
+/// Compute n! as i128, returning None on overflow
+fn factorial_i128(n: usize) -> Option<i128> {
+  let mut result: i128 = 1;
+  for i in 2..=n {
+    result = result.checked_mul(i as i128)?;
+  }
+  Some(result)
+}
+
 /// PolyLog[s, z] - Polylogarithm function Li_s(z)
 pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
