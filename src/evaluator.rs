@@ -5012,6 +5012,9 @@ pub fn evaluate_function_call_ast(
     "BesselY" if args.len() == 2 => {
       return crate::functions::math_ast::bessel_y_ast(args);
     }
+    "AiryAi" if args.len() == 1 => {
+      return crate::functions::math_ast::airy_ai_ast(args);
+    }
     "Hypergeometric1F1" if args.len() == 3 => {
       return crate::functions::math_ast::hypergeometric1f1_ast(args);
     }
@@ -10178,6 +10181,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Beta"
     | "Zeta"
     | "PolyGamma"
+    | "AiryAi"
     | "Hypergeometric1F1"
     | "Hypergeometric2F1"
     | "BesselJ"

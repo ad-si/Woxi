@@ -66,7 +66,7 @@ AirportData,,,,10,246
 AirPressureData,,,,10,3678
 AirSoundAttenuation,,,,12.2,
 AirTemperatureData,,,,10,2024
-AiryAi,,,,1,1230
+AiryAi,Airy function of the first kind Ai(x),✅,pure,1,1230
 AiryAiPrime,,,,2,4479
 AiryAiZero,,,,6,3697
 AiryBi,,,,2,1384

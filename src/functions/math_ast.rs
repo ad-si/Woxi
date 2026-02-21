@@ -8236,8 +8236,97 @@ fn polylog_numeric(s: f64, z: f64) -> f64 {
   }
 }
 
-/// N[expr] or N[expr, n] - Numeric evaluation
-/// Hypergeometric2F1[a, b, c, z] - Gauss hypergeometric function
+/// AiryAi[x] - Airy function of the first kind
+pub fn airy_ai_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "AiryAi expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Numeric evaluation
+  if let Some(x_f) = expr_to_f64(&args[0])
+    && matches!(&args[0], Expr::Real(_))
+  {
+    return Ok(Expr::Real(airy_ai(x_f)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "AiryAi".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Ai(x) using the two power series
+/// Ai(x) = c1 * f(x) - c2 * g(x)
+/// f(x) = 1 + x^3/(2·3) + x^6/(2·3·5·6) + ...
+/// g(x) = x + x^4/(3·4) + x^7/(3·4·6·7) + ...
+/// c1 = Ai(0), c2 = -Ai'(0)
+fn airy_ai(x: f64) -> f64 {
+  let c1 = 0.3550280538878172; // Ai(0)
+  let c2 = 0.2588194037928068; // -Ai'(0)
+
+  if x.abs() < 6.0 {
+    let mut f = 1.0;
+    let mut g = x;
+    let mut f_term = 1.0;
+    let mut g_term = x;
+
+    for k in 1..200 {
+      let k3 = 3 * k;
+      f_term *= x * x * x / ((k3 as f64 - 1.0) * k3 as f64);
+      g_term *= x * x * x / (k3 as f64 * (k3 as f64 + 1.0));
+      f += f_term;
+      g += g_term;
+      if f_term.abs() < 1e-16 * f.abs().max(1e-300)
+        && g_term.abs() < 1e-16 * g.abs().max(1e-300)
+      {
+        break;
+      }
+    }
+
+    c1 * f - c2 * g
+  } else if x > 0.0 {
+    // Asymptotic for large positive x
+    let zeta = 2.0 / 3.0 * x.powf(1.5);
+    let prefactor =
+      (-zeta).exp() / (2.0 * std::f64::consts::PI.sqrt() * x.powf(0.25));
+    let mut sum = 1.0;
+    let mut term = 1.0;
+    for k in 1..30 {
+      let kf = k as f64;
+      let num = (6.0 * kf - 5.0) * (6.0 * kf - 3.0) * (6.0 * kf - 1.0);
+      term *= -num / (216.0 * kf * zeta);
+      sum += term;
+      if term.abs() < 1e-16 {
+        break;
+      }
+    }
+    prefactor * sum
+  } else {
+    // Large negative x: use series (extend range)
+    let mut f = 1.0;
+    let mut g = x;
+    let mut f_term = 1.0;
+    let mut g_term = x;
+
+    for k in 1..500 {
+      let k3 = 3 * k;
+      f_term *= x * x * x / ((k3 as f64 - 1.0) * k3 as f64);
+      g_term *= x * x * x / (k3 as f64 * (k3 as f64 + 1.0));
+      f += f_term;
+      g += g_term;
+      if f_term.abs() < 1e-16 * f.abs().max(1e-300)
+        && g_term.abs() < 1e-16 * g.abs().max(1e-300)
+      {
+        break;
+      }
+    }
+
+    c1 * f - c2 * g
+  }
+}
+
 /// Hypergeometric1F1[a, b, z] - Kummer's confluent hypergeometric function
 pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
