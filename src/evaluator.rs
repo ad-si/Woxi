@@ -5030,6 +5030,12 @@ pub fn evaluate_function_call_ast(
     "ExpIntegralEi" if args.len() == 1 => {
       return crate::functions::math_ast::exp_integral_ei_ast(args);
     }
+    "BesselI" if args.len() == 2 => {
+      return crate::functions::math_ast::bessel_i_ast(args);
+    }
+    "BesselK" if args.len() == 2 => {
+      return crate::functions::math_ast::bessel_k_ast(args);
+    }
     "EllipticTheta" if args.len() == 3 => {
       return crate::functions::math_ast::elliptic_theta_ast(args);
     }

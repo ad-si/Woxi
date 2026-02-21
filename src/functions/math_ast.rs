@@ -4132,6 +4132,221 @@ fn bessel_j(n: f64, z: f64) -> f64 {
   sum
 }
 
+/// BesselI[n, z] - Modified Bessel function of the first kind
+pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BesselI expects exactly 2 arguments".into(),
+    ));
+  }
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  // BesselI[n, 0] for integer n: I_0(0) = 1, I_n(0) = 0 for n != 0
+  if matches!(z_expr, Expr::Integer(0))
+    && let Expr::Integer(n) = n_expr
+  {
+    return if *n == 0 {
+      Ok(Expr::Integer(1))
+    } else {
+      Ok(Expr::Integer(0))
+    };
+  }
+
+  // Numeric evaluation
+  let n_val = expr_to_f64(n_expr);
+  let z_val = expr_to_f64(z_expr);
+  let is_numeric_eval = n_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let result = bessel_i(n_val.unwrap(), z_val.unwrap());
+    return Ok(Expr::Real(result));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "BesselI".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute I_n(z) using series: I_n(z) = Σ (z/2)^{2m+n} / (m! * Γ(n+m+1))
+fn bessel_i(n: f64, z: f64) -> f64 {
+  if n < 0.0 && n == n.floor() {
+    // I_{-n}(z) = I_n(z) for integer n
+    return bessel_i(-n, z);
+  }
+
+  if z == 0.0 {
+    return if n == 0.0 { 1.0 } else { 0.0 };
+  }
+
+  let half_z = z / 2.0;
+  let mut sum = 0.0;
+  let mut term = half_z.powf(n) / gamma_fn(n + 1.0);
+  sum += term;
+
+  for m in 1..300 {
+    term *= half_z * half_z / (m as f64 * (n + m as f64));
+    sum += term;
+    if term.abs() < 1e-17 * sum.abs().max(1e-300) {
+      break;
+    }
+  }
+  sum
+}
+
+/// BesselK[n, z] - Modified Bessel function of the second kind
+pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BesselK expects exactly 2 arguments".into(),
+    ));
+  }
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  // BesselK[n, 0]: K_0(0) = Infinity, K_n(0) = ComplexInfinity for n > 0
+  if matches!(z_expr, Expr::Integer(0))
+    && let Expr::Integer(n) = n_expr
+  {
+    return if *n == 0 {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    } else {
+      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+    };
+  }
+
+  // Numeric evaluation
+  let n_val = expr_to_f64(n_expr);
+  let z_val = expr_to_f64(z_expr);
+  let is_numeric_eval = n_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let result = bessel_k(n_val.unwrap(), z_val.unwrap());
+    return Ok(Expr::Real(result));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "BesselK".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute K_n(z) for integer n using the Temme method for small z
+/// and the recurrence relation for integer orders.
+fn bessel_k(n: f64, z: f64) -> f64 {
+  let n_int = n.round() as i64;
+  let n_abs = n_int.unsigned_abs();
+
+  // K_{-n}(z) = K_n(z)
+  let n_abs_f = n_abs as f64;
+
+  // Compute K_0 and K_1 directly, then use recurrence for higher orders
+  let (k0, k1) = bessel_k01(z);
+  if n_abs == 0 {
+    return k0;
+  }
+  if n_abs == 1 {
+    return k1;
+  }
+
+  // Recurrence: K_{n+1}(z) = (2n/z) * K_n(z) + K_{n-1}(z)
+  let mut km1 = k0;
+  let mut k = k1;
+  for i in 1..n_abs {
+    let kp1 = (2.0 * i as f64 / z) * k + km1;
+    km1 = k;
+    k = kp1;
+  }
+
+  // If original n was non-integer, we'd need a different approach
+  // but for now we handle integer n via recurrence
+  if (n - n_abs_f).abs() > 1e-10 && n >= 0.0 {
+    // Non-integer order: use K_v(z) = (π/2) * (I_{-v}(z) - I_v(z)) / sin(vπ)
+    let pi = std::f64::consts::PI;
+    let i_neg = bessel_i(-n, z);
+    let i_pos = bessel_i(n, z);
+    return (pi / 2.0) * (i_neg - i_pos) / (n * pi).sin();
+  }
+
+  k
+}
+
+/// Compute K_0(z) and K_1(z) simultaneously using the Temme series for small z
+/// and asymptotic expansion for large z.
+fn bessel_k01(z: f64) -> (f64, f64) {
+  if z <= 2.0 {
+    // Series for K_0 and K_1
+    let euler_gamma = 0.5772156649015329;
+    let lnz2 = (z / 2.0).ln();
+    let t = z * z / 4.0;
+
+    // K_0(z) = -(ln(z/2) + γ) * I_0(z) + Σ_{m=1}^∞ (z/2)^{2m} * H_m / (m!)^2
+    let i0 = bessel_i(0.0, z);
+    let mut k0 = -(lnz2 + euler_gamma) * i0;
+    let mut term0 = 1.0;
+    let mut hm = 0.0;
+    for m in 1..100 {
+      let mf = m as f64;
+      term0 *= t / (mf * mf);
+      hm += 1.0 / mf;
+      k0 += term0 * hm;
+      if (term0 * hm).abs() < 1e-17 * k0.abs().max(1e-300) {
+        break;
+      }
+    }
+
+    // K_1(z) = (1/z) + (ln(z/2) + γ - 1) * I_1(z)
+    //   - (z/2) * Σ_{m=0}^∞ (z²/4)^m * (H_m + H_{m+1}) / (2 * m! * (m+1)!)
+    // But the correct form is:
+    // K_1(z) = (1/z) - (ln(z/2) + γ) * I_1(z) + (z/4) * Σ_{m=0}^∞ ...
+    // Let's use recurrence from K_0 instead: K_1 = -K_0' (for the derivative)
+    // Or more reliably, compute via the Wronskian: I_n * K_{n+1} + I_{n+1} * K_n = 1/z
+    // So K_1 = (1/z - I_1 * K_0) / I_0
+    let i1 = bessel_i(1.0, z);
+    let k1 = (1.0 / z - i1 * k0) / i0;
+
+    (k0, k1)
+  } else {
+    // Asymptotic: K_n(z) ~ sqrt(π/(2z)) * e^{-z} * P_n(z)
+    // where P_n(z) = 1 + (4n²-1)/(8z) + (4n²-1)(4n²-9)/(2!(8z)²) + ...
+    let pi = std::f64::consts::PI;
+    let prefactor = (pi / (2.0 * z)).sqrt() * (-z).exp();
+
+    // K_0 asymptotic (μ = 0)
+    let mut sum0 = 1.0;
+    let mut term0 = 1.0;
+    for m in 1..30 {
+      let mf = m as f64;
+      let factor = -(0.0 - (2.0 * mf - 1.0).powi(2)) / (8.0 * z * mf);
+      term0 *= factor;
+      if term0.abs() < 1e-17 {
+        break;
+      }
+      sum0 += term0;
+    }
+
+    // K_1 asymptotic (μ = 4)
+    let mut sum1 = 1.0;
+    let mut term1 = 1.0;
+    for m in 1..30 {
+      let mf = m as f64;
+      let factor = (4.0 - (2.0 * mf - 1.0).powi(2)) / (8.0 * z * mf);
+      term1 *= factor;
+      if term1.abs() < 1e-17 {
+        break;
+      }
+      sum1 += term1;
+    }
+
+    (prefactor * sum0, prefactor * sum1)
+  }
+}
+
 /// Compute Jacobi elliptic functions sn(u, m), cn(u, m), dn(u, m) numerically
 /// using the descending Landen (AGM) transformation.
 /// Parameter m is the parameter (not the modulus k; m = k^2).
