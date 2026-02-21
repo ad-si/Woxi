@@ -2322,3 +2322,117 @@ pub fn eigensystem_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(vec![eigenvalues, eigenvectors]))
 }
+
+/// Minors[m] - gives the minors of a matrix (determinants of (n-1)×(n-1) submatrices)
+/// Minors[m, k] - gives the k-th order minors
+pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "Minors expects 1, 2, or 3 arguments".into(),
+    ));
+  }
+
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "Minors".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let nrows = matrix.len();
+  if nrows == 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  let ncols = matrix[0].len();
+
+  // Determine the minor order k
+  let k = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Integer(n) if *n > 0 => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Minors".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    // Default: n-1 for n×n matrix (standard minors)
+    nrows.min(ncols) - 1
+  };
+
+  if k > nrows || k > ncols {
+    return Err(InterpreterError::EvaluationError(
+      "Minors: minor order exceeds matrix dimensions".into(),
+    ));
+  }
+
+  // Generate all combinations of k rows and k columns
+  let row_combos = combinations(nrows, k);
+  let col_combos = combinations(ncols, k);
+
+  // Build the result matrix
+  let mut result_rows = Vec::new();
+  for row_combo in &row_combos {
+    let mut result_row = Vec::new();
+    for col_combo in &col_combos {
+      // Extract submatrix
+      let mut submatrix = Vec::new();
+      for &r in row_combo {
+        let mut row = Vec::new();
+        for &c in col_combo {
+          row.push(matrix[r][c].clone());
+        }
+        submatrix.push(row);
+      }
+      // Apply function (default is Det)
+      if args.len() == 3 {
+        // Minors[m, k, f] - apply f to the submatrix
+        let sub_expr =
+          Expr::List(submatrix.into_iter().map(Expr::List).collect());
+        let f_call = Expr::FunctionCall {
+          name: match &args[2] {
+            Expr::Identifier(name) => name.clone(),
+            _ => "Det".to_string(),
+          },
+          args: vec![sub_expr],
+        };
+        result_row.push(crate::evaluator::evaluate_expr_to_expr(&f_call)?);
+      } else {
+        result_row.push(determinant(&submatrix));
+      }
+    }
+    result_rows.push(Expr::List(result_row));
+  }
+
+  Ok(Expr::List(result_rows))
+}
+
+/// Generate all combinations of `k` items from `0..n`
+fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
+  let mut result = Vec::new();
+  let mut combo = Vec::new();
+  combinations_helper(0, n, k, &mut combo, &mut result);
+  result
+}
+
+fn combinations_helper(
+  start: usize,
+  n: usize,
+  k: usize,
+  current: &mut Vec<usize>,
+  result: &mut Vec<Vec<usize>>,
+) {
+  if current.len() == k {
+    result.push(current.clone());
+    return;
+  }
+  for i in start..n {
+    current.push(i);
+    combinations_helper(i + 1, n, k, current, result);
+    current.pop();
+  }
+}

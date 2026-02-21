@@ -5799,6 +5799,9 @@ pub fn evaluate_function_call_ast(
     "Det" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::det_ast(args);
     }
+    "Minors" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::linear_algebra_ast::minors_ast(args);
+    }
     "Inverse" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::inverse_ast(args);
     }

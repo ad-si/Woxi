@@ -3558,7 +3558,7 @@ MinkowskiQuestionMark,,,,10,4315
 MinLimit,,,,11.2,2944
 MinMax,Returns the minimum and maximum of a list,✅,pure,10.1,885
 MinorPlanetData,,,,10,776
-Minors,,,,1,1221
+Minors,Matrix minors (determinants of submatrices),✅,pure,1,1221
 MinPointSeparation,,,,13,
 MinStableDistribution,,,,8,3094
 Minus,Subtracts numbers,✅,pure,1,800
