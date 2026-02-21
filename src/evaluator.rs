@@ -4069,6 +4069,77 @@ fn evaluate_function_call_ast_inner(
         .unwrap_or(Expr::Identifier(result_str));
       return Ok(result);
     }
+    // Put[expr1, expr2, ..., "file"] — write expressions to a file
+    #[cfg(not(target_arch = "wasm32"))]
+    "Put" if !args.is_empty() => {
+      let filename = match args.last().unwrap() {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Put".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let exprs = &args[..args.len() - 1];
+      let content = exprs
+        .iter()
+        .map(crate::syntax::expr_to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+      let to_write = if exprs.is_empty() {
+        String::new()
+      } else {
+        format!("{}\n", content)
+      };
+      match std::fs::write(&filename, to_write) {
+        Ok(_) => return Ok(Expr::Identifier("Null".to_string())),
+        Err(_e) => {
+          eprintln!("Put::noopen: Cannot open {}.", filename);
+          return Ok(Expr::Identifier("$Failed".to_string()));
+        }
+      }
+    }
+    // PutAppend[expr1, expr2, ..., "file"] — append expressions to a file
+    #[cfg(not(target_arch = "wasm32"))]
+    "PutAppend" if !args.is_empty() => {
+      let filename = match args.last().unwrap() {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "PutAppend".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let exprs = &args[..args.len() - 1];
+      let content = exprs
+        .iter()
+        .map(crate::syntax::expr_to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+      if !exprs.is_empty() {
+        use std::io::Write;
+        let to_write = format!("{}\n", content);
+        match std::fs::OpenOptions::new()
+          .create(true)
+          .append(true)
+          .open(&filename)
+        {
+          Ok(mut file) => {
+            if file.write_all(to_write.as_bytes()).is_err() {
+              eprintln!("PutAppend::noopen: Cannot open {}.", filename);
+              return Ok(Expr::Identifier("$Failed".to_string()));
+            }
+          }
+          Err(_) => {
+            eprintln!("PutAppend::noopen: Cannot open {}.", filename);
+            return Ok(Expr::Identifier("$Failed".to_string()));
+          }
+        }
+      }
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
     #[cfg(not(target_arch = "wasm32"))]
     "Export" if args.len() >= 2 => {
       let filename = match &args[0] {

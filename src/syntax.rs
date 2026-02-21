@@ -1718,8 +1718,9 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 /// Get precedence of an operator (higher = binds tighter)
 fn operator_precedence(op: &str) -> u8 {
   match op {
-    "=" | ":=" => 1, // Assignment (lowest)
-    "|" => 2,        // Alternatives
+    ">>" | ">>>" => 0, // Put/PutAppend (lowest precedence)
+    "=" | ":=" => 1,   // Assignment
+    "|" => 2,          // Alternatives
     "||" => 3,
     "&&" => 4,
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 5, // Comparisons
@@ -1876,6 +1877,14 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     ":>" => Expr::RuleDelayed {
       pattern: Box::new(left.clone()),
       replacement: Box::new(right.clone()),
+    },
+    ">>" => Expr::FunctionCall {
+      name: "Put".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    ">>>" => Expr::FunctionCall {
+      name: "PutAppend".to_string(),
+      args: vec![left.clone(), right.clone()],
     },
     "=" => Expr::FunctionCall {
       name: "Set".to_string(),

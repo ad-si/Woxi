@@ -1133,3 +1133,165 @@ mod read_list {
     let _ = std::fs::remove_file(path);
   }
 }
+
+mod put {
+  use super::*;
+
+  #[test]
+  fn put_single_expression() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_single.wl";
+    let result = interpret(&format!("Put[3, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "3\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_multiple_expressions() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_multi.wl";
+    let result = interpret(&format!("Put[1, 2, 3, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "1\n2\n3\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_list() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_list.wl";
+    let result = interpret(&format!("Put[{{1, 2, 3}}, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "{1, 2, 3}\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_symbolic_expression() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_sym.wl";
+    let result = interpret(&format!("Put[x + y, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "x + y\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_evaluates_argument() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_eval.wl";
+    let result = interpret(&format!("Put[1 + 2, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "3\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_empty_file() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_empty.wl";
+    let result = interpret(&format!("Put[\"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_rational() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_rat.wl";
+    let result = interpret(&format!("Put[1/3, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "1/3\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_operator_form() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_op.wl";
+    let result = interpret(&format!("42 >> \"{path}\"")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "42\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_overwrites_file() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_overwrite.wl";
+    interpret(&format!("Put[1, \"{path}\"]")).unwrap();
+    interpret(&format!("Put[2, \"{path}\"]")).unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "2\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_return_value_in_list() {
+    clear_state();
+    let path = "/tmp/woxi_test_put_retval.wl";
+    let result = interpret(&format!("{{Put[1, \"{path}\"]}}")).unwrap();
+    assert_eq!(result, "{Null}");
+    std::fs::remove_file(path).ok();
+  }
+}
+
+mod put_append {
+  use super::*;
+
+  #[test]
+  fn put_append_basic() {
+    clear_state();
+    let path = "/tmp/woxi_test_putappend.wl";
+    interpret(&format!("Put[1, \"{path}\"]")).unwrap();
+    let result = interpret(&format!("PutAppend[2, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "1\n2\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_append_multiple() {
+    clear_state();
+    let path = "/tmp/woxi_test_putappend_multi.wl";
+    interpret(&format!("Put[1, \"{path}\"]")).unwrap();
+    interpret(&format!("PutAppend[2, 3, \"{path}\"]")).unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "1\n2\n3\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_append_operator_form() {
+    clear_state();
+    let path = "/tmp/woxi_test_putappend_op.wl";
+    interpret(&format!("Put[1, \"{path}\"]")).unwrap();
+    interpret(&format!("2 >>> \"{path}\"")).unwrap();
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "1\n2\n");
+    std::fs::remove_file(path).ok();
+  }
+
+  #[test]
+  fn put_append_creates_file() {
+    clear_state();
+    let path = "/tmp/woxi_test_putappend_create.wl";
+    std::fs::remove_file(path).ok();
+    let result = interpret(&format!("PutAppend[42, \"{path}\"]")).unwrap();
+    assert_eq!(result, "Null");
+    let content = std::fs::read_to_string(path).unwrap();
+    assert_eq!(content, "42\n");
+    std::fs::remove_file(path).ok();
+  }
+}

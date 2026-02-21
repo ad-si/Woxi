@@ -84,6 +84,8 @@ Operator = {
   | "|"      // Alternatives operator
   | "===" | "=!=" | "==" | "!="  // SameQ, UnsameQ (must be before == and !=), Equal, Unequal
   | "<=" | ">="
+  | ">>>" ~ !(">" | "=")   // PutAppend operator (must be before >> and >)
+  | ">>" ~ !(">" | "=")    // Put operator (must be before > and >=)
   | ":>"     // RuleDelayed (must be before := and >)
   | ":="
   | "->"     // Rule (must be before - and >)

@@ -4403,8 +4403,8 @@ PublisherID,,,,11.2,
 PulsarData,,,,10,4881
 PunctuationCharacter,,,,10.3,2389
 Purple,,,,5.1,314
-Put,,,,1,1162
-PutAppend,,,,1,1338
+Put,Write expressions to a file,✅,effectful,1,1162
+PutAppend,Append expressions to a file,✅,effectful,1,1338
 Pyramid,,,,10,2545
 Q,,,,,
 QBinomial,,,,7,2734
