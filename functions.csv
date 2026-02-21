@@ -1865,7 +1865,7 @@ FactorialMoment,,,,8,1836
 FactorialMomentGeneratingFunction,,,,8,3176
 FactorialPower,,,,7,2085
 FactorInteger,Returns prime factorization as {prime exponent} pairs,✅,pure,1,528
-FactorList,,,,1,1745
+FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1,1745
 FactorSquareFree,,,,1,3143
 FactorSquareFreeList,,,,1,3697
 FactorTerms,,,,1,1817
