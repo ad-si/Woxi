@@ -5832,6 +5832,9 @@ fn evaluate_function_call_ast_inner(
     "Hypergeometric2F1" if args.len() == 4 => {
       return crate::functions::math_ast::hypergeometric2f1_ast(args);
     }
+    "HypergeometricU" if args.len() == 3 => {
+      return crate::functions::math_ast::hypergeometric_u_ast(args);
+    }
     "EllipticK" if args.len() == 1 => {
       return crate::functions::math_ast::elliptic_k_ast(args);
     }
@@ -11206,6 +11209,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "AiryAi"
     | "Hypergeometric1F1"
     | "Hypergeometric2F1"
+    | "HypergeometricU"
     | "BesselJ"
     | "BesselY"
     | "BesselI"
