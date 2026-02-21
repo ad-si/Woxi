@@ -4910,3 +4910,52 @@ mod eigensystem {
     assert_eq!(interpret("Eigensystem[m]").unwrap(), "Eigensystem[m]");
   }
 }
+
+mod jacobi_cn {
+  use super::*;
+
+  #[test]
+  fn at_zero_u() {
+    assert_eq!(interpret("JacobiCN[0, m]").unwrap(), "1");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiCN[u, 0]").unwrap(), "Cos[u]");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiCN[u, 1]").unwrap(), "Sech[u]");
+  }
+
+  #[test]
+  fn even_symmetry() {
+    assert_eq!(interpret("JacobiCN[-u, m]").unwrap(), "JacobiCN[u, m]");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("JacobiCN[0.5, 0.3]").unwrap().parse().unwrap();
+    assert!((result - 0.8804087364264626).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiCN[u, m]").unwrap(), "JacobiCN[u, m]");
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 =
+      interpret("N[JacobiCN[1, 1/2]]").unwrap().parse().unwrap();
+    assert!((result - 0.5959765676721407).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_2() {
+    let result: f64 =
+      interpret("N[JacobiCN[2, 1/3]]").unwrap().parse().unwrap();
+    assert!((result - (-0.21637836906745786)).abs() < 1e-10);
+  }
+}

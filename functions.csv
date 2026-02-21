@@ -2937,7 +2937,7 @@ ItoProcess,,,,9,1659
 JaccardDissimilarity,,,,6,4104
 JacobiAmplitude,,,,1,1300
 JacobiCD,,,,1,919
-JacobiCN,,,,1,595
+JacobiCN,Jacobi elliptic function cn,✅,pure,1,595
 JacobiCS,,,,1,3344
 JacobiDC,,,,1,916
 JacobiDN,Jacobi elliptic function dn,✅,pure,1,543
