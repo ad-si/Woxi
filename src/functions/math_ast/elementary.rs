@@ -185,6 +185,15 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
+  // Handle Sqrt[Quantity[mag, unit]] by delegating to Power[quantity, 1/2]
+  if crate::functions::quantity_ast::is_quantity(&args[0]).is_some() {
+    let half = make_rational(1, 2);
+    if let Some(result) =
+      crate::functions::quantity_ast::try_quantity_power(&args[0], &half)
+    {
+      return result;
+    }
+  }
   match &args[0] {
     // Perfect squares: Sqrt[0]=0, Sqrt[1]=1, Sqrt[4]=2, etc.
     Expr::Integer(n) if *n >= 0 => {
