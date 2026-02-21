@@ -1361,6 +1361,68 @@ mod leaf_count {
   }
 }
 
+mod byte_count {
+  use super::*;
+
+  #[test]
+  fn byte_count_integer() {
+    // i128 = 16 bytes
+    assert_eq!(interpret("ByteCount[42]").unwrap(), "16");
+  }
+
+  #[test]
+  fn byte_count_real() {
+    // f64 = 8 bytes
+    assert_eq!(interpret("ByteCount[3.14]").unwrap(), "8");
+  }
+
+  #[test]
+  fn byte_count_string() {
+    // string length in bytes
+    assert_eq!(interpret("ByteCount[\"hello\"]").unwrap(), "5");
+  }
+
+  #[test]
+  fn byte_count_empty_string() {
+    assert_eq!(interpret("ByteCount[\"\"]").unwrap(), "0");
+  }
+
+  #[test]
+  fn byte_count_symbol_is_zero() {
+    // Symbols are shared, so 0 bytes
+    assert_eq!(interpret("ByteCount[x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn byte_count_list() {
+    // {1, 2, 3}: 3 pointers (3*8=24) + 3 integers (3*16=48) = 72
+    assert_eq!(interpret("ByteCount[{1, 2, 3}]").unwrap(), "72");
+  }
+
+  #[test]
+  fn byte_count_nested_list() {
+    // {{1, 2}, {3, 4}}: 2 pointers (16) + 2 sublists each (2*8 + 2*16 = 48) = 112
+    assert_eq!(interpret("ByteCount[{{1, 2}, {3, 4}}]").unwrap(), "112");
+  }
+
+  #[test]
+  fn byte_count_function_call() {
+    // f[x, y]: 2 pointers (16) + 2 symbols (0) = 16
+    assert_eq!(interpret("ByteCount[f[x, y]]").unwrap(), "16");
+  }
+
+  #[test]
+  fn byte_count_larger_is_more() {
+    // A larger list should have a larger byte count
+    let small = interpret("ByteCount[{1, 2}]").unwrap();
+    let large = interpret("ByteCount[{1, 2, 3, 4, 5}]").unwrap();
+    assert!(
+      large.parse::<i128>().unwrap() > small.parse::<i128>().unwrap(),
+      "Larger list should have larger byte count"
+    );
+  }
+}
+
 mod free_q {
   use super::*;
 

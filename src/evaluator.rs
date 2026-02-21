@@ -4968,6 +4968,10 @@ pub fn evaluate_function_call_ast(
       return crate::functions::predicate_ast::leaf_count_ast(args);
     }
 
+    "ByteCount" if args.len() == 1 => {
+      return crate::functions::predicate_ast::byte_count_ast(args);
+    }
+
     // Introspection functions - return {} for symbols without stored definitions
     "Messages" | "DownValues" | "OwnValues" | "SubValues" | "NValues"
     | "FormatValues" | "DefaultValues"
