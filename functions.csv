@@ -5709,7 +5709,7 @@ TreeElementStyleFunction,,,,13.1,
 TreeExpression,,,,12.3,
 TreeExtract,,,,12.3,
 TreeFold,,,,12.3,
-TreeForm,,,,1,1138
+TreeForm,Display an expression as a tree structure,✅,pure,1,1138
 TreeGraph,,,,8,1808
 TreeGraphQ,,,,8,2807
 TreeInsert,,,,12.3,

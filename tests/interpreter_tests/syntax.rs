@@ -322,6 +322,51 @@ mod full_form {
   }
 }
 
+mod tree_form {
+  use super::*;
+
+  #[test]
+  fn tree_form_simple() {
+    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "TreeForm[f[x, y]]");
+  }
+
+  #[test]
+  fn tree_form_expression() {
+    assert_eq!(
+      interpret("TreeForm[a + b^2 + c^3 + d]").unwrap(),
+      "TreeForm[a + b^2 + c^3 + d]"
+    );
+  }
+
+  #[test]
+  fn tree_form_evaluates_argument() {
+    assert_eq!(interpret("TreeForm[1 + 2]").unwrap(), "TreeForm[3]");
+  }
+
+  #[test]
+  fn tree_form_with_depth() {
+    assert_eq!(interpret("TreeForm[f[x], 2]").unwrap(), "TreeForm[f[x], 2]");
+  }
+
+  #[test]
+  fn tree_form_no_args() {
+    assert_eq!(interpret("TreeForm[]").unwrap(), "TreeForm[]");
+  }
+
+  #[test]
+  fn tree_form_head() {
+    assert_eq!(interpret("Head[TreeForm[f[x]]]").unwrap(), "TreeForm");
+  }
+
+  #[test]
+  fn tree_form_in_list() {
+    assert_eq!(
+      interpret("{TreeForm[f[x]], TreeForm[g[y]]}").unwrap(),
+      "{TreeForm[f[x]], TreeForm[g[y]]}"
+    );
+  }
+}
+
 mod construct {
   use super::*;
 
