@@ -6327,6 +6327,354 @@ fn chebyshev_u_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
   Some(curr.into_iter().map(|c| (c, 1i128)).collect())
 }
 
+/// GegenbauerC[n, lambda, x] - Gegenbauer (ultraspherical) polynomial
+pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "GegenbauerC expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "GegenbauerC".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Extract lambda as rational (p/q)
+  let lambda = match &args[1] {
+    Expr::Integer(v) => Some((*v, 1i128)),
+    Expr::FunctionCall {
+      name,
+      args: rat_args,
+    } if name == "Rational" && rat_args.len() == 2 => {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
+      {
+        Some((*p, *q))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  };
+
+  // If lambda is not rational, check if x is real for numeric eval
+  if lambda.is_none() {
+    if let Some(lam_f) = expr_to_f64(&args[1])
+      && let Some(x_f) = expr_to_f64(&args[2])
+      && (matches!(&args[1], Expr::Real(_))
+        || matches!(&args[2], Expr::Real(_)))
+    {
+      return Ok(Expr::Real(gegenbauer_eval_f64(n, lam_f, x_f)));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "GegenbauerC".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let lam = lambda.unwrap();
+
+  match &args[2] {
+    Expr::Integer(x) => {
+      let (num, den) = gegenbauer_eval_rational(n, lam, (*x, 1));
+      Ok(make_rational(num, den))
+    }
+    Expr::FunctionCall {
+      name,
+      args: rat_args,
+    } if name == "Rational" && rat_args.len() == 2 => {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
+      {
+        let (num, den) = gegenbauer_eval_rational(n, lam, (*p, *q));
+        Ok(make_rational(num, den))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "GegenbauerC".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    Expr::Real(f) => {
+      let lam_f = lam.0 as f64 / lam.1 as f64;
+      Ok(Expr::Real(gegenbauer_eval_f64(n, lam_f, *f)))
+    }
+    _ => {
+      // Symbolic: build polynomial
+      if let Some(expr) = gegenbauer_polynomial_symbolic(n, lam, &args[2]) {
+        Ok(expr)
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "GegenbauerC".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+/// Evaluate Gegenbauer C_n^lambda(p/q) as rational
+/// C_0^λ = 1, C_1^λ = 2λx, C_{k+1}^λ = (2(k+λ)x C_k^λ - (k+2λ-1) C_{k-1}^λ) / (k+1)
+fn gegenbauer_eval_rational(
+  n: usize,
+  lam: (i128, i128),
+  x: (i128, i128),
+) -> (i128, i128) {
+  if n == 0 {
+    return (1, 1);
+  }
+  // C_1 = 2λx = (2*lam_n*x_n, lam_d*x_d)
+  let c1_n = 2i128
+    .checked_mul(lam.0)
+    .and_then(|v| v.checked_mul(x.0))
+    .unwrap_or(0);
+  let c1_d = lam.1.checked_mul(x.1).unwrap_or(1);
+  let g = gcd(c1_n.abs(), c1_d.abs());
+  let c1 = if g > 0 {
+    (c1_n / g, c1_d / g)
+  } else {
+    (c1_n, c1_d)
+  };
+  if n == 1 {
+    return c1;
+  }
+
+  let mut cm1 = (1i128, 1i128);
+  let mut c = c1;
+
+  for k in 1..n {
+    let kk = k as i128;
+    // coeff_a = 2(k + λ) = 2*(k*lam_d + lam_n)/lam_d
+    let k_plus_lam_n = kk
+      .checked_mul(lam.1)
+      .and_then(|v| v.checked_add(lam.0))
+      .unwrap_or(0);
+    let k_plus_lam_d = lam.1;
+    // 2*(k+λ)*x * C_k: numerator = 2 * k_plus_lam_n * x_n * c_n
+    let a_n = 2i128
+      .checked_mul(k_plus_lam_n)
+      .and_then(|v| v.checked_mul(x.0))
+      .and_then(|v| v.checked_mul(c.0))
+      .unwrap_or(0);
+    let a_d = k_plus_lam_d
+      .checked_mul(x.1)
+      .and_then(|v| v.checked_mul(c.1))
+      .unwrap_or(1);
+
+    // coeff_b = (k + 2λ - 1) = (k*lam_d + 2*lam_n - lam_d)/lam_d
+    let b_n = kk
+      .checked_mul(lam.1)
+      .and_then(|v| v.checked_add(2i128.checked_mul(lam.0)?))
+      .and_then(|v| v.checked_sub(lam.1))
+      .unwrap_or(0);
+    let b_d = lam.1;
+
+    // b * C_{k-1}: b_n * cm1_n / (b_d * cm1_d)
+    let sub_n = b_n.checked_mul(cm1.0).unwrap_or(0);
+    let sub_d = b_d.checked_mul(cm1.1).unwrap_or(1);
+
+    // (a - sub) / (k+1)
+    // a/a_d - sub/sub_d = (a*sub_d - sub*a_d) / (a_d * sub_d)
+    let diff_n = a_n
+      .checked_mul(sub_d)
+      .and_then(|v| v.checked_sub(sub_n.checked_mul(a_d)?))
+      .unwrap_or(0);
+    let diff_d = a_d.checked_mul(sub_d).unwrap_or(1);
+
+    // Divide by (k+1)
+    let new_n = diff_n;
+    let new_d = diff_d.checked_mul(kk + 1).unwrap_or(1);
+
+    let g = gcd(new_n.abs(), new_d.abs());
+    cm1 = c;
+    c = if g > 0 {
+      (new_n / g, new_d / g)
+    } else {
+      (new_n, new_d)
+    };
+  }
+  c
+}
+
+/// Evaluate Gegenbauer C_n^lambda(x) numerically
+fn gegenbauer_eval_f64(n: usize, lam: f64, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  if n == 1 {
+    return 2.0 * lam * x;
+  }
+
+  let mut cm1 = 1.0;
+  let mut c = 2.0 * lam * x;
+  for k in 1..n {
+    let kf = k as f64;
+    let c_new =
+      (2.0 * (kf + lam) * x * c - (kf + 2.0 * lam - 1.0) * cm1) / (kf + 1.0);
+    cm1 = c;
+    c = c_new;
+  }
+  c
+}
+
+/// Build symbolic Gegenbauer polynomial
+fn gegenbauer_polynomial_symbolic(
+  n: usize,
+  lam: (i128, i128),
+  x: &Expr,
+) -> Option<Expr> {
+  let coeffs = gegenbauer_coefficients(n, lam)?;
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, (cn, cd)) in coeffs.iter().enumerate() {
+    if *cn == 0 {
+      continue;
+    }
+    let x_power = if k == 0 {
+      None
+    } else if k == 1 {
+      Some(x.clone())
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(k as i128)),
+      })
+    };
+
+    let coeff_expr = if *cd == 1 {
+      Expr::Integer(*cn)
+    } else {
+      make_rational(*cn, *cd)
+    };
+
+    let term = match x_power {
+      None => coeff_expr,
+      Some(xp) => {
+        if *cn == 1 && *cd == 1 {
+          xp
+        } else if *cn == -1 && *cd == 1 {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), xp],
+          }
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(coeff_expr),
+            right: Box::new(xp),
+          }
+        }
+      }
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return Some(terms.pop().unwrap());
+  }
+
+  let mut result = terms[0].clone();
+  for t in terms.iter().skip(1) {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(t.clone()),
+    };
+  }
+  Some(result)
+}
+
+/// Compute Gegenbauer polynomial coefficients as (numerator, denominator) pairs
+fn gegenbauer_coefficients(
+  n: usize,
+  lam: (i128, i128),
+) -> Option<Vec<(i128, i128)>> {
+  if n == 0 {
+    return Some(vec![(1, 1)]);
+  }
+  if n == 1 {
+    // 2λx: coefficient of x^1 is 2λ = 2*lam_n/lam_d
+    let cn = 2i128.checked_mul(lam.0)?;
+    let g = gcd(cn.abs(), lam.1.abs());
+    return Some(vec![(0, 1), (cn / g, lam.1 / g)]);
+  }
+
+  // Store coefficients as (numerator, denominator) vectors
+  let mut prev: Vec<(i128, i128)> = vec![(1, 1)]; // C_0
+  let cn = 2i128.checked_mul(lam.0)?;
+  let g = gcd(cn.abs(), lam.1.abs());
+  let mut curr: Vec<(i128, i128)> = vec![(0, 1), (cn / g, lam.1 / g)]; // C_1
+
+  for k in 1..n {
+    let kk = k as i128;
+    // C_{k+1} = (2(k+λ)x * C_k - (k+2λ-1) * C_{k-1}) / (k+1)
+    // coeff_a = 2(k+λ) = 2*(k*lam_d + lam_n) / lam_d
+    let a_n = 2i128.checked_mul(kk.checked_mul(lam.1)?.checked_add(lam.0)?)?;
+    let a_d = lam.1;
+
+    // coeff_b = (k + 2λ - 1) = (k*lam_d + 2*lam_n - lam_d) / lam_d
+    let b_n = kk
+      .checked_mul(lam.1)?
+      .checked_add(2i128.checked_mul(lam.0)?)?
+      .checked_sub(lam.1)?;
+    let b_d = lam.1;
+
+    // 2(k+λ)x * curr: shift right and multiply by a_n/a_d
+    let mut next: Vec<(i128, i128)> = vec![(0, 1); curr.len() + 1];
+    for (j, (cn, cd)) in curr.iter().enumerate() {
+      // a_n/a_d * cn/cd = a_n*cn / (a_d*cd)
+      let nn = a_n.checked_mul(*cn)?;
+      let nd = a_d.checked_mul(*cd)?;
+      let g = gcd(nn.abs(), nd.abs());
+      next[j + 1] = if g > 0 { (nn / g, nd / g) } else { (nn, nd) };
+    }
+
+    // Subtract b * prev
+    for (j, (pn, pd)) in prev.iter().enumerate() {
+      // Subtract b_n/b_d * pn/pd
+      let sub_n = b_n.checked_mul(*pn)?;
+      let sub_d = b_d.checked_mul(*pd)?;
+      // next[j] = next[j] - sub_n/sub_d
+      let (ref nn, ref nd) = next[j];
+      // nn/nd - sub_n/sub_d = (nn*sub_d - sub_n*nd) / (nd*sub_d)
+      let res_n = nn
+        .checked_mul(sub_d)?
+        .checked_sub(sub_n.checked_mul(*nd)?)?;
+      let res_d = nd.checked_mul(sub_d)?;
+      let g = gcd(res_n.abs(), res_d.abs());
+      next[j] = if g > 0 {
+        (res_n / g, res_d / g)
+      } else {
+        (res_n, res_d)
+      };
+    }
+
+    // Divide by (k+1)
+    let div = kk + 1;
+    for (cn, cd) in next.iter_mut() {
+      *cd = cd.checked_mul(div)?;
+      let g = gcd(cn.abs(), cd.abs());
+      if g > 0 {
+        *cn /= g;
+        *cd /= g;
+      }
+    }
+
+    prev = curr;
+    curr = next;
+  }
+
+  Some(curr)
+}
+
 /// LaguerreL[n, x] - Laguerre polynomial
 pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
