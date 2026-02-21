@@ -5063,6 +5063,24 @@ pub fn evaluate_function_call_ast(
     "JacobiCD" if args.len() == 2 => {
       return crate::functions::math_ast::jacobi_cd_ast(args);
     }
+    "JacobiSD" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_sd_ast(args);
+    }
+    "JacobiCS" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_cs_ast(args);
+    }
+    "JacobiDS" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_ds_ast(args);
+    }
+    "JacobiNS" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_ns_ast(args);
+    }
+    "JacobiND" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_nd_ast(args);
+    }
+    "JacobiNC" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_nc_ast(args);
+    }
     "ChebyshevT" if args.len() == 2 => {
       return crate::functions::math_ast::chebyshev_t_ast(args);
     }
@@ -10164,6 +10182,12 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "JacobiSC"
     | "JacobiDC"
     | "JacobiCD"
+    | "JacobiSD"
+    | "JacobiCS"
+    | "JacobiDS"
+    | "JacobiNS"
+    | "JacobiND"
+    | "JacobiNC"
     | "ChebyshevT"
     | "ChebyshevU"
     | "GegenbauerC"
