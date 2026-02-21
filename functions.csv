@@ -1792,7 +1792,7 @@ ExcludePods,,,,8,5486
 Exclusions,,,,6,464
 ExclusionsStyle,,,,6,769
 Exists,,,,5,948
-Exit,,,,1,1692
+Exit,Terminates the kernel session with optional exit code,✅,effectful,1,1692
 ExoplanetData,,,,10,4660
 Exp,Returns the exponential function e^x,✅,pure,1,52
 Expand,Expands products and positive integer powers of sums,✅,pure,1,154
@@ -4445,7 +4445,7 @@ QueueingProcess,,,,9,2129
 QueueProperties,,,,9,2435
 Quiet,,,,6,284
 QuietEcho,,,,12.2,
-Quit,,,,1,788
+Quit,Terminates the kernel session with optional exit code,✅,effectful,1,788
 Quotient,Returns the integer quotient of division,✅,pure,1,649
 QuotientRemainder,Returns the quotient and remainder of integer division,✅,pure,,1555
 RadialAxisPlot,,,,12.2,3108
