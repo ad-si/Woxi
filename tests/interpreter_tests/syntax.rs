@@ -367,6 +367,28 @@ mod tree_form {
   }
 }
 
+mod digit_block {
+  use super::*;
+
+  #[test]
+  fn digit_block_standalone() {
+    assert_eq!(interpret("DigitBlock").unwrap(), "DigitBlock");
+  }
+
+  #[test]
+  fn digit_block_head() {
+    assert_eq!(interpret("Head[DigitBlock]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn digit_block_as_option() {
+    assert_eq!(
+      interpret("NumberForm[123, DigitBlock -> 3]").unwrap(),
+      "NumberForm[123, DigitBlock -> 3]"
+    );
+  }
+}
+
 mod construct {
   use super::*;
 
