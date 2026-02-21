@@ -3861,6 +3861,11 @@ pub fn evaluate_function_call_ast(
         ));
       }
     }
+    // ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
+    #[cfg(not(target_arch = "wasm32"))]
+    "ReadList" if !args.is_empty() && args.len() <= 3 => {
+      return crate::functions::string_ast::read_list_ast(args);
+    }
     // Get[file] — read and evaluate a file, returning the last result
     #[cfg(not(target_arch = "wasm32"))]
     "Get" if args.len() == 1 => {

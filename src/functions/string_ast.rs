@@ -1991,3 +1991,212 @@ pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     InterpreterError::EvaluationError(format!("Uncompress parse failed: {}", e))
   })
 }
+
+/// Extract text content for ReadList from the first argument.
+/// Handles:
+/// - StringToStream["text"] → returns the text
+/// - "filename" → reads the file (CLI only)
+#[cfg(not(target_arch = "wasm32"))]
+fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
+  match source {
+    // StringToStream["text"] → use text directly
+    Expr::FunctionCall { name, args }
+      if name == "StringToStream" && args.len() == 1 =>
+    {
+      if let Expr::String(s) = &args[0] {
+        Ok(s.clone())
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "StringToStream expects a string argument".into(),
+        ))
+      }
+    }
+    // InputStream[String, n] created by StringToStream evaluation
+    Expr::FunctionCall { name, args }
+      if name == "InputStream" && args.len() == 2 =>
+    {
+      // The InputStream was already evaluated from StringToStream;
+      // we can't recover the original text. Return unevaluated.
+      Err(InterpreterError::EvaluationError(
+        "ReadList: stream objects are not yet supported, use StringToStream[\"text\"] directly".into(),
+      ))
+    }
+    // String path → read file
+    Expr::String(path) => std::fs::read_to_string(path).map_err(|_| {
+      InterpreterError::EvaluationError(format!(
+        "ReadList::noopen: Cannot open {}.",
+        path
+      ))
+    }),
+    _ => Err(InterpreterError::EvaluationError(
+      "ReadList expects a filename string or StringToStream[\"text\"]".into(),
+    )),
+  }
+}
+
+/// ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ReadList expects 1 to 3 arguments".into(),
+    ));
+  }
+
+  let text = readlist_get_text(&args[0])?;
+
+  // Determine the read type (default: Expression)
+  let read_type = if args.len() >= 2 {
+    &args[1]
+  } else {
+    &Expr::Identifier("Expression".to_string())
+  };
+
+  // Optional max count
+  let max_count: Option<usize> = if args.len() == 3 {
+    if let Expr::Integer(n) = &args[2] {
+      Some(*n as usize)
+    } else {
+      None
+    }
+  } else {
+    None
+  };
+
+  // Handle composite types like {Word, Word}
+  if let Expr::List(types) = read_type {
+    return read_list_record(&text, types, max_count);
+  }
+
+  let type_name = match read_type {
+    Expr::Identifier(s) => s.as_str(),
+    _ => "Expression",
+  };
+
+  let mut results = Vec::new();
+
+  match type_name {
+    "String" => {
+      // Each line is a string
+      for line in text.lines() {
+        if let Some(max) = max_count
+          && results.len() >= max
+        {
+          break;
+        }
+        results.push(Expr::String(line.to_string()));
+      }
+    }
+    "Word" => {
+      // Whitespace-separated words
+      for word in text.split_whitespace() {
+        if let Some(max) = max_count
+          && results.len() >= max
+        {
+          break;
+        }
+        results.push(Expr::Identifier(word.to_string()));
+      }
+    }
+    "Number" => {
+      // Whitespace-separated numbers
+      for token in text.split_whitespace() {
+        if let Some(max) = max_count
+          && results.len() >= max
+        {
+          break;
+        }
+        if let Ok(n) = token.parse::<i128>() {
+          results.push(Expr::Integer(n));
+        } else if let Ok(f) = token.parse::<f64>() {
+          results.push(Expr::Real(f));
+        }
+        // Skip non-numeric tokens
+      }
+    }
+    "Expression" | _ => {
+      // Parse and evaluate each line as a Wolfram expression
+      for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+          continue;
+        }
+        if let Some(max) = max_count
+          && results.len() >= max
+        {
+          break;
+        }
+        match crate::syntax::string_to_expr(trimmed) {
+          Ok(expr) => match crate::evaluator::evaluate_expr_to_expr(&expr) {
+            Ok(val) => results.push(val),
+            Err(_) => results.push(expr),
+          },
+          Err(_) => {
+            // If parsing fails, skip
+          }
+        }
+      }
+    }
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// Handle ReadList with record types like {Word, Word}
+#[cfg(not(target_arch = "wasm32"))]
+fn read_list_record(
+  text: &str,
+  types: &[Expr],
+  max_count: Option<usize>,
+) -> Result<Expr, InterpreterError> {
+  let mut results = Vec::new();
+
+  for line in text.lines() {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+      continue;
+    }
+    if let Some(max) = max_count
+      && results.len() >= max
+    {
+      break;
+    }
+
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    let mut record = Vec::new();
+
+    for (i, type_spec) in types.iter().enumerate() {
+      let type_name = match type_spec {
+        Expr::Identifier(s) => s.as_str(),
+        _ => "Expression",
+      };
+      let token = tokens.get(i).unwrap_or(&"");
+      match type_name {
+        "Word" => record.push(Expr::Identifier(token.to_string())),
+        "Number" => {
+          if let Ok(n) = token.parse::<i128>() {
+            record.push(Expr::Integer(n));
+          } else if let Ok(f) = token.parse::<f64>() {
+            record.push(Expr::Real(f));
+          } else {
+            record.push(Expr::Identifier(token.to_string()));
+          }
+        }
+        "String" => record.push(Expr::String(token.to_string())),
+        _ => {
+          if let Ok(expr) = crate::syntax::string_to_expr(token) {
+            if let Ok(val) = crate::evaluator::evaluate_expr_to_expr(&expr) {
+              record.push(val);
+            } else {
+              record.push(expr);
+            }
+          }
+        }
+      }
+    }
+
+    results.push(Expr::List(record));
+  }
+
+  Ok(Expr::List(results))
+}

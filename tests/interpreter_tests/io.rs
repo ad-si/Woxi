@@ -969,3 +969,71 @@ mod grid_graphics {
     assert!(result.graphics.is_some());
   }
 }
+
+mod read_list {
+  use super::*;
+
+  #[test]
+  fn expression_default() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"123\\n45\\nx\\ny\"]]").unwrap(),
+      "{123, 45, x, y}"
+    );
+  }
+
+  #[test]
+  fn expression_with_evaluation() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"1+2\\n3*4\"], Expression]").unwrap(),
+      "{3, 12}"
+    );
+  }
+
+  #[test]
+  fn string_type() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"hello\\nworld\"], String]").unwrap(),
+      "{hello, world}"
+    );
+  }
+
+  #[test]
+  fn word_type() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"hello world foo\"], Word]").unwrap(),
+      "{hello, world, foo}"
+    );
+  }
+
+  #[test]
+  fn number_type() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"1 2.5 3\"], Number]").unwrap(),
+      "{1, 2.5, 3}"
+    );
+  }
+
+  #[test]
+  fn record_type() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"a b\\nc d\"], {Word, Word}]")
+        .unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+  }
+
+  #[test]
+  fn from_file() {
+    use std::io::Write;
+    let path = "/tmp/woxi_readlist_test.txt";
+    let mut file = std::fs::File::create(path).unwrap();
+    writeln!(file, "10").unwrap();
+    writeln!(file, "20").unwrap();
+    writeln!(file, "30").unwrap();
+    drop(file);
+
+    let code = format!("ReadList[\"{}\"]", path);
+    assert_eq!(interpret(&code).unwrap(), "{10, 20, 30}");
+    let _ = std::fs::remove_file(path);
+  }
+}

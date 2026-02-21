@@ -4521,7 +4521,7 @@ ReactionPDETerm,,,,12.2,
 Read,,,,1,1254
 ReadByteArray,,,,11.3,4437
 ReadLine,,,,10,2889
-ReadList,,,,1,767
+ReadList,Read a list of items from a file or stream,✅,effectful,1,767
 ReadProtected,Attribute preventing reading definitions,✅,pure,1,1484
 ReadString,,,,10,2282
 Real,Head type for real (floating-point) numbers,✅,pure,1,263
