@@ -891,14 +891,21 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Check for InputForm as second argument
+  // Check for form argument
   if args.len() == 2
     && let Expr::Identifier(form) = &args[1]
-    && form == "InputForm"
   {
-    // InputForm: infix operators + quoted strings
-    let s = crate::syntax::expr_to_input_form(&args[0]);
-    return Ok(Expr::String(s));
+    match form.as_str() {
+      "InputForm" => {
+        // InputForm: infix operators + quoted strings
+        let s = crate::syntax::expr_to_input_form(&args[0]);
+        return Ok(Expr::String(s));
+      }
+      "TeXForm" => {
+        return Ok(Expr::String(expr_to_tex(&args[0])));
+      }
+      _ => {}
+    }
   }
   // Other forms: fall through to default (OutputForm-like) behavior
 
@@ -919,6 +926,420 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // display forms like FullForm[expr] → FullForm notation
   let s = crate::syntax::expr_to_output(&args[0]);
   Ok(Expr::String(s))
+}
+
+/// Convert a Wolfram expression to LaTeX (TeX) notation.
+pub fn expr_to_tex(expr: &Expr) -> String {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  match expr {
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::Real(f) => crate::syntax::format_real(*f),
+    Expr::String(s) => format!("\\text{{{}}}", s),
+    Expr::Identifier(name) | Expr::Constant(name) => tex_identifier(name),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => format!("-{}", expr_to_tex(operand)),
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => format!("\\lnot {}", expr_to_tex(operand)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let l = expr_to_tex(left);
+      let r = expr_to_tex(right);
+      // Check if right side starts with minus to avoid x+-y
+      if r.starts_with('-') {
+        format!("{}{}", l, r)
+      } else {
+        format!("{}+{}", l, r)
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => format!("{}-{}", expr_to_tex(left), expr_to_tex(right)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => tex_times(left, right),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => format!("\\frac{{{}}}{{{}}}", expr_to_tex(left), expr_to_tex(right)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => tex_power(left, right),
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => format!("{} \\land {}", expr_to_tex(left), expr_to_tex(right)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left,
+      right,
+    } => format!("{} \\lor {}", expr_to_tex(left), expr_to_tex(right)),
+    Expr::BinaryOp {
+      op: BinaryOperator::StringJoin,
+      left,
+      right,
+    } => format!("{} \\diamond {}", expr_to_tex(left), expr_to_tex(right)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left,
+      right,
+    } => format!("{} | {}", expr_to_tex(left), expr_to_tex(right)),
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      use crate::syntax::ComparisonOp;
+      let mut result = expr_to_tex(&operands[0]);
+      for (i, op) in operators.iter().enumerate() {
+        let op_tex = match op {
+          ComparisonOp::Equal => "=",
+          ComparisonOp::NotEqual => "\\neq ",
+          ComparisonOp::Less => "<",
+          ComparisonOp::LessEqual => "\\leq ",
+          ComparisonOp::Greater => ">",
+          ComparisonOp::GreaterEqual => "\\geq ",
+          ComparisonOp::SameQ => "===",
+          ComparisonOp::UnsameQ => "=!=",
+        };
+        result.push_str(op_tex);
+        if i + 1 < operands.len() {
+          result.push_str(&expr_to_tex(&operands[i + 1]));
+        }
+      }
+      result
+    }
+    Expr::List(items) => {
+      let parts: Vec<String> = items.iter().map(expr_to_tex).collect();
+      format!("\\{{{}\\}}", parts.join(","))
+    }
+    Expr::FunctionCall { name, args } => tex_function_call(name, args),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      format!("{} \\to {}", expr_to_tex(pattern), expr_to_tex(replacement))
+    }
+    _ => crate::syntax::expr_to_output(expr),
+  }
+}
+
+/// Convert an identifier to its TeX representation.
+fn tex_identifier(name: &str) -> String {
+  match name {
+    "Pi" => "\\pi".to_string(),
+    "E" => "e".to_string(),
+    "I" => "i".to_string(),
+    "Infinity" => "\\infty".to_string(),
+    "True" => "\\text{True}".to_string(),
+    "False" => "\\text{False}".to_string(),
+    // Single letter identifiers stay as-is
+    s if s.len() == 1 => s.to_string(),
+    // Greek letters
+    "Alpha" | "alpha" => "\\alpha".to_string(),
+    "Beta" | "beta" => "\\beta".to_string(),
+    "Gamma" | "gamma" => "\\gamma".to_string(),
+    "Delta" | "delta" => "\\delta".to_string(),
+    "Epsilon" | "epsilon" => "\\epsilon".to_string(),
+    "Zeta" | "zeta" => "\\zeta".to_string(),
+    "Eta" | "eta" => "\\eta".to_string(),
+    "Theta" | "theta" => "\\theta".to_string(),
+    "Iota" | "iota" => "\\iota".to_string(),
+    "Kappa" | "kappa" => "\\kappa".to_string(),
+    "Lambda" | "lambda" => "\\lambda".to_string(),
+    "Mu" | "mu" => "\\mu".to_string(),
+    "Nu" | "nu" => "\\nu".to_string(),
+    "Xi" | "xi" => "\\xi".to_string(),
+    "Omicron" | "omicron" => "o".to_string(),
+    "Rho" | "rho" => "\\rho".to_string(),
+    "Sigma" | "sigma" => "\\sigma".to_string(),
+    "Tau" | "tau" => "\\tau".to_string(),
+    "Upsilon" | "upsilon" => "\\upsilon".to_string(),
+    "Phi" | "phi" => "\\phi".to_string(),
+    "Chi" | "chi" => "\\chi".to_string(),
+    "Psi" | "psi" => "\\psi".to_string(),
+    "Omega" | "omega" => "\\omega".to_string(),
+    // Multi-letter identifiers get \text{}
+    s => format!("\\text{{{}}}", s),
+  }
+}
+
+/// Handle multiplication in TeX (space-separated)
+fn tex_times(left: &Expr, right: &Expr) -> String {
+  let l = expr_to_tex(left);
+  let r = expr_to_tex(right);
+
+  // -1 * x → -x
+  if matches!(left, Expr::Integer(-1)) {
+    return format!("-{}", r);
+  }
+
+  format!("{} {}", l, r)
+}
+
+/// Handle power expressions in TeX
+fn tex_power(base: &Expr, exp: &Expr) -> String {
+  // Special case: Power[x, 1/2] → \sqrt{x}
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left,
+    right,
+  } = exp
+    && matches!(left.as_ref(), Expr::Integer(1))
+    && matches!(right.as_ref(), Expr::Integer(2))
+  {
+    return format!("\\sqrt{{{}}}", expr_to_tex(base));
+  }
+  // Power[x, Rational[1, 2]] → \sqrt{x}
+  if let Expr::FunctionCall { name, args } = exp
+    && name == "Rational"
+    && args.len() == 2
+  {
+    if matches!(&args[0], Expr::Integer(1))
+      && matches!(&args[1], Expr::Integer(2))
+    {
+      return format!("\\sqrt{{{}}}", expr_to_tex(base));
+    }
+    if matches!(&args[0], Expr::Integer(1)) {
+      return format!(
+        "\\sqrt[{}]{{{}}}",
+        expr_to_tex(&args[1]),
+        expr_to_tex(base)
+      );
+    }
+  }
+
+  let base_tex = tex_base_with_parens(base);
+  let exp_tex = expr_to_tex(exp);
+
+  format!("{}^{{{}}}", base_tex, exp_tex)
+}
+
+/// Wrap base in parens if needed for power
+fn tex_base_with_parens(base: &Expr) -> String {
+  match base {
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => {
+      format!("\\left({}\\right)", expr_to_tex(base))
+    }
+    _ => expr_to_tex(base),
+  }
+}
+
+/// Handle function calls in TeX
+fn tex_function_call(name: &str, args: &[Expr]) -> String {
+  match name {
+    // Trig functions
+    "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" if args.len() == 1 => {
+      let fn_tex = format!("\\{}", name.to_lowercase());
+      format!("{} ({})", fn_tex, expr_to_tex(&args[0]))
+    }
+    // Inverse trig
+    "ArcSin" if args.len() == 1 => {
+      format!("\\sin ^{{-1}}({})", expr_to_tex(&args[0]))
+    }
+    "ArcCos" if args.len() == 1 => {
+      format!("\\cos ^{{-1}}({})", expr_to_tex(&args[0]))
+    }
+    "ArcTan" if args.len() == 1 => {
+      format!("\\tan ^{{-1}}({})", expr_to_tex(&args[0]))
+    }
+    // Log
+    "Log" if args.len() == 1 => {
+      format!("\\log ({})", expr_to_tex(&args[0]))
+    }
+    "Log" if args.len() == 2 => {
+      format!(
+        "\\log _{{{}}}({})",
+        expr_to_tex(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
+    // Sqrt
+    "Sqrt" if args.len() == 1 => {
+      format!("\\sqrt{{{}}}", expr_to_tex(&args[0]))
+    }
+    // Abs
+    "Abs" if args.len() == 1 => {
+      format!("\\left| {} \\right|", expr_to_tex(&args[0]))
+    }
+    // Rational
+    "Rational" if args.len() == 2 => {
+      format!(
+        "\\frac{{{}}}{{{}}}",
+        expr_to_tex(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
+    // Plus (n-ary)
+    "Plus" if !args.is_empty() => {
+      let mut result = expr_to_tex(&args[0]);
+      for arg in args.iter().skip(1) {
+        let t = expr_to_tex(arg);
+        if t.starts_with('-') {
+          result.push_str(&t);
+        } else {
+          result.push('+');
+          result.push_str(&t);
+        }
+      }
+      result
+    }
+    // Times (n-ary)
+    "Times" if args.len() >= 2 => {
+      // Check for -1 factor
+      if matches!(&args[0], Expr::Integer(-1)) {
+        let rest: Vec<String> = args[1..].iter().map(expr_to_tex).collect();
+        return format!("-{}", rest.join(" "));
+      }
+      let parts: Vec<String> = args.iter().map(expr_to_tex).collect();
+      parts.join(" ")
+    }
+    // Power
+    "Power" if args.len() == 2 => tex_power(&args[0], &args[1]),
+    // Exp
+    "Exp" if args.len() == 1 => {
+      format!("e^{{{}}}", expr_to_tex(&args[0]))
+    }
+    // Factorial
+    "Factorial" if args.len() == 1 => {
+      format!("{}!", expr_to_tex(&args[0]))
+    }
+    // Sum
+    "Sum" if args.len() == 2 => {
+      if let Expr::List(bounds) = &args[1]
+        && bounds.len() >= 3
+      {
+        return format!(
+          "\\sum _{{{}={}}}^{{{}}} {}",
+          expr_to_tex(&bounds[0]),
+          expr_to_tex(&bounds[1]),
+          expr_to_tex(&bounds[2]),
+          expr_to_tex(&args[0])
+        );
+      }
+      format!(
+        "\\text{{Sum}}({})",
+        args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+      )
+    }
+    // Product
+    "Product" if args.len() == 2 => {
+      if let Expr::List(bounds) = &args[1]
+        && bounds.len() >= 3
+      {
+        return format!(
+          "\\prod _{{{}={}}}^{{{}}} {}",
+          expr_to_tex(&bounds[0]),
+          expr_to_tex(&bounds[1]),
+          expr_to_tex(&bounds[2]),
+          expr_to_tex(&args[0])
+        );
+      }
+      format!(
+        "\\text{{Product}}({})",
+        args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
+      )
+    }
+    // Integrate
+    "Integrate" if args.len() == 2 => {
+      if let Expr::List(bounds) = &args[1]
+        && bounds.len() == 3
+      {
+        return format!(
+          "\\int_{{{}}}^{{{}}} {} \\, d{}",
+          expr_to_tex(&bounds[1]),
+          expr_to_tex(&bounds[2]),
+          expr_to_tex(&args[0]),
+          expr_to_tex(&bounds[0])
+        );
+      }
+      // Indefinite integral
+      format!(
+        "\\int {} \\, d{}",
+        expr_to_tex(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
+    // Derivative
+    "D" if args.len() == 2 => {
+      format!(
+        "\\frac{{\\partial {}}}{{\\partial {}}}",
+        expr_to_tex(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
+    // Limit
+    "Limit" if args.len() == 2 => {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = &args[1]
+      {
+        return format!(
+          "\\lim_{{{} \\to {}}} {}",
+          expr_to_tex(pattern),
+          expr_to_tex(replacement),
+          expr_to_tex(&args[0])
+        );
+      }
+      format!(
+        "\\text{{Limit}}({}, {})",
+        expr_to_tex(&args[0]),
+        expr_to_tex(&args[1])
+      )
+    }
+    // MatrixForm
+    "MatrixForm" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let mut lines = Vec::new();
+        for row in rows {
+          if let Expr::List(cols) = row {
+            let cells: Vec<String> = cols.iter().map(expr_to_tex).collect();
+            lines.push(format!(" {} \\\\", cells.join(" & ")));
+          }
+        }
+        let ncols = if let Some(Expr::List(first_row)) = rows.first() {
+          first_row.len()
+        } else {
+          1
+        };
+        let col_spec: String =
+          std::iter::repeat_n("c", ncols).collect::<Vec<_>>().join("");
+        format!(
+          "\\left(\n\\begin{{array}}{{{}}}\n{}\\end{{array}}\n\\right)",
+          col_spec,
+          lines.join("\n") + "\n"
+        )
+      } else {
+        format!("\\text{{MatrixForm}}({})", expr_to_tex(&args[0]))
+      }
+    }
+    // Complex
+    "Complex" if args.len() == 2 => {
+      let re = expr_to_tex(&args[0]);
+      let im = expr_to_tex(&args[1]);
+      format!("{}+{} i", re, im)
+    }
+    // Default: render as text function name with parenthesized args
+    _ => {
+      let args_tex: Vec<String> = args.iter().map(expr_to_tex).collect();
+      format!("\\text{{{}}}({})", name, args_tex.join(","))
+    }
+  }
 }
 
 /// Format a StringForm expression by substituting placeholders.
