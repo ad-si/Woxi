@@ -5717,6 +5717,212 @@ fn lcm_i128(a: i128, b: i128) -> i128 {
   (a.abs() / g) * b.abs()
 }
 
+/// ChebyshevT[n, x] - Chebyshev polynomial of the first kind
+pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ChebyshevT expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let n = match &args[0] {
+    Expr::Integer(n) if *n >= 0 => *n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ChebyshevT".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  match &args[1] {
+    Expr::Integer(x) => {
+      let (num, den) = chebyshev_t_eval_rational(n, (*x, 1));
+      Ok(make_rational(num, den))
+    }
+    Expr::FunctionCall {
+      name,
+      args: rat_args,
+    } if name == "Rational" && rat_args.len() == 2 => {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&rat_args[0], &rat_args[1])
+      {
+        let (num, den) = chebyshev_t_eval_rational(n, (*p, *q));
+        Ok(make_rational(num, den))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "ChebyshevT".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    Expr::Real(f) => Ok(Expr::Real(chebyshev_t_eval_f64(n, *f))),
+    _ => {
+      // Symbolic: build the polynomial expression
+      if let Some(expr) = chebyshev_t_polynomial_symbolic(n, &args[1]) {
+        Ok(expr)
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "ChebyshevT".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+  }
+}
+
+/// Evaluate T_n(p/q) as a rational number using the recurrence
+/// T_0(x) = 1, T_1(x) = x, T_{n+1}(x) = 2x*T_n(x) - T_{n-1}(x)
+fn chebyshev_t_eval_rational(n: usize, x: (i128, i128)) -> (i128, i128) {
+  let (xn, xd) = x;
+  if n == 0 {
+    return (1, 1);
+  }
+  if n == 1 {
+    return (xn, xd);
+  }
+
+  let mut tm1 = (1i128, 1i128); // T_0
+  let mut t = (xn, xd); // T_1
+
+  for _ in 2..=n {
+    // T_{k} = 2x * T_{k-1} - T_{k-2}
+    // 2x * T_{k-1}: (2 * xn * t.0, xd * t.1)
+    let a_n = 2i128
+      .checked_mul(xn)
+      .and_then(|v| v.checked_mul(t.0))
+      .unwrap_or(0);
+    let a_d = xd.checked_mul(t.1).unwrap_or(1);
+
+    // a - tm1: (a_n * tm1.1 - tm1.0 * a_d, a_d * tm1.1)
+    let new_n = a_n
+      .checked_mul(tm1.1)
+      .and_then(|v| v.checked_sub(tm1.0.checked_mul(a_d)?))
+      .unwrap_or(0);
+    let new_d = a_d.checked_mul(tm1.1).unwrap_or(1);
+
+    let g = gcd(new_n.abs(), new_d.abs());
+    tm1 = t;
+    t = if g > 0 {
+      (new_n / g, new_d / g)
+    } else {
+      (new_n, new_d)
+    };
+  }
+  t
+}
+
+/// Evaluate T_n(x) numerically
+fn chebyshev_t_eval_f64(n: usize, x: f64) -> f64 {
+  if n == 0 {
+    return 1.0;
+  }
+  if n == 1 {
+    return x;
+  }
+
+  let mut tm1 = 1.0;
+  let mut t = x;
+  for _ in 2..=n {
+    let tnew = 2.0 * x * t - tm1;
+    tm1 = t;
+    t = tnew;
+  }
+  t
+}
+
+/// Build symbolic Chebyshev polynomial T_n(x)
+/// T_n has coefficients that can be computed via recurrence
+fn chebyshev_t_polynomial_symbolic(n: usize, x: &Expr) -> Option<Expr> {
+  // Compute coefficients: T_n(x) = Σ c_k x^k
+  let coeffs = chebyshev_t_coefficients(n)?;
+
+  // Build expression as sum of terms
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, (cn, cd)) in coeffs.iter().enumerate() {
+    if *cn == 0 {
+      continue;
+    }
+    let coeff = (*cn, *cd);
+    let x_power = if k == 0 {
+      None
+    } else if k == 1 {
+      Some(x.clone())
+    } else {
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(k as i128)),
+      })
+    };
+
+    let term = match (coeff, x_power) {
+      ((c, 1), None) => Expr::Integer(c),
+      ((1, 1), Some(xp)) => xp,
+      ((-1, 1), Some(xp)) => Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), xp],
+      },
+      ((c, 1), Some(xp)) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(c)),
+        right: Box::new(xp),
+      },
+      _ => return None, // Should not happen for Chebyshev (all integer coefficients)
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return Some(terms.pop().unwrap());
+  }
+
+  // Build sum from left to right using Plus
+  let mut result = terms[0].clone();
+  for t in terms.iter().skip(1) {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(t.clone()),
+    };
+  }
+  Some(result)
+}
+
+/// Compute Chebyshev T coefficients as (numerator, denominator) pairs
+/// T_n(x) = Σ c_k x^k where all c_k are integers (denom = 1)
+fn chebyshev_t_coefficients(n: usize) -> Option<Vec<(i128, i128)>> {
+  if n == 0 {
+    return Some(vec![(1, 1)]);
+  }
+  if n == 1 {
+    return Some(vec![(0, 1), (1, 1)]);
+  }
+
+  let mut prev: Vec<i128> = vec![1]; // T_0 coefficients
+  let mut curr: Vec<i128> = vec![0, 1]; // T_1 coefficients
+
+  for _ in 2..=n {
+    // T_{k} = 2x * T_{k-1} - T_{k-2}
+    // 2x * curr: shift coefficients right and multiply by 2
+    let mut next = vec![0i128; curr.len() + 1];
+    for (j, c) in curr.iter().enumerate() {
+      next[j + 1] = next[j + 1].checked_add(2i128.checked_mul(*c)?)?;
+    }
+    // Subtract prev
+    for (j, c) in prev.iter().enumerate() {
+      next[j] = next[j].checked_sub(*c)?;
+    }
+
+    prev = curr;
+    curr = next;
+  }
+
+  Some(curr.into_iter().map(|c| (c, 1i128)).collect())
+}
+
 /// PolyLog[s, z] - Polylogarithm function Li_s(z)
 pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

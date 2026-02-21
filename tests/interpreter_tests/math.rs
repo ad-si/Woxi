@@ -5045,3 +5045,63 @@ mod bessel_k {
     assert!((result - 1.6248388986351778).abs() < 1e-10);
   }
 }
+
+mod chebyshev_t {
+  use super::*;
+
+  #[test]
+  fn degree_zero() {
+    assert_eq!(interpret("ChebyshevT[0, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn degree_one() {
+    assert_eq!(interpret("ChebyshevT[1, x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn degree_two() {
+    assert_eq!(interpret("ChebyshevT[2, x]").unwrap(), "-1 + 2*x^2");
+  }
+
+  #[test]
+  fn degree_three() {
+    assert_eq!(interpret("ChebyshevT[3, x]").unwrap(), "-3*x + 4*x^3");
+  }
+
+  #[test]
+  fn degree_four() {
+    assert_eq!(interpret("ChebyshevT[4, x]").unwrap(), "1 - 8*x^2 + 8*x^4");
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("ChebyshevT[5, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn at_rational() {
+    assert_eq!(interpret("ChebyshevT[3, 1/2]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("ChebyshevT[5, 0.3]").unwrap().parse().unwrap();
+    assert!((result - 0.9988800000000002).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("ChebyshevT[n, x]").unwrap(), "ChebyshevT[n, x]");
+  }
+
+  #[test]
+  fn at_rational_exact() {
+    assert_eq!(interpret("ChebyshevT[4, 1/3]").unwrap(), "17/81");
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("ChebyshevT[4, 0]").unwrap(), "1");
+  }
+}
