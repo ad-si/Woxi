@@ -5850,7 +5850,7 @@ UpperTriangularMatrix,,,,13.1,
 UpperTriangularMatrixQ,,,,12,4356
 Upsample,,,,9,2528
 UpSet,Assign upvalues to symbols appearing in the LHS,✅,side_effect,1,454
-UpSetDelayed,,,,1,992
+UpSetDelayed,Assign delayed upvalues to symbols appearing in the LHS,✅,side_effect,1,992
 UpTee,,,,3,4567
 UpTeeArrow,,,,3,5390
 UpTo,,,,10.3,1222
