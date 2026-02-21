@@ -1045,7 +1045,7 @@ ContentObject,,,,10.2,3947
 ContentPadding,,,,8,2389
 ContentSelectable,,,,6,1761
 ContentSize,,,,7,1679
-Context,,,,1,1029
+Context,Return the context (namespace) of a symbol,✅,pure,1,1029
 Contexts,,,,2,3402
 ContextToFileName,,,,3,5079
 Continue,Continues to next loop iteration,✅,pure,1,1072
