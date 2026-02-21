@@ -6366,6 +6366,9 @@ fn evaluate_function_call_ast_inner(
     "Solve" if args.len() == 2 => {
       return crate::functions::polynomial_ast::solve_ast(args);
     }
+    "SolveAlways" if args.len() == 2 => {
+      return crate::functions::polynomial_ast::solve_always_ast(args);
+    }
     "Roots" if args.len() == 2 => {
       return crate::functions::polynomial_ast::roots_ast(args);
     }

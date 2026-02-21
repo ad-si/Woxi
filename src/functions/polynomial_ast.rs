@@ -6927,3 +6927,328 @@ fn is_trivially_true(eq: &Expr) -> bool {
     _ => false,
   }
 }
+
+/// SolveAlways[eqn, vars] - find conditions on parameters for equation to hold for all values of vars
+pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "SolveAlways expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let eqn = &args[0];
+  let vars_arg = &args[1];
+
+  // Extract variables: can be a single symbol or a list
+  let vars: Vec<String> = match vars_arg {
+    Expr::Identifier(s) => vec![s.clone()],
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|e| {
+        if let Expr::Identifier(s) = e {
+          Some(s.clone())
+        } else {
+          None
+        }
+      })
+      .collect(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "SolveAlways".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if vars.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "SolveAlways".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Handle True/False (e.g. 0 == 0 evaluates to True before reaching us)
+  match eqn {
+    Expr::Identifier(s) if s == "True" => {
+      return Ok(Expr::List(vec![Expr::List(vec![])]));
+    }
+    Expr::Identifier(s) if s == "False" => {
+      return Ok(Expr::List(vec![]));
+    }
+    _ => {}
+  }
+
+  // Extract the polynomial expression (LHS - RHS from equation)
+  let poly_expr = match eqn {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      // lhs == rhs => lhs - rhs
+      let lhs_str = expr_to_string(&operands[0]);
+      let rhs_str = expr_to_string(&operands[1]);
+      format!("Expand[({}) - ({})]", lhs_str, rhs_str)
+    }
+    _ => {
+      // Treat expression itself as the polynomial = 0
+      let s = expr_to_string(eqn);
+      format!("Expand[{}]", s)
+    }
+  };
+
+  // Recursively extract all leaf coefficients by expanding through each variable.
+  // Start with the polynomial expression string, then for each variable extract
+  // CoefficientList and recurse on the remaining variables.
+  let mut leaf_coeffs: Vec<String> = Vec::new();
+  extract_leaf_coefficients(&poly_expr, &vars, 0, &mut leaf_coeffs)?;
+
+  // Filter out zeros
+  leaf_coeffs.retain(|s| s != "0");
+
+  if leaf_coeffs.is_empty() {
+    return Ok(Expr::List(vec![Expr::List(vec![])]));
+  }
+
+  // Now solve: each leaf coefficient must equal zero.
+  // Process sequentially, substituting already-found solutions.
+  let mut rules: Vec<Expr> = Vec::new();
+  let mut solved_vars = std::collections::HashSet::new();
+
+  for coeff_str in &leaf_coeffs {
+    // Parse the coefficient expression
+    let coeff_expr = match crate::syntax::string_to_expr(coeff_str) {
+      Ok(e) => e,
+      Err(_) => continue,
+    };
+
+    // Simple case: coefficient is a single variable
+    if let Expr::Identifier(s) = &coeff_expr {
+      if !solved_vars.contains(s) && !vars.contains(s) {
+        solved_vars.insert(s.clone());
+        rules.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier(s.clone())),
+          replacement: Box::new(Expr::Integer(0)),
+        });
+      }
+      continue;
+    }
+
+    // Find free variables (parameters, not the quantified vars)
+    let mut free_vars_here = std::collections::BTreeSet::new();
+    collect_free_vars_sa(&coeff_expr, &vars, &mut free_vars_here);
+
+    // Remove already-solved variables
+    for sv in &solved_vars {
+      free_vars_here.remove(sv);
+    }
+
+    if free_vars_here.is_empty() {
+      // No free variables — nonzero constant, impossible
+      // But first substitute solved values and check if it becomes zero
+      let mut sub_code = format!("({})", coeff_str);
+      for rule in &rules {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = rule
+        {
+          let p = expr_to_string(pattern);
+          let r = expr_to_string(replacement);
+          sub_code = format!("({} /. {} -> ({}))", sub_code, p, r);
+        }
+      }
+      if let Ok(result) = crate::interpret(&sub_code)
+        && result.trim() == "0"
+      {
+        continue;
+      }
+      return Ok(Expr::List(vec![]));
+    } else if free_vars_here.len() == 1 {
+      // Single free variable, try Solve
+      let fv = free_vars_here.iter().next().unwrap().clone();
+      let mut sub_code = format!("({})", coeff_str);
+      for rule in &rules {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = rule
+        {
+          let p = expr_to_string(pattern);
+          let r = expr_to_string(replacement);
+          sub_code = format!("({} /. {} -> ({}))", sub_code, p, r);
+        }
+      }
+      let solve_code = format!("Solve[({}) == 0, {}]", sub_code, fv);
+      if let Ok(solve_result) = crate::interpret(&solve_code)
+        && let Ok(result_expr) = crate::syntax::string_to_expr(&solve_result)
+        && let Expr::List(outer) = &result_expr
+        && let Some(Expr::List(inner)) = outer.first()
+      {
+        for rule_expr in inner {
+          if let Expr::Rule { pattern, .. } = rule_expr
+            && let Expr::Identifier(s) = pattern.as_ref()
+          {
+            solved_vars.insert(s.clone());
+          }
+          rules.push(rule_expr.clone());
+        }
+        continue;
+      }
+      // Fallback: set variable to 0
+      solved_vars.insert(fv.clone());
+      rules.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier(fv)),
+        replacement: Box::new(Expr::Integer(0)),
+      });
+    } else {
+      // Multiple free variables: solve one at a time
+      // Substitute known solutions first
+      let mut sub_code = format!("({})", coeff_str);
+      for rule in &rules {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = rule
+        {
+          let p = expr_to_string(pattern);
+          let r = expr_to_string(replacement);
+          sub_code = format!("({} /. {} -> ({}))", sub_code, p, r);
+        }
+      }
+      // Try to solve for the first free variable
+      let fv = free_vars_here.iter().next().unwrap().clone();
+      let solve_code = format!("Solve[({}) == 0, {}]", sub_code, fv);
+      if let Ok(solve_result) = crate::interpret(&solve_code)
+        && let Ok(result_expr) = crate::syntax::string_to_expr(&solve_result)
+        && let Expr::List(outer) = &result_expr
+        && let Some(Expr::List(inner)) = outer.first()
+      {
+        for rule_expr in inner {
+          if let Expr::Rule { pattern, .. } = rule_expr
+            && let Expr::Identifier(s) = pattern.as_ref()
+          {
+            solved_vars.insert(s.clone());
+          }
+          rules.push(rule_expr.clone());
+        }
+        continue;
+      }
+      // Fallback: set all free vars to 0
+      for fv in &free_vars_here {
+        if !solved_vars.contains(fv) {
+          solved_vars.insert(fv.clone());
+          rules.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier(fv.clone())),
+            replacement: Box::new(Expr::Integer(0)),
+          });
+        }
+      }
+    }
+  }
+
+  Ok(Expr::List(vec![Expr::List(rules)]))
+}
+
+/// Recursively extract leaf coefficients from a polynomial expression.
+/// For each variable in vars (starting at var_idx), extract CoefficientList,
+/// then recurse on remaining variables for each coefficient.
+fn extract_leaf_coefficients(
+  poly_str: &str,
+  vars: &[String],
+  var_idx: usize,
+  result: &mut Vec<String>,
+) -> Result<(), InterpreterError> {
+  if var_idx >= vars.len() {
+    // No more variables to extract — this is a leaf coefficient
+    // Simplify it
+    let simplified = crate::interpret(&format!("Expand[{}]", poly_str))?;
+    result.push(simplified.trim().to_string());
+    return Ok(());
+  }
+
+  let var = &vars[var_idx];
+  let coeffs_code = format!("CoefficientList[{}, {}]", poly_str, var);
+  let coeffs_str = crate::interpret(&coeffs_code)?;
+  let coeffs_expr = crate::syntax::string_to_expr(&coeffs_str)
+    .unwrap_or(Expr::Identifier(coeffs_str));
+
+  match &coeffs_expr {
+    Expr::List(coeffs) => {
+      for coeff in coeffs {
+        let coeff_s = expr_to_string(coeff);
+        extract_leaf_coefficients(&coeff_s, vars, var_idx + 1, result)?;
+      }
+    }
+    _ => {
+      let s = expr_to_string(&coeffs_expr);
+      extract_leaf_coefficients(&s, vars, var_idx + 1, result)?;
+    }
+  }
+  Ok(())
+}
+
+/// Collect all identifiers from an expression that are NOT in the excluded set
+fn collect_free_vars_sa(
+  expr: &Expr,
+  excluded: &[String],
+  result: &mut std::collections::BTreeSet<String>,
+) {
+  match expr {
+    Expr::Identifier(s) => {
+      if !excluded.contains(s)
+        && !is_builtin_constant_sa(s)
+        && s.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false)
+      {
+        result.insert(s.clone());
+      }
+    }
+    Expr::List(items) => {
+      for item in items {
+        collect_free_vars_sa(item, excluded, result);
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for arg in args {
+        collect_free_vars_sa(arg, excluded, result);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_free_vars_sa(left, excluded, result);
+      collect_free_vars_sa(right, excluded, result);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_free_vars_sa(operand, excluded, result);
+    }
+    Expr::Comparison { operands, .. } => {
+      for op in operands {
+        collect_free_vars_sa(op, excluded, result);
+      }
+    }
+    _ => {}
+  }
+}
+
+fn is_builtin_constant_sa(s: &str) -> bool {
+  matches!(
+    s,
+    "Pi"
+      | "E"
+      | "I"
+      | "Infinity"
+      | "True"
+      | "False"
+      | "Null"
+      | "None"
+      | "All"
+      | "Automatic"
+      | "ComplexInfinity"
+      | "Indeterminate"
+      | "EulerGamma"
+      | "GoldenRatio"
+      | "Degree"
+      | "Catalan"
+  )
+}

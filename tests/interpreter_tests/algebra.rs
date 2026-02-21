@@ -1651,3 +1651,81 @@ mod polynomial_remainder {
     assert_eq!(r, "-2 + x");
   }
 }
+
+mod solve_always {
+  use super::*;
+
+  #[test]
+  fn linear_single_variable() {
+    assert_eq!(
+      interpret("SolveAlways[a*x + b == 0, x]").unwrap(),
+      "{{b -> 0, a -> 0}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_with_offsets() {
+    assert_eq!(
+      interpret("SolveAlways[(a - 2)*x^2 + (b + 1)*x + c == 0, x]").unwrap(),
+      "{{c -> 0, b -> -1, a -> 2}}"
+    );
+  }
+
+  #[test]
+  fn matching_polynomial() {
+    assert_eq!(
+      interpret("SolveAlways[a*x^2 + b*x + c == 3*x^2 - 5*x + 7, x]").unwrap(),
+      "{{c -> 7, b -> -5, a -> 3}}"
+    );
+  }
+
+  #[test]
+  fn trivially_true() {
+    assert_eq!(interpret("SolveAlways[0 == 0, x]").unwrap(), "{{}}");
+  }
+
+  #[test]
+  fn impossible_equation() {
+    assert_eq!(interpret("SolveAlways[x + 1 == 0, x]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn no_parameters() {
+    assert_eq!(
+      interpret("SolveAlways[3*x^2 + 5*x + 7 == 0, x]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn multivariate() {
+    assert_eq!(
+      interpret("SolveAlways[(a - 2)*x + (b + 1)*y + c == 0, {x, y}]").unwrap(),
+      "{{c -> 0, b -> -1, a -> 2}}"
+    );
+  }
+
+  #[test]
+  fn multivariate_all_zero() {
+    assert_eq!(
+      interpret("SolveAlways[a*x + b*y + c == 0, {x, y}]").unwrap(),
+      "{{c -> 0, b -> 0, a -> 0}}"
+    );
+  }
+
+  #[test]
+  fn list_form_single_var() {
+    assert_eq!(
+      interpret("SolveAlways[a*x + b == 0, {x}]").unwrap(),
+      "{{b -> 0, a -> 0}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_cross_terms() {
+    assert_eq!(
+      interpret("SolveAlways[a*x^2 + b*x*y + c*y^2 == 0, {x, y}]").unwrap(),
+      "{{c -> 0, b -> 0, a -> 0}}"
+    );
+  }
+}
