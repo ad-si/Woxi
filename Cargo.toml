@@ -59,5 +59,8 @@ rand_distr = "0.4"
 rand_chacha = "0.3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tiff"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }
