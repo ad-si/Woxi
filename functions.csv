@@ -632,7 +632,7 @@ ByteArrayFormat,,,,12,5587
 ByteArrayFormatQ,,,,12.2,5390
 ByteArrayQ,,,,10.1,4947
 ByteArrayToString,,,,11.2,3889
-ByteCount,,,,1,975
+ByteCount,Count bytes used internally to store an expression,✅,pure,1,975
 ByteOrdering,,,,5.2,2421
 CachePersistence,,,,10.2,5184
 CalendarConvert,,,,10,3378

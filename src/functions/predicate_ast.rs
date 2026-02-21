@@ -1128,6 +1128,76 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(count_leaves(&args[0])))
 }
 
+/// ByteCount[expr] - gives the number of bytes used internally to store expr
+pub fn byte_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ByteCount expects exactly 1 argument".into(),
+    ));
+  }
+
+  fn count_bytes(expr: &Expr) -> i128 {
+    match expr {
+      // Atoms with data
+      Expr::Integer(_) => 16, // i128 = 16 bytes
+      Expr::BigInteger(n) => {
+        let (_, bytes) = n.to_bytes_le();
+        16 + bytes.len() as i128
+      }
+      Expr::Real(_) => 8, // f64 = 8 bytes
+      Expr::BigFloat(s, _) => 8 + s.len() as i128,
+      Expr::String(s) => s.len() as i128,
+      // Symbols and constants are shared, so 0 bytes
+      Expr::Identifier(_) => 0,
+      Expr::Constant(_) => 0,
+      // Slots
+      Expr::Slot(_) | Expr::SlotSequence(_) => 8,
+      // Compound expressions: pointer per element + recursive sizes
+      Expr::List(items) => {
+        8 * items.len() as i128 + items.iter().map(count_bytes).sum::<i128>()
+      }
+      Expr::FunctionCall { args, .. } => {
+        8 * args.len() as i128 + args.iter().map(count_bytes).sum::<i128>()
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        16 + count_bytes(left) + count_bytes(right)
+      }
+      Expr::UnaryOp { operand, .. } => 8 + count_bytes(operand),
+      Expr::Comparison { operands, .. } => {
+        8 * operands.len() as i128
+          + operands.iter().map(count_bytes).sum::<i128>()
+      }
+      Expr::CompoundExpr(items) => {
+        8 * items.len() as i128 + items.iter().map(count_bytes).sum::<i128>()
+      }
+      Expr::Association(items) => items
+        .iter()
+        .map(|(k, v)| 16 + count_bytes(k) + count_bytes(v))
+        .sum::<i128>(),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => 16 + count_bytes(pattern) + count_bytes(replacement),
+      Expr::ReplaceAll { expr, rules }
+      | Expr::ReplaceRepeated { expr, rules } => {
+        16 + count_bytes(expr) + count_bytes(rules)
+      }
+      Expr::Map { func, list }
+      | Expr::Apply { func, list }
+      | Expr::MapApply { func, list } => {
+        16 + count_bytes(func) + count_bytes(list)
+      }
+      _ => 8, // fallback for other node types
+    }
+  }
+
+  Ok(Expr::Integer(count_bytes(&args[0])))
+}
+
 /// Helper to format a real number
 fn format_real_helper(f: f64) -> String {
   if f.fract() == 0.0 && f.abs() < 1e15 {
