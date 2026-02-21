@@ -5060,6 +5060,9 @@ pub fn evaluate_function_call_ast(
     "ChebyshevU" if args.len() == 2 => {
       return crate::functions::math_ast::chebyshev_u_ast(args);
     }
+    "GegenbauerC" if args.len() == 3 => {
+      return crate::functions::math_ast::gegenbauer_c_ast(args);
+    }
     "LaguerreL" if args.len() == 2 => {
       return crate::functions::math_ast::laguerre_l_ast(args);
     }
@@ -10151,6 +10154,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "JacobiCN"
     | "ChebyshevT"
     | "ChebyshevU"
+    | "GegenbauerC"
     | "LaguerreL"
     | "LogIntegral"
     | "HermiteH"

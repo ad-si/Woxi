@@ -5337,6 +5337,78 @@ mod elliptic_e {
   }
 }
 
+mod gegenbauer_c {
+  use super::*;
+
+  #[test]
+  fn degree_zero() {
+    assert_eq!(interpret("GegenbauerC[0, 2, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn degree_one() {
+    assert_eq!(interpret("GegenbauerC[1, 2, x]").unwrap(), "4*x");
+  }
+
+  #[test]
+  fn degree_two_lambda_two() {
+    assert_eq!(interpret("GegenbauerC[2, 2, x]").unwrap(), "-2 + 12*x^2");
+  }
+
+  #[test]
+  fn degree_three_lambda_two() {
+    assert_eq!(interpret("GegenbauerC[3, 2, x]").unwrap(), "-12*x + 32*x^3");
+  }
+
+  #[test]
+  fn reduces_to_chebyshev_u() {
+    // GegenbauerC[n, 1, x] = ChebyshevU[n, x]
+    assert_eq!(interpret("GegenbauerC[2, 1, x]").unwrap(), "-1 + 4*x^2");
+    assert_eq!(interpret("GegenbauerC[3, 1, x]").unwrap(), "-4*x + 8*x^3");
+  }
+
+  #[test]
+  fn rational_lambda() {
+    assert_eq!(
+      interpret("GegenbauerC[2, 3/2, x]").unwrap(),
+      "-3/2 + (15*x^2)/2"
+    );
+  }
+
+  #[test]
+  fn at_integer() {
+    assert_eq!(interpret("GegenbauerC[2, 2, 0]").unwrap(), "-2");
+    assert_eq!(interpret("GegenbauerC[3, 2, 0]").unwrap(), "0");
+    assert_eq!(interpret("GegenbauerC[3, 2, 1]").unwrap(), "20");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result: f64 = interpret("GegenbauerC[2, 2, 0.5]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.0).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[GegenbauerC[3, 2, 1/2]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - (-2.0)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("GegenbauerC[n, m, x]").unwrap(),
+      "GegenbauerC[n, m, x]"
+    );
+  }
+}
+
 mod chebyshev_u {
   use super::*;
 

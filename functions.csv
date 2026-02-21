@@ -2247,7 +2247,7 @@ GaussianSymplecticMatrixDistribution,,,,10.3,4356
 GaussianUnitaryMatrixDistribution,,,,10.3,3462
 GaussianWindow,,,,9,4225
 GCD,Returns the greatest common divisor of integers,✅,pure,1,616
-GegenbauerC,,,,1,894
+GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x),✅,pure,1,894
 General,Default message group symbol,✅,pure,1,690
 GeneralizedLinearModelFit,,,,7,2187
 GenerateAsymmetricKeyPair,,,,10.1,3326
