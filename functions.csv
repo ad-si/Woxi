@@ -5116,7 +5116,7 @@ SphericalBesselY,,,,6,2054
 SphericalDistance,,,,13.3,
 SphericalHankelH1,,,,6,2219
 SphericalHankelH2,,,,6,3566
-SphericalHarmonicY,,,,1,811
+SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1,811
 SphericalPlot3D,,,,6,744
 SphericalRegion,,,,2,802
 SphericalShell,,,,10.2,3070

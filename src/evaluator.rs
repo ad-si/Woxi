@@ -5131,6 +5131,9 @@ pub fn evaluate_function_call_ast(
     "LegendreP" if args.len() == 2 => {
       return crate::functions::math_ast::legendre_p_ast(args);
     }
+    "SphericalHarmonicY" if args.len() == 4 => {
+      return crate::functions::math_ast::spherical_harmonic_y_ast(args);
+    }
     "LegendreQ" if args.len() == 2 => {
       return crate::functions::math_ast::legendre_q_ast(args);
     }
