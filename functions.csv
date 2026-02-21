@@ -3655,7 +3655,7 @@ MultivariateTDistribution,,,,8,2380
 N,Gives the numerical value of an expression,✅,pure,1,49
 NakagamiDistribution,,,,8,3363
 NameQ,,,,1,3280
-Names,,,,1,889
+Names,Lists symbol names matching a string pattern with wildcards,✅,pure,1,889
 Nand,Logical NAND,✅,pure,4.1,2233
 NArgMax,,,,7,2320
 NArgMin,,,,7,2605

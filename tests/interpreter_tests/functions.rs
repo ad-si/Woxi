@@ -2015,3 +2015,35 @@ mod quit {
     assert_eq!(interpret("Head[Quit]").unwrap(), "Symbol");
   }
 }
+
+mod names {
+  use super::*;
+
+  #[test]
+  fn empty_env() {
+    assert_eq!(interpret("Names[]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn lists_variables() {
+    assert_eq!(interpret("x = 1; y = 2; Names[\"*\"]").unwrap(), "{x, y}");
+  }
+
+  #[test]
+  fn lists_functions() {
+    assert_eq!(interpret("f[x_] := x^2; Names[\"*\"]").unwrap(), "{f}");
+  }
+
+  #[test]
+  fn pattern_filter() {
+    assert_eq!(
+      interpret("abc = 1; abd = 2; xyz = 3; Names[\"ab*\"]").unwrap(),
+      "{abc, abd}"
+    );
+  }
+
+  #[test]
+  fn no_match() {
+    assert_eq!(interpret("a = 1; Names[\"z*\"]").unwrap(), "{}");
+  }
+}

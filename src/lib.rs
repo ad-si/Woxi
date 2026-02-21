@@ -306,6 +306,26 @@ pub fn without_shebang(src: &str) -> String {
   }
 }
 
+/// Get all defined symbol names (variables and user functions).
+/// Used by the Names[] function.
+pub fn get_defined_names() -> Vec<String> {
+  let mut names = Vec::new();
+  ENV.with(|e| {
+    for key in e.borrow().keys() {
+      names.push(key.clone());
+    }
+  });
+  FUNC_DEFS.with(|m| {
+    for key in m.borrow().keys() {
+      if !names.contains(key) {
+        names.push(key.clone());
+      }
+    }
+  });
+  names.sort();
+  names
+}
+
 /// Clear all thread-local interpreter state (environment variables
 /// and user-defined functions).  Useful for isolating test runs.
 pub fn clear_state() {
