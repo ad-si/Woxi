@@ -4778,6 +4778,12 @@ pub fn evaluate_function_call_ast(
     "FullForm" if args.len() == 1 => {
       return crate::functions::predicate_ast::full_form_ast(&args[0]);
     }
+    "CForm" if args.len() == 1 => {
+      return Ok(Expr::FunctionCall {
+        name: "CForm".to_string(),
+        args: args.to_vec(),
+      });
+    }
 
     // Attributes[symbol] - returns the attributes of a built-in symbol
     "Attributes" if args.len() == 1 => {

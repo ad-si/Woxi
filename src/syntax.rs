@@ -3085,6 +3085,10 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "FullForm" && args.len() == 1 {
         return crate::functions::predicate_ast::expr_to_full_form(&args[0]);
       }
+      // CForm[expr] displays C language format
+      if name == "CForm" && args.len() == 1 {
+        return crate::functions::string_ast::expr_to_c(&args[0]);
+      }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {
         return format!("{}..", expr_to_output(&args[0]));
