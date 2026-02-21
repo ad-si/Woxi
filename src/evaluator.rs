@@ -7200,6 +7200,7 @@ fn evaluate_function_call_ast_inner(
     | "RepeatedNull"
     | "NumberForm"
     | "DigitBlock"
+    | "Cubics"
     | "Information"
     | "ListPlot3D"
     | "TreeForm" => {
