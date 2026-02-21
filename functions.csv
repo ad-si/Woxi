@@ -5493,7 +5493,7 @@ TestObject,,,,13.3,
 TestReport,,,,10,3048
 TestReportObject,,,,10,4881
 Tetrahedron,,,,10,1424
-TeXForm,,,,1,782
+TeXForm,Convert expressions to LaTeX notation,✅,pure,1,782
 Text,Represents a text graphics primitive,✅,pure,1,122
 TextAlignment,,,,3,1051
 TextCases,,,,10.2,1644

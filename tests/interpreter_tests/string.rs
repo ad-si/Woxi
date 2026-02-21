@@ -1177,3 +1177,102 @@ mod string_form {
     );
   }
 }
+
+mod tex_form {
+  use super::*;
+
+  #[test]
+  fn simple_addition() {
+    assert_eq!(
+      interpret("ToString[x^2 + y^2, TeXForm]").unwrap(),
+      "x^{2}+y^{2}"
+    );
+  }
+
+  #[test]
+  fn sqrt() {
+    assert_eq!(
+      interpret("ToString[Sqrt[x], TeXForm]").unwrap(),
+      "\\sqrt{x}"
+    );
+  }
+
+  #[test]
+  fn fraction() {
+    assert_eq!(interpret("ToString[a/b, TeXForm]").unwrap(), "\\frac{a}{b}");
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("ToString[3/4, TeXForm]").unwrap(), "\\frac{3}{4}");
+  }
+
+  #[test]
+  fn sin() {
+    assert_eq!(interpret("ToString[Sin[x], TeXForm]").unwrap(), "\\sin (x)");
+  }
+
+  #[test]
+  fn log() {
+    assert_eq!(interpret("ToString[Log[x], TeXForm]").unwrap(), "\\log (x)");
+  }
+
+  #[test]
+  fn pi() {
+    assert_eq!(interpret("ToString[Pi, TeXForm]").unwrap(), "\\pi");
+  }
+
+  #[test]
+  fn infinity() {
+    assert_eq!(interpret("ToString[Infinity, TeXForm]").unwrap(), "\\infty");
+  }
+
+  #[test]
+  fn list() {
+    assert_eq!(
+      interpret("ToString[{a, b, c}, TeXForm]").unwrap(),
+      "\\{a,b,c\\}"
+    );
+  }
+
+  #[test]
+  fn string() {
+    assert_eq!(
+      interpret("ToString[\"hello\", TeXForm]").unwrap(),
+      "\\text{hello}"
+    );
+  }
+
+  #[test]
+  fn real_number() {
+    assert_eq!(interpret("ToString[2.5, TeXForm]").unwrap(), "2.5");
+  }
+
+  #[test]
+  fn power() {
+    assert_eq!(interpret("ToString[x^n, TeXForm]").unwrap(), "x^{n}");
+  }
+
+  #[test]
+  fn multiplication() {
+    assert_eq!(interpret("ToString[x*y, TeXForm]").unwrap(), "x y");
+  }
+
+  #[test]
+  fn subtraction() {
+    assert_eq!(interpret("ToString[x - z, TeXForm]").unwrap(), "x-z");
+  }
+
+  #[test]
+  fn negation() {
+    assert_eq!(interpret("ToString[-x, TeXForm]").unwrap(), "-x");
+  }
+
+  #[test]
+  fn abs() {
+    assert_eq!(
+      interpret("ToString[Abs[x], TeXForm]").unwrap(),
+      "\\left| x \\right|"
+    );
+  }
+}
