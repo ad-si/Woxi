@@ -5054,7 +5054,7 @@ SolidMechanicsStrain,,,,13,
 SolidMechanicsStress,,,,13,
 SolidRegionQ,,,,11,4437
 Solve,Solves an equation or system of equations,✅,pure,1,62
-SolveAlways,,,,1,1492
+SolveAlways,Find conditions on parameters for equation to hold for all variable values,✅,pure,1,1492
 SolveValues,,,,12.3,
 Sort,Sorts a list in ascending order,✅,pure,1,194
 SortBy,Sorts a list using a function as a criterion,✅,pure,6,405
