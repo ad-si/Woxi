@@ -3140,7 +3140,7 @@ LetterCharacter,,,,5.1,1226
 LetterCounts,,,,10.1,2605
 LetterNumber,,,,10.1,1524
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2,2144
-Level,,,,1,950
+Level,Extracts subexpressions at specified levels,✅,pure,1,950
 LeveneTest,,,,8,3843
 LeviCivitaTensor,,,,7,1781
 LevyDistribution,,,,7,3402
