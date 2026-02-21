@@ -428,6 +428,29 @@ mod page_width {
   }
 }
 
+mod constant {
+  use super::*;
+
+  #[test]
+  fn constant_standalone() {
+    assert_eq!(interpret("Constant").unwrap(), "Constant");
+  }
+
+  #[test]
+  fn constant_head() {
+    assert_eq!(interpret("Head[Constant]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn constant_as_attribute() {
+    // Pi has the Constant attribute
+    assert_eq!(
+      interpret("MemberQ[Attributes[Pi], Constant]").unwrap(),
+      "True"
+    );
+  }
+}
+
 mod construct {
   use super::*;
 

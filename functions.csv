@@ -1024,7 +1024,7 @@ ConnectSystemModelController,,,,12.3,
 ConnesWindow,,,,9,4262
 ConoverTest,,,,8,3972
 ConservativeConvectionPDETerm,,,,12.2,5390
-Constant,,,,1,1704
+Constant,Attribute indicating zero derivative with respect to all parameters,✅,pure,1,1704
 ConstantArray,Creates an array of repeated elements,✅,pure,6,242
 ConstantImage,,,,10,2596
 ConstantRegionQ,,,,10,3462
