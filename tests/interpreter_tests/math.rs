@@ -5337,6 +5337,51 @@ mod elliptic_e {
   }
 }
 
+mod airy_ai {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    let result: f64 = interpret("AiryAi[0.0]").unwrap().parse().unwrap();
+    assert!((result - 0.3550280538878173).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_positive() {
+    let result: f64 = interpret("AiryAi[1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.13529241631288147).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative() {
+    let result: f64 = interpret("AiryAi[-1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.5355608832923522).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_larger_positive() {
+    let result: f64 = interpret("AiryAi[2.0]").unwrap().parse().unwrap();
+    assert!((result - 0.03492413042327438).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_larger_negative() {
+    let result: f64 = interpret("AiryAi[-2.0]").unwrap().parse().unwrap();
+    assert!((result - 0.22740742820168558).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates() {
+    let result: f64 = interpret("N[AiryAi[1]]").unwrap().parse().unwrap();
+    assert!((result - 0.13529241631288147).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("AiryAi[x]").unwrap(), "AiryAi[x]");
+  }
+}
+
 mod hypergeometric_1f1 {
   use super::*;
 
