@@ -3225,7 +3225,7 @@ ListConvolve,,,,4,1110
 ListCorrelate,,,,4,1129
 ListCurvePathPlot,,,,7,2509
 ListDeconvolve,,,,8,3566
-ListDensityPlot,,,,1,839
+ListDensityPlot,Creates a density plot from a list of values or {x y z} triples,✅,pure,1,839
 ListDensityPlot3D,,,,10.2,2911
 ListFormat,,,,10,4204
 ListFourierSequenceTransform,,,,9,2541
