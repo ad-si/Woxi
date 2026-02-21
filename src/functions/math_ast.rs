@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes.
 
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr};
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -4314,6 +4314,11 @@ fn extract_negated_expr(expr: &Expr) -> Option<Expr> {
         None
       }
     }
+    // UnaryOp Minus form
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(operand.as_ref().clone()),
     _ => None,
   }
 }
@@ -4334,6 +4339,36 @@ fn is_expr_one(expr: &Expr) -> bool {
     Expr::Real(f) => *f == 1.0,
     _ => false,
   }
+}
+
+/// Check if an expression represents -Infinity
+fn is_neg_infinity(expr: &Expr) -> bool {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && args.len() == 2
+    && let (Expr::Integer(-1), Expr::Identifier(s)) = (&args[0], &args[1])
+  {
+    return s == "Infinity";
+  }
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+    && let (Expr::Integer(-1), Expr::Identifier(s)) =
+      (left.as_ref(), right.as_ref())
+  {
+    return s == "Infinity";
+  }
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = expr
+    && let Expr::Identifier(s) = operand.as_ref()
+  {
+    return s == "Infinity";
+  }
+  false
 }
 
 /// Extract f64 from various numeric expression types
@@ -4515,6 +4550,85 @@ fn elliptic_theta_numeric(a: u32, z: f64, q: f64) -> f64 {
       sum
     }
     _ => unreachable!(),
+  }
+}
+
+/// ExpIntegralEi[x] - Exponential integral Ei(x)
+pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ExpIntegralEi expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    // ExpIntegralEi[0] = -Infinity
+    Expr::Integer(0) => Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
+    }),
+    // ExpIntegralEi[Infinity] = Infinity
+    Expr::Identifier(s) if s == "Infinity" => {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    // Numeric evaluation
+    Expr::Real(x) => Ok(Expr::Real(exp_integral_ei_numeric(*x))),
+    // Check for -Infinity or other cases
+    other => {
+      if is_neg_infinity(other) {
+        return Ok(Expr::Integer(0));
+      }
+      // Unevaluated
+      Ok(Expr::FunctionCall {
+        name: "ExpIntegralEi".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute Ei(x) numerically
+/// For all x: Ei(x) = γ + ln|x| + Σ_{n=1}^∞ x^n / (n * n!)
+fn exp_integral_ei_numeric(x: f64) -> f64 {
+  if x.abs() < 40.0 {
+    // Power series: Ei(x) = γ + ln|x| + Σ x^n / (n * n!)
+    let euler_gamma = 0.5772156649015329;
+    let mut sum = euler_gamma + x.abs().ln();
+    let mut term = 1.0;
+    for n in 1..200 {
+      let nf = n as f64;
+      term *= x / nf;
+      sum += term / nf;
+      if (term / nf).abs() < 1e-16 * sum.abs() {
+        break;
+      }
+    }
+    sum
+  } else {
+    // Asymptotic expansion for large |x|: Ei(x) ~ e^x/x * Σ n!/x^n
+    // Use continued fraction for better convergence
+    let mut result = 0.0;
+    let mut term = 1.0;
+    for n in (1..=100).rev() {
+      let nf = n as f64;
+      result = nf / (1.0 + nf / (x + result));
+    }
+    result = x.exp() / (x + result);
+    if x > 0.0 {
+      result
+    } else {
+      // For large negative x, Ei(x) ≈ e^x/x * (1 + 1!/x + 2!/x^2 + ...)
+      let mut sum = 1.0;
+      term = 1.0;
+      for n in 1..100 {
+        term *= n as f64 / x;
+        sum += term;
+        if term.abs() < 1e-16 * sum.abs() {
+          break;
+        }
+      }
+      sum * x.exp() / x
+    }
   }
 }
 

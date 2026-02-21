@@ -1803,7 +1803,7 @@ ExpandNumerator,,,,1,2605
 Expectation,,,,8,954
 ExpGammaDistribution,,,,8,3506
 ExpIntegralE,,,,1,1397
-ExpIntegralEi,,,,1,569
+ExpIntegralEi,Exponential integral Ei,✅,pure,1,569
 ExpirationDate,,,,11.1,5184
 Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1,829
 ExponentFunction,,,,2,1712

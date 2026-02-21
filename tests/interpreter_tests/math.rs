@@ -4820,3 +4820,60 @@ mod elliptic_theta {
     assert!((result - 1.2529300675643478).abs() < 1e-10);
   }
 }
+
+mod exp_integral_ei {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("ExpIntegralEi[0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("ExpIntegralEi[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn at_neg_infinity() {
+    assert_eq!(interpret("ExpIntegralEi[-Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("ExpIntegralEi[x]").unwrap(), "ExpIntegralEi[x]");
+  }
+
+  #[test]
+  fn numeric_positive() {
+    let result: f64 = interpret("ExpIntegralEi[0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.4542199048631736).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative() {
+    let result: f64 =
+      interpret("ExpIntegralEi[-0.5]").unwrap().parse().unwrap();
+    assert!((result - (-0.5597735947761607)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_larger() {
+    let result: f64 = interpret("ExpIntegralEi[2.0]").unwrap().parse().unwrap();
+    assert!((result - 4.95423435600189).abs() < 1e-8);
+  }
+
+  #[test]
+  fn n_evaluates_positive() {
+    let result: f64 =
+      interpret("N[ExpIntegralEi[1]]").unwrap().parse().unwrap();
+    assert!((result - 1.8951178163559368).abs() < 1e-10);
+  }
+
+  #[test]
+  fn n_evaluates_negative() {
+    let result: f64 =
+      interpret("N[ExpIntegralEi[-1]]").unwrap().parse().unwrap();
+    assert!((result - (-0.21938393439552026)).abs() < 1e-10);
+  }
+}
