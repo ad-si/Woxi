@@ -3125,7 +3125,7 @@ LegendreP,Legendre polynomial of the first kind,✅,pure,1,515
 LegendreQ,Legendre function of the second kind Q_n(x),✅,pure,1,943
 Length,Returns the number of elements in a list,✅,pure,1,44
 LengthWhile,Returns the length of the longest initial run satisfying a test,✅,pure,6,1499
-LerchPhi,,,,1,1108
+LerchPhi,Lerch transcendent special function,✅,pure,1,1108
 Less,Checks if one value is less than another,✅,pure,1,41
 LessEqual,Checks if one value is less than or equal to another,✅,pure,1,57
 LessEqualGreater,,,,3,5390

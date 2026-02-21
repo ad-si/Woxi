@@ -18865,3 +18865,84 @@ pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 }
+
+/// LerchPhi[z, s, a] - Lerch transcendent Φ(z, s, a) = Σ_{k=0}^∞ z^k / (k+a)^s
+pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "LerchPhi expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let z = &args[0];
+  let s = &args[1];
+  let a = &args[2];
+
+  // Special case: z = 0 → a^(-s)
+  if is_expr_zero(z) {
+    if let (Some(af), Some(sf)) = (try_eval_to_f64(a), try_eval_to_f64(s)) {
+      return Ok(Expr::Real(af.powf(-sf)));
+    }
+    return crate::evaluator::evaluate_function_call_ast(
+      "Power",
+      &[
+        a.clone(),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-1), s.clone()],
+        },
+      ],
+    );
+  }
+
+  // Numeric evaluation
+  if let (Some(zf), Some(sf), Some(af)) =
+    (try_eval_to_f64(z), try_eval_to_f64(s), try_eval_to_f64(a))
+    && (zf.abs() < 1.0 || ((zf - 1.0).abs() < 1e-16 && sf > 1.0))
+  {
+    let result = lerch_phi_numeric(zf, sf, af);
+    if result.is_finite() {
+      return Ok(Expr::Real(result));
+    }
+  }
+
+  // Symbolic: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "LerchPhi".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute LerchPhi numerically via series: Σ z^k / (k+a)^s
+fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
+  // For z = 1, this is the Hurwitz zeta: Σ 1/(k+a)^s
+  // Use Euler-Maclaurin to add tail correction for better convergence
+  let n_terms = if (z - 1.0).abs() < 1e-14 { 200 } else { 1000 };
+  let mut sum = 0.0;
+  let mut z_pow = 1.0; // z^k
+  for k in 0..n_terms {
+    let denom = (k as f64 + a).powf(s);
+    if denom.abs() > 1e-300 {
+      let term = z_pow / denom;
+      sum += term;
+      if term.abs() < 1e-15 * sum.abs() && k > 5 {
+        return sum;
+      }
+    }
+    z_pow *= z;
+    if z_pow.abs() < 1e-300 {
+      return sum;
+    }
+  }
+
+  // For z=1 (Hurwitz zeta), add integral tail: ∫_{N}^∞ 1/(t+a)^s dt = (N+a)^(1-s)/(s-1)
+  if (z - 1.0).abs() < 1e-14 && s > 1.0 {
+    let n = n_terms as f64;
+    let tail = (n + a).powf(1.0 - s) / (s - 1.0);
+    // Plus first-order Euler-Maclaurin correction: f(N)/2
+    let f_n = 1.0 / (n + a).powf(s);
+    sum += tail + f_n / 2.0;
+  }
+
+  sum
+}
