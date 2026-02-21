@@ -7252,3 +7252,123 @@ fn is_builtin_constant_sa(s: &str) -> bool {
       | "Catalan"
   )
 }
+
+/// FactorList[poly] - list irreducible factors of a polynomial with exponents
+pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorList expects exactly 1 argument".into(),
+    ));
+  }
+
+  // First, factor the polynomial
+  let factored = factor_ast(args)?;
+
+  // Decompose the factored form into {factor, exponent} pairs
+  let mut pairs: Vec<Expr> = Vec::new();
+  let mut numeric_coeff = Expr::Integer(1);
+
+  decompose_product(&factored, &mut pairs, &mut numeric_coeff);
+
+  // Build result: {{numeric_coeff, 1}, {factor1, exp1}, ...}
+  let mut result = vec![Expr::List(vec![numeric_coeff, Expr::Integer(1)])];
+  result.extend(pairs);
+
+  Ok(Expr::List(result))
+}
+
+/// Decompose a factored expression into {factor, exponent} pairs.
+/// Handles Times[...], Power[base, exp], and literal factors.
+fn decompose_product(
+  expr: &Expr,
+  pairs: &mut Vec<Expr>,
+  numeric_coeff: &mut Expr,
+) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for arg in args {
+        decompose_product(arg, pairs, numeric_coeff);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      decompose_product(left, pairs, numeric_coeff);
+      decompose_product(right, pairs, numeric_coeff);
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      // base^exp
+      if is_numeric_expr(left) {
+        // numeric^exp: handle as coefficient
+        *numeric_coeff = crate::functions::math_ast::times_ast(&[
+          numeric_coeff.clone(),
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: left.clone(),
+            right: right.clone(),
+          },
+        ])
+        .unwrap_or(expr.clone());
+      } else {
+        pairs.push(Expr::List(vec![*left.clone(), *right.clone()]));
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if is_numeric_expr(&args[0]) {
+        *numeric_coeff = crate::functions::math_ast::times_ast(&[
+          numeric_coeff.clone(),
+          expr.clone(),
+        ])
+        .unwrap_or(expr.clone());
+      } else {
+        pairs.push(Expr::List(vec![args[0].clone(), args[1].clone()]));
+      }
+    }
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) => {
+      *numeric_coeff = crate::functions::math_ast::times_ast(&[
+        numeric_coeff.clone(),
+        expr.clone(),
+      ])
+      .unwrap_or(expr.clone());
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      *numeric_coeff = crate::functions::math_ast::times_ast(&[
+        numeric_coeff.clone(),
+        expr.clone(),
+      ])
+      .unwrap_or(expr.clone());
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      // -expr: multiply coeff by -1 and decompose inner
+      *numeric_coeff = crate::functions::math_ast::times_ast(&[
+        numeric_coeff.clone(),
+        Expr::Integer(-1),
+      ])
+      .unwrap_or(Expr::Integer(-1));
+      decompose_product(operand, pairs, numeric_coeff);
+    }
+    _ => {
+      // Any other expression is a factor with exponent 1
+      pairs.push(Expr::List(vec![expr.clone(), Expr::Integer(1)]));
+    }
+  }
+}
+
+/// Check if an expression is purely numeric
+fn is_numeric_expr(expr: &Expr) -> bool {
+  matches!(expr, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+    || matches!(expr,
+      Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
+    )
+}

@@ -6360,6 +6360,9 @@ fn evaluate_function_call_ast_inner(
     "Factor" if args.len() == 1 => {
       return crate::functions::polynomial_ast::factor_ast(args);
     }
+    "FactorList" if args.len() == 1 => {
+      return crate::functions::polynomial_ast::factor_list_ast(args);
+    }
     "Simplify" if args.len() == 1 => {
       return crate::functions::polynomial_ast::simplify_ast(args);
     }

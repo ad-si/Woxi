@@ -290,6 +290,63 @@ mod factor {
   }
 }
 
+mod factor_list {
+  use super::*;
+
+  #[test]
+  fn cubic() {
+    assert_eq!(
+      interpret("FactorList[x^3 - 1]").unwrap(),
+      "{{1, 1}, {-1 + x, 1}, {1 + x + x^2, 1}}"
+    );
+  }
+
+  #[test]
+  fn with_numeric_coefficient() {
+    assert_eq!(
+      interpret("FactorList[2*x^2 + 4*x + 2]").unwrap(),
+      "{{2, 1}, {1 + x, 2}}"
+    );
+  }
+
+  #[test]
+  fn irreducible() {
+    assert_eq!(
+      interpret("FactorList[x^2 + 1]").unwrap(),
+      "{{1, 1}, {1 + x^2, 1}}"
+    );
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("FactorList[6]").unwrap(), "{{6, 1}}");
+  }
+
+  #[test]
+  fn quartic() {
+    assert_eq!(
+      interpret("FactorList[x^4 - 1]").unwrap(),
+      "{{1, 1}, {-1 + x, 1}, {1 + x, 1}, {1 + x^2, 1}}"
+    );
+  }
+
+  #[test]
+  fn repeated_root() {
+    assert_eq!(
+      interpret("FactorList[x^3 + 3*x^2 + 3*x + 1]").unwrap(),
+      "{{1, 1}, {1 + x, 3}}"
+    );
+  }
+
+  #[test]
+  fn quadratic() {
+    assert_eq!(
+      interpret("FactorList[x^2 + 3*x + 2]").unwrap(),
+      "{{1, 1}, {1 + x, 1}, {2 + x, 1}}"
+    );
+  }
+}
+
 mod cancel {
   use super::*;
 
