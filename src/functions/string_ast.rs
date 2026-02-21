@@ -902,11 +902,69 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Other forms: fall through to default (OutputForm-like) behavior
 
+  // Special case: StringForm["template", args...] → substitute placeholders
+  if let Expr::FunctionCall {
+    name,
+    args: sf_args,
+  } = &args[0]
+    && name == "StringForm"
+    && !sf_args.is_empty()
+    && let Expr::String(template) = &sf_args[0]
+  {
+    return Ok(Expr::String(format_string_form(template, &sf_args[1..])));
+  }
+
   // Default (no form or unrecognized form): OutputForm-like
   // Uses expr_to_output which renders strings without quotes and handles
   // display forms like FullForm[expr] → FullForm notation
   let s = crate::syntax::expr_to_output(&args[0]);
   Ok(Expr::String(s))
+}
+
+/// Format a StringForm expression by substituting placeholders.
+/// `template` is the format string, `values` are the arguments to substitute.
+/// `` `` `` placeholders are replaced sequentially, `` `n` `` with the nth argument.
+pub fn format_string_form(template: &str, values: &[Expr]) -> String {
+  let mut result = String::new();
+  let chars: Vec<char> = template.chars().collect();
+  let len = chars.len();
+  let mut i = 0;
+  let mut seq_index = 0; // sequential placeholder counter
+
+  while i < len {
+    if chars[i] == '`' {
+      // Check for `` (sequential placeholder)
+      if i + 1 < len && chars[i + 1] == '`' {
+        if seq_index < values.len() {
+          result.push_str(&crate::syntax::expr_to_output(&values[seq_index]));
+        }
+        seq_index += 1;
+        i += 2;
+        continue;
+      }
+      // Check for `n` (indexed placeholder)
+      let start = i + 1;
+      let mut end = start;
+      while end < len && chars[end].is_ascii_digit() {
+        end += 1;
+      }
+      if end > start && end < len && chars[end] == '`' {
+        let idx: usize = chars[start..end]
+          .iter()
+          .collect::<String>()
+          .parse()
+          .unwrap_or(0);
+        if idx >= 1 && idx <= values.len() {
+          result.push_str(&crate::syntax::expr_to_output(&values[idx - 1]));
+        }
+        i = end + 1;
+        continue;
+      }
+    }
+    result.push(chars[i]);
+    i += 1;
+  }
+  result
 }
 
 /// ToExpression[s] - convert string to expression and evaluate

@@ -1107,3 +1107,73 @@ mod compress {
     );
   }
 }
+
+mod string_form {
+  use super::*;
+
+  #[test]
+  fn unevaluated_display() {
+    // StringForm stays unevaluated (displayed as function call)
+    assert_eq!(
+      interpret("StringForm[\"The value is ``.\", 5]").unwrap(),
+      "StringForm[The value is ``., 5]"
+    );
+  }
+
+  #[test]
+  fn to_string_single_placeholder() {
+    assert_eq!(
+      interpret("ToString[StringForm[\"The value is ``.\", 5]]").unwrap(),
+      "The value is 5."
+    );
+  }
+
+  #[test]
+  fn to_string_multiple_placeholders() {
+    assert_eq!(
+      interpret("ToString[StringForm[\"x=`` and y=``.\", 5, 10]]").unwrap(),
+      "x=5 and y=10."
+    );
+  }
+
+  #[test]
+  fn to_string_indexed_placeholders() {
+    assert_eq!(
+      interpret("ToString[StringForm[\"`2` is `1`.\", \"dog\", \"big\"]]")
+        .unwrap(),
+      "big is dog."
+    );
+  }
+
+  #[test]
+  fn to_string_no_placeholders() {
+    assert_eq!(
+      interpret("ToString[StringForm[\"hello\"]]").unwrap(),
+      "hello"
+    );
+  }
+
+  #[test]
+  fn to_string_with_list_arg() {
+    assert_eq!(
+      interpret("ToString[StringForm[\"x=``\", {1, 2, 3}]]").unwrap(),
+      "x={1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn to_string_with_symbolic_arg() {
+    assert_eq!(
+      interpret("ToString[StringForm[\"x=``\", Pi]]").unwrap(),
+      "x=Pi"
+    );
+  }
+
+  #[test]
+  fn to_string_three_sequential() {
+    assert_eq!(
+      interpret("ToString[StringForm[\"`` + `` = ``\", 1, 2, 3]]").unwrap(),
+      "1 + 2 = 3"
+    );
+  }
+}
