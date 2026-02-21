@@ -686,3 +686,82 @@ fn quantity_ohms_law() {
     "Quantity[500, Volts]"
   );
 }
+
+// ─── Sqrt / Power with rational exponents on Quantities ──────────────────────
+
+#[test]
+fn quantity_sqrt_squared_unit() {
+  // Sqrt[Quantity[4, Seconds^2]] → Quantity[2, Seconds]
+  assert_eq!(
+    interpret("Sqrt[Quantity[4, \"Seconds\"^2]]").unwrap(),
+    "Quantity[2, Seconds]"
+  );
+}
+
+#[test]
+fn quantity_sqrt_simple_unit() {
+  // Sqrt[Quantity[9.0, Meters^2]] → Quantity[3., Meters]
+  assert_eq!(
+    interpret("Sqrt[Quantity[9.0, \"Meters\"^2]]").unwrap(),
+    "Quantity[3., Meters]"
+  );
+}
+
+#[test]
+fn quantity_power_half_squared_unit() {
+  // Power[Quantity[4, Seconds^2], 1/2] → Quantity[2, Seconds]
+  assert_eq!(
+    interpret("Power[Quantity[4, \"Seconds\"^2], 1/2]").unwrap(),
+    "Quantity[2, Seconds]"
+  );
+}
+
+#[test]
+fn quantity_power_half_compound_unit() {
+  // Power[Quantity[4, Meters/Seconds^2], 1/2] → Quantity[2, Meters^(1/2)/Seconds]
+  assert_eq!(
+    interpret("Power[Quantity[4, \"Meters\"/\"Seconds\"^2], 1/2]").unwrap(),
+    "Quantity[2, Meters^(1/2)/Seconds]"
+  );
+}
+
+#[test]
+fn quantity_sqrt_free_fall() {
+  // Full free-fall physics example:
+  // h=100m, g=9.81 m/s², fallzeit = Sqrt[2h/g], v = g*fallzeit
+  // UnitConvert[v, km/h] should give ~159.46 km/h
+  let code = r#"
+    h = Quantity[100, "Meters"];
+    g = Quantity[9.81, "Meters"/"Seconds"^2];
+    fallzeit = Sqrt[2 h/g];
+    endgeschwindigkeit = g*fallzeit;
+    UnitConvert[endgeschwindigkeit, "Kilometers"/"Hours"]
+  "#;
+  let result = interpret(code).unwrap();
+  // Extract magnitude and verify it's approximately 159.46
+  assert!(result.starts_with("Quantity["), "Expected Quantity, got: {}", result);
+  assert!(result.ends_with("Kilometers/Hours]"), "Expected km/h unit, got: {}", result);
+  let mag_str = result
+    .strip_prefix("Quantity[").unwrap()
+    .strip_suffix(", Kilometers/Hours]").unwrap();
+  let mag: f64 = mag_str.parse().unwrap();
+  assert!((mag - 159.46).abs() < 0.1, "Expected ~159.46, got: {}", mag);
+}
+
+#[test]
+fn quantity_power_integer_still_works() {
+  // Verify integer powers still work correctly
+  assert_eq!(
+    interpret("Quantity[3, \"Meters\"]^2").unwrap(),
+    "Quantity[9, Meters^2]"
+  );
+}
+
+#[test]
+fn quantity_power_third() {
+  // Quantity[8, Meters^3]^(1/3) → Quantity[2, Meters]
+  assert_eq!(
+    interpret("Power[Quantity[8, \"Meters\"^3], 1/3]").unwrap(),
+    "Quantity[2, Meters]"
+  );
+}

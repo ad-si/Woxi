@@ -1485,6 +1485,104 @@ pub fn try_quantity_divide(
   }
 }
 
+/// Extract a rational number (p, q) from an expression.
+/// Integer(n) → (n, 1), Rational[p, q] → (p, q).
+fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) {
+        Some((*p, *q))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Raise a unit expression to a rational power (p/q) by decomposing the unit
+/// into its base components, multiplying each exponent by p/q, and rebuilding.
+/// Returns None if the unit cannot be decomposed.
+fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
+  use crate::syntax::BinaryOperator;
+
+  let info = decompose_unit_expr(unit)?;
+  let mut numer_parts: Vec<Expr> = Vec::new();
+  let mut denom_parts: Vec<Expr> = Vec::new();
+
+  for (name, e) in &info.components {
+    // New exponent: e * p / q
+    let new_n = (*e as i128) * p;
+    let new_d = q;
+    if new_n == 0 {
+      continue;
+    }
+    let g = gcd(new_n.abs(), new_d.abs());
+    let (rn, rd) = (new_n / g, new_d / g);
+    // Ensure positive denominator
+    let (rn, rd) = if rd < 0 { (-rn, -rd) } else { (rn, rd) };
+
+    let base = Expr::Identifier(name.clone());
+    let abs_rn = rn.abs();
+
+    let part = if rd == 1 && abs_rn == 1 {
+      base
+    } else if rd == 1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(Expr::Integer(abs_rn)),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(crate::functions::math_ast::make_rational_pub(
+          abs_rn, rd,
+        )),
+      }
+    };
+
+    if rn > 0 {
+      numer_parts.push(part);
+    } else {
+      denom_parts.push(part);
+    }
+  }
+
+  let numer = if numer_parts.is_empty() {
+    Expr::Integer(1)
+  } else if numer_parts.len() == 1 {
+    numer_parts.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: numer_parts,
+    }
+  };
+
+  if denom_parts.is_empty() {
+    Some(numer)
+  } else {
+    let denom = if denom_parts.len() == 1 {
+      denom_parts.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: denom_parts,
+      }
+    };
+    Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(numer),
+      right: Box::new(denom),
+    })
+  }
+}
+
 /// Handle Power when base is Quantity.
 pub fn try_quantity_power(
   base: &Expr,
@@ -1501,6 +1599,18 @@ pub fn try_quantity_power(
       Err(e) => return Some(Err(e)),
     };
 
+  // Try to simplify unit^exp by decomposing the unit and distributing the power
+  if let Some((p, q)) = expr_to_rational(exp) {
+    if let Some(new_unit) = power_unit_expr(unit, p, q) {
+      // If all units cancelled out, return bare magnitude
+      if matches!(&new_unit, Expr::Integer(1)) {
+        return Some(Ok(new_mag));
+      }
+      return Some(Ok(make_quantity(new_mag, new_unit)));
+    }
+  }
+
+  // Fallback: wrap unit in Power without simplification
   let new_unit = Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Power,
     left: Box::new(unit.clone()),
