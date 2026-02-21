@@ -6527,6 +6527,65 @@ mod nsum {
   }
 }
 
+mod lerch_phi {
+  use super::*;
+
+  #[test]
+  fn lerch_phi_zero_z() {
+    // LerchPhi[0, s, a] = a^(-s)
+    // With numeric args, evaluates to numeric
+    let result = interpret("LerchPhi[0, 2.0, 3.0]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - 1.0 / 9.0).abs() < 1e-10,
+      "LerchPhi[0, 2, 3] should be 1/9, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn lerch_phi_numeric() {
+    // LerchPhi[0.5, 2, 1] = Σ 0.5^k / (k+1)^2
+    let result = interpret("LerchPhi[0.5, 2, 1]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - 1.16459).abs() < 0.001,
+      "LerchPhi[0.5, 2, 1] should be near 1.16459, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn lerch_phi_relates_to_zeta() {
+    // LerchPhi[1, 2, 1] = Σ 1/(k+1)^2 = π²/6
+    let result = interpret("LerchPhi[1, 2, 1]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = std::f64::consts::PI * std::f64::consts::PI / 6.0;
+    assert!(
+      (val - expected).abs() < 1e-6,
+      "LerchPhi[1, 2, 1] should be pi^2/6 = {}, got {}",
+      expected,
+      val
+    );
+  }
+
+  #[test]
+  fn lerch_phi_small_z() {
+    let result = interpret("LerchPhi[0.1, 1, 1]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      val > 1.0 && val < 2.0,
+      "Should be between 1 and 2, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn lerch_phi_symbolic() {
+    assert_eq!(interpret("LerchPhi[z, s, a]").unwrap(), "LerchPhi[z, s, a]");
+  }
+}
+
 mod weierstrass_p {
   use super::*;
 
