@@ -4479,6 +4479,9 @@ pub fn evaluate_function_call_ast(
     "ListDensityPlot" if !args.is_empty() => {
       return crate::functions::field_plot::list_density_plot_ast(args);
     }
+    "ListContourPlot" if !args.is_empty() => {
+      return crate::functions::field_plot::list_contour_plot_ast(args);
+    }
     "ArrayPlot" if !args.is_empty() => {
       return crate::functions::field_plot::array_plot_ast(args);
     }

@@ -1055,6 +1055,369 @@ fn list_density_plot_triples(
   Ok(Expr::Identifier("-Graphics-".to_string()))
 }
 
+/// Parse list data and return a grid of z-values with axis ranges.
+/// Returns (grid, x_min, x_max, y_min, y_max, v_min, v_max, n_rows, n_cols).
+/// Grid is stored as grid[col][row] for marching squares compatibility.
+fn parse_list_data_to_grid(
+  rows: &[Expr],
+  func_name: &str,
+) -> Result<
+  (Vec<Vec<f64>>, f64, f64, f64, f64, f64, f64, usize, usize),
+  InterpreterError,
+> {
+  // Determine if input is {x,y,z} triples or a matrix
+  let is_triples = is_triples_data(rows);
+
+  if is_triples {
+    parse_triples_to_grid(rows, func_name)
+  } else {
+    parse_matrix_to_grid(rows, func_name)
+  }
+}
+
+/// Check if list data represents {x,y,z} triples
+fn is_triples_data(rows: &[Expr]) -> bool {
+  rows.iter().all(|r| {
+    if let Expr::List(items) = r
+      && items.len() == 3
+    {
+      return items.iter().all(|item| {
+        let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+        try_eval_to_f64(&v).is_some()
+      });
+    }
+    false
+  }) && rows.len() > 1
+    && {
+      let first_row = if let Expr::List(items) = &rows[0] {
+        items
+          .iter()
+          .filter_map(|item| {
+            let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+            try_eval_to_f64(&v)
+          })
+          .collect::<Vec<_>>()
+      } else {
+        vec![]
+      };
+      rows.len() > 3 || {
+        let mut xs = std::collections::HashSet::new();
+        let mut ys = std::collections::HashSet::new();
+        for r in rows {
+          if let Expr::List(items) = r {
+            if let Some(x) = try_eval_to_f64(
+              &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
+            ) {
+              xs.insert(x.to_bits());
+            }
+            if let Some(y) = try_eval_to_f64(
+              &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
+            ) {
+              ys.insert(y.to_bits());
+            }
+          }
+        }
+        xs.len() > 1 && ys.len() > 1 && first_row[0] != 1.0
+      }
+    }
+}
+
+/// Parse a matrix into a grid (grid[col][row] format)
+fn parse_matrix_to_grid(
+  rows: &[Expr],
+  _func_name: &str,
+) -> Result<
+  (Vec<Vec<f64>>, f64, f64, f64, f64, f64, f64, usize, usize),
+  InterpreterError,
+> {
+  let mut matrix: Vec<Vec<f64>> = Vec::new();
+  let mut v_min = f64::INFINITY;
+  let mut v_max = f64::NEG_INFINITY;
+
+  for row in rows {
+    if let Expr::List(items) = row {
+      let vals: Vec<f64> = items
+        .iter()
+        .map(|item| {
+          let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+          try_eval_to_f64(&v).unwrap_or(f64::NAN)
+        })
+        .collect();
+      for &v in &vals {
+        if v.is_finite() {
+          v_min = v_min.min(v);
+          v_max = v_max.max(v);
+        }
+      }
+      matrix.push(vals);
+    }
+  }
+
+  if matrix.is_empty() {
+    return Ok((vec![], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0));
+  }
+
+  let n_rows = matrix.len();
+  let n_cols = matrix.iter().map(|r| r.len()).max().unwrap_or(1);
+
+  // Convert to grid[col][row] format for marching squares
+  // Row 0 is top (highest y), row n_rows-1 is bottom (lowest y)
+  let mut grid = vec![vec![f64::NAN; n_rows]; n_cols];
+  for (i, row) in matrix.iter().enumerate() {
+    for (j, &val) in row.iter().enumerate() {
+      if j < n_cols {
+        // grid[col][row_from_bottom]
+        grid[j][n_rows - 1 - i] = val;
+      }
+    }
+  }
+
+  Ok((
+    grid,
+    1.0,
+    n_cols as f64,
+    1.0,
+    n_rows as f64,
+    v_min,
+    v_max,
+    n_rows,
+    n_cols,
+  ))
+}
+
+/// Parse {x,y,z} triples into a grid using inverse distance weighting
+fn parse_triples_to_grid(
+  rows: &[Expr],
+  _func_name: &str,
+) -> Result<
+  (Vec<Vec<f64>>, f64, f64, f64, f64, f64, f64, usize, usize),
+  InterpreterError,
+> {
+  let mut points: Vec<(f64, f64, f64)> = Vec::new();
+
+  for row in rows {
+    if let Expr::List(items) = row
+      && items.len() == 3
+    {
+      let x = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
+      );
+      let y = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
+      );
+      let z = try_eval_to_f64(
+        &evaluate_expr_to_expr(&items[2]).unwrap_or(items[2].clone()),
+      );
+      if let (Some(x), Some(y), Some(z)) = (x, y, z)
+        && x.is_finite()
+        && y.is_finite()
+        && z.is_finite()
+      {
+        points.push((x, y, z));
+      }
+    }
+  }
+
+  if points.is_empty() {
+    return Ok((vec![], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0));
+  }
+
+  let x_min = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+  let x_max = points.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+  let y_min = points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+  let y_max = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+  let z_min = points.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
+  let z_max = points.iter().map(|p| p.2).fold(f64::NEG_INFINITY, f64::max);
+
+  let grid_n = FIELD_GRID;
+  let x_range = x_max - x_min;
+  let y_range = y_max - y_min;
+
+  // grid[col][row] with IDW interpolation
+  let mut grid = vec![vec![f64::NAN; grid_n]; grid_n];
+  for i in 0..grid_n {
+    let gx = x_min + (i as f64 + 0.5) / grid_n as f64 * x_range;
+    for j in 0..grid_n {
+      let gy = y_min + (j as f64 + 0.5) / grid_n as f64 * y_range;
+
+      let mut w_sum = 0.0;
+      let mut z_sum = 0.0;
+      let mut exact = None;
+
+      for &(px, py, pz) in &points {
+        let dx = gx - px;
+        let dy = gy - py;
+        let dist_sq = dx * dx + dy * dy;
+        if dist_sq < 1e-20 {
+          exact = Some(pz);
+          break;
+        }
+        let w = 1.0 / dist_sq;
+        w_sum += w;
+        z_sum += w * pz;
+      }
+
+      grid[i][j] = exact.unwrap_or_else(|| z_sum / w_sum);
+    }
+  }
+
+  Ok((
+    grid, x_min, x_max, y_min, y_max, z_min, z_max, grid_n, grid_n,
+  ))
+}
+
+/// ListContourPlot[data] - contour plot from data
+/// Accepts same data formats as ListDensityPlot.
+pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let rows = match &data {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ListContourPlot: first argument must be a list of data".into(),
+      ));
+    }
+  };
+
+  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
+  let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
+    parse_list_data_to_grid(rows, "ListContourPlot")?;
+
+  if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
+    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    return Ok(Expr::Identifier("-Graphics-".to_string()));
+  }
+
+  let area = generate_axes_only(
+    (x_min, x_max),
+    (y_min, y_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+
+  let mut svg = area.svg;
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let grid_cols = grid.len();
+  let grid_rows = grid[0].len();
+  let cell_w = area.plot_w / grid_cols as f64;
+  let cell_h = area.plot_h / grid_rows as f64;
+
+  // Density background
+  for i in 0..grid_cols {
+    for j in 0..grid_rows {
+      let v = grid[i][j];
+      if v.is_finite() {
+        let (r, g, b) = value_to_color(v, v_min, v_max);
+        let sx = area.plot_x0 + i as f64 * cell_w;
+        let sy = area.plot_y0 + (grid_rows - 1 - j) as f64 * cell_h;
+        svg.push_str(&format!(
+          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
+          cell_w + 0.5, cell_h + 0.5
+        ));
+      }
+    }
+  }
+
+  // Contour lines using marching squares
+  let num_levels = 12;
+  let level_step = (v_max - v_min) / (num_levels + 1) as f64;
+  let levels: Vec<f64> = (1..=num_levels)
+    .map(|k| v_min + k as f64 * level_step)
+    .collect();
+
+  let ms_cols = grid_cols.saturating_sub(1);
+  let ms_rows = grid_rows.saturating_sub(1);
+
+  for &level in &levels {
+    let mut segments = Vec::new();
+    for i in 0..ms_cols {
+      for j in 0..ms_rows {
+        let v00 = grid[i][j];
+        let v10 = grid[i + 1][j];
+        let v01 = grid[i][j + 1];
+        let v11 = grid[i + 1][j + 1];
+        if !v00.is_finite()
+          || !v10.is_finite()
+          || !v01.is_finite()
+          || !v11.is_finite()
+        {
+          continue;
+        }
+
+        let b00 = v00 >= level;
+        let b10 = v10 >= level;
+        let b01 = v01 >= level;
+        let b11 = v11 >= level;
+        let case = (b00 as u8)
+          | ((b10 as u8) << 1)
+          | ((b01 as u8) << 2)
+          | ((b11 as u8) << 3);
+
+        if case == 0 || case == 15 {
+          continue;
+        }
+
+        let lerp = |va: f64, vb: f64| -> f64 {
+          if (vb - va).abs() < f64::EPSILON {
+            0.5
+          } else {
+            (level - va) / (vb - va)
+          }
+        };
+
+        let sx = |fx: f64| -> f64 { area.plot_x0 + (i as f64 + fx) * cell_w };
+        let sy = |fy: f64| -> f64 {
+          area.plot_y0 + (grid_rows as f64 - (j as f64 + fy)) * cell_h
+        };
+
+        let bottom = (sx(lerp(v00, v10)), sy(0.0));
+        let top = (sx(lerp(v01, v11)), sy(1.0));
+        let left = (sx(0.0), sy(lerp(v00, v01)));
+        let right = (sx(1.0), sy(lerp(v10, v11)));
+
+        let add_seg = |segs: &mut Vec<((f64, f64), (f64, f64))>,
+                       a: (f64, f64),
+                       b: (f64, f64)| {
+          segs.push((a, b));
+        };
+
+        match case {
+          1 | 14 => add_seg(&mut segments, bottom, left),
+          2 | 13 => add_seg(&mut segments, bottom, right),
+          3 | 12 => add_seg(&mut segments, left, right),
+          4 | 11 => add_seg(&mut segments, left, top),
+          5 => {
+            add_seg(&mut segments, bottom, left);
+            add_seg(&mut segments, top, right);
+          }
+          6 | 9 => add_seg(&mut segments, bottom, top),
+          7 | 8 => add_seg(&mut segments, right, top),
+          10 => {
+            add_seg(&mut segments, bottom, right);
+            add_seg(&mut segments, left, top);
+          }
+          _ => {}
+        }
+      }
+    }
+
+    for (a, b) in &segments {
+      svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#333\" stroke-width=\"{}\" stroke-opacity=\"0.7\"/>\n",
+        a.0, a.1, b.0, b.1, area.render_width as f64 / 1000.0 * 3.0
+      ));
+    }
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
 /// ArrayPlot[{{v11, ...}, ...}] - color grid from matrix, 0=white 1=black (grayscale)
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
