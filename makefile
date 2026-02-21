@@ -5,7 +5,10 @@ help: makefile
 
 .PHONY: test-unit
 test-unit:
-	cargo nextest run
+	cargo nextest run \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
 
 
 # Alias the CLI command to test before running the tests.
