@@ -4749,7 +4749,7 @@ RootLocusPlot,,,,8,2036
 RootMeanSquare,Returns the root mean square of a list,✅,pure,6,2065
 RootOfUnityQ,,,,6,3947
 RootReduce,,,,3,1397
-Roots,,,,1,924
+Roots,Finds roots of polynomial equations as Or conditions,✅,pure,1,924
 RootSum,,,,3,2141
 RootTree,,,,13.1,
 Rotate,Rotates a graphics object,✅,pure,6,315
