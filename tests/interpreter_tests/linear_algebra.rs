@@ -643,3 +643,57 @@ mod eigenvectors {
     assert_eq!(interpret("Eigenvectors[x]").unwrap(), "Eigenvectors[x]");
   }
 }
+
+mod minors {
+  use super::*;
+
+  #[test]
+  fn three_by_three() {
+    assert_eq!(
+      interpret("Minors[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "{{-3, -6, -3}, {-6, -12, -6}, {-3, -6, -3}}"
+    );
+  }
+
+  #[test]
+  fn three_by_three_k2() {
+    assert_eq!(
+      interpret("Minors[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 2]").unwrap(),
+      "{{-3, -6, -3}, {-6, -12, -6}, {-3, -6, -3}}"
+    );
+  }
+
+  #[test]
+  fn three_by_three_k1() {
+    assert_eq!(
+      interpret("Minors[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, 1]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}"
+    );
+  }
+
+  #[test]
+  fn two_by_two() {
+    assert_eq!(
+      interpret("Minors[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  #[test]
+  fn two_by_two_k2() {
+    assert_eq!(interpret("Minors[{{1, 2}, {3, 4}}, 2]").unwrap(), "{{-2}}");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("Minors[{{a, b}, {c, d}}, 2]").unwrap(),
+      "{{-(b*c) + a*d}}"
+    );
+  }
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("Minors[x]").unwrap(), "Minors[x]");
+  }
+}
