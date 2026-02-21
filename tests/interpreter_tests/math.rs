@@ -6221,6 +6221,46 @@ mod inverse_fourier {
   }
 }
 
+mod jacobi_amplitude {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    let result = interpret("JacobiAmplitude[1.0, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.9323150798838539).abs() < 1e-10);
+  }
+
+  #[test]
+  fn zero_u() {
+    assert_eq!(interpret("JacobiAmplitude[0, 0.5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn zero_m() {
+    // am(u, 0) = u
+    let result = interpret("JacobiAmplitude[0.5, 0.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.5).abs() < 1e-10);
+  }
+
+  #[test]
+  fn inverse_of_elliptic_f() {
+    let am = interpret("JacobiAmplitude[1.5, 0.3]").unwrap();
+    let check = interpret(&format!("EllipticF[{}, 0.3]", am)).unwrap();
+    let val: f64 = check.parse().unwrap();
+    assert!((val - 1.5).abs() < 1e-6);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("JacobiAmplitude[u, m]").unwrap(),
+      "JacobiAmplitude[u, m]"
+    );
+  }
+}
+
 mod elliptic_pi {
   use super::*;
 

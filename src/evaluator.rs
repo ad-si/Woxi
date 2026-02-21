@@ -5279,6 +5279,9 @@ pub fn evaluate_function_call_ast(
     "EllipticTheta" if args.len() == 3 => {
       return crate::functions::math_ast::elliptic_theta_ast(args);
     }
+    "JacobiAmplitude" if args.len() == 2 => {
+      return crate::functions::math_ast::jacobi_amplitude_ast(args);
+    }
     "JacobiDN" if args.len() == 2 => {
       return crate::functions::math_ast::jacobi_dn_ast(args);
     }

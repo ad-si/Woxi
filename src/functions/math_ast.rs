@@ -4401,6 +4401,37 @@ fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
   (sn, cn, dn)
 }
 
+/// JacobiAmplitude[u, m] - amplitude for Jacobi elliptic functions
+/// am(u, m) = arcsin(sn(u, m)), inverse of EllipticF
+pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiAmplitude expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let u = &args[0];
+  let m = &args[1];
+
+  // JacobiAmplitude[0, m] = 0
+  if is_expr_zero(u) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation
+  if let (Some(u_f), Some(m_f)) = (try_eval_to_f64(u), try_eval_to_f64(m))
+    && (matches!(u, Expr::Real(_)) || matches!(m, Expr::Real(_)))
+  {
+    let (sn, cn, _) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(sn.atan2(cn)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiAmplitude".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// JacobiDN[u, m] - Jacobi elliptic function dn
 pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

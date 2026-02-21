@@ -2935,7 +2935,7 @@ ItemSize,,,,6,490
 ItemStyle,,,,6,1431
 ItoProcess,,,,9,1659
 JaccardDissimilarity,,,,6,4104
-JacobiAmplitude,,,,1,1300
+JacobiAmplitude,Amplitude for Jacobi elliptic functions,✅,pure,1,1300
 JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1,919
 JacobiCN,Jacobi elliptic function cn,✅,pure,1,595
 JacobiCS,Jacobi elliptic function cs (cn/sn),✅,pure,1,3344
