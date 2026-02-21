@@ -4715,6 +4715,77 @@ fn elliptic_k(m: f64) -> f64 {
   std::f64::consts::PI / (2.0 * a)
 }
 
+/// EllipticE[m] - Complete elliptic integral of the second kind
+pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "EllipticE expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(0) => {
+      // EllipticE[0] = Pi/2
+      Ok(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::Identifier("Pi".to_string())),
+        right: Box::new(Expr::Integer(2)),
+      })
+    }
+    Expr::Integer(1) => {
+      // EllipticE[1] = 1
+      Ok(Expr::Integer(1))
+    }
+    Expr::Real(f) => {
+      if *f == 0.0 {
+        Ok(Expr::Real(std::f64::consts::FRAC_PI_2))
+      } else if *f == 1.0 {
+        Ok(Expr::Real(1.0))
+      } else if *f < 1.0 {
+        Ok(Expr::Real(elliptic_e(*f)))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "EllipticE".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "EllipticE".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute complete elliptic integral E(m) via series expansion
+/// E(m) = (pi/2) * [1 - sum_{n=1}^inf ((2n-1)!!/(2n)!!)^2 * m^n / (2n-1)]
+fn elliptic_e(m: f64) -> f64 {
+  // E(m) = (pi/2) * Σ_{n=0}^∞ ((2n)!/(2^n n!))^2 * (-m^n)/((2n-1)*4^n)
+  // Simpler: E(m) = (pi/2) * [1 - Σ_{n=1}^∞ (1/2 choose n)^2 * m^n / (2n-1)]
+  // Using the series: E(m) = pi/2 * Σ t_n where
+  // t_0 = 1, t_n = t_{n-1} * ((2n-1)/(2n))^2 * m * (2n-1)/(2n+1-2) ... hmm
+
+  // Better: use the standard power series
+  // E(m) = pi/2 * [1 - (1/2)^2 * m/1 - (1*3)^2/(2*4)^2 * m^2/3 - (1*3*5)^2/(2*4*6)^2 * m^3/5 - ...]
+  // Term_n = ((2n-1)!!/(2n)!!)^2 * m^n / (2n-1) for n >= 1
+  let mut sum = 1.0;
+  let mut coeff = 1.0; // ((2n-1)!!/(2n)!!)^2
+
+  for n in 1..500 {
+    let nf = n as f64;
+    // coeff_n = coeff_{n-1} * ((2n-1)/(2n))^2
+    let ratio = (2.0 * nf - 1.0) / (2.0 * nf);
+    coeff *= ratio * ratio;
+    let term = coeff * m.powi(n) / (2.0 * nf - 1.0);
+    sum -= term;
+    if term.abs() < 1e-16 * sum.abs() {
+      break;
+    }
+  }
+
+  std::f64::consts::FRAC_PI_2 * sum
+}
+
 /// BesselY[n, z] - Bessel function of the second kind
 pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

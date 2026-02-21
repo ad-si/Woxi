@@ -5018,6 +5018,9 @@ pub fn evaluate_function_call_ast(
     "EllipticK" if args.len() == 1 => {
       return crate::functions::math_ast::elliptic_k_ast(args);
     }
+    "EllipticE" if args.len() == 1 => {
+      return crate::functions::math_ast::elliptic_e_ast(args);
+    }
     "Zeta" if args.len() == 1 => {
       return crate::functions::math_ast::zeta_ast(args);
     }
@@ -10138,6 +10141,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "BesselI"
     | "BesselK"
     | "EllipticK"
+    | "EllipticE"
     | "LegendreP"
     | "PolyLog"
     | "ExpIntegralEi"
@@ -10150,7 +10154,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "LaguerreL"
     | "LogIntegral"
     | "HermiteH"
-    | "EllipticE"
     | "Conjugate"
     | "Re"
     | "Im"
