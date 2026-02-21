@@ -644,6 +644,50 @@ mod eigenvectors {
   }
 }
 
+mod signature {
+  use super::*;
+
+  #[test]
+  fn identity() {
+    assert_eq!(interpret("Signature[{1, 2, 3}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn even_permutation() {
+    assert_eq!(interpret("Signature[{2, 3, 1}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn odd_permutation() {
+    assert_eq!(interpret("Signature[{2, 1, 3}]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn reverse() {
+    assert_eq!(interpret("Signature[{3, 2, 1}]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn duplicate_elements() {
+    assert_eq!(interpret("Signature[{1, 2, 1}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("Signature[{1}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("Signature[{c, a, b}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("Signature[x]").unwrap(), "Signature[x]");
+  }
+}
+
 mod minors {
   use super::*;
 

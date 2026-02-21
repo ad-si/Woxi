@@ -2899,6 +2899,34 @@ pub fn evaluate_function_call_ast(
     "Permutations" if !args.is_empty() && args.len() <= 2 => {
       return list_helpers_ast::permutations_ast(args);
     }
+    "Signature" if args.len() == 1 => {
+      if let Expr::List(items) = &args[0] {
+        // Check for duplicates first
+        let strs: Vec<String> =
+          items.iter().map(crate::syntax::expr_to_string).collect();
+        for i in 0..strs.len() {
+          for j in (i + 1)..strs.len() {
+            if strs[i] == strs[j] {
+              return Ok(Expr::Integer(0));
+            }
+          }
+        }
+        // Count inversions to determine signature
+        let mut inversions = 0;
+        for i in 0..strs.len() {
+          for j in (i + 1)..strs.len() {
+            if strs[i] > strs[j] {
+              inversions += 1;
+            }
+          }
+        }
+        return Ok(Expr::Integer(if inversions % 2 == 0 { 1 } else { -1 }));
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Signature".to_string(),
+        args: args.to_vec(),
+      });
+    }
     "Subsets" if !args.is_empty() && args.len() <= 3 => {
       return list_helpers_ast::subsets_ast(args);
     }
