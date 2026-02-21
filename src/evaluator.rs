@@ -6886,7 +6886,8 @@ fn evaluate_function_call_ast_inner(
     | "RepeatedNull"
     | "NumberForm"
     | "Information"
-    | "ListPlot3D" => {
+    | "ListPlot3D"
+    | "TreeForm" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
