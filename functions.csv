@@ -4396,7 +4396,7 @@ Protect,Protects symbols from modification,✅,stateful,1,721
 Protected,Attribute preventing modification,✅,pure,1,1544
 ProteinData,,,,7,745
 Pruning,,,,8,2828
-PseudoInverse,,,,1,1543
+PseudoInverse,Compute Moore-Penrose pseudoinverse of a matrix,✅,pure,1,1543
 PsychrometricPropertyData,,,,11.1,4567
 PublicKey,,,,10.1,4947
 PublisherID,,,,11.2,

@@ -741,3 +741,76 @@ mod minors {
     assert_eq!(interpret("Minors[x]").unwrap(), "Minors[x]");
   }
 }
+
+mod pseudo_inverse {
+  use super::*;
+
+  #[test]
+  fn invertible_2x2() {
+    assert_eq!(
+      interpret("PseudoInverse[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{-2, 1}, {3/2, -1/2}}"
+    );
+  }
+
+  #[test]
+  fn invertible_1x1() {
+    assert_eq!(interpret("PseudoInverse[{{5}}]").unwrap(), "{{1/5}}");
+  }
+
+  #[test]
+  fn rectangular_2x3() {
+    assert_eq!(
+      interpret("PseudoInverse[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "{{-17/18, 4/9}, {-1/9, 1/9}, {13/18, -2/9}}"
+    );
+  }
+
+  #[test]
+  fn row_vector() {
+    assert_eq!(
+      interpret("PseudoInverse[{{1, 2, 3}}]").unwrap(),
+      "{{1/14}, {1/7}, {3/14}}"
+    );
+  }
+
+  #[test]
+  fn column_vector() {
+    assert_eq!(
+      interpret("PseudoInverse[{{1}, {2}, {3}}]").unwrap(),
+      "{{1/14, 1/7, 3/14}}"
+    );
+  }
+
+  #[test]
+  fn zero_matrix() {
+    assert_eq!(
+      interpret("PseudoInverse[{{0, 0}, {0, 0}}]").unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn identity_property_row_vector() {
+    // M.M+.M == M for a row vector
+    assert_eq!(
+      interpret("{{1, 2, 3}}.PseudoInverse[{{1, 2, 3}}].{{1, 2, 3}}").unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn identity_property_rectangular() {
+    // M+.M.M+ == M+ for a rectangular matrix
+    let pi = interpret("PseudoInverse[{{1, 2, 3}, {4, 5, 6}}]").unwrap();
+    let check =
+      interpret(&format!("{}.{{{{1, 2, 3}}, {{4, 5, 6}}}}.{}", pi, pi))
+        .unwrap();
+    assert_eq!(check, pi);
+  }
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("PseudoInverse[x]").unwrap(), "PseudoInverse[x]");
+  }
+}

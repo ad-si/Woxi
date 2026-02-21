@@ -6482,6 +6482,9 @@ fn evaluate_function_call_ast_inner(
     "Inverse" if args.len() == 1 => {
       return crate::functions::linear_algebra_ast::inverse_ast(args);
     }
+    "PseudoInverse" if args.len() == 1 => {
+      return crate::functions::linear_algebra_ast::pseudo_inverse_ast(args);
+    }
     "LinearSolve" if args.len() == 2 => {
       return crate::functions::linear_algebra_ast::linear_solve_ast(args);
     }

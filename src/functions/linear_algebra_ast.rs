@@ -7,6 +7,117 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
+/// Transpose a matrix (Vec<Vec<Expr>>)
+fn transpose_matrix(m: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
+  if m.is_empty() {
+    return vec![];
+  }
+  let nrows = m.len();
+  let ncols = m[0].len();
+  let mut result = vec![vec![Expr::Integer(0); nrows]; ncols];
+  for i in 0..nrows {
+    for j in 0..ncols {
+      result[j][i] = m[i][j].clone();
+    }
+  }
+  result
+}
+
+/// Multiply two matrices
+fn mat_mul(a: &[Vec<Expr>], b: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
+  let arows = a.len();
+  let acols = if arows > 0 { a[0].len() } else { 0 };
+  let bcols = if !b.is_empty() { b[0].len() } else { 0 };
+  let mut result = vec![vec![Expr::Integer(0); bcols]; arows];
+  for i in 0..arows {
+    for j in 0..bcols {
+      let mut sum = Expr::Integer(0);
+      for k in 0..acols {
+        sum = eval_add(&sum, &eval_mul(&a[i][k], &b[k][j]));
+      }
+      result[i][j] = sum;
+    }
+  }
+  result
+}
+
+/// Try to invert a square matrix. Returns None if singular.
+fn try_invert(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<Expr>>> {
+  let expr = matrix_to_expr(matrix.to_vec());
+  match inverse_ast(&[expr]) {
+    Ok(result) => expr_to_matrix(&result),
+    Err(_) => None,
+  }
+}
+
+/// PseudoInverse[matrix] - Moore-Penrose pseudoinverse
+pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PseudoInverse expects exactly 1 argument".into(),
+    ));
+  }
+  let matrix = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "PseudoInverse".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let nrows = matrix.len();
+  if nrows == 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  let ncols = matrix[0].len();
+
+  // Check if zero matrix
+  let is_zero = matrix.iter().all(|row| {
+    row.iter().all(|e| {
+      matches!(e, Expr::Integer(0))
+        || matches!(e, Expr::Real(x) if *x == 0.0)
+        || matches!(e, Expr::BigInteger(n) if *n == num_bigint::BigInt::from(0))
+    })
+  });
+  if is_zero {
+    let result = vec![vec![Expr::Integer(0); nrows]; ncols];
+    return Ok(matrix_to_expr(result));
+  }
+
+  // Square non-singular: just use Inverse
+  if nrows == ncols
+    && let Ok(inv) = inverse_ast(&[args[0].clone()])
+  {
+    return Ok(inv);
+  }
+
+  let mt = transpose_matrix(&matrix);
+
+  // Try left pseudoinverse: (M^T M)^{-1} M^T
+  // Works when M has full column rank (ncols <= nrows)
+  let mtm = mat_mul(&mt, &matrix);
+  if let Some(mtm_inv) = try_invert(&mtm) {
+    let result = mat_mul(&mtm_inv, &mt);
+    return Ok(matrix_to_expr(result));
+  }
+
+  // Try right pseudoinverse: M^T (M M^T)^{-1}
+  // Works when M has full row rank (nrows <= ncols)
+  let mmt = mat_mul(&matrix, &mt);
+  if let Some(mmt_inv) = try_invert(&mmt) {
+    let result = mat_mul(&mt, &mmt_inv);
+    return Ok(matrix_to_expr(result));
+  }
+
+  // For rank-deficient matrices, return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "PseudoInverse".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Helper: extract a matrix (list of lists) from an Expr.
 /// Returns None if it's not a valid matrix.
 fn expr_to_matrix(expr: &Expr) -> Option<Vec<Vec<Expr>>> {
@@ -217,6 +328,9 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Compute determinant recursively via cofactor expansion
 fn determinant(matrix: &[Vec<Expr>]) -> Expr {
   let n = matrix.len();
+  if n == 0 {
+    return Expr::Integer(1);
+  }
   if n == 1 {
     return matrix[0][0].clone();
   }
