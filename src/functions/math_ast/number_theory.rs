@@ -1,9 +1,9 @@
+#[allow(unused_imports)]
+use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 use num_bigint::BigInt;
 use num_traits::Signed;
-#[allow(unused_imports)]
-use super::*;
 
 pub fn bigint_gcd(a: BigInt, b: BigInt) -> BigInt {
   use num_traits::Zero;
@@ -2567,7 +2567,6 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(max_n - a0 as i128))
 }
 
-
 /// PartitionsP[n] - Number of unrestricted partitions of the integer n
 pub fn partitions_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -2603,5 +2602,3 @@ pub fn partitions_p(n: usize) -> BigInt {
   }
   dp[n].clone()
 }
-
-

@@ -1,8 +1,8 @@
+#[allow(unused_imports)]
+use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 use num_bigint::BigInt;
-#[allow(unused_imports)]
-use super::*;
 
 /// Helper - constants are kept symbolic, no direct f64 conversion in expr_to_num.
 pub fn constant_to_f64(_name: &str) -> Option<f64> {
@@ -912,4 +912,3 @@ pub fn expr_to_f64(expr: &Expr) -> Option<f64> {
     _ => None,
   }
 }
-

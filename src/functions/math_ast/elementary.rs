@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::Expr;
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::Expr;
 
 /// Abs[x] - Absolute value
 pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -673,7 +673,11 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Mod[m, n, d] - 3-argument form: m - n * Floor[(m - d) / n]
-pub fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
+pub fn mod3_ast(
+  m: &Expr,
+  n: &Expr,
+  d: &Expr,
+) -> Result<Expr, InterpreterError> {
   // Try exact rational arithmetic
   if let (Some((mn, md)), Some((nn, nd)), Some((dn, dd))) =
     (try_as_rational(m), try_as_rational(n), try_as_rational(d))
@@ -1019,7 +1023,10 @@ pub fn chop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   chop_expr(&args[0], tolerance)
 }
 
-pub fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
+pub fn chop_expr(
+  expr: &Expr,
+  tolerance: f64,
+) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Real(f) => {
       if f.abs() < tolerance {
@@ -1356,4 +1363,3 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
   }
 }
-

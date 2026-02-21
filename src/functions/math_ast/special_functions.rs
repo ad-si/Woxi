@@ -1,8 +1,8 @@
-use crate::InterpreterError;
-use crate::syntax::{Expr, BinaryOperator, UnaryOperator};
-use num_bigint::BigInt;
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
+use num_bigint::BigInt;
 
 /// Pochhammer[a, n] - Rising factorial (Pochhammer symbol): a * (a+1) * ... * (a+n-1)
 pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2368,7 +2368,10 @@ pub fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
 }
 
 /// Multiply zeta(2n) coefficient by n! and build the expression
-pub fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
+pub fn polygamma_multiply_zeta_by_nfact(
+  two_n: usize,
+  nfact: i128,
+) -> Option<Expr> {
   let (b_num, b_den) = bernoulli_number(two_n)?;
   if b_num == 0 {
     return None;
@@ -3517,4 +3520,3 @@ pub fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
 
   sum
 }
-

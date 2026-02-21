@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::{Expr, BinaryOperator};
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::{BinaryOperator, Expr};
 
 /// JacobiP[n, a, b, x] - Jacobi polynomial P_n^{(a,b)}(x)
 /// Uses the three-term recurrence relation for numerical evaluation.
@@ -1675,4 +1675,3 @@ pub fn hermite_coefficients(n: usize) -> Option<Vec<i128>> {
 
   Some(curr)
 }
-

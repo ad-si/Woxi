@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::Expr;
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::Expr;
 
 /// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
 /// Returns Some((k, n)) in lowest terms, None if not recognized.
@@ -1945,4 +1945,3 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec(),
   })
 }
-

@@ -1,7 +1,7 @@
-use crate::InterpreterError;
-use crate::syntax::Expr;
 #[allow(unused_imports)]
 use super::*;
+use crate::InterpreterError;
+use crate::syntax::Expr;
 
 /// Total[list] - Sum of all elements in a list
 /// Total[list, n] - Sum across levels 1 through n
@@ -73,7 +73,10 @@ pub fn total_sum_level1(items: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Recursively add two expressions, threading over lists element-wise
-pub fn add_exprs_recursive(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
+pub fn add_exprs_recursive(
+  a: &Expr,
+  b: &Expr,
+) -> Result<Expr, InterpreterError> {
   match (a, b) {
     (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => {
       let results: Result<Vec<Expr>, _> = la
@@ -1046,4 +1049,3 @@ pub fn quantile_single(
 }
 
 // ─── PowerExpand ──────────────────────────────────────────────────────
-
