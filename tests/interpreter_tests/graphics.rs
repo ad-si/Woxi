@@ -1005,6 +1005,31 @@ mod plot3d {
     }
   }
 
+  mod list_contour_plots {
+    use super::*;
+
+    #[test]
+    fn list_contour_plot_matrix() {
+      insta::assert_snapshot!(export_svg(
+        "ListContourPlot[{{1, 1, 1, 1}, {1, 2, 1, 2}, {1, 1, 3, 1}, {1, 2, 1, 4}}]"
+      ));
+    }
+
+    #[test]
+    fn list_contour_plot_triples() {
+      insta::assert_snapshot!(export_svg(
+        "ListContourPlot[{{0, 0, 1}, {1, 0, 0}, {0, 1, 0}, {1, 1, 1}, {0.5, 0.5, 0.5}}]"
+      ));
+    }
+
+    #[test]
+    fn list_contour_plot_image_size() {
+      insta::assert_snapshot!(export_svg(
+        "ListContourPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}, ImageSize -> 200]"
+      ));
+    }
+  }
+
   mod graphics3d_primitives {
     use super::*;
 

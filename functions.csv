@@ -3219,7 +3219,7 @@ LiouvilleLambda,,,,7,3506
 List,Represents a list of elements,✅,pure,1,1
 Listable,Attribute for automatic threading over lists,✅,pure,1,568
 ListAnimate,,,,6,926
-ListContourPlot,,,,1,902
+ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1,902
 ListContourPlot3D,,,,6,1858
 ListConvolve,,,,4,1110
 ListCorrelate,,,,4,1129
