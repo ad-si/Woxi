@@ -6156,7 +6156,7 @@ WordStem,,,,10.1,4138
 WordTranslation,,,,10.3,2712
 WorkingPrecision,Option for numerical precision,✅,pure,1,412
 WrapAround,,,,10,5587
-Write,,,,1,1246
+Write,Write expressions to an output stream in OutputForm,✅,effectful,1,1246
 WriteLine,,,,10,2282
 WriteString,Write a string to an output stream,✅,effectful,1,930
 Wronskian,,,,7,876
