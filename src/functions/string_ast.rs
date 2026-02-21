@@ -2435,15 +2435,37 @@ fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
         ))
       }
     }
-    // InputStream[String, n] created by StringToStream evaluation
+    // InputStream[name, id] — look up in stream registry
     Expr::FunctionCall { name, args }
       if name == "InputStream" && args.len() == 2 =>
     {
-      // The InputStream was already evaluated from StringToStream;
-      // we can't recover the original text. Return unevaluated.
-      Err(InterpreterError::EvaluationError(
-        "ReadList: stream objects are not yet supported, use StringToStream[\"text\"] directly".into(),
-      ))
+      if let Expr::Integer(id) = &args[1] {
+        let stream_id = *id as usize;
+        crate::STREAM_REGISTRY.with(|reg| {
+          let registry = reg.borrow();
+          if let Some(stream) = registry.get(&stream_id) {
+            match &stream.kind {
+              crate::StreamKind::StringStream(text) => Ok(text.clone()),
+              crate::StreamKind::FileStream(path) => {
+                std::fs::read_to_string(path).map_err(|_| {
+                  InterpreterError::EvaluationError(format!(
+                    "ReadList::noopen: Cannot open {}.",
+                    path
+                  ))
+                })
+              }
+            }
+          } else {
+            Err(InterpreterError::EvaluationError(
+              "ReadList: stream is not open".into(),
+            ))
+          }
+        })
+      } else {
+        Err(InterpreterError::EvaluationError(
+          "ReadList: invalid stream object".into(),
+        ))
+      }
     }
     // String path → read file
     Expr::String(path) => std::fs::read_to_string(path).map_err(|_| {

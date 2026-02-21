@@ -841,7 +841,7 @@ ClipPlanesStyle,,,,10,3353
 ClipRange,,,,9,3344
 Clock,,,,6,1244
 ClockGauge,,,,9,2311
-Close,,,,1,863
+Close,Closes an open stream and returns its name,✅,effectful,1,863
 CloseKernels,,,,7,2371
 ClosenessCentrality,,,,8,3008
 Closing,,,,7,1916
@@ -3950,12 +3950,12 @@ Opacity,Specifies opacity for graphics,✅,pure,6,37
 OpacityFunction,,,,10.2,2999
 OpacityFunctionScaling,,,,10.2,4315
 OpaqueRawPointer,,,,13.3,
-OpenAppend,,,,1,2188
+OpenAppend,Opens a file for appending,✅,effectful,1,2188
 Opener,,,,6,2851
 OpenerView,,,,6,1471
 Opening,,,,7,2632
-OpenRead,,,,1,1278
-OpenWrite,,,,1,1199
+OpenRead,Opens a file for reading,✅,effectful,1,1278
+OpenWrite,Opens a file for writing,✅,effectful,1,1199
 Operate,Applies a function to the head of an expression,✅,pure,1,2549
 OperatingSystem,,,,7,4612
 OperationDeclaration,,,,14.1,
@@ -5261,7 +5261,7 @@ StringTake,Returns a substring of a string,✅,pure,2,456
 StringTakeDrop,Returns the taken and dropped parts of a string as a list,✅,pure,12.3,
 StringTemplate,,,,10,1251
 StringToByteArray,,,,11.2,3578
-StringToStream,,,,2,1562
+StringToStream,Creates an input stream from a string,✅,pure,2,1562
 StringTrim,Removes whitespace from the beginning and end of a string,✅,pure,7,1098
 StripBoxes,,,,6,4052
 StripCellGrouping,,,,14,

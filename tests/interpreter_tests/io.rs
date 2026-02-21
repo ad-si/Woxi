@@ -205,6 +205,73 @@ mod create_file {
   }
 }
 
+mod streams {
+  use super::*;
+
+  #[test]
+  fn string_to_stream_returns_input_stream() {
+    let result = interpret(r#"Head[StringToStream["hello"]]"#).unwrap();
+    assert_eq!(result, "InputStream");
+  }
+
+  #[test]
+  fn close_string_stream() {
+    let result =
+      interpret(r#"str = StringToStream["hello world"]; Close[str]"#).unwrap();
+    assert_eq!(result, "String");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn open_read_and_close() {
+    // Create a temp file, open it, and close it
+    let result =
+      interpret(r#"file = CreateFile[]; f = OpenRead[file]; Close[f]"#)
+        .unwrap();
+    // Close returns the filename, which is a non-empty string
+    assert!(!result.is_empty(), "Close should return the filename");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn open_read_nonexistent() {
+    let result =
+      interpret(r#"OpenRead["/nonexistent/path/file.txt"]"#).unwrap();
+    assert_eq!(result, "$Failed");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn open_write_and_close() {
+    let result =
+      interpret(r#"file = CreateFile[]; f = OpenWrite[file]; Close[f]"#)
+        .unwrap();
+    assert!(!result.is_empty());
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn open_append_and_close() {
+    let result =
+      interpret(r#"file = CreateFile[]; f = OpenAppend[file]; Close[f]"#)
+        .unwrap();
+    assert!(!result.is_empty());
+  }
+
+  #[test]
+  fn close_already_closed() {
+    // Closing an already-closed stream should return unevaluated
+    let result =
+      interpret(r#"str = StringToStream["x"]; Close[str]; Close[str]"#)
+        .unwrap();
+    assert!(
+      result.starts_with("Close["),
+      "Close on already-closed stream should return unevaluated, got: {}",
+      result
+    );
+  }
+}
+
 mod run {
   use super::*;
 

@@ -4218,6 +4218,167 @@ pub fn evaluate_function_call_ast(
         Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
       };
     }
+    // OpenRead[file] — open a file for reading, return InputStream[name, id]
+    #[cfg(not(target_arch = "wasm32"))]
+    "OpenRead" if args.len() == 1 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        other => {
+          return Ok(Expr::FunctionCall {
+            name: "OpenRead".to_string(),
+            args: vec![other.clone()],
+          });
+        }
+      };
+      if !std::path::Path::new(&filename).exists() {
+        eprintln!("OpenRead::noopen: Cannot open {}.", filename);
+        return Ok(Expr::Identifier("$Failed".to_string()));
+      }
+      let id = crate::register_stream(
+        filename.clone(),
+        crate::StreamKind::FileStream(filename.clone()),
+      );
+      return Ok(Expr::FunctionCall {
+        name: "InputStream".to_string(),
+        args: vec![Expr::String(filename), Expr::Integer(id as i128)],
+      });
+    }
+    // OpenWrite[file] — open a file for writing, return OutputStream[name, id]
+    #[cfg(not(target_arch = "wasm32"))]
+    "OpenWrite" if args.len() <= 1 => {
+      let filename = if args.is_empty() {
+        let path = crate::utils::create_file(None)
+          .map_err(|e| InterpreterError::EvaluationError(e.to_string()))?;
+        path.to_string_lossy().into_owned()
+      } else {
+        match &args[0] {
+          Expr::String(s) => s.clone(),
+          other => {
+            return Ok(Expr::FunctionCall {
+              name: "OpenWrite".to_string(),
+              args: vec![other.clone()],
+            });
+          }
+        }
+      };
+      // Create or truncate the file
+      std::fs::File::create(&filename).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "OpenWrite: cannot open {}: {}",
+          filename, e
+        ))
+      })?;
+      let id = crate::register_stream(
+        filename.clone(),
+        crate::StreamKind::FileStream(filename.clone()),
+      );
+      return Ok(Expr::FunctionCall {
+        name: "OutputStream".to_string(),
+        args: vec![Expr::String(filename), Expr::Integer(id as i128)],
+      });
+    }
+    // OpenAppend[file] — open a file for appending, return OutputStream[name, id]
+    #[cfg(not(target_arch = "wasm32"))]
+    "OpenAppend" if args.len() == 1 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        other => {
+          return Ok(Expr::FunctionCall {
+            name: "OpenAppend".to_string(),
+            args: vec![other.clone()],
+          });
+        }
+      };
+      // Open for appending (create if not exists)
+      std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&filename)
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!(
+            "OpenAppend: cannot open {}: {}",
+            filename, e
+          ))
+        })?;
+      let id = crate::register_stream(
+        filename.clone(),
+        crate::StreamKind::FileStream(filename.clone()),
+      );
+      return Ok(Expr::FunctionCall {
+        name: "OutputStream".to_string(),
+        args: vec![Expr::String(filename), Expr::Integer(id as i128)],
+      });
+    }
+    // StringToStream["text"] — create an input stream from a string
+    "StringToStream" if args.len() == 1 => {
+      let text = match &args[0] {
+        Expr::String(s) => s.clone(),
+        other => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "StringToStream: argument must be a string, got {}",
+            crate::syntax::expr_to_string(other)
+          )));
+        }
+      };
+      let id = crate::register_stream(
+        "String".to_string(),
+        crate::StreamKind::StringStream(text),
+      );
+      return Ok(Expr::FunctionCall {
+        name: "InputStream".to_string(),
+        args: vec![
+          Expr::String("String".to_string()),
+          Expr::Integer(id as i128),
+        ],
+      });
+    }
+    // Close[stream] — close an open stream
+    "Close" if args.len() == 1 => {
+      // Extract stream ID from InputStream[name, id] or OutputStream[name, id]
+      match &args[0] {
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "InputStream"
+          || stream_head == "OutputStream")
+          && stream_args.len() == 2 =>
+        {
+          let id = match &stream_args[1] {
+            Expr::Integer(n) => *n as usize,
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "Close".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          };
+          match crate::close_stream(id) {
+            Some(name) => return Ok(Expr::String(name)),
+            None => {
+              let stream_str = crate::syntax::expr_to_string(&args[0]);
+              eprintln!("{} is not open.", stream_str);
+              return Ok(Expr::FunctionCall {
+                name: "Close".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          }
+        }
+        Expr::String(s) => {
+          eprintln!("{} is not open.", s);
+          return Ok(Expr::FunctionCall {
+            name: "Close".to_string(),
+            args: args.to_vec(),
+          });
+        }
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "Close".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
     "AbsoluteTime" => {
       return crate::functions::datetime_ast::absolute_time_ast(args);
     }
