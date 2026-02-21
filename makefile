@@ -82,8 +82,23 @@ wasm-build:
 	wasm-pack build \
 		-d tests/cli/playground/pkg \
 		--target web \
+		--dev \
 		--no-default-features \
 		--features wasm
+	mkdir -p tests/book/playground/pkg
+	cp -R tests/cli/playground/pkg/. tests/book/playground/pkg/
+
+
+.PHONY: wasm-build-production
+wasm-build-production:
+	wasm-pack build \
+		-d tests/cli/playground/pkg \
+		--target web \
+		--release \
+		--no-default-features \
+		--features wasm
+	mkdir -p tests/book/playground/pkg
+	cp -R tests/cli/playground/pkg/. tests/book/playground/pkg/
 
 
 .PHONY: jupyterlite-kernel-build
