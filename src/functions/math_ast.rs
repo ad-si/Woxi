@@ -101,6 +101,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
   use crate::syntax::BinaryOperator;
   match expr {
     Expr::Integer(n) => Some(*n as f64),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_f64()
+    }
     Expr::Real(f) => Some(*f),
     Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
     Expr::Constant(name) => match name.as_str() {
@@ -18154,6 +18158,168 @@ pub fn fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// InverseFourier[list] or InverseFourier[list, opts] - Inverse discrete Fourier transform
 pub fn inverse_fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   fourier_impl("InverseFourier", args, true)
+}
+
+/// Wynn epsilon algorithm for series acceleration.
+/// Takes a sequence of partial sums and returns an accelerated estimate.
+/// Polynomial extrapolation using Neville's algorithm.
+/// Given points (x_i, y_i) representing (1/n, S_n), extrapolate to x=0.
+fn neville_extrapolation(xs: &[f64], ys: &[f64]) -> f64 {
+  let n = xs.len();
+  if n == 0 {
+    return 0.0;
+  }
+  if n == 1 {
+    return ys[0];
+  }
+
+  let mut c = ys.to_vec();
+  for j in 1..n {
+    for i in (j..n).rev() {
+      // Neville's algorithm for interpolation at x=0:
+      // c[i] = (x_i * c[i-1] - x_{i-j} * c[i]) / (x_i - x_{i-j})
+      // Since we evaluate at x=0, this simplifies to:
+      let denom = xs[i] - xs[i - j];
+      if denom.abs() < 1e-300 {
+        continue;
+      }
+      c[i] = (xs[i] * c[i - 1] - xs[i - j] * c[i]) / denom;
+    }
+  }
+  c[n - 1]
+}
+
+/// NSum[expr, {i, min, max}] - Numerical summation
+pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Ok(Expr::FunctionCall {
+      name: "NSum".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let body = &args[0];
+  let iter_spec = &args[1];
+
+  let items = match iter_spec {
+    Expr::List(items) if items.len() >= 2 => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NSum".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let var_name = match &items[0] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NSum".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.len() < 3 {
+    return Ok(Expr::FunctionCall {
+      name: "NSum".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let min_val = match try_eval_to_f64(&items[1]) {
+    Some(v) => v as i64,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "NSum".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Check for infinite sum
+  let is_infinite = matches!(&items[2], Expr::Identifier(s) if s == "Infinity");
+
+  if is_infinite {
+    // Numerical infinite sum using polynomial extrapolation in 1/n
+    // 1. Compute partial sums at several checkpoint values of n
+    // 2. Extrapolate to n → ∞ (i.e., 1/n → 0) using Neville's algorithm
+    let checkpoints: Vec<i64> = vec![50, 100, 150, 200, 300, 400, 500];
+    let mut running_sum = 0.0_f64;
+    let mut checkpoint_idx = 0;
+    let mut xs: Vec<f64> = Vec::new();
+    let mut ys: Vec<f64> = Vec::new();
+
+    let max_n = *checkpoints.last().unwrap();
+    for i in min_val..(min_val + max_n) {
+      let sub_val = Expr::Integer(i as i128);
+      let substituted =
+        crate::syntax::substitute_variable(body, &var_name, &sub_val);
+      let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+      let term = match try_eval_to_f64(&val) {
+        Some(f) => f,
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "NSum".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+
+      if !term.is_finite() {
+        break;
+      }
+      running_sum += term;
+
+      let current_n = i - min_val + 1;
+      if checkpoint_idx < checkpoints.len()
+        && current_n == checkpoints[checkpoint_idx]
+      {
+        xs.push(1.0 / current_n as f64);
+        ys.push(running_sum);
+        checkpoint_idx += 1;
+      }
+    }
+
+    if xs.is_empty() {
+      return Ok(Expr::Real(running_sum));
+    }
+
+    let result = neville_extrapolation(&xs, &ys);
+    return Ok(Expr::Real(result));
+  }
+
+  // Finite sum
+  let max_val = match try_eval_to_f64(&items[2]) {
+    Some(v) => v as i64,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "NSum".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut sum = 0.0_f64;
+  for i in min_val..=max_val {
+    let sub_val = Expr::Integer(i as i128);
+    let substituted =
+      crate::syntax::substitute_variable(body, &var_name, &sub_val);
+    let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+    let term = match try_eval_to_f64(&val) {
+      Some(f) => f,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "NSum".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    sum += term;
+  }
+
+  Ok(Expr::Real(sum))
 }
 
 /// ManhattanDistance[u, v] - Manhattan (L1) distance between two points

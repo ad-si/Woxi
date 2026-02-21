@@ -38,6 +38,40 @@ fn is_known_wolfram_function(name: &str) -> bool {
   KNOWN_WOLFRAM_FUNCTIONS.contains(name)
 }
 
+/// Prepare arguments for iterating functions (Sum, Product, NSum).
+/// The body (args[0]) is kept unevaluated to preserve the iteration variable.
+/// Iterator specs (args[1..]) have their bounds evaluated but variable names preserved.
+fn prepare_iterating_function_args(
+  args: &[Expr],
+) -> Result<Vec<Expr>, InterpreterError> {
+  let mut result = Vec::new();
+
+  // Body stays unevaluated
+  result.push(args[0].clone());
+
+  // Process iterator specs
+  for arg in &args[1..] {
+    if let Expr::List(items) = arg {
+      if items.is_empty() {
+        result.push(arg.clone());
+        continue;
+      }
+      let mut new_items = Vec::new();
+      // First element is the variable name — keep unevaluated
+      new_items.push(items[0].clone());
+      // Remaining elements are bounds — evaluate them
+      for item in &items[1..] {
+        new_items.push(evaluate_expr_to_expr(item)?);
+      }
+      result.push(Expr::List(new_items));
+    } else {
+      result.push(evaluate_expr_to_expr(arg)?);
+    }
+  }
+
+  Ok(result)
+}
+
 /// Early dispatch for FunctionCall in evaluate_expr — handles held functions
 /// before argument evaluation. Returns Some(result) if handled, None otherwise.
 #[inline(never)]
@@ -92,6 +126,21 @@ fn evaluate_expr_early_dispatch(
         result
       )));
     }
+    "Sum" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      let result = crate::functions::list_helpers_ast::sum_ast(&prepared)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
+    "Product" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      let result = crate::functions::list_helpers_ast::product_ast(&prepared)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
+    "NSum" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      let result = crate::functions::math_ast::nsum_ast(&prepared)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
     _ => {}
   }
   Ok(None)
@@ -129,6 +178,22 @@ fn evaluate_expr_to_expr_early_dispatch(
       let result = evaluate_expr_to_expr(&args[0])?;
       let elapsed = start.elapsed().as_secs_f64();
       return Ok(Some(Expr::List(vec![Expr::Real(elapsed), result])));
+    }
+    "Sum" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      return Ok(Some(crate::functions::list_helpers_ast::sum_ast(
+        &prepared,
+      )?));
+    }
+    "Product" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      return Ok(Some(crate::functions::list_helpers_ast::product_ast(
+        &prepared,
+      )?));
+    }
+    "NSum" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      return Ok(Some(crate::functions::math_ast::nsum_ast(&prepared)?));
     }
     _ => {}
   }
@@ -3337,12 +3402,6 @@ pub fn evaluate_function_call_ast(
       return list_helpers_ast::nest_while_list_ast(
         &args[0], &args[1], &args[2], max_iter,
       );
-    }
-    "Product" => {
-      return list_helpers_ast::product_ast(args);
-    }
-    "Sum" => {
-      return list_helpers_ast::sum_ast(args);
     }
     "Thread" if args.len() == 1 => {
       return list_helpers_ast::thread_ast(&args[0], None);
