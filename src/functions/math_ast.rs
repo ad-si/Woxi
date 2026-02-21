@@ -4708,6 +4708,225 @@ pub fn jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// JacobiSD[u, m] - Jacobi SD elliptic function (SN/DN)
+pub fn jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiSD expects exactly 2 arguments".into(),
+    ));
+  }
+  let u = &args[0];
+  let m = &args[1];
+
+  if is_expr_zero(u) {
+    return Ok(Expr::Integer(0));
+  }
+  if is_expr_zero(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Sinh".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (sn, _, dn) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(sn / dn));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiSD".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// JacobiCS[u, m] - Jacobi CS elliptic function (CN/SN)
+pub fn jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiCS expects exactly 2 arguments".into(),
+    ));
+  }
+  let u = &args[0];
+  let m = &args[1];
+
+  if is_expr_zero(u) {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  if is_expr_zero(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Cot".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Csch".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (sn, cn, _) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(cn / sn));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiCS".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// JacobiDS[u, m] - Jacobi DS elliptic function (DN/SN)
+pub fn jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiDS expects exactly 2 arguments".into(),
+    ));
+  }
+  let u = &args[0];
+  let m = &args[1];
+
+  if is_expr_zero(u) {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  if is_expr_zero(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Csc".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Csch".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (sn, _, dn) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(dn / sn));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiDS".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// JacobiNS[u, m] - Jacobi NS elliptic function (1/SN)
+pub fn jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiNS expects exactly 2 arguments".into(),
+    ));
+  }
+  let u = &args[0];
+  let m = &args[1];
+
+  if is_expr_zero(u) {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+  if is_expr_zero(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Csc".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Coth".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (sn, _, _) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(1.0 / sn));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiNS".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// JacobiND[u, m] - Jacobi ND elliptic function (1/DN)
+pub fn jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiND expects exactly 2 arguments".into(),
+    ));
+  }
+  let u = &args[0];
+  let m = &args[1];
+
+  if is_expr_zero(u) {
+    return Ok(Expr::Integer(1));
+  }
+  if is_expr_zero(m) {
+    return Ok(Expr::Integer(1));
+  }
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Cosh".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (_, _, dn) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(1.0 / dn));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiND".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// JacobiNC[u, m] - Jacobi NC elliptic function (1/CN)
+pub fn jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiNC expects exactly 2 arguments".into(),
+    ));
+  }
+  let u = &args[0];
+  let m = &args[1];
+
+  if is_expr_zero(u) {
+    return Ok(Expr::Integer(1));
+  }
+  if is_expr_zero(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Sec".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+  if is_expr_one(m) {
+    return Ok(Expr::FunctionCall {
+      name: "Cosh".to_string(),
+      args: vec![u.clone()],
+    });
+  }
+
+  if let (Some(u_f), Some(m_f)) = (expr_to_f64(u), expr_to_f64(m)) {
+    let (_, cn, _) = jacobi_elliptic(u_f, m_f);
+    return Ok(Expr::Real(1.0 / cn));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiNC".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Check if an expression is numerically zero
 fn is_expr_zero(expr: &Expr) -> bool {
   match expr {

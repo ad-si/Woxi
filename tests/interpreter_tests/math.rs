@@ -5568,6 +5568,186 @@ mod jacobi_cd {
   }
 }
 
+mod jacobi_sd {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("JacobiSD[0, 0.5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiSD[u, 0]").unwrap(), "Sin[u]");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiSD[u, 1]").unwrap(), "Sinh[u]");
+  }
+
+  #[test]
+  fn numeric() {
+    let result: f64 = interpret("JacobiSD[1.0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.9755100439695339).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiSD[u, m]").unwrap(), "JacobiSD[u, m]");
+  }
+}
+
+mod jacobi_cs {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("JacobiCS[0, 0.5]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiCS[u, 0]").unwrap(), "Cot[u]");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiCS[u, 1]").unwrap(), "Csch[u]");
+  }
+
+  #[test]
+  fn numeric() {
+    let result: f64 = interpret("JacobiCS[1.0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.7421858197515206).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiCS[u, m]").unwrap(), "JacobiCS[u, m]");
+  }
+}
+
+mod jacobi_ds {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("JacobiDS[0, 0.5]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiDS[u, 0]").unwrap(), "Csc[u]");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiDS[u, 1]").unwrap(), "Csch[u]");
+  }
+
+  #[test]
+  fn numeric() {
+    let result: f64 = interpret("JacobiDS[1.0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.025104770762597).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiDS[u, m]").unwrap(), "JacobiDS[u, m]");
+  }
+}
+
+mod jacobi_ns {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("JacobiNS[0, 0.5]").unwrap(), "ComplexInfinity");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiNS[u, 0]").unwrap(), "Csc[u]");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiNS[u, 1]").unwrap(), "Coth[u]");
+  }
+
+  #[test]
+  fn numeric() {
+    let result: f64 = interpret("JacobiNS[1.0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.245327182326089).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiNS[u, m]").unwrap(), "JacobiNS[u, m]");
+  }
+}
+
+mod jacobi_nd {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("JacobiND[0, 0.5]").unwrap(), "1");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiND[u, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiND[u, 1]").unwrap(), "Cosh[u]");
+  }
+
+  #[test]
+  fn numeric() {
+    let result: f64 = interpret("JacobiND[1.0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.2148291743873787).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiND[u, m]").unwrap(), "JacobiND[u, m]");
+  }
+}
+
+mod jacobi_nc {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("JacobiNC[0, 0.5]").unwrap(), "1");
+  }
+
+  #[test]
+  fn m_zero() {
+    assert_eq!(interpret("JacobiNC[u, 0]").unwrap(), "Sec[u]");
+  }
+
+  #[test]
+  fn m_one() {
+    assert_eq!(interpret("JacobiNC[u, 1]").unwrap(), "Cosh[u]");
+  }
+
+  #[test]
+  fn numeric() {
+    let result: f64 = interpret("JacobiNC[1.0, 0.5]").unwrap().parse().unwrap();
+    assert!((result - 1.6779183180069608).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("JacobiNC[u, m]").unwrap(), "JacobiNC[u, m]");
+  }
+}
+
 mod bessel_y {
   use super::*;
 
