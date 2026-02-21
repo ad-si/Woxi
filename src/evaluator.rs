@@ -6401,6 +6401,7 @@ pub fn evaluate_function_call_ast(
     | "Text"
     | "Style"
     | "Subscript"
+    | "BaseForm"
     | "MatrixForm"
     | "Out"
     | "Condition"

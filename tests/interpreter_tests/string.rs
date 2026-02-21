@@ -1276,3 +1276,57 @@ mod tex_form {
     );
   }
 }
+
+mod base_form {
+  use super::*;
+
+  #[test]
+  fn binary() {
+    assert_eq!(interpret("BaseForm[123, 2]").unwrap(), "1111011₂");
+  }
+
+  #[test]
+  fn hexadecimal() {
+    assert_eq!(interpret("BaseForm[255, 16]").unwrap(), "ff₁₆");
+  }
+
+  #[test]
+  fn octal() {
+    assert_eq!(interpret("BaseForm[8, 8]").unwrap(), "10₈");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("BaseForm[0, 2]").unwrap(), "0₂");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("BaseForm[-42, 2]").unwrap(), "-101010₂");
+  }
+
+  #[test]
+  fn base_36() {
+    assert_eq!(interpret("BaseForm[35, 36]").unwrap(), "z₃₆");
+  }
+
+  #[test]
+  fn real_binary() {
+    assert_eq!(interpret("BaseForm[0.5, 2]").unwrap(), "0.1₂");
+  }
+
+  #[test]
+  fn real_integer_part() {
+    assert_eq!(interpret("BaseForm[8., 2]").unwrap(), "1000.₂");
+  }
+
+  #[test]
+  fn large_integer() {
+    assert_eq!(interpret("BaseForm[256, 16]").unwrap(), "100₁₆");
+  }
+
+  #[test]
+  fn unevaluated_symbolic() {
+    assert_eq!(interpret("BaseForm[x, 2]").unwrap(), "x₂");
+  }
+}
