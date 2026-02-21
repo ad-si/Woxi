@@ -745,7 +745,7 @@ CentralMomentGeneratingFunction,,,,8,3317
 Cepstrogram,,,,11.1,4173
 CepstrogramArray,,,,11.1,4437
 CepstrumArray,,,,11.1,4947
-CForm,,,,1,1354
+CForm,Format expression as C code,✅,pure,1,1354
 ChampernowneNumber,,,,7,3785
 ChannelBase,,,,11,5184
 ChannelBrokerAction,,,,11.2,5390

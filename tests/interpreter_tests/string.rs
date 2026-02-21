@@ -1330,3 +1330,56 @@ mod base_form {
     assert_eq!(interpret("BaseForm[x, 2]").unwrap(), "x₂");
   }
 }
+
+mod c_form {
+  use super::*;
+
+  #[test]
+  fn polynomial() {
+    assert_eq!(
+      interpret("CForm[x^2 + 2 x + 1]").unwrap(),
+      "1 + 2*x + pow(x,2)"
+    );
+  }
+
+  #[test]
+  fn trig_functions() {
+    let result = interpret("CForm[Sin[x] + Cos[y]]").unwrap();
+    assert!(result.contains("sin(x)"));
+    assert!(result.contains("cos(y)"));
+  }
+
+  #[test]
+  fn pi_constant() {
+    assert_eq!(interpret("CForm[Pi]").unwrap(), "M_PI");
+  }
+
+  #[test]
+  fn e_constant() {
+    assert_eq!(interpret("CForm[E]").unwrap(), "M_E");
+  }
+
+  #[test]
+  fn sqrt() {
+    assert_eq!(interpret("CForm[Sqrt[x]]").unwrap(), "sqrt(x)");
+  }
+
+  #[test]
+  fn division() {
+    assert_eq!(interpret("CForm[1/x]").unwrap(), "1/x");
+  }
+
+  #[test]
+  fn to_string_form() {
+    assert_eq!(
+      interpret("ToString[x^2 + 1, CForm]").unwrap(),
+      "1 + pow(x,2)"
+    );
+  }
+
+  #[test]
+  fn exp_function() {
+    // Exp[x] evaluates to E^x before reaching CForm
+    assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "pow(M_E,x)");
+  }
+}

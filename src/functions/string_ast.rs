@@ -3,7 +3,7 @@
 //! These functions work directly with `Expr` AST nodes, avoiding string round-trips.
 
 use crate::InterpreterError;
-use crate::syntax::Expr;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
 /// Helper to extract a string from an Expr
 fn expr_to_str(expr: &Expr) -> Result<String, InterpreterError> {
@@ -903,6 +903,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       "TeXForm" => {
         return Ok(Expr::String(expr_to_tex(&args[0])));
+      }
+      "CForm" => {
+        return Ok(Expr::String(expr_to_c(&args[0])));
       }
       _ => {}
     }
@@ -2620,4 +2623,142 @@ fn read_list_record(
   }
 
   Ok(Expr::List(results))
+}
+
+/// Convert an expression to C language format
+pub fn expr_to_c(expr: &Expr) -> String {
+  match expr {
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::Real(f) => {
+      let s = format!("{}", f);
+      // Ensure decimal point
+      if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+        format!("{}.", s)
+      } else {
+        s
+      }
+    }
+    Expr::String(s) => format!("\"{}\"", s),
+    Expr::Identifier(name) => name.clone(),
+    Expr::Constant(name) => match name.as_str() {
+      "Pi" => "M_PI".to_string(),
+      "E" => "M_E".to_string(),
+      _ => name.clone(),
+    },
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" => {
+        let parts: Vec<String> = args.iter().map(expr_to_c).collect();
+        parts.join(" + ")
+      }
+      "Times" => {
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            let s = expr_to_c(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus,
+                  ..
+                }
+              )
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  ..
+                }
+              )
+            {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect();
+        parts.join("*")
+      }
+      "Power" if args.len() == 2 => {
+        if matches!(&args[1], Expr::Integer(-1)) {
+          format!("1./{}", c_paren(&args[0]))
+        } else if matches!(&args[1], Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
+        {
+          format!("sqrt({})", expr_to_c(&args[0]))
+        } else {
+          format!("pow({},{})", expr_to_c(&args[0]), expr_to_c(&args[1]))
+        }
+      }
+      "Sin" => format!("sin({})", c_args(args)),
+      "Cos" => format!("cos({})", c_args(args)),
+      "Tan" => format!("tan({})", c_args(args)),
+      "Exp" => format!("exp({})", c_args(args)),
+      "Log" if args.len() == 1 => format!("log({})", c_args(args)),
+      "Log" if args.len() == 2 => {
+        format!("log({})/log({})", expr_to_c(&args[1]), expr_to_c(&args[0]))
+      }
+      "Sqrt" => format!("sqrt({})", c_args(args)),
+      "Abs" => format!("abs({})", c_args(args)),
+      "Floor" => format!("floor({})", c_args(args)),
+      "Ceiling" => format!("ceil({})", c_args(args)),
+      "ArcSin" => format!("asin({})", c_args(args)),
+      "ArcCos" => format!("acos({})", c_args(args)),
+      "ArcTan" if args.len() == 1 => format!("atan({})", c_args(args)),
+      "ArcTan" if args.len() == 2 => {
+        format!("atan2({},{})", expr_to_c(&args[1]), expr_to_c(&args[0]))
+      }
+      "Sinh" => format!("sinh({})", c_args(args)),
+      "Cosh" => format!("cosh({})", c_args(args)),
+      "Tanh" => format!("tanh({})", c_args(args)),
+      _ => format!("{}({})", name, c_args(args)),
+    },
+    Expr::BinaryOp { op, left, right } => {
+      let l = expr_to_c(left);
+      let r = expr_to_c(right);
+      match op {
+        BinaryOperator::Plus => format!("{} + {}", l, r),
+        BinaryOperator::Minus => format!("{} - {}", l, r),
+        BinaryOperator::Times => format!("{}*{}", l, r),
+        BinaryOperator::Divide => format!("{}/{}", l, r),
+        BinaryOperator::Power => format!("pow({},{})", l, r),
+        _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      format!("-{}", c_paren(operand))
+    }
+    Expr::List(items) => {
+      let parts: Vec<String> = items.iter().map(expr_to_c).collect();
+      format!("List({})", parts.join(","))
+    }
+    // Rational numbers are FunctionCall{name:"Rational", args:[num, den]}
+    // but they get evaluated before reaching here, so this pattern is rare
+    _ => crate::syntax::expr_to_string(expr),
+  }
+}
+
+/// Add parentheses for C output if needed
+fn c_paren(expr: &Expr) -> String {
+  let s = expr_to_c(expr);
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Plus" => format!("({})", s),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      ..
+    } => format!("({})", s),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      ..
+    } => format!("({})", s),
+    _ => s,
+  }
+}
+
+/// Format C function arguments
+fn c_args(args: &[Expr]) -> String {
+  args.iter().map(expr_to_c).collect::<Vec<_>>().join(",")
 }
