@@ -59,6 +59,9 @@ pub enum InterpreterError {
   ThrowValue(Box<syntax::Expr>, Option<Box<syntax::Expr>>),
   #[error("$Aborted")]
   Abort,
+  /// Internal signal for tail-call optimization (never user-visible)
+  #[error("TailCall")]
+  TailCall(Box<syntax::Expr>),
 }
 
 /// Extended result type that includes both stdout and the result
