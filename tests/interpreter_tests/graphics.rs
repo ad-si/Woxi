@@ -347,6 +347,33 @@ mod graphics {
         "Graphics[{Circle[]}, Background -> LightGray]"
       ));
     }
+
+    #[test]
+    fn axes_true() {
+      let svg = export_svg("Graphics[Circle[], Axes -> True]");
+      assert!(svg.contains(
+        "<line x1=\"0.00\" y1=\"180.00\" x2=\"360.00\" y2=\"180.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+      ));
+      assert!(svg.contains(
+        "<line x1=\"180.00\" y1=\"0.00\" x2=\"180.00\" y2=\"360.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+      ));
+      assert!(svg.matches("<line ").count() > 2);
+      assert!(svg.contains("<text "));
+      assert!(!svg.contains(">0</text>"));
+    }
+
+    #[test]
+    fn axes_list_x_only() {
+      let svg = export_svg("Graphics[Circle[], Axes -> {True, False}]");
+      assert!(svg.contains(
+        "<line x1=\"0.00\" y1=\"180.00\" x2=\"360.00\" y2=\"180.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+      ));
+      assert!(!svg.contains(
+        "<line x1=\"180.00\" y1=\"0.00\" x2=\"180.00\" y2=\"360.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+      ));
+      assert!(svg.matches("<line ").count() > 1);
+      assert!(svg.contains("<text "));
+    }
   }
 
   mod integration {

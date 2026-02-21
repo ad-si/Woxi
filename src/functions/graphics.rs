@@ -1029,6 +1029,144 @@ fn dash_attr(dashing: &Option<Vec<f64>>, bb: &BBox, svg_w: f64) -> String {
   }
 }
 
+fn format_tick_value(v: f64) -> String {
+  if v.abs() < 1e-10 {
+    return "0".to_string();
+  }
+  if (v - v.round()).abs() < 1e-10 {
+    return format!("{}", v.round() as i64);
+  }
+  let mut s = format!("{v:.6}");
+  while s.contains('.') && s.ends_with('0') {
+    s.pop();
+  }
+  if s.ends_with('.') {
+    s.pop();
+  }
+  s
+}
+
+fn nice_tick_step(min: f64, max: f64, target_count: usize) -> f64 {
+  let range = (max - min).abs();
+  if !range.is_finite() || range <= 0.0 {
+    return 1.0;
+  }
+  let raw_step = range / (target_count.max(2) as f64);
+  let magnitude = 10f64.powf(raw_step.log10().floor());
+  let normalized = raw_step / magnitude;
+  let nice = if normalized < 1.5 {
+    1.0
+  } else if normalized < 3.0 {
+    2.0
+  } else if normalized < 7.0 {
+    5.0
+  } else {
+    10.0
+  };
+  nice * magnitude
+}
+
+fn generate_ticks(min: f64, max: f64, target_count: usize) -> Vec<f64> {
+  let step = nice_tick_step(min, max, target_count);
+  if !step.is_finite() || step <= 0.0 {
+    return vec![];
+  }
+  let start = (min / step).ceil() * step;
+  let end = (max / step).floor() * step;
+  if !start.is_finite() || !end.is_finite() || start > end {
+    return vec![];
+  }
+
+  let mut ticks = Vec::new();
+  let mut t = start;
+  let eps = step * 1e-8;
+  while t <= end + eps && ticks.len() < 200 {
+    ticks.push(if t.abs() < eps { 0.0 } else { t });
+    t += step;
+  }
+  ticks
+}
+
+fn render_axes(
+  svg: &mut String,
+  axes: (bool, bool),
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+) {
+  const AXIS_STROKE: &str = "#b3b3b3";
+  const TICK_LABEL_FILL: &str = "#555555";
+
+  if !axes.0 && !axes.1 {
+    return;
+  }
+
+  let axis_y_data = if bb.y_min <= 0.0 && 0.0 <= bb.y_max {
+    0.0
+  } else {
+    bb.y_min
+  };
+  let axis_x_data = if bb.x_min <= 0.0 && 0.0 <= bb.x_max {
+    0.0
+  } else {
+    bb.x_min
+  };
+  let axis_y_px = coord_y(axis_y_data, bb, svg_h);
+  let axis_x_px = coord_x(axis_x_data, bb, svg_w);
+
+  if axes.0 {
+    svg.push_str(&format!(
+      "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n"
+    ));
+    for t in generate_ticks(bb.x_min, bb.x_max, 6) {
+      let x = coord_x(t, bb, svg_w);
+      if !x.is_finite() {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n",
+        axis_y_px - 4.0,
+        axis_y_px + 4.0
+      ));
+      let label = format_tick_value(t);
+      if axes.1 && label == "0" {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{TICK_LABEL_FILL}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
+        axis_y_px + 6.0,
+        svg_escape(&label),
+      ));
+    }
+  }
+
+  if axes.1 {
+    svg.push_str(&format!(
+      "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n"
+    ));
+    for t in generate_ticks(bb.y_min, bb.y_max, 6) {
+      let y = coord_y(t, bb, svg_h);
+      if !y.is_finite() {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n",
+        axis_x_px - 4.0,
+        axis_x_px + 4.0
+      ));
+      let label = format_tick_value(t);
+      if axes.0 && label == "0" {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{TICK_LABEL_FILL}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
+        axis_x_px - 6.0,
+        svg_escape(&label),
+      ));
+    }
+  }
+}
+
 pub(crate) fn svg_escape(s: &str) -> String {
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
@@ -1546,6 +1684,27 @@ fn parse_background(expr: &Expr) -> Option<Color> {
   parse_color(expr)
 }
 
+fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
+  fn parse_bool(expr: &Expr) -> Option<bool> {
+    match expr {
+      Expr::Identifier(s) if s == "True" => Some(true),
+      Expr::Identifier(s) if s == "False" => Some(false),
+      _ => None,
+    }
+  }
+
+  match expr {
+    Expr::Identifier(s) if s == "True" => Some((true, true)),
+    Expr::Identifier(s) if s == "False" => Some((false, false)),
+    Expr::List(items) if items.len() == 2 => {
+      let x_axis = parse_bool(&items[0])?;
+      let y_axis = parse_bool(&items[1])?;
+      Some((x_axis, y_axis))
+    }
+    _ => None,
+  }
+}
+
 // ── GraphicsBox generation ───────────────────────────────────────────────
 
 use crate::functions::graphicsbox as gbox;
@@ -1685,6 +1844,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
+  let mut axes = (false, false);
 
   for raw_opt in &args[1..] {
     let opt =
@@ -1717,6 +1877,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "Background" => {
           background = parse_background(replacement);
+        }
+        "Axes" => {
+          if let Some(parsed_axes) = parse_axes(replacement) {
+            axes = parsed_axes;
+          }
         }
         _ => {}
       }
@@ -1817,6 +1982,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       bg.to_svg_rgb(),
     ));
   }
+
+  render_axes(&mut svg, axes, &bb, svg_w, svg_h);
 
   // Render primitives
   for prim in &primitives {
