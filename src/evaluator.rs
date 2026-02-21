@@ -10568,6 +10568,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Protected"
     | "HoldRest"
     | "SetOptions"
+    | "Above"
     | "Below"
     | "Label"
     | "Continue"

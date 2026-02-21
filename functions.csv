@@ -4,7 +4,7 @@ AbelianGroup,,,,8,2693
 Abort,Aborts evaluation,✅,effectful,2,980
 AbortKernels,,,,7,3578
 AbortProtect,,,,2,2089
-Above,,,,1,816
+Above,Placement symbol representing above position,✅,pure,1,816
 Abs,Returns the absolute value of a number,✅,pure,1,64
 AbsArg,,,,10.1,1901
 AbsArgPlot,,,,12,2762
