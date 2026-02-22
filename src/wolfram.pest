@@ -79,6 +79,7 @@ Operator = {
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
   | "<>"     // StringJoin operator (must be before < and >)
+  | "~~"     // StringExpression operator (must be before single ~)
   | "&&"     // And operator (must be before single &)
   | "||"     // Or operator (must be before single |)
   | "|"      // Alternatives operator

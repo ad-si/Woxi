@@ -5230,7 +5230,7 @@ StringCount,Counts occurrences of a pattern in a string,✅,pure,5.1,1271
 StringDelete,Deletes all occurrences of a substring,✅,pure,10.1,1733
 StringDrop,Removes a substring from a string,✅,pure,2,950
 StringEndsQ,Checks if a string ends with a specific substring,✅,pure,10.1,2929
-StringExpression,,,,5.1,298
+StringExpression,Represents a string pattern formed by concatenating string pattern objects,✅,pure,5.1,298
 StringExtract,,,,10.1,3265
 StringForm,Format a string with placeholder substitution,✅,pure,1,754
 StringFormat,,,,6,4881
