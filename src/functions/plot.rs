@@ -3,7 +3,7 @@ use plotters::prelude::*;
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::chart::StyledLabel;
-use crate::functions::graphics::Color as WoxiColor;
+use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
@@ -113,6 +113,31 @@ pub(crate) enum Filling {
   Axis,
 }
 
+/// Options for line-based plots (Plot, ListLinePlot, etc.).
+pub(crate) struct PlotOptions {
+  pub svg_width: u32,
+  pub svg_height: u32,
+  pub full_width: bool,
+  pub filling: Filling,
+  pub plot_label: Option<StyledLabel>,
+  pub axes_label: Option<(String, String)>,
+  pub plot_style: Vec<WoxiColor>,
+}
+
+impl Default for PlotOptions {
+  fn default() -> Self {
+    Self {
+      svg_width: DEFAULT_WIDTH,
+      svg_height: DEFAULT_HEIGHT,
+      full_width: false,
+      filling: Filling::None,
+      plot_label: None,
+      axes_label: None,
+      plot_style: Vec::new(),
+    }
+  }
+}
+
 /// Default Wolfram plot color palette (ColorData[97]).
 pub(crate) const PLOT_COLORS: [(u8, u8, u8); 6] = [
   (0x5E, 0x81, 0xB5), // blue
@@ -134,31 +159,59 @@ pub(crate) fn generate_svg(
   svg_height: u32,
   full_width: bool,
 ) -> Result<String, InterpreterError> {
-  generate_svg_with_filling(
-    all_points,
-    x_range,
-    y_range,
+  let opts = PlotOptions {
     svg_width,
     svg_height,
     full_width,
-    Filling::None,
-  )
+    ..Default::default()
+  };
+  generate_svg_with_options(all_points, x_range, y_range, &opts)
 }
 
-/// Generate SVG for a 2D plot with optional filling.
+/// Generate SVG for a 2D plot with filling (legacy wrapper for list_plot callers).
 pub(crate) fn generate_svg_with_filling(
   all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
   y_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
-  full_width: bool,
-  filling: Filling,
+  opts: &PlotOptions,
+) -> Result<String, InterpreterError> {
+  generate_svg_with_options(all_points, x_range, y_range, opts)
+}
+
+/// Core SVG generation for 2D line plots with full option support.
+fn generate_svg_with_options(
+  all_points: &[Vec<(f64, f64)>],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
+  let svg_width = opts.svg_width;
+  let svg_height = opts.svg_height;
+  let full_width = opts.full_width;
+  let filling = opts.filling;
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
+
+  let sf = RESOLUTION_SCALE as f64;
+  let s = RESOLUTION_SCALE as i32;
+
+  // Compute dynamic margins for labels
+  let has_plot_label = opts
+    .plot_label
+    .as_ref()
+    .is_some_and(|sl| !sl.text.is_empty());
+  let has_x_axis_label =
+    opts.axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  let has_y_axis_label =
+    opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
+
+  let top_margin = if has_plot_label { 25 * s } else { 10 * s };
+  let bottom_extra = if has_x_axis_label { 16.0 * sf } else { 0.0 };
+  let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
+  let left_extra = if has_y_axis_label { 18.0 * sf } else { 0.0 };
+  let y_label_area = 40 * RESOLUTION_SCALE + left_extra as u32;
 
   let mut buf = String::new();
   {
@@ -168,15 +221,17 @@ pub(crate) fn generate_svg_with_filling(
       .fill(&WHITE)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    let s = RESOLUTION_SCALE as i32;
     let tick = 4 * s;
     let dark_gray = RGBColor(0x66, 0x66, 0x66);
     let light_gray = RGBColor(0xCC, 0xCC, 0xCC);
 
     let mut chart = ChartBuilder::on(&root)
-      .margin(10 * s)
-      .x_label_area_size(25 * RESOLUTION_SCALE)
-      .y_label_area_size(40 * RESOLUTION_SCALE)
+      .margin_top(top_margin as u32)
+      .margin_right(10 * s as u32)
+      .margin_bottom(10 * s as u32)
+      .margin_left(10 * s as u32)
+      .x_label_area_size(x_label_area)
+      .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
@@ -239,7 +294,7 @@ pub(crate) fn generate_svg_with_filling(
     }
 
     for (series_idx, points) in all_points.iter().enumerate() {
-      let (r, g, b) = PLOT_COLORS[series_idx % PLOT_COLORS.len()];
+      let (r, g, b) = series_color(&opts.plot_style, series_idx);
       let color = RGBColor(r, g, b);
       let segments = split_into_segments(points);
 
@@ -288,7 +343,92 @@ pub(crate) fn generate_svg_with_filling(
     full_width,
   );
 
+  // Inject label SVG elements before </svg>
+  if has_plot_label || has_x_axis_label || has_y_axis_label {
+    let margin_left = 10.0 * sf;
+    let margin_top = top_margin as f64;
+    let plot_x0 = margin_left + y_label_area as f64;
+    let plot_w =
+      render_width as f64 - margin_left - 10.0 * sf - y_label_area as f64;
+    let plot_h =
+      render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
+    let axis_y = margin_top + plot_h;
+    let font_size = sf * 11.0;
+    let title_font_size = sf * 13.0;
+
+    if let Some(insert_pos) = buf.rfind("</svg>") {
+      let mut labels_svg = String::new();
+
+      // AxesLabel
+      if let Some((x_label, y_label)) = &opts.axes_label {
+        if !x_label.is_empty() {
+          let cx = plot_x0 + plot_w / 2.0;
+          let base_y = axis_y + font_size * 1.5;
+          labels_svg.push_str(&format!(
+            "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"#666\">{}</text>\n",
+            html_escape(x_label)
+          ));
+        }
+        if !y_label.is_empty() {
+          let cy = margin_top + plot_h / 2.0;
+          let lx = margin_left + font_size * 0.8;
+          labels_svg.push_str(&format!(
+            "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             fill=\"#666\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+            html_escape(y_label)
+          ));
+        }
+      }
+
+      // PlotLabel
+      if let Some(sl) = &opts.plot_label
+        && !sl.text.is_empty()
+      {
+        let cx = plot_x0 + plot_w / 2.0;
+        let ty = margin_top - title_font_size * 0.5;
+        let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+        let fill = sl
+          .color
+          .as_ref()
+          .map(|c| c.to_svg_rgb())
+          .unwrap_or_else(|| "#333".to_string());
+        let mut style_attrs = String::new();
+        if sl.bold {
+          style_attrs.push_str(" font-weight=\"bold\"");
+        }
+        if sl.italic {
+          style_attrs.push_str(" font-style=\"italic\"");
+        }
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+             font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+             fill=\"{fill}\"{style_attrs}>{}</text>\n",
+          html_escape(&sl.text)
+        ));
+      }
+
+      buf.insert_str(insert_pos, &labels_svg);
+    }
+  }
+
   Ok(buf)
+}
+
+/// Get the (r, g, b) color for a series, using custom plot_style if available.
+fn series_color(plot_style: &[WoxiColor], idx: usize) -> (u8, u8, u8) {
+  if plot_style.is_empty() {
+    PLOT_COLORS[idx % PLOT_COLORS.len()]
+  } else {
+    let c = &plot_style[idx % plot_style.len()];
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  }
 }
 
 /// Generate SVG for a scatter plot using plotters.
@@ -1079,20 +1219,70 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let iter_spec = &args[1];
 
   // Parse options (Rule expressions after the first two arguments)
-  let mut svg_width = DEFAULT_WIDTH;
-  let mut svg_height = DEFAULT_HEIGHT;
-  let mut full_width = false;
+  let mut plot_opts = PlotOptions::default();
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
       replacement,
     } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Expr::Identifier(name) = pattern.as_ref()
     {
-      svg_width = w;
-      svg_height = h;
-      full_width = fw;
+      match name.as_str() {
+        "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            plot_opts.svg_width = w;
+            plot_opts.svg_height = h;
+            plot_opts.full_width = fw;
+          }
+        }
+        "PlotLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
+            plot_opts.plot_label = Some(sl);
+          }
+        }
+        "AxesLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::List(items) = &val
+            && items.len() >= 2
+          {
+            let x = crate::functions::chart::expr_to_label(&items[0])
+              .unwrap_or_default();
+            let y = crate::functions::chart::expr_to_label(&items[1])
+              .unwrap_or_default();
+            plot_opts.axes_label = Some((x, y));
+          }
+        }
+        "PlotStyle" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          match &val {
+            Expr::List(items) => {
+              for item in items {
+                // Support {Thick, RGBColor[...]} inner lists
+                if let Expr::List(inner) = item {
+                  for sub in inner {
+                    if let Some(c) = parse_color(sub) {
+                      plot_opts.plot_style.push(c);
+                      break;
+                    }
+                  }
+                } else if let Some(c) = parse_color(item) {
+                  plot_opts.plot_style.push(c);
+                }
+              }
+            }
+            _ => {
+              if let Some(c) = parse_color(&val) {
+                plot_opts.plot_style.push(c);
+              }
+            }
+          }
+        }
+        _ => {}
+      }
     }
   }
 
@@ -1181,13 +1371,11 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_max = y_data_max + padding;
 
   // Generate SVG
-  let svg = generate_svg(
+  let svg = generate_svg_with_filling(
     &all_points,
     (x_min, x_max),
     (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
+    &plot_opts,
   )?;
 
   // Generate GraphicsBox expression for .nb export

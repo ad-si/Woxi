@@ -732,6 +732,52 @@ mod plot3d {
     }
   }
 
+  mod plot_options {
+    use super::*;
+
+    #[test]
+    fn plot_plot_label() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotLabel -> "Sine Wave"]"#
+      ));
+    }
+
+    #[test]
+    fn plot_plot_label_styled() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotLabel -> Style["Sine", Bold, Italic]]"#
+      ));
+    }
+
+    #[test]
+    fn plot_axes_label() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[x^2, {x, -2, 2}, AxesLabel -> {"x", "y"}]"#
+      ));
+    }
+
+    #[test]
+    fn plot_plot_style_single() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[Sin[x], {x, 0, 2 Pi}, PlotStyle -> Red]"#
+      ));
+    }
+
+    #[test]
+    fn plot_plot_style_multi() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {Red, Blue}]"#
+      ));
+    }
+
+    #[test]
+    fn plot_all_options() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabel -> "Trig Functions", AxesLabel -> {"x", "f(x)"}, PlotStyle -> {Red, Blue}]"#
+      ));
+    }
+  }
+
   mod list_plot {
     use super::*;
 
