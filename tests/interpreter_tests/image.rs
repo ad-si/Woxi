@@ -563,7 +563,7 @@ mod image_display {
     assert_eq!(result.result, "-Image-");
     assert!(result.graphics.is_some());
     let html = result.graphics.unwrap();
-    assert!(html.contains("<img src='data:image/png;base64,"));
+    assert!(html.contains("<image href='data:image/png;base64,"));
   }
 
   #[test]

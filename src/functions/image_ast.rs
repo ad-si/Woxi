@@ -98,8 +98,10 @@ pub fn image_to_html_img(
   let b64 =
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
   format!(
-    "<img src='data:image/png;base64,{}' width='{}' height='{}'>",
-    b64, width, height
+    "<svg xmlns='http://www.w3.org/2000/svg' width='{}' height='{}'>\
+     <image href='data:image/png;base64,{}' width='{}' height='{}'/>\
+     </svg>",
+    width, height, b64, width, height
   )
 }
 
