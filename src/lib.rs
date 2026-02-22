@@ -649,6 +649,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         let result_expr = render_dataset_if_needed(result_expr);
         // In visual mode, render TableForm[list] and MatrixForm[list] as Grid SVGs
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+          let result_expr = render_color_if_needed(result_expr);
           let result_expr = render_tableform_if_needed(result_expr);
           render_matrixform_if_needed(result_expr)
         } else {
@@ -741,6 +742,38 @@ fn render_dataset_if_needed(expr: syntax::Expr) -> syntax::Expr {
     }
     _ => expr,
   }
+}
+
+/// Check if an expression is an explicit color function call (not a named color
+/// identifier like `Red`). Returns `true` for `RGBColor[…]`, `Hue[…]`,
+/// `GrayLevel[…]`, `Darker[…]`, `Lighter[…]`.
+fn is_color_function_call(expr: &syntax::Expr) -> bool {
+  matches!(
+    expr,
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "RGBColor" | "Hue" | "GrayLevel" | "Darker" | "Lighter")
+  )
+}
+
+/// If `expr` is an explicit color specification (RGBColor, Hue, GrayLevel,
+/// Darker, Lighter), render it as a 16×16 colored-square SVG swatch.
+/// If it's a list, recursively convert color elements so they become
+/// individual swatch graphics (the list itself is left intact for
+/// `render_graphics_list_if_needed` to wrap with `{…, …}`).
+/// Bare named colors (e.g. `Red`) are left as text.
+fn render_color_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if is_color_function_call(&expr)
+    && let Some(color) = functions::graphics::parse_color(&expr)
+  {
+    let svg = functions::graphics::color_swatch_svg(&color);
+    return graphics_result(svg);
+  }
+  if let syntax::Expr::List(items) = expr {
+    let new_items: Vec<syntax::Expr> =
+      items.into_iter().map(render_color_if_needed).collect();
+    return syntax::Expr::List(new_items);
+  }
+  expr
 }
 
 /// If `expr` is an Image, encode it as a base64 PNG `<img>` tag,
@@ -982,8 +1015,7 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // Take the last N SVGs (they correspond to the list items)
       let start = all_svgs.len() - items.len();
       let row: Vec<String> = all_svgs[start..].to_vec();
-      if let Some(combined) = functions::graphics::combine_graphics_svgs(&[row])
-      {
+      if let Some(combined) = functions::graphics::graphics_list_svg(&row) {
         // Clear and re-capture with the combined SVG
         clear_captured_graphics();
         return graphics_result(combined);
