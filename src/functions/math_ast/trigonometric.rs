@@ -32,12 +32,12 @@ pub fn try_symbolic_pi_fraction(expr: &Expr) -> Option<(i64, i64)> {
 
   // Helper to check if expr is Pi
   fn is_pi(e: &Expr) -> bool {
-    matches!(e, Expr::Constant(name) if name == "Pi")
+    matches!(e, Expr::Constant(name) | Expr::Identifier(name) if name == "Pi")
   }
 
   // Helper to check if expr is Degree
   fn is_degree(e: &Expr) -> bool {
-    matches!(e, Expr::Constant(name) if name == "Degree")
+    matches!(e, Expr::Constant(name) | Expr::Identifier(name) if name == "Degree")
   }
 
   // Helper to reduce fraction

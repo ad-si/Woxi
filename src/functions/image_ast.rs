@@ -277,50 +277,12 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Helper: extract f64 from Expr, resolving constants and arithmetic
 fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
-  match expr {
-    Expr::Integer(n) => Ok(*n as f64),
-    Expr::Real(f) => Ok(*f),
-    Expr::Constant(c) => match c.as_str() {
-      "Pi" => Ok(std::f64::consts::PI),
-      "E" => Ok(std::f64::consts::E),
-      _ => Err(InterpreterError::EvaluationError(format!(
-        "Image: expected a number, got {}",
-        crate::syntax::expr_to_string(expr)
-      ))),
-    },
-    Expr::BinaryOp { op, left, right } => {
-      let l = expr_to_f64(left)?;
-      let r = expr_to_f64(right)?;
-      Ok(match op {
-        crate::syntax::BinaryOperator::Plus => l + r,
-        crate::syntax::BinaryOperator::Minus => l - r,
-        crate::syntax::BinaryOperator::Times => l * r,
-        crate::syntax::BinaryOperator::Divide => l / r,
-        crate::syntax::BinaryOperator::Power => l.powf(r),
-        _ => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "Image: expected a number, got {}",
-            crate::syntax::expr_to_string(expr)
-          )));
-        }
-      })
-    }
-    Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
-      operand,
-    } => Ok(-expr_to_f64(operand)?),
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      let num = expr_to_f64(&args[0])?;
-      let den = expr_to_f64(&args[1])?;
-      Ok(num / den)
-    }
-    _ => Err(InterpreterError::EvaluationError(format!(
+  crate::functions::math_ast::try_eval_to_f64(expr).ok_or_else(|| {
+    InterpreterError::EvaluationError(format!(
       "Image: expected a number, got {}",
       crate::syntax::expr_to_string(expr)
-    ))),
-  }
+    ))
+  })
 }
 
 /// ImageQ[expr] - True if Expr::Image, False otherwise
