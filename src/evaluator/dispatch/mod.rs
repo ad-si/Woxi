@@ -573,7 +573,8 @@ pub fn evaluate_function_call_ast_inner(
     | "Cubics"
     | "PageWidth"
     | "Constant"
-    | "Catalan" => {
+    | "Catalan"
+    | "StringExpression" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),

@@ -1729,7 +1729,8 @@ fn operator_precedence(op: &str) -> u8 {
   match op {
     ">>" | ">>>" => 0, // Put/PutAppend (lowest precedence)
     "=" | ":=" => 1,   // Assignment
-    "|" => 2,          // Alternatives
+    "~~" => 2,         // StringExpression (lower than Alternatives)
+    "|" => 3,          // Alternatives
     "||" => 3,
     "&&" => 4,
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 5, // Comparisons
@@ -1859,6 +1860,26 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
     },
+    "~~" => {
+      // Flatten nested StringExpression (it's Flat/associative)
+      let mut parts = Vec::new();
+      match left {
+        Expr::FunctionCall { name, args } if name == "StringExpression" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(left.clone()),
+      }
+      match right {
+        Expr::FunctionCall { name, args } if name == "StringExpression" => {
+          parts.extend(args.clone());
+        }
+        _ => parts.push(right.clone()),
+      }
+      Expr::FunctionCall {
+        name: "StringExpression".to_string(),
+        args: parts,
+      }
+    }
     "/@" => Expr::Map {
       func: Box::new(left.clone()),
       list: Box::new(right.clone()),

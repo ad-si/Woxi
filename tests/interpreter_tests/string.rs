@@ -1032,6 +1032,118 @@ mod string_match_q_patterns {
   }
 }
 
+mod string_expression {
+  use super::*;
+
+  #[test]
+  fn parse_standalone() {
+    assert_eq!(
+      interpret(r#""a" ~~ __"#).unwrap(),
+      r#"StringExpression[a, __]"#
+    );
+  }
+
+  #[test]
+  fn string_match_q_with_prefix_pattern() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["apple", "a" ~~ __]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["banana", "a" ~~ __]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn string_match_q_with_suffix_pattern() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["hello", __ ~~ "lo"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["hello", __ ~~ "xyz"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn string_match_q_with_blank() {
+    // _ matches exactly one character
+    assert_eq!(
+      interpret(r#"StringMatchQ["ab", "a" ~~ _]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["a", "a" ~~ _]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn string_match_q_with_blank_null_sequence() {
+    // ___ matches zero or more characters
+    assert_eq!(
+      interpret(r#"StringMatchQ["a", "a" ~~ ___]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["abc", "a" ~~ ___]"#).unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn three_part_pattern() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["abc", "a" ~~ _ ~~ "c"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["axc", "a" ~~ _ ~~ "c"]"#).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["axxc", "a" ~~ _ ~~ "c"]"#).unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn select_with_string_expression() {
+    assert_eq!(
+      interpret(
+        r#"Select[{apple, banana, pear, apricot}, StringMatchQ[ToString[#], "a" ~~ __] &]"#
+      )
+      .unwrap(),
+      "{apple, apricot}"
+    );
+  }
+
+  #[test]
+  fn with_character_classes() {
+    assert_eq!(
+      interpret(r#"StringMatchQ["a1", LetterCharacter ~~ DigitCharacter]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["1a", LetterCharacter ~~ DigitCharacter]"#)
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn flat_associativity() {
+    // a ~~ b ~~ c should become StringExpression[a, b, c] (flat, not nested)
+    assert_eq!(
+      interpret(r#""a" ~~ "b" ~~ "c""#).unwrap(),
+      r#"StringExpression[a, b, c]"#
+    );
+  }
+}
+
 mod string_split_edge {
   use super::*;
 

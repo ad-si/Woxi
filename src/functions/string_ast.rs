@@ -807,7 +807,7 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
     // String literal patterns
     Expr::String(s) => Some(regex::escape(s)),
 
-    // Character class patterns
+    // Character class patterns and blank patterns
     Expr::Identifier(name) => match name.as_str() {
       "DigitCharacter" => Some("[0-9]".to_string()),
       "LetterCharacter" => Some("[a-zA-Z\\p{L}]".to_string()),
@@ -816,8 +816,22 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       "WordCharacter" => Some("[a-zA-Z0-9\\p{L}]".to_string()),
       "HexadecimalCharacter" => Some("[0-9a-fA-F]".to_string()),
       "NumberString" => Some("[0-9]+(?:\\.[0-9]*)?".to_string()),
+      "_" => Some(".".to_string()), // Blank: any single character
+      "__" => Some(".+".to_string()), // BlankSequence: one or more characters
+      "___" => Some(".*".to_string()), // BlankNullSequence: zero or more characters
       _ => None,
     },
+
+    // Alternatives as BinaryOp (e.g. pat1 | pat2)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Alternatives,
+      left,
+      right,
+    } => {
+      let l = string_pattern_to_regex(left)?;
+      let r = string_pattern_to_regex(right)?;
+      Some(format!("(?:{}|{})", l, r))
+    }
 
     // Alternatives[pat1, pat2, ...] = pat1 | pat2 | ...
     Expr::FunctionCall { name, args }
@@ -826,6 +840,15 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       let parts: Option<Vec<String>> =
         args.iter().map(string_pattern_to_regex).collect();
       parts.map(|ps| ps.join("|"))
+    }
+
+    // StringExpression[pat1, pat2, ...] = pat1 ~~ pat2 ~~ ...
+    Expr::FunctionCall { name, args }
+      if name == "StringExpression" && !args.is_empty() =>
+    {
+      let parts: Option<Vec<String>> =
+        args.iter().map(string_pattern_to_regex).collect();
+      parts.map(|ps| ps.join(""))
     }
 
     // Repeated[pat] = pat.. (one or more)
