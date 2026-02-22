@@ -320,6 +320,48 @@ mod full_form {
       "Plus[Times[a, b], c]"
     );
   }
+
+  #[test]
+  fn full_form_division() {
+    assert_eq!(
+      interpret("FullForm[a/b]").unwrap(),
+      "Times[a, Power[b, -1]]"
+    );
+  }
+
+  #[test]
+  fn full_form_reciprocal() {
+    assert_eq!(
+      interpret("FullForm[1/z]").unwrap(),
+      "Times[1, Power[z, -1]]"
+    );
+  }
+
+  #[test]
+  fn full_form_sqrt() {
+    assert_eq!(interpret("FullForm[Sqrt[5]]").unwrap(), "Sqrt[5]");
+  }
+
+  #[test]
+  fn full_form_complex_expression() {
+    // Regression: FullForm must show canonical notation as plain text
+    assert_eq!(
+      interpret("FullForm[x/Sqrt[5] + y^2 + 1/z]").unwrap(),
+      "Plus[Times[1, Power[z, -1]], Times[x, Power[Sqrt[5], -1]], Power[y, 2]]"
+    );
+  }
+
+  #[test]
+  fn full_form_no_svg_output() {
+    // Regression: FullForm results must be plain text (no SVG) in the playground
+    use woxi::interpret_with_stdout;
+    let result = interpret_with_stdout("FullForm[1/z]").unwrap();
+    assert!(
+      result.output_svg.is_none(),
+      "FullForm should not produce SVG output"
+    );
+    assert_eq!(result.result, "Times[1, Power[z, -1]]");
+  }
 }
 
 mod tree_form {
@@ -327,25 +369,26 @@ mod tree_form {
 
   #[test]
   fn tree_form_simple() {
-    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "TreeForm[f[x, y]]");
+    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "-Graphics-");
   }
 
   #[test]
   fn tree_form_expression() {
     assert_eq!(
       interpret("TreeForm[a + b^2 + c^3 + d]").unwrap(),
-      "TreeForm[a + b^2 + c^3 + d]"
+      "-Graphics-"
     );
   }
 
   #[test]
   fn tree_form_evaluates_argument() {
-    assert_eq!(interpret("TreeForm[1 + 2]").unwrap(), "TreeForm[3]");
+    // 1 + 2 evaluates to 3 (an atom), but still renders as a tree
+    assert_eq!(interpret("TreeForm[1 + 2]").unwrap(), "-Graphics-");
   }
 
   #[test]
   fn tree_form_with_depth() {
-    assert_eq!(interpret("TreeForm[f[x], 2]").unwrap(), "TreeForm[f[x], 2]");
+    assert_eq!(interpret("TreeForm[f[x], 2]").unwrap(), "-Graphics-");
   }
 
   #[test]
@@ -355,14 +398,16 @@ mod tree_form {
 
   #[test]
   fn tree_form_head() {
-    assert_eq!(interpret("Head[TreeForm[f[x]]]").unwrap(), "TreeForm");
+    // TreeForm now evaluates to -Graphics- (an identifier/symbol)
+    assert_eq!(interpret("Head[TreeForm[f[x]]]").unwrap(), "Symbol");
   }
 
   #[test]
   fn tree_form_in_list() {
+    // Each TreeForm produces -Graphics-, which get combined by the graphics list renderer
     assert_eq!(
       interpret("{TreeForm[f[x]], TreeForm[g[y]]}").unwrap(),
-      "{TreeForm[f[x]], TreeForm[g[y]]}"
+      "-Graphics-"
     );
   }
 }

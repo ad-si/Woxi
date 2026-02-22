@@ -8,6 +8,7 @@ pub mod chart;
 pub mod control_flow_ast;
 pub mod dataset_ast;
 pub mod datetime_ast;
+pub mod expr_form;
 pub mod field_plot;
 pub mod graphics;
 pub mod graphicsbox;
@@ -25,6 +26,7 @@ pub mod predicate_ast;
 pub mod quantity_ast;
 pub mod scoping;
 pub mod string_ast;
+pub mod tree_form;
 
 // Re-export all function implementations
 pub use association_ast::*;

@@ -1019,6 +1019,7 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "StreamPlot"
         || name == "VectorPlot"
         || name == "StreamDensityPlot"
+        || name == "Show"
       {
         // Flatten Sequence even in held args (unless SequenceHold)
         let args = flatten_sequences(name, args);

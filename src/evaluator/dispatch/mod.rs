@@ -556,10 +556,8 @@ pub fn evaluate_function_call_ast_inner(
     | "Style"
     | "Subscript"
     | "BaseForm"
-    | "MatrixForm"
     | "Out"
     | "Condition"
-    | "Show"
     | "MessageName"
     | "Plot3D"
     | "Integer"
@@ -576,9 +574,7 @@ pub fn evaluate_function_call_ast_inner(
     | "PageWidth"
     | "Constant"
     | "Catalan"
-    | "Information"
-    | "ListPlot3D"
-    | "TreeForm" => {
+    | "Information" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),

@@ -1175,6 +1175,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Flatten nested divisions: (a/b)/c → a/(b*c), a/(b/c) → (a*c)/b
       let (num, den) = flatten_division(a, b);
+
       Ok(Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Divide,
         left: Box::new(num),

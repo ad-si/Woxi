@@ -36,7 +36,7 @@ pub(super) fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
     {
       (args[0].clone(), args[1].clone())
     }
-    // Power[base, -1] => 1/base
+    // Power[base, -n] => 1/base^n (FunctionCall form)
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if let Some(neg_exp) = get_negative_integer(&args[1]) {
         if neg_exp == 1 {

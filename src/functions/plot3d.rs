@@ -1518,3 +1518,346 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::capture_graphics(&svg);
   Ok(Expr::Identifier("-Graphics3D-".to_string()))
 }
+
+/// Implementation of ListPlot3D[data, opts...].
+/// Accepts two formats:
+/// - `{{x1,y1,z1}, {x2,y2,z2}, ...}` — explicit 3D coordinates
+/// - `{{z11,z12,...}, {z21,z22,...}, ...}` — 2D matrix where indices → x,y, values → z
+pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = &args[0];
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let mut show_mesh = true;
+
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      match pattern.as_ref() {
+        Expr::Identifier(name) if name == "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        Expr::Identifier(name) if name == "Mesh" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+          {
+            show_mesh = false;
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  // Evaluate the data argument
+  let evaled_data = evaluate_expr_to_expr(data)?;
+
+  // Determine the data format and build a grid
+  let (grid, rows, cols, x_min, x_max, y_min, y_max) = match &evaled_data {
+    Expr::List(outer) if !outer.is_empty() => {
+      // Check first element to determine format
+      match &outer[0] {
+        // 2D matrix format: {{z11, z12, ...}, {z21, z22, ...}, ...}
+        Expr::List(first_row)
+          if !first_row.is_empty()
+            && first_row.iter().all(|e| !matches!(e, Expr::List(_))) =>
+        {
+          // Verify all rows are lists of the same length (or close)
+          let num_rows = outer.len();
+          let num_cols = first_row.len();
+
+          let mut grid = vec![vec![f64::NAN; num_cols]; num_rows];
+          for (i, row_expr) in outer.iter().enumerate() {
+            if let Expr::List(row) = row_expr {
+              for (j, val_expr) in row.iter().enumerate() {
+                if j < num_cols
+                  && let Some(v) = try_eval_to_f64(val_expr)
+                  && v.is_finite()
+                {
+                  grid[i][j] = v;
+                }
+              }
+            }
+          }
+          (
+            grid,
+            num_rows,
+            num_cols,
+            0.0,
+            (num_cols as f64 - 1.0).max(1.0),
+            0.0,
+            (num_rows as f64 - 1.0).max(1.0),
+          )
+        }
+        // Explicit 3D coordinates: {{x1,y1,z1}, {x2,y2,z2}, ...}
+        _ => {
+          // Parse as list of {x,y,z} points
+          let mut points: Vec<(f64, f64, f64)> = Vec::new();
+          for item in outer {
+            if let Expr::List(coords) = item
+              && coords.len() == 3
+            {
+              let x = try_eval_to_f64(&coords[0]);
+              let y = try_eval_to_f64(&coords[1]);
+              let z = try_eval_to_f64(&coords[2]);
+              if let (Some(x), Some(y), Some(z)) = (x, y, z)
+                && x.is_finite()
+                && y.is_finite()
+                && z.is_finite()
+              {
+                points.push((x, y, z));
+              }
+            }
+          }
+
+          if points.is_empty() {
+            return Err(InterpreterError::EvaluationError(
+              "ListPlot3D: no valid data points found".into(),
+            ));
+          }
+
+          // Find x,y range
+          let mut xmin = f64::INFINITY;
+          let mut xmax = f64::NEG_INFINITY;
+          let mut ymin = f64::INFINITY;
+          let mut ymax = f64::NEG_INFINITY;
+          for &(x, y, _) in &points {
+            xmin = xmin.min(x);
+            xmax = xmax.max(x);
+            ymin = ymin.min(y);
+            ymax = ymax.max(y);
+          }
+
+          // Bin points onto a grid
+          let grid_n = 50usize.min(points.len());
+          let x_range = if (xmax - xmin).abs() < 1e-15 {
+            1.0
+          } else {
+            xmax - xmin
+          };
+          let y_range = if (ymax - ymin).abs() < 1e-15 {
+            1.0
+          } else {
+            ymax - ymin
+          };
+
+          let mut grid = vec![vec![f64::NAN; grid_n]; grid_n];
+          let mut count = vec![vec![0u32; grid_n]; grid_n];
+
+          for &(x, y, z) in &points {
+            let i = (((x - xmin) / x_range * (grid_n - 1) as f64).round()
+              as usize)
+              .min(grid_n - 1);
+            let j = (((y - ymin) / y_range * (grid_n - 1) as f64).round()
+              as usize)
+              .min(grid_n - 1);
+            if count[i][j] == 0 {
+              grid[i][j] = z;
+            } else {
+              grid[i][j] += z;
+            }
+            count[i][j] += 1;
+          }
+
+          // Average multiple points in same bin
+          for i in 0..grid_n {
+            for j in 0..grid_n {
+              if count[i][j] > 1 {
+                grid[i][j] /= count[i][j] as f64;
+              }
+            }
+          }
+
+          (grid, grid_n, grid_n, xmin, xmax, ymin, ymax)
+        }
+      }
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ListPlot3D: first argument must be a list of data".into(),
+      ));
+    }
+  };
+
+  // Find z range
+  let mut z_min = f64::INFINITY;
+  let mut z_max = f64::NEG_INFINITY;
+  for row in &grid {
+    for &z in row {
+      if z.is_finite() {
+        z_min = z_min.min(z);
+        z_max = z_max.max(z);
+      }
+    }
+  }
+
+  if !z_min.is_finite() || !z_max.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "ListPlot3D: data produced no finite values".into(),
+    ));
+  }
+
+  let z_range = if (z_max - z_min).abs() < 1e-15 {
+    1.0
+  } else {
+    z_max - z_min
+  };
+
+  let camera = Camera::default();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+
+  for i in 0..rows.saturating_sub(1) {
+    for j in 0..cols.saturating_sub(1) {
+      let z00 = grid[i][j];
+      let z10 = if i + 1 < rows {
+        grid[i + 1][j]
+      } else {
+        f64::NAN
+      };
+      let z01 = if j + 1 < cols {
+        grid[i][j + 1]
+      } else {
+        f64::NAN
+      };
+      let z11 = if i + 1 < rows && j + 1 < cols {
+        grid[i + 1][j + 1]
+      } else {
+        f64::NAN
+      };
+
+      let nx = |ii: usize| -> f64 {
+        (ii as f64 / (rows - 1).max(1) as f64) * 2.0 - 1.0
+      };
+      let ny = |jj: usize| -> f64 {
+        (jj as f64 / (cols - 1).max(1) as f64) * 2.0 - 1.0
+      };
+      let nz =
+        |z: f64| -> f64 { ((z - z_min) / z_range) * 2.0 * Z_SCALE - Z_SCALE };
+
+      // Triangle 1: (i,j), (i+1,j), (i,j+1)
+      if z00.is_finite() && z10.is_finite() && z01.is_finite() {
+        let v0 = Point3D {
+          x: nx(i),
+          y: ny(j),
+          z: nz(z00),
+        };
+        let v1 = Point3D {
+          x: nx(i + 1),
+          y: ny(j),
+          z: nz(z10),
+        };
+        let v2 = Point3D {
+          x: nx(i),
+          y: ny(j + 1),
+          z: nz(z01),
+        };
+
+        let avg = ((z00 - z_min) / z_range
+          + (z10 - z_min) / z_range
+          + (z01 - z_min) / z_range)
+          / 3.0;
+        let base_color = height_color(avg);
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+
+        let p0 = project(v0, &camera);
+        let p1 = project(v1, &camera);
+        let p2 = project(v2, &camera);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+
+        all_triangles.push(Triangle {
+          projected: [p0, p1, p2],
+          depth: depth(center, &camera),
+          color,
+        });
+      }
+
+      // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
+      if z11.is_finite() && z01.is_finite() && z10.is_finite() {
+        let v0 = Point3D {
+          x: nx(i + 1),
+          y: ny(j + 1),
+          z: nz(z11),
+        };
+        let v1 = Point3D {
+          x: nx(i),
+          y: ny(j + 1),
+          z: nz(z01),
+        };
+        let v2 = Point3D {
+          x: nx(i + 1),
+          y: ny(j),
+          z: nz(z10),
+        };
+
+        let avg = ((z11 - z_min) / z_range
+          + (z01 - z_min) / z_range
+          + (z10 - z_min) / z_range)
+          / 3.0;
+        let base_color = height_color(avg);
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+
+        let p0 = project(v0, &camera);
+        let p1 = project(v1, &camera);
+        let p2 = project(v2, &camera);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+
+        all_triangles.push(Triangle {
+          projected: [p0, p1, p2],
+          depth: depth(center, &camera),
+          color,
+        });
+      }
+    }
+  }
+
+  if all_triangles.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ListPlot3D: data produced no renderable triangles".into(),
+    ));
+  }
+
+  let (z_axis_min, z_axis_max) = if (z_min - z_max).abs() < 1e-15 {
+    (z_min - 0.5, z_max + 0.5)
+  } else {
+    (z_min, z_max)
+  };
+
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg = generate_svg(
+    &all_triangles,
+    &camera,
+    (x_min, x_max),
+    (y_min, y_max),
+    (z_axis_min, z_axis_max),
+    svg_width,
+    svg_height,
+    full_width,
+    show_mesh,
+  )?;
+
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics3D-".to_string()))
+}
