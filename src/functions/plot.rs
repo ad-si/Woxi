@@ -1138,7 +1138,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if finite_ys.is_empty() {
     // Wolfram returns -Graphics- even when no finite values are produced
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -1164,9 +1166,6 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   )?;
 
-  // Store the SVG for capture by the Jupyter kernel
-  crate::capture_graphics(&svg);
-
   // Generate GraphicsBox expression for .nb export
   let rgb_values = [
     "0.24, 0.6, 0.8",
@@ -1189,5 +1188,5 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::capture_graphicsbox(&graphicsbox);
 
   // Return -Graphics- as the text representation
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }

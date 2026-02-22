@@ -544,6 +544,9 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       Ok(expr_to_string(&result))
     }
     Expr::Image { .. } => Ok("-Image-".to_string()),
+    Expr::Graphics { is_3d, .. } => {
+      Ok(if *is_3d { "-Graphics3D-" } else { "-Graphics-" }.to_string())
+    }
     Expr::CurriedCall { func, args } => {
       // Evaluate the curried call: f[a][b] -> apply f[a] to b
       let evaluated_func = evaluate_expr_to_expr(func)?;
@@ -1025,6 +1028,9 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "VectorPlot"
         || name == "StreamDensityPlot"
         || name == "Show"
+        || name == "GraphicsRow"
+        || name == "GraphicsColumn"
+        || name == "GraphicsGrid"
       {
         // Flatten Sequence even in held args (unless SequenceHold)
         let args = flatten_sequences(name, args);
@@ -1528,6 +1534,7 @@ pub fn evaluate_expr_to_expr_inner(
       Err(InterpreterError::TailCall(Box::new(parsed)))
     }
     Expr::Image { .. } => Ok(expr.clone()),
+    Expr::Graphics { .. } => Ok(expr.clone()),
     Expr::CurriedCall { func, args } => {
       // Evaluate the curried call: f[a][b] -> apply f[a] to args
       let evaluated_func = evaluate_expr_to_expr(func)?;

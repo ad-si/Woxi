@@ -303,7 +303,7 @@ pub fn get_captured_warnings() -> Vec<String> {
 }
 
 /// Clears the captured graphics buffer
-fn clear_captured_graphics() {
+pub fn clear_captured_graphics() {
   CAPTURED_GRAPHICS.with(|buffer| {
     buffer.borrow_mut().clear();
   });
@@ -314,6 +314,18 @@ pub fn capture_graphics(svg: &str) {
   CAPTURED_GRAPHICS.with(|buffer| {
     buffer.borrow_mut().push(svg.to_string());
   });
+}
+
+/// Capture SVG and return an Expr::Graphics carrying the SVG data.
+pub fn graphics_result(svg: String) -> syntax::Expr {
+  capture_graphics(&svg);
+  syntax::Expr::Graphics { svg, is_3d: false }
+}
+
+/// Capture SVG and return an Expr::Graphics for 3D graphics.
+pub fn graphics3d_result(svg: String) -> syntax::Expr {
+  capture_graphics(&svg);
+  syntax::Expr::Graphics { svg, is_3d: true }
 }
 
 /// Gets the last captured graphics content (backward compatible)
@@ -722,8 +734,7 @@ fn render_dataset_if_needed(expr: syntax::Expr) -> syntax::Expr {
     {
       let data = &args[0];
       if let Some(svg) = functions::graphics::dataset_to_svg(data) {
-        capture_graphics(&svg);
-        syntax::Expr::Identifier("-Graphics-".to_string())
+        graphics_result(svg)
       } else {
         expr
       }
@@ -757,6 +768,7 @@ fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
 fn is_graphics_placeholder(expr: &syntax::Expr) -> bool {
   match expr {
     syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Image-" => true,
+    syntax::Expr::Graphics { .. } => true,
     syntax::Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
@@ -974,8 +986,7 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
       {
         // Clear and re-capture with the combined SVG
         clear_captured_graphics();
-        capture_graphics(&combined);
-        return syntax::Expr::Identifier("-Graphics-".to_string());
+        return graphics_result(combined);
       }
     }
 
@@ -1014,8 +1025,7 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
           functions::graphics::combine_graphics_svgs(&rows)
         {
           clear_captured_graphics();
-          capture_graphics(&combined);
-          return syntax::Expr::Identifier("-Graphics-".to_string());
+          return graphics_result(combined);
         }
       }
     }
@@ -1107,8 +1117,7 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
           functions::graphics::combine_graphics_svgs(&rows)
         {
           clear_captured_graphics();
-          capture_graphics(&combined);
-          return syntax::Expr::Identifier("-Graphics-".to_string());
+          return graphics_result(combined);
         }
       }
     }
@@ -1162,6 +1171,8 @@ fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
 fn generate_output_svg(expr: &syntax::Expr) {
   // Skip for Graphics/Image results (they already have captured SVG/HTML)
   if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" || s == "-Image-")
+    || matches!(expr, syntax::Expr::Graphics { .. })
+    || matches!(expr, syntax::Expr::Image { .. })
   {
     return;
   }

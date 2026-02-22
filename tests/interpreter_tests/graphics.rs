@@ -1682,3 +1682,169 @@ mod tree_form_graphics {
     );
   }
 }
+
+mod graphics_row {
+  use super::*;
+
+  #[test]
+  fn basic_inline() {
+    clear_state();
+    let result = interpret(
+      "GraphicsRow[{Plot[Sin[x], {x, 0, 2 Pi}], Plot[Cos[x], {x, 0, 2 Pi}]}]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn with_variables() {
+    clear_state();
+    let result = interpret(
+      "p1 = Plot[Sin[x], {x, 0, 2 Pi}]; p2 = Plot[Cos[x], {x, 0, 2 Pi}]; GraphicsRow[{p1, p2}]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn three_plots_with_spacings() {
+    clear_state();
+    let result = interpret(
+      "p1 = Plot[Sin[x], {x, 0, 2 Pi}]; p2 = Plot[Cos[x], {x, 0, 2 Pi}]; p3 = Plot[Sin[x] Cos[x], {x, 0, 2 Pi}]; GraphicsRow[{p1, p2, p3}, Spacings -> 0.5]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn produces_combined_svg() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "p1 = Plot[Sin[x], {x, 0, 2 Pi}]; p2 = Plot[Cos[x], {x, 0, 2 Pi}]; GraphicsRow[{p1, p2}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Combined SVG should contain nested <svg> elements
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    // Count nested <svg> tags (should have at least 2 for the two plots)
+    let nested_count = svg.matches("<svg ").count();
+    assert!(
+      nested_count >= 3,
+      "Should have outer + 2 nested SVGs, got {}",
+      nested_count
+    );
+  }
+
+  #[test]
+  fn single_element() {
+    clear_state();
+    let result =
+      interpret("GraphicsRow[{Plot[Sin[x], {x, 0, 2 Pi}]}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn empty_list() {
+    clear_state();
+    let result = interpret("GraphicsRow[{}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn with_graphics_primitives() {
+    clear_state();
+    let result = interpret(
+      "g1 = Graphics[{Circle[]}]; g2 = Graphics[{Disk[]}]; GraphicsRow[{g1, g2}]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+}
+
+mod graphics_column {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    clear_state();
+    let result = interpret(
+      "GraphicsColumn[{Plot[Sin[x], {x, 0, 2 Pi}], Plot[Cos[x], {x, 0, 2 Pi}]}]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn with_variables() {
+    clear_state();
+    let result = interpret(
+      "p1 = Plot[Sin[x], {x, 0, 2 Pi}]; p2 = Plot[Cos[x], {x, 0, 2 Pi}]; GraphicsColumn[{p1, p2}]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn produces_vertical_svg() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "p1 = Plot[Sin[x], {x, 0, 2 Pi}]; p2 = Plot[Cos[x], {x, 0, 2 Pi}]; GraphicsColumn[{p1, p2}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    let nested_count = svg.matches("<svg ").count();
+    assert!(
+      nested_count >= 3,
+      "Should have outer + 2 nested SVGs, got {}",
+      nested_count
+    );
+  }
+}
+
+mod graphics_grid {
+  use super::*;
+
+  #[test]
+  fn basic_2x2() {
+    clear_state();
+    let result = interpret(
+      "p1 = Plot[Sin[x], {x, 0, 2 Pi}]; p2 = Plot[Cos[x], {x, 0, 2 Pi}]; \
+       p3 = Plot[x^2, {x, -2, 2}]; p4 = Plot[x^3, {x, -2, 2}]; \
+       GraphicsGrid[{{p1, p2}, {p3, p4}}]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn produces_grid_svg() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "p1 = Plot[Sin[x], {x, 0, 2 Pi}]; p2 = Plot[Cos[x], {x, 0, 2 Pi}]; \
+       p3 = Plot[x^2, {x, -2, 2}]; p4 = Plot[x^3, {x, -2, 2}]; \
+       GraphicsGrid[{{p1, p2}, {p3, p4}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    // 4 plots + 1 outer SVG = at least 5 <svg> tags
+    let nested_count = svg.matches("<svg ").count();
+    assert!(
+      nested_count >= 5,
+      "Should have outer + 4 nested SVGs, got {}",
+      nested_count
+    );
+  }
+
+  #[test]
+  fn with_spacings() {
+    clear_state();
+    let result = interpret(
+      "p1 = Graphics[{Circle[]}]; p2 = Graphics[{Disk[]}]; \
+       GraphicsGrid[{{p1, p2}}, Spacings -> 1]",
+    )
+    .unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+}

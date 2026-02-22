@@ -37,6 +37,15 @@ pub fn dispatch_plotting(
     "Show" if !args.is_empty() => {
       Some(crate::functions::graphics::show_ast(args))
     }
+    "GraphicsRow" if !args.is_empty() => {
+      Some(crate::functions::graphics::graphics_row_ast(args))
+    }
+    "GraphicsColumn" if !args.is_empty() => {
+      Some(crate::functions::graphics::graphics_column_ast(args))
+    }
+    "GraphicsGrid" if !args.is_empty() => {
+      Some(crate::functions::graphics::graphics_grid_ast(args))
+    }
     "TreeForm" if !args.is_empty() => {
       Some(crate::functions::tree_form::tree_form_ast(args))
     }

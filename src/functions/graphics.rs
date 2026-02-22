@@ -1992,15 +1992,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str("</svg>");
 
-  // Store the SVG for capture by Jupyter/Export
-  crate::capture_graphics(&svg);
-
   // Generate and store GraphicsBox expression for .nb export
   let box_elements = primitives_to_box_elements(&primitives);
   let graphicsbox = gbox::graphics_box(&box_elements);
   crate::capture_graphicsbox(&graphicsbox);
 
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 // ── Grid SVG rendering ──────────────────────────────────────────────────
@@ -2660,8 +2657,7 @@ fn grid_ast_internal(
   parens: bool,
 ) -> Result<Expr, InterpreterError> {
   let svg = grid_svg_internal(args, group_gaps, parens)?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 fn grid_svg_internal(
@@ -3023,8 +3019,7 @@ pub fn matrixform_3d_ast(
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// Stack multiple SVG strings vertically with spacing, capture the result.
@@ -3084,8 +3079,7 @@ pub fn stack_svgs_vertically(
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// Render a Dataset expression as an SVG table.
@@ -3448,4 +3442,441 @@ pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
 
   svg.push_str("</svg>");
   Some(svg)
+}
+
+// ── GraphicsRow / GraphicsColumn / GraphicsGrid ────────────────────────
+
+/// Extract SVG strings from a list of evaluated expressions.
+/// Each item must be an Expr::Graphics to be included.
+fn extract_svgs_from_list(items: &[Expr]) -> Vec<String> {
+  items
+    .iter()
+    .filter_map(|item| {
+      if let Expr::Graphics { svg, .. } = item {
+        Some(svg.clone())
+      } else {
+        None
+      }
+    })
+    .collect()
+}
+
+/// Spacing specification: either absolute printer's points or scaled fraction.
+#[derive(Clone, Copy)]
+enum SpacingSpec {
+  /// Absolute spacing in printer's points (1 pt = 4/3 px at 96 dpi)
+  Points(f64),
+  /// Fraction of item size (e.g. Scaled[0.1] = 10% of cell dimension)
+  Scaled(f64),
+}
+
+impl SpacingSpec {
+  /// Default: Scaled[0.1] per Mathematica docs
+  fn default_val() -> Self {
+    SpacingSpec::Scaled(0.1)
+  }
+
+  /// Resolve to pixels given a cell dimension (width or height)
+  fn to_px(self, cell_dim: f64) -> f64 {
+    match self {
+      SpacingSpec::Points(pts) => pts * (4.0 / 3.0), // pt → px at 96 dpi
+      SpacingSpec::Scaled(frac) => frac * cell_dim,
+    }
+  }
+}
+
+/// Parse a single spacing value from an expression.
+/// - Numeric → Points(n)
+/// - Scaled[s] → Scaled(s)
+fn parse_spacing_expr(expr: &Expr) -> Option<SpacingSpec> {
+  // Scaled[s]
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Scaled"
+    && args.len() == 1
+    && let Some(val) = try_eval_to_f64(&args[0])
+  {
+    return Some(SpacingSpec::Scaled(val));
+  }
+  // Numeric value → printer's points
+  if let Some(val) = try_eval_to_f64(expr) {
+    return Some(SpacingSpec::Points(val));
+  }
+  None
+}
+
+/// Parsed layout options for GraphicsRow/Column/Grid.
+struct LayoutOptions {
+  h_spacing: SpacingSpec,
+  v_spacing: SpacingSpec,
+  /// Total width constraint (from ImageSize -> n or ImageSize -> {w, h})
+  target_width: Option<f64>,
+  /// Total height constraint (only from ImageSize -> {w, h})
+  target_height: Option<f64>,
+}
+
+/// Parse Spacings and ImageSize options from rule arguments.
+fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
+  let mut opts = LayoutOptions {
+    h_spacing: SpacingSpec::default_val(),
+    v_spacing: SpacingSpec::default_val(),
+    target_width: None,
+    target_height: None,
+  };
+
+  for arg in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+    {
+      match pattern.as_ref() {
+        Expr::Identifier(name) if name == "Spacings" => {
+          match replacement.as_ref() {
+            // {h, v} pair
+            Expr::List(pair) if pair.len() == 2 => {
+              if let Some(h) = parse_spacing_expr(&pair[0]) {
+                opts.h_spacing = h;
+              }
+              if let Some(v) = parse_spacing_expr(&pair[1]) {
+                opts.v_spacing = v;
+              }
+            }
+            // Single value → both directions
+            other => {
+              if let Some(spec) = parse_spacing_expr(other) {
+                opts.h_spacing = spec;
+                opts.v_spacing = spec;
+              }
+            }
+          }
+        }
+        Expr::Identifier(name) if name == "ImageSize" => {
+          match replacement.as_ref() {
+            // {w, h} explicit pair
+            Expr::List(pair) if pair.len() == 2 => {
+              if let Some(w) = try_eval_to_f64(&pair[0]) {
+                opts.target_width = Some(w);
+              }
+              if let Some(h) = try_eval_to_f64(&pair[1]) {
+                opts.target_height = Some(h);
+              }
+            }
+            // Single number → total width only
+            other => {
+              if let Some(w) = try_eval_to_f64(other) {
+                opts.target_width = Some(w);
+              } else if let Some((w, _, _)) = parse_image_size(other) {
+                // Named sizes (Small, Medium, Large, etc.)
+                opts.target_width = Some(w as f64);
+              }
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  opts
+}
+
+/// Get the aspect ratio (width/height) from a viewBox string "x y w h".
+fn viewbox_aspect(vb: &str) -> f64 {
+  let parts: Vec<f64> = vb
+    .split_whitespace()
+    .filter_map(|s| s.parse().ok())
+    .collect();
+  if parts.len() >= 4 && parts[3] > 0.0 {
+    parts[2] / parts[3]
+  } else {
+    1.0 // fallback to square
+  }
+}
+
+/// Combine SVG strings in a grid layout with configurable spacing and size.
+/// Uses aspect-ratio-aware sizing: within each row, all cells share the same
+/// height and each cell's width is determined by its native aspect ratio.
+fn combine_svgs_grid(
+  rows: &[Vec<String>],
+  opts: &LayoutOptions,
+) -> Option<String> {
+  if rows.is_empty() {
+    return None;
+  }
+  if rows.iter().all(|r| r.is_empty()) {
+    return None;
+  }
+
+  // Parse all SVGs and collect their viewBox + inner content.
+  // For each row, collect (viewBox, inner_content, aspect_ratio).
+  let parsed_rows: Vec<Vec<(String, String, f64)>> = rows
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .filter_map(|svg| {
+          let p = parse_svg_dimensions(svg)?;
+          let ar = viewbox_aspect(&p.view_box);
+          Some((p.view_box, p.inner_content, ar))
+        })
+        .collect()
+    })
+    .collect();
+
+  if parsed_rows.iter().all(|r| r.is_empty()) {
+    return None;
+  }
+
+  // Default total width when no ImageSize given
+  let default_total_w = 360.0_f64;
+  let target_w = opts.target_width.unwrap_or(default_total_w);
+
+  // For each row: compute cell widths and row height given target_w.
+  // In a row, all cells have the same height h.
+  // cell_i width = aspect_i * h
+  // sum(aspect_i * h) + (n-1)*h_gap = target_w
+  // h = (target_w - (n-1)*h_gap) / sum(aspect_i)
+  // But h_gap may depend on h (if Scaled), so we use an initial estimate
+  // and iterate once.
+  struct RowLayout {
+    cells: Vec<(f64, f64, String, String)>, // (x, cell_w, viewBox, inner)
+    row_h: f64,
+  }
+
+  let mut row_layouts: Vec<RowLayout> = Vec::new();
+
+  for parsed_row in &parsed_rows {
+    if parsed_row.is_empty() {
+      row_layouts.push(RowLayout {
+        cells: Vec::new(),
+        row_h: 0.0,
+      });
+      continue;
+    }
+    let n = parsed_row.len();
+    let sum_aspect: f64 = parsed_row.iter().map(|(_, _, ar)| ar).sum();
+
+    // First estimate of row_h (assume h_gap = 0 initially for Scaled)
+    let h_est = if sum_aspect > 0.0 {
+      target_w / sum_aspect
+    } else {
+      target_w / n as f64
+    };
+
+    // Resolve h_gap using estimated cell width
+    let avg_cell_w = if sum_aspect > 0.0 {
+      h_est * sum_aspect / n as f64
+    } else {
+      h_est
+    };
+    let h_gap = opts.h_spacing.to_px(avg_cell_w);
+
+    // Now compute actual row height with gaps accounted for
+    let available_w = target_w - (n as f64 - 1.0).max(0.0) * h_gap;
+    let row_h = if sum_aspect > 0.0 {
+      (available_w / sum_aspect).max(10.0)
+    } else {
+      (available_w / n as f64).max(10.0)
+    };
+
+    // Lay out cells left-to-right
+    let mut x = 0.0_f64;
+    let mut cells = Vec::new();
+    for (vb, inner, ar) in parsed_row {
+      let cell_w = ar * row_h;
+      cells.push((x, cell_w, vb.clone(), inner.clone()));
+      x += cell_w + h_gap;
+    }
+
+    row_layouts.push(RowLayout { cells, row_h });
+  }
+
+  // If explicit height given, scale rows to fit
+  if let Some(total_h) = opts.target_height {
+    let num_nonempty = row_layouts.iter().filter(|r| r.row_h > 0.0).count();
+    if num_nonempty > 0 {
+      let current_h: f64 = row_layouts.iter().map(|r| r.row_h).sum();
+      // Estimate v_gap from average row height
+      let avg_row_h = current_h / num_nonempty as f64;
+      let v_gap = opts.v_spacing.to_px(avg_row_h);
+      let available_h =
+        total_h - (num_nonempty as f64 - 1.0).max(0.0) * v_gap;
+      if current_h > 0.0 && available_h > 0.0 {
+        let scale = available_h / current_h;
+        for layout in &mut row_layouts {
+          layout.row_h *= scale;
+          for cell in &mut layout.cells {
+            cell.0 *= scale; // x
+            cell.1 *= scale; // cell_w
+          }
+        }
+      }
+    }
+  }
+
+  // Compute total dimensions
+  let total_width = row_layouts
+    .iter()
+    .map(|r| {
+      r.cells
+        .last()
+        .map_or(0.0, |(x, w, _, _)| x + w)
+    })
+    .fold(0.0_f64, f64::max);
+  let v_gap = if !row_layouts.is_empty() {
+    let avg_h = row_layouts
+      .iter()
+      .map(|r| r.row_h)
+      .sum::<f64>()
+      / row_layouts.len().max(1) as f64;
+    opts.v_spacing.to_px(avg_h)
+  } else {
+    0.0
+  };
+  let total_height: f64 = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
+    + (row_layouts.iter().filter(|r| r.row_h > 0.0).count() as f64 - 1.0)
+      .max(0.0)
+      * v_gap;
+
+  let mut svg = String::with_capacity(4096);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    total_width.ceil() as u32,
+    total_height.ceil() as u32,
+    total_width.ceil() as u32,
+    total_height.ceil() as u32,
+  ));
+
+  let mut y = 0.0_f64;
+  for layout in &row_layouts {
+    if layout.row_h <= 0.0 {
+      continue;
+    }
+    for (cx, cw, vb, inner) in &layout.cells {
+      svg.push_str(&format!(
+        "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
+        cx, y, cw, layout.row_h, vb,
+      ));
+      svg.push_str(inner);
+      svg.push_str("</svg>\n");
+    }
+    y += layout.row_h + v_gap;
+  }
+
+  svg.push_str("</svg>");
+  Some(svg)
+}
+
+/// GraphicsRow[{g1, g2, ...}] or GraphicsRow[{g1, g2, ...}, opts...]
+/// Arranges graphics side-by-side in a single row.
+pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Evaluate the first argument (should be a list of graphics)
+  let list_expr = evaluate_expr_to_expr(&args[0])?;
+  let items = match &list_expr {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "GraphicsRow expects a list as its first argument".into(),
+      ));
+    }
+  };
+
+  let svgs = extract_svgs_from_list(&items);
+  if svgs.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let opts = parse_layout_options(&args[1..]);
+  let row = vec![svgs];
+  match combine_svgs_grid(&row, &opts) {
+    Some(combined) => {
+      crate::clear_captured_graphics();
+      Ok(crate::graphics_result(combined))
+    }
+    None => Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    )),
+  }
+}
+
+/// GraphicsColumn[{g1, g2, ...}] or GraphicsColumn[{g1, g2, ...}, opts...]
+/// Arranges graphics vertically in a single column.
+pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let list_expr = evaluate_expr_to_expr(&args[0])?;
+  let items = match &list_expr {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "GraphicsColumn expects a list as its first argument".into(),
+      ));
+    }
+  };
+
+  let svgs = extract_svgs_from_list(&items);
+  if svgs.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let opts = parse_layout_options(&args[1..]);
+  // Each SVG becomes its own row (single-column layout)
+  let rows: Vec<Vec<String>> = svgs.into_iter().map(|s| vec![s]).collect();
+  match combine_svgs_grid(&rows, &opts) {
+    Some(combined) => {
+      crate::clear_captured_graphics();
+      Ok(crate::graphics_result(combined))
+    }
+    None => Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    )),
+  }
+}
+
+/// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]
+/// Arranges graphics in a 2D grid.
+pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let grid_expr = evaluate_expr_to_expr(&args[0])?;
+  let outer_items = match &grid_expr {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "GraphicsGrid expects a list of lists as its first argument".into(),
+      ));
+    }
+  };
+
+  let mut rows: Vec<Vec<String>> = Vec::new();
+  for item in outer_items {
+    match item {
+      Expr::List(row_items) => {
+        rows.push(extract_svgs_from_list(row_items));
+      }
+      _ => {
+        // Single item treated as a single-element row
+        let svgs = extract_svgs_from_list(&[item.clone()]);
+        rows.push(svgs);
+      }
+    }
+  }
+
+  // Check if we have any SVGs at all
+  if rows.iter().all(|r| r.is_empty()) {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let opts = parse_layout_options(&args[1..]);
+  match combine_svgs_grid(&rows, &opts) {
+    Some(combined) => {
+      crate::clear_captured_graphics();
+      Ok(crate::graphics_result(combined))
+    }
+    None => Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    )),
+  }
 }

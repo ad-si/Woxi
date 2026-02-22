@@ -347,6 +347,8 @@ pub enum Expr {
     data: std::sync::Arc<Vec<f64>>,
     image_type: ImageType,
   },
+  /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d)
+  Graphics { svg: String, is_3d: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3083,6 +3085,13 @@ pub fn expr_to_string(expr: &Expr) -> String {
     Expr::Constant(s) => s.clone(),
     Expr::Raw(s) => s.clone(),
     Expr::Image { .. } => "-Image-".to_string(),
+    Expr::Graphics { is_3d, .. } => {
+      if *is_3d {
+        "-Graphics3D-".to_string()
+      } else {
+        "-Graphics-".to_string()
+      }
+    }
     Expr::CurriedCall { func, args } => {
       // Display as nested calls: f[a][b, c]
       let args_str: Vec<String> = args.iter().map(expr_to_string).collect();

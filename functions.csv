@@ -2410,11 +2410,11 @@ GraphHighlightStyle,,,,8,1889
 GraphHub,,,,9,4567
 Graphics,Creates a 2D graphics object,✅,pure,1,72
 Graphics3D,Creates a 3D graphics object,✅,pure,1,170
-GraphicsColumn,,,,6,1239
+GraphicsColumn,Arranges graphics in a vertical column,✅,pure,6,1239
 GraphicsComplex,,,,6,475
-GraphicsGrid,,,,6,620
+GraphicsGrid,Arranges graphics in a 2D grid,✅,pure,6,620
 GraphicsGroup,,,,6,725
-GraphicsRow,,,,6,494
+GraphicsRow,Arranges graphics in a horizontal row,✅,pure,6,494
 GraphIntersection,,,,8,3191
 GraphJoin,,,,13.1,
 GraphLayers,,,,12.3,

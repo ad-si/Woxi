@@ -217,8 +217,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )?
   };
 
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListLinePlot[{y1, y2, ...}]
@@ -247,8 +246,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     filling,
   )?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListStepPlot[{y1, y2, ...}]
@@ -280,8 +278,7 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
   )?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListLogPlot: y-axis is log10 scale
@@ -308,8 +305,7 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
   )?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListLogLogPlot: both axes log10 scale
@@ -342,8 +338,7 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
   )?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListLogLinearPlot: x-axis is log10 scale
@@ -372,8 +367,7 @@ pub fn list_log_linear_plot_ast(
     svg_height,
     full_width,
   )?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListPolarPlot[{r1, r2, ...}]: plot data in polar coordinates
@@ -405,6 +399,5 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
   )?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
