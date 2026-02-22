@@ -370,4 +370,4 @@ StatementSeparator = _{ ";"? }
 // TrailingSemicolon marks that the last statement ends with ; (suppresses output)
 TrailingSemicolon = { ";" }
 
-Program = { SOI ~ Statement ~ (StatementSeparator ~ Statement)* ~ TrailingSemicolon? ~ EOI }
+Program = { SOI ~ (Statement ~ (StatementSeparator ~ Statement)* ~ TrailingSemicolon?)? ~ EOI }

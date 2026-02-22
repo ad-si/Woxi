@@ -96,6 +96,9 @@ fn main() {
           println!("{result}");
         }
       }
+      Err(woxi::InterpreterError::EmptyInput) => {
+        // No output for empty/comment-only input
+      }
       Err(e) => eprintln!("Error: {}", e),
     },
     Commands::Run { file, args } => {
