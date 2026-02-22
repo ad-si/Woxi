@@ -1458,3 +1458,72 @@ mod read {
     assert_eq!(result, "{a, b, c}");
   }
 }
+
+mod information {
+  use super::*;
+
+  #[test]
+  fn variable_definition() {
+    clear_state();
+    let result = interpret("a = 5; ?a").unwrap();
+    assert!(result.contains(
+      "OwnValues -> Information`InformationValueForm[OwnValues, a, {a -> 5}]"
+    ));
+    assert!(result.contains("DownValues -> None"));
+    assert!(result.contains("FullName -> Global`a"));
+  }
+
+  #[test]
+  fn function_definition() {
+    clear_state();
+    let result = interpret("f[x_] := x^2; ?f").unwrap();
+    assert!(result.contains("DownValues -> Information`InformationValueForm[DownValues, f, {f[x_] :> x^2}]"));
+    assert!(result.contains("OwnValues -> None"));
+  }
+
+  #[test]
+  fn undefined_symbol() {
+    clear_state();
+    let result = interpret("?z").unwrap();
+    assert_eq!(result, "Missing[UnknownSymbol, z]");
+  }
+
+  #[test]
+  fn compound_expression() {
+    clear_state();
+    let result = interpret("a = 5; ?a; 1 + 2").unwrap();
+    assert_eq!(result, "3");
+  }
+
+  #[test]
+  fn multiple_function_definitions() {
+    clear_state();
+    let result = interpret("f[x_] := x^2; f[x_, y_] := x + y; ?f").unwrap();
+    assert!(result.contains("f[x_] :> x^2, f[x_, y_] :> x + y"));
+  }
+
+  #[test]
+  fn information_function_call_form() {
+    clear_state();
+    let result = interpret("a = 10; Information[a]").unwrap();
+    assert!(result.contains(
+      "OwnValues -> Information`InformationValueForm[OwnValues, a, {a -> 10}]"
+    ));
+  }
+
+  #[test]
+  fn function_with_head_constraint() {
+    clear_state();
+    let result = interpret("g[x_Integer] := x + 1; ?g").unwrap();
+    assert!(result.contains("g[x_Integer] :> x + 1"));
+  }
+
+  #[test]
+  fn symbol_with_attributes() {
+    clear_state();
+    let result =
+      interpret("SetAttributes[h, Listable]; h[x_] := x^2; ?h").unwrap();
+    assert!(result.contains("Attributes -> {Listable}"));
+    assert!(result.contains("h[x_] :> x^2"));
+  }
+}

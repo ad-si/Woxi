@@ -458,6 +458,13 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
       Expr::String(result)
     }
+    Rule::InformationQuery => {
+      let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
+      Expr::FunctionCall {
+        name: "Information".to_string(),
+        args: vec![Expr::Identifier(symbol_name)],
+      }
+    }
     Rule::Identifier => Expr::Identifier(pair.as_str().to_string()),
     Rule::DerivativeIdentifier => {
       // Standalone f' → Derivative[1][f], f'' → Derivative[2][f], etc.

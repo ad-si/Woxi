@@ -331,10 +331,7 @@ mod full_form {
 
   #[test]
   fn full_form_reciprocal() {
-    assert_eq!(
-      interpret("FullForm[1/z]").unwrap(),
-      "Power[z, -1]"
-    );
+    assert_eq!(interpret("FullForm[1/z]").unwrap(), "Power[z, -1]");
   }
 
   #[test]
@@ -1770,7 +1767,7 @@ mod information_function {
   fn information_attributes() {
     assert_eq!(
       interpret("Attributes[Information]").unwrap(),
-      "{Protected, ReadProtected}"
+      "{HoldAll, Protected}"
     );
   }
 }

@@ -176,10 +176,9 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
           if matches!(left.as_ref(), Expr::Integer(1)) {
             return decompose_expr(&b_inv);
           }
-          if let Ok(product) = crate::functions::times_ast(&[
-            left.as_ref().clone(),
-            b_inv,
-          ]) {
+          if let Ok(product) =
+            crate::functions::times_ast(&[left.as_ref().clone(), b_inv])
+          {
             return decompose_expr(&product);
           }
         }
