@@ -117,16 +117,19 @@ pub fn evaluate_all(input: &str) -> String {
 
         // Main result
         if let Some(ref svg) = result.graphics {
-          items.push(json_output_item("graphics", svg, None));
-          // Check for non-graphics text mixed in
-          let cleaned = result
-            .result
-            .replace("-Graphics-", "")
-            .replace("-Graphics3D-", "")
-            .replace("-Image-", "");
-          let cleaned = cleaned.trim();
-          if !cleaned.is_empty() && cleaned != "Null" && cleaned != "\0" {
-            items.push(json_output_item("text", cleaned, None));
+          // Only display graphics if output wasn't suppressed by trailing semicolon
+          if result.result != "Null" && result.result != "\0" {
+            items.push(json_output_item("graphics", svg, None));
+            // Check for non-graphics text mixed in
+            let cleaned = result
+              .result
+              .replace("-Graphics-", "")
+              .replace("-Graphics3D-", "")
+              .replace("-Image-", "");
+            let cleaned = cleaned.trim();
+            if !cleaned.is_empty() && cleaned != "Null" && cleaned != "\0" {
+              items.push(json_output_item("text", cleaned, None));
+            }
           }
         } else if result.result != "Null" && result.result != "\0" {
           items.push(json_output_item(
