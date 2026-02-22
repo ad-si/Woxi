@@ -962,8 +962,15 @@ pub fn dispatch_list_operations(
     "MinMax" if args.len() == 1 => {
       return Some(list_helpers_ast::min_max_ast(&args[0]));
     }
-    "Part" if args.len() == 2 => {
-      return Some(list_helpers_ast::part_ast(&args[0], &args[1]));
+    "Part" if args.len() >= 2 => {
+      let mut result = list_helpers_ast::part_ast(&args[0], &args[1]);
+      for idx in &args[2..] {
+        match result {
+          Ok(ref expr) => result = list_helpers_ast::part_ast(expr, idx),
+          Err(_) => break,
+        }
+      }
+      return Some(result);
     }
     "Insert" if args.len() == 3 => {
       return Some(list_helpers_ast::insert_ast(&args[0], &args[1], &args[2]));
