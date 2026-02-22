@@ -945,6 +945,41 @@ mod plot3d {
     }
 
     #[test]
+    fn rgbcolor_hex_string() {
+      insta::assert_snapshot!(export_svg(
+        r##"Graphics[{RGBColor["#264653"], Disk[]}]"##
+      ));
+    }
+
+    #[test]
+    fn bar_chart_chart_style() {
+      insta::assert_snapshot!(export_svg(
+        r##"BarChart[{1, 2, 3}, ChartStyle -> {RGBColor["#264653"], RGBColor["#2a9d8f"], RGBColor["#e9c46a"]}]"##
+      ));
+    }
+
+    #[test]
+    fn bar_chart_plot_label_styled_bold() {
+      insta::assert_snapshot!(export_svg(
+        r#"BarChart[{1, 2, 3}, PlotLabel -> Style["Title", Bold]]"#
+      ));
+    }
+
+    #[test]
+    fn bar_chart_chart_style_and_styled_plot_label() {
+      insta::assert_snapshot!(export_svg(
+        r##"BarChart[{1, 2, 3}, ChartStyle -> {RGBColor["#264653"], RGBColor["#2a9d8f"], RGBColor["#e9c46a"]}, PlotLabel -> Style["My Chart", Bold, Italic]]"##
+      ));
+    }
+
+    #[test]
+    fn bar_chart_chart_style_cycling() {
+      insta::assert_snapshot!(export_svg(
+        r#"BarChart[{1, 2, 3, 4, 5}, ChartStyle -> {Red, Blue}]"#
+      ));
+    }
+
+    #[test]
     fn word_cloud_basic() {
       insta::assert_snapshot!(export_svg(
         r#"WordCloud[{"hello", "world", "hello", "foo", "hello", "world"}]"#

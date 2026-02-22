@@ -316,6 +316,34 @@ fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
 
 // ── Color parsing ────────────────────────────────────────────────────────
 
+/// Parse a hex color string like "#RRGGBB" or "#RGB" into a Color.
+fn parse_hex_color(s: &str) -> Option<Color> {
+  let s = s.strip_prefix('#')?;
+  match s.len() {
+    6 => {
+      let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+      let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+      let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+      Some(Color::new(
+        r as f64 / 255.0,
+        g as f64 / 255.0,
+        b as f64 / 255.0,
+      ))
+    }
+    3 => {
+      let r = u8::from_str_radix(&s[0..1], 16).ok()?;
+      let g = u8::from_str_radix(&s[1..2], 16).ok()?;
+      let b = u8::from_str_radix(&s[2..3], 16).ok()?;
+      Some(Color::new(
+        (r * 17) as f64 / 255.0,
+        (g * 17) as f64 / 255.0,
+        (b * 17) as f64 / 255.0,
+      ))
+    }
+    _ => None,
+  }
+}
+
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
@@ -332,7 +360,10 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
           };
           Some(Color::new(r, g, b).with_alpha(a))
         } else if args.len() == 1 {
-          // RGBColor[gray]
+          // RGBColor["#hex"] or RGBColor[gray]
+          if let Expr::String(s) = &args[0] {
+            return parse_hex_color(s);
+          }
           let g = expr_to_f64(&args[0])?;
           Some(Color::new(g, g, g))
         } else {
@@ -3699,8 +3730,7 @@ fn combine_svgs_grid(
       // Estimate v_gap from average row height
       let avg_row_h = current_h / num_nonempty as f64;
       let v_gap = opts.v_spacing.to_px(avg_row_h);
-      let available_h =
-        total_h - (num_nonempty as f64 - 1.0).max(0.0) * v_gap;
+      let available_h = total_h - (num_nonempty as f64 - 1.0).max(0.0) * v_gap;
       if current_h > 0.0 && available_h > 0.0 {
         let scale = available_h / current_h;
         for layout in &mut row_layouts {
@@ -3717,17 +3747,10 @@ fn combine_svgs_grid(
   // Compute total dimensions
   let total_width = row_layouts
     .iter()
-    .map(|r| {
-      r.cells
-        .last()
-        .map_or(0.0, |(x, w, _, _)| x + w)
-    })
+    .map(|r| r.cells.last().map_or(0.0, |(x, w, _, _)| x + w))
     .fold(0.0_f64, f64::max);
   let v_gap = if !row_layouts.is_empty() {
-    let avg_h = row_layouts
-      .iter()
-      .map(|r| r.row_h)
-      .sum::<f64>()
+    let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
       / row_layouts.len().max(1) as f64;
     opts.v_spacing.to_px(avg_h)
   } else {

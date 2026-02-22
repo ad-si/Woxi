@@ -1,5 +1,6 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
+use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, generate_bar_svg,
@@ -27,14 +28,78 @@ fn extract_values(arg: &Expr) -> Result<Vec<f64>, InterpreterError> {
   }
 }
 
+/// A label with optional styling (bold, italic, color, font-size).
+pub(crate) struct StyledLabel {
+  pub text: String,
+  pub bold: bool,
+  pub italic: bool,
+  pub color: Option<Color>,
+  pub font_size: Option<f64>,
+}
+
+/// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
+fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  match expr {
+    Expr::String(s) => Some(StyledLabel {
+      text: s.clone(),
+      bold: false,
+      italic: false,
+      color: None,
+      font_size: None,
+    }),
+    Expr::Identifier(s) => Some(StyledLabel {
+      text: s.clone(),
+      bold: false,
+      italic: false,
+      color: None,
+      font_size: None,
+    }),
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let text = match &args[0] {
+        Expr::String(s) => s.clone(),
+        Expr::Identifier(s) => s.clone(),
+        _ => return None,
+      };
+      let mut bold = false;
+      let mut italic = false;
+      let mut color = None;
+      let mut font_size = None;
+      for arg in &args[1..] {
+        match arg {
+          Expr::Identifier(s) if s == "Bold" => bold = true,
+          Expr::Identifier(s) if s == "Italic" => italic = true,
+          _ => {
+            if let Some(c) = parse_color(arg) {
+              color = Some(c);
+            } else if let Some(f) = try_eval_to_f64(arg) {
+              font_size = Some(f);
+            }
+          }
+        }
+      }
+      Some(StyledLabel {
+        text,
+        bold,
+        italic,
+        color,
+        font_size,
+      })
+    }
+    _ => None,
+  }
+}
+
 /// Parsed chart options.
 pub(crate) struct ChartOptions {
   pub svg_width: u32,
   pub svg_height: u32,
   pub full_width: bool,
   pub chart_labels: Vec<String>,
-  pub plot_label: Option<String>,
+  pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
+  pub chart_style: Vec<Color>,
 }
 
 /// Extract a string from an Expr (Identifier or String).
@@ -55,6 +120,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     chart_labels: Vec::new(),
     plot_label: None,
     axes_label: None,
+    chart_style: Vec::new(),
   };
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -85,8 +151,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         "PlotLabel" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          if let Some(s) = expr_to_label(&val) {
-            opts.plot_label = Some(s);
+          if let Some(sl) = parse_styled_label(&val) {
+            opts.plot_label = Some(sl);
           }
         }
         "AxesLabel" => {
@@ -98,6 +164,24 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             let x = expr_to_label(&items[0]).unwrap_or_default();
             let y = expr_to_label(&items[1]).unwrap_or_default();
             opts.axes_label = Some((x, y));
+          }
+        }
+        "ChartStyle" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          match &val {
+            Expr::List(items) => {
+              for item in items {
+                if let Some(c) = parse_color(item) {
+                  opts.chart_style.push(c);
+                }
+              }
+            }
+            _ => {
+              if let Some(c) = parse_color(&val) {
+                opts.chart_style.push(c);
+              }
+            }
           }
         }
         _ => {}
@@ -137,11 +221,12 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.svg_height,
     opts.full_width,
     &opts.chart_labels,
-    opts.plot_label.as_deref(),
+    opts.plot_label.as_ref(),
     opts
       .axes_label
       .as_ref()
       .map(|(x, y)| (x.as_str(), y.as_str())),
+    &opts.chart_style,
   )?;
   Ok(crate::graphics_result(svg))
 }
