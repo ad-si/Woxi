@@ -435,6 +435,18 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   }
 }
 
+/// Generate a single 16×16 SVG swatch for a color.
+pub(crate) fn color_swatch_svg(color: &Color) -> String {
+  format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" \
+     viewBox=\"0 0 16 16\">\
+     <rect width=\"16\" height=\"16\" rx=\"2\" fill=\"{}\"{}/>\
+     </svg>",
+    color.to_svg_rgb(),
+    color.opacity_attr(),
+  )
+}
+
 // ── Directive parsing ────────────────────────────────────────────────────
 
 fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
@@ -3473,6 +3485,82 @@ pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
 
   svg.push_str("</svg>");
   Some(svg)
+}
+
+/// Render a 1-D list of SVGs as `{ svg₁, svg₂, … }` with brace/comma text
+/// interleaved between the nested graphic cells.
+pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
+  if svgs.is_empty() {
+    return None;
+  }
+
+  let cell_size = 100.0_f64;
+  let font_size = 18.0_f64;
+  let brace_w = 12.0_f64; // width reserved for `{` / `}`
+  let comma_w = 20.0_f64; // width reserved for `, `
+  let height = cell_size;
+  let text_y = height / 2.0;
+
+  // Total width: { + cells with commas + }
+  let n = svgs.len() as f64;
+  let total_width = brace_w + n * cell_size + (n - 1.0) * comma_w + brace_w;
+
+  let mut out = String::with_capacity(4096);
+  out.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n",
+    total_width.ceil() as u32,
+    height as u32,
+    total_width.ceil() as u32,
+    height as u32,
+  ));
+
+  let mut x = 0.0_f64;
+
+  // Opening brace
+  out.push_str(&format!(
+    "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
+     font-size=\"{font_size}\" text-anchor=\"middle\" \
+     dominant-baseline=\"central\">{{</text>\n",
+    x + brace_w / 2.0,
+  ));
+  x += brace_w;
+
+  for (i, cell_svg) in svgs.iter().enumerate() {
+    if i > 0 {
+      // Comma separator
+      out.push_str(&format!(
+        "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
+         font-size=\"{font_size}\" text-anchor=\"middle\" \
+         dominant-baseline=\"central\">,</text>\n",
+        x + comma_w / 2.0,
+      ));
+      x += comma_w;
+    }
+
+    // Nested graphic cell
+    if let Some(parsed) = parse_svg_dimensions(cell_svg) {
+      out.push_str(&format!(
+        "<svg x=\"{:.0}\" y=\"0\" width=\"{cell_size:.0}\" \
+         height=\"{cell_size:.0}\" viewBox=\"{}\">\n",
+        x, parsed.view_box,
+      ));
+      out.push_str(&parsed.inner_content);
+      out.push_str("</svg>\n");
+    }
+    x += cell_size;
+  }
+
+  // Closing brace
+  out.push_str(&format!(
+    "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
+     font-size=\"{font_size}\" text-anchor=\"middle\" \
+     dominant-baseline=\"central\">}}</text>\n",
+    x + brace_w / 2.0,
+  ));
+
+  out.push_str("</svg>");
+  Some(out)
 }
 
 // ── GraphicsRow / GraphicsColumn / GraphicsGrid ────────────────────────

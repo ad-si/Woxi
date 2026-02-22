@@ -1305,6 +1305,10 @@ mod graphics_list {
     // Should contain multiple nested SVG elements (one per cell)
     let nested_count = svg.matches("<svg x=").count();
     assert_eq!(nested_count, 3, "Expected 3 nested SVGs for 3-element list");
+    // Should have list braces and comma separators
+    assert!(svg.contains(">{</text>"));
+    assert!(svg.contains(">}</text>"));
+    assert!(svg.contains(">,</text>"));
   }
 
   #[test]
@@ -1969,5 +1973,124 @@ mod graphics_grid {
     )
     .unwrap();
     assert_eq!(result, "-Graphics-");
+  }
+}
+
+mod color_swatches {
+  use super::*;
+
+  #[test]
+  fn rgbcolor_3_args() {
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[1, 0, 0]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("width=\"16\""));
+    assert!(svg.contains("height=\"16\""));
+  }
+
+  #[test]
+  fn rgbcolor_hex() {
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[\"#467396\"]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(70,115,150)\""));
+  }
+
+  #[test]
+  fn rgbcolor_gray() {
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[0.5]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(128,128,128)\""));
+  }
+
+  #[test]
+  fn rgbcolor_with_alpha() {
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[1, 0, 0, 0.5]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("opacity=\"0.5\""));
+  }
+
+  #[test]
+  fn hue_swatch() {
+    clear_state();
+    let result = interpret_with_stdout("Hue[0.5]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn graylevel_swatch() {
+    clear_state();
+    let result = interpret_with_stdout("GrayLevel[0.3]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(77,77,77)\""));
+  }
+
+  #[test]
+  fn darker_swatch() {
+    clear_state();
+    let result = interpret_with_stdout("Darker[RGBColor[1, 0, 0]]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn lighter_swatch() {
+    clear_state();
+    let result = interpret_with_stdout("Lighter[RGBColor[0, 0, 1]]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn list_of_colors_inline_swatches() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // Should contain braces as text elements
+    assert!(svg.contains(">{</text>"));
+    assert!(svg.contains(">}</text>"));
+    // Should contain comma separators
+    assert!(svg.contains(">,</text>"));
+    // Should contain all three color swatches
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("fill=\"rgb(0,255,0)\""));
+    assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+  }
+
+  #[test]
+  fn mixed_list_no_swatch() {
+    clear_state();
+    let result = interpret_with_stdout("{RGBColor[1, 0, 0], 42}").unwrap();
+    // Mixed list should NOT render as color swatches
+    assert_ne!(result.result, "-Graphics-");
+  }
+
+  #[test]
+  fn cli_mode_unchanged() {
+    clear_state();
+    let result = interpret("RGBColor[1, 0, 0]").unwrap();
+    assert_eq!(result, "RGBColor[1, 0, 0]");
+  }
+
+  #[test]
+  fn named_color_no_swatch() {
+    clear_state();
+    let result = interpret_with_stdout("Red").unwrap();
+    // Named colors should NOT produce swatches
+    assert_ne!(result.result, "-Graphics-");
   }
 }
