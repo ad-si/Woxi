@@ -92,7 +92,7 @@ mod table_with_step {
   fn table_symbolic_pi_step() {
     assert_eq!(
       interpret("Table[θ, {θ, 0, 2 Pi - Pi/4, Pi/4}]").unwrap(),
-      "{0, Pi/4, 2*Pi/4, 3*Pi/4, 4*Pi/4, 5*Pi/4, 6*Pi/4, 7*Pi/4}"
+      "{0, Pi/4, Pi/2, 3/4*Pi, Pi, 5/4*Pi, 3/2*Pi, 7/4*Pi}"
     );
   }
 }

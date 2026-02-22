@@ -46,21 +46,21 @@ pub fn partition_ast(
 
 /// AST-based Flatten: flatten nested lists.
 pub fn flatten_ast(list: &Expr) -> Result<Expr, InterpreterError> {
-  fn flatten_recursive(expr: &Expr, result: &mut Vec<Expr>) {
-    match expr {
-      Expr::List(items) => {
-        for item in items {
-          flatten_recursive(item, result);
-        }
-      }
-      _ => result.push(expr.clone()),
-    }
-  }
-
   match list {
     Expr::List(_) => {
       let mut result = Vec::new();
-      flatten_recursive(list, &mut result);
+      let mut stack: Vec<&Expr> = vec![list];
+      while let Some(expr) = stack.pop() {
+        match expr {
+          Expr::List(items) => {
+            // Push items in reverse so they're processed in order
+            for item in items.iter().rev() {
+              stack.push(item);
+            }
+          }
+          _ => result.push(expr.clone()),
+        }
+      }
       Ok(Expr::List(result))
     }
     _ => Ok(Expr::FunctionCall {

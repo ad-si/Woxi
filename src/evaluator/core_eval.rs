@@ -820,10 +820,8 @@ pub fn evaluate_expr_to_expr_inner(
           right: Box::new(rhs),
         })?;
         ENV.with(|e| {
-          e.borrow_mut().insert(
-            var_name.clone(),
-            StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
-          );
+          e.borrow_mut()
+            .insert(var_name.clone(), StoredValue::ExprVal(new_val.clone()));
         });
         return Ok(new_val);
       }

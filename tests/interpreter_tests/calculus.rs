@@ -759,7 +759,7 @@ mod big_o {
   fn d_list_trig() {
     assert_eq!(
       interpret("D[{Cos[x] + Sin[x], Sin[x]}, x]").unwrap(),
-      "{-Sin[x] + Cos[x], Cos[x]}"
+      "{Cos[x] - Sin[x], Cos[x]}"
     );
   }
 

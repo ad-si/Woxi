@@ -296,6 +296,23 @@ impl Coeff {
       _ => Coeff::Real(self.to_f64() + other.to_f64()),
     }
   }
+  fn mul(&self, other: &Coeff) -> Coeff {
+    match (self, other) {
+      (Coeff::Exact(n1, d1), Coeff::Exact(n2, d2)) => {
+        let mut sn = n1 * n2;
+        let mut sd = d1 * d2;
+        let g = gcd(sn, sd);
+        sn /= g;
+        sd /= g;
+        if sd < 0 {
+          sn = -sn;
+          sd = -sd;
+        }
+        Coeff::Exact(sn, sd)
+      }
+      _ => Coeff::Real(self.to_f64() * other.to_f64()),
+    }
+  }
   fn negate(&self) -> Coeff {
     match self {
       Coeff::Exact(n, d) => Coeff::Exact(-n, *d),
@@ -326,7 +343,10 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
             args: args[1..].to_vec(),
           }
         };
-        return (Coeff::Exact(n, d), base);
+        // Recursively decompose the base in case it's also Times[coeff, ...]
+        let (inner_c, inner_base) = decompose_term(&base);
+        let outer_c = Coeff::Exact(n, d);
+        return (outer_c.mul(&inner_c), inner_base);
       }
       // Check if first arg is a Real coefficient
       if let Expr::Real(f) = &args[0] {
@@ -338,7 +358,9 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
             args: args[1..].to_vec(),
           }
         };
-        return (Coeff::Real(*f), base);
+        let (inner_c, inner_base) = decompose_term(&base);
+        let outer_c = Coeff::Real(*f);
+        return (outer_c.mul(&inner_c), inner_base);
       }
     }
     Expr::BinaryOp {
@@ -347,10 +369,29 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       right,
     } => {
       if let Some((n, d)) = expr_to_rational(left) {
-        return (Coeff::Exact(n, d), *right.clone());
+        let (inner_c, inner_base) = decompose_term(right);
+        let outer_c = Coeff::Exact(n, d);
+        return (outer_c.mul(&inner_c), inner_base);
       }
       if let Expr::Real(f) = left.as_ref() {
-        return (Coeff::Real(*f), *right.clone());
+        let (inner_c, inner_base) = decompose_term(right);
+        let outer_c = Coeff::Real(*f);
+        return (outer_c.mul(&inner_c), inner_base);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      // expr / integer → coefficient 1/d, recursively decompose expr
+      if let Some((n, d)) = expr_to_rational(right)
+        && n != 0
+      {
+        let (inner_c, inner_base) = decompose_term(left);
+        // Multiply inner coefficient by (d/n) since we're dividing by (n/d)
+        let divisor = Coeff::Exact(d, n);
+        return (inner_c.mul(&divisor), inner_base);
       }
     }
     Expr::UnaryOp {
@@ -371,25 +412,41 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   use std::collections::BTreeMap;
 
   // Group by string representation of base → sum of coefficients
-  let mut groups: Vec<(String, Expr, Coeff)> = Vec::new();
+  // Also track the original expression and count for groups with a single term
+  let mut groups: Vec<(String, Expr, Coeff, Option<Expr>, usize)> = Vec::new();
   let mut index: BTreeMap<String, usize> = BTreeMap::new();
 
   for term in terms {
     let (c, base) = decompose_term(term);
     let key = crate::syntax::expr_to_string(&base);
     if let Some(&idx) = index.get(&key) {
-      let (_, _, ref mut sum_c) = groups[idx];
-      *sum_c = sum_c.add(&c);
+      let entry = &mut groups[idx];
+      entry.2 = entry.2.add(&c);
+      entry.3 = None; // Multiple terms combined, can't preserve original
+      entry.4 += 1;
     } else {
       index.insert(key.clone(), groups.len());
-      groups.push((key, base, c));
+      groups.push((key, base, c, Some(term.clone()), 1));
     }
   }
 
   let mut result = Vec::new();
-  for (_, base, c) in groups {
+  for (_, base, c, original, count) in groups {
     if c.is_zero() {
       continue; // terms cancelled
+    }
+    // If only one term contributed and wasn't combined, AND the coefficient is the same
+    // as what decompose_term extracted (meaning no simplification happened), preserve original form.
+    // This avoids changing e.g. BinaryOp::Divide(x, 2) to Times[Rational[1,2], x] which
+    // would affect sorting and display.
+    // But if coefficient is 1 and base differs from original (e.g. Times[1, I] → I),
+    // we should still simplify.
+    if count == 1
+      && !c.is_one()
+      && let Some(orig) = original
+    {
+      result.push(orig);
+      continue;
     }
     if c.is_one() {
       result.push(base);

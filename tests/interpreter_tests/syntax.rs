@@ -237,9 +237,10 @@ mod subtraction_without_spaces {
   #[test]
   fn implicit_times_then_minus_constant_fraction() {
     // Regression: `2 Pi - Pi/4` must parse as subtraction, not implicit multiplication by -Pi.
+    // The result is simplified: 2*Pi - Pi/4 = (8*Pi - Pi)/4 = 7*Pi/4
     assert_eq!(
       interpret("FullForm[2 Pi - Pi/4]").unwrap(),
-      "Plus[Times[-1, Times[Rational[1, 4], Pi]], Times[2, Pi]]"
+      "Times[Rational[7, 4], Pi]"
     );
   }
 
