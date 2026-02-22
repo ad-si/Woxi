@@ -210,8 +210,7 @@ fn generate_svg_with_options(
   let top_margin = if has_plot_label { 25 * s } else { 10 * s };
   let bottom_extra = if has_x_axis_label { 16.0 * sf } else { 0.0 };
   let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
-  let left_extra = if has_y_axis_label { 18.0 * sf } else { 0.0 };
-  let y_label_area = 40 * RESOLUTION_SCALE + left_extra as u32;
+  let y_label_area = 40 * RESOLUTION_SCALE;
 
   let mut buf = String::new();
   {
@@ -587,16 +586,13 @@ pub(crate) fn generate_bar_svg(
   let has_chart_labels = !chart_labels.is_empty();
   let has_x_axis_label =
     axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
-  let has_y_axis_label =
-    axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
   let top_margin = if has_plot_label { 25 * s } else { 10 * s };
   let bottom_extra = if has_chart_labels { 15.0 * sf } else { 0.0 }
     + if has_x_axis_label { 16.0 * sf } else { 0.0 };
   let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
-  let left_extra = if has_y_axis_label { 18.0 * sf } else { 0.0 };
-  let y_label_area = 40 * RESOLUTION_SCALE + left_extra as u32;
+  let y_label_area = 40 * RESOLUTION_SCALE;
 
   let mut buf = String::new();
   {
@@ -934,6 +930,13 @@ pub(crate) struct PlotArea {
   pub y_max: f64,
 }
 
+/// Optional margin overrides for `generate_axes_only_opts`.
+pub(crate) struct MarginOverrides {
+  pub top_margin: u32,
+  pub x_label_area: u32,
+  pub y_label_area: u32,
+}
+
 /// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
 /// Callers can then append custom SVG elements using the coordinate transform.
 pub(crate) fn generate_axes_only(
@@ -944,12 +947,13 @@ pub(crate) fn generate_axes_only(
   full_width: bool,
 ) -> Result<PlotArea, InterpreterError> {
   generate_axes_only_opts(
-    x_range, y_range, svg_width, svg_height, full_width, None,
+    x_range, y_range, svg_width, svg_height, full_width, None, None,
   )
 }
 
 /// Like `generate_axes_only` but with custom x-axis tick positions (tick marks only, no labels).
 /// When `x_tick_positions` is `Some`, only those positions get tick marks on the x-axis.
+/// When `margins` is `Some`, overrides the default margins for top, x_label_area, and y_label_area.
 pub(crate) fn generate_axes_only_opts(
   x_range: (f64, f64),
   y_range: (f64, f64),
@@ -957,6 +961,7 @@ pub(crate) fn generate_axes_only_opts(
   svg_height: u32,
   full_width: bool,
   x_tick_positions: Option<&[f64]>,
+  margins: Option<&MarginOverrides>,
 ) -> Result<PlotArea, InterpreterError> {
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
@@ -975,15 +980,26 @@ pub(crate) fn generate_axes_only_opts(
     let tick = 4 * s;
     let dark_gray = RGBColor(0x66, 0x66, 0x66);
 
-    let x_label_area = if x_tick_positions.is_some() {
-      8 * RESOLUTION_SCALE
-    } else {
-      25 * RESOLUTION_SCALE
-    };
+    let top_margin = margins
+      .map(|m| m.top_margin)
+      .unwrap_or(10 * RESOLUTION_SCALE);
+    let x_label_area = margins.map(|m| m.x_label_area).unwrap_or(
+      if x_tick_positions.is_some() {
+        8 * RESOLUTION_SCALE
+      } else {
+        25 * RESOLUTION_SCALE
+      },
+    );
+    let y_label_area = margins
+      .map(|m| m.y_label_area)
+      .unwrap_or(40 * RESOLUTION_SCALE);
     let mut chart = ChartBuilder::on(&root)
-      .margin(10 * s)
+      .margin_top(top_margin)
+      .margin_right(10 * s as u32)
+      .margin_bottom(10 * s as u32)
+      .margin_left(10 * s as u32)
       .x_label_area_size(x_label_area)
-      .y_label_area_size(40 * RESOLUTION_SCALE)
+      .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
@@ -1067,20 +1083,24 @@ pub(crate) fn generate_axes_only_opts(
   );
 
   // Compute the plot area coordinates.
-  // ChartBuilder uses: margin(10*s) on each side, x_label_area at bottom,
-  // y_label_area(40*s) on left. So the plot area starts at:
+  // ChartBuilder uses: margin on each side, x_label_area at bottom,
+  // y_label_area on left. So the plot area starts at:
   let s = RESOLUTION_SCALE as f64;
   let margin = 10.0 * s;
-  let y_label_area = 40.0 * s;
-  let x_label_area = if x_tick_positions.is_some() {
-    8.0 * s
-  } else {
-    25.0 * s
-  };
-  let plot_x0 = margin + y_label_area;
-  let plot_y0 = margin;
-  let plot_w = render_width as f64 - 2.0 * margin - y_label_area;
-  let plot_h = render_height as f64 - 2.0 * margin - x_label_area;
+  let top_margin_f = margins.map(|m| m.top_margin as f64).unwrap_or(margin);
+  let y_label_area_f =
+    margins.map(|m| m.y_label_area as f64).unwrap_or(40.0 * s);
+  let x_label_area_f = margins.map(|m| m.x_label_area as f64).unwrap_or(
+    if x_tick_positions.is_some() {
+      8.0 * s
+    } else {
+      25.0 * s
+    },
+  );
+  let plot_x0 = margin + y_label_area_f;
+  let plot_y0 = top_margin_f;
+  let plot_w = render_width as f64 - 2.0 * margin - y_label_area_f;
+  let plot_h = render_height as f64 - top_margin_f - margin - x_label_area_f;
 
   // Draw custom x-axis tick marks if specified
   if let Some(positions) = x_tick_positions {
