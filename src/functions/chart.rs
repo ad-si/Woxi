@@ -125,8 +125,9 @@ fn svg_header(w: u32, h: u32, full_width: bool) -> String {
 pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let values = extract_values(&args[0])?;
   if values.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
   let opts = parse_chart_options(args);
 
@@ -142,16 +143,16 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .as_ref()
       .map(|(x, y)| (x.as_str(), y.as_str())),
   )?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// PieChart[{v1, v2, ...}]
 pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let values = extract_values(&args[0])?;
   if values.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
   let opts = parse_chart_options(args);
   let (svg_width, svg_height, full_width) =
@@ -164,8 +165,9 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let radius = (w.min(h) / 2.0) * 0.85;
   let total: f64 = values.iter().sum();
   if total <= 0.0 {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
@@ -191,24 +193,23 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// Histogram[{d1, d2, ...}]
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let values = extract_values(&args[0])?;
   if values.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
   let opts = parse_chart_options(args);
   let (svg_width, svg_height, full_width) =
     (opts.svg_width, opts.svg_height, opts.full_width);
 
   let svg = generate_histogram_svg(&values, svg_width, svg_height, full_width)?;
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// Compute box-whisker statistics for a sorted dataset.
@@ -287,8 +288,9 @@ fn parse_datasets(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
 pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut datasets = parse_datasets(&args[0])?;
   if datasets.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
   let opts = parse_chart_options(args);
   let (svg_width, svg_height, full_width) =
@@ -380,8 +382,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// BubbleChart[{{x,y,z}, ...}]
@@ -418,8 +419,9 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if triples.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let opts = parse_chart_options(args);
@@ -473,8 +475,7 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// SectorChart[{{angle, radius}, ...}] - like PieChart but with variable radius
@@ -511,8 +512,9 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if sectors.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let opts = parse_chart_options(args);
@@ -551,8 +553,7 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// DateListPlot[{{date, y}, ...}] - simplified: treats dates as numeric x values
@@ -593,8 +594,9 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if points.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let opts = parse_chart_options(args);
@@ -627,8 +629,7 @@ pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   )?;
 
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// Escape special HTML characters in text content.
@@ -663,8 +664,9 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if words.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   // Count word frequencies
@@ -799,6 +801,5 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }

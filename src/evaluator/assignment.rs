@@ -201,6 +201,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         | Expr::Function { .. }
         | Expr::NamedFunction { .. }
         | Expr::Image { .. }
+        | Expr::Graphics { .. }
     ) {
       // Store lists, function calls, functions, and strings as ExprVal for faithful roundtrip
       ENV.with(|e| {

@@ -218,8 +218,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -252,8 +251,9 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if !v_min.is_finite() || !v_max.is_finite() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   // Generate contour levels
@@ -383,8 +383,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -428,8 +427,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// VectorPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -538,8 +536,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// StreamPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -643,8 +640,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background
@@ -786,8 +782,7 @@ pub fn stream_density_plot_ast(
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListDensityPlot[data] - density plot from data
@@ -903,8 +898,9 @@ fn list_density_plot_matrix(
   }
 
   if matrix.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let n_rows = matrix.len();
@@ -948,8 +944,7 @@ fn list_density_plot_matrix(
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ListDensityPlot from {x, y, z} triples using inverse distance weighting
@@ -985,8 +980,9 @@ fn list_density_plot_triples(
   }
 
   if points.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let x_min = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
@@ -1051,8 +1047,7 @@ fn list_density_plot_triples(
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// Parse list data and return a grid of z-values with axis ranges.
@@ -1284,8 +1279,9 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parse_list_data_to_grid(rows, "ListContourPlot")?;
 
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let area = generate_axes_only(
@@ -1414,8 +1410,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// ArrayPlot[{{v11, ...}, ...}] - color grid from matrix, 0=white 1=black (grayscale)
@@ -1445,8 +1440,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if matrix.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
@@ -1472,8 +1468,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling
@@ -1512,8 +1507,9 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if matrix.is_empty() {
-    crate::capture_graphics("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
-    return Ok(Expr::Identifier("-Graphics-".to_string()));
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
   }
 
   let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
@@ -1539,6 +1535,5 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }

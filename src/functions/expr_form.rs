@@ -65,6 +65,9 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     Expr::Constant(c) => ExprForm::Atom(c.clone()),
     Expr::Raw(s) => ExprForm::Atom(s.clone()),
     Expr::Image { .. } => ExprForm::Atom("-Image-".to_string()),
+    Expr::Graphics { is_3d, .. } => ExprForm::Atom(
+      if *is_3d { "-Graphics3D-" } else { "-Graphics-" }.to_string(),
+    ),
 
     // --- Slot/SlotSequence ---
     Expr::Slot(n) => ExprForm::Composite {

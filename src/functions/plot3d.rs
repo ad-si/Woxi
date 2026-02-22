@@ -419,9 +419,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_mesh,
   )?;
 
-  crate::capture_graphics(&svg);
-
-  Ok(Expr::Identifier("-Graphics3D-".to_string()))
+  Ok(crate::graphics3d_result(svg))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1283,10 +1281,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if prims.is_empty() {
     // Even with no primitives, return the marker
-    crate::capture_graphics(&format!(
+    let empty_svg = format!(
       "<svg width=\"{svg_width}\" height=\"{svg_height}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
-    ));
-    return Ok(Expr::Identifier("-Graphics3D-".to_string()));
+    );
+    return Ok(crate::graphics3d_result(empty_svg));
   }
 
   // Tessellate all primitives into triangles
@@ -1515,8 +1513,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics3D-".to_string()))
+  Ok(crate::graphics3d_result(svg))
 }
 
 /// Implementation of ListPlot3D[data, opts...].
@@ -1858,6 +1855,5 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_mesh,
   )?;
 
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics3D-".to_string()))
+  Ok(crate::graphics3d_result(svg))
 }

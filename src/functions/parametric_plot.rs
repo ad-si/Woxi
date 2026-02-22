@@ -109,8 +109,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   )?;
 
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 /// PolarPlot[r[theta], {theta, tmin, tmax}]
@@ -189,8 +188,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   )?;
 
-  crate::capture_graphics(&svg);
-  Ok(Expr::Identifier("-Graphics-".to_string()))
+  Ok(crate::graphics_result(svg))
 }
 
 fn parse_iterator(

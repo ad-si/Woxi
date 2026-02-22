@@ -142,6 +142,7 @@ pub fn dispatch_io_functions(
       // The second argument has already been evaluated, which triggers
       // capture_graphics() for Plot expressions.  Grab the SVG.
       let content = match &args[1] {
+        Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
         Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
           match crate::get_captured_graphics().ok_or_else(|| {
             InterpreterError::EvaluationError(
@@ -182,6 +183,7 @@ pub fn dispatch_io_functions(
         }));
       }
       let svg = match &args[0] {
+        Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
         Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" => {
           crate::get_captured_graphics().unwrap_or_default()
         }
