@@ -2,8 +2,8 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, Filling, generate_scatter_svg, generate_svg,
-  generate_svg_with_filling, parse_image_size,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, Filling, PlotOptions, generate_scatter_svg,
+  generate_svg, generate_svg_with_filling, parse_image_size,
 };
 use crate::syntax::Expr;
 
@@ -237,15 +237,14 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let svg = generate_svg_with_filling(
-    &all_series,
-    x_range,
-    y_range,
+  let opts = PlotOptions {
     svg_width,
     svg_height,
     full_width,
     filling,
-  )?;
+    ..Default::default()
+  };
+  let svg = generate_svg_with_filling(&all_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
 

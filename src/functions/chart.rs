@@ -38,7 +38,7 @@ pub(crate) struct StyledLabel {
 }
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
-fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   match expr {
     Expr::String(s) => Some(StyledLabel {
       text: s.clone(),
@@ -103,7 +103,7 @@ pub(crate) struct ChartOptions {
 }
 
 /// Extract a string from an Expr (Identifier or String).
-fn expr_to_label(e: &Expr) -> Option<String> {
+pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
   match e {
     Expr::String(s) => Some(s.clone()),
     Expr::Identifier(s) => Some(s.clone()),
