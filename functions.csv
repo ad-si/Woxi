@@ -773,7 +773,7 @@ ChartElements,,,,7,2421
 ChartLabels,,,,7,661
 ChartLayout,,,,7,1223
 ChartLegends,,,,7,1006
-ChartStyle,,,,7,634
+ChartStyle,Style specification for chart elements,✅,pure,7,634
 ChatEvaluate,,,,13.3,
 ChatObject,,,,13.3,
 Chebyshev1FilterModel,,,,9,4356

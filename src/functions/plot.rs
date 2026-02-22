@@ -2,6 +2,8 @@ use plotters::prelude::*;
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
+use crate::functions::chart::StyledLabel;
+use crate::functions::graphics::Color as WoxiColor;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
@@ -422,8 +424,9 @@ pub(crate) fn generate_bar_svg(
   svg_height: u32,
   full_width: bool,
   chart_labels: &[String],
-  plot_label: Option<&str>,
+  plot_label: Option<&StyledLabel>,
   axes_label: Option<(&str, &str)>,
+  chart_style: &[WoxiColor],
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -446,7 +449,7 @@ pub(crate) fn generate_bar_svg(
     axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
   let has_y_axis_label =
     axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
-  let has_plot_label = plot_label.is_some_and(|s| !s.is_empty());
+  let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
   let top_margin = if has_plot_label { 25 * s } else { 10 * s };
   let bottom_extra = if has_chart_labels { 15.0 * sf } else { 0.0 }
@@ -503,12 +506,20 @@ pub(crate) fn generate_bar_svg(
         InterpreterError::EvaluationError(format!("BarChart: {e}"))
       })?;
 
-    // Draw bars as plotters Rectangle elements (same color for all bars, like Mathematica)
+    // Draw bars as plotters Rectangle elements
     let gap = 0.1; // gap fraction per bar
-    let (br, bg, bb) = PLOT_COLORS[0];
-    let bar_color = RGBColor(br, bg, bb);
     for (i, &val) in values.iter().enumerate() {
-      let color = bar_color;
+      let (br, bg, bb) = if !chart_style.is_empty() {
+        let c = &chart_style[i % chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      } else {
+        PLOT_COLORS[0]
+      };
+      let color = RGBColor(br, bg, bb);
       let x0 = i as f64 + gap;
       let x1 = (i + 1) as f64 - gap;
       chart
@@ -599,16 +610,29 @@ pub(crate) fn generate_bar_svg(
     }
 
     // PlotLabel: centered above the chart
-    if let Some(title) = plot_label
-      && !title.is_empty()
+    if let Some(sl) = plot_label
+      && !sl.text.is_empty()
     {
       let cx = plot_x0 + plot_w / 2.0;
       let ty = margin_top - title_font_size * 0.5;
+      let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+      let fill = sl
+        .color
+        .as_ref()
+        .map(|c| c.to_svg_rgb())
+        .unwrap_or_else(|| "#333".to_string());
+      let mut style_attrs = String::new();
+      if sl.bold {
+        style_attrs.push_str(" font-weight=\"bold\"");
+      }
+      if sl.italic {
+        style_attrs.push_str(" font-style=\"italic\"");
+      }
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{title_font_size:.0}\" \
-           fill=\"#333\">{}</text>\n",
-        html_escape(title)
+           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+           fill=\"{fill}\"{style_attrs}>{}</text>\n",
+        html_escape(&sl.text)
       ));
     }
 
