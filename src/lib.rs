@@ -1217,6 +1217,11 @@ pub fn insert_statement_separators(input: &str) -> String {
   let mut line_has_code = false; // whether the current line has non-whitespace, non-comment content
   let mut last_code_char: Option<char> = None; // last meaningful (non-comment) character
   let mut prev_code_char: Option<char> = None; // second-to-last meaningful character
+  // Deferred semicolon: instead of inserting `;` immediately at a newline,
+  // we record the position where it should go. We only actually insert it
+  // when we later encounter actual code on a subsequent line. This avoids
+  // adding a spurious trailing `;` when only comments/whitespace follow.
+  let mut pending_semi_pos: Option<usize> = None;
   let chars: Vec<char> = input.chars().collect();
   let len = chars.len();
   let mut i = 0;
@@ -1247,6 +1252,10 @@ pub fn insert_statement_separators(input: &str) -> String {
     // Track string state
     if ch == '"' {
       in_string = !in_string;
+      // A string is actual code — flush any pending semicolon
+      if let Some(pos) = pending_semi_pos.take() {
+        result.insert(pos, ';');
+      }
       result.push(ch);
       line_has_code = true;
       prev_code_char = last_code_char;
@@ -1282,7 +1291,8 @@ pub fn insert_statement_separators(input: &str) -> String {
         && !ends_with_tag_set;
 
       if needs_semi {
-        result.push(';');
+        // Defer the semicolon — record position before the newline
+        pending_semi_pos = Some(result.len());
       }
       result.push('\n');
 
@@ -1295,6 +1305,10 @@ pub fn insert_statement_separators(input: &str) -> String {
       result.push(ch);
     } else {
       if !ch.is_whitespace() {
+        // Actual code encountered — flush any pending semicolon
+        if let Some(pos) = pending_semi_pos.take() {
+          result.insert(pos, ';');
+        }
         line_has_code = true;
         prev_code_char = last_code_char;
         last_code_char = Some(ch);
@@ -1326,6 +1340,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
   let mut in_string = false;
   let mut in_comment = false;
   let mut line_has_code = false;
+  let mut current_has_code = false; // tracks whether the current buffer has actual code (not just comments/whitespace)
   let mut last_code_char: Option<char> = None;
   let mut prev_code_char: Option<char> = None;
   let chars: Vec<char> = trimmed.chars().collect();
@@ -1392,6 +1407,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
           statements.push(stmt);
         }
         current.clear();
+        current_has_code = false;
       } else {
         current.push(ch);
       }
@@ -1405,6 +1421,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
     } else {
       if !ch.is_whitespace() {
         line_has_code = true;
+        current_has_code = true;
         prev_code_char = last_code_char;
         last_code_char = Some(ch);
       }
@@ -1415,7 +1432,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
   }
 
   let stmt = current.trim().to_string();
-  if !stmt.is_empty() {
+  if !stmt.is_empty() && current_has_code {
     statements.push(stmt);
   }
 
