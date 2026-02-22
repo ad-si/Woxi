@@ -3,8 +3,8 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, generate_bar_svg,
-  generate_histogram_svg, parse_image_size,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, MarginOverrides, PLOT_COLORS,
+  RESOLUTION_SCALE, generate_bar_svg, generate_histogram_svg, parse_image_size,
 };
 use crate::syntax::Expr;
 
@@ -155,7 +155,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             opts.plot_label = Some(sl);
           }
         }
-        "AxesLabel" => {
+        "AxesLabel" | "FrameLabel" => {
           let val =
             evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
           if let Expr::List(items) = &val
@@ -404,6 +404,34 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Use plotters for axes
   let n = datasets.len();
+
+  // Calculate margins based on label presence
+  let s = RESOLUTION_SCALE as i32;
+  let sf = RESOLUTION_SCALE as f64;
+  let has_chart_labels = !opts.chart_labels.is_empty();
+  let has_x_axis_label =
+    opts.axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  let has_plot_label = opts
+    .plot_label
+    .as_ref()
+    .is_some_and(|sl| !sl.text.is_empty());
+
+  let top_margin = if has_plot_label {
+    25 * s as u32
+  } else {
+    10 * s as u32
+  };
+  let bottom_extra = if has_chart_labels { 15.0 * sf } else { 0.0 }
+    + if has_x_axis_label { 16.0 * sf } else { 0.0 };
+  let x_label_area = 8 * RESOLUTION_SCALE + bottom_extra as u32;
+  let y_label_area = 40 * RESOLUTION_SCALE;
+
+  let margin_overrides = MarginOverrides {
+    top_margin,
+    x_label_area,
+    y_label_area,
+  };
+
   // One tick mark per box (centered), no labels — matches Mathematica
   let x_tick_positions: Vec<f64> = (0..n).map(|i| i as f64 + 0.5).collect();
   let area = crate::functions::plot::generate_axes_only_opts(
@@ -413,6 +441,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     Some(&x_tick_positions),
+    Some(&margin_overrides),
   )?;
 
   let plot_x0 = area.plot_x0;
@@ -431,7 +460,16 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let stroke_w = (area.render_width as f64 / 1000.0 * 1.5).max(1.0);
 
   for (i, &(lo, q1, med, q3, hi)) in all_stats.iter().enumerate() {
-    let (r, g, b) = PLOT_COLORS[0];
+    let (r, g, b) = if !opts.chart_style.is_empty() {
+      let c = &opts.chart_style[i % opts.chart_style.len()];
+      (
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      )
+    } else {
+      PLOT_COLORS[0]
+    };
     let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
     let box_half_w = slot_w * 0.3;
     let cap_half_w = box_half_w * 0.5;
@@ -466,6 +504,84 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Insert label SVG elements before </svg>
+  let axis_y = plot_y0 + plot_h;
+  let font_size = sf * 11.0;
+  let title_font_size = sf * 13.0;
+  let margin_left = 10.0 * sf;
+  let mut labels_svg = String::new();
+
+  // ChartLabels: centered below each box
+  if has_chart_labels {
+    for (i, label) in opts.chart_labels.iter().enumerate().take(n) {
+      let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
+      let ly = axis_y + font_size * 1.5;
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"#666\">{}</text>\n",
+        html_escape(label)
+      ));
+    }
+  }
+
+  // AxesLabel / FrameLabel: x-axis label centered below, y-axis label rotated on left
+  if let Some((x_label, y_label)) = &opts.axes_label {
+    if !x_label.is_empty() {
+      let cx = plot_x0 + plot_w / 2.0;
+      let base_y = axis_y
+        + if has_chart_labels {
+          font_size * 1.5 + font_size * 1.3
+        } else {
+          font_size * 1.5
+        };
+      labels_svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"#666\">{}</text>\n",
+        html_escape(x_label)
+      ));
+    }
+    if !y_label.is_empty() {
+      let cy = plot_y0 + plot_h / 2.0;
+      let lx = margin_left + font_size * 0.8;
+      labels_svg.push_str(&format!(
+        "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"#666\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+        html_escape(y_label)
+      ));
+    }
+  }
+
+  // PlotLabel: centered above the chart
+  if let Some(sl) = &opts.plot_label
+    && !sl.text.is_empty()
+  {
+    let cx = plot_x0 + plot_w / 2.0;
+    let ty = top_margin as f64 - title_font_size * 0.5;
+    let fs = sl.font_size.map(|f| f * sf).unwrap_or(title_font_size);
+    let fill = sl
+      .color
+      .as_ref()
+      .map(|c| c.to_svg_rgb())
+      .unwrap_or_else(|| "#333".to_string());
+    let mut style_attrs = String::new();
+    if sl.bold {
+      style_attrs.push_str(" font-weight=\"bold\"");
+    }
+    if sl.italic {
+      style_attrs.push_str(" font-style=\"italic\"");
+    }
+    labels_svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+         fill=\"{fill}\"{style_attrs}>{}</text>\n",
+      html_escape(&sl.text)
+    ));
+  }
+
+  svg.push_str(&labels_svg);
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
 }

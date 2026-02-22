@@ -1,0 +1,89 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(r##\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, ChartStyle -> RGBColor[\"#2a9d8f\"]]\"##)"
+---
+<svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="499,100 499,2069 "/>
+<text x="420" y="2055" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,2055 499,2055 "/>
+<text x="420" y="1934" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1934 499,1934 "/>
+<text x="420" y="1812" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1812 499,1812 "/>
+<text x="420" y="1691" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+10
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1691 499,1691 "/>
+<text x="420" y="1570" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1570 499,1570 "/>
+<text x="420" y="1449" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1449 499,1449 "/>
+<text x="420" y="1327" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1327 499,1327 "/>
+<text x="420" y="1206" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1206 499,1206 "/>
+<text x="420" y="1085" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+15
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,1085 499,1085 "/>
+<text x="420" y="964" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,964 499,964 "/>
+<text x="420" y="843" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,843 499,843 "/>
+<text x="420" y="721" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,721 499,721 "/>
+<text x="420" y="600" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,600 499,600 "/>
+<text x="420" y="479" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+20
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,479 499,479 "/>
+<text x="420" y="358" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,358 499,358 "/>
+<text x="420" y="236" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,236 499,236 "/>
+<text x="420" y="115" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="88.70967741935483" opacity="1" fill="#666666">
+
+</text>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="459,115 499,115 "/>
+<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="500,2070 3499,2070 "/>
+<line x1="1250.0" y1="2070.0" x2="1250.0" y2="2110.0" stroke="#666" stroke-width="10"/>
+<line x1="2750.0" y1="2070.0" x2="2750.0" y2="2110.0" stroke="#666" stroke-width="10"/>
+<line x1="1250.0" y1="235.9" x2="1250.0" y2="1448.9" stroke="#666" stroke-width="5.4"/>
+<line x1="1025.0" y1="235.9" x2="1475.0" y2="235.9" stroke="#666" stroke-width="5.4"/>
+<line x1="1025.0" y1="1448.9" x2="1475.0" y2="1448.9" stroke="#666" stroke-width="5.4"/>
+<rect x="800.0" y="478.5" width="900.0" height="788.5" fill="rgb(42,157,143)" stroke="#666" stroke-width="5.4"/>
+<line x1="800.0" y1="903.0" x2="1700.0" y2="903.0" stroke="white" stroke-width="8.1"/>
+<line x1="2750.0" y1="963.7" x2="2750.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
+<line x1="2525.0" y1="963.7" x2="2975.0" y2="963.7" stroke="#666" stroke-width="5.4"/>
+<line x1="2525.0" y1="1934.1" x2="2975.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
+<rect x="2300.0" y="1085.0" width="900.0" height="727.8" fill="rgb(42,157,143)" stroke="#666" stroke-width="5.4"/>
+<line x1="2300.0" y1="1448.9" x2="3200.0" y2="1448.9" stroke="white" stroke-width="8.1"/>
+</svg>

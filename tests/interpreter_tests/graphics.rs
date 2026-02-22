@@ -939,6 +939,48 @@ mod plot3d {
     }
 
     #[test]
+    fn box_whisker_chart_plot_label() {
+      insta::assert_snapshot!(export_svg(
+        r#"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> "My Title"]"#
+      ));
+    }
+
+    #[test]
+    fn box_whisker_chart_chart_labels() {
+      insta::assert_snapshot!(export_svg(
+        r#"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, ChartLabels -> {"A", "B"}]"#
+      ));
+    }
+
+    #[test]
+    fn box_whisker_chart_frame_label() {
+      insta::assert_snapshot!(export_svg(
+        r#"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, FrameLabel -> {"X Axis", "Y Axis"}]"#
+      ));
+    }
+
+    #[test]
+    fn box_whisker_chart_chart_style() {
+      insta::assert_snapshot!(export_svg(
+        r##"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, ChartStyle -> RGBColor["#2a9d8f"]]"##
+      ));
+    }
+
+    #[test]
+    fn box_whisker_chart_all_options() {
+      insta::assert_snapshot!(export_svg(
+        r##"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, PlotLabel -> Style["Test", Bold], ChartLabels -> {"A", "B"}, FrameLabel -> {"X", "Y"}, ChartStyle -> RGBColor["#2a9d8f"]]"##
+      ));
+    }
+
+    #[test]
+    fn box_whisker_chart_styled_plot_label() {
+      insta::assert_snapshot!(export_svg(
+        r#"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> Style["Styled Title", Bold, Italic]]"#
+      ));
+    }
+
+    #[test]
     fn bubble_chart() {
       insta::assert_snapshot!(export_svg(
         "BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]"
