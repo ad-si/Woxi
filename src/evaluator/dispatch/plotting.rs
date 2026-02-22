@@ -34,8 +34,17 @@ pub fn dispatch_plotting(
     "Graphics" if !args.is_empty() => {
       Some(crate::functions::graphics::graphics_ast(args))
     }
+    "Show" if !args.is_empty() => {
+      Some(crate::functions::graphics::show_ast(args))
+    }
+    "TreeForm" if !args.is_empty() => {
+      Some(crate::functions::tree_form::tree_form_ast(args))
+    }
     "Graphics3D" if !args.is_empty() => {
       Some(crate::functions::plot3d::graphics3d_ast(args))
+    }
+    "ListPlot3D" if !args.is_empty() => {
+      Some(crate::functions::plot3d::list_plot3d_ast(args))
     }
     "ListPlot" if !args.is_empty() => {
       Some(crate::functions::list_plot::list_plot_ast(args))

@@ -1297,3 +1297,368 @@ mod graphics_list {
     }
   }
 }
+
+mod matrix_form {
+  use super::*;
+
+  #[test]
+  fn matrix_form_non_visual() {
+    clear_state();
+    assert_eq!(
+      interpret("MatrixForm[{{1,2},{3,4}}]").unwrap(),
+      "MatrixForm[{{1, 2}, {3, 4}}]"
+    );
+  }
+
+  #[test]
+  fn matrix_form_visual_2d() {
+    clear_state();
+    let result = interpret_with_stdout("MatrixForm[{{1,2},{3,4}}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<svg"));
+    for val in ["1", "2", "3", "4"] {
+      assert!(
+        svg.contains(&format!(">{val}</text>")),
+        "Missing value {val} in MatrixForm SVG"
+      );
+    }
+  }
+
+  #[test]
+  fn matrix_form_visual_1d_column() {
+    clear_state();
+    let result = interpret_with_stdout("MatrixForm[{a, b, c}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    for val in ["a", "b", "c"] {
+      assert!(
+        svg.contains(&format!(">{val}</text>")),
+        "Missing value {val} in MatrixForm column SVG"
+      );
+    }
+  }
+
+  #[test]
+  fn matrix_form_evaluates_args() {
+    clear_state();
+    assert_eq!(
+      interpret("MatrixForm[{{1+1, 2+2},{3+3, 4+4}}]").unwrap(),
+      "MatrixForm[{{2, 4}, {6, 8}}]"
+    );
+  }
+
+  #[test]
+  fn matrix_form_has_parentheses() {
+    clear_state();
+    let result = interpret_with_stdout("MatrixForm[{{1,2},{3,4}}]").unwrap();
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // The SVG should contain path elements for the parentheses
+    let path_count = svg.matches("<path ").count();
+    assert_eq!(
+      path_count, 2,
+      "MatrixForm SVG should have exactly 2 parenthesis paths, got {path_count}"
+    );
+  }
+
+  #[test]
+  fn matrix_form_nested_3d() {
+    clear_state();
+    let result =
+      interpret_with_stdout("MatrixForm[{{{1,2},{3,4}}, {{5,6},{7,8}}}]")
+        .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<svg"));
+    // Should have 10 parenthesis paths:
+    // 2 outer parens + 4 cells × 2 sub-parens each = 10
+    let path_count = svg.matches("<path ").count();
+    assert_eq!(
+      path_count, 10,
+      "Nested MatrixForm should have 10 parenthesis paths, got {path_count}"
+    );
+    // All values should appear
+    for val in ["1", "2", "3", "4", "5", "6", "7", "8"] {
+      assert!(
+        svg.contains(&format!(">{val}</text>")),
+        "Missing value {val} in nested MatrixForm SVG"
+      );
+    }
+
+    // Verify spatial layout: "1" and "2" should share the same x (stacked vertically)
+    // and "1" should be above "2" (smaller y).
+    // Parse text positions from SVG
+    fn parse_text_pos(svg: &str, label: &str) -> Option<(f64, f64)> {
+      let needle = format!(">{label}</text>");
+      let idx = svg.find(&needle)?;
+      let before = &svg[..idx];
+      // Find the enclosing <text> tag
+      let tag_start = before.rfind("<text ")?;
+      let tag = &svg[tag_start..idx];
+      let x_start = tag.find("x=\"")? + 3;
+      let x_end = tag[x_start..].find('"')? + x_start;
+      let y_start = tag.find("y=\"")? + 3;
+      let y_end = tag[y_start..].find('"')? + y_start;
+      let x: f64 = tag[x_start..x_end].parse().ok()?;
+      let y: f64 = tag[y_start..y_end].parse().ok()?;
+      Some((x, y))
+    }
+
+    let pos1 = parse_text_pos(&svg, "1").expect("1 not found");
+    let pos2 = parse_text_pos(&svg, "2").expect("2 not found");
+    let pos3 = parse_text_pos(&svg, "3").expect("3 not found");
+
+    // 1 and 2 are in the same column vector → same x
+    assert!(
+      (pos1.0 - pos2.0).abs() < 1.0,
+      "1 and 2 should have same x (stacked vertically), got x1={} x2={}",
+      pos1.0,
+      pos2.0
+    );
+    // 1 above 2 → smaller y
+    assert!(
+      pos1.1 < pos2.1,
+      "1 should be above 2, got y1={} y2={}",
+      pos1.1,
+      pos2.1
+    );
+    // 3 is in a different column → different x from 1
+    assert!(
+      (pos3.0 - pos1.0).abs() > 10.0,
+      "3 should be in a different column from 1, got x1={} x3={}",
+      pos1.0,
+      pos3.0
+    );
+  }
+}
+
+mod show {
+  use super::*;
+
+  #[test]
+  fn show_two_graphics() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Show[Graphics[{Red, Disk[]}], Graphics[{Blue, Circle[{1,0}]}]]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn show_svg_output() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Show[Graphics[{Red, Disk[]}], Graphics[{Blue, Circle[{1,0}]}]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("</svg>"));
+  }
+
+  #[test]
+  fn show_single_graphics() {
+    clear_state();
+    assert_eq!(
+      interpret("Show[Graphics[{Circle[]}]]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn show_no_graphics_returns_unevaluated() {
+    clear_state();
+    assert_eq!(interpret("Show[1, 2, 3]").unwrap(), "Show[1, 2, 3]");
+  }
+}
+
+mod list_plot_3d {
+  use super::*;
+
+  #[test]
+  fn list_plot3d_explicit_coords() {
+    clear_state();
+    assert_eq!(
+      interpret("ListPlot3D[{{0,0,0},{1,0,1},{0,1,2},{1,1,3}}]").unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_matrix_format() {
+    clear_state();
+    assert_eq!(
+      interpret("ListPlot3D[{{1,2,3},{4,5,6},{7,8,9}}]").unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_svg_output() {
+    clear_state();
+    let result =
+      interpret_with_stdout("ListPlot3D[{{1,2,3},{4,5,6},{7,8,9}}]").unwrap();
+    assert_eq!(result.result, "-Graphics3D-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("</svg>"));
+  }
+
+  #[test]
+  fn list_plot3d_with_options() {
+    clear_state();
+    assert_eq!(
+      interpret("ListPlot3D[{{1,2,3},{4,5,6}}, Mesh -> None]").unwrap(),
+      "-Graphics3D-"
+    );
+  }
+}
+
+mod tree_form_graphics {
+  use super::*;
+
+  #[test]
+  fn tree_form_produces_graphics() {
+    clear_state();
+    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "-Graphics-");
+  }
+
+  #[test]
+  fn tree_form_svg_output() {
+    clear_state();
+    let result = interpret_with_stdout("TreeForm[f[x, y]]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("<svg"));
+    assert!(svg.contains("</svg>"));
+    // Should contain the function name and arguments as text
+    assert!(svg.contains(">f<"), "SVG should contain node label 'f'");
+    assert!(svg.contains(">x<"), "SVG should contain leaf label 'x'");
+    assert!(svg.contains(">y<"), "SVG should contain leaf label 'y'");
+  }
+
+  #[test]
+  fn tree_form_nested() {
+    clear_state();
+    assert_eq!(
+      interpret("TreeForm[f[g[x], h[y, z]]]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn tree_form_with_depth_limit() {
+    clear_state();
+    assert_eq!(interpret("TreeForm[f[g[h[x]]], 2]").unwrap(), "-Graphics-");
+  }
+
+  #[test]
+  fn tree_form_atom() {
+    clear_state();
+    assert_eq!(interpret("TreeForm[42]").unwrap(), "-Graphics-");
+  }
+
+  #[test]
+  fn tree_form_no_args() {
+    clear_state();
+    assert_eq!(interpret("TreeForm[]").unwrap(), "TreeForm[]");
+  }
+
+  #[test]
+  fn tree_form_minus_canonical() {
+    // a - b should decompose as Plus[a, Times[-1, b]], not "Minus"
+    clear_state();
+    let result = interpret_with_stdout("TreeForm[Hold[a - b]]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">Plus<"),
+      "SVG should contain 'Plus' for subtraction, got SVG without it"
+    );
+    assert!(
+      svg.contains(">Times<"),
+      "SVG should contain 'Times' for the -1 multiplication"
+    );
+    assert!(
+      !svg.contains(">Minus<"),
+      "SVG should NOT contain raw 'Minus' operator name"
+    );
+  }
+
+  #[test]
+  fn tree_form_divide_canonical() {
+    // a / b should decompose as Times[a, Power[b, -1]], not "Divide"
+    clear_state();
+    let result = interpret_with_stdout("TreeForm[Hold[a / b]]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">Times<"),
+      "SVG should contain 'Times' for division"
+    );
+    assert!(
+      svg.contains(">Power<"),
+      "SVG should contain 'Power' for the b^-1"
+    );
+  }
+
+  #[test]
+  fn tree_form_unary_minus_canonical() {
+    // -x should decompose as Times[-1, x]
+    clear_state();
+    let result = interpret_with_stdout("TreeForm[Hold[-x]]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">Times<"),
+      "SVG should contain 'Times' for unary minus"
+    );
+  }
+
+  #[test]
+  fn tree_form_comparison_canonical() {
+    // a < b should decompose as Less[a, b]
+    clear_state();
+    let result = interpret_with_stdout("TreeForm[Hold[a < b]]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">Less<"),
+      "SVG should contain 'Less' for comparison"
+    );
+  }
+
+  #[test]
+  fn tree_form_association() {
+    clear_state();
+    let result =
+      interpret_with_stdout("TreeForm[<|\"a\" -> 1, \"b\" -> 2|>]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">Association<"),
+      "SVG should contain 'Association' head"
+    );
+    assert!(
+      svg.contains(">Rule<"),
+      "SVG should contain 'Rule' for key-value pairs"
+    );
+  }
+
+  #[test]
+  fn tree_form_replace_all() {
+    clear_state();
+    let result = interpret_with_stdout("TreeForm[Hold[x /. x -> 1]]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">ReplaceAll<"),
+      "SVG should contain 'ReplaceAll' head"
+    );
+  }
+}

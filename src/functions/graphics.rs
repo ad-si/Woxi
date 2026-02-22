@@ -2097,6 +2097,12 @@ pub fn has_fraction(expr: &Expr) -> bool {
     {
       true
     }
+    // FullForm renders as plain text, no stacked fractions
+    Expr::FunctionCall { name, args }
+      if name == "FullForm" && args.len() == 1 =>
+    {
+      false
+    }
     Expr::FunctionCall { args, .. } => args.iter().any(has_fraction),
     Expr::List(items) => items.iter().any(has_fraction),
     Expr::BinaryOp { left, right, .. } => {
@@ -2355,6 +2361,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           stacked_fraction_svg(&num_markup, &den_markup, num_w, den_w)
         }
 
+        // FullForm[expr] → render in canonical notation
+        "FullForm" if args.len() == 1 => {
+          let full_form =
+            crate::functions::predicate_ast::expr_to_full_form(&args[0]);
+          svg_escape(&full_form)
+        }
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -2464,6 +2477,11 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 
     // FunctionCall
     Expr::FunctionCall { name, args } => match name.as_str() {
+      "FullForm" if args.len() == 1 => {
+        let full_form =
+          crate::functions::predicate_ast::expr_to_full_form(&args[0]);
+        full_form.len() as f64
+      }
       "Plus" if args.len() >= 2 => {
         let terms: f64 = args.iter().map(estimate_display_width).sum();
         terms + (args.len() - 1) as f64 * 3.0
@@ -2518,8 +2536,113 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
   }
 }
 
+/// Extract the option name from a Rule pattern (e.g. Identifier("ImageSize") -> "ImageSize")
+fn option_name(expr: &Expr) -> Option<&str> {
+  if let Expr::Identifier(name) = expr {
+    Some(name.as_str())
+  } else {
+    None
+  }
+}
+
+/// Merge an option into a list, replacing any existing option with the same name.
+fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
+  if let Expr::Rule { pattern, .. } = opt
+    && let Some(opt_name) = option_name(pattern)
+  {
+    opts.retain(|existing| {
+      if let Expr::Rule { pattern: ep, .. } = existing {
+        option_name(ep) != Some(opt_name)
+      } else {
+        true
+      }
+    });
+  }
+  opts.push(opt.clone());
+}
+
+/// Implementation of Show[g1, g2, ..., opts...].
+/// Merges multiple Graphics[...] calls into a single Graphics[...] call,
+/// combining their primitives and options. Arguments are kept unevaluated
+/// (Show is in the held-args list) so Graphics[...] expressions arrive as
+/// FunctionCall nodes rather than being rendered to `-Graphics-`.
+pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mut merged_primitives: Vec<Expr> = Vec::new();
+  let mut merged_options: Vec<Expr> = Vec::new();
+  let mut is_3d = false;
+
+  for arg in args {
+    // If the arg is not already a Graphics/Graphics3D expression,
+    // try evaluating it (e.g. it could be a variable or function call)
+    let evaled;
+    let expr_ref = match arg {
+      Expr::FunctionCall { name, .. }
+        if name == "Graphics" || name == "Graphics3D" =>
+      {
+        arg
+      }
+      Expr::Rule { .. } => arg,
+      _ => {
+        evaled = evaluate_expr_to_expr(arg).unwrap_or_else(|_| arg.clone());
+        &evaled
+      }
+    };
+
+    match expr_ref {
+      Expr::FunctionCall { name, args: gargs } if name == "Graphics" => {
+        if !gargs.is_empty() {
+          merged_primitives.push(gargs[0].clone());
+        }
+        for opt in gargs.iter().skip(1) {
+          merge_option(&mut merged_options, opt);
+        }
+      }
+      Expr::FunctionCall { name, args: gargs } if name == "Graphics3D" => {
+        is_3d = true;
+        if !gargs.is_empty() {
+          merged_primitives.push(gargs[0].clone());
+        }
+        for opt in gargs.iter().skip(1) {
+          merge_option(&mut merged_options, opt);
+        }
+      }
+      Expr::Rule { .. } => {
+        merge_option(&mut merged_options, expr_ref);
+      }
+      _ => {}
+    }
+  }
+
+  if merged_primitives.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Show".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let content = Expr::List(merged_primitives);
+  let mut graphics_args = vec![content];
+  graphics_args.extend(merged_options);
+
+  if is_3d {
+    crate::functions::plot3d::graphics3d_ast(&graphics_args)
+  } else {
+    graphics_ast(&graphics_args)
+  }
+}
+
 pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_with_gaps(args, &[])
+}
+
+/// Render a grid enclosed with large parentheses (for MatrixForm).
+pub fn grid_ast_with_parens(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  grid_ast_internal(args, &[], true)
+}
+
+/// Render a parenthesized grid and return the raw SVG string (for composition).
+pub fn grid_svg_with_parens(args: &[Expr]) -> Result<String, InterpreterError> {
+  grid_svg_internal(args, &[], true)
 }
 
 /// Render a grid with optional extra vertical gaps before certain rows.
@@ -2528,6 +2651,24 @@ pub fn grid_ast_with_gaps(
   args: &[Expr],
   group_gaps: &[usize],
 ) -> Result<Expr, InterpreterError> {
+  grid_ast_internal(args, group_gaps, false)
+}
+
+fn grid_ast_internal(
+  args: &[Expr],
+  group_gaps: &[usize],
+  parens: bool,
+) -> Result<Expr, InterpreterError> {
+  let svg = grid_svg_internal(args, group_gaps, parens)?;
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+fn grid_svg_internal(
+  args: &[Expr],
+  group_gaps: &[usize],
+  parens: bool,
+) -> Result<String, InterpreterError> {
   // Extract rows from args[0]
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows: Vec<Vec<Expr>> = match &data {
@@ -2550,10 +2691,9 @@ pub fn grid_ast_with_gaps(
       }
     }
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Grid".to_string(),
-        args: args.to_vec(),
-      });
+      return Err(InterpreterError::EvaluationError(
+        "Grid: argument must be a list".into(),
+      ));
     }
   };
 
@@ -2579,10 +2719,7 @@ pub fn grid_ast_with_gaps(
   let num_rows = rows.len();
   let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
   if num_cols == 0 {
-    return Ok(Expr::FunctionCall {
-      name: "Grid".to_string(),
-      args: args.to_vec(),
-    });
+    return Err(InterpreterError::EvaluationError("Grid: empty data".into()));
   }
 
   // Compute column widths based on estimated display width
@@ -2616,9 +2753,13 @@ pub fn grid_ast_with_gaps(
     })
     .collect();
 
-  let total_width: f64 = col_widths.iter().sum();
+  let grid_width: f64 = col_widths.iter().sum();
   let total_gap: f64 = group_gaps.len() as f64 * group_gap;
   let total_height: f64 = row_heights.iter().sum::<f64>() + total_gap;
+
+  // When parentheses are enabled, reserve space on left and right
+  let paren_margin: f64 = if parens { 12.0 } else { 0.0 };
+  let total_width: f64 = grid_width + 2.0 * paren_margin;
 
   // Build SVG
   let svg_w = total_width.ceil() as u32;
@@ -2629,7 +2770,33 @@ pub fn grid_ast_with_gaps(
     svg_w, svg_h, svg_w, svg_h
   ));
 
-  // Draw cell text
+  // Draw round parentheses if enabled
+  if parens {
+    let h = total_height;
+    let inset = 8.0; // how far the curve bows inward
+    let stroke_w = 1.2;
+    // Left parenthesis: smooth arc from top to bottom, bowing left
+    // Cubic Bézier: start at (margin, 0), control points pull left, end at (margin, h)
+    let lx = paren_margin;
+    svg.push_str(&format!(
+      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+      lx, 0.0,
+      lx - inset, h * 0.33,
+      lx - inset, h * 0.67,
+      lx, h
+    ));
+    // Right parenthesis: smooth arc from top to bottom, bowing right
+    let rx = paren_margin + grid_width;
+    svg.push_str(&format!(
+      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+      rx, 0.0,
+      rx + inset, h * 0.33,
+      rx + inset, h * 0.67,
+      rx, h
+    ));
+  }
+
+  // Draw cell text (shifted right by paren_margin when parens are enabled)
   let mut y_offset: f64 = 0.0;
   for (i, row) in rows.iter().enumerate() {
     // Add group gap before this row if it's a group boundary
@@ -2637,7 +2804,7 @@ pub fn grid_ast_with_gaps(
       y_offset += group_gap;
     }
     let rh = row_heights[i];
-    let mut x_offset: f64 = 0.0;
+    let mut x_offset: f64 = paren_margin;
     for (j, cell) in row.iter().enumerate() {
       let col_w = col_widths[j];
       let cx = x_offset + col_w / 2.0;
@@ -2657,14 +2824,15 @@ pub fn grid_ast_with_gaps(
     let mut y = 0.0_f64;
     for i in 0..=num_rows {
       svg.push_str(&format!(
-        "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"black\" stroke-width=\"1\"/>\n"
+        "<line x1=\"{paren_margin:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"black\" stroke-width=\"1\"/>\n",
+        paren_margin + grid_width
       ));
       if i < num_rows {
         y += row_heights[i];
       }
     }
     // Vertical lines (num_cols + 1 lines)
-    let mut x_offset: f64 = 0.0;
+    let mut x_offset: f64 = paren_margin;
     for j in 0..=num_cols {
       svg.push_str(&format!(
         "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"black\" stroke-width=\"1\"/>\n"
@@ -2677,8 +2845,246 @@ pub fn grid_ast_with_gaps(
 
   svg.push_str("</svg>");
 
-  crate::capture_graphics(&svg);
+  Ok(svg)
+}
 
+/// Render a 3D MatrixForm: a 2D grid of parenthesized column vectors,
+/// all wrapped in outer parentheses.
+///
+/// Input: list of rows, each row is a list of sub-lists.
+/// Each sub-list `{a, b, c}` is rendered as a parenthesized column vector.
+/// The grid of these column vectors is wrapped in outer parentheses.
+pub fn matrixform_3d_ast(
+  outer_rows: &[Vec<Expr>],
+) -> Result<Expr, InterpreterError> {
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let pad_x: f64 = 12.0;
+  let pad_y: f64 = 8.0;
+  let row_height = font_size + pad_y;
+  let paren_w: f64 = 10.0; // width reserved for each sub-paren pair
+  let paren_inset: f64 = 5.0; // how far parens bow
+  let outer_paren_margin: f64 = 12.0;
+  let outer_paren_inset: f64 = 8.0;
+  let cell_gap_x: f64 = 14.0; // horizontal gap between cells
+  let cell_gap_y: f64 = 10.0; // vertical gap between rows
+
+  let num_outer_rows = outer_rows.len();
+  let num_outer_cols = outer_rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  if num_outer_cols == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "MatrixForm: empty 3D data".into(),
+    ));
+  }
+
+  // For each cell, determine: max element display width and number of sub-rows
+  // cell_info[i][j] = (sub_row_count, max_elem_width_chars)
+  let mut cell_info: Vec<Vec<(usize, f64)>> = Vec::new();
+  for row in outer_rows {
+    let mut row_info = Vec::new();
+    for cell in row {
+      match cell {
+        Expr::List(items) => {
+          let count = items.len().max(1);
+          let max_w: f64 = items
+            .iter()
+            .map(estimate_display_width)
+            .fold(0.0_f64, f64::max);
+          row_info.push((count, max_w));
+        }
+        _ => {
+          row_info.push((1, estimate_display_width(cell)));
+        }
+      }
+    }
+    // Pad to num_outer_cols
+    while row_info.len() < num_outer_cols {
+      row_info.push((1, 1.0));
+    }
+    cell_info.push(row_info);
+  }
+
+  // For each outer column, find max sub-cell width
+  let mut col_inner_widths: Vec<f64> = vec![0.0; num_outer_cols];
+  for row_info in &cell_info {
+    for (j, &(_, max_w)) in row_info.iter().enumerate() {
+      let w = max_w * char_width + pad_x;
+      if w > col_inner_widths[j] {
+        col_inner_widths[j] = w;
+      }
+    }
+  }
+
+  // Each cell's total width = inner_width + 2 * paren_w (for sub-parens)
+  let col_total_widths: Vec<f64> =
+    col_inner_widths.iter().map(|w| w + 2.0 * paren_w).collect();
+
+  // For each outer row, find max sub-row count (determines row height)
+  let outer_row_sub_counts: Vec<usize> = cell_info
+    .iter()
+    .map(|ri| ri.iter().map(|&(c, _)| c).max().unwrap_or(1))
+    .collect();
+  let outer_row_heights: Vec<f64> = outer_row_sub_counts
+    .iter()
+    .map(|&c| c as f64 * row_height)
+    .collect();
+
+  let grid_width: f64 = col_total_widths.iter().sum::<f64>()
+    + (num_outer_cols as f64 - 1.0) * cell_gap_x;
+  let grid_height: f64 = outer_row_heights.iter().sum::<f64>()
+    + (num_outer_rows as f64 - 1.0) * cell_gap_y;
+
+  let total_width = grid_width + 2.0 * outer_paren_margin;
+  let total_height = grid_height;
+
+  let svg_w = total_width.ceil() as u32;
+  let svg_h = total_height.ceil() as u32;
+  let mut svg = String::with_capacity(4096);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    svg_w, svg_h, svg_w, svg_h
+  ));
+
+  // Draw outer parentheses
+  let lx = outer_paren_margin;
+  let h = total_height;
+  let stroke_w = 1.2;
+  svg.push_str(&format!(
+    "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+    lx, 0.0,
+    lx - outer_paren_inset, h * 0.33,
+    lx - outer_paren_inset, h * 0.67,
+    lx, h
+  ));
+  let rx = outer_paren_margin + grid_width;
+  svg.push_str(&format!(
+    "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+    rx, 0.0,
+    rx + outer_paren_inset, h * 0.33,
+    rx + outer_paren_inset, h * 0.67,
+    rx, h
+  ));
+
+  // Draw each cell
+  let mut y_off = 0.0_f64;
+  for (i, row) in outer_rows.iter().enumerate() {
+    let row_h = outer_row_heights[i];
+    let mut x_off = outer_paren_margin;
+    for (j, cell) in row.iter().enumerate() {
+      let cell_w = col_total_widths[j];
+      let inner_w = col_inner_widths[j];
+
+      // Get sub-items for this cell
+      let sub_items: Vec<&Expr> = match cell {
+        Expr::List(items) => items.iter().collect(),
+        _ => vec![cell],
+      };
+      let sub_count = sub_items.len();
+      let sub_h = sub_count as f64 * row_height;
+
+      // Center sub-vector vertically within cell
+      let sub_y_start = y_off + (row_h - sub_h) / 2.0;
+
+      // Draw sub-parentheses around this cell's column vector
+      let sub_lx = x_off + paren_w;
+      let sub_rx = x_off + paren_w + inner_w;
+      let sub_top = sub_y_start;
+      let sub_bot = sub_y_start + sub_h;
+      let sub_stroke = 1.0;
+
+      svg.push_str(&format!(
+        "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{sub_stroke}\"/>\n",
+        sub_lx, sub_top,
+        sub_lx - paren_inset, sub_top + sub_h * 0.33,
+        sub_lx - paren_inset, sub_top + sub_h * 0.67,
+        sub_lx, sub_bot
+      ));
+      svg.push_str(&format!(
+        "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{sub_stroke}\"/>\n",
+        sub_rx, sub_top,
+        sub_rx + paren_inset, sub_top + sub_h * 0.33,
+        sub_rx + paren_inset, sub_top + sub_h * 0.67,
+        sub_rx, sub_bot
+      ));
+
+      // Draw sub-items as text, vertically stacked
+      for (k, item) in sub_items.iter().enumerate() {
+        let cx = x_off + cell_w / 2.0;
+        let cy = sub_y_start + k as f64 * row_height + row_height / 2.0;
+        svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          expr_to_svg_markup(item)
+        ));
+      }
+
+      x_off += cell_w + cell_gap_x;
+    }
+    y_off += row_h + cell_gap_y;
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
+  Ok(Expr::Identifier("-Graphics-".to_string()))
+}
+
+/// Stack multiple SVG strings vertically with spacing, capture the result.
+pub fn stack_svgs_vertically(
+  svgs: &[String],
+) -> Result<Expr, InterpreterError> {
+  if svgs.is_empty() {
+    return Err(InterpreterError::EvaluationError("No SVGs to stack".into()));
+  }
+
+  // Parse each SVG to get its dimensions and content
+  let mut parsed: Vec<(f64, f64, String, String)> = Vec::new(); // (w, h, viewBox, innerContent)
+  for svg in svgs {
+    if let Some(p) = parse_svg_dimensions(svg) {
+      let parts: Vec<f64> = p
+        .view_box
+        .split_whitespace()
+        .filter_map(|s| s.parse().ok())
+        .collect();
+      if parts.len() >= 4 {
+        parsed.push((parts[2], parts[3], p.view_box.clone(), p.inner_content));
+      }
+    }
+  }
+
+  if parsed.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Could not parse SVGs".into(),
+    ));
+  }
+
+  let gap = 8.0_f64;
+  let max_width: f64 = parsed.iter().map(|(w, _, _, _)| *w).fold(0.0, f64::max);
+  let total_height: f64 = parsed.iter().map(|(_, h, _, _)| *h).sum::<f64>()
+    + (parsed.len() as f64 - 1.0) * gap;
+
+  let mut svg = String::with_capacity(4096);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    max_width.ceil() as u32,
+    total_height.ceil() as u32,
+    max_width.ceil() as u32,
+    total_height.ceil() as u32,
+  ));
+
+  let mut y = 0.0_f64;
+  for (w, h, vb, content) in &parsed {
+    // Center horizontally if narrower than max
+    let x = (max_width - w) / 2.0;
+    svg.push_str(&format!(
+      "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
+      x, y, w, h, vb
+    ));
+    svg.push_str(content);
+    svg.push_str("</svg>\n");
+    y += h + gap;
+  }
+
+  svg.push_str("</svg>");
+  crate::capture_graphics(&svg);
   Ok(Expr::Identifier("-Graphics-".to_string()))
 }
 

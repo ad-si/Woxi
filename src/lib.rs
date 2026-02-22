@@ -635,9 +635,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         let result_expr = render_grid_if_needed(result_expr);
         // If the result is a Dataset expression, render it as an SVG table
         let result_expr = render_dataset_if_needed(result_expr);
-        // In visual mode, render TableForm[list] as a Grid SVG
+        // In visual mode, render TableForm[list] and MatrixForm[list] as Grid SVGs
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          render_tableform_if_needed(result_expr)
+          let result_expr = render_tableform_if_needed(result_expr);
+          render_matrixform_if_needed(result_expr)
         } else {
           result_expr
         };
@@ -885,6 +886,69 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// If `expr` is a MatrixForm[list] with non-graphics data, render as a Grid SVG.
+/// For 2D lists, render as a parenthesized matrix.
+/// For 3D lists, render each sub-matrix as a parenthesized matrix, stacked vertically.
+/// For 1D lists, render as a column vector with parentheses.
+fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "MatrixForm" && args.len() == 1 =>
+    {
+      let data = &args[0];
+      if contains_graphics_placeholder(data) {
+        return expr;
+      }
+      match data {
+        // 3D list: 2D grid of column vectors, each parenthesized, with outer parens
+        syntax::Expr::List(items) if is_3d_list(items) => {
+          // Build outer_rows: Vec<Vec<Expr>> where each inner Expr is a sub-list
+          let outer_rows: Vec<Vec<syntax::Expr>> = items
+            .iter()
+            .map(|row| {
+              if let syntax::Expr::List(cells) = row {
+                cells.clone()
+              } else {
+                vec![row.clone()]
+              }
+            })
+            .collect();
+          match functions::graphics::matrixform_3d_ast(&outer_rows) {
+            Ok(result) => result,
+            Err(_) => expr,
+          }
+        }
+        // 2D list: single matrix
+        syntax::Expr::List(items)
+          if items
+            .iter()
+            .all(|item| matches!(item, syntax::Expr::List(_))) =>
+        {
+          match functions::graphics::grid_ast_with_parens(&[data.clone()]) {
+            Ok(result) => result,
+            Err(_) => expr,
+          }
+        }
+        // 1D list: column vector
+        syntax::Expr::List(items) if !items.is_empty() => {
+          let grid_data = syntax::Expr::List(
+            items
+              .iter()
+              .map(|e| syntax::Expr::List(vec![e.clone()]))
+              .collect(),
+          );
+          match functions::graphics::grid_ast_with_parens(&[grid_data]) {
+            Ok(result) => result,
+            Err(_) => expr,
+          }
+        }
+        _ => expr,
+      }
+    }
+    _ => expr,
+  }
+}
+
 /// If the result is a list (1D, 2D, or 3D) of `-Graphics-` items,
 /// or a `TableForm` wrapping such a list, combine captured SVGs into a grid.
 fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
@@ -1098,6 +1162,11 @@ fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
 fn generate_output_svg(expr: &syntax::Expr) {
   // Skip for Graphics/Image results (they already have captured SVG/HTML)
   if matches!(expr, syntax::Expr::Identifier(s) if s == "-Graphics-" || s == "-Graphics3D-" || s == "-Image-")
+  {
+    return;
+  }
+  // Skip for FullForm results — display as plain text in the playground
+  if matches!(expr, syntax::Expr::FunctionCall { name, args } if name == "FullForm" && args.len() == 1)
   {
     return;
   }
