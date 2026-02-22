@@ -2314,6 +2314,46 @@ mod part_list_index {
   }
 }
 
+mod part_multi_index {
+  use super::*;
+
+  #[test]
+  fn part_two_indices() {
+    assert_eq!(interpret("Part[{a, {b, c}, d}, 2, 1]").unwrap(), "b");
+  }
+
+  #[test]
+  fn part_two_indices_bracket_syntax() {
+    assert_eq!(interpret("lst = {a, {b, c}, d}; lst[[2, 1]]").unwrap(), "b");
+  }
+
+  #[test]
+  fn part_three_indices() {
+    assert_eq!(
+      interpret("Part[{{{a, b}, {c, d}}, {{e, f}, {g, h}}}, 1, 2, 1]").unwrap(),
+      "c"
+    );
+  }
+
+  #[test]
+  fn part_multi_index_nested_matrix() {
+    assert_eq!(
+      interpret("Part[{{1, 2}, {3, 4}, {5, 6}}, 2, 2]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn part_multi_index_negative() {
+    assert_eq!(interpret("Part[{{a, b}, {c, d}}, -1, -1]").unwrap(), "d");
+  }
+
+  #[test]
+  fn part_multi_index_head() {
+    assert_eq!(interpret("Part[{f[a, b], g[c, d]}, 2, 0]").unwrap(), "g");
+  }
+}
+
 mod join_non_list {
   use super::*;
 
