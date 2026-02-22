@@ -147,7 +147,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Hold" | "HoldForm" | "Table" | "Do" | "While" | "For" | "Module"
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
-    | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained" => {
+    | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
+    | "Information" => {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
@@ -188,7 +189,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
     "Infinity" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
-    | "Information" | "ListPlot3D" | "Input" | "SeriesData" => {
+    | "ListPlot3D" | "Input" | "SeriesData" => {
       vec!["Protected", "ReadProtected"]
     }
 

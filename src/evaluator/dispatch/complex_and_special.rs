@@ -269,6 +269,139 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(args[0].clone()));
     }
 
+    // Information[symbol] - returns InformationData about a symbol
+    // ?symbol is syntactic sugar that parses as Information[symbol]
+    // Output matches wolframscript: InformationData[<|...|>, False]
+    "Information" if args.len() == 1 => {
+      if let Expr::Identifier(sym) = &args[0] {
+        // Look up OwnValues (variable assignments)
+        let own_value = crate::ENV.with(|e| {
+          let env = e.borrow();
+          env.get(sym).cloned()
+        });
+
+        // Look up DownValues (function definitions)
+        let down_values = crate::FUNC_DEFS.with(|m| {
+          let defs = m.borrow();
+          defs.get(sym).cloned()
+        });
+
+        // Look up user-set Attributes
+        let user_attrs =
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+
+        let has_own = own_value.is_some();
+        let has_down = down_values.is_some();
+        let has_attrs = user_attrs.as_ref().is_some_and(|a| !a.is_empty());
+
+        if !has_own && !has_down && !has_attrs {
+          // Undefined symbol → Missing[UnknownSymbol, name]
+          return Some(Ok(Expr::FunctionCall {
+            name: "Missing".to_string(),
+            args: vec![
+              Expr::Identifier("UnknownSymbol".to_string()),
+              Expr::Identifier(sym.clone()),
+            ],
+          }));
+        }
+
+        // Build OwnValues field
+        let own_str = if let Some(stored) = own_value {
+          let val_str = match stored {
+            crate::StoredValue::ExprVal(e) => expr_to_string(&e),
+            crate::StoredValue::Raw(val) => val,
+            crate::StoredValue::Association(items) => {
+              let items_expr: Vec<(crate::syntax::Expr, crate::syntax::Expr)> =
+                items
+                  .iter()
+                  .map(|(k, v)| {
+                    let key_expr = crate::syntax::string_to_expr(k)
+                      .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
+                    let val_expr = crate::syntax::string_to_expr(v)
+                      .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
+                    (key_expr, val_expr)
+                  })
+                  .collect();
+              expr_to_string(&crate::syntax::Expr::Association(items_expr))
+            }
+          };
+          format!(
+            "Information`InformationValueForm[OwnValues, {}, {{{} -> {}}}]",
+            sym, sym, val_str
+          )
+        } else {
+          "None".to_string()
+        };
+
+        // Build DownValues field
+        let down_str = if let Some(overloads) = down_values {
+          let rules: Vec<String> = overloads
+            .iter()
+            .map(|(params, _conds, _defaults, heads, body)| {
+              let params_str = params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                  if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
+                    format!("{}_{}", p, head)
+                  } else {
+                    format!("{}_", p)
+                  }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+              let body_str = expr_to_string(body);
+              format!("{}[{}] :> {}", sym, params_str, body_str)
+            })
+            .collect();
+          format!(
+            "Information`InformationValueForm[DownValues, {}, {{{}}}]",
+            sym,
+            rules.join(", ")
+          )
+        } else {
+          "None".to_string()
+        };
+
+        // Build Attributes field
+        let attrs_str = if let Some(attrs) = user_attrs {
+          if attrs.is_empty() {
+            "{}".to_string()
+          } else {
+            format!("{{{}}}", attrs.join(", "))
+          }
+        } else {
+          "{}".to_string()
+        };
+
+        // Build InformationData output matching wolframscript
+        let result_str = format!(
+          "InformationData[<|ObjectType -> Symbol, \
+           Usage -> Global`{sym}, \
+           Documentation -> None, \
+           OwnValues -> {own_str}, \
+           UpValues -> None, \
+           DownValues -> {down_str}, \
+           SubValues -> None, \
+           DefaultValues -> None, \
+           NValues -> None, \
+           FormatValues -> None, \
+           Options -> None, \
+           Attributes -> {attrs_str}, \
+           FullName -> Global`{sym}|>, False]"
+        );
+
+        // Parse the result string back into an Expr for proper output
+        return Some(Ok(Expr::Raw(result_str)));
+      }
+
+      // Non-identifier argument — return unevaluated
+      return Some(Ok(Expr::FunctionCall {
+        name: "Information".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+
     // Sow[expr] or Sow[expr, tag] - adds expr to the current Reap collection
     "Sow" if args.len() == 1 || args.len() == 2 => {
       let tag = if args.len() == 2 {

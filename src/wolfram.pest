@@ -110,6 +110,9 @@ Decrement = { Identifier ~ "--" }
 PreIncrement = { "++" ~ Identifier }
 PreDecrement = { "--" ~ Identifier }
 
+// InformationQuery: ?symbol shorthand for Information[symbol]
+InformationQuery = { "?" ~ !"?" ~ Identifier }
+
 // Unset: x =. (removes definition)
 Unset = { Identifier ~ "=." }
 
@@ -211,6 +214,7 @@ Term = _{
   | PreDecrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
+  | InformationQuery
   | Identifier
   | SlotSequence
   | Slot

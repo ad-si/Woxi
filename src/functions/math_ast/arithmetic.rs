@@ -425,10 +425,9 @@ fn term_sort_key(e: &Expr) -> String {
     left,
     right,
   } = e
+    && matches!(left.as_ref(), Expr::Integer(_))
   {
-    if matches!(left.as_ref(), Expr::Integer(_)) {
-      return crate::syntax::expr_to_string(right);
-    }
+    return crate::syntax::expr_to_string(right);
   }
   let s = crate::syntax::expr_to_string(e);
   s.strip_prefix('-').unwrap_or(&s).to_string()
