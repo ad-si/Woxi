@@ -233,11 +233,9 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if pa != pb {
         pa.cmp(&pb)
       } else {
-        let sa = crate::syntax::expr_to_string(a);
-        let sb = crate::syntax::expr_to_string(b);
-        let sa_stripped = sa.strip_prefix('-').unwrap_or(&sa);
-        let sb_stripped = sb.strip_prefix('-').unwrap_or(&sb);
-        sa_stripped.cmp(sb_stripped)
+        let sa = term_sort_key(a);
+        let sb = term_sort_key(b);
+        sa.cmp(&sb)
       }
     });
     final_args.extend(sorted_symbolic);
@@ -415,6 +413,25 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     }
   }
   result
+}
+
+/// Extract sort key for a Plus term.
+/// For Divide(n, x) where n is an integer, sort by the denominator (x)
+/// so that 1/z sorts near z-related terms rather than before all variables.
+fn term_sort_key(e: &Expr) -> String {
+  // For integer/denominator divisions, sort by denominator
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left,
+    right,
+  } = e
+  {
+    if matches!(left.as_ref(), Expr::Integer(_)) {
+      return crate::syntax::expr_to_string(right);
+    }
+  }
+  let s = crate::syntax::expr_to_string(e);
+  s.strip_prefix('-').unwrap_or(&s).to_string()
 }
 
 /// Sort symbolic factors in Times using the same ordering as Wolfram:
