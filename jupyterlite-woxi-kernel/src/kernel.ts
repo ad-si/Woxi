@@ -95,7 +95,7 @@ export class WoxiKernel extends BaseKernel implements IKernel {
       const graphics = this._wasm!.get_graphics();
 
       if (graphics) {
-        // Render SVG graphics (from Plot, etc.)
+        // Render SVG graphics (from Plot, images, etc.)
         this.publishExecuteResult({
           execution_count: this.executionCount,
           data: {
