@@ -571,6 +571,26 @@ mod graphics {
         "Plot should use CompressedData for line points"
       );
     }
+
+    #[test]
+    fn trailing_semicolon_suppresses_graphics() {
+      let result =
+        woxi::interpret_with_stdout("Plot[Sin[x], {x, 0, 2 Pi}];").unwrap();
+      assert_eq!(
+        result.result, "Null",
+        "Trailing semicolon should suppress result to Null"
+      );
+    }
+
+    #[test]
+    fn assignment_with_semicolon_suppresses_graphics() {
+      let result =
+        woxi::interpret_with_stdout("p = Plot[Sin[x], {x, 0, 2 Pi}];").unwrap();
+      assert_eq!(
+        result.result, "Null",
+        "Assignment with trailing semicolon should suppress result to Null"
+      );
+    }
   }
 }
 
