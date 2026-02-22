@@ -239,7 +239,7 @@ mod subtraction_without_spaces {
     // Regression: `2 Pi - Pi/4` must parse as subtraction, not implicit multiplication by -Pi.
     assert_eq!(
       interpret("FullForm[2 Pi - Pi/4]").unwrap(),
-      "Plus[Times[-1, Times[Pi, Power[4, -1]]], Times[2, Pi]]"
+      "Plus[Times[-1, Times[Rational[1, 4], Pi]], Times[2, Pi]]"
     );
   }
 
@@ -333,13 +333,16 @@ mod full_form {
   fn full_form_reciprocal() {
     assert_eq!(
       interpret("FullForm[1/z]").unwrap(),
-      "Times[1, Power[z, -1]]"
+      "Power[z, -1]"
     );
   }
 
   #[test]
   fn full_form_sqrt() {
-    assert_eq!(interpret("FullForm[Sqrt[5]]").unwrap(), "Sqrt[5]");
+    assert_eq!(
+      interpret("FullForm[Sqrt[5]]").unwrap(),
+      "Power[5, Rational[1, 2]]"
+    );
   }
 
   #[test]
@@ -347,7 +350,7 @@ mod full_form {
     // Regression: FullForm must show canonical notation as plain text
     assert_eq!(
       interpret("FullForm[x/Sqrt[5] + y^2 + 1/z]").unwrap(),
-      "Plus[Times[1, Power[z, -1]], Times[x, Power[Sqrt[5], -1]], Power[y, 2]]"
+      "Plus[Times[Power[5, Rational[-1, 2]], x], Power[y, 2], Power[z, -1]]"
     );
   }
 
@@ -360,7 +363,7 @@ mod full_form {
       result.output_svg.is_none(),
       "FullForm should not produce SVG output"
     );
-    assert_eq!(result.result, "Times[1, Power[z, -1]]");
+    assert_eq!(result.result, "Power[z, -1]");
   }
 }
 

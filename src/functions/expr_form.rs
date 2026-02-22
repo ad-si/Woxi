@@ -81,10 +81,25 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       head: "List".to_string(),
       children: items.clone(),
     },
-    Expr::FunctionCall { name, args } => ExprForm::Composite {
-      head: name.clone(),
-      children: args.clone(),
-    },
+    Expr::FunctionCall { name, args } => {
+      // Sqrt[x] → Power[x, Rational[1, 2]] in FullForm
+      if name == "Sqrt" && args.len() == 1 {
+        return ExprForm::Composite {
+          head: "Power".to_string(),
+          children: vec![
+            args[0].clone(),
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)],
+            },
+          ],
+        };
+      }
+      ExprForm::Composite {
+        head: name.clone(),
+        children: args.clone(),
+      }
+    }
     Expr::Rule {
       pattern,
       replacement,
@@ -151,17 +166,36 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
           },
         ],
       },
-      BinaryOperator::Divide => ExprForm::Composite {
-        head: "Times".to_string(),
-        children: vec![
-          left.as_ref().clone(),
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: right.clone(),
-            right: Box::new(Expr::Integer(-1)),
-          },
-        ],
-      },
+      BinaryOperator::Divide => {
+        // Canonicalize: a/b → simplified form using power and times
+        // This handles cases like 1/z → Power[z, -1],
+        // x/Sqrt[5] → Times[Power[5, Rational[-1, 2]], x]
+        if let Ok(b_inv) =
+          crate::functions::power_two(right, &Expr::Integer(-1))
+        {
+          if matches!(left.as_ref(), Expr::Integer(1)) {
+            return decompose_expr(&b_inv);
+          }
+          if let Ok(product) = crate::functions::times_ast(&[
+            left.as_ref().clone(),
+            b_inv,
+          ]) {
+            return decompose_expr(&product);
+          }
+        }
+        // Fallback to structural decomposition
+        ExprForm::Composite {
+          head: "Times".to_string(),
+          children: vec![
+            left.as_ref().clone(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: right.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            },
+          ],
+        }
+      }
       // Simple binary → named head
       BinaryOperator::Power => ExprForm::Composite {
         head: "Power".to_string(),
