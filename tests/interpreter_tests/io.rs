@@ -1119,6 +1119,41 @@ mod read_list {
   }
 
   #[test]
+  fn with_stream_variable() {
+    assert_eq!(
+      interpret(
+        "stream = StringToStream[\"123\\n45\\nx\\ny\"]; ReadList[stream]"
+      )
+      .unwrap(),
+      "{123, 45, x, y}"
+    );
+  }
+
+  #[test]
+  fn number_with_max_count() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"1\\n2\\n3\"], Number, 2]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"\"], Expression]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn empty_lines() {
+    assert_eq!(
+      interpret("ReadList[StringToStream[\"\\n\\n\\n\"], Expression]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
   fn from_file() {
     use std::io::Write;
     let path = "/tmp/woxi_readlist_test.txt";
