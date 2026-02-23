@@ -1668,7 +1668,7 @@ ElidedForms,,,,10,5184
 Eliminate,Eliminates variables from a system of equations,✅,pure,1,891
 Ellipsoid,,,,10,1476
 EllipticE,Complete elliptic integral of the second kind E(m),✅,pure,1,879
-EllipticExp,,,,1,3048
+EllipticExp,Symbol for elliptic exponential function,✅,pure,1,3048
 EllipticExpPrime,,,,2,4660
 EllipticF,Incomplete elliptic integral of the first kind F(phi m),✅,pure,1,1111
 EllipticFilterModel,,,,9,4387
@@ -1702,7 +1702,7 @@ EndOfFile,Symbol returned by Read at end of file,✅,pure,1,1852
 EndOfLine,,,,5.1,2545
 EndOfString,,,,5.1,1202
 EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1,599
-EngineeringForm,,,,1,2079
+EngineeringForm,Display wrapper for engineering notation formatting,✅,pure,1,2079
 English,,,,,
 EnterExpressionPacket,,,,3,4027
 EnterTextPacket,,,,3,3843
@@ -2101,7 +2101,7 @@ FormPage,,,,10.3,1672
 FormProtectionMethod,,,,12.3,
 FormulaData,,,,10,2473
 FormulaLookup,,,,10,1488
-FortranForm,,,,1,2807
+FortranForm,Symbol for Fortran code formatting,✅,pure,1,2807
 Forward,,,,6,2986
 ForwardBackward,,,,6,2611
 ForwardCloudCredentials,,,,12.2,
@@ -3291,7 +3291,7 @@ Locator,,,,6,549
 LocatorAutoCreate,,,,6,1490
 LocatorPane,,,,6,984
 LocatorRegion,,,,6,3803
-Locked,,,,1,2786
+Locked,Attribute preventing modification of a symbol,✅,pure,1,2786
 Log,Returns the natural logarithm of a number,✅,pure,1,58
 Log10,Returns the base-10 logarithm of a number,✅,pure,7,598
 Log2,Returns the base-2 logarithm of a number,✅,pure,7,904
@@ -3918,7 +3918,7 @@ NumberMultiplier,,,,3,3737
 NumberPadding,,,,2,1035
 NumberPoint,Symbol specifying the decimal point character in NumberForm,✅,pure,1,2541
 NumberQ,Checks if a value is a number,✅,pure,1,340
-NumberSeparator,,,,1,2960
+NumberSeparator,Option specifying the digit separator in NumberForm,✅,pure,1,2960
 NumberSigns,,,,2,1779
 NumberString,,,,5.1,1068
 Numerator,Returns the numerator of a rational expression,✅,pure,1,628
@@ -4308,7 +4308,7 @@ PositiveRationals,,,,12,4479
 PositiveReals,,,,12,1388
 PositiveSemidefiniteMatrixQ,,,,10,2837
 PossibleZeroQ,,,,6,1369
-Postfix,,,,1,3070
+Postfix,Symbol for postfix display formatting,✅,pure,1,3070
 Power,Raises a number to a power,✅,pure,1,4
 PowerDistribution,,,,8,3224
 PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2,640
@@ -5927,7 +5927,7 @@ VerifyDigitalSignature,,,,12,4707
 VerifyFileSignature,,,,12.1,
 VerifyInterpretation,,,,12,
 VerifySecurityCertificates,,,,11,4567
-VerifySolutions,,,,1,2986
+VerifySolutions,Option for Solve to verify solutions,✅,pure,1,2986
 VerifyTestAssumptions,,,,8,3916
 VersionedPreferences,,,,12.1,
 VertexAdd,,,,8,3191
