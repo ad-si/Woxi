@@ -4685,7 +4685,7 @@ ResponseForm,,,,10,3889
 Rest,Returns the list without its first element,✅,pure,1,289
 RestartInterval,,,,10.2,5587
 Restricted,,,,10,2421
-Resultant,,,,1,1975
+Resultant,Resultant of two polynomials via Sylvester matrix determinant,✅,pure,1,1975
 Return,Returns a value from a function or control structure,✅,pure,1,196
 ReturnExpressionPacket,,,,3,4612
 ReturnPacket,,,,3,3717
