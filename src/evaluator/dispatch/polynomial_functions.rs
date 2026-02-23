@@ -30,6 +30,11 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    "FactorTermsList" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::polynomial_ast::factor_terms_list_ast(
+        args,
+      ));
+    }
     "FactorTerms" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::factor_terms_ast(args));
     }

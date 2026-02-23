@@ -3119,3 +3119,26 @@ mod share {
     assert_eq!(interpret("Attributes[Share]").unwrap(), "{Protected}");
   }
 }
+
+mod plus_rendering {
+  use super::*;
+
+  #[test]
+  fn negative_times_coefficient() {
+    // Regression test: Plus with negative Times coefficient should use " - "
+    assert_eq!(
+      interpret("Plus[1, Times[-2, x], Power[x, 2]]").unwrap(),
+      "1 - 2*x + x^2"
+    );
+  }
+
+  #[test]
+  fn negative_integer_term() {
+    assert_eq!(interpret("1 + (-3) + x").unwrap(), "-2 + x");
+  }
+
+  #[test]
+  fn multiple_negative_terms() {
+    assert_eq!(interpret("a - 3*b - 5*c").unwrap(), "a - 3*b - 5*c");
+  }
+}

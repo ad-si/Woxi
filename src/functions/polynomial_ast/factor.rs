@@ -1527,197 +1527,87 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(build_product(result_factors))
 }
 
-/// Yun's square-free factorization algorithm.
-/// Input: primitive polynomial (GCD of coeffs = 1) with positive leading coeff.
-/// Returns: Vec of (coefficients, multiplicity) pairs.
-fn yun_square_free(f: &[i128]) -> Vec<(Vec<i128>, usize)> {
-  if f.len() <= 1 {
-    return vec![(f.to_vec(), 1)];
+/// FactorTermsList[poly] - returns {content, primitive_part}
+pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorTermsList expects 1 or 2 arguments".into(),
+    ));
   }
 
-  let fp = poly_derivative(f);
+  let expanded = expand_and_combine(&args[0]);
 
-  if poly_is_zero(&fp) {
-    // Derivative is zero — shouldn't happen for char 0
-    return vec![(f.to_vec(), 1)];
+  // Handle zero
+  if matches!(&expanded, Expr::Integer(0)) {
+    return Ok(Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]));
   }
 
-  let c = poly_gcd_int(f, &fp);
-  let mut w = poly_exact_div(f, &c);
-  let mut y = poly_exact_div(&fp, &c);
-
-  let mut factors: Vec<(Vec<i128>, usize)> = Vec::new();
-  let mut i = 1;
-
-  loop {
-    // z = y - w'
-    let wp = poly_derivative(&w);
-    let z = poly_sub(&y, &wp);
-
-    if poly_is_zero(&z) && poly_is_one(&w) {
-      break;
-    }
-
-    if poly_is_zero(&z) {
-      // w itself is the remaining factor with multiplicity i
-      if !poly_is_one(&w) {
-        factors.push((w, i));
-      }
-      break;
-    }
-
-    let g = poly_gcd_int(&w, &z);
-    if !poly_is_one(&g) {
-      factors.push((g.clone(), i));
-    }
-    w = poly_exact_div(&w, &g);
-    y = poly_exact_div(&z, &g);
-    i += 1;
+  // Handle pure integer
+  if let Expr::Integer(n) = &expanded {
+    return Ok(Expr::List(vec![Expr::Integer(*n), Expr::Integer(1)]));
   }
 
-  if factors.is_empty() {
-    vec![(f.to_vec(), 1)]
+  let var = if args.len() == 2 {
+    // Explicit variable given
+    match &args[1] {
+      Expr::Identifier(name) => Some(name.clone()),
+      _ => None,
+    }
   } else {
-    factors
-  }
-}
+    find_single_variable(&expanded)
+  };
 
-/// Polynomial derivative (coefficient representation)
-fn poly_derivative(f: &[i128]) -> Vec<i128> {
-  if f.len() <= 1 {
-    return vec![0];
-  }
-  let mut result: Vec<i128> = Vec::with_capacity(f.len() - 1);
-  for (i, &c) in f.iter().enumerate().skip(1) {
-    result.push(c * i as i128);
-  }
-  if result.is_empty() {
-    result.push(0);
-  }
-  result
-}
-
-/// Polynomial GCD using Euclidean algorithm (for integer coefficient polynomials)
-/// Returns a primitive GCD with positive leading coefficient
-fn poly_gcd_int(a: &[i128], b: &[i128]) -> Vec<i128> {
-  let mut a = a.to_vec();
-  let mut b = b.to_vec();
-  trim_poly(&mut a);
-  trim_poly(&mut b);
-
-  if poly_is_zero(&b) {
-    return make_primitive(&a);
-  }
-  if poly_is_zero(&a) {
-    return make_primitive(&b);
-  }
-
-  // Use pseudo-remainder based Euclidean algorithm
-  while !poly_is_zero(&b) {
-    let r = poly_pseudo_rem(&a, &b);
-    a = b;
-    b = make_primitive(&r);
-  }
-
-  make_primitive(&a)
-}
-
-/// Pseudo-remainder of polynomial division
-fn poly_pseudo_rem(a: &[i128], b: &[i128]) -> Vec<i128> {
-  if b.len() > a.len() {
-    return a.to_vec();
-  }
-  let mut rem = a.to_vec();
-  let lead_b = *b.last().unwrap();
-  let deg_diff = a.len() - b.len();
-
-  for i in (0..=deg_diff).rev() {
-    let lead_r = rem[i + b.len() - 1];
-    if lead_r == 0 {
-      continue;
+  let var = match var {
+    Some(v) => v,
+    None => {
+      return Ok(Expr::List(vec![Expr::Integer(1), expanded]));
     }
-    // Multiply all of rem by lead_b, subtract lead_r * b shifted
-    for j in 0..rem.len() {
-      rem[j] *= lead_b;
+  };
+
+  let coeffs = match extract_poly_coeffs(&expanded, &var) {
+    Some(c) => c,
+    None => {
+      return Ok(Expr::List(vec![Expr::Integer(1), expanded]));
     }
-    for j in 0..b.len() {
-      rem[i + j] -= lead_r * b[j];
-    }
+  };
+
+  // Compute content (GCD of coefficients)
+  let content = coeffs
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, gcd_i128);
+  if content == 0 {
+    return Ok(Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]));
   }
 
-  trim_poly(&mut rem);
-  rem
-}
+  // Include sign of leading (highest degree) coefficient in content
+  let sign = if coeffs
+    .iter()
+    .rev()
+    .find(|&&c| c != 0)
+    .map(|&c| c < 0)
+    .unwrap_or(false)
+  {
+    -1i128
+  } else {
+    1
+  };
+  let signed_content = content * sign;
 
-/// Exact polynomial division (quotient only)
-fn poly_exact_div(a: &[i128], b: &[i128]) -> Vec<i128> {
-  if b.len() > a.len() || poly_is_zero(b) {
-    return a.to_vec();
+  let pp: Vec<i128> = coeffs.iter().map(|c| c / signed_content).collect();
+  let pp_expr = int_coeffs_to_canonical_expr(&pp, &var);
+
+  if args.len() == 2 {
+    // Two-arg form: {numerical_content, 1, primitive_part}
+    return Ok(Expr::List(vec![
+      Expr::Integer(signed_content),
+      Expr::Integer(1),
+      pp_expr,
+    ]));
   }
 
-  let n = a.len();
-  let m = b.len();
-  let lead_b = *b.last().unwrap();
-  let quot_len = n - m + 1;
-  let mut rem = a.to_vec();
-  let mut quot = vec![0i128; quot_len];
-
-  for i in (0..quot_len).rev() {
-    if rem[i + m - 1] % lead_b != 0 {
-      // Not exact division - return original
-      return a.to_vec();
-    }
-    let coeff = rem[i + m - 1] / lead_b;
-    quot[i] = coeff;
-    for j in 0..m {
-      rem[i + j] -= coeff * b[j];
-    }
-  }
-
-  trim_poly(&mut quot);
-  quot
-}
-
-/// Make polynomial primitive (divide by GCD of coefficients, positive leading coeff)
-fn make_primitive(f: &[i128]) -> Vec<i128> {
-  let content = f.iter().copied().filter(|&c| c != 0).fold(0i128, gcd_i128);
-  if content <= 1 {
-    return f.to_vec();
-  }
-  let mut result: Vec<i128> = f.iter().map(|c| c / content).collect();
-  // Ensure positive leading coefficient
-  if result.last().map(|&c| c < 0).unwrap_or(false) {
-    for c in &mut result {
-      *c = -*c;
-    }
-  }
-  result
-}
-
-fn poly_sub(a: &[i128], b: &[i128]) -> Vec<i128> {
-  let len = a.len().max(b.len());
-  let mut result = vec![0i128; len];
-  for (i, r) in result.iter_mut().enumerate() {
-    let av = if i < a.len() { a[i] } else { 0 };
-    let bv = if i < b.len() { b[i] } else { 0 };
-    *r = av - bv;
-  }
-  trim_poly(&mut result);
-  result
-}
-
-fn poly_is_zero(f: &[i128]) -> bool {
-  f.iter().all(|&c| c == 0)
-}
-
-fn poly_is_one(f: &[i128]) -> bool {
-  f.len() == 1 && f[0] == 1
-}
-
-fn trim_poly(f: &mut Vec<i128>) {
-  while f.len() > 1 && *f.last().unwrap() == 0 {
-    f.pop();
-  }
+  Ok(Expr::List(vec![Expr::Integer(signed_content), pp_expr]))
 }
 
 /// Convert integer coefficient array to canonical Expr representation
