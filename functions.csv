@@ -5254,7 +5254,7 @@ StringReverse,Reverses the characters in a string,✅,pure,2,1109
 StringRiffle,Joins a list of strings with a separator,✅,pure,10.1,1241
 StringRotateLeft,Rotates characters in a string to the left,✅,pure,9,4612
 StringRotateRight,Rotates characters in a string to the right,✅,pure,9,4225
-StringSkeleton,,,,1,
+StringSkeleton,Represents omitted characters in string output as <<n>>,✅,none,1,
 StringSplit,Splits a string into a list of substrings,✅,pure,5.1,525
 StringStartsQ,Checks if a string starts with a specific substring,✅,pure,10.1,2168
 StringTake,Returns a substring of a string,✅,pure,2,456
@@ -5623,7 +5623,7 @@ ToString,Converts an expression to a string,✅,pure,1,148
 Total,Sums the elements of a list,✅,pure,5,151
 TotalLayer,,,,11,1518
 TotalVariationFilter,,,,8,3020
-TotalWidth,,,,1,5184
+TotalWidth,Option specifying the total width for formatted output,✅,none,1,5184
 TouchPosition,,,,10,5486
 TouchscreenAutoZoom,,,,9,4947
 TouchscreenControlPlacement,,,,9,5587
