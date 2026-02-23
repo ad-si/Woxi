@@ -525,6 +525,11 @@ pub fn dispatch_complex_and_special(
           }
         }
 
+        // Show built-in DefaultValues (e.g. Default[Plus] := 0)
+        if let Some(def_str) = builtin_default_value_str(sym) {
+          lines.push(format!("Default[{}] := {}", sym, def_str));
+        }
+
         if lines.is_empty() {
           // Undefined symbol - return Null
           return Some(Ok(Expr::Identifier("Null".to_string())));
@@ -745,6 +750,11 @@ pub fn dispatch_complex_and_special(
             }
           }
 
+          // Show built-in DefaultValues (e.g. Default[Plus] := 0)
+          if let Some(def_str) = builtin_default_value_str(sym) {
+            lines.push(format!("Default[{}] := {}", sym, def_str));
+          }
+
           lines
         }
 
@@ -953,8 +963,20 @@ pub fn dispatch_complex_and_special(
       return Some(apply_replace_ast(&args[0], &args[1]));
     }
 
-    // Form wrappers -- transparent, just return the inner expression
-    "MathMLForm" | "StandardForm" | "InputForm" | "OutputForm" | "Format"
+    // Format[expr, OutputForm] and OutputForm[expr] → 2D rendering
+    "Format"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Identifier(f) if f == "OutputForm") =>
+    {
+      let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
+      return Some(Ok(Expr::Raw(rendered)));
+    }
+    "OutputForm" if args.len() == 1 => {
+      let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
+      return Some(Ok(Expr::Raw(rendered)));
+    }
+    // Other form wrappers -- transparent, just return the inner expression
+    "MathMLForm" | "StandardForm" | "InputForm" | "Format"
       if !args.is_empty() =>
     {
       return Some(Ok(args[0].clone()));
@@ -969,7 +991,39 @@ pub fn dispatch_complex_and_special(
       }));
     }
 
+    // Default[symbol] - return the default value for a built-in symbol
+    "Default" if args.len() == 1 => {
+      if let Expr::Identifier(sym) = &args[0]
+        && let Some(val) = builtin_default_value(sym)
+      {
+        return Some(Ok(val));
+      }
+      // Return unevaluated for symbols without defaults
+      return Some(Ok(Expr::FunctionCall {
+        name: "Default".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+
     _ => {}
   }
   None
+}
+
+/// Return the built-in Default value for a symbol as an Expr, if one exists.
+fn builtin_default_value(sym: &str) -> Option<Expr> {
+  match sym {
+    "Plus" => Some(Expr::Integer(0)),
+    "Times" => Some(Expr::Integer(1)),
+    _ => None,
+  }
+}
+
+/// Return the string representation of the built-in Default value for a symbol, if one exists.
+fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
+  match sym {
+    "Plus" => Some("0"),
+    "Times" => Some("1"),
+    _ => None,
+  }
 }

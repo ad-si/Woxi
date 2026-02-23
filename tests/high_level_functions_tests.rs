@@ -1042,7 +1042,10 @@ mod high_level_functions_tests {
 
     #[test]
     fn format_with_output_form() {
-      assert_eq!(interpret("Format[x^2 + 1, OutputForm]").unwrap(), "1 + x^2");
+      assert_eq!(
+        interpret("Format[x^2 + 1, OutputForm]").unwrap(),
+        "     2\n1 + x"
+      );
     }
 
     #[test]
@@ -1081,7 +1084,7 @@ mod high_level_functions_tests {
     fn definition_builtin_attributes() {
       assert_eq!(
         interpret("Definition[Plus]").unwrap(),
-        "Attributes[Plus] = {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}"
+        "Attributes[Plus] = {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}\n \nDefault[Plus] := 0"
       );
     }
 
@@ -1116,6 +1119,25 @@ mod high_level_functions_tests {
         interpret("Attributes[Definition]").unwrap(),
         "{HoldAll, Protected}"
       );
+    }
+  }
+
+  mod default_tests {
+    use super::*;
+
+    #[test]
+    fn default_plus() {
+      assert_eq!(interpret("Default[Plus]").unwrap(), "0");
+    }
+
+    #[test]
+    fn default_times() {
+      assert_eq!(interpret("Default[Times]").unwrap(), "1");
+    }
+
+    #[test]
+    fn default_unevaluated() {
+      assert_eq!(interpret("Default[Power]").unwrap(), "Default[Power]");
     }
   }
 

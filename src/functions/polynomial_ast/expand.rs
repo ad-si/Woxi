@@ -713,7 +713,7 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
     // base^n where n > 0: expand
     Expr::BinaryOp {
       op: BinaryOperator::Power,
-      left: base,
+      left: _base,
       right: exp,
     } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0) => {
       expand_and_combine(expr)
