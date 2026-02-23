@@ -1293,7 +1293,7 @@ Decapitalize,Lowercases the first letter of a string,✅,pure,10.1,4660
 DecimalForm,,,,11.2,1438
 DeclareCompiledComponent,,,,13.2,
 DeclarePackage,,,,2,1997
-Decompose,,,,1,3522
+Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1,3522
 DeconvolutionLayer,,,,11,3162
 Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1,536
 Decrypt,,,,10.1,2596
