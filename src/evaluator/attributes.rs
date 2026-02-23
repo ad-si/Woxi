@@ -145,7 +145,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Boole" | "Positive" | "Negative" | "NonPositive" | "NonNegative"
     | "EvenQ" | "OddQ" | "PrimeQ" | "IntegerQ" | "NumberQ" | "NumericQ"
     | "AtomQ" | "Clip" | "Cyclotomic" | "PartitionsQ" | "Rescale"
-    | "Resultant" | "Unitize" | "UnitStep" | "N" => {
+    | "Resultant" | "Unitize" | "UnitStep" | "N" | "FactorSquareFree" => {
       vec!["Listable", "Protected"]
     }
 

@@ -2102,3 +2102,44 @@ mod resultant {
     );
   }
 }
+
+mod factor_square_free {
+  use super::*;
+
+  #[test]
+  fn basic_repeated_factor() {
+    assert_eq!(
+      interpret("FactorSquareFree[x^5 - x^4 - x + 1]").unwrap(),
+      "(-1 + x)^2*(1 + x + x^2 + x^3)"
+    );
+  }
+
+  #[test]
+  fn with_x_factor() {
+    assert_eq!(
+      interpret("FactorSquareFree[x^4 - 2*x^3 + x^2]").unwrap(),
+      "(-1 + x)^2*x^2"
+    );
+  }
+
+  #[test]
+  fn with_integer_content() {
+    assert_eq!(
+      interpret("FactorSquareFree[12*x^3 + 36*x^2 + 36*x + 12]").unwrap(),
+      "12*(1 + x)^3"
+    );
+  }
+
+  #[test]
+  fn square_free_unchanged() {
+    assert_eq!(interpret("FactorSquareFree[x^6 - 1]").unwrap(), "-1 + x^6");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[FactorSquareFree]").unwrap(),
+      "{Listable, Protected}"
+    );
+  }
+}
