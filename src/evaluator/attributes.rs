@@ -126,8 +126,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Listable", "NumericFunction", "Protected"]
     }
 
-    // Exp has ReadProtected too
-    "Exp" => vec!["Listable", "NumericFunction", "Protected", "ReadProtected"],
+    // These have ReadProtected too
+    "Exp" | "InverseJacobiCN" | "InverseJacobiSN" => {
+      vec!["Listable", "NumericFunction", "Protected", "ReadProtected"]
+    }
 
     // Listable + Protected (non-numeric)
     "Range" | "IntegerDigits" | "RealDigits" | "Rationalize"

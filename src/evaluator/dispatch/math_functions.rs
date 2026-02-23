@@ -438,6 +438,12 @@ pub fn dispatch_math_functions(
     "JacobiCN" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_cn_ast(args));
     }
+    "InverseJacobiSN" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_sn_ast(args));
+    }
+    "InverseJacobiCN" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_cn_ast(args));
+    }
     "JacobiSC" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_sc_ast(args));
     }
