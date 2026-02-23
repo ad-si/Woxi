@@ -3654,7 +3654,7 @@ MultivariatePoissonDistribution,,,,8,2720
 MultivariateTDistribution,,,,8,2380
 N,Gives the numerical value of an expression,✅,pure,1,49
 NakagamiDistribution,,,,8,3363
-NameQ,,,,1,3280
+NameQ,Test if a string is a defined symbol name,✅,pure,1,3280
 Names,Lists symbol names matching a string pattern with wildcards,✅,pure,1,889
 Nand,Logical NAND,✅,pure,4.1,2233
 NArgMax,,,,7,2320
@@ -4331,7 +4331,7 @@ PredictorFunction,,,,10,4387
 PredictorMeasurements,,,,10,1388
 PredictorMeasurementsObject,,,,10.1,
 PreemptProtect,,,,7,3413
-Prefix,,,,1,3153
+Prefix,Prefix output form symbol,✅,pure,1,3153
 PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1,955
 Prepend,Adds an element to the beginning of a list,✅,pure,1,345
 PrependLayer,,,,12,5587
@@ -4781,7 +4781,7 @@ RulerUnits,,,,4,4612
 RulesTree,,,,12.3,
 Run,Runs an external command,✅,effectful,1,1367
 RunProcess,,,,10,1760
-RunThrough,,,,1,3215
+RunThrough,Symbol for running external commands,✅,effectful,1,3215
 RuntimeAttributes,,,,8,914
 RuntimeOptions,,,,8,922
 RussellRaoDissimilarity,,,,6,4387
@@ -4934,7 +4934,7 @@ SetUsers,,,,10,5486
 Shallow,,,,2,2008
 ShannonWavelet,,,,8,3916
 ShapiroWilkTest,,,,8,3593
-Share,,,,1,3233
+Share,Memory sharing optimization (no-op),✅,none,1,3233
 SharingList,,,,11.3,5587
 Sharpen,Sharpens an image using unsharp mask,✅,pure,7,2462
 ShearingMatrix,,,,6,2960
@@ -6171,7 +6171,7 @@ Yesterday,,,,10,2762
 YuleDissimilarity,,,,6,4947
 ZernikeR,,,,6,2333
 ZeroSymmetric,,,,9,4881
-ZeroTest,,,,1,3215
+ZeroTest,Option for testing zero equivalence,✅,pure,1,3215
 Zeta,Riemann zeta function,✅,pure,1,482
 ZetaZero,,,,6,1338
 ZIPCodeData,,,,10,408

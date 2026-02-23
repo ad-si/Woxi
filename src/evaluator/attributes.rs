@@ -203,7 +203,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Locked" => vec!["Locked", "Protected"],
     "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
     | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
-    | "ListPlot3D" | "Input" | "SeriesData" => {
+    | "ListPlot3D" | "Input" | "SeriesData" | "RunThrough" => {
       vec!["Protected", "ReadProtected"]
     }
 
@@ -420,6 +420,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Infix"
     | "NumberPoint"
     | "Postfix"
+    | "Prefix"
     | "Quartics"
     | "Quotient"
     | "QuotientRemainder"
@@ -478,7 +479,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Curl"
     | "PrimePowerQ"
     | "BellB"
-    | "Fit" => {
+    | "Fit"
+    | "ZeroTest"
+    | "Share"
+    | "NameQ" => {
       vec!["Protected"]
     }
 
