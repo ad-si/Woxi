@@ -784,6 +784,9 @@ pub fn dispatch_math_functions(
     "BernoulliB" if args.len() == 1 => {
       return Some(crate::functions::math_ast::bernoulli_b_ast(args));
     }
+    "EulerE" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::euler_e_ast(args));
+    }
     "BellB" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::bell_b_ast(args));
     }

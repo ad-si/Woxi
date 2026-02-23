@@ -551,6 +551,217 @@ pub fn bernoulli_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(make_rational(num, den))
 }
 
+/// EulerE[n] - nth Euler number
+/// EulerE[n, z] - nth Euler polynomial
+pub fn euler_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "EulerE expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  let n = match expr_to_i128(&args[0]) {
+    Some(n) if n >= 0 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "EulerE".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if args.len() == 1 {
+    // Euler number E(n)
+    // E(0) = 1, E(odd) = 0
+    // E(2m) = -sum_{k=0}^{m-1} C(2m, 2k) * E(2k)
+    if n == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    if n % 2 != 0 {
+      return Ok(Expr::Integer(0));
+    }
+
+    let m = n / 2;
+    let mut e_even: Vec<BigInt> = Vec::with_capacity(m + 1);
+    e_even.push(BigInt::from(1)); // E(0) = 1
+
+    for i in 1..=m {
+      let nn = 2 * i;
+      let mut sum = BigInt::from(0);
+      let mut binom = BigInt::from(1); // C(nn, 0)
+      for k in 0..i {
+        sum += &binom * &e_even[k];
+        // C(nn, 2k+2) = C(nn, 2k) * (nn-2k)*(nn-2k-1) / ((2k+1)*(2k+2))
+        binom = binom * BigInt::from(nn - 2 * k) * BigInt::from(nn - 2 * k - 1)
+          / BigInt::from((2 * k + 1) * (2 * k + 2));
+      }
+      e_even.push(-sum);
+    }
+
+    let result = e_even[m].clone();
+    // Convert BigInt to Expr
+    Ok(bigint_to_expr(result))
+  } else {
+    // Euler polynomial E_n(z)
+    // Build using integration relation:
+    // E_0(x) = 1
+    // E_n(x) = integral(n * E_{n-1}(x)) + C
+    // where C is chosen so E_n(0) + E_n(1) = 0 for n >= 1
+    //
+    // Represent polynomial as vector of rational coefficients (num, den)
+    // coeffs[k] = coefficient of x^k
+    euler_polynomial(n, &args[1])
+  }
+}
+
+/// Compute the nth Euler polynomial and either evaluate at a point or return symbolic expression
+fn euler_polynomial(n: usize, z: &Expr) -> Result<Expr, InterpreterError> {
+  fn rat_gcd(a: i128, b: i128) -> i128 {
+    let (mut a, mut b) = (a.abs(), b.abs());
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a
+  }
+
+  fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+    let num = a.0 * b.1 + b.0 * a.1;
+    let den = a.1 * b.1;
+    let g = rat_gcd(num, den);
+    if den < 0 {
+      (-num / g, -den / g)
+    } else {
+      (num / g, den / g)
+    }
+  }
+
+  // Build polynomial coefficients using recurrence
+  // coeffs[k] = (numerator, denominator) for coefficient of x^k
+  let mut coeffs: Vec<(i128, i128)> = vec![(1, 1)]; // E_0(x) = 1
+
+  for degree in 1..=n {
+    // E_degree(x) = integral(degree * E_{degree-1}(x)) + C
+    // integral of degree * sum(a_k * x^k) = sum(degree * a_k / (k+1) * x^(k+1))
+    let prev_len = coeffs.len(); // should be `degree`
+    let mut new_coeffs: Vec<(i128, i128)> = Vec::with_capacity(degree + 1);
+    new_coeffs.push((0, 1)); // placeholder for constant term
+
+    for k in 0..prev_len {
+      // coefficient of x^(k+1) = degree * coeffs[k] / (k+1)
+      let (cn, cd) = coeffs[k];
+      let num = degree as i128 * cn;
+      let den = cd * (k as i128 + 1);
+      let g = rat_gcd(num, den);
+      let (num, den) = if den < 0 {
+        (-num / g, -den / g)
+      } else {
+        (num / g, den / g)
+      };
+      new_coeffs.push((num, den));
+    }
+
+    // Determine C such that E_n(0) + E_n(1) = 0
+    // E_n(0) = C
+    // E_n(1) = C + sum_{k=1}^{degree} new_coeffs[k]
+    // So 2C + sum_{k=1}^{degree} new_coeffs[k] = 0
+    // C = -1/2 * sum_{k=1}^{degree} new_coeffs[k]
+    let mut sum_at_1 = (0i128, 1i128);
+    for k in 1..=degree {
+      sum_at_1 = rat_add(sum_at_1, new_coeffs[k]);
+    }
+    // C = -sum_at_1 / 2
+    let c_num = -sum_at_1.0;
+    let c_den = sum_at_1.1 * 2;
+    let g = rat_gcd(c_num, c_den);
+    let (c_num, c_den) = if c_den < 0 {
+      (-c_num / g, -c_den / g)
+    } else {
+      (c_num / g, c_den / g)
+    };
+    new_coeffs[0] = (c_num, c_den);
+
+    coeffs = new_coeffs;
+  }
+
+  // Now coeffs has the polynomial coefficients for E_n(z)
+  // Check if z is numeric - if so, evaluate directly
+  if let Some(z_val) = expr_to_rational(z) {
+    // Evaluate polynomial at z_val using Horner's method
+    let (z_num, z_den) = z_val;
+    let mut result = (0i128, 1i128);
+    for k in (0..=n).rev() {
+      // result = result * z + coeffs[k]
+      let rn = result.0 * z_num;
+      let rd = result.1 * z_den;
+      let g = rat_gcd(rn, rd);
+      let (rn, rd) = if rd < 0 {
+        (-rn / g, -rd / g)
+      } else {
+        (rn / g, rd / g)
+      };
+      result = rat_add((rn, rd), coeffs[k]);
+    }
+    return Ok(make_rational(result.0, result.1));
+  }
+
+  // Build symbolic polynomial expression
+  let mut terms = Vec::new();
+  for k in 0..=n {
+    let (cn, cd) = coeffs[k];
+    if cn == 0 {
+      continue;
+    }
+    let coeff_expr = make_rational(cn, cd);
+    let term = if k == 0 {
+      coeff_expr
+    } else {
+      let power = if k == 1 {
+        z.clone()
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(z.clone()),
+          right: Box::new(Expr::Integer(k as i128)),
+        }
+      };
+      if cn == cd {
+        // coefficient is 1
+        power
+      } else if cn == -cd {
+        // coefficient is -1
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(power),
+        }
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(coeff_expr),
+          right: Box::new(power),
+        }
+      }
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
+  let mut result = terms[0].clone();
+  for term in &terms[1..] {
+    result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(term.clone()),
+    };
+  }
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
 /// BellB[n] - nth Bell number
 /// BellB[n, x] - nth Bell polynomial
 pub fn bell_b_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
