@@ -207,10 +207,10 @@ pub fn take_multi_ast(
     return Ok(result);
   }
 
-  match result {
+  match &result {
     Expr::List(items) => {
       let mut new_items = Vec::new();
-      for item in &items {
+      for item in items {
         new_items.push(take_multi_ast(item, &specs[1..])?);
       }
       Ok(Expr::List(new_items))

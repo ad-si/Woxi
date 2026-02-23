@@ -761,16 +761,18 @@ fn is_color_function_call(expr: &syntax::Expr) -> bool {
 /// individual swatch graphics (the list itself is left intact for
 /// `render_graphics_list_if_needed` to wrap with `{…, …}`).
 /// Bare named colors (e.g. `Red`) are left as text.
-fn render_color_if_needed(expr: syntax::Expr) -> syntax::Expr {
+fn render_color_if_needed(mut expr: syntax::Expr) -> syntax::Expr {
   if is_color_function_call(&expr)
     && let Some(color) = functions::graphics::parse_color(&expr)
   {
     let svg = functions::graphics::color_swatch_svg(&color);
     return graphics_result(svg);
   }
-  if let syntax::Expr::List(items) = expr {
-    let new_items: Vec<syntax::Expr> =
-      items.into_iter().map(render_color_if_needed).collect();
+  if let syntax::Expr::List(ref mut items) = expr {
+    let new_items: Vec<syntax::Expr> = std::mem::take(items)
+      .into_iter()
+      .map(render_color_if_needed)
+      .collect();
     return syntax::Expr::List(new_items);
   }
   expr

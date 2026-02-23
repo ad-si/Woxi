@@ -5,7 +5,7 @@ help: makefile
 
 .PHONY: test-unit
 test-unit:
-	RUST_MIN_STACK=16777216 cargo nextest run \
+	cargo nextest run \
 		--show-progress=none \
 		--status-level=fail \
 		--failure-output=final

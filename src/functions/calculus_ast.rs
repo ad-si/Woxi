@@ -1252,11 +1252,13 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// Simplify an expression
-pub fn simplify(expr: Expr) -> Expr {
-  match expr {
+pub fn simplify(mut expr: Expr) -> Expr {
+  match &mut expr {
     Expr::BinaryOp { op, left, right } => {
-      let left = simplify(*left);
-      let right = simplify(*right);
+      let op = *op;
+      let left = simplify(*std::mem::replace(left, Box::new(Expr::Integer(0))));
+      let right =
+        simplify(*std::mem::replace(right, Box::new(Expr::Integer(0))));
 
       use crate::syntax::BinaryOperator::*;
       match (&op, &left, &right) {
@@ -1343,7 +1345,9 @@ pub fn simplify(expr: Expr) -> Expr {
       }
     }
     Expr::UnaryOp { op, operand } => {
-      let operand = simplify(*operand);
+      let op = *op;
+      let operand =
+        simplify(*std::mem::replace(operand, Box::new(Expr::Integer(0))));
       use crate::syntax::UnaryOperator;
       if matches!(&op, UnaryOperator::Minus) {
         if let Expr::Integer(0) = operand {

@@ -515,8 +515,8 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Evaluate the test condition
     let test_result = evaluate_expr_to_expr(test)?;
     match test_result {
-      Expr::Identifier(s) if s == "True" => {}
-      Expr::Identifier(s) if s == "False" => break,
+      Expr::Identifier(ref s) if s == "True" => {}
+      Expr::Identifier(ref s) if s == "False" => break,
       _ => break,
     }
 

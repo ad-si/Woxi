@@ -832,7 +832,7 @@ pub fn evaluate_expr_to_expr_inner(
       {
         let elem = evaluate_expr_to_expr(&args[1])?;
         let current = ENV.with(|e| e.borrow().get(var_name).cloned());
-        let current_val = match current {
+        let mut current_val = match current {
           Some(StoredValue::ExprVal(e)) => e,
           Some(StoredValue::Raw(s)) => {
             crate::syntax::string_to_expr(&s).unwrap_or(Expr::List(vec![]))
@@ -844,8 +844,9 @@ pub fn evaluate_expr_to_expr_inner(
             )));
           }
         };
-        let new_val = match current_val {
-          Expr::List(mut items) => {
+        let new_val = match &mut current_val {
+          Expr::List(items) => {
+            let mut items = std::mem::take(items);
             if name == "AppendTo" {
               items.push(elem);
             } else {

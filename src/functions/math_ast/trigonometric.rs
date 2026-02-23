@@ -546,54 +546,50 @@ pub fn exact_cot(k: i64, n: i64) -> Option<Expr> {
 }
 
 /// Negate an Expr, simplifying integer, rational, and division cases
-pub fn negate_expr(expr: Expr) -> Expr {
-  match expr {
-    Expr::Integer(n) => Expr::Integer(-n),
-    Expr::Real(f) => Expr::Real(-f),
+pub fn negate_expr(mut expr: Expr) -> Expr {
+  match &mut expr {
+    Expr::Integer(n) => return Expr::Integer(-*n),
+    Expr::Real(f) => return Expr::Real(-*f),
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
       if let Expr::Integer(n) = &args[0] {
-        Expr::FunctionCall {
+        return Expr::FunctionCall {
           name: "Rational".to_string(),
           args: vec![Expr::Integer(-n), args[1].clone()],
-        }
-      } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), Expr::FunctionCall { name, args }],
-        }
+        };
       }
+      let name = std::mem::take(name);
+      let args = std::mem::take(args);
+      return Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), Expr::FunctionCall { name, args }],
+      };
     }
     // -(a/b) => Times[-1, a/b] to match Wolfram output style
-    Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Divide,
-      left,
-      right,
-    } => {
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Divide =>
+    {
       // If numerator is an integer, negate it directly: -(n/b) => (-n)/b
-      if let Expr::Integer(n) = *left
-        && n > 1
+      if let Expr::Integer(n) = &**left
+        && *n > 1
       {
+        let neg_left = Box::new(Expr::Integer(-*n));
+        let right = std::mem::replace(right, Box::new(Expr::Integer(0)));
         return Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
-          left: Box::new(Expr::Integer(-n)),
+          left: neg_left,
           right,
         };
       }
-      Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
-        operand: Box::new(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
-          left,
-          right,
-        }),
-      }
+      // fall through to default
     }
-    other => Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(-1), other],
-    },
+    _ => {}
+  }
+  // Default: wrap in Times[-1, expr]
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![Expr::Integer(-1), expr],
   }
 }
 

@@ -579,10 +579,10 @@ pub fn rotate_multi_ast(
   // If there are more shifts, apply them to each sublist
   if shifts.len() > 1 {
     let rest_shifts = &shifts[1..];
-    match rotated {
+    match &rotated {
       Expr::List(items) => {
         let mut new_items = Vec::new();
-        for item in &items {
+        for item in items {
           new_items.push(rotate_multi_ast(item, rest_shifts, left)?);
         }
         Ok(Expr::List(new_items))

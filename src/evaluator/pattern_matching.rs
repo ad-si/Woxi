@@ -968,7 +968,7 @@ pub fn match_pattern(
         }
       };
       match test_result {
-        Some(Expr::Identifier(s)) if s == "True" => {
+        Some(Expr::Identifier(ref s)) if s == "True" => {
           if name.is_empty() {
             Some(vec![])
           } else {

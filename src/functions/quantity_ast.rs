@@ -1046,41 +1046,52 @@ fn units_equal(u1: &Expr, u2: &Expr) -> bool {
 
 /// Recursively normalize unit expressions: String → Identifier,
 /// and expand abbreviations like "km/h" → Kilometers/Hours.
-fn normalize_unit(unit: Expr) -> Expr {
-  match unit {
-    Expr::String(ref s) => {
+fn normalize_unit(mut unit: Expr) -> Expr {
+  match &mut unit {
+    Expr::String(s) => {
+      let s = s.clone();
       // Try abbreviation expansion first
-      if get_unit_info(s).is_some() {
-        Expr::Identifier(s.clone())
-      } else if let Some(expanded) = resolve_unit_abbreviation(s) {
+      if get_unit_info(&s).is_some() {
+        Expr::Identifier(s)
+      } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
         normalize_unit(expanded)
-      } else if let Some(expanded) = resolve_per_unit(s) {
+      } else if let Some(expanded) = resolve_per_unit(&s) {
         normalize_unit(expanded)
-      } else if let Some(parsed) = try_parse_unit_string(s) {
+      } else if let Some(parsed) = try_parse_unit_string(&s) {
         normalize_unit(parsed)
       } else {
-        Expr::Identifier(s.clone())
+        Expr::Identifier(s)
       }
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op,
-      left: Box::new(normalize_unit(*left)),
-      right: Box::new(normalize_unit(*right)),
-    },
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name,
-      args: args.into_iter().map(normalize_unit).collect(),
-    },
-    Expr::Identifier(ref s) => {
+    Expr::BinaryOp { op, left, right } => {
+      let op = *op;
+      let left = *std::mem::replace(left, Box::new(Expr::Integer(0)));
+      let right = *std::mem::replace(right, Box::new(Expr::Integer(0)));
+      Expr::BinaryOp {
+        op,
+        left: Box::new(normalize_unit(left)),
+        right: Box::new(normalize_unit(right)),
+      }
+    }
+    Expr::FunctionCall { name, args } => {
+      let name = std::mem::take(name);
+      let args = std::mem::take(args);
+      Expr::FunctionCall {
+        name,
+        args: args.into_iter().map(normalize_unit).collect(),
+      }
+    }
+    Expr::Identifier(s) => {
+      let s = s.clone();
       // Try CamelCase "Per" decomposition for identifiers too
-      if get_unit_info(s).is_none()
-        && let Some(expanded) = resolve_per_unit(s)
+      if get_unit_info(&s).is_none()
+        && let Some(expanded) = resolve_per_unit(&s)
       {
         return normalize_unit(expanded);
       }
       unit
     }
-    other => other,
+    _ => unit,
   }
 }
 

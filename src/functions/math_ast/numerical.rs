@@ -896,8 +896,8 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for item in items {
         let p = precision_ast(&[item.clone()])?;
         match p {
-          Expr::Identifier(name) if name == "Infinity" => {}
-          Expr::Identifier(name) if name == "MachinePrecision" => {
+          Expr::Identifier(ref name) if name == "Infinity" => {}
+          Expr::Identifier(ref name) if name == "MachinePrecision" => {
             let mp = 15.954589770191003; // $MachinePrecision
             min_prec = Some(min_prec.map_or(mp, |v: f64| v.min(mp)));
           }
@@ -918,8 +918,8 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for arg in fargs {
         let p = precision_ast(&[arg.clone()])?;
         match p {
-          Expr::Identifier(name) if name == "Infinity" => {}
-          Expr::Identifier(name) if name == "MachinePrecision" => {
+          Expr::Identifier(ref name) if name == "Infinity" => {}
+          Expr::Identifier(ref name) if name == "MachinePrecision" => {
             let mp = 15.954589770191003;
             min_prec = Some(min_prec.map_or(mp, |v: f64| v.min(mp)));
           }
