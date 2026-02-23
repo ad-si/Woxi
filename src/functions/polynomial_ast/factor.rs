@@ -133,17 +133,9 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
 
   let mut factors: Vec<Expr> = Vec::new();
 
-  // Add x^k factor if leading zeros
-  if leading_zeros > 0 {
-    if leading_zeros == 1 {
-      factors.push(Expr::Identifier(var.to_string()));
-    } else {
-      factors.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier(var.to_string())),
-        right: Box::new(Expr::Integer(leading_zeros as i128)),
-      });
-    }
+  // Add x factor for each leading zero (x^k = x * x * ... * x)
+  for _ in 0..leading_zeros {
+    factors.push(Expr::Identifier(var.to_string()));
   }
 
   if trimmed.len() <= 1 {
@@ -1455,11 +1447,10 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let overall = content * sign;
 
-  // Use full factoring, then group factors with the same multiplicity
-  let factors = factor_integer_poly(&pp, &var);
+  // Use Yun's algorithm for square-free factorization, then further factor each component
+  let sff = yun_square_free(&pp);
 
-  if factors.is_empty() {
-    // No factorization found - return as-is
+  if sff.is_empty() {
     if overall == 1 {
       return Ok(expanded);
     }
@@ -1467,25 +1458,23 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(build_product(vec![Expr::Integer(overall), poly_expr]));
   }
 
-  // Group identical factors by string representation
-  let mut grouped: Vec<(Expr, i128)> = Vec::new();
-  for f in &factors {
-    let key = expr_to_string(f);
-    if let Some(entry) =
-      grouped.iter_mut().find(|(e, _)| expr_to_string(e) == key)
-    {
-      entry.1 += 1;
+  // Split out x factors from each square-free component
+  let mut all_pairs: Vec<(Vec<i128>, i128)> = Vec::new();
+  for (factor_coeffs, mult) in &sff {
+    let (x_pow, remaining) = split_x_factor(factor_coeffs);
+    if x_pow > 0 {
+      // x^x_pow with this multiplicity -> x with mult * x_pow
+      all_pairs.push((vec![0, 1], *mult * x_pow as i128));
+      if remaining.len() > 1 || (remaining.len() == 1 && remaining[0] != 1) {
+        all_pairs.push((remaining, *mult));
+      }
     } else {
-      grouped.push((f.clone(), 1));
+      all_pairs.push((factor_coeffs.clone(), *mult));
     }
   }
 
-  // Group by multiplicity: multiply factors with the same multiplicity together
-  let mut by_mult: std::collections::BTreeMap<i128, Vec<Expr>> =
-    std::collections::BTreeMap::new();
-  for (factor, mult) in &grouped {
-    by_mult.entry(*mult).or_default().push(factor.clone());
-  }
+  // Sort by constant term (ascending) for consistent output
+  all_pairs.sort_by_key(|(c, _)| c[0]);
 
   let mut result_factors: Vec<Expr> = Vec::new();
 
@@ -1493,25 +1482,15 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result_factors.push(Expr::Integer(overall));
   }
 
-  // Output in descending multiplicity order
-  for (&mult, group_factors) in by_mult.iter().rev() {
-    // Combine factors with same multiplicity into one product
-    let combined = if group_factors.len() == 1 {
-      group_factors[0].clone()
-    } else {
-      // Multiply them together and evaluate to canonical form
-      let product = build_product(group_factors.clone());
-
-      expand_and_combine(&product)
-    };
-
-    if mult == 1 {
-      result_factors.push(combined);
+  for (factor_coeffs, mult) in &all_pairs {
+    let factor_expr = int_coeffs_to_canonical_expr(factor_coeffs, &var);
+    if *mult == 1 {
+      result_factors.push(factor_expr);
     } else {
       result_factors.push(Expr::BinaryOp {
         op: BinaryOperator::Power,
-        left: Box::new(combined),
-        right: Box::new(Expr::Integer(mult)),
+        left: Box::new(factor_expr),
+        right: Box::new(Expr::Integer(*mult)),
       });
     }
   }
@@ -1525,6 +1504,221 @@ pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(build_product(result_factors))
+}
+
+/// FactorSquareFreeList[poly] - returns {{f1, e1}, {f2, e2}, ...}
+/// where poly = f1^e1 * f2^e2 * ..., and each fi is square-free.
+/// The first entry is always {numeric_coefficient, 1}.
+/// Compute the formal derivative of a polynomial given as coefficient vector.
+fn poly_derivative(p: &[i128]) -> Vec<i128> {
+  if p.len() <= 1 {
+    return vec![0];
+  }
+  p.iter()
+    .enumerate()
+    .skip(1)
+    .map(|(i, &c)| c * i as i128)
+    .collect()
+}
+
+/// Split a coefficient vector into x^k and the remaining polynomial.
+/// E.g., [0, 0, 1, -1] (= x^2 - x^3) becomes (2, [1, -1]) meaning x^2 * (1 - x).
+fn split_x_factor(coeffs: &[i128]) -> (usize, Vec<i128>) {
+  let leading_zeros = coeffs.iter().take_while(|&&c| c == 0).count();
+  if leading_zeros == 0 || leading_zeros >= coeffs.len() {
+    return (0, coeffs.to_vec());
+  }
+  (leading_zeros, coeffs[leading_zeros..].to_vec())
+}
+
+/// Square-free factorization using Yun's algorithm.
+/// Returns pairs (factor_coeffs, multiplicity) where each factor is square-free.
+/// The input polynomial should be primitive (content already extracted).
+fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
+  use crate::functions::polynomial_ast::cancel::{poly_exact_divide, poly_gcd};
+
+  if pp.len() <= 1 {
+    return vec![];
+  }
+
+  let fp = poly_derivative(pp);
+  let g = match poly_gcd(pp, &fp) {
+    Some(g) => g,
+    None => return vec![(pp.to_vec(), 1)],
+  };
+
+  // If GCD is constant (degree 0), polynomial is already square-free
+  let g_is_one =
+    g.len() == 1 || (g.iter().rev().skip(1).all(|&c| c == 0) && g[0] != 0);
+  if g_is_one {
+    return vec![(pp.to_vec(), 1)];
+  }
+
+  let mut w = match poly_exact_divide(pp, &g) {
+    Some(q) => q,
+    None => return vec![(pp.to_vec(), 1)],
+  };
+
+  let mut result: Vec<(Vec<i128>, i128)> = Vec::new();
+  let mut g = g;
+  let mut i: i128 = 1;
+
+  loop {
+    if g.len() <= 1 || (g.iter().rev().skip(1).all(|&c| c == 0) && g[0] != 0) {
+      break;
+    }
+
+    let y = match poly_gcd(&w, &g) {
+      Some(y) => y,
+      None => break,
+    };
+    let z = match poly_exact_divide(&w, &y) {
+      Some(q) => q,
+      None => break,
+    };
+
+    // z is the square-free factor with multiplicity i
+    let z_is_trivial =
+      z.len() == 1 && (z[0] == 1 || z[0] == -1) || z.is_empty();
+    if !z_is_trivial {
+      // Normalize: make monic-positive
+      let mut zn = z;
+      if zn.last().map(|&c| c < 0).unwrap_or(false) {
+        zn = zn.iter().map(|c| -c).collect();
+      }
+      let zg = zn.iter().copied().filter(|&c| c != 0).fold(0i128, gcd_i128);
+      if zg > 1 {
+        zn = zn.iter().map(|c| c / zg).collect();
+      }
+      result.push((zn, i));
+    }
+
+    g = match poly_exact_divide(&g, &y) {
+      Some(q) => q,
+      None => break,
+    };
+    w = y;
+    i += 1;
+  }
+
+  // If w is non-trivial, it's a factor with multiplicity i
+  let w_is_trivial = w.len() == 1 && (w[0] == 1 || w[0] == -1) || w.is_empty();
+  if !w_is_trivial {
+    let mut wn = w;
+    if wn.last().map(|&c| c < 0).unwrap_or(false) {
+      wn = wn.iter().map(|c| -c).collect();
+    }
+    let wg = wn.iter().copied().filter(|&c| c != 0).fold(0i128, gcd_i128);
+    if wg > 1 {
+      wn = wn.iter().map(|c| c / wg).collect();
+    }
+    result.push((wn, i));
+  }
+
+  result
+}
+
+pub fn factor_square_free_list_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorSquareFreeList expects exactly 1 argument".into(),
+    ));
+  }
+
+  let expanded = expand_and_combine(&args[0]);
+
+  // Handle zero
+  if matches!(&expanded, Expr::Integer(0)) {
+    return Ok(Expr::List(vec![Expr::List(vec![
+      Expr::Integer(0),
+      Expr::Integer(1),
+    ])]));
+  }
+
+  // Handle pure numeric
+  if let Expr::Integer(n) = &expanded {
+    return Ok(Expr::List(vec![Expr::List(vec![
+      Expr::Integer(*n),
+      Expr::Integer(1),
+    ])]));
+  }
+
+  let var = match find_single_variable(&expanded) {
+    Some(v) => v,
+    None => {
+      // Constant expression
+      return Ok(Expr::List(vec![Expr::List(vec![
+        expanded,
+        Expr::Integer(1),
+      ])]));
+    }
+  };
+
+  let coeffs = match extract_poly_coeffs(&expanded, &var) {
+    Some(c) => c,
+    None => {
+      return Ok(Expr::List(vec![Expr::List(vec![
+        expanded,
+        Expr::Integer(1),
+      ])]));
+    }
+  };
+
+  // Factor out GCD of coefficients (content)
+  let content = coeffs
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, gcd_i128);
+  if content == 0 {
+    return Ok(Expr::List(vec![Expr::List(vec![
+      Expr::Integer(0),
+      Expr::Integer(1),
+    ])]));
+  }
+
+  let pp: Vec<i128> = coeffs.iter().map(|c| c / content).collect();
+
+  // Make leading coefficient positive
+  let (sign, pp) = if pp.last().map(|&c| c < 0).unwrap_or(false) {
+    (-1i128, pp.iter().map(|c| -c).collect::<Vec<_>>())
+  } else {
+    (1, pp)
+  };
+  let overall = content * sign;
+
+  // Use Yun's algorithm for square-free factorization, then further factor each component
+  let sff = yun_square_free(&pp);
+
+  // Build result list: {overall, 1}, then {factor, mult} pairs
+  let mut result =
+    vec![Expr::List(vec![Expr::Integer(overall), Expr::Integer(1)])];
+
+  // Split out x factors from each square-free component
+  let mut pairs: Vec<(Vec<i128>, i128)> = Vec::new();
+  for (factor_coeffs, mult) in &sff {
+    let (x_pow, remaining) = split_x_factor(factor_coeffs);
+    if x_pow > 0 {
+      pairs.push((vec![0, 1], *mult * x_pow as i128));
+      if remaining.len() > 1 || (remaining.len() == 1 && remaining[0] != 1) {
+        pairs.push((remaining, *mult));
+      }
+    } else {
+      pairs.push((factor_coeffs.clone(), *mult));
+    }
+  }
+
+  // Sort by constant term (value at x=0) in ascending order (Wolfram convention)
+  pairs.sort_by_key(|(c, _)| c[0]);
+
+  for (factor_coeffs, mult) in &pairs {
+    let factor_expr = int_coeffs_to_canonical_expr(factor_coeffs, &var);
+    result.push(Expr::List(vec![factor_expr, Expr::Integer(*mult)]));
+  }
+
+  Ok(Expr::List(result))
 }
 
 /// FactorTermsList[poly] - returns {content, primitive_part}

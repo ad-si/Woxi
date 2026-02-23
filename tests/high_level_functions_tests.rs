@@ -1234,4 +1234,126 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod factor_square_free_list_tests {
+    use super::*;
+
+    #[test]
+    fn test_zero() {
+      assert_eq!(interpret("FactorSquareFreeList[0]").unwrap(), "{{0, 1}}");
+    }
+
+    #[test]
+    fn test_integer() {
+      assert_eq!(interpret("FactorSquareFreeList[5]").unwrap(), "{{5, 1}}");
+    }
+
+    #[test]
+    fn test_negative_integer() {
+      assert_eq!(interpret("FactorSquareFreeList[-7]").unwrap(), "{{-7, 1}}");
+    }
+
+    #[test]
+    fn test_single_variable() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[x]").unwrap(),
+        "{{1, 1}, {x, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_x_power() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[x^6]").unwrap(),
+        "{{1, 1}, {x, 6}}"
+      );
+    }
+
+    #[test]
+    fn test_perfect_square() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[(1+x)^2]").unwrap(),
+        "{{1, 1}, {1 + x, 2}}"
+      );
+    }
+
+    #[test]
+    fn test_mixed_multiplicities() {
+      // x^5-x^3-x^2+1 = (x-1)^2 * (x^3+2x^2+2x+1)
+      assert_eq!(
+        interpret("FactorSquareFreeList[x^5 - x^3 - x^2 + 1]").unwrap(),
+        "{{1, 1}, {-1 + x, 2}, {1 + 2*x + 2*x^2 + x^3, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_with_numeric_content() {
+      // 12*x^4-12*x^2 = 12*x^2*(x^2-1)
+      assert_eq!(
+        interpret("FactorSquareFreeList[12*x^4 - 12*x^2]").unwrap(),
+        "{{12, 1}, {-1 + x^2, 1}, {x, 2}}"
+      );
+    }
+
+    #[test]
+    fn test_three_distinct_multiplicities() {
+      // 8*x^5*(x+1)^3*(x-2)^2
+      assert_eq!(
+        interpret("FactorSquareFreeList[8*x^5*(x+1)^3*(x-2)^2]").unwrap(),
+        "{{8, 1}, {-2 + x, 2}, {x, 5}, {1 + x, 3}}"
+      );
+    }
+
+    #[test]
+    fn test_ordering_by_constant_term() {
+      // (x-3)^2*(x+2)*(x-5)^3 - sorted by constant term: -5, -3, 2
+      assert_eq!(
+        interpret("FactorSquareFreeList[(x-3)^2*(x+2)*(x-5)^3]").unwrap(),
+        "{{1, 1}, {-5 + x, 3}, {-3 + x, 2}, {2 + x, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_irreducible_square_free() {
+      // x^4-1 is already square-free
+      assert_eq!(
+        interpret("FactorSquareFreeList[x^4 - 1]").unwrap(),
+        "{{1, 1}, {-1 + x^4, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_linear_polynomial() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[3*x + 6]").unwrap(),
+        "{{3, 1}, {2 + x, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_quadratic_with_square_factor() {
+      // (x^2+3)*(x^2-2)^2
+      assert_eq!(
+        interpret("FactorSquareFreeList[(x^2+3)*(x^2-2)^2]").unwrap(),
+        "{{1, 1}, {-2 + x^2, 2}, {3 + x^2, 1}}"
+      );
+    }
+
+    #[test]
+    fn test_x_times_linear_squared() {
+      // x^3*(x+1)^2*(x-1)
+      assert_eq!(
+        interpret("FactorSquareFreeList[x^3*(x+1)^2*(x-1)]").unwrap(),
+        "{{1, 1}, {-1 + x, 1}, {x, 3}, {1 + x, 2}}"
+      );
+    }
+
+    #[test]
+    fn test_negative_leading() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[-x^2 + 1]").unwrap(),
+        "{{-1, 1}, {-1 + x^2, 1}}"
+      );
+    }
+  }
 }
