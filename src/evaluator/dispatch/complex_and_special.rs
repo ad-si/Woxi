@@ -402,6 +402,143 @@ pub fn dispatch_complex_and_special(
       }));
     }
 
+    // Definition[symbol] - show definition of a symbol
+    "Definition" if args.len() == 1 => {
+      if let Expr::Identifier(sym) = &args[0] {
+        let mut lines: Vec<String> = Vec::new();
+
+        // 1. Show user-set attributes (if any)
+        let user_attrs =
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+        if let Some(attrs) = &user_attrs
+          && !attrs.is_empty()
+        {
+          lines.push(format!("Attributes[{}] = {{{}}}", sym, attrs.join(", ")));
+        }
+
+        // 2. Show OwnValues (variable assignments)
+        let own_value = crate::ENV.with(|e| {
+          let env = e.borrow();
+          env.get(sym).cloned()
+        });
+        if let Some(stored) = own_value {
+          let val_str = match stored {
+            crate::StoredValue::ExprVal(e) => expr_to_string(&e),
+            crate::StoredValue::Raw(val) => val,
+            crate::StoredValue::Association(items) => {
+              let items_expr: Vec<(crate::syntax::Expr, crate::syntax::Expr)> =
+                items
+                  .iter()
+                  .map(|(k, v)| {
+                    let key_expr = crate::syntax::string_to_expr(k)
+                      .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
+                    let val_expr = crate::syntax::string_to_expr(v)
+                      .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
+                    (key_expr, val_expr)
+                  })
+                  .collect();
+              expr_to_string(&crate::syntax::Expr::Association(items_expr))
+            }
+          };
+          lines.push(format!("{} = {}", sym, val_str));
+        }
+
+        // 3. Show DownValues (function definitions)
+        let down_values = crate::FUNC_DEFS.with(|m| {
+          let defs = m.borrow();
+          defs.get(sym).cloned()
+        });
+        if let Some(overloads) = down_values {
+          for (params, conds, _defaults, heads, body) in &overloads {
+            // Check if this is a specific-value definition (SameQ conditions)
+            let has_sameq_conds = conds.iter().any(|c| {
+              if let Some(Expr::Comparison { operators, .. }) = c {
+                operators
+                  .iter()
+                  .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+              } else {
+                false
+              }
+            });
+
+            if has_sameq_conds {
+              // Reconstruct f[val1, val2] = body
+              let args_strs: Vec<String> = params
+                .iter()
+                .zip(conds.iter())
+                .map(|(p, c)| {
+                  if let Some(Expr::Comparison {
+                    operands,
+                    operators,
+                    ..
+                  }) = c
+                    && operators.iter().any(|op| {
+                      matches!(op, crate::syntax::ComparisonOp::SameQ)
+                    })
+                    && operands.len() == 2
+                    && matches!(&operands[0], Expr::Identifier(n) if n == p)
+                  {
+                    return expr_to_string(&operands[1]);
+                  }
+                  format!("{}_", p)
+                })
+                .collect();
+              lines.push(format!(
+                "{}[{}] = {}",
+                sym,
+                args_strs.join(", "),
+                expr_to_string(body)
+              ));
+            } else {
+              // Reconstruct f[x_, y_Integer] := body
+              let params_str: Vec<String> = params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                  if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
+                    format!("{}_{}", p, head)
+                  } else {
+                    format!("{}_", p)
+                  }
+                })
+                .collect();
+              lines.push(format!(
+                "{}[{}] := {}",
+                sym,
+                params_str.join(", "),
+                expr_to_string(body)
+              ));
+            }
+          }
+        }
+
+        // For built-in symbols: show attributes
+        if lines.is_empty() {
+          let builtin_attrs =
+            crate::evaluator::attributes::get_builtin_attributes(sym);
+          if !builtin_attrs.is_empty() {
+            lines.push(format!(
+              "Attributes[{}] = {{{}}}",
+              sym,
+              builtin_attrs.join(", ")
+            ));
+          }
+        }
+
+        if lines.is_empty() {
+          // Undefined symbol - return Null
+          return Some(Ok(Expr::Identifier("Null".to_string())));
+        }
+
+        return Some(Ok(Expr::Raw(lines.join("\n \n"))));
+      }
+
+      return Some(Ok(Expr::FunctionCall {
+        name: "Definition".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+
     // Sow[expr] or Sow[expr, tag] - adds expr to the current Reap collection
     "Sow" if args.len() == 1 || args.len() == 2 => {
       let tag = if args.len() == 2 {

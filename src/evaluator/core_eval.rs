@@ -59,7 +59,7 @@ pub fn evaluate_expr_early_dispatch(
       }
     }
     "Function" | "Protect" | "Unprotect" | "Condition" | "MessageName"
-    | "Information" => {
+    | "Information" | "Definition" => {
       let result = evaluate_function_call_ast(name, args)?;
       return Ok(Some(expr_to_string(&result)));
     }
@@ -812,8 +812,8 @@ pub fn evaluate_expr_to_expr_inner(
         }
         return Ok(Expr::Identifier("Null".to_string()));
       }
-      // Special handling for Information - hold argument unevaluated
-      if name == "Information" && args.len() == 1 {
+      // Special handling for Information/Definition - hold argument unevaluated
+      if (name == "Information" || name == "Definition") && args.len() == 1 {
         return dispatch::evaluate_function_call_ast(name, args);
       }
       // Special handling for AddTo, SubtractFrom, TimesBy, DivideBy - x += y, x -= y, etc.
