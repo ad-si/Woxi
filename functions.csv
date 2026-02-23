@@ -4318,7 +4318,7 @@ PowerRange,,,,10,2131
 PowerSpectralDensity,,,,9,2091
 PowersRepresentations,,,,6,1637
 PowerSymmetricPolynomial,,,,8,4707
-PrecedenceForm,,,,1,4006
+PrecedenceForm,Formatting wrapper that specifies precedence for output display,✅,none,1,4006
 Precedes,,,,3,4947
 PrecedesEqual,,,,3,5390
 PrecedesSlantEqual,,,,3,5390
