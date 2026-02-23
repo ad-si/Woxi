@@ -3183,6 +3183,44 @@ mod skeleton {
   }
 }
 
+mod string_skeleton {
+  use super::*;
+
+  #[test]
+  fn displays_as_angle_brackets() {
+    assert_eq!(interpret("StringSkeleton[5]").unwrap(), "<<5>>");
+  }
+
+  #[test]
+  fn displays_with_string() {
+    assert_eq!(interpret("StringSkeleton[\"abc\"]").unwrap(), "<<abc>>");
+  }
+
+  #[test]
+  fn no_args_returns_unevaluated() {
+    assert_eq!(interpret("StringSkeleton[]").unwrap(), "StringSkeleton[]");
+  }
+
+  #[test]
+  fn no_builtin_attributes() {
+    assert_eq!(interpret("Attributes[StringSkeleton]").unwrap(), "{}");
+  }
+}
+
+mod total_width {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_self() {
+    assert_eq!(interpret("TotalWidth").unwrap(), "TotalWidth");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(interpret("Attributes[TotalWidth]").unwrap(), "{Protected}");
+  }
+}
+
 mod plus_rendering {
   use super::*;
 
