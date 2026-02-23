@@ -490,6 +490,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FactorTerms"
     | "Delimiters"
     | "PrecedenceForm"
+    | "Skeleton"
     | "FactorSquareFreeList" => {
       vec!["Protected"]
     }
