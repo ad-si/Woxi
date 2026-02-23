@@ -814,3 +814,57 @@ mod pseudo_inverse {
     assert_eq!(interpret("PseudoInverse[x]").unwrap(), "PseudoInverse[x]");
   }
 }
+
+mod lattice_reduce {
+  use super::*;
+
+  #[test]
+  fn basic_2x2() {
+    assert_eq!(
+      interpret("LatticeReduce[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{1, 0}, {0, 2}}"
+    );
+  }
+
+  #[test]
+  fn single_vector() {
+    assert_eq!(
+      interpret("LatticeReduce[{{1, 2, 3}}]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn removes_dependent() {
+    assert_eq!(
+      interpret("LatticeReduce[{{1, 0}, {0, 1}, {2, 3}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn removes_dependent_3d() {
+    assert_eq!(
+      interpret("LatticeReduce[{{1, 0, 0}, {0, 1, 0}, {1, 1, 0}}]").unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}}"
+    );
+  }
+
+  #[test]
+  fn rank_deficient_3x3() {
+    // Matrix with rank 2: last row is sum of first two
+    let result =
+      interpret("LatticeReduce[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap();
+    // Should produce 2 vectors (rank 2)
+    assert!(result.starts_with("{{") && result.ends_with("}}"));
+    // Count the number of inner lists
+    let inner = &result[1..result.len() - 1];
+    let count = inner.matches("}, {").count() + 1;
+    assert_eq!(count, 2);
+  }
+
+  #[test]
+  fn unevaluated_symbolic() {
+    assert_eq!(interpret("LatticeReduce[x]").unwrap(), "LatticeReduce[x]");
+  }
+}
