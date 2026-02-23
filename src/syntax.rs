@@ -3868,6 +3868,35 @@ pub fn expr_to_output(expr: &Expr) -> String {
           let inner = expr_to_output(&args[1]);
           return format!("{}/{}", inner, d);
         }
+        // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)
+        if args.len() == 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && let Expr::Integer(n) = &rargs[0]
+          && let Expr::Integer(d) = &rargs[1]
+          && *n != 1
+          && *n != -1
+          && *d > 0
+        {
+          let inner = expr_to_output(&args[1]);
+          let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+            || matches!(
+              &args[1],
+              Expr::BinaryOp {
+                op: BinaryOperator::Plus | BinaryOperator::Minus,
+                ..
+              }
+            ) {
+            format!("({})", inner)
+          } else {
+            inner
+          };
+          return format!("({}*{})/{}", n, inner_str, d);
+        }
         // Handle Times[-1, x] as "-x" and Times[-1, x, y, ...] as "-x*y*..."
         if args.len() >= 2 && matches!(&args[0], Expr::Integer(-1)) {
           let rest = args[1..]

@@ -1756,7 +1756,7 @@ EstimatorRegulator,,,,8,4138
 EuclideanDistance,,,,6,477
 EulerAngles,,,,10.2,2491
 EulerCharacteristic,,,,12,5486
-EulerE,,,,1,3298
+EulerE,Returns the nth Euler number or nth Euler polynomial,✅,pure,1,3298
 EulerGamma,Euler-Mascheroni constant,✅,pure,1,868
 EulerianGraphQ,,,,8,3124
 EulerMatrix,,,,10.2,2082

@@ -541,6 +541,109 @@ mod high_level_functions_tests {
     }
   }
 
+  mod euler_e_tests {
+    use super::*;
+    #[test]
+    fn test_euler_e_0() {
+      assert_eq!(interpret("EulerE[0]").unwrap(), "1");
+    }
+    #[test]
+    fn test_euler_e_1() {
+      assert_eq!(interpret("EulerE[1]").unwrap(), "0");
+    }
+    #[test]
+    fn test_euler_e_2() {
+      assert_eq!(interpret("EulerE[2]").unwrap(), "-1");
+    }
+    #[test]
+    fn test_euler_e_odd() {
+      assert_eq!(interpret("EulerE[3]").unwrap(), "0");
+      assert_eq!(interpret("EulerE[5]").unwrap(), "0");
+      assert_eq!(interpret("EulerE[7]").unwrap(), "0");
+    }
+    #[test]
+    fn test_euler_e_4() {
+      assert_eq!(interpret("EulerE[4]").unwrap(), "5");
+    }
+    #[test]
+    fn test_euler_e_6() {
+      assert_eq!(interpret("EulerE[6]").unwrap(), "-61");
+    }
+    #[test]
+    fn test_euler_e_8() {
+      assert_eq!(interpret("EulerE[8]").unwrap(), "1385");
+    }
+    #[test]
+    fn test_euler_e_10() {
+      assert_eq!(interpret("EulerE[10]").unwrap(), "-50521");
+    }
+    #[test]
+    fn test_euler_e_20() {
+      assert_eq!(interpret("EulerE[20]").unwrap(), "370371188237525");
+    }
+    #[test]
+    fn test_euler_e_table() {
+      assert_eq!(
+        interpret("Table[EulerE[k], {k, 0, 10}]").unwrap(),
+        "{1, 0, -1, 0, 5, 0, -61, 0, 1385, 0, -50521}"
+      );
+    }
+    #[test]
+    fn test_euler_e_negative_arg() {
+      assert_eq!(interpret("EulerE[-1]").unwrap(), "EulerE[-1]");
+    }
+    #[test]
+    fn test_euler_e_rational_arg() {
+      assert_eq!(interpret("EulerE[1/2]").unwrap(), "EulerE[1/2]");
+    }
+    #[test]
+    fn test_euler_polynomial_0() {
+      assert_eq!(interpret("EulerE[0, z]").unwrap(), "1");
+    }
+    #[test]
+    fn test_euler_polynomial_1() {
+      assert_eq!(interpret("EulerE[1, z]").unwrap(), "-1/2 + z");
+    }
+    #[test]
+    fn test_euler_polynomial_2() {
+      assert_eq!(interpret("EulerE[2, z]").unwrap(), "-z + z^2");
+    }
+    #[test]
+    fn test_euler_polynomial_3() {
+      assert_eq!(interpret("EulerE[3, z]").unwrap(), "1/4 - (3*z^2)/2 + z^3");
+    }
+    #[test]
+    fn test_euler_polynomial_5() {
+      assert_eq!(
+        interpret("EulerE[5, z]").unwrap(),
+        "-1/2 + (5*z^2)/2 - (5*z^4)/2 + z^5"
+      );
+    }
+    #[test]
+    fn test_euler_polynomial_numeric_eval() {
+      assert_eq!(interpret("EulerE[3, 5]").unwrap(), "351/4");
+      assert_eq!(interpret("EulerE[4, -2]").unwrap(), "30");
+      assert_eq!(interpret("EulerE[6, 1/3]").unwrap(), "-602/729");
+    }
+    #[test]
+    fn test_euler_polynomial_at_half() {
+      assert_eq!(interpret("EulerE[3, 1/2]").unwrap(), "0");
+      assert_eq!(interpret("EulerE[5, 1/2]").unwrap(), "0");
+    }
+    #[test]
+    fn test_euler_polynomial_at_0_and_1() {
+      assert_eq!(interpret("EulerE[2, 0]").unwrap(), "0");
+      assert_eq!(interpret("EulerE[2, 1]").unwrap(), "0");
+      assert_eq!(interpret("EulerE[4, 0]").unwrap(), "0");
+      assert_eq!(interpret("EulerE[4, 1]").unwrap(), "0");
+    }
+    #[test]
+    fn test_euler_polynomial_invalid_first_arg() {
+      assert_eq!(interpret("EulerE[-1, z]").unwrap(), "EulerE[-1, z]");
+      assert_eq!(interpret("EulerE[1/2, z]").unwrap(), "EulerE[1/2, z]");
+    }
+  }
+
   mod catalan_number_tests {
     use super::*;
     #[test]
