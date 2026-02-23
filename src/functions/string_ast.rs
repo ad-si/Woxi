@@ -2443,7 +2443,6 @@ pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Handles:
 /// - StringToStream["text"] → returns the text
 /// - "filename" → reads the file (CLI only)
-#[cfg(not(target_arch = "wasm32"))]
 fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
   match source {
     // StringToStream["text"] → use text directly
@@ -2504,7 +2503,6 @@ fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
 }
 
 /// ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
-#[cfg(not(target_arch = "wasm32"))]
 pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2612,7 +2610,6 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Handle ReadList with record types like {Word, Word}
-#[cfg(not(target_arch = "wasm32"))]
 fn read_list_record(
   text: &str,
   types: &[Expr],

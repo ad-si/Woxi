@@ -7,7 +7,6 @@ pub fn dispatch_io_functions(
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
     // ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
-    #[cfg(not(target_arch = "wasm32"))]
     "ReadList" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::read_list_ast(args));
     }
