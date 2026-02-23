@@ -86,6 +86,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ExpIntegralE"
     | "EllipticTheta"
     | "WeierstrassP"
+    | "WeierstrassPPrime"
     | "JacobiDN"
     | "JacobiSN"
     | "JacobiCN"
