@@ -581,6 +581,75 @@ fn expr_to_f64(e: &Expr) -> Option<f64> {
   }
 }
 
+/// Returns true if `e` contains a non-standard function call (not in the common
+/// algebraic/transcendental set) that has at least one non-numeric argument.
+/// This identifies expressions like `Dt[y, x]` or `Derivative[1][f][x]` that
+/// represent unevaluated derivatives or opaque functions with free variables.
+fn contains_opaque_fn_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      let is_known = matches!(
+        name.as_str(),
+        "Times"
+          | "Plus"
+          | "Minus"
+          | "Power"
+          | "Rational"
+          | "Sqrt"
+          | "Abs"
+          | "Sin"
+          | "Cos"
+          | "Tan"
+          | "Cot"
+          | "Sec"
+          | "Csc"
+          | "Sinh"
+          | "Cosh"
+          | "Tanh"
+          | "Coth"
+          | "Sech"
+          | "Csch"
+          | "ArcSin"
+          | "ArcCos"
+          | "ArcTan"
+          | "ArcCot"
+          | "ArcSec"
+          | "ArcCsc"
+          | "ArcSinh"
+          | "ArcCosh"
+          | "ArcTanh"
+          | "ArcCoth"
+          | "ArcSech"
+          | "ArcCsch"
+          | "Exp"
+          | "Log"
+          | "Erf"
+          | "Erfc"
+          | "Factorial"
+          | "Binomial"
+          | "Re"
+          | "Im"
+          | "Conjugate"
+          | "Floor"
+          | "Ceiling"
+          | "Round"
+          | "Sign"
+          | "Gamma"
+          | "Beta"
+      );
+      if !is_known && args.iter().any(|a| !is_numeric_factor(a)) {
+        return true;
+      }
+      args.iter().any(contains_opaque_fn_call)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_opaque_fn_call(left) || contains_opaque_fn_call(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_opaque_fn_call(operand),
+    _ => false,
+  }
+}
+
 /// Compare two Plus terms using Wolfram-compatible canonical ordering.
 /// For polynomial-like terms, sorts by (variable, exponent) pairs in reverse-lex order:
 /// each term's pairs are sorted by variable name descending, then compared
@@ -597,6 +666,8 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
   let pairs_a = extract_var_exp_pairs(&base_a);
   let pairs_b = extract_var_exp_pairs(&base_b);
+  let a_has_pairs = pairs_a.is_some();
+  let b_has_pairs = pairs_b.is_some();
 
   match (pairs_a, pairs_b) {
     (Some(mut va), Some(mut vb)) => {
@@ -618,6 +689,20 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       va.len().cmp(&vb.len())
     }
     _ => {
+      // If exactly one term has polynomial pairs and the other doesn't,
+      // check whether the non-polynomial term contains an opaque function call
+      // with free-variable arguments (e.g. Dt[y, x], Derivative[1][f][x]).
+      // If so, the polynomial term sorts first.
+      if a_has_pairs != b_has_pairs {
+        let none_term = if b_has_pairs { a } else { b };
+        if contains_opaque_fn_call(none_term) {
+          return if a_has_pairs {
+            std::cmp::Ordering::Less
+          } else {
+            std::cmp::Ordering::Greater
+          };
+        }
+      }
       // Fall back to string comparison for non-polynomial terms
       let sa = term_sort_key(a);
       let sb = term_sort_key(b);
@@ -1601,10 +1686,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // b^(-n) = 1 / b^n = Rational[1, b^n]
     let pos_exp = (-*e) as u32;
     if let Some(denom) = b.checked_pow(pos_exp) {
-      return Ok(Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(1), Expr::Integer(denom)],
-      });
+      return Ok(make_rational(1, denom));
     }
   }
 

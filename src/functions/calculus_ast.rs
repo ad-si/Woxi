@@ -736,13 +736,17 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }))
         }
         "Log" if args.len() == 1 => {
-          // d/dx[ln(f(x))] = f'(x) / f(x)
+          // d/dx[ln(f(x))] = f'(x) * f(x)^(-1)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: Box::new(df),
-            right: Box::new(args[0].clone()),
-          }))
+          let power_neg_one = Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![args[0].clone(), Expr::Integer(-1)],
+          };
+          if matches!(df, Expr::Integer(1)) {
+            Ok(power_neg_one)
+          } else {
+            crate::functions::math_ast::times_ast(&[df, power_neg_one])
+          }
         }
         // Handle evaluated Plus[a, b, ...] (FunctionCall form of +)
         "Plus" if args.len() >= 2 => {
@@ -863,8 +867,8 @@ fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
         },
       )
     }
-    _ => {
-      // general a: Erf[Sqrt[a]*x], prefix = Sqrt[Pi/a]
+    Expr::Integer(n) if *n != 1 => {
+      // concrete integer a: (Sqrt[Pi/a]*Erf[Sqrt[a]*x])/2 — matches Wolfram output
       let sqrt_a = Expr::FunctionCall {
         name: "Sqrt".to_string(),
         args: vec![coeff.clone()],
@@ -884,12 +888,46 @@ fn make_gaussian_antiderivative(var: &str, coeff: &Expr) -> Expr {
       };
       (erf_arg, prefix)
     }
+    _ => {
+      // symbolic a: (Sqrt[Pi]*Erf[Sqrt[a]*x])/(2*Sqrt[a]) — matches Wolfram output
+      let sqrt_a = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![coeff.clone()],
+      };
+      let erf_arg = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(sqrt_a.clone()),
+        right: Box::new(var_expr),
+      };
+      let prefix = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![Expr::Constant("Pi".to_string())],
+      };
+      let erf_expr = Expr::FunctionCall {
+        name: "Erf".to_string(),
+        args: vec![erf_arg],
+      };
+      // (Sqrt[Pi] * Erf[Sqrt[a]*x]) / (2 * Sqrt[a])
+      return Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(prefix),
+          right: Box::new(erf_expr),
+        }),
+        right: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(2)),
+          right: Box::new(sqrt_a),
+        }),
+      };
+    }
   };
   let erf_expr = Expr::FunctionCall {
     name: "Erf".to_string(),
     args: vec![erf_arg],
   };
-  // (prefix * Erf[...]) / 2
+  // a=1 case: (Sqrt[Pi] * Erf[x]) / 2
   Expr::BinaryOp {
     op: crate::syntax::BinaryOperator::Divide,
     left: Box::new(Expr::BinaryOp {

@@ -3449,7 +3449,7 @@ MaxFeatureDisplacement,,,,10.1,5079
 MaxFeatures,,,,9,2671
 MaxFilter,,,,7,2525
 MaximalBy,Returns elements that maximize a criterion,✅,pure,10,1249
-Maximize,,,,5,530
+Maximize,Global symbolic maximization of a function over variables with optional constraints,✅,pure,5,530
 MaxItems,,,,10.1,2236
 MaxIterations,Option for maximum iterations,✅,pure,1,646
 MaxLimit,,,,11.2,2889
@@ -3550,7 +3550,7 @@ MinFilter,,,,7,3153
 MinimalBy,Returns elements that minimize a criterion,✅,pure,10,1534
 MinimalPolynomial,,,,6,1428
 MinimalStateSpaceModel,,,,8,4567
-Minimize,,,,5,577
+Minimize,Global symbolic minimization of a function over variables with optional constraints,✅,pure,5,577
 MinimumTimeIncrement,,,,10,4567
 MinimumTimeIncrement[tseries],,,,,
 MinIntervalSize,,,,10,3440

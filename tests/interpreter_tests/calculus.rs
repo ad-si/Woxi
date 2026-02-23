@@ -131,7 +131,7 @@ mod differentiate_plus_times {
 
   #[test]
   fn d_log_one_plus_t() {
-    assert_eq!(interpret("D[Log[1 + t], t]").unwrap(), "1/(1 + t)");
+    assert_eq!(interpret("D[Log[1 + t], t]").unwrap(), "(1 + t)^(-1)");
   }
 
   #[test]
@@ -728,7 +728,7 @@ mod integrate_gaussian {
     // ∫ Exp[-a*x^2] dx = (Sqrt[Pi/a]*Erf[Sqrt[a]*x])/2
     assert_eq!(
       interpret("Integrate[Exp[-a*x^2], x]").unwrap(),
-      "(Sqrt[Pi/a]*Erf[Sqrt[a]*x])/2"
+      "(Sqrt[Pi]*Erf[Sqrt[a]*x])/(2*Sqrt[a])"
     );
   }
 }
@@ -865,7 +865,7 @@ mod dt {
 
   #[test]
   fn product_with_dependent_var() {
-    assert_eq!(interpret("Dt[x*y, x]").unwrap(), "x*Dt[y, x] + y");
+    assert_eq!(interpret("Dt[x*y, x]").unwrap(), "y + x*Dt[y, x]");
   }
 
   #[test]
@@ -886,5 +886,131 @@ mod dt {
   #[test]
   fn cubic_polynomial() {
     assert_eq!(interpret("Dt[x^3 + 2*x, x]").unwrap(), "2 + 3*x^2");
+  }
+}
+
+mod minimize {
+  use super::*;
+
+  // --- Unconstrained single-variable ---
+
+  #[test]
+  fn quadratic_exact() {
+    // x^2 - 4x + 5 has minimum 1 at x=2
+    assert_eq!(
+      interpret("Minimize[x^2 - 4*x + 5, x]").unwrap(),
+      "{1, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_list_var() {
+    // Same, but var given as {x}
+    assert_eq!(
+      interpret("Minimize[x^2 - 4*x + 5, {x}]").unwrap(),
+      "{1, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn cubic_unbounded() {
+    // x^3 has no lower bound
+    assert_eq!(
+      interpret("Minimize[x^3, x]").unwrap(),
+      "{-Infinity, {x -> -Infinity}}"
+    );
+  }
+
+  #[test]
+  fn quartic_sqrt_minimum() {
+    // x^4 - 4x^2 has minimum -4 at x = ±Sqrt[2]
+    assert_eq!(
+      interpret("Minimize[x^4 - 4*x^2, x]").unwrap(),
+      "{-4, {x -> -Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn quartic_rational_minimum() {
+    // x^4 - 3x^2 + 1 has minimum -5/4 at x = ±Sqrt[3/2]
+    assert_eq!(
+      interpret("Minimize[x^4 - 3*x^2 + 1, x]").unwrap(),
+      "{-5/4, {x -> -(Sqrt[6]/2)}}"
+    );
+  }
+
+  #[test]
+  fn exponential_minus_x() {
+    // E^x - x has minimum 1 at x=0
+    assert_eq!(interpret("Minimize[E^x - x, x]").unwrap(), "{1, {x -> 0}}");
+  }
+
+  // --- Unconstrained multi-variable ---
+
+  #[test]
+  fn two_var_paraboloid() {
+    // (x-3)^2 + (y-2)^2 has minimum 0 at (3,2)
+    assert_eq!(
+      interpret("Minimize[(x - 3)^2 + (y - 2)^2, {x, y}]").unwrap(),
+      "{0, {x -> 3, y -> 2}}"
+    );
+  }
+
+  #[test]
+  fn three_var_origin() {
+    assert_eq!(
+      interpret("Minimize[x^2 + y^2 + z^2, {x, y, z}]").unwrap(),
+      "{0, {x -> 0, y -> 0, z -> 0}}"
+    );
+  }
+
+  // --- Constrained ---
+
+  #[test]
+  fn constrained_1d_bound() {
+    // x >= 1: minimum of x is 1 at x=1
+    assert_eq!(
+      interpret("Minimize[{x, x >= 1}, x]").unwrap(),
+      "{1, {x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn constrained_2d_quadratic() {
+    // x^2 + y^2 subject to x + y >= 1: minimum 1/2 at (1/2, 1/2)
+    assert_eq!(
+      interpret("Minimize[{x^2 + y^2, x + y >= 1}, {x, y}]").unwrap(),
+      "{1/2, {x -> 1/2, y -> 1/2}}"
+    );
+  }
+
+  #[test]
+  fn constrained_2d_lp() {
+    // 2x + 3y subject to x + y >= 1, x >= 0, y >= 0: minimum 2 at (1,0)
+    assert_eq!(
+      interpret("Minimize[{2*x + 3*y, x + y >= 1, x >= 0, y >= 0}, {x, y}]")
+        .unwrap(),
+      "{2, {x -> 1, y -> 0}}"
+    );
+  }
+
+  // --- Maximize ---
+
+  #[test]
+  fn maximize_parabola() {
+    // -(x-5)^2 + 10 has maximum 10 at x=5
+    assert_eq!(
+      interpret("Maximize[-(x - 5)^2 + 10, x]").unwrap(),
+      "{10, {x -> 5}}"
+    );
+  }
+
+  #[test]
+  fn maximize_unbounded() {
+    // x^2 - 4x + 5 has no upper bound
+    assert_eq!(
+      interpret("Maximize[x^2 - 4*x + 5, x]").unwrap(),
+      "{Infinity, {x -> -Infinity}}"
+    );
   }
 }

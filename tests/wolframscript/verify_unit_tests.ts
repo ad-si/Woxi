@@ -342,24 +342,28 @@ function buildWolframScript(
     const expectedEscaped = escapeForWolfram(woxiResult);
 
     // Only split if expression contains := (function definitions can't be inside parens)
+    // Wrap the ToString[...] part in Quiet[...] to suppress wolframscript messages
+    // (e.g. Prime::intpp) that would otherwise pollute stdout and break the DONE check.
     let wBlock: string;
     if (expr.includes(":=")) {
       const stmts = splitTopLevelSemicolons(expr);
       if (stmts.length > 1) {
         const setup = stmts.slice(0, -1).join("; ");
         const last = stmts[stmts.length - 1];
-        wBlock = setup + "; ToString[(" + last + "), InputForm]";
+        wBlock = setup + "; Quiet[ToString[(" + last + "), InputForm]]";
       } else {
-        wBlock = "ToString[(" + expr + "), InputForm]";
+        wBlock = "Quiet[ToString[(" + expr + "), InputForm]]";
       }
     } else {
-      wBlock = "ToString[(" + expr + "), InputForm]";
+      wBlock = "Quiet[ToString[(" + expr + "), InputForm]]";
     }
 
     const wExpected = '"' + expectedEscaped + '"';
     const wLabel = '"FAIL #' + (idx + 1) + ": " + exprEscaped + '"';
+    // Wrap in CheckAbort so Abort[]/Interrupt[] calls inside test cases
+    // don't kill the entire script run.
     lines.push(
-      "Module[{res$$ = (" + wBlock + ")}," +
+      "Module[{res$$ = CheckAbort[(" + wBlock + '), "$Aborted"]},' +
         " If[res$$ =!= " + wExpected + "," +
         " Print[" + wLabel + "];" +
         ' Print["  Woxi:    ' + expectedEscaped + '"];' +
@@ -392,6 +396,30 @@ function listRustFiles(dir: string): string[] {
   }
 
   return files;
+}
+
+/**
+ * Run one batch of test cases through wolframscript.
+ * Returns the raw output string, or throws on failure.
+ */
+function runWolframBatch(
+  batch: { expr: string; woxiResult: string; idx: number }[]
+): string {
+  const wolframProgram = buildWolframScript(batch);
+  try {
+    return execSync(`wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`, {
+      encoding: "utf-8",
+      timeout: 300_000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+  } catch (err: any) {
+    throw new Error(err.stderr || err.message || "wolframscript batch failed");
+  }
+}
+
+/** Shell-quote a string for use as a -code argument. */
+function shellQuoteForExec(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
 function main() {
@@ -428,47 +456,55 @@ function main() {
     woxiResults.push({ expr: fullExpr, woxiResult: result, idx: i });
   }
 
-  // Step 2: Build a single wolframscript program that evaluates all
-  // expressions and compares against the Woxi results.
-  console.log("Running wolframscript...");
-  const wolframProgram = buildWolframScript(woxiResults);
-  const tmpFile = join(ROOT, "tests/wolframscript/.verify_unit_tests.wls");
-  writeFileSync(tmpFile, wolframProgram);
+  // Step 2: Run wolframscript in batches to avoid server timeout/buffer limits.
+  // Each batch runs independently; we accumulate failures across all batches.
+  const BATCH_SIZE = 50;
+  const totalBatches = Math.ceil(woxiResults.length / BATCH_SIZE);
+  console.log(`Running wolframscript in ${totalBatches} batches of up to ${BATCH_SIZE}...`);
 
-  let output: string;
-  try {
-    output = execSync(`wolframscript -charset UTF8 -file "${tmpFile}"`, {
-      encoding: "utf-8",
-      timeout: 300_000,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-  } catch (err: any) {
-    console.error("wolframscript failed:");
-    console.error(err.stderr || err.message);
-    process.exit(2);
-  } finally {
-    try { unlinkSync(tmpFile); } catch {}
-  }
-
-  const outputLines = output.trim().split("\n");
-
-  // Check for DONE sentinel
-  const lastLine = outputLines[outputLines.length - 1]?.trim();
-  if (lastLine !== "DONE") {
-    console.error("wolframscript did not complete successfully");
-    console.error("Output:", output);
-    process.exit(2);
-  }
-
-  // Collect failures
   const failures: string[] = [];
-  for (const line of outputLines) {
-    if (line.startsWith("FAIL") || line.startsWith("  ")) {
-      failures.push(line);
+  let failCount = 0;
+
+  for (let b = 0; b < totalBatches; b++) {
+    const batchStart = b * BATCH_SIZE;
+    const batch = woxiResults.slice(batchStart, batchStart + BATCH_SIZE);
+
+    let output: string;
+    try {
+      output = runWolframBatch(batch);
+    } catch (err: any) {
+      console.error(`wolframscript failed on batch ${b + 1}/${totalBatches}:`);
+      console.error(err.message || err);
+      process.exit(2);
+    }
+
+    const outputLines = output.trim().split("\n");
+
+    // Check for DONE sentinel
+    const lastLine = outputLines[outputLines.length - 1]?.trim();
+    if (lastLine !== "DONE") {
+      console.error(`Batch ${b + 1}/${totalBatches} did not complete successfully`);
+      console.error("Output:", output);
+      process.exit(2);
+    }
+
+    // Collect failures from this batch
+    for (const line of outputLines) {
+      if (line.startsWith("FAIL") || line.startsWith("  ")) {
+        failures.push(line);
+        if (line.startsWith("FAIL")) failCount++;
+      }
+    }
+
+    if (totalBatches > 1) {
+      process.stdout.write(`  batch ${b + 1}/${totalBatches} done\r`);
     }
   }
 
-  const failCount = failures.filter((l) => l.startsWith("FAIL")).length;
+  if (totalBatches > 1) {
+    process.stdout.write("\n");
+  }
+
   const passCount = tested - failCount;
 
   if (failCount === 0) {

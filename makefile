@@ -1,3 +1,7 @@
+# Prepend local wrappers and cargo-installed binaries to PATH.
+# .bin/ contains wolframscript and wo wrappers for Docker environments.
+export PATH := $(CURDIR)/.bin:$(HOME)/.cargo/bin:$(PATH)
+
 .PHONY: help
 help: makefile
 	@tail -n +4 makefile | grep ".PHONY"

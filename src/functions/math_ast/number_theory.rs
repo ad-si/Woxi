@@ -1186,6 +1186,10 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Prime expects exactly 1 argument".into(),
     ));
   }
+  let unevaluated = Expr::FunctionCall {
+    name: "Prime".to_string(),
+    args: args.to_vec(),
+  };
   match expr_to_i128(&args[0]).or_else(|| {
     if let Expr::Real(f) = &args[0] {
       if f.fract() == 0.0 {
@@ -1200,12 +1204,28 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(n) if n >= 1 => {
       Ok(Expr::Integer(crate::nth_prime(n as usize) as i128))
     }
-    _ => {
-      // Wolfram returns unevaluated for non-positive or non-integer arguments
-      Ok(Expr::FunctionCall {
-        name: "Prime".to_string(),
-        args: args.to_vec(),
-      })
+    Some(_) => {
+      // Concrete non-positive integer: emit message like wolframscript
+      let arg_str = crate::syntax::expr_to_string(&args[0]);
+      eprintln!();
+      eprintln!(
+        "Prime::intpp: Positive integer argument expected in Prime[{}].",
+        arg_str
+      );
+      Ok(unevaluated)
+    }
+    None => {
+      // Concrete non-integer numeric (e.g. 1.5): emit message like wolframscript
+      // Symbolic arguments return unevaluated silently
+      if matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
+        let arg_str = crate::syntax::expr_to_string(&args[0]);
+        eprintln!();
+        eprintln!(
+          "Prime::intpp: Positive integer argument expected in Prime[{}].",
+          arg_str
+        );
+      }
+      Ok(unevaluated)
     }
   }
 }
