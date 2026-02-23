@@ -201,7 +201,7 @@ ArgMax,,,,7,1721
 ArgMin,,,,7,2144
 ArgumentsOptions,,,,12.2,3363
 ARIMAProcess,,,,9,2442
-ArithmeticGeometricMean,,,,1,2449
+ArithmeticGeometricMean,Arithmetic-geometric mean of two numbers,✅,pure,1,2449
 ARMAProcess,,,,9,1553
 Around,,,,12,573
 AroundReplace,,,,12,3678
@@ -4111,7 +4111,7 @@ ParticleData,,,,6,3280
 Partition,Partitions a list into sublists of a given length,✅,pure,1,190
 PartitionGranularity,,,,11,4081
 PartitionsP,Number of unrestricted partitions of an integer,✅,pure,1,1488
-PartitionsQ,,,,1,2380
+PartitionsQ,Number of partitions of n into distinct parts,✅,pure,1,2380
 PartLayer,,,,11.1,3257
 PartOfSpeech,,,,10.3,4809
 PartProtection,,,,10.4,4660

@@ -702,6 +702,14 @@ pub fn dispatch_math_functions(
     "PartitionsP" if args.len() == 1 => {
       return Some(crate::functions::math_ast::partitions_p_ast(args));
     }
+    "PartitionsQ" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::partitions_q_ast(args));
+    }
+    "ArithmeticGeometricMean" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::arithmetic_geometric_mean_ast(
+        args,
+      ));
+    }
     "NextPrime" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::next_prime_ast(args));
     }
