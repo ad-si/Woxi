@@ -34,7 +34,9 @@ There is 3 levels of tests:
 - Always run `make test` after any changes to rule out any regressions.
 - Never implement features or tests only for special cases like e.g. one specific number.
     Make sure to implement it for all possible cases!
-- Use `wolframscript -code 'Plus[1, 2]'` to verify the output of Wolfram Language code.
+- Use `wolframscript -code 'Plus[1, 2]'`
+    (or `curl -s -X POST http://host.docker.internal:3456/exec -d '{"cmd":"wolframscript -code [wl-code]"}'`
+    if run in a Docker container) to verify the output of Wolfram Language code.
     The output of Woxi must 100% match the output of wolframscript.
 - Do not write code to temporary files. Simply use `cargo run -- eval '<code>'`.
 - If you stumble upon a pre-existing issue, do not try to ignore it or work around it,
