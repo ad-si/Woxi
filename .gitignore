@@ -2,6 +2,7 @@
 /.direnv
 /.env
 /.jupyterlite.doit.db
+/examples
 /target
 /tests/_*
 /tests/book
