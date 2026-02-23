@@ -1606,4 +1606,81 @@ mod high_level_functions_tests {
       assert!((val - 0.6849087487827934).abs() < 1e-5);
     }
   }
+
+  mod full_definition_tests {
+    use super::*;
+
+    #[test]
+    fn basic_function() {
+      let r = interpret("Clear[f]; f[x_] := x^2; FullDefinition[f]").unwrap();
+      assert_eq!(r, "f[x_] := x^2");
+    }
+
+    #[test]
+    fn with_dependency() {
+      let r = interpret(
+        "Clear[f, g]; f[x_] := x^2; g[x_] := f[x] + 1; FullDefinition[g]",
+      )
+      .unwrap();
+      assert!(
+        r.contains("g[x_] := f[x] + 1"),
+        "should contain g's def: {}",
+        r
+      );
+      assert!(r.contains("f[x_] := x^2"), "should contain f's def: {}", r);
+    }
+
+    #[test]
+    fn chain_dependencies() {
+      let r = interpret(
+        "Clear[f, g, h]; f[x_] := x^2; g[x_] := f[x] + 1; h[x_] := g[x] + f[x]; FullDefinition[h]",
+      )
+      .unwrap();
+      assert!(
+        r.contains("h[x_] := g[x] + f[x]"),
+        "should contain h: {}",
+        r
+      );
+      assert!(r.contains("g[x_] := f[x] + 1"), "should contain g: {}", r);
+      assert!(r.contains("f[x_] := x^2"), "should contain f: {}", r);
+    }
+
+    #[test]
+    fn no_dependencies() {
+      let r = interpret("Clear[f]; f[x_] := x^2; FullDefinition[f]").unwrap();
+      assert_eq!(r, "f[x_] := x^2");
+    }
+
+    #[test]
+    fn undefined_symbol() {
+      let r = interpret("Clear[xyz]; FullDefinition[xyz]").unwrap();
+      assert_eq!(r, "Null");
+    }
+
+    #[test]
+    fn builtin_symbol() {
+      let r = interpret("FullDefinition[Sin]").unwrap();
+      assert!(
+        r.contains("Attributes[Sin]"),
+        "should show built-in attrs: {}",
+        r
+      );
+    }
+
+    #[test]
+    fn attributes() {
+      assert_eq!(
+        interpret("Attributes[FullDefinition]").unwrap(),
+        "{HoldAll, Protected}"
+      );
+    }
+
+    #[test]
+    fn set_delayed_variable_dependency() {
+      let r = interpret("Clear[a, b]; a := 5; b := a + 1; FullDefinition[b]")
+        .unwrap();
+      assert!(r.contains("b = a + 1"), "should contain b: {}", r);
+      assert!(r.contains("a = 5"), "should contain a: {}", r);
+    }
+  }
 }

@@ -2182,7 +2182,7 @@ FrontEndExecute,,,,3,982
 FrontEndToken,,,,3,1293
 FrontEndTokenExecute,,,,4,1280
 Full,,,,6,294
-FullDefinition,,,,1,4173
+FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1,4173
 FullForm,Returns the full internal form of an expression,✅,pure,1,491
 FullGraphics,,,,2,2688
 FullInformationOutputRegulator,,,,10,4173
