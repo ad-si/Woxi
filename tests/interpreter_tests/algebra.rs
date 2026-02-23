@@ -1953,6 +1953,39 @@ mod cyclotomic {
   }
 }
 
+mod expand_numerator {
+  use super::*;
+
+  #[test]
+  fn basic_square() {
+    assert_eq!(
+      interpret("ExpandNumerator[(1 + x)^2/(1 + y)^2]").unwrap(),
+      "(1 + 2*x + x^2)/(1 + y)^2"
+    );
+  }
+
+  #[test]
+  fn cubic_numerator() {
+    assert_eq!(
+      interpret("ExpandNumerator[(a + b)^3/(c + d)]").unwrap(),
+      "(a^3 + 3*a^2*b + 3*a*b^2 + b^3)/(c + d)"
+    );
+  }
+
+  #[test]
+  fn no_fraction() {
+    assert_eq!(interpret("ExpandNumerator[x + 1]").unwrap(), "1 + x");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[ExpandNumerator]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
 mod expand_denominator {
   use super::*;
 

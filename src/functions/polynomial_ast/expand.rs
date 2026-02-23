@@ -623,6 +623,152 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
   }
 }
 
+// ─── ExpandNumerator ───────────────────────────────────────────────
+
+/// ExpandNumerator[expr] - Expands the numerator of a rational expression
+/// while leaving the denominator unchanged.
+pub fn expand_numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ExpandNumerator expects exactly 1 argument".into(),
+    ));
+  }
+  // Thread over Lists
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| expand_numerator_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
+  Ok(expand_numerator_recursive(&args[0]))
+}
+
+/// Recursively expand numerators in an expression.
+fn expand_numerator_recursive(expr: &Expr) -> Expr {
+  match expr {
+    // a + b : expand numerator in each summand
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(expand_numerator_recursive(left)),
+      right: Box::new(expand_numerator_recursive(right)),
+    },
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(expand_numerator_recursive(left)),
+      right: Box::new(expand_numerator_recursive(right)),
+    },
+    Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: args.iter().map(expand_numerator_recursive).collect(),
+    },
+
+    // a / b : expand the numerator a
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let expanded_num = expand_and_combine(left);
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(expanded_num),
+        right: right.clone(),
+      }
+    }
+
+    // a * b : expand factors with positive power
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let left_result = expand_numerator_in_product(left);
+      let right_result = expand_numerator_in_product(right);
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(left_result),
+        right: Box::new(right_result),
+      }
+    }
+
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let new_args: Vec<Expr> =
+        args.iter().map(expand_numerator_in_product).collect();
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      }
+    }
+
+    // base^n where n > 0: expand
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0) => {
+      expand_and_combine(expr)
+    }
+
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(n) if *n > 0) =>
+    {
+      expand_and_combine(expr)
+    }
+
+    _ => expr.clone(),
+  }
+}
+
+/// Expand numerator parts in a product factor.
+fn expand_numerator_in_product(factor: &Expr) -> Expr {
+  match factor {
+    // base^n where n > 0: expand
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: _base,
+      right: exp,
+    } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0) => {
+      expand_and_combine(factor)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(n) if *n > 0) =>
+    {
+      expand_and_combine(factor)
+    }
+    // base^(-n): leave as-is (this is a denominator)
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: _,
+      right: exp,
+    } if is_negative_integer(exp) => factor.clone(),
+    // Nested product
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(expand_numerator_in_product(left)),
+      right: Box::new(expand_numerator_in_product(right)),
+    },
+    _ => factor.clone(),
+  }
+}
+
 // ─── ExpandDenominator ─────────────────────────────────────────────
 
 /// ExpandDenominator[expr] - Expands the denominator of a rational expression

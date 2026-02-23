@@ -159,7 +159,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
-    | "Information" | "MemoryConstrained" => {
+    | "Information" | "MemoryConstrained" | "TagUnset" => {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
@@ -199,9 +199,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Constant", "Protected", "ReadProtected"]
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "Infinity" | "InputString" | "InverseSeries" | "PlotRange"
-    | "MatrixForm" | "Show" | "Plot3D" | "ListPlot3D" | "Input"
-    | "SeriesData" => {
+    "EllipticLog" | "Infinity" | "InputString" | "InverseSeries"
+    | "PlotRange" | "MatrixForm" | "Show" | "Plot3D" | "ListPlot3D"
+    | "Input" | "SeriesData" => {
       vec!["Protected", "ReadProtected"]
     }
 
@@ -339,8 +339,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "General"
     | "Default"
     | "NonConstants"
+    | "NRoots"
     | "Number"
     | "Underflow"
+    | "Update"
     | "Short"
     | "Flat"
     | "OneIdentity"
@@ -407,7 +409,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "GCD"
     | "LCM"
     | "Mod"
+    | "Environment"
     | "ExpandDenominator"
+    | "ExpandNumerator"
     | "Infix"
     | "NumberPoint"
     | "Quartics"
