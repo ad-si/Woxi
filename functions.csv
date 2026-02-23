@@ -1328,7 +1328,7 @@ Defer,,,,6,751
 DefineInputStreamMethod,,,,9,4947
 DefineOutputStreamMethod,,,,9,4747
 DefineResourceFunction,,,,12,5587
-Definition,,,,1,2462
+Definition,Display the definition of a symbol,✅,pure,1,2462
 Degree,Represents the number of radians in one degree,✅,pure,1,150
 DegreeCentrality,,,,8,2487
 DegreeGraphDistribution,,,,8,2039

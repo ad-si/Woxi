@@ -952,4 +952,67 @@ mod high_level_functions_tests {
       assert_eq!(interpret("Attributes[Format]").unwrap(), "{Protected}");
     }
   }
+
+  mod definition_tests {
+    use super::*;
+
+    #[test]
+    fn definition_user_function() {
+      assert_eq!(
+        interpret("f[x_] := x^2; Definition[f]").unwrap(),
+        "f[x_] := x^2"
+      );
+    }
+
+    #[test]
+    fn definition_variable() {
+      assert_eq!(interpret("a = 5; Definition[a]").unwrap(), "a = 5");
+    }
+
+    #[test]
+    fn definition_undefined() {
+      assert_eq!(interpret("Definition[noSuchThing]; 42").unwrap(), "42");
+    }
+
+    #[test]
+    fn definition_builtin_attributes() {
+      assert_eq!(
+        interpret("Definition[Plus]").unwrap(),
+        "Attributes[Plus] = {Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}"
+      );
+    }
+
+    #[test]
+    fn definition_with_head_constraint() {
+      assert_eq!(
+        interpret("f[x_Integer] := x^2; Definition[f]").unwrap(),
+        "f[x_Integer] := x^2"
+      );
+    }
+
+    #[test]
+    fn definition_multiple_rules() {
+      assert_eq!(
+        interpret("f[x_] := x^2; f[0] = 42; Definition[f]").unwrap(),
+        "f[0] = 42\n \nf[x_] := x^2"
+      );
+    }
+
+    #[test]
+    fn definition_with_user_attributes() {
+      assert_eq!(
+        interpret("f[x_] := x^2; SetAttributes[f, Listable]; Definition[f]")
+          .unwrap(),
+        "Attributes[f] = {Listable}\n \nf[x_] := x^2"
+      );
+    }
+
+    #[test]
+    fn definition_attributes() {
+      assert_eq!(
+        interpret("Attributes[Definition]").unwrap(),
+        "{HoldAll, Protected}"
+      );
+    }
+  }
 }
