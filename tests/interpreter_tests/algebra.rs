@@ -1888,6 +1888,71 @@ mod factor_terms {
   }
 }
 
+mod cyclotomic {
+  use super::*;
+
+  #[test]
+  fn phi_1() {
+    assert_eq!(interpret("Cyclotomic[1, x]").unwrap(), "-1 + x");
+  }
+
+  #[test]
+  fn phi_2() {
+    assert_eq!(interpret("Cyclotomic[2, x]").unwrap(), "1 + x");
+  }
+
+  #[test]
+  fn phi_3() {
+    assert_eq!(interpret("Cyclotomic[3, x]").unwrap(), "1 + x + x^2");
+  }
+
+  #[test]
+  fn phi_4() {
+    assert_eq!(interpret("Cyclotomic[4, x]").unwrap(), "1 + x^2");
+  }
+
+  #[test]
+  fn phi_5() {
+    assert_eq!(
+      interpret("Cyclotomic[5, x]").unwrap(),
+      "1 + x + x^2 + x^3 + x^4"
+    );
+  }
+
+  #[test]
+  fn phi_6() {
+    assert_eq!(interpret("Cyclotomic[6, x]").unwrap(), "1 - x + x^2");
+  }
+
+  #[test]
+  fn phi_8() {
+    assert_eq!(interpret("Cyclotomic[8, x]").unwrap(), "1 + x^4");
+  }
+
+  #[test]
+  fn phi_12() {
+    assert_eq!(interpret("Cyclotomic[12, x]").unwrap(), "1 - x^2 + x^4");
+  }
+
+  #[test]
+  fn phi_0() {
+    assert_eq!(interpret("Cyclotomic[0, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numeric_evaluation() {
+    assert_eq!(interpret("Cyclotomic[1, 3]").unwrap(), "2");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[Cyclotomic]").unwrap(),
+      "{Listable, Protected}"
+    );
+  }
+}
+
 mod expand_denominator {
   use super::*;
 

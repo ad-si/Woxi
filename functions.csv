@@ -1221,7 +1221,7 @@ CycleGraph,,,,8,1547
 CycleIndexPolynomial,,,,9,3124
 Cycles,,,,8,941
 CyclicGroup,,,,8,3121
-Cyclotomic,,,,1,2399
+Cyclotomic,n-th cyclotomic polynomial,✅,pure,1,2399
 Cylinder,,,,6,302
 CylindricalDecomposition,,,,5,2350
 CylindricalDecompositionFunction,,,,12.2,
@@ -2782,7 +2782,7 @@ InfiniteLineThrough,,,,13.1,
 InfinitePast,,,,12.1,
 InfinitePlane,,,,10,1434
 Infinity,,,,,
-Infix,,,,1,2449
+Infix,Symbol for infix display formatting,✅,pure,1,2449
 InflationAdjust,,,,10,3317
 InflationMethod,,,,10,5486
 Information,Displays information about a symbol,✅,pure,1,320
@@ -3493,7 +3493,7 @@ MellinConvolve,,,,11,5079
 MellinTransform,,,,11,3176
 MemberQ,Checks if a list contains a value,✅,pure,1,244
 MemoryAvailable,,,,11.2,4027
-MemoryConstrained,,,,1,2473
+MemoryConstrained,Symbol for memory-constrained evaluation,✅,pure,1,2473
 MemoryConstraint,,,,10,4262
 MemoryInUse,Current memory usage of the process,✅,pure,1,1117
 MengerMesh,,,,11.1,2533
@@ -3916,7 +3916,7 @@ NumberLinePlot,,,,10,913
 NumberMarks,,,,3,2734
 NumberMultiplier,,,,3,3737
 NumberPadding,,,,2,1035
-NumberPoint,,,,1,2541
+NumberPoint,Symbol specifying the decimal point character in NumberForm,✅,pure,1,2541
 NumberQ,Checks if a value is a number,✅,pure,1,340
 NumberSeparator,,,,1,2960
 NumberSigns,,,,2,1779
@@ -5777,7 +5777,7 @@ Uncompress,Decompresses a string from Compress,✅,pure,6,1069
 UnconstrainedParameters,,,,12,4291
 Undefined,,,,,
 UnderBar,,,,6,3785
-Underflow,,,,1,2557
+Underflow,Symbol representing arithmetic underflow,✅,pure,1,2557
 Underlined,,,,6,1701
 Underoverscript,,,,3,3803
 UnderoverscriptBox,,,,3,2777
