@@ -622,3 +622,202 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
     _ => expr.clone(),
   }
 }
+
+// ─── ExpandDenominator ─────────────────────────────────────────────
+
+/// ExpandDenominator[expr] - Expands the denominator of a rational expression
+/// while leaving the numerator unchanged.
+pub fn expand_denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ExpandDenominator expects exactly 1 argument".into(),
+    ));
+  }
+  // Thread over Lists
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| expand_denominator_ast(&[item.clone()]))
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
+  Ok(expand_denominator_recursive(&args[0]))
+}
+
+/// Recursively expand denominators in an expression.
+fn expand_denominator_recursive(expr: &Expr) -> Expr {
+  match expr {
+    // a + b + ... : expand denominator in each summand
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(expand_denominator_recursive(left)),
+      right: Box::new(expand_denominator_recursive(right)),
+    },
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(expand_denominator_recursive(left)),
+      right: Box::new(expand_denominator_recursive(right)),
+    },
+    Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: args.iter().map(expand_denominator_recursive).collect(),
+    },
+
+    // a / b : expand the denominator b
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let expanded_den = expand_and_combine(right);
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: left.clone(),
+        right: Box::new(expanded_den),
+      }
+    }
+
+    // a * b^(-n) : expand b^n and keep the negative power
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let left_result = expand_denominator_in_product(left);
+      let right_result = expand_denominator_in_product(right);
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(left_result),
+        right: Box::new(right_result),
+      }
+    }
+
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let new_args: Vec<Expr> =
+        args.iter().map(expand_denominator_in_product).collect();
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      }
+    }
+
+    // base^(-n) where n > 0: expand base^n, then take reciprocal
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if is_negative_integer(exp) => {
+      let pos_exp = negate_expr(exp);
+      let expanded = expand_and_combine(&Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base.clone(),
+        right: Box::new(pos_exp),
+      });
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(expanded),
+        right: exp.clone(),
+      }
+    }
+
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && is_negative_integer(&args[1]) =>
+    {
+      let pos_exp = negate_expr(&args[1]);
+      let expanded = expand_and_combine(&Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![args[0].clone(), pos_exp],
+      });
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![expanded, args[1].clone()],
+      }
+    }
+
+    _ => expr.clone(),
+  }
+}
+
+/// Expand denominators in a factor of a product.
+fn expand_denominator_in_product(factor: &Expr) -> Expr {
+  match factor {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if is_negative_integer(exp) => {
+      let pos_exp = negate_expr(exp);
+      let expanded = expand_and_combine(&Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base.clone(),
+        right: Box::new(pos_exp),
+      });
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(expanded),
+        right: exp.clone(),
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && is_negative_integer(&args[1]) =>
+    {
+      let pos_exp = negate_expr(&args[1]);
+      let expanded = expand_and_combine(&Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![args[0].clone(), pos_exp],
+      });
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![expanded, args[1].clone()],
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(expand_denominator_in_product(left)),
+      right: Box::new(expand_denominator_in_product(right)),
+    },
+    _ => factor.clone(),
+  }
+}
+
+fn is_negative_integer(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n < 0,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => matches!(operand.as_ref(), Expr::Integer(n) if *n > 0),
+    _ => false,
+  }
+}
+
+fn negate_expr(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) => Expr::Integer(-n),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => operand.as_ref().clone(),
+    _ => Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(expr.clone()),
+    },
+  }
+}

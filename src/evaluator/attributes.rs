@@ -192,8 +192,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Constant", "Protected", "ReadProtected"]
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "Infinity" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
-    | "ListPlot3D" | "Input" | "SeriesData" => {
+    "Infinity" | "InputString" | "InverseSeries" | "PlotRange"
+    | "MatrixForm" | "Show" | "Plot3D" | "ListPlot3D" | "Input"
+    | "SeriesData" => {
       vec!["Protected", "ReadProtected"]
     }
 
@@ -325,6 +326,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Complex"
     | "Constants"
     | "Break"
+    | "Byte"
     | "MaxIterations"
     | "AccuracyGoal"
     | "General"
@@ -397,6 +399,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "GCD"
     | "LCM"
     | "Mod"
+    | "ExpandDenominator"
+    | "Quartics"
     | "Quotient"
     | "QuotientRemainder"
     | "Divisors"
