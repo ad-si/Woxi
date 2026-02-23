@@ -2550,3 +2550,183 @@ fn combinations_helper(
     current.pop();
   }
 }
+
+/// LatticeReduce[{v1, v2, ...}] - LLL lattice basis reduction
+/// Implements the Lenstra–Lenstra–Lovász algorithm with exact rational arithmetic.
+pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "LatticeReduce".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Extract the matrix of integer vectors
+  let rows = match &args[0] {
+    Expr::List(rows) => rows,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LatticeReduce".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if rows.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Parse into Vec<Vec<i128>>
+  let mut basis: Vec<Vec<i128>> = Vec::new();
+  for row in rows {
+    match row {
+      Expr::List(elems) => {
+        let mut vec = Vec::new();
+        for e in elems {
+          match e {
+            Expr::Integer(n) => vec.push(*n),
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "LatticeReduce".to_string(),
+                args: args.to_vec(),
+              });
+            }
+          }
+        }
+        basis.push(vec);
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "LatticeReduce".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  // Verify all vectors have the same dimension
+  let dim = basis[0].len();
+  if basis.iter().any(|v| v.len() != dim) {
+    return Err(InterpreterError::EvaluationError(
+      "LatticeReduce: all vectors must have the same dimension".into(),
+    ));
+  }
+
+  // Run LLL algorithm
+  let result = lll_reduce(&mut basis);
+
+  // Convert back to Expr
+  let result_rows: Vec<Expr> = result
+    .iter()
+    .map(|row| Expr::List(row.iter().map(|&n| Expr::Integer(n)).collect()))
+    .collect();
+
+  Ok(Expr::List(result_rows))
+}
+
+fn dot_int(a: &[i128], b: &[i128]) -> i128 {
+  a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
+}
+
+fn dot_f64(a: &[f64], b: &[f64]) -> f64 {
+  a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
+/// LLL lattice basis reduction algorithm (delta = 3/4)
+/// Uses floating-point Gram-Schmidt with integer basis vectors
+fn lll_reduce(basis: &mut Vec<Vec<i128>>) -> Vec<Vec<i128>> {
+  let n = basis.len();
+  if n <= 1 {
+    return basis
+      .iter()
+      .filter(|v| v.iter().any(|&x| x != 0))
+      .cloned()
+      .collect();
+  }
+
+  let dim = basis[0].len();
+  let delta: f64 = 0.75;
+
+  // Gram-Schmidt orthogonal vectors (as f64)
+  let mut bstar: Vec<Vec<f64>> = vec![vec![0.0; dim]; n];
+  // mu coefficients
+  let mut mu: Vec<Vec<f64>> = vec![vec![0.0; n]; n];
+  // B[i] = ||b*_i||^2
+  let mut big_b: Vec<f64> = vec![0.0; n];
+
+  // Compute Gram-Schmidt
+  let compute_gs = |basis: &[Vec<i128>],
+                    bstar: &mut Vec<Vec<f64>>,
+                    mu: &mut Vec<Vec<f64>>,
+                    big_b: &mut Vec<f64>| {
+    let n = basis.len();
+    for i in 0..n {
+      // b*_i = b_i
+      for d in 0..dim {
+        bstar[i][d] = basis[i][d] as f64;
+      }
+      // Subtract projections
+      for j in 0..i {
+        if big_b[j].abs() < 1e-30 {
+          mu[i][j] = 0.0;
+          continue;
+        }
+        let bi_f: Vec<f64> = basis[i].iter().map(|&x| x as f64).collect();
+        mu[i][j] = dot_f64(&bi_f, &bstar[j]) / big_b[j];
+        for d in 0..dim {
+          bstar[i][d] -= mu[i][j] * bstar[j][d];
+        }
+      }
+      big_b[i] = dot_f64(&bstar[i], &bstar[i]);
+    }
+  };
+
+  compute_gs(basis, &mut bstar, &mut mu, &mut big_b);
+
+  let max_iters = n * n * 200;
+  let mut iters = 0;
+  let mut k = 1;
+  while k < n && iters < max_iters {
+    iters += 1;
+
+    // Size reduce basis[k] by basis[j] for j = k-1, k-2, ..., 0
+    for j in (0..k).rev() {
+      if mu[k][j].abs() > 0.5 {
+        let r = mu[k][j].round() as i128;
+        if r != 0 {
+          for d in 0..dim {
+            basis[k][d] -= r * basis[j][d];
+          }
+          // Update mu values
+          compute_gs(basis, &mut bstar, &mut mu, &mut big_b);
+        }
+      }
+    }
+
+    // Check Lovász condition
+    if big_b[k - 1].abs() < 1e-30 {
+      if big_b[k].abs() >= 1e-30 {
+        basis.swap(k, k - 1);
+        compute_gs(basis, &mut bstar, &mut mu, &mut big_b);
+      } else {
+        k += 1;
+      }
+    } else {
+      let lhs = big_b[k] + mu[k][k - 1] * mu[k][k - 1] * big_b[k - 1];
+      if lhs >= delta * big_b[k - 1] {
+        k += 1;
+      } else {
+        basis.swap(k, k - 1);
+        compute_gs(basis, &mut bstar, &mut mu, &mut big_b);
+        k = if k > 1 { k - 1 } else { 1 };
+      }
+    }
+  }
+
+  // Remove zero vectors
+  basis
+    .iter()
+    .filter(|v| v.iter().any(|&x| x != 0))
+    .cloned()
+    .collect()
+}

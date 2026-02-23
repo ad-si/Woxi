@@ -101,6 +101,11 @@ pub fn dispatch_linear_algebra_functions(
     "Projection" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::projection_ast(args));
     }
+    "LatticeReduce" if args.len() == 1 => {
+      return Some(crate::functions::linear_algebra_ast::lattice_reduce_ast(
+        args,
+      ));
+    }
     "CellularAutomaton" if args.len() == 3 => {
       return Some(
         crate::functions::cellular_automaton_ast::cellular_automaton_ast(args),

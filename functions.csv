@@ -3073,7 +3073,7 @@ Last,Returns the last element of a list,✅,pure,1,140
 Latitude,,,,7,3191
 LatitudeLongitude,,,,7,2729
 LatticeData,,,,6,1451
-LatticeReduce,,,,1,2650
+LatticeReduce,LLL lattice basis reduction,✅,pure,1,2650
 LaunchKernels,,,,7,1549
 LayeredGraph,,,,14,
 LayeredGraph3D,,,,14,
