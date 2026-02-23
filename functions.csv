@@ -588,7 +588,7 @@ Boxes,,,,6,3200
 BoxMatrix,Creates a matrix of ones with given radius,✅,pure,7,2152
 BoxObject,,,,10,4204
 BoxRatios,Option for 3D box aspect ratios,✅,pure,1,363
-BoxStyle,,,,2,677
+BoxStyle,Option specifying the style of 3D boxes in plots,✅,none,2,677
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8,1002
 Bra,,,,13.3,2333
 BracketingBar,,,,3,2514
@@ -965,7 +965,7 @@ Complex,Head type for complex numbers,✅,pure,1,541
 ComplexArrayPlot,,,,12.2,4881
 ComplexContourPlot,,,,12.1,2210
 Complexes,,,,4,790
-ComplexExpand,,,,2,309
+ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
 ComplexInfinity,,,,,
 ComplexityFunction,,,,3,1451
 ComplexListPlot,,,,12,999
@@ -1063,7 +1063,7 @@ ContourLabels,,,,6,843
 ContourPlot,Creates a contour plot of a function,✅,pure,1,155
 ContourPlot3D,,,,6,352
 Contours,Option specifying contour levels in contour plots,✅,none,2,418
-ContourShading,,,,2,693
+ContourShading,Option specifying shading between contour lines,✅,none,2,693
 ContourStyle,Option specifying the style of contour lines,✅,none,2,424
 ContraharmonicMean,,,,7,4527
 ContrastiveLossLayer,,,,11.1,4567
@@ -2846,7 +2846,7 @@ InterfaceSwitched,,,,13,
 Interleaving,,,,7,429
 IntermediateTest,,,,14,
 InternallyBalancedDecomposition,,,,8,4809
-InterpolatingFunction,,,,2,659
+InterpolatingFunction,Represents an interpolating function object,✅,none,2,659
 InterpolatingPolynomial,,,,2,1052
 Interpolation,,,,2,383
 InterpolationOrder,,,,3,435
@@ -2884,7 +2884,7 @@ InverseFourierCosTransform,,,,4,3537
 InverseFourierSequenceTransform,,,,7,3257
 InverseFourierSinTransform,,,,4,3121
 InverseFourierTransform,,,,4,1124
-InverseFunction,,,,2,584
+InverseFunction,Represents the inverse of a function,✅,none,2,584
 InverseFunctions,,,,2,2431
 InverseGammaDistribution,,,,7,2605
 InverseGammaRegularized,,,,3,2380
@@ -3424,7 +3424,7 @@ MathieuS,,,,3,1960
 MathieuSPrime,,,,3,2477
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
 Matrices,,,,9,1753
-MatrixExp,,,,2,807
+MatrixExp,Computes the matrix exponential,✅,pure,2,807
 MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1,53
 MatrixFunction,,,,9,2134
 MatrixLog,,,,9,1875
@@ -3461,7 +3461,7 @@ MaxRecursion,Option specifying the maximum recursion depth,✅,none,2,420
 MaxRoots,,,,14,
 MaxStableDistribution,,,,8,3108
 MaxStepFraction,,,,4,2112
-MaxSteps,,,,2,705
+MaxSteps,Option specifying the maximum number of steps,✅,none,2,705
 MaxStepSize,,,,3,1482
 MaxTrainingRounds,,,,11,1607
 MaxValue,,,,7,1305
@@ -4387,7 +4387,7 @@ ProductLog,Returns the Lambert W function value,✅,pure,3,905
 ProgressIndicator,,,,6,1435
 ProgressReporting,,,,12.3,
 Projection,Returns the projection of a vector onto another,✅,pure,6,1381
-Prolog,,,,2,660
+Prolog,Option specifying graphics primitives drawn before the main plot,✅,none,2,660
 ProofObject,,,,11.3,5486
 PropagateAborts,,,,13.2,
 Proportion,,,,3,5390
@@ -4495,7 +4495,7 @@ RangeFilter,,,,8,3048
 RankedMax,,,,8,2355
 RankedMin,,,,8,2263
 RarerProbability,,,,12,
-Raster,,,,2,747
+Raster,Graphics primitive representing raster image data,✅,none,2,747
 Raster3D,,,,9,2317
 Rasterize,,,,6,539
 RasterSize,,,,6,1499
@@ -4665,7 +4665,7 @@ Rescale,Rescales values to a specified range,✅,pure,5.1,523
 RescalingTransform,,,,6,2045
 ResetDirectory,,,,2,2495
 ReshapeLayer,,,,11,2399
-Residue,,,,2,585
+Residue,Computes the residue of an expression at a point,✅,pure,2,585
 ResidueSum,,,,13.1,
 ResizeLayer,,,,11.1,4567
 Resolve,,,,5,1047
@@ -4920,7 +4920,7 @@ SetFileDate,,,,2,4479
 SetFileFormatProperties,,,,13,
 SetOptions,Sets options for functions (no-op in Woxi),✅,effectful,1,446
 SetPermissions,,,,10.2,3378
-SetPrecision,,,,2,548
+SetPrecision,Sets the precision of a number to a specified number of digits,✅,pure,2,548
 SetSelectedNotebook,,,,3,2383
 SetSharedFunction,,,,7,2587
 SetSharedVariable,,,,7,1808
@@ -5118,7 +5118,7 @@ SphericalHankelH1,,,,6,2219
 SphericalHankelH2,,,,6,3566
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1,811
 SphericalPlot3D,,,,6,744
-SphericalRegion,,,,2,802
+SphericalRegion,Option specifying spherical region in 3D plots,✅,none,2,802
 SphericalShell,,,,10.2,3070
 SpheroidalEigenvalue,,,,6,2707
 SpheroidalJoiningFactor,,,,6,4612
