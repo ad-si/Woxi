@@ -510,15 +510,28 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "TableHeadings"
     | "MeshStyle"
     | "PrecisionGoal"
+    | "Prolog"
+    | "BoxStyle"
+    | "ContourShading"
+    | "MaxSteps"
+    | "SphericalRegion"
+    | "ComplexExpand"
+    | "Residue"
+    | "SetPrecision"
     | "FactorSquareFreeList" => {
       vec!["Protected"]
     }
 
     // NonThreadable + Protected
-    "MatrixPower" => vec!["NonThreadable", "Protected"],
+    "MatrixPower" | "MatrixExp" => vec!["NonThreadable", "Protected"],
+
+    // NHoldAll + Protected + ReadProtected
+    "InverseFunction" => vec!["NHoldAll", "Protected", "ReadProtected"],
 
     // Protected + ReadProtected (additional)
-    "Sound" | "Cuboid" => vec!["Protected", "ReadProtected"],
+    "Sound" | "Cuboid" | "Raster" | "InterpolatingFunction" => {
+      vec!["Protected", "ReadProtected"]
+    }
 
     // Unknown symbol: empty attributes
     _ => vec![],
