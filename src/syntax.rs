@@ -3130,8 +3130,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
               result.push_str(&expr_to_string(arg));
             }
           } else {
-            result.push_str(" + ");
-            result.push_str(&expr_to_string(arg));
+            // Fallback: check if the rendered form starts with "-"
+            let s = expr_to_string(arg);
+            if s.starts_with('-') {
+              result.push_str(" - ");
+              result.push_str(&s[1..]);
+            } else {
+              result.push_str(" + ");
+              result.push_str(&s);
+            }
           }
         }
         return result;
@@ -3762,20 +3769,69 @@ pub fn expr_to_output(expr: &Expr) -> String {
             args: fn_args,
           } = arg
           {
-            if fn_name == "Times"
-              && fn_args.len() >= 2
-              && matches!(&fn_args[0], Expr::Integer(-1))
-            {
-              result.push_str(" - ");
-              // Format the positive part of the product
-              let pos_args = fn_args[1..].to_vec();
-              if pos_args.len() == 1 {
-                result.push_str(&expr_to_output(&pos_args[0]));
+            if fn_name == "Times" && fn_args.len() >= 2 {
+              // Check if leading factor is negative
+              let neg_coeff = match &fn_args[0] {
+                Expr::Integer(n) if *n < 0 => Some(if *n == -1 {
+                  None // coefficient of -1 means just negate
+                } else {
+                  Some(Expr::Integer(-n))
+                }),
+                Expr::FunctionCall { name: rn, args: ra }
+                  if rn == "Rational"
+                    && ra.len() == 2
+                    && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
+                {
+                  if let Expr::Integer(n) = &ra[0] {
+                    if *n == -1 {
+                      Some(Some(Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(1), ra[1].clone()],
+                      }))
+                    } else {
+                      Some(Some(Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(-n), ra[1].clone()],
+                      }))
+                    }
+                  } else {
+                    None
+                  }
+                }
+                _ => None,
+              };
+              if let Some(pos_coeff) = neg_coeff {
+                result.push_str(" - ");
+                let pos_term = match pos_coeff {
+                  None => {
+                    // Times[-1, rest...] → rest
+                    let pos_args = fn_args[1..].to_vec();
+                    if pos_args.len() == 1 {
+                      pos_args[0].clone()
+                    } else {
+                      Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: pos_args,
+                      }
+                    }
+                  }
+                  Some(new_coeff) => {
+                    let mut new_args = vec![new_coeff];
+                    new_args.extend_from_slice(&fn_args[1..]);
+                    if new_args.len() == 1 {
+                      new_args[0].clone()
+                    } else {
+                      Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: new_args,
+                      }
+                    }
+                  }
+                };
+                result.push_str(&expr_to_output(&pos_term));
               } else {
-                result.push_str(&expr_to_output(&Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: pos_args,
-                }));
+                result.push_str(" + ");
+                result.push_str(&expr_to_output(arg));
               }
             } else {
               result.push_str(" + ");

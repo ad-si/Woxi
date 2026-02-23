@@ -2143,3 +2143,52 @@ mod factor_square_free {
     );
   }
 }
+
+mod factor_terms_list {
+  use super::*;
+
+  #[test]
+  fn common_integer_factor() {
+    assert_eq!(
+      interpret("FactorTermsList[6*x^2 - 12*x + 6]").unwrap(),
+      "{6, 1 - 2*x + x^2}"
+    );
+  }
+
+  #[test]
+  fn no_common_factor() {
+    assert_eq!(
+      interpret("FactorTermsList[x^2 + 2*x + 1]").unwrap(),
+      "{1, 1 + 2*x + x^2}"
+    );
+  }
+
+  #[test]
+  fn negative_leading() {
+    assert_eq!(
+      interpret("FactorTermsList[-3*x^2 + 6*x - 9]").unwrap(),
+      "{-3, 3 - 2*x + x^2}"
+    );
+  }
+
+  #[test]
+  fn constant_input() {
+    assert_eq!(interpret("FactorTermsList[5]").unwrap(), "{5, 1}");
+  }
+
+  #[test]
+  fn no_numeric_content() {
+    assert_eq!(
+      interpret("FactorTermsList[x^3 + x]").unwrap(),
+      "{1, x + x^3}"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[FactorTermsList]").unwrap(),
+      "{Protected}"
+    );
+  }
+}

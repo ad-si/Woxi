@@ -2624,10 +2624,6 @@ pub fn lattice_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(result_rows))
 }
 
-fn dot_int(a: &[i128], b: &[i128]) -> i128 {
-  a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
-}
-
 fn dot_f64(a: &[f64], b: &[f64]) -> f64 {
   a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
