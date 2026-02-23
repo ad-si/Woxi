@@ -1019,15 +1019,19 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
       // Recursively distribute in each alternative, then flatten Or
       let mut result = Vec::new();
       for arg in args {
-        let converted = distribute_and_over_or(arg);
-        match converted {
-          Expr::FunctionCall {
-            name: on,
-            args: oargs,
-          } if on == "Or" => {
-            result.extend(oargs);
+        let mut converted = distribute_and_over_or(arg);
+        let is_or =
+          matches!(&converted, Expr::FunctionCall { name, .. } if name == "Or");
+        if is_or {
+          if let Expr::FunctionCall {
+            args: ref mut oargs,
+            ..
+          } = converted
+          {
+            result.append(oargs);
           }
-          _ => result.push(converted),
+        } else {
+          result.push(converted);
         }
       }
       if result.len() == 1 {

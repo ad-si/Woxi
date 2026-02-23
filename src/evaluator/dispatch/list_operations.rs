@@ -519,7 +519,7 @@ pub fn dispatch_list_operations(
                 args: vec![a.clone(), b.clone()],
               });
               match result {
-                Ok(Expr::Identifier(s)) if s == "True" => {
+                Ok(Expr::Identifier(ref s)) if s == "True" => {
                   std::cmp::Ordering::Less
                 }
                 _ => std::cmp::Ordering::Greater,
@@ -533,16 +533,16 @@ pub fn dispatch_list_operations(
     "ReverseSort" if args.len() == 1 || args.len() == 2 => {
       // ReverseSort[list] sorts then reverses
       // ReverseSort[list, p] sorts by p then reverses
-      let sorted = match evaluate_expr_to_expr(&Expr::FunctionCall {
+      let mut sorted = match evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Sort".to_string(),
         args: args.to_vec(),
       }) {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
       };
-      if let Expr::List(mut items) = sorted {
+      if let Expr::List(ref mut items) = sorted {
         items.reverse();
-        return Some(Ok(Expr::List(items)));
+        return Some(Ok(Expr::List(std::mem::take(items))));
       }
       return Some(Ok(sorted));
     }

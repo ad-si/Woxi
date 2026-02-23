@@ -1212,11 +1212,11 @@ pub fn image_apply_ast(
             name: crate::syntax::expr_to_string(func),
             args: vec![pixel_expr],
           };
-          let result = eval_fn(&call)?;
-          match result {
+          let mut result = eval_fn(&call)?;
+          match &mut result {
             Expr::List(vals) => {
               for v in vals {
-                new_data.push(expr_to_f64(&v)?);
+                new_data.push(expr_to_f64(v)?);
               }
             }
             _ => {

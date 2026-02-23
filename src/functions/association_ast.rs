@@ -257,18 +257,37 @@ pub fn associate_to_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (key_expr, val_expr)
       })
       .collect::<Vec<_>>(),
-    Some(crate::StoredValue::ExprVal(Expr::Association(items))) => items,
-    Some(crate::StoredValue::Raw(s)) => {
-      if let Ok(Expr::Association(items)) = crate::syntax::string_to_expr(&s) {
-        items
+    Some(crate::StoredValue::ExprVal(mut expr)) => {
+      if let Expr::Association(ref mut items) = expr {
+        std::mem::take(items)
       } else {
         return Err(InterpreterError::EvaluationError(format!(
-          "{} is not an association",
+          "{} is not defined",
           var_name
         )));
       }
     }
-    None | Some(crate::StoredValue::ExprVal(_)) => {
+    Some(crate::StoredValue::Raw(s)) => {
+      match crate::syntax::string_to_expr(&s) {
+        Ok(mut expr) => {
+          if let Expr::Association(ref mut items) = expr {
+            std::mem::take(items)
+          } else {
+            return Err(InterpreterError::EvaluationError(format!(
+              "{} is not an association",
+              var_name
+            )));
+          }
+        }
+        Err(_) => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "{} is not an association",
+            var_name
+          )));
+        }
+      }
+    }
+    None => {
       return Err(InterpreterError::EvaluationError(format!(
         "{} is not defined",
         var_name
@@ -358,13 +377,15 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           pattern: Box::new(key.clone()),
           replacement: Box::new(value.clone()),
         };
-        let result = crate::evaluator::apply_function_to_arg(func, &rule)?;
-        match result {
+        let mut result = crate::evaluator::apply_function_to_arg(func, &rule)?;
+        match &mut result {
           Expr::Rule {
             pattern,
             replacement,
           } => {
-            new_items.push((*pattern, *replacement));
+            let p = std::mem::replace(pattern.as_mut(), Expr::Integer(0));
+            let r = std::mem::replace(replacement.as_mut(), Expr::Integer(0));
+            new_items.push((p, r));
           }
           _ => {
             // When f doesn't produce rules, collect all results as Association args

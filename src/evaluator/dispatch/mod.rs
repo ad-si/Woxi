@@ -449,7 +449,7 @@ pub fn evaluate_function_call_ast_inner(
           }
           // Evaluate the condition - it must return True
           match evaluate_expr_to_expr(&substituted_cond) {
-            Ok(Expr::Identifier(s)) if s == "True" => {} // condition met
+            Ok(Expr::Identifier(ref s)) if s == "True" => {} // condition met
             _ => {
               conditions_met = false;
               break;

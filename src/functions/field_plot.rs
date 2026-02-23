@@ -69,7 +69,7 @@ fn evaluate_condition(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   if let Ok(result) = evaluate_expr_to_expr(&sub2) {
-    matches!(result, Expr::Identifier(s) if s == "True")
+    matches!(result, Expr::Identifier(ref s) if s == "True")
   } else {
     false
   }

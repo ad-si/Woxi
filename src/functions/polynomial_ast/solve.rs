@@ -31,10 +31,10 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let solutions = solve_ast(args)?;
 
   // Convert {{var -> val1}, {var -> val2}, ...} to x == val1 || x == val2 || ...
-  match solutions {
+  match &solutions {
     Expr::List(outer) => {
       let mut conditions: Vec<Expr> = Vec::new();
-      for item in &outer {
+      for item in outer {
         if let Expr::List(inner) = item {
           if inner.is_empty() {
             // {{}} means all values (identity)

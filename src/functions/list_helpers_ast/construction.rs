@@ -83,14 +83,14 @@ pub fn table_ast(
 
       if items.len() == 2 {
         // Check if second element is a list (iterate over list)
-        let second = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        match second {
+        let mut second = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+        match &mut second {
           Expr::List(list_items) => {
             // {i, {a, b, c}} form - iterate over list elements
             let mut results = Vec::new();
-            for item in list_items {
+            for item in list_items.iter() {
               let substituted =
-                crate::syntax::substitute_variable(body, &var_name, &item);
+                crate::syntax::substitute_variable(body, &var_name, item);
               let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
               results.push(val);
             }

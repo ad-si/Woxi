@@ -248,7 +248,7 @@ pub enum ImageType {
 
 /// Owned expression tree for storing parsed function bodies.
 /// This avoids re-parsing function bodies on every call.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Expr {
   /// Integer literal
   Integer(i128),
@@ -349,6 +349,528 @@ pub enum Expr {
   },
   /// Graphics output: holds SVG string, displays as -Graphics- (or -Graphics3D- if is_3d)
   Graphics { svg: String, is_3d: bool },
+}
+
+/// Extract all child `Expr` nodes from a variant, leaving it childless.
+/// Used by the iterative `Drop` implementation.
+fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
+  match expr {
+    // Leaf variants — no children
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_)
+    | Expr::Identifier(_)
+    | Expr::Slot(_)
+    | Expr::SlotSequence(_)
+    | Expr::Pattern { .. }
+    | Expr::Constant(_)
+    | Expr::Raw(_)
+    | Expr::Image { .. }
+    | Expr::Graphics { .. } => {}
+
+    // Vec<Expr> children
+    Expr::List(children) | Expr::CompoundExpr(children) => {
+      stack.append(children);
+    }
+    Expr::FunctionCall { args, .. } => {
+      stack.append(args);
+    }
+    Expr::Comparison { operands, .. } => {
+      stack.append(operands);
+    }
+
+    // Box<Expr> children (two boxes)
+    Expr::BinaryOp { left, right, .. } => {
+      stack.push(*std::mem::replace(left, Box::new(Expr::Integer(0))));
+      stack.push(*std::mem::replace(right, Box::new(Expr::Integer(0))));
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      stack.push(*std::mem::replace(pattern, Box::new(Expr::Integer(0))));
+      stack.push(*std::mem::replace(replacement, Box::new(Expr::Integer(0))));
+    }
+    Expr::ReplaceAll { expr, rules }
+    | Expr::ReplaceRepeated { expr, rules } => {
+      stack.push(*std::mem::replace(expr, Box::new(Expr::Integer(0))));
+      stack.push(*std::mem::replace(rules, Box::new(Expr::Integer(0))));
+    }
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => {
+      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
+      stack.push(*std::mem::replace(list, Box::new(Expr::Integer(0))));
+    }
+    Expr::PrefixApply { func, arg } => {
+      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
+      stack.push(*std::mem::replace(arg, Box::new(Expr::Integer(0))));
+    }
+    Expr::Postfix { expr, func } => {
+      stack.push(*std::mem::replace(expr, Box::new(Expr::Integer(0))));
+      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
+    }
+    Expr::Part { expr, index } => {
+      stack.push(*std::mem::replace(expr, Box::new(Expr::Integer(0))));
+      stack.push(*std::mem::replace(index, Box::new(Expr::Integer(0))));
+    }
+
+    // Single Box<Expr>
+    Expr::UnaryOp { operand, .. } => {
+      stack.push(*std::mem::replace(operand, Box::new(Expr::Integer(0))));
+    }
+    Expr::Function { body } => {
+      stack.push(*std::mem::replace(body, Box::new(Expr::Integer(0))));
+    }
+    Expr::NamedFunction { body, .. } => {
+      stack.push(*std::mem::replace(body, Box::new(Expr::Integer(0))));
+    }
+    Expr::PatternOptional { default, .. } => {
+      stack.push(*std::mem::replace(default, Box::new(Expr::Integer(0))));
+    }
+    Expr::PatternTest { test, .. } => {
+      stack.push(*std::mem::replace(test, Box::new(Expr::Integer(0))));
+    }
+
+    // Box<Expr> + Vec<Expr>
+    Expr::CurriedCall { func, args } => {
+      stack.push(*std::mem::replace(func, Box::new(Expr::Integer(0))));
+      stack.append(args);
+    }
+
+    // Vec<(Expr, Expr)>
+    Expr::Association(pairs) => {
+      for (k, v) in pairs.drain(..) {
+        stack.push(k);
+        stack.push(v);
+      }
+    }
+  }
+}
+
+impl Drop for Expr {
+  fn drop(&mut self) {
+    let mut work = Vec::new();
+    take_expr_children(self, &mut work);
+    while let Some(mut child) = work.pop() {
+      take_expr_children(&mut child, &mut work);
+      // child now has no Expr children, so its recursive drop is trivial
+    }
+  }
+}
+
+impl Clone for Expr {
+  fn clone(&self) -> Self {
+    // Fast path for leaf variants — avoid heap allocation
+    match self {
+      Expr::Integer(n) => return Expr::Integer(*n),
+      Expr::BigInteger(n) => return Expr::BigInteger(n.clone()),
+      Expr::Real(f) => return Expr::Real(*f),
+      Expr::BigFloat(s, p) => return Expr::BigFloat(s.clone(), *p),
+      Expr::String(s) => return Expr::String(s.clone()),
+      Expr::Identifier(s) => return Expr::Identifier(s.clone()),
+      Expr::Slot(n) => return Expr::Slot(*n),
+      Expr::SlotSequence(n) => return Expr::SlotSequence(*n),
+      Expr::Pattern { name, head } => {
+        return Expr::Pattern {
+          name: name.clone(),
+          head: head.clone(),
+        };
+      }
+      Expr::Constant(s) => return Expr::Constant(s.clone()),
+      Expr::Raw(s) => return Expr::Raw(s.clone()),
+      Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        image_type,
+      } => {
+        return Expr::Image {
+          width: *width,
+          height: *height,
+          channels: *channels,
+          data: data.clone(),
+          image_type: *image_type,
+        };
+      }
+      Expr::Graphics { svg, is_3d } => {
+        return Expr::Graphics {
+          svg: svg.clone(),
+          is_3d: *is_3d,
+        };
+      }
+      _ => {} // fall through to iterative clone
+    }
+
+    // Iterative clone for non-leaf variants
+    enum CloneTask<'a> {
+      Visit(&'a Expr),
+      Build(CloneFrame),
+    }
+
+    enum CloneFrame {
+      List(usize),
+      FunctionCall(String, usize),
+      BinaryOp(BinaryOperator),
+      UnaryOp(UnaryOperator),
+      Comparison(Vec<ComparisonOp>, usize),
+      CompoundExpr(usize),
+      Association(usize),
+      Rule,
+      RuleDelayed,
+      ReplaceAll,
+      ReplaceRepeated,
+      Map,
+      Apply,
+      MapApply,
+      PrefixApply,
+      Postfix,
+      Part,
+      CurriedCall(usize),
+      Function,
+      NamedFunction(Vec<String>),
+      PatternOptional(String, Option<String>),
+      PatternTest(String),
+    }
+
+    let mut tasks: Vec<CloneTask> = vec![CloneTask::Visit(self)];
+    let mut results: Vec<Expr> = Vec::new();
+
+    while let Some(task) = tasks.pop() {
+      match task {
+        CloneTask::Visit(expr) => match expr {
+          // Leaf variants
+          Expr::Integer(n) => results.push(Expr::Integer(*n)),
+          Expr::BigInteger(n) => results.push(Expr::BigInteger(n.clone())),
+          Expr::Real(f) => results.push(Expr::Real(*f)),
+          Expr::BigFloat(s, p) => results.push(Expr::BigFloat(s.clone(), *p)),
+          Expr::String(s) => results.push(Expr::String(s.clone())),
+          Expr::Identifier(s) => results.push(Expr::Identifier(s.clone())),
+          Expr::Slot(n) => results.push(Expr::Slot(*n)),
+          Expr::SlotSequence(n) => results.push(Expr::SlotSequence(*n)),
+          Expr::Pattern { name, head } => results.push(Expr::Pattern {
+            name: name.clone(),
+            head: head.clone(),
+          }),
+          Expr::Constant(s) => results.push(Expr::Constant(s.clone())),
+          Expr::Raw(s) => results.push(Expr::Raw(s.clone())),
+          Expr::Image {
+            width,
+            height,
+            channels,
+            data,
+            image_type,
+          } => results.push(Expr::Image {
+            width: *width,
+            height: *height,
+            channels: *channels,
+            data: data.clone(),
+            image_type: *image_type,
+          }),
+          Expr::Graphics { svg, is_3d } => results.push(Expr::Graphics {
+            svg: svg.clone(),
+            is_3d: *is_3d,
+          }),
+
+          // Vec<Expr> children
+          Expr::List(children) => {
+            let count = children.len();
+            tasks.push(CloneTask::Build(CloneFrame::List(count)));
+            for child in children.iter().rev() {
+              tasks.push(CloneTask::Visit(child));
+            }
+          }
+          Expr::CompoundExpr(children) => {
+            let count = children.len();
+            tasks.push(CloneTask::Build(CloneFrame::CompoundExpr(count)));
+            for child in children.iter().rev() {
+              tasks.push(CloneTask::Visit(child));
+            }
+          }
+          Expr::FunctionCall { name, args } => {
+            let count = args.len();
+            tasks.push(CloneTask::Build(CloneFrame::FunctionCall(
+              name.clone(),
+              count,
+            )));
+            for child in args.iter().rev() {
+              tasks.push(CloneTask::Visit(child));
+            }
+          }
+          Expr::Comparison {
+            operands,
+            operators,
+          } => {
+            let count = operands.len();
+            tasks.push(CloneTask::Build(CloneFrame::Comparison(
+              operators.clone(),
+              count,
+            )));
+            for child in operands.iter().rev() {
+              tasks.push(CloneTask::Visit(child));
+            }
+          }
+
+          // Two Box<Expr> children
+          Expr::BinaryOp { op, left, right } => {
+            tasks.push(CloneTask::Build(CloneFrame::BinaryOp(*op)));
+            tasks.push(CloneTask::Visit(right));
+            tasks.push(CloneTask::Visit(left));
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
+            tasks.push(CloneTask::Build(CloneFrame::Rule));
+            tasks.push(CloneTask::Visit(replacement));
+            tasks.push(CloneTask::Visit(pattern));
+          }
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => {
+            tasks.push(CloneTask::Build(CloneFrame::RuleDelayed));
+            tasks.push(CloneTask::Visit(replacement));
+            tasks.push(CloneTask::Visit(pattern));
+          }
+          Expr::ReplaceAll { expr, rules } => {
+            tasks.push(CloneTask::Build(CloneFrame::ReplaceAll));
+            tasks.push(CloneTask::Visit(rules));
+            tasks.push(CloneTask::Visit(expr));
+          }
+          Expr::ReplaceRepeated { expr, rules } => {
+            tasks.push(CloneTask::Build(CloneFrame::ReplaceRepeated));
+            tasks.push(CloneTask::Visit(rules));
+            tasks.push(CloneTask::Visit(expr));
+          }
+          Expr::Map { func, list } => {
+            tasks.push(CloneTask::Build(CloneFrame::Map));
+            tasks.push(CloneTask::Visit(list));
+            tasks.push(CloneTask::Visit(func));
+          }
+          Expr::Apply { func, list } => {
+            tasks.push(CloneTask::Build(CloneFrame::Apply));
+            tasks.push(CloneTask::Visit(list));
+            tasks.push(CloneTask::Visit(func));
+          }
+          Expr::MapApply { func, list } => {
+            tasks.push(CloneTask::Build(CloneFrame::MapApply));
+            tasks.push(CloneTask::Visit(list));
+            tasks.push(CloneTask::Visit(func));
+          }
+          Expr::PrefixApply { func, arg } => {
+            tasks.push(CloneTask::Build(CloneFrame::PrefixApply));
+            tasks.push(CloneTask::Visit(arg));
+            tasks.push(CloneTask::Visit(func));
+          }
+          Expr::Postfix { expr, func } => {
+            tasks.push(CloneTask::Build(CloneFrame::Postfix));
+            tasks.push(CloneTask::Visit(func));
+            tasks.push(CloneTask::Visit(expr));
+          }
+          Expr::Part { expr, index } => {
+            tasks.push(CloneTask::Build(CloneFrame::Part));
+            tasks.push(CloneTask::Visit(index));
+            tasks.push(CloneTask::Visit(expr));
+          }
+
+          // Single Box<Expr>
+          Expr::UnaryOp { op, operand } => {
+            tasks.push(CloneTask::Build(CloneFrame::UnaryOp(*op)));
+            tasks.push(CloneTask::Visit(operand));
+          }
+          Expr::Function { body } => {
+            tasks.push(CloneTask::Build(CloneFrame::Function));
+            tasks.push(CloneTask::Visit(body));
+          }
+          Expr::NamedFunction { params, body } => {
+            tasks.push(CloneTask::Build(CloneFrame::NamedFunction(
+              params.clone(),
+            )));
+            tasks.push(CloneTask::Visit(body));
+          }
+          Expr::PatternOptional {
+            name,
+            head,
+            default,
+          } => {
+            tasks.push(CloneTask::Build(CloneFrame::PatternOptional(
+              name.clone(),
+              head.clone(),
+            )));
+            tasks.push(CloneTask::Visit(default));
+          }
+          Expr::PatternTest { name, test } => {
+            tasks.push(CloneTask::Build(CloneFrame::PatternTest(name.clone())));
+            tasks.push(CloneTask::Visit(test));
+          }
+
+          // Box<Expr> + Vec<Expr>
+          Expr::CurriedCall { func, args } => {
+            let count = args.len();
+            // Build needs: func first, then count args
+            tasks.push(CloneTask::Build(CloneFrame::CurriedCall(count)));
+            for child in args.iter().rev() {
+              tasks.push(CloneTask::Visit(child));
+            }
+            tasks.push(CloneTask::Visit(func));
+          }
+
+          // Vec<(Expr, Expr)>
+          Expr::Association(pairs) => {
+            let count = pairs.len();
+            tasks.push(CloneTask::Build(CloneFrame::Association(count)));
+            // Push pairs in reverse; each pair = (key, value)
+            for (k, v) in pairs.iter().rev() {
+              tasks.push(CloneTask::Visit(v));
+              tasks.push(CloneTask::Visit(k));
+            }
+          }
+        },
+
+        CloneTask::Build(frame) => {
+          let expr = match frame {
+            CloneFrame::List(count) => {
+              let children: Vec<Expr> =
+                results.drain(results.len() - count..).collect();
+              Expr::List(children)
+            }
+            CloneFrame::CompoundExpr(count) => {
+              let children: Vec<Expr> =
+                results.drain(results.len() - count..).collect();
+              Expr::CompoundExpr(children)
+            }
+            CloneFrame::FunctionCall(name, count) => {
+              let args: Vec<Expr> =
+                results.drain(results.len() - count..).collect();
+              Expr::FunctionCall { name, args }
+            }
+            CloneFrame::Comparison(operators, count) => {
+              let operands: Vec<Expr> =
+                results.drain(results.len() - count..).collect();
+              Expr::Comparison {
+                operands,
+                operators,
+              }
+            }
+            CloneFrame::BinaryOp(op) => {
+              let right = Box::new(results.pop().unwrap());
+              let left = Box::new(results.pop().unwrap());
+              Expr::BinaryOp { op, left, right }
+            }
+            CloneFrame::UnaryOp(op) => {
+              let operand = Box::new(results.pop().unwrap());
+              Expr::UnaryOp { op, operand }
+            }
+            CloneFrame::Rule => {
+              let replacement = Box::new(results.pop().unwrap());
+              let pattern = Box::new(results.pop().unwrap());
+              Expr::Rule {
+                pattern,
+                replacement,
+              }
+            }
+            CloneFrame::RuleDelayed => {
+              let replacement = Box::new(results.pop().unwrap());
+              let pattern = Box::new(results.pop().unwrap());
+              Expr::RuleDelayed {
+                pattern,
+                replacement,
+              }
+            }
+            CloneFrame::ReplaceAll => {
+              let rules = Box::new(results.pop().unwrap());
+              let expr = Box::new(results.pop().unwrap());
+              Expr::ReplaceAll { expr, rules }
+            }
+            CloneFrame::ReplaceRepeated => {
+              let rules = Box::new(results.pop().unwrap());
+              let expr = Box::new(results.pop().unwrap());
+              Expr::ReplaceRepeated { expr, rules }
+            }
+            CloneFrame::Map => {
+              let list = Box::new(results.pop().unwrap());
+              let func = Box::new(results.pop().unwrap());
+              Expr::Map { func, list }
+            }
+            CloneFrame::Apply => {
+              let list = Box::new(results.pop().unwrap());
+              let func = Box::new(results.pop().unwrap());
+              Expr::Apply { func, list }
+            }
+            CloneFrame::MapApply => {
+              let list = Box::new(results.pop().unwrap());
+              let func = Box::new(results.pop().unwrap());
+              Expr::MapApply { func, list }
+            }
+            CloneFrame::PrefixApply => {
+              let arg = Box::new(results.pop().unwrap());
+              let func = Box::new(results.pop().unwrap());
+              Expr::PrefixApply { func, arg }
+            }
+            CloneFrame::Postfix => {
+              let func = Box::new(results.pop().unwrap());
+              let expr = Box::new(results.pop().unwrap());
+              Expr::Postfix { expr, func }
+            }
+            CloneFrame::Part => {
+              let index = Box::new(results.pop().unwrap());
+              let expr = Box::new(results.pop().unwrap());
+              Expr::Part { expr, index }
+            }
+            CloneFrame::Function => {
+              let body = Box::new(results.pop().unwrap());
+              Expr::Function { body }
+            }
+            CloneFrame::NamedFunction(params) => {
+              let body = Box::new(results.pop().unwrap());
+              Expr::NamedFunction { params, body }
+            }
+            CloneFrame::PatternOptional(name, head) => {
+              let default = Box::new(results.pop().unwrap());
+              Expr::PatternOptional {
+                name,
+                head,
+                default,
+              }
+            }
+            CloneFrame::PatternTest(name) => {
+              let test = Box::new(results.pop().unwrap());
+              Expr::PatternTest { name, test }
+            }
+            CloneFrame::CurriedCall(count) => {
+              let args: Vec<Expr> =
+                results.drain(results.len() - count..).collect();
+              let func = Box::new(results.pop().unwrap());
+              Expr::CurriedCall { func, args }
+            }
+            CloneFrame::Association(count) => {
+              let mut pairs = Vec::with_capacity(count);
+              let start = results.len() - count * 2;
+              let flat: Vec<Expr> = results.drain(start..).collect();
+              let mut iter = flat.into_iter();
+              for _ in 0..count {
+                let k = iter.next().unwrap();
+                let v = iter.next().unwrap();
+                pairs.push((k, v));
+              }
+              Expr::Association(pairs)
+            }
+          };
+          results.push(expr);
+        }
+      }
+    }
+
+    results.pop().unwrap()
+  }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1945,21 +2467,21 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         _ => ComparisonOp::Equal,
       };
       // If the left side is already a Comparison, extend the chain
-      if let Expr::Comparison {
-        operands: mut ops,
-        operators: mut comp_ops,
-      } = left.clone()
       {
-        ops.push(right.clone());
-        comp_ops.push(comp_op);
-        Expr::Comparison {
-          operands: ops,
-          operators: comp_ops,
-        }
-      } else {
-        Expr::Comparison {
-          operands: vec![left.clone(), right.clone()],
-          operators: vec![comp_op],
+        let mut cloned = left.clone();
+        if let Expr::Comparison {
+          operands: ref mut ops,
+          operators: ref mut comp_ops,
+        } = cloned
+        {
+          ops.push(right.clone());
+          comp_ops.push(comp_op);
+          cloned
+        } else {
+          Expr::Comparison {
+            operands: vec![left.clone(), right.clone()],
+            operators: vec![comp_op],
+          }
         }
       }
     }

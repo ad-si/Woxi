@@ -941,7 +941,7 @@ fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {
         name: "MatchQ".to_string(),
         args: vec![sel.clone(), pat.clone()],
       }) {
-        Ok(Expr::Identifier(s)) => s == "True",
+        Ok(Expr::Identifier(ref s)) => s == "True",
         _ => false,
       }
     }
