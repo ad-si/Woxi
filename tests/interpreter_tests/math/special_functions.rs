@@ -2472,6 +2472,41 @@ mod nsum {
   }
 }
 
+mod nproduct {
+  use super::*;
+
+  #[test]
+  fn basic_product() {
+    assert_eq!(interpret("NProduct[i, {i, 1, 5}]").unwrap(), "120.");
+  }
+
+  #[test]
+  fn product_of_squares() {
+    assert_eq!(interpret("NProduct[i^2, {i, 1, 4}]").unwrap(), "576.");
+  }
+
+  #[test]
+  fn product_of_reciprocals() {
+    assert_eq!(
+      interpret("NProduct[1/i, {i, 1, 5}]").unwrap(),
+      "0.008333333333333333"
+    );
+  }
+
+  #[test]
+  fn product_shifted() {
+    assert_eq!(interpret("NProduct[i + 1, {i, 0, 3}]").unwrap(), "24.");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[NProduct]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+}
+
 mod lerch_phi {
   use super::*;
 

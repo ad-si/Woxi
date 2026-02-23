@@ -113,6 +113,11 @@ pub fn evaluate_expr_early_dispatch(
       let result = crate::functions::math_ast::nsum_ast(&prepared)?;
       return Ok(Some(expr_to_string(&result)));
     }
+    "NProduct" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      let result = crate::functions::math_ast::nproduct_ast(&prepared)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
     _ => {}
   }
   Ok(None)
@@ -175,6 +180,10 @@ pub fn evaluate_expr_to_expr_early_dispatch(
     "NSum" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;
       return Ok(Some(crate::functions::math_ast::nsum_ast(&prepared)?));
+    }
+    "NProduct" if args.len() >= 2 => {
+      let prepared = prepare_iterating_function_args(args)?;
+      return Ok(Some(crate::functions::math_ast::nproduct_ast(&prepared)?));
     }
     _ => {}
   }
