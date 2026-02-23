@@ -1356,4 +1356,254 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod inverse_jacobi_tests {
+    use super::*;
+
+    // ─── InverseJacobiSN ─────────────────────────────────
+    #[test]
+    fn sn_zero() {
+      assert_eq!(interpret("InverseJacobiSN[0, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn sn_one() {
+      assert_eq!(interpret("InverseJacobiSN[1, m]").unwrap(), "EllipticK[m]");
+    }
+
+    #[test]
+    fn sn_m_zero() {
+      assert_eq!(interpret("InverseJacobiSN[x, 0]").unwrap(), "ArcSin[x]");
+    }
+
+    #[test]
+    fn sn_m_one() {
+      assert_eq!(interpret("InverseJacobiSN[x, 1]").unwrap(), "ArcTanh[x]");
+    }
+
+    #[test]
+    fn sn_numeric() {
+      let r = interpret("InverseJacobiSN[0.5, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.5306368995398673).abs() < 1e-6);
+    }
+
+    // ─── InverseJacobiCN ─────────────────────────────────
+    #[test]
+    fn cn_one() {
+      assert_eq!(interpret("InverseJacobiCN[1, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn cn_zero() {
+      assert_eq!(interpret("InverseJacobiCN[0, m]").unwrap(), "EllipticK[m]");
+    }
+
+    #[test]
+    fn cn_m_zero() {
+      assert_eq!(interpret("InverseJacobiCN[x, 0]").unwrap(), "ArcCos[x]");
+    }
+
+    #[test]
+    fn cn_m_one() {
+      assert_eq!(interpret("InverseJacobiCN[x, 1]").unwrap(), "ArcSech[x]");
+    }
+
+    #[test]
+    fn cn_numeric() {
+      let r = interpret("InverseJacobiCN[0.5, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 1.0991352230920428).abs() < 1e-6);
+    }
+
+    // ─── InverseJacobiDN ─────────────────────────────────
+    #[test]
+    fn dn_one() {
+      assert_eq!(interpret("InverseJacobiDN[1, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn dn_m_one() {
+      assert_eq!(interpret("InverseJacobiDN[x, 1]").unwrap(), "ArcSech[x]");
+    }
+
+    #[test]
+    fn dn_numeric() {
+      let r = interpret("InverseJacobiDN[0.9, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.9566256006832332).abs() < 1e-5);
+    }
+
+    // ─── InverseJacobiCD ─────────────────────────────────
+    #[test]
+    fn cd_one() {
+      assert_eq!(interpret("InverseJacobiCD[1, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn cd_zero() {
+      assert_eq!(interpret("InverseJacobiCD[0, m]").unwrap(), "EllipticK[m]");
+    }
+
+    #[test]
+    fn cd_m_zero() {
+      assert_eq!(interpret("InverseJacobiCD[x, 0]").unwrap(), "ArcCos[x]");
+    }
+
+    #[test]
+    fn cd_numeric() {
+      let r = interpret("InverseJacobiCD[0.5, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 1.1832525486389236).abs() < 1e-5);
+    }
+
+    // ─── InverseJacobiSC ─────────────────────────────────
+    #[test]
+    fn sc_zero() {
+      assert_eq!(interpret("InverseJacobiSC[0, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn sc_m_zero() {
+      assert_eq!(interpret("InverseJacobiSC[x, 0]").unwrap(), "ArcTan[x]");
+    }
+
+    #[test]
+    fn sc_m_one() {
+      assert_eq!(interpret("InverseJacobiSC[x, 1]").unwrap(), "ArcSinh[x]");
+    }
+
+    #[test]
+    fn sc_numeric() {
+      let r = interpret("InverseJacobiSC[0.5, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.4685566171679445).abs() < 1e-6);
+    }
+
+    // ─── InverseJacobiCS ─────────────────────────────────
+    #[test]
+    fn cs_m_zero() {
+      assert_eq!(interpret("InverseJacobiCS[x, 0]").unwrap(), "ArcCot[x]");
+    }
+
+    #[test]
+    fn cs_numeric() {
+      let r = interpret("InverseJacobiCS[2.0, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.4685566171679443).abs() < 1e-6);
+    }
+
+    // ─── InverseJacobiSD ─────────────────────────────────
+    #[test]
+    fn sd_zero() {
+      assert_eq!(interpret("InverseJacobiSD[0, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn sd_m_zero() {
+      assert_eq!(interpret("InverseJacobiSD[x, 0]").unwrap(), "ArcSin[x]");
+    }
+
+    #[test]
+    fn sd_m_one() {
+      assert_eq!(interpret("InverseJacobiSD[x, 1]").unwrap(), "ArcSinh[x]");
+    }
+
+    #[test]
+    fn sd_numeric() {
+      let r = interpret("InverseJacobiSD[0.5, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.5094709002418752).abs() < 1e-5);
+    }
+
+    // ─── InverseJacobiDS ─────────────────────────────────
+    #[test]
+    fn ds_m_zero() {
+      assert_eq!(interpret("InverseJacobiDS[x, 0]").unwrap(), "ArcCsc[x]");
+    }
+
+    #[test]
+    fn ds_m_one() {
+      assert_eq!(interpret("InverseJacobiDS[x, 1]").unwrap(), "ArcCsch[x]");
+    }
+
+    #[test]
+    fn ds_numeric() {
+      let r = interpret("InverseJacobiDS[2.0, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.5094709002418752).abs() < 1e-5);
+    }
+
+    // ─── InverseJacobiNS ─────────────────────────────────
+    #[test]
+    fn ns_m_zero() {
+      assert_eq!(interpret("InverseJacobiNS[x, 0]").unwrap(), "ArcCsc[x]");
+    }
+
+    #[test]
+    fn ns_m_one() {
+      assert_eq!(interpret("InverseJacobiNS[x, 1]").unwrap(), "ArcCoth[x]");
+    }
+
+    #[test]
+    fn ns_numeric() {
+      let r = interpret("InverseJacobiNS[2.0, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.5306368995398673).abs() < 1e-6);
+    }
+
+    // ─── InverseJacobiNC ─────────────────────────────────
+    #[test]
+    fn nc_one() {
+      assert_eq!(interpret("InverseJacobiNC[1, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn nc_m_zero() {
+      assert_eq!(interpret("InverseJacobiNC[x, 0]").unwrap(), "ArcSec[x]");
+    }
+
+    #[test]
+    fn nc_m_one() {
+      assert_eq!(interpret("InverseJacobiNC[x, 1]").unwrap(), "ArcCosh[x]");
+    }
+
+    #[test]
+    fn nc_numeric() {
+      let r = interpret("InverseJacobiNC[2.0, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 1.0991352230920428).abs() < 1e-5);
+    }
+
+    // ─── InverseJacobiND ─────────────────────────────────
+    #[test]
+    fn nd_one() {
+      assert_eq!(interpret("InverseJacobiND[1, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn nd_m_one() {
+      assert_eq!(interpret("InverseJacobiND[x, 1]").unwrap(), "ArcCosh[x]");
+    }
+
+    #[test]
+    fn nd_numeric() {
+      let r = interpret("InverseJacobiND[1.05, 0.5]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.45324704270437755).abs() < 1e-5);
+    }
+
+    // ─── InverseJacobiDC ─────────────────────────────────
+    #[test]
+    fn dc_one() {
+      assert_eq!(interpret("InverseJacobiDC[1, m]").unwrap(), "0");
+    }
+
+    #[test]
+    fn dc_numeric() {
+      let r = interpret("InverseJacobiDC[1.2, 0.3]").unwrap();
+      let val: f64 = r.parse().unwrap();
+      assert!((val - 0.6849087487827934).abs() < 1e-5);
+    }
+  }
 }

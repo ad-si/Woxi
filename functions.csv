@@ -2893,17 +2893,17 @@ InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7,2
 InverseHankelTransform,,,,11.1,4527
 InverseHaversine,,,,7,3593
 InverseImagePyramid,,,,12,
-InverseJacobiCD,,,,1,4006
+InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1,4006
 InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1,1865
-InverseJacobiCS,,,,1,4081
-InverseJacobiDC,,,,1,4204
-InverseJacobiDN,,,,1,4138
-InverseJacobiDS,,,,1,4138
-InverseJacobiNC,,,,1,4173
-InverseJacobiND,,,,1,4173
-InverseJacobiNS,,,,1,4173
-InverseJacobiSC,,,,1,4104
-InverseJacobiSD,,,,1,4173
+InverseJacobiCS,Inverse Jacobi elliptic function cs,✅,pure,1,4081
+InverseJacobiDC,Inverse Jacobi elliptic function dc,✅,pure,1,4204
+InverseJacobiDN,Inverse Jacobi elliptic function dn,✅,pure,1,4138
+InverseJacobiDS,Inverse Jacobi elliptic function ds,✅,pure,1,4138
+InverseJacobiNC,Inverse Jacobi elliptic function nc,✅,pure,1,4173
+InverseJacobiND,Inverse Jacobi elliptic function nd,✅,pure,1,4173
+InverseJacobiNS,Inverse Jacobi elliptic function ns,✅,pure,1,4173
+InverseJacobiSC,Inverse Jacobi elliptic function sc,✅,pure,1,4104
+InverseJacobiSD,Inverse Jacobi elliptic function sd,✅,pure,1,4173
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1,1905
 InverseLaplaceTransform,,,,4,583
 InverseMellinTransform,,,,11,3972

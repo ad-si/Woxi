@@ -444,6 +444,36 @@ pub fn dispatch_math_functions(
     "InverseJacobiCN" if args.len() == 2 => {
       return Some(crate::functions::math_ast::inverse_jacobi_cn_ast(args));
     }
+    "InverseJacobiDN" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_dn_ast(args));
+    }
+    "InverseJacobiCD" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_cd_ast(args));
+    }
+    "InverseJacobiSC" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_sc_ast(args));
+    }
+    "InverseJacobiCS" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_cs_ast(args));
+    }
+    "InverseJacobiSD" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_sd_ast(args));
+    }
+    "InverseJacobiDS" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_ds_ast(args));
+    }
+    "InverseJacobiNS" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_ns_ast(args));
+    }
+    "InverseJacobiNC" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_nc_ast(args));
+    }
+    "InverseJacobiND" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_nd_ast(args));
+    }
+    "InverseJacobiDC" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::inverse_jacobi_dc_ast(args));
+    }
     "JacobiSC" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_sc_ast(args));
     }
