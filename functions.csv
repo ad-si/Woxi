@@ -758,7 +758,7 @@ ChannelReceiverFunction,,,,11.2,4479
 ChannelSend,,,,11,3280
 ChannelSubscribers,,,,11,4612
 ChanVeseBinarize,,,,8,2408
-Character,,,,1,1993
+Character,Symbol used in string patterns to represent a single character,✅,pure,1,1993
 CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
 CharacterEncoding,,,,3,1434
 CharacteristicFunction,,,,6,1817
@@ -1028,7 +1028,7 @@ Constant,Attribute indicating zero derivative with respect to all parameters,✅
 ConstantArray,Creates an array of repeated elements,✅,pure,6,242
 ConstantImage,,,,10,2596
 ConstantRegionQ,,,,10,3462
-Constants,,,,1,1873
+Constants,Option for Simplify specifying which symbols are constants,✅,pure,1,1873
 ConstantVideo,,,,14.1,
 ConstellationData,,,,10,1342
 Construct,Constructs an expression from a head and arguments,✅,pure,11.3,2071
@@ -3768,7 +3768,7 @@ NoncentralChiSquareDistribution,,,,6,3059
 NoncentralFRatioDistribution,,,,6,2900
 NoncentralStudentTDistribution,,,,6,2057
 NonCommutativeMultiply,Non-commutative multiplication operator,✅,pure,1,290
-NonConstants,,,,1,1954
+NonConstants,Option for Simplify specifying which symbols are not constants,✅,pure,1,1954
 NondimensionalizationTransform,,,,11.3,4262
 None,Symbol representing no value or absence of an option,✅,pure,1,23
 NoneMatch,,,,14.1,
@@ -3945,7 +3945,7 @@ Offset,,,,3,237
 On,Turns on messages (no-op in Woxi),✅,effectful,1,1095
 ONanGroupON,,,,8,5184
 Once,,,,11,3462
-OneIdentity,,,,1,1960
+OneIdentity,Attribute indicating f[x] is identical to x for matching,✅,pure,1,1960
 Opacity,Specifies opacity for graphics,✅,pure,6,37
 OpacityFunction,,,,10.2,2999
 OpacityFunctionScaling,,,,10.2,4315
@@ -3995,7 +3995,7 @@ OutputSizeLimit,,,,6,4527
 OutputStream,,,,2,3298
 OverBar,,,,6,717
 OverDot,,,,6,1547
-Overflow,,,,1,1926
+Overflow,Symbol representing arithmetic overflow,✅,pure,1,1926
 OverHat,,,,6,970
 Overlaps,,,,5.1,1658
 Overlay,,,,8,1156
