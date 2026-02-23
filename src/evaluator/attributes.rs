@@ -484,7 +484,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Share"
     | "NameQ"
     | "FactorTermsList"
-    | "FactorTerms" => {
+    | "FactorTerms"
+    | "Delimiters"
+    | "FactorSquareFreeList" => {
       vec!["Protected"]
     }
 

@@ -3120,6 +3120,20 @@ mod share {
   }
 }
 
+mod delimiters {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_self() {
+    assert_eq!(interpret("Delimiters").unwrap(), "Delimiters");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(interpret("Attributes[Delimiters]").unwrap(), "{Protected}");
+  }
+}
+
 mod plus_rendering {
   use super::*;
 
