@@ -1698,7 +1698,7 @@ EncryptFile,,,,11.1,4356
 End,Ends a private context (no-op in Woxi),✅,effectful,1,571
 EndDialogPacket,,,,3,
 EndOfBuffer,,,,10,3059
-EndOfFile,,,,1,1852
+EndOfFile,Symbol returned by Read at end of file,✅,pure,1,1852
 EndOfLine,,,,5.1,2545
 EndOfString,,,,5.1,1202
 EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1,599
