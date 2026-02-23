@@ -22,6 +22,9 @@ pub fn dispatch_polynomial_functions(
     "Expand" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::expand_ast(args));
     }
+    "Decompose" if args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::decompose_ast(args));
+    }
     "Factor" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::factor_ast(args));
     }

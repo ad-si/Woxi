@@ -1118,4 +1118,120 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod decompose_tests {
+    use super::*;
+    #[test]
+    fn test_basic_composition() {
+      assert_eq!(interpret("Decompose[x^2 + 1, x]").unwrap(), "{1 + x, x^2}");
+    }
+    #[test]
+    fn test_polynomial_in_x_squared() {
+      assert_eq!(
+        interpret("Decompose[x^4 + x^2, x]").unwrap(),
+        "{x + x^2, x^2}"
+      );
+    }
+    #[test]
+    fn test_three_level_decomposition() {
+      assert_eq!(
+        interpret("Decompose[(x^2 + x)^4 + 1, x]").unwrap(),
+        "{1 + x, x^4, x + x^2}"
+      );
+    }
+    #[test]
+    fn test_cubic_plus_one() {
+      assert_eq!(interpret("Decompose[x^3 + 1, x]").unwrap(), "{1 + x, x^3}");
+    }
+    #[test]
+    fn test_indecomposable() {
+      assert_eq!(
+        interpret("Decompose[x^4 + x^3 + x^2 + x, x]").unwrap(),
+        "{x + x^2 + x^3 + x^4}"
+      );
+    }
+    #[test]
+    fn test_monomial_indecomposable() {
+      assert_eq!(interpret("Decompose[x^6, x]").unwrap(), "{x^6}");
+    }
+    #[test]
+    fn test_constant() {
+      assert_eq!(interpret("Decompose[5, x]").unwrap(), "{5}");
+    }
+    #[test]
+    fn test_linear() {
+      assert_eq!(interpret("Decompose[x, x]").unwrap(), "{x}");
+    }
+    #[test]
+    fn test_squared_composition() {
+      assert_eq!(
+        interpret("Decompose[x^4 + 2*x^3 + x^2, x]").unwrap(),
+        "{x^2, x + x^2}"
+      );
+    }
+    #[test]
+    fn test_shifted_power() {
+      assert_eq!(
+        interpret("Decompose[(x + 1)^4, x]").unwrap(),
+        "{1 + 2*x + x^2, 2*x + x^2}"
+      );
+    }
+    #[test]
+    fn test_sixth_power_shifted() {
+      assert_eq!(
+        interpret("Decompose[(x + 1)^6, x]").unwrap(),
+        "{1 + 3*x + 3*x^2 + x^3, 2*x + x^2}"
+      );
+    }
+    #[test]
+    fn test_non_monic() {
+      assert_eq!(
+        interpret("Decompose[2*x^4 + 3*x^2 + 1, x]").unwrap(),
+        "{1 + 3*x + 2*x^2, x^2}"
+      );
+    }
+    #[test]
+    fn test_x8_x4_1() {
+      assert_eq!(
+        interpret("Decompose[x^8 + x^4 + 1, x]").unwrap(),
+        "{1 + x + x^2, x^4}"
+      );
+    }
+    #[test]
+    fn test_with_negative_coeffs() {
+      assert_eq!(
+        interpret("Decompose[x^6 - 2*x^5 + x^4, x]").unwrap(),
+        "{x^2, -x^2 + x^3}"
+      );
+      assert_eq!(
+        interpret("Decompose[x^4 - 2*x^3 + 3*x^2 - 2*x + 1, x]").unwrap(),
+        "{1 + 2*x + x^2, -x + x^2}"
+      );
+    }
+    #[test]
+    fn test_rational_coefficients() {
+      assert_eq!(
+        interpret("Decompose[(x^2 + 1/2)^2, x]").unwrap(),
+        "{1/4 + x + x^2, x^2}"
+      );
+    }
+    #[test]
+    fn test_cubic_indecomposable() {
+      assert_eq!(
+        interpret("Decompose[x^3 + 3*x^2 + 3*x + 1, x]").unwrap(),
+        "{1 + 3*x + 3*x^2 + x^3}"
+      );
+    }
+    #[test]
+    fn test_x6_plus_1() {
+      assert_eq!(interpret("Decompose[x^6 + 1, x]").unwrap(), "{1 + x, x^6}");
+    }
+    #[test]
+    fn test_binomial_cubed_in_x2() {
+      assert_eq!(
+        interpret("Decompose[x^6 + 3*x^4 + 3*x^2 + 1, x]").unwrap(),
+        "{1 + 3*x + 3*x^2 + x^3, x^2}"
+      );
+    }
+  }
 }
