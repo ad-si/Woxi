@@ -1887,3 +1887,71 @@ mod factor_terms {
     );
   }
 }
+
+mod resultant {
+  use super::*;
+
+  #[test]
+  fn basic_integer() {
+    assert_eq!(interpret("Resultant[x^2 + 1, x^3 - 1, x]").unwrap(), "2");
+  }
+
+  #[test]
+  fn common_root() {
+    // x^2 - 1 and x^3 - 1 share x=1 as a root
+    assert_eq!(interpret("Resultant[x^2 - 1, x^3 - 1, x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn linear_polynomials() {
+    assert_eq!(interpret("Resultant[2*x + 3, 4*x - 1, x]").unwrap(), "-14");
+  }
+
+  #[test]
+  fn symbolic_linear() {
+    assert_eq!(
+      interpret("Resultant[a*x + b, c*x + d, x]").unwrap(),
+      "-(b*c) + a*d"
+    );
+  }
+
+  #[test]
+  fn symbolic_quadratic_expanded() {
+    assert_eq!(
+      interpret("Expand[Resultant[x^2 + a*x + b, x^2 + c*x + d, x]]").unwrap(),
+      "b^2 - a*b*c + b*c^2 + a^2*d - 2*b*d - a*c*d + d^2"
+    );
+  }
+
+  #[test]
+  fn quadratic_common_root() {
+    // x^2 - 5x + 6 = (x-2)(x-3), x^2 - 3x + 2 = (x-1)(x-2), share x=2
+    assert_eq!(
+      interpret("Resultant[x^2 - 5*x + 6, x^2 - 3*x + 2, x]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn zero_polynomial() {
+    assert_eq!(interpret("Resultant[x, x^2, x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn constant_and_polynomial() {
+    assert_eq!(interpret("Resultant[3, x + 1, x]").unwrap(), "3");
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(interpret("Resultant[f, g, x]").unwrap(), "1");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[Resultant]").unwrap(),
+      "{Listable, Protected}"
+    );
+  }
+}

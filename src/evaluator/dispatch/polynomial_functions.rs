@@ -58,6 +58,9 @@ pub fn dispatch_polynomial_functions(
     "Eliminate" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::eliminate_ast(args));
     }
+    "Resultant" if args.len() == 3 => {
+      return Some(crate::functions::polynomial_ast::resultant_ast(args));
+    }
     "Reduce" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::polynomial_ast::reduce_ast(args));
     }
