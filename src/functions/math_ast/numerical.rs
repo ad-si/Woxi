@@ -1759,6 +1759,86 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::Real(sum))
 }
 
+/// NProduct[f, {i, imin, imax}] - Numerical product
+pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Ok(Expr::FunctionCall {
+      name: "NProduct".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let body = &args[0];
+  let iter_spec = &args[1];
+
+  let items = match iter_spec {
+    Expr::List(items) if items.len() >= 2 => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NProduct".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let var_name = match &items[0] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "NProduct".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.len() < 3 {
+    return Ok(Expr::FunctionCall {
+      name: "NProduct".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let min_val = match try_eval_to_f64(&items[1]) {
+    Some(v) => v as i64,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "NProduct".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let max_val = match try_eval_to_f64(&items[2]) {
+    Some(v) => v as i64,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "NProduct".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut product = 1.0_f64;
+  for i in min_val..=max_val {
+    let sub_val = Expr::Integer(i as i128);
+    let substituted =
+      crate::syntax::substitute_variable(body, &var_name, &sub_val);
+    let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+    let term = match try_eval_to_f64(&val) {
+      Some(f) => f,
+      None => {
+        return Ok(Expr::FunctionCall {
+          name: "NProduct".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    product *= term;
+  }
+
+  Ok(Expr::Real(product))
+}
+
 /// ManhattanDistance[u, v] - Manhattan (L1) distance between two points
 pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

@@ -159,7 +159,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
-    | "Information" | "MemoryConstrained" | "TagUnset" => {
+    | "Information" | "MemoryConstrained" | "TagUnset" | "NProduct" => {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],

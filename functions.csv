@@ -3884,7 +3884,7 @@ NotVerticalBar,,,,3,4881
 Now,Returns the current date and time,✅,contextual,10,1071
 NoWhitespace,,,,10.3,5587
 NProbability,,,,8,1534
-NProduct,,,,1,2229
+NProduct,Numerical product of a sequence,implemented,none,1,2229
 NRoots,Symbol for numerical root counting,✅,pure,1,2462
 NSolve,,,,2,252
 NSolveValues,,,,12.3,
