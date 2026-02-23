@@ -914,3 +914,491 @@ pub fn is_numeric_expr(expr: &Expr) -> bool {
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
     )
 }
+
+// ─── FactorTerms ────────────────────────────────────────────────────
+
+/// FactorTerms[poly] - Pull out the greatest common numerical factor
+/// from the terms of a polynomial.
+/// FactorTerms[poly, x] - Pull out factors that don't depend on x.
+pub fn factor_terms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorTerms expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // Thread over List
+  if let Expr::List(items) = &args[0] {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| {
+        let mut new_args = vec![item.clone()];
+        if args.len() > 1 {
+          new_args.push(args[1].clone());
+        }
+        factor_terms_ast(&new_args)
+      })
+      .collect();
+    return Ok(Expr::List(results?));
+  }
+
+  // Expand to canonical form
+  let expanded = expand_and_combine(&args[0]);
+
+  // Collect additive terms
+  let terms = collect_additive_terms(&expanded);
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  if terms.len() == 1 {
+    return Ok(expanded);
+  }
+
+  // First, factor out the numeric GCD from all terms
+  let numeric_factored = factor_terms_numeric(&expanded, &terms)?;
+
+  if args.len() == 2 {
+    // FactorTerms[poly, x] — also factor out terms not depending on x
+    let var = match &args[1] {
+      Expr::Identifier(s) => s.clone(),
+      _ => return Ok(numeric_factored),
+    };
+    // Apply variable-dependent factoring to the inner expression
+    // (after numeric factor has been pulled out)
+    match &numeric_factored {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        // numeric_factor * inner — apply var factoring to inner
+        let inner_factored = factor_terms_wrt_var(right, &var)?;
+        return Ok(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: left.clone(),
+          right: Box::new(inner_factored),
+        });
+      }
+      _ => {
+        // No numeric factor was extracted
+        return factor_terms_wrt_var(&numeric_factored, &var);
+      }
+    }
+  }
+
+  Ok(numeric_factored)
+}
+
+/// Extract the rational coefficient (numerator, denominator) from a term.
+/// Returns (numerator, denominator) as i128.
+fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
+  match term {
+    // Pure integer
+    Expr::Integer(n) => Some((*n, 1)),
+    // Rational number
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    // Negation
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (n, d) = extract_rational_coeff(operand)?;
+      Some((-n, d))
+    }
+    // Product: extract numeric factors
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    }
+    | Expr::FunctionCall { name: _, args: _ }
+      if matches!(term, Expr::FunctionCall { name, .. } if name == "Times")
+        || matches!(
+          term,
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            ..
+          }
+        ) =>
+    {
+      let factors = collect_multiplicative_factors(term);
+      let mut num: i128 = 1;
+      let mut den: i128 = 1;
+      for f in &factors {
+        match f {
+          Expr::Integer(n) => num *= n,
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+              num *= n;
+              den *= d;
+            }
+          }
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          } => match operand.as_ref() {
+            Expr::Integer(n) => num *= -n,
+            Expr::FunctionCall { name, args }
+              if name == "Rational" && args.len() == 2 =>
+            {
+              if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1])
+              {
+                num *= -n;
+                den *= d;
+              }
+            }
+            _ => {} // non-numeric factor, ignore (it's a variable)
+          },
+          _ => {} // non-numeric factor (variable part)
+        }
+      }
+      Some((num, den))
+    }
+    // Identifier or other: coefficient is 1
+    Expr::Identifier(_)
+    | Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      ..
+    } => Some((1, 1)),
+    _ => {
+      // Use decompose_term as fallback
+      let (coeff, _, _) = decompose_term(term);
+      match &coeff {
+        Expr::Integer(n) => Some((*n, 1)),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+            Some((*n, *d))
+          } else {
+            None
+          }
+        }
+        _ => None,
+      }
+    }
+  }
+}
+
+/// Factor out the GCD of numeric coefficients from all terms.
+fn factor_terms_numeric(
+  expanded: &Expr,
+  terms: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Extract rational coefficients from each term
+  let mut coeffs: Vec<(i128, i128)> = Vec::new();
+  for term in terms {
+    match extract_rational_coeff(term) {
+      Some(pair) => coeffs.push(pair),
+      None => return Ok(expanded.clone()), // non-numeric coefficient, return as-is
+    }
+  }
+
+  if coeffs.is_empty() {
+    return Ok(expanded.clone());
+  }
+
+  // Compute GCD of all numerators and LCM of all denominators
+  let num_gcd = coeffs
+    .iter()
+    .map(|(n, _)| *n)
+    .filter(|&n| n != 0)
+    .fold(0i128, gcd_i128);
+  let den_lcm = coeffs.iter().map(|(_, d)| *d).fold(1i128, lcm_i128);
+
+  // If all non-zero numerators are negative, factor out the negative sign
+  let all_negative =
+    coeffs.iter().filter(|(n, _)| *n != 0).all(|(n, _)| *n < 0);
+  let sign: i128 = if all_negative { -1 } else { 1 };
+  let num_gcd = num_gcd * sign;
+
+  if num_gcd.abs() <= 1 && den_lcm == 1 {
+    return Ok(expanded.clone());
+  }
+
+  // The overall factor is num_gcd / den_lcm
+  // Divide each term by this factor
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for (term, (n, d)) in terms.iter().zip(coeffs.iter()) {
+    // New coefficient: (n/d) / (num_gcd/den_lcm) = (n * den_lcm) / (d * num_gcd)
+    let new_n = n * den_lcm / (d * num_gcd);
+    let var_factors = extract_non_numeric_factors(term);
+
+    let coeff_expr = if new_n == 1 && !var_factors.is_empty() {
+      None
+    } else if new_n == -1 && !var_factors.is_empty() {
+      None // handle sign below
+    } else {
+      Some(Expr::Integer(new_n.abs()))
+    };
+
+    let var_part = if var_factors.is_empty() {
+      None
+    } else if var_factors.len() == 1 {
+      Some(var_factors[0].clone())
+    } else {
+      let mut product = var_factors[0].clone();
+      for f in &var_factors[1..] {
+        product = Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(product),
+          right: Box::new(f.clone()),
+        };
+      }
+      Some(product)
+    };
+
+    let term_expr = match (coeff_expr, var_part) {
+      (Some(c), Some(v)) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(c),
+        right: Box::new(v),
+      },
+      (Some(c), None) => c,
+      (None, Some(v)) => v,
+      (None, None) => Expr::Integer(1),
+    };
+
+    let final_term = if new_n < 0 {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(term_expr),
+      }
+    } else {
+      term_expr
+    };
+
+    new_terms.push(final_term);
+  }
+
+  // Build the inner sum
+  let inner = build_sum(new_terms);
+
+  // Build the overall factor
+  let factor = if den_lcm == 1 {
+    Expr::Integer(num_gcd)
+  } else {
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(num_gcd), Expr::Integer(den_lcm)],
+    }
+  };
+
+  // Return factor * inner (or just inner if factor is 1)
+  if matches!(&factor, Expr::Integer(1)) {
+    Ok(inner)
+  } else {
+    Ok(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(factor),
+      right: Box::new(inner),
+    })
+  }
+}
+
+/// FactorTerms[poly, x] — factor out terms that don't depend on x.
+/// Groups terms by power of x, collects the coefficient of each power,
+/// then factors out the polynomial GCD of those coefficient expressions.
+fn factor_terms_wrt_var(
+  expr: &Expr,
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  let terms = collect_additive_terms(expr);
+
+  // Collect coefficients for each power of x
+  let mut power_coeffs: std::collections::BTreeMap<i128, Vec<Expr>> =
+    std::collections::BTreeMap::new();
+
+  for term in &terms {
+    let (power, coeff) = term_var_power_and_coeff(term, var);
+    power_coeffs.entry(power).or_default().push(coeff);
+  }
+
+  // Sum and simplify coefficients for each power
+  let mut summed_coeffs: Vec<(i128, Expr)> = Vec::new();
+  for (power, coeffs) in &power_coeffs {
+    let sum = if coeffs.len() == 1 {
+      coeffs[0].clone()
+    } else {
+      build_sum(coeffs.clone())
+    };
+    let simplified = expand_and_combine(&sum);
+    summed_coeffs.push((*power, simplified));
+  }
+
+  if summed_coeffs.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Try to find a common symbolic factor among all coefficient expressions.
+  // First, factor out the numeric GCD across all coefficient terms.
+  let mut all_coeff_terms: Vec<Expr> = Vec::new();
+  for (_, coeff) in &summed_coeffs {
+    all_coeff_terms.extend(collect_additive_terms(coeff));
+  }
+
+  // Try to find a polynomial GCD of the coefficient expressions
+  // by looking for a common variable and using polynomial GCD
+  let coeff_exprs: Vec<&Expr> = summed_coeffs.iter().map(|(_, c)| c).collect();
+
+  // Check if all coefficients share a common factor
+  // Try to find a single variable common to all coefficient expressions
+  let mut common_var: Option<String> = None;
+  for coeff in &coeff_exprs {
+    if let Some(v) = find_single_variable(coeff)
+      && v != var
+    {
+      common_var = Some(v);
+      break;
+    }
+  }
+
+  // If we found a common variable, try polynomial GCD
+  if let Some(cv) = &common_var {
+    let mut poly_coeffs: Vec<Vec<i128>> = Vec::new();
+    let mut all_valid = true;
+
+    for coeff in &coeff_exprs {
+      match extract_poly_coeffs(coeff, cv) {
+        Some(c) => poly_coeffs.push(c),
+        None => {
+          all_valid = false;
+          break;
+        }
+      }
+    }
+
+    if all_valid && poly_coeffs.len() >= 2 {
+      // Compute GCD of all coefficient polynomials
+      let mut gcd_poly = poly_coeffs[0].clone();
+      for p in &poly_coeffs[1..] {
+        if let Some(g) =
+          crate::functions::polynomial_ast::poly_gcd(&gcd_poly, p)
+        {
+          gcd_poly = g;
+        } else {
+          // GCD computation failed, fall through to numeric GCD
+          return factor_terms_numeric(expr, &terms);
+        }
+      }
+
+      // Check if GCD is non-trivial (not just a constant ±1)
+      let is_trivial = gcd_poly.len() <= 1
+        && gcd_poly.first().map(|c| c.abs()).unwrap_or(0) <= 1;
+
+      if !is_trivial {
+        // Divide each coefficient by the GCD polynomial
+        let mut new_terms: Vec<Expr> = Vec::new();
+        for (power, coeff) in &summed_coeffs {
+          if let Some(c) = extract_poly_coeffs(coeff, cv) {
+            let (quotient, _remainder) =
+              match crate::functions::polynomial_ast::poly_div(&c, &gcd_poly) {
+                Some(qr) => qr,
+                None => return factor_terms_numeric(expr, &terms),
+              };
+            let q_expr = coeffs_to_expr(&quotient, cv);
+
+            let var_power = if *power == 0 {
+              q_expr
+            } else if *power == 1 {
+              Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(q_expr),
+                right: Box::new(Expr::Identifier(var.to_string())),
+              }
+            } else {
+              Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(q_expr),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(Expr::Identifier(var.to_string())),
+                  right: Box::new(Expr::Integer(*power)),
+                }),
+              }
+            };
+            new_terms.push(var_power);
+          }
+        }
+
+        let inner = expand_and_combine(&build_sum(new_terms));
+        let gcd_expr = coeffs_to_expr(&gcd_poly, cv);
+
+        // Factor out numeric GCD from both parts
+        let gcd_terms = collect_additive_terms(&gcd_expr);
+        let factored_gcd =
+          factor_terms_numeric(&gcd_expr, &gcd_terms).unwrap_or(gcd_expr);
+        let inner_terms = collect_additive_terms(&inner);
+        let factored_inner =
+          factor_terms_numeric(&inner, &inner_terms).unwrap_or(inner);
+
+        return Ok(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(factored_gcd),
+          right: Box::new(factored_inner),
+        });
+      }
+    }
+  }
+
+  // Fall back to numeric GCD factoring
+  factor_terms_numeric(expr, &terms)
+}
+
+/// Extract non-numeric factors from a term (strip numeric coefficient including Rational).
+fn extract_non_numeric_factors(term: &Expr) -> Vec<Expr> {
+  match term {
+    Expr::Integer(_) | Expr::Real(_) => vec![],
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      vec![] // Rational is purely numeric
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => extract_non_numeric_factors(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => {
+      let factors = collect_multiplicative_factors(term);
+      factors
+        .into_iter()
+        .filter(|f| {
+          !matches!(f, Expr::Integer(_) | Expr::Real(_))
+            && !matches!(f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+            && !matches!(f, Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand } if matches!(operand.as_ref(), Expr::Integer(_) | Expr::Real(_)))
+        })
+        .collect()
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args
+        .iter()
+        .filter(|f| {
+          !matches!(f, Expr::Integer(_) | Expr::Real(_))
+            && !matches!(f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+        })
+        .cloned()
+        .collect()
+    }
+    _ => vec![term.clone()],
+  }
+}
+
+fn lcm_i128(a: i128, b: i128) -> i128 {
+  if a == 0 || b == 0 {
+    0
+  } else {
+    (a / gcd_i128(a, b)) * b
+  }
+}
