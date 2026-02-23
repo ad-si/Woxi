@@ -24,6 +24,12 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
+    "Unevaluated" if !args.is_empty() => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "Unevaluated".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "ReleaseHold" if args.len() == 1 => match &args[0] {
       Expr::FunctionCall {
         name: hold_name,

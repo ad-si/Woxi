@@ -1043,6 +1043,7 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "Hold"
         || name == "HoldForm"
         || name == "HoldComplete"
+        || name == "Unevaluated"
         || name == "ValueQ"
         || name == "Reap"
         || name == "Plot"

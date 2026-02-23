@@ -206,7 +206,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Locked" => vec!["Locked", "Protected"],
     "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
     | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
-    | "ListPlot3D" | "Input" | "SeriesData" | "RunThrough" => {
+    | "ListPlot3D" | "Input" | "SeriesData" | "RunThrough"
+    | "AbsolutePointSize" => {
       vec!["Protected", "ReadProtected"]
     }
 
@@ -492,6 +493,16 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "PrecedenceForm"
     | "Skeleton"
     | "TotalWidth"
+    | "Word"
+    | "Frame"
+    | "Background"
+    | "AxesStyle"
+    | "ColorFunction"
+    | "AxesOrigin"
+    | "FrameStyle"
+    | "GridLines"
+    | "Epilog"
+    | "FrameTicks"
     | "FactorSquareFreeList" => {
       vec!["Protected"]
     }
