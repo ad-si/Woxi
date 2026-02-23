@@ -1362,7 +1362,7 @@ DelimitedSequence,,,,10,2693
 Delimiter,,,,6,698
 DelimiterAutoMatching,,,,12.3,
 DelimiterFlashTime,,,,3,4881
-Delimiters,,,,1,3889
+Delimiters,Option symbol specifying what delimiters to use or look for,✅,none,1,3889
 DeliveryFunction,,,,10.1,5079
 Dendrogram,,,,10.4,3143
 Denominator,Returns the denominator of a rational expression,✅,pure,1,512
