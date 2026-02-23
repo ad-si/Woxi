@@ -1786,3 +1786,104 @@ mod solve_always {
     );
   }
 }
+
+mod factor_terms {
+  use super::*;
+
+  #[test]
+  fn basic_integer_gcd() {
+    assert_eq!(
+      interpret("FactorTerms[3 + 6 x + 3 x^2]").unwrap(),
+      "3*(1 + 2*x + x^2)"
+    );
+  }
+
+  #[test]
+  fn factor_from_all_terms() {
+    assert_eq!(
+      interpret("FactorTerms[6 x + 9 x^2]").unwrap(),
+      "3*(2*x + 3*x^2)"
+    );
+  }
+
+  #[test]
+  fn simple_factoring() {
+    assert_eq!(interpret("FactorTerms[5 + 10 x]").unwrap(), "5*(1 + 2*x)");
+  }
+
+  #[test]
+  fn gcd_one_no_change() {
+    assert_eq!(interpret("FactorTerms[x + x^2]").unwrap(), "x + x^2");
+  }
+
+  #[test]
+  fn single_term() {
+    assert_eq!(interpret("FactorTerms[7 x]").unwrap(), "7*x");
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("FactorTerms[42]").unwrap(), "42");
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("FactorTerms[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn variable_only() {
+    assert_eq!(interpret("FactorTerms[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn negative_gcd() {
+    assert_eq!(
+      interpret("FactorTerms[-6*x - 9*x^2]").unwrap(),
+      "-3*(2*x + 3*x^2)"
+    );
+  }
+
+  #[test]
+  fn negative_gcd_with_constant() {
+    assert_eq!(interpret("FactorTerms[-3 - 6*x]").unwrap(), "-3*(1 + 2*x)");
+  }
+
+  #[test]
+  fn symbolic_coefficients() {
+    assert_eq!(
+      interpret("FactorTerms[2 a + 4 b + 6 c]").unwrap(),
+      "2*(a + 2*b + 3*c)"
+    );
+  }
+
+  #[test]
+  fn no_common_factor() {
+    assert_eq!(interpret("FactorTerms[a + b]").unwrap(), "a + b");
+  }
+
+  #[test]
+  fn rational_coefficients() {
+    assert_eq!(
+      interpret("FactorTerms[2/3 + (4/3)*x]").unwrap(),
+      "(2*(1 + 2*x))/3"
+    );
+  }
+
+  #[test]
+  fn with_variable_argument() {
+    assert_eq!(
+      interpret("FactorTerms[3 + 3 a + 6 a x + 6 x + 12 a x^2 + 12 x^2, x]")
+        .unwrap(),
+      "3*(1 + a)*(1 + 2*x + 4*x^2)"
+    );
+  }
+
+  #[test]
+  fn threads_over_list() {
+    assert_eq!(
+      interpret("FactorTerms[{6 + 12 x, 4 + 8 x}]").unwrap(),
+      "{6*(1 + 2*x), 4*(1 + 2*x)}"
+    );
+  }
+}

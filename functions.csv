@@ -1868,7 +1868,7 @@ FactorInteger,Returns prime factorization as {prime exponent} pairs,✅,pure,1,5
 FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1,1745
 FactorSquareFree,,,,1,3143
 FactorSquareFreeList,,,,1,3697
-FactorTerms,,,,1,1817
+FactorTerms,Pulls out the greatest common numerical factor from terms,✅,pure,1,1817
 FactorTermsList,,,,1,3265
 Failure,,,,10,1522
 FailureAction,,,,10,3491
