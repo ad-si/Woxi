@@ -231,6 +231,7 @@ script_test!(
 script_test!(script_levenshtein_distance, "levenshtein_distance.wls");
 script_test!(script_100_doors, "100_doors.wls");
 script_test!(script_table_form, "table_form.wls");
+script_test!(script_euro_coins_100g, "euro_coins_100g.wls");
 
 #[test]
 fn script_cli_args() {

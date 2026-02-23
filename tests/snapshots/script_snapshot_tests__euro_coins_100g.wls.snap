@@ -1,0 +1,6 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{12, {c1 -> 0, c2 -> 0, c5 -> 0, c10 -> 0, c20 -> 0, c50 -> 0, e1 -> 2, e2 -> 10}}
+{12, {c1 -> 0, c2 -> 0, c5 -> 0, c10 -> 0, c20 -> 0, c50 -> 0, e1 -> 2, e2 -> 10}}
