@@ -2620,3 +2620,101 @@ mod weierstrass_p {
     );
   }
 }
+
+mod weierstrass_p_prime {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    // Pole of order 3 at origin
+    assert_eq!(
+      interpret("WeierstrassPPrime[0, {1, 2}]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn numeric_basic() {
+    // WeierstrassPPrime[2., {1, 2}] ≈ 8.3966
+    let result = interpret("WeierstrassPPrime[2., {1, 2}]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - 8.3966).abs() < 0.01,
+      "WeierstrassPPrime[2., {{1, 2}}] should be ≈ 8.3966, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn numeric_negative() {
+    // WeierstrassPPrime[0.5, {1, 2}] ≈ -15.914
+    let result = interpret("WeierstrassPPrime[0.5, {1, 2}]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - (-15.914)).abs() < 0.01,
+      "WeierstrassPPrime[0.5, {{1, 2}}] should be ≈ -15.914, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn numeric_three_real_roots() {
+    // Δ > 0 case: WeierstrassPPrime[1.0, {4, 0}] ≈ -1.5157
+    let result = interpret("WeierstrassPPrime[1.0, {4, 0}]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - (-1.5157)).abs() < 0.01,
+      "WeierstrassPPrime[1.0, {{4, 0}}] should be ≈ -1.5157, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn odd_function() {
+    // ℘' is odd: ℘'(-u) == -℘'(u)
+    let pos = interpret("WeierstrassPPrime[0.3, {2, 3}]").unwrap();
+    let neg = interpret("WeierstrassPPrime[-0.3, {2, 3}]").unwrap();
+    let p: f64 = pos.parse().unwrap();
+    let n: f64 = neg.parse().unwrap();
+    assert!(
+      (p + n).abs() < 1e-4,
+      "WeierstrassPPrime should be odd: {} vs {}",
+      p,
+      n
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    // Symbolic inputs should return unevaluated
+    assert_eq!(
+      interpret("WeierstrassPPrime[z, {g2, g3}]").unwrap(),
+      "WeierstrassPPrime[z, {g2, g3}]"
+    );
+  }
+
+  #[test]
+  fn differential_equation() {
+    // Verify (℘')² = 4℘³ - g₂℘ - g₃
+    let g2 = 4.0;
+    let g3 = 1.0;
+    let u = 0.4;
+    let p_u = interpret(&format!("WeierstrassP[{}, {{{}, {}}}]", u, g2, g3))
+      .unwrap()
+      .parse::<f64>()
+      .unwrap();
+    let pp_u =
+      interpret(&format!("WeierstrassPPrime[{}, {{{}, {}}}]", u, g2, g3))
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    let lhs = pp_u * pp_u;
+    let rhs = 4.0 * p_u * p_u * p_u - g2 * p_u - g3;
+    assert!(
+      (lhs - rhs).abs() / rhs.abs().max(1.0) < 1e-4,
+      "Should satisfy (℘')² = 4℘³ - g₂℘ - g₃: lhs={}, rhs={}",
+      lhs,
+      rhs
+    );
+  }
+}

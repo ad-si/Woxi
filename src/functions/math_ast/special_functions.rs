@@ -1678,6 +1678,56 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// WeierstrassPPrime[u, {g2, g3}] - Derivative of Weierstrass elliptic function ℘'(u; g₂, g₃)
+pub fn weierstrass_p_prime_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WeierstrassPPrime expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let u = &args[0];
+  let (g2, g3) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "WeierstrassPPrime".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Special case: u = 0 → ComplexInfinity (pole of order 3 at origin)
+  if is_expr_zero(u) {
+    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+  }
+
+  // Numeric evaluation
+  if let (Some(u_f), Some(g2_f), Some(g3_f)) =
+    (try_eval_to_f64(u), try_eval_to_f64(g2), try_eval_to_f64(g3))
+  {
+    let result = weierstrass_p_prime_numeric(u_f, g2_f, g3_f);
+    return Ok(Expr::Real(result));
+  }
+
+  // Symbolic: return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "WeierstrassPPrime".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute WeierstrassPPrime numerically via central difference of WeierstrassP
+pub fn weierstrass_p_prime_numeric(u: f64, g2: f64, g3: f64) -> f64 {
+  // Use central difference with step size chosen for good accuracy
+  let h = u.abs().max(1.0) * 1e-6;
+  let p_plus = weierstrass_p_numeric(u + h, g2, g3);
+  let p_minus = weierstrass_p_numeric(u - h, g2, g3);
+  (p_plus - p_minus) / (2.0 * h)
+}
+
 /// Compute WeierstrassP numerically using cubic roots + Jacobi elliptic functions
 pub fn weierstrass_p_numeric(u: f64, g2: f64, g3: f64) -> f64 {
   // Solve depressed cubic: t³ - (g2/4)t - (g3/4) = 0
@@ -1719,9 +1769,41 @@ pub fn weierstrass_p_numeric(u: f64, g2: f64, g3: f64) -> f64 {
     }
     e3 + denom / (sn * sn)
   } else {
-    // One real root or degenerate — use Laurent series
-    weierstrass_p_laurent(u, g2, g3)
+    // One real root or degenerate — use duplication formula with Laurent series
+    // The Laurent series converges only for small |u|, so we halve u
+    // repeatedly until it's small enough, then apply the duplication formula.
+    weierstrass_p_duplication(u, g2, g3)
   }
+}
+
+/// Compute ℘(u) using repeated argument halving + duplication formula.
+/// The duplication formula is: ℘(2z) = -2℘(z) + (6℘(z)² - g₂/2)² / (4(4℘(z)³ - g₂℘(z) - g₃))
+fn weierstrass_p_duplication(u: f64, g2: f64, g3: f64) -> f64 {
+  // Halve u until it's small enough for the Laurent series to converge well
+  let threshold = 0.3;
+  let mut halvings = 0u32;
+  let mut z = u;
+  while z.abs() > threshold && halvings < 60 {
+    z /= 2.0;
+    halvings += 1;
+  }
+
+  // Compute ℘(z) using Laurent series (converges well for small z)
+  let mut wp = weierstrass_p_laurent(z, g2, g3);
+
+  // Apply duplication formula to double back: ℘(2z) from ℘(z)
+  for _ in 0..halvings {
+    let wp2 = wp * wp;
+    let wp3 = wp2 * wp;
+    let denom = 4.0 * wp3 - g2 * wp - g3; // = ℘'(z)²
+    if denom.abs() < 1e-300 {
+      return f64::INFINITY;
+    }
+    let num = 6.0 * wp2 - g2 / 2.0; // = ℘''(z)
+    wp = -2.0 * wp + num * num / (4.0 * denom);
+  }
+
+  wp
 }
 
 /// Laurent series fallback: ℘(u) = 1/u² + Σ cₖ u^{2k}

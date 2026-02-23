@@ -423,6 +423,9 @@ pub fn dispatch_math_functions(
     "WeierstrassP" if args.len() == 2 => {
       return Some(crate::functions::math_ast::weierstrass_p_ast(args));
     }
+    "WeierstrassPPrime" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::weierstrass_p_prime_ast(args));
+    }
     "JacobiAmplitude" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_amplitude_ast(args));
     }
