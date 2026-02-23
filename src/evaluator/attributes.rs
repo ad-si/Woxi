@@ -336,6 +336,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Label"
     | "Continue"
     | "Goto"
+    | "Format"
     | "FormatType"
     | "Orderless"
     | "ScientificForm"
