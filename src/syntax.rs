@@ -4774,3 +4774,437 @@ fn to_subscript_digits(mut n: u64) -> String {
   digits.reverse();
   digits.into_iter().collect()
 }
+
+// ─── 2D OutputForm rendering ───────────────────────────────────────────
+
+/// A rectangular block of text used for 2D layout.
+#[derive(Debug, Clone)]
+struct TextBox {
+  lines: Vec<String>,
+  baseline: usize, // 0-indexed row that is the "main" line
+}
+
+impl TextBox {
+  /// Create a single-line box.
+  fn atom(s: &str) -> Self {
+    TextBox {
+      lines: vec![s.to_string()],
+      baseline: 0,
+    }
+  }
+
+  /// Width of the widest line.
+  fn width(&self) -> usize {
+    self.lines.iter().map(|l| l.len()).max().unwrap_or(0)
+  }
+
+  /// Height (number of lines).
+  fn height(&self) -> usize {
+    self.lines.len()
+  }
+
+  /// Pad all lines to the same width with trailing spaces.
+  fn normalize(&mut self) {
+    let w = self.width();
+    for line in &mut self.lines {
+      if line.len() < w {
+        line.push_str(&" ".repeat(w - line.len()));
+      }
+    }
+  }
+
+  /// Horizontal concatenation of multiple boxes, aligned on baselines.
+  fn hconcat(parts: &[TextBox]) -> TextBox {
+    if parts.is_empty() {
+      return TextBox::atom("");
+    }
+    if parts.len() == 1 {
+      return parts[0].clone();
+    }
+
+    // Find max baseline and max height-above-baseline
+    let max_above: usize = parts.iter().map(|b| b.baseline).max().unwrap_or(0);
+    let max_below: usize = parts
+      .iter()
+      .map(|b| b.height().saturating_sub(b.baseline + 1))
+      .max()
+      .unwrap_or(0);
+    let total_height = max_above + 1 + max_below;
+
+    let mut result_lines: Vec<String> = vec![String::new(); total_height];
+
+    for part in parts {
+      let mut p = part.clone();
+      p.normalize();
+      let w = p.width();
+      let offset = max_above - p.baseline; // lines of padding above this part
+
+      for row in 0..total_height {
+        if row >= offset && row < offset + p.height() {
+          result_lines[row].push_str(&p.lines[row - offset]);
+        } else {
+          result_lines[row].push_str(&" ".repeat(w));
+        }
+      }
+    }
+
+    let baseline = max_above;
+    TextBox {
+      lines: result_lines,
+      baseline,
+    }
+  }
+
+  /// Place exponent as superscript to the right and above the base.
+  fn superscript(base: &TextBox, exp: &TextBox) -> TextBox {
+    let mut base = base.clone();
+    let mut exp = exp.clone();
+    base.normalize();
+    exp.normalize();
+
+    let bw = base.width();
+    let ew = exp.width();
+
+    // The exponent sits above the top of the base, shifted right by base width.
+    // Total lines = exp.height() + base.height()
+    // Baseline = exp.height() + base.baseline
+
+    let total = exp.height() + base.height();
+    let mut lines = Vec::with_capacity(total);
+
+    // Exponent lines (shifted right by base width)
+    for i in 0..exp.height() {
+      lines.push(format!("{}{}", " ".repeat(bw), &exp.lines[i]));
+    }
+    // Base lines (padded right by exponent width)
+    for i in 0..base.height() {
+      lines.push(format!("{}{}", &base.lines[i], " ".repeat(ew)));
+    }
+
+    TextBox {
+      baseline: exp.height() + base.baseline,
+      lines,
+    }
+  }
+
+  /// Render a fraction:  numerator / bar / denominator
+  fn fraction(num: &TextBox, denom: &TextBox) -> TextBox {
+    let mut num = num.clone();
+    let mut denom = denom.clone();
+    num.normalize();
+    denom.normalize();
+
+    let bar_width = num.width().max(denom.width());
+
+    // Center numerator and denominator
+    let num_pad = (bar_width.saturating_sub(num.width())) / 2;
+    let denom_pad = (bar_width.saturating_sub(denom.width())) / 2;
+
+    let mut lines = Vec::new();
+
+    // Numerator lines (centered)
+    for l in &num.lines {
+      lines.push(format!("{}{}", " ".repeat(num_pad), l));
+    }
+    // Bar
+    lines.push("-".repeat(bar_width));
+    // Denominator lines (centered)
+    for l in &denom.lines {
+      lines.push(format!("{}{}", " ".repeat(denom_pad), l));
+    }
+
+    // Baseline is the bar line
+    let baseline = num.height();
+    TextBox { lines, baseline }
+  }
+
+  /// Convert to final string (trim trailing whitespace per line).
+  fn to_string(&self) -> String {
+    self
+      .lines
+      .iter()
+      .map(|l| l.trim_end().to_string())
+      .collect::<Vec<_>>()
+      .join("\n")
+  }
+}
+
+/// Convert an expression to a 2D TextBox for OutputForm rendering.
+fn expr_to_textbox(expr: &Expr) -> TextBox {
+  match expr {
+    Expr::Integer(n) => TextBox::atom(&n.to_string()),
+    Expr::BigInteger(n) => TextBox::atom(&n.to_string()),
+    Expr::Real(f) => TextBox::atom(&format_real(*f)),
+    Expr::String(s) => TextBox::atom(s),
+    Expr::Identifier(s) | Expr::Constant(s) => TextBox::atom(s),
+    Expr::Raw(s) => TextBox::atom(s),
+
+    // Power[base, exp]
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let base = expr_to_textbox_base(left);
+      let exp = expr_to_textbox(right);
+      TextBox::superscript(&base, &exp)
+    }
+
+    // FunctionCall Power
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      // Check for fraction: Power[denom, -1] inside Times will be handled by Times
+      // Here handle standalone Power
+      let base = expr_to_textbox_base(&args[0]);
+      let exp = expr_to_textbox(&args[1]);
+      TextBox::superscript(&base, &exp)
+    }
+
+    // Plus[args...]
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      let mut parts: Vec<TextBox> = Vec::new();
+      parts.push(expr_to_textbox(&args[0]));
+      for arg in args.iter().skip(1) {
+        // Check for negative terms
+        let (sign, term) = extract_sign_for_plus(arg);
+        parts.push(TextBox::atom(sign));
+        parts.push(expr_to_textbox(&term));
+      }
+      TextBox::hconcat(&parts)
+    }
+
+    // BinaryOp Plus
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let l = expr_to_textbox(left);
+      let (sign, term) = extract_sign_for_plus(right);
+      let r = expr_to_textbox(&term);
+      TextBox::hconcat(&[l, TextBox::atom(sign), r])
+    }
+
+    // Times[args...] - handle fractions and products
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      render_times_textbox(args)
+    }
+
+    // BinaryOp Times
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => render_times_textbox(&[*left.clone(), *right.clone()]),
+
+    // BinaryOp Divide
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let num = expr_to_textbox(left);
+      let denom = expr_to_textbox(right);
+      TextBox::fraction(&num, &denom)
+    }
+
+    // Rational[num, denom]
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let num = expr_to_textbox(&args[0]);
+      let denom = expr_to_textbox(&args[1]);
+      TextBox::fraction(&num, &denom)
+    }
+
+    // UnaryOp Minus
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let inner = expr_to_textbox(operand);
+      TextBox::hconcat(&[TextBox::atom("-"), inner])
+    }
+
+    // List
+    Expr::List(items) => {
+      let mut parts: Vec<TextBox> = Vec::new();
+      parts.push(TextBox::atom("{"));
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          parts.push(TextBox::atom(", "));
+        }
+        parts.push(expr_to_textbox(item));
+      }
+      parts.push(TextBox::atom("}"));
+      TextBox::hconcat(&parts)
+    }
+
+    // For everything else, fall back to 1D rendering
+    _ => TextBox::atom(&expr_to_output(expr)),
+  }
+}
+
+/// Render a base expression for Power, adding parens if needed for precedence.
+fn expr_to_textbox_base(expr: &Expr) -> TextBox {
+  let needs_parens = matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      ..
+    }
+  ) || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus");
+
+  if needs_parens {
+    let inner = expr_to_textbox(expr);
+    TextBox::hconcat(&[TextBox::atom("("), inner, TextBox::atom(")")])
+  } else {
+    expr_to_textbox(expr)
+  }
+}
+
+/// Extract sign and unsigned term for Plus rendering.
+fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
+  match expr {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (" - ", *operand.clone()),
+    Expr::Integer(n) if *n < 0 => (" - ", Expr::Integer(-n)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => (" - ", *right.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(n) if *n < 0) => {
+      if let Expr::Integer(n) = left.as_ref() {
+        (
+          " - ",
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-n)),
+            right: right.clone(),
+          },
+        )
+      } else {
+        (" + ", expr.clone())
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && !args.is_empty()
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      if let Expr::Integer(n) = &args[0] {
+        if *n == -1 {
+          let new_args = args[1..].to_vec();
+          if new_args.len() == 1 {
+            (" - ", new_args[0].clone())
+          } else {
+            (
+              " - ",
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: new_args,
+              },
+            )
+          }
+        } else {
+          let mut new_args = vec![Expr::Integer(-n)];
+          new_args.extend_from_slice(&args[1..]);
+          (
+            " - ",
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: new_args,
+            },
+          )
+        }
+      } else {
+        (" + ", expr.clone())
+      }
+    }
+    _ => (" + ", expr.clone()),
+  }
+}
+
+/// Render Times arguments as 2D, handling fractions (Power[x, -1]).
+fn render_times_textbox(args: &[Expr]) -> TextBox {
+  // Separate numerator and denominator factors
+  let mut num_factors: Vec<&Expr> = Vec::new();
+  let mut denom_factors: Vec<&Expr> = Vec::new();
+
+  for arg in args {
+    match arg {
+      Expr::FunctionCall { name, args: pargs }
+        if name == "Power"
+          && pargs.len() == 2
+          && matches!(&pargs[1], Expr::Integer(-1)) =>
+      {
+        denom_factors.push(&pargs[0]);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        left,
+      } if matches!(right.as_ref(), Expr::Integer(-1)) => {
+        denom_factors.push(left);
+      }
+      _ => {
+        num_factors.push(arg);
+      }
+    }
+  }
+
+  if denom_factors.is_empty() {
+    // No fractions - just render as product
+    let mut parts: Vec<TextBox> = Vec::new();
+    for (i, f) in num_factors.iter().enumerate() {
+      if i > 0 {
+        parts.push(TextBox::atom(" "));
+      }
+      parts.push(expr_to_textbox(f));
+    }
+    TextBox::hconcat(&parts)
+  } else {
+    // Has fractions - render as num/denom
+    let num_box = if num_factors.is_empty() {
+      TextBox::atom("1")
+    } else if num_factors.len() == 1 {
+      expr_to_textbox(num_factors[0])
+    } else {
+      let mut parts: Vec<TextBox> = Vec::new();
+      for (i, f) in num_factors.iter().enumerate() {
+        if i > 0 {
+          parts.push(TextBox::atom(" "));
+        }
+        parts.push(expr_to_textbox(f));
+      }
+      TextBox::hconcat(&parts)
+    };
+    let denom_box = if denom_factors.len() == 1 {
+      expr_to_textbox(denom_factors[0])
+    } else {
+      let mut parts: Vec<TextBox> = Vec::new();
+      for (i, f) in denom_factors.iter().enumerate() {
+        if i > 0 {
+          parts.push(TextBox::atom(" "));
+        }
+        parts.push(expr_to_textbox(f));
+      }
+      TextBox::hconcat(&parts)
+    };
+    TextBox::fraction(&num_box, &denom_box)
+  }
+}
+
+/// Render an expression in 2D OutputForm.
+pub fn expr_to_output_form_2d(expr: &Expr) -> String {
+  let tb = expr_to_textbox(expr);
+  tb.to_string()
+}

@@ -299,9 +299,9 @@ function runWoxi(expr: string): string {
       timeout: 10_000,
       stdio: ["pipe", "pipe", "ignore"], // suppress stderr (error messages like Part::partw)
     }).trim();
-    // Take only the last line — earlier lines may be Print/error side-effects
-    const lines = output.split("\n");
-    return lines[lines.length - 1];
+    // Return the full trimmed output.
+    // Multi-line results (e.g. Definition) must be preserved intact.
+    return output;
   } catch {
     return "<WOXI_ERROR>";
   }

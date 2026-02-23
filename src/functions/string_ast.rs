@@ -930,6 +930,10 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "CForm" => {
         return Ok(Expr::String(expr_to_c(&args[0])));
       }
+      "OutputForm" => {
+        let s = crate::syntax::expr_to_output_form_2d(&args[0]);
+        return Ok(Expr::String(s));
+      }
       _ => {}
     }
   }
