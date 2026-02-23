@@ -3154,6 +3154,35 @@ mod precedence_form {
   }
 }
 
+mod skeleton {
+  use super::*;
+
+  #[test]
+  fn displays_as_angle_brackets() {
+    assert_eq!(interpret("Skeleton[5]").unwrap(), "<<5>>");
+  }
+
+  #[test]
+  fn displays_with_one() {
+    assert_eq!(interpret("Skeleton[1]").unwrap(), "<<1>>");
+  }
+
+  #[test]
+  fn displays_with_ten() {
+    assert_eq!(interpret("Skeleton[10]").unwrap(), "<<10>>");
+  }
+
+  #[test]
+  fn no_args_returns_unevaluated() {
+    assert_eq!(interpret("Skeleton[]").unwrap(), "Skeleton[]");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(interpret("Attributes[Skeleton]").unwrap(), "{Protected}");
+  }
+}
+
 mod plus_rendering {
   use super::*;
 

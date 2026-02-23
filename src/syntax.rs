@@ -2746,6 +2746,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Special case: Skeleton[n] displays as <<n>>
+      if name == "Skeleton" && args.len() == 1 {
+        return format!("<<{}>>", expr_to_string(&args[0]));
+      }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {
         return format!("{}..", expr_to_string(&args[0]));
@@ -3667,6 +3671,10 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // CForm[expr] displays C language format
       if name == "CForm" && args.len() == 1 {
         return crate::functions::string_ast::expr_to_c(&args[0]);
+      }
+      // Special case: Skeleton[n] displays as <<n>>
+      if name == "Skeleton" && args.len() == 1 {
+        return format!("<<{}>>", expr_to_output(&args[0]));
       }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {

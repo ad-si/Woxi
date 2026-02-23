@@ -4996,7 +4996,7 @@ Sinh,Returns the hyperbolic sine,✅,pure,1,278
 SinhIntegral,,,,3,1309
 SinIntegral,,,,2,1148
 SixJSymbol,,,,2,1217
-Skeleton,,,,1,4479
+Skeleton,Represents omitted elements in output display as <<n>>,✅,none,1,4479
 SkeletonTransform,,,,8,3522
 SkellamDistribution,,,,8,3862
 Skewness,Computes the skewness of a list,✅,pure,6,1402
