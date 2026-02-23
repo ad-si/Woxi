@@ -172,7 +172,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "TagSet" | "UpSet" => vec!["HoldFirst", "Protected", "SequenceHold"],
 
     // HoldRest + Protected
-    "If" | "PatternTest" => vec!["HoldRest", "Protected"],
+    "If" | "PatternTest" | "Save" => vec!["HoldRest", "Protected"],
     "Rule" => vec!["Protected", "SequenceHold"],
     "RuleDelayed" => vec!["HoldRest", "Protected", "SequenceHold"],
 

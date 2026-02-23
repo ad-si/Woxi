@@ -63,6 +63,14 @@ pub fn evaluate_expr_early_dispatch(
       let result = evaluate_function_call_ast(name, args)?;
       return Ok(Some(expr_to_string(&result)));
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    "Save" if args.len() == 2 => {
+      // HoldRest: evaluate first arg (filename), hold second (symbols)
+      let filename_expr = evaluate_expr_to_expr(&args[0])?;
+      let result =
+        evaluate_function_call_ast(name, &[filename_expr, args[1].clone()])?;
+      return Ok(Some(expr_to_string(&result)));
+    }
     "CompoundExpression" => {
       if args.is_empty() {
         return Ok(Some("Null".to_string()));
@@ -120,6 +128,15 @@ pub fn evaluate_expr_to_expr_early_dispatch(
   match name {
     "Protect" | "Unprotect" | "Condition" | "MessageName" => {
       return Ok(Some(evaluate_function_call_ast(name, args)?));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    "Save" if args.len() == 2 => {
+      // HoldRest: evaluate first arg (filename), hold second (symbols)
+      let filename_expr = evaluate_expr_to_expr(&args[0])?;
+      return Ok(Some(evaluate_function_call_ast(
+        name,
+        &[filename_expr, args[1].clone()],
+      )?));
     }
     "CompoundExpression" => {
       if args.is_empty() {
