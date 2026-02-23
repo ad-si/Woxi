@@ -626,7 +626,7 @@ ButtonFunction,,,,3,1866
 ButtonMinHeight,,,,3,4052
 ButtonNotebook,,,,3,2116
 ButtonSource,,,,3,3636
-Byte,,,,1,2438
+Byte,Symbol for byte type in BinaryRead/BinaryWrite,✅,pure,1,2438
 ByteArray,,,,10.1,2591
 ByteArrayFormat,,,,12,5587
 ByteArrayFormatQ,,,,12.2,5390
@@ -1797,7 +1797,7 @@ ExoplanetData,,,,10,4660
 Exp,Returns the exponential function e^x,✅,pure,1,52
 Expand,Expands products and positive integer powers of sums,✅,pure,1,154
 ExpandAll,Expands all products and powers in an expression,✅,pure,1,700
-ExpandDenominator,,,,1,2435
+ExpandDenominator,Expands the denominator of a rational expression,✅,pure,1,2435
 ExpandFileName,,,,7,2807
 ExpandNumerator,,,,1,2605
 Expectation,,,,8,954
@@ -2815,7 +2815,7 @@ InputOutputResponseData,,,,14,
 InputPacket,,,,3,
 InputPorts,,,,12.2,4747
 InputStream,,,,2,3344
-InputString,,,,1,2051
+InputString,Symbol specifying input string type for Input,✅,pure,1,2051
 InputStringPacket,,,,3,
 InscribedBall,,,,13.3,
 Insert,Inserts an element at a specified position in a list,✅,pure,1,575
@@ -2910,7 +2910,7 @@ InverseMellinTransform,,,,11,3972
 InversePermutation,,,,8,1650
 InverseRadon,,,,8,3636
 InverseRadonTransform,,,,11.2,5390
-InverseSeries,,,,1,2065
+InverseSeries,Symbol for computing inverse of a power series,✅,pure,1,2065
 InverseShortTimeFourier,,,,12,
 InverseSpectrogram,,,,12,3862
 InverseSurvivalFunction,,,,8,2350
@@ -4431,7 +4431,7 @@ QuantityVariableCanonicalUnit,,,,10,5184
 QuantityVariableDimensions,,,,10,4947
 QuantityVariableIdentifier,,,,10,5390
 QuantityVariablePhysicalQuantity,,,,10,5013
-Quartics,,,,1,2057
+Quartics,Option for Solve controlling whether quartic formulas are used,✅,pure,1,2057
 QuartileDeviation,,,,6,3803
 Quartiles,Returns the quartiles of a list,✅,pure,6,1495
 QuartileSkewness,,,,6,4262

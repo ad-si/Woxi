@@ -1888,6 +1888,55 @@ mod factor_terms {
   }
 }
 
+mod expand_denominator {
+  use super::*;
+
+  #[test]
+  fn basic_square() {
+    assert_eq!(
+      interpret("ExpandDenominator[(1 + x)^2/(1 + y)^2]").unwrap(),
+      "(1 + x)^2/(1 + 2*y + y^2)"
+    );
+  }
+
+  #[test]
+  fn cubic_denominator() {
+    assert_eq!(
+      interpret("ExpandDenominator[(a + b)/(c + d)^3]").unwrap(),
+      "(a + b)/(c^3 + 3*c^2*d + 3*c*d^2 + d^3)"
+    );
+  }
+
+  #[test]
+  fn no_denominator() {
+    assert_eq!(interpret("ExpandDenominator[x + 1]").unwrap(), "1 + x");
+  }
+
+  #[test]
+  fn simple_fraction() {
+    assert_eq!(
+      interpret("ExpandDenominator[x/(y+z)]").unwrap(),
+      "x/(y + z)"
+    );
+  }
+
+  #[test]
+  fn sum_of_fractions() {
+    assert_eq!(
+      interpret("ExpandDenominator[a/(1+x)^2 + b/(1+y)^2]").unwrap(),
+      "a/(1 + 2*x + x^2) + b/(1 + 2*y + y^2)"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[ExpandDenominator]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
 mod resultant {
   use super::*;
 

@@ -83,6 +83,11 @@ pub fn dispatch_polynomial_functions(
     "ExpandAll" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::expand_all_ast(args));
     }
+    "ExpandDenominator" if args.len() == 1 => {
+      return Some(crate::functions::polynomial_ast::expand_denominator_ast(
+        args,
+      ));
+    }
     "Cancel" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::cancel_ast(args));
     }
