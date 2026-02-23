@@ -1173,3 +1173,100 @@ mod partitions_p {
     assert_eq!(interpret("PartitionsP[1.5]").unwrap(), "PartitionsP[1.5]");
   }
 }
+
+mod partitions_q {
+  use super::*;
+
+  #[test]
+  fn base_cases() {
+    assert_eq!(interpret("PartitionsQ[0]").unwrap(), "1");
+    assert_eq!(interpret("PartitionsQ[1]").unwrap(), "1");
+    assert_eq!(interpret("PartitionsQ[2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn small_values() {
+    assert_eq!(interpret("PartitionsQ[3]").unwrap(), "2");
+    assert_eq!(interpret("PartitionsQ[4]").unwrap(), "2");
+    assert_eq!(interpret("PartitionsQ[5]").unwrap(), "3");
+  }
+
+  #[test]
+  fn medium_values() {
+    assert_eq!(interpret("PartitionsQ[10]").unwrap(), "10");
+    assert_eq!(interpret("PartitionsQ[20]").unwrap(), "64");
+    assert_eq!(interpret("PartitionsQ[50]").unwrap(), "3658");
+  }
+
+  #[test]
+  fn large_value() {
+    assert_eq!(interpret("PartitionsQ[100]").unwrap(), "444793");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("PartitionsQ[-1]").unwrap(), "0");
+    assert_eq!(interpret("PartitionsQ[-10]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("PartitionsQ[x]").unwrap(), "PartitionsQ[x]");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[PartitionsQ]").unwrap(),
+      "{Listable, Protected}"
+    );
+  }
+}
+
+mod arithmetic_geometric_mean {
+  use super::*;
+
+  #[test]
+  fn numeric() {
+    let result = interpret("ArithmeticGeometricMean[1., 2.]")
+      .unwrap()
+      .parse::<f64>()
+      .unwrap();
+    assert!((result - 1.4567910310469068).abs() < 1e-10);
+  }
+
+  #[test]
+  fn zero_arg() {
+    assert_eq!(interpret("ArithmeticGeometricMean[0, 5]").unwrap(), "0");
+    assert_eq!(interpret("ArithmeticGeometricMean[5, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn equal_args() {
+    assert_eq!(interpret("ArithmeticGeometricMean[3, 3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[a, b]").unwrap(),
+      "ArithmeticGeometricMean[a, b]"
+    );
+  }
+
+  #[test]
+  fn exact_stays_unevaluated() {
+    assert_eq!(
+      interpret("ArithmeticGeometricMean[1, 2]").unwrap(),
+      "ArithmeticGeometricMean[1, 2]"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[ArithmeticGeometricMean]").unwrap(),
+      "{Listable, NumericFunction, Orderless, Protected, ReadProtected}"
+    );
+  }
+}

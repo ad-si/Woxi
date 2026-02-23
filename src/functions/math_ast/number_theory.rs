@@ -2602,3 +2602,96 @@ pub fn partitions_p(n: usize) -> BigInt {
   }
   dp[n].clone()
 }
+
+/// PartitionsQ[n] - Number of partitions of n into distinct parts
+pub fn partitions_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PartitionsQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  match expr_to_i128(&args[0]) {
+    Some(n) => {
+      if n < 0 {
+        return Ok(Expr::Integer(0));
+      }
+      let n = n as usize;
+      let result = partitions_q(n);
+      Ok(bigint_to_expr(result))
+    }
+    None => Ok(Expr::FunctionCall {
+      name: "PartitionsQ".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// ArithmeticGeometricMean[a, b] - Computes the arithmetic-geometric mean
+pub fn arithmetic_geometric_mean_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ArithmeticGeometricMean expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // AGM[0, b] = 0 and AGM[a, 0] = 0
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(x) if *x == 0.0)
+  };
+  if is_zero(&args[0]) || is_zero(&args[1]) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // AGM[a, a] = a (for integer/real values)
+  if let (Some(a), Some(b)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
+    && a == b
+  {
+    return Ok(args[0].clone());
+  }
+
+  // Numeric evaluation when both are numeric and at least one is Real
+  if let (Some(a), Some(b)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1])) {
+    let is_numeric_eval =
+      matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+    if is_numeric_eval {
+      return Ok(Expr::Real(agm(a, b)));
+    }
+  }
+
+  // Stay unevaluated for symbolic/exact inputs
+  Ok(Expr::FunctionCall {
+    name: "ArithmeticGeometricMean".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute AGM iteratively
+fn agm(mut a: f64, mut b: f64) -> f64 {
+  for _ in 0..100 {
+    let a_new = (a + b) / 2.0;
+    let b_new = (a * b).sqrt();
+    if (a_new - b_new).abs() < 1e-15 * a_new.abs().max(1.0) {
+      return a_new;
+    }
+    a = a_new;
+    b = b_new;
+  }
+  (a + b) / 2.0
+}
+
+/// Compute q(n) - number of partitions into distinct parts using DP
+/// Uses generating function: prod_{k=1}^{n} (1 + x^k)
+fn partitions_q(n: usize) -> BigInt {
+  let mut dp = vec![BigInt::from(0); n + 1];
+  dp[0] = BigInt::from(1);
+  for k in 1..=n {
+    // Process in reverse to ensure each part k is used at most once
+    for j in (k..=n).rev() {
+      dp[j] = &dp[j] + &dp[j - k];
+    }
+  }
+  dp[n].clone()
+}
