@@ -539,6 +539,317 @@ pub fn dispatch_complex_and_special(
       }));
     }
 
+    // FullDefinition[symbol] - show definition of a symbol and all its dependencies
+    "FullDefinition" if args.len() == 1 => {
+      if let Expr::Identifier(sym) = &args[0] {
+        // Helper: collect all Identifier names referenced in an expression
+        fn collect_identifiers(expr: &Expr, out: &mut Vec<String>) {
+          match expr {
+            Expr::Identifier(name) => out.push(name.clone()),
+            Expr::FunctionCall { name, args } => {
+              out.push(name.clone());
+              for a in args {
+                collect_identifiers(a, out);
+              }
+            }
+            Expr::List(elems) | Expr::CompoundExpr(elems) => {
+              for e in elems {
+                collect_identifiers(e, out);
+              }
+            }
+            Expr::BinaryOp { left, right, .. } => {
+              collect_identifiers(left, out);
+              collect_identifiers(right, out);
+            }
+            Expr::UnaryOp { operand, .. } => collect_identifiers(operand, out),
+            Expr::Comparison { operands, .. } => {
+              for o in operands {
+                collect_identifiers(o, out);
+              }
+            }
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } => {
+              collect_identifiers(pattern, out);
+              collect_identifiers(replacement, out);
+            }
+            Expr::ReplaceAll { expr, rules }
+            | Expr::ReplaceRepeated { expr, rules } => {
+              collect_identifiers(expr, out);
+              collect_identifiers(rules, out);
+            }
+            Expr::Map { func, list }
+            | Expr::Apply { func, list }
+            | Expr::MapApply { func, list } => {
+              collect_identifiers(func, out);
+              collect_identifiers(list, out);
+            }
+            Expr::PrefixApply { func, arg } => {
+              collect_identifiers(func, out);
+              collect_identifiers(arg, out);
+            }
+            Expr::Postfix { expr, func } => {
+              collect_identifiers(expr, out);
+              collect_identifiers(func, out);
+            }
+            Expr::Part { expr, index } => {
+              collect_identifiers(expr, out);
+              collect_identifiers(index, out);
+            }
+            Expr::CurriedCall { func, args } => {
+              collect_identifiers(func, out);
+              for a in args {
+                collect_identifiers(a, out);
+              }
+            }
+            Expr::Function { body } | Expr::NamedFunction { body, .. } => {
+              collect_identifiers(body, out);
+            }
+            Expr::Association(pairs) => {
+              for (k, v) in pairs {
+                collect_identifiers(k, out);
+                collect_identifiers(v, out);
+              }
+            }
+            Expr::PatternOptional { default, .. } => {
+              collect_identifiers(default, out)
+            }
+            Expr::PatternTest { test, .. } => collect_identifiers(test, out),
+            _ => {}
+          }
+        }
+
+        // Helper: get definition lines for a symbol (same logic as Definition)
+        fn get_definition_lines(sym: &str) -> Vec<String> {
+          let mut lines = Vec::new();
+
+          let user_attrs =
+            crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+          if let Some(attrs) = &user_attrs
+            && !attrs.is_empty()
+          {
+            lines.push(format!(
+              "Attributes[{}] = {{{}}}",
+              sym,
+              attrs.join(", ")
+            ));
+          }
+
+          let own_value = crate::ENV.with(|e| {
+            let env = e.borrow();
+            env.get(sym).cloned()
+          });
+          if let Some(stored) = own_value {
+            let val_str = match stored {
+              crate::StoredValue::ExprVal(e) => expr_to_string(&e),
+              crate::StoredValue::Raw(val) => val,
+              crate::StoredValue::Association(items) => {
+                let items_expr: Vec<(
+                  crate::syntax::Expr,
+                  crate::syntax::Expr,
+                )> = items
+                  .iter()
+                  .map(|(k, v)| {
+                    let key_expr = crate::syntax::string_to_expr(k)
+                      .unwrap_or(crate::syntax::Expr::Identifier(k.clone()));
+                    let val_expr = crate::syntax::string_to_expr(v)
+                      .unwrap_or(crate::syntax::Expr::Raw(v.clone()));
+                    (key_expr, val_expr)
+                  })
+                  .collect();
+                expr_to_string(&crate::syntax::Expr::Association(items_expr))
+              }
+            };
+            lines.push(format!("{} = {}", sym, val_str));
+          }
+
+          let down_values = crate::FUNC_DEFS.with(|m| {
+            let defs = m.borrow();
+            defs.get(sym).cloned()
+          });
+          if let Some(overloads) = down_values {
+            for (params, conds, _defaults, heads, body) in &overloads {
+              let has_sameq_conds = conds.iter().any(|c| {
+                if let Some(Expr::Comparison { operators, .. }) = c {
+                  operators
+                    .iter()
+                    .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+                } else {
+                  false
+                }
+              });
+
+              if has_sameq_conds {
+                let args_strs: Vec<String> = params
+                  .iter()
+                  .zip(conds.iter())
+                  .map(|(p, c)| {
+                    if let Some(Expr::Comparison {
+                      operands,
+                      operators,
+                      ..
+                    }) = c
+                      && operators.iter().any(|op| {
+                        matches!(op, crate::syntax::ComparisonOp::SameQ)
+                      })
+                      && operands.len() == 2
+                      && matches!(&operands[0], Expr::Identifier(n) if n == p)
+                    {
+                      return expr_to_string(&operands[1]);
+                    }
+                    format!("{}_", p)
+                  })
+                  .collect();
+                lines.push(format!(
+                  "{}[{}] = {}",
+                  sym,
+                  args_strs.join(", "),
+                  expr_to_string(body)
+                ));
+              } else {
+                let params_str: Vec<String> = params
+                  .iter()
+                  .enumerate()
+                  .map(|(i, p)| {
+                    if let Some(head) = heads.get(i).and_then(|h| h.as_ref()) {
+                      format!("{}_{}", p, head)
+                    } else {
+                      format!("{}_", p)
+                    }
+                  })
+                  .collect();
+                lines.push(format!(
+                  "{}[{}] := {}",
+                  sym,
+                  params_str.join(", "),
+                  expr_to_string(body)
+                ));
+              }
+            }
+          }
+
+          if lines.is_empty() {
+            let builtin_attrs =
+              crate::evaluator::attributes::get_builtin_attributes(sym);
+            if !builtin_attrs.is_empty() {
+              lines.push(format!(
+                "Attributes[{}] = {{{}}}",
+                sym,
+                builtin_attrs.join(", ")
+              ));
+            }
+          }
+
+          lines
+        }
+
+        // Helper: check if a symbol has user-defined values
+        fn has_user_definition(sym: &str) -> bool {
+          let has_own = crate::ENV.with(|e| e.borrow().contains_key(sym));
+          let has_down =
+            crate::FUNC_DEFS.with(|m| m.borrow().contains_key(sym));
+          let has_attrs =
+            crate::FUNC_ATTRS.with(|m| m.borrow().contains_key(sym));
+          has_own || has_down || has_attrs
+        }
+
+        // Helper: collect body expressions from a symbol's definitions
+        fn get_body_exprs(sym: &str) -> Vec<Expr> {
+          let mut bodies = Vec::new();
+
+          // OwnValues body
+          let own_value = crate::ENV.with(|e| {
+            let env = e.borrow();
+            env.get(sym).cloned()
+          });
+          if let Some(crate::StoredValue::ExprVal(e)) = own_value {
+            bodies.push(e);
+          }
+
+          // DownValues bodies
+          let down_values = crate::FUNC_DEFS.with(|m| {
+            let defs = m.borrow();
+            defs.get(sym).cloned()
+          });
+          if let Some(overloads) = down_values {
+            for (_params, _conds, _defaults, _heads, body) in overloads {
+              bodies.push(body);
+            }
+          }
+
+          bodies
+        }
+
+        // Get main definition
+        let main_lines = get_definition_lines(sym);
+        if main_lines.is_empty() {
+          return Some(Ok(Expr::Identifier("Null".to_string())));
+        }
+
+        let mut all_sections: Vec<String> = vec![main_lines.join("\n \n")];
+        let mut seen: std::collections::HashSet<String> =
+          std::collections::HashSet::new();
+        seen.insert(sym.clone());
+
+        // BFS for dependent symbols
+        let mut queue: std::collections::VecDeque<String> =
+          std::collections::VecDeque::new();
+
+        // Collect symbols from main symbol's bodies
+        let bodies = get_body_exprs(sym);
+        let mut referenced = Vec::new();
+        for body in &bodies {
+          collect_identifiers(body, &mut referenced);
+        }
+        // Deduplicate while preserving first-occurrence order
+        let mut seen_in_queue: std::collections::HashSet<String> =
+          std::collections::HashSet::new();
+        for name in &referenced {
+          if !seen.contains(name) && seen_in_queue.insert(name.clone()) {
+            queue.push_back(name.clone());
+          }
+        }
+
+        while let Some(dep_sym) = queue.pop_front() {
+          if !seen.insert(dep_sym.clone()) {
+            continue;
+          }
+          if !has_user_definition(&dep_sym) {
+            continue;
+          }
+
+          let dep_lines = get_definition_lines(&dep_sym);
+          if !dep_lines.is_empty() {
+            all_sections.push(dep_lines.join("\n \n"));
+          }
+
+          // Collect further dependencies
+          let dep_bodies = get_body_exprs(&dep_sym);
+          let mut dep_referenced = Vec::new();
+          for body in &dep_bodies {
+            collect_identifiers(body, &mut dep_referenced);
+          }
+          for name in &dep_referenced {
+            if !seen.contains(name) {
+              queue.push_back(name.clone());
+            }
+          }
+        }
+
+        return Some(Ok(Expr::Raw(all_sections.join("\n \n"))));
+      }
+
+      return Some(Ok(Expr::FunctionCall {
+        name: "FullDefinition".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+
     // Sow[expr] or Sow[expr, tag] - adds expr to the current Reap collection
     "Sow" if args.len() == 1 || args.len() == 2 => {
       let tag = if args.len() == 2 {
