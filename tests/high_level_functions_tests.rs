@@ -898,4 +898,58 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod format_tests {
+    use super::*;
+
+    #[test]
+    fn format_number() {
+      assert_eq!(interpret("Format[3.14159]").unwrap(), "3.14159");
+    }
+
+    #[test]
+    fn format_integer() {
+      assert_eq!(interpret("Format[42]").unwrap(), "42");
+    }
+
+    #[test]
+    fn format_rational() {
+      assert_eq!(interpret("Format[1/3]").unwrap(), "1/3");
+    }
+
+    #[test]
+    fn format_symbol() {
+      assert_eq!(interpret("Format[Pi]").unwrap(), "Pi");
+    }
+
+    #[test]
+    fn format_expression() {
+      assert_eq!(interpret("Format[x + y]").unwrap(), "x + y");
+    }
+
+    #[test]
+    fn format_string() {
+      assert_eq!(interpret(r#"Format["hello"]"#).unwrap(), "hello");
+    }
+
+    #[test]
+    fn format_list() {
+      assert_eq!(interpret("Format[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+    }
+
+    #[test]
+    fn format_with_output_form() {
+      assert_eq!(interpret("Format[x^2 + 1, OutputForm]").unwrap(), "1 + x^2");
+    }
+
+    #[test]
+    fn format_with_input_form() {
+      assert_eq!(interpret("Format[x + y, InputForm]").unwrap(), "x + y");
+    }
+
+    #[test]
+    fn format_attributes() {
+      assert_eq!(interpret("Attributes[Format]").unwrap(), "{Protected}");
+    }
+  }
 }

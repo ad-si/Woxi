@@ -506,7 +506,7 @@ pub fn dispatch_complex_and_special(
     }
 
     // Form wrappers -- transparent, just return the inner expression
-    "MathMLForm" | "StandardForm" | "InputForm" | "OutputForm"
+    "MathMLForm" | "StandardForm" | "InputForm" | "OutputForm" | "Format"
       if !args.is_empty() =>
     {
       return Some(Ok(args[0].clone()));

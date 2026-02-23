@@ -2089,7 +2089,7 @@ ForeignCallback,,,,13.3,
 ForeignFunction,,,,13.3,
 ForeignFunctionLoad,,,,13.3,
 ForeignPointerLookup,,,,13.3,
-Format,,,,1,1864
+Format,Display wrapper that formats an expression in a given form,✅,pure,1,1864
 FormatType,Option for output format type,✅,pure,1,1227
 FormBox,,,,3,991
 FormBoxOptions,,,,4,
