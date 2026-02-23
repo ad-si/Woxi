@@ -6,7 +6,13 @@
  * Usage: npx tsx tests/wolframscript/verify_unit_tests.ts
  */
 
-import { readFileSync, writeFileSync, unlinkSync } from "fs";
+import {
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+  readdirSync,
+  statSync,
+} from "fs";
 import { execSync } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -29,6 +35,10 @@ function unescapeRust(s: string): string {
     .replace(/\\"/g, '"')
     .replace(/\\n/g, "\n")
     .replace(/\\\\/g, "\\");
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -103,9 +113,13 @@ function extractTestCases(filePath: string): TestCase[] {
     // Look backwards from `interpret(` to determine the form:
     // 1. `assert_eq!(interpret(` — possibly with whitespace/newlines between assert_eq!( and interpret(
     // 2. `let result = interpret(`
-    const preceding = content.substring(Math.max(0, idx - 80), idx);
+    const preceding = content.substring(Math.max(0, idx - 240), idx);
     const isAssertEqForm = /assert_eq!\(\s*$/.test(preceding);
-    const isLetForm = /let\s+result\s*=\s*$/.test(preceding);
+    const letMatch = preceding.match(
+      /let\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[^=]+)?=\s*$/
+    );
+    const letVar = letMatch?.[1] ?? null;
+    const isLetForm = letVar !== null;
 
     if (!isAssertEqForm && !isLetForm) {
       searchPos = idx + 1;
@@ -167,8 +181,11 @@ function extractTestCases(filePath: string): TestCase[] {
 
       // Skip ).unwrap(); and find assert_eq!(result,
       const restStr = content.substring(afterExpr);
-      const assertPattern =
-        /\s*\)\s*\.unwrap\(\);\s*assert_eq!\(\s*result\s*,\s*/;
+      const assertPattern = new RegExp(
+        "\\s*\\)\\s*\\.unwrap\\(\\)\\s*;\\s*assert_eq!\\(\\s*" +
+          escapeRegex(letVar!) +
+          "\\s*,\\s*"
+      );
       const assertMatch = restStr.match(assertPattern);
       if (!assertMatch) {
         searchPos = idx + 1;
@@ -298,10 +315,10 @@ function runWoxi(expr: string): string {
       encoding: "utf-8",
       timeout: 10_000,
       stdio: ["pipe", "pipe", "ignore"], // suppress stderr (error messages like Part::partw)
-    }).trim();
-    // Return the full trimmed output.
-    // Multi-line results (e.g. Definition) must be preserved intact.
-    return output;
+    });
+    // Preserve leading whitespace (important for OutputForm 2D rendering),
+    // only strip trailing line breaks from CLI output.
+    return output.replace(/[\r\n]+$/, "");
   } catch {
     return "<WOXI_ERROR>";
   }
@@ -354,12 +371,36 @@ function buildWolframScript(
   return lines.join(";\n");
 }
 
+function listRustFiles(dir: string): string[] {
+  const files: string[] = [];
+
+  for (const entry of readdirSync(dir)) {
+    const fullPath = join(dir, entry);
+    const st = statSync(fullPath);
+    if (st.isDirectory()) {
+      // Skip auxiliary/non-unit trees.
+      if (entry.startsWith("_")) continue;
+      if (entry === "cli") continue;
+      if (entry === "notebooks") continue;
+      if (entry === "woxi") continue;
+      files.push(...listRustFiles(fullPath));
+      continue;
+    }
+    if (entry.endsWith(".rs")) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
 function main() {
-  const testFiles = [
-    join(ROOT, "tests/interpreter_tests.rs"),
-    join(ROOT, "tests/list_tests.rs"),
-    join(ROOT, "tests/high_level_functions_tests.rs"),
-  ];
+  const testFiles = listRustFiles(join(ROOT, "tests"))
+    .filter((f) => {
+      const content = readFileSync(f, "utf-8");
+      return content.includes("#[test]") && content.includes("interpret(");
+    })
+    .sort();
 
   let allCases: TestCase[] = [];
   for (const f of testFiles) {
