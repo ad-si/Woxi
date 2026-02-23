@@ -14,7 +14,7 @@ AbsoluteCurrentValue,,,,6,2299
 AbsoluteDashing,,,,2,1455
 AbsoluteFileName,,,,7,3031
 AbsoluteOptions,,,,4,888
-AbsolutePointSize,,,,2,392
+AbsolutePointSize,Graphics primitive for setting point size in absolute units,✅,none,2,392
 AbsoluteThickness,Sets absolute line thickness in graphics,✅,pure,2,187
 AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2,562
 AbsoluteTiming,Returns the time taken to evaluate an expression,✅,contextual,5,257
@@ -376,8 +376,8 @@ AutoSubmitting,,,,10.2,5184
 Axes,Option specifying whether axes should be drawn in a plot,✅,pure,1,116
 AxesEdge,,,,2,1459
 AxesLabel,Option specifying labels for the axes of a plot,✅,pure,1,71
-AxesOrigin,,,,2,166
-AxesStyle,,,,2,124
+AxesOrigin,Option specifying the origin point for plot axes,✅,none,2,166
+AxesStyle,Option specifying the style of plot axes,✅,none,2,124
 AxiomaticTheory,,,,12,3242
 Axis,,,,3,291
 AxisLabel,,,,12.3,
@@ -386,7 +386,7 @@ AxisStyle,,,,12.3,
 B,,,,,
 BabyMonsterGroupB,,,,8,4947
 Back,,,,6,2074
-Background,,,,2,108
+Background,Option specifying the background color or style,✅,none,2,108
 Backslash,,,,3,3291
 Backward,,,,6,3242
 Ball,,,,10,989
@@ -894,7 +894,7 @@ ColorData,,,,6,224
 ColorDataFunction,,,,6,4225
 ColorDetect,,,,12,3755
 ColorDistance,,,,10,2071
-ColorFunction,,,,2,152
+ColorFunction,Option specifying the color function for visualization,✅,none,2,152
 ColorFunctionBinning,,,,12.2,5184
 ColorFunctionScaling,,,,4,559
 Colorize,,,,8,1035
@@ -1728,7 +1728,7 @@ EntityValue,,,,10,342
 Entropy,,,,7,2124
 EntropyFilter,,,,7,3537
 Environment,Symbol representing the system environment,✅,pure,1,2720
-Epilog,,,,2,243
+Epilog,Option specifying graphics primitives drawn after the main plot,✅,none,2,243
 EpilogFunction,,,,10.1,5587
 Equal,Checks if two values are equal,✅,pure,1,11
 EqualTilde,,,,3,5079
@@ -2132,7 +2132,7 @@ FractionalGaussianNoiseProcess,,,,10,4204
 FractionalPart,Returns the fractional part of a number,✅,pure,3,820
 FractionBox,,,,3,1143
 FractionBoxOptions,,,,4,4138
-Frame,,,,2,97
+Frame,Option specifying whether a frame is drawn around a plot,✅,none,2,97
 FrameBox,,,,3,2374
 FrameBoxOptions,,,,4,4660
 Framed,,,,6,390
@@ -2140,8 +2140,8 @@ FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2,221
 FrameListVideo,,,,12.3,
 FrameMargins,,,,6,755
 FrameRate,,,,11.2,4527
-FrameStyle,,,,2,173
-FrameTicks,,,,2,337
+FrameStyle,Option specifying the style of the frame around a plot,✅,none,2,173
+FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2,337
 FrameTicksStyle,,,,6,540
 FRatioDistribution,,,,6,1788
 FrechetDistribution,,,,8,2671
@@ -2452,7 +2452,7 @@ Grid,Displays data in a grid layout,✅,pure,6,167
 GridBox,,,,3,1245
 GridDefaultElement,,,,3,5587
 GridGraph,,,,8,1005
-GridLines,,,,2,211
+GridLines,Option specifying grid lines in a plot,✅,none,2,211
 GridLinesStyle,,,,6,247
 GridVideo,,,,13,
 GroebnerBasis,,,,2,1150
@@ -5793,7 +5793,7 @@ UndoOptions,,,,10,5013
 UndoTrackedVariables,,,,10,1559
 Unequal,Checks if two values are not equal,✅,pure,1,200
 UnequalTo,,,,10.4,3678
-Unevaluated,,,,2,407
+Unevaluated,Wrapper that prevents evaluation of its argument,✅,pure,2,407
 UniformDistribution,Represents a continuous uniform probability distribution,✅,pure,6,757
 UniformGraphDistribution,,,,8,2921
 UniformPolyhedron,,,,12,2837
@@ -6136,7 +6136,7 @@ With,Substitutes local constants into an expression,✅,pure,2,99
 WithCleanup,,,,12.2,5013
 WithLock,,,,12.3,
 WolframLanguageData,,,,10.2,830
-Word,,,,2,79
+Word,Symbol representing a word in string patterns,✅,none,2,79
 WordBoundary,,,,5.1,1682
 WordCharacter,,,,5.1,1534
 WordCloud,Creates a word cloud from a list of words,✅,pure,10.1,917

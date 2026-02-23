@@ -3221,6 +3221,91 @@ mod total_width {
   }
 }
 
+mod unevaluated {
+  use super::*;
+
+  #[test]
+  fn holds_argument() {
+    assert_eq!(
+      interpret("Unevaluated[1 + 2]").unwrap(),
+      "Unevaluated[1 + 2]"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[Unevaluated]").unwrap(),
+      "{HoldAllComplete, Protected}"
+    );
+  }
+}
+
+mod v2_option_symbols {
+  use super::*;
+
+  #[test]
+  fn word_attributes() {
+    assert_eq!(interpret("Attributes[Word]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn frame_attributes() {
+    assert_eq!(interpret("Attributes[Frame]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn background_attributes() {
+    assert_eq!(interpret("Attributes[Background]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn axes_style_attributes() {
+    assert_eq!(interpret("Attributes[AxesStyle]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn color_function_attributes() {
+    assert_eq!(
+      interpret("Attributes[ColorFunction]").unwrap(),
+      "{Protected}"
+    );
+  }
+
+  #[test]
+  fn axes_origin_attributes() {
+    assert_eq!(interpret("Attributes[AxesOrigin]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn frame_style_attributes() {
+    assert_eq!(interpret("Attributes[FrameStyle]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn grid_lines_attributes() {
+    assert_eq!(interpret("Attributes[GridLines]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn epilog_attributes() {
+    assert_eq!(interpret("Attributes[Epilog]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn frame_ticks_attributes() {
+    assert_eq!(interpret("Attributes[FrameTicks]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn absolute_point_size_attributes() {
+    assert_eq!(
+      interpret("Attributes[AbsolutePointSize]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
 mod plus_rendering {
   use super::*;
 
