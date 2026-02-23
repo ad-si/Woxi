@@ -1673,7 +1673,7 @@ EllipticExpPrime,,,,2,4660
 EllipticF,Incomplete elliptic integral of the first kind F(phi m),✅,pure,1,1111
 EllipticFilterModel,,,,9,4387
 EllipticK,Complete elliptic integral of the first kind,✅,pure,1,441
-EllipticLog,,,,1,2519
+EllipticLog,Symbol for elliptic logarithm function,✅,pure,1,2519
 EllipticNomeQ,,,,3,1415
 EllipticPi,Elliptic integral of the third kind,✅,pure,1,1362
 EllipticTheta,Jacobi theta function,✅,pure,1,551
@@ -1727,7 +1727,7 @@ EntityUnregister,,,,11.3,5486
 EntityValue,,,,10,342
 Entropy,,,,7,2124
 EntropyFilter,,,,7,3537
-Environment,,,,1,2720
+Environment,Symbol representing the system environment,✅,pure,1,2720
 Epilog,,,,2,243
 EpilogFunction,,,,10.1,5587
 Equal,Checks if two values are equal,✅,pure,1,11
@@ -1799,7 +1799,7 @@ Expand,Expands products and positive integer powers of sums,✅,pure,1,154
 ExpandAll,Expands all products and powers in an expression,✅,pure,1,700
 ExpandDenominator,Expands the denominator of a rational expression,✅,pure,1,2435
 ExpandFileName,,,,7,2807
-ExpandNumerator,,,,1,2605
+ExpandNumerator,Expands the numerator of a rational expression,✅,pure,1,2605
 Expectation,,,,8,954
 ExpGammaDistribution,,,,8,3506
 ExpIntegralE,Generalized exponential integral E_n(z),✅,pure,1,1397
@@ -3885,7 +3885,7 @@ Now,Returns the current date and time,✅,contextual,10,1071
 NoWhitespace,,,,10.3,5587
 NProbability,,,,8,1534
 NProduct,,,,1,2229
-NRoots,,,,1,2462
+NRoots,Symbol for numerical root counting,✅,pure,1,2462
 NSolve,,,,2,252
 NSolveValues,,,,12.3,
 NSum,Numerical approximation of a sum using polynomial extrapolation,✅,pure,1,784
@@ -5433,7 +5433,7 @@ TagBoxOptions,,,,6,4052
 TaggingRules,,,,4,1459
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1,812
 TagSetDelayed,Defines a delayed upvalue assignment associated with a tag symbol,✅,stateful,1,431
-TagUnset,,,,1,2635
+TagUnset,Symbol for removing tagged definitions,✅,pure,1,2635
 Take,Returns the first n elements of a list,✅,pure,1,231
 TakeDrop,,,,10.2,1507
 TakeLargest,Takes the n largest elements from a list,✅,pure,10.1,1926
@@ -5835,7 +5835,7 @@ Until,,,,13.1,
 UpArrow,,,,3,3070
 UpArrowBar,,,,3,5390
 UpArrowDownArrow,,,,3,5390
-Update,,,,1,2688
+Update,Symbol for updating objects,✅,pure,1,2688
 UpdateInterval,,,,6,1138
 UpdatePacletSites,,,,12.1,
 UpdateSearchIndex,,,,10.2,5079
