@@ -3076,3 +3076,46 @@ mod upset_delayed {
     );
   }
 }
+
+mod name_q {
+  use super::*;
+
+  #[test]
+  fn builtin_symbol() {
+    assert_eq!(interpret("NameQ[\"Plus\"]").unwrap(), "True");
+  }
+
+  #[test]
+  fn undefined_symbol() {
+    assert_eq!(interpret("NameQ[\"asdfNotDefined\"]").unwrap(), "False");
+  }
+
+  #[test]
+  fn user_defined() {
+    assert_eq!(interpret("x = 5; NameQ[\"x\"]").unwrap(), "True");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(interpret("Attributes[NameQ]").unwrap(), "{Protected}");
+  }
+}
+
+mod share {
+  use super::*;
+
+  #[test]
+  fn returns_zero() {
+    assert_eq!(interpret("Share[x]").unwrap(), "0");
+  }
+
+  #[test]
+  fn no_args_returns_zero() {
+    assert_eq!(interpret("Share[]").unwrap(), "0");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(interpret("Attributes[Share]").unwrap(), "{Protected}");
+  }
+}

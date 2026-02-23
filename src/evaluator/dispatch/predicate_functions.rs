@@ -512,6 +512,29 @@ pub fn dispatch_predicate_functions(
     "Construct" if !args.is_empty() => {
       return Some(crate::functions::predicate_ast::construct_ast(args));
     }
+    // NameQ["name"] - check if a symbol with that name exists
+    "NameQ" if args.len() == 1 => {
+      if let Expr::String(name) = &args[0] {
+        // Check if the symbol has been defined (OwnValues, DownValues, or is built-in)
+        let has_own = crate::ENV.with(|e| e.borrow().contains_key(name));
+        let has_down = crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name));
+        let has_builtin_attrs =
+          !crate::evaluator::attributes::get_builtin_attributes(name)
+            .is_empty();
+        if has_own || has_down || has_builtin_attrs {
+          return Some(Ok(Expr::Identifier("True".to_string())));
+        }
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "NameQ".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    // Share[expr] - memory optimization, returns 0 (no-op in Woxi)
+    "Share" => {
+      return Some(Ok(Expr::Integer(0)));
+    }
     _ => {}
   }
   None
