@@ -1615,7 +1615,7 @@ mod distribute {
   fn times_over_plus() {
     assert_eq!(
       interpret("Distribute[(a + b)(c + d)]").unwrap(),
-      "a*c + a*d + b*c + b*d"
+      "a*c + b*c + a*d + b*d"
     );
   }
 
@@ -1643,7 +1643,7 @@ mod distribute {
   fn with_head_restriction() {
     assert_eq!(
       interpret("Distribute[(a + b)(c + d), Plus, Times]").unwrap(),
-      "a*c + a*d + b*c + b*d"
+      "a*c + b*c + a*d + b*d"
     );
   }
 
