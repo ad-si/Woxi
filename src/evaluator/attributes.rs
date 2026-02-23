@@ -199,16 +199,17 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["Constant", "Protected", "ReadProtected"]
     }
     "I" => vec!["Locked", "Protected", "ReadProtected"],
-    "EllipticLog" | "Infinity" | "InputString" | "InverseSeries"
-    | "PlotRange" | "MatrixForm" | "Show" | "Plot3D" | "ListPlot3D"
-    | "Input" | "SeriesData" => {
+    "Locked" => vec!["Locked", "Protected"],
+    "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
+    | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
+    | "ListPlot3D" | "Input" | "SeriesData" => {
       vec!["Protected", "ReadProtected"]
     }
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],
     "Superscript" => vec!["NHoldRest", "ReadProtected"],
-    "NumberForm" => vec!["NHoldRest", "Protected"],
+    "EngineeringForm" | "NumberForm" => vec!["NHoldRest", "Protected"],
 
     // NHoldAll + Protected
     "SlotSequence" => vec!["NHoldAll", "Protected"],
@@ -341,8 +342,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "NonConstants"
     | "NRoots"
     | "Number"
+    | "NumberSeparator"
     | "Underflow"
     | "Update"
+    | "VerifySolutions"
     | "Short"
     | "Flat"
     | "OneIdentity"
@@ -411,9 +414,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Mod"
     | "Environment"
     | "ExpandDenominator"
+    | "FortranForm"
     | "ExpandNumerator"
     | "Infix"
     | "NumberPoint"
+    | "Postfix"
     | "Quartics"
     | "Quotient"
     | "QuotientRemainder"
