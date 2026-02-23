@@ -3134,6 +3134,26 @@ mod delimiters {
   }
 }
 
+mod precedence_form {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_self() {
+    assert_eq!(
+      interpret("PrecedenceForm[x + y, 10]").unwrap(),
+      "PrecedenceForm[x + y, 10]"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[PrecedenceForm]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
 mod plus_rendering {
   use super::*;
 
