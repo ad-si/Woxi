@@ -1683,4 +1683,85 @@ mod high_level_functions_tests {
       assert!(r.contains("a = 5"), "should contain a: {}", r);
     }
   }
+
+  mod matrix_power_tests {
+    use super::*;
+
+    #[test]
+    fn power_zero_is_identity() {
+      assert_eq!(
+        interpret("MatrixPower[{{1, 2}, {3, 4}}, 0]").unwrap(),
+        "{{1, 0}, {0, 1}}"
+      );
+    }
+
+    #[test]
+    fn power_one() {
+      assert_eq!(
+        interpret("MatrixPower[{{1, 2}, {3, 4}}, 1]").unwrap(),
+        "{{1, 2}, {3, 4}}"
+      );
+    }
+
+    #[test]
+    fn power_two() {
+      assert_eq!(
+        interpret("MatrixPower[{{1, 2}, {3, 4}}, 2]").unwrap(),
+        "{{7, 10}, {15, 22}}"
+      );
+    }
+
+    #[test]
+    fn power_three() {
+      assert_eq!(
+        interpret("MatrixPower[{{1, 2}, {3, 4}}, 3]").unwrap(),
+        "{{37, 54}, {81, 118}}"
+      );
+    }
+
+    #[test]
+    fn power_negative_one() {
+      assert_eq!(
+        interpret("MatrixPower[{{1, 2}, {3, 4}}, -1]").unwrap(),
+        "{{-2, 1}, {3/2, -1/2}}"
+      );
+    }
+
+    #[test]
+    fn power_negative_two() {
+      assert_eq!(
+        interpret("MatrixPower[{{1, 2}, {3, 4}}, -2]").unwrap(),
+        "{{11/2, -5/2}, {-15/4, 7/4}}"
+      );
+    }
+
+    #[test]
+    fn diagonal_matrix() {
+      assert_eq!(
+        interpret("MatrixPower[{{2, 0}, {0, 3}}, 5]").unwrap(),
+        "{{32, 0}, {0, 243}}"
+      );
+    }
+
+    #[test]
+    fn identity_matrix_power() {
+      assert_eq!(
+        interpret("MatrixPower[{{1, 0}, {0, 1}}, 100]").unwrap(),
+        "{{1, 0}, {0, 1}}"
+      );
+    }
+
+    #[test]
+    fn symbolic_returns_unevaluated() {
+      assert_eq!(interpret("MatrixPower[m, 3]").unwrap(), "MatrixPower[m, 3]");
+    }
+
+    #[test]
+    fn attributes() {
+      assert_eq!(
+        interpret("Attributes[MatrixPower]").unwrap(),
+        "{NonThreadable, Protected}"
+      );
+    }
+  }
 }

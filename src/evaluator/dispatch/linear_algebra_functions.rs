@@ -106,6 +106,91 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "MatrixPower" if args.len() == 2 => {
+      if let Some(n) = expr_to_i128(&args[1]) {
+        let mat = &args[0];
+        // Check matrix is a list of lists and is square
+        if let Expr::List(rows) = mat {
+          let size = rows.len();
+          if size == 0 {
+            return Some(Ok(mat.clone()));
+          }
+          // Check all rows have same length = size
+          let is_square = rows.iter().all(|r| {
+            if let Expr::List(cols) = r {
+              cols.len() == size
+            } else {
+              false
+            }
+          });
+          if !is_square {
+            return Some(Ok(Expr::FunctionCall {
+              name: "MatrixPower".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+
+          if n == 0 {
+            // Return identity matrix
+            return Some(
+              crate::functions::linear_algebra_ast::identity_matrix_ast(&[
+                Expr::Integer(size as i128),
+              ]),
+            );
+          }
+
+          let (base, exp) = if n < 0 {
+            // Compute inverse first
+            match crate::functions::linear_algebra_ast::inverse_ast(&[
+              mat.clone()
+            ]) {
+              Ok(inv) => (inv, (-n) as u64),
+              Err(e) => return Some(Err(e)),
+            }
+          } else {
+            (mat.clone(), n as u64)
+          };
+
+          // Exponentiation by squaring
+          let mut result = None;
+          let mut power = base;
+          let mut exp = exp;
+          while exp > 0 {
+            if exp & 1 == 1 {
+              result = Some(match result {
+                None => power.clone(),
+                Some(r) => {
+                  match crate::functions::linear_algebra_ast::dot_ast(&[
+                    r,
+                    power.clone(),
+                  ]) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                  }
+                }
+              });
+            }
+            exp >>= 1;
+            if exp > 0 {
+              power = match crate::functions::linear_algebra_ast::dot_ast(&[
+                power.clone(),
+                power,
+              ]) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+              };
+            }
+          }
+
+          return Some(Ok(result.unwrap_or(mat.clone())));
+        }
+      }
+      // Symbolic: return unevaluated
+      return Some(Ok(Expr::FunctionCall {
+        name: "MatrixPower".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "CellularAutomaton" if args.len() == 3 => {
       return Some(
         crate::functions::cellular_automaton_ast::cellular_automaton_ast(args),
