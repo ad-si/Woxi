@@ -2718,3 +2718,106 @@ mod weierstrass_p_prime {
     );
   }
 }
+
+mod inverse_jacobi {
+  use super::*;
+
+  fn assert_f64_approx(code: &str, expected: f64, tol: f64) {
+    let result = interpret(code).unwrap().parse::<f64>().unwrap();
+    assert!(
+      (result - expected).abs() < tol,
+      "{} = {} (expected {})",
+      code,
+      result,
+      expected
+    );
+  }
+
+  #[test]
+  fn inverse_jacobi_sn_numeric() {
+    assert_f64_approx("InverseJacobiSN[0.5, 0.3]", 0.5306368995398673, 1e-8);
+  }
+
+  #[test]
+  fn inverse_jacobi_cn_numeric() {
+    assert_f64_approx("InverseJacobiCN[0.5, 0.3]", 1.0991352230920428, 1e-8);
+  }
+
+  #[test]
+  fn inverse_jacobi_sn_zero() {
+    assert_eq!(interpret("InverseJacobiSN[0, 1/2]").unwrap(), "0");
+    assert_eq!(interpret("InverseJacobiSN[0, 0.5]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn inverse_jacobi_cn_one() {
+    assert_eq!(interpret("InverseJacobiCN[1, 0.5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn inverse_jacobi_sn_symbolic() {
+    assert_eq!(
+      interpret("InverseJacobiSN[x, m]").unwrap(),
+      "InverseJacobiSN[x, m]"
+    );
+  }
+
+  #[test]
+  fn inverse_jacobi_cn_symbolic() {
+    assert_eq!(
+      interpret("InverseJacobiCN[x, m]").unwrap(),
+      "InverseJacobiCN[x, m]"
+    );
+  }
+
+  #[test]
+  fn inverse_jacobi_sn_roundtrip() {
+    assert_f64_approx("JacobiSN[InverseJacobiSN[0.5, 0.3], 0.3]", 0.5, 1e-8);
+  }
+
+  #[test]
+  fn inverse_jacobi_cn_roundtrip() {
+    assert_f64_approx("JacobiCN[InverseJacobiCN[0.5, 0.3], 0.3]", 0.5, 1e-8);
+  }
+
+  #[test]
+  fn inverse_jacobi_sn_negative() {
+    assert_f64_approx("InverseJacobiSN[-0.5, 0.3]", -0.5306368995398673, 1e-8);
+  }
+
+  #[test]
+  fn inverse_jacobi_cn_m_zero() {
+    // When m=0, InverseJacobiCN[x, 0] = ArcCos[x]
+    assert_f64_approx(
+      "InverseJacobiCN[0.5, 0]",
+      std::f64::consts::FRAC_PI_3,
+      1e-8,
+    );
+  }
+
+  #[test]
+  fn inverse_jacobi_sn_m_zero() {
+    // When m=0, InverseJacobiSN[x, 0] = ArcSin[x]
+    assert_f64_approx(
+      "InverseJacobiSN[0.5, 0]",
+      std::f64::consts::FRAC_PI_6,
+      1e-8,
+    );
+  }
+
+  #[test]
+  fn inverse_jacobi_sn_attributes() {
+    assert_eq!(
+      interpret("Attributes[InverseJacobiSN]").unwrap(),
+      "{Listable, NumericFunction, Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn inverse_jacobi_cn_attributes() {
+    assert_eq!(
+      interpret("Attributes[InverseJacobiCN]").unwrap(),
+      "{Listable, NumericFunction, Protected, ReadProtected}"
+    );
+  }
+}

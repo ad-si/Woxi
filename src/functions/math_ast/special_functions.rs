@@ -3602,3 +3602,68 @@ pub fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
 
   sum
 }
+
+/// InverseJacobiSN[x, m] - Inverse Jacobi elliptic function sn
+/// Returns u such that JacobiSN[u, m] == x
+/// Computed as EllipticF[ArcSin[x], m]
+pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseJacobiSN expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let x = &args[0];
+  let m = &args[1];
+
+  // InverseJacobiSN[0, m] = 0 (or 0. if m is Real)
+  if is_expr_zero(x) {
+    if matches!(m, Expr::Real(_)) || matches!(x, Expr::Real(_)) {
+      return Ok(Expr::Real(0.0));
+    }
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation
+  if let (Some(x_f), Some(m_f)) = (expr_to_f64(x), expr_to_f64(m)) {
+    let phi = x_f.asin();
+    return Ok(Expr::Real(elliptic_f(phi, m_f)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "InverseJacobiSN".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// InverseJacobiCN[x, m] - Inverse Jacobi elliptic function cn
+/// Returns u such that JacobiCN[u, m] == x
+/// Computed as EllipticF[ArcCos[x], m]
+pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseJacobiCN expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let x = &args[0];
+  let m = &args[1];
+
+  // InverseJacobiCN[1, m] = 0
+  if is_expr_one(x) {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation
+  if let (Some(x_f), Some(m_f)) = (expr_to_f64(x), expr_to_f64(m)) {
+    let phi = x_f.acos();
+    return Ok(Expr::Real(elliptic_f(phi, m_f)));
+  }
+
+  // Unevaluated
+  Ok(Expr::FunctionCall {
+    name: "InverseJacobiCN".to_string(),
+    args: args.to_vec(),
+  })
+}

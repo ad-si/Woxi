@@ -2894,7 +2894,7 @@ InverseHankelTransform,,,,11.1,4527
 InverseHaversine,,,,7,3593
 InverseImagePyramid,,,,12,
 InverseJacobiCD,,,,1,4006
-InverseJacobiCN,,,,1,1865
+InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1,1865
 InverseJacobiCS,,,,1,4081
 InverseJacobiDC,,,,1,4204
 InverseJacobiDN,,,,1,4138
@@ -2904,7 +2904,7 @@ InverseJacobiND,,,,1,4173
 InverseJacobiNS,,,,1,4173
 InverseJacobiSC,,,,1,4104
 InverseJacobiSD,,,,1,4173
-InverseJacobiSN,,,,1,1905
+InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1,1905
 InverseLaplaceTransform,,,,4,583
 InverseMellinTransform,,,,11,3972
 InversePermutation,,,,8,1650
