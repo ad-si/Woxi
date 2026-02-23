@@ -203,6 +203,36 @@ mod plus_formatting {
     let result = interpret("FullForm[a b + c]").unwrap();
     assert_eq!(result, "Plus[Times[a, b], c]");
   }
+
+  #[test]
+  fn plus_term_ordering_reverse_lex() {
+    // Wolfram sorts polynomial terms by reverse-lex variable ordering
+    assert_eq!(interpret("x^2 + 2*b*x + b^2").unwrap(), "b^2 + 2*b*x + x^2");
+  }
+
+  #[test]
+  fn plus_term_ordering_ascending_degree() {
+    // For single-variable polynomials, ascending degree order
+    assert_eq!(interpret("3*x^2 + 6*x + 2").unwrap(), "2 + 6*x + 3*x^2");
+  }
+
+  #[test]
+  fn plus_term_ordering_multivar() {
+    // Multi-variable terms: reverse-lex order
+    assert_eq!(
+      interpret("a*c + b*c + a*d + b*d").unwrap(),
+      "a*c + b*c + a*d + b*d"
+    );
+  }
+
+  #[test]
+  fn plus_term_ordering_with_division() {
+    // Terms with 1/z should sort by the variable z
+    assert_eq!(
+      interpret("x/Sqrt[5] + y^2 + 1/z").unwrap(),
+      "x/Sqrt[5] + y^2 + 1/z"
+    );
+  }
 }
 
 mod subtraction_without_spaces {

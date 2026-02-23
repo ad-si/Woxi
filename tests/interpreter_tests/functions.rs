@@ -1893,7 +1893,7 @@ mod alternatives {
   fn replace_all_with_alternatives() {
     assert_eq!(
       interpret("a + b + c + d /. (a | b) -> t").unwrap(),
-      "2*t + c + d"
+      "c + d + 2*t"
     );
   }
 

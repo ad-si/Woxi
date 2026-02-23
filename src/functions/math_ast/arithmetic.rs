@@ -227,17 +227,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // For alphabetical comparison, strip the leading "-" from negated terms
     // so that -x sorts next to x rather than before everything.
     let mut sorted_symbolic = collected;
-    sorted_symbolic.sort_by(|a, b| {
-      let pa = term_priority(a);
-      let pb = term_priority(b);
-      if pa != pb {
-        pa.cmp(&pb)
-      } else {
-        let sa = term_sort_key(a);
-        let sb = term_sort_key(b);
-        sa.cmp(&sb)
-      }
-    });
+    sorted_symbolic.sort_by(compare_plus_terms);
     final_args.extend(sorted_symbolic);
 
     if final_args.is_empty() {
@@ -472,22 +462,168 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   result
 }
 
-/// Extract sort key for a Plus term.
-/// For Divide(n, x) where n is an integer, sort by the denominator (x)
-/// so that 1/z sorts near z-related terms rather than before all variables.
+/// Extract sort key for a Plus term (fallback for non-polynomial terms).
+/// Strip the numeric coefficient so that e.g. `3*Sin[x]` and `5*Cos[x]` sort by
+/// their base rather than by the coefficient digits.
 fn term_sort_key(e: &Expr) -> String {
-  // For integer/denominator divisions, sort by denominator
-  if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
-    left,
-    right,
-  } = e
-    && matches!(left.as_ref(), Expr::Integer(_))
-  {
-    return crate::syntax::expr_to_string(right);
-  }
-  let s = crate::syntax::expr_to_string(e);
+  let (_, base) = decompose_term(e);
+  let s = crate::syntax::expr_to_string(&base);
   s.strip_prefix('-').unwrap_or(&s).to_string()
+}
+
+/// Check if an expression is purely numeric (no symbolic variables).
+/// E.g. `5`, `Rational[1,2]`, `Power[5, Rational[-1, 2]]` are all numeric.
+fn is_numeric_factor(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::Real(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      args.iter().all(is_numeric_factor)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_numeric_factor(&args[0]) && is_numeric_factor(&args[1])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => is_numeric_factor(left) && is_numeric_factor(right),
+    _ => false,
+  }
+}
+
+/// Extract (variable_name, exponent) pairs from a polynomial-like expression base.
+/// Returns None if the expression is not a simple polynomial term.
+/// E.g. `x` → [(x, 1.0)], `x^2` → [(x, 2.0)], `a*b` → [(a, 1.0), (b, 1.0)]
+/// Numeric factors in Times (like `5^(-1/2)` in `x/Sqrt[5]`) are skipped.
+fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
+  match e {
+    Expr::Identifier(s) => Some(vec![(s.clone(), 1.0)]),
+    Expr::Constant(c) => Some(vec![(format!("{c:?}"), 1.0)]),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Identifier(s) = left.as_ref() {
+        let exp = expr_to_f64(right)?;
+        return Some(vec![(s.clone(), exp)]);
+      }
+      None
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::Identifier(s) = &args[0] {
+        let exp = expr_to_f64(&args[1])?;
+        return Some(vec![(s.clone(), exp)]);
+      }
+      None
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      // left / right = left * right^(-1)
+      let mut pairs = Vec::new();
+      if !is_numeric_factor(left) {
+        pairs.extend(extract_var_exp_pairs(left)?);
+      }
+      if !is_numeric_factor(right) {
+        let mut right_pairs = extract_var_exp_pairs(right)?;
+        for pair in &mut right_pairs {
+          pair.1 = -pair.1;
+        }
+        pairs.extend(right_pairs);
+      }
+      Some(pairs)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut pairs = Vec::new();
+      if !is_numeric_factor(left) {
+        pairs.extend(extract_var_exp_pairs(left)?);
+      }
+      if !is_numeric_factor(right) {
+        pairs.extend(extract_var_exp_pairs(right)?);
+      }
+      Some(pairs)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut pairs = Vec::new();
+      for arg in args {
+        if !is_numeric_factor(arg) {
+          pairs.extend(extract_var_exp_pairs(arg)?);
+        }
+      }
+      Some(pairs)
+    }
+    _ => None,
+  }
+}
+
+/// Convert an expression to an f64 if it represents a number.
+fn expr_to_f64(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some(*n as f64 / *d as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Compare two Plus terms using Wolfram-compatible canonical ordering.
+/// For polynomial-like terms, sorts by (variable, exponent) pairs in reverse-lex order:
+/// each term's pairs are sorted by variable name descending, then compared
+/// lexicographically (variable ascending, exponent ascending, shorter first).
+fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  let pa = term_priority(a);
+  let pb = term_priority(b);
+  if pa != pb {
+    return pa.cmp(&pb);
+  }
+
+  let (_, base_a) = decompose_term(a);
+  let (_, base_b) = decompose_term(b);
+
+  let pairs_a = extract_var_exp_pairs(&base_a);
+  let pairs_b = extract_var_exp_pairs(&base_b);
+
+  match (pairs_a, pairs_b) {
+    (Some(mut va), Some(mut vb)) => {
+      // Sort each term's pairs by variable name descending
+      va.sort_by(|x, y| y.0.cmp(&x.0));
+      vb.sort_by(|x, y| y.0.cmp(&x.0));
+      // Compare pair-by-pair: variable ascending, then exponent ascending
+      for (ap, bp) in va.iter().zip(vb.iter()) {
+        let cmp = ap.0.cmp(&bp.0);
+        if cmp != std::cmp::Ordering::Equal {
+          return cmp;
+        }
+        let cmp = ap.1.partial_cmp(&bp.1).unwrap_or(std::cmp::Ordering::Equal);
+        if cmp != std::cmp::Ordering::Equal {
+          return cmp;
+        }
+      }
+      // If all compared pairs equal, shorter comes first
+      va.len().cmp(&vb.len())
+    }
+    _ => {
+      // Fall back to string comparison for non-polynomial terms
+      let sa = term_sort_key(a);
+      let sb = term_sort_key(b);
+      sa.cmp(&sb)
+    }
+  }
 }
 
 /// Sort symbolic factors in Times using the same ordering as Wolfram:
