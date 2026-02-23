@@ -61,6 +61,9 @@ pub fn dispatch_polynomial_functions(
     "Resultant" if args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::resultant_ast(args));
     }
+    "Cyclotomic" if args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::cyclotomic_ast(args));
+    }
     "Reduce" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::polynomial_ast::reduce_ast(args));
     }

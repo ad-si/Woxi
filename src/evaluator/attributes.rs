@@ -144,8 +144,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "StringLength" | "Characters" | "ToUpperCase" | "ToLowerCase"
     | "Boole" | "Positive" | "Negative" | "NonPositive" | "NonNegative"
     | "EvenQ" | "OddQ" | "PrimeQ" | "IntegerQ" | "NumberQ" | "NumericQ"
-    | "AtomQ" | "Clip" | "PartitionsQ" | "Rescale" | "Resultant"
-    | "Unitize" | "UnitStep" | "N" => {
+    | "AtomQ" | "Clip" | "Cyclotomic" | "PartitionsQ" | "Rescale"
+    | "Resultant" | "Unitize" | "UnitStep" | "N" => {
       vec!["Listable", "Protected"]
     }
 
@@ -159,7 +159,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
-    | "Information" => {
+    | "Information" | "MemoryConstrained" => {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
@@ -340,6 +340,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Default"
     | "NonConstants"
     | "Number"
+    | "Underflow"
     | "Short"
     | "Flat"
     | "OneIdentity"
@@ -407,6 +408,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "LCM"
     | "Mod"
     | "ExpandDenominator"
+    | "Infix"
+    | "NumberPoint"
     | "Quartics"
     | "Quotient"
     | "QuotientRemainder"
