@@ -734,4 +734,168 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  mod save_tests {
+    use super::*;
+    use woxi::interpret_with_stdout;
+
+    #[test]
+    fn test_save_variable_to_stdout() {
+      let result =
+        interpret_with_stdout(r#"a = 5; Save["stdout", a]"#).unwrap();
+      assert_eq!(result.result, "Null");
+      assert!(result.stdout.contains("a = 5"));
+    }
+
+    #[test]
+    fn test_save_function_to_stdout() {
+      let result =
+        interpret_with_stdout(r#"f[x_] := x + 1; Save["stdout", f]"#).unwrap();
+      assert_eq!(result.result, "Null");
+      assert!(result.stdout.contains("f[x_] := x + 1"));
+    }
+
+    #[test]
+    fn test_save_multiple_definitions() {
+      let result = interpret_with_stdout(
+        r#"f[x_] := x + 1; f[x_, y_] := x + y; Save["stdout", f]"#,
+      )
+      .unwrap();
+      assert!(result.stdout.contains("f[x_] := x + 1"));
+      assert!(result.stdout.contains("f[x_, y_] := x + y"));
+    }
+
+    #[test]
+    fn test_save_multiple_symbols() {
+      let result = interpret_with_stdout(
+        r#"f[x_] := x + 1; a = 5; Save["stdout", {f, a}]"#,
+      )
+      .unwrap();
+      assert!(result.stdout.contains("f[x_] := x + 1"));
+      assert!(result.stdout.contains("a = 5"));
+    }
+
+    #[test]
+    fn test_save_with_attributes() {
+      let result = interpret_with_stdout(
+        r#"Attributes[h] = {Listable}; h[x_] := x^3; Save["stdout", h]"#,
+      )
+      .unwrap();
+      assert!(result.stdout.contains("Attributes[h] = {Listable}"));
+      assert!(result.stdout.contains("h[x_] := x^3"));
+    }
+
+    #[test]
+    fn test_save_with_options() {
+      let result = interpret_with_stdout(
+        r#"Options[h] = {Method -> "Default"}; h[x_] := x^2; Save["stdout", h]"#,
+      )
+      .unwrap();
+      assert!(result.stdout.contains("h[x_] := x^2"));
+      assert!(
+        result
+          .stdout
+          .contains(r#"Options[h] = {Method -> "Default"}"#)
+      );
+    }
+
+    #[test]
+    fn test_save_with_head_constraint() {
+      let result =
+        interpret_with_stdout(r#"g[x_Integer] := x^2; Save["stdout", g]"#)
+          .unwrap();
+      assert!(result.stdout.contains("g[x_Integer] := x^2"));
+    }
+
+    #[test]
+    fn test_save_with_default_value() {
+      let result =
+        interpret_with_stdout(r#"f[x_, y_:3] := x + y; Save["stdout", f]"#)
+          .unwrap();
+      assert!(result.stdout.contains("f[x_, y_:3] := x + y"));
+    }
+
+    #[test]
+    fn test_save_literal_dispatch() {
+      let result =
+        interpret_with_stdout(r#"f[1] = 42; Save["stdout", f]"#).unwrap();
+      assert!(result.stdout.contains("f[1] = 42"));
+    }
+
+    #[test]
+    fn test_save_undefined_symbol() {
+      let result =
+        interpret_with_stdout(r#"Save["stdout", undefined]"#).unwrap();
+      assert_eq!(result.result, "Null");
+    }
+
+    #[test]
+    fn test_save_string_symbol_name() {
+      let result =
+        interpret_with_stdout(r#"a = 5; Save["stdout", "a"]"#).unwrap();
+      assert!(result.stdout.contains("a = 5"));
+    }
+
+    #[test]
+    fn test_save_to_file() {
+      let result =
+        interpret(r#"a = 5; Save["/tmp/woxi_save_test.wl", a]"#).unwrap();
+      assert_eq!(result, "Null");
+      let content = std::fs::read_to_string("/tmp/woxi_save_test.wl").unwrap();
+      assert!(content.contains("a = 5"));
+      std::fs::remove_file("/tmp/woxi_save_test.wl").ok();
+    }
+
+    #[test]
+    fn test_save_roundtrip() {
+      let result = interpret(
+        r#"f[x_] := x + 1; Save["/tmp/woxi_save_rt.wl", f]; Clear[f]; Get["/tmp/woxi_save_rt.wl"]; f[3]"#,
+      )
+      .unwrap();
+      assert_eq!(result, "4");
+      std::fs::remove_file("/tmp/woxi_save_rt.wl").ok();
+    }
+
+    #[test]
+    fn test_save_multiple_to_file() {
+      let result = interpret(
+        r#"f[x_] := x^2; a = 10; Save["/tmp/woxi_save_multi.wl", {f, a}]; Clear[f]; Clear[a]; Get["/tmp/woxi_save_multi.wl"]; {f[3], a}"#,
+      )
+      .unwrap();
+      assert_eq!(result, "{9, 10}");
+      std::fs::remove_file("/tmp/woxi_save_multi.wl").ok();
+    }
+
+    #[test]
+    fn test_save_string_value() {
+      let result =
+        interpret_with_stdout(r#"a = "hello world"; Save["stdout", a]"#)
+          .unwrap();
+      assert!(result.stdout.contains(r#"a = "hello world""#));
+    }
+
+    #[test]
+    fn test_save_list_value() {
+      let result =
+        interpret_with_stdout(r#"b = {1, 2, 3}; Save["stdout", b]"#).unwrap();
+      assert!(result.stdout.contains("b = {1, 2, 3}"));
+    }
+
+    #[test]
+    fn test_save_returns_null() {
+      assert_eq!(
+        interpret(r#"a = 5; Save["/tmp/woxi_save_null.wl", a]"#).unwrap(),
+        "Null"
+      );
+      std::fs::remove_file("/tmp/woxi_save_null.wl").ok();
+    }
+
+    #[test]
+    fn test_save_attributes() {
+      assert_eq!(
+        interpret(r#"Attributes[Save]"#).unwrap(),
+        "{HoldRest, Protected}"
+      );
+    }
+  }
 }

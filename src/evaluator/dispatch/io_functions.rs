@@ -666,6 +666,191 @@ pub fn dispatch_io_functions(
         args: args.to_vec(),
       }));
     }
+    // Save["filename", symbol] or Save["filename", {sym1, sym2, ...}]
+    // Saves symbol definitions (OwnValues, DownValues, Attributes, Options) to a file
+    #[cfg(not(target_arch = "wasm32"))]
+    "Save" if args.len() == 2 => {
+      let filename = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Save".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+
+      // Collect symbol names from the second argument (held)
+      let symbols: Vec<String> = match &args[1] {
+        Expr::Identifier(s) => vec![s.clone()],
+        Expr::String(s) => vec![s.clone()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|item| match item {
+            Expr::Identifier(s) => Some(s.clone()),
+            Expr::String(s) => Some(s.clone()),
+            _ => None,
+          })
+          .collect(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Save".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+
+      // Collect all definition lines for all symbols
+      let mut all_lines: Vec<String> = Vec::new();
+
+      for sym in &symbols {
+        let mut sym_lines: Vec<String> = Vec::new();
+
+        // 1. Attributes (user-set only)
+        let user_attrs =
+          crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
+        if let Some(attrs) = user_attrs
+          && !attrs.is_empty()
+        {
+          sym_lines.push(format!(
+            "Attributes[{}] = {{{}}}",
+            sym,
+            attrs.join(", ")
+          ));
+        }
+
+        // 2. DownValues (function definitions)
+        let down_values = crate::FUNC_DEFS.with(|m| {
+          let defs = m.borrow();
+          defs.get(sym).cloned()
+        });
+        if let Some(overloads) = down_values {
+          for (params, conditions, defaults, heads, body) in &overloads {
+            let params_str = params
+              .iter()
+              .enumerate()
+              .map(|(i, p)| {
+                // Check if this is a literal-dispatch parameter (_dvN with SameQ condition)
+                if (p.starts_with("_dv") || p.starts_with("_lp"))
+                  && let Some(Some(cond)) = conditions.get(i)
+                  && let Expr::Comparison {
+                    operands,
+                    operators,
+                  } = cond
+                  && operators
+                    .iter()
+                    .any(|op| matches!(op, crate::syntax::ComparisonOp::SameQ))
+                  && operands.len() == 2
+                {
+                  // Literal value dispatch: use the value directly
+                  return crate::syntax::expr_to_string(&operands[1]);
+                }
+
+                let head = heads.get(i).and_then(|h| h.as_ref());
+                let default = defaults.get(i).and_then(|d| d.as_ref());
+                let condition = conditions.get(i).and_then(|c| c.as_ref());
+
+                let mut param_str = if let Some(h) = head {
+                  format!("{}_{}", p, h)
+                } else {
+                  format!("{}_", p)
+                };
+
+                if let Some(def) = default {
+                  param_str = format!(
+                    "{}:{}",
+                    param_str,
+                    crate::syntax::expr_to_string(def)
+                  );
+                }
+
+                if let Some(cond) = condition {
+                  param_str = format!(
+                    "{} /; {}",
+                    param_str,
+                    crate::syntax::expr_to_string(cond)
+                  );
+                }
+
+                param_str
+              })
+              .collect::<Vec<_>>()
+              .join(", ");
+
+            let body_str = crate::syntax::expr_to_string(body);
+
+            // Use = for literal-dispatch (all params are _dvN), := otherwise
+            let is_literal_dispatch = params
+              .iter()
+              .all(|p| p.starts_with("_dv") || p.starts_with("_lp"));
+            let assign_op = if is_literal_dispatch { "=" } else { ":=" };
+
+            sym_lines.push(format!(
+              "{}[{}] {} {}",
+              sym, params_str, assign_op, body_str
+            ));
+          }
+        }
+
+        // 3. OwnValues (variable assignments)
+        let own_value = crate::ENV.with(|e| {
+          let env = e.borrow();
+          env.get(sym).cloned()
+        });
+        if let Some(stored) = own_value {
+          let val_str = match stored {
+            crate::StoredValue::ExprVal(e) => crate::syntax::expr_to_string(&e),
+            crate::StoredValue::Raw(val) => val,
+            crate::StoredValue::Association(items) => {
+              let parts: Vec<String> = items
+                .iter()
+                .map(|(k, v)| format!("{} -> {}", k, v))
+                .collect();
+              format!("<|{}|>", parts.join(", "))
+            }
+          };
+          sym_lines.push(format!("{} = {}", sym, val_str));
+        }
+
+        // 4. Options
+        let options =
+          crate::FUNC_OPTIONS.with(|m| m.borrow().get(sym).cloned());
+        if let Some(opts) = options
+          && !opts.is_empty()
+        {
+          let opts_str = opts
+            .iter()
+            .map(crate::syntax::expr_to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+          sym_lines.push(format!("Options[{}] = {{{}}}", sym, opts_str));
+        }
+
+        all_lines.extend(sym_lines);
+      }
+
+      // Join definitions with "\n \n" separator and add trailing newline
+      let content = if all_lines.is_empty() {
+        "\n".to_string()
+      } else {
+        format!("{}\n", all_lines.join("\n \n"))
+      };
+
+      if filename == "stdout" {
+        print!("{}", content);
+        crate::capture_stdout(content.trim_end());
+      } else {
+        match std::fs::write(&filename, &content) {
+          Ok(_) => {}
+          Err(_e) => {
+            eprintln!("Save::noopen: Cannot open {}.", filename);
+            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          }
+        }
+      }
+
+      return Some(Ok(Expr::Identifier("Null".to_string())));
+    }
     _ => {}
   }
   None

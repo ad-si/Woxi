@@ -4804,7 +4804,7 @@ SatisfiabilityCount,,,,7,3612
 SatisfiabilityInstances,,,,7,3108
 SatisfiableQ,,,,7,4052
 Saturday,,,,9,1949
-Save,,,,1,1714
+Save,Saves definitions associated with symbols to a file,✅,effectful,1,1714
 SaveConnection,,,,12,3593
 SaveDefinitions,,,,6,574
 SavitzkyGolayMatrix,,,,10,3506
