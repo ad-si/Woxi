@@ -1062,9 +1062,9 @@ ContourIntegrate,,,,13.3,
 ContourLabels,,,,6,843
 ContourPlot,Creates a contour plot of a function,✅,pure,1,155
 ContourPlot3D,,,,6,352
-Contours,,,,2,418
+Contours,Option specifying contour levels in contour plots,✅,none,2,418
 ContourShading,,,,2,693
-ContourStyle,,,,2,424
+ContourStyle,Option specifying the style of contour lines,✅,none,2,424
 ContraharmonicMean,,,,7,4527
 ContrastiveLossLayer,,,,11.1,4567
 Control,,,,7,411
@@ -1200,7 +1200,7 @@ CTCLossLayer,,,,11.3,5390
 Cube,,,,12,1815
 CubeRoot,Returns the real-valued cube root,✅,pure,9,1154
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1,1688
-Cuboid,,,,2,561
+Cuboid,3D graphics primitive representing a cuboid,✅,none,2,561
 Cumulant,,,,8,1586
 CumulantGeneratingFunction,,,,8,3176
 CumulativeFeatureImpactPlot,,,,13.1,
@@ -1457,7 +1457,7 @@ DirectedEdges,,,,6,986
 DirectedGraph,,,,8,2246
 DirectedGraphQ,,,,8,3191
 DirectedInfinity,Represents a directed infinity,✅,pure,1,1270
-Direction,,,,2,484
+Direction,Option specifying the direction for operations,✅,none,2,484
 DirectionalLight,,,,13,
 Directive,Combines graphics directives,✅,pure,6,33
 Directory,,,,2,1342
@@ -3430,7 +3430,7 @@ MatrixFunction,,,,9,2134
 MatrixLog,,,,9,1875
 MatrixNormalDistribution,,,,10.3,3317
 MatrixPlot,Plots a matrix as a colored grid,✅,pure,6,552
-MatrixPower,,,,2,399
+MatrixPower,Computes integer powers of a square matrix,✅,pure,2,399
 MatrixPropertyDistribution,,,,10.3,2483
 MatrixQ,Tests if an expression is a matrix,✅,pure,1,524
 MatrixRank,Returns the rank of a matrix,✅,pure,5,523
@@ -3457,7 +3457,7 @@ MaxMemoryUsed,Peak memory usage in the current session,✅,pure,1,1085
 MaxMixtureKernels,,,,8,4225
 MaxOverlapFraction,,,,12,
 MaxPlotPoints,,,,5.1,1548
-MaxRecursion,,,,2,420
+MaxRecursion,Option specifying the maximum recursion depth,✅,none,2,420
 MaxRoots,,,,14,
 MaxStableDistribution,,,,8,3108
 MaxStepFraction,,,,4,2112
@@ -3527,7 +3527,7 @@ MeshRefinementFunction,,,,10,2263
 MeshRegion,,,,10,935
 MeshRegionQ,,,,10,3291
 MeshShading,,,,6,779
-MeshStyle,,,,2,527
+MeshStyle,Option specifying the style of mesh lines,✅,none,2,527
 Message,Issues a message (no-op in Woxi),✅,effectful,1,362
 MessageDialog,,,,6,1946
 MessageList,,,,2,4006
@@ -4324,7 +4324,7 @@ PrecedesEqual,,,,3,5390
 PrecedesSlantEqual,,,,3,5390
 PrecedesTilde,,,,3,4527
 Precision,Returns the number of significant decimal digits,✅,pure,1,726
-PrecisionGoal,,,,2,653
+PrecisionGoal,Option specifying the precision goal for numeric computation,✅,none,2,653
 PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1,1041
 Predict,,,,10,1081
 PredictorFunction,,,,10,4387
@@ -5060,7 +5060,7 @@ Sort,Sorts a list in ascending order,✅,pure,1,194
 SortBy,Sorts a list using a function as a criterion,✅,pure,6,405
 SortedBy,,,,12,5013
 SortedEntityClass,,,,12,4262
-Sound,,,,2,629
+Sound,Represents a sound object,✅,none,2,629
 SoundNote,,,,6,479
 SoundVolume,,,,6,1503
 SourceLink,,,,10.4,4315
@@ -5424,7 +5424,7 @@ TableAlignments,,,,2,1159
 TableDepth,,,,2,1986
 TableDirections,,,,2,1977
 TableForm,Formats data as a table,✅,pure,1,255
-TableHeadings,,,,2,517
+TableHeadings,Option specifying headings for table rows and columns,✅,none,2,517
 TableSpacing,,,,2,1290
 TableView,,,,12.1,2792
 TabView,,,,6,1308

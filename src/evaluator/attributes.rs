@@ -503,9 +503,22 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "GridLines"
     | "Epilog"
     | "FrameTicks"
+    | "Contours"
+    | "MaxRecursion"
+    | "ContourStyle"
+    | "Direction"
+    | "TableHeadings"
+    | "MeshStyle"
+    | "PrecisionGoal"
     | "FactorSquareFreeList" => {
       vec!["Protected"]
     }
+
+    // NonThreadable + Protected
+    "MatrixPower" => vec!["NonThreadable", "Protected"],
+
+    // Protected + ReadProtected (additional)
+    "Sound" | "Cuboid" => vec!["Protected", "ReadProtected"],
 
     // Unknown symbol: empty attributes
     _ => vec![],
