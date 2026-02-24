@@ -2771,6 +2771,66 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
   }
 }
 
+/// Format a Quantity unit expression for InputForm (strings are quoted).
+/// Wolfram InputForm: "Meters"/"Seconds"^2
+fn quantity_unit_to_input_form(unit: &Expr) -> String {
+  match unit {
+    Expr::Identifier(s) => s.clone(),
+    Expr::String(s) => format!("\"{}\"", s),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let exp_str = expr_to_input_form(right);
+      let exp_fmt = if matches!(right.as_ref(), Expr::Integer(_)) {
+        exp_str
+      } else {
+        format!("({})", exp_str)
+      };
+      format!("{}^{}", quantity_unit_to_input_form(left), exp_fmt)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      format!(
+        "{}/{}",
+        quantity_unit_to_input_form(left),
+        quantity_unit_to_input_form(right)
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      format!(
+        "{}*{}",
+        quantity_unit_to_input_form(left),
+        quantity_unit_to_input_form(right)
+      )
+    }
+    Expr::BinaryOp { .. } => expr_to_input_form(unit),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let exp_str = expr_to_input_form(&args[1]);
+      let exp_fmt = if matches!(args[1], Expr::Integer(_)) {
+        exp_str
+      } else {
+        format!("({})", exp_str)
+      };
+      format!("{}^{}", quantity_unit_to_input_form(&args[0]), exp_fmt)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let parts: Vec<String> =
+        args.iter().map(quantity_unit_to_input_form).collect();
+      parts.join("*")
+    }
+    _ => expr_to_input_form(unit),
+  }
+}
+
 /// Format a Quantity unit expression without quoting.
 /// Wolfram displays units unquoted: Meters, Miles/Hours, Meters/Seconds^2
 fn quantity_unit_to_string(unit: &Expr) -> String {
@@ -4768,6 +4828,14 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         expr_to_input_form(replacement)
       )
     }
+    // Quantity: InputForm quotes string unit names
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      let mag_str = expr_to_input_form(&args[0]);
+      let unit_str = quantity_unit_to_input_form(&args[1]);
+      format!("Quantity[{}, {}]", mag_str, unit_str)
+    }
     // FunctionCall: handle FullForm specially in InputForm (keep the wrapper)
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
@@ -4872,6 +4940,14 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
           | "Complex"
           | "DirectedInfinity"
           | "Skeleton"
+          | "Composition"
+          | "NonCommutativeMultiply"
+          | "Minus"
+          | "Therefore"
+          | "Because"
+          | "Blank"
+          | "BlankSequence"
+          | "BlankNullSequence"
       ) =>
     {
       if args.is_empty() {
@@ -4899,32 +4975,71 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         } = arg
           && tname == "Times"
           && !targs.is_empty()
-          && matches!(&targs[0], Expr::Integer(n) if *n < 0)
         {
-          // Negative Times: -n * ... → " - n*..."
-          let neg_arg = if let Expr::Integer(n) = &targs[0] {
-            if *n == -1 {
-              if targs.len() == 2 {
-                targs[1].clone()
-              } else {
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: targs[1..].to_vec(),
-                }
-              }
+          // Check if leading factor is negative (Integer, Real, or Rational)
+          let neg_coeff = match &targs[0] {
+            Expr::Integer(n) if *n < 0 => Some(if *n == -1 {
+              None // coefficient of -1 means just negate
             } else {
-              let mut new_args = vec![Expr::Integer(-n)];
-              new_args.extend_from_slice(&targs[1..]);
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: new_args,
+              Some(Expr::Integer(-n))
+            }),
+            Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
+            Expr::FunctionCall { name: rn, args: ra }
+              if rn == "Rational"
+                && ra.len() == 2
+                && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
+            {
+              if let Expr::Integer(n) = &ra[0] {
+                if *n == -1 {
+                  Some(Some(Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), ra[1].clone()],
+                  }))
+                } else {
+                  Some(Some(Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(-n), ra[1].clone()],
+                  }))
+                }
+              } else {
+                None
               }
             }
-          } else {
-            arg.clone()
+            _ => None,
           };
-          result.push_str(" - ");
-          result.push_str(&expr_to_input_form(&neg_arg));
+          if let Some(pos_coeff) = neg_coeff {
+            // Negative Times: -n * ... → " - n*..."
+            let pos_term = match pos_coeff {
+              None => {
+                // Times[-1, rest...] → rest
+                if targs.len() == 2 {
+                  targs[1].clone()
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: targs[1..].to_vec(),
+                  }
+                }
+              }
+              Some(new_coeff) => {
+                let mut new_args = vec![new_coeff];
+                new_args.extend_from_slice(&targs[1..]);
+                if new_args.len() == 1 {
+                  new_args[0].clone()
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: new_args,
+                  }
+                }
+              }
+            };
+            result.push_str(" - ");
+            result.push_str(&expr_to_input_form(&pos_term));
+          } else {
+            result.push_str(" + ");
+            result.push_str(&expr_to_input_form(arg));
+          }
         } else {
           result.push_str(" + ");
           result.push_str(&expr_to_input_form(arg));

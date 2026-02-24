@@ -1417,7 +1417,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
 /// Returns the complete `<math>...</math>` block with proper indentation.
 pub fn expr_to_mathml(expr: &Expr) -> String {
   let inner = mathml_inner(expr, 1);
-  format!("<math>\n{}\n</math>\n", inner)
+  format!("<math>\n{}\n</math>", inner)
 }
 
 /// Render a single expression as a MathML fragment at the given indentation depth.
@@ -1752,58 +1752,63 @@ fn mathml_escape_str(s: &str) -> String {
 // ====================================================================
 
 /// Convert a Wolfram expression to its StandardForm box representation.
-/// Returns a string like `DisplayForm[RowBox[{...}]]`.
+/// Returns a string like `\!\(\*RowBox[{"..."}]\)` matching Wolfram's InputForm
+/// of StandardForm expressions.
 pub fn expr_to_box_form(expr: &Expr) -> String {
   let box_str = expr_to_boxes(expr);
   // If the result is NOT already a box (RowBox, FractionBox, etc.), wrap in RowBox
   if box_str.contains("Box[") {
-    format!("DisplayForm[{}]", box_str)
+    format!("\\!\\(\\*{}\\)", box_str)
   } else {
-    format!("DisplayForm[RowBox[{{{}}}]]", box_str)
+    format!("\\!\\(\\*RowBox[{{{}}}]\\)", box_str)
   }
 }
 
 /// Convert an expression to its box form representation.
+/// All atoms are string-quoted to match Wolfram's box format.
 fn expr_to_boxes(expr: &Expr) -> String {
   use crate::syntax::{BinaryOperator, UnaryOperator};
 
   match expr {
-    // Simple atoms
-    Expr::Integer(n) => n.to_string(),
-    Expr::BigInteger(n) => n.to_string(),
-    Expr::Real(f) => crate::syntax::format_real(*f),
+    // Simple atoms — all quoted in box form
+    Expr::Integer(n) => format!("\"{}\"", n),
+    Expr::BigInteger(n) => format!("\"{}\"", n),
+    Expr::Real(f) => format!("\"{}\"", crate::syntax::format_real(*f)),
     Expr::String(s) => {
-      format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+      format!(
+        "\"\\\"{}\\\"\"",
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+      )
     }
-    Expr::Identifier(name) | Expr::Constant(name) => name.clone(),
+    Expr::Identifier(name) | Expr::Constant(name) => format!("\"{}\"", name),
 
     // Unary minus
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } => {
-      format!("RowBox[{{-, {}}}]", expr_to_boxes(operand))
+      format!("RowBox[{{\"-\", {}}}]", expr_to_boxes(operand))
     }
 
     // Binary operators
     Expr::BinaryOp { op, left, right } => match op {
       BinaryOperator::Plus => {
         format!(
-          "RowBox[{{{}, +, {}}}]",
+          "RowBox[{{{}, \"+\", {}}}]",
           expr_to_boxes(left),
           expr_to_boxes(right)
         )
       }
       BinaryOperator::Minus => {
         format!(
-          "RowBox[{{{}, -, {}}}]",
+          "RowBox[{{{}, \"-\", {}}}]",
           expr_to_boxes(left),
           expr_to_boxes(right)
         )
       }
       BinaryOperator::Times => {
         format!(
-          "RowBox[{{{},  , {}}}]",
+          "RowBox[{{{}, \" \", {}}}]",
           expr_to_boxes(left),
           expr_to_boxes(right)
         )
@@ -1831,7 +1836,7 @@ fn expr_to_boxes(expr: &Expr) -> String {
           _ => "?",
         };
         format!(
-          "RowBox[{{{}, {}, {}}}]",
+          "RowBox[{{{}, \"{}\", {}}}]",
           expr_to_boxes(left),
           op_str,
           expr_to_boxes(right)
@@ -1841,12 +1846,12 @@ fn expr_to_boxes(expr: &Expr) -> String {
 
     // Lists
     Expr::List(items) => {
-      let mut parts = vec!["{{".to_string()];
+      let mut parts = vec!["\"{{\"".to_string()];
       if !items.is_empty() {
         let inner: Vec<String> = items.iter().map(expr_to_boxes).collect();
-        parts.push(format!("RowBox[{{{}}}]", inner.join(", ,, ")));
+        parts.push(format!("RowBox[{{{}}}]", inner.join(", \",\", ")));
       }
-      parts.push("}}".to_string());
+      parts.push("\"}}\"".to_string());
       format!("RowBox[{{{}}}]", parts.join(", "))
     }
 
@@ -1904,7 +1909,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
         ) || matches!(arg, Expr::Integer(n) if *n < 0);
 
         if is_neg {
-          parts.push("-".to_string());
+          parts.push("\"-\"".to_string());
           match arg {
             Expr::FunctionCall { name: n, args: a }
               if n == "Times"
@@ -1918,12 +1923,12 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
               }
             }
             Expr::Integer(n) if *n < 0 => {
-              parts.push((-n).to_string());
+              parts.push(format!("\"{}\"", -n));
             }
             _ => parts.push(expr_to_boxes(arg)),
           }
         } else {
-          parts.push("+".to_string());
+          parts.push("\"+\"".to_string());
           parts.push(expr_to_boxes(arg));
         }
       }
@@ -1935,19 +1940,23 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       // Leading -1
       if matches!(&args[0], Expr::Integer(-1)) {
         if args.len() == 2 {
-          return format!("RowBox[{{-, {}}}]", expr_to_boxes(&args[1]));
+          return format!("RowBox[{{\"-\", {}}}]", expr_to_boxes(&args[1]));
         }
         let rest = box_function_call("Times", &args[1..]);
-        return format!("RowBox[{{-, {}}}]", rest);
+        return format!("RowBox[{{\"-\", {}}}]", rest);
       }
       let parts: Vec<String> = args.iter().map(expr_to_boxes).collect();
-      format!("RowBox[{{{}}}]", parts.join(",  , "))
+      format!("RowBox[{{{}}}]", parts.join(", \" \", "))
     }
 
     // Default: function application
     _ => {
       let args_boxes: Vec<String> = args.iter().map(expr_to_boxes).collect();
-      format!("RowBox[{{{}[{}]}}]", name, args_boxes.join(", "))
+      format!(
+        "RowBox[{{\"{}[\", {}, \"]\"}}]",
+        name,
+        args_boxes.join(", \",\", ")
+      )
     }
   }
 }

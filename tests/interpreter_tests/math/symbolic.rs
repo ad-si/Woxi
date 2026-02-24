@@ -317,10 +317,10 @@ mod variables {
 
   #[test]
   fn variables_polynomial() {
-    // Variables preserves traversal order of the internal form (matching wolframscript)
+    // Variables returns sorted: simple symbols first (alphabetical), then compound expressions
     assert_eq!(
       interpret("Variables[a x^2 + b x + c]").unwrap(),
-      "{c, b, x, a}"
+      "{a, b, c, x}"
     );
   }
 
@@ -328,7 +328,7 @@ mod variables {
   fn variables_list() {
     assert_eq!(
       interpret("Variables[{a + b x, c y^2 + x/2}]").unwrap(),
-      "{a, b, x, c, y}"
+      "{a, b, c, x, y}"
     );
   }
 

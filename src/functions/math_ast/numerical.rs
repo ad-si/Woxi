@@ -1152,9 +1152,22 @@ pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let mut vars = Vec::new();
   collect_variables(&args[0], &mut vars);
-  // Deduplicate while preserving traversal order (matching Wolfram)
+  // Deduplicate
   let mut seen = std::collections::HashSet::new();
   vars.retain(|v| seen.insert(crate::syntax::expr_to_string(v)));
+  // Sort in Wolfram canonical order: simple identifiers first (alphabetical),
+  // then compound expressions (by string representation)
+  vars.sort_by(|a, b| {
+    let a_simple = matches!(a, Expr::Identifier(_));
+    let b_simple = matches!(b, Expr::Identifier(_));
+    match (a_simple, b_simple) {
+      (true, false) => std::cmp::Ordering::Less,
+      (false, true) => std::cmp::Ordering::Greater,
+      _ => {
+        crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
+      }
+    }
+  });
   Ok(Expr::List(vars))
 }
 

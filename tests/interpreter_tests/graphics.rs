@@ -1575,44 +1575,44 @@ mod graphics_list {
     clear_state();
     assert_eq!(
       interpret("ToString[MathMLForm[3], InputForm]").unwrap(),
-      "<math>\n <mn>3</mn>\n</math>\n"
+      "<math>\n <mn>3</mn>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[x], InputForm]").unwrap(),
-      "<math>\n <mi>x</mi>\n</math>\n"
+      "<math>\n <mi>x</mi>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[x + y], InputForm]").unwrap(),
-      "<math>\n <mrow>\n  <mi>x</mi>\n  <mo>+</mo>\n  <mi>y</mi>\n </mrow>\n</math>\n"
+      "<math>\n <mrow>\n  <mi>x</mi>\n  <mo>+</mo>\n  <mi>y</mi>\n </mrow>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[1/2], InputForm]").unwrap(),
-      "<math>\n <mfrac>\n  <mn>1</mn>\n  <mn>2</mn>\n </mfrac>\n</math>\n"
+      "<math>\n <mfrac>\n  <mn>1</mn>\n  <mn>2</mn>\n </mfrac>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[x^2], InputForm]").unwrap(),
-      "<math>\n <msup>\n  <mi>x</mi>\n  <mn>2</mn>\n </msup>\n</math>\n"
+      "<math>\n <msup>\n  <mi>x</mi>\n  <mn>2</mn>\n </msup>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[Pi], InputForm]").unwrap(),
-      "<math>\n <mi>&#960;</mi>\n</math>\n"
+      "<math>\n <mi>&#960;</mi>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[Sqrt[x]], InputForm]").unwrap(),
-      "<math>\n <msqrt>\n  <mi>x</mi>\n </msqrt>\n</math>\n"
+      "<math>\n <msqrt>\n  <mi>x</mi>\n </msqrt>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[Sin[x]], InputForm]").unwrap(),
-      "<math>\n <mrow>\n  <mi>sin</mi>\n  <mo>&#8289;</mo>\n  <mo>(</mo>\n  <mi>x</mi>\n  <mo>)</mo>\n </mrow>\n</math>\n"
+      "<math>\n <mrow>\n  <mi>sin</mi>\n  <mo>&#8289;</mo>\n  <mo>(</mo>\n  <mi>x</mi>\n  <mo>)</mo>\n </mrow>\n</math>"
     );
     assert_eq!(
       interpret("ToString[MathMLForm[3.14], InputForm]").unwrap(),
-      "<math>\n <mn>3.14</mn>\n</math>\n"
+      "<math>\n <mn>3.14</mn>\n</math>"
     );
     // Default ToString also produces MathML
     assert_eq!(
       interpret("ToString[MathMLForm[42]]").unwrap(),
-      "<math>\n <mn>42</mn>\n</math>\n"
+      "<math>\n <mn>42</mn>\n</math>"
     );
   }
 
@@ -1621,26 +1621,26 @@ mod graphics_list {
     clear_state();
     assert_eq!(
       interpret("ToString[StandardForm[12], InputForm]").unwrap(),
-      "DisplayForm[RowBox[{12}]]"
+      r#"\!\(\*RowBox[{"12"}]\)"#
     );
     assert_eq!(
       interpret("ToString[StandardForm[x + y], InputForm]").unwrap(),
-      "DisplayForm[RowBox[{x, +, y}]]"
+      r#"\!\(\*RowBox[{"x", "+", "y"}]\)"#
     );
     assert_eq!(
       interpret("ToString[StandardForm[1/2], InputForm]").unwrap(),
-      "DisplayForm[FractionBox[1, 2]]"
+      r#"\!\(\*FractionBox["1", "2"]\)"#
     );
     assert_eq!(
       interpret("ToString[StandardForm[x^2], InputForm]").unwrap(),
-      "DisplayForm[SuperscriptBox[x, 2]]"
+      r#"\!\(\*SuperscriptBox["x", "2"]\)"#
     );
     assert_eq!(
       interpret(
         "ToString[(MathMLForm[1 + 2]; StandardForm[3 * 4]), InputForm]"
       )
       .unwrap(),
-      "DisplayForm[RowBox[{12}]]"
+      r#"\!\(\*RowBox[{"12"}]\)"#
     );
   }
 

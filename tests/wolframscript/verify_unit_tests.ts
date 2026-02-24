@@ -317,7 +317,7 @@ function runWoxi(expr: string): string {
   }
 
   try {
-    const output = execSync(`woxi eval '${fullExpr.replace(/'/g, "'\\''")}'`, {
+    const output = execSync(`woxi eval --quiet-print '${fullExpr.replace(/'/g, "'\\''")}'`, {
       encoding: "utf-8",
       timeout: 10_000,
       stdio: ["pipe", "pipe", "ignore"], // suppress stderr (error messages like Part::partw)
@@ -373,6 +373,7 @@ function buildWolframScript(
     // removes content newlines too (e.g. MathMLForm output ends with \n).
     lines.push(
       "Module[{res$$ = CheckAbort[(" + wBlock + '), "$Aborted"], rr$$, ee$$},' +
+        " If[!StringQ[res$$], res$$ = ToString[res$$, InputForm]];" +
         ' rr$$ = StringReplace[res$$, RegularExpression["[\\\\r\\\\n]+$"] -> ""];' +
         " ee$$ = " + wExpected + ";" +
         " If[rr$$ =!= ee$$," +
@@ -487,11 +488,13 @@ function main() {
   //  - Fit[]: floating-point rounding at machine-epsilon level (different QR vs LAPACK)
   //  - SeedRandom[]: returns RNG internal state (ChaCha8 vs ExtendedCA)
   //  - Share[]: returns system-specific memory deduplication byte count
+  //  - Names[]: returns implementation-specific set of built-in symbols
   // (Hash with 1 arg uses assert! not assert_eq!, so it's naturally excluded.)
   const IMPL_SPECIFIC_PATTERNS = [
     /\bFit\[/,
     /\bSeedRandom\[/,
     /\bShare\[/,
+    /\bNames\[/,
   ];
 
   // Filter out multiline expressions (they break the generated scripts).

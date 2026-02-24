@@ -129,6 +129,23 @@ thread_local! {
     static CAPTURED_STDOUT: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
+// Quiet print mode — suppresses Print's stdout output while still
+// capturing to the internal buffer. Used by conformance tests to
+// separate Print side-effects from expression results.
+thread_local! {
+    static QUIET_PRINT: RefCell<bool> = const { RefCell::new(false) };
+}
+
+/// Enable/disable quiet print mode (suppresses Print's stdout output).
+pub fn set_quiet_print(enabled: bool) {
+  QUIET_PRINT.with(|q| *q.borrow_mut() = enabled);
+}
+
+/// Check if quiet print mode is enabled.
+pub fn is_quiet_print() -> bool {
+  QUIET_PRINT.with(|q| *q.borrow())
+}
+
 // Visual display mode flag — set by interpret_with_stdout to enable
 // rendering of display wrappers like TableForm as SVG grids
 thread_local! {

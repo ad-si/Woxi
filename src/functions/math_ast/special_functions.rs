@@ -4093,6 +4093,23 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return hypergeometric2f1_1_n_np1(a, z);
   }
 
+  // 2F1(1, b, c, z) for positive integer b < c, c > b+1: partial fraction closed form
+  if a_int == Some(1)
+    && let (Some(b), Some(c)) = (b_int, c_int)
+    && b > 0
+    && c > b + 1
+  {
+    return hypergeometric2f1_1_b_c(b, c, z);
+  }
+  // By symmetry: 2F1(b, 1, c, z)
+  if b_int == Some(1)
+    && let (Some(a), Some(c)) = (a_int, c_int)
+    && a > 0
+    && c > a + 1
+  {
+    return hypergeometric2f1_1_b_c(a, c, z);
+  }
+
   // Try numeric evaluation when all args are numeric and at least one is Real
   let vals: Vec<Option<f64>> = args
     .iter()
@@ -4266,6 +4283,237 @@ fn hypergeometric2f1_1_n_np1(
     ],
   };
 
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Evaluate 2F1(1, b, c, z) for positive integers b, c with c > b + 1.
+/// Uses partial fraction decomposition of (b)_k/(c)_k.
+///
+/// The series 2F1(1,b,c,z) = sum_{k=0}^inf (b)_k/(c)_k * z^k is decomposed via
+/// partial fractions into a sum involving Log(1-z) and polynomial terms, then
+/// factored into the canonical form that matches Wolfram's output.
+fn hypergeometric2f1_1_b_c(
+  b: i128,
+  c: i128,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::numeric_utils::gcd;
+  use std::collections::BTreeMap;
+
+  let m = c - b; // >= 2
+
+  // Compute prefactor = (c-1)! / (b-1)! = b * (b+1) * ... * (c-1)
+  let mut prefactor: i128 = 1;
+  for i in b..c {
+    prefactor *= i;
+  }
+
+  // Compute C_j = prefactor * (-1)^j / (j! * (m-1-j)!) for j = 0..m-1
+  let mut cj: Vec<(i128, i128)> = Vec::new(); // (numerator, denominator)
+  for j in 0..m {
+    let sign: i128 = if j % 2 == 0 { 1 } else { -1 };
+    let mut j_fact: i128 = 1;
+    for k in 1..=j {
+      j_fact *= k;
+    }
+    let mut mj_fact: i128 = 1;
+    for k in 1..=(m - 1 - j) {
+      mj_fact *= k;
+    }
+    let n = sign * prefactor;
+    let d = j_fact * mj_fact;
+    let g = gcd(n.abs(), d);
+    cj.push((n / g, d / g));
+  }
+
+  // Collect all distributed terms into (has_log, z_power) -> (num, den)
+  // BTreeMap orders (false, _) before (true, _), and by z_power ascending,
+  // which matches Wolfram's canonical Plus ordering.
+  let mut collected: BTreeMap<(bool, i128), (i128, i128)> = BTreeMap::new();
+
+  fn add_rational(
+    map: &mut BTreeMap<(bool, i128), (i128, i128)>,
+    key: (bool, i128),
+    num: i128,
+    den: i128,
+  ) {
+    use crate::functions::math_ast::numeric_utils::gcd;
+    let entry = map.entry(key).or_insert((0, 1));
+    let new_num = entry.0 * den + num * entry.1;
+    let new_den = entry.1 * den;
+    if new_num == 0 {
+      *entry = (0, 1);
+    } else {
+      let g = gcd(new_num.abs(), new_den.abs());
+      *entry = (new_num / g, new_den / g);
+    }
+  }
+
+  for j in 0..m {
+    let (cn, cd) = cj[j as usize];
+
+    // Log term: -C_j * z^{m-1-j} * Log[1-z]
+    add_rational(&mut collected, (true, m - 1 - j), -cn, cd);
+
+    // Poly terms: -C_j/i * z^{m-1-j+i} for i = 1..b+j-1
+    for i in 1..(b + j) {
+      let num = -cn;
+      let den = cd * i;
+      let g = gcd(num.abs(), den.abs());
+      add_rational(&mut collected, (false, m - 1 - j + i), num / g, den / g);
+    }
+  }
+
+  // Remove zero entries
+  collected.retain(|_, (n, _)| *n != 0);
+
+  // Find common denominator across all terms
+  let common_den: i128 = collected.values().fold(1i128, |acc, &(_, d)| {
+    let g = gcd(acc, d.abs());
+    acc / g * d.abs()
+  });
+
+  // Scale all numerators to common denominator
+  let scaled: Vec<((bool, i128), i128)> = collected
+    .iter()
+    .map(|(&key, &(n, d))| (key, n * (common_den / d)))
+    .collect();
+
+  // Find GCD of all scaled numerators
+  let num_gcd = scaled.iter().map(|(_, n)| n.abs()).fold(0i128, gcd);
+
+  if num_gcd == 0 {
+    return Ok(Expr::Integer(0));
+  }
+
+  // Sign convention: make the coefficient of the highest z-power polynomial term positive
+  let max_poly_entry = scaled
+    .iter()
+    .filter(|((has_log, _), _)| !has_log)
+    .max_by_key(|((_, power), _)| *power);
+
+  let sign_adjust: i128 = match max_poly_entry {
+    Some((_, coeff)) if *coeff < 0 => -1,
+    _ => 1,
+  };
+
+  // Overall factor = sign_adjust * num_gcd / common_den
+  let factor_num = sign_adjust * num_gcd;
+  let factor_den = common_den;
+  let fg = gcd(factor_num.abs(), factor_den);
+  let (factor_n, factor_d) = (factor_num / fg, factor_den / fg);
+
+  // Build Log[1-z]
+  let one_minus_z = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::Integer(1),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), z.clone()],
+      },
+    ],
+  };
+  let log_1mz = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![one_minus_z],
+  };
+
+  // Build the Plus terms with factored coefficients
+  let mut plus_terms: Vec<Expr> = Vec::new();
+
+  for &((has_log, power), scaled_num) in &scaled {
+    // Factored coefficient: scaled_num / (sign_adjust * num_gcd)
+    let cn = scaled_num * sign_adjust;
+    let cd = num_gcd;
+    let cg = gcd(cn.abs(), cd);
+    let (cn, cd) = (cn / cg, cd / cg);
+
+    let mut factors: Vec<Expr> = Vec::new();
+
+    // Add coefficient (skip if coefficient is 1)
+    if cn == -1 && cd == 1 {
+      factors.push(Expr::Integer(-1));
+    } else if !(cn == 1 && cd == 1) {
+      if cd == 1 {
+        factors.push(Expr::Integer(cn));
+      } else {
+        factors.push(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(cn), Expr::Integer(cd)],
+        });
+      }
+    }
+
+    // Add z^power
+    if power == 1 {
+      factors.push(z.clone());
+    } else if power > 1 {
+      factors.push(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z.clone(), Expr::Integer(power)],
+      });
+    }
+
+    // Add Log[1-z] if this is a log term
+    if has_log {
+      factors.push(log_1mz.clone());
+    }
+
+    let term = if factors.is_empty() {
+      Expr::Integer(cn) // constant term
+    } else if factors.len() == 1 {
+      factors.pop().unwrap()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: factors,
+      }
+    };
+
+    plus_terms.push(term);
+  }
+
+  let inner = if plus_terms.len() == 1 {
+    plus_terms.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: plus_terms,
+    }
+  };
+
+  // Build: factor * Power[z, -(c-1)] * inner
+  let mut outer_factors: Vec<Expr> = Vec::new();
+
+  if factor_d == 1 {
+    if factor_n != 1 {
+      outer_factors.push(Expr::Integer(factor_n));
+    }
+  } else {
+    outer_factors.push(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(factor_n), Expr::Integer(factor_d)],
+    });
+  }
+
+  outer_factors.push(Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![z.clone(), Expr::Integer(-(c - 1))],
+  });
+
+  outer_factors.push(inner);
+
+  let result = if outer_factors.len() == 1 {
+    outer_factors.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: outer_factors,
+    }
+  };
+
+  // Evaluate to get canonical form
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 

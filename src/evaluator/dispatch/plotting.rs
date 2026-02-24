@@ -142,7 +142,9 @@ pub fn dispatch_plotting(
     }
     "Print" => {
       if args.is_empty() {
-        println!();
+        if !crate::is_quiet_print() {
+          println!();
+        }
         crate::capture_stdout("");
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
@@ -151,7 +153,9 @@ pub fn dispatch_plotting(
         .map(crate::syntax::expr_to_output)
         .collect::<Vec<_>>()
         .join("");
-      println!("{}", display_str);
+      if !crate::is_quiet_print() {
+        println!("{}", display_str);
+      }
       crate::capture_stdout(&display_str);
       Some(Ok(Expr::Identifier("Null".to_string())))
     }

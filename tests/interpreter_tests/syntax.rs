@@ -1172,7 +1172,7 @@ mod plot3d_function {
   fn plot3d_attributes() {
     assert_eq!(
       interpret("Attributes[Plot3D]").unwrap(),
-      "{Protected, ReadProtected}"
+      "{HoldAll, Protected, ReadProtected}"
     );
   }
 }
@@ -1605,8 +1605,8 @@ mod begin_end_package {
 
   #[test]
   fn end_returns_context() {
-    // End returns the previous context (Global` by default in Woxi)
-    assert_eq!(interpret("End[]").unwrap(), "Global`");
+    // End returns the context being ended (Private` by default, matching wolframscript)
+    assert_eq!(interpret("End[]").unwrap(), "Private`");
   }
 
   #[test]
@@ -1616,7 +1616,7 @@ mod begin_end_package {
 
   #[test]
   fn end_package_returns_context() {
-    assert_eq!(interpret("EndPackage[]").unwrap(), "Global`");
+    assert_eq!(interpret("EndPackage[]").unwrap(), "Null");
   }
 }
 

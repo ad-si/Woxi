@@ -301,11 +301,11 @@ mod hypergeometric2f1 {
   }
 
   #[test]
-  fn symbolic_unevaluated() {
-    // Truly unevaluated case (no closed form)
+  fn symbolic_1_b_c() {
+    // 2F1(1, b, c, z) with positive integer b < c, c > b+1
     assert_eq!(
       interpret("Hypergeometric2F1[1, 2, 4, x]").unwrap(),
-      "Hypergeometric2F1[1, 2, 4, x]"
+      "(-3*(-2*x + x^2 - 2*Log[1 - x] + 2*x*Log[1 - x]))/x^3"
     );
   }
 
