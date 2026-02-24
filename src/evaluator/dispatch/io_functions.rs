@@ -893,9 +893,8 @@ fn generate_minimal_pdf(text: &str) -> String {
   // Object 3: Page
   offsets.push(pdf.len());
   pdf.push_str(
-    &"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]\n   \
-     /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
-      .to_string(),
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]\n   \
+     /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
   );
 
   // Object 4: Content stream

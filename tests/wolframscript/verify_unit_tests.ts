@@ -618,20 +618,15 @@ function main() {
   } else {
     console.error(`\n${passCount}/${testedFiltered} passed, ${failCount} differ:\n`);
     for (const line of failures) {
-      console.error(line);
-    }
-
-    // Print file locations
-    console.error("\nFile locations:");
-    for (const line of failures) {
       const m = line.match(/^FAIL #(\d+)/);
       if (m) {
         const idx = parseInt(m[1]) - 1;
         const tc = cases[idx];
         if (tc) {
-          console.error(`  ${tc.file}:${tc.line}`);
+          console.error(`\n${tc.file}:${tc.line}`);
         }
       }
+      console.error(line);
     }
 
     process.exit(1);
