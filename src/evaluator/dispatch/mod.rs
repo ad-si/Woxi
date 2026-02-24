@@ -82,7 +82,7 @@ pub fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
         .find(|c: char| c.is_whitespace())
         .unwrap_or(trimmed.len());
       let word = &trimmed[..end];
-      (Expr::Identifier(word.to_string()), skipped + end)
+      (Expr::String(word.to_string()), skipped + end)
     }
     "Number" => {
       // Skip leading whitespace
@@ -533,10 +533,17 @@ pub fn evaluate_function_call_ast_inner(
     || name == "Off"
     || name == "On"
     || name == "Remove"
-    || name == "SetOptions"
     || name == "ClearAttributes"
   {
     return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  // SetOptions is not implemented - return unevaluated
+  if name == "SetOptions" {
+    return Ok(Expr::FunctionCall {
+      name: "SetOptions".to_string(),
+      args: args.to_vec(),
+    });
   }
 
   // Circle[] defaults to Circle[{0, 0}]

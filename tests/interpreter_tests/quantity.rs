@@ -718,10 +718,10 @@ fn quantity_power_half_squared_unit() {
 
 #[test]
 fn quantity_power_half_compound_unit() {
-  // Power[Quantity[4, Meters/Seconds^2], 1/2] → Quantity[2, "Meters"^(1/2)/"Seconds"]
+  // Power[Quantity[4, Meters/Seconds^2], 1/2] → Quantity[2, Sqrt[Meters]/Seconds] (matching wolframscript)
   assert_eq!(
     interpret("Power[Quantity[4, \"Meters\"/\"Seconds\"^2], 1/2]").unwrap(),
-    "Quantity[2, Meters^(1/2)/Seconds]"
+    "Quantity[2, Sqrt[\"Meters\"]/Seconds]"
   );
 }
 
@@ -916,9 +916,10 @@ fn unit_convert_atmospheres_to_bars() {
 
 #[test]
 fn unit_convert_calories_to_joules() {
+  // Calories = food calorie = 4184 J (matching wolframscript)
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Calories\"], \"Joules\"]").unwrap(),
-    "Quantity[523/125, Joules]"
+    "Quantity[4184, Joules]"
   );
 }
 
@@ -933,10 +934,11 @@ fn unit_convert_kilocalories_to_joules() {
 
 #[test]
 fn unit_convert_kilocalories_to_calories() {
+  // Kilocalories and Calories are both food calories (4184 J each) in Wolfram
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Kilocalories\"], \"Calories\"]")
       .unwrap(),
-    "Quantity[1000, Calories]"
+    "Quantity[1, Calories]"
   );
 }
 
@@ -1096,7 +1098,7 @@ fn quantity_abbreviation_nmi() {
 fn quantity_abbreviation_t() {
   assert_eq!(
     interpret("Quantity[5, \"t\"]").unwrap(),
-    "Quantity[5, Tonnes]"
+    "Quantity[5, MetricTons]"
   );
 }
 
@@ -1128,7 +1130,7 @@ fn quantity_abbreviation_atm() {
 fn quantity_abbreviation_cal() {
   assert_eq!(
     interpret("Quantity[100, \"cal\"]").unwrap(),
-    "Quantity[100, Calories]"
+    "Quantity[100, ThermochemicalCalories]"
   );
 }
 
@@ -1136,7 +1138,7 @@ fn quantity_abbreviation_cal() {
 fn quantity_abbreviation_kcal() {
   assert_eq!(
     interpret("Quantity[2, \"kcal\"]").unwrap(),
-    "Quantity[2, Kilocalories]"
+    "Quantity[2, ThermochemicalKilocalories]"
   );
 }
 
@@ -1144,7 +1146,7 @@ fn quantity_abbreviation_kcal() {
 fn quantity_abbreviation_ev() {
   assert_eq!(
     interpret("Quantity[1, \"eV\"]").unwrap(),
-    "Quantity[1, ElectronVolts]"
+    "Quantity[1, Electronvolts]"
   );
 }
 
@@ -1206,9 +1208,10 @@ fn quantity_abbreviation_kn() {
 
 #[test]
 fn quantity_abbreviation_kt() {
+  // kt = MetricKilotons (matching wolframscript)
   assert_eq!(
     interpret("Quantity[30, \"kt\"]").unwrap(),
-    "Quantity[30, Knots]"
+    "Quantity[30, MetricKilotons]"
   );
 }
 

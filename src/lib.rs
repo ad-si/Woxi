@@ -563,8 +563,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             ),
             syntax::Expr::Real(seconds),
           ]),
-          syntax::Expr::Identifier("Instant".to_string()),
-          syntax::Expr::Identifier("Gregorian".to_string()),
+          syntax::Expr::String("Instant".to_string()),
+          syntax::Expr::String("Gregorian".to_string()),
           syntax::Expr::Real(tz_offset_hours),
         ],
       };

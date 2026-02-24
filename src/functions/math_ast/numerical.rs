@@ -1152,20 +1152,9 @@ pub fn variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let mut vars = Vec::new();
   collect_variables(&args[0], &mut vars);
-  // Sort canonically and deduplicate
-  vars.sort_by(|a, b| {
-    let ord = crate::functions::list_helpers_ast::compare_exprs(a, b);
-    if ord > 0 {
-      std::cmp::Ordering::Less
-    } else if ord < 0 {
-      std::cmp::Ordering::Greater
-    } else {
-      std::cmp::Ordering::Equal
-    }
-  });
-  vars.dedup_by(|a, b| {
-    crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
-  });
+  // Deduplicate while preserving traversal order (matching Wolfram)
+  let mut seen = std::collections::HashSet::new();
+  vars.retain(|v| seen.insert(crate::syntax::expr_to_string(v)));
   Ok(Expr::List(vars))
 }
 

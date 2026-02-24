@@ -299,8 +299,8 @@ pub fn dispatch_complex_and_special(
           return Some(Ok(Expr::FunctionCall {
             name: "Missing".to_string(),
             args: vec![
-              Expr::Identifier("UnknownSymbol".to_string()),
-              Expr::Identifier(sym.clone()),
+              Expr::String("UnknownSymbol".to_string()),
+              Expr::String(sym.clone()),
             ],
           }));
         }

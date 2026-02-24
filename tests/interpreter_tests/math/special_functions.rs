@@ -33,9 +33,10 @@ mod gudermannian {
 
   #[test]
   fn complex_infinity() {
+    // Gudermannian[ComplexInfinity] returns unevaluated (matching wolframscript)
     assert_eq!(
       interpret("Gudermannian[ComplexInfinity]").unwrap(),
-      "Indeterminate"
+      "Gudermannian[ComplexInfinity]"
     );
   }
 
@@ -468,10 +469,8 @@ mod hypergeometric_u {
 
   #[test]
   fn symbolic_with_variable() {
-    assert_eq!(
-      interpret("HypergeometricU[1, 2, x]").unwrap(),
-      "HypergeometricU[1, 2, x]"
-    );
+    // HypergeometricU[a, a+1, z] = z^(-a) (matching wolframscript)
+    assert_eq!(interpret("HypergeometricU[1, 2, x]").unwrap(), "x^(-1)");
   }
 }
 

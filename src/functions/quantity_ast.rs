@@ -108,9 +108,14 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 45359237,
       to_si_denom: 100000000,
     },
-    "Tonnes" => UnitInfo {
+    "Tonnes" | "MetricTons" => UnitInfo {
       dimensions: dims(&[(Mass, 1)]),
       to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+    "MetricKilotons" => UnitInfo {
+      dimensions: dims(&[(Mass, 1)]),
+      to_si_numer: 1000000,
       to_si_denom: 1,
     },
     "Ounces" => UnitInfo {
@@ -230,17 +235,22 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 1000,
       to_si_denom: 1,
     },
-    "Calories" => UnitInfo {
-      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
-      to_si_numer: 4184,
-      to_si_denom: 1000,
-    },
-    "Kilocalories" => UnitInfo {
+    "Calories" | "DietaryCalories" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
       to_si_numer: 4184,
       to_si_denom: 1,
     },
-    "ElectronVolts" => UnitInfo {
+    "ThermochemicalCalories" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 4184,
+      to_si_denom: 1000,
+    },
+    "Kilocalories" | "ThermochemicalKilocalories" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si_numer: 4184,
+      to_si_denom: 1,
+    },
+    "ElectronVolts" | "Electronvolts" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
       to_si_numer: 1602176634,
       to_si_denom: 10000000000000000000000000000,
@@ -554,13 +564,13 @@ fn resolve_per_unit(s: &str) -> Option<Expr> {
     }
   };
 
-  let numer_expr = Expr::Identifier(numer_name);
+  let numer_expr = Expr::String(numer_name);
   let denom_expr = if exp == 1 {
-    Expr::Identifier(denom_name)
+    Expr::String(denom_name)
   } else {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
-      left: Box::new(Expr::Identifier(denom_name.clone())),
+      left: Box::new(Expr::String(denom_name.clone())),
       right: Box::new(Expr::Integer(exp)),
     }
   };
@@ -593,7 +603,7 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "g" => "Grams",
     "mg" => "Milligrams",
     "lb" | "lbs" => "Pounds",
-    "t" => "Tonnes",
+    "t" => "MetricTons",
     "oz" => "Ounces",
     "s" => "Seconds",
     "ms" => "Milliseconds",
@@ -613,9 +623,9 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "J" => "Joules",
     "mJ" => "Millijoules",
     "kJ" => "Kilojoules",
-    "cal" => "Calories",
-    "kcal" => "Kilocalories",
-    "eV" => "ElectronVolts",
+    "cal" => "ThermochemicalCalories",
+    "kcal" => "ThermochemicalKilocalories",
+    "eV" => "Electronvolts",
     "W" => "Watts",
     "mW" => "Milliwatts",
     "kW" => "Kilowatts",
@@ -642,19 +652,20 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "GHz" => "Gigahertz",
     "T" => "Teslas",
     "mT" => "Milliteslas",
-    "kn" | "kt" => "Knots",
+    "kn" => "Knots",
+    "kt" => "MetricKilotons",
     _ => "",
   };
   if !simple.is_empty() {
-    return Some(Expr::Identifier(simple.to_string()));
+    return Some(Expr::String(simple.to_string()));
   }
 
   // Compound abbreviations
   let make_div = |n: &str, d: &str| -> Expr {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
-      left: Box::new(Expr::Identifier(n.to_string())),
-      right: Box::new(Expr::Identifier(d.to_string())),
+      left: Box::new(Expr::String(n.to_string())),
+      right: Box::new(Expr::String(d.to_string())),
     }
   };
   match s {
@@ -665,10 +676,10 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
       // Try parsing "X/Y" pattern
       if let Some((num, den)) = s.split_once('/') {
         let num_expr = resolve_unit_abbreviation(num).or_else(|| {
-          get_unit_info(num).map(|_| Expr::Identifier(num.to_string()))
+          get_unit_info(num).map(|_| Expr::String(num.to_string()))
         })?;
         let den_expr = resolve_unit_abbreviation(den).or_else(|| {
-          get_unit_info(den).map(|_| Expr::Identifier(den.to_string()))
+          get_unit_info(den).map(|_| Expr::String(den.to_string()))
         })?;
         Some(Expr::BinaryOp {
           op: BinaryOperator::Divide,
@@ -946,7 +957,7 @@ fn components_to_unit_expr(components: &[(String, i64)]) -> Expr {
   let mut denom_parts: Vec<Expr> = Vec::new();
 
   for (name, exp) in components {
-    let base = Expr::Identifier(name.clone());
+    let base = Expr::String(name.clone());
     let abs_exp = exp.abs();
     let part = if abs_exp == 1 {
       base
@@ -1044,15 +1055,15 @@ fn units_equal(u1: &Expr, u2: &Expr) -> bool {
   crate::syntax::expr_to_string(u1) == crate::syntax::expr_to_string(u2)
 }
 
-/// Recursively normalize unit expressions: String → Identifier,
-/// and expand abbreviations like "km/h" → Kilometers/Hours.
+/// Recursively normalize unit expressions: expand abbreviations like "km/h" → "Kilometers"/"Hours".
+/// Strings are kept as Expr::String (Wolfram stores units as strings internally).
 fn normalize_unit(mut unit: Expr) -> Expr {
   match &mut unit {
     Expr::String(s) => {
       let s = s.clone();
       // Try abbreviation expansion first
       if get_unit_info(&s).is_some() {
-        Expr::Identifier(s)
+        Expr::String(s)
       } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
         normalize_unit(expanded)
       } else if let Some(expanded) = resolve_per_unit(&s) {
@@ -1060,7 +1071,7 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       } else if let Some(parsed) = try_parse_unit_string(&s) {
         normalize_unit(parsed)
       } else {
-        Expr::Identifier(s)
+        Expr::String(s)
       }
     }
     Expr::BinaryOp { op, left, right } => {
@@ -1083,10 +1094,16 @@ fn normalize_unit(mut unit: Expr) -> Expr {
     }
     Expr::Identifier(s) => {
       let s = s.clone();
+      // Known unit name: convert Identifier to String for proper InputForm quoting
+      if get_unit_info(&s).is_some() {
+        return Expr::String(s);
+      }
+      // Try abbreviation expansion
+      if let Some(expanded) = resolve_unit_abbreviation(&s) {
+        return normalize_unit(expanded);
+      }
       // Try CamelCase "Per" decomposition for identifiers too
-      if get_unit_info(&s).is_none()
-        && let Some(expanded) = resolve_per_unit(&s)
-      {
+      if let Some(expanded) = resolve_per_unit(&s) {
         return normalize_unit(expanded);
       }
       unit
@@ -1693,7 +1710,7 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
     // Ensure positive denominator
     let (rn, rd) = if rd < 0 { (-rn, -rd) } else { (rn, rd) };
 
-    let base = Expr::Identifier(name.clone());
+    let base = Expr::String(name.clone());
     let abs_rn = rn.abs();
 
     let part = if rd == 1 && abs_rn == 1 {
@@ -1703,6 +1720,12 @@ fn power_unit_expr(unit: &Expr, p: i128, q: i128) -> Option<Expr> {
         op: BinaryOperator::Power,
         left: Box::new(base),
         right: Box::new(Expr::Integer(abs_rn)),
+      }
+    } else if abs_rn == 1 && rd == 2 {
+      // Power[base, 1/2] → Sqrt[base] (matching Wolfram convention for units)
+      Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![base],
       }
     } else {
       Expr::BinaryOp {

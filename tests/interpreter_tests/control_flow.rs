@@ -703,15 +703,19 @@ mod return_in_loops {
   #[test]
   fn return_in_while() {
     clear_state();
-    assert_eq!(interpret("While[True, Return[99]]").unwrap(), "99");
+    // In Wolfram, Return[] inside While is NOT caught by the loop -
+    // it propagates up as the symbolic Return[99]
+    assert_eq!(interpret("While[True, Return[99]]").unwrap(), "Return[99]");
   }
 
   #[test]
   fn return_in_for() {
     clear_state();
+    // In Wolfram, Return[] inside For is NOT caught by the loop -
+    // it propagates up as the symbolic Return[5]
     assert_eq!(
       interpret("For[i=1, i<=10, i++, If[i==5, Return[i]]]").unwrap(),
-      "5"
+      "Return[5]"
     );
   }
 }
