@@ -514,7 +514,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     // This is a simple identifier
     if let Some(stored) = ENV.with(|e| e.borrow().get(trimmed).cloned()) {
       return Ok(match stored {
-        StoredValue::ExprVal(e) => syntax::expr_to_output(&e),
+        StoredValue::ExprVal(e) => syntax::top_level_output(&e),
         StoredValue::Raw(val) => val,
         StoredValue::Association(items) => {
           let items_expr: Vec<(syntax::Expr, syntax::Expr)> = items
@@ -660,7 +660,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);
         // Convert to output string (strips quotes from strings for display)
-        last_result = Some(syntax::expr_to_output(&result_expr));
+        last_result = Some(syntax::top_level_output(&result_expr));
         any_nonempty = true;
       }
       Rule::FunctionDefinition => {

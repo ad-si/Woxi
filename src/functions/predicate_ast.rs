@@ -1139,25 +1139,30 @@ pub fn byte_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   fn count_bytes(expr: &Expr) -> i128 {
     match expr {
       // Atoms with data
-      Expr::Integer(_) => 16, // i128 = 16 bytes
+      Expr::Integer(_) => 16, // machine integer: 16 bytes (Wolfram's representation)
       Expr::BigInteger(n) => {
         let (_, bytes) = n.to_bytes_le();
         16 + bytes.len() as i128
       }
-      Expr::Real(_) => 8, // f64 = 8 bytes
-      Expr::BigFloat(s, _) => 8 + s.len() as i128,
-      Expr::String(s) => s.len() as i128,
+      Expr::Real(_) => 16, // machine real: 16 bytes (Wolfram's representation)
+      Expr::BigFloat(s, _) => 16 + s.len() as i128,
+      // Strings: 32-byte header + 8 bytes per 8 characters of content
+      Expr::String(s) => 32 + ((s.len() / 8) * 8) as i128,
       // Symbols and constants are shared, so 0 bytes
       Expr::Identifier(_) => 0,
       Expr::Constant(_) => 0,
       // Slots
       Expr::Slot(_) | Expr::SlotSequence(_) => 8,
-      // Compound expressions: pointer per element + recursive sizes
+      // Compound expressions: 40-byte base + 8 bytes per slot + recursive sizes
       Expr::List(items) => {
-        8 * items.len() as i128 + items.iter().map(count_bytes).sum::<i128>()
+        40 + 8 * items.len() as i128 + items.iter().map(count_bytes).sum::<i128>()
       }
-      Expr::FunctionCall { args, .. } => {
-        8 * args.len() as i128 + args.iter().map(count_bytes).sum::<i128>()
+      Expr::FunctionCall { name, args } => {
+        // Rational and Complex are packed types with fixed 56-byte size
+        if name == "Rational" || name == "Complex" {
+          return 56;
+        }
+        40 + 8 * args.len() as i128 + args.iter().map(count_bytes).sum::<i128>()
       }
       Expr::BinaryOp { left, right, .. } => {
         16 + count_bytes(left) + count_bytes(right)

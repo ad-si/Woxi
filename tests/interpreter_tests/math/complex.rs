@@ -527,7 +527,8 @@ mod im_tests {
 
   #[test]
   fn log2_non_power() {
-    assert_eq!(interpret("Log2[3]").unwrap(), "Log2[3]");
+    // Log2[x] for non-power-of-2 returns change-of-base formula (matches Wolfram)
+    assert_eq!(interpret("Log2[3]").unwrap(), "Log[3]/Log[2]");
   }
 
   // ── Log10 ────────────────────────────────────────────────
@@ -544,7 +545,8 @@ mod im_tests {
 
   #[test]
   fn log10_non_power() {
-    assert_eq!(interpret("Log10[7]").unwrap(), "Log10[7]");
+    // Log10[x] for non-power-of-10 returns change-of-base formula (matches Wolfram)
+    assert_eq!(interpret("Log10[7]").unwrap(), "Log[7]/Log[10]");
   }
 }
 

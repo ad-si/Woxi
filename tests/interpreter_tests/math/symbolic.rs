@@ -155,7 +155,7 @@ mod sum {
     // Sum[1/n, {n, 1, Infinity}] diverges — should return unevaluated
     assert_eq!(
       interpret("Sum[1/n, {n, 1, Infinity}]").unwrap(),
-      "Sum[1/n, {n, 1, Infinity}]"
+      "Sum[n^(-1), {n, 1, Infinity}]"
     );
   }
 

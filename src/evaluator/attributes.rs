@@ -167,6 +167,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
+    "True" | "False" => vec!["Locked", "Protected"],
 
     // Function is HoldAll + Protected
     "Function" => vec!["HoldAll", "Protected"],
@@ -291,8 +292,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "GreaterEqual"
     | "SameQ"
     | "UnsameQ"
-    | "True"
-    | "False"
     | "Null"
     | "None"
     | "Automatic"
@@ -491,7 +490,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FactorTerms"
     | "Delimiters"
     | "PrecedenceForm"
-    | "Skeleton"
     | "TotalWidth"
     | "Word"
     | "Frame"

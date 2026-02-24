@@ -464,8 +464,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Unix epoch is 1970-01-01; Wolfram epoch is 1900-01-01
     // Difference: 70 years = 2208988800 seconds (accounting for leap years)
     let wolfram_secs = unix_secs + 2208988800.0;
-    let int_secs = wolfram_secs.floor() as i128;
-    return Ok(Expr::Integer(int_secs));
+    return Ok(Expr::Real(wolfram_secs));
   }
 
   if args.len() != 1 {
@@ -508,6 +507,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let total =
           date_to_absolute_seconds(year, month, day, hour, minute, second);
+        // Integer date components always produce an integer result
         if total == total.floor() {
           Ok(Expr::Integer(total as i128))
         } else {
@@ -533,7 +533,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .collect();
           if let Some((y, m, d)) = parse_date_with_format(date_str, &format) {
             let total = date_to_absolute_seconds(y, m, d, 0, 0, 0.0);
-            return Ok(Expr::Integer(total as i128));
+            return Ok(Expr::Real(total));
           }
         }
         Ok(Expr::FunctionCall {

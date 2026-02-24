@@ -18,23 +18,25 @@ mod absolute_time {
 
   #[test]
   fn absolute_time_format_spec() {
+    // String format spec returns Real (Wolfram behavior)
     assert_eq!(
       interpret(
         "AbsoluteTime[{\"01/02/03\", {\"Day\", \"Month\", \"YearShort\"}}]"
       )
       .unwrap(),
-      "3253046400"
+      "3.2530464*^9"
     );
   }
 
   #[test]
   fn absolute_time_format_spec_dashes() {
+    // String format spec returns Real (Wolfram behavior)
     assert_eq!(
       interpret(
         "AbsoluteTime[{\"6-6-91\", {\"Day\", \"Month\", \"YearShort\"}}]"
       )
       .unwrap(),
-      "2885155200"
+      "2.8851552*^9"
     );
   }
 

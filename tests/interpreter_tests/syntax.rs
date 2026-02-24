@@ -200,8 +200,9 @@ mod plus_formatting {
   #[test]
   fn plus_times_before_identifier() {
     // Times[a, b] should come before c alphabetically (a < c)
+    // FullForm displays as FullForm[output form]
     let result = interpret("FullForm[a b + c]").unwrap();
-    assert_eq!(result, "Plus[Times[a, b], c]");
+    assert_eq!(result, "FullForm[a*b + c]");
   }
 
   #[test]
@@ -230,7 +231,7 @@ mod plus_formatting {
     // Terms with 1/z should sort by the variable z
     assert_eq!(
       interpret("x/Sqrt[5] + y^2 + 1/z").unwrap(),
-      "x/Sqrt[5] + y^2 + 1/z"
+      "x/Sqrt[5] + y^2 + z^(-1)"
     );
   }
 }
@@ -268,9 +269,10 @@ mod subtraction_without_spaces {
   fn implicit_times_then_minus_constant_fraction() {
     // Regression: `2 Pi - Pi/4` must parse as subtraction, not implicit multiplication by -Pi.
     // The result is simplified: 2*Pi - Pi/4 = (8*Pi - Pi)/4 = 7*Pi/4
+    // FullForm displays as FullForm[output form] matching wolframscript
     assert_eq!(
       interpret("FullForm[2 Pi - Pi/4]").unwrap(),
-      "Times[Rational[7, 4], Pi]"
+      "FullForm[(7*Pi)/4]"
     );
   }
 
@@ -326,29 +328,30 @@ mod full_form {
 
   #[test]
   fn full_form_plus() {
-    assert_eq!(interpret("FullForm[x + y + z]").unwrap(), "Plus[x, y, z]");
+    // FullForm displays as FullForm[output form] matching wolframscript
+    assert_eq!(interpret("FullForm[x + y + z]").unwrap(), "FullForm[x + y + z]");
   }
 
   #[test]
   fn full_form_times() {
-    assert_eq!(interpret("FullForm[x y z]").unwrap(), "Times[x, y, z]");
+    assert_eq!(interpret("FullForm[x y z]").unwrap(), "FullForm[x*y*z]");
   }
 
   #[test]
   fn full_form_list() {
-    assert_eq!(interpret("FullForm[{1, 2, 3}]").unwrap(), "List[1, 2, 3]");
+    assert_eq!(interpret("FullForm[{1, 2, 3}]").unwrap(), "FullForm[{1, 2, 3}]");
   }
 
   #[test]
   fn full_form_power() {
-    assert_eq!(interpret("FullForm[x^2]").unwrap(), "Power[x, 2]");
+    assert_eq!(interpret("FullForm[x^2]").unwrap(), "FullForm[x^2]");
   }
 
   #[test]
   fn full_form_complex() {
     assert_eq!(
       interpret("FullForm[a b + c]").unwrap(),
-      "Plus[Times[a, b], c]"
+      "FullForm[a*b + c]"
     );
   }
 
@@ -356,29 +359,29 @@ mod full_form {
   fn full_form_division() {
     assert_eq!(
       interpret("FullForm[a/b]").unwrap(),
-      "Times[a, Power[b, -1]]"
+      "FullForm[a/b]"
     );
   }
 
   #[test]
   fn full_form_reciprocal() {
-    assert_eq!(interpret("FullForm[1/z]").unwrap(), "Power[z, -1]");
+    assert_eq!(interpret("FullForm[1/z]").unwrap(), "FullForm[z^(-1)]");
   }
 
   #[test]
   fn full_form_sqrt() {
     assert_eq!(
       interpret("FullForm[Sqrt[5]]").unwrap(),
-      "Power[5, Rational[1, 2]]"
+      "FullForm[Sqrt[5]]"
     );
   }
 
   #[test]
   fn full_form_complex_expression() {
-    // Regression: FullForm must show canonical notation as plain text
+    // Regression: FullForm must show output notation wrapped in FullForm[...]
     assert_eq!(
       interpret("FullForm[x/Sqrt[5] + y^2 + 1/z]").unwrap(),
-      "Plus[Times[Power[5, Rational[-1, 2]], x], Power[y, 2], Power[z, -1]]"
+      "FullForm[x/Sqrt[5] + y^2 + z^(-1)]"
     );
   }
 
@@ -391,7 +394,7 @@ mod full_form {
       result.output_svg.is_none(),
       "FullForm should not produce SVG output"
     );
-    assert_eq!(result.result, "Power[z, -1]");
+    assert_eq!(result.result, "FullForm[z^(-1)]");
   }
 }
 
@@ -849,7 +852,7 @@ mod false_symbol {
 
   #[test]
   fn false_is_protected() {
-    assert_eq!(interpret("Attributes[False]").unwrap(), "{Protected}");
+    assert_eq!(interpret("Attributes[False]").unwrap(), "{Locked, Protected}");
   }
 
   #[test]
@@ -2312,7 +2315,7 @@ mod subscript_function {
   fn subscript_fullform() {
     assert_eq!(
       interpret("FullForm[Subscript[x, 1]]").unwrap(),
-      "Subscript[x, 1]"
+      "FullForm[Subscript[x, 1]]"
     );
   }
 }
@@ -2356,7 +2359,7 @@ mod true_symbol {
 
   #[test]
   fn true_is_protected() {
-    assert_eq!(interpret("Attributes[True]").unwrap(), "{Protected}");
+    assert_eq!(interpret("Attributes[True]").unwrap(), "{Locked, Protected}");
   }
 
   #[test]
@@ -3179,7 +3182,7 @@ mod skeleton {
 
   #[test]
   fn attributes() {
-    assert_eq!(interpret("Attributes[Skeleton]").unwrap(), "{Protected}");
+    assert_eq!(interpret("Attributes[Skeleton]").unwrap(), "{}");
   }
 }
 
@@ -3188,12 +3191,12 @@ mod string_skeleton {
 
   #[test]
   fn displays_as_angle_brackets() {
-    assert_eq!(interpret("StringSkeleton[5]").unwrap(), "<<5>>");
+    assert_eq!(interpret("StringSkeleton[5]").unwrap(), "5<<>>");
   }
 
   #[test]
   fn displays_with_string() {
-    assert_eq!(interpret("StringSkeleton[\"abc\"]").unwrap(), "<<abc>>");
+    assert_eq!(interpret("StringSkeleton[\"abc\"]").unwrap(), "abc<<>>");
   }
 
   #[test]

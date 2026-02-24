@@ -484,7 +484,7 @@ mod xor_logical {
   #[test]
   fn simplifies_with_false() {
     clear_state();
-    assert_eq!(interpret("Xor[a, False, b]").unwrap(), "a \\[Xor] b");
+    assert_eq!(interpret("Xor[a, False, b]").unwrap(), "Xor[a, b]");
   }
 }
 
@@ -506,13 +506,13 @@ mod not_logical {
   #[test]
   fn not_symbolic() {
     clear_state();
-    assert_eq!(interpret("Not[a]").unwrap(), "!a");
+    assert_eq!(interpret("Not[a]").unwrap(), " !a");
   }
 
   #[test]
   fn not_symbolic_expr() {
     clear_state();
-    assert_eq!(interpret("Not[a && b]").unwrap(), "!(a && b)");
+    assert_eq!(interpret("Not[a && b]").unwrap(), " !(a && b)");
   }
 
   #[test]
@@ -723,18 +723,24 @@ mod logical_expand {
   fn distribute_and_over_or() {
     assert_eq!(
       interpret("LogicalExpand[a && (b || c)]").unwrap(),
-      "a && b || a && c"
+      "(a && b) || (a && c)"
     );
   }
 
   #[test]
   fn de_morgan_not_and() {
-    assert_eq!(interpret("LogicalExpand[!(a && b)]").unwrap(), "!a || !b");
+    assert_eq!(
+      interpret("LogicalExpand[Not[a && b]]").unwrap(),
+      " !a ||  !b"
+    );
   }
 
   #[test]
   fn de_morgan_not_or() {
-    assert_eq!(interpret("LogicalExpand[!(a || b)]").unwrap(), "!a && !b");
+    assert_eq!(
+      interpret("LogicalExpand[Not[a || b]]").unwrap(),
+      " !a &&  !b"
+    );
   }
 
   #[test]
@@ -746,7 +752,7 @@ mod logical_expand {
   fn implies_expansion() {
     assert_eq!(
       interpret("LogicalExpand[Implies[a, b]]").unwrap(),
-      "!a || b"
+      "b ||  !a"
     );
   }
 
@@ -754,7 +760,7 @@ mod logical_expand {
   fn xor_expansion() {
     assert_eq!(
       interpret("LogicalExpand[Xor[a, b]]").unwrap(),
-      "a && !b || !a && b"
+      "(a &&  !b) || (b &&  !a)"
     );
   }
 
@@ -762,26 +768,32 @@ mod logical_expand {
   fn equivalent_expansion() {
     assert_eq!(
       interpret("LogicalExpand[Equivalent[a, b]]").unwrap(),
-      "a && b || !a && !b"
+      "(a && b) || ( !a &&  !b)"
     );
   }
 
   #[test]
   fn nand_expansion() {
-    assert_eq!(interpret("LogicalExpand[Nand[a, b]]").unwrap(), "!a || !b");
+    assert_eq!(
+      interpret("LogicalExpand[Nand[a, b]]").unwrap(),
+      " !a ||  !b"
+    );
   }
 
   #[test]
   fn nor_expansion() {
-    assert_eq!(interpret("LogicalExpand[Nor[a, b]]").unwrap(), "!a && !b");
+    assert_eq!(
+      interpret("LogicalExpand[Nor[a, b]]").unwrap(),
+      " !a &&  !b"
+    );
   }
 
   #[test]
   fn nested_expansion() {
-    // (a || b) && (c || d) → a && c || b && c || a && d || b && d
+    // (a || b) && (c || d) → (a && c) || (a && d) || (b && c) || (b && d)
     assert_eq!(
       interpret("LogicalExpand[(a || b) && (c || d)]").unwrap(),
-      "a && c || b && c || a && d || b && d"
+      "(a && c) || (a && d) || (b && c) || (b && d)"
     );
   }
 
@@ -789,7 +801,7 @@ mod logical_expand {
   fn already_dnf() {
     assert_eq!(
       interpret("LogicalExpand[a || (b && c)]").unwrap(),
-      "a || b && c"
+      "a || (b && c)"
     );
   }
 

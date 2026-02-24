@@ -131,6 +131,7 @@ pub fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
     // Condition matches assumptions → strip ConditionalExpression
     simplify_expr(value)
   } else if assumptions_str == format!("!{}", cond_str)
+    || assumptions_str == format!(" !{}", cond_str)
     || assumptions_str == format!("Not[{}]", cond_str)
   {
     // Assumptions negate the condition → Undefined

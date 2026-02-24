@@ -1259,6 +1259,23 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── QuantityUnit ───────────────────────────────────────────────────────────
 
+/// Convert unit expression identifiers to strings (Wolfram stores units as strings)
+fn unit_idents_to_strings(unit: &Expr) -> Expr {
+  match unit {
+    Expr::Identifier(s) => Expr::String(s.clone()),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(unit_idents_to_strings(left)),
+      right: Box::new(unit_idents_to_strings(right)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(unit_idents_to_strings).collect(),
+    },
+    _ => unit.clone(),
+  }
+}
+
 pub fn quantity_unit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1266,7 +1283,7 @@ pub fn quantity_unit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some((_mag, unit)) = is_quantity(&args[0]) {
-    Ok(unit.clone())
+    Ok(unit_idents_to_strings(unit))
   } else {
     Ok(Expr::FunctionCall {
       name: "QuantityUnit".to_string(),

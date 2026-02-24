@@ -495,6 +495,29 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Sort rules alphabetically by variable name to match Wolfram's ordering
+  rules.sort_by(|a, b| {
+    let a_name = if let Expr::Rule { pattern, .. } = a {
+      if let Expr::Identifier(s) = pattern.as_ref() {
+        s.as_str()
+      } else {
+        ""
+      }
+    } else {
+      ""
+    };
+    let b_name = if let Expr::Rule { pattern, .. } = b {
+      if let Expr::Identifier(s) = pattern.as_ref() {
+        s.as_str()
+      } else {
+        ""
+      }
+    } else {
+      ""
+    };
+    a_name.cmp(b_name)
+  });
+
   Ok(Expr::List(vec![Expr::List(rules)]))
 }
 

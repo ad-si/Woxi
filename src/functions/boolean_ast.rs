@@ -709,17 +709,17 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
         "Implies" if args.len() == 2 => {
-          // Implies[a, b] → Or[Not[a], b]
+          // Implies[a, b] → Or[b, Not[a]] (Wolfram puts b first)
           let a = eliminate_connectives(&args[0]);
           let b = eliminate_connectives(&args[1]);
           Expr::FunctionCall {
             name: "Or".to_string(),
             args: vec![
+              b,
               Expr::FunctionCall {
                 name: "Not".to_string(),
                 args: vec![a],
               },
-              b,
             ],
           }
         }
@@ -770,7 +770,7 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           }
         }
         "Xor" if args.len() >= 2 => {
-          // Xor[a, b] → Or[And[a, Not[b]], And[Not[a], b]]
+          // Xor[a, b] → Or[And[a, Not[b]], And[b, Not[a]]] (Wolfram order)
           let elim_args: Vec<Expr> =
             args.iter().map(eliminate_connectives).collect();
           if elim_args.len() == 2 {
@@ -792,11 +792,11 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
                 Expr::FunctionCall {
                   name: "And".to_string(),
                   args: vec![
+                    b.clone(),
                     Expr::FunctionCall {
                       name: "Not".to_string(),
                       args: vec![a.clone()],
                     },
-                    b.clone(),
                   ],
                 },
               ],
@@ -956,17 +956,18 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
             name: tn,
             args: targs,
           } if tn == "Or" => {
-            // For each Or alternative, cross-product with existing groups
+            // For each existing group, cross-product with Or alternatives
+            // (Wolfram order: iterate existing groups first, then alternatives)
             let mut new_groups = Vec::new();
-            for alt in targs {
-              let alt_literals = match alt {
-                Expr::FunctionCall {
-                  name: an,
-                  args: aargs,
-                } if an == "And" => aargs.clone(),
-                _ => vec![alt.clone()],
-              };
-              for existing in &and_groups {
+            for existing in &and_groups {
+              for alt in targs {
+                let alt_literals = match alt {
+                  Expr::FunctionCall {
+                    name: an,
+                    args: aargs,
+                  } if an == "And" => aargs.clone(),
+                  _ => vec![alt.clone()],
+                };
                 let mut group = existing.clone();
                 group.extend(alt_literals.clone());
                 new_groups.push(group);

@@ -1140,9 +1140,17 @@ pub fn log10_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
-  Ok(Expr::FunctionCall {
-    name: "Log10".to_string(),
-    args: args.to_vec(),
+  // Symbolic fallback: Log10[x] = Log[x] / Log[10]
+  Ok(Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: args.to_vec(),
+    }),
+    right: Box::new(Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::Integer(10)],
+    }),
   })
 }
 
@@ -1166,9 +1174,17 @@ pub fn log2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
-  Ok(Expr::FunctionCall {
-    name: "Log2".to_string(),
-    args: args.to_vec(),
+  // Symbolic fallback: Log2[x] = Log[x] / Log[2]
+  Ok(Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: args.to_vec(),
+    }),
+    right: Box::new(Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![Expr::Integer(2)],
+    }),
   })
 }
 
@@ -1552,16 +1568,16 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(0) => {
-      // ArcCosh[0] = I*Pi/2
+      // ArcCosh[0] = (I/2)*Pi
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
         &[
-          Expr::Identifier("I".to_string()),
-          Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: Box::new(Expr::Constant("Pi".to_string())),
-            right: Box::new(Expr::Integer(2)),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)],
           },
+          Expr::Identifier("I".to_string()),
+          Expr::Constant("Pi".to_string()),
         ],
       );
     }
@@ -1621,16 +1637,16 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(0) => {
-      // ArcCoth[0] = I*Pi/2
+      // ArcCoth[0] = (I/2)*Pi
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
         &[
-          Expr::Identifier("I".to_string()),
-          Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Divide,
-            left: Box::new(Expr::Constant("Pi".to_string())),
-            right: Box::new(Expr::Integer(2)),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)],
           },
+          Expr::Identifier("I".to_string()),
+          Expr::Constant("Pi".to_string()),
         ],
       );
     }

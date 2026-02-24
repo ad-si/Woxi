@@ -1375,7 +1375,7 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if n == 0 {
-    return Ok(Expr::Identifier("N".to_string()));
+    return Ok(Expr::String("N".to_string()));
   }
 
   let abs_n = n.unsigned_abs() as u64;
@@ -1414,5 +1414,5 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Identifier(result))
+  Ok(Expr::String(result))
 }

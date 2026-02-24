@@ -28,12 +28,9 @@ pub fn dispatch_predicate_functions(
         _ => Expr::Identifier("False".to_string()),
       }));
     }
-    "SymbolQ" if args.len() == 1 => {
-      return Some(Ok(match &args[0] {
-        Expr::Identifier(_) => Expr::Identifier("True".to_string()),
-        _ => Expr::Identifier("False".to_string()),
-      }));
-    }
+    // SymbolQ is not a standard Wolfram built-in (it's from GeneralUtilities package),
+    // so return unevaluated to match Wolfram behavior
+    // "SymbolQ" if args.len() == 1 => { ... }
     "Boole" if args.len() == 1 => {
       return Some(Ok(match &args[0] {
         Expr::Identifier(name) if name == "True" => Expr::Integer(1),
@@ -445,9 +442,9 @@ pub fn dispatch_predicate_functions(
       return Some(Ok(Expr::String("Global`".to_string())));
     }
     "Context" if args.len() == 1 => {
-      let sym_name = match &args[0] {
-        Expr::Identifier(name) => name.clone(),
-        Expr::String(name) => name.clone(),
+      let (sym_name, from_string) = match &args[0] {
+        Expr::Identifier(name) => (name.clone(), false),
+        Expr::String(name) => (name.clone(), true),
         _ => {
           return Some(Ok(Expr::FunctionCall {
             name: "Context".to_string(),
@@ -459,6 +456,18 @@ pub fn dispatch_predicate_functions(
       let builtin = get_builtin_attributes(&sym_name);
       if !builtin.is_empty() {
         return Some(Ok(Expr::String("System`".to_string())));
+      }
+      // For string arguments, check if symbol exists; if not, return unevaluated
+      if from_string {
+        let exists = crate::ENV.with(|e| e.borrow().contains_key(&sym_name))
+          || crate::FUNC_DEFS.with(|m| m.borrow().contains_key(&sym_name))
+          || crate::FUNC_ATTRS.with(|m| m.borrow().contains_key(&sym_name));
+        if !exists {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Context".to_string(),
+            args: args.to_vec(),
+          }));
+        }
       }
       // User-defined symbols are in Global` context
       return Some(Ok(Expr::String("Global`".to_string())));
