@@ -98,16 +98,21 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Fall back: compute indefinite integral and evaluate at bounds
     if let Some(antideriv) = integrate(&args[0], &var_name) {
       let antideriv = simplify(antideriv);
+      let antideriv = crate::evaluator::evaluate_expr_to_expr(&antideriv)
+        .unwrap_or(antideriv);
       // F(hi) - F(lo)
       let at_hi = crate::syntax::substitute_variable(&antideriv, &var_name, hi);
       let at_lo = crate::syntax::substitute_variable(&antideriv, &var_name, lo);
       let at_hi = crate::evaluator::evaluate_expr_to_expr(&at_hi)?;
       let at_lo = crate::evaluator::evaluate_expr_to_expr(&at_lo)?;
-      return Ok(simplify(Expr::BinaryOp {
+      let result = simplify(Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Minus,
         left: Box::new(at_hi),
         right: Box::new(at_lo),
-      }));
+      });
+      return Ok(
+        crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+      );
     }
 
     // Return unevaluated
@@ -130,7 +135,12 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Integrate the expression
   match integrate(&args[0], &var_name) {
-    Some(result) => Ok(simplify(result)),
+    Some(result) => {
+      let simplified = simplify(result);
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&simplified)
+        .unwrap_or(simplified);
+      Ok(evaluated)
+    }
     None => Ok(Expr::FunctionCall {
       name: "Integrate".to_string(),
       args: args.to_vec(),
@@ -1266,6 +1276,42 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             return Some(make_gaussian_antiderivative(var, &coeff));
           }
           None
+        }
+        "Times" => {
+          // ∫ (c1 * c2 * ... * f(x)) dx = c1 * c2 * ... * ∫ f(x) dx
+          let (const_factors, var_factors): (Vec<_>, Vec<_>) =
+            args.iter().partition(|a| is_constant_wrt(a, var));
+          if var_factors.len() == 1 {
+            let int_var = integrate(var_factors[0], var)?;
+            let const_expr = if const_factors.is_empty() {
+              return Some(int_var);
+            } else if const_factors.len() == 1 {
+              const_factors[0].clone()
+            } else {
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: const_factors.into_iter().cloned().collect(),
+              }
+            };
+            Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(const_expr),
+              right: Box::new(int_var),
+            })
+          } else if var_factors.is_empty() {
+            // All constant: ∫ c dx = c*x
+            let const_expr = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: args.clone(),
+            };
+            Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(const_expr),
+              right: Box::new(Expr::Identifier(var.to_string())),
+            })
+          } else {
+            None
+          }
         }
         _ => None,
       }

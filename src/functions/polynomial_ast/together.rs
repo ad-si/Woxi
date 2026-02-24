@@ -106,6 +106,15 @@ pub(super) fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             num_factors.push(*left.clone());
             den_factors.push(*right.clone());
           }
+          // Rational[n,d] inside Times: split numerator n and denominator d
+          Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } if rname == "Rational" && rargs.len() == 2 => {
+            // Denominator is always positive after make_rational normalisation
+            num_factors.push(rargs[0].clone());
+            den_factors.push(rargs[1].clone());
+          }
           _ => num_factors.push(arg.clone()),
         }
       }

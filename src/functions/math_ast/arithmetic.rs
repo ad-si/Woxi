@@ -581,6 +581,27 @@ fn expr_to_f64(e: &Expr) -> Option<f64> {
   }
 }
 
+/// Returns true if `e` contains free variables (identifiers that are not
+/// well-known constants like I, Infinity).  Used to distinguish transcendental
+/// expressions-of-variables (e.g. Sin[2*x]) from pure numeric constants
+/// (e.g. Log[15], Sqrt[6]) when sorting Plus terms.
+fn has_free_variables(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(name) => {
+      // I and Infinity are well-known constants, not free variables
+      name != "I" && name != "Infinity"
+    }
+    Expr::Constant(_) => false,
+    Expr::Integer(_) | Expr::Real(_) => false,
+    Expr::FunctionCall { args, .. } => args.iter().any(has_free_variables),
+    Expr::BinaryOp { left, right, .. } => {
+      has_free_variables(left) || has_free_variables(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_free_variables(operand),
+    _ => false,
+  }
+}
+
 /// Returns true if `e` contains a non-standard function call (not in the common
 /// algebraic/transcendental set) that has at least one non-numeric argument.
 /// This identifies expressions like `Dt[y, x]` or `Derivative[1][f][x]` that
@@ -690,12 +711,17 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     }
     _ => {
       // If exactly one term has polynomial pairs and the other doesn't,
-      // check whether the non-polynomial term contains an opaque function call
-      // with free-variable arguments (e.g. Dt[y, x], Derivative[1][f][x]).
-      // If so, the polynomial term sorts first.
+      // sort the polynomial term first when the non-polynomial term is a
+      // transcendental function (priority 1) with free variables, e.g.
+      // Sin[2*x] (sort after x/2) or Times[-1, Sin[x]/4].
+      // Pure numeric constants like Log[15] and compound algebraic terms
+      // like 5*(5*a+b) fall through to string comparison.
       if a_has_pairs != b_has_pairs {
         let none_term = if b_has_pairs { a } else { b };
-        if contains_opaque_fn_call(none_term) {
+        let (_, none_base) = decompose_term(none_term);
+        if contains_opaque_fn_call(none_term)
+          || (term_priority(&none_base) == 1 && has_free_variables(&none_base))
+        {
           return if a_has_pairs {
             std::cmp::Ordering::Less
           } else {
@@ -749,6 +775,8 @@ pub fn term_priority(e: &Expr) -> i32 {
 /// This ensures simple symbols sort before sums/products, matching Wolfram behavior.
 pub fn times_factor_subpriority(e: &Expr) -> i32 {
   match e {
+    // Imaginary unit I sorts before all other symbolic factors
+    Expr::Identifier(name) if name == "I" => -2,
     Expr::Identifier(_) | Expr::Constant(_) => 0,
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -760,9 +788,21 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
         crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
       ..
     } => 1,
-    Expr::FunctionCall { name, .. } => match name.as_str() {
-      "Times" | "Power" | "Rational" => 0,
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Times" => args.iter().map(times_factor_subpriority).max().unwrap_or(0),
+      "Rational" => 0,
       "Plus" => 1,
+      // Power[base, exp] and Sqrt[base] sort like their base (same as BinaryOp::Power)
+      "Sqrt" if args.len() == 1 => times_factor_subpriority(&args[0]),
+      "Power" if args.len() == 2 => times_factor_subpriority(&args[0]),
+      // Numeric-constant function calls (e.g. Log[2]) sort before variables
+      // but after the imaginary unit I
+      _ if args.iter().all(|a| {
+        matches!(a, Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_))
+      }) =>
+      {
+        -1
+      }
       _ => 2,
     },
     _ => 0,
@@ -1056,6 +1096,15 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut any_real = false;
   let mut symbolic_args: Vec<Expr> = Vec::new();
 
+  // Pre-check: is there an explicit Rational or non-unity Integer coefficient among the args?
+  // If so, we can absorb integer denominators from (expr/d) terms into the coefficient.
+  // This simplifies e.g. Times[Rational(-1,2), x^3/3] → Rational(-1,6)*x^3
+  // but leaves Times[I, Pi/2] intact (no explicit rational coefficient).
+  let has_rational_coeff_in_args = args.iter().any(|a| {
+    matches!(a, Expr::FunctionCall { name, .. } if name == "Rational")
+      || matches!(a, Expr::Integer(n) if *n != 1 && *n != -1)
+  });
+
   for arg in args {
     match arg {
       Expr::Integer(n) => {
@@ -1088,7 +1137,28 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       _ => {
-        if let Some(n) = expr_to_num(arg) {
+        // If arg is (symbolic_expr / Integer(d)) AND there is already a rational or
+        // non-unity integer coefficient among the args, absorb d into the coefficient.
+        // E.g. Times[Rational(-1,2), x^3/3] → Rational(-1,6)*x^3
+        // But leave Times[I, Pi/2] unchanged (no explicit rational coefficient).
+        if has_rational_coeff_in_args
+          && let Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: num_expr,
+            right: den_expr,
+          } = arg
+          && let Expr::Integer(d) = den_expr.as_ref()
+          && *d != 0
+          && expr_to_num(num_expr).is_none()
+        {
+          if let Some(rd) = rat_denom.checked_mul(*d) {
+            rat_denom = rd;
+            has_rational = true;
+            symbolic_args.push(*num_expr.clone());
+          } else {
+            symbolic_args.push(arg.clone());
+          }
+        } else if let Some(n) = expr_to_num(arg) {
           real_product *= n;
           any_real = true;
         } else {

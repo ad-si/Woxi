@@ -65,6 +65,14 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
         right: Box::new(n_eval(right)?),
       })
     }
+    // Rule: keep the pattern, apply N to the replacement
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Ok(Expr::Rule {
+      pattern: pattern.clone(),
+      replacement: Box::new(n_eval(replacement)?),
+    }),
     _ => {
       if let Some(v) = try_eval_to_f64(expr) {
         Ok(Expr::Real(v))

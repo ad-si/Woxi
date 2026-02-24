@@ -321,11 +321,82 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       times_ast(&[Expr::Identifier("I".to_string()), sqrt_pos])
     }
     Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
-    _ => Ok(Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: args.to_vec(),
-    }),
+    // Sqrt[a + b*I] for Gaussian integers — try to find exact Gaussian integer sqrt
+    _ => {
+      if let Some(result) = try_sqrt_gaussian(&args[0]) {
+        return Ok(result);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: args.to_vec(),
+      })
+    }
   }
+}
+
+/// Try to compute an exact Gaussian integer square root of a complex number.
+///
+/// For `z = a + b*I` (Gaussian integer), finds `p + q*I` such that `(p+qI)^2 = z`,
+/// choosing the principal root with `p >= 0` (or `p == 0, q > 0`).
+/// Returns `None` if no such integer solution exists.
+fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
+  use crate::functions::math_ast::numeric_utils::try_extract_complex_exact;
+  let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
+  // Normalize to integers a and b where z = a + b*I
+  // Require both parts to be integers (denominator 1 after reducing)
+  let g_r = crate::functions::math_ast::numeric_utils::gcd(rn, rd).abs();
+  let (rn, rd) = (rn / g_r, rd / g_r);
+  let g_i = crate::functions::math_ast::numeric_utils::gcd(in_, id).abs();
+  let (in_, id) = (in_ / g_i, id / g_i);
+  // Pure real cases are handled by existing code; skip to avoid duplication
+  if in_ == 0 {
+    return None;
+  }
+  if rd != 1 || id != 1 {
+    return None; // Only handle Gaussian integers, not Gaussian rationals
+  }
+  let a = rn; // real part
+  let b = in_; // imaginary part
+  // |z|^2 = a^2 + b^2; needs to be a perfect square n^2
+  let m = a.checked_mul(a)?.checked_add(b.checked_mul(b)?)?;
+  let n = (m as f64).sqrt() as i128;
+  if n * n != m {
+    return None; // |z| is not an integer
+  }
+  // p^2 = (n + a) / 2; needs n + a to be even and non-negative
+  let n_plus_a = n.checked_add(a)?;
+  if n_plus_a < 0 || n_plus_a % 2 != 0 {
+    return None;
+  }
+  let p_sq = n_plus_a / 2;
+  let p = (p_sq as f64).sqrt() as i128;
+  if p * p != p_sq {
+    return None; // p is not an integer
+  }
+  // Determine q: q = b / (2*p)
+  if p == 0 {
+    // Handle p == 0: then a == -n <= 0 and b != 0 → q^2 = n, pick q > 0
+    let q_sq = n;
+    let q = (q_sq as f64).sqrt() as i128;
+    if q * q != q_sq {
+      return None;
+    }
+    // Choose q with same sign as b (principal root convention)
+    let q = if b < 0 { -q } else { q };
+    return Some(build_complex_expr(0, 1, q, 1));
+  }
+  let two_p = p.checked_mul(2)?;
+  if b % two_p != 0 {
+    return None;
+  }
+  let q = b / two_p;
+  // Verify: (p + q*I)^2 = p^2 - q^2 + 2pq*I should equal a + b*I
+  let check_re = p.checked_mul(p)?.checked_sub(q.checked_mul(q)?)?;
+  let check_im = p.checked_mul(q)?.checked_mul(2)?;
+  if check_re != a || check_im != b {
+    return None;
+  }
+  Some(build_complex_expr(p, 1, q, 1))
 }
 
 /// Surd[x, n] - Real-valued nth root
