@@ -76,39 +76,15 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
   let mut hb_socket =
     runtimelib::create_kernel_heartbeat_connection(&connection_info).await?;
 
-  // Start heartbeat thread with more aggressive polling
+  // Start heartbeat thread
   let hb_handle = tokio::spawn(async move {
-    let mut interval =
-      tokio::time::interval(tokio::time::Duration::from_millis(500));
-    loop {
-      interval.tick().await; // Wait for the next interval tick
-
-      // Check heartbeat more often
-      match hb_socket.single_heartbeat().await {
-        Ok(_) => {
-          // Heartbeat successfully processed
-        }
-        Err(e) => {
-          eprintln!("Heartbeat error: {}", e);
-          break;
-        }
-      }
-    }
+    while let Ok(()) = hb_socket.single_heartbeat().await {}
   });
 
   // Send initial status: idle
-  let status = Status::idle();
-  // For initial messages with no parent, use our kernel's session ID
-  let dummy_parent = jupyter_protocol::Header {
-    msg_id: "".to_string(),
-    session: session_id.clone(),
-    username: "woxi".to_string(),
-    date: chrono::Utc::now(),
-    msg_type: "".to_string(),
-    version: "5.3.0".to_string(),
-  };
-  let status_message = create_message(&status, Some(&dummy_parent), vec![]);
-  iopub_socket.send(status_message).await?;
+  iopub_socket
+    .send(JupyterMessage::new(Status::idle(), None))
+    .await?;
 
   // Main loop
   loop {
@@ -126,17 +102,13 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
                         },
                         JupyterMessageContent::KernelInfoRequest(_) => {
                             // Send busy status before handling kernel info
-                            let busy_status = Status::busy();
-                            let busy_msg = create_message(&busy_status, Some(&request.header), vec![]);
-                            iopub_socket.send(busy_msg).await?;
+                            iopub_socket.send(Status::busy().as_child_of(&request)).await?;
 
                             // Handle the kernel info request
                             handle_kernel_info_request(&mut shell_socket, &request).await?;
 
                             // Send idle status after handling kernel info
-                            let idle_status = Status::idle();
-                            let idle_msg = create_message(&idle_status, Some(&request.header), vec![]);
-                            iopub_socket.send(idle_msg).await?;
+                            iopub_socket.send(Status::idle().as_child_of(&request)).await?;
                         },
                         JupyterMessageContent::IsCompleteRequest(is_complete_request) => {
                             handle_is_complete_request(&mut shell_socket, &request, is_complete_request).await?;
@@ -145,29 +117,18 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
                             println!("Received shutdown request on shell channel");
 
                             // Send status: busy
-                            let busy_status = Status::busy();
-                            let busy_msg = create_message(&busy_status, Some(&request.header), vec![]);
-                            iopub_socket.send(busy_msg).await?;
+                            iopub_socket.send(Status::busy().as_child_of(&request)).await?;
 
-                            // Create shutdown reply
+                            // Send the shutdown reply
                             let shutdown_reply = jupyter_protocol::ShutdownReply {
                                 restart: shutdown_request.restart,
                                 status: jupyter_protocol::ReplyStatus::Ok,
                                 error: None,
                             };
-
-                            // Send the reply
-                            let reply_msg = create_message(
-                                &shutdown_reply,
-                                Some(&request.header),
-                                request.zmq_identities.iter().map(|b| b.to_vec()).collect(),
-                            );
-                            shell_socket.send(reply_msg).await?;
+                            shell_socket.send(shutdown_reply.as_child_of(&request)).await?;
 
                             // Send status: idle before exiting
-                            let idle_status = Status::idle();
-                            let idle_msg = create_message(&idle_status, Some(&request.header), vec![]);
-                            iopub_socket.send(idle_msg).await?;
+                            iopub_socket.send(Status::idle().as_child_of(&request)).await?;
 
                             println!("Shutdown reply sent, exiting");
                             break;
@@ -193,46 +154,31 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
                             println!("Received shutdown request on control channel");
 
                             // Send status: busy
-                            let busy_status = Status::busy();
-                            let busy_msg = create_message(&busy_status, Some(&request.header), vec![]);
-                            iopub_socket.send(busy_msg).await?;
+                            iopub_socket.send(Status::busy().as_child_of(&request)).await?;
 
-                            // Create shutdown reply
+                            // Send the shutdown reply
                             let shutdown_reply = jupyter_protocol::ShutdownReply {
                                 restart: shutdown_request.restart,
                                 status: jupyter_protocol::ReplyStatus::Ok,
                                 error: None,
                             };
-
-                            // Send the reply
-                            let reply_msg = create_message(
-                                &shutdown_reply,
-                                Some(&request.header),
-                                request.zmq_identities.iter().map(|b| b.to_vec()).collect(),
-                            );
-                            control_socket.send(reply_msg).await?;
+                            control_socket.send(shutdown_reply.as_child_of(&request)).await?;
 
                             // Send status: idle before exiting
-                            let idle_status = Status::idle();
-                            let idle_msg = create_message(&idle_status, Some(&request.header), vec![]);
-                            iopub_socket.send(idle_msg).await?;
+                            iopub_socket.send(Status::idle().as_child_of(&request)).await?;
 
                             println!("Shutdown reply sent from control channel, exiting");
                             break;
                         },
                         JupyterMessageContent::KernelInfoRequest(_) => {
                             // Send busy status before handling kernel info
-                            let busy_status = Status::busy();
-                            let busy_msg = create_message(&busy_status, Some(&request.header), vec![]);
-                            iopub_socket.send(busy_msg).await?;
+                            iopub_socket.send(Status::busy().as_child_of(&request)).await?;
 
                             // Handle the kernel info request
                             handle_kernel_info_request(&mut control_socket, &request).await?;
 
                             // Send idle status after handling kernel info
-                            let idle_status = Status::idle();
-                            let idle_msg = create_message(&idle_status, Some(&request.header), vec![]);
-                            iopub_socket.send(idle_msg).await?;
+                            iopub_socket.send(Status::idle().as_child_of(&request)).await?;
                         },
                         _ => {
                             println!("Unhandled control message: {:?}", request.header.msg_type);
@@ -282,59 +228,6 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
   Ok(())
 }
 
-// Helper function to create a jupyter message
-fn create_message<T>(
-  content: &T,
-  parent: Option<&jupyter_protocol::Header>,
-  identities: Vec<Vec<u8>>,
-) -> JupyterMessage
-where
-  T: Clone,
-  JupyterMessageContent: From<T>,
-{
-  let content_clone = content.clone();
-  let jupyter_content: JupyterMessageContent = content_clone.into();
-
-  let now = chrono::Utc::now();
-  let header = jupyter_protocol::Header {
-    msg_id: Uuid::new_v4().to_string(),
-    session: parent
-      .map_or_else(|| Uuid::new_v4().to_string(), |h| h.session.clone()),
-    username: "woxi".to_string(),
-    date: now,
-    msg_type: get_message_type(&jupyter_content),
-    version: "5.3.0".to_string(),
-  };
-
-  JupyterMessage {
-    zmq_identities: identities.into_iter().map(Into::into).collect(),
-    header,
-    parent_header: parent.cloned(),
-    metadata: Default::default(),
-    content: jupyter_content,
-    buffers: vec![],
-    channel: None,
-  }
-}
-
-// Helper function to get message type
-fn get_message_type(content: &JupyterMessageContent) -> String {
-  match content {
-    JupyterMessageContent::Status(_) => "status".to_string(),
-    JupyterMessageContent::ExecuteInput(_) => "execute_input".to_string(),
-    JupyterMessageContent::ExecuteResult(_) => "execute_result".to_string(),
-    JupyterMessageContent::StreamContent(_) => "stream".to_string(),
-    JupyterMessageContent::ExecuteReply(_) => "execute_reply".to_string(),
-    JupyterMessageContent::KernelInfoReply(_) => {
-      "kernel_info_reply".to_string()
-    }
-    JupyterMessageContent::IsCompleteReply(_) => {
-      "is_complete_reply".to_string()
-    }
-    _ => "unknown".to_string(),
-  }
-}
-
 // Handle execute_request messages
 async fn handle_execute_request(
   shell_socket: &mut runtimelib::KernelShellConnection,
@@ -349,33 +242,24 @@ async fn handle_execute_request(
   );
 
   // 1. Send status: busy
-  let busy_status = Status::busy();
-  let busy_msg = create_message(&busy_status, Some(&request.header), vec![]);
-  iopub_socket.send(busy_msg).await?;
+  iopub_socket.send(Status::busy().as_child_of(request)).await?;
 
   // 2. Send execute_input
   let execute_input = jupyter_protocol::ExecuteInput {
     code: execute_request.code.clone(),
     execution_count: ExecutionCount(execution_count),
   };
-  let input_msg = create_message(&execute_input, Some(&request.header), vec![]);
-  iopub_socket.send(input_msg).await?;
+  iopub_socket.send(execute_input.as_child_of(request)).await?;
 
   // 3. Execute the code using woxi interpreter with the new stdout capture mode
-
-  // Use the new interpret_with_stdout function to get both stdout and the result
   let (execution_result, graphics) =
     match woxi::interpret_with_stdout(&execute_request.code) {
       Ok(result) => {
         // Send captured stdout if there's any content
         if !result.stdout.is_empty() {
-          let stream_content = jupyter_protocol::StreamContent {
-            name: jupyter_protocol::Stdio::Stdout,
-            text: result.stdout,
-          };
-          let stream_msg =
-            create_message(&stream_content, Some(&request.header), vec![]);
-          iopub_socket.send(stream_msg).await?;
+          iopub_socket
+            .send(jupyter_protocol::StreamContent::stdout(&result.stdout).as_child_of(request))
+            .await?;
         }
 
         // Return the result and any graphical output
@@ -383,13 +267,9 @@ async fn handle_execute_request(
       }
       Err(e) => {
         // Send stderr stream message with error
-        let error_content = jupyter_protocol::StreamContent {
-          name: jupyter_protocol::Stdio::Stderr,
-          text: format!("Error: {0}\n", e),
-        };
-        let error_msg =
-          create_message(&error_content, Some(&request.header), vec![]);
-        iopub_socket.send(error_msg).await?;
+        iopub_socket
+          .send(jupyter_protocol::StreamContent::stderr(&format!("Error: {0}\n", e)).as_child_of(request))
+          .await?;
 
         // Return error text for execute_result
         (format!("Error: {0}", e), None)
@@ -414,16 +294,13 @@ async fn handle_execute_request(
       metadata: Default::default(),
       transient: None,
     };
-
-    let result_msg =
-      create_message(&execute_result, Some(&request.header), vec![]);
-    iopub_socket.send(result_msg).await?;
+    iopub_socket
+      .send(execute_result.as_child_of(request))
+      .await?;
   }
 
   // 5. Send status: idle
-  let idle_status = Status::idle();
-  let idle_msg = create_message(&idle_status, Some(&request.header), vec![]);
-  iopub_socket.send(idle_msg).await?;
+  iopub_socket.send(Status::idle().as_child_of(request)).await?;
 
   // 6. Send execute_reply
   let execute_reply = jupyter_protocol::ExecuteReply {
@@ -433,13 +310,9 @@ async fn handle_execute_request(
     user_expressions: Default::default(),
     error: None,
   };
-
-  let reply_msg = create_message(
-    &execute_reply,
-    Some(&request.header),
-    request.zmq_identities.iter().map(|b| b.to_vec()).collect(),
-  );
-  shell_socket.send(reply_msg).await?;
+  shell_socket
+    .send(execute_reply.as_child_of(request))
+    .await?;
 
   Ok(())
 }
@@ -459,13 +332,9 @@ async fn handle_is_complete_request(
     status: jupyter_protocol::IsCompleteReplyStatus::Complete,
     indent: "".to_string(),
   };
-
-  let reply_msg = create_message(
-    &is_complete_reply,
-    Some(&request.header),
-    request.zmq_identities.iter().map(|b| b.to_vec()).collect(),
-  );
-  shell_socket.send(reply_msg).await?;
+  shell_socket
+    .send(is_complete_reply.as_child_of(request))
+    .await?;
 
   Ok(())
 }
@@ -508,36 +377,13 @@ async fn handle_kernel_info_request(
     error: None,
   };
 
-  // Note: KernelInfoReply needs to be boxed for JupyterMessageContent
-  let boxed_reply = Box::new(kernel_info_reply);
-
-  // Create message manually for KernelInfoReply since it's a special case
-  let now = chrono::Utc::now();
-  let header = jupyter_protocol::Header {
-    msg_id: Uuid::new_v4().to_string(),
-    session: request.header.session.clone(),
-    username: "woxi".to_string(),
-    date: now,
-    msg_type: "kernel_info_reply".to_string(),
-    version: "5.3.0".to_string(),
-  };
-
-  // Create a reply message with proper metadata
-  let reply_msg = JupyterMessage {
-    zmq_identities: request.zmq_identities.clone(),
-    header,
-    parent_header: Some(request.header.clone()),
-    metadata: Default::default(), // Use default metadata
-    content: JupyterMessageContent::KernelInfoReply(boxed_reply),
-    buffers: vec![],
-    channel: None, // No channel needed
-  };
-
   println!(
-    "Sending kernel info reply to msg_id: {} with session: {} on identities: {:?}",
-    request.header.msg_id, reply_msg.header.session, request.zmq_identities
+    "Sending kernel info reply to msg_id: {} on identities: {:?}",
+    request.header.msg_id, request.zmq_identities
   );
-  shell_socket.send(reply_msg).await?;
+  shell_socket
+    .send(kernel_info_reply.as_child_of(request))
+    .await?;
 
   Ok(())
 }
