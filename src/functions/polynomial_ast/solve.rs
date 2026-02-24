@@ -53,8 +53,6 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
-      // Deduplicate conditions
-      conditions.dedup_by(|a, b| expr_to_string(a) == expr_to_string(b));
       if conditions.is_empty() {
         Ok(Expr::Identifier("False".to_string()))
       } else if conditions.len() == 1 {
@@ -155,7 +153,9 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let input = &args[0];
   match input {
-    // Or[x == a, x == b, ...] → {{x -> a}, {x -> b}, ...}
+    // Or[x == a, x == b, ...] → Sequence[{x -> a}, {x -> b}, ...]
+    // Wolfram's ToRules returns a Sequence of rule-lists for Or input,
+    // which displays as {x -> a}{x -> b} (elements joined without separator)
     Expr::FunctionCall { name, args } if name == "Or" => {
       let result: Vec<Expr> = args
         .iter()
@@ -168,7 +168,10 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         })
         .collect();
-      Ok(Expr::List(result))
+      Ok(Expr::FunctionCall {
+        name: "Sequence".to_string(),
+        args: result,
+      })
     }
     // BinaryOp::Or tree (used by reduce_multi_var_and for multiple solutions)
     Expr::BinaryOp {
@@ -187,16 +190,15 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         })
         .collect();
-      Ok(Expr::List(result))
+      Ok(Expr::FunctionCall {
+        name: "Sequence".to_string(),
+        args: result,
+      })
     }
-    // And[x == a, y == b] → {{x -> a, y -> b}}
+    // And[x == a, y == b] → {x -> a, y -> b}
     Expr::FunctionCall { name, .. } if name == "And" => {
       let rules = collect_and_rules(input);
-      if rules.is_empty() {
-        Ok(Expr::List(vec![]))
-      } else {
-        Ok(Expr::List(vec![Expr::List(rules)]))
-      }
+      Ok(Expr::List(rules))
     }
     // BinaryOp::And tree (used by reduce_multi_var_and for single solution)
     Expr::BinaryOp {
@@ -204,27 +206,22 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ..
     } => {
       let rules = collect_and_rules(input);
-      if rules.is_empty() {
-        Ok(Expr::List(vec![]))
-      } else {
-        Ok(Expr::List(vec![Expr::List(rules)]))
-      }
+      Ok(Expr::List(rules))
     }
-    // Single equation: x == a → {{x -> a}}
+    // Single equation: x == a → {x -> a}
     Expr::Comparison { .. } => {
       let rules = collect_and_rules(input);
-      if rules.is_empty() {
-        Ok(Expr::List(vec![]))
-      } else {
-        Ok(Expr::List(vec![Expr::List(rules)]))
-      }
+      Ok(Expr::List(rules))
     }
-    // True → {{}} (trivially satisfied)
+    // True → {} (trivially satisfied, no constraints)
     Expr::Identifier(s) if s == "True" => {
-      Ok(Expr::List(vec![Expr::List(vec![])]))
+      Ok(Expr::List(vec![]))
     }
-    // False → {} (no solutions)
-    Expr::Identifier(s) if s == "False" => Ok(Expr::List(vec![])),
+    // False → Sequence[] (no solutions, matches Wolfram: splices to nothing in context)
+    Expr::Identifier(s) if s == "False" => Ok(Expr::FunctionCall {
+      name: "Sequence".to_string(),
+      args: vec![],
+    }),
     // Anything else: return unevaluated
     _ => Ok(Expr::FunctionCall {
       name: "ToRules".to_string(),
@@ -270,7 +267,18 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &var_names,
           None,
         )?;
-      return to_rules_ast(&[reduce_result]);
+      // to_rules_ast returns flat rules or list-of-list-of-rules
+      // Solve always wraps single-solution into {{...}} format
+      let rules = to_rules_ast(&[reduce_result])?;
+      let wrapped = match &rules {
+        Expr::List(items)
+          if items.iter().all(|i| matches!(i, Expr::Rule { .. })) =>
+        {
+          Expr::List(vec![rules])
+        }
+        _ => rules,
+      };
+      return Ok(wrapped);
     }
   }
 

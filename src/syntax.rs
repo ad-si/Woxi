@@ -2737,6 +2737,66 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
   }
 }
 
+/// Format a Quantity unit expression without quoting.
+/// Wolfram displays units unquoted: Meters, Miles/Hours, Meters/Seconds^2
+fn quantity_unit_to_string(unit: &Expr) -> String {
+  match unit {
+    Expr::Identifier(s) | Expr::String(s) => s.clone(),
+    // Power must come before the general BinaryOp arm to avoid being shadowed
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let exp_str = expr_to_string(right);
+      let exp_fmt = if matches!(right.as_ref(), Expr::Integer(_)) {
+        exp_str
+      } else {
+        format!("({})", exp_str)
+      };
+      format!("{}^{}", quantity_unit_to_string(left), exp_fmt)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      format!(
+        "{}/{}",
+        quantity_unit_to_string(left),
+        quantity_unit_to_string(right)
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      format!(
+        "{}*{}",
+        quantity_unit_to_string(left),
+        quantity_unit_to_string(right)
+      )
+    }
+    Expr::BinaryOp { .. } => expr_to_string(unit),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let exp_str = expr_to_string(&args[1]);
+      let exp_fmt = if matches!(args[1], Expr::Integer(_)) {
+        exp_str
+      } else {
+        format!("({})", exp_str)
+      };
+      format!("{}^{}", quantity_unit_to_string(&args[0]), exp_fmt)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let parts: Vec<String> =
+        args.iter().map(quantity_unit_to_string).collect();
+      parts.join("*")
+    }
+    _ => expr_to_string(unit),
+  }
+}
+
 /// Convert an Expr back to a string representation
 pub fn expr_to_string(expr: &Expr) -> String {
   match expr {
@@ -2765,9 +2825,19 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
-      // Special case: Skeleton[n] and StringSkeleton[n] display as <<n>>
-      if (name == "Skeleton" || name == "StringSkeleton") && args.len() == 1 {
+      // Special case: Quantity[n, unit] — unit shown as quoted string(s)
+      if name == "Quantity" && args.len() == 2 {
+        let mag_str = expr_to_string(&args[0]);
+        let unit_str = quantity_unit_to_string(&args[1]);
+        return format!("Quantity[{}, {}]", mag_str, unit_str);
+      }
+      // Special case: Skeleton[n] displays as <<n>>
+      if name == "Skeleton" && args.len() == 1 {
         return format!("<<{}>>", expr_to_string(&args[0]));
+      }
+      // Special case: StringSkeleton[n] displays as n<<>>
+      if name == "StringSkeleton" && args.len() == 1 {
+        return format!("{}<<>>", expr_to_string(&args[0]));
       }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {
@@ -2798,16 +2868,6 @@ pub fn expr_to_string(expr: &Expr) -> String {
         {
           return format!("___{}", h);
         }
-      }
-      // Special case: BaseForm[expr, base] displays number in given base with subscript
-      if name == "BaseForm"
-        && args.len() == 2
-        && let Some(base) = expr_to_i64(&args[1])
-        && (2..=36).contains(&base)
-      {
-        let formatted = format_in_base(&args[0], base as u32);
-        let base_sub = to_subscript_digits(base as u64);
-        return format!("{}{}", formatted, base_sub);
       }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
@@ -2905,19 +2965,32 @@ pub fn expr_to_string(expr: &Expr) -> String {
         return parts.join(" \u{2235} ");
       }
       // Special case: Or[a, b, ...] displays as a || b || ...
+      // Wolfram wraps And subterms in parens: (a && b) || (c && d)
       if name == "Or" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args
+          .iter()
+          .map(|arg| {
+            let s = expr_to_string(arg);
+            let is_and = matches!(
+              arg,
+              Expr::BinaryOp {
+                op: BinaryOperator::And,
+                ..
+              }
+            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
+            if is_and {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect();
         return parts.join(" || ");
       }
       // Special case: And[a, b, ...] displays as a && b && ...
       if name == "And" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" && ");
-      }
-      // Special case: Xor[a, b, ...] displays as a \[Xor] b \[Xor] ...
-      if name == "Xor" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
-        return parts.join(" \\[Xor] ");
       }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
@@ -3011,6 +3084,75 @@ pub fn expr_to_string(expr: &Expr) -> String {
             return format!("-({})", rest);
           }
           return format!("-{}", rest);
+        }
+        // Complex number grouping: Times containing I with non-numeric remaining factors
+        // e.g. Times[2, I, Sqrt[3]] → (2*I)*Sqrt[3], Times[Rational[1,2], I, Pi] → (I/2)*Pi
+        let has_imaginary =
+          args.iter().any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+        if has_imaginary {
+          let mut numeric_factors: Vec<&Expr> = Vec::new();
+          let mut symbolic_factors: Vec<&Expr> = Vec::new();
+          for arg in args.iter() {
+            match arg {
+              Expr::Integer(_) | Expr::Real(_) => numeric_factors.push(arg),
+              Expr::Identifier(n) if n == "I" => {}
+              Expr::FunctionCall { name: rn, .. } if rn == "Rational" => {
+                numeric_factors.push(arg);
+              }
+              _ => symbolic_factors.push(arg),
+            }
+          }
+          if !symbolic_factors.is_empty() {
+            let i_part_opt: Option<String> = if numeric_factors.is_empty() {
+              Some("I".to_string())
+            } else if numeric_factors.len() == 1 {
+              match numeric_factors[0] {
+                Expr::Integer(1) => Some("I".to_string()),
+                Expr::Integer(-1) => Some("-I".to_string()),
+                Expr::Integer(n) => Some(format!("({}*I)", n)),
+                Expr::FunctionCall { name: rn, args: ra }
+                  if rn == "Rational" && ra.len() == 2 =>
+                {
+                  if let (Expr::Integer(num), Expr::Integer(den)) = (&ra[0], &ra[1]) {
+                    if *num == 1 {
+                      Some(format!("(I/{})", den))
+                    } else if *num == -1 {
+                      Some(format!("(-(I/{}))", den))
+                    } else {
+                      Some(format!("(({num}*I)/{den})"))
+                    }
+                  } else {
+                    None
+                  }
+                }
+                _ => None,
+              }
+            } else {
+              None
+            };
+            if let Some(i_part) = i_part_opt {
+              let rest: Vec<String> = symbolic_factors
+                .iter()
+                .map(|a| {
+                  let s = expr_to_string(a);
+                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                    || matches!(
+                      a,
+                      Expr::BinaryOp {
+                        op: BinaryOperator::Plus | BinaryOperator::Minus,
+                        ..
+                      }
+                    )
+                  {
+                    format!("({})", s)
+                  } else {
+                    s
+                  }
+                })
+                .collect();
+              return format!("{}*{}", i_part, rest.join("*"));
+            }
+          }
         }
         return args
           .iter()
@@ -3279,6 +3421,13 @@ pub fn expr_to_string(expr: &Expr) -> String {
           let inner_str = expr_to_string(&inner_div);
           return format!("-({})", inner_str);
         }
+        // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm convention)
+        // Only for simple identifiers; products, functions, and sums are handled differently
+        if matches!(left.as_ref(), Expr::Integer(1)) {
+          if let Expr::Identifier(s) = right.as_ref() {
+            return format!("{}^(-1)", s);
+          }
+        }
       }
 
       // Special case: BinaryOp Times with Rational[1, d] or Rational[-1, d]
@@ -3406,6 +3555,30 @@ pub fn expr_to_string(expr: &Expr) -> String {
       let left_str = expr_to_string(left);
       let right_str = expr_to_string(right);
 
+      // Special case: Or wraps And children in parens (Wolfram convention)
+      if matches!(op, BinaryOperator::Or) {
+        let is_and_expr = |e: &Expr| -> bool {
+          matches!(
+            e,
+            Expr::BinaryOp {
+              op: BinaryOperator::And,
+              ..
+            }
+          ) || matches!(e, Expr::FunctionCall { name, .. } if name == "And")
+        };
+        let lf = if is_and_expr(left) {
+          format!("({})", left_str)
+        } else {
+          left_str
+        };
+        let rf = if is_and_expr(right) {
+          format!("({})", right_str)
+        } else {
+          right_str
+        };
+        return format!("{} || {}", lf, rf);
+      }
+
       // Add parens when a lower-precedence expr is inside a higher-precedence one,
       // or when the numerator of a division is a product (Wolfram convention)
       let left_needs_parens = (is_multiplicative && is_additive(left))
@@ -3480,14 +3653,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
       }
     }
     Expr::UnaryOp { op, operand } => {
-      let op_str = match op {
-        UnaryOperator::Minus => "-",
-        UnaryOperator::Not => "!",
-      };
       let inner = expr_to_string(operand);
-      let needs_parens = if matches!(op, UnaryOperator::Not) {
-        // Not needs parens around compound expressions: !(a && b), !(a || b)
-        matches!(
+      if matches!(op, UnaryOperator::Not) {
+        // Not: Wolfram formats as " !expr" (leading space) or " !(expr)"
+        let needs_parens = matches!(
           operand.as_ref(),
           Expr::BinaryOp {
             op: BinaryOperator::And | BinaryOperator::Or,
@@ -3496,10 +3665,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
         ) || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, .. } if name == "And" || name == "Or"
-        )
+        );
+        if needs_parens {
+          format!(" !({})", inner)
+        } else {
+          format!(" !{}", inner)
+        }
       } else {
         // Minus needs parens around Plus, Minus, Times, Divide
-        matches!(
+        let needs_parens = matches!(
           operand.as_ref(),
           Expr::BinaryOp {
             op: BinaryOperator::Plus
@@ -3511,12 +3685,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
         ) || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
-        )
-      };
-      if needs_parens {
-        format!("{}({})", op_str, inner)
-      } else {
-        format!("{}{}", op_str, inner)
+        );
+        if needs_parens {
+          format!("-({})", inner)
+        } else {
+          format!("-{}", inner)
+        }
       }
     }
     Expr::Comparison {
@@ -3584,7 +3758,13 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{} //. {}", expr_to_string(expr), expr_to_string(rules))
     }
     Expr::Map { func, list } => {
-      format!("{} /@ {}", expr_to_string(func), expr_to_string(list))
+      let func_str = expr_to_string(func);
+      // Parenthesize func if it's a Function or NamedFunction (lower precedence than /@ )
+      let func_display = match func.as_ref() {
+        Expr::Function { .. } | Expr::NamedFunction { .. } => format!("({})", func_str),
+        _ => func_str,
+      };
+      format!("{} /@ {}", func_display, expr_to_string(list))
     }
     Expr::Apply { func, list } => {
       format!("{} @@ {}", expr_to_string(func), expr_to_string(list))
@@ -3593,7 +3773,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{} @@@ {}", expr_to_string(func), expr_to_string(list))
     }
     Expr::PrefixApply { func, arg } => {
-      format!("{} @ {}", expr_to_string(func), expr_to_string(arg))
+      // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)
+      let func_str = expr_to_string(func);
+      let arg_str = expr_to_string(arg);
+      // Parenthesize func if it's complex (not a simple identifier or function call)
+      let func_display = match func.as_ref() {
+        Expr::Identifier(_) | Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => func_str,
+        _ => format!("({})", func_str),
+      };
+      format!("{}[{}]", func_display, arg_str)
     }
     Expr::Postfix { expr, func } => {
       format!("{} // {}", expr_to_string(expr), expr_to_string(func))
@@ -3614,7 +3802,8 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{}[[{}]]", expr_to_string(base), indices.join(","))
     }
     Expr::Function { body } => {
-      format!("{}&", expr_to_string(body))
+      // Wolfram shows anonymous functions with trailing space: "f & " (not "f &")
+      format!("{} & ", expr_to_string(body))
     }
     Expr::NamedFunction { params, body } => {
       if params.len() == 1 {
@@ -3683,17 +3872,32 @@ pub fn expr_to_output(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
-      // Special case: FullForm[expr] displays the inner expr in FullForm notation
+      // Sequence[] (empty sequence) displays as nothing in Wolfram output
+      if name == "Sequence" && args.is_empty() {
+        return String::new();
+      }
+      // Special case: Quantity[n, unit] — unit shown as quoted string(s)
+      if name == "Quantity" && args.len() == 2 {
+        let mag_str = expr_to_output(&args[0]);
+        let unit_str = quantity_unit_to_string(&args[1]);
+        return format!("Quantity[{}, {}]", mag_str, unit_str);
+      }
+      // Special case: FullForm[expr] displays as FullForm[<output form of inner>]
+      // This matches wolframscript behavior: FullForm[1/z] → FullForm[z^(-1)]
       if name == "FullForm" && args.len() == 1 {
-        return crate::functions::predicate_ast::expr_to_full_form(&args[0]);
+        return format!("FullForm[{}]", expr_to_output(&args[0]));
       }
       // CForm[expr] displays C language format
       if name == "CForm" && args.len() == 1 {
         return crate::functions::string_ast::expr_to_c(&args[0]);
       }
-      // Special case: Skeleton[n] and StringSkeleton[n] display as <<n>>
-      if (name == "Skeleton" || name == "StringSkeleton") && args.len() == 1 {
+      // Special case: Skeleton[n] displays as <<n>>
+      if name == "Skeleton" && args.len() == 1 {
         return format!("<<{}>>", expr_to_output(&args[0]));
+      }
+      // Special case: StringSkeleton[n] displays as n<<>>
+      if name == "StringSkeleton" && args.len() == 1 {
+        return format!("{}<<>>", expr_to_output(&args[0]));
       }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {
@@ -3969,6 +4173,75 @@ pub fn expr_to_output(expr: &Expr) -> String {
           }
           return format!("-{}", rest);
         }
+        // Complex number grouping: Times containing I with non-numeric remaining factors
+        // e.g. Times[2, I, Sqrt[3]] → (2*I)*Sqrt[3], Times[Rational[1,2], I, Pi] → (I/2)*Pi
+        let has_imaginary =
+          args.iter().any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+        if has_imaginary {
+          let mut numeric_factors: Vec<&Expr> = Vec::new();
+          let mut symbolic_factors: Vec<&Expr> = Vec::new();
+          for arg in args.iter() {
+            match arg {
+              Expr::Integer(_) | Expr::Real(_) => numeric_factors.push(arg),
+              Expr::Identifier(n) if n == "I" => {}
+              Expr::FunctionCall { name: rn, .. } if rn == "Rational" => {
+                numeric_factors.push(arg);
+              }
+              _ => symbolic_factors.push(arg),
+            }
+          }
+          if !symbolic_factors.is_empty() {
+            let i_part_opt: Option<String> = if numeric_factors.is_empty() {
+              Some("I".to_string())
+            } else if numeric_factors.len() == 1 {
+              match numeric_factors[0] {
+                Expr::Integer(1) => Some("I".to_string()),
+                Expr::Integer(-1) => Some("-I".to_string()),
+                Expr::Integer(n) => Some(format!("({}*I)", n)),
+                Expr::FunctionCall { name: rn, args: ra }
+                  if rn == "Rational" && ra.len() == 2 =>
+                {
+                  if let (Expr::Integer(num), Expr::Integer(den)) = (&ra[0], &ra[1]) {
+                    if *num == 1 {
+                      Some(format!("(I/{})", den))
+                    } else if *num == -1 {
+                      Some(format!("(-(I/{}))", den))
+                    } else {
+                      Some(format!("(({num}*I)/{den})"))
+                    }
+                  } else {
+                    None
+                  }
+                }
+                _ => None,
+              }
+            } else {
+              None
+            };
+            if let Some(i_part) = i_part_opt {
+              let rest: Vec<String> = symbolic_factors
+                .iter()
+                .map(|a| {
+                  let s = expr_to_output(a);
+                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                    || matches!(
+                      a,
+                      Expr::BinaryOp {
+                        op: BinaryOperator::Plus | BinaryOperator::Minus,
+                        ..
+                      }
+                    )
+                  {
+                    format!("({})", s)
+                  } else {
+                    s
+                  }
+                })
+                .collect();
+              return format!("{}*{}", i_part, rest.join("*"));
+            }
+          }
+        }
         return args
           .iter()
           .map(|a| {
@@ -4111,19 +4384,32 @@ pub fn expr_to_output(expr: &Expr) -> String {
         return parts.join(" \u{2235} ");
       }
       // Special case: Or[a, b, ...] displays as a || b || ...
+      // Wolfram wraps And subterms in parens: (a && b) || (c && d)
       if name == "Or" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        let parts: Vec<String> = args
+          .iter()
+          .map(|arg| {
+            let s = expr_to_output(arg);
+            let is_and = matches!(
+              arg,
+              Expr::BinaryOp {
+                op: BinaryOperator::And,
+                ..
+              }
+            ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And");
+            if is_and {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect();
         return parts.join(" || ");
       }
       // Special case: And[a, b, ...] displays as a && b && ...
       if name == "And" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" && ");
-      }
-      // Special case: Xor[a, b, ...] displays as a \[Xor] b \[Xor] ...
-      if name == "Xor" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
-        return parts.join(" \\[Xor] ");
       }
       // Special case: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
       if name == "Row"
@@ -4232,6 +4518,44 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       if name == "FullForm" && args.len() == 1 =>
     {
       format!("FullForm[{}]", expr_to_input_form(&args[0]))
+    }
+    // BaseForm: InputForm shows BaseForm[n, base] structure (not subscript notation)
+    Expr::FunctionCall { name, args } if name == "BaseForm" && args.len() == 2 => {
+      format!(
+        "BaseForm[{}, {}]",
+        expr_to_input_form(&args[0]),
+        expr_to_input_form(&args[1])
+      )
+    }
+    // CForm: InputForm shows CForm[expr] structure (not C code string)
+    Expr::FunctionCall { name, args } if name == "CForm" && args.len() == 1 => {
+      format!("CForm[{}]", expr_to_input_form(&args[0]))
+    }
+    // Unevaluated: InputForm strips the wrapper, showing just the inner expression
+    Expr::FunctionCall { name, args } if name == "Unevaluated" && args.len() == 1 => {
+      expr_to_input_form(&args[0])
+    }
+    // StringSkeleton[n]: InputForm shows n<<>> with InputForm content
+    Expr::FunctionCall { name, args } if name == "StringSkeleton" && args.len() == 1 => {
+      format!("{}<<>>", expr_to_input_form(&args[0]))
+    }
+    // StringExpression[a, b, c]: InputForm shows a~~b~~c with quoted strings
+    Expr::FunctionCall { name, args } if name == "StringExpression" && !args.is_empty() => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join("~~")
+    }
+    // StringForm: InputForm shows StringForm["template", args...] with quoted string
+    Expr::FunctionCall { name, args } if name == "StringForm" && !args.is_empty() => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      format!("StringForm[{}]", parts.join(", "))
+    }
+    // Row, TableForm, MatrixForm: display directive wrappers, show structure in InputForm
+    Expr::FunctionCall { name, args }
+      if (name == "Row" || name == "TableForm" || name == "MatrixForm")
+        && !args.is_empty() =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      format!("{}[{}]", name, parts.join(", "))
     }
     // For all other cases, delegate to expr_to_output (which handles
     // infix Plus/Times/Power, Rational, etc.)
@@ -5226,4 +5550,16 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 pub fn expr_to_output_form_2d(expr: &Expr) -> String {
   let tb = expr_to_textbox(expr);
   tb.to_string()
+}
+
+/// Top-level output: like expr_to_output but Sequence[a, b, ...] displays as
+/// concatenated elements (matching Wolfram REPL behavior where Sequence splices
+/// into the output context). Only applies at the outermost level.
+pub fn top_level_output(expr: &Expr) -> String {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Sequence" => {
+      args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
+    }
+    _ => expr_to_output(expr),
+  }
 }

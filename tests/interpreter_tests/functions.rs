@@ -577,7 +577,8 @@ mod context {
 
   #[test]
   fn context_string_user() {
-    assert_eq!(interpret("Context[\"myVar\"]").unwrap(), "Global`");
+    // "myVar" doesn't exist as a symbol, so Context returns unevaluated
+    assert_eq!(interpret("Context[\"myVar\"]").unwrap(), "Context[myVar]");
   }
 
   #[test]
@@ -677,7 +678,7 @@ mod function_head {
   #[test]
   fn function_display_one_arg() {
     // Function[body] displays as body &
-    assert_eq!(interpret("Function[# + 1]").unwrap(), "#1 + 1&");
+    assert_eq!(interpret("Function[# + 1]").unwrap(), "#1 + 1 & ");
   }
 
   #[test]
@@ -1244,27 +1245,30 @@ mod operator_precedence_at_map_apply {
   #[test]
   fn prefix_at_tighter_than_map() {
     // @ binds tighter than /@ — f @ g /@ h = Map[f[g], h]
+    // FullForm displays Map as /@ notation and PrefixApply as f[g]
     assert_eq!(
       interpret("FullForm[Hold[f @ g /@ h]]").unwrap(),
-      "Hold[Map[f[g], h]]"
+      "FullForm[Hold[f[g] /@ h]]"
     );
   }
 
   #[test]
   fn prefix_at_tighter_than_apply() {
     // @ binds tighter than @@ — f @ g @@ h = Apply[f[g], h]
+    // FullForm displays Apply as @@ notation and PrefixApply as f[g]
     assert_eq!(
       interpret("FullForm[Hold[f @ g @@ h]]").unwrap(),
-      "Hold[Apply[f[g], h]]"
+      "FullForm[Hold[f[g] @@ h]]"
     );
   }
 
   #[test]
   fn anon_func_map_continuation() {
     // f & /@ {1, 2} — & then /@ should work even for single-term body
+    // FullForm displays as (f & ) /@ g[h] matching wolframscript
     assert_eq!(
       interpret("FullForm[Hold[f & /@ g @ h]]").unwrap(),
-      "Hold[Map[Function[f], g[h]]]"
+      "FullForm[Hold[(f & ) /@ g[h]]]"
     );
   }
 
@@ -1437,19 +1441,20 @@ mod byte_count {
 
   #[test]
   fn byte_count_real() {
-    // f64 = 8 bytes
-    assert_eq!(interpret("ByteCount[3.14]").unwrap(), "8");
+    // machine real: 16 bytes (Wolfram's representation)
+    assert_eq!(interpret("ByteCount[3.14]").unwrap(), "16");
   }
 
   #[test]
   fn byte_count_string() {
-    // string length in bytes
-    assert_eq!(interpret("ByteCount[\"hello\"]").unwrap(), "5");
+    // 32-byte header; "hello" (5 chars) fits within header
+    assert_eq!(interpret("ByteCount[\"hello\"]").unwrap(), "32");
   }
 
   #[test]
   fn byte_count_empty_string() {
-    assert_eq!(interpret("ByteCount[\"\"]").unwrap(), "0");
+    // empty string: 32-byte header
+    assert_eq!(interpret("ByteCount[\"\"]").unwrap(), "32");
   }
 
   #[test]
@@ -1460,20 +1465,20 @@ mod byte_count {
 
   #[test]
   fn byte_count_list() {
-    // {1, 2, 3}: 3 pointers (3*8=24) + 3 integers (3*16=48) = 72
-    assert_eq!(interpret("ByteCount[{1, 2, 3}]").unwrap(), "72");
+    // {1, 2, 3}: 40 base + 3*8 slots + 3*16 integers = 112
+    assert_eq!(interpret("ByteCount[{1, 2, 3}]").unwrap(), "112");
   }
 
   #[test]
   fn byte_count_nested_list() {
-    // {{1, 2}, {3, 4}}: 2 pointers (16) + 2 sublists each (2*8 + 2*16 = 48) = 112
-    assert_eq!(interpret("ByteCount[{{1, 2}, {3, 4}}]").unwrap(), "112");
+    // {{1,2},{3,4}}: 40 base + 2*8 slots + 2*(40+2*8+2*16) = 232
+    assert_eq!(interpret("ByteCount[{{1, 2}, {3, 4}}]").unwrap(), "232");
   }
 
   #[test]
   fn byte_count_function_call() {
-    // f[x, y]: 2 pointers (16) + 2 symbols (0) = 16
-    assert_eq!(interpret("ByteCount[f[x, y]]").unwrap(), "16");
+    // f[x, y]: 40 base + 2*8 slots + 2*0 symbols = 56
+    assert_eq!(interpret("ByteCount[f[x, y]]").unwrap(), "56");
   }
 
   #[test]

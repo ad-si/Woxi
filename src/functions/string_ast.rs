@@ -1156,7 +1156,12 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
   let base_tex = tex_base_with_parens(base);
   let exp_tex = expr_to_tex(exp);
 
-  format!("{}^{{{}}}", base_tex, exp_tex)
+  // Single-character exponents don't need braces in Wolfram TeXForm
+  if exp_tex.chars().count() == 1 {
+    format!("{}^{}", base_tex, exp_tex)
+  } else {
+    format!("{}^{{{}}}", base_tex, exp_tex)
+  }
 }
 
 /// Wrap base in parens if needed for power
@@ -1204,7 +1209,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Abs
     "Abs" if args.len() == 1 => {
-      format!("\\left| {} \\right|", expr_to_tex(&args[0]))
+      format!("| {}|", expr_to_tex(&args[0]))
     }
     // Rational
     "Rational" if args.len() == 2 => {

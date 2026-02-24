@@ -216,24 +216,28 @@ mod assuming {
 mod symbol_q {
   use super::*;
 
+  // SymbolQ is not a standard Wolfram built-in (it's from GeneralUtilities package),
+  // so it returns unevaluated in standard Wolfram Language — matching our behavior.
+
   #[test]
   fn symbol_is_true() {
-    assert_eq!(interpret("SymbolQ[a]").unwrap(), "True");
+    // Wolfram: SymbolQ[a] → SymbolQ[a] (unevaluated, not a standard built-in)
+    assert_eq!(interpret("SymbolQ[a]").unwrap(), "SymbolQ[a]");
   }
 
   #[test]
   fn integer_is_false() {
-    assert_eq!(interpret("SymbolQ[1]").unwrap(), "False");
+    assert_eq!(interpret("SymbolQ[1]").unwrap(), "SymbolQ[1]");
   }
 
   #[test]
   fn expr_is_false() {
-    assert_eq!(interpret("SymbolQ[a + b]").unwrap(), "False");
+    assert_eq!(interpret("SymbolQ[a + b]").unwrap(), "SymbolQ[a + b]");
   }
 
   #[test]
   fn string_is_false() {
-    assert_eq!(interpret("SymbolQ[\"abc\"]").unwrap(), "False");
+    assert_eq!(interpret("SymbolQ[\"abc\"]").unwrap(), "SymbolQ[abc]");
   }
 }
 

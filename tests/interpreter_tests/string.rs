@@ -1136,10 +1136,10 @@ mod string_expression {
 
   #[test]
   fn flat_associativity() {
-    // a ~~ b ~~ c should become StringExpression[a, b, c] (flat, not nested)
+    // String literals in ~~ are concatenated (Wolfram behavior)
     assert_eq!(
       interpret(r#""a" ~~ "b" ~~ "c""#).unwrap(),
-      r#"StringExpression[a, b, c]"#
+      r#"abc"#
     );
   }
 }
@@ -1295,9 +1295,10 @@ mod tex_form {
 
   #[test]
   fn simple_addition() {
+    // Single-character exponents use no braces (Wolfram behavior)
     assert_eq!(
       interpret("ToString[x^2 + y^2, TeXForm]").unwrap(),
-      "x^{2}+y^{2}"
+      "x^2+y^2"
     );
   }
 
@@ -1362,7 +1363,8 @@ mod tex_form {
 
   #[test]
   fn power() {
-    assert_eq!(interpret("ToString[x^n, TeXForm]").unwrap(), "x^{n}");
+    // Single-character exponents use no braces (Wolfram behavior)
+    assert_eq!(interpret("ToString[x^n, TeXForm]").unwrap(), "x^n");
   }
 
   #[test]
@@ -1382,9 +1384,10 @@ mod tex_form {
 
   #[test]
   fn abs() {
+    // Wolfram uses simple bar notation for Abs
     assert_eq!(
       interpret("ToString[Abs[x], TeXForm]").unwrap(),
-      "\\left| x \\right|"
+      "| x|"
     );
   }
 }

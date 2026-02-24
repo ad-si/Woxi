@@ -574,7 +574,6 @@ pub fn evaluate_function_call_ast_inner(
     | "PageWidth"
     | "Constant"
     | "Catalan"
-    | "StringExpression"
     | "Placed" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
@@ -582,6 +581,27 @@ pub fn evaluate_function_call_ast_inner(
       });
     }
     _ => {}
+  }
+
+  // StringExpression[...]: when all args are string literals, concatenate them
+  if name == "StringExpression" {
+    if args.iter().all(|a| matches!(a, Expr::String(_))) {
+      let concatenated: String = args
+        .iter()
+        .map(|a| {
+          if let Expr::String(s) = a {
+            s.clone()
+          } else {
+            String::new()
+          }
+        })
+        .collect();
+      return Ok(Expr::String(concatenated));
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
   }
 
   // Check if the function is a known but unimplemented Wolfram Language function

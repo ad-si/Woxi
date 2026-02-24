@@ -119,7 +119,7 @@ pub fn dispatch_attributes(
               entry.push("Protected".to_string());
             }
           });
-          protected_syms.push(Expr::Identifier(sym.clone()));
+          protected_syms.push(Expr::String(sym.clone()));
         }
       }
       return Some(Ok(Expr::List(protected_syms)));
@@ -155,7 +155,7 @@ pub fn dispatch_attributes(
             }
           });
           if was_protected {
-            unprotected_syms.push(Expr::Identifier(sym.clone()));
+            unprotected_syms.push(Expr::String(sym.clone()));
           }
         }
       }

@@ -1119,8 +1119,9 @@ mod roots {
 
   #[test]
   fn roots_quadratic_repeated() {
+    // Double root: x == 1 repeated twice (matching Wolfram behavior)
     let result = interpret("Roots[x^2 - 2*x + 1 == 0, x]").unwrap();
-    assert_eq!(result, "x == 1");
+    assert_eq!(result, "x == 1 || x == 1");
   }
 }
 
@@ -1175,16 +1176,16 @@ mod to_rules {
 
   #[test]
   fn to_rules_single_equation() {
-    // x == 5 → {{x -> 5}}
-    assert_eq!(interpret("ToRules[x == 5]").unwrap(), "{{x -> 5}}");
+    // x == 5 → {x -> 5}
+    assert_eq!(interpret("ToRules[x == 5]").unwrap(), "{x -> 5}");
   }
 
   #[test]
   fn to_rules_or_conditions() {
-    // x == -2 || x == 2 → {{x -> -2}, {x -> 2}}
+    // x == -2 || x == 2 → Sequence[{x -> -2}, {x -> 2}] (displays as "{x -> -2}{x -> 2}")
     assert_eq!(
       interpret("ToRules[x == -2 || x == 2]").unwrap(),
-      "{{x -> -2}, {x -> 2}}"
+      "{x -> -2}{x -> 2}"
     );
   }
 
@@ -1193,27 +1194,29 @@ mod to_rules {
     // Convert Roots output to Solve-style rules
     assert_eq!(
       interpret("ToRules[Roots[x^2 - 4 == 0, x]]").unwrap(),
-      "{{x -> -2}, {x -> 2}}"
+      "{x -> -2}{x -> 2}"
     );
   }
 
   #[test]
   fn to_rules_and_conditions() {
-    // x == 1 && y == 2 → {{x -> 1, y -> 2}}
+    // x == 1 && y == 2 → {x -> 1, y -> 2}
     assert_eq!(
       interpret("ToRules[x == 1 && y == 2]").unwrap(),
-      "{{x -> 1, y -> 2}}"
+      "{x -> 1, y -> 2}"
     );
   }
 
   #[test]
   fn to_rules_true() {
-    assert_eq!(interpret("ToRules[True]").unwrap(), "{{}}");
+    assert_eq!(interpret("ToRules[True]").unwrap(), "{}");
   }
 
   #[test]
   fn to_rules_false() {
-    assert_eq!(interpret("ToRules[False]").unwrap(), "{}");
+    // ToRules[False] returns Sequence[] (empty, matches Wolfram behavior)
+    // When wrapped in ToString[(ToRules[False]), InputForm] → "InputForm"
+    assert_eq!(interpret("ToRules[False]").unwrap(), "");
   }
 }
 
@@ -1716,7 +1719,7 @@ mod solve_always {
   fn linear_single_variable() {
     assert_eq!(
       interpret("SolveAlways[a*x + b == 0, x]").unwrap(),
-      "{{b -> 0, a -> 0}}"
+      "{{a -> 0, b -> 0}}"
     );
   }
 
@@ -1724,7 +1727,7 @@ mod solve_always {
   fn quadratic_with_offsets() {
     assert_eq!(
       interpret("SolveAlways[(a - 2)*x^2 + (b + 1)*x + c == 0, x]").unwrap(),
-      "{{c -> 0, b -> -1, a -> 2}}"
+      "{{a -> 2, b -> -1, c -> 0}}"
     );
   }
 
@@ -1732,7 +1735,7 @@ mod solve_always {
   fn matching_polynomial() {
     assert_eq!(
       interpret("SolveAlways[a*x^2 + b*x + c == 3*x^2 - 5*x + 7, x]").unwrap(),
-      "{{c -> 7, b -> -5, a -> 3}}"
+      "{{a -> 3, b -> -5, c -> 7}}"
     );
   }
 
@@ -1758,7 +1761,7 @@ mod solve_always {
   fn multivariate() {
     assert_eq!(
       interpret("SolveAlways[(a - 2)*x + (b + 1)*y + c == 0, {x, y}]").unwrap(),
-      "{{c -> 0, b -> -1, a -> 2}}"
+      "{{a -> 2, b -> -1, c -> 0}}"
     );
   }
 
@@ -1766,7 +1769,7 @@ mod solve_always {
   fn multivariate_all_zero() {
     assert_eq!(
       interpret("SolveAlways[a*x + b*y + c == 0, {x, y}]").unwrap(),
-      "{{c -> 0, b -> 0, a -> 0}}"
+      "{{a -> 0, b -> 0, c -> 0}}"
     );
   }
 
@@ -1774,7 +1777,7 @@ mod solve_always {
   fn list_form_single_var() {
     assert_eq!(
       interpret("SolveAlways[a*x + b == 0, {x}]").unwrap(),
-      "{{b -> 0, a -> 0}}"
+      "{{a -> 0, b -> 0}}"
     );
   }
 
@@ -1782,7 +1785,7 @@ mod solve_always {
   fn quadratic_cross_terms() {
     assert_eq!(
       interpret("SolveAlways[a*x^2 + b*x*y + c*y^2 == 0, {x, y}]").unwrap(),
-      "{{c -> 0, b -> 0, a -> 0}}"
+      "{{a -> 0, b -> 0, c -> 0}}"
     );
   }
 }
