@@ -91,12 +91,21 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   }
 }
 
+/// Position for chart labels placed with `Placed[labels, position]`.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum LabelPosition {
+  Below,  // Below the bar at the x-axis (default)
+  Above,  // Just above the top of the bar
+  Center, // Vertically centered within the bar
+}
+
 /// Parsed chart options.
 pub(crate) struct ChartOptions {
   pub svg_width: u32,
   pub svg_height: u32,
   pub full_width: bool,
   pub chart_labels: Vec<String>,
+  pub chart_label_position: LabelPosition,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
@@ -118,6 +127,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     svg_height: DEFAULT_HEIGHT,
     full_width: false,
     chart_labels: Vec::new(),
+    chart_label_position: LabelPosition::Below,
     plot_label: None,
     axes_label: None,
     chart_style: Vec::new(),
@@ -138,12 +148,40 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
         }
         "ChartLabels" => {
-          let val =
-            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
-          if let Expr::List(items) = &val {
-            for item in items {
-              if let Some(s) = expr_to_label(item) {
-                opts.chart_labels.push(s);
+          // Placed[{labels...}, position] — check raw expr first to avoid
+          // evaluating Placed[] as an unknown function
+          let raw = replacement.as_ref();
+          if let Expr::FunctionCall { name, args } = raw
+            && name == "Placed"
+            && args.len() == 2
+          {
+            let pos_name = match &args[1] {
+              Expr::Identifier(s) => s.as_str(),
+              _ => "",
+            };
+            opts.chart_label_position = match pos_name {
+              "Above" | "Top" => LabelPosition::Above,
+              "Center" => LabelPosition::Center,
+              // Below, Bottom, Right, Left, and any other value → default (Below)
+              _ => LabelPosition::Below,
+            };
+            let labels_val =
+              evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
+            if let Expr::List(items) = &labels_val {
+              for item in items {
+                if let Some(s) = expr_to_label(item) {
+                  opts.chart_labels.push(s);
+                }
+              }
+            }
+          } else {
+            let val = evaluate_expr_to_expr(replacement)
+              .unwrap_or(*replacement.clone());
+            if let Expr::List(items) = &val {
+              for item in items {
+                if let Some(s) = expr_to_label(item) {
+                  opts.chart_labels.push(s);
+                }
               }
             }
           }
@@ -221,6 +259,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.svg_height,
     opts.full_width,
     &opts.chart_labels,
+    opts.chart_label_position,
     opts.plot_label.as_ref(),
     opts
       .axes_label

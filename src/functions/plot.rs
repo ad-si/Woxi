@@ -2,7 +2,7 @@ use plotters::prelude::*;
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::chart::StyledLabel;
+use crate::functions::chart::{LabelPosition, StyledLabel};
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
@@ -122,6 +122,12 @@ pub(crate) struct PlotOptions {
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub plot_style: Vec<WoxiColor>,
+  /// Axes option: true = show axes and tick marks (default), false = hide
+  pub axes: bool,
+  /// Ticks option: true = show tick marks and labels (default), false = hide
+  pub ticks: bool,
+  /// Number of sample points for Plot[] (default: NUM_SAMPLES)
+  pub plot_points: usize,
 }
 
 impl Default for PlotOptions {
@@ -134,6 +140,9 @@ impl Default for PlotOptions {
       plot_label: None,
       axes_label: None,
       plot_style: Vec::new(),
+      axes: true,
+      ticks: true,
+      plot_points: NUM_SAMPLES,
     }
   }
 }
@@ -191,6 +200,8 @@ fn generate_svg_with_options(
   let svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let filling = opts.filling;
+  let show_axes = opts.axes;
+  let show_ticks = opts.ticks;
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
@@ -208,9 +219,40 @@ fn generate_svg_with_options(
     opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
 
   let top_margin = if has_plot_label { 25 * s } else { 10 * s };
-  let bottom_extra = if has_x_axis_label { 16.0 * sf } else { 0.0 };
-  let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
-  let y_label_area = 40 * RESOLUTION_SCALE;
+
+  // Label areas depend on axes/ticks settings
+  let bottom_extra = if show_axes && show_ticks && has_x_axis_label {
+    16.0 * sf
+  } else {
+    0.0
+  };
+  let x_label_area: u32;
+  let y_label_area: u32;
+  let margin_left: u32;
+  let margin_right: u32;
+  let margin_bottom: u32;
+  if !show_axes {
+    // No axes: minimal margins, zero label areas
+    x_label_area = 0;
+    y_label_area = 0;
+    margin_left = 5 * s as u32;
+    margin_right = 5 * s as u32;
+    margin_bottom = 5 * s as u32;
+  } else if !show_ticks {
+    // Axes visible but no tick marks or labels: small label areas just for
+    // the axis lines themselves
+    x_label_area = 5 * RESOLUTION_SCALE;
+    y_label_area = 5 * RESOLUTION_SCALE;
+    margin_left = 10 * s as u32;
+    margin_right = 10 * s as u32;
+    margin_bottom = 10 * s as u32;
+  } else {
+    x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
+    y_label_area = 40 * RESOLUTION_SCALE;
+    margin_left = 10 * s as u32;
+    margin_right = 10 * s as u32;
+    margin_bottom = 10 * s as u32;
+  }
 
   let mut buf = String::new();
   {
@@ -226,52 +268,80 @@ fn generate_svg_with_options(
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
-      .margin_right(10 * s as u32)
-      .margin_bottom(10 * s as u32)
-      .margin_left(10 * s as u32)
+      .margin_right(margin_right)
+      .margin_bottom(margin_bottom)
+      .margin_left(margin_left)
       .x_label_area_size(x_label_area)
       .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    // Compute nice major tick step (~5 labels), then request enough ticks
-    // for ~5 minor subdivisions between each major tick.
-    let x_major = nice_step(x_max - x_min, 5);
-    let y_major = nice_step(y_max - y_min, 5);
-    let x_minor_step = x_major / 5.0;
-    let y_minor_step = y_major / 5.0;
-    let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
-    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
+    if !show_axes {
+      // Hidden axes: configure mesh with transparent style, no labels/ticks
+      chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_labels(0)
+        .y_labels(0)
+        .axis_style(ShapeStyle::from(&WHITE).stroke_width(0))
+        .set_tick_mark_size(LabelAreaPosition::Left, 0)
+        .set_tick_mark_size(LabelAreaPosition::Bottom, 0)
+        .draw()
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    } else if !show_ticks {
+      // Axes visible but no tick marks or labels
+      chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_labels(0)
+        .y_labels(0)
+        .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
+        .set_tick_mark_size(LabelAreaPosition::Left, 0)
+        .set_tick_mark_size(LabelAreaPosition::Bottom, 0)
+        .draw()
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    } else {
+      // Full axes with tick marks and labels
 
-    chart
-      .configure_mesh()
-      .disable_mesh()
-      .x_labels(x_tick_count)
-      .y_labels(y_tick_count)
-      .x_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, x_major) {
-          format_tick(*v)
-        } else {
-          String::new()
-        }
-      })
-      .y_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, y_major) {
-          format_tick(*v)
-        } else {
-          String::new()
-        }
-      })
-      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-      .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
-          .into_font()
-          .color(&dark_gray),
-      )
-      .set_tick_mark_size(LabelAreaPosition::Left, tick)
-      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
-      .draw()
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+      // Compute nice major tick step (~5 labels), then request enough ticks
+      // for ~5 minor subdivisions between each major tick.
+      let x_major = nice_step(x_max - x_min, 5);
+      let y_major = nice_step(y_max - y_min, 5);
+      let x_minor_step = x_major / 5.0;
+      let y_minor_step = y_major / 5.0;
+      let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
+      let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
+
+      chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_labels(x_tick_count)
+        .y_labels(y_tick_count)
+        .x_label_formatter(&move |v: &f64| {
+          if is_major_tick(*v, x_major) {
+            format_tick(*v)
+          } else {
+            String::new()
+          }
+        })
+        .y_label_formatter(&move |v: &f64| {
+          if is_major_tick(*v, y_major) {
+            format_tick(*v)
+          } else {
+            String::new()
+          }
+        })
+        .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
+        .label_style(
+          ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+            .into_font()
+            .color(&dark_gray),
+        )
+        .set_tick_mark_size(LabelAreaPosition::Left, tick)
+        .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
+        .draw()
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
 
     // Draw lighter origin lines through x=0 and y=0 if visible
     let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
@@ -344,13 +414,17 @@ fn generate_svg_with_options(
 
   // Inject label SVG elements before </svg>
   if has_plot_label || has_x_axis_label || has_y_axis_label {
-    let margin_left = 10.0 * sf;
+    let margin_left_f = margin_left as f64;
+    let margin_right_f = margin_right as f64;
+    let margin_bottom_f = margin_bottom as f64;
     let margin_top = top_margin as f64;
-    let plot_x0 = margin_left + y_label_area as f64;
-    let plot_w =
-      render_width as f64 - margin_left - 10.0 * sf - y_label_area as f64;
+    let plot_x0 = margin_left_f + y_label_area as f64;
+    let plot_w = render_width as f64
+      - margin_left_f
+      - margin_right_f
+      - y_label_area as f64;
     let plot_h =
-      render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
+      render_height as f64 - margin_top - margin_bottom_f - x_label_area as f64;
     let axis_y = margin_top + plot_h;
     let font_size = sf * 11.0;
     let title_font_size = sf * 13.0;
@@ -372,7 +446,7 @@ fn generate_svg_with_options(
         }
         if !y_label.is_empty() {
           let cy = margin_top + plot_h / 2.0;
-          let lx = margin_left + font_size * 0.8;
+          let lx = margin_left_f + font_size * 0.8;
           labels_svg.push_str(&format!(
             "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
@@ -563,6 +637,7 @@ pub(crate) fn generate_bar_svg(
   svg_height: u32,
   full_width: bool,
   chart_labels: &[String],
+  chart_label_position: LabelPosition,
   plot_label: Option<&StyledLabel>,
   axes_label: Option<(&str, &str)>,
   chart_style: &[WoxiColor],
@@ -701,16 +776,29 @@ pub(crate) fn generate_bar_svg(
   if let Some(insert_pos) = buf.rfind("</svg>") {
     let mut labels_svg = String::new();
 
-    // ChartLabels: centered below each bar
+    // ChartLabels: position based on chart_label_position
     if has_chart_labels {
       let slot_w = plot_w / n as f64;
+      let map_y_val =
+        |v: f64| -> f64 { plot_y0 + (y_max - v) / y_max * plot_h };
       for (i, label) in chart_labels.iter().enumerate().take(n) {
         let cx = plot_x0 + (i as f64 + 0.5) * slot_w;
-        let ly = axis_y + font_size * 1.5;
+        let (ly, fill) = match chart_label_position {
+          LabelPosition::Above => {
+            let bar_top = map_y_val(values[i]);
+            (bar_top - font_size * 0.5, "#333")
+          }
+          LabelPosition::Center => {
+            let bar_top = map_y_val(values[i]);
+            let bar_center = (bar_top + axis_y) / 2.0 + font_size * 0.4;
+            (bar_center, "white")
+          }
+          LabelPosition::Below => (axis_y + font_size * 1.5, "#666"),
+        };
         labels_svg.push_str(&format!(
           "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-           fill=\"#666\">{}</text>\n",
+           fill=\"{fill}\">{}</text>\n",
           html_escape(label)
         ));
       }
@@ -1240,6 +1328,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Parse options (Rule expressions after the first two arguments)
   let mut plot_opts = PlotOptions::default();
+  // PlotRange and AspectRatio are applied after parsing all options
+  let mut plot_range_x: Option<(f64, f64)> = None;
+  let mut plot_range_y: Option<(f64, f64)> = None;
+  let mut aspect_ratio: Option<f64> = None;
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
@@ -1301,9 +1393,106 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
+        "PlotRange" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          match &val {
+            // PlotRange -> All or Automatic: use auto range (default)
+            Expr::Identifier(s)
+              if s == "All" || s == "Automatic" || s == "Full" =>
+            {
+              plot_range_x = None;
+              plot_range_y = None;
+            }
+            // PlotRange -> {ymin, ymax}: set y range only
+            Expr::List(items) if items.len() == 2 => {
+              let a = try_eval_to_f64(
+                &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
+              );
+              let b = try_eval_to_f64(
+                &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
+              );
+              match (a, b) {
+                (Some(lo), Some(hi)) => plot_range_y = Some((lo, hi)),
+                // {All/Automatic, {ymin, ymax}} or similar list-of-ranges form
+                _ => {
+                  if let (Expr::List(xa), Expr::List(ya)) =
+                    (&items[0], &items[1])
+                    && xa.len() == 2
+                    && ya.len() == 2
+                  {
+                    let x0 = try_eval_to_f64(
+                      &evaluate_expr_to_expr(&xa[0]).unwrap_or(xa[0].clone()),
+                    );
+                    let x1 = try_eval_to_f64(
+                      &evaluate_expr_to_expr(&xa[1]).unwrap_or(xa[1].clone()),
+                    );
+                    let y0 = try_eval_to_f64(
+                      &evaluate_expr_to_expr(&ya[0]).unwrap_or(ya[0].clone()),
+                    );
+                    let y1 = try_eval_to_f64(
+                      &evaluate_expr_to_expr(&ya[1]).unwrap_or(ya[1].clone()),
+                    );
+                    if let (Some(x0), Some(x1)) = (x0, x1) {
+                      plot_range_x = Some((x0, x1));
+                    }
+                    if let (Some(y0), Some(y1)) = (y0, y1) {
+                      plot_range_y = Some((y0, y1));
+                    }
+                  }
+                }
+              }
+            }
+            _ => {}
+          }
+        }
+        "Axes" => {
+          match replacement.as_ref() {
+            Expr::Identifier(s) if s == "True" => plot_opts.axes = true,
+            Expr::Identifier(s) if s == "False" => plot_opts.axes = false,
+            // {xbool, ybool}: treat as False only if both are False
+            Expr::List(items) if items.len() == 2 => {
+              let both_false = items
+                .iter()
+                .all(|i| matches!(i, Expr::Identifier(s) if s == "False"));
+              plot_opts.axes = !both_false;
+            }
+            _ => {}
+          }
+        }
+        "AspectRatio" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Some(r) = try_eval_to_f64(&val)
+            && r > 0.0
+          {
+            aspect_ratio = Some(r);
+          }
+        }
+        "PlotPoints" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          match &val {
+            Expr::Integer(n) if *n > 0 => plot_opts.plot_points = *n as usize,
+            _ => {}
+          }
+        }
+        "Ticks" => match replacement.as_ref() {
+          Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
+          Expr::Identifier(s) if s == "Automatic" || s == "All" => {
+            plot_opts.ticks = true
+          }
+          _ => {}
+        },
         _ => {}
       }
     }
+  }
+
+  // Apply AspectRatio: override svg_height based on width * ratio
+  // (AspectRatio is height/width in Wolfram Language)
+  if let Some(ar) = aspect_ratio {
+    plot_opts.svg_height = (plot_opts.svg_width as f64 * ar).round() as u32;
   }
 
   // Parse iterator spec: {x, xmin, xmax}
@@ -1345,13 +1534,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![body],
   };
 
-  // Sample each function
-  let step = (x_max - x_min) / (NUM_SAMPLES - 1) as f64;
+  // Sample each function using the configured number of sample points
+  let n_samples = plot_opts.plot_points.max(2);
+  let step = (x_max - x_min) / (n_samples - 1) as f64;
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
 
   for func_body in &bodies {
-    let mut points = Vec::with_capacity(NUM_SAMPLES);
-    for i in 0..NUM_SAMPLES {
+    let mut points = Vec::with_capacity(n_samples);
+    for i in 0..n_samples {
       let x = x_min + i as f64 * step;
       if let Some(y) = evaluate_at_point(func_body, &var_name, x) {
         points.push((x, y));
@@ -1380,21 +1570,26 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
   let y_data_max = finite_ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-  // Add 4% padding
+  // Add 4% padding to the auto-computed y range
   let y_range = y_data_max - y_data_min;
   let padding = if y_range.abs() < f64::EPSILON {
     1.0
   } else {
     y_range * 0.04
   };
-  let y_min = y_data_min - padding;
-  let y_max = y_data_max + padding;
+  let y_auto_min = y_data_min - padding;
+  let y_auto_max = y_data_max + padding;
+
+  // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
+  let (x_display_min, x_display_max) = plot_range_x.unwrap_or((x_min, x_max));
+  let (y_display_min, y_display_max) =
+    plot_range_y.unwrap_or((y_auto_min, y_auto_max));
 
   // Generate SVG
   let svg = generate_svg_with_filling(
     &all_points,
-    (x_min, x_max),
-    (y_min, y_max),
+    (x_display_min, x_display_max),
+    (y_display_min, y_display_max),
     &plot_opts,
   )?;
 

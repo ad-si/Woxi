@@ -2610,6 +2610,8 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut merged_primitives: Vec<Expr> = Vec::new();
   let mut merged_options: Vec<Expr> = Vec::new();
   let mut is_3d = false;
+  // Pre-rendered Graphics objects (e.g. from Plot[], Plot3D[])
+  let mut rendered_graphics: Vec<Expr> = Vec::new();
 
   for arg in args {
     // If the arg is not already a Graphics/Graphics3D expression,
@@ -2646,11 +2648,24 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           merge_option(&mut merged_options, opt);
         }
       }
+      Expr::Graphics { is_3d: g_is_3d, .. } => {
+        // Pre-rendered Graphics from Plot[], Plot3D[], etc.
+        is_3d = *g_is_3d;
+        rendered_graphics.push(expr_ref.clone());
+      }
       Expr::Rule { .. } => {
         merge_option(&mut merged_options, expr_ref);
       }
       _ => {}
     }
+  }
+
+  // If we have pre-rendered Graphics but no primitives from Graphics[...],
+  // return the rendered result directly. Single-arg Show just passes through.
+  // Multi-arg (combining rendered plots) returns the first one since we
+  // cannot merge SVGs without re-rendering from source data.
+  if merged_primitives.is_empty() && !rendered_graphics.is_empty() {
+    return Ok(rendered_graphics[0].clone());
   }
 
   if merged_primitives.is_empty() {

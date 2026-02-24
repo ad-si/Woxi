@@ -4201,7 +4201,7 @@ Pink,,,,5.1,306
 PitchRecognize,,,,12,5390
 PixelValue,,,,8,2005
 PixelValuePositions,,,,9,1536
-Placed,,,,7,391
+Placed,Inert positional wrapper for label and legend placement (used with ChartLabels etc.),✅,pure,7,391
 Placeholder,,,,7,1029
 PlaceholderLayer,,,,12.2,4707
 PlaceholderReplace,,,,8,
