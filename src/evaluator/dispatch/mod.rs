@@ -508,9 +508,24 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // Begin["ctx`"] / BeginPackage["ctx`"] return the context string
+  if (name == "Begin" || name == "BeginPackage") && args.len() == 1 {
+    if let Expr::String(ctx) = &args[0] {
+      return Ok(Expr::String(ctx.clone()));
+    }
+  }
+  // End[] / EndPackage[] return the previous context (Global` as default in Woxi)
+  if (name == "End" || name == "EndPackage") && args.is_empty() {
+    return Ok(Expr::String("Global`".to_string()));
+  }
+
+  // Needs["pkg`"] returns $Failed (packages not supported in Woxi)
+  if name == "Needs" && args.len() == 1 {
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+
   // Package/message/system functions - no-op in Woxi, returns Null
-  if name == "Needs"
-    || name == "Message"
+  if name == "Message"
     || name == "Begin"
     || name == "End"
     || name == "BeginPackage"
@@ -522,6 +537,23 @@ pub fn evaluate_function_call_ast_inner(
     || name == "ClearAttributes"
   {
     return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  // Circle[] defaults to Circle[{0, 0}]
+  if name == "Circle" {
+    let center = if args.is_empty() {
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)])
+    } else {
+      args[0].clone()
+    };
+    let mut new_args = vec![center];
+    if args.len() > 1 {
+      new_args.extend_from_slice(&args[1..]);
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Circle".to_string(),
+      args: new_args,
+    });
   }
 
   // Graphics primitives and style directives: return as symbolic (unevaluated)
@@ -540,7 +572,6 @@ pub fn evaluate_function_call_ast_inner(
     | "Directive"
     | "Point"
     | "Line"
-    | "Circle"
     | "Disk"
     | "Rectangle"
     | "Polygon"

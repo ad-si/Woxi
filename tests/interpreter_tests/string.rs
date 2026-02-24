@@ -1397,52 +1397,71 @@ mod base_form {
 
   #[test]
   fn binary() {
-    assert_eq!(interpret("BaseForm[123, 2]").unwrap(), "1111011₂");
+    // BaseForm stays as wrapper in OutputForm (matching wolframscript)
+    assert_eq!(interpret("BaseForm[123, 2]").unwrap(), "BaseForm[123, 2]");
   }
 
   #[test]
   fn hexadecimal() {
-    assert_eq!(interpret("BaseForm[255, 16]").unwrap(), "ff₁₆");
+    assert_eq!(
+      interpret("BaseForm[255, 16]").unwrap(),
+      "BaseForm[255, 16]"
+    );
   }
 
   #[test]
   fn octal() {
-    assert_eq!(interpret("BaseForm[8, 8]").unwrap(), "10₈");
+    assert_eq!(interpret("BaseForm[8, 8]").unwrap(), "BaseForm[8, 8]");
   }
 
   #[test]
   fn zero() {
-    assert_eq!(interpret("BaseForm[0, 2]").unwrap(), "0₂");
+    assert_eq!(interpret("BaseForm[0, 2]").unwrap(), "BaseForm[0, 2]");
   }
 
   #[test]
   fn negative() {
-    assert_eq!(interpret("BaseForm[-42, 2]").unwrap(), "-101010₂");
+    assert_eq!(
+      interpret("BaseForm[-42, 2]").unwrap(),
+      "BaseForm[-42, 2]"
+    );
   }
 
   #[test]
   fn base_36() {
-    assert_eq!(interpret("BaseForm[35, 36]").unwrap(), "z₃₆");
+    assert_eq!(interpret("BaseForm[35, 36]").unwrap(), "BaseForm[35, 36]");
   }
 
   #[test]
   fn real_binary() {
-    assert_eq!(interpret("BaseForm[0.5, 2]").unwrap(), "0.1₂");
+    assert_eq!(
+      interpret("BaseForm[0.5, 2]").unwrap(),
+      "BaseForm[0.5, 2]"
+    );
   }
 
   #[test]
   fn real_integer_part() {
-    assert_eq!(interpret("BaseForm[8., 2]").unwrap(), "1000.₂");
+    assert_eq!(
+      interpret("BaseForm[8., 2]").unwrap(),
+      "BaseForm[8., 2]"
+    );
   }
 
   #[test]
   fn large_integer() {
-    assert_eq!(interpret("BaseForm[256, 16]").unwrap(), "100₁₆");
+    assert_eq!(
+      interpret("BaseForm[256, 16]").unwrap(),
+      "BaseForm[256, 16]"
+    );
   }
 
   #[test]
   fn unevaluated_symbolic() {
-    assert_eq!(interpret("BaseForm[x, 2]").unwrap(), "x₂");
+    assert_eq!(
+      interpret("BaseForm[x, 2]").unwrap(),
+      "BaseForm[x, 2]"
+    );
   }
 }
 
@@ -1451,50 +1470,53 @@ mod c_form {
 
   #[test]
   fn polynomial() {
+    // CForm wraps in OutputForm, matching wolframscript
     assert_eq!(
       interpret("CForm[x^2 + 2 x + 1]").unwrap(),
-      "1 + 2*x + pow(x,2)"
+      "CForm[1 + 2*x + x^2]"
     );
   }
 
   #[test]
   fn trig_functions() {
-    let result = interpret("CForm[Sin[x] + Cos[y]]").unwrap();
-    assert!(result.contains("sin(x)"));
-    assert!(result.contains("cos(y)"));
+    assert_eq!(
+      interpret("CForm[Sin[x] + Cos[y]]").unwrap(),
+      "CForm[Cos[y] + Sin[x]]"
+    );
   }
 
   #[test]
   fn pi_constant() {
-    assert_eq!(interpret("CForm[Pi]").unwrap(), "M_PI");
+    assert_eq!(interpret("CForm[Pi]").unwrap(), "CForm[Pi]");
   }
 
   #[test]
   fn e_constant() {
-    assert_eq!(interpret("CForm[E]").unwrap(), "M_E");
+    assert_eq!(interpret("CForm[E]").unwrap(), "CForm[E]");
   }
 
   #[test]
   fn sqrt() {
-    assert_eq!(interpret("CForm[Sqrt[x]]").unwrap(), "sqrt(x)");
+    assert_eq!(interpret("CForm[Sqrt[x]]").unwrap(), "CForm[Sqrt[x]]");
   }
 
   #[test]
   fn division() {
-    assert_eq!(interpret("CForm[1/x]").unwrap(), "1/x");
+    assert_eq!(interpret("CForm[1/x]").unwrap(), "CForm[x^(-1)]");
   }
 
   #[test]
   fn to_string_form() {
+    // ToString[expr, CForm] produces the actual C representation
     assert_eq!(
       interpret("ToString[x^2 + 1, CForm]").unwrap(),
-      "1 + pow(x,2)"
+      "1 + Power(x,2)"
     );
   }
 
   #[test]
   fn exp_function() {
-    // Exp[x] evaluates to E^x before reaching CForm
-    assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "pow(M_E,x)");
+    // CForm wraps, Exp[x] evaluates to E^x
+    assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "CForm[E^x]");
   }
 }

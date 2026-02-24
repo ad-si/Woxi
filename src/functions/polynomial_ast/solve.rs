@@ -53,6 +53,24 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
+      // Sort conditions by root value in descending order (matching Wolfram)
+      conditions.sort_by(|a, b| {
+        let val_a = if let Expr::Comparison { operands, .. } = a {
+          expr_to_f64(&operands[1]).ok()
+        } else {
+          None
+        };
+        let val_b = if let Expr::Comparison { operands, .. } = b {
+          expr_to_f64(&operands[1]).ok()
+        } else {
+          None
+        };
+        match (val_b, val_a) {
+          (Some(vb), Some(va)) => vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal),
+          _ => std::cmp::Ordering::Equal,
+        }
+      });
+
       if conditions.is_empty() {
         Ok(Expr::Identifier("False".to_string()))
       } else if conditions.len() == 1 {

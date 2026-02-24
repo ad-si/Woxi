@@ -2692,11 +2692,7 @@ pub fn expr_to_c(expr: &Expr) -> String {
     }
     Expr::String(s) => format!("\"{}\"", s),
     Expr::Identifier(name) => name.clone(),
-    Expr::Constant(name) => match name.as_str() {
-      "Pi" => "M_PI".to_string(),
-      "E" => "M_E".to_string(),
-      _ => name.clone(),
-    },
+    Expr::Constant(name) => name.clone(),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Plus" => {
         let parts: Vec<String> = args.iter().map(expr_to_c).collect();
@@ -2736,32 +2732,14 @@ pub fn expr_to_c(expr: &Expr) -> String {
           format!("1./{}", c_paren(&args[0]))
         } else if matches!(&args[1], Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
         {
-          format!("sqrt({})", expr_to_c(&args[0]))
+          format!("Sqrt({})", expr_to_c(&args[0]))
         } else {
-          format!("pow({},{})", expr_to_c(&args[0]), expr_to_c(&args[1]))
+          format!("Power({},{})", expr_to_c(&args[0]), expr_to_c(&args[1]))
         }
       }
-      "Sin" => format!("sin({})", c_args(args)),
-      "Cos" => format!("cos({})", c_args(args)),
-      "Tan" => format!("tan({})", c_args(args)),
-      "Exp" => format!("exp({})", c_args(args)),
-      "Log" if args.len() == 1 => format!("log({})", c_args(args)),
-      "Log" if args.len() == 2 => {
-        format!("log({})/log({})", expr_to_c(&args[1]), expr_to_c(&args[0]))
+      "Rational" if args.len() == 2 => {
+        format!("{}./{}", expr_to_c(&args[0]), c_paren(&args[1]))
       }
-      "Sqrt" => format!("sqrt({})", c_args(args)),
-      "Abs" => format!("abs({})", c_args(args)),
-      "Floor" => format!("floor({})", c_args(args)),
-      "Ceiling" => format!("ceil({})", c_args(args)),
-      "ArcSin" => format!("asin({})", c_args(args)),
-      "ArcCos" => format!("acos({})", c_args(args)),
-      "ArcTan" if args.len() == 1 => format!("atan({})", c_args(args)),
-      "ArcTan" if args.len() == 2 => {
-        format!("atan2({},{})", expr_to_c(&args[1]), expr_to_c(&args[0]))
-      }
-      "Sinh" => format!("sinh({})", c_args(args)),
-      "Cosh" => format!("cosh({})", c_args(args)),
-      "Tanh" => format!("tanh({})", c_args(args)),
       _ => format!("{}({})", name, c_args(args)),
     },
     Expr::BinaryOp { op, left, right } => {
@@ -2772,7 +2750,7 @@ pub fn expr_to_c(expr: &Expr) -> String {
         BinaryOperator::Minus => format!("{} - {}", l, r),
         BinaryOperator::Times => format!("{}*{}", l, r),
         BinaryOperator::Divide => format!("{}/{}", l, r),
-        BinaryOperator::Power => format!("pow({},{})", l, r),
+        BinaryOperator::Power => format!("Power({},{})", l, r),
         _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
       }
     }

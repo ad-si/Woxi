@@ -93,7 +93,7 @@ pub fn is_builtin_flat(name: &str) -> bool {
 }
 
 pub fn is_builtin_orderless(name: &str) -> bool {
-  matches!(name, "Plus" | "Times" | "Max" | "Min")
+  matches!(name, "Plus" | "Times" | "Max" | "Min" | "GCD" | "LCM")
 }
 
 /// Thread a Listable function over list arguments.

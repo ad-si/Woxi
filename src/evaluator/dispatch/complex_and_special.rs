@@ -798,7 +798,7 @@ pub fn dispatch_complex_and_special(
         // Get main definition
         let main_lines = get_definition_lines(sym);
         if main_lines.is_empty() {
-          return Some(Ok(Expr::Identifier("Null".to_string())));
+          return Some(Ok(Expr::Raw("".to_string())));
         }
 
         let mut all_sections: Vec<String> = vec![main_lines.join("\n \n")];
@@ -975,10 +975,17 @@ pub fn dispatch_complex_and_special(
       let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
       return Some(Ok(Expr::Raw(rendered)));
     }
-    // Other form wrappers -- transparent, just return the inner expression
-    "MathMLForm" | "StandardForm" | "InputForm" | "Format"
+    // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
+    "MathMLForm" | "StandardForm" | "InputForm"
       if !args.is_empty() =>
     {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    // Format is transparent -- returns the inner expression
+    "Format" if !args.is_empty() => {
       return Some(Ok(args[0].clone()));
     }
 

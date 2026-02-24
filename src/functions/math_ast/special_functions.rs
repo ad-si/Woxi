@@ -519,6 +519,7 @@ pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiAmplitude[0, m] = 0
   if is_expr_zero(u) {
+    if has_real_arg(u, m) { return Ok(Expr::Real(0.0)); }
     return Ok(Expr::Integer(0));
   }
 
@@ -1264,6 +1265,7 @@ pub fn jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiSC[0, m] = 0
   if is_expr_zero(u) {
+    if has_real_arg(u, m) { return Ok(Expr::Real(0.0)); }
     return Ok(Expr::Integer(0));
   }
   // JacobiSC[u, 0] = Tan[u]
@@ -1305,6 +1307,7 @@ pub fn jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiDC[0, m] = 1
   if is_expr_zero(u) {
+    if has_real_arg(u, m) { return Ok(Expr::Real(1.0)); }
     return Ok(Expr::Integer(1));
   }
   // JacobiDC[u, 0] = Sec[u]
@@ -1343,6 +1346,7 @@ pub fn jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // JacobiCD[0, m] = 1
   if is_expr_zero(u) {
+    if has_real_arg(u, m) { return Ok(Expr::Real(1.0)); }
     return Ok(Expr::Integer(1));
   }
   // JacobiCD[u, 0] = Cos[u]
@@ -1379,7 +1383,9 @@ pub fn jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let u = &args[0];
   let m = &args[1];
 
+  // JacobiSD[0, m] = 0
   if is_expr_zero(u) {
+    if has_real_arg(u, m) { return Ok(Expr::Real(0.0)); }
     return Ok(Expr::Integer(0));
   }
   if is_expr_zero(m) {
@@ -1527,7 +1533,9 @@ pub fn jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let u = &args[0];
   let m = &args[1];
 
+  // JacobiND[0, m] = 1
   if is_expr_zero(u) {
+    if has_real_arg(u, m) { return Ok(Expr::Real(1.0)); }
     return Ok(Expr::Integer(1));
   }
   if is_expr_zero(m) {
@@ -1561,7 +1569,9 @@ pub fn jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let u = &args[0];
   let m = &args[1];
 
+  // JacobiNC[0, m] = 1
   if is_expr_zero(u) {
+    if has_real_arg(u, m) { return Ok(Expr::Real(1.0)); }
     return Ok(Expr::Integer(1));
   }
   if is_expr_zero(m) {
@@ -1777,8 +1787,11 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let phi_expr = &args[0];
   let m_expr = &args[1];
 
-  // EllipticF[0, m] = 0
+  // EllipticF[0, m] = 0 (Real if any argument is Real)
   if is_expr_zero(phi_expr) {
+    if matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)) {
+      return Ok(Expr::Real(0.0));
+    }
     return Ok(Expr::Integer(0));
   }
 
@@ -1865,8 +1878,11 @@ pub fn elliptic_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let phi_expr = &args[1];
     let m_expr = &args[2];
 
-    // EllipticPi[n, 0, m] = 0
+    // EllipticPi[n, 0, m] = 0 (Real if any argument is Real)
     if is_expr_zero(phi_expr) {
+      if matches!(n_expr, Expr::Real(_)) || matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)) {
+        return Ok(Expr::Real(0.0));
+      }
       return Ok(Expr::Integer(0));
     }
 

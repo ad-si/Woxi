@@ -450,7 +450,7 @@ mod normalize {
   fn normalize_symbolic() {
     assert_eq!(
       interpret("Normalize[{a, b}]").unwrap(),
-      "{a/Sqrt[a^2 + b^2], b/Sqrt[a^2 + b^2]}"
+      "{a/Sqrt[Abs[a]^2 + Abs[b]^2], b/Sqrt[Abs[a]^2 + Abs[b]^2]}"
     );
   }
 
