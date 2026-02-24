@@ -64,7 +64,10 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Post-process: normalize result equations
-  let eqs: Vec<Expr> = eqs.into_iter().map(|eq| normalize_eliminate_result(&eq, &vars_to_eliminate)).collect();
+  let eqs: Vec<Expr> = eqs
+    .into_iter()
+    .map(|eq| normalize_eliminate_result(&eq, &vars_to_eliminate))
+    .collect();
 
   // Return the result
   if eqs.len() == 1 {
@@ -626,8 +629,9 @@ pub fn is_builtin_constant_sa(s: &str) -> bool {
 }
 
 /// Normalize an Eliminate result equation to match Wolfram's canonical form.
-/// For linear equations in a single variable, solve to isolate the variable.
-/// For non-linear equations, move everything to the LHS and set == 0.
+/// - Single variable, linear: solve for the variable → var == value
+/// - Multi-variable, linear: isolate alphabetically first variable on RHS
+/// - Non-linear: move everything to LHS → poly == 0
 fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
   let (lhs, rhs) = match extract_eq_sides(eq) {
     Some(pair) => pair,
@@ -648,64 +652,141 @@ fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
   vars_in_result.sort();
   vars_in_result.dedup();
 
-  // If there's a single variable and the equation is linear, solve for it
-  if vars_in_result.len() == 1 {
+  // Collect additive terms
+  let terms = collect_additive_terms(&expanded);
+
+  // Check if the equation is linear: each term involves at most one variable to power 1
+  let is_linear = terms.iter().all(|term| {
+    let mut term_vars = Vec::new();
+    collect_free_vars(term, &mut term_vars);
+    term_vars.sort();
+    term_vars.dedup();
+    if term_vars.is_empty() {
+      return true; // constant term
+    }
+    if term_vars.len() > 1 {
+      return false; // product of variables
+    }
+    max_power(term, &term_vars[0]).is_some_and(|d| d <= 1)
+  });
+
+  // Single variable, linear: solve for it → var == value
+  if vars_in_result.len() == 1 && is_linear {
     let var = &vars_in_result[0];
-    if let Some(degree) = max_power(&expanded, var) {
-      if degree == 1 {
-        // Try to solve: coeff*var + rest = 0 => var = -rest/coeff
-        let terms = collect_additive_terms(&expanded);
-        let mut coeff = Expr::Integer(0);
-        let mut rest = Expr::Integer(0);
+    let mut coeff = Expr::Integer(0);
+    let mut rest = Expr::Integer(0);
 
-        for term in &terms {
-          if let Some(c) = extract_coefficient_of_power(term, var, 1) {
-            coeff = add_exprs(&coeff, &c);
-          }
-          if let Some(c) = extract_coefficient_of_power(term, var, 0) {
-            rest = add_exprs(&rest, &c);
-          }
-        }
-
-        let coeff = simplify(coeff);
-        let rest = simplify(rest);
-        let neg_rest = simplify(expand_and_combine(&negate_expr(&rest)));
-
-        let val = match &coeff {
-          Expr::Integer(1) => neg_rest,
-          Expr::Integer(-1) => simplify(expand_and_combine(&negate_expr(&neg_rest))),
-          _ => simplify(solve_divide(&neg_rest, &coeff)),
-        };
-
-        return Expr::Comparison {
-          operands: vec![Expr::Identifier(var.clone()), val],
-          operators: vec![crate::syntax::ComparisonOp::Equal],
-        };
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, var, 1) {
+        coeff = add_exprs(&coeff, &c);
+      }
+      if let Some(c) = extract_coefficient_of_power(term, var, 0) {
+        rest = add_exprs(&rest, &c);
       }
     }
+
+    let coeff = simplify(coeff);
+    let rest = simplify(rest);
+    let neg_rest = simplify(expand_and_combine(&negate_expr(&rest)));
+
+    let val = match &coeff {
+      Expr::Integer(1) => neg_rest,
+      Expr::Integer(-1) => {
+        simplify(expand_and_combine(&negate_expr(&neg_rest)))
+      }
+      _ => simplify(solve_divide(&neg_rest, &coeff)),
+    };
+
+    return Expr::Comparison {
+      operands: vec![Expr::Identifier(var.clone()), val],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
   }
 
-  // For multi-variable or non-linear: keep as lhs == rhs but try to normalize
-  // Move everything to LHS, set RHS to 0 for non-trivial cases
-  if !matches!(rhs, Expr::Integer(0)) && !matches!(lhs, Expr::Integer(0)) {
-    // Check if either side is already "simple" (a single variable or simple expression)
-    let lhs_is_simple = matches!(&lhs, Expr::Identifier(_));
-    let rhs_is_simple = matches!(&rhs, Expr::Identifier(_));
+  // Multi-variable, linear: isolate alphabetically first variable on RHS
+  if is_linear && vars_in_result.len() > 1 {
+    let first_var = vars_in_result[0].clone();
 
-    if lhs_is_simple && !rhs_is_simple {
-      // Keep lhs == rhs form when lhs is a single variable
-      return eq.clone();
+    // Get the coefficient of first_var in the polynomial
+    let mut first_coeff = Expr::Integer(0);
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, &first_var, 1) {
+        first_coeff = add_exprs(&first_coeff, &c);
+      }
     }
-    if rhs_is_simple && !lhs_is_simple {
-      // Swap to put variable on LHS
-      return Expr::Comparison {
-        operands: vec![rhs, lhs],
-        operators: vec![crate::syntax::ComparisonOp::Equal],
-      };
+    let first_coeff = simplify(first_coeff);
+
+    // We want the first_var to have a negative coefficient in the polynomial,
+    // so that when we move it to the RHS and negate, it becomes positive.
+    let coeff_is_positive = matches!(&first_coeff, Expr::Integer(n) if *n > 0);
+
+    let final_terms: Vec<Expr> = if coeff_is_positive {
+      terms.iter().map(negate_expr).collect()
+    } else {
+      terms
+    };
+
+    // Split into first_var terms and other terms
+    let mut lhs_terms: Vec<Expr> = Vec::new();
+    let mut rhs_neg_terms: Vec<Expr> = Vec::new();
+
+    for term in &final_terms {
+      if contains_var(term, &first_var) {
+        rhs_neg_terms.push(term.clone());
+      } else {
+        lhs_terms.push(term.clone());
+      }
     }
+
+    // Build LHS: sum of non-first_var terms
+    let lhs_expr = if lhs_terms.is_empty() {
+      Expr::Integer(0)
+    } else {
+      let mut result = lhs_terms[0].clone();
+      for term in &lhs_terms[1..] {
+        result = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(result),
+          right: Box::new(term.clone()),
+        };
+      }
+      simplify(expand_and_combine(&result))
+    };
+
+    // Build RHS: negate the first_var terms (moving from LHS to RHS)
+    let rhs_sum = if rhs_neg_terms.is_empty() {
+      Expr::Integer(0)
+    } else {
+      let mut result = rhs_neg_terms[0].clone();
+      for term in &rhs_neg_terms[1..] {
+        result = Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left: Box::new(result),
+          right: Box::new(term.clone()),
+        };
+      }
+      result
+    };
+    let rhs_expr = simplify(expand_and_combine(&negate_expr(&rhs_sum)));
+
+    return Expr::Comparison {
+      operands: vec![lhs_expr, rhs_expr],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
   }
 
-  eq.clone()
+  // Non-linear: (rhs - lhs) == 0
+  let neg_diff = Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(rhs),
+    right: Box::new(lhs),
+  };
+  let expanded_neg = simplify(expand_and_combine(&neg_diff));
+
+  Expr::Comparison {
+    operands: vec![expanded_neg, Expr::Integer(0)],
+    operators: vec![crate::syntax::ComparisonOp::Equal],
+  }
 }
 
 /// Collect free variable names from an expression

@@ -773,31 +773,55 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         }
         // Handle evaluated Times[a, b, ...] (FunctionCall form of *)
         "Times" if args.len() >= 2 => {
-          // For n factors, treat as a * rest and apply product rule recursively
-          let a = &args[0];
-          let rest = if args.len() == 2 {
-            args[1].clone()
-          } else {
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: args[1..].to_vec(),
+          // Generalized product rule:
+          // D[f1*f2*...*fn, x] = sum_i(f1*...*D[fi]*...*fn)
+          // Each term replaces one factor with its derivative.
+          let mut sum_terms: Vec<Expr> = Vec::new();
+          for i in 0..args.len() {
+            let di = differentiate(&args[i], var)?;
+            // Skip if derivative is zero (constant factor)
+            if matches!(&di, Expr::Integer(0)) {
+              continue;
             }
-          };
-          let da = differentiate(a, var)?;
-          let drest = differentiate(&rest, var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Plus,
-            left: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
-              left: Box::new(da),
-              right: Box::new(rest.clone()),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Times,
-              left: Box::new(a.clone()),
-              right: Box::new(drest),
-            }),
-          }))
+            if let Expr::Real(f) = &di
+              && *f == 0.0
+            {
+              continue;
+            }
+            // Build the product: all factors with the i-th replaced by its derivative
+            let mut product_args: Vec<Expr> = Vec::new();
+            for (j, arg) in args.iter().enumerate() {
+              if j == i {
+                product_args.push(di.clone());
+              } else {
+                product_args.push(arg.clone());
+              }
+            }
+            // Simplify this individual product term using times_ast
+            let term = if product_args.len() == 1 {
+              simplify(product_args.remove(0))
+            } else {
+              crate::functions::math_ast::times_ast(&product_args)?
+            };
+            if !matches!(&term, Expr::Integer(0)) {
+              sum_terms.push(term);
+            }
+          }
+
+          if sum_terms.is_empty() {
+            Ok(Expr::Integer(0))
+          } else if sum_terms.len() == 1 {
+            Ok(sum_terms.remove(0))
+          } else {
+            // Combine terms using plus_ast for proper like-term collection
+            // without expanding product sub-expressions
+            crate::functions::math_ast::plus_ast(&sum_terms).or_else(|_| {
+              Ok(Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: sum_terms,
+              })
+            })
+          }
         }
         // Handle evaluated Power[base, exp] (FunctionCall form of ^)
         "Power" if args.len() == 2 => differentiate(

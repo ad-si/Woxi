@@ -137,7 +137,10 @@ mod differentiate_plus_times {
   #[test]
   fn d_times_three_factors() {
     // D[4*(3 + 2*x)*x, x] should work with 3-factor Times
-    assert_eq!(interpret("D[4*(3 + 2*x)*x, x]").unwrap(), "4*(3 + 4*x)");
+    assert_eq!(
+      interpret("D[4*(3 + 2*x)*x, x]").unwrap(),
+      "8*x + 4*(3 + 2*x)"
+    );
   }
 }
 
@@ -935,7 +938,7 @@ mod minimize {
     // x^4 - 3x^2 + 1 has minimum -5/4 at x = ±Sqrt[3/2]
     assert_eq!(
       interpret("Minimize[x^4 - 3*x^2 + 1, x]").unwrap(),
-      "{-5/4, {x -> -(Sqrt[6]/2)}}"
+      "{-5/4, {x -> -Sqrt[3/2]}}"
     );
   }
 

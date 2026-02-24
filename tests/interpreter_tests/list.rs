@@ -2685,10 +2685,7 @@ mod join_non_list {
   fn delete_position_zero() {
     // Delete[{a, b, c}, 0] removes the head List, returning Sequence[a, b, c]
     // which at top level displays as concatenated elements (matches Wolfram)
-    assert_eq!(
-      interpret("Delete[{a, b, c}, 0]").unwrap(),
-      "abc"
-    );
+    assert_eq!(interpret("Delete[{a, b, c}, 0]").unwrap(), "abc");
   }
 
   #[test]

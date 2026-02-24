@@ -860,31 +860,8 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Solve normal equations: (A^T A) c = A^T y
-  // Compute A^T A (m×m)
-  let mut ata = vec![vec![0.0f64; m]; m];
-  for i in 0..m {
-    for j in 0..m {
-      let mut sum = 0.0;
-      for k in 0..n {
-        sum += a_matrix[k][i] * a_matrix[k][j];
-      }
-      ata[i][j] = sum;
-    }
-  }
-
-  // Compute A^T y (m×1)
-  let mut aty = vec![0.0f64; m];
-  for i in 0..m {
-    let mut sum = 0.0;
-    for k in 0..n {
-      sum += a_matrix[k][i] * y_vals[k];
-    }
-    aty[i] = sum;
-  }
-
-  // Solve via Gaussian elimination with partial pivoting
-  let coeffs = solve_linear_system(&mut ata, &mut aty)?;
+  // Solve via QR decomposition (Householder reflections)
+  let coeffs = solve_least_squares_qr(&a_matrix, &y_vals)?;
 
   // Build result: c[0]*basis[0] + c[1]*basis[1] + ...
   // We construct the expression using Times and Plus function calls
@@ -968,61 +945,86 @@ fn extract_fit_data(
   Ok((xs, ys))
 }
 
-/// Solve a linear system Ax = b using Gaussian elimination with partial pivoting.
-/// Modifies `a` and `b` in place. Returns the solution vector.
-fn solve_linear_system(
-  a: &mut Vec<Vec<f64>>,
-  b: &mut Vec<f64>,
+/// Solve least-squares problem min ||Ax - b||_2 using Householder QR decomposition.
+/// A is n×m (n rows, m cols) with n >= m.  Returns the m-element solution vector.
+fn solve_least_squares_qr(
+  a: &[Vec<f64>],
+  b: &[f64],
 ) -> Result<Vec<f64>, InterpreterError> {
   let n = a.len();
-  if n == 0 || b.len() != n {
+  if n == 0 {
     return Err(InterpreterError::EvaluationError(
-      "Fit: internal error in linear solve".into(),
+      "Fit: empty design matrix".into(),
+    ));
+  }
+  let m = a[0].len();
+  if m == 0 || b.len() != n {
+    return Err(InterpreterError::EvaluationError(
+      "Fit: dimension mismatch in least squares".into(),
     ));
   }
 
-  // Forward elimination with partial pivoting
-  for col in 0..n {
-    // Find pivot
-    let mut max_val = a[col][col].abs();
-    let mut max_row = col;
-    for row in (col + 1)..n {
-      if a[row][col].abs() > max_val {
-        max_val = a[row][col].abs();
-        max_row = row;
-      }
+  // Copy A and b (we'll transform them in place)
+  let mut r: Vec<Vec<f64>> = a.to_vec();
+  let mut rhs: Vec<f64> = b.to_vec();
+
+  // Householder QR: transform A into R, apply same reflections to rhs
+  for j in 0..m {
+    // Compute norm of column j below diagonal
+    let mut sigma = 0.0f64;
+    for i in j..n {
+      sigma += r[i][j] * r[i][j];
     }
-    if max_val < 1e-15 {
+    let norm = sigma.sqrt();
+
+    if norm < 1e-15 {
       return Err(InterpreterError::EvaluationError(
-        "Fit: design matrix is singular or nearly singular".into(),
+        "Fit: design matrix is rank-deficient".into(),
       ));
     }
 
-    // Swap rows
-    if max_row != col {
-      a.swap(col, max_row);
-      b.swap(col, max_row);
+    // Choose sign to maximize |v[j]| (avoid cancellation)
+    let alpha = if r[j][j] >= 0.0 { -norm } else { norm };
+
+    // Build Householder vector v (save a copy since column j gets overwritten)
+    let mut v = vec![0.0f64; n];
+    v[j] = r[j][j] - alpha;
+    for i in (j + 1)..n {
+      v[i] = r[i][j];
     }
 
-    // Eliminate below
-    let pivot = a[col][col];
-    for row in (col + 1)..n {
-      let factor = a[row][col] / pivot;
-      for j in col..n {
-        a[row][j] -= factor * a[col][j];
+    let vtv: f64 = v[j..].iter().map(|x| x * x).sum();
+    if vtv < 1e-30 {
+      r[j][j] = alpha;
+      continue;
+    }
+    let tau = 2.0 / vtv;
+
+    // Apply H = I - tau * v * v^T to columns of R
+    for k in j..m {
+      let dot: f64 = (j..n).map(|i| v[i] * r[i][k]).sum();
+      let factor = tau * dot;
+      for i in j..n {
+        r[i][k] -= factor * v[i];
       }
-      b[row] -= factor * b[col];
+    }
+
+    // Apply H to rhs
+    let dot: f64 = (j..n).map(|i| v[i] * rhs[i]).sum();
+    let factor = tau * dot;
+    for i in j..n {
+      rhs[i] -= factor * v[i];
     }
   }
 
-  // Back substitution
-  let mut x = vec![0.0f64; n];
-  for col in (0..n).rev() {
-    let mut sum = b[col];
-    for j in (col + 1)..n {
-      sum -= a[col][j] * x[j];
+  // Back substitution: solve R[0:m, 0:m] * x = rhs[0:m]
+  let mut x = vec![0.0f64; m];
+  for j in (0..m).rev() {
+    let mut sum = rhs[j];
+    for k in (j + 1)..m {
+      sum -= r[j][k] * x[k];
     }
-    x[col] = sum / a[col][col];
+    x[j] = sum / r[j][j];
   }
 
   Ok(x)

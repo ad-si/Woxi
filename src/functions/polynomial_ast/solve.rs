@@ -66,7 +66,9 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None
         };
         match (val_b, val_a) {
-          (Some(vb), Some(va)) => vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal),
+          (Some(vb), Some(va)) => {
+            vb.partial_cmp(&va).unwrap_or(std::cmp::Ordering::Equal)
+          }
           _ => std::cmp::Ordering::Equal,
         }
       });
@@ -232,9 +234,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(rules))
     }
     // True → {} (trivially satisfied, no constraints)
-    Expr::Identifier(s) if s == "True" => {
-      Ok(Expr::List(vec![]))
-    }
+    Expr::Identifier(s) if s == "True" => Ok(Expr::List(vec![])),
     // False → Sequence[] (no solutions, matches Wolfram: splices to nothing in context)
     Expr::Identifier(s) if s == "False" => Ok(Expr::FunctionCall {
       name: "Sequence".to_string(),
@@ -597,6 +597,21 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               )
             };
             let make_sol = |sign_minus: bool| -> Expr {
+              // Special case: when nb == 0 and so == 1, absorb denominator into Sqrt
+              // E.g. Sqrt[6]/2 → Sqrt[3/2] to match Wolfram's canonical form
+              if nb == 0 && den != 1 && so == 1 {
+                let rational_arg =
+                  crate::functions::math_ast::make_rational(sqrt_in, den * den);
+                if let Ok(simplified) =
+                  crate::functions::math_ast::sqrt_ast(&[rational_arg])
+                {
+                  return if sign_minus {
+                    negate_expr(&simplified)
+                  } else {
+                    simplified
+                  };
+                }
+              }
               let num = if nb == 0 {
                 if sign_minus {
                   negate_expr(&sqrt_part)
@@ -1463,6 +1478,23 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
               )
             };
             for sign_minus in [true, false] {
+              // When nb == 0 and den != 1 and so == 1, use Sqrt[sqrt_in/den^2]
+              // to produce canonical form like Sqrt[3/2] instead of Sqrt[6]/2
+              if nb == 0 && den != 1 && so == 1 {
+                let rational_arg =
+                  crate::functions::math_ast::make_rational(sqrt_in, den * den);
+                if let Ok(simplified) =
+                  crate::functions::math_ast::sqrt_ast(&[rational_arg])
+                {
+                  let root = if sign_minus {
+                    negate_expr(&simplified)
+                  } else {
+                    simplified
+                  };
+                  roots.push(root);
+                  continue;
+                }
+              }
               let num = if nb == 0 {
                 if sign_minus {
                   negate_expr(&sqrt_part)

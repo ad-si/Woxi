@@ -976,9 +976,7 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(Expr::Raw(rendered)));
     }
     // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
-    "MathMLForm" | "StandardForm" | "InputForm"
-      if !args.is_empty() =>
-    {
+    "MathMLForm" | "StandardForm" | "InputForm" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),

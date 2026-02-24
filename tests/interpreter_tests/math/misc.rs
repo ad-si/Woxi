@@ -80,10 +80,7 @@ mod implicit_multiply_power_precedence {
 
   #[test]
   fn b_y_cubed() {
-    assert_eq!(
-      interpret("FullForm[b y^3]").unwrap(),
-      "FullForm[b*y^3]"
-    );
+    assert_eq!(interpret("FullForm[b y^3]").unwrap(), "FullForm[b*y^3]");
   }
 
   #[test]

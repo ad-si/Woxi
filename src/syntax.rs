@@ -3087,8 +3087,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
         }
         // Complex number grouping: Times containing I with non-numeric remaining factors
         // e.g. Times[2, I, Sqrt[3]] → (2*I)*Sqrt[3], Times[Rational[1,2], I, Pi] → (I/2)*Pi
-        let has_imaginary =
-          args.iter().any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+        let has_imaginary = args
+          .iter()
+          .any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
         if has_imaginary {
           let mut numeric_factors: Vec<&Expr> = Vec::new();
           let mut symbolic_factors: Vec<&Expr> = Vec::new();
@@ -3113,7 +3114,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational" && ra.len() == 2 =>
                 {
-                  if let (Expr::Integer(num), Expr::Integer(den)) = (&ra[0], &ra[1]) {
+                  if let (Expr::Integer(num), Expr::Integer(den)) =
+                    (&ra[0], &ra[1])
+                  {
                     if *num == 1 {
                       Some(format!("(I/{})", den))
                     } else if *num == -1 {
@@ -3225,6 +3228,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
                 } else {
                   Some(Expr::Integer(-n))
                 }),
+                Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational"
                     && ra.len() == 2
@@ -3423,10 +3427,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
         }
         // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm convention)
         // Only for simple identifiers; products, functions, and sums are handled differently
-        if matches!(left.as_ref(), Expr::Integer(1)) {
-          if let Expr::Identifier(s) = right.as_ref() {
-            return format!("{}^(-1)", s);
-          }
+        if matches!(left.as_ref(), Expr::Integer(1))
+          && let Expr::Identifier(s) = right.as_ref()
+        {
+          return format!("{}^(-1)", s);
         }
       }
 
@@ -3761,7 +3765,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
       let func_str = expr_to_string(func);
       // Parenthesize func if it's a Function or NamedFunction (lower precedence than /@ )
       let func_display = match func.as_ref() {
-        Expr::Function { .. } | Expr::NamedFunction { .. } => format!("({})", func_str),
+        Expr::Function { .. } | Expr::NamedFunction { .. } => {
+          format!("({})", func_str)
+        }
         _ => func_str,
       };
       format!("{} /@ {}", func_display, expr_to_string(list))
@@ -3778,7 +3784,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
       let arg_str = expr_to_string(arg);
       // Parenthesize func if it's complex (not a simple identifier or function call)
       let func_display = match func.as_ref() {
-        Expr::Identifier(_) | Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => func_str,
+        Expr::Identifier(_)
+        | Expr::FunctionCall { .. }
+        | Expr::CurriedCall { .. } => func_str,
         _ => format!("({})", func_str),
       };
       format!("{}[{}]", func_display, arg_str)
@@ -4007,6 +4015,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
                 } else {
                   Some(Expr::Integer(-n))
                 }),
+                Expr::Real(r) if *r < 0.0 => Some(Some(Expr::Real(-r))),
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational"
                     && ra.len() == 2
@@ -4174,8 +4183,9 @@ pub fn expr_to_output(expr: &Expr) -> String {
         }
         // Complex number grouping: Times containing I with non-numeric remaining factors
         // e.g. Times[2, I, Sqrt[3]] → (2*I)*Sqrt[3], Times[Rational[1,2], I, Pi] → (I/2)*Pi
-        let has_imaginary =
-          args.iter().any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+        let has_imaginary = args
+          .iter()
+          .any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
         if has_imaginary {
           let mut numeric_factors: Vec<&Expr> = Vec::new();
           let mut symbolic_factors: Vec<&Expr> = Vec::new();
@@ -4200,7 +4210,9 @@ pub fn expr_to_output(expr: &Expr) -> String {
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational" && ra.len() == 2 =>
                 {
-                  if let (Expr::Integer(num), Expr::Integer(den)) = (&ra[0], &ra[1]) {
+                  if let (Expr::Integer(num), Expr::Integer(den)) =
+                    (&ra[0], &ra[1])
+                  {
                     if *num == 1 {
                       Some(format!("(I/{})", den))
                     } else if *num == -1 {
@@ -4519,7 +4531,9 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       format!("FullForm[{}]", expr_to_input_form(&args[0]))
     }
     // BaseForm: InputForm shows BaseForm[n, base] structure (not subscript notation)
-    Expr::FunctionCall { name, args } if name == "BaseForm" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "BaseForm" && args.len() == 2 =>
+    {
       format!(
         "BaseForm[{}, {}]",
         expr_to_input_form(&args[0]),
@@ -4531,20 +4545,28 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       format!("CForm[{}]", expr_to_input_form(&args[0]))
     }
     // Unevaluated: InputForm strips the wrapper, showing just the inner expression
-    Expr::FunctionCall { name, args } if name == "Unevaluated" && args.len() == 1 => {
+    Expr::FunctionCall { name, args }
+      if name == "Unevaluated" && args.len() == 1 =>
+    {
       expr_to_input_form(&args[0])
     }
     // StringSkeleton[n]: InputForm shows <<n>> with InputForm content
-    Expr::FunctionCall { name, args } if name == "StringSkeleton" && args.len() == 1 => {
+    Expr::FunctionCall { name, args }
+      if name == "StringSkeleton" && args.len() == 1 =>
+    {
       format!("<<{}>>", expr_to_input_form(&args[0]))
     }
     // StringExpression[a, b, c]: InputForm shows a~~b~~c with quoted strings
-    Expr::FunctionCall { name, args } if name == "StringExpression" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if name == "StringExpression" && !args.is_empty() =>
+    {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join("~~")
     }
     // StringForm: InputForm shows StringForm["template", args...] with quoted string
-    Expr::FunctionCall { name, args } if name == "StringForm" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if name == "StringForm" && !args.is_empty() =>
+    {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("StringForm[{}]", parts.join(", "))
     }
@@ -4964,157 +4986,6 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     // Atoms that don't contain the variable
     _ => expr.clone(),
   }
-}
-
-/// Convert an Expr to i64 if possible (for BaseForm base argument etc.)
-fn expr_to_i64(expr: &Expr) -> Option<i64> {
-  match expr {
-    Expr::Integer(n) => Some(*n as i64),
-    _ => None,
-  }
-}
-
-/// Convert an integer to a string in the given base (2-36).
-fn integer_to_base_string(mut n: i128, base: u32) -> String {
-  if n == 0 {
-    return "0".to_string();
-  }
-  let negative = n < 0;
-  if negative {
-    n = -n;
-  }
-  let mut digits = Vec::new();
-  let mut val = n as u128;
-  while val > 0 {
-    let digit = (val % base as u128) as u32;
-    digits.push(char::from_digit(digit, base).unwrap());
-    val /= base as u128;
-  }
-  digits.reverse();
-  let s: String = digits.into_iter().collect();
-  if negative { format!("-{}", s) } else { s }
-}
-
-/// Convert a BigInteger to a string in the given base.
-fn bigint_to_base_string(n: &num_bigint::BigInt, base: u32) -> String {
-  use num_bigint::Sign;
-  use num_traits::Zero;
-
-  if n.is_zero() {
-    return "0".to_string();
-  }
-
-  let (sign, mut val) = (n.sign(), n.magnitude().clone());
-  let base_big = num_bigint::BigUint::from(base);
-  let mut digits = Vec::new();
-
-  while !val.is_zero() {
-    let rem = &val % &base_big;
-    use num_traits::ToPrimitive;
-    let digit = rem.to_u32().unwrap();
-    digits.push(char::from_digit(digit, base).unwrap());
-    val /= &base_big;
-  }
-
-  digits.reverse();
-  let s: String = digits.into_iter().collect();
-  if sign == Sign::Minus {
-    format!("-{}", s)
-  } else {
-    s
-  }
-}
-
-/// Convert a real number to a string in the given base.
-fn real_to_base_string(f: f64, base: u32) -> String {
-  if f == 0.0 {
-    return "0.".to_string();
-  }
-  let negative = f < 0.0;
-  let f = f.abs();
-
-  // Integer part
-  let int_part = f.floor() as u128;
-  let frac_part = f - int_part as f64;
-
-  let int_str = if int_part == 0 {
-    "0".to_string()
-  } else {
-    let mut digits = Vec::new();
-    let mut val = int_part;
-    while val > 0 {
-      let digit = (val % base as u128) as u32;
-      digits.push(char::from_digit(digit, base).unwrap());
-      val /= base as u128;
-    }
-    digits.reverse();
-    digits.into_iter().collect()
-  };
-
-  if frac_part == 0.0 {
-    return if negative {
-      format!("-{}.", int_str)
-    } else {
-      format!("{}.", int_str)
-    };
-  }
-
-  // Fractional part
-  let mut frac_digits = Vec::new();
-  let mut frac = frac_part;
-  let max_digits = 16; // enough precision for f64
-  for _ in 0..max_digits {
-    frac *= base as f64;
-    let digit = frac.floor() as u32;
-    frac_digits.push(char::from_digit(digit.min(base - 1), base).unwrap());
-    frac -= digit as f64;
-    if frac.abs() < 1e-15 {
-      break;
-    }
-  }
-
-  // Remove trailing zeros
-  while frac_digits.last() == Some(&'0') {
-    frac_digits.pop();
-  }
-
-  let frac_str: String = frac_digits.into_iter().collect();
-  if negative {
-    format!("-{}.{}", int_str, frac_str)
-  } else {
-    format!("{}.{}", int_str, frac_str)
-  }
-}
-
-/// Format an expression in the given base for BaseForm display.
-fn format_in_base(expr: &Expr, base: u32) -> String {
-  match expr {
-    Expr::Integer(n) => integer_to_base_string(*n, base),
-    Expr::BigInteger(n) => bigint_to_base_string(n, base),
-    Expr::Real(f) => real_to_base_string(*f, base),
-    Expr::List(items) => {
-      let parts: Vec<String> =
-        items.iter().map(|e| format_in_base(e, base)).collect();
-      format!("{{{}}}", parts.join(", "))
-    }
-    _ => expr_to_output(expr),
-  }
-}
-
-/// Convert a number to Unicode subscript digit characters.
-fn to_subscript_digits(mut n: u64) -> String {
-  const SUBSCRIPTS: [char; 10] =
-    ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
-  if n == 0 {
-    return "₀".to_string();
-  }
-  let mut digits = Vec::new();
-  while n > 0 {
-    digits.push(SUBSCRIPTS[(n % 10) as usize]);
-    n /= 10;
-  }
-  digits.reverse();
-  digits.into_iter().collect()
 }
 
 // ─── 2D OutputForm rendering ───────────────────────────────────────────

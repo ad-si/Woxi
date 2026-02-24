@@ -509,10 +509,11 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // Begin["ctx`"] / BeginPackage["ctx`"] return the context string
-  if (name == "Begin" || name == "BeginPackage") && args.len() == 1 {
-    if let Expr::String(ctx) = &args[0] {
-      return Ok(Expr::String(ctx.clone()));
-    }
+  if (name == "Begin" || name == "BeginPackage")
+    && args.len() == 1
+    && let Expr::String(ctx) = &args[0]
+  {
+    return Ok(Expr::String(ctx.clone()));
   }
   // End[] / EndPackage[] return the previous context (Global` as default in Woxi)
   if (name == "End" || name == "EndPackage") && args.is_empty() {
@@ -525,8 +526,7 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // Package/message/system functions - no-op in Woxi, returns Null
-  if name == "Message"
-    || name == "Begin"
+  if name == "Begin"
     || name == "End"
     || name == "BeginPackage"
     || name == "EndPackage"
