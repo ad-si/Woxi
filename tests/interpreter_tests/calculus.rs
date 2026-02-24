@@ -994,6 +994,33 @@ mod minimize {
     );
   }
 
+  #[test]
+  fn ilp_integers_domain_simple() {
+    // Minimize[{x + y, {2*x + 3*y == 6, x >= 0, y >= 0}}, {x, y}, Integers]
+    // Solutions: (0,2)=2, (3,0)=3 → minimum is 2 at (0,2)
+    assert_eq!(
+      interpret(
+        "Minimize[{x + y, {2*x + 3*y == 6, x >= 0, y >= 0}}, {x, y}, Integers]"
+      )
+      .unwrap(),
+      "{2, {x -> 0, y -> 2}}"
+    );
+  }
+
+  #[test]
+  fn ilp_funccall_vars() {
+    // Minimize with Array-style variables n[1], n[2]
+    // 3*n[1] + 5*n[2] == 10, n[i] >= 0, minimize n[1]+n[2]
+    // Solutions: (0,2)=2 coins → minimum 2
+    assert_eq!(
+      interpret(
+        "vars = Array[n, 2]; Minimize[{Total[vars], {vars . {3, 5} == 10, vars[[1]] >= 0, vars[[2]] >= 0}}, vars, Integers]"
+      )
+      .unwrap(),
+      "{2, {n[1] -> 0, n[2] -> 2}}"
+    );
+  }
+
   // --- Maximize ---
 
   #[test]

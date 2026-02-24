@@ -519,6 +519,55 @@ pub fn thread_ast(
         }
       }
     }
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      // Thread over list operands in a comparison, e.g. Thread[{a,b} >= 0] -> {a>=0, b>=0}
+      let mut list_index: Option<usize> = None;
+      let mut list_len: Option<usize> = None;
+      for (i, op) in operands.iter().enumerate() {
+        if let Expr::List(items) = op {
+          match list_len {
+            None => {
+              list_len = Some(items.len());
+              list_index = Some(i);
+            }
+            Some(len) if len != items.len() => {
+              return Err(InterpreterError::EvaluationError(
+                "Thread: all lists must have the same length".into(),
+              ));
+            }
+            _ => {}
+          }
+        }
+      }
+      match (list_index, list_len) {
+        (Some(_), Some(len)) => {
+          let results: Vec<Expr> = (0..len)
+            .map(|j| {
+              let new_operands: Vec<Expr> = operands
+                .iter()
+                .map(|op| {
+                  if let Expr::List(items) = op {
+                    items[j].clone()
+                  } else {
+                    op.clone()
+                  }
+                })
+                .collect();
+              let new_cmp = Expr::Comparison {
+                operands: new_operands,
+                operators: operators.clone(),
+              };
+              crate::evaluator::evaluate_expr_to_expr(&new_cmp)
+            })
+            .collect::<Result<_, _>>()?;
+          Ok(Expr::List(results))
+        }
+        _ => Ok(expr.clone()),
+      }
+    }
     _ => Ok(expr.clone()),
   }
 }

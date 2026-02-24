@@ -1026,19 +1026,79 @@ pub fn minimize_ast(
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {
   let func_name = if maximize { "Maximize" } else { "Minimize" };
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(format!(
-      "{func_name} expects 2 arguments"
+      "{func_name} expects 2 or 3 arguments"
     )));
   }
 
-  // Parse variable list: x, {x}, {x, y}, ...
-  let vars = minimize_parse_vars(&args[1], func_name)?;
+  // Parse variable list: x, {x}, {x, y}, or {n[1], n[2], ...}
+  let (_var_strings, var_exprs) =
+    minimize_parse_vars_full(&args[1], func_name)?;
+
+  // Detect if any variable is a FunctionCall (e.g. n[1]).
+  // If so, rename them to fresh identifiers so the solver can treat them as plain symbols.
+  let has_funccall_vars = var_exprs
+    .iter()
+    .any(|e| matches!(e, Expr::FunctionCall { .. }));
+
+  // Fresh names for FunctionCall vars: __ilp_0, __ilp_1, ...
+  let fresh_names: Vec<String> =
+    (0..var_exprs.len()).map(|i| format!("__ilp_{i}")).collect();
+
+  // Rename FunctionCall vars in an expression
+  let rename_forward = |mut e: Expr| -> Expr {
+    if has_funccall_vars {
+      for (orig, fresh) in var_exprs.iter().zip(fresh_names.iter()) {
+        if matches!(orig, Expr::FunctionCall { .. }) {
+          e = substitute_expr(&e, orig, &Expr::Identifier(fresh.clone()));
+        }
+      }
+    }
+    e
+  };
+
+  // The effective var names used by the solver
+  let vars: Vec<String> = if has_funccall_vars {
+    fresh_names.clone()
+  } else {
+    var_exprs
+      .iter()
+      .map(|e| {
+        if let Expr::Identifier(n) = e {
+          n.clone()
+        } else {
+          expr_to_string(e)
+        }
+      })
+      .collect()
+  };
 
   // Parse objective and constraints: f or {f, cons1, cons2, ...}
-  let (objective, constraints) = minimize_parse_objective(&args[0]);
+  let (raw_objective, raw_constraints) = minimize_parse_objective(&args[0]);
+  let objective = rename_forward(raw_objective);
+  let mut constraints: Vec<Expr> =
+    raw_constraints.into_iter().map(rename_forward).collect();
 
-  if constraints.is_empty() {
+  // Handle 3-argument form: Minimize[{obj, cons}, vars, Domain]
+  // If the third argument is Integers, inject Element[var, Integers] for each var.
+  if args.len() == 3 {
+    let domain_is_integers =
+      matches!(&args[2], Expr::Identifier(d) if d == "Integers");
+    if domain_is_integers {
+      for var in &vars {
+        constraints.push(Expr::FunctionCall {
+          name: "Element".to_string(),
+          args: vec![
+            Expr::Identifier(var.clone()),
+            Expr::Identifier("Integers".to_string()),
+          ],
+        });
+      }
+    }
+  }
+
+  let result = if constraints.is_empty() {
     // Unconstrained
     if vars.len() == 1 {
       minimize_single_var(&objective, &vars[0], maximize, func_name)
@@ -1047,37 +1107,104 @@ pub fn minimize_ast(
     }
   } else {
     minimize_constrained(&objective, &constraints, &vars, maximize, func_name)
+  }?;
+
+  // Reverse renaming: replace fresh identifiers back with original FunctionCall exprs
+  // in Rule patterns so the result uses the original variable names.
+  if has_funccall_vars {
+    let result = fresh_names
+      .iter()
+      .zip(var_exprs.iter())
+      .filter(|(_, orig)| matches!(orig, Expr::FunctionCall { .. }))
+      .fold(result, |acc, (fresh, orig)| {
+        substitute_expr(&acc, &Expr::Identifier(fresh.clone()), orig)
+      });
+    return Ok(result);
   }
+  Ok(result)
 }
 
-fn minimize_parse_vars(
+/// Parse var list returning (string_names, original_exprs).
+/// Accepts plain identifiers AND FunctionCall expressions like n[1].
+fn minimize_parse_vars_full(
   expr: &Expr,
   func_name: &str,
-) -> Result<Vec<String>, InterpreterError> {
+) -> Result<(Vec<String>, Vec<Expr>), InterpreterError> {
+  fn parse_one(
+    item: &Expr,
+    func_name: &str,
+  ) -> Result<(String, Expr), InterpreterError> {
+    match item {
+      Expr::Identifier(name) => Ok((name.clone(), item.clone())),
+      Expr::FunctionCall { .. } => Ok((expr_to_string(item), item.clone())),
+      _ => Err(InterpreterError::EvaluationError(format!(
+        "{func_name}: variables must be symbols"
+      ))),
+    }
+  }
   match expr {
-    Expr::Identifier(name) => Ok(vec![name.clone()]),
     Expr::List(items) => {
-      let mut vars = Vec::new();
-      for item in items {
-        match item {
-          Expr::Identifier(name) => vars.push(name.clone()),
-          _ => {
-            return Err(InterpreterError::EvaluationError(format!(
-              "{func_name}: variables must be symbols"
-            )));
-          }
-        }
-      }
-      if vars.is_empty() {
+      if items.is_empty() {
         return Err(InterpreterError::EvaluationError(format!(
           "{func_name}: variable list cannot be empty"
         )));
       }
-      Ok(vars)
+      let mut names = Vec::new();
+      let mut exprs = Vec::new();
+      for item in items {
+        let (n, e) = parse_one(item, func_name)?;
+        names.push(n);
+        exprs.push(e);
+      }
+      Ok((names, exprs))
     }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "{func_name}: second argument must be a variable or list of variables"
-    ))),
+    _ => {
+      let (n, e) = parse_one(expr, func_name)?;
+      Ok((vec![n], vec![e]))
+    }
+  }
+}
+
+/// Recursively replace every occurrence of `from` with `to` in `expr`.
+fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
+  if expr_to_string(expr) == expr_to_string(from) {
+    return to.clone();
+  }
+  match expr {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|e| substitute_expr(e, from, to)).collect())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(|e| substitute_expr(e, from, to)).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_expr(left, from, to)),
+      right: Box::new(substitute_expr(right, from, to)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_expr(operand, from, to)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|e| substitute_expr(e, from, to))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(substitute_expr(pattern, from, to)),
+      replacement: Box::new(substitute_expr(replacement, from, to)),
+    },
+    _ => expr.clone(),
   }
 }
 
@@ -1932,6 +2059,11 @@ fn flatten_and_expr(expr: &Expr, result: &mut Vec<Expr>) {
     Expr::FunctionCall { name, args } if name == "And" => {
       for arg in args {
         flatten_and_expr(arg, result);
+      }
+    }
+    Expr::List(items) => {
+      for item in items {
+        flatten_and_expr(item, result);
       }
     }
     _ => result.push(expr.clone()),

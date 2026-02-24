@@ -327,6 +327,21 @@ mod equal_edge_cases {
       "{True, True, True}"
     );
   }
+
+  #[test]
+  fn equal_funccall_var_symbolic() {
+    // n[1] + 2 == 3 should stay symbolic, not evaluate to False
+    assert_eq!(interpret("n[1] + 2 == 3").unwrap(), "2 + n[1] == 3");
+  }
+
+  #[test]
+  fn equal_dot_product_symbolic() {
+    // Dot product of Array vars with weights == target should stay symbolic
+    assert_eq!(
+      interpret("vars = Array[n, 2]; vars . {3, 5} == 10").unwrap(),
+      "3*n[1] + 5*n[2] == 10"
+    );
+  }
 }
 
 mod unsame_q_multi {
