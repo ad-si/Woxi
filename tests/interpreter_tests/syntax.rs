@@ -1422,8 +1422,12 @@ mod set_options_function {
   use super::*;
 
   #[test]
-  fn set_options_returns_null() {
-    assert_eq!(interpret("SetOptions[f, a -> 1]").unwrap(), "Null");
+  fn set_options_returns_unevaluated() {
+    // SetOptions is not implemented - returns unevaluated (matching wolframscript)
+    assert_eq!(
+      interpret("SetOptions[f, a -> 1]").unwrap(),
+      "SetOptions[f, a -> 1]"
+    );
   }
 
   #[test]

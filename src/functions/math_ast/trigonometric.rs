@@ -1858,7 +1858,11 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
     Expr::Identifier(name) if name == "ComplexInfinity" => {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      // Gudermannian[ComplexInfinity] is unevaluated in Wolfram
+      return Ok(Expr::FunctionCall {
+        name: "Gudermannian".to_string(),
+        args: args.to_vec(),
+      });
     }
     Expr::Identifier(name) if name == "Undefined" => {
       return Ok(Expr::Identifier("Undefined".to_string()));

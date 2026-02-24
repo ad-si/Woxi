@@ -76,10 +76,11 @@ mod image_core {
   }
 
   #[test]
-  fn image_type_real64() {
+  fn image_type_default_real32() {
     clear_state();
+    // Default image type is Real32 (matching wolframscript)
     let result = interpret("ImageType[Image[{{0, 0.5, 1}}]]").unwrap();
-    assert_eq!(result, "Real64");
+    assert_eq!(result, "Real32");
   }
 
   #[test]
@@ -136,15 +137,17 @@ mod image_core {
   #[test]
   fn image_color_space_grayscale() {
     clear_state();
+    // Wolfram returns Automatic for ImageColorSpace
     let result = interpret("ImageColorSpace[Image[{{0, 1}}]]").unwrap();
-    assert_eq!(result, "Grayscale");
+    assert_eq!(result, "Automatic");
   }
 
   #[test]
   fn image_color_space_rgb() {
     clear_state();
+    // Wolfram returns Automatic for ImageColorSpace
     let result = interpret("ImageColorSpace[Image[{{{1, 0, 0}}}]]").unwrap();
-    assert_eq!(result, "RGB");
+    assert_eq!(result, "Automatic");
   }
 
   #[test]

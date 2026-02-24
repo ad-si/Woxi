@@ -452,7 +452,7 @@ pub fn dispatch_io_functions(
             }
           };
           match crate::close_stream(id) {
-            Some(name) => return Some(Ok(Expr::String(name))),
+            Some(name) => return Some(Ok(Expr::Identifier(name))),
             None => {
               let stream_str = crate::syntax::expr_to_string(&args[0]);
               eprintln!("{} is not open.", stream_str);

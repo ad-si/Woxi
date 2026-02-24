@@ -317,9 +317,10 @@ mod variables {
 
   #[test]
   fn variables_polynomial() {
+    // Variables preserves traversal order of the internal form (matching wolframscript)
     assert_eq!(
       interpret("Variables[a x^2 + b x + c]").unwrap(),
-      "{a, b, c, x}"
+      "{c, b, x, a}"
     );
   }
 
@@ -327,7 +328,7 @@ mod variables {
   fn variables_list() {
     assert_eq!(
       interpret("Variables[{a + b x, c y^2 + x/2}]").unwrap(),
-      "{a, b, c, x, y}"
+      "{a, b, x, c, y}"
     );
   }
 

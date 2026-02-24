@@ -234,7 +234,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels,
       data: Arc::new(data),
-      image_type: requested_type.unwrap_or(ImageType::Real64),
+      image_type: requested_type.unwrap_or(ImageType::Real32),
     })
   } else {
     // Grayscale image: {{v, v, ...}, ...}
@@ -270,7 +270,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels: 1,
       data: Arc::new(data),
-      image_type: requested_type.unwrap_or(ImageType::Real64),
+      image_type: requested_type.unwrap_or(ImageType::Real32),
     })
   }
 }
@@ -350,7 +350,7 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ImageType::Real32 => "Real32",
         ImageType::Real64 => "Real64",
       };
-      Ok(Expr::Identifier(type_str.to_string()))
+      Ok(Expr::String(type_str.to_string()))
     }
     _ => Err(InterpreterError::EvaluationError(
       "ImageType: argument is not an Image".into(),
@@ -416,12 +416,9 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
-    Expr::Image { channels, .. } => {
-      let space = match channels {
-        1 => "Grayscale",
-        _ => "RGB",
-      };
-      Ok(Expr::Identifier(space.to_string()))
+    Expr::Image { .. } => {
+      // Wolfram returns Automatic for ImageColorSpace (matching wolframscript)
+      Ok(Expr::Identifier("Automatic".to_string()))
     }
     _ => Err(InterpreterError::EvaluationError(
       "ImageColorSpace: argument is not an Image".into(),

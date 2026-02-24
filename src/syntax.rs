@@ -2269,21 +2269,23 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 fn operator_precedence(op: &str) -> u8 {
   match op {
     ">>" | ">>>" => 0, // Put/PutAppend (lowest precedence)
-    "=" | ":=" => 1,   // Assignment
-    "~~" => 2,         // StringExpression (lower than Alternatives)
-    "|" => 3,          // Alternatives
-    "||" => 3,
-    "&&" => 4,
-    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 5, // Comparisons
-    "->" | ":>" => 6,
-    "+" | "-" => 7,
-    "*" | "/" => 8,
-    "<>" => 7,          // Same as + for string concatenation
-    "." => 9,           // Dot (higher than arithmetic)
-    "@@@" | "@@" => 10, // Apply/MapApply
-    "/@" => 11,         // Map (higher than Apply)
-    "@" => 12,          // Prefix application (higher than Map)
-    "^" => 13,          // Power (highest)
+    "/:" => 1, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
+    "=" | ":=" => 2, // Assignment
+    "^=" | "^:=" => 2, // UpSet/UpSetDelayed (same as assignment)
+    "~~" => 3, // StringExpression (lower than Alternatives)
+    "|" => 4,  // Alternatives
+    "||" => 4,
+    "&&" => 5,
+    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 6, // Comparisons
+    "->" | ":>" => 7,
+    "+" | "-" => 8,
+    "*" | "/" => 9,
+    "<>" => 8,          // Same as + for string concatenation
+    "." => 10,          // Dot (higher than arithmetic)
+    "@@@" | "@@" => 11, // Apply/MapApply
+    "/@" => 12,         // Map (higher than Apply)
+    "@" => 13,          // Prefix application (higher than Map)
+    "^" => 14,          // Power (highest)
     _ => 0,
   }
 }
@@ -2324,12 +2326,16 @@ fn build_expr_with_precedence(
     }
 
     // For right-associative operators, use prec, otherwise use prec + 1
-    let next_min_prec =
-      if op_str == "^" || op_str == "@" || op_str == "=" || op_str == ":=" {
-        prec
-      } else {
-        prec + 1
-      };
+    let next_min_prec = if op_str == "^"
+      || op_str == "@"
+      || op_str == "="
+      || op_str == ":="
+      || op_str == "/:"
+    {
+      prec
+    } else {
+      prec + 1
+    };
 
     // Build the right side with higher precedence
     let right =
@@ -2473,6 +2479,33 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       name: "SetDelayed".to_string(),
       args: vec![left.clone(), right.clone()],
     },
+    "/:" => {
+      // TagSet or TagSetDelayed: tag /: lhs = rhs  or  tag /: lhs := rhs
+      // The right side has already been parsed with the = or := operator,
+      // producing Set[lhs, rhs] or SetDelayed[lhs, rhs].
+      match right {
+        Expr::FunctionCall { name, args }
+          if (name == "SetDelayed" || name == "Set") && args.len() == 2 =>
+        {
+          let tag_name = if name == "SetDelayed" {
+            "TagSetDelayed"
+          } else {
+            "TagSet"
+          };
+          Expr::FunctionCall {
+            name: tag_name.to_string(),
+            args: vec![left.clone(), args[0].clone(), args[1].clone()],
+          }
+        }
+        _ => {
+          // Fallback: wrap as Condition (x /: y without = or :=)
+          Expr::FunctionCall {
+            name: "Condition".to_string(),
+            args: vec![left.clone(), right.clone()],
+          }
+        }
+      }
+    }
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => {
       let comp_op = match op_str {
         "==" => ComparisonOp::Equal,
@@ -3109,7 +3142,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
             } else if numeric_factors.len() == 1 {
               match numeric_factors[0] {
                 Expr::Integer(1) => Some("I".to_string()),
-                Expr::Integer(-1) => Some("-I".to_string()),
+                Expr::Integer(-1) => Some("(-I)".to_string()),
                 Expr::Integer(n) => Some(format!("({}*I)", n)),
                 Expr::FunctionCall { name: rn, args: ra }
                   if rn == "Rational" && ra.len() == 2 =>
@@ -3169,6 +3202,10 @@ pub fn expr_to_string(expr: &Expr) -> String {
                   ..
                 }
               )
+              // Complex numbers (except plain I = Complex[0,1]) need parens in Times
+              || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
+                && args.len() == 2
+                && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
             {
               format!("({})", s)
             } else {
@@ -4479,6 +4516,20 @@ pub fn expr_to_output(expr: &Expr) -> String {
   }
 }
 
+/// Check if an expression tree contains any Expr::String nodes.
+fn contains_string(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(_) => true,
+    Expr::List(items) => items.iter().any(contains_string),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_string),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_string(left) || contains_string(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_string(operand),
+    _ => false,
+  }
+}
+
 /// Render Expr in InputForm - like expr_to_output but strings are quoted.
 pub fn expr_to_input_form(expr: &Expr) -> String {
   match expr {
@@ -4540,9 +4591,9 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         expr_to_input_form(&args[1])
       )
     }
-    // CForm: InputForm shows CForm[expr] structure (not C code string)
+    // CForm: InputForm renders the expression as C code
     Expr::FunctionCall { name, args } if name == "CForm" && args.len() == 1 => {
-      format!("CForm[{}]", expr_to_input_form(&args[0]))
+      crate::functions::string_ast::expr_to_c(&args[0])
     }
     // Unevaluated: InputForm strips the wrapper, showing just the inner expression
     Expr::FunctionCall { name, args }
@@ -4550,11 +4601,23 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     {
       expr_to_input_form(&args[0])
     }
-    // StringSkeleton[n]: InputForm shows <<n>> with InputForm content
+    // StringSkeleton[n]: InputForm shows n<<>> (content before <<>>)
     Expr::FunctionCall { name, args }
       if name == "StringSkeleton" && args.len() == 1 =>
     {
-      format!("<<{}>>", expr_to_input_form(&args[0]))
+      format!("{}<<>>", expr_to_input_form(&args[0]))
+    }
+    // MessageName[sym, "tag"]: InputForm shows sym::tag
+    Expr::FunctionCall { name, args }
+      if name == "MessageName" && args.len() == 2 =>
+    {
+      let sym = expr_to_input_form(&args[0]);
+      let tag = match &args[1] {
+        Expr::String(s) => s.clone(),
+        Expr::Identifier(s) => s.clone(),
+        other => expr_to_input_form(other),
+      };
+      format!("{}::{}", sym, tag)
     }
     // StringExpression[a, b, c]: InputForm shows a~~b~~c with quoted strings
     Expr::FunctionCall { name, args }
@@ -4578,8 +4641,174 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
-    // For all other cases, delegate to expr_to_output (which handles
-    // infix Plus/Times/Power, Rational, etc.)
+    // Generic FunctionCall: render as name[arg1, arg2, ...] with InputForm for args.
+    // Known infix operators (Plus, Times, Power, etc.) fall through to expr_to_output
+    // since they rarely contain string literals and need infix rendering.
+    Expr::FunctionCall { name, args }
+      if !matches!(
+        name.as_str(),
+        "Plus"
+          | "Times"
+          | "Power"
+          | "And"
+          | "Or"
+          | "Not"
+          | "Equal"
+          | "Unequal"
+          | "Less"
+          | "LessEqual"
+          | "Greater"
+          | "GreaterEqual"
+          | "Inequality"
+          | "Factorial"
+          | "Factorial2"
+          | "Increment"
+          | "Decrement"
+          | "PreIncrement"
+          | "PreDecrement"
+          | "Condition"
+          | "PatternTest"
+          | "Optional"
+          | "Alternatives"
+          | "Dot"
+          | "Repeated"
+          | "RepeatedNull"
+          | "Derivative"
+          | "Sequence"
+          | "Rational"
+          | "Complex"
+          | "DirectedInfinity"
+          | "Skeleton"
+      ) =>
+    {
+      if args.is_empty() {
+        format!("{}[]", name)
+      } else {
+        let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+        format!("{}[{}]", name, parts.join(", "))
+      }
+    }
+    // Plus in InputForm: render as infix but use expr_to_input_form for args
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      let mut result = expr_to_input_form(&args[0]);
+      for arg in args.iter().skip(1) {
+        // Check for negation patterns
+        if let Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } = arg
+        {
+          result.push_str(" - ");
+          result.push_str(&expr_to_input_form(operand));
+        } else if let Expr::FunctionCall {
+          name: tname,
+          args: targs,
+        } = arg
+          && tname == "Times"
+          && !targs.is_empty()
+          && matches!(&targs[0], Expr::Integer(n) if *n < 0)
+        {
+          // Negative Times: -n * ... → " - n*..."
+          let neg_arg = if let Expr::Integer(n) = &targs[0] {
+            if *n == -1 {
+              if targs.len() == 2 {
+                targs[1].clone()
+              } else {
+                Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: targs[1..].to_vec(),
+                }
+              }
+            } else {
+              let mut new_args = vec![Expr::Integer(-n)];
+              new_args.extend_from_slice(&targs[1..]);
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: new_args,
+              }
+            }
+          } else {
+            arg.clone()
+          };
+          result.push_str(" - ");
+          result.push_str(&expr_to_input_form(&neg_arg));
+        } else {
+          result.push_str(" + ");
+          result.push_str(&expr_to_input_form(arg));
+        }
+      }
+      result
+    }
+    // Times in InputForm: use expr_to_output for structure, but render via
+    // expr_to_input_form for args to preserve string quoting
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Check for imaginary unit patterns: -I * something
+      let has_i = args
+        .iter()
+        .any(|a| matches!(a, Expr::Identifier(n) if n == "I"));
+      let has_neg1 = args.iter().any(|a| matches!(a, Expr::Integer(-1)));
+      if has_i && has_neg1 {
+        let s = expr_to_output(expr);
+        if s.starts_with("-I*") {
+          // In InputForm, -I*x needs parens: (-I)*x
+          let rest_expr = if args.len() == 3 {
+            // Times[-1, I, x] → render x via input form
+            let other: Vec<&Expr> = args
+              .iter()
+              .filter(|a| {
+                !matches!(a, Expr::Integer(-1))
+                  && !matches!(a, Expr::Identifier(n) if n == "I")
+              })
+              .collect();
+            if other.len() == 1 {
+              expr_to_input_form(other[0])
+            } else {
+              s[3..].to_string()
+            }
+          } else {
+            s[3..].to_string()
+          };
+          format!("(-I)*{}", rest_expr)
+        } else {
+          s
+        }
+      } else {
+        // General Times: render using expr_to_output structure but fix string quoting
+        // by re-rendering the result with input_form for Quantity-like subexpressions
+        let needs_input_form = args.iter().any(contains_string);
+        if needs_input_form {
+          // Re-render each factor with input_form
+          // Handle Times[-1, ...] as negation
+          if matches!(&args[0], Expr::Integer(-1)) {
+            let rest: Vec<String> = args[1..].iter().map(|a| {
+              let s = expr_to_input_form(a);
+              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
+              {
+                format!("({})", s)
+              } else { s }
+            }).collect();
+            format!("-{}", rest.join("*"))
+          } else {
+            let parts: Vec<String> = args.iter().map(|a| {
+              let s = expr_to_input_form(a);
+              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
+                || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
+                  && args.len() == 2
+                  && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
+              {
+                format!("({})", s)
+              } else { s }
+            }).collect();
+            parts.join("*")
+          }
+        } else {
+          expr_to_output(expr)
+        }
+      }
+    }
+    // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
   }
 }

@@ -3914,6 +3914,17 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Special case: HypergeometricU[a, a+1, z] = z^(-a) (symbolic)
+  if let Expr::Integer(a) = &args[0]
+    && let Expr::Integer(b) = &args[1]
+    && *b == *a + 1
+  {
+    return Ok(Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![args[2].clone(), Expr::Integer(-*a)],
+    });
+  }
+
   // Return unevaluated
   Ok(Expr::FunctionCall {
     name: "HypergeometricU".to_string(),

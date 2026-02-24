@@ -920,6 +920,16 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     match form.as_str() {
       "InputForm" => {
+        // If the expression is CForm[inner], produce C code instead
+        if let Expr::FunctionCall {
+          name,
+          args: inner_args,
+        } = &args[0]
+          && name == "CForm"
+          && inner_args.len() == 1
+        {
+          return Ok(Expr::String(expr_to_c(&inner_args[0])));
+        }
         // InputForm: infix operators + quoted strings
         let s = crate::syntax::expr_to_input_form(&args[0]);
         return Ok(Expr::String(s));
@@ -2571,14 +2581,14 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     "Word" => {
-      // Whitespace-separated words
+      // Whitespace-separated words (returned as strings)
       for word in text.split_whitespace() {
         if let Some(max) = max_count
           && results.len() >= max
         {
           break;
         }
-        results.push(Expr::Identifier(word.to_string()));
+        results.push(Expr::String(word.to_string()));
       }
     }
     "Number" => {
@@ -2654,7 +2664,7 @@ fn read_list_record(
       };
       let token = tokens.get(i).unwrap_or(&"");
       match type_name {
-        "Word" => record.push(Expr::Identifier(token.to_string())),
+        "Word" => record.push(Expr::String(token.to_string())),
         "Number" => {
           if let Ok(n) = token.parse::<i128>() {
             record.push(Expr::Integer(n));

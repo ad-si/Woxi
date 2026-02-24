@@ -666,8 +666,8 @@ pub fn evaluate_expr_to_expr_inner(
                 ),
                 Expr::Real(seconds),
               ]),
-              Expr::Identifier("Instant".to_string()),
-              Expr::Identifier("Gregorian".to_string()),
+              Expr::String("Instant".to_string()),
+              Expr::String("Gregorian".to_string()),
               Expr::Real(tz_offset_hours),
             ],
           });
