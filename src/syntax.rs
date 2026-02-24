@@ -4148,7 +4148,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
 /// This is used for the final output in interpret(), not for round-tripping.
 pub fn expr_to_output(expr: &Expr) -> String {
   match expr {
-    Expr::String(s) => s.clone(), // No quotes for display
+    Expr::String(s) => {
+      // Strings containing Wolfram box-syntax Unicode markers render as
+      // DisplayForm[<box expression>] in OutputForm (matching wolframscript).
+      if s.starts_with(crate::functions::string_ast::BOX_START) {
+        return box_string_to_display_form(s);
+      }
+      s.clone() // No quotes for display
+    }
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(expr_to_output).collect();
       format!("{{{}}}", parts.join(", "))
@@ -4779,27 +4786,26 @@ fn contains_string(expr: &Expr) -> bool {
 }
 
 /// Escape a string for InputForm representation.
-/// Wolfram box-syntax escape sequences (`\!`, `\(`, `\)`, `\*`) and
-/// named-character sequences (`\[Name]`) are preserved as-is, while
+/// Wolfram private-use Unicode box characters are converted to their
+/// escape-sequence equivalents (`\!`, `\(`, `\)`, `\*`).
+/// Named-character sequences (`\[Name]`) are preserved as-is, while
 /// other backslashes are doubled.
 fn escape_string_for_input_form(s: &str) -> String {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
   let mut escaped = String::with_capacity(s.len() + 10);
   let chars: Vec<char> = s.chars().collect();
   let mut i = 0;
   while i < chars.len() {
     match chars[i] {
+      // Private-use Unicode box syntax chars → escape sequences
+      c if c == BOX_START => escaped.push_str("\\!"),
+      c if c == BOX_OPEN => escaped.push_str("\\("),
+      c if c == BOX_SEP => escaped.push_str("\\*"),
+      c if c == BOX_CLOSE => escaped.push_str("\\)"),
       '\\' if i + 1 < chars.len() => match chars[i + 1] {
-        // Wolfram box-syntax escape sequences — preserve as-is
-        '!' | '(' | ')' | '*' => {
-          escaped.push('\\');
-          escaped.push(chars[i + 1]);
-          i += 2;
-          continue;
-        }
         // \[Name] named character sequences — preserve as-is
         '[' => {
-          escaped.push('\\');
-          escaped.push('[');
+          escaped.push_str("\\[");
           i += 2;
           continue;
         }
@@ -6075,6 +6081,33 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
 pub fn expr_to_output_form_2d(expr: &Expr) -> String {
   let tb = expr_to_textbox(expr);
   tb.to_string()
+}
+
+/// Convert a string containing Wolfram box-syntax Unicode markers to the
+/// `DisplayForm[<box>]` representation used in OutputForm.
+/// The box expression is shown with quoted atoms unquoted.
+fn box_string_to_display_form(s: &str) -> String {
+  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+  // Strip the Unicode markers: BOX_START BOX_OPEN BOX_SEP <content> BOX_CLOSE
+  let inner = s
+    .trim_start_matches(BOX_START)
+    .trim_start_matches(BOX_OPEN)
+    .trim_start_matches(BOX_SEP)
+    .trim_end_matches(BOX_CLOSE);
+  // Unquote atoms: remove `"` wrapping around atoms in the box expression
+  let mut result = String::with_capacity(inner.len());
+  let mut in_quote = false;
+  let mut prev_backslash = false;
+  for ch in inner.chars() {
+    if ch == '"' && !prev_backslash {
+      in_quote = !in_quote;
+      // Skip the quote character itself
+    } else {
+      result.push(ch);
+    }
+    prev_backslash = ch == '\\';
+  }
+  format!("DisplayForm[{}]", result)
 }
 
 /// Top-level output: like expr_to_output but Sequence[a, b, ...] displays as
