@@ -174,8 +174,13 @@ pub fn dispatch_io_functions(
           }));
         }
       };
+      if format_str == "PDF" {
+        // Generate minimal PDF with expression text
+        let text = crate::syntax::expr_to_output(&args[0]);
+        return Some(Ok(Expr::String(generate_minimal_pdf(&text))));
+      }
       if format_str != "SVG" {
-        // Only SVG supported for now; return unevaluated for other formats
+        // Return unevaluated for unsupported formats
         return Some(Ok(Expr::FunctionCall {
           name: "ExportString".to_string(),
           args: args.to_vec(),
@@ -854,4 +859,73 @@ pub fn dispatch_io_functions(
     _ => {}
   }
   None
+}
+
+/// Generate a minimal valid PDF containing the given text.
+fn generate_minimal_pdf(text: &str) -> String {
+  // Escape special PDF characters in text
+  let escaped: String = text
+    .chars()
+    .map(|c| match c {
+      '(' => "\\(".to_string(),
+      ')' => "\\)".to_string(),
+      '\\' => "\\\\".to_string(),
+      _ => c.to_string(),
+    })
+    .collect();
+
+  let content_stream = format!("BT /F1 12 Tf 72 720 Td ({}) Tj ET", escaped);
+  let content_len = content_stream.len();
+
+  let mut pdf = String::new();
+  let mut offsets: Vec<usize> = Vec::new();
+
+  pdf.push_str("%PDF-1.4\n");
+
+  // Object 1: Catalog
+  offsets.push(pdf.len());
+  pdf.push_str("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+  // Object 2: Pages
+  offsets.push(pdf.len());
+  pdf.push_str("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+  // Object 3: Page
+  offsets.push(pdf.len());
+  pdf.push_str(
+    &"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]\n   \
+     /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+      .to_string(),
+  );
+
+  // Object 4: Content stream
+  offsets.push(pdf.len());
+  pdf.push_str(&format!(
+    "4 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+    content_len, content_stream
+  ));
+
+  // Object 5: Font
+  offsets.push(pdf.len());
+  pdf.push_str(
+    "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+  );
+
+  // Cross-reference table
+  let xref_offset = pdf.len();
+  let num_objects = offsets.len() + 1; // +1 for the free object 0
+  pdf.push_str("xref\n");
+  pdf.push_str(&format!("0 {}\n", num_objects));
+  pdf.push_str("0000000000 65535 f \n");
+  for offset in &offsets {
+    pdf.push_str(&format!("{:010} 00000 n \n", offset));
+  }
+
+  // Trailer
+  pdf.push_str(&format!(
+    "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+    num_objects, xref_offset
+  ));
+
+  pdf
 }

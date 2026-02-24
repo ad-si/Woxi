@@ -756,16 +756,16 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     _ => {
       // If exactly one term has polynomial pairs and the other doesn't,
       // sort the polynomial term first when the non-polynomial term is a
-      // transcendental function (priority 1) with free variables, e.g.
-      // Sin[2*x] (sort after x/2) or Times[-1, Sin[x]/4].
+      // transcendental function (priority 1), e.g.
+      // Sin[2*x] (sort after x/2), Times[-1, Sin[x]/4], or
+      // numeric transcendental constants like Log[15], Sqrt[6].
       // For compound algebraic terms like 4*(3+2*x) vs 8*x, compare by
       // earliest variable: same variable → monomial first.
       if a_has_pairs != b_has_pairs {
         let pair_term = if a_has_pairs { a } else { b };
         let none_term = if b_has_pairs { a } else { b };
         let (_, none_base) = decompose_term(none_term);
-        if contains_opaque_fn_call(none_term)
-          || (term_priority(&none_base) == 1 && has_free_variables(&none_base))
+        if contains_opaque_fn_call(none_term) || term_priority(&none_base) >= 1
         {
           return if a_has_pairs {
             std::cmp::Ordering::Less

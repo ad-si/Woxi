@@ -292,10 +292,20 @@ mod hypergeometric2f1 {
   }
 
   #[test]
-  fn symbolic_unevaluated() {
+  fn symbolic_simplification_1_2_3_x() {
+    // 2F1(1, 2, 3, x) = -(2/x^2)*(x + Log[1-x])
     assert_eq!(
       interpret("Hypergeometric2F1[1, 2, 3, x]").unwrap(),
-      "Hypergeometric2F1[1, 2, 3, x]"
+      "(-2*(x + Log[1 - x]))/x^2"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    // Truly unevaluated case (no closed form)
+    assert_eq!(
+      interpret("Hypergeometric2F1[1, 2, 4, x]").unwrap(),
+      "Hypergeometric2F1[1, 2, 4, x]"
     );
   }
 

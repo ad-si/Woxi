@@ -1209,7 +1209,7 @@ mod compress {
   fn uncompress_roundtrip_symbolic() {
     assert_eq!(
       interpret("Uncompress[Compress[x^2 + y Sin[x] + 10 Log[15]]]").unwrap(),
-      "10*Log[15] + x^2 + y*Sin[x]"
+      "x^2 + 10*Log[15] + y*Sin[x]"
     );
   }
 

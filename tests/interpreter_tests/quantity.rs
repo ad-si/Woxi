@@ -489,13 +489,14 @@ fn unit_convert_speed_of_light_to_km_h() {
 
 #[test]
 fn unit_convert_compound_string_target() {
-  // "Meters/Seconds^2" as a string should be parsed as a compound unit
+  // Wolfram doesn't recognize compound expressions with bare symbols as units.
+  // Kilometers/Seconds^2 (unquoted) returns unevaluated.
   assert_eq!(
     interpret(
       "UnitConvert[Quantity[1, Kilometers/Seconds^2], \"Meters/Seconds^2\"]"
     )
     .unwrap(),
-    "Quantity[1000, Meters/Seconds^2]"
+    "UnitConvert[Quantity[1, Kilometers/Seconds^2], Meters/Seconds^2]"
   );
 }
 
@@ -938,7 +939,7 @@ fn unit_convert_kilocalories_to_calories() {
   assert_eq!(
     interpret("UnitConvert[Quantity[1, \"Kilocalories\"], \"Calories\"]")
       .unwrap(),
-    "Quantity[1, Calories]"
+    "Quantity[1, DietaryCalories]"
   );
 }
 

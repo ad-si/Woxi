@@ -1055,6 +1055,14 @@ fn units_equal(u1: &Expr, u2: &Expr) -> bool {
   crate::syntax::expr_to_string(u1) == crate::syntax::expr_to_string(u2)
 }
 
+/// Map unit aliases to their canonical Wolfram names.
+fn canonical_unit_name(name: &str) -> &str {
+  match name {
+    "Calories" | "Kilocalories" => "DietaryCalories",
+    _ => name,
+  }
+}
+
 /// Recursively normalize unit expressions: expand abbreviations like "km/h" → "Kilometers"/"Hours".
 /// Strings are kept as Expr::String (Wolfram stores units as strings internally).
 fn normalize_unit(mut unit: Expr) -> Expr {
@@ -1063,7 +1071,7 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       let s = s.clone();
       // Try abbreviation expansion first
       if get_unit_info(&s).is_some() {
-        Expr::String(s)
+        Expr::String(canonical_unit_name(&s).to_string())
       } else if let Some(expanded) = resolve_unit_abbreviation(&s) {
         normalize_unit(expanded)
       } else if let Some(expanded) = resolve_per_unit(&s) {
@@ -1074,14 +1082,23 @@ fn normalize_unit(mut unit: Expr) -> Expr {
         Expr::String(s)
       }
     }
-    Expr::BinaryOp { op, left, right } => {
-      let op = *op;
-      let left = *std::mem::replace(left, Box::new(Expr::Integer(0)));
-      let right = *std::mem::replace(right, Box::new(Expr::Integer(0)));
-      Expr::BinaryOp {
-        op,
-        left: Box::new(normalize_unit(left)),
-        right: Box::new(normalize_unit(right)),
+    Expr::BinaryOp { .. } => {
+      // Wolfram doesn't recognize compound expressions with bare symbols as units.
+      // E.g. Kilometers/Seconds^2 is symbolic, not a unit specification.
+      // Only normalize compound expressions that use string-based unit names.
+      if has_bare_identifier_units(&unit) {
+        unit
+      } else if let Expr::BinaryOp { op, left, right } = &mut unit {
+        let op = *op;
+        let left = *std::mem::replace(left, Box::new(Expr::Integer(0)));
+        let right = *std::mem::replace(right, Box::new(Expr::Integer(0)));
+        Expr::BinaryOp {
+          op,
+          left: Box::new(normalize_unit(left)),
+          right: Box::new(normalize_unit(right)),
+        }
+      } else {
+        unreachable!()
       }
     }
     Expr::FunctionCall { name, args } => {
@@ -1096,7 +1113,7 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       let s = s.clone();
       // Known unit name: convert Identifier to String for proper InputForm quoting
       if get_unit_info(&s).is_some() {
-        return Expr::String(s);
+        return Expr::String(canonical_unit_name(&s).to_string());
       }
       // Try abbreviation expansion
       if let Some(expanded) = resolve_unit_abbreviation(&s) {
@@ -1349,6 +1366,33 @@ pub fn compatible_unit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── UnitConvert ────────────────────────────────────────────────────────────
 
+/// Check if a unit expression is a compound (BinaryOp or multi-arg FunctionCall).
+fn is_compound_unit_expr(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::BinaryOp { .. } | Expr::FunctionCall { name: _, args: _ }
+  ) && !matches!(e, Expr::FunctionCall { name, args } if name == "Quantity" || args.is_empty())
+}
+
+/// Check if a unit expression contains bare identifiers in compound form.
+/// Wolfram doesn't recognize compound expressions with bare symbols as units
+/// (e.g. `Kilometers/Seconds^2` as opposed to `"Kilometers/Seconds^2"`).
+fn has_bare_identifier_units(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(_) => true,
+    Expr::String(_) | Expr::Integer(_) => false,
+    Expr::BinaryOp { left, right, .. } => {
+      has_bare_identifier_units(left) || has_bare_identifier_units(right)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" || name == "Times" || name == "Sqrt" =>
+    {
+      args.iter().any(has_bare_identifier_units)
+    }
+    _ => false,
+  }
+}
+
 pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1357,6 +1401,16 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some((mag, unit)) = is_quantity(&args[0]) {
     let target = &args[1];
+
+    // Wolfram doesn't recognize compound expressions with bare symbols as units.
+    // E.g. Kilometers/Seconds^2 is symbolic, not a unit specification.
+    // Only string-based units like "Kilometers/Seconds^2" work.
+    if is_compound_unit_expr(unit) && has_bare_identifier_units(unit) {
+      return Ok(Expr::FunctionCall {
+        name: "UnitConvert".to_string(),
+        args: args.to_vec(),
+      });
+    }
 
     // Try compound unit decomposition for both sides
     let from_info = decompose_unit_expr(unit);

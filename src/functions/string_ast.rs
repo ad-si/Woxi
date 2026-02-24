@@ -914,6 +914,28 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // If the expression is MathMLForm[inner], produce MathML regardless of form argument
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "MathMLForm"
+    && inner_args.len() == 1
+  {
+    return Ok(Expr::String(expr_to_mathml(&inner_args[0])));
+  }
+
+  // If the expression is StandardForm[inner], produce box form representation
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "StandardForm"
+    && inner_args.len() == 1
+  {
+    return Ok(Expr::String(expr_to_box_form(&inner_args[0])));
+  }
+
   // Check for form argument
   if args.len() == 2
     && let Expr::Identifier(form) = &args[1]
@@ -1383,6 +1405,549 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     _ => {
       let args_tex: Vec<String> = args.iter().map(expr_to_tex).collect();
       format!("\\text{{{}}}({})", name, args_tex.join(","))
+    }
+  }
+}
+
+// ====================================================================
+// MathML generation
+// ====================================================================
+
+/// Convert a Wolfram expression to MathML (presentation MathML).
+/// Returns the complete `<math>...</math>` block with proper indentation.
+pub fn expr_to_mathml(expr: &Expr) -> String {
+  let inner = mathml_inner(expr, 1);
+  format!("<math>\n{}\n</math>\n", inner)
+}
+
+/// Render a single expression as a MathML fragment at the given indentation depth.
+fn mathml_inner(expr: &Expr, depth: usize) -> String {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  let indent = " ".repeat(depth);
+
+  match expr {
+    // Numbers
+    Expr::Integer(n) => format!("{}<mn>{}</mn>", indent, n),
+    Expr::BigInteger(n) => format!("{}<mn>{}</mn>", indent, n),
+    Expr::Real(f) => {
+      format!("{}<mn>{}</mn>", indent, crate::syntax::format_real(*f))
+    }
+
+    // Strings
+    Expr::String(s) => format!("{}<ms>{}</ms>", indent, mathml_escape(s)),
+
+    // Identifiers and constants
+    Expr::Identifier(name) | Expr::Constant(name) => {
+      format!("{}<mi>{}</mi>", indent, mathml_identifier(name))
+    }
+
+    // Unary minus
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let inner = mathml_inner(operand, depth + 1);
+      format!(
+        "{}<mrow>\n{}<mo>-</mo>\n{}\n{}</mrow>",
+        indent,
+        " ".repeat(depth + 1),
+        inner,
+        indent
+      )
+    }
+
+    // Binary operators
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus => {
+        let l = mathml_inner(left, depth + 1);
+        let r = mathml_inner(right, depth + 1);
+        format!(
+          "{}<mrow>\n{}\n{}<mo>+</mo>\n{}\n{}</mrow>",
+          indent,
+          l,
+          " ".repeat(depth + 1),
+          r,
+          indent
+        )
+      }
+      BinaryOperator::Minus => {
+        let l = mathml_inner(left, depth + 1);
+        let r = mathml_inner(right, depth + 1);
+        format!(
+          "{}<mrow>\n{}\n{}<mo>-</mo>\n{}\n{}</mrow>",
+          indent,
+          l,
+          " ".repeat(depth + 1),
+          r,
+          indent
+        )
+      }
+      BinaryOperator::Times => {
+        let l = mathml_inner(left, depth + 1);
+        let r = mathml_inner(right, depth + 1);
+        format!(
+          "{}<mrow>\n{}\n{}<mo>&#8290;</mo>\n{}\n{}</mrow>",
+          indent,
+          l,
+          " ".repeat(depth + 1),
+          r,
+          indent
+        )
+      }
+      BinaryOperator::Divide => {
+        let l = mathml_inner(left, depth + 1);
+        let r = mathml_inner(right, depth + 1);
+        format!("{}<mfrac>\n{}\n{}\n{}</mfrac>", indent, l, r, indent)
+      }
+      BinaryOperator::Power => {
+        let b = mathml_inner(left, depth + 1);
+        let e = mathml_inner(right, depth + 1);
+        format!("{}<msup>\n{}\n{}\n{}</msup>", indent, b, e, indent)
+      }
+      _ => {
+        // Fallback: render as operator
+        let op_str = format!("{:?}", op);
+        let l = mathml_inner(left, depth + 1);
+        let r = mathml_inner(right, depth + 1);
+        format!(
+          "{}<mrow>\n{}\n{}<mo>{}</mo>\n{}\n{}</mrow>",
+          indent,
+          l,
+          " ".repeat(depth + 1),
+          op_str,
+          r,
+          indent
+        )
+      }
+    },
+
+    // Lists
+    Expr::List(items) => mathml_list(items, depth),
+
+    // Function calls
+    Expr::FunctionCall { name, args } => {
+      mathml_function_call(name, args, depth)
+    }
+
+    // Fallback: render via output form
+    _ => {
+      let s = crate::syntax::expr_to_output(expr);
+      format!("{}<mi>{}</mi>", indent, mathml_escape(&s))
+    }
+  }
+}
+
+fn mathml_escape(s: &str) -> String {
+  s.replace('&', "&amp;")
+    .replace('<', "&lt;")
+    .replace('>', "&gt;")
+}
+
+fn mathml_identifier(name: &str) -> &str {
+  match name {
+    "Pi" => "&#960;",
+    "E" => "&#8519;",
+    "I" => "&#8520;",
+    "Infinity" | "DirectedInfinity" => "&#8734;",
+    _ => name,
+  }
+}
+
+fn mathml_list(items: &[Expr], depth: usize) -> String {
+  let indent = " ".repeat(depth);
+  let inner_indent = " ".repeat(depth + 1);
+  let inner2_indent = " ".repeat(depth + 2);
+
+  // Build comma-separated items inside {  }
+  let mut parts = Vec::new();
+  for (i, item) in items.iter().enumerate() {
+    parts.push(mathml_inner(item, depth + 2));
+    if i + 1 < items.len() {
+      parts.push(format!("{}<mo>,</mo>", inner2_indent));
+    }
+  }
+
+  format!(
+    "{}<mrow>\n{}<mo>{{</mo>\n{}<mrow>\n{}\n{}</mrow>\n{}<mo>}}</mo>\n{}</mrow>",
+    indent,
+    inner_indent,
+    inner_indent,
+    parts.join("\n"),
+    inner_indent,
+    inner_indent,
+    indent
+  )
+}
+
+fn mathml_function_call(name: &str, args: &[Expr], depth: usize) -> String {
+  let indent = " ".repeat(depth);
+  let inner = " ".repeat(depth + 1);
+
+  match name {
+    // Rational
+    "Rational" if args.len() == 2 => {
+      let n = mathml_inner(&args[0], depth + 1);
+      let d = mathml_inner(&args[1], depth + 1);
+      format!("{}<mfrac>\n{}\n{}\n{}</mfrac>", indent, n, d, indent)
+    }
+
+    // Power
+    "Power" if args.len() == 2 => {
+      // Power[x, Rational[1, 2]] → Sqrt
+      if let Expr::FunctionCall { name: rn, args: ra } = &args[1]
+        && rn == "Rational"
+        && ra.len() == 2
+        && matches!(&ra[0], Expr::Integer(1))
+        && matches!(&ra[1], Expr::Integer(2))
+      {
+        let b = mathml_inner(&args[0], depth + 1);
+        return format!("{}<msqrt>\n{}\n{}</msqrt>", indent, b, indent);
+      }
+      let b = mathml_inner(&args[0], depth + 1);
+      let e = mathml_inner(&args[1], depth + 1);
+      format!("{}<msup>\n{}\n{}\n{}</msup>", indent, b, e, indent)
+    }
+
+    // Sqrt
+    "Sqrt" if args.len() == 1 => {
+      let b = mathml_inner(&args[0], depth + 1);
+      format!("{}<msqrt>\n{}\n{}</msqrt>", indent, b, indent)
+    }
+
+    // Plus (n-ary)
+    "Plus" if !args.is_empty() => {
+      let mut parts = Vec::new();
+      parts.push(mathml_inner(&args[0], depth + 1));
+      for arg in args.iter().skip(1) {
+        // Check if argument has a leading minus (Times[-1, ...])
+        let is_neg = matches!(arg,
+          Expr::FunctionCall { name: n, args: a }
+            if n == "Times" && !a.is_empty() && matches!(&a[0], Expr::Integer(-1))
+        ) || matches!(arg, Expr::Integer(n) if *n < 0)
+          || matches!(
+            arg,
+            Expr::UnaryOp {
+              op: UnaryOperator::Minus,
+              ..
+            }
+          );
+
+        if is_neg {
+          parts.push(format!("{}<mo>-</mo>", inner));
+          // Render the negated form
+          match arg {
+            Expr::FunctionCall { name: n, args: a }
+              if n == "Times"
+                && a.len() >= 2
+                && matches!(&a[0], Expr::Integer(-1)) =>
+            {
+              if a.len() == 2 {
+                parts.push(mathml_inner(&a[1], depth + 1));
+              } else {
+                parts.push(mathml_function_call("Times", &a[1..], depth + 1));
+              }
+            }
+            Expr::Integer(n) if *n < 0 => {
+              parts.push(format!("{}<mn>{}</mn>", inner, -n));
+            }
+            Expr::UnaryOp {
+              op: UnaryOperator::Minus,
+              operand,
+            } => {
+              parts.push(mathml_inner(operand, depth + 1));
+            }
+            _ => parts.push(mathml_inner(arg, depth + 1)),
+          }
+        } else {
+          parts.push(format!("{}<mo>+</mo>", inner));
+          parts.push(mathml_inner(arg, depth + 1));
+        }
+      }
+      format!("{}<mrow>\n{}\n{}</mrow>", indent, parts.join("\n"), indent)
+    }
+
+    // Times (n-ary)
+    "Times" if args.len() >= 2 => {
+      // Check for leading -1
+      if matches!(&args[0], Expr::Integer(-1)) {
+        let rest = &args[1..];
+        if rest.len() == 1 {
+          let r = mathml_inner(&rest[0], depth + 1);
+          return format!(
+            "{}<mrow>\n{}<mo>-</mo>\n{}\n{}</mrow>",
+            indent, inner, r, indent
+          );
+        }
+        let r = mathml_function_call("Times", rest, depth + 1);
+        return format!(
+          "{}<mrow>\n{}<mo>-</mo>\n{}\n{}</mrow>",
+          indent, inner, r, indent
+        );
+      }
+      let mut parts = Vec::new();
+      parts.push(mathml_inner(&args[0], depth + 1));
+      for arg in args.iter().skip(1) {
+        parts.push(format!("{}<mo>&#8290;</mo>", inner));
+        parts.push(mathml_inner(arg, depth + 1));
+      }
+      format!("{}<mrow>\n{}\n{}</mrow>", indent, parts.join("\n"), indent)
+    }
+
+    // Trig functions (lowercase in MathML)
+    "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Log" | "Exp"
+      if args.len() == 1 =>
+    {
+      let fn_name = name.to_lowercase();
+      let a = mathml_inner(&args[0], depth + 1);
+      format!(
+        "{}<mrow>\n{}<mi>{}</mi>\n{}<mo>&#8289;</mo>\n{}<mo>(</mo>\n{}\n{}<mo>)</mo>\n{}</mrow>",
+        indent, inner, fn_name, inner, inner, a, inner, indent
+      )
+    }
+
+    // Complex
+    "Complex" if args.len() == 2 => {
+      let re = mathml_inner(&args[0], depth + 1);
+      let im = mathml_inner(&args[1], depth + 1);
+      format!(
+        "{}<mrow>\n{}\n{}<mo>+</mo>\n{}\n{}<mo>&#8290;</mo>\n{}<mi>&#8520;</mi>\n{}</mrow>",
+        indent, re, inner, im, inner, inner, indent
+      )
+    }
+
+    // Default: render as function application
+    _ => {
+      let args_inner: Vec<String> =
+        args.iter().map(|a| mathml_inner(a, depth + 1)).collect();
+      let mut parts = Vec::new();
+      for (i, a) in args_inner.iter().enumerate() {
+        parts.push(a.clone());
+        if i + 1 < args_inner.len() {
+          parts.push(format!("{}<mo>,</mo>", inner));
+        }
+      }
+      format!(
+        "{}<mrow>\n{}<mi>{}</mi>\n{}<mo>&#8289;</mo>\n{}<mo>(</mo>\n{}\n{}<mo>)</mo>\n{}</mrow>",
+        indent,
+        inner,
+        mathml_escape_str(name),
+        inner,
+        inner,
+        parts.join("\n"),
+        inner,
+        indent
+      )
+    }
+  }
+}
+
+fn mathml_escape_str(s: &str) -> String {
+  s.replace('&', "&amp;")
+    .replace('<', "&lt;")
+    .replace('>', "&gt;")
+}
+
+// ====================================================================
+// StandardForm box representation
+// ====================================================================
+
+/// Convert a Wolfram expression to its StandardForm box representation.
+/// Returns a string like `DisplayForm[RowBox[{...}]]`.
+pub fn expr_to_box_form(expr: &Expr) -> String {
+  let box_str = expr_to_boxes(expr);
+  // If the result is NOT already a box (RowBox, FractionBox, etc.), wrap in RowBox
+  if box_str.contains("Box[") {
+    format!("DisplayForm[{}]", box_str)
+  } else {
+    format!("DisplayForm[RowBox[{{{}}}]]", box_str)
+  }
+}
+
+/// Convert an expression to its box form representation.
+fn expr_to_boxes(expr: &Expr) -> String {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+
+  match expr {
+    // Simple atoms
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::Real(f) => crate::syntax::format_real(*f),
+    Expr::String(s) => {
+      format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+    Expr::Identifier(name) | Expr::Constant(name) => name.clone(),
+
+    // Unary minus
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      format!("RowBox[{{-, {}}}]", expr_to_boxes(operand))
+    }
+
+    // Binary operators
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus => {
+        format!(
+          "RowBox[{{{}, +, {}}}]",
+          expr_to_boxes(left),
+          expr_to_boxes(right)
+        )
+      }
+      BinaryOperator::Minus => {
+        format!(
+          "RowBox[{{{}, -, {}}}]",
+          expr_to_boxes(left),
+          expr_to_boxes(right)
+        )
+      }
+      BinaryOperator::Times => {
+        format!(
+          "RowBox[{{{},  , {}}}]",
+          expr_to_boxes(left),
+          expr_to_boxes(right)
+        )
+      }
+      BinaryOperator::Divide => {
+        format!(
+          "FractionBox[{}, {}]",
+          expr_to_boxes(left),
+          expr_to_boxes(right)
+        )
+      }
+      BinaryOperator::Power => {
+        format!(
+          "SuperscriptBox[{}, {}]",
+          expr_to_boxes(left),
+          expr_to_boxes(right)
+        )
+      }
+      _ => {
+        let op_str = match op {
+          BinaryOperator::And => "&&",
+          BinaryOperator::Or => "||",
+          BinaryOperator::StringJoin => "<>",
+          BinaryOperator::Alternatives => "|",
+          _ => "?",
+        };
+        format!(
+          "RowBox[{{{}, {}, {}}}]",
+          expr_to_boxes(left),
+          op_str,
+          expr_to_boxes(right)
+        )
+      }
+    },
+
+    // Lists
+    Expr::List(items) => {
+      let mut parts = vec!["{{".to_string()];
+      if !items.is_empty() {
+        let inner: Vec<String> = items.iter().map(expr_to_boxes).collect();
+        parts.push(format!("RowBox[{{{}}}]", inner.join(", ,, ")));
+      }
+      parts.push("}}".to_string());
+      format!("RowBox[{{{}}}]", parts.join(", "))
+    }
+
+    // Function calls
+    Expr::FunctionCall { name, args } => box_function_call(name, args),
+
+    // Fallback
+    _ => crate::syntax::expr_to_output(expr),
+  }
+}
+
+fn box_function_call(name: &str, args: &[Expr]) -> String {
+  match name {
+    // Rational → FractionBox
+    "Rational" if args.len() == 2 => {
+      format!(
+        "FractionBox[{}, {}]",
+        expr_to_boxes(&args[0]),
+        expr_to_boxes(&args[1])
+      )
+    }
+
+    // Power → SuperscriptBox
+    "Power" if args.len() == 2 => {
+      // Power[x, Rational[1, 2]] → SqrtBox
+      if let Expr::FunctionCall { name: rn, args: ra } = &args[1]
+        && rn == "Rational"
+        && ra.len() == 2
+        && matches!(&ra[0], Expr::Integer(1))
+        && matches!(&ra[1], Expr::Integer(2))
+      {
+        return format!("SqrtBox[{}]", expr_to_boxes(&args[0]));
+      }
+      format!(
+        "SuperscriptBox[{}, {}]",
+        expr_to_boxes(&args[0]),
+        expr_to_boxes(&args[1])
+      )
+    }
+
+    // Sqrt → SqrtBox
+    "Sqrt" if args.len() == 1 => {
+      format!("SqrtBox[{}]", expr_to_boxes(&args[0]))
+    }
+
+    // Plus → RowBox with + separators
+    "Plus" if !args.is_empty() => {
+      let mut parts = Vec::new();
+      parts.push(expr_to_boxes(&args[0]));
+      for arg in args.iter().skip(1) {
+        // Check for negative terms (Times[-1, ...])
+        let is_neg = matches!(arg,
+          Expr::FunctionCall { name: n, args: a }
+            if n == "Times" && !a.is_empty() && matches!(&a[0], Expr::Integer(-1))
+        ) || matches!(arg, Expr::Integer(n) if *n < 0);
+
+        if is_neg {
+          parts.push("-".to_string());
+          match arg {
+            Expr::FunctionCall { name: n, args: a }
+              if n == "Times"
+                && a.len() >= 2
+                && matches!(&a[0], Expr::Integer(-1)) =>
+            {
+              if a.len() == 2 {
+                parts.push(expr_to_boxes(&a[1]));
+              } else {
+                parts.push(box_function_call("Times", &a[1..]));
+              }
+            }
+            Expr::Integer(n) if *n < 0 => {
+              parts.push((-n).to_string());
+            }
+            _ => parts.push(expr_to_boxes(arg)),
+          }
+        } else {
+          parts.push("+".to_string());
+          parts.push(expr_to_boxes(arg));
+        }
+      }
+      format!("RowBox[{{{}}}]", parts.join(", "))
+    }
+
+    // Times → RowBox with space separators
+    "Times" if args.len() >= 2 => {
+      // Leading -1
+      if matches!(&args[0], Expr::Integer(-1)) {
+        if args.len() == 2 {
+          return format!("RowBox[{{-, {}}}]", expr_to_boxes(&args[1]));
+        }
+        let rest = box_function_call("Times", &args[1..]);
+        return format!("RowBox[{{-, {}}}]", rest);
+      }
+      let parts: Vec<String> = args.iter().map(expr_to_boxes).collect();
+      format!("RowBox[{{{}}}]", parts.join(",  , "))
+    }
+
+    // Default: function application
+    _ => {
+      let args_boxes: Vec<String> = args.iter().map(expr_to_boxes).collect();
+      format!("RowBox[{{{}[{}]}}]", name, args_boxes.join(", "))
     }
   }
 }

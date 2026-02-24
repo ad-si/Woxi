@@ -157,7 +157,11 @@ mod image_core {
       "img = Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]; ImageData[img]",
     )
     .unwrap();
-    assert_eq!(result, "{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}");
+    // ImageData returns f32-precision values (matching wolframscript)
+    assert_eq!(
+      result,
+      "{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}, {0.4000000059604645, 0.5, 0.6000000238418579}}"
+    );
   }
 
   #[test]
@@ -193,7 +197,8 @@ mod image_processing {
     clear_state();
     let result =
       interpret("ImageData[Binarize[Image[{{0.3, 0.5, 0.7}}]]]").unwrap();
-    assert_eq!(result, "{{0., 1., 1.}}");
+    // Binarize produces Bit-type images, so ImageData returns integers
+    assert_eq!(result, "{{0, 1, 1}}");
   }
 
   #[test]
@@ -201,7 +206,7 @@ mod image_processing {
     clear_state();
     let result =
       interpret("ImageData[Binarize[Image[{{0.3, 0.5, 0.7}}], 0.6]]").unwrap();
-    assert_eq!(result, "{{0., 0., 1.}}");
+    assert_eq!(result, "{{0, 0, 1}}");
   }
 
   #[test]
@@ -262,13 +267,17 @@ mod image_processing {
   }
 
   #[test]
-  fn image_crop_manual() {
+  fn image_crop_manual_returns_unevaluated() {
     clear_state();
+    // Wolfram's ImageCrop does not accept {{x1,y1},{x2,y2}} as a region spec
     let result = interpret(
       "ImageDimensions[ImageCrop[Image[{{0, 0, 0, 0}, {0, 1, 1, 0}, {0, 0, 0, 0}}], {{1, 1}, {3, 2}}]]",
     )
     .unwrap();
-    assert_eq!(result, "{2, 1}");
+    assert_eq!(
+      result,
+      "ImageDimensions[ImageCrop[-Image-, {{1, 1}, {3, 2}}]]"
+    );
   }
 
   #[test]
@@ -328,7 +337,11 @@ mod image_processing {
       "ImageData[ImageTake[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], 1]]",
     )
     .unwrap();
-    assert_eq!(result, "{{0.1, 0.2, 0.3}}");
+    // f32 precision values (matching wolframscript)
+    assert_eq!(
+      result,
+      "{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}}"
+    );
   }
 }
 
@@ -385,11 +398,12 @@ mod image_advanced {
   }
 
   #[test]
-  fn image_add_clamped() {
+  fn image_add_overflow() {
     clear_state();
+    // Wolfram does NOT clamp ImageAdd results to [0,1]
     let result =
       interpret("ImageData[ImageAdd[Image[{{0.8}}], Image[{{0.5}}]]]").unwrap();
-    assert_eq!(result, "{{1.}}");
+    assert_eq!(result, "{{1.2999999523162842}}");
   }
 
   #[test]
@@ -399,16 +413,18 @@ mod image_advanced {
       "ImageData[ImageSubtract[Image[{{0.5, 0.8}}], Image[{{0.2, 0.3}}]]]",
     )
     .unwrap();
-    assert_eq!(result, "{{0.3, 0.5}}");
+    // f32 precision: 0.5-0.2 = 0.30000001192092896 in f32
+    assert_eq!(result, "{{0.30000001192092896, 0.5}}");
   }
 
   #[test]
-  fn image_subtract_clamped() {
+  fn image_subtract_negative() {
     clear_state();
+    // Wolfram does NOT clamp ImageSubtract results to [0,1]
     let result =
       interpret("ImageData[ImageSubtract[Image[{{0.2}}], Image[{{0.5}}]]]")
         .unwrap();
-    assert_eq!(result, "{{0.}}");
+    assert_eq!(result, "{{-0.30000001192092896}}");
   }
 
   #[test]
@@ -574,5 +590,24 @@ mod image_display {
     clear_state();
     let result = interpret("Image[{{0, 0.5, 1}}]").unwrap();
     assert_eq!(result, "-Image-");
+  }
+
+  #[test]
+  fn image_input_form_grayscale() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[(Image[{{0, 0.5, 1}, {1, 0.5, 0}}]), InputForm]")
+        .unwrap(),
+      "Image[NumericArray[{{0., 0.5, 1.}, {1., 0.5, 0.}}, \"Real32\"], \"Real32\", ColorSpace -> Automatic, Interleaving -> None]"
+    );
+  }
+
+  #[test]
+  fn image_input_form_rgb() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[(Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}]), InputForm]").unwrap(),
+      "Image[NumericArray[{{{1., 0., 0.}, {0., 1., 0.}}, {{0., 0., 1.}, {1., 1., 0.}}}, \"Real32\"], \"Real32\", ColorSpace -> Automatic, Interleaving -> True]"
+    );
   }
 }

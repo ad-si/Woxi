@@ -240,6 +240,7 @@ pub enum AST {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageType {
+  Bit,
   Byte,
   Bit16,
   Real32,
@@ -2830,6 +2831,176 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
   }
 }
 
+/// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
+/// in a Times expression. Handles both FunctionCall and BinaryOp representations.
+fn is_denominator_factor(expr: &Expr) -> bool {
+  let exponent = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      &args[1]
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } => right.as_ref(),
+    _ => return false,
+  };
+  match exponent {
+    Expr::Integer(n) => *n < 0,
+    Expr::FunctionCall { name: rn, args: ra }
+      if rn == "Rational" && ra.len() == 2 =>
+    {
+      matches!(&ra[0], Expr::Integer(n) if *n < 0)
+    }
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && !ta.is_empty()
+        && matches!(&ta[0], Expr::Integer(-1)) =>
+    {
+      true
+    }
+    _ => false,
+  }
+}
+
+/// Given Power[base, negative_exp], return Power[base, positive_exp] for denominator display.
+/// For exponent -1, returns just the base (since base^1 = base).
+/// Handles both FunctionCall and BinaryOp representations.
+fn denominator_form(expr: &Expr) -> Expr {
+  let (base, exponent) = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => unreachable!(),
+  };
+  let pos_exp = match exponent {
+    Expr::Integer(n) => Expr::Integer(-n),
+    Expr::FunctionCall { name: rn, args: ra }
+      if rn == "Rational" && ra.len() == 2 =>
+    {
+      if let Expr::Integer(n) = &ra[0] {
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-n), ra[1].clone()],
+        }
+      } else {
+        unreachable!()
+      }
+    }
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && ta.len() >= 2
+        && matches!(&ta[0], Expr::Integer(-1)) =>
+    {
+      if ta.len() == 2 {
+        ta[1].clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: ta[1..].to_vec(),
+        }
+      }
+    }
+    _ => unreachable!(),
+  };
+  // If positive exponent is 1, return just the base
+  if matches!(&pos_exp, Expr::Integer(1)) {
+    base.clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base.clone(), pos_exp],
+    }
+  }
+}
+
+/// Format a list of Times factors, moving negative-exponent Powers to denominator.
+/// `formatter` is the string formatting function (expr_to_string or expr_to_output).
+fn format_times_with_denominator(
+  args: &[Expr],
+  formatter: fn(&Expr) -> String,
+) -> Option<String> {
+  // Check if any factor has negative exponent
+  if !args.iter().any(is_denominator_factor) {
+    return None;
+  }
+
+  let mut numer_factors: Vec<&Expr> = Vec::new();
+  let mut denom_exprs: Vec<Expr> = Vec::new();
+  for a in args.iter() {
+    if is_denominator_factor(a) {
+      denom_exprs.push(denominator_form(a));
+    } else {
+      numer_factors.push(a);
+    }
+  }
+
+  // Format a single factor with parens around Plus
+  let fmt_factor = |a: &Expr| -> String {
+    let s = formatter(a);
+    if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        a,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+    {
+      format!("({})", s)
+    } else {
+      s
+    }
+  };
+
+  // Format numerator
+  let numer_str = if numer_factors.is_empty() {
+    "1".to_string()
+  } else if numer_factors.len() == 1 {
+    fmt_factor(numer_factors[0])
+  } else {
+    let inner = numer_factors
+      .iter()
+      .map(|a| fmt_factor(a))
+      .collect::<Vec<_>>()
+      .join("*");
+    format!("({})", inner)
+  };
+
+  // Format denominator
+  let denom_str = if denom_exprs.len() == 1 {
+    let s = formatter(&denom_exprs[0]);
+    // Wrap in parens if it's a Plus
+    if matches!(&denom_exprs[0], Expr::FunctionCall { name, .. } if name == "Plus")
+    {
+      format!("({})", s)
+    } else {
+      s
+    }
+  } else {
+    let inner = denom_exprs
+      .iter()
+      .map(|a| {
+        let s = formatter(a);
+        if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus") {
+          format!("({})", s)
+        } else {
+          s
+        }
+      })
+      .collect::<Vec<_>>()
+      .join("*");
+    format!("({})", inner)
+  };
+
+  Some(format!("{}/{}", numer_str, denom_str))
+}
+
 /// Convert an Expr back to a string representation
 pub fn expr_to_string(expr: &Expr) -> String {
   match expr {
@@ -3074,6 +3245,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
         }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
+          // Check if the rest of the factors need denominator formatting
+          if let Some(frac) =
+            format_times_with_denominator(&args[1..], expr_to_string)
+          {
+            return format!("-({})", frac);
+          }
           let rest = args[1..]
             .iter()
             .map(|a| {
@@ -3189,6 +3366,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
               return format!("{}*{}", i_part, rest.join("*"));
             }
           }
+        }
+        // Check for denominator factors (negative exponents) to format as fraction
+        if let Some(frac) = format_times_with_denominator(args, expr_to_string)
+        {
+          return frac;
         }
         return args
           .iter()
@@ -4175,6 +4357,12 @@ pub fn expr_to_output(expr: &Expr) -> String {
         }
         // Handle Times[-1, x] as "-x" and Times[-1, x, y, ...] as "-x*y*..."
         if args.len() >= 2 && matches!(&args[0], Expr::Integer(-1)) {
+          // Check if the rest of the factors need denominator formatting
+          if let Some(frac) =
+            format_times_with_denominator(&args[1..], expr_to_output)
+          {
+            return format!("-({})", frac);
+          }
           let rest = args[1..]
             .iter()
             .map(|a| {
@@ -4289,6 +4477,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
               return format!("{}*{}", i_part, rest.join("*"));
             }
           }
+        }
+        // Check for denominator factors (negative exponents) to format as fraction
+        if let Some(frac) = format_times_with_denominator(args, expr_to_output)
+        {
+          return frac;
         }
         return args
           .iter()
@@ -4808,8 +5001,85 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         }
       }
     }
+    // Image: produce NumericArray InputForm
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    } => {
+      let type_str = match image_type {
+        ImageType::Bit => "Bit",
+        ImageType::Byte => "UnsignedInteger8",
+        ImageType::Bit16 => "UnsignedInteger16",
+        ImageType::Real32 => "Real32",
+        ImageType::Real64 => "Real64",
+      };
+      let interleaving = if *channels == 1 { "None" } else { "True" };
+
+      // Build nested list representation
+      let w = *width as usize;
+      let h = *height as usize;
+      let ch = *channels as usize;
+
+      let mut rows = Vec::with_capacity(h);
+      for y in 0..h {
+        if ch == 1 {
+          // Grayscale: {{v, v, v}, {v, v, v}}
+          let mut row_vals = Vec::with_capacity(w);
+          for x in 0..w {
+            let v = data[y * w + x];
+            row_vals.push(format_image_value(v, image_type));
+          }
+          rows.push(format!("{{{}}}", row_vals.join(", ")));
+        } else {
+          // Color: {{{r, g, b}, {r, g, b}}, ...}
+          let mut pixels = Vec::with_capacity(w);
+          for x in 0..w {
+            let base = (y * w + x) * ch;
+            let mut comps = Vec::with_capacity(ch);
+            for c in 0..ch {
+              let v = data[base + c];
+              comps.push(format_image_value(v, image_type));
+            }
+            pixels.push(format!("{{{}}}", comps.join(", ")));
+          }
+          rows.push(format!("{{{}}}", pixels.join(", ")));
+        }
+      }
+      let array_data = format!("{{{}}}", rows.join(", "));
+
+      format!(
+        "Image[NumericArray[{}, \"{}\"], \"{}\", ColorSpace -> Automatic, Interleaving -> {}]",
+        array_data, type_str, type_str, interleaving
+      )
+    }
+
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
+  }
+}
+
+/// Format an image pixel value with proper precision.
+/// For Real32 images, values are displayed with f32 precision (cast to f32 then back to f64).
+fn format_image_value(v: f64, image_type: &ImageType) -> String {
+  match image_type {
+    ImageType::Bit => {
+      format!("{}", v.round() as i64)
+    }
+    ImageType::Real32 => {
+      let f32_val = v as f32;
+      let f64_val = f32_val as f64;
+      format_real(f64_val)
+    }
+    ImageType::Byte => {
+      format!("{}", (v * 255.0).round() as u8)
+    }
+    ImageType::Bit16 => {
+      format!("{}", (v * 65535.0).round() as u16)
+    }
+    ImageType::Real64 => format_real(v),
   }
 }
 
