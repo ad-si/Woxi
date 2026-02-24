@@ -113,6 +113,12 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
                         JupyterMessageContent::IsCompleteRequest(is_complete_request) => {
                             handle_is_complete_request(&mut shell_socket, &request, is_complete_request).await?;
                         },
+                        JupyterMessageContent::CommInfoRequest(_) => {
+                            // Reply with empty comms - Woxi doesn't support widgets/comms
+                            shell_socket
+                                .send(jupyter_protocol::CommInfoReply::default().as_child_of(&request))
+                                .await?;
+                        },
                         JupyterMessageContent::ShutdownRequest(shutdown_request) => {
                             println!("Received shutdown request on shell channel");
 
