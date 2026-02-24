@@ -820,6 +820,40 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_axes_both_true_is_default() {
+      // Axes -> {True, True} is the same as the default
+      let svg_both =
+        export_svg("Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {True, True}]");
+      let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
+      assert_eq!(svg_both, svg_default);
+    }
+
+    #[test]
+    fn plot_axes_both_false_is_axes_false() {
+      // Axes -> {False, False} is the same as Axes -> False
+      let svg_both =
+        export_svg("Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {False, False}]");
+      let svg_false = export_svg("Plot[Sin[x], {x, 0, 2 Pi}, Axes -> False]");
+      assert_eq!(svg_both, svg_false);
+    }
+
+    #[test]
+    fn plot_axes_x_only() {
+      // Axes -> {True, False}: x-axis shown, y-axis hidden
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {True, False}]"
+      ));
+    }
+
+    #[test]
+    fn plot_axes_y_only() {
+      // Axes -> {False, True}: x-axis hidden, y-axis shown
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {False, True}]"
+      ));
+    }
+
+    #[test]
     fn plot_aspect_ratio_square() {
       // AspectRatio -> 1 makes height equal to width (square plot)
       insta::assert_snapshot!(export_svg(
