@@ -145,6 +145,14 @@ impl WoxiKernel {
           .send(jupyter_protocol::HistoryReply::default().as_child_of(parent))
           .await?;
       }
+      JupyterMessageContent::CompleteRequest(req) => {
+        let reply = jupyter_protocol::CompleteReply {
+          cursor_start: req.cursor_pos,
+          cursor_end: req.cursor_pos,
+          ..Default::default()
+        };
+        self.shell.send(reply.as_child_of(parent)).await?;
+      }
       JupyterMessageContent::ShutdownRequest(req) => {
         info!("Shutdown request received");
         let reply = ShutdownReply {
