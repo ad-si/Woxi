@@ -588,7 +588,7 @@ mod elliptic_f {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("EllipticF[0, 0.5]").unwrap(), "0");
+    assert_eq!(interpret("EllipticF[0, 0.5]").unwrap(), "0.");
   }
 
   #[test]
@@ -663,7 +663,7 @@ mod elliptic_pi {
 
   #[test]
   fn incomplete_zero_phi() {
-    assert_eq!(interpret("EllipticPi[0.3, 0, 0.5]").unwrap(), "0");
+    assert_eq!(interpret("EllipticPi[0.3, 0, 0.5]").unwrap(), "0.");
   }
 
   #[test]
@@ -1292,7 +1292,7 @@ mod jacobi_sc {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("JacobiSC[0, 0.5]").unwrap(), "0");
+    assert_eq!(interpret("JacobiSC[0, 0.5]").unwrap(), "0.");
   }
 
   #[test]
@@ -1322,7 +1322,7 @@ mod jacobi_dc {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("JacobiDC[0, 0.5]").unwrap(), "1");
+    assert_eq!(interpret("JacobiDC[0, 0.5]").unwrap(), "1.");
   }
 
   #[test]
@@ -1352,7 +1352,7 @@ mod jacobi_cd {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("JacobiCD[0, 0.5]").unwrap(), "1");
+    assert_eq!(interpret("JacobiCD[0, 0.5]").unwrap(), "1.");
   }
 
   #[test]
@@ -1382,7 +1382,7 @@ mod jacobi_sd {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("JacobiSD[0, 0.5]").unwrap(), "0");
+    assert_eq!(interpret("JacobiSD[0, 0.5]").unwrap(), "0.");
   }
 
   #[test]
@@ -1502,7 +1502,7 @@ mod jacobi_nd {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("JacobiND[0, 0.5]").unwrap(), "1");
+    assert_eq!(interpret("JacobiND[0, 0.5]").unwrap(), "1.");
   }
 
   #[test]
@@ -1532,7 +1532,7 @@ mod jacobi_nc {
 
   #[test]
   fn at_zero() {
-    assert_eq!(interpret("JacobiNC[0, 0.5]").unwrap(), "1");
+    assert_eq!(interpret("JacobiNC[0, 0.5]").unwrap(), "1.");
   }
 
   #[test]
@@ -1569,7 +1569,7 @@ mod jacobi_amplitude {
 
   #[test]
   fn zero_u() {
-    assert_eq!(interpret("JacobiAmplitude[0, 0.5]").unwrap(), "0");
+    assert_eq!(interpret("JacobiAmplitude[0, 0.5]").unwrap(), "0.");
   }
 
   #[test]

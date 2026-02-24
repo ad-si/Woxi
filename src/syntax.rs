@@ -2835,9 +2835,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "Skeleton" && args.len() == 1 {
         return format!("<<{}>>", expr_to_string(&args[0]));
       }
-      // Special case: StringSkeleton[n] displays as n<<>>
+      // Special case: StringSkeleton[n] displays as <<n>>
       if name == "StringSkeleton" && args.len() == 1 {
-        return format!("{}<<>>", expr_to_string(&args[0]));
+        return format!("<<{}>>", expr_to_string(&args[0]));
       }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {
@@ -3887,17 +3887,17 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "FullForm" && args.len() == 1 {
         return format!("FullForm[{}]", expr_to_output(&args[0]));
       }
-      // CForm[expr] displays C language format
+      // CForm[expr] displays as CForm[evaluated_expr] in OutputForm
       if name == "CForm" && args.len() == 1 {
-        return crate::functions::string_ast::expr_to_c(&args[0]);
+        return format!("CForm[{}]", expr_to_output(&args[0]));
       }
       // Special case: Skeleton[n] displays as <<n>>
       if name == "Skeleton" && args.len() == 1 {
         return format!("<<{}>>", expr_to_output(&args[0]));
       }
-      // Special case: StringSkeleton[n] displays as n<<>>
+      // Special case: StringSkeleton[n] displays as <<n>>
       if name == "StringSkeleton" && args.len() == 1 {
-        return format!("{}<<>>", expr_to_output(&args[0]));
+        return format!("<<{}>>", expr_to_output(&args[0]));
       }
       // Special case: Repeated[x] displays as x..
       if name == "Repeated" && args.len() == 1 {
@@ -3929,15 +3929,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
           return format!("___{}", h);
         }
       }
-      // Special case: BaseForm[expr, base] displays number in given base with subscript
-      if name == "BaseForm"
-        && args.len() == 2
-        && let Some(base) = expr_to_i64(&args[1])
-        && (2..=36).contains(&base)
-      {
-        let formatted = format_in_base(&args[0], base as u32);
-        let base_sub = to_subscript_digits(base as u64);
-        return format!("{}{}", formatted, base_sub);
+      // Special case: BaseForm[expr, base] displays as BaseForm[expr, base] in OutputForm
+      // (matching wolframscript; the subscript rendering only appears in notebook cells)
+      if name == "BaseForm" && args.len() == 2 {
+        return format!(
+          "BaseForm[{}, {}]",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
       }
       // Special case: Rational[num, denom] displays as num/denom
       if name == "Rational" && args.len() == 2 {
@@ -4535,9 +4534,9 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Unevaluated" && args.len() == 1 => {
       expr_to_input_form(&args[0])
     }
-    // StringSkeleton[n]: InputForm shows n<<>> with InputForm content
+    // StringSkeleton[n]: InputForm shows <<n>> with InputForm content
     Expr::FunctionCall { name, args } if name == "StringSkeleton" && args.len() == 1 => {
-      format!("{}<<>>", expr_to_input_form(&args[0]))
+      format!("<<{}>>", expr_to_input_form(&args[0]))
     }
     // StringExpression[a, b, c]: InputForm shows a~~b~~c with quoted strings
     Expr::FunctionCall { name, args } if name == "StringExpression" && !args.is_empty() => {

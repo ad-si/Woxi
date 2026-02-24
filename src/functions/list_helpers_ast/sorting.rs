@@ -483,10 +483,12 @@ fn expr_sort_key(e: &Expr) -> String {
   match e {
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       // For Orderless functions (Plus, Times), use the last argument as sort key
-      if let Some(last) = args.last()
-        && is_atom_expr(last)
-      {
-        return crate::syntax::expr_to_string(last);
+      if let Some(last) = args.last() {
+        if is_atom_expr(last) {
+          return crate::syntax::expr_to_string(last);
+        }
+        // Recurse into compound argument to find the symbolic sort key
+        return expr_sort_key(last);
       }
       // Fallback: use function name
       name.clone()

@@ -14,6 +14,13 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       "Orderless",
       "Protected",
     ],
+    "GCD" | "LCM" => vec![
+      "Flat",
+      "Listable",
+      "OneIdentity",
+      "Orderless",
+      "Protected",
+    ],
     "Power" => vec!["Listable", "NumericFunction", "OneIdentity", "Protected"],
     "Max" | "Min" => vec![
       "Flat",
@@ -162,7 +169,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
-    | "Information" | "MemoryConstrained" | "TagUnset" | "NProduct"
+    | "MemoryConstrained" | "TagUnset" | "NProduct"
     | "Definition" | "FullDefinition" => {
       vec!["HoldAll", "Protected"]
     }
@@ -413,8 +420,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "PolynomialQ"
     | "PolynomialRemainder"
     | "PolynomialQuotient"
-    | "GCD"
-    | "LCM"
     | "Mod"
     | "Environment"
     | "ExpandDenominator"
@@ -527,7 +532,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "InverseFunction" => vec!["NHoldAll", "Protected", "ReadProtected"],
 
     // Protected + ReadProtected (additional)
-    "Sound" | "Cuboid" | "Raster" | "InterpolatingFunction" => {
+    "Sound" | "Cuboid" | "Raster" | "InterpolatingFunction" | "Information" => {
       vec!["Protected", "ReadProtected"]
     }
 

@@ -758,7 +758,7 @@ mod gcd {
 
   #[test]
   fn symbolic() {
-    assert_eq!(interpret("GCD[x, 5]").unwrap(), "GCD[x, 5]");
+    assert_eq!(interpret("GCD[x, 5]").unwrap(), "GCD[5, x]");
   }
 }
 
@@ -851,7 +851,7 @@ mod lcm {
 
   #[test]
   fn symbolic() {
-    assert_eq!(interpret("LCM[x, 5]").unwrap(), "LCM[x, 5]");
+    assert_eq!(interpret("LCM[x, 5]").unwrap(), "LCM[5, x]");
   }
 }
 

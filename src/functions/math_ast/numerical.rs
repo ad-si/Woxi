@@ -755,7 +755,10 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .iter()
               .map(|e| Expr::BinaryOp {
                 op: crate::syntax::BinaryOperator::Power,
-                left: Box::new(e.clone()),
+                left: Box::new(Expr::FunctionCall {
+                  name: "Abs".to_string(),
+                  args: vec![e.clone()],
+                }),
                 right: Box::new(Expr::Integer(2)),
               })
               .collect();

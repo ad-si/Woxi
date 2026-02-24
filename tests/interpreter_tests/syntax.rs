@@ -403,26 +403,33 @@ mod tree_form {
 
   #[test]
   fn tree_form_simple() {
-    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "-Graphics-");
+    // TreeForm stays as wrapper in OutputForm (matching wolframscript)
+    assert_eq!(
+      interpret("TreeForm[f[x, y]]").unwrap(),
+      "TreeForm[f[x, y]]"
+    );
   }
 
   #[test]
   fn tree_form_expression() {
     assert_eq!(
       interpret("TreeForm[a + b^2 + c^3 + d]").unwrap(),
-      "-Graphics-"
+      "TreeForm[a + b^2 + c^3 + d]"
     );
   }
 
   #[test]
   fn tree_form_evaluates_argument() {
-    // 1 + 2 evaluates to 3 (an atom), but still renders as a tree
-    assert_eq!(interpret("TreeForm[1 + 2]").unwrap(), "-Graphics-");
+    // 1 + 2 evaluates to 3, then wrapped
+    assert_eq!(interpret("TreeForm[1 + 2]").unwrap(), "TreeForm[3]");
   }
 
   #[test]
   fn tree_form_with_depth() {
-    assert_eq!(interpret("TreeForm[f[x], 2]").unwrap(), "-Graphics-");
+    assert_eq!(
+      interpret("TreeForm[f[x], 2]").unwrap(),
+      "TreeForm[f[x], 2]"
+    );
   }
 
   #[test]
@@ -432,16 +439,14 @@ mod tree_form {
 
   #[test]
   fn tree_form_head() {
-    // TreeForm now evaluates to -Graphics- (an identifier/symbol)
-    assert_eq!(interpret("Head[TreeForm[f[x]]]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[TreeForm[f[x]]]").unwrap(), "TreeForm");
   }
 
   #[test]
   fn tree_form_in_list() {
-    // Each TreeForm produces -Graphics-, which get combined by the graphics list renderer
     assert_eq!(
       interpret("{TreeForm[f[x]], TreeForm[g[y]]}").unwrap(),
-      "-Graphics-"
+      "{TreeForm[f[x]], TreeForm[g[y]]}"
     );
   }
 }
@@ -1595,23 +1600,25 @@ mod begin_end_package {
   use super::*;
 
   #[test]
-  fn begin_returns_null() {
-    assert_eq!(interpret("Begin[\"Private`\"]").unwrap(), "Null");
+  fn begin_returns_context() {
+    // Begin returns the context string (matching wolframscript)
+    assert_eq!(interpret("Begin[\"Private`\"]").unwrap(), "Private`");
   }
 
   #[test]
-  fn end_returns_null() {
-    assert_eq!(interpret("End[]").unwrap(), "Null");
+  fn end_returns_context() {
+    // End returns the previous context (Global` by default in Woxi)
+    assert_eq!(interpret("End[]").unwrap(), "Global`");
   }
 
   #[test]
-  fn begin_package_returns_null() {
-    assert_eq!(interpret("BeginPackage[\"MyPkg`\"]").unwrap(), "Null");
+  fn begin_package_returns_context() {
+    assert_eq!(interpret("BeginPackage[\"MyPkg`\"]").unwrap(), "MyPkg`");
   }
 
   #[test]
-  fn end_package_returns_null() {
-    assert_eq!(interpret("EndPackage[]").unwrap(), "Null");
+  fn end_package_returns_context() {
+    assert_eq!(interpret("EndPackage[]").unwrap(), "Global`");
   }
 }
 
@@ -1801,7 +1808,7 @@ mod information_function {
   fn information_attributes() {
     assert_eq!(
       interpret("Attributes[Information]").unwrap(),
-      "{HoldAll, Protected}"
+      "{Protected, ReadProtected}"
     );
   }
 }
@@ -2057,8 +2064,9 @@ mod needs_function {
   use super::*;
 
   #[test]
-  fn needs_returns_null() {
-    assert_eq!(interpret("Needs[\"SomePackage`\"]").unwrap(), "Null");
+  fn needs_returns_failed() {
+    // Needs returns $Failed when package is not found (matching wolframscript)
+    assert_eq!(interpret("Needs[\"SomePackage`\"]").unwrap(), "$Failed");
   }
 
   #[test]
@@ -3191,12 +3199,12 @@ mod string_skeleton {
 
   #[test]
   fn displays_as_angle_brackets() {
-    assert_eq!(interpret("StringSkeleton[5]").unwrap(), "5<<>>");
+    assert_eq!(interpret("StringSkeleton[5]").unwrap(), "<<5>>");
   }
 
   #[test]
   fn displays_with_string() {
-    assert_eq!(interpret("StringSkeleton[\"abc\"]").unwrap(), "abc<<>>");
+    assert_eq!(interpret("StringSkeleton[\"abc\"]").unwrap(), "<<abc>>");
   }
 
   #[test]

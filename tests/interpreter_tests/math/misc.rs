@@ -124,7 +124,7 @@ mod implicit_multiply_power_precedence {
   #[test]
   fn function_call_implicit_times_with_implicit_arg() {
     // Sin[3y] should parse 3y as implicit multiplication inside the argument
-    assert_eq!(interpret("Sin[x] Sin[3y]").unwrap(), "Sin[3*y]*Sin[x]");
+    assert_eq!(interpret("Sin[x] Sin[3y]").unwrap(), "Sin[x]*Sin[3*y]");
   }
 
   #[test]

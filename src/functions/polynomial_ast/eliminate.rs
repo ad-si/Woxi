@@ -63,6 +63,9 @@ pub fn eliminate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Post-process: normalize result equations
+  let eqs: Vec<Expr> = eqs.into_iter().map(|eq| normalize_eliminate_result(&eq, &vars_to_eliminate)).collect();
+
   // Return the result
   if eqs.len() == 1 {
     Ok(eqs.into_iter().next().unwrap())
@@ -620,4 +623,112 @@ pub fn is_builtin_constant_sa(s: &str) -> bool {
       | "Degree"
       | "Catalan"
   )
+}
+
+/// Normalize an Eliminate result equation to match Wolfram's canonical form.
+/// For linear equations in a single variable, solve to isolate the variable.
+/// For non-linear equations, move everything to the LHS and set == 0.
+fn normalize_eliminate_result(eq: &Expr, _eliminated_vars: &[String]) -> Expr {
+  let (lhs, rhs) = match extract_eq_sides(eq) {
+    Some(pair) => pair,
+    None => return eq.clone(),
+  };
+
+  // Convert to standard form: lhs - rhs = 0
+  let diff = Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(lhs.clone()),
+    right: Box::new(rhs.clone()),
+  };
+  let expanded = simplify(expand_and_combine(&diff));
+
+  // Collect free variables in the result
+  let mut vars_in_result = Vec::new();
+  collect_free_vars(&expanded, &mut vars_in_result);
+  vars_in_result.sort();
+  vars_in_result.dedup();
+
+  // If there's a single variable and the equation is linear, solve for it
+  if vars_in_result.len() == 1 {
+    let var = &vars_in_result[0];
+    if let Some(degree) = max_power(&expanded, var) {
+      if degree == 1 {
+        // Try to solve: coeff*var + rest = 0 => var = -rest/coeff
+        let terms = collect_additive_terms(&expanded);
+        let mut coeff = Expr::Integer(0);
+        let mut rest = Expr::Integer(0);
+
+        for term in &terms {
+          if let Some(c) = extract_coefficient_of_power(term, var, 1) {
+            coeff = add_exprs(&coeff, &c);
+          }
+          if let Some(c) = extract_coefficient_of_power(term, var, 0) {
+            rest = add_exprs(&rest, &c);
+          }
+        }
+
+        let coeff = simplify(coeff);
+        let rest = simplify(rest);
+        let neg_rest = simplify(expand_and_combine(&negate_expr(&rest)));
+
+        let val = match &coeff {
+          Expr::Integer(1) => neg_rest,
+          Expr::Integer(-1) => simplify(expand_and_combine(&negate_expr(&neg_rest))),
+          _ => simplify(solve_divide(&neg_rest, &coeff)),
+        };
+
+        return Expr::Comparison {
+          operands: vec![Expr::Identifier(var.clone()), val],
+          operators: vec![crate::syntax::ComparisonOp::Equal],
+        };
+      }
+    }
+  }
+
+  // For multi-variable or non-linear: keep as lhs == rhs but try to normalize
+  // Move everything to LHS, set RHS to 0 for non-trivial cases
+  if !matches!(rhs, Expr::Integer(0)) && !matches!(lhs, Expr::Integer(0)) {
+    // Check if either side is already "simple" (a single variable or simple expression)
+    let lhs_is_simple = matches!(&lhs, Expr::Identifier(_));
+    let rhs_is_simple = matches!(&rhs, Expr::Identifier(_));
+
+    if lhs_is_simple && !rhs_is_simple {
+      // Keep lhs == rhs form when lhs is a single variable
+      return eq.clone();
+    }
+    if rhs_is_simple && !lhs_is_simple {
+      // Swap to put variable on LHS
+      return Expr::Comparison {
+        operands: vec![rhs, lhs],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      };
+    }
+  }
+
+  eq.clone()
+}
+
+/// Collect free variable names from an expression
+fn collect_free_vars(expr: &Expr, vars: &mut Vec<String>) {
+  match expr {
+    Expr::Identifier(name) if !is_builtin_constant_sa(name) => {
+      vars.push(name.clone());
+    }
+    Expr::FunctionCall { args, .. } => {
+      for arg in args {
+        collect_free_vars(arg, vars);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_free_vars(left, vars);
+      collect_free_vars(right, vars);
+    }
+    Expr::UnaryOp { operand, .. } => collect_free_vars(operand, vars),
+    Expr::List(items) | Expr::CompoundExpr(items) => {
+      for item in items {
+        collect_free_vars(item, vars);
+      }
+    }
+    _ => {}
+  }
 }

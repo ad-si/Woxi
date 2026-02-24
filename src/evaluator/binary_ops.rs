@@ -92,11 +92,22 @@ pub fn thread_binary_op(
         } else if matches!(r, Expr::Integer(1)) {
           Ok(l.clone())
         } else {
-          Ok(Expr::BinaryOp {
-            op,
-            left: Box::new(l.clone()),
-            right: Box::new(r.clone()),
-          })
+          // Apply Orderless canonical ordering for Times
+          let ord = crate::functions::list_helpers_ast::compare_exprs(l, r);
+          if ord < 0 {
+            // Swap to put smaller expression first
+            Ok(Expr::BinaryOp {
+              op,
+              left: Box::new(r.clone()),
+              right: Box::new(l.clone()),
+            })
+          } else {
+            Ok(Expr::BinaryOp {
+              op,
+              left: Box::new(l.clone()),
+              right: Box::new(r.clone()),
+            })
+          }
         }
       }
       BinaryOperator::Divide => {

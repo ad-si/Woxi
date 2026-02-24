@@ -1096,7 +1096,7 @@ mod roots {
   #[test]
   fn roots_quadratic_integer() {
     let result = interpret("Roots[x^2 - 4 == 0, x]").unwrap();
-    assert_eq!(result, "x == -2 || x == 2");
+    assert_eq!(result, "x == 2 || x == -2");
   }
 
   #[test]
@@ -1132,7 +1132,7 @@ mod eliminate {
   fn eliminate_single_variable_linear() {
     // Eliminate y from {x == 2 + y, y == z}
     let result = interpret("Eliminate[{x == 2 + y, y == z}, y]").unwrap();
-    assert_eq!(result, "-2 + x == z");
+    assert_eq!(result, "z == -2 + x");
   }
 
   #[test]
@@ -1146,7 +1146,7 @@ mod eliminate {
   fn eliminate_to_constant() {
     // Eliminate y from {x + y == 3, x - y == 1}
     let result = interpret("Eliminate[{x + y == 3, x - y == 1}, y]").unwrap();
-    assert_eq!(result, "-3 + 2*x == 1");
+    assert_eq!(result, "x == 2");
   }
 
   #[test]
@@ -1194,7 +1194,7 @@ mod to_rules {
     // Convert Roots output to Solve-style rules
     assert_eq!(
       interpret("ToRules[Roots[x^2 - 4 == 0, x]]").unwrap(),
-      "{x -> -2}{x -> 2}"
+      "{x -> 2}{x -> -2}"
     );
   }
 

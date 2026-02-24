@@ -1676,7 +1676,7 @@ mod high_level_functions_tests {
     #[test]
     fn undefined_symbol() {
       let r = interpret("Clear[xyz]; FullDefinition[xyz]").unwrap();
-      assert_eq!(r, "Null");
+      assert_eq!(r, "");
     }
 
     #[test]

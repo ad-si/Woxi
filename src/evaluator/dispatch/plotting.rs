@@ -47,7 +47,11 @@ pub fn dispatch_plotting(
       Some(crate::functions::graphics::graphics_grid_ast(args))
     }
     "TreeForm" if !args.is_empty() => {
-      Some(crate::functions::tree_form::tree_form_ast(args))
+      // TreeForm stays as a wrapper in OutputForm (matching wolframscript)
+      Some(Ok(Expr::FunctionCall {
+        name: "TreeForm".to_string(),
+        args: args.to_vec(),
+      }))
     }
     "Graphics3D" if !args.is_empty() => {
       Some(crate::functions::plot3d::graphics3d_ast(args))

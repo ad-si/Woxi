@@ -406,7 +406,7 @@ mod graphics {
 
     #[test]
     fn graphics_primitives_are_symbolic() {
-      assert_eq!(interpret("Circle[]").unwrap(), "Circle[]");
+      assert_eq!(interpret("Circle[]").unwrap(), "Circle[{0, 0}]");
       assert_eq!(interpret("Disk[{1, 0}]").unwrap(), "Disk[{1, 0}]");
       assert_eq!(interpret("Point[{0, 0}]").unwrap(), "Point[{0, 0}]");
       assert_eq!(interpret("RGBColor[1, 0, 0]").unwrap(), "RGBColor[1, 0, 0]");
@@ -1554,11 +1554,16 @@ mod graphics_list {
   }
 
   #[test]
-  fn mathmlform_is_transparent() {
+  fn form_wrappers_stay_wrapped() {
     clear_state();
-    assert_eq!(interpret("MathMLForm[1 + 2]").unwrap(), "3");
-    assert_eq!(interpret("StandardForm[3 * 4]").unwrap(), "12");
-    assert_eq!(interpret("InputForm[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+    // Form wrappers stay as wrappers in OutputForm (matching wolframscript)
+    assert_eq!(interpret("MathMLForm[1 + 2]").unwrap(), "MathMLForm[3]");
+    assert_eq!(interpret("StandardForm[3 * 4]").unwrap(), "StandardForm[12]");
+    assert_eq!(
+      interpret("InputForm[{1, 2, 3}]").unwrap(),
+      "InputForm[{1, 2, 3}]"
+    );
+    // OutputForm is the display form, so it renders directly
     assert_eq!(interpret("OutputForm[42]").unwrap(), "42");
   }
 
@@ -1869,24 +1874,13 @@ mod tree_form_graphics {
   use super::*;
 
   #[test]
-  fn tree_form_produces_graphics() {
+  fn tree_form_produces_wrapper() {
+    // TreeForm stays as wrapper in OutputForm (matching wolframscript)
     clear_state();
-    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "-Graphics-");
-  }
-
-  #[test]
-  fn tree_form_svg_output() {
-    clear_state();
-    let result = interpret_with_stdout("TreeForm[f[x, y]]").unwrap();
-    assert_eq!(result.result, "-Graphics-");
-    assert!(result.graphics.is_some());
-    let svg = result.graphics.unwrap();
-    assert!(svg.contains("<svg"));
-    assert!(svg.contains("</svg>"));
-    // Should contain the function name and arguments as text
-    assert!(svg.contains(">f<"), "SVG should contain node label 'f'");
-    assert!(svg.contains(">x<"), "SVG should contain leaf label 'x'");
-    assert!(svg.contains(">y<"), "SVG should contain leaf label 'y'");
+    assert_eq!(
+      interpret("TreeForm[f[x, y]]").unwrap(),
+      "TreeForm[f[x, y]]"
+    );
   }
 
   #[test]
@@ -1894,113 +1888,29 @@ mod tree_form_graphics {
     clear_state();
     assert_eq!(
       interpret("TreeForm[f[g[x], h[y, z]]]").unwrap(),
-      "-Graphics-"
+      "TreeForm[f[g[x], h[y, z]]]"
     );
   }
 
   #[test]
   fn tree_form_with_depth_limit() {
     clear_state();
-    assert_eq!(interpret("TreeForm[f[g[h[x]]], 2]").unwrap(), "-Graphics-");
+    assert_eq!(
+      interpret("TreeForm[f[g[h[x]]], 2]").unwrap(),
+      "TreeForm[f[g[h[x]]], 2]"
+    );
   }
 
   #[test]
   fn tree_form_atom() {
     clear_state();
-    assert_eq!(interpret("TreeForm[42]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("TreeForm[42]").unwrap(), "TreeForm[42]");
   }
 
   #[test]
   fn tree_form_no_args() {
     clear_state();
     assert_eq!(interpret("TreeForm[]").unwrap(), "TreeForm[]");
-  }
-
-  #[test]
-  fn tree_form_minus_canonical() {
-    // a - b should decompose as Plus[a, Times[-1, b]], not "Minus"
-    clear_state();
-    let result = interpret_with_stdout("TreeForm[Hold[a - b]]").unwrap();
-    let svg = result.graphics.unwrap();
-    assert!(
-      svg.contains(">Plus<"),
-      "SVG should contain 'Plus' for subtraction, got SVG without it"
-    );
-    assert!(
-      svg.contains(">Times<"),
-      "SVG should contain 'Times' for the -1 multiplication"
-    );
-    assert!(
-      !svg.contains(">Minus<"),
-      "SVG should NOT contain raw 'Minus' operator name"
-    );
-  }
-
-  #[test]
-  fn tree_form_divide_canonical() {
-    // a / b should decompose as Times[a, Power[b, -1]], not "Divide"
-    clear_state();
-    let result = interpret_with_stdout("TreeForm[Hold[a / b]]").unwrap();
-    let svg = result.graphics.unwrap();
-    assert!(
-      svg.contains(">Times<"),
-      "SVG should contain 'Times' for division"
-    );
-    assert!(
-      svg.contains(">Power<"),
-      "SVG should contain 'Power' for the b^-1"
-    );
-  }
-
-  #[test]
-  fn tree_form_unary_minus_canonical() {
-    // -x should decompose as Times[-1, x]
-    clear_state();
-    let result = interpret_with_stdout("TreeForm[Hold[-x]]").unwrap();
-    let svg = result.graphics.unwrap();
-    assert!(
-      svg.contains(">Times<"),
-      "SVG should contain 'Times' for unary minus"
-    );
-  }
-
-  #[test]
-  fn tree_form_comparison_canonical() {
-    // a < b should decompose as Less[a, b]
-    clear_state();
-    let result = interpret_with_stdout("TreeForm[Hold[a < b]]").unwrap();
-    let svg = result.graphics.unwrap();
-    assert!(
-      svg.contains(">Less<"),
-      "SVG should contain 'Less' for comparison"
-    );
-  }
-
-  #[test]
-  fn tree_form_association() {
-    clear_state();
-    let result =
-      interpret_with_stdout("TreeForm[<|\"a\" -> 1, \"b\" -> 2|>]").unwrap();
-    let svg = result.graphics.unwrap();
-    assert!(
-      svg.contains(">Association<"),
-      "SVG should contain 'Association' head"
-    );
-    assert!(
-      svg.contains(">Rule<"),
-      "SVG should contain 'Rule' for key-value pairs"
-    );
-  }
-
-  #[test]
-  fn tree_form_replace_all() {
-    clear_state();
-    let result = interpret_with_stdout("TreeForm[Hold[x /. x -> 1]]").unwrap();
-    let svg = result.graphics.unwrap();
-    assert!(
-      svg.contains(">ReplaceAll<"),
-      "SVG should contain 'ReplaceAll' head"
-    );
   }
 }
 

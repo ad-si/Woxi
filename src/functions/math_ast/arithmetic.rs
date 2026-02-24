@@ -822,6 +822,22 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     if sa != sb {
       return sa.cmp(&sb);
     }
+    // For FunctionCall with same head, compare arguments structurally
+    if let (
+      Expr::FunctionCall { name: na, args: aa },
+      Expr::FunctionCall { name: nb, args: ab },
+    ) = (a, b) {
+      if na == nb {
+        // Same head: compare arguments using Wolfram canonical ordering
+        for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
+          let ord = crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);
+          if ord > 0 { return std::cmp::Ordering::Less; }
+          if ord < 0 { return std::cmp::Ordering::Greater; }
+        }
+        return aa.len().cmp(&ab.len());
+      }
+    }
+    // Default: compare by string representation
     crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
   });
 }
