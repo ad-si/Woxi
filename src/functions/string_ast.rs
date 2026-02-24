@@ -1417,7 +1417,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
 /// Returns the complete `<math>...</math>` block with proper indentation.
 pub fn expr_to_mathml(expr: &Expr) -> String {
   let inner = mathml_inner(expr, 1);
-  format!("<math>\n{}\n</math>", inner)
+  format!("<math>\n{}\n</math>\n", inner)
 }
 
 /// Render a single expression as a MathML fragment at the given indentation depth.
