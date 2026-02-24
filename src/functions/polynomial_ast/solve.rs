@@ -3,7 +3,7 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
-use crate::functions::calculus_ast::simplify;
+use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
 // ─── Solve ──────────────────────────────────────────────────────────
 
@@ -115,6 +115,16 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         rules
       }
+      // BinaryOp::And tree (used by reduce_multi_var_and)
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => {
+        let mut rules = collect_and_rules(left);
+        rules.extend(collect_and_rules(right));
+        rules
+      }
       _ => {
         if let Some(rule) = eq_to_rule(expr) {
           vec![rule]
@@ -122,6 +132,24 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           vec![]
         }
       }
+    }
+  }
+
+  fn collect_or_terms(expr: &Expr) -> Vec<Expr> {
+    match expr {
+      Expr::BinaryOp {
+        op: BinaryOperator::Or,
+        left,
+        right,
+      } => {
+        let mut terms = collect_or_terms(left);
+        terms.extend(collect_or_terms(right));
+        terms
+      }
+      Expr::FunctionCall { name, args } if name == "Or" => {
+        args.iter().flat_map(collect_or_terms).collect()
+      }
+      _ => vec![expr.clone()],
     }
   }
 
@@ -142,8 +170,39 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(Expr::List(result))
     }
+    // BinaryOp::Or tree (used by reduce_multi_var_and for multiple solutions)
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      ..
+    } => {
+      let or_terms = collect_or_terms(input);
+      let result: Vec<Expr> = or_terms
+        .iter()
+        .map(|arg| Expr::List(collect_and_rules(arg)))
+        .filter(|list| {
+          if let Expr::List(items) = list {
+            !items.is_empty()
+          } else {
+            false
+          }
+        })
+        .collect();
+      Ok(Expr::List(result))
+    }
     // And[x == a, y == b] → {{x -> a, y -> b}}
     Expr::FunctionCall { name, .. } if name == "And" => {
+      let rules = collect_and_rules(input);
+      if rules.is_empty() {
+        Ok(Expr::List(vec![]))
+      } else {
+        Ok(Expr::List(vec![Expr::List(rules)]))
+      }
+    }
+    // BinaryOp::And tree (used by reduce_multi_var_and for single solution)
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      ..
+    } => {
       let rules = collect_and_rules(input);
       if rules.is_empty() {
         Ok(Expr::List(vec![]))
@@ -177,12 +236,98 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Solve[equation, var] — solve a polynomial equation for a variable.
 ///
 /// Supports linear (degree 1) and quadratic (degree 2) equations.
-/// The equation must be of the form `lhs == rhs`.
+/// Also handles systems: Solve[{eq1, eq2, ...}, {x1, x2, ...}]
+/// And inequality constraints: Solve[eq && ineq, var]
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "Solve expects exactly 2 arguments".into(),
     ));
+  }
+
+  // Handle system of equations: Solve[{eq1,...}, {var1,...}]
+  if let (Expr::List(eqs), Expr::List(vars_exprs)) = (&args[0], &args[1]) {
+    let var_names: Vec<String> = vars_exprs
+      .iter()
+      .filter_map(|v| {
+        if let Expr::Identifier(name) = v {
+          Some(name.clone())
+        } else {
+          None
+        }
+      })
+      .collect();
+    if var_names.len() == vars_exprs.len() && !var_names.is_empty() {
+      // Try symbolic Gaussian elimination for linear systems (handles underdetermined case)
+      if let Some(result) = solve_linear_symbolic(eqs, &var_names) {
+        return Ok(result);
+      }
+      // Fall back to Reduce's multi-variable elimination for nonlinear systems
+      let constraints: Vec<Expr> = eqs.clone();
+      let reduce_result =
+        crate::functions::polynomial_ast::reduce::reduce_multi_var_and(
+          &constraints,
+          &var_names,
+          None,
+        )?;
+      return to_rules_ast(&[reduce_result]);
+    }
+  }
+
+  // Handle single equation with list of one variable: Solve[eq, {var}]
+  if let Expr::List(vars_exprs) = &args[1]
+    && vars_exprs.len() == 1
+  {
+    return solve_ast(&[args[0].clone(), vars_exprs[0].clone()]);
+  }
+
+  // Handle equation + inequality: Solve[eq && ineq, var]
+  // Extract the equation and inequality parts from an And expression
+  if let Expr::Identifier(var_name) = &args[1] {
+    let var_name = var_name.clone();
+    let (eq_part_opt, ineqs) = extract_eq_and_ineq_parts(&args[0]);
+    if let Some(eq_part) = eq_part_opt
+      && !ineqs.is_empty()
+    {
+      // Solve the equation part, then filter by inequalities
+      let eq_solutions = solve_ast(&[eq_part, args[1].clone()])?;
+      if let Expr::List(solutions) = &eq_solutions {
+        let filtered: Vec<Expr> = solutions
+          .iter()
+          .filter(|sol| {
+            if let Expr::List(rules) = sol {
+              for rule in rules {
+                if let Expr::Rule {
+                  pattern: _,
+                  replacement,
+                } = rule
+                {
+                  for ineq in &ineqs {
+                    let subst = crate::syntax::substitute_variable(
+                      ineq,
+                      &var_name,
+                      replacement,
+                    );
+                    if let Ok(result) =
+                      crate::evaluator::evaluate_expr_to_expr(&subst)
+                      && matches!(&result, Expr::Identifier(s) if s == "False")
+                    {
+                      return false;
+                    }
+                  }
+                }
+              }
+              true
+            } else {
+              true
+            }
+          })
+          .cloned()
+          .collect();
+        return Ok(Expr::List(filtered));
+      }
+      return Ok(eq_solutions);
+    }
   }
 
   let var = match &args[1] {
@@ -259,7 +404,19 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Expand and collect polynomial coefficients
-  let expanded = expand_and_combine(&poly);
+  // Clear denominators: (poly/constant) → poly (same roots)
+  let expanded_raw = expand_and_combine(&poly);
+  let expanded = {
+    let together = together_expr(&expanded_raw);
+    match &together {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: numerator,
+        right: denominator,
+      } if is_constant_wrt(denominator, var) => expand_and_combine(numerator),
+      _ => expanded_raw,
+    }
+  };
   let terms = collect_additive_terms(&expanded);
 
   // Find maximum degree
@@ -305,6 +462,26 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement: Box::new(solution),
     }])
   };
+
+  // Factor out x^k when the k lowest-degree coefficients are zero.
+  // E.g., a - a^3/6 = 0  → coeffs = [0, 1, 0, -1/6]
+  // → x=0 is a root, reduced polynomial: 1 - a^2/6 = 0
+  if degree > 1 && matches!(&coeffs[0], Expr::Integer(0)) {
+    let zero_count = coeffs
+      .iter()
+      .take_while(|c| matches!(c, Expr::Integer(0)))
+      .count();
+    if zero_count > 0 && (zero_count as i128) < degree {
+      let reduced_eq = build_eq_from_coeffs(&coeffs[zero_count..], var);
+      let reduced_solutions = solve_ast(&[reduced_eq, args[1].clone()])?;
+      if let Expr::List(ref reduced_sols) = reduced_solutions {
+        let x_zero = make_rule(Expr::Integer(0));
+        let mut all_solutions = vec![x_zero];
+        all_solutions.extend(reduced_sols.iter().cloned());
+        return Ok(Expr::List(all_solutions));
+      }
+    }
+  }
 
   match degree {
     0 => {
@@ -517,26 +694,38 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Non-integer coefficients: use general symbolic formula
-      let sqrt_disc = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![discriminant],
+      // First evaluate the discriminant to simplify complex arithmetic (e.g., (3+I)^2 - 4*(2+2I) → -2I)
+      let disc_eval = crate::evaluator::evaluate_expr_to_expr(&discriminant)
+        .unwrap_or(discriminant.clone());
+      // Try to evaluate Sqrt of the discriminant symbolically
+      let sqrt_disc_raw = crate::functions::sqrt_ast(&[disc_eval])
+        .unwrap_or_else(|_| Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![discriminant.clone()],
+        });
+      let sqrt_disc = crate::evaluator::evaluate_expr_to_expr(&sqrt_disc_raw)
+        .unwrap_or(sqrt_disc_raw);
+      // Evaluate numerators first so complex arithmetic simplifies before dividing
+      let eval_expr = |e: Expr| -> Expr {
+        let evaled =
+          crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e.clone());
+        // Re-evaluate if a further reduction is possible
+        let evaled2 = crate::evaluator::evaluate_expr_to_expr(&evaled)
+          .unwrap_or(evaled.clone());
+        simplify(evaled2)
       };
-      let sol1 = simplify(solve_divide(
-        &simplify(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(neg_b.clone()),
-          right: Box::new(sqrt_disc.clone()),
-        }),
-        &two_a,
-      ));
-      let sol2 = simplify(solve_divide(
-        &simplify(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(neg_b),
-          right: Box::new(sqrt_disc),
-        }),
-        &two_a,
-      ));
+      let num1 = eval_expr(Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(neg_b.clone()),
+        right: Box::new(sqrt_disc.clone()),
+      });
+      let sol1 = eval_expr(solve_divide(&num1, &two_a));
+      let num2 = eval_expr(Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(neg_b),
+        right: Box::new(sqrt_disc),
+      });
+      let sol2 = eval_expr(solve_divide(&num2, &two_a));
       Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]))
     }
     _ => {
@@ -577,6 +766,55 @@ pub fn solve_divide(num: &Expr, den: &Expr) -> Expr {
       left: Box::new(num.clone()),
       right: Box::new(den.clone()),
     },
+  }
+}
+
+/// Build an equation `p(var) == 0` from a coefficient array where
+/// `coeffs[i]` is the coefficient of `var^i`.
+/// Used to construct the reduced polynomial after factoring out a zero root.
+fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
+  let mut terms: Vec<Expr> = Vec::new();
+  for (i, c) in coeffs.iter().enumerate() {
+    if matches!(c, Expr::Integer(0)) {
+      continue;
+    }
+    let term = if i == 0 {
+      c.clone()
+    } else if i == 1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(c.clone()),
+        right: Box::new(Expr::Identifier(var.to_string())),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(c.clone()),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(var.to_string())),
+          right: Box::new(Expr::Integer(i as i128)),
+        }),
+      }
+    };
+    terms.push(term);
+  }
+  let poly_expr = if terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    let mut result = terms.remove(0);
+    for t in terms {
+      result = Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(result),
+        right: Box::new(t),
+      };
+    }
+    result
+  };
+  Expr::Comparison {
+    operands: vec![poly_expr, Expr::Integer(0)],
+    operators: vec![crate::syntax::ComparisonOp::Equal],
   }
 }
 
@@ -2908,6 +3146,347 @@ pub fn find_minimum_ast(
     .collect();
 
   Ok(Expr::List(vec![min_val_expr, Expr::List(rules)]))
+}
+
+/// Split an And expression into its equality part and inequality parts.
+///
+/// For `eq && ineq1 && ineq2`, returns `(Some(eq), [ineq1, ineq2])`.
+/// Equalities are `Comparison { op: Equal }`, inequalities are everything else.
+pub fn extract_eq_and_ineq_parts(expr: &Expr) -> (Option<Expr>, Vec<Expr>) {
+  let mut constraints = Vec::new();
+  collect_and_constraints(expr, &mut constraints);
+  let mut eq_part: Option<Expr> = None;
+  let mut ineqs: Vec<Expr> = Vec::new();
+  for c in constraints {
+    let is_eq = matches!(
+      &c,
+      Expr::Comparison { operators, .. }
+        if operators.len() == 1
+          && operators[0] == crate::syntax::ComparisonOp::Equal
+    );
+    if is_eq && eq_part.is_none() {
+      eq_part = Some(c);
+    } else {
+      ineqs.push(c);
+    }
+  }
+  (eq_part, ineqs)
+}
+
+/// Check if an expression is zero.
+fn is_expr_zero(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(x) if *x == 0.0)
+}
+
+/// Evaluate and simplify an expression (double pass for compound simplifications).
+fn eval_entry(e: Expr) -> Expr {
+  let r = crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
+  let r2 = crate::evaluator::evaluate_expr_to_expr(&r).unwrap_or(r);
+  simplify(r2)
+}
+
+/// Solve a system of linear equations using symbolic Gaussian elimination.
+///
+/// Returns `Some(Expr::List([Expr::List([rules...])]))` if the system is linear and consistent,
+/// `Some(Expr::List([]))` if inconsistent, or `None` if the system is not linear.
+fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
+  let n = var_names.len();
+  let mut matrix: Vec<Vec<Expr>> = Vec::new();
+
+  for eq in eqs {
+    let (lhs, rhs) = match eq {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operators.len() == 1
+        && operators[0] == crate::syntax::ComparisonOp::Equal
+        && operands.len() == 2 =>
+      {
+        (&operands[0], &operands[1])
+      }
+      _ => return None,
+    };
+    // poly = lhs - rhs; find coefficients of poly == 0
+    let poly_raw = Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(lhs.clone()),
+      right: Box::new(rhs.clone()),
+    };
+    let poly = expand_and_combine(&poly_raw);
+    let terms = collect_additive_terms(&poly);
+
+    let mut coeffs: Vec<Expr> = vec![Expr::Integer(0); n];
+    let mut constant = Expr::Integer(0);
+
+    for term in &terms {
+      let all_const = var_names.iter().all(|v| is_constant_wrt(term, v));
+      if all_const {
+        constant = add_exprs(&constant, term);
+        continue;
+      }
+      let mut found_var: Option<(usize, Expr)> = None;
+      let mut valid = true;
+      for (j, var) in var_names.iter().enumerate() {
+        let (power, coeff) = term_var_power_and_coeff(term, var);
+        if power == 1 {
+          if found_var.is_some() {
+            valid = false; // product of two variables → nonlinear
+            break;
+          }
+          found_var = Some((j, coeff));
+        } else if power != 0 {
+          valid = false; // higher power or sentinel
+          break;
+        }
+      }
+      if !valid {
+        return None; // non-linear system — fall back to reduce
+      }
+      if let Some((j, coeff)) = found_var {
+        coeffs[j] = eval_entry(add_exprs(&coeffs[j], &coeff));
+      } else {
+        constant = add_exprs(&constant, term);
+      }
+    }
+    // Augmented row: [a0, ..., a_{n-1}, b] where A*x = b (b = -constant)
+    let mut row: Vec<Expr> =
+      coeffs.iter().map(|c| eval_entry(c.clone())).collect();
+    row.push(eval_entry(negate_expr(&eval_entry(constant))));
+    matrix.push(row);
+  }
+
+  let nrows = matrix.len();
+  let ncols = n + 1;
+  let mut pivot_row = 0;
+  let mut pivot_cols: Vec<(usize, usize)> = Vec::new();
+
+  for col in 0..n {
+    if pivot_row >= nrows {
+      break;
+    }
+    let found = (pivot_row..nrows).find(|&r| !is_expr_zero(&matrix[r][col]));
+    let Some(swap_row) = found else { continue };
+    if swap_row != pivot_row {
+      matrix.swap(pivot_row, swap_row);
+    }
+    pivot_cols.push((pivot_row, col));
+    let pivot = matrix[pivot_row][col].clone();
+
+    for row in 0..nrows {
+      if row == pivot_row {
+        continue;
+      }
+      let factor = matrix[row][col].clone();
+      if !is_expr_zero(&factor) {
+        for j in 0..ncols {
+          let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
+          let t2 = eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
+          matrix[row][j] = eval_entry(Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            left: Box::new(t1),
+            right: Box::new(t2),
+          });
+        }
+      }
+    }
+    pivot_row += 1;
+  }
+
+  // Normalize each pivot row by dividing by its pivot element
+  for &(row, col) in &pivot_cols {
+    let pivot = matrix[row][col].clone();
+    if !is_expr_zero(&pivot) {
+      for j in 0..ncols {
+        let entry = matrix[row][j].clone();
+        if !is_expr_zero(&entry) {
+          matrix[row][j] = eval_entry(solve_divide(&entry, &pivot));
+        }
+      }
+    }
+  }
+
+  // Check for inconsistency
+  for row in 0..nrows {
+    if (0..n).all(|j| is_expr_zero(&matrix[row][j]))
+      && !is_expr_zero(&matrix[row][n])
+    {
+      return Some(Expr::List(vec![])); // no solution
+    }
+  }
+
+  let pivot_var_cols: Vec<usize> = pivot_cols.iter().map(|(_, c)| *c).collect();
+  let free_var_cols: Vec<usize> =
+    (0..n).filter(|j| !pivot_var_cols.contains(j)).collect();
+
+  // Build solution expression for one parameterization:
+  // vars[pivot_col] = rhs - sum_fc(coeff_fc * vars[fc]) where fc are free cols.
+  // Rules are sorted by variable index to match Wolfram's output order.
+  let build_rules = |pivot_cols: &[(usize, usize)],
+                     free_var_cols: &[usize],
+                     matrix: &[Vec<Expr>]|
+   -> Vec<Expr> {
+    let mut rules = Vec::new();
+    // Sort pivot_cols by column index so rules appear in variable order
+    let mut sorted_pivots = pivot_cols.to_vec();
+    sorted_pivots.sort_by_key(|&(_, c)| c);
+    for &(row, col) in &sorted_pivots {
+      let mut rhs_expr = matrix[row][n].clone();
+      for &fc in free_var_cols {
+        let coeff = matrix[row][fc].clone();
+        if !is_expr_zero(&coeff) {
+          let term =
+            multiply_exprs(&coeff, &Expr::Identifier(var_names[fc].clone()));
+          let neg_term = negate_expr(&eval_entry(term));
+          rhs_expr = eval_entry(add_exprs(&rhs_expr, &neg_term));
+        }
+      }
+      rules.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier(var_names[col].clone())),
+        replacement: Box::new(eval_entry(rhs_expr)),
+      });
+    }
+    rules
+  };
+
+  // Check if an expression contains rational (fractional) coefficients
+  fn has_fraction(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        !matches!(&args[1], Expr::Integer(1))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        right,
+        ..
+      } => !matches!(right.as_ref(), Expr::Integer(1)),
+      Expr::BinaryOp { left, right, .. } => {
+        has_fraction(left) || has_fraction(right)
+      }
+      Expr::FunctionCall { args, .. } => args.iter().any(has_fraction),
+      Expr::UnaryOp { operand, .. } => has_fraction(operand),
+      _ => false,
+    }
+  }
+
+  let rules = build_rules(&pivot_cols, &free_var_cols, &matrix);
+
+  // If any rule has fractional coefficients, try column swaps to eliminate fractions.
+  // This matches Wolfram's convention of preferring integer-coefficient parameterizations.
+  let rules = if free_var_cols.is_empty()
+    || !rules.iter().any(|r| {
+      if let Expr::Rule { replacement, .. } = r {
+        has_fraction(replacement)
+      } else {
+        false
+      }
+    }) {
+    rules
+  } else {
+    // Try each (free_col, pivot_row) swap.
+    // A swap of free column fc with pivot at (row r, col pc_r) is "integer-clean" if:
+    //   for all other pivot rows r', rref[r'][fc] / rref[r][fc] is integer.
+    let mut best_rules = rules;
+    'swap_search: for fi in 0..free_var_cols.len() {
+      let fc = free_var_cols[fi];
+      for pi in 0..pivot_cols.len() {
+        let (pivot_r, pivot_c) = pivot_cols[pi];
+        let swap_coeff = matrix[pivot_r][fc].clone();
+        if is_expr_zero(&swap_coeff) {
+          continue;
+        }
+        // Check that for all other pivot rows, the ratio is integer
+        let mut all_ratios_integer = true;
+        for (pi2, &(r2, _)) in pivot_cols.iter().enumerate() {
+          if pi2 == pi {
+            continue;
+          }
+          let other_coeff = &matrix[r2][fc];
+          if is_expr_zero(other_coeff) {
+            continue;
+          }
+          // Check if other_coeff / swap_coeff is integer
+          let ratio = eval_entry(solve_divide(other_coeff, &swap_coeff));
+          if has_fraction(&ratio) {
+            all_ratios_integer = false;
+            break;
+          }
+        }
+        if !all_ratios_integer {
+          continue;
+        }
+        // Perform the column swap: fc becomes a pivot, pivot_c becomes free.
+        // New pivot rows = same as before but row pi now solves for vars[fc] instead of vars[pivot_c].
+        // New free cols = (free_var_cols with fc replaced by pivot_c).
+        let new_pivot_cols: Vec<(usize, usize)> = pivot_cols
+          .iter()
+          .enumerate()
+          .map(|(i, &(r, c))| if i == pi { (r, fc) } else { (r, c) })
+          .collect();
+        let new_free_var_cols: Vec<usize> = free_var_cols
+          .iter()
+          .map(|&f| if f == fc { pivot_c } else { f })
+          .collect();
+        // Rebuild the RREF for the new pivot structure.
+        // We need to "pivot" column fc out of row pi:
+        // For row pi: new_matrix[pi][fc] = 1, others in col fc = 0, vars[pivot_c] is free.
+        // Re-express: row pi → divide by swap_coeff, then eliminate fc from all other rows.
+        let mut new_matrix = matrix.clone();
+        // Normalize row pi: divide by swap_coeff
+        {
+          let sc = new_matrix[pivot_r][fc].clone();
+          for j in 0..ncols {
+            let v = new_matrix[pivot_r][j].clone();
+            if !is_expr_zero(&v) {
+              new_matrix[pivot_r][j] = eval_entry(solve_divide(&v, &sc));
+            }
+          }
+          // After dividing, old pivot col entry: divide pivot_c col
+          // (was 1, now 1/swap_coeff * 1 = 1/swap_coeff... wait)
+          // Actually the matrix had rref[pi][pivot_c] = 1 (since it was normalized after GE)
+          // and rref[pi][fc] = swap_coeff.
+          // After dividing row pi by swap_coeff: rref[pi][fc] = 1, rref[pi][pivot_c] = 1/swap_coeff.
+        }
+        // Eliminate fc from all other pivot rows
+        for (pi2, &(r2, _)) in pivot_cols.iter().enumerate() {
+          if pi2 == pi {
+            continue;
+          }
+          let factor = new_matrix[r2][fc].clone();
+          if is_expr_zero(&factor) {
+            continue;
+          }
+          for j in 0..ncols {
+            let t1 = new_matrix[r2][j].clone();
+            let t2 =
+              eval_entry(multiply_exprs(&factor, &new_matrix[pivot_r][j]));
+            new_matrix[r2][j] = eval_entry(Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(t1),
+              right: Box::new(t2),
+            });
+          }
+        }
+        let new_rules =
+          build_rules(&new_pivot_cols, &new_free_var_cols, &new_matrix);
+        let any_fraction = new_rules.iter().any(|r| {
+          if let Expr::Rule { replacement, .. } = r {
+            has_fraction(replacement)
+          } else {
+            false
+          }
+        });
+        if !any_fraction {
+          best_rules = new_rules;
+          break 'swap_search;
+        }
+      }
+    }
+    best_rules
+  };
+
+  Some(Expr::List(vec![Expr::List(rules)]))
 }
 
 /// Convert an evaluated expression to f64

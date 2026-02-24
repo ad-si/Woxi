@@ -2164,19 +2164,38 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     };
   }
 
-  // Apply ReplaceAll/ReplaceRepeated if present
+  // Apply ReplaceAll/ReplaceRepeated if present.
+  // In Wolfram Language, /. has higher precedence than = and :=, so:
+  //   intA = expr /. rules  →  Set[intA, ReplaceAll[expr, rules]]
+  // not: ReplaceAll[Set[intA, expr], rules]
   if let Some((rules_pair, is_replace_repeated)) = replace_rules {
     let rules = pair_to_expr(rules_pair);
-    result = if is_replace_repeated {
-      Expr::ReplaceRepeated {
-        expr: Box::new(result),
-        rules: Box::new(rules),
+    let make_replace = |e: Expr, r: Expr| -> Expr {
+      if is_replace_repeated {
+        Expr::ReplaceRepeated {
+          expr: Box::new(e),
+          rules: Box::new(r),
+        }
+      } else {
+        Expr::ReplaceAll {
+          expr: Box::new(e),
+          rules: Box::new(r),
+        }
       }
-    } else {
-      Expr::ReplaceAll {
-        expr: Box::new(result),
-        rules: Box::new(rules),
+    };
+    // If result is an assignment, push /. inside to the right-hand side
+    result = match result {
+      Expr::FunctionCall { ref name, ref args }
+        if (name == "Set" || name == "SetDelayed") && args.len() == 2 =>
+      {
+        let lhs = args[0].clone();
+        let rhs = args[1].clone();
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![lhs, make_replace(rhs, rules)],
+        }
       }
+      _ => make_replace(result, rules),
     };
   }
 
