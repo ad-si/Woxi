@@ -209,11 +209,12 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "I" => vec!["Locked", "Protected", "ReadProtected"],
     "Locked" => vec!["Locked", "Protected"],
     "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
-    | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "Plot3D"
-    | "ListPlot3D" | "Input" | "SeriesData" | "RunThrough"
-    | "AbsolutePointSize" => {
+    | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "ListPlot3D"
+    | "Input" | "SeriesData" | "RunThrough" | "AbsolutePointSize" => {
       vec!["Protected", "ReadProtected"]
     }
+    // HoldAll + Protected + ReadProtected
+    "Plot3D" => vec!["HoldAll", "Protected", "ReadProtected"],
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],

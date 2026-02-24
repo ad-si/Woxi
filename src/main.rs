@@ -18,6 +18,9 @@ enum Commands {
   Eval {
     /// The Wolfram Language expression to evaluate
     expression: String,
+    /// Suppress Print output to stdout (Print still captured internally)
+    #[arg(long)]
+    quiet_print: bool,
   },
   /// Run a Wolfram Language file
   Run {
@@ -89,18 +92,26 @@ fn main() {
   let cli = Cli::parse();
 
   match cli.command {
-    Commands::Eval { expression } => match interpret(&expression) {
-      Ok(result) => {
-        // "\0" is a sentinel value indicating output was already printed (e.g., Part error)
-        if result != "\0" {
-          println!("{result}");
+    Commands::Eval {
+      expression,
+      quiet_print,
+    } => {
+      if quiet_print {
+        woxi::set_quiet_print(true);
+      }
+      match interpret(&expression) {
+        Ok(result) => {
+          // "\0" is a sentinel value indicating output was already printed (e.g., Part error)
+          if result != "\0" {
+            println!("{result}");
+          }
         }
+        Err(woxi::InterpreterError::EmptyInput) => {
+          // No output for empty/comment-only input
+        }
+        Err(e) => eprintln!("Error: {}", e),
       }
-      Err(woxi::InterpreterError::EmptyInput) => {
-        // No output for empty/comment-only input
-      }
-      Err(e) => eprintln!("Error: {}", e),
-    },
+    }
     Commands::Run { file, args } => {
       let absolute_path = if file.is_absolute() {
         file.clone()

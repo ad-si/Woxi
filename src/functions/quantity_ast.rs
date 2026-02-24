@@ -718,15 +718,36 @@ fn try_parse_unit_string(s: &str) -> Option<Expr> {
   let pairs = crate::parse(s).ok()?;
   for pair in pairs {
     if pair.as_rule() == crate::Rule::Expression {
-      return Some(crate::syntax::pair_to_expr(pair));
+      return Some(identifiers_to_strings(&crate::syntax::pair_to_expr(pair)));
     }
     for inner in pair.into_inner() {
       if inner.as_rule() == crate::Rule::Expression {
-        return Some(crate::syntax::pair_to_expr(inner));
+        return Some(identifiers_to_strings(&crate::syntax::pair_to_expr(
+          inner,
+        )));
       }
     }
   }
   None
+}
+
+/// Convert all Identifier nodes to String nodes in a parsed unit expression.
+/// This ensures that units parsed from strings like "Meters/Seconds^2" are
+/// stored as String nodes, matching Wolfram's internal representation.
+fn identifiers_to_strings(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Identifier(s) => Expr::String(s.clone()),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(identifiers_to_strings(left)),
+      right: Box::new(identifiers_to_strings(right)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(identifiers_to_strings).collect(),
+    },
+    other => other.clone(),
+  }
 }
 
 /// Recursively decompose a unit Expr into a CompoundUnitInfo.

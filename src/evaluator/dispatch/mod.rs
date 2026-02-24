@@ -515,9 +515,13 @@ pub fn evaluate_function_call_ast_inner(
   {
     return Ok(Expr::String(ctx.clone()));
   }
-  // End[] / EndPackage[] return the previous context (Global` as default in Woxi)
-  if (name == "End" || name == "EndPackage") && args.is_empty() {
-    return Ok(Expr::String("Global`".to_string()));
+  // End[] returns the context being ended (matches wolframscript default: "Private`")
+  if name == "End" && args.is_empty() {
+    return Ok(Expr::String("Private`".to_string()));
+  }
+  // EndPackage[] returns Null (matching wolframscript)
+  if name == "EndPackage" && args.is_empty() {
+    return Ok(Expr::Identifier("Null".to_string()));
   }
 
   // Needs["pkg`"] returns $Failed (packages not supported in Woxi)
