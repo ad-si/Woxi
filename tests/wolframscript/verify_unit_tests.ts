@@ -471,11 +471,26 @@ function main() {
 
   console.log(`Extracted ${allCases.length} test cases`);
 
+  // Expressions that produce inherently implementation-specific results and
+  // can never match between Woxi and wolframscript:
+  //  - Fit[]: floating-point rounding at machine-epsilon level (different QR vs LAPACK)
+  //  - SeedRandom[]: returns RNG internal state (ChaCha8 vs ExtendedCA)
+  //  - Share[]: returns system-specific memory deduplication byte count
+  // (Hash with 1 arg uses assert! not assert_eq!, so it's naturally excluded.)
+  const IMPL_SPECIFIC_PATTERNS = [
+    /\bFit\[/,
+    /\bSeedRandom\[/,
+    /\bShare\[/,
+  ];
+
   // Filter out multiline expressions (they break the generated scripts).
   // Also skip Interrupt[] — it sends a kernel interrupt that crashes wolframscript
   // even inside CheckAbort, so it cannot be tested via batch conformance.
   const cases = allCases.filter(
-    (c) => !c.expr.includes("\n") && !c.expr.includes("Interrupt[]")
+    (c) =>
+      !c.expr.includes("\n") &&
+      !c.expr.includes("Interrupt[]") &&
+      !IMPL_SPECIFIC_PATTERNS.some((p) => p.test(c.expr))
   );
   const skipped = allCases.length - cases.length;
   const tested = cases.length;

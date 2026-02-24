@@ -835,8 +835,14 @@ mod hash {
   }
 
   #[test]
-  fn default_returns_unevaluated() {
-    assert_eq!(interpret(r#"Hash["hello"]"#).unwrap(), "Hash[hello]");
+  fn default_returns_integer() {
+    // Default Hash uses Expression type (SipHash on InputForm)
+    let result = interpret(r#"Hash["hello"]"#).unwrap();
+    assert!(
+      result.parse::<u64>().is_ok(),
+      "Hash[\"hello\"] should return an integer, got: {}",
+      result
+    );
   }
 }
 
@@ -1137,10 +1143,7 @@ mod string_expression {
   #[test]
   fn flat_associativity() {
     // String literals in ~~ are concatenated (Wolfram behavior)
-    assert_eq!(
-      interpret(r#""a" ~~ "b" ~~ "c""#).unwrap(),
-      r#"abc"#
-    );
+    assert_eq!(interpret(r#""a" ~~ "b" ~~ "c""#).unwrap(), r#"abc"#);
   }
 }
 
@@ -1385,10 +1388,7 @@ mod tex_form {
   #[test]
   fn abs() {
     // Wolfram uses simple bar notation for Abs
-    assert_eq!(
-      interpret("ToString[Abs[x], TeXForm]").unwrap(),
-      "| x|"
-    );
+    assert_eq!(interpret("ToString[Abs[x], TeXForm]").unwrap(), "| x|");
   }
 }
 
@@ -1403,10 +1403,7 @@ mod base_form {
 
   #[test]
   fn hexadecimal() {
-    assert_eq!(
-      interpret("BaseForm[255, 16]").unwrap(),
-      "BaseForm[255, 16]"
-    );
+    assert_eq!(interpret("BaseForm[255, 16]").unwrap(), "BaseForm[255, 16]");
   }
 
   #[test]
@@ -1421,10 +1418,7 @@ mod base_form {
 
   #[test]
   fn negative() {
-    assert_eq!(
-      interpret("BaseForm[-42, 2]").unwrap(),
-      "BaseForm[-42, 2]"
-    );
+    assert_eq!(interpret("BaseForm[-42, 2]").unwrap(), "BaseForm[-42, 2]");
   }
 
   #[test]
@@ -1434,34 +1428,22 @@ mod base_form {
 
   #[test]
   fn real_binary() {
-    assert_eq!(
-      interpret("BaseForm[0.5, 2]").unwrap(),
-      "BaseForm[0.5, 2]"
-    );
+    assert_eq!(interpret("BaseForm[0.5, 2]").unwrap(), "BaseForm[0.5, 2]");
   }
 
   #[test]
   fn real_integer_part() {
-    assert_eq!(
-      interpret("BaseForm[8., 2]").unwrap(),
-      "BaseForm[8., 2]"
-    );
+    assert_eq!(interpret("BaseForm[8., 2]").unwrap(), "BaseForm[8., 2]");
   }
 
   #[test]
   fn large_integer() {
-    assert_eq!(
-      interpret("BaseForm[256, 16]").unwrap(),
-      "BaseForm[256, 16]"
-    );
+    assert_eq!(interpret("BaseForm[256, 16]").unwrap(), "BaseForm[256, 16]");
   }
 
   #[test]
   fn unevaluated_symbolic() {
-    assert_eq!(
-      interpret("BaseForm[x, 2]").unwrap(),
-      "BaseForm[x, 2]"
-    );
+    assert_eq!(interpret("BaseForm[x, 2]").unwrap(), "BaseForm[x, 2]");
   }
 }
 

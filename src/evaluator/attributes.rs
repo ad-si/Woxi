@@ -14,13 +14,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
       "Orderless",
       "Protected",
     ],
-    "GCD" | "LCM" => vec![
-      "Flat",
-      "Listable",
-      "OneIdentity",
-      "Orderless",
-      "Protected",
-    ],
+    "GCD" | "LCM" => {
+      vec!["Flat", "Listable", "OneIdentity", "Orderless", "Protected"]
+    }
     "Power" => vec!["Listable", "NumericFunction", "OneIdentity", "Protected"],
     "Max" | "Min" => vec![
       "Flat",
@@ -169,8 +165,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Block" | "With" | "Assuming" | "Trace" | "Defer" | "Compile"
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
-    | "MemoryConstrained" | "TagUnset" | "NProduct"
-    | "Definition" | "FullDefinition" => {
+    | "MemoryConstrained" | "TagUnset" | "NProduct" | "Definition"
+    | "FullDefinition" => {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],

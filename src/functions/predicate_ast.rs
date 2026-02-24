@@ -1155,7 +1155,8 @@ pub fn byte_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Slot(_) | Expr::SlotSequence(_) => 8,
       // Compound expressions: 40-byte base + 8 bytes per slot + recursive sizes
       Expr::List(items) => {
-        40 + 8 * items.len() as i128 + items.iter().map(count_bytes).sum::<i128>()
+        40 + 8 * items.len() as i128
+          + items.iter().map(count_bytes).sum::<i128>()
       }
       Expr::FunctionCall { name, args } => {
         // Rational and Complex are packed types with fixed 56-byte size

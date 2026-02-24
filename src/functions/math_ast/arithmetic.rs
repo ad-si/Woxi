@@ -462,6 +462,50 @@ pub fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   result
 }
 
+/// Extract the earliest (alphabetically first) variable name from an expression.
+fn extract_earliest_variable(e: &Expr) -> Option<String> {
+  match e {
+    Expr::Identifier(s)
+      if !matches!(
+        s.as_str(),
+        "Pi"
+          | "E"
+          | "I"
+          | "Infinity"
+          | "True"
+          | "False"
+          | "Null"
+          | "None"
+          | "All"
+          | "Automatic"
+          | "ComplexInfinity"
+          | "Indeterminate"
+          | "EulerGamma"
+          | "GoldenRatio"
+          | "Degree"
+          | "Catalan"
+      ) && s.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false) =>
+    {
+      Some(s.clone())
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().filter_map(extract_earliest_variable).min()
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      let l = extract_earliest_variable(left);
+      let r = extract_earliest_variable(right);
+      match (l, r) {
+        (Some(a), Some(b)) => Some(if a <= b { a } else { b }),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+      }
+    }
+    Expr::UnaryOp { operand, .. } => extract_earliest_variable(operand),
+    _ => None,
+  }
+}
+
 /// Extract sort key for a Plus term (fallback for non-polynomial terms).
 /// Strip the numeric coefficient so that e.g. `3*Sin[x]` and `5*Cos[x]` sort by
 /// their base rather than by the coefficient digits.
@@ -714,9 +758,10 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       // sort the polynomial term first when the non-polynomial term is a
       // transcendental function (priority 1) with free variables, e.g.
       // Sin[2*x] (sort after x/2) or Times[-1, Sin[x]/4].
-      // Pure numeric constants like Log[15] and compound algebraic terms
-      // like 5*(5*a+b) fall through to string comparison.
+      // For compound algebraic terms like 4*(3+2*x) vs 8*x, compare by
+      // earliest variable: same variable → monomial first.
       if a_has_pairs != b_has_pairs {
+        let pair_term = if a_has_pairs { a } else { b };
         let none_term = if b_has_pairs { a } else { b };
         let (_, none_base) = decompose_term(none_term);
         if contains_opaque_fn_call(none_term)
@@ -727,6 +772,30 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           } else {
             std::cmp::Ordering::Greater
           };
+        }
+        // For compound algebraic terms with free variables, compare by
+        // earliest variable name. Same or later variable → monomial first.
+        if has_free_variables(&none_base) {
+          let (_, pair_base) = decompose_term(pair_term);
+          let pair_earliest = extract_earliest_variable(&pair_base);
+          let none_earliest = extract_earliest_variable(&none_base);
+          if let (Some(pv), Some(nv)) = (&pair_earliest, &none_earliest) {
+            if nv < pv {
+              // Non-pair term has earlier variable → it comes first
+              return if a_has_pairs {
+                std::cmp::Ordering::Greater
+              } else {
+                std::cmp::Ordering::Less
+              };
+            } else {
+              // Same or later variable → pair (monomial) first
+              return if a_has_pairs {
+                std::cmp::Ordering::Less
+              } else {
+                std::cmp::Ordering::Greater
+              };
+            }
+          }
         }
       }
       // Fall back to string comparison for non-polynomial terms
@@ -826,16 +895,21 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     if let (
       Expr::FunctionCall { name: na, args: aa },
       Expr::FunctionCall { name: nb, args: ab },
-    ) = (a, b) {
-      if na == nb {
-        // Same head: compare arguments using Wolfram canonical ordering
-        for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
-          let ord = crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);
-          if ord > 0 { return std::cmp::Ordering::Less; }
-          if ord < 0 { return std::cmp::Ordering::Greater; }
+    ) = (a, b)
+      && na == nb
+    {
+      // Same head: compare arguments using Wolfram canonical ordering
+      for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
+        let ord =
+          crate::functions::list_helpers_ast::compare_exprs(arg_a, arg_b);
+        if ord > 0 {
+          return std::cmp::Ordering::Less;
         }
-        return aa.len().cmp(&ab.len());
+        if ord < 0 {
+          return std::cmp::Ordering::Greater;
+        }
       }
+      return aa.len().cmp(&ab.len());
     }
     // Default: compare by string representation
     crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
@@ -1496,6 +1570,62 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
           }
         }
       }
+    }
+  }
+
+  // Sqrt[n] / d → Sqrt[n/d^2] for integer n and d
+  // E.g. Sqrt[6]/2 → Sqrt[3/2], matching Wolfram's canonical form
+  // Only apply when the reduced denominator has no perfect square factors,
+  // to avoid infinite loops (e.g. Sqrt[3]/4 would loop through Sqrt[3/16] → (1/4)*Sqrt[3] → ...)
+  if let Expr::Integer(d) = b
+    && *d != 0
+    && let Expr::FunctionCall {
+      name,
+      args: sqrt_args,
+    } = a
+    && name == "Sqrt"
+    && sqrt_args.len() == 1
+    && let Expr::Integer(n) = &sqrt_args[0]
+    && *n > 0
+  {
+    let denom = d * d;
+    let g = gcd(*n, denom);
+    let reduced_d = (denom / g) as u64;
+    // Check that the reduced denominator has no perfect square factors
+    let mut has_sq_factor = false;
+    {
+      let val = reduced_d;
+      let mut f = 2u64;
+      while f * f <= val {
+        if val.is_multiple_of(f * f) {
+          has_sq_factor = true;
+          break;
+        }
+        f += 1;
+      }
+    }
+    if !has_sq_factor {
+      return sqrt_ast(&[make_rational(*n, denom)]);
+    }
+  }
+
+  // c*Sqrt[n] / d → (c/d)*Sqrt[n] → absorbed form via times_ast
+  if let Expr::Integer(d) = b
+    && *d != 0
+    && let Expr::FunctionCall { name, args: targs } = a
+    && name == "Times"
+    && targs.len() == 2
+  {
+    let has_sqrt_int = matches!(&targs[1],
+      Expr::FunctionCall { name: sname, args: sqrt_args }
+        if sname == "Sqrt" && sqrt_args.len() == 1
+        && matches!(&sqrt_args[0], Expr::Integer(n) if *n > 0)
+    );
+    let has_numeric_coeff = matches!(&targs[0], Expr::Integer(_))
+      || matches!(&targs[0], Expr::FunctionCall { name: rn, .. } if rn == "Rational");
+    if has_sqrt_int && has_numeric_coeff {
+      let coeff = make_rational(1, *d);
+      return times_ast(&[targs[0].clone(), coeff, targs[1].clone()]);
     }
   }
 

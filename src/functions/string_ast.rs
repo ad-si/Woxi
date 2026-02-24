@@ -2280,17 +2280,24 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let s = expr_to_str(&args[0])?;
-
   let hash_type = if args.len() >= 2 {
     expr_to_str(&args[1])?
   } else {
-    // Default hash type — not replicable, return unevaluated
-    return Ok(Expr::FunctionCall {
-      name: "Hash".to_string(),
-      args: args.to_vec(),
-    });
+    "Expression".to_string()
   };
+
+  // For the default Expression hash, hash the expression's InputForm representation
+  if hash_type == "Expression" {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let repr = crate::syntax::expr_to_string(&args[0]);
+    let mut hasher = DefaultHasher::new();
+    repr.hash(&mut hasher);
+    let h = hasher.finish();
+    return Ok(Expr::Integer(h as i128));
+  }
+
+  let s = expr_to_str(&args[0])?;
 
   let format = if args.len() == 3 {
     expr_to_str(&args[2])?

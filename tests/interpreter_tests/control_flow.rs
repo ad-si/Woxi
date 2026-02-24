@@ -782,10 +782,7 @@ mod logical_expand {
 
   #[test]
   fn nor_expansion() {
-    assert_eq!(
-      interpret("LogicalExpand[Nor[a, b]]").unwrap(),
-      " !a &&  !b"
-    );
+    assert_eq!(interpret("LogicalExpand[Nor[a, b]]").unwrap(), " !a &&  !b");
   }
 
   #[test]

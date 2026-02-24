@@ -1132,14 +1132,14 @@ mod eliminate {
   fn eliminate_single_variable_linear() {
     // Eliminate y from {x == 2 + y, y == z}
     let result = interpret("Eliminate[{x == 2 + y, y == z}, y]").unwrap();
-    assert_eq!(result, "z == -2 + x");
+    assert_eq!(result, "2 + z == x");
   }
 
   #[test]
   fn eliminate_single_from_two_linear() {
     // Eliminate a from {x == a + b, y == a - b}
     let result = interpret("Eliminate[{x == a + b, y == a - b}, a]").unwrap();
-    assert_eq!(result, "y == -2*b + x");
+    assert_eq!(result, "x - y == 2*b");
   }
 
   #[test]
@@ -1153,7 +1153,7 @@ mod eliminate {
   fn eliminate_with_product() {
     // Eliminate x from {a == x + y, b == x*y}
     let result = interpret("Eliminate[{a == x + y, b == x*y}, x]").unwrap();
-    assert_eq!(result, "b == a*y - y^2");
+    assert_eq!(result, "-b + a*y - y^2 == 0");
   }
 
   #[test]

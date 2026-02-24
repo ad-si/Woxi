@@ -329,7 +329,10 @@ mod full_form {
   #[test]
   fn full_form_plus() {
     // FullForm displays as FullForm[output form] matching wolframscript
-    assert_eq!(interpret("FullForm[x + y + z]").unwrap(), "FullForm[x + y + z]");
+    assert_eq!(
+      interpret("FullForm[x + y + z]").unwrap(),
+      "FullForm[x + y + z]"
+    );
   }
 
   #[test]
@@ -339,7 +342,10 @@ mod full_form {
 
   #[test]
   fn full_form_list() {
-    assert_eq!(interpret("FullForm[{1, 2, 3}]").unwrap(), "FullForm[{1, 2, 3}]");
+    assert_eq!(
+      interpret("FullForm[{1, 2, 3}]").unwrap(),
+      "FullForm[{1, 2, 3}]"
+    );
   }
 
   #[test]
@@ -349,18 +355,12 @@ mod full_form {
 
   #[test]
   fn full_form_complex() {
-    assert_eq!(
-      interpret("FullForm[a b + c]").unwrap(),
-      "FullForm[a*b + c]"
-    );
+    assert_eq!(interpret("FullForm[a b + c]").unwrap(), "FullForm[a*b + c]");
   }
 
   #[test]
   fn full_form_division() {
-    assert_eq!(
-      interpret("FullForm[a/b]").unwrap(),
-      "FullForm[a/b]"
-    );
+    assert_eq!(interpret("FullForm[a/b]").unwrap(), "FullForm[a/b]");
   }
 
   #[test]
@@ -370,10 +370,7 @@ mod full_form {
 
   #[test]
   fn full_form_sqrt() {
-    assert_eq!(
-      interpret("FullForm[Sqrt[5]]").unwrap(),
-      "FullForm[Sqrt[5]]"
-    );
+    assert_eq!(interpret("FullForm[Sqrt[5]]").unwrap(), "FullForm[Sqrt[5]]");
   }
 
   #[test]
@@ -404,10 +401,7 @@ mod tree_form {
   #[test]
   fn tree_form_simple() {
     // TreeForm stays as wrapper in OutputForm (matching wolframscript)
-    assert_eq!(
-      interpret("TreeForm[f[x, y]]").unwrap(),
-      "TreeForm[f[x, y]]"
-    );
+    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "TreeForm[f[x, y]]");
   }
 
   #[test]
@@ -426,10 +420,7 @@ mod tree_form {
 
   #[test]
   fn tree_form_with_depth() {
-    assert_eq!(
-      interpret("TreeForm[f[x], 2]").unwrap(),
-      "TreeForm[f[x], 2]"
-    );
+    assert_eq!(interpret("TreeForm[f[x], 2]").unwrap(), "TreeForm[f[x], 2]");
   }
 
   #[test]
@@ -857,7 +848,10 @@ mod false_symbol {
 
   #[test]
   fn false_is_protected() {
-    assert_eq!(interpret("Attributes[False]").unwrap(), "{Locked, Protected}");
+    assert_eq!(
+      interpret("Attributes[False]").unwrap(),
+      "{Locked, Protected}"
+    );
   }
 
   #[test]
@@ -1817,8 +1811,11 @@ mod message_function {
   use super::*;
 
   #[test]
-  fn message_returns_null() {
-    assert_eq!(interpret("Message[f, \"test\"]").unwrap(), "Null");
+  fn message_returns_unevaluated() {
+    assert_eq!(
+      interpret("Message[f, \"test\"]").unwrap(),
+      "Message[f, test]"
+    );
   }
 
   #[test]
@@ -2367,7 +2364,10 @@ mod true_symbol {
 
   #[test]
   fn true_is_protected() {
-    assert_eq!(interpret("Attributes[True]").unwrap(), "{Locked, Protected}");
+    assert_eq!(
+      interpret("Attributes[True]").unwrap(),
+      "{Locked, Protected}"
+    );
   }
 
   #[test]

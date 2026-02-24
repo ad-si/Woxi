@@ -1558,7 +1558,10 @@ mod graphics_list {
     clear_state();
     // Form wrappers stay as wrappers in OutputForm (matching wolframscript)
     assert_eq!(interpret("MathMLForm[1 + 2]").unwrap(), "MathMLForm[3]");
-    assert_eq!(interpret("StandardForm[3 * 4]").unwrap(), "StandardForm[12]");
+    assert_eq!(
+      interpret("StandardForm[3 * 4]").unwrap(),
+      "StandardForm[12]"
+    );
     assert_eq!(
       interpret("InputForm[{1, 2, 3}]").unwrap(),
       "InputForm[{1, 2, 3}]"
@@ -1877,10 +1880,7 @@ mod tree_form_graphics {
   fn tree_form_produces_wrapper() {
     // TreeForm stays as wrapper in OutputForm (matching wolframscript)
     clear_state();
-    assert_eq!(
-      interpret("TreeForm[f[x, y]]").unwrap(),
-      "TreeForm[f[x, y]]"
-    );
+    assert_eq!(interpret("TreeForm[f[x, y]]").unwrap(), "TreeForm[f[x, y]]");
   }
 
   #[test]
