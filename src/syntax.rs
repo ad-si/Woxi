@@ -3069,12 +3069,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
     Expr::Real(f) => format_real(*f),
     Expr::BigFloat(digits, prec) => format!("{}`{}.", digits, prec),
     Expr::String(s) => {
-      let escaped = s
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\t', "\\t")
-        .replace('\r', "\\r");
+      let escaped = escape_string_for_input_form(s);
       format!("\"{}\"", escaped)
     }
     Expr::Identifier(s) => s.clone(),
@@ -4783,16 +4778,62 @@ fn contains_string(expr: &Expr) -> bool {
   }
 }
 
+/// Escape a string for InputForm representation.
+/// Wolfram box-syntax escape sequences (`\!`, `\(`, `\)`, `\*`) and
+/// named-character sequences (`\[Name]`) are preserved as-is, while
+/// other backslashes are doubled.
+fn escape_string_for_input_form(s: &str) -> String {
+  let mut escaped = String::with_capacity(s.len() + 10);
+  let chars: Vec<char> = s.chars().collect();
+  let mut i = 0;
+  while i < chars.len() {
+    match chars[i] {
+      '\\' if i + 1 < chars.len() => match chars[i + 1] {
+        // Wolfram box-syntax escape sequences — preserve as-is
+        '!' | '(' | ')' | '*' => {
+          escaped.push('\\');
+          escaped.push(chars[i + 1]);
+          i += 2;
+          continue;
+        }
+        // \[Name] named character sequences — preserve as-is
+        '[' => {
+          escaped.push('\\');
+          escaped.push('[');
+          i += 2;
+          continue;
+        }
+        // Literal backslash (\\) — keep as \\
+        '\\' => {
+          escaped.push_str("\\\\");
+          i += 2;
+          continue;
+        }
+        // Any other \X — escape the backslash
+        _ => {
+          escaped.push_str("\\\\");
+        }
+      },
+      '\\' => {
+        // Trailing backslash
+        escaped.push_str("\\\\");
+      }
+      '"' => escaped.push_str("\\\""),
+      '\n' => escaped.push_str("\\n"),
+      '\t' => escaped.push_str("\\t"),
+      '\r' => escaped.push_str("\\r"),
+      c => escaped.push(c),
+    }
+    i += 1;
+  }
+  escaped
+}
+
 /// Render Expr in InputForm - like expr_to_output but strings are quoted.
 pub fn expr_to_input_form(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => {
-      let escaped = s
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\t', "\\t")
-        .replace('\r', "\\r");
+      let escaped = escape_string_for_input_form(s);
       format!("\"{}\"", escaped)
     }
     Expr::List(items) => {

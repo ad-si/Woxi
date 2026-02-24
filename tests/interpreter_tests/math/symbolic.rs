@@ -317,10 +317,10 @@ mod variables {
 
   #[test]
   fn variables_polynomial() {
-    // Variables returns sorted: simple symbols first (alphabetical), then compound expressions
+    // Variables preserves first-appearance order in the canonical expression form
     assert_eq!(
       interpret("Variables[a x^2 + b x + c]").unwrap(),
-      "{a, b, c, x}"
+      "{c, b, x, a}"
     );
   }
 
