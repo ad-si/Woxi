@@ -1751,16 +1751,30 @@ fn mathml_escape_str(s: &str) -> String {
 // StandardForm box representation
 // ====================================================================
 
+// Wolfram private-use Unicode characters for box syntax.
+// These are used internally in strings; InputForm converts them to \!, \(, \*, \).
+pub const BOX_START: char = '\u{f361}'; // \!
+pub const BOX_OPEN: char = '\u{f369}'; // \(
+pub const BOX_SEP: char = '\u{f368}'; // \*
+pub const BOX_CLOSE: char = '\u{f360}'; // \)
+
 /// Convert a Wolfram expression to its StandardForm box representation.
-/// Returns a string like `\!\(\*RowBox[{"..."}]\)` matching Wolfram's InputForm
-/// of StandardForm expressions.
+/// Returns a string using private-use Unicode box markers internally.
+/// In InputForm these render as `\!\(\*RowBox[{"..."}]\)`;
+/// in OutputForm they render as `DisplayForm[RowBox[{...}]]`.
 pub fn expr_to_box_form(expr: &Expr) -> String {
   let box_str = expr_to_boxes(expr);
   // If the result is NOT already a box (RowBox, FractionBox, etc.), wrap in RowBox
   if box_str.contains("Box[") {
-    format!("\\!\\(\\*{}\\)", box_str)
+    format!(
+      "{}{}{}{}{}",
+      BOX_START, BOX_OPEN, BOX_SEP, box_str, BOX_CLOSE
+    )
   } else {
-    format!("\\!\\(\\*RowBox[{{{}}}]\\)", box_str)
+    format!(
+      "{}{}{}RowBox[{{{}}}]{}",
+      BOX_START, BOX_OPEN, BOX_SEP, box_str, BOX_CLOSE
+    )
   }
 }
 

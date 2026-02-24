@@ -1619,28 +1619,31 @@ mod graphics_list {
   #[test]
   fn standard_form_produces_box_form() {
     clear_state();
+    // ToString[StandardForm[...], InputForm] produces a string with box-syntax
+    // Unicode markers. In OutputForm (what interpret() returns), these display as
+    // DisplayForm[<box>] with atoms unquoted (matching wolframscript).
     assert_eq!(
       interpret("ToString[StandardForm[12], InputForm]").unwrap(),
-      r#"\!\(\*RowBox[{"12"}]\)"#
+      "DisplayForm[RowBox[{12}]]"
     );
     assert_eq!(
       interpret("ToString[StandardForm[x + y], InputForm]").unwrap(),
-      r#"\!\(\*RowBox[{"x", "+", "y"}]\)"#
+      "DisplayForm[RowBox[{x, +, y}]]"
     );
     assert_eq!(
       interpret("ToString[StandardForm[1/2], InputForm]").unwrap(),
-      r#"\!\(\*FractionBox["1", "2"]\)"#
+      "DisplayForm[FractionBox[1, 2]]"
     );
     assert_eq!(
       interpret("ToString[StandardForm[x^2], InputForm]").unwrap(),
-      r#"\!\(\*SuperscriptBox["x", "2"]\)"#
+      "DisplayForm[SuperscriptBox[x, 2]]"
     );
     assert_eq!(
       interpret(
         "ToString[(MathMLForm[1 + 2]; StandardForm[3 * 4]), InputForm]"
       )
       .unwrap(),
-      r#"\!\(\*RowBox[{"12"}]\)"#
+      "DisplayForm[RowBox[{12}]]"
     );
   }
 
