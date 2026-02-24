@@ -190,6 +190,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut show_mesh = true;
+  let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
 
   for opt in &args[3..] {
@@ -221,6 +222,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let (Some(lo), Some(hi)) = (lo, hi) {
               z_clip = Some((lo, hi));
             }
+          }
+        }
+        Expr::Identifier(name) if name == "Boxed" => {
+          match replacement.as_ref() {
+            Expr::Identifier(s) if s == "False" => show_axes = false,
+            Expr::Identifier(s) if s == "True" => show_axes = true,
+            _ => {}
           }
         }
         _ => {}
@@ -417,6 +425,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     show_mesh,
+    show_axes,
   )?;
 
   Ok(crate::graphics3d_result(svg))
@@ -433,6 +442,7 @@ fn generate_svg(
   svg_height: u32,
   full_width: bool,
   show_mesh: bool,
+  show_axes: bool,
 ) -> Result<String, InterpreterError> {
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
@@ -520,8 +530,10 @@ fn generate_svg(
         ));
   }
 
-  // Draw 3D axes
-  draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+  // Draw 3D axes (skip when Boxed -> False)
+  if show_axes {
+    draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+  }
 
   svg.push_str("</svg>");
   Ok(svg)
@@ -1853,6 +1865,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     show_mesh,
+    true, // show_axes: always show axes for list_plot3d
   )?;
 
   Ok(crate::graphics3d_result(svg))

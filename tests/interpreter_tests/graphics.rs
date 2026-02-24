@@ -776,6 +776,97 @@ mod plot3d {
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabel -> "Trig Functions", AxesLabel -> {"x", "f(x)"}, PlotStyle -> {Red, Blue}]"#
       ));
     }
+
+    #[test]
+    fn plot_range_y_clip() {
+      // PlotRange -> {ymin, ymax} clips the y-axis display range
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {-0.5, 0.5}]"
+      ));
+    }
+
+    #[test]
+    fn plot_range_all() {
+      // PlotRange -> All uses the auto-computed range (same as default)
+      let svg_all = export_svg("Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> All]");
+      let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
+      // Both should produce valid SVGs with the same content
+      assert!(svg_all.starts_with("<svg"));
+      assert_eq!(svg_all, svg_default);
+    }
+
+    #[test]
+    fn plot_range_both_axes() {
+      // PlotRange -> {{xmin, xmax}, {ymin, ymax}} sets both axis ranges
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {{0.5, 2}, {-0.5, 0.5}}]"
+      ));
+    }
+
+    #[test]
+    fn plot_axes_false() {
+      // Axes -> False hides the axes, tick marks, and labels
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> False]"
+      ));
+    }
+
+    #[test]
+    fn plot_axes_true_is_default() {
+      // Axes -> True is the same as not specifying Axes
+      let svg_true = export_svg("Plot[Sin[x], {x, 0, 2 Pi}, Axes -> True]");
+      let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
+      assert_eq!(svg_true, svg_default);
+    }
+
+    #[test]
+    fn plot_aspect_ratio_square() {
+      // AspectRatio -> 1 makes height equal to width (square plot)
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, AspectRatio -> 1]"
+      ));
+    }
+
+    #[test]
+    fn plot_aspect_ratio_tall() {
+      // AspectRatio -> 2 makes height twice the width
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, AspectRatio -> 2]"
+      ));
+    }
+
+    #[test]
+    fn plot_points_few() {
+      // PlotPoints -> 10 uses only 10 sample points (visibly coarser curve)
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, PlotPoints -> 10]"
+      ));
+    }
+
+    #[test]
+    fn plot_points_default_500() {
+      // PlotPoints -> 500 is the same as default
+      let svg_500 = export_svg("Plot[Sin[x], {x, 0, 2 Pi}, PlotPoints -> 500]");
+      let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
+      assert_eq!(svg_500, svg_default);
+    }
+
+    #[test]
+    fn plot_ticks_none() {
+      // Ticks -> None shows the axes but hides tick marks and labels
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Ticks -> None]"
+      ));
+    }
+
+    #[test]
+    fn plot_ticks_automatic_is_default() {
+      // Ticks -> Automatic is the same as default
+      let svg_auto =
+        export_svg("Plot[Sin[x], {x, 0, 2 Pi}, Ticks -> Automatic]");
+      let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
+      assert_eq!(svg_auto, svg_default);
+    }
   }
 
   mod list_plot {
@@ -1009,6 +1100,75 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         r#"BarChart[{5, 9, 24}, ChartLabels -> {"Anna", "Ben", "Carl"}]"#
       ));
+    }
+
+    #[test]
+    fn bar_chart_labels_placed_above() {
+      insta::assert_snapshot!(export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Above]]"#
+      ));
+    }
+
+    #[test]
+    fn bar_chart_labels_placed_center() {
+      insta::assert_snapshot!(export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Center]]"#
+      ));
+    }
+
+    #[test]
+    fn bar_chart_labels_placed_below_is_default() {
+      let svg_placed = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Below]]"#,
+      );
+      let svg_plain = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> {"Anna", "Ben", "Carl"}]"#,
+      );
+      assert_eq!(svg_placed, svg_plain);
+    }
+
+    #[test]
+    fn bar_chart_labels_placed_top_is_above() {
+      let svg_top = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Top]]"#,
+      );
+      let svg_above = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Above]]"#,
+      );
+      assert_eq!(svg_top, svg_above);
+    }
+
+    #[test]
+    fn bar_chart_labels_placed_bottom_is_below() {
+      let svg_bottom = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Bottom]]"#,
+      );
+      let svg_below = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Below]]"#,
+      );
+      assert_eq!(svg_bottom, svg_below);
+    }
+
+    #[test]
+    fn bar_chart_labels_placed_right_is_below() {
+      let svg_right = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Right]]"#,
+      );
+      let svg_below = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> {"Anna", "Ben", "Carl"}]"#,
+      );
+      assert_eq!(svg_right, svg_below);
+    }
+
+    #[test]
+    fn bar_chart_labels_placed_left_is_below() {
+      let svg_left = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> Placed[{"Anna", "Ben", "Carl"}, Left]]"#,
+      );
+      let svg_below = export_svg(
+        r#"BarChart[{5, 9, 24}, ChartLabels -> {"Anna", "Ben", "Carl"}]"#,
+      );
+      assert_eq!(svg_left, svg_below);
     }
 
     #[test]
@@ -2092,5 +2252,51 @@ mod color_swatches {
     let result = interpret_with_stdout("Red").unwrap();
     // Named colors should NOT produce swatches
     assert_ne!(result.result, "-Graphics-");
+  }
+}
+
+mod show_function {
+  use super::*;
+
+  #[test]
+  fn show_graphics_circle() {
+    // Show[Graphics[...]] should produce a valid SVG
+    insta::assert_snapshot!(export_svg("Show[Graphics[{Circle[]}]]"));
+  }
+
+  #[test]
+  fn show_plot_result() {
+    // Show[Plot[...]] should pass the rendered graphics through
+    let result = interpret("Show[Plot[Sin[x], {x, 0, 2 Pi}]]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn show_plot_produces_svg() {
+    // Show[Plot[...]] should produce a valid SVG via ExportString
+    let svg = export_svg("Show[Plot[Sin[x], {x, 0, 2 Pi}]]");
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.contains("</svg>"));
+  }
+}
+
+mod plot3d_boxed {
+  use super::*;
+
+  #[test]
+  fn boxed_false_produces_svg() {
+    // Boxed -> False hides the axis lines on the 3D plot
+    insta::assert_snapshot!(export_svg(
+      "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, Boxed -> False]"
+    ));
+  }
+
+  #[test]
+  fn boxed_true_is_default() {
+    // Boxed -> True is the same as not specifying Boxed
+    let svg_true =
+      export_svg("Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, Boxed -> True]");
+    let svg_default = export_svg("Plot3D[x + y, {x, -1, 1}, {y, -1, 1}]");
+    assert_eq!(svg_true, svg_default);
   }
 }
