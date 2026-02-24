@@ -232,6 +232,12 @@ function escapeForWolfram(s: string): string {
       result += "\\\\";
     } else if (ch === '"') {
       result += '\\"';
+    } else if (ch === "\n") {
+      result += "\\n";
+    } else if (ch === "\r") {
+      result += "\\r";
+    } else if (ch === "\t") {
+      result += "\\t";
     } else {
       result += ch;
     }
@@ -362,12 +368,17 @@ function buildWolframScript(
     const wLabel = '"FAIL #' + (idx + 1) + ": " + exprEscaped + '"';
     // Wrap in CheckAbort so Abort[]/Interrupt[] calls inside test cases
     // don't kill the entire script run.
+    // Strip trailing newlines from both sides before comparison,
+    // because runWoxi strips trailing newlines from CLI output which
+    // removes content newlines too (e.g. MathMLForm output ends with \n).
     lines.push(
-      "Module[{res$$ = CheckAbort[(" + wBlock + '), "$Aborted"]},' +
-        " If[res$$ =!= " + wExpected + "," +
+      "Module[{res$$ = CheckAbort[(" + wBlock + '), "$Aborted"], rr$$, ee$$},' +
+        ' rr$$ = StringReplace[res$$, RegularExpression["[\\\\r\\\\n]+$"] -> ""];' +
+        " ee$$ = " + wExpected + ";" +
+        " If[rr$$ =!= ee$$," +
         " Print[" + wLabel + "];" +
         ' Print["  Woxi:    ' + expectedEscaped + '"];' +
-        ' Print["  Wolfram: " <> res$$]]]'
+        ' Print["  Wolfram: " <> rr$$]]]'
     );
   }
 
@@ -509,10 +520,27 @@ function main() {
     woxiResults.push({ expr: fullExpr, woxiResult: result, idx: i });
   }
 
+  // Filter out rendered-object placeholders: Graphics/Image objects render
+  // to SVG/pixels internally so their InputForm is implementation-specific
+  // (different sampling points, coordinate transforms, etc.) and will never
+  // match between Woxi and wolframscript.
+  const RENDERED_PLACEHOLDERS = ["-Graphics-", "-Graphics3D-"];
+  const beforeFilter = woxiResults.length;
+  const filteredResults = woxiResults.filter(
+    (r) => !RENDERED_PLACEHOLDERS.includes(r.woxiResult)
+      // PDF output differs between generators — skip byte-level comparison
+      && !r.woxiResult.startsWith("%PDF-")
+  );
+  const renderedSkipped = beforeFilter - filteredResults.length;
+  if (renderedSkipped > 0) {
+    console.log(`Skipped ${renderedSkipped} rendered-object tests (Graphics/Image placeholders).`);
+  }
+  const woxiResultsFiltered = filteredResults;
+
   // Step 2: Run wolframscript in batches to avoid server timeout/buffer limits.
   // Each batch runs independently; we accumulate failures across all batches.
   const BATCH_SIZE = 50;
-  const totalBatches = Math.ceil(woxiResults.length / BATCH_SIZE);
+  const totalBatches = Math.ceil(woxiResultsFiltered.length / BATCH_SIZE);
   console.log(`Running wolframscript in ${totalBatches} batches of up to ${BATCH_SIZE}...`);
 
   const failures: string[] = [];
@@ -520,7 +548,7 @@ function main() {
 
   for (let b = 0; b < totalBatches; b++) {
     const batchStart = b * BATCH_SIZE;
-    const batch = woxiResults.slice(batchStart, batchStart + BATCH_SIZE);
+    const batch = woxiResultsFiltered.slice(batchStart, batchStart + BATCH_SIZE);
 
     let output: string;
     let batchCrashed = false;
@@ -582,12 +610,13 @@ function main() {
     process.stdout.write("\n");
   }
 
-  const passCount = tested - failCount;
+  const testedFiltered = woxiResultsFiltered.length;
+  const passCount = testedFiltered - failCount;
 
   if (failCount === 0) {
-    console.log(`All ${tested} test cases match between Woxi and wolframscript.`);
+    console.log(`All ${testedFiltered} test cases match between Woxi and wolframscript.`);
   } else {
-    console.error(`\n${passCount}/${tested} passed, ${failCount} differ:\n`);
+    console.error(`\n${passCount}/${testedFiltered} passed, ${failCount} differ:\n`);
     for (const line of failures) {
       console.error(line);
     }

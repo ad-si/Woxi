@@ -314,9 +314,10 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(*width as i128),
       Expr::Integer(*height as i128),
     ])),
-    _ => Err(InterpreterError::EvaluationError(
-      "ImageDimensions: argument is not an Image".into(),
-    )),
+    _ => Ok(Expr::FunctionCall {
+      name: "ImageDimensions".to_string(),
+      args: args.to_vec(),
+    }),
   }
 }
 
@@ -345,6 +346,7 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Image { image_type, .. } => {
       let type_str = match image_type {
+        ImageType::Bit => "Bit",
         ImageType::Byte => "Byte",
         ImageType::Bit16 => "Bit16",
         ImageType::Real32 => "Real32",
@@ -371,20 +373,31 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels,
       data,
-      ..
+      image_type,
     } => {
       let w = *width as usize;
       let h = *height as usize;
       let ch = *channels as usize;
-      let mut rows = Vec::with_capacity(h);
 
+      // Convert values to the appropriate precision.
+      // Bit images (from Binarize) return integers 0 and 1.
+      // Real32 images store f64 internally but should output f32-precision values.
+      let to_expr = |v: f64| -> Expr {
+        match image_type {
+          crate::syntax::ImageType::Bit => Expr::Integer(v.round() as i128),
+          crate::syntax::ImageType::Real32 => Expr::Real((v as f32) as f64),
+          _ => Expr::Real(v),
+        }
+      };
+
+      let mut rows = Vec::with_capacity(h);
       for y in 0..h {
         if ch == 1 {
           // Grayscale: {{v, v, ...}, ...}
           let mut row = Vec::with_capacity(w);
           for x in 0..w {
             let idx = y * w + x;
-            row.push(Expr::Real(data[idx]));
+            row.push(to_expr(data[idx]));
           }
           rows.push(Expr::List(row));
         } else {
@@ -393,7 +406,7 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           for x in 0..w {
             let base = (y * w + x) * ch;
             let pixel: Vec<Expr> =
-              (0..ch).map(|c| Expr::Real(data[base + c])).collect();
+              (0..ch).map(|c| to_expr(data[base + c])).collect();
             row.push(Expr::List(pixel));
           }
           rows.push(Expr::List(row));
@@ -495,7 +508,7 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       height,
       channels,
       data,
-      image_type,
+      ..
     } => {
       let ch = *channels as usize;
       let w = *width as usize;
@@ -521,7 +534,7 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         height: *height,
         channels: 1,
         data: Arc::new(new_data),
-        image_type: *image_type,
+        image_type: crate::syntax::ImageType::Bit,
       })
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -825,49 +838,17 @@ pub fn image_crop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       data,
       ..
     } => {
+      if args.len() == 2 {
+        // Wolfram's ImageCrop[image, size] expects a flat {w,h} size spec.
+        // Nested lists like {{x1,y1},{x2,y2}} are not valid — return unevaluated.
+        return Ok(Expr::FunctionCall {
+          name: "ImageCrop".to_string(),
+          args: args.to_vec(),
+        });
+      }
+      // Auto-crop: trim uniform border
       let dyn_img = expr_to_dynamic_image(*width, *height, *channels, data);
-
-      let cropped = if args.len() == 2 {
-        // Manual crop: {{x1,y1},{x2,y2}}
-        let (x1, y1, x2, y2) = match &args[1] {
-          Expr::List(coords) if coords.len() == 2 => {
-            let p1 = match &coords[0] {
-              Expr::List(p) if p.len() == 2 => {
-                (expr_to_f64(&p[0])? as u32, expr_to_f64(&p[1])? as u32)
-              }
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "ImageCrop: coordinates must be {{x1,y1},{x2,y2}}".into(),
-                ));
-              }
-            };
-            let p2 = match &coords[1] {
-              Expr::List(p) if p.len() == 2 => {
-                (expr_to_f64(&p[0])? as u32, expr_to_f64(&p[1])? as u32)
-              }
-              _ => {
-                return Err(InterpreterError::EvaluationError(
-                  "ImageCrop: coordinates must be {{x1,y1},{x2,y2}}".into(),
-                ));
-              }
-            };
-            (p1.0, p1.1, p2.0, p2.1)
-          }
-          _ => {
-            return Err(InterpreterError::EvaluationError(
-              "ImageCrop: second argument must be {{x1,y1},{x2,y2}}".into(),
-            ));
-          }
-        };
-        let crop_w = x2.saturating_sub(x1);
-        let crop_h = y2.saturating_sub(y1);
-        dyn_img.crop_imm(x1, y1, crop_w, crop_h)
-      } else {
-        // Auto-crop: trim uniform border
-        // Simple implementation: find bounding box of non-uniform pixels
-        auto_crop(&dyn_img)
-      };
-
+      let cropped = auto_crop(&dyn_img);
       Ok(dynamic_image_to_expr(&cropped))
     }
     _ => Err(InterpreterError::EvaluationError(
@@ -1430,7 +1411,7 @@ fn pointwise_image_op(
       let new_data: Vec<f64> = data1
         .iter()
         .zip(data2.iter())
-        .map(|(&a, &b)| op(a, b).clamp(0.0, 1.0))
+        .map(|(&a, &b)| op(a, b))
         .collect();
 
       Ok(Expr::Image {
@@ -1629,12 +1610,13 @@ pub fn import_image_from_bytes(bytes: &[u8]) -> Result<Expr, InterpreterError> {
 /// Import an image file and return an Expr::Image
 #[cfg(not(target_arch = "wasm32"))]
 pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
-  let img = image::open(path).map_err(|e| {
-    InterpreterError::EvaluationError(format!(
-      "Import: cannot open \"{}\": {}",
-      path, e
-    ))
-  })?;
+  let img = match image::open(path) {
+    Ok(img) => img,
+    Err(_) => {
+      // Wolfram returns $Failed when the file cannot be opened
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+  };
   Ok(dynamic_image_to_expr(&img))
 }
 

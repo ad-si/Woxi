@@ -3984,9 +3984,113 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  let z = &args[3];
+
   // Special case: z = 0 => result is 1
-  if matches!(&args[3], Expr::Integer(0)) {
+  if matches!(z, Expr::Integer(0)) {
     return Ok(Expr::Integer(1));
+  }
+
+  // Extract integer values for a, b, c if available
+  let a_int = match &args[0] {
+    Expr::Integer(n) => Some(*n),
+    _ => None,
+  };
+  let b_int = match &args[1] {
+    Expr::Integer(n) => Some(*n),
+    _ => None,
+  };
+  let c_int = match &args[2] {
+    Expr::Integer(n) => Some(*n),
+    _ => None,
+  };
+
+  // a = 0 or b = 0 => 1
+  if a_int == Some(0) || b_int == Some(0) {
+    return Ok(Expr::Integer(1));
+  }
+
+  // 2F1(a, b, b, z) = (1-z)^(-a)
+  if crate::syntax::expr_to_string(&args[1])
+    == crate::syntax::expr_to_string(&args[2])
+  {
+    let neg_a = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), args[0].clone()],
+    })?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::Integer(1),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), z.clone()],
+            },
+          ],
+        },
+        neg_a,
+      ],
+    });
+  }
+
+  // 2F1(a, b, a, z) = (1-z)^(-b)
+  if crate::syntax::expr_to_string(&args[0])
+    == crate::syntax::expr_to_string(&args[2])
+  {
+    let neg_b = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), args[1].clone()],
+    })?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::Integer(1),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), z.clone()],
+            },
+          ],
+        },
+        neg_b,
+      ],
+    });
+  }
+
+  // a is non-positive integer: finite polynomial
+  if let Some(a) = a_int
+    && a < 0
+  {
+    return hypergeometric2f1_polynomial(-a as usize, &args[1], &args[2], z);
+  }
+
+  // b is non-positive integer: finite polynomial (by symmetry 2F1(a,b,c,z) = 2F1(b,a,c,z))
+  if let Some(b) = b_int
+    && b < 0
+  {
+    return hypergeometric2f1_polynomial(-b as usize, &args[0], &args[2], z);
+  }
+
+  // 2F1(1, n, n+1, z) for positive integer n: closed form with Log
+  if a_int == Some(1)
+    && let (Some(b), Some(c)) = (b_int, c_int)
+    && b > 0
+    && c == b + 1
+  {
+    return hypergeometric2f1_1_n_np1(b, z);
+  }
+  // By symmetry: 2F1(n, 1, n+1, z)
+  if b_int == Some(1)
+    && let (Some(a), Some(c)) = (a_int, c_int)
+    && a > 0
+    && c == a + 1
+  {
+    return hypergeometric2f1_1_n_np1(a, z);
   }
 
   // Try numeric evaluation when all args are numeric and at least one is Real
@@ -4015,6 +4119,154 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name: "Hypergeometric2F1".to_string(),
     args: args.to_vec(),
   })
+}
+
+/// Evaluate 2F1(-n, b, c, z) as a finite polynomial (n terms).
+/// sum_{k=0}^{n} (-n)_k (b)_k / (c)_k * z^k / k!
+fn hypergeometric2f1_polynomial(
+  n: usize,
+  b: &Expr,
+  c: &Expr,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Build the polynomial symbolically: sum_{k=0}^{n} coeff_k * z^k
+  // coeff_k = (-n)_k (b)_k / ((c)_k * k!)
+  // (-n)_k = (-n)(-n+1)...(-n+k-1) = (-1)^k * n!/(n-k)!
+  let mut terms: Vec<Expr> = vec![Expr::Integer(1)]; // k=0 term
+  let ni = n as i128;
+
+  for k in 1..=n {
+    let ki = k as i128;
+    // Build coefficient: product of (-n+j)*(b+j)/(c+j) for j=0..k-1, divided by k!
+    // Use symbolic multiplication
+    let mut numer_factors: Vec<Expr> = Vec::new();
+    let mut denom_factors: Vec<Expr> = Vec::new();
+
+    for j in 0..k {
+      let ji = j as i128;
+      // (-n+j) factor
+      numer_factors.push(Expr::Integer(-ni + ji));
+      // (b+j) factor
+      numer_factors.push(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![b.clone(), Expr::Integer(ji)],
+      });
+      // (c+j) factor in denominator
+      denom_factors.push(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![c.clone(), Expr::Integer(ji)],
+      });
+    }
+    // k! in denominator
+    denom_factors.push(Expr::Integer(factorial_i128(k).unwrap_or(1)));
+
+    // z^k
+    let zk = if k == 1 {
+      z.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z.clone(), Expr::Integer(ki)],
+      }
+    };
+    numer_factors.push(zk);
+
+    let numer = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: numer_factors,
+    };
+    let denom = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: denom_factors,
+    };
+    terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        numer,
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![denom, Expr::Integer(-1)],
+        },
+      ],
+    });
+  }
+
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms,
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}
+
+/// Evaluate 2F1(1, n, n+1, z) for positive integer n.
+/// Result: -(n/z^n) * (sum_{k=1}^{n-1} z^k/k + Log[1-z])
+fn hypergeometric2f1_1_n_np1(
+  n: i128,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // Build: -(n/z^n) * (sum_{k=1}^{n-1} z^k/k + Log[1-z])
+  let one_minus_z = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      Expr::Integer(1),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), z.clone()],
+      },
+    ],
+  };
+  let log_1mz = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![one_minus_z],
+  };
+
+  // Build the polynomial sum: sum_{k=1}^{n-1} z^k / k
+  let mut inner_terms: Vec<Expr> = Vec::new();
+  for k in 1..n {
+    let zk = if k == 1 {
+      z.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z.clone(), Expr::Integer(k)],
+      }
+    };
+    if k == 1 {
+      inner_terms.push(zk);
+    } else {
+      inner_terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(k)],
+          },
+          zk,
+        ],
+      });
+    }
+  }
+  inner_terms.push(log_1mz);
+
+  let inner = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: inner_terms,
+  };
+
+  // -(n/z^n) * inner = Times[-n, Power[z, -n], inner]
+  let result = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::Integer(-n),
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![z.clone(), Expr::Integer(-n)],
+      },
+      inner,
+    ],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Compute 2F1(a, b; c; z) using series expansion

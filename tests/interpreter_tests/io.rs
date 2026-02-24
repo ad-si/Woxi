@@ -802,10 +802,14 @@ mod export_string {
   }
 
   #[test]
-  fn export_string_unsupported_format() {
+  fn export_string_pdf() {
     clear_state();
     let result = interpret("ExportString[42, \"PDF\"]").unwrap();
-    assert_eq!(result, "ExportString[42, PDF]");
+    assert!(
+      result.starts_with("%PDF-"),
+      "Expected PDF output, got: {}",
+      &result[..50.min(result.len())]
+    );
   }
 }
 
