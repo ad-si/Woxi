@@ -98,10 +98,10 @@ pub fn dispatch_polynomial_functions(
         args, true,
       ));
     }
-    "Minimize" if args.len() == 2 => {
+    "Minimize" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::minimize_ast(args, false));
     }
-    "Maximize" if args.len() == 2 => {
+    "Maximize" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::minimize_ast(args, true));
     }
     "Tuples" if args.len() == 1 || args.len() == 2 => {

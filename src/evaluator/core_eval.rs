@@ -1608,7 +1608,10 @@ pub fn has_free_symbols(expr: &Expr) -> bool {
       has_free_symbols(left) || has_free_symbols(right)
     }
     Expr::UnaryOp { operand, .. } => has_free_symbols(operand),
-    Expr::FunctionCall { args, .. } => args.iter().any(has_free_symbols),
+    Expr::FunctionCall { name, args } => {
+      has_free_symbols(&Expr::Identifier(name.clone()))
+        || args.iter().any(has_free_symbols)
+    }
     Expr::Comparison { operands, .. } => operands.iter().any(has_free_symbols),
     Expr::Rule {
       pattern,

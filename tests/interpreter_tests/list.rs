@@ -2395,6 +2395,32 @@ mod join_non_list {
   }
 
   #[test]
+  fn thread_comparison_geq() {
+    // Thread[{a, b, c} >= 0] should produce {a >= 0, b >= 0, c >= 0}
+    assert_eq!(
+      interpret("Thread[{a, b, c} >= 0]").unwrap(),
+      "{a >= 0, b >= 0, c >= 0}"
+    );
+  }
+
+  #[test]
+  fn thread_comparison_leq() {
+    assert_eq!(
+      interpret("Thread[{a, b} <= 5]").unwrap(),
+      "{a <= 5, b <= 5}"
+    );
+  }
+
+  #[test]
+  fn thread_comparison_array_vars() {
+    // Thread with Array-style variables
+    assert_eq!(
+      interpret("vars = Array[n, 3]; Thread[vars >= 0]").unwrap(),
+      "{n[1] >= 0, n[2] >= 0, n[3] >= 0}"
+    );
+  }
+
+  #[test]
   fn map_at_deep_position() {
     assert_eq!(
       interpret("MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]").unwrap(),
