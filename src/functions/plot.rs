@@ -122,8 +122,8 @@ pub(crate) struct PlotOptions {
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub plot_style: Vec<WoxiColor>,
-  /// Axes option: true = show axes and tick marks (default), false = hide
-  pub axes: bool,
+  /// Per-axis visibility: (x_axis, y_axis). Both true = default.
+  pub axes: (bool, bool),
   /// Ticks option: true = show tick marks and labels (default), false = hide
   pub ticks: bool,
   /// Number of sample points for Plot[] (default: NUM_SAMPLES)
@@ -140,7 +140,7 @@ impl Default for PlotOptions {
       plot_label: None,
       axes_label: None,
       plot_style: Vec::new(),
-      axes: true,
+      axes: (true, true),
       ticks: true,
       plot_points: NUM_SAMPLES,
     }
@@ -200,7 +200,7 @@ fn generate_svg_with_options(
   let svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let filling = opts.filling;
-  let show_axes = opts.axes;
+  let (show_x_axis, show_y_axis) = opts.axes;
   let show_ticks = opts.ticks;
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -220,39 +220,38 @@ fn generate_svg_with_options(
 
   let top_margin = if has_plot_label { 25 * s } else { 10 * s };
 
-  // Label areas depend on axes/ticks settings
-  let bottom_extra = if show_axes && show_ticks && has_x_axis_label {
+  // Label areas and margins computed per-axis.
+  // Setting a label area to 0 suppresses that axis line in plotters.
+  let bottom_extra = if show_x_axis && show_ticks && has_x_axis_label {
     16.0 * sf
   } else {
     0.0
   };
-  let x_label_area: u32;
-  let y_label_area: u32;
-  let margin_left: u32;
-  let margin_right: u32;
-  let margin_bottom: u32;
-  if !show_axes {
-    // No axes: minimal margins, zero label areas
-    x_label_area = 0;
-    y_label_area = 0;
-    margin_left = 5 * s as u32;
-    margin_right = 5 * s as u32;
-    margin_bottom = 5 * s as u32;
+  let x_label_area: u32 = if !show_x_axis {
+    0
   } else if !show_ticks {
-    // Axes visible but no tick marks or labels: small label areas just for
-    // the axis lines themselves
-    x_label_area = 5 * RESOLUTION_SCALE;
-    y_label_area = 5 * RESOLUTION_SCALE;
-    margin_left = 10 * s as u32;
-    margin_right = 10 * s as u32;
-    margin_bottom = 10 * s as u32;
+    5 * RESOLUTION_SCALE
   } else {
-    x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
-    y_label_area = 40 * RESOLUTION_SCALE;
-    margin_left = 10 * s as u32;
-    margin_right = 10 * s as u32;
-    margin_bottom = 10 * s as u32;
-  }
+    25 * RESOLUTION_SCALE + bottom_extra as u32
+  };
+  let y_label_area: u32 = if !show_y_axis {
+    0
+  } else if !show_ticks {
+    5 * RESOLUTION_SCALE
+  } else {
+    40 * RESOLUTION_SCALE
+  };
+  let margin_left: u32 = if show_y_axis {
+    10 * s as u32
+  } else {
+    5 * s as u32
+  };
+  let margin_right: u32 = 10 * s as u32;
+  let margin_bottom: u32 = if show_x_axis {
+    10 * s as u32
+  } else {
+    5 * s as u32
+  };
 
   let mut buf = String::new();
   {
@@ -276,72 +275,77 @@ fn generate_svg_with_options(
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    if !show_axes {
-      // Hidden axes: configure mesh with transparent style, no labels/ticks
-      chart
-        .configure_mesh()
-        .disable_mesh()
-        .x_labels(0)
-        .y_labels(0)
-        .axis_style(ShapeStyle::from(&WHITE).stroke_width(0))
-        .set_tick_mark_size(LabelAreaPosition::Left, 0)
-        .set_tick_mark_size(LabelAreaPosition::Bottom, 0)
-        .draw()
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    } else if !show_ticks {
-      // Axes visible but no tick marks or labels
-      chart
-        .configure_mesh()
-        .disable_mesh()
-        .x_labels(0)
-        .y_labels(0)
-        .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-        .set_tick_mark_size(LabelAreaPosition::Left, 0)
-        .set_tick_mark_size(LabelAreaPosition::Bottom, 0)
-        .draw()
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    // Configure mesh: per-axis tick counts and sizes, unified axis style.
+    // When a label area is 0, plotters suppresses that axis border line.
+    let x_labels_count;
+    let y_labels_count;
+    let x_tick_size;
+    let y_tick_size;
+    let x_major;
+    let y_major;
+    if show_ticks && (show_x_axis || show_y_axis) {
+      // Compute nice major tick step for each visible axis
+      let xmaj = nice_step(x_max - x_min, 5);
+      let ymaj = nice_step(y_max - y_min, 5);
+      x_major = xmaj;
+      y_major = ymaj;
+      let x_minor = xmaj / 5.0;
+      let y_minor = ymaj / 5.0;
+      x_labels_count = if show_x_axis {
+        ((x_max - x_min) / x_minor).round() as usize + 1
+      } else {
+        0
+      };
+      y_labels_count = if show_y_axis {
+        ((y_max - y_min) / y_minor).round() as usize + 1
+      } else {
+        0
+      };
+      x_tick_size = if show_x_axis { tick } else { 0 };
+      y_tick_size = if show_y_axis { tick } else { 0 };
     } else {
-      // Full axes with tick marks and labels
-
-      // Compute nice major tick step (~5 labels), then request enough ticks
-      // for ~5 minor subdivisions between each major tick.
-      let x_major = nice_step(x_max - x_min, 5);
-      let y_major = nice_step(y_max - y_min, 5);
-      let x_minor_step = x_major / 5.0;
-      let y_minor_step = y_major / 5.0;
-      let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
-      let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
-
-      chart
-        .configure_mesh()
-        .disable_mesh()
-        .x_labels(x_tick_count)
-        .y_labels(y_tick_count)
-        .x_label_formatter(&move |v: &f64| {
-          if is_major_tick(*v, x_major) {
-            format_tick(*v)
-          } else {
-            String::new()
-          }
-        })
-        .y_label_formatter(&move |v: &f64| {
-          if is_major_tick(*v, y_major) {
-            format_tick(*v)
-          } else {
-            String::new()
-          }
-        })
-        .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-        .label_style(
-          ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
-            .into_font()
-            .color(&dark_gray),
-        )
-        .set_tick_mark_size(LabelAreaPosition::Left, tick)
-        .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
-        .draw()
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+      x_major = 1.0;
+      y_major = 1.0;
+      x_labels_count = 0;
+      y_labels_count = 0;
+      x_tick_size = 0;
+      y_tick_size = 0;
     }
+    let any_axis = show_x_axis || show_y_axis;
+    let axis_style = if any_axis {
+      dark_gray.stroke_width(RESOLUTION_SCALE)
+    } else {
+      ShapeStyle::from(&WHITE).stroke_width(0)
+    };
+    chart
+      .configure_mesh()
+      .disable_mesh()
+      .x_labels(x_labels_count)
+      .y_labels(y_labels_count)
+      .x_label_formatter(&move |v: &f64| {
+        if x_labels_count > 0 && is_major_tick(*v, x_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .y_label_formatter(&move |v: &f64| {
+        if y_labels_count > 0 && is_major_tick(*v, y_major) {
+          format_tick(*v)
+        } else {
+          String::new()
+        }
+      })
+      .axis_style(axis_style)
+      .label_style(
+        ("sans-serif", RESOLUTION_SCALE as f64 * 11.0)
+          .into_font()
+          .color(&dark_gray),
+      )
+      .set_tick_mark_size(LabelAreaPosition::Left, y_tick_size)
+      .set_tick_mark_size(LabelAreaPosition::Bottom, x_tick_size)
+      .draw()
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
     // Draw lighter origin lines through x=0 and y=0 if visible
     let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
@@ -1447,15 +1451,16 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "Axes" => {
+          let parse_bool =
+            |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
           match replacement.as_ref() {
-            Expr::Identifier(s) if s == "True" => plot_opts.axes = true,
-            Expr::Identifier(s) if s == "False" => plot_opts.axes = false,
-            // {xbool, ybool}: treat as False only if both are False
+            Expr::Identifier(s) if s == "True" => plot_opts.axes = (true, true),
+            Expr::Identifier(s) if s == "False" => {
+              plot_opts.axes = (false, false)
+            }
+            // {xbool, ybool}: independent per-axis control
             Expr::List(items) if items.len() == 2 => {
-              let both_false = items
-                .iter()
-                .all(|i| matches!(i, Expr::Identifier(s) if s == "False"));
-              plot_opts.axes = !both_false;
+              plot_opts.axes = (parse_bool(&items[0]), parse_bool(&items[1]));
             }
             _ => {}
           }
