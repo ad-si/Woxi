@@ -119,6 +119,12 @@ async fn run_impl(connection_file: Option<&Path>) -> anyhow::Result<()> {
                                 .send(jupyter_protocol::CommInfoReply::default().as_child_of(&request))
                                 .await?;
                         },
+                        JupyterMessageContent::HistoryRequest(_) => {
+                            // Reply with empty history - Woxi doesn't track execution history
+                            shell_socket
+                                .send(jupyter_protocol::HistoryReply::default().as_child_of(&request))
+                                .await?;
+                        },
                         JupyterMessageContent::ShutdownRequest(shutdown_request) => {
                             println!("Received shutdown request on shell channel");
 
