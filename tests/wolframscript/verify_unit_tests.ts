@@ -403,18 +403,52 @@ function listRustFiles(dir: string): string[] {
  * Returns the raw output string, or throws on failure.
  */
 function runWolframBatch(
-  batch: { expr: string; woxiResult: string; idx: number }[]
+  batch: { expr: string; woxiResult: string; idx: number }[],
+  timeoutMs = 300_000
 ): string {
   const wolframProgram = buildWolframScript(batch);
   try {
     return execSync(`wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`, {
       encoding: "utf-8",
-      timeout: 300_000,
+      timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
     });
   } catch (err: any) {
     throw new Error(err.stderr || err.message || "wolframscript batch failed");
   }
+}
+
+/**
+ * Return true iff a batch completed successfully (DONE sentinel present).
+ * Uses a shorter timeout so bisection doesn't take forever.
+ */
+function batchOk(
+  batch: { expr: string; woxiResult: string; idx: number }[]
+): boolean {
+  try {
+    const out = runWolframBatch(batch, 60_000);
+    return out.split("\n").some((l) => l.trim() === "DONE");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Binary-search within a failing batch to find the first expression that
+ * causes wolframscript to crash, hang, or produce no output.
+ * Returns the culprit entry, or null if the batch unexpectedly passes now.
+ */
+function findFailingExpression(
+  batch: { expr: string; woxiResult: string; idx: number }[]
+): { expr: string; woxiResult: string; idx: number } | null {
+  if (batch.length === 0) return null;
+  if (batch.length === 1) {
+    return batchOk(batch) ? null : batch[0];
+  }
+  const mid = Math.floor(batch.length / 2);
+  const first = batch.slice(0, mid);
+  if (!batchOk(first)) return findFailingExpression(first);
+  return findFailingExpression(batch.slice(mid));
 }
 
 /** Shell-quote a string for use as a -code argument. */
@@ -437,8 +471,12 @@ function main() {
 
   console.log(`Extracted ${allCases.length} test cases`);
 
-  // Filter out multiline expressions (they break the generated scripts)
-  const cases = allCases.filter((c) => !c.expr.includes("\n"));
+  // Filter out multiline expressions (they break the generated scripts).
+  // Also skip Interrupt[] — it sends a kernel interrupt that crashes wolframscript
+  // even inside CheckAbort, so it cannot be tested via batch conformance.
+  const cases = allCases.filter(
+    (c) => !c.expr.includes("\n") && !c.expr.includes("Interrupt[]")
+  );
   const skipped = allCases.length - cases.length;
   const tested = cases.length;
 
@@ -470,21 +508,45 @@ function main() {
     const batch = woxiResults.slice(batchStart, batchStart + BATCH_SIZE);
 
     let output: string;
+    let batchCrashed = false;
+    let crashErr = "";
     try {
       output = runWolframBatch(batch);
     } catch (err: any) {
-      console.error(`wolframscript failed on batch ${b + 1}/${totalBatches}:`);
-      console.error(err.message || err);
-      process.exit(2);
+      batchCrashed = true;
+      crashErr = err.message || String(err);
+      output = "";
     }
 
     const outputLines = output.trim().split("\n");
 
-    // Check for DONE sentinel
-    const lastLine = outputLines[outputLines.length - 1]?.trim();
-    if (lastLine !== "DONE") {
-      console.error(`Batch ${b + 1}/${totalBatches} did not complete successfully`);
-      console.error("Output:", output);
+    // Check for DONE sentinel — Print["DONE"] returns Null which wolframscript
+    // may print as an extra trailing line, so search all lines rather than
+    // requiring DONE to be last.
+    const doneIdx = outputLines.findIndex((l) => l.trim() === "DONE");
+    if (batchCrashed || doneIdx === -1) {
+      const batchEnd = batchStart + batch.length - 1;
+      const reason = batchCrashed
+        ? `crashed: ${crashErr}`
+        : output.trim() === ""
+          ? "produced no output (crash or timeout)"
+          : `did not contain DONE sentinel`;
+      console.error(
+        `\nBatch ${b + 1}/${totalBatches} (cases ${batchStart + 1}–${batchEnd + 1}) ${reason}.`
+      );
+      if (!batchCrashed && output.trim()) {
+        console.error(`wolframscript output:\n${output}`);
+      }
+      console.error(`\nBisecting to find the failing expression...`);
+      const culprit = findFailingExpression(batch);
+      if (culprit) {
+        const tc = cases[culprit.idx];
+        console.error(`\nFailing expression (case #${culprit.idx + 1}): ${culprit.expr}`);
+        console.error(`Woxi result: ${culprit.woxiResult}`);
+        if (tc) console.error(`Source: ${tc.file}:${tc.line}`);
+      } else {
+        console.error(`Bisection could not reproduce the failure (flaky?).`);
+      }
       process.exit(2);
     }
 
