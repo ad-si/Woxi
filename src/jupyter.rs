@@ -4,11 +4,14 @@ use jupyter_protocol::{
   JupyterMessageContent, KernelInfoReply, LanguageInfo, ReplyStatus, ShutdownReply, Status,
   connection_info::Transport,
 };
+use log::{debug, error, info, trace, warn};
 use runtimelib::{KernelIoPubConnection, RouterRecvConnection, RouterSendConnection};
 use std::path::Path;
 use uuid::Uuid;
 
 pub fn run(connection_file: Option<&std::path::Path>) -> Result<()> {
+  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+
   tokio::runtime::Runtime::new()?.block_on(async { run_impl(connection_file).await })
 }
 
@@ -21,7 +24,7 @@ struct WoxiKernel {
 impl WoxiKernel {
   pub async fn start(connection_info: &ConnectionInfo) -> Result<()> {
     let session_id = Uuid::new_v4().to_string();
-    println!("Starting kernel with session ID: {}", session_id);
+    debug!("Starting kernel with session ID: {}", session_id);
 
     // Create all connections
     let mut heartbeat =
@@ -60,7 +63,7 @@ impl WoxiKernel {
           JupyterMessageContent::KernelInfoRequest(_) => {
             let reply = Self::kernel_info().as_child_of(&message);
             if let Err(err) = control_connection.send(reply).await {
-              eprintln!("Error on control: {}", err);
+              error!("Error on control: {}", err);
             }
           }
           JupyterMessageContent::ShutdownRequest(req) => {
@@ -81,7 +84,7 @@ impl WoxiKernel {
     // Shell task
     let shell_handle = tokio::spawn(async move {
       if let Err(err) = kernel.handle_shell(&mut shell_reader).await {
-        eprintln!("Shell error: {}", err);
+        error!("Shell error: {}", err);
       }
     });
 
@@ -99,7 +102,7 @@ impl WoxiKernel {
     loop {
       let msg = reader.read().await?;
       if let Err(err) = self.handle_shell_message(&msg).await {
-        eprintln!("Error handling shell message: {}", err);
+        error!("Error handling shell message: {}", err);
       }
     }
   }
@@ -123,7 +126,7 @@ impl WoxiKernel {
           .await?;
       }
       JupyterMessageContent::IsCompleteRequest(req) => {
-        println!("Handling is_complete_request for code: {}", req.code);
+        trace!("is_complete_request: {}", req.code);
         let reply = jupyter_protocol::IsCompleteReply {
           status: jupyter_protocol::IsCompleteReplyStatus::Complete,
           indent: "".to_string(),
@@ -143,7 +146,7 @@ impl WoxiKernel {
           .await?;
       }
       JupyterMessageContent::ShutdownRequest(req) => {
-        println!("Received shutdown request on shell channel");
+        info!("Shutdown request received");
         let reply = ShutdownReply {
           restart: req.restart,
           status: ReplyStatus::Ok,
@@ -157,7 +160,7 @@ impl WoxiKernel {
         std::process::exit(0);
       }
       _ => {
-        println!("Unhandled shell message: {:?}", parent.header.msg_type);
+        warn!("Unhandled shell message: {:?}", parent.header.msg_type);
       }
     }
 
@@ -175,10 +178,7 @@ impl WoxiKernel {
     parent: &JupyterMessage,
     req: &jupyter_protocol::ExecuteRequest,
   ) -> Result<()> {
-    println!(
-      "Executing: {} (cell {})",
-      req.code, self.execution_count.0
-    );
+    debug!("Execute[{}]: {}", self.execution_count.0, req.code);
 
     // Send execute_input
     let execute_input = jupyter_protocol::ExecuteInput {
@@ -279,7 +279,7 @@ impl WoxiKernel {
 
 async fn run_impl(connection_file: Option<&Path>) -> Result<()> {
   let connection_info = if let Some(file_path) = connection_file {
-    println!("Loading connection info from: {}", file_path.display());
+    debug!("Loading connection info from: {}", file_path.display());
     let content = tokio::fs::read_to_string(file_path).await?;
     serde_json::from_str(&content)?
   } else {
@@ -308,12 +308,12 @@ async fn run_impl(connection_file: Option<&Path>) -> Result<()> {
     let content = serde_json::to_string(&connection_info)?;
     tokio::fs::write(&connection_path, content).await?;
 
-    println!(
+    info!(
       "Started kernel with connection file: {}",
       connection_path.display()
     );
-    println!(
-      "Connect to this kernel using: jupyter console --existing {}",
+    info!(
+      "Connect using: jupyter console --existing {}",
       connection_path.display()
     );
 
