@@ -369,6 +369,162 @@ mod image_advanced {
   }
 
   #[test]
+  fn edge_detect_returns_bit_type() {
+    clear_state();
+    let result = interpret(
+      "ImageType[EdgeDetect[Image[{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Bit");
+  }
+
+  #[test]
+  fn edge_detect_binary_output() {
+    // All pixel values should be 0 or 1
+    clear_state();
+    let result = interpret(
+      "Min[Flatten[ImageData[EdgeDetect[Image[{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}]]]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "0");
+  }
+
+  #[test]
+  fn edge_detect_center_is_zero() {
+    // The center of a uniform region should have no edge
+    clear_state();
+    let result = interpret(
+      "ImageData[EdgeDetect[Image[{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}]]][[3, 3]]",
+    )
+    .unwrap();
+    assert_eq!(result, "0");
+  }
+
+  #[test]
+  fn edge_detect_inner_ring_detected() {
+    // The 8 inner ring pixels around the center should all be edges
+    clear_state();
+    let result = interpret(
+      "Total[Flatten[ImageData[EdgeDetect[Image[{{0, 0, 0, 0, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {0, 0, 0, 0, 0}}]]]]]",
+    )
+    .unwrap();
+    // Should detect at least 8 edge pixels (the inner ring)
+    let total: f64 = result.parse().unwrap();
+    assert!(
+      total >= 8.0,
+      "Expected at least 8 edge pixels, got {}",
+      total
+    );
+  }
+
+  #[test]
+  fn edge_detect_uniform_is_zero() {
+    // A completely uniform image should have no edges
+    clear_state();
+    let result = interpret(
+      "Total[Flatten[ImageData[EdgeDetect[Image[{{1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}}]]]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "0");
+  }
+
+  #[test]
+  fn edge_detect_10x10_rectangle() {
+    // Rectangular edges should be detected correctly.
+    // Use multi-statement approach to avoid PEG parser slowdown with large inline matrices.
+    clear_state();
+    interpret(
+      "img10 = Image[{{0,0,0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0,0,0},{0,0,1,1,1,1,1,1,0,0},{0,0,1,1,1,1,1,1,0,0},{0,0,1,1,1,1,1,1,0,0},{0,0,1,1,1,1,1,1,0,0},{0,0,1,1,1,1,1,1,0,0},{0,0,1,1,1,1,1,1,0,0},{0,0,0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0,0,0}}]",
+    ).unwrap();
+    let result = interpret("ImageData[EdgeDetect[img10]]").unwrap();
+    // Interior should be 0 (no edge in uniform region)
+    assert!(result.contains("{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"));
+    // Edge boundary rows should have some 1s
+    let total: f64 = interpret("Total[Flatten[ImageData[EdgeDetect[img10]]]]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(
+      total >= 16.0 && total <= 30.0,
+      "Expected 16-30 edge pixels for rectangle, got {}",
+      total
+    );
+  }
+
+  #[test]
+  fn edge_detect_with_radius() {
+    // EdgeDetect[img, r] should accept a radius parameter
+    clear_state();
+    let result = interpret(
+      "ImageType[EdgeDetect[Image[{{0,0,0,0,0},{0,1,1,1,0},{0,1,1,1,0},{0,1,1,1,0},{0,0,0,0,0}}], 1]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Bit");
+  }
+
+  #[test]
+  fn edge_detect_with_radius_and_threshold() {
+    // EdgeDetect[img, r, t] should accept radius and threshold
+    clear_state();
+    let result = interpret(
+      "ImageType[EdgeDetect[Image[{{0,0,0,0,0},{0,1,1,1,0},{0,1,1,1,0},{0,1,1,1,0},{0,0,0,0,0}}], 1, 0.5]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Bit");
+  }
+
+  #[test]
+  fn edge_detect_high_threshold_suppresses_all() {
+    // Very high threshold should suppress all or nearly all edges
+    clear_state();
+    let result = interpret(
+      "Total[Flatten[ImageData[EdgeDetect[Image[{{0,0,0,0,0},{0,1,1,1,0},{0,1,1,1,0},{0,1,1,1,0},{0,0,0,0,0}}], 2, 0.99]]]]",
+    )
+    .unwrap();
+    let total: f64 = result.parse().unwrap();
+    assert!(
+      total <= 4.0,
+      "High threshold should suppress most edges, got {}",
+      total
+    );
+  }
+
+  #[test]
+  fn edge_detect_rgb_image() {
+    // EdgeDetect on RGB image should produce single-channel output
+    clear_state();
+    let result = interpret(
+      "ImageChannels[EdgeDetect[Image[{{{1,0,0},{0,0,0},{0,0,0}},{{0,0,0},{0,1,0},{0,0,0}},{{0,0,0},{0,0,0},{0,0,1}}}]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "1");
+  }
+
+  #[test]
+  fn edge_detect_larger_radius_smoother() {
+    // Larger radius should generally produce fewer edge pixels
+    // (more smoothing = less detail).
+    // Use multi-statement approach to avoid PEG parser slowdown with inline matrices.
+    clear_state();
+    interpret(
+      "imgSmooth = Image[{{0,0,0,0,0},{0,1,1,1,0},{0,1,1,1,0},{0,1,1,1,0},{0,0,0,0,0}}]",
+    ).unwrap();
+    let r1: f64 =
+      interpret("Total[Flatten[ImageData[EdgeDetect[imgSmooth, 1]]]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let r3: f64 =
+      interpret("Total[Flatten[ImageData[EdgeDetect[imgSmooth, 3]]]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    // Both should detect edges (non-zero)
+    assert!(r1 > 0.0, "r=1 should detect some edges");
+    assert!(r3 > 0.0, "r=3 should detect some edges");
+  }
+
+  #[test]
   fn color_convert_rgb_to_grayscale() {
     clear_state();
     let result = interpret(

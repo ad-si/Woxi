@@ -15,15 +15,18 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
-  // Flatten nested Plus arguments
+  // Flatten nested Plus arguments (recursive to handle deeply nested Plus)
   let mut flat_args: Vec<Expr> = Vec::new();
-  for arg in args {
+  let mut stack: Vec<&Expr> = args.iter().rev().collect();
+  while let Some(arg) = stack.pop() {
     match arg {
       Expr::FunctionCall {
         name,
         args: inner_args,
       } if name == "Plus" => {
-        flat_args.extend(inner_args.clone());
+        for inner in inner_args.iter().rev() {
+          stack.push(inner);
+        }
       }
       _ => flat_args.push(arg.clone()),
     }
