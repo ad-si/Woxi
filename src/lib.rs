@@ -747,6 +747,11 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             {
               syntax::expr_to_input_form(&args[0])
             }
+            syntax::Expr::FunctionCall { name, args }
+              if name == "Quantity" && args.len() == 2 =>
+            {
+              syntax::quantity_to_visual_string(&args[0], &args[1])
+            }
             _ => syntax::top_level_output(&result_expr),
           }
         } else {
