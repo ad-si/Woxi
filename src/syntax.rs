@@ -129,11 +129,7 @@ impl WoNum {
 
   pub fn sign(&self) -> i8 {
     match self {
-      Self::Int(i) => match i.cmp(&0) {
-        std::cmp::Ordering::Greater => 1,
-        std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Equal => 0,
-      },
+      Self::Int(i) => i.cmp(&0) as _,
       Self::Float(f) => {
         if *f > 0.0 {
           1
