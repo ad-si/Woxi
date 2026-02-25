@@ -1571,6 +1571,52 @@ mod graphics_list {
   }
 
   #[test]
+  fn form_wrappers_unwrapped_in_visual_mode() {
+    clear_state();
+    // In visual/playground mode (interpret_with_stdout), form wrappers
+    // are unwrapped for display (like a Wolfram notebook).
+
+    // StandardForm unwraps to OutputForm text, SVG is generated for inner expr
+    let result =
+      interpret_with_stdout("StandardForm[((1 + 2) ^ 3 * 7) + x^2]").unwrap();
+    assert_eq!(result.result, "189 + x^2");
+    assert!(
+      result.output_svg.is_some(),
+      "StandardForm should generate SVG"
+    );
+    let svg = result.output_svg.unwrap();
+    assert!(
+      svg.contains("super"),
+      "StandardForm SVG should contain superscript"
+    );
+
+    // InputForm unwraps to InputForm text, no SVG
+    let result =
+      interpret_with_stdout("InputForm[((1 + 2) ^ 3 * 7) + x^2]").unwrap();
+    assert_eq!(result.result, "189 + x^2");
+    assert!(
+      result.output_svg.is_none(),
+      "InputForm should not generate SVG"
+    );
+
+    // InputForm quotes strings
+    let result = interpret_with_stdout(r#"InputForm["hello"]"#).unwrap();
+    assert_eq!(result.result, r#""hello""#);
+
+    // StandardForm doesn't quote strings
+    let result = interpret_with_stdout(r#"StandardForm["hello"]"#).unwrap();
+    assert_eq!(result.result, "hello");
+
+    // StandardForm on fraction — SVG should render
+    let result = interpret_with_stdout("StandardForm[1/2]").unwrap();
+    assert_eq!(result.result, "1/2");
+    assert!(
+      result.output_svg.is_some(),
+      "StandardForm[1/2] should generate SVG"
+    );
+  }
+
+  #[test]
   fn mathml_form_produces_mathml() {
     clear_state();
     assert_eq!(

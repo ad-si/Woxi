@@ -731,8 +731,29 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         let result_expr = render_graphics_list_if_needed(result_expr);
         // Generate SVG rendering of the result for playground display
         generate_output_svg(&result_expr);
+        // In visual mode (playground), unwrap StandardForm/InputForm wrappers
+        // so they display like in a Wolfram notebook.
+        // CLI mode preserves wrappers to match wolframscript behavior.
+        let is_visual = VISUAL_MODE.with(|v| *v.borrow());
+        let output_text = if is_visual {
+          match &result_expr {
+            syntax::Expr::FunctionCall { name, args }
+              if name == "StandardForm" && args.len() == 1 =>
+            {
+              syntax::expr_to_output(&args[0])
+            }
+            syntax::Expr::FunctionCall { name, args }
+              if name == "InputForm" && args.len() == 1 =>
+            {
+              syntax::expr_to_input_form(&args[0])
+            }
+            _ => syntax::top_level_output(&result_expr),
+          }
+        } else {
+          syntax::top_level_output(&result_expr)
+        };
         // Convert to output string (strips quotes from strings for display)
-        last_result = Some(syntax::top_level_output(&result_expr));
+        last_result = Some(output_text);
         any_nonempty = true;
       }
       ProgramStmt::FunctionDefinition(node) => {
@@ -1287,6 +1308,21 @@ fn generate_output_svg(expr: &syntax::Expr) {
   {
     return;
   }
+  // Skip SVG for InputForm results — display as plain text
+  if matches!(expr, syntax::Expr::FunctionCall { name, args } if name == "InputForm" && args.len() == 1)
+  {
+    return;
+  }
+  // Unwrap StandardForm — render SVG for the inner expression
+  let expr = if let syntax::Expr::FunctionCall { name, args } = expr {
+    if name == "StandardForm" && args.len() == 1 {
+      &args[0]
+    } else {
+      expr
+    }
+  } else {
+    expr
+  };
   let markup = functions::graphics::expr_to_svg_markup(expr);
   let char_width = 8.4_f64;
   let font_size = 14_usize;
