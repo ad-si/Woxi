@@ -1,6 +1,22 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Find the index of a Label[tag] in a list of expressions where `tag` matches `goto_tag`.
+/// Matching is done by structural equality via expr_to_string comparison.
+pub fn find_label_index(exprs: &[Expr], goto_tag: &Expr) -> Option<usize> {
+  let tag_str = expr_to_string(goto_tag);
+  for (i, expr) in exprs.iter().enumerate() {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "Label"
+      && args.len() == 1
+      && expr_to_string(&args[0]) == tag_str
+    {
+      return Some(i);
+    }
+  }
+  None
+}
+
 /// Prepare arguments for iterating functions (Sum, Product, NSum).
 /// The body (args[0]) is kept unevaluated to preserve the iteration variable.
 /// Iterator specs (args[1..]) have their bounds evaluated but variable names preserved.
@@ -76,8 +92,23 @@ pub fn evaluate_expr_early_dispatch(
         return Ok(Some("Null".to_string()));
       }
       let mut result = String::new();
-      for arg in args {
-        result = evaluate_expr(arg)?;
+      let mut start_index = 0;
+      'goto_loop: loop {
+        for i in start_index..args.len() {
+          match evaluate_expr(&args[i]) {
+            Ok(val) => result = val,
+            Err(InterpreterError::GotoSignal(tag)) => {
+              if let Some(label_idx) = find_label_index(args, &tag) {
+                start_index = label_idx + 1;
+                continue 'goto_loop;
+              } else {
+                return Err(InterpreterError::GotoSignal(tag));
+              }
+            }
+            Err(e) => return Err(e),
+          }
+        }
+        break;
       }
       return Ok(Some(result));
     }
@@ -148,8 +179,23 @@ pub fn evaluate_expr_to_expr_early_dispatch(
         return Ok(Some(Expr::Identifier("Null".to_string())));
       }
       let mut result = Expr::Identifier("Null".to_string());
-      for arg in args {
-        result = evaluate_expr_to_expr(arg)?;
+      let mut start_index = 0;
+      'goto_loop: loop {
+        for i in start_index..args.len() {
+          match evaluate_expr_to_expr(&args[i]) {
+            Ok(val) => result = val,
+            Err(InterpreterError::GotoSignal(tag)) => {
+              if let Some(label_idx) = find_label_index(args, &tag) {
+                start_index = label_idx + 1;
+                continue 'goto_loop;
+              } else {
+                return Err(InterpreterError::GotoSignal(tag));
+              }
+            }
+            Err(e) => return Err(e),
+          }
+        }
+        break;
       }
       return Ok(Some(result));
     }
@@ -454,8 +500,23 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
     }
     Expr::CompoundExpr(exprs) => {
       let mut result = String::new();
-      for e in exprs {
-        result = evaluate_expr(e)?;
+      let mut start_index = 0;
+      'goto_loop: loop {
+        for i in start_index..exprs.len() {
+          match evaluate_expr(&exprs[i]) {
+            Ok(val) => result = val,
+            Err(InterpreterError::GotoSignal(tag)) => {
+              if let Some(label_idx) = find_label_index(exprs, &tag) {
+                start_index = label_idx + 1;
+                continue 'goto_loop;
+              } else {
+                return Err(InterpreterError::GotoSignal(tag));
+              }
+            }
+            Err(e) => return Err(e),
+          }
+        }
+        break;
       }
       Ok(result)
     }
@@ -916,6 +977,14 @@ pub fn evaluate_expr_to_expr_inner(
       if name == "Continue" && args.is_empty() {
         return Err(InterpreterError::ContinueSignal);
       }
+      // Special handling for Label[tag] — evaluates to Null (marker only)
+      if name == "Label" && args.len() == 1 {
+        return Ok(Expr::Identifier("Null".to_string()));
+      }
+      // Special handling for Goto[tag] — raises GotoSignal
+      if name == "Goto" && args.len() == 1 {
+        return Err(InterpreterError::GotoSignal(Box::new(args[0].clone())));
+      }
       // Special handling for Throw[value] and Throw[value, tag]
       if name == "Throw" && !args.is_empty() && args.len() <= 2 {
         let val = evaluate_expr_to_expr(&args[0])?;
@@ -1374,8 +1443,23 @@ pub fn evaluate_expr_to_expr_inner(
     }
     Expr::CompoundExpr(exprs) => {
       let mut result = Expr::Identifier("Null".to_string());
-      for e in exprs {
-        result = evaluate_expr_to_expr(e)?;
+      let mut start_index = 0;
+      'goto_loop: loop {
+        for i in start_index..exprs.len() {
+          match evaluate_expr_to_expr(&exprs[i]) {
+            Ok(val) => result = val,
+            Err(InterpreterError::GotoSignal(tag)) => {
+              if let Some(label_idx) = find_label_index(exprs, &tag) {
+                start_index = label_idx + 1;
+                continue 'goto_loop;
+              } else {
+                return Err(InterpreterError::GotoSignal(tag));
+              }
+            }
+            Err(e) => return Err(e),
+          }
+        }
+        break;
       }
       Ok(result)
     }

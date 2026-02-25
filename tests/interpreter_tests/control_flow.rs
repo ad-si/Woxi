@@ -614,6 +614,102 @@ mod pause {
   }
 }
 
+mod goto_label {
+  use super::*;
+
+  #[test]
+  fn basic_goto_label_loop() {
+    clear_state();
+    assert_eq!(
+      interpret("i = 0; Label[start]; i = i + 1; If[i < 5, Goto[start]]; i")
+        .unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn label_alone_returns_null() {
+    clear_state();
+    // Label at top level (not inside CompoundExpr) stays symbolic
+    assert_eq!(interpret("Label[x]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn goto_no_label_returns_null() {
+    clear_state();
+    // Goto with no matching label returns Null (with stderr message)
+    assert_eq!(interpret("Goto[x]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn goto_label_in_module() {
+    clear_state();
+    assert_eq!(
+      interpret("Module[{i = 0}, Label[s]; i = i + 1; If[i < 3, Goto[s]]; i]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn goto_label_in_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[] := (i = 0; Label[s]; i = i + 1; If[i < 3, Goto[s]]; i); f[]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn goto_label_with_integer_tag() {
+    clear_state();
+    assert_eq!(
+      interpret("i = 0; Label[1]; i = i + 1; If[i < 3, Goto[1]]; i").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn goto_label_with_string_tag() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = 0; Label[\"loop\"]; i = i + 1; If[i < 4, Goto[\"loop\"]]; i"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn goto_label_with_print() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "i = 0; Label[start]; i = i + 1; Print[i]; If[i < 3, Goto[start]]; i",
+    )
+    .unwrap();
+    assert_eq!(result.stdout, "1\n2\n3\n");
+    assert_eq!(result.result, "3");
+  }
+
+  #[test]
+  fn goto_label_hold_all() {
+    clear_state();
+    // Goto and Label have HoldAll, so tags are not evaluated
+    assert_eq!(
+      interpret("Attributes[Goto]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+    assert_eq!(
+      interpret("Attributes[Label]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+}
+
 mod do_multi_iterator {
   use super::*;
 

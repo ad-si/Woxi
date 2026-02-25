@@ -62,6 +62,9 @@ pub enum InterpreterError {
   /// Internal signal for tail-call optimization (never user-visible)
   #[error("TailCall")]
   TailCall(Box<syntax::Expr>),
+  /// Internal signal for Goto[tag] — caught by CompoundExpression
+  #[error("Goto")]
+  GotoSignal(Box<syntax::Expr>),
 }
 
 /// Extended result type that includes both stdout and the result
@@ -636,17 +639,48 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     )));
   }
 
-  let mut last_result = None;
-  let mut any_nonempty = false;
-  let mut trailing_semicolon = false;
+  // Collect all program statements upfront so we can support Goto/Label
+  // across top-level semicolon-separated expressions.
+  enum ProgramStmt<'a> {
+    Expr(syntax::Expr),
+    FunctionDefinition(Pair<'a, Rule>),
+    TagSetDelayed(Pair<'a, Rule>),
+    TagSet(Pair<'a, Rule>),
+    TrailingSemicolon,
+  }
+  let mut stmts: Vec<ProgramStmt> = Vec::new();
+  // Also collect the Expr ASTs separately (with indices) for Label lookup
+  let mut expr_asts: Vec<syntax::Expr> = Vec::new();
   for node in program.into_inner() {
     match node.as_rule() {
       Rule::Expression => {
-        // Convert Pair to Expr AST
         let expr = syntax::pair_to_expr(node);
+        expr_asts.push(expr.clone());
+        stmts.push(ProgramStmt::Expr(expr));
+      }
+      Rule::FunctionDefinition => {
+        stmts.push(ProgramStmt::FunctionDefinition(node))
+      }
+      Rule::TagSetDelayed => stmts.push(ProgramStmt::TagSetDelayed(node)),
+      Rule::TagSet => stmts.push(ProgramStmt::TagSet(node)),
+      Rule::TrailingSemicolon => stmts.push(ProgramStmt::TrailingSemicolon),
+      _ => {} // ignore EOI, etc.
+    }
+  }
+
+  let mut last_result = None;
+  let mut any_nonempty = false;
+  let mut trailing_semicolon = false;
+  let mut stmt_idx = 0;
+  'goto_loop: loop {
+    if stmt_idx >= stmts.len() {
+      break;
+    }
+    match &stmts[stmt_idx] {
+      ProgramStmt::Expr(expr) => {
         // Evaluate using AST-based evaluation
         // At top level, uncaught Return[] becomes symbolic Return[val] (like wolframscript)
-        let result_expr = match evaluator::evaluate_expr_to_expr(&expr) {
+        let result_expr = match evaluator::evaluate_expr_to_expr(expr) {
           Err(InterpreterError::ReturnValue(val)) => {
             syntax::Expr::FunctionCall {
               name: "Return".to_string(),
@@ -655,6 +689,27 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           }
           Err(InterpreterError::Abort) => {
             return Ok("$Aborted".to_string());
+          }
+          Err(InterpreterError::GotoSignal(tag)) => {
+            // Search for matching Label in the top-level expression list
+            if let Some(label_idx) =
+              evaluator::find_label_index(&expr_asts, &tag)
+            {
+              // Find the stmt index corresponding to this expr_ast index
+              let mut expr_count = 0;
+              for (si, s) in stmts.iter().enumerate() {
+                if matches!(s, ProgramStmt::Expr(_)) {
+                  if expr_count == label_idx {
+                    stmt_idx = si + 1; // resume after the Label
+                    continue 'goto_loop;
+                  }
+                  expr_count += 1;
+                }
+              }
+            }
+            let tag_str = syntax::expr_to_string(&tag);
+            eprintln!("Goto::nolabel: Label {} not found.", tag_str);
+            syntax::Expr::Identifier("Null".to_string())
           }
           other => other?,
         };
@@ -680,26 +735,26 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         last_result = Some(syntax::top_level_output(&result_expr));
         any_nonempty = true;
       }
-      Rule::FunctionDefinition => {
-        store_function_definition(node)?;
+      ProgramStmt::FunctionDefinition(node) => {
+        store_function_definition(node.clone())?;
         last_result = Some("Null".to_string());
         any_nonempty = true;
       }
-      Rule::TagSetDelayed => {
-        store_tag_set_delayed(node, false)?;
+      ProgramStmt::TagSetDelayed(node) => {
+        store_tag_set_delayed(node.clone(), false)?;
         last_result = Some("Null".to_string());
         any_nonempty = true;
       }
-      Rule::TagSet => {
-        store_tag_set_delayed(node, true)?;
+      ProgramStmt::TagSet(node) => {
+        store_tag_set_delayed(node.clone(), true)?;
         last_result = Some("Null".to_string());
         any_nonempty = true;
       }
-      Rule::TrailingSemicolon => {
+      ProgramStmt::TrailingSemicolon => {
         trailing_semicolon = true;
       }
-      _ => {} // ignore EOI, etc.
     }
+    stmt_idx += 1;
   }
 
   // Print consolidated unimplemented-function warning to stderr (top-level only)
