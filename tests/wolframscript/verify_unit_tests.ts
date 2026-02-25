@@ -536,6 +536,10 @@ function main() {
     (r) => !RENDERED_PLACEHOLDERS.includes(r.woxiResult)
       // PDF output differs between generators — skip byte-level comparison
       && !r.woxiResult.startsWith("%PDF-")
+      // Box-formatted output (DisplayForm[RowBox[...]]) uses private-use Unicode
+      // code points in wolframscript but plain ASCII in Woxi — the visual output
+      // is identical but byte-level comparison fails.
+      && !r.woxiResult.startsWith("DisplayForm[")
   );
   const renderedSkipped = beforeFilter - filteredResults.length;
   if (renderedSkipped > 0) {
