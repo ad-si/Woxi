@@ -51,7 +51,7 @@ test-scripts-wolframscript:
 
 
 .PHONY: test-unit-wolframscript
-test-unit-wolframscript:
+test-unit-wolframscript: install
 	@echo "Verifying unit tests against wolframscript …"
 	node tests/wolframscript/verify_unit_tests.ts
 	@echo "All unit test verifications passed."

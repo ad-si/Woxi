@@ -3098,6 +3098,29 @@ fn format_times_with_denominator(
   Some(format!("{}/{}", numer_str, denom_str))
 }
 
+fn expr_to_part_index_string(expr: &Expr) -> String {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Span"
+  {
+    if args.len() == 2 {
+      return format!(
+        "{} ;; {}",
+        expr_to_string(&args[0]),
+        expr_to_string(&args[1])
+      );
+    }
+    if args.len() == 3 {
+      return format!(
+        "{} ;; {} ;; {}",
+        expr_to_string(&args[0]),
+        expr_to_string(&args[1]),
+        expr_to_string(&args[2])
+      );
+    }
+  }
+  expr_to_string(expr)
+}
+
 /// Convert an Expr back to a string representation
 pub fn expr_to_string(expr: &Expr) -> String {
   match expr {
@@ -4107,14 +4130,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
     }
     Expr::Part { expr, index } => {
       // Flatten nested Part into a single [[i, j, k]] notation
-      let mut indices = vec![expr_to_string(index)];
+      let mut indices = vec![expr_to_part_index_string(index)];
       let mut base = expr.as_ref();
       while let Expr::Part {
         expr: inner_expr,
         index: inner_index,
       } = base
       {
-        indices.push(expr_to_string(inner_index));
+        indices.push(expr_to_part_index_string(inner_index));
         base = inner_expr.as_ref();
       }
       indices.reverse();
