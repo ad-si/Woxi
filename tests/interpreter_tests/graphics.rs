@@ -1609,10 +1609,10 @@ mod graphics_list {
       interpret("ToString[MathMLForm[3.14], InputForm]").unwrap(),
       "<math>\n <mn>3.14</mn>\n</math>\n"
     );
-    // Default ToString also produces MathML
+    // Default ToString also produces MathML (no trailing newline in OutputForm)
     assert_eq!(
       interpret("ToString[MathMLForm[42]]").unwrap(),
-      "<math>\n <mn>42</mn>\n</math>\n"
+      "<math>\n <mn>42</mn>\n</math>"
     );
   }
 
