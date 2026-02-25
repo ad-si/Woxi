@@ -628,10 +628,10 @@ mod goto_label {
   }
 
   #[test]
-  fn label_alone_returns_null() {
+  fn label_alone_returns_unevaluated() {
     clear_state();
     // Label at top level (not inside CompoundExpr) stays symbolic
-    assert_eq!(interpret("Label[x]").unwrap(), "Null");
+    assert_eq!(interpret("Label[x]").unwrap(), "Label[x]");
   }
 
   #[test]
@@ -696,17 +696,11 @@ mod goto_label {
   }
 
   #[test]
-  fn goto_label_hold_all() {
+  fn goto_label_attributes() {
     clear_state();
-    // Goto and Label have HoldAll, so tags are not evaluated
-    assert_eq!(
-      interpret("Attributes[Goto]").unwrap(),
-      "{HoldAll, Protected}"
-    );
-    assert_eq!(
-      interpret("Attributes[Label]").unwrap(),
-      "{HoldAll, Protected}"
-    );
+    // Goto and Label only have Protected (no HoldAll), matching Wolfram
+    assert_eq!(interpret("Attributes[Goto]").unwrap(), "{Protected}");
+    assert_eq!(interpret("Attributes[Label]").unwrap(), "{Protected}");
   }
 }
 
