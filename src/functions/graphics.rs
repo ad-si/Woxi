@@ -41,12 +41,12 @@ impl Color {
 
   fn darker(self, amount: f64) -> Self {
     let f = 1.0 - amount;
-    Color::new(self.r * f, self.g * f, self.b * f).with_alpha(self.a)
+    Self::new(self.r * f, self.g * f, self.b * f).with_alpha(self.a)
   }
 
   fn lighter(self, amount: f64) -> Self {
     let f = amount;
-    Color::new(
+    Self::new(
       self.r + (1.0 - self.r) * f,
       self.g + (1.0 - self.g) * f,
       self.b + (1.0 - self.b) * f,
@@ -70,7 +70,7 @@ impl Color {
       4 => (t, p, b),
       _ => (b, p, q),
     };
-    Color::new(r, g, bl)
+    Self::new(r, g, bl)
   }
 }
 
@@ -182,7 +182,7 @@ impl BBox {
     }
   }
 
-  fn merge(&mut self, other: &BBox) {
+  fn merge(&mut self, other: &Self) {
     self.x_min = self.x_min.min(other.x_min);
     self.x_max = self.x_max.max(other.x_max);
     self.y_min = self.y_min.min(other.y_min);
@@ -202,7 +202,7 @@ impl BBox {
     // Ensure non-zero range
     let dx = if dx < 1e-10 { 0.5 } else { dx };
     let dy = if dy < 1e-10 { 0.5 } else { dy };
-    BBox {
+    Self {
       x_min: self.x_min - dx,
       x_max: self.x_max + dx,
       y_min: self.y_min - dy,
@@ -3607,14 +3607,14 @@ enum SpacingSpec {
 impl SpacingSpec {
   /// Default: Scaled[0.1] per Mathematica docs
   fn default_val() -> Self {
-    SpacingSpec::Scaled(0.1)
+    Self::Scaled(0.1)
   }
 
   /// Resolve to pixels given a cell dimension (width or height)
   fn to_px(self, cell_dim: f64) -> f64 {
     match self {
-      SpacingSpec::Points(pts) => pts * (4.0 / 3.0), // pt → px at 96 dpi
-      SpacingSpec::Scaled(frac) => frac * cell_dim,
+      Self::Points(pts) => pts * (4.0 / 3.0), // pt → px at 96 dpi
+      Self::Scaled(frac) => frac * cell_dim,
     }
   }
 }

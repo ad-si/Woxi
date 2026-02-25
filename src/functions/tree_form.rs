@@ -6,7 +6,7 @@ use crate::syntax::{Expr, expr_to_string};
 /// A node in the expression tree
 struct TreeNode {
   label: String,
-  children: Vec<TreeNode>,
+  children: Vec<Self>,
 }
 
 /// Recursively build a tree from an expression, respecting an optional depth limit.

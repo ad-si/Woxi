@@ -7,34 +7,34 @@ use crate::{ENV, InterpreterError, Rule, StoredValue, WolframParser};
 enum SymExpr {
   Num(i64),
   Var(String),
-  Add(Box<SymExpr>, Box<SymExpr>),
-  Sub(Box<SymExpr>, Box<SymExpr>),
-  Mul(Box<SymExpr>, Box<SymExpr>),
-  Div(Box<SymExpr>, Box<SymExpr>),
-  Pow(Box<SymExpr>, Box<SymExpr>),
-  Sin(Box<SymExpr>),
-  Cos(Box<SymExpr>),
-  Tan(Box<SymExpr>),
-  Sec(Box<SymExpr>), // Needed for Tan derivative
+  Add(Box<Self>, Box<Self>),
+  Sub(Box<Self>, Box<Self>),
+  Mul(Box<Self>, Box<Self>),
+  Div(Box<Self>, Box<Self>),
+  Pow(Box<Self>, Box<Self>),
+  Sin(Box<Self>),
+  Cos(Box<Self>),
+  Tan(Box<Self>),
+  Sec(Box<Self>), // Needed for Tan derivative
 }
 
 impl SymExpr {
   /// Check if this expression equals a constant value
   fn is_const(&self, val: i64) -> bool {
-    matches!(self, SymExpr::Num(n) if *n == val)
+    matches!(self, Self::Num(n) if *n == val)
   }
 
   /// Check if this expression is a constant (doesn't contain the variable)
   fn is_constant_wrt(&self, var: &str) -> bool {
     match self {
-      SymExpr::Num(_) => true,
-      SymExpr::Var(v) => v != var,
-      SymExpr::Add(a, b)
-      | SymExpr::Sub(a, b)
-      | SymExpr::Mul(a, b)
-      | SymExpr::Div(a, b)
-      | SymExpr::Pow(a, b) => a.is_constant_wrt(var) && b.is_constant_wrt(var),
-      SymExpr::Sin(a) | SymExpr::Cos(a) | SymExpr::Tan(a) | SymExpr::Sec(a) => {
+      Self::Num(_) => true,
+      Self::Var(v) => v != var,
+      Self::Add(a, b)
+      | Self::Sub(a, b)
+      | Self::Mul(a, b)
+      | Self::Div(a, b)
+      | Self::Pow(a, b) => a.is_constant_wrt(var) && b.is_constant_wrt(var),
+      Self::Sin(a) | Self::Cos(a) | Self::Tan(a) | Self::Sec(a) => {
         a.is_constant_wrt(var)
       }
     }
