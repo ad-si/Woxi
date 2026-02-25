@@ -1,18 +1,24 @@
 use anyhow::Result;
 use jupyter_protocol::{
-  CodeMirrorMode, ConnectionInfo, ExecuteResult, ExecutionCount, HelpLink, JupyterMessage,
-  JupyterMessageContent, KernelInfoReply, LanguageInfo, ReplyStatus, ShutdownReply, Status,
-  connection_info::Transport,
+  CodeMirrorMode, ConnectionInfo, ExecuteResult, ExecutionCount, HelpLink,
+  JupyterMessage, JupyterMessageContent, KernelInfoReply, LanguageInfo,
+  ReplyStatus, ShutdownReply, Status, connection_info::Transport,
 };
 use log::{debug, error, info, trace, warn};
-use runtimelib::{KernelIoPubConnection, RouterRecvConnection, RouterSendConnection};
+use runtimelib::{
+  KernelIoPubConnection, RouterRecvConnection, RouterSendConnection,
+};
 use std::path::Path;
 use uuid::Uuid;
 
 pub fn run(connection_file: Option<&std::path::Path>) -> Result<()> {
-  env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+  env_logger::Builder::from_env(
+    env_logger::Env::default().default_filter_or("warn"),
+  )
+  .init();
 
-  tokio::runtime::Runtime::new()?.block_on(async { run_impl(connection_file).await })
+  tokio::runtime::Runtime::new()?
+    .block_on(async { run_impl(connection_file).await })
 }
 
 struct WoxiKernel {
@@ -30,14 +36,20 @@ impl WoxiKernel {
     let mut heartbeat =
       runtimelib::create_kernel_heartbeat_connection(connection_info).await?;
     let shell_connection =
-      runtimelib::create_kernel_shell_connection(connection_info, &session_id).await?;
+      runtimelib::create_kernel_shell_connection(connection_info, &session_id)
+        .await?;
     let (shell_writer, mut shell_reader) = shell_connection.split();
-    let mut control_connection =
-      runtimelib::create_kernel_control_connection(connection_info, &session_id).await?;
+    let mut control_connection = runtimelib::create_kernel_control_connection(
+      connection_info,
+      &session_id,
+    )
+    .await?;
     let _stdin_connection =
-      runtimelib::create_kernel_stdin_connection(connection_info, &session_id).await?;
+      runtimelib::create_kernel_stdin_connection(connection_info, &session_id)
+        .await?;
     let iopub_connection =
-      runtimelib::create_kernel_iopub_connection(connection_info, &session_id).await?;
+      runtimelib::create_kernel_iopub_connection(connection_info, &session_id)
+        .await?;
 
     let mut kernel = Self {
       execution_count: ExecutionCount::default(),
@@ -98,7 +110,10 @@ impl WoxiKernel {
     Ok(())
   }
 
-  async fn handle_shell(&mut self, reader: &mut RouterRecvConnection) -> Result<()> {
+  async fn handle_shell(
+    &mut self,
+    reader: &mut RouterRecvConnection,
+  ) -> Result<()> {
     loop {
       let msg = reader.read().await?;
       if let Err(err) = self.handle_shell_message(&msg).await {
@@ -107,12 +122,12 @@ impl WoxiKernel {
     }
   }
 
-  async fn handle_shell_message(&mut self, parent: &JupyterMessage) -> Result<()> {
+  async fn handle_shell_message(
+    &mut self,
+    parent: &JupyterMessage,
+  ) -> Result<()> {
     // Always send busy at the start
-    self
-      .iopub
-      .send(Status::busy().as_child_of(parent))
-      .await?;
+    self.iopub.send(Status::busy().as_child_of(parent)).await?;
 
     match &parent.content {
       JupyterMessageContent::ExecuteRequest(req) => {
@@ -161,10 +176,7 @@ impl WoxiKernel {
           error: None,
         };
         self.shell.send(reply.as_child_of(parent)).await?;
-        self
-          .iopub
-          .send(Status::idle().as_child_of(parent))
-          .await?;
+        self.iopub.send(Status::idle().as_child_of(parent)).await?;
         std::process::exit(0);
       }
       _ => {
@@ -173,10 +185,7 @@ impl WoxiKernel {
     }
 
     // Always send idle at the end
-    self
-      .iopub
-      .send(Status::idle().as_child_of(parent))
-      .await?;
+    self.iopub.send(Status::idle().as_child_of(parent)).await?;
 
     Ok(())
   }
@@ -193,35 +202,37 @@ impl WoxiKernel {
       code: req.code.clone(),
       execution_count: self.execution_count,
     };
-    self
-      .iopub
-      .send(execute_input.as_child_of(parent))
-      .await?;
+    self.iopub.send(execute_input.as_child_of(parent)).await?;
 
     // Execute the code
-    let (execution_result, graphics) = match woxi::interpret_with_stdout(&req.code) {
-      Ok(result) => {
-        if !result.stdout.is_empty() {
+    let (execution_result, graphics) =
+      match woxi::interpret_with_stdout(&req.code) {
+        Ok(result) => {
+          if !result.stdout.is_empty() {
+            self
+              .iopub
+              .send(
+                jupyter_protocol::StreamContent::stdout(&result.stdout)
+                  .as_child_of(parent),
+              )
+              .await?;
+          }
+          (result.result, result.graphics)
+        }
+        Err(e) => {
           self
             .iopub
             .send(
-              jupyter_protocol::StreamContent::stdout(&result.stdout).as_child_of(parent),
+              jupyter_protocol::StreamContent::stderr(&format!(
+                "Error: {}\n",
+                e
+              ))
+              .as_child_of(parent),
             )
             .await?;
+          (format!("Error: {}", e), None)
         }
-        (result.result, result.graphics)
-      }
-      Err(e) => {
-        self
-          .iopub
-          .send(
-            jupyter_protocol::StreamContent::stderr(&format!("Error: {}\n", e))
-              .as_child_of(parent),
-          )
-          .await?;
-        (format!("Error: {}", e), None)
-      }
-    };
+      };
 
     // Send execute_result only if it's not "Null"
     if execution_result != "Null" {
@@ -240,10 +251,7 @@ impl WoxiKernel {
         metadata: Default::default(),
         transient: None,
       };
-      self
-        .iopub
-        .send(execute_result.as_child_of(parent))
-        .await?;
+      self.iopub.send(execute_result.as_child_of(parent)).await?;
     }
 
     // Send execute_reply
@@ -271,7 +279,9 @@ impl WoxiKernel {
         mimetype: Some("application/vnd.wolfram.mathematica".to_string()),
         file_extension: Some(".wls".to_string()),
         pygments_lexer: Some("mathematica".to_string()),
-        codemirror_mode: Some(CodeMirrorMode::Simple("mathematica".to_string())),
+        codemirror_mode: Some(CodeMirrorMode::Simple(
+          "mathematica".to_string(),
+        )),
         nbconvert_exporter: Some("text".to_string()),
       },
       banner: "Woxi Jupyter Kernel - Wolfram Language Interpreter".to_string(),
