@@ -23,7 +23,7 @@ static KNOWN_WOLFRAM_FUNCTIONS: LazyLock<HashSet<&'static str>> =
         let _desc = parts.next()?;
         let status = parts.next().unwrap_or("").trim();
         // Only include functions that are NOT implemented (not ✅)
-        if status != "✅" && !name.is_empty() && name != "-----" {
+        if !status.starts_with("✅") && !name.is_empty() && name != "-----" {
           Some(name)
         } else {
           None
