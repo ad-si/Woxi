@@ -922,7 +922,15 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "MathMLForm"
     && inner_args.len() == 1
   {
-    return Ok(Expr::String(expr_to_mathml(&inner_args[0])));
+    let mathml = expr_to_mathml(&inner_args[0]);
+    // InputForm includes trailing newline; default/OutputForm does not
+    let is_input_form = args.len() == 2
+      && matches!(&args[1], Expr::Identifier(f) if f == "InputForm");
+    if is_input_form {
+      return Ok(Expr::String(mathml));
+    } else {
+      return Ok(Expr::String(mathml.trim_end_matches('\n').to_string()));
+    }
   }
 
   // If the expression is StandardForm[inner], produce box form representation
