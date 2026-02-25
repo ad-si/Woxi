@@ -933,13 +933,30 @@ fn auto_crop(img: &image::DynamicImage) -> image::DynamicImage {
 
 // ─── Advanced functions (Phase 3) ──────────────────────────────────────────
 
-/// EdgeDetect[img] - Sobel edge detection
+/// EdgeDetect[img], EdgeDetect[img, r], EdgeDetect[img, r, t]
+/// Gaussian smoothing + Sobel edge detection + binarization.
+/// r = Gaussian blur radius (default 2), t = threshold (default: automatic via Otsu).
 pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "EdgeDetect expects exactly 1 argument".into(),
+      "EdgeDetect expects 1 to 3 arguments".into(),
     ));
   }
+
+  // r is the Gaussian kernel radius; σ = r/√2 (Wolfram: variance = r²/2)
+  let r = if args.len() >= 2 {
+    expr_to_f64(&args[1])?
+  } else {
+    2.0
+  };
+  let gauss_radius = r.round().max(0.0) as usize;
+  let sigma = r / std::f64::consts::SQRT_2;
+
+  let user_threshold = if args.len() == 3 {
+    Some(expr_to_f64(&args[2])?)
+  } else {
+    None
+  };
 
   match &args[0] {
     Expr::Image {
@@ -966,52 +983,213 @@ pub fn edge_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
-      // Sobel kernels
+      // Gaussian pre-smoothing (separable, clamped borders)
+      if sigma > 0.0 && gauss_radius > 0 {
+        let kernel = gaussian_kernel_1d(sigma, gauss_radius);
+        gray = separable_convolve(&gray, w, h, &kernel, gauss_radius);
+      }
+
+      // Sobel gradient computation with clamped border access
       let gx_kernel: [[f64; 3]; 3] =
         [[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]];
       let gy_kernel: [[f64; 3]; 3] =
         [[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]];
 
-      let mut result = vec![0.0_f64; w * h];
-      let mut max_mag = 0.0_f64;
+      let mut magnitudes = vec![0.0_f64; w * h];
+      let mut directions = vec![0.0_f64; w * h];
 
-      for y in 1..h.saturating_sub(1) {
-        for x in 1..w.saturating_sub(1) {
+      let clamp_y = |y: i32| y.clamp(0, h as i32 - 1) as usize;
+      let clamp_x = |x: i32| x.clamp(0, w as i32 - 1) as usize;
+
+      for y in 0..h {
+        for x in 0..w {
           let mut gx = 0.0;
           let mut gy = 0.0;
-          for ky in 0..3 {
-            for kx in 0..3 {
-              let pixel = gray[(y + ky - 1) * w + (x + kx - 1)];
-              gx += pixel * gx_kernel[ky][kx];
-              gy += pixel * gy_kernel[ky][kx];
+          for ky in 0..3_i32 {
+            for kx in 0..3_i32 {
+              let sy = clamp_y(y as i32 + ky - 1);
+              let sx = clamp_x(x as i32 + kx - 1);
+              let pixel = gray[sy * w + sx];
+              gx += pixel * gx_kernel[ky as usize][kx as usize];
+              gy += pixel * gy_kernel[ky as usize][kx as usize];
             }
           }
-          let mag = (gx * gx + gy * gy).sqrt();
-          result[y * w + x] = mag;
-          if mag > max_mag {
-            max_mag = mag;
+          magnitudes[y * w + x] = (gx * gx + gy * gy).sqrt();
+          directions[y * w + x] = gy.atan2(gx);
+        }
+      }
+
+      // Non-maximum suppression: thin edges to 1 pixel width
+      let mut nms = vec![0.0_f64; w * h];
+      for y in 0..h {
+        for x in 0..w {
+          let mag = magnitudes[y * w + x];
+          if mag == 0.0 {
+            continue;
+          }
+          let angle = directions[y * w + x];
+          // Quantize gradient direction to one of 4 axes (0°, 45°, 90°, 135°)
+          // and compare magnitude to neighbors along that direction
+          let (dy, dx) = quantize_gradient_direction(angle);
+          let n1y = clamp_y(y as i32 + dy);
+          let n1x = clamp_x(x as i32 + dx);
+          let n2y = clamp_y(y as i32 - dy);
+          let n2x = clamp_x(x as i32 - dx);
+          let m1 = magnitudes[n1y * w + n1x];
+          let m2 = magnitudes[n2y * w + n2x];
+          if mag >= m1 && mag >= m2 {
+            nms[y * w + x] = mag;
           }
         }
       }
 
-      // Normalize to [0, 1]
-      if max_mag > 0.0 {
-        for v in result.iter_mut() {
-          *v /= max_mag;
-        }
-      }
+      // Binarize: determine threshold and apply
+      let max_mag = nms.iter().cloned().fold(0.0_f64, f64::max);
+
+      // If the maximum gradient is negligible, the image is effectively uniform
+      let result = if max_mag < 1e-10 {
+        vec![0.0_f64; w * h]
+      } else {
+        let threshold = if let Some(t) = user_threshold {
+          t * max_mag
+        } else {
+          otsu_threshold(&nms)
+        };
+        nms
+          .iter()
+          .map(|&m| if m >= threshold { 1.0 } else { 0.0 })
+          .collect()
+      };
 
       Ok(Expr::Image {
         width: *width,
         height: *height,
         channels: 1,
         data: Arc::new(result),
-        image_type: ImageType::Real64,
+        image_type: ImageType::Bit,
       })
     }
     _ => Err(InterpreterError::EvaluationError(
       "EdgeDetect: argument is not an Image".into(),
     )),
+  }
+}
+
+/// Build a 1D Gaussian kernel with the given sigma, truncated at ±radius.
+fn gaussian_kernel_1d(sigma: f64, radius: usize) -> Vec<f64> {
+  let mut kernel = Vec::with_capacity(2 * radius + 1);
+  let mut sum = 0.0;
+  for i in 0..=(2 * radius) {
+    let x = i as f64 - radius as f64;
+    let val = (-x * x / (2.0 * sigma * sigma)).exp();
+    kernel.push(val);
+    sum += val;
+  }
+  for v in &mut kernel {
+    *v /= sum;
+  }
+  kernel
+}
+
+/// Apply a separable convolution (horizontal then vertical) with clamped borders.
+fn separable_convolve(
+  data: &[f64],
+  w: usize,
+  h: usize,
+  kernel: &[f64],
+  radius: usize,
+) -> Vec<f64> {
+  // Horizontal pass
+  let mut tmp = vec![0.0_f64; w * h];
+  for y in 0..h {
+    for x in 0..w {
+      let mut acc = 0.0;
+      for k in 0..kernel.len() {
+        let sx =
+          (x as i32 + k as i32 - radius as i32).clamp(0, w as i32 - 1) as usize;
+        acc += data[y * w + sx] * kernel[k];
+      }
+      tmp[y * w + x] = acc;
+    }
+  }
+  // Vertical pass
+  let mut out = vec![0.0_f64; w * h];
+  for y in 0..h {
+    for x in 0..w {
+      let mut acc = 0.0;
+      for k in 0..kernel.len() {
+        let sy =
+          (y as i32 + k as i32 - radius as i32).clamp(0, h as i32 - 1) as usize;
+        acc += tmp[sy * w + x] * kernel[k];
+      }
+      out[y * w + x] = acc;
+    }
+  }
+  out
+}
+
+/// Compute an automatic threshold using Otsu's method.
+/// Finds the threshold that minimizes within-class variance of the values.
+fn otsu_threshold(data: &[f64]) -> f64 {
+  let n_bins = 256;
+  let max_val = data.iter().cloned().fold(0.0_f64, f64::max);
+  if max_val <= 0.0 {
+    return 0.0;
+  }
+
+  // Build histogram
+  let mut hist = vec![0u64; n_bins];
+  for &v in data {
+    let bin = ((v / max_val) * (n_bins - 1) as f64).round() as usize;
+    hist[bin.min(n_bins - 1)] += 1;
+  }
+
+  let total = data.len() as f64;
+  let mut sum_total = 0.0;
+  for (i, &count) in hist.iter().enumerate() {
+    sum_total += i as f64 * count as f64;
+  }
+
+  let mut best_thresh = 0.0_f64;
+  let mut best_var = -1.0_f64;
+  let mut w0 = 0.0_f64;
+  let mut sum0 = 0.0_f64;
+
+  for (i, &count) in hist.iter().enumerate() {
+    w0 += count as f64;
+    if w0 == 0.0 {
+      continue;
+    }
+    let w1 = total - w0;
+    if w1 == 0.0 {
+      break;
+    }
+    sum0 += i as f64 * count as f64;
+    let mean0 = sum0 / w0;
+    let mean1 = (sum_total - sum0) / w1;
+    let between_var = w0 * w1 * (mean0 - mean1) * (mean0 - mean1);
+    if between_var > best_var {
+      best_var = between_var;
+      best_thresh = (i as f64 + 0.5) / (n_bins - 1) as f64;
+    }
+  }
+
+  best_thresh * max_val
+}
+
+/// Quantize gradient direction to one of 4 axes and return (dy, dx) neighbor offset.
+fn quantize_gradient_direction(angle: f64) -> (i32, i32) {
+  use std::f64::consts::PI;
+  // Normalize angle to [0, π) — we only care about the axis, not the sign
+  let a = ((angle % PI) + PI) % PI;
+  if !(PI / 8.0..7.0 * PI / 8.0).contains(&a) {
+    (0, 1) // horizontal edge → compare left/right
+  } else if a < 3.0 * PI / 8.0 {
+    (1, 1) // 45° diagonal
+  } else if a < 5.0 * PI / 8.0 {
+    (1, 0) // vertical edge → compare up/down
+  } else {
+    (-1, 1) // 135° diagonal
   }
 }
 

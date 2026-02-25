@@ -1390,10 +1390,7 @@ fn unit_convert_singular_target_kilometer_hour() {
 #[test]
 fn unit_convert_singular_target_foot() {
   assert_eq!(
-    interpret(
-      "UnitConvert[Quantity[1, \"Meters\"], \"Foot\"]"
-    )
-    .unwrap(),
+    interpret("UnitConvert[Quantity[1, \"Meters\"], \"Foot\"]").unwrap(),
     "Quantity[1250/381, Feet]"
   );
 }
@@ -1401,10 +1398,7 @@ fn unit_convert_singular_target_foot() {
 #[test]
 fn unit_convert_singular_target_inch() {
   assert_eq!(
-    interpret(
-      "UnitConvert[Quantity[1, \"Meters\"], \"Inch\"]"
-    )
-    .unwrap(),
+    interpret("UnitConvert[Quantity[1, \"Meters\"], \"Inch\"]").unwrap(),
     "Quantity[5000/127, Inches]"
   );
 }
@@ -1435,17 +1429,13 @@ fn unit_convert_all_target_formats_m_s_to_km_h() {
     expected
   );
   assert_eq!(
-    interpret(
-      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"km/h\"]"
-    )
-    .unwrap(),
+    interpret("UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"km/h\"]")
+      .unwrap(),
     expected
   );
   assert_eq!(
-    interpret(
-      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"kph\"]"
-    )
-    .unwrap(),
+    interpret("UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"kph\"]")
+      .unwrap(),
     expected
   );
 }

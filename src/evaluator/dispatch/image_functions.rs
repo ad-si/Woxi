@@ -57,7 +57,7 @@ pub fn dispatch_image_functions(
     "ImageTake" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::image_ast::image_take_ast(args));
     }
-    "EdgeDetect" if args.len() == 1 => {
+    "EdgeDetect" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
     }
     "DominantColors" if !args.is_empty() && args.len() <= 2 => {

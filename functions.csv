@@ -1630,7 +1630,7 @@ EdgeCount,,,,8,1256
 EdgeCoverQ,,,,8,4612
 EdgeCycleMatrix,,,,10,4479
 EdgeDelete,,,,8,2172
-EdgeDetect,Detects edges in an image using Sobel operator,✅,pure,8,962
+EdgeDetect,Detects edges in an image with Gaussian smoothing and Sobel operator,✅,pure,8,962
 EdgeForm,Specifies edge styling for filled graphics,✅,pure,1,120
 EdgeIndex,,,,8,3242
 EdgeLabels,,,,8,1057
