@@ -2354,6 +2354,68 @@ mod part_multi_index {
   }
 }
 
+mod part_span {
+  use super::*;
+
+  #[test]
+  fn part_span_basic_bracket_syntax() {
+    assert_eq!(interpret("{a, b, c, d, e}[[2;;4]]").unwrap(), "{b, c, d}");
+  }
+
+  #[test]
+  fn part_span_implicit_end() {
+    assert_eq!(
+      interpret("Part[{a, b, c, d, e}, 2;;]").unwrap(),
+      "{b, c, d, e}"
+    );
+  }
+
+  #[test]
+  fn part_span_implicit_start_and_end() {
+    assert_eq!(
+      interpret("Part[{a, b, c, d, e}, ;;]").unwrap(),
+      "{a, b, c, d, e}"
+    );
+  }
+
+  #[test]
+  fn part_span_negative_end() {
+    assert_eq!(
+      interpret("Part[{a, b, c, d, e}, ;;-2]").unwrap(),
+      "{a, b, c, d}"
+    );
+  }
+
+  #[test]
+  fn part_span_negative_step() {
+    assert_eq!(
+      interpret("Part[{a, b, c, d, e}, 5;;2;;-1]").unwrap(),
+      "{e, d, c, b}"
+    );
+  }
+
+  #[test]
+  fn part_span_on_function_call_preserves_head() {
+    assert_eq!(interpret("Part[f[a, b, c, d], 2;;3]").unwrap(), "f[b, c]");
+  }
+
+  #[test]
+  fn part_span_nested_with_all() {
+    assert_eq!(
+      interpret("Part[{{a, b, c}, {d, e, f}}, All, 2;;3]").unwrap(),
+      "{{b, c}, {e, f}}"
+    );
+  }
+
+  #[test]
+  fn part_span_invalid_range_stays_unevaluated() {
+    assert_eq!(
+      interpret("Part[{a, b, c, d, e}, 5;;2]").unwrap(),
+      "{a, b, c, d, e}[[Span[5, 2]]]"
+    );
+  }
+}
+
 mod join_non_list {
   use super::*;
 
