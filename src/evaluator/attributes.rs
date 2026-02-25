@@ -166,7 +166,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
     | "MemoryConstrained" | "TagUnset" | "NProduct" | "Definition"
-    | "FullDefinition" | "Goto" | "Label" => {
+    | "FullDefinition" => {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
@@ -516,7 +516,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ComplexExpand"
     | "Residue"
     | "SetPrecision"
-    | "FactorSquareFreeList" => {
+    | "FactorSquareFreeList"
+    | "Goto"
+    | "Label" => {
       vec!["Protected"]
     }
 

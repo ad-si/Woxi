@@ -500,10 +500,13 @@ function main() {
   // Filter out multiline expressions (they break the generated scripts).
   // Also skip Interrupt[] — it sends a kernel interrupt that crashes wolframscript
   // even inside CheckAbort, so it cannot be tested via batch conformance.
+  // Also skip bare Goto[tag] without a matching Label — it fatally aborts the
+  // wolframscript session (uncatchable, even by CheckAbort/Catch).
   const cases = allCases.filter(
     (c) =>
       !c.expr.includes("\n") &&
       !c.expr.includes("Interrupt[]") &&
+      !(c.expr.match(/^Goto\[/) && !c.expr.includes("Label[")) &&
       !IMPL_SPECIFIC_PATTERNS.some((p) => p.test(c.expr))
   );
   const skipped = allCases.length - cases.length;
