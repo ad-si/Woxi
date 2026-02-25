@@ -1513,6 +1513,47 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       // But if encountered standalone, treat as a sentinel
       Expr::Integer(0) // Should not be reached
     }
+    Rule::SpanExpr => {
+      // SpanExpr: Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)?
+      // SpanSep tokens act as position markers to distinguish ;;b from b;;
+      // Produces Span[start, end] or Span[start, end, step]
+      // Defaults: start=1, end=All
+      let one = Expr::Integer(1);
+      let all = Expr::Identifier("All".to_string());
+
+      // Collect children as slots separated by SpanSep markers
+      // slots[0] = before first ;;, slots[1] = between ;; and ;;, slots[2] = after second ;;
+      let mut slots: Vec<Option<Expr>> = vec![None];
+      for child in pair.into_inner() {
+        if child.as_rule() == Rule::SpanSep {
+          slots.push(None);
+        } else {
+          let last = slots.last_mut().unwrap();
+          *last = Some(pair_to_expr(child));
+        }
+      }
+
+      let start = slots.first().and_then(|s| s.clone()).unwrap_or(one);
+      let end = slots.get(1).and_then(|s| s.clone()).unwrap_or(all);
+
+      if slots.len() >= 3 {
+        // 3-part Span: a;;b;;c
+        let step = slots
+          .get(2)
+          .and_then(|s| s.clone())
+          .unwrap_or_else(|| Expr::Integer(1));
+        Expr::FunctionCall {
+          name: "Span".to_string(),
+          args: vec![start, end, step],
+        }
+      } else {
+        // 2-part Span: a;;b
+        Expr::FunctionCall {
+          name: "Span".to_string(),
+          args: vec![start, end],
+        }
+      }
+    }
     Rule::Expression | Rule::ExpressionNoImplicit | Rule::ConditionExpr => {
       parse_expression(pair)
     }
