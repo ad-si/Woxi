@@ -2928,6 +2928,75 @@ fn quantity_unit_to_string(unit: &Expr) -> String {
   }
 }
 
+/// Format a Quantity unit expression using abbreviated unit names for visual display.
+/// E.g. `"Meters"/"Seconds"` → `m/s`, `"Meters"/"Seconds"^2` → `m/s^2`.
+fn quantity_unit_to_abbrev(unit: &Expr) -> String {
+  use crate::functions::quantity_ast::unit_to_abbreviation;
+  match unit {
+    Expr::Identifier(s) | Expr::String(s) => {
+      unit_to_abbreviation(s).unwrap_or(s.as_str()).to_string()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let exp_str = expr_to_string(right);
+      let exp_fmt = if matches!(right.as_ref(), Expr::Integer(_)) {
+        exp_str
+      } else {
+        format!("({})", exp_str)
+      };
+      format!("{}^{}", quantity_unit_to_abbrev(left), exp_fmt)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      format!(
+        "{}/{}",
+        quantity_unit_to_abbrev(left),
+        quantity_unit_to_abbrev(right)
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      format!(
+        "{}*{}",
+        quantity_unit_to_abbrev(left),
+        quantity_unit_to_abbrev(right)
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let exp_str = expr_to_string(&args[1]);
+      let exp_fmt = if matches!(args[1], Expr::Integer(_)) {
+        exp_str
+      } else {
+        format!("({})", exp_str)
+      };
+      format!("{}^{}", quantity_unit_to_abbrev(&args[0]), exp_fmt)
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let parts: Vec<String> =
+        args.iter().map(quantity_unit_to_abbrev).collect();
+      parts.join("*")
+    }
+    _ => expr_to_string(unit),
+  }
+}
+
+/// Format a Quantity expression for visual/notebook display.
+/// `Quantity[12.345, "Meters"/"Seconds"]` → `"12.345 m/s"`.
+pub fn quantity_to_visual_string(mag: &Expr, unit: &Expr) -> String {
+  let mag_str = expr_to_output(mag);
+  let unit_str = quantity_unit_to_abbrev(unit);
+  format!("{} {}", mag_str, unit_str)
+}
+
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
 /// in a Times expression. Handles both FunctionCall and BinaryOp representations.
 fn is_denominator_factor(expr: &Expr) -> bool {

@@ -2161,6 +2161,58 @@ pub fn has_fraction(expr: &Expr) -> bool {
   }
 }
 
+/// Convert a Quantity unit expression to its abbreviated SVG form.
+/// E.g. `"Meters"/"Seconds"` → `m/s`, `"Meters"^2` → `m²` (with superscript).
+fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
+  use crate::functions::quantity_ast::unit_to_abbreviation;
+  use crate::syntax::BinaryOperator;
+
+  // Handle Power in both BinaryOp and FunctionCall form
+  if let Some((base, exp)) = as_power(unit) {
+    let base_str = quantity_unit_to_svg_abbrev(base);
+    let exp_str = expr_to_svg_markup(exp);
+    return format!(
+      "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+      base_str, exp_str
+    );
+  }
+
+  match unit {
+    Expr::Identifier(s) | Expr::String(s) => {
+      let abbr = unit_to_abbreviation(s).unwrap_or(s.as_str());
+      svg_escape(abbr)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      format!(
+        "{}/{}",
+        quantity_unit_to_svg_abbrev(left),
+        quantity_unit_to_svg_abbrev(right)
+      )
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      format!(
+        "{}\u{22c5}{}",
+        quantity_unit_to_svg_abbrev(left),
+        quantity_unit_to_svg_abbrev(right)
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let parts: Vec<String> =
+        args.iter().map(quantity_unit_to_svg_abbrev).collect();
+      parts.join("\u{22c5}")
+    }
+    _ => expr_to_svg_markup(unit),
+  }
+}
+
 /// Convert an `Expr` into SVG text markup (inner content of a `<text>` element).
 /// Recursively handles all expression types so that Power expressions
 /// anywhere in the tree are rendered with `<tspan>` superscripts.
@@ -2408,6 +2460,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           svg_escape(&full_form)
         }
 
+        // Quantity[magnitude, unit] → "magnitude abbreviation"
+        "Quantity" if args.len() == 2 => {
+          let mag = expr_to_svg_markup(&args[0]);
+          let unit = quantity_unit_to_svg_abbrev(&args[1]);
+          format!("{} {}", mag, unit)
+        }
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -2560,6 +2619,12 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         estimate_display_width(&args[0]),
         estimate_display_width(&args[1]),
       ),
+      "Quantity" if args.len() == 2 => {
+        // "magnitude unit_abbrev" — 1 space between
+        estimate_display_width(&args[0])
+          + 1.0
+          + estimate_unit_abbrev_width(&args[1])
+      }
       _ => {
         let args_width: f64 = args.iter().map(estimate_display_width).sum();
         let seps = if args.len() > 1 {
@@ -2573,6 +2638,46 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 
     // Fallback
     _ => expr_to_output(expr).len() as f64,
+  }
+}
+
+/// Estimate the display width of an abbreviated unit expression.
+fn estimate_unit_abbrev_width(unit: &Expr) -> f64 {
+  use crate::functions::quantity_ast::unit_to_abbreviation;
+  use crate::syntax::BinaryOperator;
+
+  if let Some((base, exp)) = as_power(unit) {
+    return estimate_unit_abbrev_width(base)
+      + estimate_display_width(exp) * 0.7;
+  }
+
+  match unit {
+    Expr::Identifier(s) | Expr::String(s) => {
+      let abbr = unit_to_abbreviation(s).unwrap_or(s.as_str());
+      abbr.len() as f64
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      estimate_unit_abbrev_width(left) + 1.0 + estimate_unit_abbrev_width(right)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      // · separator = 1 char
+      estimate_unit_abbrev_width(left) + 1.0 + estimate_unit_abbrev_width(right)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      let parts: f64 = args.iter().map(estimate_unit_abbrev_width).sum();
+      parts + (args.len() - 1) as f64 // · separators
+    }
+    _ => estimate_display_width(unit),
   }
 }
 

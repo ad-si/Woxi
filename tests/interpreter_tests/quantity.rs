@@ -1262,3 +1262,200 @@ fn compatible_unit_q_knots_m_per_s() {
     "True"
   );
 }
+
+// ─── Singular unit normalization ─────────────────────────────────────────────
+
+#[test]
+fn quantity_singular_meter() {
+  assert_eq!(
+    interpret("Quantity[5, \"Meter\"]").unwrap(),
+    "Quantity[5, Meters]"
+  );
+}
+
+#[test]
+fn quantity_singular_second() {
+  assert_eq!(
+    interpret("Quantity[10, \"Second\"]").unwrap(),
+    "Quantity[10, Seconds]"
+  );
+}
+
+#[test]
+fn quantity_singular_compound() {
+  assert_eq!(
+    interpret("Quantity[12.345, \"Meter\"/\"Second\"]").unwrap(),
+    "Quantity[12.345, Meters/Seconds]"
+  );
+}
+
+#[test]
+fn quantity_singular_foot() {
+  assert_eq!(
+    interpret("Quantity[100, \"Foot\"]").unwrap(),
+    "Quantity[100, Feet]"
+  );
+}
+
+#[test]
+fn quantity_singular_inch() {
+  assert_eq!(
+    interpret("Quantity[5, \"Inch\"]").unwrap(),
+    "Quantity[5, Inches]"
+  );
+}
+
+#[test]
+fn quantity_singular_henry() {
+  assert_eq!(
+    interpret("Quantity[3, \"Henry\"]").unwrap(),
+    "Quantity[3, Henries]"
+  );
+}
+
+// ─── SVG rendering (playground) ─────────────────────────────────────────────
+
+#[test]
+fn quantity_svg_simple_unit() {
+  clear_state();
+  let result = interpret_with_stdout("Quantity[5, \"Meters\"]").unwrap();
+  assert_eq!(result.result, "5 m");
+  let svg = result.output_svg.expect("Quantity should produce SVG");
+  assert!(
+    svg.contains("5 m"),
+    "SVG should show abbreviated unit: {svg}"
+  );
+}
+
+#[test]
+fn quantity_svg_compound_divide() {
+  clear_state();
+  let result =
+    interpret_with_stdout("Quantity[12.345, \"Meters\"/\"Seconds\"]").unwrap();
+  assert_eq!(result.result, "12.345 m/s");
+  let svg = result.output_svg.expect("Quantity should produce SVG");
+  assert!(
+    svg.contains("12.345 m/s"),
+    "SVG should show abbreviated compound unit: {svg}"
+  );
+}
+
+#[test]
+fn quantity_svg_power_unit() {
+  clear_state();
+  let result =
+    interpret_with_stdout("Quantity[9.8, \"Meters\"/\"Seconds\"^2]").unwrap();
+  assert_eq!(result.result, "9.8 m/s^2");
+  let svg = result.output_svg.expect("Quantity should produce SVG");
+  assert!(
+    svg.contains("m/s"),
+    "SVG should show abbreviated unit: {svg}"
+  );
+  assert!(
+    svg.contains("super"),
+    "SVG should contain superscript for exponent: {svg}"
+  );
+}
+
+#[test]
+fn quantity_svg_kilogram() {
+  clear_state();
+  let result = interpret_with_stdout("Quantity[70, \"Kilograms\"]").unwrap();
+  assert_eq!(result.result, "70 kg");
+  let svg = result.output_svg.expect("Quantity should produce SVG");
+  assert!(svg.contains("70 kg"), "SVG should show 'kg': {svg}");
+}
+
+#[test]
+fn quantity_svg_singular_compound() {
+  clear_state();
+  let result =
+    interpret_with_stdout("Quantity[12.345, \"Meter\"/\"Second\"]").unwrap();
+  assert_eq!(result.result, "12.345 m/s");
+}
+
+// ─── UnitConvert with singular unit names ───────────────────────────────────
+
+#[test]
+fn unit_convert_singular_target_kilometer_hour() {
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"Kilometer\"/\"Hour\"]"
+    )
+    .unwrap(),
+    "Quantity[44.442, Kilometers/Hours]"
+  );
+}
+
+#[test]
+fn unit_convert_singular_target_foot() {
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, \"Meters\"], \"Foot\"]"
+    )
+    .unwrap(),
+    "Quantity[1250/381, Feet]"
+  );
+}
+
+#[test]
+fn unit_convert_singular_target_inch() {
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, \"Meters\"], \"Inch\"]"
+    )
+    .unwrap(),
+    "Quantity[5000/127, Inches]"
+  );
+}
+
+#[test]
+fn unit_convert_all_target_formats_m_s_to_km_h() {
+  // All of these should produce the same result
+  let expected = "Quantity[44.442, Kilometers/Hours]";
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"Kilometers\"/\"Hours\"]"
+    )
+    .unwrap(),
+    expected
+  );
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"Kilometer\"/\"Hour\"]"
+    )
+    .unwrap(),
+    expected
+  );
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"km\"/\"h\"]"
+    )
+    .unwrap(),
+    expected
+  );
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"km/h\"]"
+    )
+    .unwrap(),
+    expected
+  );
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"kph\"]"
+    )
+    .unwrap(),
+    expected
+  );
+}
+
+#[test]
+fn unit_convert_singular_target_playground_display() {
+  clear_state();
+  let result = interpret_with_stdout(
+    "UnitConvert[Quantity[12.345, \"Meter\"/\"Second\"], \"Kilometer\"/\"Hour\"]",
+  )
+  .unwrap();
+  assert_eq!(result.result, "44.442 km/h");
+}

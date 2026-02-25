@@ -808,6 +808,16 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       if let Some(parsed) = try_parse_unit_string(name) {
         return decompose_unit_expr(&parsed);
       }
+      // Try singular → plural normalization (e.g. "Kilometer" → "Kilometers")
+      let plural = normalize_singular_to_plural(name);
+      if let Some(info) = get_unit_info(&plural) {
+        return Some(CompoundUnitInfo {
+          components: vec![(plural, 1)],
+          si_numer: info.to_si_numer,
+          si_denom: info.to_si_denom,
+          dimensions: info.dimensions,
+        });
+      }
       None
     }
     Expr::BinaryOp { op, left, right } => {
@@ -1037,6 +1047,85 @@ fn simplify_unit_expr(unit: &Expr) -> Option<(Expr, i128, i128)> {
   Some((components_to_unit_expr(&simplified), conv_n, conv_d))
 }
 
+/// Map a full unit name to its standard SI abbreviation.
+/// Returns `None` for unknown units.
+pub fn unit_to_abbreviation(name: &str) -> Option<&'static str> {
+  match name {
+    // Length
+    "Meters" => Some("m"),
+    "Kilometers" => Some("km"),
+    "Centimeters" => Some("cm"),
+    "Millimeters" => Some("mm"),
+    "Micrometers" => Some("\u{03bc}m"), // μm
+    "Nanometers" => Some("nm"),
+    "NauticalMiles" => Some("nmi"),
+    "Feet" => Some("ft"),
+    "Inches" => Some("in"),
+    "Miles" => Some("mi"),
+    "Yards" => Some("yd"),
+    // Mass
+    "Kilograms" => Some("kg"),
+    "Grams" => Some("g"),
+    "Milligrams" => Some("mg"),
+    "Pounds" => Some("lb"),
+    "MetricTons" => Some("t"),
+    "Ounces" => Some("oz"),
+    // Time
+    "Seconds" => Some("s"),
+    "Milliseconds" => Some("ms"),
+    "Microseconds" => Some("\u{03bc}s"), // μs
+    "Nanoseconds" => Some("ns"),
+    "Minutes" => Some("min"),
+    "Hours" => Some("h"),
+    "Days" => Some("d"),
+    // Volume
+    "Liters" => Some("L"),
+    "Milliliters" => Some("mL"),
+    "Gallons" => Some("gal"),
+    // Electrical / Energy / Power
+    "Amperes" => Some("A"),
+    "Milliamperes" => Some("mA"),
+    "Volts" => Some("V"),
+    "Millivolts" => Some("mV"),
+    "Kilovolts" => Some("kV"),
+    "Joules" => Some("J"),
+    "Millijoules" => Some("mJ"),
+    "Kilojoules" => Some("kJ"),
+    "ThermochemicalCalories" => Some("cal"),
+    "ThermochemicalKilocalories" => Some("kcal"),
+    "Electronvolts" => Some("eV"),
+    "Watts" => Some("W"),
+    "Milliwatts" => Some("mW"),
+    "Kilowatts" => Some("kW"),
+    "Farads" => Some("F"),
+    "Millifarads" => Some("mF"),
+    "Microfarads" => Some("\u{03bc}F"), // μF
+    "Nanofarads" => Some("nF"),
+    "Picofarads" => Some("pF"),
+    "Coulombs" => Some("C"),
+    "Newtons" => Some("N"),
+    "Pascals" => Some("Pa"),
+    "Bars" => Some("bar"),
+    "Atmospheres" => Some("atm"),
+    "Ohms" => Some("\u{03a9}"),     // Ω
+    "Kilohms" => Some("k\u{03a9}"), // kΩ
+    "Megohms" => Some("M\u{03a9}"), // MΩ
+    "Henries" => Some("H"),
+    "Millihenries" => Some("mH"),
+    "WattHours" => Some("Wh"),
+    "KilowattHours" => Some("kWh"),
+    "Hertz" => Some("Hz"),
+    "Kilohertz" => Some("kHz"),
+    "Megahertz" => Some("MHz"),
+    "Gigahertz" => Some("GHz"),
+    "Teslas" => Some("T"),
+    "Milliteslas" => Some("mT"),
+    "Knots" => Some("kn"),
+    "MetricKilotons" => Some("kt"),
+    _ => None,
+  }
+}
+
 // ─── Quantity helpers ───────────────────────────────────────────────────────
 
 /// Extract (magnitude, unit_string) from a Quantity FunctionCall.
@@ -1084,6 +1173,26 @@ fn canonical_unit_name(name: &str) -> &str {
   }
 }
 
+/// Try to produce the plural form of a singular unit name.
+/// E.g. "Meter" → "Meters", "Foot" → "Feet", "Henry" → "Henries", "Inch" → "Inches".
+fn normalize_singular_to_plural(name: &str) -> String {
+  // Irregular plurals
+  match name {
+    "Foot" => return "Feet".to_string(),
+    "Inch" => return "Inches".to_string(),
+    _ => {}
+  }
+  // Names ending in "y" → "ies" (Henry → Henries)
+  if let Some(base) = name.strip_suffix('y') {
+    let candidate = format!("{}ies", base);
+    if get_unit_info(&candidate).is_some() {
+      return candidate;
+    }
+  }
+  // Default: add "s"
+  format!("{}s", name)
+}
+
 /// Recursively normalize unit expressions: expand abbreviations like "km/h" → "Kilometers"/"Hours".
 /// Strings are kept as Expr::String (Wolfram stores units as strings internally).
 fn normalize_unit(mut unit: Expr) -> Expr {
@@ -1100,7 +1209,13 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       } else if let Some(parsed) = try_parse_unit_string(&s) {
         normalize_unit(parsed)
       } else {
-        Expr::String(s)
+        // Try singular → plural normalization
+        let plural = normalize_singular_to_plural(&s);
+        if get_unit_info(&plural).is_some() {
+          Expr::String(canonical_unit_name(&plural).to_string())
+        } else {
+          Expr::String(s)
+        }
       }
     }
     Expr::BinaryOp { .. } => {
@@ -1143,6 +1258,11 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       // Try CamelCase "Per" decomposition for identifiers too
       if let Some(expanded) = resolve_per_unit(&s) {
         return normalize_unit(expanded);
+      }
+      // Try singular → plural normalization
+      let plural = normalize_singular_to_plural(&s);
+      if get_unit_info(&plural).is_some() {
+        return Expr::String(canonical_unit_name(&plural).to_string());
       }
       unit
     }
