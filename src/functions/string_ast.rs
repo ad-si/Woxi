@@ -1761,10 +1761,10 @@ fn mathml_escape_str(s: &str) -> String {
 
 // Wolfram private-use Unicode characters for box syntax.
 // These are used internally in strings; InputForm converts them to \!, \(, \*, \).
-pub const BOX_START: char = '\u{f361}'; // \!
-pub const BOX_OPEN: char = '\u{f369}'; // \(
-pub const BOX_SEP: char = '\u{f368}'; // \*
-pub const BOX_CLOSE: char = '\u{f360}'; // \)
+pub const BOX_START: char = '\u{f7c1}'; // \!
+pub const BOX_OPEN: char = '\u{f7c9}'; // \(
+pub const BOX_SEP: char = '\u{f7c8}'; // \*
+pub const BOX_CLOSE: char = '\u{f7c0}'; // \)
 
 /// Convert a Wolfram expression to its StandardForm box representation.
 /// Returns a string using private-use Unicode box markers internally.
