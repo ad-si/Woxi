@@ -963,14 +963,17 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::min_max_ast(&args[0]));
     }
     "Part" if args.len() >= 2 => {
-      let mut result = list_helpers_ast::part_ast(&args[0], &args[1]);
+      let mut part_expr = Expr::Part {
+        expr: Box::new(args[0].clone()),
+        index: Box::new(args[1].clone()),
+      };
       for idx in &args[2..] {
-        match result {
-          Ok(ref expr) => result = list_helpers_ast::part_ast(expr, idx),
-          Err(_) => break,
-        }
+        part_expr = Expr::Part {
+          expr: Box::new(part_expr),
+          index: Box::new(idx.clone()),
+        };
       }
-      return Some(result);
+      return Some(evaluate_expr_to_expr(&part_expr));
     }
     "Insert" if args.len() == 3 => {
       return Some(list_helpers_ast::insert_ast(&args[0], &args[1], &args[2]));

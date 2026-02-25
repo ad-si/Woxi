@@ -2,16 +2,21 @@
 use super::*;
 
 /// Find the index of a Label[tag] in a list of expressions where `tag` matches `goto_tag`.
-/// Matching is done by structural equality via expr_to_string comparison.
+/// Both the goto tag and each label's tag are compared after evaluation,
+/// since neither Goto nor Label has HoldAll.
 pub fn find_label_index(exprs: &[Expr], goto_tag: &Expr) -> Option<usize> {
   let tag_str = expr_to_string(goto_tag);
   for (i, expr) in exprs.iter().enumerate() {
     if let Expr::FunctionCall { name, args } = expr
       && name == "Label"
       && args.len() == 1
-      && expr_to_string(&args[0]) == tag_str
     {
-      return Some(i);
+      // Evaluate the label's tag to match Goto's evaluated tag
+      let label_tag =
+        evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+      if expr_to_string(&label_tag) == tag_str {
+        return Some(i);
+      }
     }
   }
   None
@@ -977,13 +982,12 @@ pub fn evaluate_expr_to_expr_inner(
       if name == "Continue" && args.is_empty() {
         return Err(InterpreterError::ContinueSignal);
       }
-      // Special handling for Label[tag] — evaluates to Null (marker only)
-      if name == "Label" && args.len() == 1 {
-        return Ok(Expr::Identifier("Null".to_string()));
-      }
-      // Special handling for Goto[tag] — raises GotoSignal
+      // Label[tag] is not evaluated — it stays symbolic.
+      // CompoundExpression handles it via find_label_index on the AST.
+      // Special handling for Goto[tag] — evaluates the tag then raises GotoSignal
       if name == "Goto" && args.len() == 1 {
-        return Err(InterpreterError::GotoSignal(Box::new(args[0].clone())));
+        let tag = evaluate_expr_to_expr(&args[0])?;
+        return Err(InterpreterError::GotoSignal(Box::new(tag)));
       }
       // Special handling for Throw[value] and Throw[value, tag]
       if name == "Throw" && !args.is_empty() && args.len() <= 2 {
@@ -1548,7 +1552,25 @@ pub fn evaluate_expr_to_expr_inner(
       // Evaluate all indices
       let mut indices = Vec::with_capacity(indices_unevaluated.len());
       for idx in &indices_unevaluated {
-        indices.push(evaluate_expr_to_expr(idx)?);
+        if let Expr::FunctionCall { name, args } = idx
+          && name == "Span"
+          && (args.len() == 2 || args.len() == 3)
+        {
+          let mut evaluated_args = Vec::with_capacity(args.len());
+          for arg in args {
+            if matches!(arg, Expr::Identifier(s) if s == "All") {
+              evaluated_args.push(arg.clone());
+            } else {
+              evaluated_args.push(evaluate_expr_to_expr(arg)?);
+            }
+          }
+          indices.push(Expr::FunctionCall {
+            name: "Span".to_string(),
+            args: evaluated_args,
+          });
+        } else {
+          indices.push(evaluate_expr_to_expr(idx)?);
+        }
       }
 
       // Check if any index is All — use apply_part_indices path only when needed

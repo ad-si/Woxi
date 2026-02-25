@@ -1,6 +1,119 @@
 #[allow(unused_imports)]
 use super::*;
 
+fn expr_to_i64(expr: &Expr) -> Option<i64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as i64),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_i64()
+    }
+    Expr::Real(f) => Some(*f as i64),
+    _ => None,
+  }
+}
+
+fn normalize_span_pos(pos: i64, len: i64) -> Option<i64> {
+  if pos == 0 {
+    return None;
+  }
+  let normalized = if pos < 0 { len + pos + 1 } else { pos };
+  if (1..=len).contains(&normalized) {
+    Some(normalized)
+  } else {
+    None
+  }
+}
+
+fn part_take_unevaluated(expr: &Expr, index: &Expr) -> Expr {
+  Expr::Part {
+    expr: Box::new(expr.clone()),
+    index: Box::new(index.clone()),
+  }
+}
+
+fn part_take_warn(expr: &Expr, start: i64, end: i64) {
+  let expr_str = crate::syntax::expr_to_string(expr);
+  eprintln!();
+  eprintln!(
+    "Part::take: Cannot take positions {} through {} in {}.",
+    start, end, expr_str
+  );
+}
+
+fn extract_span_from_items(
+  expr: &Expr,
+  index: &Expr,
+  items: &[Expr],
+  start_expr: &Expr,
+  end_expr: &Expr,
+  step_expr: Option<&Expr>,
+  rebuild: impl FnOnce(Vec<Expr>) -> Expr,
+) -> Result<Expr, InterpreterError> {
+  let len = items.len() as i64;
+  let start_raw = if matches!(start_expr, Expr::Identifier(s) if s == "All") {
+    1
+  } else if let Some(v) = expr_to_i64(start_expr) {
+    v
+  } else {
+    return Ok(part_take_unevaluated(expr, index));
+  };
+  let step = match step_expr {
+    Some(e) => match expr_to_i64(e) {
+      Some(v) => v,
+      None => return Ok(part_take_unevaluated(expr, index)),
+    },
+    None => 1,
+  };
+  if step == 0 {
+    let end_raw = if matches!(end_expr, Expr::Identifier(s) if s == "All") {
+      len
+    } else if let Some(v) = expr_to_i64(end_expr) {
+      v
+    } else {
+      return Ok(part_take_unevaluated(expr, index));
+    };
+    part_take_warn(expr, start_raw, end_raw);
+    return Ok(part_take_unevaluated(expr, index));
+  }
+  let end_raw = if matches!(end_expr, Expr::Identifier(s) if s == "All") {
+    if step < 0 { -1 } else { len }
+  } else if let Some(v) = expr_to_i64(end_expr) {
+    v
+  } else {
+    return Ok(part_take_unevaluated(expr, index));
+  };
+
+  let start = if let Some(v) = normalize_span_pos(start_raw, len) {
+    v
+  } else {
+    part_take_warn(expr, start_raw, end_raw);
+    return Ok(part_take_unevaluated(expr, index));
+  };
+  let end = if let Some(v) = normalize_span_pos(end_raw, len) {
+    v
+  } else {
+    part_take_warn(expr, start_raw, end_raw);
+    return Ok(part_take_unevaluated(expr, index));
+  };
+
+  if (step > 0 && start > end) || (step < 0 && start < end) {
+    part_take_warn(expr, start_raw, end_raw);
+    return Ok(part_take_unevaluated(expr, index));
+  }
+
+  let mut out = Vec::new();
+  let mut i = start;
+  loop {
+    if (step > 0 && i > end) || (step < 0 && i < end) {
+      break;
+    }
+    out.push(items[(i - 1) as usize].clone());
+    i += step;
+  }
+  Ok(rebuild(out))
+}
+
 /// Get the innermost base of nested Part expressions
 pub fn get_part_base(expr: &Expr) -> &Expr {
   match expr {
@@ -95,18 +208,51 @@ pub fn extract_part_ast(
     });
   }
 
+  // Span[start, end] or Span[start, end, step]
+  if let Expr::FunctionCall { name, args } = index
+    && name == "Span"
+    && (args.len() == 2 || args.len() == 3)
+  {
+    match expr {
+      Expr::List(items) => {
+        return extract_span_from_items(
+          expr,
+          index,
+          items,
+          &args[0],
+          &args[1],
+          args.get(2),
+          Expr::List,
+        );
+      }
+      Expr::FunctionCall {
+        name,
+        args: fn_args,
+      } => {
+        return extract_span_from_items(
+          expr,
+          index,
+          fn_args,
+          &args[0],
+          &args[1],
+          args.get(2),
+          |selected| Expr::FunctionCall {
+            name: name.clone(),
+            args: selected,
+          },
+        );
+      }
+      _ => return Ok(part_take_unevaluated(expr, index)),
+    }
+  }
+
   let idx = match index {
     Expr::Integer(n) => *n as i64,
     Expr::BigInteger(n) => {
       use num_traits::ToPrimitive;
       match n.to_i64() {
         Some(v) => v,
-        None => {
-          return Ok(Expr::Part {
-            expr: Box::new(expr.clone()),
-            index: Box::new(index.clone()),
-          });
-        }
+        None => return Ok(part_take_unevaluated(expr, index)),
       }
     }
     Expr::Real(f) => *f as i64,
@@ -118,12 +264,7 @@ pub fn extract_part_ast(
       }
       return Ok(Expr::List(results));
     }
-    _ => {
-      return Ok(Expr::Part {
-        expr: Box::new(expr.clone()),
-        index: Box::new(index.clone()),
-      });
-    }
+    _ => return Ok(part_take_unevaluated(expr, index)),
   };
 
   match expr {
@@ -137,10 +278,7 @@ pub fn extract_part_ast(
         let expr_str = crate::syntax::expr_to_string(expr);
         eprintln!();
         eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
-        Ok(Expr::Part {
-          expr: Box::new(expr.clone()),
-          index: Box::new(index.clone()),
-        })
+        Ok(part_take_unevaluated(expr, index))
       }
     }
     Expr::FunctionCall { name, args } => {
@@ -156,10 +294,7 @@ pub fn extract_part_ast(
         let expr_str = crate::syntax::expr_to_string(expr);
         eprintln!();
         eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
-        Ok(Expr::Part {
-          expr: Box::new(expr.clone()),
-          index: Box::new(index.clone()),
-        })
+        Ok(part_take_unevaluated(expr, index))
       }
     }
     Expr::String(s) => {
@@ -172,15 +307,9 @@ pub fn extract_part_ast(
         // Print warning to stderr and return unevaluated Part expression
         eprintln!();
         eprintln!("Part::partw: Part {} of \"{}\" does not exist.", idx, s);
-        Ok(Expr::Part {
-          expr: Box::new(expr.clone()),
-          index: Box::new(index.clone()),
-        })
+        Ok(part_take_unevaluated(expr, index))
       }
     }
-    _ => Ok(Expr::Part {
-      expr: Box::new(expr.clone()),
-      index: Box::new(index.clone()),
-    }),
+    _ => Ok(part_take_unevaluated(expr, index)),
   }
 }
