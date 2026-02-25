@@ -77,17 +77,17 @@ impl std::iter::Sum for WoNum {
   }
 }
 
-impl std::iter::FromIterator<WoNum> for WoNum {
+impl std::iter::FromIterator<Self> for WoNum {
   fn from_iter<I: IntoIterator<Item = Self>>(iter: I) -> Self {
     let mut sum_i128 = 0i128;
     let mut sum_f64 = 0.0;
 
     for num in iter {
       match num {
-        WoNum::Int(i) => {
+        Self::Int(i) => {
           sum_i128 += i;
         }
-        WoNum::Float(f) => {
+        Self::Float(f) => {
           sum_f64 += f;
         }
       }
@@ -97,9 +97,9 @@ impl std::iter::FromIterator<WoNum> for WoNum {
       || (sum_i128 != 0i128
         && std::mem::size_of::<f64>() < std::mem::size_of::<i128>())
     {
-      WoNum::Float(sum_f64)
+      Self::Float(sum_f64)
     } else {
-      WoNum::Int(sum_i128)
+      Self::Int(sum_i128)
     }
   }
 }
@@ -122,19 +122,15 @@ pub fn str_to_wonum(num_str: &str) -> WoNum {
 impl WoNum {
   pub fn abs(self) -> Self {
     match self {
-      WoNum::Int(i) => WoNum::Int(i.abs()),
-      WoNum::Float(f) => WoNum::Float(f.abs()),
+      Self::Int(i) => Self::Int(i.abs()),
+      Self::Float(f) => Self::Float(f.abs()),
     }
   }
 
   pub fn sign(&self) -> i8 {
     match self {
-      WoNum::Int(i) => match i.cmp(&0) {
-        std::cmp::Ordering::Greater => 1,
-        std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Equal => 0,
-      },
-      WoNum::Float(f) => {
+      Self::Int(i) => i.cmp(&0) as _,
+      Self::Float(f) => {
         if *f > 0.0 {
           1
         } else if *f < 0.0 {
@@ -148,32 +144,32 @@ impl WoNum {
 
   pub fn sqrt(self) -> Result<Self, String> {
     let val = match self {
-      WoNum::Int(i) => {
+      Self::Int(i) => {
         if i < 0 {
           return Err("Sqrt function argument must be non-negative".into());
         }
         i as f64
       }
-      WoNum::Float(f) => {
+      Self::Float(f) => {
         if f < 0.0 {
           return Err("Sqrt function argument must be non-negative".into());
         }
         f
       }
     };
-    Ok(WoNum::Float(val.sqrt()))
+    Ok(Self::Float(val.sqrt()))
   }
 
   pub fn floor(self) -> Self {
     match self {
-      WoNum::Int(i) => WoNum::Int(i),
-      WoNum::Float(f) => {
+      Self::Int(i) => Self::Int(i),
+      Self::Float(f) => {
         let result = f.floor();
         // Handle -0.0
         if result == -0.0 {
-          WoNum::Float(0.0)
+          Self::Float(0.0)
         } else {
-          WoNum::Float(result)
+          Self::Float(result)
         }
       }
     }
@@ -181,14 +177,14 @@ impl WoNum {
 
   pub fn ceiling(self) -> Self {
     match self {
-      WoNum::Int(i) => WoNum::Int(i),
-      WoNum::Float(f) => {
+      Self::Int(i) => Self::Int(i),
+      Self::Float(f) => {
         let result = f.ceil();
         // Handle -0.0
         if result == -0.0 {
-          WoNum::Float(0.0)
+          Self::Float(0.0)
         } else {
-          WoNum::Float(result)
+          Self::Float(result)
         }
       }
     }
@@ -196,8 +192,8 @@ impl WoNum {
 
   pub fn round(self) -> Self {
     match self {
-      WoNum::Int(i) => WoNum::Int(i),
-      WoNum::Float(f) => {
+      Self::Int(i) => Self::Int(i),
+      Self::Float(f) => {
         // Banker's rounding (half-to-even)
         let base = f.trunc();
         let frac = f - base;
@@ -214,9 +210,9 @@ impl WoNum {
         };
         // Handle -0.0
         if result == -0.0 {
-          WoNum::Float(0.0)
+          Self::Float(0.0)
         } else {
-          WoNum::Float(result)
+          Self::Float(result)
         }
       }
     }
@@ -268,63 +264,63 @@ pub enum Expr {
   /// SlotSequence (##, ##1, ##2, etc.) — represents a sequence of arguments
   SlotSequence(usize),
   /// List: {e1, e2, ...}
-  List(Vec<Expr>),
+  List(Vec<Self>),
   /// Function call: f[e1, e2, ...]
-  FunctionCall { name: String, args: Vec<Expr> },
+  FunctionCall { name: String, args: Vec<Self> },
   /// Binary operator: e1 op e2
   BinaryOp {
     op: BinaryOperator,
-    left: Box<Expr>,
-    right: Box<Expr>,
+    left: Box<Self>,
+    right: Box<Self>,
   },
   /// Unary operator: op e
   UnaryOp {
     op: UnaryOperator,
-    operand: Box<Expr>,
+    operand: Box<Self>,
   },
   /// Comparison chain: e1 op1 e2 op2 e3 ...
   Comparison {
-    operands: Vec<Expr>,
+    operands: Vec<Self>,
     operators: Vec<ComparisonOp>,
   },
   /// Compound expression: e1; e2; e3
-  CompoundExpr(Vec<Expr>),
+  CompoundExpr(Vec<Self>),
   /// Association: <| key1 -> val1, key2 -> val2, ... |>
-  Association(Vec<(Expr, Expr)>),
+  Association(Vec<(Self, Self)>),
   /// Rule: pattern -> replacement
   Rule {
-    pattern: Box<Expr>,
-    replacement: Box<Expr>,
+    pattern: Box<Self>,
+    replacement: Box<Self>,
   },
   /// Delayed rule: pattern :> replacement
   RuleDelayed {
-    pattern: Box<Expr>,
-    replacement: Box<Expr>,
+    pattern: Box<Self>,
+    replacement: Box<Self>,
   },
   /// ReplaceAll: expr /. rules
-  ReplaceAll { expr: Box<Expr>, rules: Box<Expr> },
+  ReplaceAll { expr: Box<Self>, rules: Box<Self> },
   /// ReplaceRepeated: expr //. rules
-  ReplaceRepeated { expr: Box<Expr>, rules: Box<Expr> },
+  ReplaceRepeated { expr: Box<Self>, rules: Box<Self> },
   /// Map: f /@ list
-  Map { func: Box<Expr>, list: Box<Expr> },
+  Map { func: Box<Self>, list: Box<Self> },
   /// Apply: f @@ list
-  Apply { func: Box<Expr>, list: Box<Expr> },
+  Apply { func: Box<Self>, list: Box<Self> },
   /// MapApply: f @@@ list (applies f to each sublist)
-  MapApply { func: Box<Expr>, list: Box<Expr> },
+  MapApply { func: Box<Self>, list: Box<Self> },
   /// Prefix application: f @ x (equivalent to f[x])
-  PrefixApply { func: Box<Expr>, arg: Box<Expr> },
+  PrefixApply { func: Box<Self>, arg: Box<Self> },
   /// Postfix application: expr // f
-  Postfix { expr: Box<Expr>, func: Box<Expr> },
+  Postfix { expr: Box<Self>, func: Box<Self> },
   /// Part extraction: expr[[index]]
-  Part { expr: Box<Expr>, index: Box<Expr> },
+  Part { expr: Box<Self>, index: Box<Self> },
   /// Curried/chained function call: f[a][b] - func is f[a], args is {b}
-  CurriedCall { func: Box<Expr>, args: Vec<Expr> },
+  CurriedCall { func: Box<Self>, args: Vec<Self> },
   /// Anonymous function: body &
-  Function { body: Box<Expr> },
+  Function { body: Box<Self> },
   /// Named-parameter function: Function[x, body] or Function[{x,y,...}, body]
   NamedFunction {
     params: Vec<String>,
-    body: Box<Expr>,
+    body: Box<Self>,
   },
   /// Pattern: name_ or name_Head
   Pattern { name: String, head: Option<String> },
@@ -332,10 +328,10 @@ pub enum Expr {
   PatternOptional {
     name: String,
     head: Option<String>,
-    default: Box<Expr>,
+    default: Box<Self>,
   },
   /// PatternTest: _?test or x_?test — matches if test[x] is True
-  PatternTest { name: String, test: Box<Expr> },
+  PatternTest { name: String, test: Box<Self> },
   /// Constant like Pi, E, etc.
   Constant(String),
   /// Raw unparsed text (fallback)
@@ -470,30 +466,30 @@ impl Clone for Expr {
   fn clone(&self) -> Self {
     // Fast path for leaf variants — avoid heap allocation
     match self {
-      Expr::Integer(n) => return Expr::Integer(*n),
-      Expr::BigInteger(n) => return Expr::BigInteger(n.clone()),
-      Expr::Real(f) => return Expr::Real(*f),
-      Expr::BigFloat(s, p) => return Expr::BigFloat(s.clone(), *p),
-      Expr::String(s) => return Expr::String(s.clone()),
-      Expr::Identifier(s) => return Expr::Identifier(s.clone()),
-      Expr::Slot(n) => return Expr::Slot(*n),
-      Expr::SlotSequence(n) => return Expr::SlotSequence(*n),
-      Expr::Pattern { name, head } => {
-        return Expr::Pattern {
+      Self::Integer(n) => return Self::Integer(*n),
+      Self::BigInteger(n) => return Self::BigInteger(n.clone()),
+      Self::Real(f) => return Self::Real(*f),
+      Self::BigFloat(s, p) => return Self::BigFloat(s.clone(), *p),
+      Self::String(s) => return Self::String(s.clone()),
+      Self::Identifier(s) => return Self::Identifier(s.clone()),
+      Self::Slot(n) => return Self::Slot(*n),
+      Self::SlotSequence(n) => return Self::SlotSequence(*n),
+      Self::Pattern { name, head } => {
+        return Self::Pattern {
           name: name.clone(),
           head: head.clone(),
         };
       }
-      Expr::Constant(s) => return Expr::Constant(s.clone()),
-      Expr::Raw(s) => return Expr::Raw(s.clone()),
-      Expr::Image {
+      Self::Constant(s) => return Self::Constant(s.clone()),
+      Self::Raw(s) => return Self::Raw(s.clone()),
+      Self::Image {
         width,
         height,
         channels,
         data,
         image_type,
       } => {
-        return Expr::Image {
+        return Self::Image {
           width: *width,
           height: *height,
           channels: *channels,
@@ -501,8 +497,8 @@ impl Clone for Expr {
           image_type: *image_type,
         };
       }
-      Expr::Graphics { svg, is_3d } => {
-        return Expr::Graphics {
+      Self::Graphics { svg, is_3d } => {
+        return Self::Graphics {
           svg: svg.clone(),
           is_3d: *is_3d,
         };
@@ -542,60 +538,60 @@ impl Clone for Expr {
     }
 
     let mut tasks: Vec<CloneTask> = vec![CloneTask::Visit(self)];
-    let mut results: Vec<Expr> = Vec::new();
+    let mut results: Vec<Self> = Vec::new();
 
     while let Some(task) = tasks.pop() {
       match task {
         CloneTask::Visit(expr) => match expr {
           // Leaf variants
-          Expr::Integer(n) => results.push(Expr::Integer(*n)),
-          Expr::BigInteger(n) => results.push(Expr::BigInteger(n.clone())),
-          Expr::Real(f) => results.push(Expr::Real(*f)),
-          Expr::BigFloat(s, p) => results.push(Expr::BigFloat(s.clone(), *p)),
-          Expr::String(s) => results.push(Expr::String(s.clone())),
-          Expr::Identifier(s) => results.push(Expr::Identifier(s.clone())),
-          Expr::Slot(n) => results.push(Expr::Slot(*n)),
-          Expr::SlotSequence(n) => results.push(Expr::SlotSequence(*n)),
-          Expr::Pattern { name, head } => results.push(Expr::Pattern {
+          Self::Integer(n) => results.push(Self::Integer(*n)),
+          Self::BigInteger(n) => results.push(Self::BigInteger(n.clone())),
+          Self::Real(f) => results.push(Self::Real(*f)),
+          Self::BigFloat(s, p) => results.push(Self::BigFloat(s.clone(), *p)),
+          Self::String(s) => results.push(Self::String(s.clone())),
+          Self::Identifier(s) => results.push(Self::Identifier(s.clone())),
+          Self::Slot(n) => results.push(Self::Slot(*n)),
+          Self::SlotSequence(n) => results.push(Self::SlotSequence(*n)),
+          Self::Pattern { name, head } => results.push(Self::Pattern {
             name: name.clone(),
             head: head.clone(),
           }),
-          Expr::Constant(s) => results.push(Expr::Constant(s.clone())),
-          Expr::Raw(s) => results.push(Expr::Raw(s.clone())),
-          Expr::Image {
+          Self::Constant(s) => results.push(Self::Constant(s.clone())),
+          Self::Raw(s) => results.push(Self::Raw(s.clone())),
+          Self::Image {
             width,
             height,
             channels,
             data,
             image_type,
-          } => results.push(Expr::Image {
+          } => results.push(Self::Image {
             width: *width,
             height: *height,
             channels: *channels,
             data: data.clone(),
             image_type: *image_type,
           }),
-          Expr::Graphics { svg, is_3d } => results.push(Expr::Graphics {
+          Self::Graphics { svg, is_3d } => results.push(Self::Graphics {
             svg: svg.clone(),
             is_3d: *is_3d,
           }),
 
           // Vec<Expr> children
-          Expr::List(children) => {
+          Self::List(children) => {
             let count = children.len();
             tasks.push(CloneTask::Build(CloneFrame::List(count)));
             for child in children.iter().rev() {
               tasks.push(CloneTask::Visit(child));
             }
           }
-          Expr::CompoundExpr(children) => {
+          Self::CompoundExpr(children) => {
             let count = children.len();
             tasks.push(CloneTask::Build(CloneFrame::CompoundExpr(count)));
             for child in children.iter().rev() {
               tasks.push(CloneTask::Visit(child));
             }
           }
-          Expr::FunctionCall { name, args } => {
+          Self::FunctionCall { name, args } => {
             let count = args.len();
             tasks.push(CloneTask::Build(CloneFrame::FunctionCall(
               name.clone(),
@@ -605,7 +601,7 @@ impl Clone for Expr {
               tasks.push(CloneTask::Visit(child));
             }
           }
-          Expr::Comparison {
+          Self::Comparison {
             operands,
             operators,
           } => {
@@ -620,12 +616,12 @@ impl Clone for Expr {
           }
 
           // Two Box<Expr> children
-          Expr::BinaryOp { op, left, right } => {
+          Self::BinaryOp { op, left, right } => {
             tasks.push(CloneTask::Build(CloneFrame::BinaryOp(*op)));
             tasks.push(CloneTask::Visit(right));
             tasks.push(CloneTask::Visit(left));
           }
-          Expr::Rule {
+          Self::Rule {
             pattern,
             replacement,
           } => {
@@ -633,7 +629,7 @@ impl Clone for Expr {
             tasks.push(CloneTask::Visit(replacement));
             tasks.push(CloneTask::Visit(pattern));
           }
-          Expr::RuleDelayed {
+          Self::RuleDelayed {
             pattern,
             replacement,
           } => {
@@ -641,63 +637,63 @@ impl Clone for Expr {
             tasks.push(CloneTask::Visit(replacement));
             tasks.push(CloneTask::Visit(pattern));
           }
-          Expr::ReplaceAll { expr, rules } => {
+          Self::ReplaceAll { expr, rules } => {
             tasks.push(CloneTask::Build(CloneFrame::ReplaceAll));
             tasks.push(CloneTask::Visit(rules));
             tasks.push(CloneTask::Visit(expr));
           }
-          Expr::ReplaceRepeated { expr, rules } => {
+          Self::ReplaceRepeated { expr, rules } => {
             tasks.push(CloneTask::Build(CloneFrame::ReplaceRepeated));
             tasks.push(CloneTask::Visit(rules));
             tasks.push(CloneTask::Visit(expr));
           }
-          Expr::Map { func, list } => {
+          Self::Map { func, list } => {
             tasks.push(CloneTask::Build(CloneFrame::Map));
             tasks.push(CloneTask::Visit(list));
             tasks.push(CloneTask::Visit(func));
           }
-          Expr::Apply { func, list } => {
+          Self::Apply { func, list } => {
             tasks.push(CloneTask::Build(CloneFrame::Apply));
             tasks.push(CloneTask::Visit(list));
             tasks.push(CloneTask::Visit(func));
           }
-          Expr::MapApply { func, list } => {
+          Self::MapApply { func, list } => {
             tasks.push(CloneTask::Build(CloneFrame::MapApply));
             tasks.push(CloneTask::Visit(list));
             tasks.push(CloneTask::Visit(func));
           }
-          Expr::PrefixApply { func, arg } => {
+          Self::PrefixApply { func, arg } => {
             tasks.push(CloneTask::Build(CloneFrame::PrefixApply));
             tasks.push(CloneTask::Visit(arg));
             tasks.push(CloneTask::Visit(func));
           }
-          Expr::Postfix { expr, func } => {
+          Self::Postfix { expr, func } => {
             tasks.push(CloneTask::Build(CloneFrame::Postfix));
             tasks.push(CloneTask::Visit(func));
             tasks.push(CloneTask::Visit(expr));
           }
-          Expr::Part { expr, index } => {
+          Self::Part { expr, index } => {
             tasks.push(CloneTask::Build(CloneFrame::Part));
             tasks.push(CloneTask::Visit(index));
             tasks.push(CloneTask::Visit(expr));
           }
 
           // Single Box<Expr>
-          Expr::UnaryOp { op, operand } => {
+          Self::UnaryOp { op, operand } => {
             tasks.push(CloneTask::Build(CloneFrame::UnaryOp(*op)));
             tasks.push(CloneTask::Visit(operand));
           }
-          Expr::Function { body } => {
+          Self::Function { body } => {
             tasks.push(CloneTask::Build(CloneFrame::Function));
             tasks.push(CloneTask::Visit(body));
           }
-          Expr::NamedFunction { params, body } => {
+          Self::NamedFunction { params, body } => {
             tasks.push(CloneTask::Build(CloneFrame::NamedFunction(
               params.clone(),
             )));
             tasks.push(CloneTask::Visit(body));
           }
-          Expr::PatternOptional {
+          Self::PatternOptional {
             name,
             head,
             default,
@@ -708,13 +704,13 @@ impl Clone for Expr {
             )));
             tasks.push(CloneTask::Visit(default));
           }
-          Expr::PatternTest { name, test } => {
+          Self::PatternTest { name, test } => {
             tasks.push(CloneTask::Build(CloneFrame::PatternTest(name.clone())));
             tasks.push(CloneTask::Visit(test));
           }
 
           // Box<Expr> + Vec<Expr>
-          Expr::CurriedCall { func, args } => {
+          Self::CurriedCall { func, args } => {
             let count = args.len();
             // Build needs: func first, then count args
             tasks.push(CloneTask::Build(CloneFrame::CurriedCall(count)));
@@ -725,7 +721,7 @@ impl Clone for Expr {
           }
 
           // Vec<(Expr, Expr)>
-          Expr::Association(pairs) => {
+          Self::Association(pairs) => {
             let count = pairs.len();
             tasks.push(CloneTask::Build(CloneFrame::Association(count)));
             // Push pairs in reverse; each pair = (key, value)
@@ -739,24 +735,24 @@ impl Clone for Expr {
         CloneTask::Build(frame) => {
           let expr = match frame {
             CloneFrame::List(count) => {
-              let children: Vec<Expr> =
+              let children: Vec<Self> =
                 results.drain(results.len() - count..).collect();
-              Expr::List(children)
+              Self::List(children)
             }
             CloneFrame::CompoundExpr(count) => {
-              let children: Vec<Expr> =
+              let children: Vec<Self> =
                 results.drain(results.len() - count..).collect();
-              Expr::CompoundExpr(children)
+              Self::CompoundExpr(children)
             }
             CloneFrame::FunctionCall(name, count) => {
-              let args: Vec<Expr> =
+              let args: Vec<Self> =
                 results.drain(results.len() - count..).collect();
-              Expr::FunctionCall { name, args }
+              Self::FunctionCall { name, args }
             }
             CloneFrame::Comparison(operators, count) => {
-              let operands: Vec<Expr> =
+              let operands: Vec<Self> =
                 results.drain(results.len() - count..).collect();
-              Expr::Comparison {
+              Self::Comparison {
                 operands,
                 operators,
               }
@@ -764,16 +760,16 @@ impl Clone for Expr {
             CloneFrame::BinaryOp(op) => {
               let right = Box::new(results.pop().unwrap());
               let left = Box::new(results.pop().unwrap());
-              Expr::BinaryOp { op, left, right }
+              Self::BinaryOp { op, left, right }
             }
             CloneFrame::UnaryOp(op) => {
               let operand = Box::new(results.pop().unwrap());
-              Expr::UnaryOp { op, operand }
+              Self::UnaryOp { op, operand }
             }
             CloneFrame::Rule => {
               let replacement = Box::new(results.pop().unwrap());
               let pattern = Box::new(results.pop().unwrap());
-              Expr::Rule {
+              Self::Rule {
                 pattern,
                 replacement,
               }
@@ -781,7 +777,7 @@ impl Clone for Expr {
             CloneFrame::RuleDelayed => {
               let replacement = Box::new(results.pop().unwrap());
               let pattern = Box::new(results.pop().unwrap());
-              Expr::RuleDelayed {
+              Self::RuleDelayed {
                 pattern,
                 replacement,
               }
@@ -789,54 +785,54 @@ impl Clone for Expr {
             CloneFrame::ReplaceAll => {
               let rules = Box::new(results.pop().unwrap());
               let expr = Box::new(results.pop().unwrap());
-              Expr::ReplaceAll { expr, rules }
+              Self::ReplaceAll { expr, rules }
             }
             CloneFrame::ReplaceRepeated => {
               let rules = Box::new(results.pop().unwrap());
               let expr = Box::new(results.pop().unwrap());
-              Expr::ReplaceRepeated { expr, rules }
+              Self::ReplaceRepeated { expr, rules }
             }
             CloneFrame::Map => {
               let list = Box::new(results.pop().unwrap());
               let func = Box::new(results.pop().unwrap());
-              Expr::Map { func, list }
+              Self::Map { func, list }
             }
             CloneFrame::Apply => {
               let list = Box::new(results.pop().unwrap());
               let func = Box::new(results.pop().unwrap());
-              Expr::Apply { func, list }
+              Self::Apply { func, list }
             }
             CloneFrame::MapApply => {
               let list = Box::new(results.pop().unwrap());
               let func = Box::new(results.pop().unwrap());
-              Expr::MapApply { func, list }
+              Self::MapApply { func, list }
             }
             CloneFrame::PrefixApply => {
               let arg = Box::new(results.pop().unwrap());
               let func = Box::new(results.pop().unwrap());
-              Expr::PrefixApply { func, arg }
+              Self::PrefixApply { func, arg }
             }
             CloneFrame::Postfix => {
               let func = Box::new(results.pop().unwrap());
               let expr = Box::new(results.pop().unwrap());
-              Expr::Postfix { expr, func }
+              Self::Postfix { expr, func }
             }
             CloneFrame::Part => {
               let index = Box::new(results.pop().unwrap());
               let expr = Box::new(results.pop().unwrap());
-              Expr::Part { expr, index }
+              Self::Part { expr, index }
             }
             CloneFrame::Function => {
               let body = Box::new(results.pop().unwrap());
-              Expr::Function { body }
+              Self::Function { body }
             }
             CloneFrame::NamedFunction(params) => {
               let body = Box::new(results.pop().unwrap());
-              Expr::NamedFunction { params, body }
+              Self::NamedFunction { params, body }
             }
             CloneFrame::PatternOptional(name, head) => {
               let default = Box::new(results.pop().unwrap());
-              Expr::PatternOptional {
+              Self::PatternOptional {
                 name,
                 head,
                 default,
@@ -844,25 +840,25 @@ impl Clone for Expr {
             }
             CloneFrame::PatternTest(name) => {
               let test = Box::new(results.pop().unwrap());
-              Expr::PatternTest { name, test }
+              Self::PatternTest { name, test }
             }
             CloneFrame::CurriedCall(count) => {
-              let args: Vec<Expr> =
+              let args: Vec<Self> =
                 results.drain(results.len() - count..).collect();
               let func = Box::new(results.pop().unwrap());
-              Expr::CurriedCall { func, args }
+              Self::CurriedCall { func, args }
             }
             CloneFrame::Association(count) => {
               let mut pairs = Vec::with_capacity(count);
               let start = results.len() - count * 2;
-              let flat: Vec<Expr> = results.drain(start..).collect();
+              let flat: Vec<Self> = results.drain(start..).collect();
               let mut iter = flat.into_iter();
               for _ in 0..count {
                 let k = iter.next().unwrap();
                 let v = iter.next().unwrap();
                 pairs.push((k, v));
               }
-              Expr::Association(pairs)
+              Self::Association(pairs)
             }
           };
           results.push(expr);
@@ -5725,7 +5721,7 @@ struct TextBox {
 impl TextBox {
   /// Create a single-line box.
   fn atom(s: &str) -> Self {
-    TextBox {
+    Self {
       lines: vec![s.to_string()],
       baseline: 0,
     }
@@ -5752,9 +5748,9 @@ impl TextBox {
   }
 
   /// Horizontal concatenation of multiple boxes, aligned on baselines.
-  fn hconcat(parts: &[TextBox]) -> TextBox {
+  fn hconcat(parts: &[Self]) -> Self {
     if parts.is_empty() {
-      return TextBox::atom("");
+      return Self::atom("");
     }
     if parts.len() == 1 {
       return parts[0].clone();
@@ -5787,14 +5783,14 @@ impl TextBox {
     }
 
     let baseline = max_above;
-    TextBox {
+    Self {
       lines: result_lines,
       baseline,
     }
   }
 
   /// Place exponent as superscript to the right and above the base.
-  fn superscript(base: &TextBox, exp: &TextBox) -> TextBox {
+  fn superscript(base: &Self, exp: &Self) -> Self {
     let mut base = base.clone();
     let mut exp = exp.clone();
     base.normalize();
@@ -5819,14 +5815,14 @@ impl TextBox {
       lines.push(format!("{}{}", &base.lines[i], " ".repeat(ew)));
     }
 
-    TextBox {
+    Self {
       baseline: exp.height() + base.baseline,
       lines,
     }
   }
 
   /// Render a fraction:  numerator / bar / denominator
-  fn fraction(num: &TextBox, denom: &TextBox) -> TextBox {
+  fn fraction(num: &Self, denom: &Self) -> Self {
     let mut num = num.clone();
     let mut denom = denom.clone();
     num.normalize();
@@ -5853,7 +5849,7 @@ impl TextBox {
 
     // Baseline is the bar line
     let baseline = num.height();
-    TextBox { lines, baseline }
+    Self { lines, baseline }
   }
 
   /// Convert to final string (trim trailing whitespace per line).
