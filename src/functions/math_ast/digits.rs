@@ -138,17 +138,17 @@ pub struct BigUint {
 
 impl BigUint {
   fn zero() -> Self {
-    BigUint { digits: vec![0] }
+    Self { digits: vec![0] }
   }
 
   fn from_u64(n: u64) -> Self {
-    BigUint { digits: vec![n] }
+    Self { digits: vec![n] }
   }
 
   fn from_u128(n: u128) -> Self {
     let lo = n as u64;
     let hi = (n >> 64) as u64;
-    let mut b = BigUint {
+    let mut b = Self {
       digits: vec![lo, hi],
     };
     b.trim();
@@ -165,7 +165,7 @@ impl BigUint {
     }
   }
 
-  fn cmp(&self, other: &BigUint) -> std::cmp::Ordering {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     let a_len = self.digits.len();
     let b_len = other.digits.len();
@@ -182,7 +182,7 @@ impl BigUint {
   }
 
   /// self + other
-  fn add(&self, other: &BigUint) -> BigUint {
+  fn add(&self, other: &Self) -> Self {
     let max_len = self.digits.len().max(other.digits.len());
     let mut result = Vec::with_capacity(max_len + 1);
     let mut carry: u64 = 0;
@@ -205,13 +205,13 @@ impl BigUint {
     if carry > 0 {
       result.push(carry);
     }
-    let mut r = BigUint { digits: result };
+    let mut r = Self { digits: result };
     r.trim();
     r
   }
 
   /// self - other (assumes self >= other)
-  fn sub(&self, other: &BigUint) -> BigUint {
+  fn sub(&self, other: &Self) -> Self {
     let mut result = Vec::with_capacity(self.digits.len());
     let mut borrow: u64 = 0;
     for i in 0..self.digits.len() {
@@ -226,13 +226,13 @@ impl BigUint {
       result.push(s2);
       borrow = (c1 as u64) + (c2 as u64);
     }
-    let mut r = BigUint { digits: result };
+    let mut r = Self { digits: result };
     r.trim();
     r
   }
 
   /// self * other
-  fn mul(&self, other: &BigUint) -> BigUint {
+  fn mul(&self, other: &Self) -> Self {
     let n = self.digits.len() + other.digits.len();
     let mut result = vec![0u64; n];
     for i in 0..self.digits.len() {
@@ -248,13 +248,13 @@ impl BigUint {
         result[i + other.digits.len()] += carry as u64;
       }
     }
-    let mut r = BigUint { digits: result };
+    let mut r = Self { digits: result };
     r.trim();
     r
   }
 
   /// self * scalar
-  fn mul_u64(&self, scalar: u64) -> BigUint {
+  fn mul_u64(&self, scalar: u64) -> Self {
     let mut result = Vec::with_capacity(self.digits.len() + 1);
     let mut carry: u128 = 0;
     for &d in &self.digits {
@@ -265,33 +265,33 @@ impl BigUint {
     if carry > 0 {
       result.push(carry as u64);
     }
-    let mut r = BigUint { digits: result };
+    let mut r = Self { digits: result };
     r.trim();
     r
   }
 
   /// Division: returns (quotient, remainder)
-  fn divmod(&self, other: &BigUint) -> (BigUint, BigUint) {
+  fn divmod(&self, other: &Self) -> (Self, Self) {
     use std::cmp::Ordering;
     if other.is_zero() {
       panic!("BigUint division by zero");
     }
     match self.cmp(other) {
-      Ordering::Less => return (BigUint::zero(), self.clone()),
-      Ordering::Equal => return (BigUint::from_u64(1), BigUint::zero()),
+      Ordering::Less => return (Self::zero(), self.clone()),
+      Ordering::Equal => return (Self::from_u64(1), Self::zero()),
       _ => {}
     }
     if other.digits.len() == 1 {
       let d = other.digits[0];
       let (q, r) = self.divmod_u64(d);
-      return (q, BigUint::from_u64(r));
+      return (q, Self::from_u64(r));
     }
     // Long division
     self.long_divmod(other)
   }
 
   /// Divide by a single u64, returns (quotient, remainder)
-  fn divmod_u64(&self, d: u64) -> (BigUint, u64) {
+  fn divmod_u64(&self, d: u64) -> (Self, u64) {
     let mut result = vec![0u64; self.digits.len()];
     let mut rem: u128 = 0;
     for i in (0..self.digits.len()).rev() {
@@ -299,15 +299,15 @@ impl BigUint {
       result[i] = (rem / d as u128) as u64;
       rem %= d as u128;
     }
-    let mut q = BigUint { digits: result };
+    let mut q = Self { digits: result };
     q.trim();
     (q, rem as u64)
   }
 
   /// Long division for multi-digit divisors
-  fn long_divmod(&self, other: &BigUint) -> (BigUint, BigUint) {
+  fn long_divmod(&self, other: &Self) -> (Self, Self) {
     // Shift-and-subtract algorithm operating on bits
-    let mut remainder = BigUint::zero();
+    let mut remainder = Self::zero();
     let self_bits = self.bit_len();
     let mut quotient_digits = vec![0u64; self_bits.div_ceil(64)];
     for i in (0..self_bits).rev() {
@@ -321,7 +321,7 @@ impl BigUint {
         quotient_digits[i / 64] |= 1u64 << (i % 64);
       }
     }
-    let mut q = BigUint {
+    let mut q = Self {
       digits: quotient_digits,
     };
     q.trim();
@@ -346,7 +346,7 @@ impl BigUint {
     }
   }
 
-  fn shl1(&self) -> BigUint {
+  fn shl1(&self) -> Self {
     let mut result = Vec::with_capacity(self.digits.len() + 1);
     let mut carry = 0u64;
     for &d in &self.digits {
@@ -356,7 +356,7 @@ impl BigUint {
     if carry > 0 {
       result.push(carry);
     }
-    let mut r = BigUint { digits: result };
+    let mut r = Self { digits: result };
     r.trim();
     r
   }
@@ -377,7 +377,7 @@ impl BigUint {
     }
   }
 
-  fn gcd(a: &BigUint, b: &BigUint) -> BigUint {
+  fn gcd(a: &Self, b: &Self) -> Self {
     let mut a = a.clone();
     let mut b = b.clone();
     while !b.is_zero() {
@@ -399,7 +399,7 @@ pub struct BigRational {
 
 impl BigRational {
   fn zero() -> Self {
-    BigRational {
+    Self {
       num: BigUint::zero(),
       den: BigUint::from_u64(1),
       negative: false,
@@ -407,7 +407,7 @@ impl BigRational {
   }
 
   fn from_i64(n: i64) -> Self {
-    BigRational {
+    Self {
       num: BigUint::from_u64(n.unsigned_abs()),
       den: BigUint::from_u64(1),
       negative: n < 0,
@@ -430,7 +430,7 @@ impl BigRational {
   }
 
   /// self + other
-  fn add(&self, other: &BigRational) -> BigRational {
+  fn add(&self, other: &Self) -> Self {
     // a/b + c/d = (a*d + c*b) / (b*d) respecting signs
     let ad = self.num.mul(&other.den);
     let cb = other.num.mul(&self.den);
@@ -445,7 +445,7 @@ impl BigRational {
         std::cmp::Ordering::Less => (cb.sub(&ad), other.negative),
       }
     };
-    let mut r = BigRational {
+    let mut r = Self {
       num,
       den: bd,
       negative,
@@ -455,8 +455,8 @@ impl BigRational {
   }
 
   /// self - other
-  fn sub(&self, other: &BigRational) -> BigRational {
-    let neg_other = BigRational {
+  fn sub(&self, other: &Self) -> Self {
+    let neg_other = Self {
       num: other.num.clone(),
       den: other.den.clone(),
       negative: !other.negative,
@@ -465,8 +465,8 @@ impl BigRational {
   }
 
   /// self * scalar (positive integer)
-  fn mul_u64(&self, s: u64) -> BigRational {
-    let mut r = BigRational {
+  fn mul_u64(&self, s: u64) -> Self {
+    let mut r = Self {
       num: self.num.mul_u64(s),
       den: self.den.clone(),
       negative: self.negative,
@@ -477,7 +477,7 @@ impl BigRational {
 
   /// Floor division: returns (floor, remainder) such that self = floor + remainder/1
   /// where 0 <= remainder < 1 (for positive self)
-  fn floor_and_remainder(&self) -> (i128, BigRational) {
+  fn floor_and_remainder(&self) -> (i128, Self) {
     let (q, r) = self.num.divmod(&self.den);
     let q_i128 = q.to_i128().unwrap_or(0);
     let floor_val = if self.negative && !r.is_zero() {
@@ -488,14 +488,14 @@ impl BigRational {
       q_i128
     };
     // remainder = self - floor_val
-    let floor_rat = BigRational::from_i64(floor_val as i64);
+    let floor_rat = Self::from_i64(floor_val as i64);
     let rem = self.sub(&floor_rat);
     (floor_val, rem)
   }
 
   /// 1 / self
-  fn reciprocal(&self) -> BigRational {
-    BigRational {
+  fn reciprocal(&self) -> Self {
+    Self {
       num: self.den.clone(),
       den: self.num.clone(),
       negative: self.negative,

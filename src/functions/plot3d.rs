@@ -28,7 +28,7 @@ struct Camera {
 impl Default for Camera {
   fn default() -> Self {
     // Matches Mathematica's default ViewPoint {1.3, -2.4, 2.0}
-    Camera {
+    Self {
       azimuth: -1.07,  // ~-61 degrees
       elevation: 0.63, // ~36 degrees
     }

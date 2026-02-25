@@ -253,25 +253,25 @@ pub enum Coeff {
 impl Coeff {
   fn is_zero(&self) -> bool {
     match self {
-      Coeff::Exact(n, _) => *n == 0,
-      Coeff::Real(f) => *f == 0.0,
+      Self::Exact(n, _) => *n == 0,
+      Self::Real(f) => *f == 0.0,
     }
   }
   fn is_one(&self) -> bool {
     match self {
-      Coeff::Exact(n, d) => *n == 1 && *d == 1,
-      Coeff::Real(f) => *f == 1.0,
+      Self::Exact(n, d) => *n == 1 && *d == 1,
+      Self::Real(f) => *f == 1.0,
     }
   }
   fn to_f64(&self) -> f64 {
     match self {
-      Coeff::Exact(n, d) => *n as f64 / *d as f64,
-      Coeff::Real(f) => *f,
+      Self::Exact(n, d) => *n as f64 / *d as f64,
+      Self::Real(f) => *f,
     }
   }
-  fn add(&self, other: &Coeff) -> Coeff {
+  fn add(&self, other: &Self) -> Self {
     match (self, other) {
-      (Coeff::Exact(n1, d1), Coeff::Exact(n2, d2)) => {
+      (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
         let mut sn = n1 * d2 + n2 * d1;
         let mut sd = d1 * d2;
         let g = gcd(sn, sd);
@@ -281,14 +281,14 @@ impl Coeff {
           sn = -sn;
           sd = -sd;
         }
-        Coeff::Exact(sn, sd)
+        Self::Exact(sn, sd)
       }
-      _ => Coeff::Real(self.to_f64() + other.to_f64()),
+      _ => Self::Real(self.to_f64() + other.to_f64()),
     }
   }
-  fn mul(&self, other: &Coeff) -> Coeff {
+  fn mul(&self, other: &Self) -> Self {
     match (self, other) {
-      (Coeff::Exact(n1, d1), Coeff::Exact(n2, d2)) => {
+      (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
         let mut sn = n1 * n2;
         let mut sd = d1 * d2;
         let g = gcd(sn, sd);
@@ -298,21 +298,21 @@ impl Coeff {
           sn = -sn;
           sd = -sd;
         }
-        Coeff::Exact(sn, sd)
+        Self::Exact(sn, sd)
       }
-      _ => Coeff::Real(self.to_f64() * other.to_f64()),
+      _ => Self::Real(self.to_f64() * other.to_f64()),
     }
   }
-  fn negate(&self) -> Coeff {
+  fn negate(&self) -> Self {
     match self {
-      Coeff::Exact(n, d) => Coeff::Exact(-n, *d),
-      Coeff::Real(f) => Coeff::Real(-f),
+      Self::Exact(n, d) => Self::Exact(-n, *d),
+      Self::Real(f) => Self::Real(-f),
     }
   }
   fn to_expr(&self) -> Expr {
     match self {
-      Coeff::Exact(n, d) => make_rational(*n, *d),
-      Coeff::Real(f) => Expr::Real(*f),
+      Self::Exact(n, d) => make_rational(*n, *d),
+      Self::Real(f) => Expr::Real(*f),
     }
   }
 }
