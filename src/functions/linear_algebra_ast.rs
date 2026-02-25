@@ -322,7 +322,8 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Det: argument must be a square matrix".into(),
     ));
   }
-  Ok(determinant(&matrix))
+  let det = determinant(&matrix);
+  Ok(crate::functions::expand_and_combine(&det))
 }
 
 /// Compute determinant recursively via cofactor expansion

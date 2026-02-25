@@ -101,6 +101,42 @@ mod det {
   fn det_identity() {
     assert_eq!(interpret("Det[{{1, 0}, {0, 1}}]").unwrap(), "1");
   }
+
+  #[test]
+  fn det_symbolic_2x2() {
+    assert_eq!(interpret("Det[{{a, b}, {c, d}}]").unwrap(), "-(b*c) + a*d");
+  }
+
+  #[test]
+  fn det_symbolic_3x3() {
+    assert_eq!(
+      interpret("Det[{{a, b, c}, {d, e, f}, {g, h, i}}]").unwrap(),
+      "-(c*e*g) + b*f*g + c*d*h - a*f*h - b*d*i + a*e*i"
+    );
+  }
+
+  #[test]
+  fn det_singular_3x3() {
+    assert_eq!(
+      interpret("Det[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn det_1x1() {
+    assert_eq!(interpret("Det[{{7}}]").unwrap(), "7");
+  }
+
+  #[test]
+  fn det_rational() {
+    assert_eq!(interpret("Det[{{1/2, 1/3}, {1/4, 1/5}}]").unwrap(), "1/60");
+  }
+
+  #[test]
+  fn det_unevaluated() {
+    assert_eq!(interpret("Det[x]").unwrap(), "Det[x]");
+  }
 }
 
 mod inverse {
