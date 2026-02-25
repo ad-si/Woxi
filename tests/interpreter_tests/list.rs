@@ -2411,7 +2411,15 @@ mod part_span {
   fn part_span_invalid_range_stays_unevaluated() {
     assert_eq!(
       interpret("Part[{a, b, c, d, e}, 5;;2]").unwrap(),
-      "{a, b, c, d, e}[[Span[5, 2]]]"
+      "{a, b, c, d, e}[[5 ;; 2]]"
+    );
+  }
+
+  #[test]
+  fn part_span_invalid_range_with_step_stays_unevaluated() {
+    assert_eq!(
+      interpret("Part[{a, b, c, d, e}, 5;;2;;1]").unwrap(),
+      "{a, b, c, d, e}[[5 ;; 2 ;; 1]]"
     );
   }
 }
