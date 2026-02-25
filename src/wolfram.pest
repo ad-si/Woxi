@@ -1,13 +1,21 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
+// Span expression: a;;b or a;;b;;c (with optional operands: ;;b, a;;, ;;;;c)
+// Produces Span[a, b] or Span[a, b, c] with defaults (1 for start, All for end)
+// SpanSep is a visible token so the parser can count separators and determine positions.
+SpanSep = { ";;" ~ !(";" | "=") }
+SpanExpr = { Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)? }
+// PartIndex: an index inside [[ ]] — can be a SpanExpr or a plain Expression
+PartIndex = _{ SpanExpr | Expression }
+
 // Part extraction suffix: [[expr, ...]] for indexing
-PartIndexSuffix = { ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
+PartIndexSuffix = { ("[[" ~ PartIndex ~ ("," ~ PartIndex)* ~ "]]")+ }
 
 // PartExtract for non-FunctionCall bases only (Slot, Identifier)
 // FunctionCall-based Part extraction is handled by FunctionCallExtended
 // List-based Part extraction is handled by ListExtended
-PartExtract = { (Slot | Identifier) ~ ("[[" ~ Expression ~ ("," ~ Expression)* ~ "]]")+ }
+PartExtract = { (Slot | Identifier) ~ ("[[" ~ PartIndex ~ ("," ~ PartIndex)* ~ "]]")+ }
 
 Integer = @{ ("-")? ~ ASCII_DIGIT+ }
 Real = @{
@@ -170,7 +178,7 @@ PostfixApplication = { PostfixBase ~ ("//" ~ PostfixFunction)+ }
 // The result is the value of the last expression (like Wolfram's CompoundExpression)
 // A trailing ; means the result is Null (e.g. "a;" is CompoundExpression[a, Null])
 // Uses single alternative to avoid parsing Expression twice for non-compound inputs.
-CompoundExpression = { Expression ~ (";" ~ Expression?)+ }
+CompoundExpression = { Expression ~ (";" ~ !";" ~ Expression?)+ }
 
 // DerivativePrime: one or more ' characters after a function name (e.g. f', f'', f''')
 // Transforms f'[x] → Derivative[1][f][x], f''[x] → Derivative[2][f][x], etc.
@@ -336,7 +344,7 @@ HasRuleOperator = _{ (
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
   | !("->" | ":>" | "}" | "," | "]" | ")" | "\"") ~ ANY
 )* ~ ("->" | ":>") }
-ListItem = _{ &HasRuleOperator ~ ListItemRule | Expression }
+ListItem = _{ &HasRuleOperator ~ ListItemRule | SpanExpr | Expression }
 
 AssociationItem = { ConditionExpr ~ "->" ~ ConditionExpr }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
@@ -347,7 +355,7 @@ Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>
 // Merged RuleAnonymousFunction with ReplacementRule to reduce backtracking.
 // Uses HasRuleOperator lookahead to skip rule parsing when no rule operator exists.
 FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? }
-FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | CompoundExpression | Expression }
+FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | CompoundExpression | SpanExpr | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ }
@@ -367,9 +375,9 @@ TagSet = { Identifier ~ "/:" ~ BaseFunctionCall ~ "=" ~ !("." | "=" | "!") ~ Exp
 Statement = _{ TagSetDelayed | TagSet | FunctionDefinition | Expression }
 
 // StatementSeparator can be a semicolon (traditional) or empty (relying on whitespace/newlines)
-StatementSeparator = _{ ";"? }
+StatementSeparator = _{ (";" ~ !";")?  }
 
 // TrailingSemicolon marks that the last statement ends with ; (suppresses output)
-TrailingSemicolon = { ";" }
+TrailingSemicolon = { ";" ~ !";" }
 
 Program = { SOI ~ (Statement ~ (StatementSeparator ~ Statement)* ~ TrailingSemicolon?)? ~ EOI }
