@@ -1529,10 +1529,7 @@ mod tex_form_standalone {
 
   #[test]
   fn sqrt() {
-    assert_eq!(
-      interpret("TeXForm[Sqrt[x]]").unwrap(),
-      "TeXForm[Sqrt[x]]"
-    );
+    assert_eq!(interpret("TeXForm[Sqrt[x]]").unwrap(), "TeXForm[Sqrt[x]]");
   }
 }
 
