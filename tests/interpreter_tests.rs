@@ -157,4 +157,5 @@ mod interpreter_tests {
   mod statistics;
   mod string;
   mod syntax;
+  mod tabular;
 }
