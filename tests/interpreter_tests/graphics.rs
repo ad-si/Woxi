@@ -2367,3 +2367,184 @@ mod plot3d_boxed {
     assert_eq!(svg_true, svg_default);
   }
 }
+
+mod named_colors {
+  use woxi::interpret;
+
+  // ── Basic colors ──
+
+  #[test]
+  fn red() {
+    assert_eq!(interpret("Red").unwrap(), "RGBColor[1, 0, 0]");
+  }
+
+  #[test]
+  fn green() {
+    assert_eq!(interpret("Green").unwrap(), "RGBColor[0, 1, 0]");
+  }
+
+  #[test]
+  fn blue() {
+    assert_eq!(interpret("Blue").unwrap(), "RGBColor[0, 0, 1]");
+  }
+
+  #[test]
+  fn black() {
+    assert_eq!(interpret("Black").unwrap(), "GrayLevel[0]");
+  }
+
+  #[test]
+  fn white() {
+    assert_eq!(interpret("White").unwrap(), "GrayLevel[1]");
+  }
+
+  #[test]
+  fn gray() {
+    assert_eq!(interpret("Gray").unwrap(), "GrayLevel[0.5]");
+  }
+
+  #[test]
+  fn cyan() {
+    assert_eq!(interpret("Cyan").unwrap(), "RGBColor[0, 1, 1]");
+  }
+
+  #[test]
+  fn magenta() {
+    assert_eq!(interpret("Magenta").unwrap(), "RGBColor[1, 0, 1]");
+  }
+
+  #[test]
+  fn yellow() {
+    assert_eq!(interpret("Yellow").unwrap(), "RGBColor[1, 1, 0]");
+  }
+
+  #[test]
+  fn brown() {
+    assert_eq!(interpret("Brown").unwrap(), "RGBColor[0.6, 0.4, 0.2]");
+  }
+
+  #[test]
+  fn orange() {
+    assert_eq!(interpret("Orange").unwrap(), "RGBColor[1, 0.5, 0]");
+  }
+
+  #[test]
+  fn pink() {
+    assert_eq!(interpret("Pink").unwrap(), "RGBColor[1, 0.5, 0.5]");
+  }
+
+  #[test]
+  fn purple() {
+    assert_eq!(interpret("Purple").unwrap(), "RGBColor[0.5, 0, 0.5]");
+  }
+
+  // ── Light colors ──
+
+  #[test]
+  fn light_red() {
+    assert_eq!(interpret("LightRed").unwrap(), "RGBColor[1, 0.85, 0.85]");
+  }
+
+  #[test]
+  fn light_blue() {
+    assert_eq!(interpret("LightBlue").unwrap(), "RGBColor[0.87, 0.94, 1]");
+  }
+
+  #[test]
+  fn light_green() {
+    assert_eq!(interpret("LightGreen").unwrap(), "RGBColor[0.88, 1, 0.88]");
+  }
+
+  #[test]
+  fn light_gray() {
+    assert_eq!(interpret("LightGray").unwrap(), "GrayLevel[0.85]");
+  }
+
+  #[test]
+  fn light_orange() {
+    assert_eq!(
+      interpret("LightOrange").unwrap(),
+      "RGBColor[1, 0.9, 0.8]"
+    );
+  }
+
+  #[test]
+  fn light_yellow() {
+    assert_eq!(
+      interpret("LightYellow").unwrap(),
+      "RGBColor[1, 1, 0.85]"
+    );
+  }
+
+  #[test]
+  fn light_purple() {
+    assert_eq!(
+      interpret("LightPurple").unwrap(),
+      "RGBColor[0.94, 0.88, 0.94]"
+    );
+  }
+
+  #[test]
+  fn light_cyan() {
+    assert_eq!(interpret("LightCyan").unwrap(), "RGBColor[0.9, 1, 1]");
+  }
+
+  #[test]
+  fn light_magenta() {
+    assert_eq!(
+      interpret("LightMagenta").unwrap(),
+      "RGBColor[1, 0.9, 1]"
+    );
+  }
+
+  #[test]
+  fn light_brown() {
+    assert_eq!(
+      interpret("LightBrown").unwrap(),
+      "RGBColor[0.94, 0.91, 0.88]"
+    );
+  }
+
+  #[test]
+  fn light_pink() {
+    assert_eq!(
+      interpret("LightPink").unwrap(),
+      "RGBColor[1, 0.85, 0.85]"
+    );
+  }
+
+  // ── Composition with other color functions ──
+
+  #[test]
+  fn darker_named_color() {
+    assert_eq!(
+      interpret("Darker[Red]").unwrap(),
+      "Darker[RGBColor[1, 0, 0]]"
+    );
+  }
+
+  #[test]
+  fn lighter_named_color() {
+    assert_eq!(
+      interpret("Lighter[Blue]").unwrap(),
+      "Lighter[RGBColor[0, 0, 1]]"
+    );
+  }
+
+  #[test]
+  fn named_color_in_list() {
+    assert_eq!(
+      interpret("{Red, Blue, Green}").unwrap(),
+      "{RGBColor[1, 0, 0], RGBColor[0, 0, 1], RGBColor[0, 1, 0]}"
+    );
+  }
+
+  #[test]
+  fn named_color_user_override() {
+    // User can assign to a named color variable
+    woxi::clear_state();
+    interpret("Red = 42").unwrap();
+    assert_eq!(interpret("Red").unwrap(), "42");
+    woxi::clear_state();
+  }
+}

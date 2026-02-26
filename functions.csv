@@ -513,7 +513,7 @@ BitShiftRight,,,,6,2003
 BitXor,Returns the bitwise XOR of integers,✅,pure,4,1228
 BiweightLocation,,,,11.1,4081
 BiweightMidvariance,,,,11.1,4437
-Black,,,,5.1,113
+Black,Named color evaluating to GrayLevel[0],✅,pure,5.1,113
 BlackmanHarrisWindow,,,,9,3823
 BlackmanNuttallWindow,,,,9,4173
 BlackmanWindow,,,,9,3636
@@ -542,7 +542,7 @@ BlockRandom,,,,6,1134
 BlockUpperTriangularMatrix,,,,13.1,
 BlomqvistBeta,,,,9,3947
 BlomqvistBetaTest,,,,9,4225
-Blue,,,,5.1,90
+Blue,Named color evaluating to RGBColor[0 0 1],✅,pure,5.1,90
 Blur,Applies Gaussian blur to an image,✅,pure,7,1124
 Blurring,,,,13.2,
 BodePlot,,,,8,1456
@@ -599,7 +599,7 @@ Break,Exits a loop,✅,pure,1,610
 BridgeData,,🚫,,10,4881
 BrightnessEqualize,,,,11.1,4173
 BroadcastStationData,,🚫,,10,4881
-Brown,,,,5.1,497
+Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
 BrownForsytheTest,,,,8,3972
 BrownianBridgeProcess,,,,9,3280
 BSplineBasis,,,,7,1466
@@ -1216,7 +1216,7 @@ CurrentValue,,,,6,442
 CurryApplied,,,,12.1,5184
 CurvatureFlowFilter,,,,8,3121
 CurveClosed,,,,8,2084
-Cyan,,,,5.1,507
+Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 CycleGraph,,,,8,1547
 CycleIndexPolynomial,,,,9,3124
 Cycles,,,,8,941
@@ -2434,7 +2434,7 @@ GraphSum,,,,13.1,
 GraphTree,,,,12.3,
 GraphTriangleCount,,,,14.1,
 GraphUnion,,,,8,2251
-Gray,,,,5.1,281
+Gray,Named color evaluating to GrayLevel[0.5],✅,pure,5.1,281
 GrayLevel,Specifies a gray color level,✅,pure,1,46
 Greater,Checks if one value is greater than another,✅,pure,1,48
 GreaterEqual,Checks if one value is greater than or equal to another,✅,pure,1,110
@@ -2446,7 +2446,7 @@ GreaterLess,,,,3,5390
 GreaterSlantEqual,,,,3,5486
 GreaterThan,,,,10.3,2632
 GreaterTilde,,,,3,5013
-Green,,,,5.1,119
+Green,Named color evaluating to RGBColor[0 1 0],✅,pure,5.1,119
 GreenFunction,,,,10.4,2210
 Grid,Displays data in a grid layout,✅,pure,6,167
 GridBox,,,,3,1245
@@ -3160,20 +3160,20 @@ LicenseEntitlements,,,,12.2,5587
 LicensingSettings,,,,12.2,
 LiftingFilterData,,🚫,,8,5184
 LiftingWaveletTransform,,,,8,2720
-LightBlue,,,,6,581
-LightBrown,,,,6,2205
-LightCyan,,,,6,2871
+LightBlue,Named light color evaluating to RGBColor[0.87 0.94 1],✅,pure,6,581
+LightBrown,Named light color evaluating to RGBColor[0.94 0.91 0.88],✅,pure,6,2205
+LightCyan,Named light color evaluating to RGBColor[0.9 1 1],✅,pure,6,2871
 Lighter,Makes a color lighter,✅,pure,6,402
-LightGray,,,,6,633
-LightGreen,,,,6,1140
+LightGray,Named light color evaluating to GrayLevel[0.85],✅,pure,6,633
+LightGreen,Named light color evaluating to RGBColor[0.88 1 0.88],✅,pure,6,1140
 Lighting,Option for 3D lighting,✅,pure,1,511
 LightingAngle,,,,6,3306
-LightMagenta,,,,6,3176
-LightOrange,,,,6,1551
-LightPink,,,,6,1944
-LightPurple,,,,6,1838
-LightRed,,,,6,973
-LightYellow,,,,6,1188
+LightMagenta,Named light color evaluating to RGBColor[1 0.9 1],✅,pure,6,3176
+LightOrange,Named light color evaluating to RGBColor[1 0.9 0.8],✅,pure,6,1551
+LightPink,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6,1944
+LightPurple,Named light color evaluating to RGBColor[0.94 0.88 0.94],✅,pure,6,1838
+LightRed,Named light color evaluating to RGBColor[1 0.85 0.85],✅,pure,6,973
+LightYellow,Named light color evaluating to RGBColor[1 1 0.85],✅,pure,6,1188
 Likelihood,,,,8,2688
 Limit,Computes the limit of an expression,✅,pure,1,160
 LimitsPositioning,,,,3,2276
@@ -3349,7 +3349,7 @@ LyonsGroupLy,,,,8,5184
 M,,,,,
 MachineNumberQ,,,,2,2059
 MachinePrecision,,,,5,886
-Magenta,,,,5.1,432
+Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
 Magnification,,,,3,1145
 Magnify,,,,6,1599
 MailAddressValidation,,,,11.2,5587
@@ -3967,7 +3967,7 @@ Options,Returns or sets the options associated with a symbol,✅,pure,1,232
 OptionsPattern,,,,6,305
 OptionValue,,,,6,268
 Or,Checks if at least one condition is true,✅,pure,1,136
-Orange,,,,5.1,234
+Orange,Named color evaluating to RGBColor[1 0.5 0],✅,pure,5.1,234
 Order,Returns the canonical ordering of two expressions,✅,pure,1,1216
 OrderDistribution,,,,8,2024
 OrderedQ,Tests if a list is in canonical order,✅,pure,1,1162
@@ -4197,7 +4197,7 @@ PieChart3D,,,,7,2048
 PillaiTrace,,,,9,4612
 PillaiTraceTest,,,,9,4173
 PingTime,,,,11,4567
-Pink,,,,5.1,306
+Pink,Named color evaluating to RGBColor[1 0.5 0.5],✅,pure,5.1,306
 PitchRecognize,,,,12,5390
 PixelValue,,,,8,2005
 PixelValuePositions,,,,9,1536
@@ -4402,7 +4402,7 @@ PublicKey,,,,10.1,4947
 PublisherID,,,,11.2,
 PulsarData,,🚫,,10,4881
 PunctuationCharacter,,,,10.3,2389
-Purple,,,,5.1,314
+Purple,Named color evaluating to RGBColor[0.5 0 0.5],✅,pure,5.1,314
 Put,Write expressions to a file,✅,effectful,1,1162
 PutAppend,Append expressions to a file,✅,effectful,1,1338
 Pyramid,,,,10,2545
@@ -4547,7 +4547,7 @@ RectangleChart3D,,,,7,3200
 RectangularRepeatingElement,,,,11.1,5486
 RecurrenceFilter,,,,9,2642
 RecurrenceTable,,,,7,534
-Red,,,,5.1,65
+Red,Named color evaluating to RGBColor[1 0 0],✅,pure,5.1,65
 Reduce,Reduces equations and inequalities to canonical disjunctive form,✅,pure,1,213
 ReferenceAltitude,,,,14.1,
 ReferenceLineStyle,,,,8,4225
@@ -6097,7 +6097,7 @@ WheelGraph,,,,8,2286
 WhenEvent,,,,9,780
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1,226
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1,220
-White,,,,5.1,163
+White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
 WhiteNoiseProcess,,,,10,2487
 WhitePoint,,,,10,5390
 Whitespace,,,,5.1,1088
@@ -6166,7 +6166,7 @@ XMLTemplate,,,,10,2578
 Xnor,,,,7,3031
 Xor,Checks if exactly one condition is true,✅,pure,1,1197
 XYZColor,,,,10,1887
-Yellow,,,,5.1,240
+Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Yesterday,,,,10,2762
 YuleDissimilarity,,,,6,4947
 ZernikeR,,,,6,2333
