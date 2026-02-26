@@ -1040,13 +1040,16 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// extracts the converted form from nested wrappers.
 fn resolve_form_wrappers(expr: &Expr) -> Expr {
   match expr {
-    Expr::FunctionCall { name, args } if args.len() == 1 => match name.as_str() {
+    Expr::FunctionCall { name, args } if args.len() == 1 => match name.as_str()
+    {
       "TeXForm" => Expr::Identifier(expr_to_tex(&args[0])),
       "CForm" => Expr::Identifier(expr_to_c(&args[0])),
       "FortranForm" => Expr::Identifier(expr_to_fortran(&args[0])),
       _ => expr.clone(),
     },
-    Expr::List(items) => Expr::List(items.iter().map(resolve_form_wrappers).collect()),
+    Expr::List(items) => {
+      Expr::List(items.iter().map(resolve_form_wrappers).collect())
+    }
     _ => expr.clone(),
   }
 }
