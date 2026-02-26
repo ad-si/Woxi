@@ -2072,6 +2072,42 @@ fn is_additive_expr(e: &Expr) -> bool {
   ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
 }
 
+/// Check if an expression is a simple numeric atom (integer, real, etc.).
+fn is_numeric_atom(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(..)
+  )
+}
+
+/// Determine the separator between two adjacent factors in Times SVG rendering.
+/// Returns `""` (no separator) or `" "` (space) — never `"*"`.
+fn times_svg_separator(left: &Expr, right: &Expr) -> &'static str {
+  // Right side is additive → will be wrapped in parens → no separator (e.g. 9(x + y))
+  if is_additive_expr(right) {
+    return "";
+  }
+  // Right is Power with additive base → rendered starting with "(" → no separator
+  if let Some((base, _)) = as_power(right)
+    && is_additive_expr(base)
+  {
+    return "";
+  }
+  // Number followed by identifier → no separator (e.g. 10x)
+  if is_numeric_atom(left) && matches!(right, Expr::Identifier(_)) {
+    return "";
+  }
+  // Number followed by Power of identifier → no separator (e.g. 10x²)
+  if is_numeric_atom(left)
+    && let Some((base, _)) = as_power(right)
+    && matches!(base, Expr::Identifier(_))
+  {
+    return "";
+  }
+  // Default: space (implicit multiplication)
+  " "
+}
+
 /// Render a stacked fraction (numerator over denominator) as SVG tspan markup.
 /// Uses `<tspan>` elements with `dy`/`dx` positioning:
 /// numerator shifted up, fraction bar (─ characters), denominator shifted down,
@@ -2225,9 +2261,15 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some((base, exp)) = as_power(expr) {
     let base_markup = expr_to_svg_markup(base);
     let exp_markup = expr_to_svg_markup(exp);
+    // Wrap base in parens if it's a lower-precedence additive expression
+    let base_fmt = if is_additive_expr(base) {
+      format!("({})", base_markup)
+    } else {
+      base_markup
+    };
     return format!(
       "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-      base_markup, exp_markup
+      base_fmt, exp_markup
     );
   }
 
@@ -2262,7 +2304,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       let (op_str, needs_space) = match op {
         BinaryOperator::Plus => ("+", true),
         BinaryOperator::Minus => ("-", true),
-        BinaryOperator::Times => ("*", false),
+        BinaryOperator::Times => (times_svg_separator(left, right), false),
         BinaryOperator::Divide => ("/", false),
         BinaryOperator::Power => unreachable!(),
         BinaryOperator::And => ("&amp;&amp;", true),
@@ -2414,9 +2456,10 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               den_w,
             );
           }
-          // Times[-1, x, ...] → -x*...
+          // Times[-1, x, ...] → -x...
           if matches!(&args[0], Expr::Integer(-1)) {
-            let rest: Vec<String> = args[1..]
+            let rest_args = &args[1..];
+            let rest: Vec<String> = rest_args
               .iter()
               .map(|a| {
                 let s = expr_to_svg_markup(a);
@@ -2427,10 +2470,18 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                 }
               })
               .collect();
-            return format!("-{}", rest.join("*"));
+            let mut joined = rest[0].clone();
+            for i in 1..rest.len() {
+              joined.push_str(times_svg_separator(
+                &rest_args[i - 1],
+                &rest_args[i],
+              ));
+              joined.push_str(&rest[i]);
+            }
+            return format!("-{}", joined);
           }
-          // General: a*b*c
-          args
+          // General: implicit multiplication (no * symbol)
+          let parts: Vec<String> = args
             .iter()
             .map(|a| {
               let s = expr_to_svg_markup(a);
@@ -2440,8 +2491,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                 s
               }
             })
-            .collect::<Vec<_>>()
-            .join("*")
+            .collect();
+          let mut result = parts[0].clone();
+          for i in 1..parts.len() {
+            result.push_str(times_svg_separator(&args[i - 1], &args[i]));
+            result.push_str(&parts[i]);
+          }
+          result
         }
 
         // Rational[n, d] → stacked fraction
@@ -2492,7 +2548,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
   use crate::syntax::{BinaryOperator, expr_to_output};
 
   if let Some((base, exp)) = as_power(expr) {
-    return estimate_display_width(base) + estimate_display_width(exp) * 0.7;
+    let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
+    return estimate_display_width(base)
+      + parens
+      + estimate_display_width(exp) * 0.7;
   }
 
   match expr {
@@ -2522,16 +2581,33 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 
     // BinaryOp
     Expr::BinaryOp { op, left, right } => {
+      let is_mult =
+        matches!(op, BinaryOperator::Times | BinaryOperator::Divide);
       let op_len: f64 = match op {
         BinaryOperator::Plus | BinaryOperator::Minus => 3.0,
-        BinaryOperator::Times | BinaryOperator::Divide => 1.0,
+        BinaryOperator::Times => times_svg_separator(left, right).len() as f64,
+        BinaryOperator::Divide => 1.0,
         BinaryOperator::Power => unreachable!(),
         BinaryOperator::And => 4.0,
         BinaryOperator::Or => 4.0,
         BinaryOperator::StringJoin => 2.0,
         BinaryOperator::Alternatives => 3.0,
       };
-      estimate_display_width(left) + op_len + estimate_display_width(right)
+      let left_parens = if is_mult && is_additive_expr(left) {
+        2.0
+      } else {
+        0.0
+      };
+      let right_parens = if is_mult && is_additive_expr(right) {
+        2.0
+      } else {
+        0.0
+      };
+      estimate_display_width(left)
+        + left_parens
+        + op_len
+        + estimate_display_width(right)
+        + right_parens
     }
 
     // Comparison: operands + operators
@@ -2603,16 +2679,32 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           );
         }
         if matches!(&args[0], Expr::Integer(-1)) {
-          let rest: f64 = args[1..].iter().map(estimate_display_width).sum();
-          let seps = if args.len() > 2 {
-            (args.len() - 2) as f64
-          } else {
-            0.0
-          };
-          1.0 + rest + seps
+          let rest_args = &args[1..];
+          let rest: f64 = rest_args
+            .iter()
+            .map(|a| {
+              let w = estimate_display_width(a);
+              if is_additive_expr(a) { w + 2.0 } else { w }
+            })
+            .sum();
+          let sep_width: f64 = rest_args
+            .windows(2)
+            .map(|w| times_svg_separator(&w[0], &w[1]).len() as f64)
+            .sum();
+          1.0 + rest + sep_width
         } else {
-          let factors: f64 = args.iter().map(estimate_display_width).sum();
-          factors + (args.len() - 1) as f64
+          let factors: f64 = args
+            .iter()
+            .map(|a| {
+              let w = estimate_display_width(a);
+              if is_additive_expr(a) { w + 2.0 } else { w }
+            })
+            .sum();
+          let sep_width: f64 = args
+            .windows(2)
+            .map(|w| times_svg_separator(&w[0], &w[1]).len() as f64)
+            .sum();
+          factors + sep_width
         }
       }
       "Rational" if args.len() == 2 => stacked_fraction_width(
