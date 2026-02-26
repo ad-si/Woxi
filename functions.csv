@@ -5427,6 +5427,7 @@ TableForm,Formats data as a table,✅,pure,1,255
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2,517
 TableSpacing,,,,2,1290
 TableView,,,,12.1,2792
+Tabular,Represents a data frame or table of structured data,✅,pure,14.2,2792
 TabView,,,,6,1308
 TagBox,,,,3,1012
 TagBoxOptions,,,,6,4052
