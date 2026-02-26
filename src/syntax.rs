@@ -2997,6 +2997,26 @@ pub fn quantity_to_visual_string(mag: &Expr, unit: &Expr) -> String {
   format!("{} {}", mag_str, unit_str)
 }
 
+/// Check if an expression is Power[symbol, negative_integer].
+/// Used to decide when to keep x^(-n) notation instead of fraction form.
+fn is_symbol_neg_int_power(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Identifier(_))
+        && matches!(right.as_ref(), Expr::Integer(n) if *n < 0)
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      matches!(&args[0], Expr::Identifier(_))
+        && matches!(&args[1], Expr::Integer(n) if *n < 0)
+    }
+    _ => false,
+  }
+}
+
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
 /// in a Times expression. Handles both FunctionCall and BinaryOp representations.
 fn is_denominator_factor(expr: &Expr) -> bool {
@@ -3429,9 +3449,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
         }
         // Handle Times[-1, x, ...] as "-x*..."
         if matches!(&args[0], Expr::Integer(-1)) {
+          // If the rest is a single Power[symbol, negative_int], use -x^(-n)
+          // notation instead of -(1/x^n), matching wolframscript output
+          let is_single_symbol_neg_power =
+            args.len() == 2 && is_symbol_neg_int_power(&args[1]);
           // Check if the rest of the factors need denominator formatting
-          if let Some(frac) =
-            format_times_with_denominator(&args[1..], expr_to_string)
+          if !is_single_symbol_neg_power
+            && let Some(frac) =
+              format_times_with_denominator(&args[1..], expr_to_string)
           {
             return format!("-({})", frac);
           }
@@ -4548,9 +4573,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
         }
         // Handle Times[-1, x] as "-x" and Times[-1, x, y, ...] as "-x*y*..."
         if args.len() >= 2 && matches!(&args[0], Expr::Integer(-1)) {
+          // If the rest is a single Power[symbol, negative_int], use -x^(-n)
+          // notation instead of -(1/x^n), matching wolframscript output
+          let is_single_symbol_neg_power =
+            args.len() == 2 && is_symbol_neg_int_power(&args[1]);
           // Check if the rest of the factors need denominator formatting
-          if let Some(frac) =
-            format_times_with_denominator(&args[1..], expr_to_output)
+          if !is_single_symbol_neg_power
+            && let Some(frac) =
+              format_times_with_denominator(&args[1..], expr_to_output)
           {
             return format!("-({})", frac);
           }

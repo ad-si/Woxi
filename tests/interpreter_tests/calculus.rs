@@ -114,6 +114,72 @@ mod definite_integrals {
     // ∫_0^3 5 dx = 15
     assert_eq!(interpret("Integrate[5, {x, 0, 3}]").unwrap(), "15");
   }
+
+  #[test]
+  fn definite_integral_reciprocal_square() {
+    // ∫_1^2 1/x^2 dx = 1/2
+    assert_eq!(interpret("Integrate[1/x^2, {x, 1, 2}]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn definite_integral_reciprocal_square_plus_one() {
+    // ∫_1^2 (1/x^2 + 1) dx = 3/2
+    assert_eq!(interpret("Integrate[1/x^2 + 1, {x, 1, 2}]").unwrap(), "3/2");
+  }
+
+  #[test]
+  fn definite_integral_user_defined_function() {
+    // f[x_] := 1/x^2 + 1; ∫_1^2 f[x] dx = 3/2
+    assert_eq!(
+      interpret("f[x_] := 1/x^2 + 1; Integrate[f[x], {x, 1, 2}]").unwrap(),
+      "3/2"
+    );
+  }
+
+  #[test]
+  fn definite_integral_reciprocal_cube() {
+    // ∫_1^2 1/x^3 dx = 3/8
+    assert_eq!(interpret("Integrate[1/x^3, {x, 1, 2}]").unwrap(), "3/8");
+  }
+}
+
+mod integrate_reciprocal_powers {
+  use super::*;
+
+  #[test]
+  fn integrate_one_over_x_squared() {
+    // ∫ 1/x^2 dx = -x^(-1)
+    assert_eq!(interpret("Integrate[1/x^2, x]").unwrap(), "-x^(-1)");
+  }
+
+  #[test]
+  fn integrate_one_over_x_cubed() {
+    // ∫ 1/x^3 dx = -x^(-2)/2
+    assert_eq!(interpret("Integrate[1/x^3, x]").unwrap(), "-(x^(-2)/2)");
+  }
+
+  #[test]
+  fn integrate_one_over_x_fourth() {
+    // ∫ 1/x^4 dx = -x^(-3)/3
+    assert_eq!(interpret("Integrate[1/x^4, x]").unwrap(), "-(x^(-3)/3)");
+  }
+
+  #[test]
+  fn integrate_const_over_x_squared() {
+    // ∫ 3/x^2 dx = -3*x^(-1) = -3/x
+    assert_eq!(interpret("Integrate[3/x^2, x]").unwrap(), "-3/x");
+  }
+
+  #[test]
+  fn integrate_reciprocal_plus_polynomial() {
+    // ∫ (1/x^2 + 1) dx = -x^(-1) + x
+    let result = interpret("Integrate[1/x^2 + 1, x]").unwrap();
+    assert!(
+      result == "-x^(-1) + x" || result == "x - x^(-1)",
+      "Got: {}",
+      result
+    );
+  }
 }
 
 mod differentiate_plus_times {
