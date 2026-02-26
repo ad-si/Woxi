@@ -4875,7 +4875,7 @@ SemialgebraicComponentInstances,,,,6,3537
 SemidefiniteOptimization,,,,12,4527
 SendMail,,,,7,2324
 SendMessage,,,,10,4173
-Sequence,,,,3,162
+Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3,162
 SequenceAlignment,,,,7,2944
 SequenceCases,,,,10.1,1751
 SequenceCount,,,,10.1,2921
