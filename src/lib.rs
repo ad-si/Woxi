@@ -1366,6 +1366,12 @@ fn generate_output_svg(expr: &syntax::Expr) {
   {
     return;
   }
+  // Skip SVG for CForm/TeXForm/FortranForm — display converted text as plain text
+  if matches!(expr, syntax::Expr::FunctionCall { name, args }
+    if (name == "CForm" || name == "TeXForm" || name == "FortranForm") && args.len() == 1)
+  {
+    return;
+  }
   // Unwrap StandardForm — render SVG for the inner expression
   let expr = if let syntax::Expr::FunctionCall { name, args } = expr {
     if name == "StandardForm" && args.len() == 1 {

@@ -1028,10 +1028,27 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Default (no form or unrecognized form): OutputForm-like
-  // Uses expr_to_output which renders strings without quotes and handles
-  // display forms like FullForm[expr] → FullForm notation
-  let s = crate::syntax::expr_to_output(&args[0]);
+  // Resolve any nested form wrappers (TeXForm, CForm, FortranForm) first,
+  // matching wolframscript behavior where ToString extracts form conversions.
+  let resolved = resolve_form_wrappers(&args[0]);
+  let s = crate::syntax::expr_to_output(&resolved);
   Ok(Expr::String(s))
+}
+
+/// Recursively replace TeXForm/CForm/FortranForm wrappers with their converted
+/// string representation. This matches wolframscript behavior where ToString
+/// extracts the converted form from nested wrappers.
+fn resolve_form_wrappers(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if args.len() == 1 => match name.as_str() {
+      "TeXForm" => Expr::Identifier(expr_to_tex(&args[0])),
+      "CForm" => Expr::Identifier(expr_to_c(&args[0])),
+      "FortranForm" => Expr::Identifier(expr_to_fortran(&args[0])),
+      _ => expr.clone(),
+    },
+    Expr::List(items) => Expr::List(items.iter().map(resolve_form_wrappers).collect()),
+    _ => expr.clone(),
+  }
 }
 
 /// Convert a Wolfram expression to LaTeX (TeX) notation.
