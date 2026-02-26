@@ -622,6 +622,58 @@ mod rule_display {
   }
 
   #[test]
+  fn replace_all_head_list_to_sequence() {
+    // List -> Sequence should flatten nested lists into function args
+    assert_eq!(
+      interpret("f[{{a, b}, {c, d}, {a}}] /. List -> Sequence").unwrap(),
+      "f[a, b, c, d, a]"
+    );
+  }
+
+  #[test]
+  fn replace_all_head_list_to_function() {
+    // List -> f should turn {a, b} into f[a, b]
+    assert_eq!(interpret("{a, b} /. List -> g").unwrap(), "g[a, b]");
+  }
+
+  #[test]
+  fn replace_all_head_list_to_plus() {
+    // List -> Plus should sum the elements
+    assert_eq!(interpret("{1, 2, 3} /. List -> Plus").unwrap(), "6");
+  }
+
+  #[test]
+  fn replace_all_head_function_call() {
+    // f -> g should replace function head
+    assert_eq!(interpret("f[a, b] /. f -> g").unwrap(), "g[a, b]");
+  }
+
+  #[test]
+  fn replace_all_list_as_argument() {
+    // List as a symbol argument should be replaced
+    assert_eq!(interpret("g[List, a] /. List -> f").unwrap(), "g[f, a]");
+  }
+
+  #[test]
+  fn replace_all_multi_rule_with_head() {
+    // Multi-rule should replace both args and head
+    assert_eq!(
+      interpret("{a, b} /. {a -> 1, List -> f}").unwrap(),
+      "f[1, b]"
+    );
+    assert_eq!(interpret("f[a] /. {a -> 1, f -> g}").unwrap(), "g[1]");
+  }
+
+  #[test]
+  fn replace_all_nested_list_to_sequence() {
+    // Nested lists should all be replaced
+    assert_eq!(
+      interpret("f[{a, b}] /. List -> Sequence").unwrap(),
+      "f[a, b]"
+    );
+  }
+
+  #[test]
   fn rule_with_patterns() {
     assert_eq!(
       interpret("{1, 2, 3} /. x_Integer -> x^2").unwrap(),
