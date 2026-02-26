@@ -404,3 +404,72 @@ mod clear_all {
     );
   }
 }
+
+mod multiline_association {
+  use super::*;
+
+  #[test]
+  fn basic_multiline() {
+    clear_state();
+    assert_eq!(
+      interpret("a = <|\n \"x\" -> 1,\n \"y\" -> 2\n|>\na").unwrap(),
+      "<|x -> 1, y -> 2|>"
+    );
+  }
+
+  #[test]
+  fn multiline_with_print() {
+    clear_state();
+    let res = interpret_with_stdout(
+      "coinWeights = <|\n \"1c\" -> 230,\n \"2c\" -> 306\n|>;\nPrint[coinWeights]",
+    )
+    .unwrap();
+    assert_eq!(res.stdout.trim(), "<|1c -> 230, 2c -> 306|>");
+    assert_eq!(res.result, "Null");
+  }
+
+  #[test]
+  fn multiline_part_extraction() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = <|\n \"x\" -> 10,\n \"y\" -> 20,\n \"z\" -> 30\n|>\na[[\"y\"]]"
+      )
+      .unwrap(),
+      "20"
+    );
+  }
+
+  #[test]
+  fn multiline_keys_values() {
+    clear_state();
+    assert_eq!(
+      interpret("a = <|\n \"a\" -> 1,\n \"b\" -> 2\n|>\nKeys[a]").unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  fn nested_multiline() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = <|\"x\" -> <|\n \"nested\" -> 42\n|>|>\na[[\"x\"]][[\"nested\"]]"
+      )
+      .unwrap(),
+      "42"
+    );
+  }
+
+  #[test]
+  fn multiline_many_entries() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d = <|\n \"a\" -> 1,\n \"b\" -> 2,\n \"c\" -> 3,\n \"d\" -> 4,\n \"e\" -> 5\n|>\nLength[Keys[d]]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+}

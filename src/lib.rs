@@ -1418,7 +1418,33 @@ pub fn insert_statement_separators(input: &str) -> String {
       continue;
     }
 
-    // Track nesting depth
+    // Track nesting depth (including <| |> for associations)
+    if ch == '<' && i + 1 < len && chars[i + 1] == '|' {
+      depth += 1;
+      // Push both characters and advance past them
+      if let Some(pos) = pending_semi_pos.take() {
+        result.insert(pos, ';');
+      }
+      line_has_code = true;
+      prev_code_char = Some('<');
+      last_code_char = Some('|');
+      result.push('<');
+      result.push('|');
+      i += 2;
+      continue;
+    } else if ch == '|' && i + 1 < len && chars[i + 1] == '>' {
+      depth -= 1;
+      if let Some(pos) = pending_semi_pos.take() {
+        result.insert(pos, ';');
+      }
+      line_has_code = true;
+      prev_code_char = Some('|');
+      last_code_char = Some('>');
+      result.push('|');
+      result.push('>');
+      i += 2;
+      continue;
+    }
     match ch {
       '[' | '(' | '{' => depth += 1,
       ']' | ')' | '}' => depth -= 1,
@@ -1535,7 +1561,28 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       continue;
     }
 
-    // Track nesting depth
+    // Track nesting depth (including <| |> for associations)
+    if ch == '<' && i + 1 < len && chars[i + 1] == '|' {
+      depth += 1;
+      line_has_code = true;
+      current_has_code = true;
+      prev_code_char = Some('<');
+      last_code_char = Some('|');
+      current.push('<');
+      current.push('|');
+      i += 2;
+      continue;
+    } else if ch == '|' && i + 1 < len && chars[i + 1] == '>' {
+      depth -= 1;
+      line_has_code = true;
+      current_has_code = true;
+      prev_code_char = Some('|');
+      last_code_char = Some('>');
+      current.push('|');
+      current.push('>');
+      i += 2;
+      continue;
+    }
     match ch {
       '[' | '(' | '{' => depth += 1,
       ']' | ')' | '}' => depth -= 1,
