@@ -91,6 +91,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_split_preserves_multiline_association() {
+    assert_eq!(
+      split_into_statements(
+        "a = <|\n  \"x\" -> 1,\n  \"y\" -> 2\n|>\nPrint[a]"
+      ),
+      vec!["a = <|\n  \"x\" -> 1,\n  \"y\" -> 2\n|>", "Print[a]"]
+    );
+  }
+
+  #[test]
+  fn test_split_preserves_nested_multiline_association() {
+    assert_eq!(
+      split_into_statements("a = <|\"x\" -> <|\n  \"n\" -> 42\n|>|>\nPrint[a]"),
+      vec!["a = <|\"x\" -> <|\n  \"n\" -> 42\n|>|>", "Print[a]"]
+    );
+  }
+
+  #[test]
   fn test_comment_only_input() {
     // A standalone comment should not cause an error
     clear_state();
