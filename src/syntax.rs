@@ -4330,17 +4330,17 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "FullForm" && args.len() == 1 {
         return format!("FullForm[{}]", expr_to_output(&args[0]));
       }
-      // CForm[expr] displays as C code in OutputForm
+      // CForm[expr] displays as CForm[evaluated_expr] in OutputForm (inside other expressions)
       if name == "CForm" && args.len() == 1 {
-        return crate::functions::string_ast::expr_to_c(&args[0]);
+        return format!("CForm[{}]", expr_to_output(&args[0]));
       }
-      // TeXForm[expr] displays as TeX in OutputForm
+      // TeXForm[expr] displays as TeXForm[evaluated_expr] in OutputForm
       if name == "TeXForm" && args.len() == 1 {
-        return crate::functions::string_ast::expr_to_tex(&args[0]);
+        return format!("TeXForm[{}]", expr_to_output(&args[0]));
       }
-      // FortranForm[expr] displays as Fortran code in OutputForm
+      // FortranForm[expr] displays as FortranForm[evaluated_expr] in OutputForm
       if name == "FortranForm" && args.len() == 1 {
-        return crate::functions::string_ast::expr_to_fortran(&args[0]);
+        return format!("FortranForm[{}]", expr_to_output(&args[0]));
       }
       // Special case: Skeleton[n] displays as <<n>>
       if name == "Skeleton" && args.len() == 1 {

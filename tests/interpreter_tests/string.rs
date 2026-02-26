@@ -1452,10 +1452,10 @@ mod c_form {
 
   #[test]
   fn polynomial() {
-    // CForm displays the C representation directly
+    // CForm wraps in OutputForm, matching wolframscript
     assert_eq!(
       interpret("CForm[x^2 + 2 x + 1]").unwrap(),
-      "1 + 2*x + Power(x,2)"
+      "CForm[1 + 2*x + x^2]"
     );
   }
 
@@ -1463,28 +1463,28 @@ mod c_form {
   fn trig_functions() {
     assert_eq!(
       interpret("CForm[Sin[x] + Cos[y]]").unwrap(),
-      "Cos(y) + Sin(x)"
+      "CForm[Cos[y] + Sin[x]]"
     );
   }
 
   #[test]
   fn pi_constant() {
-    assert_eq!(interpret("CForm[Pi]").unwrap(), "Pi");
+    assert_eq!(interpret("CForm[Pi]").unwrap(), "CForm[Pi]");
   }
 
   #[test]
   fn e_constant() {
-    assert_eq!(interpret("CForm[E]").unwrap(), "E");
+    assert_eq!(interpret("CForm[E]").unwrap(), "CForm[E]");
   }
 
   #[test]
   fn sqrt() {
-    assert_eq!(interpret("CForm[Sqrt[x]]").unwrap(), "Sqrt(x)");
+    assert_eq!(interpret("CForm[Sqrt[x]]").unwrap(), "CForm[Sqrt[x]]");
   }
 
   #[test]
   fn division() {
-    assert_eq!(interpret("CForm[1/x]").unwrap(), "1/x");
+    assert_eq!(interpret("CForm[1/x]").unwrap(), "CForm[x^(-1)]");
   }
 
   #[test]
@@ -1498,7 +1498,8 @@ mod c_form {
 
   #[test]
   fn exp_function() {
-    assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "Power(E,x)");
+    // CForm wraps, Exp[x] evaluates to E^x
+    assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "CForm[E^x]");
   }
 }
 
@@ -1506,8 +1507,9 @@ mod tex_form_standalone {
   use super::*;
 
   #[test]
-  fn displays_tex() {
-    assert_eq!(interpret("TeXForm[1 + x^2]").unwrap(), "x^2+1");
+  fn wraps_in_output_form() {
+    // TeXForm wraps in OutputForm, matching wolframscript
+    assert_eq!(interpret("TeXForm[1 + x^2]").unwrap(), "TeXForm[1 + x^2]");
   }
 
   #[test]
@@ -1517,7 +1519,7 @@ mod tex_form_standalone {
 
   #[test]
   fn pi_constant() {
-    assert_eq!(interpret("TeXForm[Pi]").unwrap(), "\\pi");
+    assert_eq!(interpret("TeXForm[Pi]").unwrap(), "TeXForm[Pi]");
   }
 
   #[test]
@@ -1527,7 +1529,10 @@ mod tex_form_standalone {
 
   #[test]
   fn sqrt() {
-    assert_eq!(interpret("TeXForm[Sqrt[x]]").unwrap(), "\\sqrt{x}");
+    assert_eq!(
+      interpret("TeXForm[Sqrt[x]]").unwrap(),
+      "TeXForm[Sqrt[x]]"
+    );
   }
 }
 
@@ -1535,8 +1540,12 @@ mod fortran_form {
   use super::*;
 
   #[test]
-  fn displays_fortran() {
-    assert_eq!(interpret("FortranForm[1 + x^2]").unwrap(), "1 + x**2");
+  fn wraps_in_output_form() {
+    // FortranForm wraps in OutputForm, matching wolframscript
+    assert_eq!(
+      interpret("FortranForm[1 + x^2]").unwrap(),
+      "FortranForm[1 + x^2]"
+    );
   }
 
   #[test]
@@ -1624,7 +1633,10 @@ mod fortran_form {
 
   #[test]
   fn exp_function() {
-    assert_eq!(interpret("FortranForm[Exp[x]]").unwrap(), "E**x");
+    assert_eq!(
+      interpret("FortranForm[Exp[x]]").unwrap(),
+      "FortranForm[E^x]"
+    );
   }
 
   #[test]

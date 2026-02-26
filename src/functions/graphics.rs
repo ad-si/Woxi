@@ -2526,6 +2526,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           format!("{} {}", mag, unit)
         }
 
+        // CForm/TeXForm/FortranForm → display converted text
+        "CForm" if args.len() == 1 => {
+          svg_escape(&crate::functions::string_ast::expr_to_c(&args[0]))
+        }
+        "TeXForm" if args.len() == 1 => {
+          svg_escape(&crate::functions::string_ast::expr_to_tex(&args[0]))
+        }
+        "FortranForm" if args.len() == 1 => {
+          svg_escape(&crate::functions::string_ast::expr_to_fortran(&args[0]))
+        }
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
