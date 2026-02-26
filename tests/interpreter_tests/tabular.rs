@@ -275,3 +275,97 @@ mod tabular_ast {
     assert!(svg.contains(">bar</text>"));
   }
 }
+
+mod to_tabular {
+  use super::*;
+
+  #[test]
+  fn to_tabular_columns_list_of_rules() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ToTabular[{\"a\" -> {1, 4}, \"b\" -> {2, 5}, \"c\" -> {3, 6}}, \"Columns\"]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // Should contain column headers
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
+    assert!(svg.contains(">c</text>"));
+    // Should contain data values
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">2</text>"));
+    assert!(svg.contains(">3</text>"));
+    assert!(svg.contains(">4</text>"));
+    assert!(svg.contains(">5</text>"));
+    assert!(svg.contains(">6</text>"));
+  }
+
+  #[test]
+  fn to_tabular_columns_association() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ToTabular[<|\"x\" -> {10, 20}, \"y\" -> {30, 40}|>, \"Columns\"]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">x</text>"));
+    assert!(svg.contains(">y</text>"));
+    assert!(svg.contains(">10</text>"));
+    assert!(svg.contains(">20</text>"));
+    assert!(svg.contains(">30</text>"));
+    assert!(svg.contains(">40</text>"));
+  }
+
+  #[test]
+  fn to_tabular_normal_roundtrip() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Normal[ToTabular[{\"a\" -> {1, 2}, \"b\" -> {3, 4}}, \"Columns\"]]"
+      )
+      .unwrap(),
+      "<|a -> {1, 2}, b -> {3, 4}|>"
+    );
+  }
+
+  #[test]
+  fn to_tabular_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[ToTabular[{\"a\" -> {1, 2}, \"b\" -> {3, 4}}, \"Columns\"]]"
+      )
+      .unwrap(),
+      "Tabular"
+    );
+  }
+
+  #[test]
+  fn to_tabular_unevaluated_without_orientation() {
+    clear_state();
+    assert_eq!(
+      interpret("ToTabular[{\"a\" -> {1, 2}}]").unwrap(),
+      "ToTabular[{a -> {1, 2}}]"
+    );
+  }
+
+  #[test]
+  fn to_tabular_single_column() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ToTabular[{\"vals\" -> {100, 200, 300}}, \"Columns\"]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">vals</text>"));
+    assert!(svg.contains(">100</text>"));
+    assert!(svg.contains(">200</text>"));
+    assert!(svg.contains(">300</text>"));
+  }
+}

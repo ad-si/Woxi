@@ -5428,6 +5428,7 @@ TableHeadings,Option specifying headings for table rows and columns,✅,none,2,5
 TableSpacing,,,,2,1290
 TableView,,,,12.1,2792
 Tabular,Represents a data frame or table of structured data,✅,pure,14.2,2792
+ToTabular,Converts data into a Tabular object with specified orientation,✅,pure,14.2,
 TabView,,,,6,1308
 TagBox,,,,3,1012
 TagBoxOptions,,,,6,4052
