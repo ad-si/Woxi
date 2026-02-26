@@ -1,7 +1,8 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
-use crate::syntax::{BinaryOperator, Expr, expr_to_string};
+use crate::functions::calculus_ast::simplify;
+use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 // ─── Factor ─────────────────────────────────────────────────────────
 
@@ -26,11 +27,17 @@ pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // First expand to canonical form
   let expanded = expand_and_combine(&args[0]);
 
-  // Try to find the variable
-  let var = match find_single_variable(&expanded) {
-    Some(v) => v,
-    None => return Ok(expanded), // multivariate or constant — return as is
-  };
+  // Collect all variables
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(&expanded, &mut vars);
+  if vars.is_empty() {
+    return Ok(expanded); // constant — return as is
+  }
+  if vars.len() > 1 {
+    // Multivariate polynomial — try Kronecker substitution
+    return factor_multivariate(&expanded, vars);
+  }
+  let var = vars.into_iter().next().unwrap();
 
   // Extract integer coefficients
   let coeffs = match extract_poly_coeffs(&expanded, &var) {
@@ -553,13 +560,27 @@ pub fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
   }
 
   if factors.is_empty() {
-    // No cyclotomic factors found — try Kronecker's method for small-degree polynomials
+    // No cyclotomic factors found — try square-free factorization first
+    let sqfree = try_square_free_factor(coeffs, var);
+    if !sqfree.is_empty() {
+      return sqfree;
+    }
+    // Then try Kronecker's method for small-degree polynomials
     return try_kronecker_factor(coeffs, var);
   }
 
   // We found cyclotomic factors; handle the remainder
   if remaining.len() > 2 {
-    // Try to factor the remainder further with Kronecker
+    // Try square-free factorization on the remainder first
+    let sub = try_square_free_factor(&remaining, var);
+    if !sub.is_empty() {
+      return factors
+        .iter()
+        .map(|f| coeffs_to_expr(f, var))
+        .chain(sub)
+        .collect();
+    }
+    // Then try Kronecker
     let sub = try_kronecker_factor(&remaining, var);
     if sub.is_empty() {
       factors.push(remaining);
@@ -575,6 +596,44 @@ pub fn try_factor_no_rational_roots(coeffs: &[i128], var: &str) -> Vec<Expr> {
   }
 
   factors.iter().map(|f| coeffs_to_expr(f, var)).collect()
+}
+
+/// Square-free factorization: detect repeated factors using Yun's algorithm,
+/// then recursively factor each square-free component.
+pub fn try_square_free_factor(coeffs: &[i128], var: &str) -> Vec<Expr> {
+  let deg = coeffs.len() - 1;
+  if deg <= 2 {
+    return vec![];
+  }
+
+  let sqfree_parts = yun_square_free(coeffs);
+
+  // Check if we found any multiplicity > 1
+  let has_repeated = sqfree_parts.iter().any(|(_, m)| *m > 1);
+  if !has_repeated {
+    return vec![];
+  }
+
+  let mut all_factors: Vec<Expr> = Vec::new();
+
+  for (part_coeffs, multiplicity) in &sqfree_parts {
+    // Recursively factor each square-free part
+    let sub = factor_sub_poly(part_coeffs, var);
+    if sub.is_empty() {
+      // part is trivial (constant 1)
+      continue;
+    }
+    // Add each sub-factor with the correct multiplicity
+    for _ in 0..*multiplicity {
+      all_factors.extend(sub.clone());
+    }
+  }
+
+  if all_factors.len() > 1 {
+    all_factors
+  } else {
+    vec![]
+  }
 }
 
 /// Kronecker's method for factoring integer polynomials of small degree.
@@ -1864,4 +1923,887 @@ fn int_coeffs_to_canonical_expr(coeffs: &[i128], var: &str) -> Expr {
 
   // Evaluate to canonical form
   crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result)
+}
+
+// ─── Multivariate Factoring (Kronecker Substitution) ────────────────
+
+/// Factor a multivariate polynomial expression using Kronecker substitution.
+fn factor_multivariate(
+  expanded: &Expr,
+  vars: std::collections::HashSet<String>,
+) -> Result<Expr, InterpreterError> {
+  let mut sorted_vars: Vec<String> = vars.into_iter().collect();
+  sorted_vars.sort();
+
+  // Extract GCD of all integer coefficients
+  let gcd = extract_multivar_gcd(expanded);
+  let working = if gcd > 1 {
+    divide_expr_by_scalar(expanded, gcd)
+  } else {
+    expanded.clone()
+  };
+
+  // Extract common monomial factor (e.g., x^2*y from all terms)
+  let (monomial_factors, working) =
+    extract_common_monomial(&working, &sorted_vars);
+
+  // Check if the remaining polynomial still has multiple variables
+  let mut remaining_vars = std::collections::HashSet::new();
+  collect_variables(&working, &mut remaining_vars);
+
+  let poly_factors = if remaining_vars.len() > 1 {
+    // Try Kronecker substitution on the remaining polynomial
+    match kronecker_factor_multivar(&working, &sorted_vars) {
+      Some((overall_sign, factors)) if !factors.is_empty() => {
+        let overall = gcd * overall_sign;
+        let mut all_factors = monomial_factors;
+        all_factors.extend(factors);
+        return Ok(build_multivariate_result(overall, all_factors));
+      }
+      _ => {
+        // Can't factor further; return with monomial factors
+        if monomial_factors.is_empty() && gcd == 1 {
+          return Ok(expanded.clone());
+        }
+        let mut all_factors = monomial_factors;
+        all_factors.push((working.clone(), 1));
+        return Ok(build_multivariate_result(gcd, all_factors));
+      }
+    }
+  } else if remaining_vars.len() == 1 {
+    // Remaining is univariate — factor it with existing code
+    let var = remaining_vars.into_iter().next().unwrap();
+    if let Some(coeffs) = extract_poly_coeffs(&working, &var) {
+      let coeff_gcd = coeffs
+        .iter()
+        .copied()
+        .filter(|&c| c != 0)
+        .fold(0i128, gcd_i128);
+      if coeff_gcd > 0 {
+        let reduced: Vec<i128> = coeffs.iter().map(|c| c / coeff_gcd).collect();
+        let (sign, reduced) = if reduced.last().map(|&c| c < 0).unwrap_or(false)
+        {
+          (-1i128, reduced.iter().map(|c| -c).collect::<Vec<_>>())
+        } else {
+          (1, reduced)
+        };
+        let uni_factors = factor_integer_poly(&reduced, &var);
+        if uni_factors.len() > 1 || !monomial_factors.is_empty() || gcd > 1 {
+          let overall = gcd * coeff_gcd * sign;
+          let mut all_factors = monomial_factors;
+          // Group and add univariate factors
+          let mut grouped: Vec<(Expr, usize)> = Vec::new();
+          for f in &uni_factors {
+            let key = expr_to_string(f);
+            if let Some(entry) =
+              grouped.iter_mut().find(|(e, _)| expr_to_string(e) == key)
+            {
+              entry.1 += 1;
+            } else {
+              grouped.push((f.clone(), 1));
+            }
+          }
+          all_factors.extend(grouped);
+          return Ok(build_multivariate_result(overall, all_factors));
+        }
+      }
+    }
+    vec![]
+  } else {
+    vec![]
+  };
+
+  if !poly_factors.is_empty() || !monomial_factors.is_empty() {
+    let mut all_factors = monomial_factors;
+    all_factors.extend(poly_factors);
+    return Ok(build_multivariate_result(gcd, all_factors));
+  }
+
+  Ok(expanded.clone())
+}
+
+/// Core Kronecker substitution algorithm for multivariate factoring.
+/// Returns Some((overall_sign, factors)) where factors is Vec<(expr, multiplicity)>,
+/// or None if can't factor.
+fn kronecker_factor_multivar(
+  poly: &Expr,
+  sorted_vars: &[String],
+) -> Option<(i128, Vec<(Expr, usize)>)> {
+  if sorted_vars.len() < 2 {
+    return None;
+  }
+
+  // Primary variable is the first one alphabetically
+  let primary = &sorted_vars[0];
+  let secondary_vars = &sorted_vars[1..];
+
+  // Compute D = max degree over all variables + 1
+  let mut max_deg: i128 = 0;
+  for var in sorted_vars {
+    if let Some(d) = max_power(poly, var) {
+      max_deg = max_deg.max(d);
+    }
+  }
+  let d = (max_deg + 1) as usize;
+
+  // Check that substituted degree won't be too large
+  let mut total_deg_bound = d;
+  for _ in 1..secondary_vars.len() {
+    total_deg_bound = total_deg_bound.saturating_mul(d);
+  }
+  if total_deg_bound > 200 || max_deg as usize * total_deg_bound > 200 {
+    return None; // Degree too large
+  }
+
+  // Forward substitution: compute univariate coefficients directly
+  // by mapping each multivariate term's exponent vector to a single index
+  let coeffs = multivar_to_univar_coeffs(poly, sorted_vars, d)?;
+
+  // Factor out GCD and normalize sign
+  let coeff_gcd = coeffs
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, gcd_i128);
+  if coeff_gcd == 0 {
+    return None;
+  }
+  let reduced: Vec<i128> = coeffs.iter().map(|c| c / coeff_gcd).collect();
+  let (reduced, uni_sign) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+    (reduced.iter().map(|c| -c).collect::<Vec<_>>(), -1i128)
+  } else {
+    (reduced, 1i128)
+  };
+  let overall_sign = coeff_gcd * uni_sign;
+
+  // Factor the univariate polynomial
+  let factor_exprs = factor_integer_poly(&reduced, primary);
+  if factor_exprs.len() <= 1 {
+    return None; // Couldn't factor
+  }
+
+  // Convert factor expressions back to coefficient vectors
+  let mut factor_coeffs: Vec<Vec<i128>> = Vec::new();
+  for f in &factor_exprs {
+    match extract_poly_coeffs(f, primary) {
+      Some(c) => factor_coeffs.push(c),
+      None => return None,
+    }
+  }
+
+  // Group identical factors
+  let grouped = group_factors(&factor_coeffs);
+  if grouped.len() > 15 {
+    return None; // Too many distinct factors
+  }
+
+  // Try to recombine factors into multivariate factors
+  // Pass `reduced` (not `coeffs`) since factors are of the reduced polynomial
+  recombine_factors(&reduced, &grouped, sorted_vars, d)
+    .map(|factors| (overall_sign, factors))
+}
+
+/// Compute univariate coefficient vector from a multivariate polynomial
+/// via Kronecker substitution: for each term, map its exponent vector
+/// (e_primary, e_var1, e_var2, ...) to index = e_primary + D*e_var1 + D^2*e_var2 + ...
+fn multivar_to_univar_coeffs(
+  poly: &Expr,
+  sorted_vars: &[String],
+  d: usize,
+) -> Option<Vec<i128>> {
+  let terms = collect_additive_terms(poly);
+  let mut max_index: usize = 0;
+  let mut term_data: Vec<(usize, i128)> = Vec::new();
+
+  for term in &terms {
+    // Extract the integer coefficient and exponents for each variable
+    let (int_coeff, exponents) = extract_multivar_term_data(term, sorted_vars)?;
+
+    // Compute the univariate index
+    let mut index: usize = 0;
+    let mut multiplier: usize = 1;
+    for &exp in &exponents {
+      index += exp as usize * multiplier;
+      multiplier *= d;
+    }
+
+    max_index = max_index.max(index);
+    term_data.push((index, int_coeff));
+  }
+
+  if max_index > 500 {
+    return None; // Safety limit
+  }
+
+  let mut coeffs = vec![0i128; max_index + 1];
+  for (idx, c) in term_data {
+    coeffs[idx] += c;
+  }
+
+  Some(coeffs)
+}
+
+/// Extract integer coefficient and exponent vector from a multivariate term.
+/// Returns (coefficient, [exp_var0, exp_var1, ...]) or None if not a valid polynomial term.
+fn extract_multivar_term_data(
+  term: &Expr,
+  sorted_vars: &[String],
+) -> Option<(i128, Vec<i128>)> {
+  let mut exponents = vec![0i128; sorted_vars.len()];
+
+  // Decompose term using the existing infrastructure
+  let (num_coeff, _key, var_factors) = decompose_term(term);
+
+  // Extract numeric coefficient
+  let coeff = match &simplify(num_coeff) {
+    Expr::Integer(n) => *n,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      if let Expr::Integer(n) = operand.as_ref() {
+        -n
+      } else {
+        return None;
+      }
+    }
+    _ => return None,
+  };
+
+  // Extract exponents from variable factors
+  for factor in &var_factors {
+    match factor {
+      Expr::Identifier(name) => {
+        if let Some(pos) = sorted_vars.iter().position(|v| v == name) {
+          exponents[pos] += 1;
+        } else {
+          return None; // Unknown variable
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        if let Expr::Identifier(name) = left.as_ref() {
+          if let Expr::Integer(exp) = right.as_ref() {
+            if let Some(pos) = sorted_vars.iter().position(|v| v == name) {
+              exponents[pos] += exp;
+            } else {
+              return None;
+            }
+          } else {
+            return None;
+          }
+        } else {
+          return None;
+        }
+      }
+      _ => return None,
+    }
+  }
+
+  Some((coeff, exponents))
+}
+
+/// Reverse Kronecker substitution: convert a univariate coefficient vector
+/// back to a multivariate expression.
+/// coeffs[k] maps to: coeff * primary^(k mod D) * var1^((k/D) mod D) * var2^((k/D^2) mod D) * ...
+fn reverse_kronecker_coeffs(
+  coeffs: &[i128],
+  sorted_vars: &[String],
+  d: usize,
+) -> Expr {
+  let primary = &sorted_vars[0];
+  let secondary_vars = &sorted_vars[1..];
+  let mut terms: Vec<Expr> = Vec::new();
+
+  for (k, &c) in coeffs.iter().enumerate() {
+    if c == 0 {
+      continue;
+    }
+    let mut remaining = k;
+    let mut factors: Vec<Expr> = Vec::new();
+
+    // Primary variable exponent
+    let primary_exp = remaining % d;
+    remaining /= d;
+    if primary_exp > 0 {
+      if primary_exp == 1 {
+        factors.push(Expr::Identifier(primary.clone()));
+      } else {
+        factors.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(primary.clone())),
+          right: Box::new(Expr::Integer(primary_exp as i128)),
+        });
+      }
+    }
+
+    // Secondary variable exponents
+    for sec_var in secondary_vars {
+      let exp = remaining % d;
+      remaining /= d;
+      if exp > 0 {
+        if exp == 1 {
+          factors.push(Expr::Identifier(sec_var.clone()));
+        } else {
+          factors.push(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(Expr::Identifier(sec_var.clone())),
+            right: Box::new(Expr::Integer(exp as i128)),
+          });
+        }
+      }
+    }
+
+    // Build the term: c * factors
+    let term = if factors.is_empty() {
+      Expr::Integer(c)
+    } else {
+      let var_part = build_product(factors);
+      if c == 1 {
+        var_part
+      } else if c == -1 {
+        negate_term(&var_part)
+      } else {
+        multiply_exprs(&Expr::Integer(c), &var_part)
+      }
+    };
+    terms.push(term);
+  }
+
+  if terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    let raw = build_sum(terms);
+    combine_and_build(collect_additive_terms(&raw))
+  }
+}
+
+/// Group identical factor coefficient vectors and count multiplicities.
+fn group_factors(factors: &[Vec<i128>]) -> Vec<(Vec<i128>, usize)> {
+  let mut grouped: Vec<(Vec<i128>, usize)> = Vec::new();
+  for f in factors {
+    if let Some(entry) = grouped.iter_mut().find(|(c, _)| c == f) {
+      entry.1 += 1;
+    } else {
+      grouped.push((f.clone(), 1));
+    }
+  }
+  grouped
+}
+
+/// Try to recombine univariate factors into multivariate factors.
+/// Returns Some(vec of (factor_expr, multiplicity)) or None.
+fn recombine_factors(
+  full_coeffs: &[i128],
+  grouped: &[(Vec<i128>, usize)],
+  sorted_vars: &[String],
+  d: usize,
+) -> Option<Vec<(Expr, usize)>> {
+  let n = grouped.len();
+
+  // Build the original multivariate expression for comparison
+  let original = reverse_kronecker_coeffs(full_coeffs, sorted_vars, d);
+  let original_expanded = expand_and_combine(&original);
+
+  // For single distinct factor with multiplicity > 1, just reverse-substitute it
+  if n == 1 {
+    let (ref fc, mult) = grouped[0];
+    let candidate = reverse_kronecker_coeffs(fc, sorted_vars, d);
+    // Verify: candidate^mult should equal original
+    let candidate_expanded = expand_and_combine(&candidate);
+    let powered = if mult == 1 {
+      candidate_expanded.clone()
+    } else {
+      expand_and_combine(&Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(candidate_expanded.clone()),
+        right: Box::new(Expr::Integer(mult as i128)),
+      })
+    };
+    if exprs_equal(&powered, &original_expanded) {
+      return Some(vec![(candidate, mult)]);
+    }
+    return None;
+  }
+
+  // Try all non-trivial subsets of the factor instances.
+  // We represent a partition as: for each grouped factor (coeffs, mult),
+  // how many copies go to the "left" side (0..=mult).
+  // We enumerate assignments and check if the partition works.
+  let max_assignments: Vec<usize> = grouped.iter().map(|(_, m)| *m).collect();
+
+  // Total number of factor instances
+  let total_instances: usize = max_assignments.iter().sum();
+  if total_instances > 20 {
+    return None; // Too many to enumerate
+  }
+
+  // Enumerate all assignments (for each group, 0..=mult copies to left side)
+  let mut assignment = vec![0usize; n];
+
+  loop {
+    // Skip trivial partitions (all-left or all-right)
+    let left_count: usize = assignment.iter().sum();
+    if left_count > 0
+      && left_count < total_instances
+      && left_count <= total_instances / 2
+    {
+      // Compute left product (coefficient vector)
+      let left_coeffs = compute_subset_product(grouped, &assignment);
+      // Compute right = full / left
+      if let Some((right_coeffs, rem)) = poly_div(full_coeffs, &left_coeffs)
+        && rem.iter().all(|&c| c == 0)
+      {
+        // Reverse-substitute both sides
+        let left_expr = reverse_kronecker_coeffs(&left_coeffs, sorted_vars, d);
+        let right_expr =
+          reverse_kronecker_coeffs(&right_coeffs, sorted_vars, d);
+
+        // Verify: expand(left * right) == original
+        let product = expand_and_combine(&Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(left_expr.clone()),
+          right: Box::new(right_expr.clone()),
+        });
+
+        if exprs_equal(&product, &original_expanded) {
+          // Valid partition! Now recursively try to factor each side.
+          let mut result = Vec::new();
+          let left_sub = try_refactor_multivar(&left_expr, sorted_vars, d);
+          let right_sub = try_refactor_multivar(&right_expr, sorted_vars, d);
+          result.extend(left_sub);
+          result.extend(right_sub);
+          return Some(result);
+        }
+      }
+    }
+
+    // Increment assignment (odometer-style)
+    if !increment_assignment(&mut assignment, &max_assignments) {
+      break;
+    }
+  }
+
+  None
+}
+
+/// Try to further factor a multivariate expression that came from recombination.
+/// Returns a list of (factor, multiplicity) pairs.
+fn try_refactor_multivar(
+  expr: &Expr,
+  sorted_vars: &[String],
+  d: usize,
+) -> Vec<(Expr, usize)> {
+  let expanded = expand_and_combine(expr);
+
+  // Use direct coefficient computation (not symbolic substitution)
+  if let Some(coeffs) = multivar_to_univar_coeffs(&expanded, sorted_vars, d) {
+    let coeff_gcd = coeffs
+      .iter()
+      .copied()
+      .filter(|&c| c != 0)
+      .fold(0i128, gcd_i128);
+    if coeff_gcd == 0 {
+      return vec![(expanded, 1)];
+    }
+    let reduced: Vec<i128> = coeffs.iter().map(|c| c / coeff_gcd).collect();
+    let (reduced, _) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+      (reduced.iter().map(|c| -c).collect::<Vec<_>>(), -1i128)
+    } else {
+      (reduced, 1i128)
+    };
+
+    let primary = &sorted_vars[0];
+    let factor_exprs = factor_integer_poly(&reduced, primary);
+    if factor_exprs.len() > 1 {
+      let mut fc: Vec<Vec<i128>> = Vec::new();
+      for f in &factor_exprs {
+        if let Some(c) = extract_poly_coeffs(f, primary) {
+          fc.push(c);
+        } else {
+          return vec![(expanded, 1)];
+        }
+      }
+      let grouped = group_factors(&fc);
+      if let Some(sub_factors) =
+        recombine_factors(&reduced, &grouped, sorted_vars, d)
+      {
+        return sub_factors;
+      }
+    }
+  }
+
+  vec![(expanded, 1)]
+}
+
+/// Compute the product of a subset of grouped factors.
+/// assignment[i] = how many copies of grouped[i] to include.
+fn compute_subset_product(
+  grouped: &[(Vec<i128>, usize)],
+  assignment: &[usize],
+) -> Vec<i128> {
+  let mut product = vec![1i128]; // Start with constant 1
+  for (i, &count) in assignment.iter().enumerate() {
+    let fc = &grouped[i].0;
+    for _ in 0..count {
+      product = poly_mul_coeffs(&product, fc);
+    }
+  }
+  product
+}
+
+/// Multiply two coefficient vectors (polynomial multiplication).
+fn poly_mul_coeffs(a: &[i128], b: &[i128]) -> Vec<i128> {
+  if a.is_empty() || b.is_empty() {
+    return vec![];
+  }
+  let mut result = vec![0i128; a.len() + b.len() - 1];
+  for (i, &ai) in a.iter().enumerate() {
+    for (j, &bj) in b.iter().enumerate() {
+      result[i + j] += ai * bj;
+    }
+  }
+  result
+}
+
+/// Increment an assignment vector (odometer-style).
+/// Returns false if we've exhausted all assignments.
+fn increment_assignment(assignment: &mut [usize], max_vals: &[usize]) -> bool {
+  for i in 0..assignment.len() {
+    if assignment[i] < max_vals[i] {
+      assignment[i] += 1;
+      return true;
+    }
+    assignment[i] = 0;
+  }
+  false
+}
+
+/// Check if two expanded expressions are equal (by string comparison after normalization).
+fn exprs_equal(a: &Expr, b: &Expr) -> bool {
+  expr_to_string(a) == expr_to_string(b)
+}
+
+/// Extract the GCD of all integer coefficients in a multivariate polynomial.
+/// Extract common monomial factor from all terms.
+/// Returns (monomial_factors, remaining_polynomial).
+/// E.g., for x^2*y + x*y^2, returns ([(x,1), (y,1)], x + y).
+fn extract_common_monomial(
+  expr: &Expr,
+  sorted_vars: &[String],
+) -> (Vec<(Expr, usize)>, Expr) {
+  let terms = collect_additive_terms(expr);
+  if terms.is_empty() {
+    return (vec![], expr.clone());
+  }
+
+  // Find minimum exponent of each variable across all terms
+  let mut min_exps = vec![i128::MAX; sorted_vars.len()];
+  let mut valid = true;
+
+  for term in &terms {
+    match extract_multivar_term_data(term, sorted_vars) {
+      Some((_coeff, exponents)) => {
+        for (i, &exp) in exponents.iter().enumerate() {
+          min_exps[i] = min_exps[i].min(exp);
+        }
+      }
+      None => {
+        valid = false;
+        break;
+      }
+    }
+  }
+
+  if !valid {
+    return (vec![], expr.clone());
+  }
+
+  // Build monomial factors and divide each term
+  let mut monomial_factors: Vec<(Expr, usize)> = Vec::new();
+  for (i, &min_exp) in min_exps.iter().enumerate() {
+    if min_exp > 0 {
+      monomial_factors
+        .push((Expr::Identifier(sorted_vars[i].clone()), min_exp as usize));
+    }
+  }
+
+  if monomial_factors.is_empty() {
+    return (vec![], expr.clone());
+  }
+
+  // Rebuild each term with reduced exponents
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for term in &terms {
+    if let Some((coeff, exponents)) =
+      extract_multivar_term_data(term, sorted_vars)
+    {
+      let mut factors: Vec<Expr> = Vec::new();
+      if coeff != 1 {
+        factors.push(Expr::Integer(coeff));
+      }
+      for (i, &exp) in exponents.iter().enumerate() {
+        let reduced_exp = exp - min_exps[i];
+        if reduced_exp > 0 {
+          if reduced_exp == 1 {
+            factors.push(Expr::Identifier(sorted_vars[i].clone()));
+          } else {
+            factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(Expr::Identifier(sorted_vars[i].clone())),
+              right: Box::new(Expr::Integer(reduced_exp)),
+            });
+          }
+        }
+      }
+      if factors.is_empty() {
+        new_terms.push(Expr::Integer(coeff));
+      } else {
+        new_terms.push(build_product(factors));
+      }
+    }
+  }
+
+  let remaining = if new_terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    combine_and_build(new_terms)
+  };
+
+  (monomial_factors, remaining)
+}
+
+fn extract_multivar_gcd(expr: &Expr) -> i128 {
+  let terms = collect_additive_terms(expr);
+  let mut gcd = 0i128;
+  for term in &terms {
+    let c = term_integer_coeff(term);
+    gcd = gcd_i128(gcd, c);
+  }
+  if gcd == 0 { 1 } else { gcd.abs() }
+}
+
+/// Extract the integer coefficient from a multivariate term.
+fn term_integer_coeff(term: &Expr) -> i128 {
+  match term {
+    Expr::Integer(n) => *n,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => -term_integer_coeff(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => {
+      let factors = collect_multiplicative_factors(term);
+      let mut coeff = 1i128;
+      for f in &factors {
+        match f {
+          Expr::Integer(n) => coeff *= n,
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } => {
+            coeff = -coeff;
+            if let Expr::Integer(n) = operand.as_ref() {
+              coeff *= n;
+            }
+          }
+          _ => {}
+        }
+      }
+      coeff
+    }
+    _ => 1, // variable or power term has implicit coefficient 1
+  }
+}
+
+/// Divide all terms of a polynomial expression by a scalar.
+fn divide_expr_by_scalar(expr: &Expr, scalar: i128) -> Expr {
+  if scalar == 1 {
+    return expr.clone();
+  }
+  let terms = collect_additive_terms(expr);
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for term in &terms {
+    new_terms.push(divide_term_by_scalar(term, scalar));
+  }
+  if new_terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    combine_and_build(new_terms)
+  }
+}
+
+/// Divide a single term by a scalar.
+fn divide_term_by_scalar(term: &Expr, scalar: i128) -> Expr {
+  match term {
+    Expr::Integer(n) => Expr::Integer(n / scalar),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      let inner = divide_term_by_scalar(operand, scalar);
+      negate_term(&inner)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => {
+      let factors = collect_multiplicative_factors(term);
+      let mut new_factors: Vec<Expr> = Vec::new();
+      let mut divided = false;
+      for f in &factors {
+        if !divided {
+          if let Expr::Integer(n) = f {
+            new_factors.push(Expr::Integer(n / scalar));
+            divided = true;
+            continue;
+          }
+          if let Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } = f
+            && let Expr::Integer(n) = operand.as_ref()
+          {
+            let val = -n;
+            new_factors.push(Expr::Integer(val / scalar));
+            divided = true;
+            continue;
+          }
+        }
+        new_factors.push(f.clone());
+      }
+      if !divided {
+        // No integer factor found; the coefficient is implicit 1
+        // This shouldn't happen for expanded polynomials with GCD > 1
+        return term.clone();
+      }
+      // Remove factors that are 1
+      new_factors.retain(|f| !matches!(f, Expr::Integer(1)));
+      if new_factors.is_empty() {
+        Expr::Integer(1)
+      } else {
+        build_product(new_factors)
+      }
+    }
+    _ => {
+      // Implicit coefficient 1; 1/scalar = 1 only if scalar=1
+      term.clone()
+    }
+  }
+}
+
+/// Build the final factored result from overall coefficient and factor list.
+fn build_multivariate_result(
+  overall: i128,
+  factors: Vec<(Expr, usize)>,
+) -> Expr {
+  // First, group identical factors by string representation
+  let mut grouped: Vec<(Expr, usize)> = Vec::new();
+  for (factor, mult) in &factors {
+    let f = combine_and_build(collect_additive_terms(factor));
+    let key = expr_to_string(&f);
+    if let Some(entry) =
+      grouped.iter_mut().find(|(e, _)| expr_to_string(e) == key)
+    {
+      entry.1 += mult;
+    } else {
+      grouped.push((f, *mult));
+    }
+  }
+
+  let mut result_factors: Vec<Expr> = Vec::new();
+
+  // If overall is negative, absorb -1 into one of the factors with odd multiplicity
+  let mut remaining_overall = overall;
+  if remaining_overall < 0 {
+    // Find the best factor to negate: prefer one whose first variable term
+    // has a negative coefficient (so negation makes the expression look more canonical)
+    let mut best_idx: Option<usize> = None;
+    for (i, (factor, mult)) in grouped.iter().enumerate() {
+      if *mult % 2 == 1 {
+        // Check if first variable term is negative
+        let s = expr_to_string(factor);
+        let starts_negative = s.starts_with('-');
+        if starts_negative {
+          best_idx = Some(i);
+          break;
+        }
+        if best_idx.is_none() {
+          best_idx = Some(i);
+        }
+      }
+    }
+    if let Some(idx) = best_idx {
+      let terms = collect_additive_terms(&grouped[idx].0);
+      let negated: Vec<Expr> = terms.iter().map(negate_term).collect();
+      grouped[idx].0 = combine_and_build(negated);
+      remaining_overall = -remaining_overall;
+    }
+  }
+
+  if remaining_overall != 1 {
+    result_factors.push(Expr::Integer(remaining_overall));
+  }
+
+  for (factor, mult) in &grouped {
+    if *mult == 1 {
+      result_factors.push(factor.clone());
+    } else {
+      result_factors.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(factor.clone()),
+        right: Box::new(Expr::Integer(*mult as i128)),
+      });
+    }
+  }
+
+  // Sort factors in canonical order:
+  // 1. Pure numeric factors come first
+  // 2. Then by constant term, degree, term count, coefficients
+  result_factors.sort_by(|a, b| {
+    let a_is_num = matches!(a, Expr::Integer(_));
+    let b_is_num = matches!(b, Expr::Integer(_));
+    match (a_is_num, b_is_num) {
+      (true, false) => return std::cmp::Ordering::Less,
+      (false, true) => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
+    let ca = factor_constant_term(a);
+    let cb = factor_constant_term(b);
+    ca.cmp(&cb)
+      .then_with(|| factor_degree(a).cmp(&factor_degree(b)))
+      .then_with(|| factor_term_count(a).cmp(&factor_term_count(b)))
+      .then_with(|| {
+        factor_first_nonconst_coeff(a).cmp(&factor_first_nonconst_coeff(b))
+      })
+      .then_with(|| {
+        // For multivariate: sort by minimum term coefficient
+        // so factors with negative terms sort before positive ones
+        let min_a = collect_additive_terms(a)
+          .iter()
+          .map(term_integer_coeff)
+          .min()
+          .unwrap_or(0);
+        let min_b = collect_additive_terms(b)
+          .iter()
+          .map(term_integer_coeff)
+          .min()
+          .unwrap_or(0);
+        min_a.cmp(&min_b)
+      })
+      .then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
+  });
+
+  if result_factors.is_empty() {
+    Expr::Integer(1)
+  } else if result_factors.len() == 1 {
+    result_factors.remove(0)
+  } else {
+    build_product(result_factors)
+  }
 }
