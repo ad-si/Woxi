@@ -731,11 +731,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         let result_expr = render_dataset_if_needed(result_expr);
         // If the result is a Tabular expression, render it as an SVG table
         let result_expr = render_tabular_if_needed(result_expr);
-        // In visual mode, render TableForm[list] and MatrixForm[list] as Grid SVGs
+        // In visual mode, render TableForm[list], MatrixForm[list], and Column[list] as SVGs
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
           let result_expr = render_color_if_needed(result_expr);
           let result_expr = render_tableform_if_needed(result_expr);
-          render_matrixform_if_needed(result_expr)
+          let result_expr = render_matrixform_if_needed(result_expr);
+          render_column_if_needed(result_expr)
         } else {
           result_expr
         };
@@ -1119,6 +1120,22 @@ fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
           }
         }
         _ => expr,
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// If `expr` is `Column[{…}]`, render it as an SVG column and return `-Graphics-`.
+fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      if let Some(svg) = functions::graphics::column_to_svg(args) {
+        graphics_result(svg)
+      } else {
+        expr
       }
     }
     _ => expr,

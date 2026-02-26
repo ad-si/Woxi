@@ -5102,7 +5102,10 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     }
     // Row, TableForm, MatrixForm: display directive wrappers, show structure in InputForm
     Expr::FunctionCall { name, args }
-      if (name == "Row" || name == "TableForm" || name == "MatrixForm")
+      if (name == "Row"
+        || name == "TableForm"
+        || name == "MatrixForm"
+        || name == "Column")
         && !args.is_empty() =>
     {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
