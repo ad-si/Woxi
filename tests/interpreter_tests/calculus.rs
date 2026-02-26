@@ -1044,3 +1044,63 @@ mod minimize {
     );
   }
 }
+
+mod integrate_rational {
+  use super::*;
+
+  #[test]
+  fn integrate_1_over_x() {
+    assert_eq!(interpret("Integrate[1/x, x]").unwrap(), "Log[x]");
+  }
+
+  #[test]
+  fn integrate_x4_over_x2_minus_1() {
+    // Polynomial long division + partial fractions with linear factors
+    assert_eq!(
+      interpret("Integrate[x^4/(x^2-1), x]").unwrap(),
+      "x + x^3/3 + Log[1 - x]/2 - Log[1 + x]/2"
+    );
+  }
+
+  #[test]
+  fn integrate_1_over_x2_minus_1() {
+    // Partial fractions with linear factors only
+    assert_eq!(
+      interpret("Integrate[1/(x^2-1), x]").unwrap(),
+      "Log[1 - x]/2 - Log[1 + x]/2"
+    );
+  }
+
+  #[test]
+  fn integrate_1_over_x2_plus_1() {
+    // Irreducible quadratic denominator
+    assert_eq!(interpret("Integrate[1/(x^2+1), x]").unwrap(), "ArcTan[x]");
+  }
+
+  #[test]
+  fn integrate_x_over_1_minus_x3() {
+    // Mixed linear + irreducible quadratic factors
+    assert_eq!(
+      interpret("Integrate[x/(1-x^3), x]").unwrap(),
+      "-(ArcTan[(1 + 2*x)/Sqrt[3]]/Sqrt[3]) - Log[1 - x]/3 + Log[1 + x + x^2]/6"
+    );
+  }
+
+  #[test]
+  fn integrate_quadratic_only() {
+    // Pure irreducible quadratic: (2x+3)/(x^2+x+1)
+    assert_eq!(
+      interpret("Integrate[(2*x+3)/(x^2+x+1), x]").unwrap(),
+      "(4*ArcTan[(1 + 2*x)/Sqrt[3]])/Sqrt[3] + Log[1 + x + x^2]"
+    );
+  }
+
+  #[test]
+  fn integrate_x_plus_1_over_x2_plus_1() {
+    // Quadratic with both Log and ArcTan parts
+    assert_eq!(
+      interpret("Integrate[(x+1)/(x^2+1), x]").unwrap(),
+      "ArcTan[x] + Log[1 + x^2]/2"
+    );
+  }
+}

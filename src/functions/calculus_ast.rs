@@ -1095,6 +1095,670 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// Try to integrate a rational function (numerator/denominator where both are polynomials).
+/// Uses polynomial long division + partial fraction decomposition.
+fn try_integrate_rational(
+  num_expr: &Expr,
+  den_expr: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::{
+    build_sum, coeffs_to_expr, divide_by_root, evaluate_poly,
+    expand_and_combine, extract_poly_coeffs, find_integer_root, gcd_i128,
+    poly_long_divide,
+  };
+  use crate::syntax::BinaryOperator;
+
+  // Step 1: Extract polynomial coefficients
+  let num_expanded = expand_and_combine(num_expr);
+  let den_expanded = expand_and_combine(den_expr);
+  let num_coeffs = extract_poly_coeffs(&num_expanded, var)?;
+  let den_coeffs = extract_poly_coeffs(&den_expanded, var)?;
+
+  // Need at least degree 1 denominator
+  if den_coeffs.len() <= 1 {
+    return None;
+  }
+
+  // Step 2: Polynomial long division (if needed)
+  let (quotient_integral, proper_num) = if num_coeffs.len() >= den_coeffs.len()
+  {
+    let (quotient, remainder) = poly_long_divide(&num_coeffs, &den_coeffs);
+    // Check that division actually worked (poly_long_divide returns (vec![0], original) on failure)
+    if quotient == vec![0] && remainder == num_coeffs {
+      return None;
+    }
+    let quot_expr = coeffs_to_expr(&quotient, var);
+    let quot_integral = integrate(&quot_expr, var)?;
+    // If remainder is all zeros, just return the quotient integral
+    if remainder.iter().all(|&c| c == 0) {
+      return Some(quot_integral);
+    }
+    (Some(quot_integral), remainder)
+  } else {
+    (None, num_coeffs)
+  };
+
+  // If proper numerator is all zeros, return just quotient integral
+  if proper_num.iter().all(|&c| c == 0) {
+    return quotient_integral;
+  }
+
+  // Step 3: Factor denominator
+  let gcd_coeff = den_coeffs
+    .iter()
+    .copied()
+    .filter(|&c| c != 0)
+    .fold(0i128, gcd_i128);
+  if gcd_coeff == 0 {
+    return None;
+  }
+  let reduced: Vec<i128> = den_coeffs.iter().map(|c| c / gcd_coeff).collect();
+  let (sign, reduced) = if reduced.last().map(|&c| c < 0).unwrap_or(false) {
+    (-1i128, reduced.iter().map(|c| -c).collect::<Vec<_>>())
+  } else {
+    (1, reduced)
+  };
+  let overall_factor = gcd_coeff * sign;
+
+  // Find integer roots
+  let mut remaining = reduced.clone();
+  let mut roots: Vec<i128> = Vec::new();
+
+  loop {
+    if remaining.len() <= 1 {
+      break;
+    }
+    match find_integer_root(&remaining) {
+      Some(root) => {
+        roots.push(root);
+        remaining = divide_by_root(&remaining, root);
+      }
+      None => break,
+    }
+  }
+
+  // Remaining factor: if degree > 2, bail out
+  // Trim trailing zeros from remaining
+  while remaining.len() > 1 && remaining.last() == Some(&0) {
+    remaining.pop();
+  }
+  let remaining_deg =
+    if remaining.len() <= 1 && remaining.first().copied().unwrap_or(0) != 0 {
+      0 // constant
+    } else if remaining.len() <= 1 {
+      0
+    } else {
+      remaining.len() - 1
+    };
+  if remaining_deg > 2 {
+    return None;
+  }
+
+  // Must have at least one root or a quadratic remaining to do something useful
+  if roots.is_empty() && remaining_deg < 2 {
+    return None;
+  }
+
+  // Sort roots for consistent output (descending, so linear factors appear in ascending order)
+  roots.sort_by(|a, b| b.cmp(a));
+
+  // Step 4: Compute residues for linear roots
+  let mut log_terms: Vec<Expr> = Vec::new();
+
+  for (i, &root) in roots.iter().enumerate() {
+    let num_at_root = evaluate_poly(&proper_num, root);
+    let mut den_product = 1i128;
+    for (j, &other_root) in roots.iter().enumerate() {
+      if i != j {
+        den_product = den_product.checked_mul(root - other_root)?;
+      }
+    }
+    // Include remaining factor evaluation
+    if remaining_deg > 0 {
+      let rem_at_root = evaluate_poly(&remaining, root);
+      den_product = den_product.checked_mul(rem_at_root)?;
+    } else if remaining.len() == 1 && remaining[0] != 0 && remaining[0] != 1 {
+      den_product = den_product.checked_mul(remaining[0])?;
+    }
+    den_product = den_product.checked_mul(overall_factor)?;
+
+    if den_product == 0 {
+      return None;
+    }
+
+    // A_i = num_at_root / den_product as reduced fraction
+    let g = gcd_i128(num_at_root.abs(), den_product.abs());
+    let (mut an, mut ad) = (num_at_root / g, den_product / g);
+    if ad < 0 {
+      an = -an;
+      ad = -ad;
+    }
+
+    if an == 0 {
+      continue;
+    }
+
+    // Step 5: Build Log terms
+    // Convention: argument is positive at x=0
+    // root > 0: Log[root - x], root < 0: Log[-root + x], root = 0: Log[x]
+    let log_arg = if root == 0 {
+      Expr::Identifier(var.to_string())
+    } else if root > 0 {
+      // Log[root - x]
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(root)),
+        right: Box::new(Expr::Identifier(var.to_string())),
+      }
+    } else {
+      // root < 0: Log[-root + x]
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(-root)),
+        right: Box::new(Expr::Identifier(var.to_string())),
+      }
+    };
+
+    let log_expr = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![log_arg],
+    };
+
+    // Build coefficient * Log[...]
+    let term = if ad == 1 {
+      if an == 1 {
+        log_expr
+      } else if an == -1 {
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(log_expr),
+        }
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(an)),
+          right: Box::new(log_expr),
+        }
+      }
+    } else {
+      // Use Rational form: Rational[an, ad] * Log[...]
+      // But for positive fractions, Wolfram outputs Log[...]/ad
+      // and for negative, -Log[...]/ad, etc.
+      let abs_an = an.abs();
+      let frac_expr = if abs_an == 1 {
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(log_expr.clone()),
+          right: Box::new(Expr::Integer(ad)),
+        }
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(crate::functions::math_ast::make_rational_pub(
+            abs_an, ad,
+          )),
+          right: Box::new(log_expr.clone()),
+        }
+      };
+      if an < 0 {
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(frac_expr),
+        }
+      } else {
+        frac_expr
+      }
+    };
+
+    log_terms.push(term);
+  }
+
+  // Step 6 & 7: Handle quadratic part
+  let mut quad_terms: Vec<Expr> = Vec::new();
+
+  if remaining_deg == 2 {
+    // Remaining is a*x^2 + b*x + c (monic after normalization from factoring)
+    // remaining = [c, b, a] where a should be 1 (monic from divide_by_root)
+    let rem_a = remaining[2];
+    let rem_b = remaining[1];
+    let rem_c = remaining[0];
+
+    // Normalize to monic: x^2 + (b/a)*x + (c/a)
+    // Since we factored out integer roots, remaining should already be monic (a=1)
+    if rem_a != 1 {
+      return None; // Can't handle non-monic quadratics easily
+    }
+
+    let b = rem_b; // coefficient of x
+    let c = rem_c; // constant term
+
+    // discriminant: b^2 - 4c (for x^2 + bx + c)
+    let disc = b * b - 4 * c;
+    if disc >= 0 {
+      // Reducible quadratic - shouldn't happen since we already extracted all integer roots
+      // But if it does, bail out
+      return None;
+    }
+
+    // Compute (Bx + C) numerator of partial fraction for quadratic factor.
+    // Use polynomial identity:
+    // proper_num(x) = sum(A_j * overall_factor * cofactor_j(x) * quad(x))
+    //                 + (Bx + C) * overall_factor * linear_product(x)
+    // where cofactor_j(x) = prod_{k!=j}(x - r_k), linear_product(x) = prod(x - r_j)
+    //
+    // Strategy: compute the sum as a rational polynomial, subtract from proper_num,
+    // then divide by overall_factor * linear_product to get (Bx + C).
+
+    // Build linear_product polynomial = prod(x - r_j)
+    let mut lin_prod_poly = vec![1i128]; // start with constant 1
+    for &root in &roots {
+      // Multiply by (x - root): new[i] = old[i-1] - root * old[i]
+      let mut new_poly = vec![0i128; lin_prod_poly.len() + 1];
+      for (i, &coeff) in lin_prod_poly.iter().enumerate() {
+        new_poly[i] -= root * coeff;
+        new_poly[i + 1] += coeff;
+      }
+      lin_prod_poly = new_poly;
+    }
+
+    // Compute the sum of residue contributions as a rational polynomial.
+    // Use a common denominator: multiply proper_num by LCM of all ad_j,
+    // subtract the integer contributions, then divide.
+    // First, collect residues as (an_j, ad_j) pairs.
+    let mut residues: Vec<(i128, i128)> = Vec::new();
+    for (i, &root) in roots.iter().enumerate() {
+      let num_at_root = evaluate_poly(&proper_num, root);
+      let mut den_prod = 1i128;
+      for (j, &other_root) in roots.iter().enumerate() {
+        if i != j {
+          den_prod *= root - other_root;
+        }
+      }
+      let rem_at_root = evaluate_poly(&remaining, root);
+      den_prod *= rem_at_root;
+      den_prod *= overall_factor;
+      if den_prod == 0 {
+        return None;
+      }
+      let g = gcd_i128(num_at_root.abs(), den_prod.abs());
+      let (mut an, mut ad) = (num_at_root / g, den_prod / g);
+      if ad < 0 {
+        an = -an;
+        ad = -ad;
+      }
+      residues.push((an, ad));
+    }
+
+    // Compute LCM of all denominators
+    let mut lcm = 1i128;
+    for &(_, ad) in &residues {
+      let g = gcd_i128(lcm, ad);
+      lcm = (lcm / g).checked_mul(ad)?;
+    }
+
+    // Build: lcm * proper_num - sum(lcm/ad_j * an_j * overall_factor * cofactor_j * quad)
+    // = lcm * (Bx + C) * overall_factor * linear_product
+    let mut residual: Vec<i128> = proper_num.iter().map(|&c| c * lcm).collect();
+    // Pad to degree of den
+    let target_deg = den_coeffs.len() - 1;
+    while residual.len() <= target_deg {
+      residual.push(0);
+    }
+
+    let quad_poly = remaining.clone(); // [c, b, 1]
+
+    for (i, &_root) in roots.iter().enumerate() {
+      let (an, ad) = residues[i];
+      let scale = (lcm / ad) * an * overall_factor;
+
+      // Build cofactor_j(x) = prod_{k!=j}(x - r_k)
+      let mut cofactor = vec![1i128];
+      for (j, &other_root) in roots.iter().enumerate() {
+        if i != j {
+          let mut new_poly = vec![0i128; cofactor.len() + 1];
+          for (k, &coeff) in cofactor.iter().enumerate() {
+            new_poly[k] -= other_root * coeff;
+            new_poly[k + 1] += coeff;
+          }
+          cofactor = new_poly;
+        }
+      }
+
+      // Multiply cofactor by quad_poly
+      let mut product = vec![0i128; cofactor.len() + quad_poly.len() - 1];
+      for (ci, &cv) in cofactor.iter().enumerate() {
+        for (qi, &qv) in quad_poly.iter().enumerate() {
+          product[ci + qi] += cv * qv;
+        }
+      }
+
+      // Subtract scale * product from residual
+      for (k, &pv) in product.iter().enumerate() {
+        if k < residual.len() {
+          residual[k] -= scale * pv;
+        }
+      }
+    }
+
+    // Now residual = lcm * (Bx + C) * overall_factor * linear_product
+    // Divide residual by (overall_factor * linear_product)
+    let mut divisor_poly = lin_prod_poly.clone();
+    // Multiply divisor by overall_factor
+    for c in &mut divisor_poly {
+      *c *= overall_factor;
+    }
+    // Polynomial division: residual / divisor_poly should give (lcm * B)x + (lcm * C)
+    // Use poly_long_divide
+    let (bc_scaled, rem_check) = poly_long_divide(&residual, &divisor_poly);
+    if !rem_check.iter().all(|&c| c == 0) {
+      return None;
+    }
+
+    // Trim trailing zeros from bc_scaled
+    let mut bc_scaled = bc_scaled;
+    while bc_scaled.len() > 1 && bc_scaled.last() == Some(&0) {
+      bc_scaled.pop();
+    }
+
+    // bc_scaled should be degree 1: [lcm*C, lcm*B]
+    if bc_scaled.len() > 2 {
+      return None;
+    }
+    let bc_c_scaled = if bc_scaled.is_empty() {
+      0
+    } else {
+      bc_scaled[0]
+    };
+    let bc_b_scaled = if bc_scaled.len() < 2 { 0 } else { bc_scaled[1] };
+
+    // Divide by lcm to get B and C as rationals
+    let g_b = gcd_i128(bc_b_scaled.abs(), lcm);
+    let (big_b_num, big_b_den) = (bc_b_scaled / g_b, lcm / g_b);
+    let g_c = gcd_i128(bc_c_scaled.abs(), lcm);
+    let (big_c_num, big_c_den) = (bc_c_scaled / g_c, lcm / g_c);
+
+    // Convert to common B and C as integers (if possible) or rationals
+    // For the integration formula, we need B and C as rationals
+    // big_b = big_b_num / big_b_den, big_c = big_c_num / big_c_den
+    // But our formula uses integer B and C. If they're not integers, we need to adjust.
+    // Use common denominator for B and C as rationals
+    let common_den = {
+      let g = gcd_i128(big_b_den, big_c_den);
+      (big_b_den / g).checked_mul(big_c_den)?
+    };
+    let big_b_int = big_b_num * (common_den / big_b_den);
+    let big_c_int = big_c_num * (common_den / big_c_den);
+    // The quadratic partial fraction is (big_b_int * x + big_c_int) / (common_den * (x^2+bx+c))
+
+    // Step 7: Integrate (big_b_int * x + big_c_int) / (common_den * (x^2 + bx + c))
+    // = (1/common_den) * Integrate[(big_b_int * x + big_c_int) / (x^2 + bx + c)]
+    // Split: (Bx + C) = (B/2)(2x + b) + (C - Bb/2)
+    // where B = big_b_int, C = big_c_int
+    // Integral of (2x+b)/(x^2+bx+c) = Log[x^2+bx+c]
+    // Integral of 1/(x^2+bx+c) = (2/sqrt(4c-b^2)) * ArcTan[(2x+b)/sqrt(4c-b^2)]
+
+    let neg_disc = 4 * c - b * b; // = -(b^2-4c) > 0 since disc < 0
+    if neg_disc <= 0 {
+      return None;
+    }
+
+    // Build quadratic expr for Log: c + b*x + x^2 (Wolfram orders by ascending power)
+    let quad_log_arg = if b == 0 && c == 1 {
+      // 1 + x^2
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::Identifier(var.to_string())),
+          right: Box::new(Expr::Integer(2)),
+        }),
+      }
+    } else {
+      coeffs_to_expr(&[c, b, 1], var)
+    };
+
+    // Log part coefficient: B/(2*common_den)
+    // = big_b_int / (2 * common_den)
+    let log_total_num = big_b_int;
+    let log_total_den = 2 * common_den;
+    let g_log = gcd_i128(log_total_num.abs(), log_total_den);
+    let (log_num, log_den) = (log_total_num / g_log, log_total_den / g_log);
+
+    if log_num != 0 {
+      let log_expr = Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![quad_log_arg.clone()],
+      };
+      let log_term = build_coeff_times_expr(log_num, log_den, log_expr);
+      quad_terms.push(log_term);
+    }
+
+    // ArcTan part coefficient: (2*big_c_int - big_b_int*b) / (common_den * sqrt(4c - b^2))
+    let arctan_coeff_num = 2 * big_c_int - big_b_int * b;
+    if arctan_coeff_num != 0 {
+      // Check if neg_disc is a perfect square
+      let sqrt_neg_disc = {
+        let s = (neg_disc as f64).sqrt().round() as i128;
+        if s * s == neg_disc {
+          Expr::Integer(s)
+        } else {
+          Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(neg_disc)],
+          }
+        }
+      };
+
+      // ArcTan argument: (b + 2*x) / sqrt(neg_disc)
+      let arctan_inner = {
+        let numerator = if b == 0 {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::Identifier(var.to_string())),
+          }
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::Integer(b)),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(2)),
+              right: Box::new(Expr::Identifier(var.to_string())),
+            }),
+          }
+        };
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(numerator),
+          right: Box::new(sqrt_neg_disc.clone()),
+        }
+      };
+
+      let arctan_expr = Expr::FunctionCall {
+        name: "ArcTan".to_string(),
+        args: vec![arctan_inner],
+      };
+
+      // Full coefficient: arctan_coeff_num / (common_den * sqrt(neg_disc))
+      // Reduce: arctan_coeff_num / common_den first
+      let g_at = gcd_i128(arctan_coeff_num.abs(), common_den);
+      let at_num = arctan_coeff_num / g_at;
+      let at_den_int = common_den / g_at;
+
+      // If at_den_int > 1, multiply into the sqrt denominator
+      let effective_sqrt = if at_den_int == 1 {
+        sqrt_neg_disc.clone()
+      } else if let Expr::Integer(s) = &sqrt_neg_disc {
+        // Combine: at_den_int * s
+        Expr::Integer(at_den_int * s)
+      } else {
+        // at_den_int * Sqrt[neg_disc]
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(at_den_int)),
+          right: Box::new(sqrt_neg_disc.clone()),
+        }
+      };
+
+      let arctan_term = build_arctan_term(at_num, &effective_sqrt, arctan_expr);
+      quad_terms.push(arctan_term);
+    }
+  } else if remaining_deg == 0 && roots.is_empty() {
+    // No roots and no quadratic - can't decompose
+    return None;
+  }
+
+  // Step 8: Combine all terms
+  let mut all_terms: Vec<Expr> = Vec::new();
+  if let Some(qi) = quotient_integral {
+    all_terms.push(qi);
+  }
+  // ArcTan terms come before Log terms in Wolfram output ordering
+  // Actually, looking at the expected outputs:
+  // x/(1-x^3) → -(ArcTan[...]/Sqrt[3]) - Log[1 - x]/3 + Log[1 + x + x^2]/6
+  // (2x+3)/(x^2+x+1) → (4*ArcTan[...])/Sqrt[3] + Log[...]
+  // So ArcTan terms come first, then Log terms
+  all_terms.extend(quad_terms);
+  all_terms.extend(log_terms);
+
+  if all_terms.is_empty() {
+    return None;
+  }
+
+  Some(build_sum(all_terms))
+}
+
+/// Build an ArcTan term: coeff_num * arctan_expr / sqrt_expr
+/// Handles simplification for common cases.
+fn build_arctan_term(
+  coeff_num: i128,
+  sqrt_expr: &Expr,
+  arctan_expr: Expr,
+) -> Expr {
+  use crate::syntax::BinaryOperator;
+
+  let abs_coeff = coeff_num.abs();
+
+  let term = if let Expr::Integer(s) = sqrt_expr {
+    // sqrt is an integer - can simplify
+    let g = gcd_i128_local(abs_coeff, *s);
+    let reduced_num = abs_coeff / g;
+    let reduced_den = *s / g;
+
+    if reduced_den == 1 {
+      if reduced_num == 1 {
+        arctan_expr.clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(reduced_num)),
+          right: Box::new(arctan_expr.clone()),
+        }
+      }
+    } else if reduced_num == 1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(arctan_expr.clone()),
+        right: Box::new(Expr::Integer(reduced_den)),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(reduced_num)),
+          right: Box::new(arctan_expr.clone()),
+        }),
+        right: Box::new(Expr::Integer(reduced_den)),
+      }
+    }
+  } else {
+    // sqrt is Sqrt[n] - put it in denominator
+    if abs_coeff == 1 {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(arctan_expr.clone()),
+        right: Box::new(sqrt_expr.clone()),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(abs_coeff)),
+          right: Box::new(arctan_expr.clone()),
+        }),
+        right: Box::new(sqrt_expr.clone()),
+      }
+    }
+  };
+
+  if coeff_num < 0 {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(term),
+    }
+  } else {
+    term
+  }
+}
+
+/// Build (num/den) * expr, handling sign and simplifications.
+fn build_coeff_times_expr(num: i128, den: i128, expr: Expr) -> Expr {
+  use crate::syntax::BinaryOperator;
+
+  let abs_num = num.abs();
+
+  let unsigned_term = if den == 1 {
+    if abs_num == 1 {
+      expr
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(abs_num)),
+        right: Box::new(expr),
+      }
+    }
+  } else if abs_num == 1 {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(expr),
+      right: Box::new(Expr::Integer(den)),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(crate::functions::math_ast::make_rational_pub(
+        abs_num, den,
+      )),
+      right: Box::new(expr),
+    }
+  };
+
+  if num < 0 {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(unsigned_term),
+    }
+  } else {
+    unsigned_term
+  }
+}
+
+/// Local gcd helper (avoids import issues)
+fn gcd_i128_local(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a
+}
+
 /// Integrate an expression with respect to a variable
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   match expr {
@@ -1186,7 +1850,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: right.clone(),
             })
           } else {
-            None
+            // Try rational function integration (partial fractions)
+            try_integrate_rational(left, right, var)
           }
         }
         Power => {

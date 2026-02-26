@@ -801,11 +801,226 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
-      // Fall back to string comparison for non-polynomial terms
+      // Fall back: try structural comparison of function call arguments,
+      // then string comparison for non-polynomial terms.
+      // This ensures e.g. Log[1 - x] sorts before Log[1 + x] to match Wolfram.
+      let cmp = compare_expr_canonical(&base_a, &base_b);
+      if cmp != std::cmp::Ordering::Equal {
+        return cmp;
+      }
       let sa = term_sort_key(a);
       let sb = term_sort_key(b);
       sa.cmp(&sb)
     }
+  }
+}
+
+/// Compare two expressions using Wolfram-compatible canonical ordering.
+/// Used as a tie-breaker when Plus term sorting can't distinguish terms
+/// via polynomial structure alone.
+///
+/// Rules:
+///   - Integers: by value
+///   - Identifiers: alphabetically
+///   - FunctionCall with same name: compare arguments element by element
+///   - BinaryOp::Plus/Times: compare left then right
+///   - UnaryOp::Minus(x) < x (negative sorts before positive)
+///   - Fall back to string comparison
+fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  use std::cmp::Ordering;
+
+  // Assign a type tag for top-level ordering
+  fn type_tag(e: &Expr) -> u8 {
+    match e {
+      Expr::Integer(_) => 0,
+      Expr::Real(_) => 1,
+      Expr::Constant(_) => 2,
+      Expr::Identifier(_) => 3,
+      Expr::UnaryOp { .. } => 4,
+      Expr::BinaryOp { .. } => 5,
+      Expr::FunctionCall { .. } => 6,
+      _ => 7,
+    }
+  }
+
+  let ta = type_tag(a);
+  let tb = type_tag(b);
+
+  match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => x.cmp(y),
+    (Expr::Real(x), Expr::Real(y)) => {
+      x.partial_cmp(y).unwrap_or(Ordering::Equal)
+    }
+    (Expr::Identifier(x), Expr::Identifier(y)) => x.cmp(y),
+    (Expr::Constant(x), Expr::Constant(y)) => x.cmp(y),
+    (
+      Expr::FunctionCall { name: na, args: aa },
+      Expr::FunctionCall { name: nb, args: ab },
+    ) => {
+      let cmp = na.cmp(nb);
+      if cmp != Ordering::Equal {
+        return cmp;
+      }
+      // Compare arguments element by element
+      for (arg_a, arg_b) in aa.iter().zip(ab.iter()) {
+        let cmp = compare_expr_canonical(arg_a, arg_b);
+        if cmp != Ordering::Equal {
+          return cmp;
+        }
+      }
+      aa.len().cmp(&ab.len())
+    }
+    (
+      Expr::BinaryOp {
+        op: op_a,
+        left: la,
+        right: ra,
+      },
+      Expr::BinaryOp {
+        op: op_b,
+        left: lb,
+        right: rb,
+      },
+    ) => {
+      // Normalize Minus(a, b) to Plus(a, -b) for comparison
+      let (norm_op_a, norm_ra) =
+        if *op_a == crate::syntax::BinaryOperator::Minus {
+          (
+            crate::syntax::BinaryOperator::Plus,
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: ra.clone(),
+            },
+          )
+        } else {
+          (*op_a, *ra.clone())
+        };
+      let (norm_op_b, norm_rb) =
+        if *op_b == crate::syntax::BinaryOperator::Minus {
+          (
+            crate::syntax::BinaryOperator::Plus,
+            Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: rb.clone(),
+            },
+          )
+        } else {
+          (*op_b, *rb.clone())
+        };
+      let oa = norm_op_a as u8;
+      let ob = norm_op_b as u8;
+      let cmp = oa.cmp(&ob);
+      if cmp != Ordering::Equal {
+        return cmp;
+      }
+      let cmp = compare_expr_canonical(la, lb);
+      if cmp != Ordering::Equal {
+        return cmp;
+      }
+      compare_expr_canonical(&norm_ra, &norm_rb)
+    }
+    (
+      Expr::UnaryOp { op: _, operand: oa },
+      Expr::UnaryOp { op: _, operand: ob },
+    ) => compare_expr_canonical(oa, ob),
+    // Negated vs non-negated: -x sorts before x
+    // Handle both UnaryOp::Minus and Times[-1, x] / Times[negative, x]
+    _ if is_negated_form(a) && !is_negated_form(b) => {
+      let inner_a = strip_negation(a);
+      let inner_cmp = compare_expr_canonical(&inner_a, b);
+      if inner_cmp == Ordering::Equal {
+        Ordering::Less // -x < x
+      } else {
+        inner_cmp
+      }
+    }
+    _ if !is_negated_form(a) && is_negated_form(b) => {
+      let inner_b = strip_negation(b);
+      let inner_cmp = compare_expr_canonical(a, &inner_b);
+      if inner_cmp == Ordering::Equal {
+        Ordering::Greater // x > -x
+      } else {
+        inner_cmp
+      }
+    }
+    _ => {
+      if ta != tb {
+        ta.cmp(&tb)
+      } else {
+        // Fall back to string comparison
+        let sa = crate::syntax::expr_to_string(a);
+        let sb = crate::syntax::expr_to_string(b);
+        sa.cmp(&sb)
+      }
+    }
+  }
+}
+
+/// Check if an expression is a negated form: UnaryOp::Minus(x), Times[-1, x],
+/// Times[negative_integer, x], or BinaryOp::Times with -1.
+fn is_negated_form(e: &Expr) -> bool {
+  match e {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      ..
+    } => true,
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      matches!(&args[0], Expr::Integer(n) if *n < 0)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      ..
+    } => matches!(left.as_ref(), Expr::Integer(n) if *n < 0),
+    _ => false,
+  }
+}
+
+/// Strip negation from a negated form, returning the positive inner expression.
+fn strip_negation(e: &Expr) -> Expr {
+  match e {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => *operand.clone(),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      if let Expr::Integer(n) = &args[0] {
+        let pos_n = -n;
+        if pos_n == 1 && args.len() == 2 {
+          args[1].clone()
+        } else {
+          let mut new_args = args.clone();
+          new_args[0] = Expr::Integer(pos_n);
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: new_args,
+          }
+        }
+      } else {
+        e.clone()
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(n) = left.as_ref() {
+        let pos_n = -n;
+        if pos_n == 1 {
+          *right.clone()
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(pos_n)),
+            right: right.clone(),
+          }
+        }
+      } else {
+        e.clone()
+      }
+    }
+    _ => e.clone(),
   }
 }
 
@@ -830,8 +1045,9 @@ pub fn term_priority(e: &Expr) -> i32 {
       left,
       right,
     } => term_priority(left).max(term_priority(right)),
-    Expr::FunctionCall { name, .. } => match name.as_str() {
-      "Times" | "Power" | "Plus" | "Rational" => 0,
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Times" => args.iter().map(term_priority).max().unwrap_or(0),
+      "Power" | "Plus" | "Rational" => 0,
       "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh"
       | "Tanh" | "Coth" | "Sech" | "Csch" | "ArcSin" | "ArcCos" | "ArcTan"
       | "ArcCot" | "ArcSec" | "ArcCsc" | "Exp" | "Log" | "Factorial"
