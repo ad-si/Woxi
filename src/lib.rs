@@ -519,11 +519,13 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains('=')
     // Reals may need scientific notation formatting
     {
-      // Check if any element is a named color that needs evaluation
-      let has_named_color = trimmed[1..trimmed.len() - 1]
-        .split(',')
-        .any(|item| evaluator::named_color_expr_pub(item.trim()).is_some());
-      if !has_named_color {
+      // Check if any element needs evaluation (named colors, date symbols, etc.)
+      let needs_eval = trimmed[1..trimmed.len() - 1].split(',').any(|item| {
+        let item = item.trim();
+        evaluator::named_color_expr_pub(item).is_some()
+          || matches!(item, "Now" | "Today" | "Tomorrow" | "Yesterday")
+      });
+      if !needs_eval {
         // Simple list with no function calls or operators - return as-is
         return Ok(trimmed.to_string());
       }

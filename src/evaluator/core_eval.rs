@@ -816,6 +816,34 @@ pub fn evaluate_expr_to_expr_inner(
             ],
           });
         }
+        // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
+        #[cfg(not(target_arch = "wasm32"))]
+        if name == "Today" || name == "Tomorrow" || name == "Yesterday" {
+          use chrono::{Duration, Local};
+          let now = Local::now();
+          let date = match name.as_str() {
+            "Tomorrow" => now + Duration::days(1),
+            "Yesterday" => now - Duration::days(1),
+            _ => now,
+          };
+          return Ok(Expr::FunctionCall {
+            name: "DateObject".to_string(),
+            args: vec![
+              Expr::List(vec![
+                Expr::Integer(
+                  date.format("%Y").to_string().parse::<i128>().unwrap(),
+                ),
+                Expr::Integer(
+                  date.format("%m").to_string().parse::<i128>().unwrap(),
+                ),
+                Expr::Integer(
+                  date.format("%d").to_string().parse::<i128>().unwrap(),
+                ),
+              ]),
+              Expr::String("Day".to_string()),
+            ],
+          });
+        }
         // Handle system $ variables
         if name.starts_with('$')
           && let Some(val) = get_system_variable(name)
