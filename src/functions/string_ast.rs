@@ -944,6 +944,39 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(expr_to_box_form(&inner_args[0])));
   }
 
+  // If the expression is TeXForm[inner], produce TeX representation
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "TeXForm"
+    && inner_args.len() == 1
+  {
+    return Ok(Expr::String(expr_to_tex(&inner_args[0])));
+  }
+
+  // If the expression is FortranForm[inner], produce Fortran representation
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "FortranForm"
+    && inner_args.len() == 1
+  {
+    return Ok(Expr::String(expr_to_fortran(&inner_args[0])));
+  }
+
+  // If the expression is CForm[inner], produce C representation
+  if let Expr::FunctionCall {
+    name,
+    args: inner_args,
+  } = &args[0]
+    && name == "CForm"
+    && inner_args.len() == 1
+  {
+    return Ok(Expr::String(expr_to_c(&inner_args[0])));
+  }
+
   // Check for form argument
   if args.len() == 2
     && let Expr::Identifier(form) = &args[1]
@@ -969,6 +1002,9 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       "CForm" => {
         return Ok(Expr::String(expr_to_c(&args[0])));
+      }
+      "FortranForm" => {
+        return Ok(Expr::String(expr_to_fortran(&args[0])));
       }
       "OutputForm" => {
         let s = crate::syntax::expr_to_output_form_2d(&args[0]);
@@ -1259,16 +1295,27 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         expr_to_tex(&args[1])
       )
     }
-    // Plus (n-ary)
+    // Plus (n-ary) — reverse order so higher-degree terms come first (math convention),
+    // then rotate so a non-negative term leads (avoid starting with -z+x, prefer x-z)
     "Plus" if !args.is_empty() => {
-      let mut result = expr_to_tex(&args[0]);
-      for arg in args.iter().skip(1) {
-        let t = expr_to_tex(arg);
+      let tex_strs: Vec<String> = args.iter().rev().map(expr_to_tex).collect();
+      // Find first non-negative term to lead with
+      let lead = tex_strs
+        .iter()
+        .position(|s| !s.starts_with('-'))
+        .unwrap_or(0);
+      let reordered: Vec<&str> = tex_strs[lead..]
+        .iter()
+        .chain(tex_strs[..lead].iter())
+        .map(|s| s.as_str())
+        .collect();
+      let mut result = reordered[0].to_string();
+      for t in reordered.iter().skip(1) {
         if t.starts_with('-') {
-          result.push_str(&t);
+          result.push_str(t);
         } else {
           result.push('+');
-          result.push_str(&t);
+          result.push_str(t);
         }
       }
       result
@@ -3403,4 +3450,125 @@ fn c_paren(expr: &Expr) -> String {
 /// Format C function arguments
 fn c_args(args: &[Expr]) -> String {
   args.iter().map(expr_to_c).collect::<Vec<_>>().join(",")
+}
+
+/// Convert an expression to Fortran language format
+pub fn expr_to_fortran(expr: &Expr) -> String {
+  match expr {
+    Expr::Integer(n) => n.to_string(),
+    Expr::BigInteger(n) => n.to_string(),
+    Expr::Real(f) => {
+      let s = format!("{}", f);
+      // Ensure decimal point
+      if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+        format!("{}.", s)
+      } else {
+        s
+      }
+    }
+    Expr::String(s) => format!("\"{}\"", s),
+    Expr::Identifier(name) => name.clone(),
+    Expr::Constant(name) => name.clone(),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" => {
+        let parts: Vec<String> = args.iter().map(expr_to_fortran).collect();
+        parts.join(" + ")
+      }
+      "Times" => {
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            let s = expr_to_fortran(a);
+            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Plus,
+                  ..
+                }
+              )
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  ..
+                }
+              )
+            {
+              format!("({})", s)
+            } else {
+              s
+            }
+          })
+          .collect();
+        parts.join("*")
+      }
+      "Power" if args.len() == 2 => {
+        if matches!(&args[1], Expr::FunctionCall { name, args: ra } if name == "Rational" && ra.len() == 2 && matches!(&ra[0], Expr::Integer(1)) && matches!(&ra[1], Expr::Integer(2)))
+        {
+          format!("Sqrt({})", expr_to_fortran(&args[0]))
+        } else {
+          format!("{}**{}", fortran_paren(&args[0]), fortran_paren(&args[1]))
+        }
+      }
+      "Rational" if args.len() == 2 => {
+        format!("{}./{}", expr_to_fortran(&args[0]), fortran_paren(&args[1]))
+      }
+      _ => format!("{}({})", name, fortran_args(args)),
+    },
+    Expr::BinaryOp { op, left, right } => {
+      let l = expr_to_fortran(left);
+      let r = expr_to_fortran(right);
+      match op {
+        BinaryOperator::Plus => format!("{} + {}", l, r),
+        BinaryOperator::Minus => format!("{} - {}", l, r),
+        BinaryOperator::Times => format!("{}*{}", l, r),
+        BinaryOperator::Divide => format!("{}/{}", l, r),
+        BinaryOperator::Power => format!("{}**{}", l, r),
+        _ => format!("{}({})", format!("{:?}", op), format!("{},{}", l, r)),
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      format!("-{}", fortran_paren(operand))
+    }
+    Expr::List(items) => {
+      let parts: Vec<String> = items.iter().map(expr_to_fortran).collect();
+      format!("(/{}/) ", parts.join(","))
+    }
+    _ => crate::syntax::expr_to_string(expr),
+  }
+}
+
+/// Add parentheses for Fortran output if needed
+fn fortran_paren(expr: &Expr) -> String {
+  let s = expr_to_fortran(expr);
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Plus" => format!("({})", s),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      ..
+    } => format!("({})", s),
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      ..
+    } => format!("({})", s),
+    Expr::Integer(n) if *n < 0 => format!("({})", s),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => format!("({})", s),
+    _ => s,
+  }
+}
+
+/// Format Fortran function arguments
+fn fortran_args(args: &[Expr]) -> String {
+  args
+    .iter()
+    .map(expr_to_fortran)
+    .collect::<Vec<_>>()
+    .join(",")
 }

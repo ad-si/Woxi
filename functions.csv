@@ -2101,7 +2101,7 @@ FormPage,,,,10.3,1672
 FormProtectionMethod,,,,12.3,
 FormulaData,,🚫,,10,2473
 FormulaLookup,,,,10,1488
-FortranForm,Symbol for Fortran code formatting,✅,pure,1,2807
+FortranForm,Format expression as Fortran code,✅,pure,1,2807
 Forward,,,,6,2986
 ForwardBackward,,,,6,2611
 ForwardCloudCredentials,,,,12.2,
