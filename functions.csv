@@ -910,7 +910,7 @@ ColorSlider,,,,6,1949
 ColorsNear,,,,12,3593
 ColorSpace,,,,7,419
 ColorToneMapping,,,,10.2,4356
-Column,,,,6,174
+Column,Displays elements in a vertical column,✅,pure,6,174
 ColumnAlignments,,,,3,2671
 ColumnLines,,,,3,2914
 ColumnsEqual,,,,3,4660

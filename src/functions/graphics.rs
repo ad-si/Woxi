@@ -4545,3 +4545,74 @@ fn render_tabular_svg_grid(
   svg.push_str("</svg>");
   Some(svg)
 }
+
+/// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
+/// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
+pub fn column_to_svg(args: &[Expr]) -> Option<String> {
+  if args.is_empty() {
+    return None;
+  }
+
+  // Extract items from the first argument (must be a List)
+  let items = match &args[0] {
+    Expr::List(items) => items.clone(),
+    _ => return None,
+  };
+
+  if items.is_empty() {
+    return None;
+  }
+
+  // Parse optional alignment from second arg (default: Left)
+  let alignment = if args.len() >= 2 {
+    match &args[1] {
+      Expr::Identifier(s) if s == "Center" => "middle",
+      Expr::Identifier(s) if s == "Right" => "end",
+      _ => "start", // Left or anything else
+    }
+  } else {
+    "start"
+  };
+
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let pad_x: f64 = 12.0;
+  let pad_y: f64 = 8.0;
+  let row_height = font_size + pad_y;
+
+  // Compute column width from widest item
+  let col_width: f64 = items
+    .iter()
+    .map(|item| estimate_display_width(item) * char_width + pad_x)
+    .fold(0.0_f64, f64::max);
+
+  let total_height = row_height * items.len() as f64;
+  let total_width = col_width;
+
+  let svg_w = total_width.ceil() as u32;
+  let svg_h = total_height.ceil() as u32;
+
+  let mut svg = String::with_capacity(1024);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    svg_w, svg_h, svg_w, svg_h
+  ));
+
+  // Compute text x-coordinate based on alignment
+  let text_x: f64 = match alignment {
+    "middle" => total_width / 2.0,
+    "end" => total_width - pad_x / 2.0,
+    _ => pad_x / 2.0, // "start"
+  };
+
+  for (i, item) in items.iter().enumerate() {
+    let cy = i as f64 * row_height + row_height / 2.0;
+    svg.push_str(&format!(
+      "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
+      expr_to_svg_markup(item)
+    ));
+  }
+
+  svg.push_str("</svg>");
+  Some(svg)
+}

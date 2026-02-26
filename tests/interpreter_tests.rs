@@ -143,6 +143,7 @@ mod interpreter_tests {
   mod association;
   mod calculus;
   mod cellular_automaton;
+  mod column;
   mod control_flow;
   mod dataset;
   mod datetime;
