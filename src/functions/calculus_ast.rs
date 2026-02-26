@@ -1850,6 +1850,34 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: right.clone(),
             })
           } else {
+            // If denominator is x^n, rewrite as numerator * x^(-n)
+            if let Expr::BinaryOp {
+              op: Power,
+              left: base,
+              right: exp,
+            } = right.as_ref()
+              && let Expr::Identifier(name) = base.as_ref()
+              && name == var
+              && is_constant_wrt(exp, var)
+            {
+              let neg_exp = Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: exp.clone(),
+              };
+              let x_neg_n = Expr::BinaryOp {
+                op: Power,
+                left: base.clone(),
+                right: Box::new(neg_exp),
+              };
+              let rewritten = Expr::BinaryOp {
+                op: Times,
+                left: left.clone(),
+                right: Box::new(x_neg_n),
+              };
+              if let Some(result) = integrate(&rewritten, var) {
+                return Some(result);
+              }
+            }
             // Try rational function integration (partial fractions)
             try_integrate_rational(left, right, var)
           }
@@ -1865,13 +1893,37 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               left: right.clone(),
               right: Box::new(Expr::Integer(1)),
             });
+            let power_expr = Expr::BinaryOp {
+              op: Power,
+              left: left.clone(),
+              right: Box::new(new_exp.clone()),
+            };
+            // When new_exp is a negative integer, pull the sign out
+            // e.g. x^(-1)/(-1) → -x^(-1), x^(-2)/(-2) → -x^(-2)/2
+            if let Expr::Integer(n) = &new_exp {
+              let n = *n;
+              if n < 0 {
+                let abs_n = -n;
+                if abs_n == 1 {
+                  return Some(Expr::UnaryOp {
+                    op: crate::syntax::UnaryOperator::Minus,
+                    operand: Box::new(power_expr),
+                  });
+                } else {
+                  return Some(Expr::UnaryOp {
+                    op: crate::syntax::UnaryOperator::Minus,
+                    operand: Box::new(Expr::BinaryOp {
+                      op: Divide,
+                      left: Box::new(power_expr),
+                      right: Box::new(Expr::Integer(abs_n)),
+                    }),
+                  });
+                }
+              }
+            }
             return Some(Expr::BinaryOp {
               op: Divide,
-              left: Box::new(Expr::BinaryOp {
-                op: Power,
-                left: left.clone(),
-                right: Box::new(new_exp.clone()),
-              }),
+              left: Box::new(power_expr),
               right: Box::new(new_exp),
             });
           }
