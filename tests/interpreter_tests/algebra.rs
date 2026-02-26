@@ -290,6 +290,55 @@ mod factor {
   }
 }
 
+mod factor_multivariate {
+  use super::*;
+
+  #[test]
+  fn bivariate_perfect_square() {
+    assert_eq!(interpret("Factor[x^2 + 2*x*y + y^2]").unwrap(), "(x + y)^2");
+  }
+
+  #[test]
+  fn bivariate_difference_of_squares() {
+    assert_eq!(interpret("Factor[x^2 - y^2]").unwrap(), "(x - y)*(x + y)");
+  }
+
+  #[test]
+  fn common_variable_factor() {
+    assert_eq!(interpret("Factor[x^2*y + x*y^2]").unwrap(), "x*y*(x + y)");
+  }
+
+  #[test]
+  fn perfect_cube() {
+    assert_eq!(
+      interpret("Factor[x^3 + 3*x^2*y + 3*x*y^2 + y^3]").unwrap(),
+      "(x + y)^3"
+    );
+  }
+
+  #[test]
+  fn target_expression() {
+    assert_eq!(
+      interpret("Factor[Expand[Expand[(x + y)^2 + 9(2 + x)(x + y)]^3]]")
+        .unwrap(),
+      "(x + y)^3*(18 + 10*x + y)^3"
+    );
+  }
+
+  #[test]
+  fn irreducible_sum_of_squares() {
+    assert_eq!(interpret("Factor[x^2 + y^2]").unwrap(), "x^2 + y^2");
+  }
+
+  #[test]
+  fn with_numeric_gcd() {
+    assert_eq!(
+      interpret("Factor[6*x^2 + 12*x*y + 6*y^2]").unwrap(),
+      "6*(x + y)^2"
+    );
+  }
+}
+
 mod factor_list {
   use super::*;
 
