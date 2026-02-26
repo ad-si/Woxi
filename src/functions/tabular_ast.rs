@@ -87,15 +87,14 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
   }
 
   // If already has schema (2+ args where the second is a TabularSchema), return as-is
-  if args.len() >= 2 {
-    if let Expr::FunctionCall { name, .. } = &args[1] {
-      if name == "TabularSchema" {
-        return Expr::FunctionCall {
-          name: "Tabular".to_string(),
-          args: args.to_vec(),
-        };
-      }
-    }
+  if args.len() >= 2
+    && let Expr::FunctionCall { name, .. } = &args[1]
+    && name == "TabularSchema"
+  {
+    return Expr::FunctionCall {
+      name: "Tabular".to_string(),
+      args: args.to_vec(),
+    };
   }
 
   let data = &args[0];
@@ -114,12 +113,12 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
       }
 
       // Single flat list — treat as single-column data
-      return tabular_from_flat_list(rows, args);
+      tabular_from_flat_list(rows, args)
     }
 
     // Tabular[<|key1 -> val, ...|>] — column-oriented association
     Expr::Association(pairs) if !pairs.is_empty() => {
-      return tabular_from_column_association(pairs, args);
+      tabular_from_column_association(pairs, args)
     }
 
     _ => {
@@ -153,11 +152,11 @@ fn tabular_from_list_of_associations(rows: &[Expr], args: &[Expr]) -> Expr {
   }
 
   // Override with explicit column names if provided
-  if args.len() >= 2 {
-    if let Expr::List(names) = &args[1] {
-      col_keys = names.clone();
-      col_key_strs = names.iter().map(crate::syntax::expr_to_string).collect();
-    }
+  if args.len() >= 2
+    && let Expr::List(names) = &args[1]
+  {
+    col_keys = names.clone();
+    col_key_strs = names.iter().map(crate::syntax::expr_to_string).collect();
   }
 
   // Infer column types

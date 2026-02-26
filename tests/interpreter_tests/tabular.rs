@@ -85,8 +85,7 @@ mod tabular_ast {
   #[test]
   fn tabular_flat_list() {
     clear_state();
-    let result =
-      interpret_with_stdout("Tabular[{10, 20, 30}]").unwrap();
+    let result = interpret_with_stdout("Tabular[{10, 20, 30}]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -123,10 +122,7 @@ mod tabular_ast {
   fn normal_tabular_list_of_associations() {
     clear_state();
     assert_eq!(
-      interpret(
-        "Normal[Tabular[{<|\"a\" -> 1, \"b\" -> 2|>}]]"
-      )
-      .unwrap(),
+      interpret("Normal[Tabular[{<|\"a\" -> 1, \"b\" -> 2|>}]]").unwrap(),
       "{<|a -> 1, b -> 2|>}"
     );
   }
@@ -135,10 +131,8 @@ mod tabular_ast {
   fn normal_tabular_column_association() {
     clear_state();
     assert_eq!(
-      interpret(
-        "Normal[Tabular[<|\"x\" -> {1, 2}, \"y\" -> {3, 4}|>]]"
-      )
-      .unwrap(),
+      interpret("Normal[Tabular[<|\"x\" -> {1, 2}, \"y\" -> {3, 4}|>]]")
+        .unwrap(),
       "<|x -> {1, 2}, y -> {3, 4}|>"
     );
   }
@@ -163,10 +157,8 @@ mod tabular_ast {
   #[test]
   fn tabular_has_header_background() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Tabular[{<|\"X\" -> 1, \"Y\" -> 2|>}]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Tabular[{<|\"X\" -> 1, \"Y\" -> 2|>}]").unwrap();
     let svg = result.graphics.unwrap();
     assert!(
       svg.contains("fill=\"#f0f0f0\""),
@@ -208,10 +200,8 @@ mod tabular_ast {
   #[test]
   fn tabular_single_column_association() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Tabular[<|\"values\" -> {10, 20, 30}|>]",
-    )
-    .unwrap();
+    let result =
+      interpret_with_stdout("Tabular[<|\"values\" -> {10, 20, 30}|>]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
     let svg = result.graphics.unwrap();
@@ -225,10 +215,7 @@ mod tabular_ast {
   fn tabular_already_has_schema() {
     clear_state();
     // When Tabular already has a TabularSchema, it should pass through
-    let result = interpret(
-      "Tabular[{{1, 2}}, TabularSchema[<||>]]",
-    )
-    .unwrap();
+    let result = interpret("Tabular[{{1, 2}}, TabularSchema[<||>]]").unwrap();
     // Should render as graphics since it has schema
     assert!(result == "-Graphics-" || result.contains("Tabular"));
   }
@@ -236,10 +223,7 @@ mod tabular_ast {
   #[test]
   fn output_svg_not_set_for_tabular() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Tabular[{<|\"a\" -> 1|>}]",
-    )
-    .unwrap();
+    let result = interpret_with_stdout("Tabular[{<|\"a\" -> 1|>}]").unwrap();
     assert!(
       result.output_svg.is_none(),
       "output_svg should be None for Tabular table results"
@@ -270,8 +254,7 @@ mod tabular_ast {
   #[test]
   fn tabular_single_row() {
     clear_state();
-    let result =
-      interpret_with_stdout("Tabular[{{1, 2, 3}}]").unwrap();
+    let result = interpret_with_stdout("Tabular[{{1, 2, 3}}]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
   }
