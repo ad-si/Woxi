@@ -541,6 +541,124 @@ pub fn permutations(items: &[Expr]) -> Vec<Vec<Expr>> {
   result
 }
 
+/// Try simple symbol replacement at the AST level.
+/// Handles cases like `List -> Sequence` where `Expr::List` has head "List"
+/// but doesn't contain the literal string "List" in its printed form `{...}`.
+/// Returns `Some(new_expr)` if any replacement was made, `None` otherwise.
+fn try_symbol_replace_all(
+  expr: &Expr,
+  pattern_sym: &str,
+  replacement: &Expr,
+) -> Option<Expr> {
+  match expr {
+    // Direct symbol match: replace identifiers that match the pattern
+    Expr::Identifier(name) if name == pattern_sym => Some(replacement.clone()),
+
+    // List head replacement: List -> X turns {a,b} into X[a,b]
+    Expr::List(items) if pattern_sym == "List" => {
+      // Recurse into items first
+      let new_items: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          try_symbol_replace_all(item, pattern_sym, replacement)
+            .unwrap_or_else(|| item.clone())
+        })
+        .collect();
+      // Replace the head
+      match replacement {
+        Expr::Identifier(new_head) => Some(Expr::FunctionCall {
+          name: new_head.clone(),
+          args: new_items,
+        }),
+        _ => {
+          // For non-symbol replacements, convert to FullForm-style
+          let head_str = expr_to_string(replacement);
+          Some(Expr::FunctionCall {
+            name: head_str,
+            args: new_items,
+          })
+        }
+      }
+    }
+
+    // Recurse into List items (when pattern is not "List")
+    Expr::List(items) => {
+      let mut new_items = Vec::with_capacity(items.len());
+      let mut any_changed = false;
+      for item in items {
+        if let Some(new_item) =
+          try_symbol_replace_all(item, pattern_sym, replacement)
+        {
+          new_items.push(new_item);
+          any_changed = true;
+        } else {
+          new_items.push(item.clone());
+        }
+      }
+      if any_changed {
+        Some(Expr::List(new_items))
+      } else {
+        None
+      }
+    }
+
+    // FunctionCall head replacement: f -> g turns f[a,b] into g[a,b]
+    Expr::FunctionCall { name, args } => {
+      let head_changed = name == pattern_sym;
+      let new_name = if head_changed {
+        match replacement {
+          Expr::Identifier(new_head) => new_head.clone(),
+          _ => expr_to_string(replacement),
+        }
+      } else {
+        name.clone()
+      };
+      // Recurse into args
+      let mut new_args = Vec::with_capacity(args.len());
+      let mut any_arg_changed = false;
+      for arg in args {
+        if let Some(new_arg) =
+          try_symbol_replace_all(arg, pattern_sym, replacement)
+        {
+          new_args.push(new_arg);
+          any_arg_changed = true;
+        } else {
+          new_args.push(arg.clone());
+        }
+      }
+      if head_changed || any_arg_changed {
+        Some(Expr::FunctionCall {
+          name: new_name,
+          args: new_args,
+        })
+      } else {
+        None
+      }
+    }
+
+    // Recurse into other compound expressions
+    Expr::Rule {
+      pattern: pat,
+      replacement: repl,
+    } => {
+      let new_pat = try_symbol_replace_all(pat, pattern_sym, replacement);
+      let new_repl = try_symbol_replace_all(repl, pattern_sym, replacement);
+      if new_pat.is_some() || new_repl.is_some() {
+        Some(Expr::Rule {
+          pattern: Box::new(new_pat.unwrap_or_else(|| pat.as_ref().clone())),
+          replacement: Box::new(
+            new_repl.unwrap_or_else(|| repl.as_ref().clone()),
+          ),
+        })
+      } else {
+        None
+      }
+    }
+
+    _ => None,
+  }
+}
+
 /// Try Flat subsequence replacement. For a Flat function f, matches f[a,b] within f[a,b,c]
 /// by trying contiguous subsequences. Recursively applies to subexpressions.
 pub fn try_flat_replace_all(
@@ -704,6 +822,21 @@ pub fn apply_replace_all_ast(
     replacement,
   } = rules
     && let Some(result) = try_flat_replace_all(expr, pattern, replacement)?
+  {
+    return Ok(result);
+  }
+
+  // Try AST-level symbol replacement (handles Expr::List head replacement for List -> X)
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  }
+  | Expr::RuleDelayed {
+    pattern,
+    replacement,
+  } = rules
+    && let Expr::Identifier(pat_sym) = pattern.as_ref()
+    && let Some(result) = try_symbol_replace_all(expr, pat_sym, replacement)
   {
     return Ok(result);
   }
@@ -1314,16 +1447,46 @@ pub fn apply_replace_all_multi_ast(
         .iter()
         .map(|item| apply_replace_all_multi_ast(item, rules))
         .collect();
-      Ok(Expr::List(new_items?))
+      let new_items = new_items?;
+      // Check if any rule replaces the "List" head
+      for (pattern, replacement) in rules {
+        if let Expr::Identifier(sym) = pattern
+          && sym == "List"
+        {
+          let new_head = match replacement {
+            Expr::Identifier(h) => h.clone(),
+            _ => expr_to_string(replacement),
+          };
+          return Ok(Expr::FunctionCall {
+            name: new_head,
+            args: new_items,
+          });
+        }
+      }
+      Ok(Expr::List(new_items))
     }
     Expr::FunctionCall { name, args } => {
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
         .map(|arg| apply_replace_all_multi_ast(arg, rules))
         .collect();
+      let new_args = new_args?;
+      // Check if any rule replaces the function head
+      let mut new_name = name.clone();
+      for (pattern, replacement) in rules {
+        if let Expr::Identifier(sym) = pattern
+          && sym == name
+        {
+          new_name = match replacement {
+            Expr::Identifier(h) => h.clone(),
+            _ => expr_to_string(replacement),
+          };
+          break;
+        }
+      }
       Ok(Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args?,
+        name: new_name,
+        args: new_args,
       })
     }
     Expr::BinaryOp { op, left, right } => {
