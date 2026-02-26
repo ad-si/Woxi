@@ -4330,9 +4330,17 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "FullForm" && args.len() == 1 {
         return format!("FullForm[{}]", expr_to_output(&args[0]));
       }
-      // CForm[expr] displays as CForm[evaluated_expr] in OutputForm
+      // CForm[expr] displays as C code in OutputForm
       if name == "CForm" && args.len() == 1 {
-        return format!("CForm[{}]", expr_to_output(&args[0]));
+        return crate::functions::string_ast::expr_to_c(&args[0]);
+      }
+      // TeXForm[expr] displays as TeX in OutputForm
+      if name == "TeXForm" && args.len() == 1 {
+        return crate::functions::string_ast::expr_to_tex(&args[0]);
+      }
+      // FortranForm[expr] displays as Fortran code in OutputForm
+      if name == "FortranForm" && args.len() == 1 {
+        return crate::functions::string_ast::expr_to_fortran(&args[0]);
       }
       // Special case: Skeleton[n] displays as <<n>>
       if name == "Skeleton" && args.len() == 1 {
@@ -5061,6 +5069,18 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
     // CForm: InputForm renders the expression as C code
     Expr::FunctionCall { name, args } if name == "CForm" && args.len() == 1 => {
       crate::functions::string_ast::expr_to_c(&args[0])
+    }
+    // TeXForm: InputForm renders the expression as TeX
+    Expr::FunctionCall { name, args }
+      if name == "TeXForm" && args.len() == 1 =>
+    {
+      crate::functions::string_ast::expr_to_tex(&args[0])
+    }
+    // FortranForm: InputForm renders the expression as Fortran code
+    Expr::FunctionCall { name, args }
+      if name == "FortranForm" && args.len() == 1 =>
+    {
+      crate::functions::string_ast::expr_to_fortran(&args[0])
     }
     // Unevaluated: InputForm strips the wrapper, showing just the inner expression
     Expr::FunctionCall { name, args }

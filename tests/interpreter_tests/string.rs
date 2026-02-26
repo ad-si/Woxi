@@ -1298,10 +1298,10 @@ mod tex_form {
 
   #[test]
   fn simple_addition() {
-    // Single-character exponents use no braces (Wolfram behavior)
+    // Higher-degree terms first (standard math convention), matching wolframscript
     assert_eq!(
       interpret("ToString[x^2 + y^2, TeXForm]").unwrap(),
-      "x^2+y^2"
+      "y^2+x^2"
     );
   }
 
@@ -1452,10 +1452,10 @@ mod c_form {
 
   #[test]
   fn polynomial() {
-    // CForm wraps in OutputForm, matching wolframscript
+    // CForm displays the C representation directly
     assert_eq!(
       interpret("CForm[x^2 + 2 x + 1]").unwrap(),
-      "CForm[1 + 2*x + x^2]"
+      "1 + 2*x + Power(x,2)"
     );
   }
 
@@ -1463,28 +1463,28 @@ mod c_form {
   fn trig_functions() {
     assert_eq!(
       interpret("CForm[Sin[x] + Cos[y]]").unwrap(),
-      "CForm[Cos[y] + Sin[x]]"
+      "Cos(y) + Sin(x)"
     );
   }
 
   #[test]
   fn pi_constant() {
-    assert_eq!(interpret("CForm[Pi]").unwrap(), "CForm[Pi]");
+    assert_eq!(interpret("CForm[Pi]").unwrap(), "Pi");
   }
 
   #[test]
   fn e_constant() {
-    assert_eq!(interpret("CForm[E]").unwrap(), "CForm[E]");
+    assert_eq!(interpret("CForm[E]").unwrap(), "E");
   }
 
   #[test]
   fn sqrt() {
-    assert_eq!(interpret("CForm[Sqrt[x]]").unwrap(), "CForm[Sqrt[x]]");
+    assert_eq!(interpret("CForm[Sqrt[x]]").unwrap(), "Sqrt(x)");
   }
 
   #[test]
   fn division() {
-    assert_eq!(interpret("CForm[1/x]").unwrap(), "CForm[x^(-1)]");
+    assert_eq!(interpret("CForm[1/x]").unwrap(), "1/x");
   }
 
   #[test]
@@ -1498,7 +1498,137 @@ mod c_form {
 
   #[test]
   fn exp_function() {
-    // CForm wraps, Exp[x] evaluates to E^x
-    assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "CForm[E^x]");
+    assert_eq!(interpret("CForm[Exp[x]]").unwrap(), "Power(E,x)");
+  }
+}
+
+mod tex_form_standalone {
+  use super::*;
+
+  #[test]
+  fn displays_tex() {
+    assert_eq!(interpret("TeXForm[1 + x^2]").unwrap(), "x^2+1");
+  }
+
+  #[test]
+  fn to_string_extracts_tex() {
+    assert_eq!(interpret("ToString[TeXForm[1 + x^2]]").unwrap(), "x^2+1");
+  }
+
+  #[test]
+  fn pi_constant() {
+    assert_eq!(interpret("TeXForm[Pi]").unwrap(), "\\pi");
+  }
+
+  #[test]
+  fn to_string_pi() {
+    assert_eq!(interpret("ToString[TeXForm[Pi]]").unwrap(), "\\pi");
+  }
+
+  #[test]
+  fn sqrt() {
+    assert_eq!(interpret("TeXForm[Sqrt[x]]").unwrap(), "\\sqrt{x}");
+  }
+}
+
+mod fortran_form {
+  use super::*;
+
+  #[test]
+  fn displays_fortran() {
+    assert_eq!(interpret("FortranForm[1 + x^2]").unwrap(), "1 + x**2");
+  }
+
+  #[test]
+  fn to_string_extracts_fortran() {
+    assert_eq!(
+      interpret("ToString[FortranForm[1 + x^2]]").unwrap(),
+      "1 + x**2"
+    );
+  }
+
+  #[test]
+  fn power() {
+    assert_eq!(interpret("ToString[x^2, FortranForm]").unwrap(), "x**2");
+  }
+
+  #[test]
+  fn multiplication() {
+    assert_eq!(interpret("ToString[x*y, FortranForm]").unwrap(), "x*y");
+  }
+
+  #[test]
+  fn sqrt() {
+    assert_eq!(
+      interpret("ToString[Sqrt[x], FortranForm]").unwrap(),
+      "Sqrt(x)"
+    );
+  }
+
+  #[test]
+  fn trig() {
+    assert_eq!(
+      interpret("ToString[Sin[x], FortranForm]").unwrap(),
+      "Sin(x)"
+    );
+  }
+
+  #[test]
+  fn list() {
+    assert_eq!(
+      interpret("ToString[{1, 2, 3}, FortranForm]").unwrap(),
+      "(/1,2,3/) "
+    );
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("ToString[3/4, FortranForm]").unwrap(), "3./4");
+  }
+
+  #[test]
+  fn addition() {
+    assert_eq!(
+      interpret("ToString[x + y + z, FortranForm]").unwrap(),
+      "x + y + z"
+    );
+  }
+
+  #[test]
+  fn negation() {
+    // -x evaluates to Times[-1, x]
+    assert_eq!(interpret("ToString[-x, FortranForm]").unwrap(), "-1*x");
+  }
+
+  #[test]
+  fn division() {
+    assert_eq!(interpret("ToString[x/y, FortranForm]").unwrap(), "x/y");
+  }
+
+  #[test]
+  fn polynomial() {
+    assert_eq!(
+      interpret("ToString[x^2 + x + 1, FortranForm]").unwrap(),
+      "1 + x + x**2"
+    );
+  }
+
+  #[test]
+  fn to_string_form() {
+    // ToString[expr, FortranForm] produces the Fortran representation
+    assert_eq!(
+      interpret("ToString[x^2 + 1, FortranForm]").unwrap(),
+      "1 + x**2"
+    );
+  }
+
+  #[test]
+  fn exp_function() {
+    assert_eq!(interpret("FortranForm[Exp[x]]").unwrap(), "E**x");
+  }
+
+  #[test]
+  fn real_number() {
+    assert_eq!(interpret("ToString[2.5, FortranForm]").unwrap(), "2.5");
   }
 }

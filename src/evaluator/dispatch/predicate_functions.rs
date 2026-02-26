@@ -402,6 +402,18 @@ pub fn dispatch_predicate_functions(
         args: args.to_vec(),
       }));
     }
+    "TeXForm" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "TeXForm".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "FortranForm" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "FortranForm".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // Attributes[symbol] - returns the attributes of a built-in symbol
     "Attributes" if args.len() == 1 => {
       let sym_name = match &args[0] {
