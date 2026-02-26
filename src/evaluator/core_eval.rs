@@ -1,6 +1,80 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Helper to construct an RGBColor Expr from numeric values.
+/// Uses Integer for whole numbers (0, 1) and Real for fractional values.
+fn rgb_color_expr(r: f64, g: f64, b: f64) -> Expr {
+  fn num(v: f64) -> Expr {
+    if v == 0.0 {
+      Expr::Integer(0)
+    } else if v == 1.0 {
+      Expr::Integer(1)
+    } else {
+      Expr::Real(v)
+    }
+  }
+  Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![num(r), num(g), num(b)],
+  }
+}
+
+/// Helper to construct a GrayLevel Expr.
+fn gray_level_expr(g: f64) -> Expr {
+  fn num(v: f64) -> Expr {
+    if v == 0.0 {
+      Expr::Integer(0)
+    } else if v == 1.0 {
+      Expr::Integer(1)
+    } else {
+      Expr::Real(v)
+    }
+  }
+  Expr::FunctionCall {
+    name: "GrayLevel".to_string(),
+    args: vec![num(g)],
+  }
+}
+
+/// Map named color identifiers to their Wolfram Language evaluation result.
+/// Basic colors → RGBColor[r, g, b] or GrayLevel[g]
+/// Light* colors → RGBColor[r, g, b] or GrayLevel[g]
+pub fn named_color_expr_pub(name: &str) -> Option<Expr> {
+  named_color_expr(name)
+}
+
+fn named_color_expr(name: &str) -> Option<Expr> {
+  Some(match name {
+    // Basic colors
+    "Red" => rgb_color_expr(1.0, 0.0, 0.0),
+    "Green" => rgb_color_expr(0.0, 1.0, 0.0),
+    "Blue" => rgb_color_expr(0.0, 0.0, 1.0),
+    "Black" => gray_level_expr(0.0),
+    "White" => gray_level_expr(1.0),
+    "Gray" => gray_level_expr(0.5),
+    "Cyan" => rgb_color_expr(0.0, 1.0, 1.0),
+    "Magenta" => rgb_color_expr(1.0, 0.0, 1.0),
+    "Yellow" => rgb_color_expr(1.0, 1.0, 0.0),
+    "Brown" => rgb_color_expr(0.6, 0.4, 0.2),
+    "Orange" => rgb_color_expr(1.0, 0.5, 0.0),
+    "Pink" => rgb_color_expr(1.0, 0.5, 0.5),
+    "Purple" => rgb_color_expr(0.5, 0.0, 0.5),
+    // Light colors
+    "LightRed" => rgb_color_expr(1.0, 0.85, 0.85),
+    "LightBlue" => rgb_color_expr(0.87, 0.94, 1.0),
+    "LightGreen" => rgb_color_expr(0.88, 1.0, 0.88),
+    "LightGray" => gray_level_expr(0.85),
+    "LightOrange" => rgb_color_expr(1.0, 0.9, 0.8),
+    "LightYellow" => rgb_color_expr(1.0, 1.0, 0.85),
+    "LightPurple" => rgb_color_expr(0.94, 0.88, 0.94),
+    "LightCyan" => rgb_color_expr(0.9, 1.0, 1.0),
+    "LightMagenta" => rgb_color_expr(1.0, 0.9, 1.0),
+    "LightBrown" => rgb_color_expr(0.94, 0.91, 0.88),
+    "LightPink" => rgb_color_expr(1.0, 0.85, 0.85),
+    _ => return None,
+  })
+}
+
 /// Find the index of a Label[tag] in a list of expressions where `tag` matches `goto_tag`.
 /// Both the goto tag and each label's tag are compared after evaluation,
 /// since neither Goto nor Label has HoldAll.
@@ -265,6 +339,10 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
           }
         }
       } else {
+        // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
+        if let Some(color_expr) = named_color_expr(name) {
+          return Ok(expr_to_string(&color_expr));
+        }
         // Return as symbolic
         Ok(name.clone())
       }
@@ -743,6 +821,10 @@ pub fn evaluate_expr_to_expr_inner(
           && let Some(val) = get_system_variable(name)
         {
           return Ok(val);
+        }
+        // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
+        if let Some(color_expr) = named_color_expr(name) {
+          return Ok(color_expr);
         }
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
