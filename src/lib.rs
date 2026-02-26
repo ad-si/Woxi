@@ -719,6 +719,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         let result_expr = render_grid_if_needed(result_expr);
         // If the result is a Dataset expression, render it as an SVG table
         let result_expr = render_dataset_if_needed(result_expr);
+        // If the result is a Tabular expression, render it as an SVG table
+        let result_expr = render_tabular_if_needed(result_expr);
         // In visual mode, render TableForm[list] and MatrixForm[list] as Grid SVGs
         let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
           let result_expr = render_color_if_needed(result_expr);
@@ -833,6 +835,25 @@ fn render_dataset_if_needed(expr: syntax::Expr) -> syntax::Expr {
     {
       let data = &args[0];
       if let Some(svg) = functions::graphics::dataset_to_svg(data) {
+        graphics_result(svg)
+      } else {
+        expr
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// If `expr` is a Tabular[data, schema] call, render it as an SVG table
+/// and return `-Graphics-`.
+fn render_tabular_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Tabular" && args.len() >= 2 =>
+    {
+      let data = &args[0];
+      let schema = &args[1];
+      if let Some(svg) = functions::graphics::tabular_to_svg(data, schema) {
         graphics_result(svg)
       } else {
         expr

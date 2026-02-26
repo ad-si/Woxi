@@ -4203,3 +4203,343 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )),
   }
 }
+
+// ── Tabular SVG rendering ────────────────────────────────────────────
+
+/// Convert a Tabular[data, schema] to an SVG table.
+/// The data can be a list of lists, a list of associations, or a
+/// column-oriented association.
+pub fn tabular_to_svg(data: &Expr, schema: &Expr) -> Option<String> {
+  // Extract column keys from schema
+  let col_keys = extract_tabular_column_keys(schema);
+
+  match data {
+    Expr::List(rows) if !rows.is_empty() => {
+      if rows.iter().all(|r| matches!(r, Expr::Association(_))) {
+        tabular_list_of_assocs_to_svg(rows, &col_keys)
+      } else if rows.iter().all(|r| matches!(r, Expr::List(_))) {
+        tabular_list_of_lists_to_svg(rows, &col_keys)
+      } else {
+        // Flat list — single column
+        tabular_flat_list_to_svg(rows, &col_keys)
+      }
+    }
+    Expr::Association(pairs) if !pairs.is_empty() => {
+      tabular_column_assoc_to_svg(pairs, &col_keys)
+    }
+    _ => None,
+  }
+}
+
+/// Extract column keys from a TabularSchema expression.
+fn extract_tabular_column_keys(schema: &Expr) -> Vec<String> {
+  if let Expr::FunctionCall { name, args } = schema
+    && name == "TabularSchema"
+    && !args.is_empty()
+  {
+    if let Expr::Association(pairs) = &args[0] {
+      for (k, v) in pairs {
+        let key_str = match k {
+          Expr::String(s) => s.as_str(),
+          Expr::Identifier(s) => s.as_str(),
+          _ => continue,
+        };
+        if key_str == "ColumnKeys" {
+          if let Expr::List(keys) = v {
+            return keys.iter().map(|k| expr_to_svg_markup(k)).collect();
+          }
+        }
+      }
+    }
+  }
+  vec![]
+}
+
+/// Render Tabular from a list of associations as SVG.
+fn tabular_list_of_assocs_to_svg(
+  rows: &[Expr],
+  col_keys: &[String],
+) -> Option<String> {
+  if col_keys.is_empty() {
+    return None;
+  }
+
+  // Build data grid aligned to column keys
+  let grid: Vec<Vec<Expr>> = rows
+    .iter()
+    .map(|item| {
+      if let Expr::Association(pairs) = item {
+        col_keys
+          .iter()
+          .map(|h| {
+            pairs
+              .iter()
+              .find(|(k, _)| expr_to_svg_markup(k) == *h)
+              .map(|(_, v)| v.clone())
+              .unwrap_or(Expr::Identifier("Missing[]".to_string()))
+          })
+          .collect()
+      } else {
+        vec![]
+      }
+    })
+    .collect();
+
+  render_tabular_svg_grid(col_keys, &grid, true)
+}
+
+/// Render Tabular from a list of lists as SVG.
+fn tabular_list_of_lists_to_svg(
+  rows: &[Expr],
+  col_keys: &[String],
+) -> Option<String> {
+  let grid: Vec<Vec<Expr>> = rows
+    .iter()
+    .map(|r| {
+      if let Expr::List(items) = r {
+        items.clone()
+      } else {
+        vec![]
+      }
+    })
+    .collect();
+
+  let has_named_cols = !col_keys.is_empty()
+    && !col_keys
+      .iter()
+      .enumerate()
+      .all(|(i, k)| k == &format!("{}", i + 1));
+
+  render_tabular_svg_grid(col_keys, &grid, has_named_cols)
+}
+
+/// Render Tabular from a flat list as SVG (single column).
+fn tabular_flat_list_to_svg(
+  items: &[Expr],
+  col_keys: &[String],
+) -> Option<String> {
+  let grid: Vec<Vec<Expr>> = items.iter().map(|e| vec![e.clone()]).collect();
+  let has_named_cols = !col_keys.is_empty()
+    && !col_keys
+      .iter()
+      .enumerate()
+      .all(|(i, k)| k == &format!("{}", i + 1));
+  render_tabular_svg_grid(col_keys, &grid, has_named_cols)
+}
+
+/// Render Tabular from a column-oriented association as SVG.
+/// <|"a" -> {1,2,3}, "b" -> {4,5,6}|>
+fn tabular_column_assoc_to_svg(
+  pairs: &[(Expr, Expr)],
+  col_keys: &[String],
+) -> Option<String> {
+  // Determine number of rows from the longest column
+  let num_rows = pairs
+    .iter()
+    .map(|(_, v)| {
+      if let Expr::List(items) = v {
+        items.len()
+      } else {
+        1
+      }
+    })
+    .max()
+    .unwrap_or(0);
+
+  // Build grid by transposing column data to row data
+  let mut grid: Vec<Vec<Expr>> = Vec::with_capacity(num_rows);
+  for i in 0..num_rows {
+    let row: Vec<Expr> = pairs
+      .iter()
+      .map(|(_, v)| {
+        if let Expr::List(items) = v {
+          items
+            .get(i)
+            .cloned()
+            .unwrap_or(Expr::Identifier("Missing[]".to_string()))
+        } else if i == 0 {
+          v.clone()
+        } else {
+          Expr::Identifier("Missing[]".to_string())
+        }
+      })
+      .collect();
+    grid.push(row);
+  }
+
+  render_tabular_svg_grid(col_keys, &grid, true)
+}
+
+/// Core SVG rendering for Tabular: a table with optional column headers,
+/// row numbers in a left column, and grid lines.
+fn render_tabular_svg_grid(
+  col_keys: &[String],
+  grid: &[Vec<Expr>],
+  show_headers: bool,
+) -> Option<String> {
+  if grid.is_empty() {
+    return None;
+  }
+
+  let num_data_rows = grid.len();
+  let num_cols = if !col_keys.is_empty() {
+    col_keys.len()
+  } else {
+    grid.iter().map(|r| r.len()).max().unwrap_or(0)
+  };
+
+  if num_cols == 0 {
+    return None;
+  }
+
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let pad_x: f64 = 16.0;
+  let pad_y: f64 = 8.0;
+  let row_height = font_size + pad_y;
+  let header_row_height = font_size + pad_y + 2.0;
+
+  // Row-number column width (for 1-based row indices)
+  let max_row_digits = format!("{}", num_data_rows).len().max(1) as f64;
+  let row_num_col_w = max_row_digits * char_width + pad_x;
+
+  // Compute data column widths from headers and data
+  let mut col_widths: Vec<f64> = if show_headers && !col_keys.is_empty() {
+    col_keys
+      .iter()
+      .map(|h| h.len() as f64 * char_width + pad_x)
+      .collect()
+  } else {
+    vec![pad_x; num_cols]
+  };
+
+  for row in grid {
+    for (j, cell) in row.iter().enumerate() {
+      if j < num_cols && j < col_widths.len() {
+        let w = estimate_display_width(cell) * char_width + pad_x;
+        if w > col_widths[j] {
+          col_widths[j] = w;
+        }
+      }
+    }
+  }
+
+  let data_width: f64 = col_widths.iter().sum();
+  let total_width = row_num_col_w + data_width;
+  let num_header_rows = if show_headers && !col_keys.is_empty() {
+    1
+  } else {
+    0
+  };
+  let total_height: f64 = if num_header_rows > 0 {
+    header_row_height + (num_data_rows as f64) * row_height
+  } else {
+    (num_data_rows as f64) * row_height
+  };
+
+  let svg_w = total_width.ceil() as u32;
+  let svg_h = total_height.ceil() as u32;
+  let mut svg = String::with_capacity(4096);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    svg_w, svg_h, svg_w, svg_h
+  ));
+
+  // Row-number column background (light blue-gray)
+  svg.push_str(&format!(
+    "<rect x=\"0\" y=\"0\" width=\"{row_num_col_w:.1}\" height=\"{total_height:.1}\" fill=\"#eef2f7\"/>\n"
+  ));
+
+  // Header row background (if applicable)
+  if num_header_rows > 0 {
+    svg.push_str(&format!(
+      "<rect x=\"{row_num_col_w:.1}\" y=\"0\" width=\"{data_width:.1}\" height=\"{header_row_height:.1}\" fill=\"#f0f0f0\"/>\n"
+    ));
+    // Also extend the row-number column header background
+    svg.push_str(&format!(
+      "<rect x=\"0\" y=\"0\" width=\"{row_num_col_w:.1}\" height=\"{header_row_height:.1}\" fill=\"#dde4ed\"/>\n"
+    ));
+  }
+
+  // Header text (bold)
+  if num_header_rows > 0 && !col_keys.is_empty() {
+    let mut x_offset: f64 = row_num_col_w;
+    for (j, header) in col_keys.iter().enumerate() {
+      if j >= col_widths.len() {
+        break;
+      }
+      let col_w = col_widths[j];
+      let cx = x_offset + col_w / 2.0;
+      let cy = header_row_height / 2.0;
+      svg.push_str(&format!(
+        "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" font-weight=\"bold\" text-anchor=\"middle\" dominant-baseline=\"central\">{header}</text>\n"
+      ));
+      x_offset += col_w;
+    }
+  }
+
+  // Data rows
+  let y_start: f64 = if num_header_rows > 0 {
+    header_row_height
+  } else {
+    0.0
+  };
+  let mut y_offset: f64 = y_start;
+  for (i, row) in grid.iter().enumerate() {
+    // Row number (1-based, in left column)
+    let row_num = format!("{}", i + 1);
+    let rx = row_num_col_w / 2.0;
+    let cy = y_offset + row_height / 2.0;
+    svg.push_str(&format!(
+      "<text x=\"{rx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"#888\" text-anchor=\"middle\" dominant-baseline=\"central\">{row_num}</text>\n"
+    ));
+
+    // Data cells
+    let mut x_offset: f64 = row_num_col_w;
+    for (j, cell) in row.iter().enumerate() {
+      if j < num_cols && j < col_widths.len() {
+        let col_w = col_widths[j];
+        let cx = x_offset + col_w / 2.0;
+        svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          expr_to_svg_markup(cell)
+        ));
+        x_offset += col_w;
+      }
+    }
+    y_offset += row_height;
+  }
+
+  // Grid lines
+  // Horizontal lines
+  let num_total_rows = num_header_rows + num_data_rows;
+  let mut y = 0.0_f64;
+  for i in 0..=num_total_rows {
+    let is_border =
+      i == 0 || i == num_total_rows || (num_header_rows > 0 && i == 1);
+    let stroke_width = if is_border { "1.5" } else { "0.5" };
+    let color = if is_border { "#999" } else { "#ccc" };
+    svg.push_str(&format!(
+      "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_width}\"/>\n"
+    ));
+    if num_header_rows > 0 && i == 0 {
+      y += header_row_height;
+    } else if i < num_total_rows {
+      y += row_height;
+    }
+  }
+
+  // Vertical lines: outer borders + separator after row-number column
+  svg.push_str(&format!(
+    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+  ));
+  svg.push_str(&format!(
+    "<line x1=\"{row_num_col_w:.1}\" y1=\"0\" x2=\"{row_num_col_w:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+  ));
+  svg.push_str(&format!(
+    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+  ));
+
+  svg.push_str("</svg>");
+  Some(svg)
+}

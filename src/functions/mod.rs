@@ -26,6 +26,7 @@ pub mod predicate_ast;
 pub mod quantity_ast;
 pub mod scoping;
 pub mod string_ast;
+pub mod tabular_ast;
 pub mod tree_form;
 
 // Re-export all function implementations

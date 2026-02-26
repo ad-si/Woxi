@@ -269,6 +269,16 @@ pub fn dispatch_list_operations(
       {
         return Some(Ok(ds_args[0].clone()));
       }
+      // Normal[Tabular[data, ...]] extracts the data
+      if let Expr::FunctionCall {
+        name,
+        args: tab_args,
+      } = &args[0]
+        && name == "Tabular"
+        && !tab_args.is_empty()
+      {
+        return Some(Ok(tab_args[0].clone()));
+      }
       // Normal[SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, den]]
       // => sum(c_i * (x - x0)^(nmin + i), i=0..len-1) when den=1
       if let Expr::FunctionCall {
