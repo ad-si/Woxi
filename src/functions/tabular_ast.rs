@@ -262,6 +262,62 @@ fn tabular_from_flat_list(items: &[Expr], args: &[Expr]) -> Expr {
   }
 }
 
+/// ToTabular[data, "Columns"] — converts a list of rules to a column-oriented Tabular.
+/// {"a" -> {1,2}, "b" -> {3,4}} => Tabular[<|"a" -> {1,2}, "b" -> {3,4}|>]
+pub fn to_tabular_ast(args: &[Expr]) -> Expr {
+  if args.len() < 2 {
+    return Expr::FunctionCall {
+      name: "ToTabular".to_string(),
+      args: args.to_vec(),
+    };
+  }
+
+  let orientation = &args[1];
+
+  // Only "Columns" orientation is currently supported
+  let is_columns = matches!(orientation, Expr::String(s) if s == "Columns");
+
+  if !is_columns {
+    return Expr::FunctionCall {
+      name: "ToTabular".to_string(),
+      args: args.to_vec(),
+    };
+  }
+
+  match &args[0] {
+    // List of rules: {"a" -> {1, 4}, "b" -> {2, 5}}
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|item| matches!(item, Expr::Rule { .. })) =>
+    {
+      let pairs: Vec<(Expr, Expr)> = items
+        .iter()
+        .map(|item| {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = item
+          {
+            (*pattern.clone(), *replacement.clone())
+          } else {
+            unreachable!()
+          }
+        })
+        .collect();
+      let assoc_data = Expr::Association(pairs.clone());
+      tabular_from_column_association(&pairs, &[assoc_data])
+    }
+    // Already an association: <|"a" -> {1, 4}, "b" -> {2, 5}|>
+    Expr::Association(pairs) if !pairs.is_empty() => {
+      tabular_from_column_association(pairs, &[args[0].clone()])
+    }
+    _ => Expr::FunctionCall {
+      name: "ToTabular".to_string(),
+      args: args.to_vec(),
+    },
+  }
+}
+
 /// Construct Tabular from a column-oriented association.
 /// <|"a" -> {1,2,3}, "b" -> {4,5,6}|>
 fn tabular_from_column_association(
