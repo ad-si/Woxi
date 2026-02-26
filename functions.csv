@@ -5592,7 +5592,7 @@ TitsGroupT,,,,8,5013
 ToBoxes,,,,3,737
 ToCharacterCode,Converts characters to their character codes,✅,pure,2,846
 ToContinuousTimeModel,,,,8,3972
-Today,,,,10,1044
+Today,Returns a DateObject representing the current date,✅,contextual,10,1044
 ToDiscreteTimeModel,,,,8,2251
 ToEntity,,,,10,2688
 ToeplitzMatrix,,,,6,2408
@@ -5605,7 +5605,7 @@ ToInvertibleTimeSeries,,,,9,4138
 TokenWords,,,,2,4881
 Tolerance,,,,2,1583
 ToLowerCase,Converts a string to lowercase,✅,pure,2,827
-Tomorrow,,,,10,2688
+Tomorrow,Returns a DateObject representing the next calendar day,✅,contextual,10,2688
 ToNumberField,,,,6,2219
 Tooltip,,,,6,260
 TooltipDelay,,,,7,1833
@@ -6169,7 +6169,7 @@ Xnor,,,,7,3031
 Xor,Checks if exactly one condition is true,✅,pure,1,1197
 XYZColor,,,,10,1887
 Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
-Yesterday,,,,10,2762
+Yesterday,Returns a DateObject representing the previous calendar day,✅,contextual,10,2762
 YuleDissimilarity,,,,6,4947
 ZernikeR,,,,6,2333
 ZeroSymmetric,,,,9,4881

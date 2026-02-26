@@ -596,6 +596,35 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       };
       return Ok(syntax::expr_to_output(&expr));
     }
+    // Handle Today/Tomorrow/Yesterday → DateObject[{y, m, d}, Day]
+    #[cfg(not(target_arch = "wasm32"))]
+    if trimmed == "Today" || trimmed == "Tomorrow" || trimmed == "Yesterday" {
+      use chrono::{Duration, Local};
+      let now = Local::now();
+      let date = match trimmed {
+        "Tomorrow" => now + Duration::days(1),
+        "Yesterday" => now - Duration::days(1),
+        _ => now,
+      };
+      let expr = syntax::Expr::FunctionCall {
+        name: "DateObject".to_string(),
+        args: vec![
+          syntax::Expr::List(vec![
+            syntax::Expr::Integer(
+              date.format("%Y").to_string().parse::<i128>().unwrap(),
+            ),
+            syntax::Expr::Integer(
+              date.format("%m").to_string().parse::<i128>().unwrap(),
+            ),
+            syntax::Expr::Integer(
+              date.format("%d").to_string().parse::<i128>().unwrap(),
+            ),
+          ]),
+          syntax::Expr::String("Day".to_string()),
+        ],
+      };
+      return Ok(syntax::expr_to_output(&expr));
+    }
     // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
     if let Some(color_expr) = evaluator::named_color_expr_pub(trimmed) {
       return Ok(syntax::expr_to_output(&color_expr));
