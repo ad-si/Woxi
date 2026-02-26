@@ -519,8 +519,14 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !trimmed.contains('=')
     // Reals may need scientific notation formatting
     {
-      // Simple list with no function calls or operators - return as-is
-      return Ok(trimmed.to_string());
+      // Check if any element is a named color that needs evaluation
+      let has_named_color = trimmed[1..trimmed.len() - 1]
+        .split(',')
+        .any(|item| evaluator::named_color_expr_pub(item.trim()).is_some());
+      if !has_named_color {
+        // Simple list with no function calls or operators - return as-is
+        return Ok(trimmed.to_string());
+      }
     }
   }
 
@@ -589,6 +595,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
         ],
       };
       return Ok(syntax::expr_to_output(&expr));
+    }
+    // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
+    if let Some(color_expr) = evaluator::named_color_expr_pub(trimmed) {
+      return Ok(syntax::expr_to_output(&color_expr));
     }
     // Return identifier as-is if not found
     return Ok(trimmed.to_string());
