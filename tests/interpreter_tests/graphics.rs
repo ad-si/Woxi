@@ -2462,18 +2462,12 @@ mod named_colors {
 
   #[test]
   fn light_orange() {
-    assert_eq!(
-      interpret("LightOrange").unwrap(),
-      "RGBColor[1, 0.9, 0.8]"
-    );
+    assert_eq!(interpret("LightOrange").unwrap(), "RGBColor[1, 0.9, 0.8]");
   }
 
   #[test]
   fn light_yellow() {
-    assert_eq!(
-      interpret("LightYellow").unwrap(),
-      "RGBColor[1, 1, 0.85]"
-    );
+    assert_eq!(interpret("LightYellow").unwrap(), "RGBColor[1, 1, 0.85]");
   }
 
   #[test]
@@ -2491,10 +2485,7 @@ mod named_colors {
 
   #[test]
   fn light_magenta() {
-    assert_eq!(
-      interpret("LightMagenta").unwrap(),
-      "RGBColor[1, 0.9, 1]"
-    );
+    assert_eq!(interpret("LightMagenta").unwrap(), "RGBColor[1, 0.9, 1]");
   }
 
   #[test]
@@ -2507,10 +2498,7 @@ mod named_colors {
 
   #[test]
   fn light_pink() {
-    assert_eq!(
-      interpret("LightPink").unwrap(),
-      "RGBColor[1, 0.85, 0.85]"
-    );
+    assert_eq!(interpret("LightPink").unwrap(), "RGBColor[1, 0.85, 0.85]");
   }
 
   // ── Composition with other color functions ──

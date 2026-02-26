@@ -239,12 +239,10 @@ pub fn dispatch_io_functions(
           args: tab_args,
         } if tab_name == "Tabular" && tab_args.len() >= 2 => {
           // Tabular[data, schema] → render as SVG table
-          if let Some(svg) =
-            crate::functions::graphics::tabular_to_svg(
-              &tab_args[0],
-              &tab_args[1],
-            )
-          {
+          if let Some(svg) = crate::functions::graphics::tabular_to_svg(
+            &tab_args[0],
+            &tab_args[1],
+          ) {
             svg
           } else {
             let markup =

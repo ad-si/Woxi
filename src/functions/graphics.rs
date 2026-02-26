@@ -4239,19 +4239,18 @@ fn extract_tabular_column_keys(schema: &Expr) -> Vec<String> {
   if let Expr::FunctionCall { name, args } = schema
     && name == "TabularSchema"
     && !args.is_empty()
+    && let Expr::Association(pairs) = &args[0]
   {
-    if let Expr::Association(pairs) = &args[0] {
-      for (k, v) in pairs {
-        let key_str = match k {
-          Expr::String(s) => s.as_str(),
-          Expr::Identifier(s) => s.as_str(),
-          _ => continue,
-        };
-        if key_str == "ColumnKeys" {
-          if let Expr::List(keys) = v {
-            return keys.iter().map(|k| expr_to_svg_markup(k)).collect();
-          }
-        }
+    for (k, v) in pairs {
+      let key_str = match k {
+        Expr::String(s) => s.as_str(),
+        Expr::Identifier(s) => s.as_str(),
+        _ => continue,
+      };
+      if key_str == "ColumnKeys"
+        && let Expr::List(keys) = v
+      {
+        return keys.iter().map(expr_to_svg_markup).collect();
       }
     }
   }
