@@ -55,6 +55,15 @@ mod n_arbitrary_precision {
   }
 
   #[test]
+  fn n_arbitrary_with_symbolic_parts() {
+    // N[expr, prec] should evaluate numeric parts and leave symbols as-is
+    // sqrt(a) is parsed as Times[sqrt, a], not Sqrt[a]
+    let result = interpret("a = 4/433; N[sqrt(a), 10]").unwrap();
+    assert!(result.contains("sqrt"));
+    assert!(result.contains("`10."));
+  }
+
+  #[test]
   fn n_pi_10000_digits() {
     // N[Pi, 10000] — the main todo item
     let result = interpret("N[Pi, 10000]").unwrap();
