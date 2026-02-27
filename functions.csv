@@ -103,7 +103,7 @@ AlphaChannel,,,,8,3121
 AlternatingFactorial,,,,10,4947
 AlternatingGroup,,,,8,2828
 AlternativeHypothesis,,,,8,3353
-Alternatives,,,,2,10
+Alternatives,Pattern object representing any of several alternatives,✅,pure,2,10
 AltitudeMethod,,,,10,5390
 AmbientLight,,,,13,
 AmbiguityFunction,,,,10,4612
@@ -1706,7 +1706,7 @@ EngineeringForm,Display wrapper for engineering notation formatting,✅,pure,1,2
 English,,,,,
 EnterExpressionPacket,,,,3,4027
 EnterTextPacket,,,,3,3843
-Entity,,,,10,76
+Entity,Symbolic representation of a real-world entity,✅,pure,10,76
 EntityClass,,,,10,651
 EntityClassList,,,,10,3353
 EntityCopies,,,,10.3,4612
@@ -2716,7 +2716,7 @@ ImageScaled,,,,6,631
 ImageScan,,,,9,4437
 ImageSegmentationComponents,,,,14,
 ImageSegmentationFilter,,,,14,
-ImageSize,,,,3,70
+ImageSize,Option specifying the display size of graphics and other objects,✅,none,3,70
 ImageSizeAction,,,,6,1991
 ImageSizeMultipliers,,,,6,2179
 ImageStitch,,,,13,

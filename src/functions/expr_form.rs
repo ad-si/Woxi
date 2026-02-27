@@ -217,7 +217,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       },
       BinaryOperator::Alternatives => ExprForm::Composite {
         head: "Alternatives".to_string(),
-        children: vec![left.as_ref().clone(), right.as_ref().clone()],
+        children: collect_children(expr, &BinaryOperator::Alternatives),
       },
     },
 
