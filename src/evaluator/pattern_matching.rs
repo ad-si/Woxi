@@ -605,14 +605,6 @@ fn try_symbol_replace_all(
     // FunctionCall head replacement: f -> g turns f[a,b] into g[a,b]
     Expr::FunctionCall { name, args } => {
       let head_changed = name == pattern_sym;
-      let new_name = if head_changed {
-        match replacement {
-          Expr::Identifier(new_head) => new_head.clone(),
-          _ => expr_to_string(replacement),
-        }
-      } else {
-        name.clone()
-      };
       // Recurse into args
       let mut new_args = Vec::with_capacity(args.len());
       let mut any_arg_changed = false;
@@ -626,9 +618,21 @@ fn try_symbol_replace_all(
           new_args.push(arg.clone());
         }
       }
-      if head_changed || any_arg_changed {
+      if head_changed {
+        match replacement {
+          Expr::Identifier(new_head) => Some(Expr::FunctionCall {
+            name: new_head.clone(),
+            args: new_args,
+          }),
+          // Non-symbol replacement: create CurriedCall (f -> expr turns f[a,b] into expr[a,b])
+          _ => Some(Expr::CurriedCall {
+            func: Box::new(replacement.clone()),
+            args: new_args,
+          }),
+        }
+      } else if any_arg_changed {
         Some(Expr::FunctionCall {
-          name: new_name,
+          name: name.clone(),
           args: new_args,
         })
       } else {
@@ -1472,20 +1476,25 @@ pub fn apply_replace_all_multi_ast(
         .collect();
       let new_args = new_args?;
       // Check if any rule replaces the function head
-      let mut new_name = name.clone();
       for (pattern, replacement) in rules {
         if let Expr::Identifier(sym) = pattern
           && sym == name
         {
-          new_name = match replacement {
-            Expr::Identifier(h) => h.clone(),
-            _ => expr_to_string(replacement),
+          return match replacement {
+            Expr::Identifier(h) => Ok(Expr::FunctionCall {
+              name: h.clone(),
+              args: new_args,
+            }),
+            // Non-symbol replacement: create CurriedCall
+            _ => Ok(Expr::CurriedCall {
+              func: Box::new((*replacement).clone()),
+              args: new_args,
+            }),
           };
-          break;
         }
       }
       Ok(Expr::FunctionCall {
-        name: new_name,
+        name: name.clone(),
         args: new_args,
       })
     }

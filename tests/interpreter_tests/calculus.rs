@@ -1170,3 +1170,202 @@ mod integrate_rational {
     );
   }
 }
+
+mod dsolve {
+  use super::*;
+
+  #[test]
+  fn first_order_constant_rhs() {
+    // y'[x] == 0 → y[x] -> C[1]
+    assert_eq!(
+      interpret("DSolve[y'[x] == 0, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]}}"
+    );
+  }
+
+  #[test]
+  fn second_order_zero_rhs() {
+    // y''[x] == 0 → y[x] -> C[1] + C[2]*x
+    let result = interpret("DSolve[y''[x] == 0, y[x], x]").unwrap();
+    assert!(
+      result == "{{y[x] -> C[1] + C[2]*x}}"
+        || result == "{{y[x] -> C[2]*x + C[1]}}",
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn harmonic_oscillator() {
+    // y''[x] + y[x] == 0 → y[x] -> C[1]*Cos[x] + C[2]*Sin[x]
+    let result = interpret("DSolve[y''[x] + y[x] == 0, y[x], x]").unwrap();
+    assert!(
+      result == "{{y[x] -> C[1]*Cos[x] + C[2]*Sin[x]}}"
+        || result == "{{y[x] -> C[2]*Sin[x] + C[1]*Cos[x]}}",
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn harmonic_oscillator_with_ic() {
+    // y''[x] + y[x] == 0, y[0]==1, y'[0]==0 → y[x] -> Cos[x]
+    assert_eq!(
+      interpret("DSolve[{y''[x] + y[x] == 0, y[0] == 1, y'[0] == 0}, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> Cos[x]}}"
+    );
+  }
+
+  #[test]
+  fn exponential_growth() {
+    // y'[x] == y[x] → y[x] -> C[1]*E^x
+    assert_eq!(
+      interpret("DSolve[y'[x] == y[x], y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*E^x}}"
+    );
+  }
+
+  #[test]
+  fn exponential_growth_with_coeff() {
+    // y'[x] == 2*y[x] → y[x] -> C[1]*E^(2*x)
+    assert_eq!(
+      interpret("DSolve[y'[x] == 2*y[x], y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*E^(2*x)}}"
+    );
+  }
+
+  #[test]
+  fn direct_integration() {
+    // y'[x] == 2*x → y[x] -> x^2 + C[1]
+    let result = interpret("DSolve[y'[x] == 2*x, y[x], x]").unwrap();
+    assert!(
+      result == "{{y[x] -> x^2 + C[1]}}" || result == "{{y[x] -> C[1] + x^2}}",
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn damped_oscillator_underdamped() {
+    // y'' + 2y' + 10y == 0, y(0)==1, y'(0)==0
+    // Roots: -1 ± 3i → E^(-x)(Cos[3x] + Sin[3x]/3)
+    let result = interpret(
+      "DSolve[{y''[x] + 2*y'[x] + 10*y[x] == 0, y[0] == 1, y'[0] == 0}, y[x], x]",
+    )
+    .unwrap();
+    assert!(
+      result.contains("Cos[3*x]") && result.contains("Sin[3*x]"),
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn real_distinct_roots() {
+    // y'' - 3y' + 2y == 0 → roots r=1, r=2
+    let result =
+      interpret("DSolve[y''[x] - 3*y'[x] + 2*y[x] == 0, y[x], x]").unwrap();
+    assert!(
+      result.contains("E^x") && result.contains("E^(2*x)"),
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn repeated_root() {
+    // y'' - 2y' + y == 0 → double root r=1
+    let result =
+      interpret("DSolve[y''[x] - 2*y'[x] + y[x] == 0, y[x], x]").unwrap();
+    // Should contain x*E^x for the repeated root part
+    assert!(result.contains("E^x"), "Got: {}", result);
+  }
+
+  #[test]
+  fn function_form() {
+    // y'' + y == 0, returning Function form
+    let result = interpret("DSolve[y''[x] + y[x] == 0, y, x]").unwrap();
+    assert!(result.contains("Function["), "Got: {}", result);
+  }
+
+  #[test]
+  fn spring_damper_system() {
+    // Full spring-damper test matching the test script
+    let result = interpret(
+      "m = 1; k = 10; c = 2; sol = DSolve[{m*x''[t] + c*x'[t] + k*x[t] == 0, x[0] == 1, x'[0] == 0}, x[t], t][[1]]; x[t] /. sol",
+    )
+    .unwrap();
+    assert!(
+      result.contains("Cos") && result.contains("Sin"),
+      "Got: {}",
+      result
+    );
+  }
+}
+
+mod ndsolve {
+  use super::*;
+
+  #[test]
+  fn exponential_growth() {
+    // NDSolve y'=y, y(0)=1, check y(0.5) ≈ E^0.5
+    let result = interpret(
+      "sol = NDSolve[{y'[x] == y[x], y[0] == 1}, y, {x, 0, 1}]; y[0.5] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = std::f64::consts::E.powf(0.5);
+    assert!(
+      (val - expected).abs() < 0.001,
+      "Expected {}, got {}",
+      expected,
+      val
+    );
+  }
+
+  #[test]
+  fn linear_growth() {
+    // NDSolve y'=1, y(0)=0, check y(0.5) ≈ 0.5
+    let result = interpret(
+      "sol = NDSolve[{y'[x] == 1, y[0] == 0}, y, {x, 0, 1}]; y[0.5] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {}", val);
+  }
+
+  #[test]
+  fn quadratic_growth() {
+    // NDSolve y'=x, y(0)=0, check y(1) ≈ 0.5
+    let result = interpret(
+      "sol = NDSolve[{y'[x] == x, y[0] == 0}, y, {x, 0, 1}]; y[1] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {}", val);
+  }
+
+  #[test]
+  fn interpolating_function_display() {
+    // InterpolatingFunction should display with <> for data
+    let result =
+      interpret("NDSolve[{y'[x] == y[x], y[0] == 1}, y, {x, 0, 1}]").unwrap();
+    assert!(
+      result.contains("InterpolatingFunction") && result.contains("<>"),
+      "Got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn second_order_harmonic() {
+    // NDSolve y'' + y = 0, y(0)=1, y'(0)=0, check y(Pi) ≈ -1
+    let result = interpret(
+      "sol = NDSolve[{y''[x] + y[x] == 0, y[0] == 1, y'[0] == 0}, y, {x, 0, 4}]; y[N[Pi]] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {}", val);
+  }
+}

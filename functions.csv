@@ -1587,7 +1587,7 @@ DrazinInverse,,,,13,
 Drop,Returns the list without its first n elements,✅,pure,1,318
 DropoutLayer,,,,11,2208
 DropShadowing,,,,13.1,
-DSolve,,,,2,88
+DSolve,Solves ordinary differential equations symbolically,✅,pure,2,88
 DSolveChangeVariables,,,,13.1,
 DSolveValue,,,,10,711
 DStabilityConditions,,,,14.1,
@@ -3666,7 +3666,7 @@ NCaputoD,,,,13.2,
 NContourIntegrate,,,,14,
 NDEigensystem,,,,10.2,1641
 NDEigenvalues,,,,10.2,2329
-NDSolve,,,,2,157
+NDSolve,Solves ordinary differential equations numerically,✅,contextual,2,157
 NDSolveValue,,,,9,439
 Nearest,,,,6,602
 NearestFunction,,,,6,3656
