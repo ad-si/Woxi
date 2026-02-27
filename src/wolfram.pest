@@ -7,7 +7,7 @@ COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 SpanSep = { ";;" ~ !(";" | "=") }
 SpanExpr = { Expression? ~ SpanSep ~ Expression? ~ (SpanSep ~ Expression?)? }
 // PartIndex: an index inside [[ ]] — can be a SpanExpr or a plain Expression
-PartIndex = _{ SpanExpr | Expression }
+PartIndex = _{ &HasSpanSep ~ SpanExpr | Expression }
 
 // Part extraction suffix: [[expr, ...]] for indexing
 PartIndexSuffix = { ("[[" ~ PartIndex ~ ("," ~ PartIndex)* ~ "]]")+ }
@@ -55,7 +55,7 @@ SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Id
 FunctionAnonymousFunction = { BaseFunctionCall ~ "&" ~ !"&" ~ BracketArgs* }
 // ParenAnonymousFunction handles (Expression)& - for expressions like (# === "")&
 // Optional BracketArgs allow direct calls: (# + 1)&[5]
-ParenAnonymousFunction = { "(" ~ (CompoundExpression | Expression) ~ ")" ~ "&" ~ !"&" ~ BracketArgs* }
+ParenAnonymousFunction = { "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" ~ "&" ~ !"&" ~ BracketArgs* }
 // ListAnonymousFunction handles {expr1, expr2, ...}& - for expressions like {#1, #2}&
 // Optional BracketArgs allow direct calls: {#, #^2}&[3]
 ListAnonymousFunction = { List ~ "&" ~ !"&" ~ BracketArgs* }
@@ -235,7 +235,7 @@ Term = _{
   | SlotSequence
   | Slot
   | Association
-  | "(" ~ (CompoundExpression | Expression) ~ ")"
+  | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
@@ -280,7 +280,7 @@ TermNoImplicit = _{
   | SlotSequence
   | Slot
   | Association
-  | "(" ~ (CompoundExpression | Expression) ~ ")"
+  | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
@@ -295,7 +295,7 @@ ExpressionNoImplicit = {
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
 // PatternTest: x_?test or _?test or _?(expr) or x_?(expr)
 // The test can be an Identifier or a parenthesized expression (e.g. anonymous function)
-PatternTestFunc = _{ Identifier | "(" ~ (CompoundExpression | Expression) ~ ")" }
+PatternTestFunc = _{ Identifier | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" }
 PatternTest = { PatternName? ~ "_" ~ "?" ~ PatternTestFunc }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
@@ -342,20 +342,44 @@ RuleAnonSuffix = { "&" ~ !"&" }
 ListItemRule = { ReplacementRule ~ RuleAnonSuffix? }
 // Scan forward looking for -> or :> at the current nesting depth
 NestedContent = _{ (
-    "{" ~ NestedContent ~ "}"
+    "<|" ~ NestedContent ~ "|>"
+  | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
-  | !("{" | "}" | "[" | "]" | "(" | ")" | "\"") ~ ANY
+  | !("<|" | "|>" | "{" | "}" | "[" | "]" | "(" | ")" | "\"") ~ ANY
 )* }
 HasRuleOperator = _{ (
-    "{" ~ NestedContent ~ "}"
+    "<|" ~ NestedContent ~ "|>"
+  | "{" ~ NestedContent ~ "}"
   | "[" ~ NestedContent ~ "]"
   | "(" ~ NestedContent ~ ")"
   | "\"" ~ (!("\"") ~ ANY)* ~ "\""
-  | !("->" | ":>" | "}" | "," | "]" | ")" | "\"") ~ ANY
+  | !("->" | ":>" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
 )* ~ ("->" | ":>") }
-ListItem = _{ &HasRuleOperator ~ ListItemRule | SpanExpr | Expression }
+// Scan forward looking for ;; (span separator) at the current nesting depth.
+// Used as a zero-width lookahead to avoid expensive SpanExpr backtracking.
+HasSpanSep = _{ (
+    "<|" ~ NestedContent ~ "|>"
+  | "{" ~ NestedContent ~ "}"
+  | "[" ~ NestedContent ~ "]"
+  | "(" ~ NestedContent ~ ")"
+  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | ";" ~ !";"                  // skip lone semicolons (not ;;)
+  | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
+)* ~ ";;" ~ !(";" | "=") }
+// Scan forward looking for ; (compound separator, not ;;) at the current nesting depth.
+// Used as a zero-width lookahead to avoid expensive CompoundExpression backtracking.
+HasSemicolon = _{ (
+    ";;" ~ !(";" | "=")         // skip ;; span separators
+  | "<|" ~ NestedContent ~ "|>"
+  | "{" ~ NestedContent ~ "}"
+  | "[" ~ NestedContent ~ "]"
+  | "(" ~ NestedContent ~ ")"
+  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\"") ~ ANY
+)* ~ ";" ~ !";" }
+ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSpanSep ~ SpanExpr | Expression }
 
 AssociationItem = { ConditionExpr ~ "->" ~ ConditionExpr }
 Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>" }
@@ -366,7 +390,7 @@ Association     = { "<|" ~ ( AssociationItem ~ ("," ~ AssociationItem)* )? ~ "|>
 // Merged RuleAnonymousFunction with ReplacementRule to reduce backtracking.
 // Uses HasRuleOperator lookahead to skip rule parsing when no rule operator exists.
 FunctionArgRule = { ReplacementRule ~ RuleAnonSuffix? }
-FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | CompoundExpression | SpanExpr | Expression }
+FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | &HasSpanSep ~ SpanExpr | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ }
