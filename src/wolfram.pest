@@ -83,7 +83,8 @@ RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 BaseFunctionCall = { Identifier ~ DerivativePrime? ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 Operator = {
-    "/@"     // keep first
+    "\\[Element]" | "\u{2208}" // Named character operator: Element (∈)
+  | "/@"     // keep first
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
   | "<>"     // StringJoin operator (must be before < and >)
@@ -296,7 +297,8 @@ ConditionExpr = {
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 ConditionOp = {
-    "===" | "=!=" | "==" | "!="  // Comparison
+    "\\[Element]" | "\u{2208}"       // Named character operator: Element (∈)
+  | "===" | "=!=" | "==" | "!="  // Comparison
   | "<=" | ">=" | "<" | ">"       // Order comparison
   | "+" | "-" | "*" | "/" | "^"   // Arithmetic
   | "&&" | "||"                   // Logical

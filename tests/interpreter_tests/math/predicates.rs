@@ -221,6 +221,49 @@ mod element {
   fn element_attributes() {
     assert_eq!(interpret("Attributes[Element]").unwrap(), "{Protected}");
   }
+
+  #[test]
+  fn element_infix_named_char_pi_reals() {
+    assert_eq!(interpret("Pi \\[Element] Reals").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_infix_named_char_integer() {
+    assert_eq!(interpret("3 \\[Element] Integers").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_infix_named_char_rational() {
+    assert_eq!(interpret("1/2 \\[Element] Rationals").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_infix_named_char_false() {
+    assert_eq!(interpret("Pi \\[Element] Integers").unwrap(), "False");
+  }
+
+  #[test]
+  fn element_infix_named_char_symbolic() {
+    assert_eq!(
+      interpret("x \\[Element] Reals").unwrap(),
+      "Element[x, Reals]"
+    );
+  }
+
+  #[test]
+  fn element_infix_unicode_pi_reals() {
+    assert_eq!(interpret("Pi \u{2208} Reals").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_infix_unicode_integer() {
+    assert_eq!(interpret("3 \u{2208} Integers").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_infix_unicode_false() {
+    assert_eq!(interpret("Pi \u{2208} Integers").unwrap(), "False");
+  }
 }
 
 mod conditional_expression {
