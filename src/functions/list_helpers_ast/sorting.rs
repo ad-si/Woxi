@@ -428,51 +428,84 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   }
 
   // Wolfram canonical ordering: symbols and compounds are compared structurally
+  // Classification: atom-like (atoms, constants, powers) sort before function calls
   let a_is_atom = is_atom_expr(a);
   let b_is_atom = is_atom_expr(b);
+  let a_is_power = is_power_expr(a);
+  let b_is_power = is_power_expr(b);
+  let a_is_func_call = !a_is_atom && !a_is_power && is_plain_func_call(a);
+  let b_is_func_call = !b_is_atom && !b_is_power && is_plain_func_call(b);
 
-  match (a_is_atom, b_is_atom) {
-    (true, true) => {
-      // Both atoms: alphabetical comparison
-      let a_str = crate::syntax::expr_to_string(a);
-      let b_str = crate::syntax::expr_to_string(b);
-      wolfram_string_order(&a_str, &b_str)
-    }
-    (true, false) => {
-      // Atom vs compound: compare atom with compound's sort key
-      let b_key = expr_sort_key(b);
-      let a_str = crate::syntax::expr_to_string(a);
-      let cmp = wolfram_string_order(&a_str, &b_key);
-      if cmp == 0 {
-        1 // atom comes before compound with same key
-      } else {
-        cmp
+  // Atoms and powers always sort before plain function calls
+  let a_is_atom_like = a_is_atom || a_is_power;
+  let b_is_atom_like = b_is_atom || b_is_power;
+
+  if a_is_atom_like && b_is_func_call {
+    1 // atom/power always before function call
+  } else if a_is_func_call && b_is_atom_like {
+    -1 // function call always after atom/power
+  } else {
+    // Same category: use standard ordering
+    match (a_is_atom, b_is_atom) {
+      (true, true) => {
+        // Both atoms: alphabetical comparison
+        let a_str = crate::syntax::expr_to_string(a);
+        let b_str = crate::syntax::expr_to_string(b);
+        wolfram_string_order(&a_str, &b_str)
       }
-    }
-    (false, true) => {
-      // Compound vs atom: reverse of above
-      let a_key = expr_sort_key(a);
-      let b_str = crate::syntax::expr_to_string(b);
-      let cmp = wolfram_string_order(&a_key, &b_str);
-      if cmp == 0 {
-        -1 // compound comes after atom with same key
-      } else {
-        cmp
+      (true, false) => {
+        // Atom vs compound: compare atom with compound's sort key
+        let b_key = expr_sort_key(b);
+        let a_str = crate::syntax::expr_to_string(a);
+        let cmp = wolfram_string_order(&a_str, &b_key);
+        if cmp == 0 {
+          1 // atom comes before compound with same key
+        } else {
+          cmp
+        }
       }
-    }
-    (false, false) => {
-      // Both compounds: compare sort keys, then by full string
-      let a_key = expr_sort_key(a);
-      let b_key = expr_sort_key(b);
-      let cmp = wolfram_string_order(&a_key, &b_key);
-      if cmp != 0 {
-        return cmp;
+      (false, true) => {
+        // Compound vs atom: reverse of above
+        let a_key = expr_sort_key(a);
+        let b_str = crate::syntax::expr_to_string(b);
+        let cmp = wolfram_string_order(&a_key, &b_str);
+        if cmp == 0 {
+          -1 // compound comes after atom with same key
+        } else {
+          cmp
+        }
       }
-      let a_str = crate::syntax::expr_to_string(a);
-      let b_str = crate::syntax::expr_to_string(b);
-      wolfram_string_order(&a_str, &b_str)
+      (false, false) => {
+        // Both compounds: compare sort keys, then by full string
+        let a_key = expr_sort_key(a);
+        let b_key = expr_sort_key(b);
+        let cmp = wolfram_string_order(&a_key, &b_key);
+        if cmp != 0 {
+          return cmp;
+        }
+        let a_str = crate::syntax::expr_to_string(a);
+        let b_str = crate::syntax::expr_to_string(b);
+        wolfram_string_order(&a_str, &b_str)
+      }
     }
   }
+}
+
+/// Check if an expression is a Power (BinaryOp or FunctionCall)
+fn is_power_expr(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      ..
+    }
+  ) || matches!(e, Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2)
+}
+
+/// Check if an expression is a plain function call (not Plus/Times/Power/Rational)
+fn is_plain_func_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. }
+    if name != "Plus" && name != "Times" && name != "Power" && name != "Rational")
 }
 
 /// Extract the sort key for a compound expression.
@@ -482,15 +515,16 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
 fn expr_sort_key(e: &Expr) -> String {
   match e {
     Expr::FunctionCall { name, args } if !args.is_empty() => {
-      // For Orderless functions (Plus, Times), use the last argument as sort key
-      if let Some(last) = args.last() {
+      // For Plus/Times (Orderless), use the last symbolic argument
+      if (name == "Plus" || name == "Times")
+        && let Some(last) = args.last()
+      {
         if is_atom_expr(last) {
           return crate::syntax::expr_to_string(last);
         }
-        // Recurse into compound argument to find the symbolic sort key
         return expr_sort_key(last);
       }
-      // Fallback: use function name
+      // For other function calls (like C[1], Sin[x]), use the function name
       name.clone()
     }
     Expr::BinaryOp { op, left, right } => {

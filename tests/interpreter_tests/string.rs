@@ -1298,10 +1298,10 @@ mod tex_form {
 
   #[test]
   fn simple_addition() {
-    // Higher-degree terms first (standard math convention), matching wolframscript
+    // Wolfram canonical order for same-degree terms
     assert_eq!(
       interpret("ToString[x^2 + y^2, TeXForm]").unwrap(),
-      "y^2+x^2"
+      "x^2+y^2"
     );
   }
 
@@ -1583,13 +1583,13 @@ mod fortran_form {
   fn list() {
     assert_eq!(
       interpret("ToString[{1, 2, 3}, FortranForm]").unwrap(),
-      "(/1,2,3/) "
+      "List(1,2,3)"
     );
   }
 
   #[test]
   fn rational() {
-    assert_eq!(interpret("ToString[3/4, FortranForm]").unwrap(), "3./4");
+    assert_eq!(interpret("ToString[3/4, FortranForm]").unwrap(), "0.75");
   }
 
   #[test]
@@ -1603,7 +1603,7 @@ mod fortran_form {
   #[test]
   fn negation() {
     // -x evaluates to Times[-1, x]
-    assert_eq!(interpret("ToString[-x, FortranForm]").unwrap(), "-1*x");
+    assert_eq!(interpret("ToString[-x, FortranForm]").unwrap(), "-x");
   }
 
   #[test]

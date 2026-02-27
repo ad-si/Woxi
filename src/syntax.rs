@@ -3293,6 +3293,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
           expr_to_string(&args[1])
         );
       }
+      // Special case: Association[...] with Rule/RuleDelayed args displays as <|...|>
+      if name == "Association"
+        && args
+          .iter()
+          .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return format!("<|{}|>", parts.join(", "));
+      }
       // Special case: Factorial[n] displays as n!
       if name == "Factorial" && args.len() == 1 {
         return format!("{}!", expr_to_string(&args[0]));
@@ -3410,15 +3419,45 @@ pub fn expr_to_string(expr: &Expr) -> String {
       }
       // Special case: Alternatives[a, b, ...] displays as a | b | ...
       if name == "Alternatives" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            // Wrap nested Alternatives in parentheses
+            if let Expr::FunctionCall {
+              name: inner_name,
+              args: inner_args,
+            } = a
+              && inner_name == "Alternatives"
+              && inner_args.len() >= 2
+            {
+              return format!("({})", expr_to_string(a));
+            }
+            expr_to_string(a)
+          })
+          .collect();
         return parts.join(" | ");
-      }
-      if name == "Alternatives" && args.len() == 1 {
-        return expr_to_string(&args[0]);
       }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
         // Handle Times[Rational[1, d], expr] as "expr/d"
+        // Handle Times[Rational[-1, d], Power[x, neg]] as "-1/d*1/x^n"
+        // This is the Wolfram convention for results like Integrate[1/x^3, x]
+        if args.len() == 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && let Expr::Integer(n) = &rargs[0]
+          && let Expr::Integer(d) = &rargs[1]
+          && *d > 0
+          && is_denominator_factor(&args[1])
+        {
+          let denom_form = denominator_form(&args[1]);
+          let denom_str = expr_to_string(&denom_form);
+          return format!("{}/{}*1/{}", n, d, denom_str);
+        }
         // Handle Times[Rational[-1, d], expr] as "-expr/d"
         // Handle Times[Rational[1, d], expr] as "expr/d" (Wolfram convention)
         if args.len() == 2
@@ -4420,6 +4459,15 @@ pub fn expr_to_output(expr: &Expr) -> String {
           expr_to_output(&args[1])
         );
       }
+      // Special case: Association[...] with Rule/RuleDelayed args displays as <|...|>
+      if name == "Association"
+        && args
+          .iter()
+          .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return format!("<|{}|>", parts.join(", "));
+      }
       // Special case: Factorial[n] displays as n!
       if name == "Factorial" && args.len() == 1 {
         return format!("{}!", expr_to_output(&args[0]));
@@ -4559,6 +4607,24 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       // Special case: Times displays as infix with * (no spaces)
       if name == "Times" && args.len() >= 2 {
+        // Handle Times[Rational[n, d], Power[x, neg]] as "n/d*1/x^abs(neg)"
+        // Wolfram canonical form for results like Integrate[1/x^3, x]
+        if args.len() == 2
+          && let Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } = &args[0]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && let Expr::Integer(n) = &rargs[0]
+          && let Expr::Integer(d) = &rargs[1]
+          && *d > 0
+          && is_denominator_factor(&args[1])
+        {
+          let denom_form = denominator_form(&args[1]);
+          let denom_str = expr_to_output(&denom_form);
+          return format!("{}/{}*1/{}", n, d, denom_str);
+        }
         // Handle Times[Rational[1, d], expr] as "expr/d"
         if args.len() == 2
           && let Expr::FunctionCall {
@@ -4906,11 +4972,23 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       // Special case: Alternatives[a, b, ...] displays as a | b | ...
       if name == "Alternatives" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            // Wrap nested Alternatives in parentheses
+            if let Expr::FunctionCall {
+              name: inner_name,
+              args: inner_args,
+            } = a
+              && inner_name == "Alternatives"
+              && inner_args.len() >= 2
+            {
+              return format!("({})", expr_to_output(a));
+            }
+            expr_to_output(a)
+          })
+          .collect();
         return parts.join(" | ");
-      }
-      if name == "Alternatives" && args.len() == 1 {
-        return expr_to_output(&args[0]);
       }
       // Special case: Entity[type, name] preserves string quotes
       if name == "Entity" {
@@ -5098,6 +5176,16 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       let mag_str = expr_to_input_form(&args[0]);
       let unit_str = quantity_unit_to_input_form(&args[1]);
       format!("Quantity[{}, {}]", mag_str, unit_str)
+    }
+    // Association[Rule, RuleDelayed, ...] displays as <|...|>
+    Expr::FunctionCall { name, args }
+      if name == "Association"
+        && args.iter().all(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      format!("<|{}|>", parts.join(", "))
     }
     // FunctionCall: handle FullForm specially in InputForm (keep the wrapper)
     Expr::FunctionCall { name, args }

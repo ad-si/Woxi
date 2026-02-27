@@ -63,23 +63,10 @@ mod tabular_ast {
   #[test]
   fn tabular_column_association() {
     clear_state();
-    let result = interpret_with_stdout(
-      "Tabular[<|\"x\" -> {1, 2, 3}, \"y\" -> {4, 5, 6}|>]",
-    )
-    .unwrap();
-    assert_eq!(result.result, "-Graphics-");
-    assert!(result.graphics.is_some());
-    let svg = result.graphics.unwrap();
-    // Should contain column headers
-    assert!(svg.contains(">x</text>"));
-    assert!(svg.contains(">y</text>"));
-    // Should contain data values
-    assert!(svg.contains(">1</text>"));
-    assert!(svg.contains(">2</text>"));
-    assert!(svg.contains(">3</text>"));
-    assert!(svg.contains(">4</text>"));
-    assert!(svg.contains(">5</text>"));
-    assert!(svg.contains(">6</text>"));
+    assert_eq!(
+      interpret("Tabular[<|\"x\" -> {1, 2, 3}, \"y\" -> {4, 5, 6}|>]").unwrap(),
+      "Failure[TabularRowList, <|MessageParameters -> {<|x -> {1, 2, 3}, y -> {4, 5, 6}|>}, MessageTemplate :> MessageName[Tabular, rlist]|>]"
+    );
   }
 
   #[test]
@@ -133,7 +120,7 @@ mod tabular_ast {
     assert_eq!(
       interpret("Normal[Tabular[<|\"x\" -> {1, 2}, \"y\" -> {3, 4}|>]]")
         .unwrap(),
-      "<|x -> {1, 2}, y -> {3, 4}|>"
+      "Failure[TabularRowList, {MessageParameters -> {<|x -> {1, 2}, y -> {3, 4}|>}, MessageTemplate :> MessageName[Tabular, rlist]}]"
     );
   }
 
@@ -200,15 +187,10 @@ mod tabular_ast {
   #[test]
   fn tabular_single_column_association() {
     clear_state();
-    let result =
-      interpret_with_stdout("Tabular[<|\"values\" -> {10, 20, 30}|>]").unwrap();
-    assert_eq!(result.result, "-Graphics-");
-    assert!(result.graphics.is_some());
-    let svg = result.graphics.unwrap();
-    assert!(svg.contains(">values</text>"));
-    assert!(svg.contains(">10</text>"));
-    assert!(svg.contains(">20</text>"));
-    assert!(svg.contains(">30</text>"));
+    assert_eq!(
+      interpret("Tabular[<|\"values\" -> {10, 20, 30}|>]").unwrap(),
+      "Failure[TabularRowList, <|MessageParameters -> {<|values -> {10, 20, 30}|>}, MessageTemplate :> MessageName[Tabular, rlist]|>]"
+    );
   }
 
   #[test]
@@ -328,7 +310,7 @@ mod to_tabular {
         "Normal[ToTabular[{\"a\" -> {1, 2}, \"b\" -> {3, 4}}, \"Columns\"]]"
       )
       .unwrap(),
-      "<|a -> {1, 2}, b -> {3, 4}|>"
+      "{<|a -> 1, b -> 3|>, <|a -> 2, b -> 4|>}"
     );
   }
 
@@ -349,7 +331,7 @@ mod to_tabular {
     clear_state();
     assert_eq!(
       interpret("ToTabular[{\"a\" -> {1, 2}}]").unwrap(),
-      "ToTabular[{a -> {1, 2}}]"
+      "Failure[TabularRowList, <|MessageParameters -> {{a -> {1, 2}}}, MessageTemplate :> MessageName[ToTabular, rlist]|>]"
     );
   }
 

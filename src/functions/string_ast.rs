@@ -1379,10 +1379,24 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         expr_to_tex(&args[1])
       )
     }
-    // Plus (n-ary) — reverse order so higher-degree terms come first (math convention),
+    // Plus (n-ary) — use Wolfram canonical order but move pure numeric
+    // constants to the end (matching Wolfram's TeXForm convention),
     // then rotate so a non-negative term leads (avoid starting with -z+x, prefer x-z)
     "Plus" if !args.is_empty() => {
-      let tex_strs: Vec<String> = args.iter().rev().map(expr_to_tex).collect();
+      // Partition into symbolic and numeric terms, keeping relative order
+      let mut symbolic: Vec<&Expr> = Vec::new();
+      let mut numeric: Vec<&Expr> = Vec::new();
+      for arg in args {
+        if matches!(arg, Expr::Integer(_) | Expr::Real(_)) {
+          numeric.push(arg);
+        } else {
+          symbolic.push(arg);
+        }
+      }
+      let reordered_args: Vec<&Expr> =
+        symbolic.into_iter().chain(numeric).collect();
+      let tex_strs: Vec<String> =
+        reordered_args.iter().map(|a| expr_to_tex(a)).collect();
       // Find first non-negative term to lead with
       let lead = tex_strs
         .iter()
@@ -3559,6 +3573,10 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
         parts.join(" + ")
       }
       "Times" => {
+        // Handle Times[-1, x] as -x
+        if args.len() == 2 && matches!(&args[0], Expr::Integer(-1)) {
+          return format!("-{}", fortran_paren(&args[1]));
+        }
         let parts: Vec<String> = args
           .iter()
           .map(|a| {
@@ -3596,7 +3614,19 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
         }
       }
       "Rational" if args.len() == 2 => {
-        format!("{}./{}", expr_to_fortran(&args[0]), fortran_paren(&args[1]))
+        // Wolfram FortranForm evaluates rationals to decimal
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          let val = *n as f64 / *d as f64;
+          let s = format!("{}", val);
+          // Ensure decimal point
+          if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+            format!("{}.", s)
+          } else {
+            s
+          }
+        } else {
+          format!("{}./{}", expr_to_fortran(&args[0]), fortran_paren(&args[1]))
+        }
       }
       _ => format!("{}({})", name, fortran_args(args)),
     },
@@ -3620,7 +3650,7 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
     }
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(expr_to_fortran).collect();
-      format!("(/{}/) ", parts.join(","))
+      format!("List({})", parts.join(","))
     }
     _ => crate::syntax::expr_to_string(expr),
   }

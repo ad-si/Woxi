@@ -277,6 +277,42 @@ pub fn dispatch_list_operations(
         && name == "Tabular"
         && !tab_args.is_empty()
       {
+        // For column-oriented data (Association with list values), transpose to rows
+        if let Expr::Association(pairs) = &tab_args[0]
+          && !pairs.is_empty()
+          && pairs.iter().all(|(_, v)| matches!(v, Expr::List(_)))
+        {
+          // Determine number of rows from the longest column
+          let num_rows = pairs
+            .iter()
+            .map(|(_, v)| {
+              if let Expr::List(items) = v {
+                items.len()
+              } else {
+                0
+              }
+            })
+            .max()
+            .unwrap_or(0);
+          // Build row-oriented associations
+          let mut rows = Vec::new();
+          for i in 0..num_rows {
+            let mut row_pairs = Vec::new();
+            for (k, v) in pairs {
+              let val = if let Expr::List(items) = v {
+                items.get(i).cloned().unwrap_or(Expr::FunctionCall {
+                  name: "Missing".to_string(),
+                  args: vec![],
+                })
+              } else {
+                v.clone()
+              };
+              row_pairs.push((k.clone(), val));
+            }
+            rows.push(Expr::Association(row_pairs));
+          }
+          return Some(Ok(Expr::List(rows)));
+        }
         return Some(Ok(tab_args[0].clone()));
       }
       // Normal[SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, den]]
@@ -374,8 +410,28 @@ pub fn dispatch_list_operations(
           .unwrap();
         return Some(Ok(result));
       }
-      // For other expressions, Normal is identity
-      return Some(Ok(args[0].clone()));
+      // Normal[<|k -> v, ...|>] converts Association to List of rules
+      if let Expr::Association(pairs) = &args[0] {
+        let rules: Vec<Expr> = pairs
+          .iter()
+          .map(|(k, v)| Expr::Rule {
+            pattern: Box::new(k.clone()),
+            replacement: Box::new(v.clone()),
+          })
+          .collect();
+        return Some(Ok(Expr::List(rules)));
+      }
+      // Normal[FunctionCall{Association, args}] converts to List
+      if let Expr::FunctionCall {
+        name,
+        args: assoc_args,
+      } = &args[0]
+        && name == "Association"
+      {
+        return Some(Ok(Expr::List(assoc_args.clone())));
+      }
+      // For other expressions, recursively convert Associations in arguments
+      return Some(Ok(normal_convert_associations(&args[0])));
     }
     "First" if args.len() == 1 || args.len() == 2 => {
       let default = if args.len() == 2 {
@@ -1070,4 +1126,33 @@ pub fn dispatch_list_operations(
     _ => {}
   }
   None
+}
+
+/// Convert Associations to Lists of rules within an expression.
+/// Recurses into FunctionCall args and List items but not into Rule values,
+/// matching Wolfram's Normal behavior.
+fn normal_convert_associations(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Association(pairs) => {
+      let rules: Vec<Expr> = pairs
+        .iter()
+        .map(|(k, v)| Expr::Rule {
+          pattern: Box::new(k.clone()),
+          replacement: Box::new(v.clone()),
+        })
+        .collect();
+      Expr::List(rules)
+    }
+    Expr::FunctionCall { name, args } if name == "Association" => {
+      Expr::List(args.clone())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(normal_convert_associations).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(normal_convert_associations).collect())
+    }
+    _ => expr.clone(),
+  }
 }

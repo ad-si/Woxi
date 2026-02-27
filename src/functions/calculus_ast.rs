@@ -1898,27 +1898,26 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               left: left.clone(),
               right: Box::new(new_exp.clone()),
             };
-            // When new_exp is a negative integer, pull the sign out
-            // e.g. x^(-1)/(-1) → -x^(-1), x^(-2)/(-2) → -x^(-2)/2
+            // When new_exp is a negative integer, use Wolfram canonical form:
+            // x^n / n where n < 0 → Times[Rational[1, n], Power[x, n]]
+            // e.g. x^(-2)/(-2) → Times[Rational[-1, 2], Power[x, -2]] → -1/2*1/x^2
             if let Expr::Integer(n) = &new_exp {
               let n = *n;
               if n < 0 {
                 let abs_n = -n;
-                if abs_n == 1 {
-                  return Some(Expr::UnaryOp {
-                    op: crate::syntax::UnaryOperator::Minus,
-                    operand: Box::new(power_expr),
-                  });
+                // Build Rational[-1, abs_n] (= 1/n since n < 0)
+                let coeff = if abs_n == 1 {
+                  Expr::Integer(-1)
                 } else {
-                  return Some(Expr::UnaryOp {
-                    op: crate::syntax::UnaryOperator::Minus,
-                    operand: Box::new(Expr::BinaryOp {
-                      op: Divide,
-                      left: Box::new(power_expr),
-                      right: Box::new(Expr::Integer(abs_n)),
-                    }),
-                  });
-                }
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(-1), Expr::Integer(abs_n)],
+                  }
+                };
+                return Some(Expr::FunctionCall {
+                  name: "Times".to_string(),
+                  args: vec![coeff, power_expr],
+                });
               }
             }
             return Some(Expr::BinaryOp {

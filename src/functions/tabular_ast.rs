@@ -1,5 +1,39 @@
 use crate::syntax::Expr;
 
+/// Create a Failure expression for Tabular/ToTabular errors.
+fn make_tabular_failure(
+  tag: &str,
+  func_name: &str,
+  msg_tag: &str,
+  data: &Expr,
+) -> Expr {
+  Expr::FunctionCall {
+    name: "Failure".to_string(),
+    args: vec![
+      Expr::String(tag.to_string()),
+      Expr::FunctionCall {
+        name: "Association".to_string(),
+        args: vec![
+          Expr::Rule {
+            pattern: Box::new(Expr::String("MessageParameters".to_string())),
+            replacement: Box::new(Expr::List(vec![data.clone()])),
+          },
+          Expr::RuleDelayed {
+            pattern: Box::new(Expr::String("MessageTemplate".to_string())),
+            replacement: Box::new(Expr::FunctionCall {
+              name: "MessageName".to_string(),
+              args: vec![
+                Expr::Identifier(func_name.to_string()),
+                Expr::String(msg_tag.to_string()),
+              ],
+            }),
+          },
+        ],
+      },
+    ],
+  }
+}
+
 /// Infer the element type for a column of values.
 fn infer_column_type(values: &[&Expr]) -> String {
   if values.is_empty() {
@@ -116,9 +150,9 @@ pub fn tabular_ast(args: &[Expr]) -> Expr {
       tabular_from_flat_list(rows, args)
     }
 
-    // Tabular[<|key1 -> val, ...|>] — column-oriented association
-    Expr::Association(pairs) if !pairs.is_empty() => {
-      tabular_from_column_association(pairs, args)
+    // Tabular[<|key1 -> val, ...|>] — not supported directly, return Failure
+    Expr::Association(_) => {
+      make_tabular_failure("TabularRowList", "Tabular", "rlist", &args[0])
     }
 
     _ => {
@@ -265,7 +299,25 @@ fn tabular_from_flat_list(items: &[Expr], args: &[Expr]) -> Expr {
 /// ToTabular[data, "Columns"] — converts a list of rules to a column-oriented Tabular.
 /// {"a" -> {1,2}, "b" -> {3,4}} => Tabular[<|"a" -> {1,2}, "b" -> {3,4}|>]
 pub fn to_tabular_ast(args: &[Expr]) -> Expr {
+  if args.is_empty() {
+    return Expr::FunctionCall {
+      name: "ToTabular".to_string(),
+      args: args.to_vec(),
+    };
+  }
   if args.len() < 2 {
+    // ToTabular[data] without orientation — check if data is a list of rules
+    if let Expr::List(items) = &args[0]
+      && !items.is_empty()
+      && items.iter().all(|item| matches!(item, Expr::Rule { .. }))
+    {
+      return make_tabular_failure(
+        "TabularRowList",
+        "ToTabular",
+        "rlist",
+        &args[0],
+      );
+    }
     return Expr::FunctionCall {
       name: "ToTabular".to_string(),
       args: args.to_vec(),

@@ -70,7 +70,7 @@ fn named_color_expr(name: &str) -> Option<Expr> {
     "LightCyan" => rgb_color_expr(0.9, 1.0, 1.0),
     "LightMagenta" => rgb_color_expr(1.0, 0.9, 1.0),
     "LightBrown" => rgb_color_expr(0.94, 0.91, 0.88),
-    "LightPink" => rgb_color_expr(1.0, 0.85, 0.85),
+    "LightPink" => rgb_color_expr(1.0, 0.925, 0.925),
     _ => return None,
   })
 }
@@ -154,7 +154,7 @@ pub fn evaluate_expr_early_dispatch(
       }
     }
     "Function" | "Protect" | "Unprotect" | "Condition" | "MessageName"
-    | "Information" | "Definition" | "FullDefinition" => {
+    | "Information" | "Definition" | "FullDefinition" | "Attributes" => {
       let result = evaluate_function_call_ast(name, args)?;
       return Ok(Some(expr_to_string(&result)));
     }
@@ -241,7 +241,7 @@ pub fn evaluate_expr_to_expr_early_dispatch(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
   match name {
-    "Protect" | "Unprotect" | "Condition" | "MessageName" => {
+    "Protect" | "Unprotect" | "Condition" | "MessageName" | "Attributes" => {
       return Ok(Some(evaluate_function_call_ast(name, args)?));
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -342,6 +342,10 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
         if let Some(color_expr) = named_color_expr(name) {
           return Ok(expr_to_string(&color_expr));
+        }
+        // Thick → Thickness[Large]
+        if name == "Thick" {
+          return Ok("Thickness[Large]".to_string());
         }
         // Return as symbolic
         Ok(name.clone())
@@ -853,6 +857,13 @@ pub fn evaluate_expr_to_expr_inner(
         // Handle named colors (Red → RGBColor[1, 0, 0], etc.)
         if let Some(color_expr) = named_color_expr(name) {
           return Ok(color_expr);
+        }
+        // Thick → Thickness[Large]
+        if name == "Thick" {
+          return Ok(Expr::FunctionCall {
+            name: "Thickness".to_string(),
+            args: vec![Expr::Identifier("Large".to_string())],
+          });
         }
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
