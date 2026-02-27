@@ -333,7 +333,7 @@ mod reverse_element {
   fn function_form_stays_unevaluated() {
     assert_eq!(
       interpret("ReverseElement[Reals, 5]").unwrap(),
-      "ReverseElement[Reals, 5]"
+      "Reals \u{220B} 5"
     );
   }
 
@@ -341,23 +341,20 @@ mod reverse_element {
   fn infix_named_char() {
     assert_eq!(
       interpret("Reals \\[ReverseElement] 5").unwrap(),
-      "ReverseElement[Reals, 5]"
+      "Reals \u{220B} 5"
     );
   }
 
   #[test]
   fn infix_unicode() {
-    assert_eq!(
-      interpret("Reals \u{220B} 5").unwrap(),
-      "ReverseElement[Reals, 5]"
-    );
+    assert_eq!(interpret("Reals \u{220B} 5").unwrap(), "Reals \u{220B} 5");
   }
 
   #[test]
   fn symbolic() {
     assert_eq!(
       interpret("Reals \\[ReverseElement] x").unwrap(),
-      "ReverseElement[Reals, x]"
+      "Reals \u{220B} x"
     );
   }
 }
