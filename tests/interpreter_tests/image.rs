@@ -767,3 +767,319 @@ mod image_display {
     );
   }
 }
+
+mod image_collage {
+  use super::*;
+
+  #[test]
+  fn collage_basic_returns_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageQ[ImageCollage[{img1, img2}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn collage_single_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{1, 0, 0}, {0, 1, 0}}]; ImageQ[ImageCollage[{img}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn collage_weighted_images() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageQ[ImageCollage[{3*img1, img2}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn collage_paired_format() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageQ[ImageCollage[{{img1, 2}, {img2, 1}}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn collage_explicit_size() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageDimensions[ImageCollage[{img1, img2}, \"Fit\", {100, 80}]]"
+      )
+      .unwrap(),
+      "{100, 80}"
+    );
+  }
+
+  #[test]
+  fn collage_with_fitting_and_size() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageDimensions[ImageCollage[{img1, img2}, \"Fit\", {200, 150}]]"
+      )
+      .unwrap(),
+      "{200, 150}"
+    );
+  }
+
+  #[test]
+  fn collage_stretch_fitting() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageDimensions[ImageCollage[{img1, img2}, \"Stretch\", {120, 90}]]"
+      )
+      .unwrap(),
+      "{120, 90}"
+    );
+  }
+
+  #[test]
+  fn collage_fill_fitting() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageDimensions[ImageCollage[{img1, img2}, \"Fill\", {120, 90}]]"
+      )
+      .unwrap(),
+      "{120, 90}"
+    );
+  }
+
+  #[test]
+  fn collage_rgb_images() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{{1,0,0},{0,1,0}},{{0,0,1},{1,1,0}}}]; img2 = Image[{{{0,1,1},{1,0,1}},{{1,1,1},{0,0,0}}}]; ImageQ[ImageCollage[{img1, img2}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn collage_many_images() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "imgs = Table[Image[{{i/5, 0}, {0, i/5}}], {i, 5}]; ImageQ[ImageCollage[imgs]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn collage_result_has_rgba_channels() {
+    clear_state();
+    // Collage uses RGBA canvas
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageChannels[ImageCollage[{img1, img2}]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn collage_width_only_size() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; dims = ImageDimensions[ImageCollage[{img1, img2}, \"Fit\", 200]]; dims[[1]]"
+      )
+      .unwrap(),
+      "200"
+    );
+  }
+}
+
+mod image_assemble {
+  use super::*;
+
+  #[test]
+  fn assemble_flat_list_single_row() {
+    clear_state();
+    // Two 2x2 images side by side → 4x2
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageDimensions[ImageAssemble[{img1, img2}]]"
+      )
+      .unwrap(),
+      "{4, 2}"
+    );
+  }
+
+  #[test]
+  fn assemble_2x2_grid() {
+    clear_state();
+    // 2x2 grid of 2x2 images → 4x4
+    assert_eq!(
+      interpret(
+        "a = Image[{{1,0},{0,1}}]; b = Image[{{0,1},{1,0}}]; c = Image[{{0.5,0.5},{0.5,0.5}}]; d = Image[{{0,0},{1,1}}]; ImageDimensions[ImageAssemble[{{a,b},{c,d}}]]"
+      )
+      .unwrap(),
+      "{4, 4}"
+    );
+  }
+
+  #[test]
+  fn assemble_returns_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{1, 0}, {0, 1}}]; ImageQ[ImageAssemble[{img, img}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn assemble_single_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{1, 0, 0}, {0, 1, 0}}]; ImageDimensions[ImageAssemble[{img}]]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+  }
+
+  #[test]
+  fn assemble_mismatched_heights_unevaluated() {
+    clear_state();
+    // Without fitting, mismatched heights return unevaluated
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1,0,0},{0,1,0},{0,0,1}}]; img2 = Image[{{0,1},{1,0}}]; ImageQ[ImageAssemble[{img1, img2}]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn assemble_mismatched_with_fit() {
+    clear_state();
+    // With "Fit", mismatched sizes are handled
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1,0,0},{0,1,0},{0,0,1}}]; img2 = Image[{{0,1},{1,0}}]; ImageDimensions[ImageAssemble[{img1, img2}, \"Fit\"]]"
+      )
+      .unwrap(),
+      "{5, 3}"
+    );
+  }
+
+  #[test]
+  fn assemble_mismatched_with_stretch() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1,0,0},{0,1,0},{0,0,1}}]; img2 = Image[{{0,1},{1,0}}]; ImageDimensions[ImageAssemble[{img1, img2}, \"Stretch\"]]"
+      )
+      .unwrap(),
+      "{5, 3}"
+    );
+  }
+
+  #[test]
+  fn assemble_mismatched_with_fill() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{1,0,0},{0,1,0},{0,0,1}}]; img2 = Image[{{0,1},{1,0}}]; ImageDimensions[ImageAssemble[{img1, img2}, \"Fill\"]]"
+      )
+      .unwrap(),
+      "{5, 3}"
+    );
+  }
+
+  #[test]
+  fn assemble_rgb_images() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img1 = Image[{{{1,0,0},{0,1,0}},{{0,0,1},{1,1,0}}}]; img2 = Image[{{{0,1,1},{1,0,1}},{{1,1,1},{0,0,0}}}]; ImageDimensions[ImageAssemble[{img1, img2}]]"
+      )
+      .unwrap(),
+      "{4, 2}"
+    );
+  }
+
+  #[test]
+  fn assemble_3x1_grid() {
+    clear_state();
+    // Three images in a column (3 rows, 1 col)
+    assert_eq!(
+      interpret(
+        "a = Image[{{1,0},{0,1}}]; b = Image[{{0,1},{1,0}}]; c = Image[{{0.5,0.5},{0.5,0.5}}]; ImageDimensions[ImageAssemble[{{a},{b},{c}}]]"
+      )
+      .unwrap(),
+      "{2, 6}"
+    );
+  }
+
+  #[test]
+  fn assemble_1x3_grid() {
+    clear_state();
+    // Single row with 3 images
+    assert_eq!(
+      interpret(
+        "a = Image[{{1,0},{0,1}}]; b = Image[{{0,1},{1,0}}]; c = Image[{{0.5,0.5},{0.5,0.5}}]; ImageDimensions[ImageAssemble[{{a, b, c}}]]"
+      )
+      .unwrap(),
+      "{6, 2}"
+    );
+  }
+
+  #[test]
+  fn assemble_result_has_rgba_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{1, 0}, {0, 1}}]; ImageChannels[ImageAssemble[{img, img}]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn assemble_missing_cell() {
+    clear_state();
+    // Missing[] in grid should produce background (still works)
+    assert_eq!(
+      interpret(
+        "img = Image[{{1, 0}, {0, 1}}]; ImageDimensions[ImageAssemble[{{img, img}, {img, Missing[]}}, \"Fit\"]]"
+      )
+      .unwrap(),
+      "{4, 4}"
+    );
+  }
+}
