@@ -2312,19 +2312,19 @@ fn operator_precedence(op: &str) -> u8 {
     "=" | ":=" => 2, // Assignment
     "^=" | "^:=" => 2, // UpSet/UpSetDelayed (same as assignment)
     "->" | ":>" => 3, // Rule/RuleDelayed (lower than boolean operators)
-    "||" => 4,        // Or
-    "&&" => 5,        // And
+    "||" => 4, // Or
+    "&&" => 5, // And
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 6, // Comparisons
-    "~~" => 7,        // StringExpression (lower than Alternatives)
-    "|" => 8,         // Alternatives (higher than StringExpression, Or, And, Rule)
-    "+" | "-" => 9,   // Plus/Minus
-    "*" | "/" => 10,  // Times/Divide
-    "<>" => 9,        // StringJoin (same level as Plus)
-    "." => 11,        // Dot (higher than arithmetic)
+    "~~" => 7, // StringExpression (lower than Alternatives)
+    "|" => 8,  // Alternatives (higher than StringExpression, Or, And, Rule)
+    "+" | "-" => 9, // Plus/Minus
+    "*" | "/" => 10, // Times/Divide
+    "<>" => 9, // StringJoin (same level as Plus)
+    "." => 11, // Dot (higher than arithmetic)
     "@@@" | "@@" => 12, // Apply/MapApply
-    "/@" => 13,         // Map (higher than Apply)
-    "@" => 14,          // Prefix application (higher than Map)
-    "^" => 15,          // Power (highest)
+    "/@" => 13, // Map (higher than Apply)
+    "@" => 14, // Prefix application (higher than Map)
+    "^" => 15, // Power (highest)
     _ => 0,
   }
 }
