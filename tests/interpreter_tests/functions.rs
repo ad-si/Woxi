@@ -1935,6 +1935,91 @@ mod alternatives {
       "{x, x, x, d}"
     );
   }
+
+  #[test]
+  fn alternatives_function_call_form() {
+    // Alternatives[a, b, c] displays as a | b | c
+    assert_eq!(interpret("Alternatives[a, b, c]").unwrap(), "a | b | c");
+  }
+
+  #[test]
+  fn alternatives_single_arg() {
+    // Alternatives[a] reduces to a (OneIdentity)
+    assert_eq!(interpret("Alternatives[a]").unwrap(), "a");
+  }
+
+  #[test]
+  fn alternatives_flattening() {
+    // Alternatives is Flat: nested Alternatives are flattened
+    assert_eq!(
+      interpret("Alternatives[Alternatives[a, b], c]").unwrap(),
+      "a | b | c"
+    );
+  }
+
+  #[test]
+  fn alternatives_attributes() {
+    assert_eq!(
+      interpret("Attributes[Alternatives]").unwrap(),
+      "{Flat, OneIdentity, Protected}"
+    );
+  }
+
+  #[test]
+  fn alternatives_head() {
+    assert_eq!(interpret("Head[a | b | c]").unwrap(), "Alternatives");
+    assert_eq!(
+      interpret("Head[Alternatives[a, b]]").unwrap(),
+      "Alternatives"
+    );
+  }
+
+  #[test]
+  fn alternatives_match_q_function_form() {
+    // MatchQ with Alternatives as FunctionCall
+    assert_eq!(
+      interpret("MatchQ[1, Alternatives[1, 2, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[5, Alternatives[1, 2, 3]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn alternatives_cases_function_form() {
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, Alternatives[1, 3, 5]]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn alternatives_string_replace() {
+    assert_eq!(
+      interpret("StringReplace[\"abcabc\", \"a\" | \"b\" -> \"x\"]").unwrap(),
+      "xxcxxc"
+    );
+  }
+
+  #[test]
+  fn alternatives_string_cases() {
+    assert_eq!(
+      interpret("StringCases[\"the cat sat on the mat\", \"cat\" | \"mat\"]")
+        .unwrap(),
+      "{cat, mat}"
+    );
+  }
+
+  #[test]
+  fn alternatives_precedence_over_rule() {
+    // | binds tighter than -> so "a" | "b" -> "x" is Rule[Alternatives["a","b"], "x"]
+    assert_eq!(
+      interpret("Head[\"a\" | \"b\" -> \"x\"]").unwrap(),
+      "Rule"
+    );
+  }
 }
 
 mod filter_rules {
@@ -2235,5 +2320,295 @@ mod unique {
   fn unique_symbolic_unevaluated() {
     // Non-symbol, non-string, non-list args return unevaluated
     assert_eq!(interpret("Unique[1]").unwrap(), "Unique[1]");
+  }
+}
+
+mod entity {
+  use super::*;
+
+  #[test]
+  fn entity_preserves_string_args() {
+    // Entity preserves string quotes in output
+    assert_eq!(
+      interpret("Entity[\"Country\", \"France\"]").unwrap(),
+      "Entity[\"Country\", \"France\"]"
+    );
+  }
+
+  #[test]
+  fn entity_single_arg() {
+    assert_eq!(
+      interpret("Entity[\"Country\"]").unwrap(),
+      "Entity[\"Country\"]"
+    );
+  }
+
+  #[test]
+  fn entity_head() {
+    assert_eq!(
+      interpret("Head[Entity[\"Country\", \"France\"]]").unwrap(),
+      "Entity"
+    );
+  }
+
+  #[test]
+  fn entity_attributes() {
+    assert_eq!(
+      interpret("Attributes[Entity]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn entity_stays_symbolic() {
+    // Entity expressions are inert - they evaluate to themselves
+    assert_eq!(
+      interpret("Entity[\"City\", \"Paris\"]").unwrap(),
+      "Entity[\"City\", \"Paris\"]"
+    );
+  }
+
+  #[test]
+  fn entity_mixed_args() {
+    // Entity with mixed arg types preserves strings but evaluates others
+    assert_eq!(
+      interpret("Entity[\"Planet\", \"Mars\"]").unwrap(),
+      "Entity[\"Planet\", \"Mars\"]"
+    );
+  }
+}
+
+mod image_size {
+  use super::*;
+
+  #[test]
+  fn image_size_is_symbol() {
+    // ImageSize evaluates to itself as a symbol
+    assert_eq!(interpret("ImageSize").unwrap(), "ImageSize");
+  }
+
+  #[test]
+  fn image_size_attributes() {
+    assert_eq!(
+      interpret("Attributes[ImageSize]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn image_size_head() {
+    assert_eq!(interpret("Head[ImageSize]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn image_size_in_rule() {
+    // ImageSize used as option name in a Rule
+    assert_eq!(
+      interpret("ImageSize -> 300").unwrap(),
+      "ImageSize -> 300"
+    );
+  }
+
+  #[test]
+  fn image_size_in_list_of_rules() {
+    assert_eq!(
+      interpret("{ImageSize -> 400, PlotRange -> All}").unwrap(),
+      "{ImageSize -> 400, PlotRange -> All}"
+    );
+  }
+}
+
+mod font_size {
+  use super::*;
+
+  #[test]
+  fn font_size_is_symbol() {
+    assert_eq!(interpret("FontSize").unwrap(), "FontSize");
+  }
+
+  #[test]
+  fn font_size_attributes() {
+    assert_eq!(
+      interpret("Attributes[FontSize]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn font_size_head() {
+    assert_eq!(interpret("Head[FontSize]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn font_size_in_rule() {
+    assert_eq!(
+      interpret("FontSize -> 14").unwrap(),
+      "FontSize -> 14"
+    );
+  }
+
+  #[test]
+  fn font_size_in_style() {
+    assert_eq!(
+      interpret("Style[\"hello\", FontSize -> 24]").unwrap(),
+      "Style[hello, FontSize -> 24]"
+    );
+  }
+}
+
+mod reals {
+  use super::*;
+
+  #[test]
+  fn reals_evaluates_to_itself() {
+    assert_eq!(interpret("Reals").unwrap(), "Reals");
+  }
+
+  #[test]
+  fn reals_head() {
+    assert_eq!(interpret("Head[Reals]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn reals_attributes() {
+    assert_eq!(interpret("Attributes[Reals]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn element_integer_in_reals() {
+    assert_eq!(interpret("Element[5, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_rational_in_reals() {
+    assert_eq!(interpret("Element[3/7, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_real_in_reals() {
+    assert_eq!(interpret("Element[2.5, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_pi_in_reals() {
+    assert_eq!(interpret("Element[Pi, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_complex_not_in_reals() {
+    assert_eq!(interpret("Element[2 + 3 I, Reals]").unwrap(), "False");
+  }
+}
+
+mod font_family {
+  use super::*;
+
+  #[test]
+  fn font_family_evaluates_to_itself() {
+    assert_eq!(interpret("FontFamily").unwrap(), "FontFamily");
+  }
+
+  #[test]
+  fn font_family_head() {
+    assert_eq!(interpret("Head[FontFamily]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn font_family_attributes() {
+    assert_eq!(
+      interpret("Attributes[FontFamily]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn font_family_in_rule() {
+    assert_eq!(
+      interpret("FontFamily -> \"Helvetica\"").unwrap(),
+      "FontFamily -> Helvetica"
+    );
+  }
+
+  #[test]
+  fn font_family_in_style() {
+    assert_eq!(
+      interpret("Style[\"hello\", FontFamily -> \"Arial\"]").unwrap(),
+      "Style[hello, FontFamily -> Arial]"
+    );
+  }
+}
+
+mod thick {
+  use super::*;
+
+  #[test]
+  fn thick_evaluates_to_itself() {
+    assert_eq!(interpret("Thick").unwrap(), "Thick");
+  }
+
+  #[test]
+  fn thick_head() {
+    assert_eq!(interpret("Head[Thick]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn thick_attributes() {
+    assert_eq!(interpret("Attributes[Thick]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn thick_in_graphics_directive_list() {
+    // Thick should be usable in a Graphics directive list
+    assert_eq!(
+      interpret("Graphics[{Thick, Line[{{0, 0}, {1, 1}}]}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn thick_in_plot_style() {
+    // Thick can be used as a PlotStyle option value
+    assert_eq!(
+      interpret("Plot[Sin[x], {x, 0, 1}, PlotStyle -> Thick]").unwrap(),
+      "-Graphics-"
+    );
+  }
+}
+
+mod base_style {
+  use super::*;
+
+  #[test]
+  fn base_style_evaluates_to_itself() {
+    assert_eq!(interpret("BaseStyle").unwrap(), "BaseStyle");
+  }
+
+  #[test]
+  fn base_style_head() {
+    assert_eq!(interpret("Head[BaseStyle]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn base_style_attributes() {
+    assert_eq!(
+      interpret("Attributes[BaseStyle]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn base_style_in_rule() {
+    assert_eq!(
+      interpret("BaseStyle -> {FontSize -> 14}").unwrap(),
+      "BaseStyle -> {FontSize -> 14}"
+    );
+  }
+
+  #[test]
+  fn base_style_in_graphics() {
+    assert_eq!(
+      interpret("Graphics[{Disk[]}, BaseStyle -> {Red}]").unwrap(),
+      "-Graphics-"
+    );
   }
 }

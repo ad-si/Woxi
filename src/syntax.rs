@@ -2304,26 +2304,27 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
 }
 
 /// Get precedence of an operator (higher = binds tighter)
+/// Matches Wolfram Language operator precedence ordering.
 fn operator_precedence(op: &str) -> u8 {
   match op {
     ">>" | ">>>" => 0, // Put/PutAppend (lowest precedence)
     "/:" => 1, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
     "=" | ":=" => 2, // Assignment
     "^=" | "^:=" => 2, // UpSet/UpSetDelayed (same as assignment)
-    "~~" => 3, // StringExpression (lower than Alternatives)
-    "|" => 4,  // Alternatives
-    "||" => 4,
-    "&&" => 5,
+    "->" | ":>" => 3, // Rule/RuleDelayed (lower than boolean operators)
+    "||" => 4,        // Or
+    "&&" => 5,        // And
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 6, // Comparisons
-    "->" | ":>" => 7,
-    "+" | "-" => 8,
-    "*" | "/" => 9,
-    "<>" => 8,          // Same as + for string concatenation
-    "." => 10,          // Dot (higher than arithmetic)
-    "@@@" | "@@" => 11, // Apply/MapApply
-    "/@" => 12,         // Map (higher than Apply)
-    "@" => 13,          // Prefix application (higher than Map)
-    "^" => 14,          // Power (highest)
+    "~~" => 7,        // StringExpression (lower than Alternatives)
+    "|" => 8,         // Alternatives (higher than StringExpression, Or, And, Rule)
+    "+" | "-" => 9,   // Plus/Minus
+    "*" | "/" => 10,  // Times/Divide
+    "<>" => 9,        // StringJoin (same level as Plus)
+    "." => 11,        // Dot (higher than arithmetic)
+    "@@@" | "@@" => 12, // Apply/MapApply
+    "/@" => 13,         // Map (higher than Apply)
+    "@" => 14,          // Prefix application (higher than Map)
+    "^" => 15,          // Power (highest)
     _ => 0,
   }
 }
@@ -3406,6 +3407,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "And" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" && ");
+      }
+      // Special case: Alternatives[a, b, ...] displays as a | b | ...
+      if name == "Alternatives" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" | ");
+      }
+      if name == "Alternatives" && args.len() == 1 {
+        return expr_to_string(&args[0]);
       }
       // Special case: Times displays as infix with *
       if name == "Times" && args.len() >= 2 {
@@ -4894,6 +4903,25 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "And" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" && ");
+      }
+      // Special case: Alternatives[a, b, ...] displays as a | b | ...
+      if name == "Alternatives" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" | ");
+      }
+      if name == "Alternatives" && args.len() == 1 {
+        return expr_to_output(&args[0]);
+      }
+      // Special case: Entity[type, name] preserves string quotes
+      if name == "Entity" {
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| match a {
+            Expr::String(s) => format!("\"{}\"", s),
+            _ => expr_to_output(a),
+          })
+          .collect();
+        return format!("Entity[{}]", parts.join(", "));
       }
       // Special case: Row[{exprs...}] concatenates; Row[{exprs...}, sep] joins with separator
       if name == "Row"

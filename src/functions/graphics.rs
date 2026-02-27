@@ -564,6 +564,16 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // Darker/Lighter/RGBColor/Hue already handled by parse_color above
       _ => false,
     },
+    // Thick is equivalent to AbsoluteThickness[2]
+    Expr::Identifier(s) if s == "Thick" => {
+      style.thickness = -2.0; // negative = absolute pixels
+      true
+    }
+    // Thin is equivalent to AbsoluteThickness[0.5]
+    Expr::Identifier(s) if s == "Thin" => {
+      style.thickness = -0.5;
+      true
+    }
     _ => false,
   }
 }
