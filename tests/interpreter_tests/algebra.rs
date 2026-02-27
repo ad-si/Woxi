@@ -2268,7 +2268,7 @@ mod power_expand {
   fn sum_of_powers() {
     assert_eq!(
       interpret("PowerExpand[(x+y)^n + (a*b)^s]").unwrap(),
-      "(x + y)^n + a^s*b^s"
+      "a^s*b^s + (x + y)^n"
     );
   }
 
