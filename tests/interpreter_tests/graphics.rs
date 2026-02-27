@@ -2498,25 +2498,19 @@ mod named_colors {
 
   #[test]
   fn light_pink() {
-    assert_eq!(interpret("LightPink").unwrap(), "RGBColor[1, 0.85, 0.85]");
+    assert_eq!(interpret("LightPink").unwrap(), "RGBColor[1, 0.925, 0.925]");
   }
 
   // ── Composition with other color functions ──
 
   #[test]
   fn darker_named_color() {
-    assert_eq!(
-      interpret("Darker[Red]").unwrap(),
-      "Darker[RGBColor[1, 0, 0]]"
-    );
+    assert_eq!(interpret("Darker[Red]").unwrap(), "RGBColor[2/3, 0, 0]");
   }
 
   #[test]
   fn lighter_named_color() {
-    assert_eq!(
-      interpret("Lighter[Blue]").unwrap(),
-      "Lighter[RGBColor[0, 0, 1]]"
-    );
+    assert_eq!(interpret("Lighter[Blue]").unwrap(), "RGBColor[1/3, 1/3, 1]");
   }
 
   #[test]

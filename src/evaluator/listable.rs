@@ -89,10 +89,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
 }
 
 pub fn is_builtin_flat(name: &str) -> bool {
-  matches!(
-    name,
-    "Plus" | "Times" | "Max" | "Min" | "And" | "Or" | "Alternatives"
-  )
+  matches!(name, "Plus" | "Times" | "Max" | "Min" | "And" | "Or")
 }
 
 pub fn is_builtin_orderless(name: &str) -> bool {

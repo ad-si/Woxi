@@ -631,6 +631,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     if let Some(color_expr) = evaluator::named_color_expr_pub(trimmed) {
       return Ok(syntax::expr_to_output(&color_expr));
     }
+    // Thick → Thickness[Large]
+    if trimmed == "Thick" {
+      return Ok("Thickness[Large]".to_string());
+    }
     // Return identifier as-is if not found
     return Ok(trimmed.to_string());
   }

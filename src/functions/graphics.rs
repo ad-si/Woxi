@@ -108,7 +108,7 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
     "LightCyan" => Color::new(0.9, 1.0, 1.0),
     "LightMagenta" => Color::new(1.0, 0.9, 1.0),
     "LightBrown" => Color::new(0.94, 0.91, 0.88),
-    "LightPink" => Color::new(1.0, 0.85, 0.85),
+    "LightPink" => Color::new(1.0, 0.925, 0.925),
     _ => return None,
   })
 }

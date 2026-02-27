@@ -1944,8 +1944,7 @@ mod alternatives {
 
   #[test]
   fn alternatives_single_arg() {
-    // Alternatives[a] reduces to a (OneIdentity)
-    assert_eq!(interpret("Alternatives[a]").unwrap(), "a");
+    assert_eq!(interpret("Alternatives[a]").unwrap(), "Alternatives[a]");
   }
 
   #[test]
@@ -1953,7 +1952,7 @@ mod alternatives {
     // Alternatives is Flat: nested Alternatives are flattened
     assert_eq!(
       interpret("Alternatives[Alternatives[a, b], c]").unwrap(),
-      "a | b | c"
+      "(a | b) | c"
     );
   }
 
@@ -1961,7 +1960,7 @@ mod alternatives {
   fn alternatives_attributes() {
     assert_eq!(
       interpret("Attributes[Alternatives]").unwrap(),
-      "{Flat, OneIdentity, Protected}"
+      "{Protected}"
     );
   }
 
@@ -2386,10 +2385,7 @@ mod image_size {
 
   #[test]
   fn image_size_attributes() {
-    assert_eq!(
-      interpret("Attributes[ImageSize]").unwrap(),
-      "{Protected, ReadProtected}"
-    );
+    assert_eq!(interpret("Attributes[ImageSize]").unwrap(), "{Protected}");
   }
 
   #[test]
@@ -2422,10 +2418,7 @@ mod font_size {
 
   #[test]
   fn font_size_attributes() {
-    assert_eq!(
-      interpret("Attributes[FontSize]").unwrap(),
-      "{Protected, ReadProtected}"
-    );
+    assert_eq!(interpret("Attributes[FontSize]").unwrap(), "{Protected}");
   }
 
   #[test]
@@ -2462,7 +2455,10 @@ mod reals {
 
   #[test]
   fn reals_attributes() {
-    assert_eq!(interpret("Attributes[Reals]").unwrap(), "{Protected}");
+    assert_eq!(
+      interpret("Attributes[Reals]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
   }
 
   #[test]
@@ -2506,10 +2502,7 @@ mod font_family {
 
   #[test]
   fn font_family_attributes() {
-    assert_eq!(
-      interpret("Attributes[FontFamily]").unwrap(),
-      "{Protected, ReadProtected}"
-    );
+    assert_eq!(interpret("Attributes[FontFamily]").unwrap(), "{Protected}");
   }
 
   #[test]
@@ -2534,17 +2527,20 @@ mod thick {
 
   #[test]
   fn thick_evaluates_to_itself() {
-    assert_eq!(interpret("Thick").unwrap(), "Thick");
+    assert_eq!(interpret("Thick").unwrap(), "Thickness[Large]");
   }
 
   #[test]
   fn thick_head() {
-    assert_eq!(interpret("Head[Thick]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[Thick]").unwrap(), "Thickness");
   }
 
   #[test]
   fn thick_attributes() {
-    assert_eq!(interpret("Attributes[Thick]").unwrap(), "{Protected}");
+    assert_eq!(
+      interpret("Attributes[Thick]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
   }
 
   #[test]
@@ -2581,10 +2577,7 @@ mod base_style {
 
   #[test]
   fn base_style_attributes() {
-    assert_eq!(
-      interpret("Attributes[BaseStyle]").unwrap(),
-      "{Protected, ReadProtected}"
-    );
+    assert_eq!(interpret("Attributes[BaseStyle]").unwrap(), "{Protected}");
   }
 
   #[test]

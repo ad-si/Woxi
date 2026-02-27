@@ -567,6 +567,24 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // Darker[color] and Darker[color, amount] — darken a color
+  if name == "Darker"
+    && !args.is_empty()
+    && args.len() <= 2
+    && let Some(result) = evaluate_darker_lighter(args, true)
+  {
+    return Ok(result);
+  }
+
+  // Lighter[color] and Lighter[color, amount] — lighten a color
+  if name == "Lighter"
+    && !args.is_empty()
+    && args.len() <= 2
+    && let Some(result) = evaluate_darker_lighter(args, false)
+  {
+    return Ok(result);
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor"
@@ -578,8 +596,6 @@ pub fn evaluate_function_call_ast_inner(
     | "Dashing"
     | "EdgeForm"
     | "FaceForm"
-    | "Darker"
-    | "Lighter"
     | "Directive"
     | "Point"
     | "Line"
@@ -648,6 +664,14 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // Darker/Lighter fallback: return unevaluated if color couldn't be resolved
+  if name == "Darker" || name == "Lighter" {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // Check if the function is a known but unimplemented Wolfram Language function
   if is_known_wolfram_function(name) {
     let args_str = args
@@ -663,5 +687,125 @@ pub fn evaluate_function_call_ast_inner(
   Ok(Expr::FunctionCall {
     name: name.to_string(),
     args: args.to_vec(),
+  })
+}
+
+/// Extract RGB components from a color expression as (numerator, denominator) pairs.
+/// Returns None if the expression is not a recognized color.
+fn extract_rgb_rational(color: &Expr) -> Option<[(i128, i128); 3]> {
+  match color {
+    Expr::FunctionCall { name, args }
+      if name == "RGBColor" && args.len() >= 3 =>
+    {
+      let mut rgb = [(0i128, 1i128); 3];
+      for (i, arg) in args[..3].iter().enumerate() {
+        rgb[i] = expr_to_rational(arg)?;
+      }
+      Some(rgb)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "GrayLevel" && !args.is_empty() =>
+    {
+      let g = expr_to_rational(&args[0])?;
+      Some([g, g, g])
+    }
+    _ => None,
+  }
+}
+
+/// Convert an expression to a rational (numerator, denominator) pair.
+fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::Real(f) => {
+      // Try to convert common float values to exact rationals
+      if *f == 0.0 {
+        Some((0, 1))
+      } else if *f == 1.0 {
+        Some((1, 1))
+      } else {
+        // For other floats, use denominator 1000 and simplify
+        let n = (*f * 1000.0).round() as i128;
+        let g = gcd_i128(n.abs(), 1000);
+        Some((n / g, 1000 / g))
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  if b == 0 { a } else { gcd_i128(b, a % b) }
+}
+
+/// Build a rational or integer Expr from (num, den).
+fn rational_to_expr(num: i128, den: i128) -> Expr {
+  if den == 1 {
+    Expr::Integer(num)
+  } else if num == 0 {
+    Expr::Integer(0)
+  } else {
+    let g = gcd_i128(num.abs(), den.abs());
+    let (n, d) = (num / g, den / g);
+    if d == 1 {
+      Expr::Integer(n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(n), Expr::Integer(d)],
+      }
+    }
+  }
+}
+
+/// Evaluate Darker[color, amount] or Lighter[color, amount].
+/// `is_darker` = true for Darker, false for Lighter.
+fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
+  let rgb = extract_rgb_rational(&args[0])?;
+
+  // Default amount is 1/3
+  let (amt_num, amt_den) = if args.len() >= 2 {
+    expr_to_rational(&args[1])?
+  } else {
+    (1, 3)
+  };
+
+  let mut result_rgb = [Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)];
+  for (i, (c_num, c_den)) in rgb.iter().enumerate() {
+    if is_darker {
+      // Darker: c * (1 - amount) = c * (den - num) / den
+      let factor_num = amt_den - amt_num;
+      let factor_den = amt_den;
+      let new_num = c_num * factor_num;
+      let new_den = c_den * factor_den;
+      result_rgb[i] = rational_to_expr(new_num, new_den);
+    } else {
+      // Lighter: c + amount * (1 - c)
+      // = c + amount - amount*c
+      // = c*(1 - amount) + amount
+      // = c_num/c_den * (amt_den - amt_num)/amt_den + amt_num/amt_den
+      // = (c_num*(amt_den-amt_num) + c_den*amt_num) / (c_den * amt_den)
+      let new_num = c_num * (amt_den - amt_num) + c_den * amt_num;
+      let new_den = c_den * amt_den;
+      result_rgb[i] = rational_to_expr(new_num, new_den);
+    }
+  }
+
+  Some(Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![
+      result_rgb[0].clone(),
+      result_rgb[1].clone(),
+      result_rgb[2].clone(),
+    ],
   })
 }

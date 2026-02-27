@@ -36,7 +36,7 @@ pub fn dispatch_association_functions(
     "Tabular" if !args.is_empty() => {
       return Some(Ok(crate::functions::tabular_ast::tabular_ast(args)));
     }
-    "ToTabular" if args.len() >= 2 => {
+    "ToTabular" if !args.is_empty() => {
       return Some(Ok(crate::functions::tabular_ast::to_tabular_ast(args)));
     }
     "AssociationMap" if args.len() == 2 => {

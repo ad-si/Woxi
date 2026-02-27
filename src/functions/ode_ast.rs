@@ -1477,13 +1477,13 @@ fn solve_first_order_linear(
   if q_is_zero
     && crate::functions::calculus_ast::is_constant_wrt(&p_expr, x_name)
   {
-    // y = C[1]*E^(-a*x)
+    // y = E^(-a*x)*C[1]
     let neg_p = negate_expr(&p_expr);
     let exp_term = make_exp_term_expr(&neg_p, x_name);
     return Ok(Expr::BinaryOp {
       op: BinaryOperator::Times,
-      left: Box::new(make_c(1)),
-      right: Box::new(exp_term),
+      left: Box::new(exp_term),
+      right: Box::new(make_c(1)),
     });
   }
 

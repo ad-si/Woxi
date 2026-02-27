@@ -166,7 +166,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "CompoundExpression" | "Switch" | "Which" | "Catch" | "Throw"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On" | "TimeConstrained"
     | "MemoryConstrained" | "TagUnset" | "NProduct" | "Definition"
-    | "FullDefinition" => {
+    | "FullDefinition" | "Attributes" => {
       vec!["HoldAll", "Protected"]
     }
     "Remove" => vec!["HoldAll", "Locked", "Protected"],
@@ -199,7 +199,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "And" | "Or" => vec!["Flat", "HoldAll", "OneIdentity", "Protected"],
 
     // Flat + OneIdentity + Protected
-    "Alternatives" | "NonCommutativeMultiply" => {
+    "NonCommutativeMultiply" => {
       vec!["Flat", "OneIdentity", "Protected"]
     }
 
@@ -213,7 +213,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
     | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "ListPlot3D"
     | "Input" | "SeriesData" | "RunThrough" | "AbsolutePointSize"
-    | "ImageSize" | "Entity" => {
+    | "Entity" => {
       vec!["Protected", "ReadProtected"]
     }
     // HoldAll + Protected + ReadProtected
@@ -461,7 +461,6 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Precision"
     | "Accuracy"
     | "MachinePrecision"
-    | "Attributes"
     | "Context"
     | "Contexts"
     | "Abort"
@@ -523,8 +522,11 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Goto"
     | "Label"
     | "Element"
-    | "Reals"
-    | "Thick" => {
+    | "Alternatives"
+    | "ImageSize"
+    | "FontSize"
+    | "FontFamily"
+    | "BaseStyle" => {
       vec!["Protected"]
     }
 
@@ -540,9 +542,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Raster"
     | "InterpolatingFunction"
     | "Information"
-    | "FontSize"
-    | "FontFamily"
-    | "BaseStyle" => {
+    | "Reals"
+    | "Thick" => {
       vec!["Protected", "ReadProtected"]
     }
 

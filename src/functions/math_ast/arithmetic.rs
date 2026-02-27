@@ -1083,11 +1083,12 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       // Power[base, exp] and Sqrt[base] sort like their base (same as BinaryOp::Power)
       "Sqrt" if args.len() == 1 => times_factor_subpriority(&args[0]),
       "Power" if args.len() == 2 => times_factor_subpriority(&args[0]),
-      // Numeric-constant function calls (e.g. Log[2]) sort before variables
-      // but after the imaginary unit I
-      _ if args.iter().all(|a| {
-        matches!(a, Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_))
-      }) =>
+      // Numeric-constant function calls (e.g. Log[2], Sqrt[3]) sort before variables
+      // but after the imaginary unit I. Only applies to known math functions.
+      "Log" | "Sqrt" | "Sin" | "Cos" | "Tan" | "Exp" | "Abs"
+        if args.iter().all(|a| {
+          matches!(a, Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_))
+        }) =>
       {
         -1
       }

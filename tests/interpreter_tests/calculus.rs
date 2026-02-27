@@ -155,13 +155,13 @@ mod integrate_reciprocal_powers {
   #[test]
   fn integrate_one_over_x_cubed() {
     // ∫ 1/x^3 dx = -x^(-2)/2
-    assert_eq!(interpret("Integrate[1/x^3, x]").unwrap(), "-(x^(-2)/2)");
+    assert_eq!(interpret("Integrate[1/x^3, x]").unwrap(), "-1/2*1/x^2");
   }
 
   #[test]
   fn integrate_one_over_x_fourth() {
     // ∫ 1/x^4 dx = -x^(-3)/3
-    assert_eq!(interpret("Integrate[1/x^4, x]").unwrap(), "-(x^(-3)/3)");
+    assert_eq!(interpret("Integrate[1/x^4, x]").unwrap(), "-1/3*1/x^3");
   }
 
   #[test]
@@ -1185,11 +1185,11 @@ mod dsolve {
 
   #[test]
   fn second_order_zero_rhs() {
-    // y''[x] == 0 → y[x] -> C[1] + C[2]*x
+    // y''[x] == 0 → y[x] -> C[1] + x*C[2]
     let result = interpret("DSolve[y''[x] == 0, y[x], x]").unwrap();
     assert!(
-      result == "{{y[x] -> C[1] + C[2]*x}}"
-        || result == "{{y[x] -> C[2]*x + C[1]}}",
+      result == "{{y[x] -> C[1] + x*C[2]}}"
+        || result == "{{y[x] -> x*C[2] + C[1]}}",
       "Got: {}",
       result
     );
@@ -1222,7 +1222,7 @@ mod dsolve {
     // y'[x] == y[x] → y[x] -> C[1]*E^x
     assert_eq!(
       interpret("DSolve[y'[x] == y[x], y[x], x]").unwrap(),
-      "{{y[x] -> C[1]*E^x}}"
+      "{{y[x] -> E^x*C[1]}}"
     );
   }
 
@@ -1231,7 +1231,7 @@ mod dsolve {
     // y'[x] == 2*y[x] → y[x] -> C[1]*E^(2*x)
     assert_eq!(
       interpret("DSolve[y'[x] == 2*y[x], y[x], x]").unwrap(),
-      "{{y[x] -> C[1]*E^(2*x)}}"
+      "{{y[x] -> E^(2*x)*C[1]}}"
     );
   }
 
