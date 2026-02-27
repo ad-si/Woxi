@@ -21,6 +21,13 @@ pub fn dispatch_datetime_functions(
     "DateString" => {
       return Some(crate::functions::datetime_ast::date_string_ast(args));
     }
+    // DateObject is a data container — return as-is
+    "DateObject" => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "DateObject".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     _ => {}
   }
   None

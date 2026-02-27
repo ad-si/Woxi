@@ -976,6 +976,88 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fmt_arg = crate::evaluator::evaluate_expr_to_expr(&args[1])?;
   let format_specs = match &fmt_arg {
     Expr::List(items) => items.clone(),
+    Expr::String(s) => {
+      // Named date format specifications
+      match s.as_str() {
+        "ISODateTime" => vec![
+          Expr::String("Year".to_string()),
+          Expr::String("-".to_string()),
+          Expr::String("Month".to_string()),
+          Expr::String("-".to_string()),
+          Expr::String("Day2".to_string()),
+          Expr::String("T".to_string()),
+          Expr::String("Hour".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Minute".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Second".to_string()),
+        ],
+        "ISODate" => vec![
+          Expr::String("Year".to_string()),
+          Expr::String("-".to_string()),
+          Expr::String("Month".to_string()),
+          Expr::String("-".to_string()),
+          Expr::String("Day2".to_string()),
+        ],
+        "DateTime" => vec![
+          Expr::String("DayName".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Day".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("MonthName".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Year".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Hour".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Minute".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Second".to_string()),
+        ],
+        "DateTimeShort" => vec![
+          Expr::String("DayNameShort".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Day".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("MonthNameShort".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Year".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Hour".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Minute".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Second".to_string()),
+        ],
+        "Date" => vec![
+          Expr::String("DayName".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Day".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("MonthName".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Year".to_string()),
+        ],
+        "DateShort" => vec![
+          Expr::String("DayNameShort".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Day".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("MonthNameShort".to_string()),
+          Expr::String(" ".to_string()),
+          Expr::String("Year".to_string()),
+        ],
+        "Time" => vec![
+          Expr::String("Hour".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Minute".to_string()),
+          Expr::String(":".to_string()),
+          Expr::String("Second".to_string()),
+        ],
+        // Single format element as a string (e.g. DateString[Now, "Year"])
+        _ => vec![Expr::String(s.clone())],
+      }
+    }
     _ => {
       return Ok(Expr::FunctionCall {
         name: "DateString".to_string(),

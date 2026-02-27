@@ -1261,7 +1261,7 @@ DateList,Converts to date list,✅,pure,6,709
 DateListLogPlot,,,,7,2294
 DateListPlot,Plots data with date-valued x-axis,✅,pure,6,508
 DateListStepPlot,,,,10.3,2929
-DateObject,,,,10,341
+DateObject,Represents a date or date-time object,✅,pure,10,341
 DateObjectQ,,,,10,3224
 DateOverlapsQ,,,,11.1,4747
 DatePattern,,,,6,3108
