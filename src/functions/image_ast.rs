@@ -1994,6 +1994,7 @@ pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let mut entries: Vec<ImageEntry> = Vec::new();
+  let mut max_channels: u8 = 1;
 
   let list = match &args[0] {
     Expr::List(items) => items,
@@ -2007,6 +2008,9 @@ pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for item in list {
     // Try direct image/weighted image
     if let Some((w, h, ch, data, _, weight)) = extract_image_weight(item) {
+      if ch > max_channels {
+        max_channels = ch;
+      }
       entries.push(ImageEntry {
         dyn_img: expr_to_dynamic_image(w, h, ch, data),
         orig_w: w,
@@ -2029,6 +2033,9 @@ pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let weight =
         crate::functions::math_ast::try_eval_to_f64(&pair[1]).unwrap_or(1.0);
+      if *channels > max_channels {
+        max_channels = *channels;
+      }
       entries.push(ImageEntry {
         dyn_img: expr_to_dynamic_image(*width, *height, *channels, data),
         orig_w: *width,
@@ -2123,9 +2130,17 @@ pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  Ok(dynamic_image_to_expr(&image::DynamicImage::ImageRgba8(
-    canvas,
-  )))
+  // Convert the RGBA canvas to the appropriate channel count
+  let dyn_img = match max_channels {
+    1 => image::DynamicImage::ImageLuma8(
+      image::DynamicImage::ImageRgba8(canvas).to_luma8(),
+    ),
+    3 => image::DynamicImage::ImageRgb8(
+      image::DynamicImage::ImageRgba8(canvas).to_rgb8(),
+    ),
+    _ => image::DynamicImage::ImageRgba8(canvas),
+  };
+  Ok(dynamic_image_to_expr(&dyn_img))
 }
 
 // ─── ImageAssemble ────────────────────────────────────────────────────────
@@ -2262,6 +2277,21 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Determine max channels across all input images
+  let mut max_channels: u8 = 1;
+  fn count_channels_in_list(items: &[Expr], max_ch: &mut u8) {
+    for item in items {
+      if let Expr::Image { channels, .. } = item {
+        if *channels > *max_ch {
+          *max_ch = *channels;
+        }
+      } else if let Expr::List(sub) = item {
+        count_channels_in_list(sub, max_ch);
+      }
+    }
+  }
+  count_channels_in_list(outer, &mut max_channels);
+
   // Determine if it's a 2D grid or a flat list (single row)
   let is_2d = outer.iter().all(|e| matches!(e, Expr::List(_)));
 
@@ -2395,9 +2425,17 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y_offset += row_heights[r];
   }
 
-  Ok(dynamic_image_to_expr(&image::DynamicImage::ImageRgba8(
-    canvas,
-  )))
+  // Convert the RGBA canvas to the appropriate channel count
+  let dyn_img = match max_channels {
+    1 => image::DynamicImage::ImageLuma8(
+      image::DynamicImage::ImageRgba8(canvas).to_luma8(),
+    ),
+    3 => image::DynamicImage::ImageRgb8(
+      image::DynamicImage::ImageRgba8(canvas).to_rgb8(),
+    ),
+    _ => image::DynamicImage::ImageRgba8(canvas),
+  };
+  Ok(dynamic_image_to_expr(&dyn_img))
 }
 
 // ─── I/O functions (Phase 4) ──────────────────────────────────────────────

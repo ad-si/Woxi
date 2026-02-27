@@ -892,15 +892,15 @@ mod image_collage {
   }
 
   #[test]
-  fn collage_result_has_rgba_channels() {
+  fn collage_preserves_channel_count() {
     clear_state();
-    // Collage uses RGBA canvas
+    // Grayscale inputs → grayscale output
     assert_eq!(
       interpret(
         "img1 = Image[{{1, 0}, {0, 1}}]; img2 = Image[{{0, 1}, {1, 0}}]; ImageChannels[ImageCollage[{img1, img2}]]"
       )
       .unwrap(),
-      "4"
+      "1"
     );
   }
 
@@ -1059,14 +1059,15 @@ mod image_assemble {
   }
 
   #[test]
-  fn assemble_result_has_rgba_channels() {
+  fn assemble_preserves_channel_count() {
     clear_state();
+    // Grayscale inputs → grayscale output
     assert_eq!(
       interpret(
         "img = Image[{{1, 0}, {0, 1}}]; ImageChannels[ImageAssemble[{img, img}]]"
       )
       .unwrap(),
-      "4"
+      "1"
     );
   }
 
