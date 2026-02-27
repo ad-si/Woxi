@@ -477,8 +477,14 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   /// A replacement rule: either a simple literal pattern or a regex pattern.
   enum ReplaceRule {
-    Simple { pattern: String, replacement: String },
-    Regex { regex: regex::Regex, replacement: String },
+    Simple {
+      pattern: String,
+      replacement: String,
+    },
+    Regex {
+      regex: regex::Regex,
+      replacement: String,
+    },
   }
 
   fn extract_rule(expr: &Expr) -> Result<ReplaceRule, InterpreterError> {
@@ -503,7 +509,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // For simple string literals, use direct matching
     if let Expr::String(pat_str) = pattern_expr {
-      return Ok(ReplaceRule::Simple { pattern: pat_str.clone(), replacement });
+      return Ok(ReplaceRule::Simple {
+        pattern: pat_str.clone(),
+        replacement,
+      });
     }
 
     // For complex patterns (Alternatives, StringExpression, etc.), use regex
@@ -514,12 +523,18 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           e
         ))
       })?;
-      return Ok(ReplaceRule::Regex { regex: re, replacement });
+      return Ok(ReplaceRule::Regex {
+        regex: re,
+        replacement,
+      });
     }
 
     // Fallback: try expr_to_str for identifiers etc.
     if let Ok(pat_str) = expr_to_str(pattern_expr) {
-      return Ok(ReplaceRule::Simple { pattern: pat_str, replacement });
+      return Ok(ReplaceRule::Simple {
+        pattern: pat_str,
+        replacement,
+      });
     }
 
     Err(InterpreterError::EvaluationError(
@@ -556,7 +571,10 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut matched = false;
       for rule in rules {
         match rule {
-          ReplaceRule::Simple { pattern, replacement } => {
+          ReplaceRule::Simple {
+            pattern,
+            replacement,
+          } => {
             if pattern.is_empty() {
               continue;
             }
@@ -569,14 +587,15 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
           ReplaceRule::Regex { regex, replacement } => {
-            if let Some(m) = regex.find(&s[i..]) {
-              if m.start() == 0 && !m.as_str().is_empty() {
-                result.push_str(replacement);
-                i += m.len();
-                count += 1;
-                matched = true;
-                break;
-              }
+            if let Some(m) = regex.find(&s[i..])
+              && m.start() == 0
+              && !m.as_str().is_empty()
+            {
+              result.push_str(replacement);
+              i += m.len();
+              count += 1;
+              matched = true;
+              break;
             }
           }
         }

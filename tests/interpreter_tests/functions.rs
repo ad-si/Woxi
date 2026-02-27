@@ -2015,10 +2015,7 @@ mod alternatives {
   #[test]
   fn alternatives_precedence_over_rule() {
     // | binds tighter than -> so "a" | "b" -> "x" is Rule[Alternatives["a","b"], "x"]
-    assert_eq!(
-      interpret("Head[\"a\" | \"b\" -> \"x\"]").unwrap(),
-      "Rule"
-    );
+    assert_eq!(interpret("Head[\"a\" | \"b\" -> \"x\"]").unwrap(), "Rule");
   }
 }
 
@@ -2403,10 +2400,7 @@ mod image_size {
   #[test]
   fn image_size_in_rule() {
     // ImageSize used as option name in a Rule
-    assert_eq!(
-      interpret("ImageSize -> 300").unwrap(),
-      "ImageSize -> 300"
-    );
+    assert_eq!(interpret("ImageSize -> 300").unwrap(), "ImageSize -> 300");
   }
 
   #[test]
@@ -2441,10 +2435,7 @@ mod font_size {
 
   #[test]
   fn font_size_in_rule() {
-    assert_eq!(
-      interpret("FontSize -> 14").unwrap(),
-      "FontSize -> 14"
-    );
+    assert_eq!(interpret("FontSize -> 14").unwrap(), "FontSize -> 14");
   }
 
   #[test]

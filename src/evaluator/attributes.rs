@@ -199,7 +199,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "And" | "Or" => vec!["Flat", "HoldAll", "OneIdentity", "Protected"],
 
     // Flat + OneIdentity + Protected
-    "Alternatives" | "NonCommutativeMultiply" => vec!["Flat", "OneIdentity", "Protected"],
+    "Alternatives" | "NonCommutativeMultiply" => {
+      vec!["Flat", "OneIdentity", "Protected"]
+    }
 
     // Constants
     "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Catalan" | "Degree"
@@ -533,8 +535,14 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "InverseFunction" => vec!["NHoldAll", "Protected", "ReadProtected"],
 
     // Protected + ReadProtected (additional)
-    "Sound" | "Cuboid" | "Raster" | "InterpolatingFunction" | "Information"
-    | "FontSize" | "FontFamily" | "BaseStyle" => {
+    "Sound"
+    | "Cuboid"
+    | "Raster"
+    | "InterpolatingFunction"
+    | "Information"
+    | "FontSize"
+    | "FontFamily"
+    | "BaseStyle" => {
       vec!["Protected", "ReadProtected"]
     }
 

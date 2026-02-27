@@ -228,7 +228,13 @@ const VALID_DOMAINS: &[&str] = &[
 
 /// Known real-valued constants (parsed as Constant or Identifier)
 const REAL_CONSTANTS: &[&str] = &[
-  "Pi", "E", "Degree", "EulerGamma", "GoldenRatio", "Catalan", "Khinchin",
+  "Pi",
+  "E",
+  "Degree",
+  "EulerGamma",
+  "GoldenRatio",
+  "Catalan",
+  "Khinchin",
   "Glaisher",
 ];
 
