@@ -520,7 +520,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FactorSquareFreeList"
     | "Goto"
     | "Label"
-    | "Element" => {
+    | "Element"
+    | "Reals"
+    | "Thick" => {
       vec!["Protected"]
     }
 
@@ -532,7 +534,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
 
     // Protected + ReadProtected (additional)
     "Sound" | "Cuboid" | "Raster" | "InterpolatingFunction" | "Information"
-    | "FontSize" => {
+    | "FontSize" | "FontFamily" | "BaseStyle" => {
       vec!["Protected", "ReadProtected"]
     }
 

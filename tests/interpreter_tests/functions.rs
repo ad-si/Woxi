@@ -2455,3 +2455,160 @@ mod font_size {
     );
   }
 }
+
+mod reals {
+  use super::*;
+
+  #[test]
+  fn reals_evaluates_to_itself() {
+    assert_eq!(interpret("Reals").unwrap(), "Reals");
+  }
+
+  #[test]
+  fn reals_head() {
+    assert_eq!(interpret("Head[Reals]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn reals_attributes() {
+    assert_eq!(interpret("Attributes[Reals]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn element_integer_in_reals() {
+    assert_eq!(interpret("Element[5, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_rational_in_reals() {
+    assert_eq!(interpret("Element[3/7, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_real_in_reals() {
+    assert_eq!(interpret("Element[2.5, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_pi_in_reals() {
+    assert_eq!(interpret("Element[Pi, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_complex_not_in_reals() {
+    assert_eq!(interpret("Element[2 + 3 I, Reals]").unwrap(), "False");
+  }
+}
+
+mod font_family {
+  use super::*;
+
+  #[test]
+  fn font_family_evaluates_to_itself() {
+    assert_eq!(interpret("FontFamily").unwrap(), "FontFamily");
+  }
+
+  #[test]
+  fn font_family_head() {
+    assert_eq!(interpret("Head[FontFamily]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn font_family_attributes() {
+    assert_eq!(
+      interpret("Attributes[FontFamily]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn font_family_in_rule() {
+    assert_eq!(
+      interpret("FontFamily -> \"Helvetica\"").unwrap(),
+      "FontFamily -> Helvetica"
+    );
+  }
+
+  #[test]
+  fn font_family_in_style() {
+    assert_eq!(
+      interpret("Style[\"hello\", FontFamily -> \"Arial\"]").unwrap(),
+      "Style[hello, FontFamily -> Arial]"
+    );
+  }
+}
+
+mod thick {
+  use super::*;
+
+  #[test]
+  fn thick_evaluates_to_itself() {
+    assert_eq!(interpret("Thick").unwrap(), "Thick");
+  }
+
+  #[test]
+  fn thick_head() {
+    assert_eq!(interpret("Head[Thick]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn thick_attributes() {
+    assert_eq!(interpret("Attributes[Thick]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn thick_in_graphics_directive_list() {
+    // Thick should be usable in a Graphics directive list
+    assert_eq!(
+      interpret("Graphics[{Thick, Line[{{0, 0}, {1, 1}}]}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn thick_in_plot_style() {
+    // Thick can be used as a PlotStyle option value
+    assert_eq!(
+      interpret("Plot[Sin[x], {x, 0, 1}, PlotStyle -> Thick]").unwrap(),
+      "-Graphics-"
+    );
+  }
+}
+
+mod base_style {
+  use super::*;
+
+  #[test]
+  fn base_style_evaluates_to_itself() {
+    assert_eq!(interpret("BaseStyle").unwrap(), "BaseStyle");
+  }
+
+  #[test]
+  fn base_style_head() {
+    assert_eq!(interpret("Head[BaseStyle]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn base_style_attributes() {
+    assert_eq!(
+      interpret("Attributes[BaseStyle]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn base_style_in_rule() {
+    assert_eq!(
+      interpret("BaseStyle -> {FontSize -> 14}").unwrap(),
+      "BaseStyle -> {FontSize -> 14}"
+    );
+  }
+
+  #[test]
+  fn base_style_in_graphics() {
+    assert_eq!(
+      interpret("Graphics[{Disk[]}, BaseStyle -> {Red}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+}

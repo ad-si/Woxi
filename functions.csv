@@ -411,7 +411,7 @@ BaseEncode,,,,11.3,4052
 BaseForm,Displays numbers in a specified base with subscript notation,✅,pure,1,789
 Baseline,,,,3,509
 BaselinePosition,,,,6,619
-BaseStyle,,,,6,137
+BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6,137
 BasicRecurrentLayer,,,,11.1,3566
 BatchNormalizationLayer,,,,11,1675
 BatchSize,,,,11,2299
@@ -2074,7 +2074,7 @@ FoldWhile,,,,12.2,3200
 FoldWhileList,,,,12.2,3070
 FollowRedirects,,,,11,4947
 FontColor,,,,3,175
-FontFamily,,,,3,103
+FontFamily,Option specifying the font family for text rendering,✅,none,3,103
 FontSize,Option specifying the default font size in printer's points,✅,none,3,96
 FontSlant,,,,3,856
 FontSubstitutions,,,,3,5013
@@ -4529,7 +4529,7 @@ RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
 RealBlockDiagonalForm,,,,7,5486
 RealDigits,Returns the digits of a real number,✅,pure,2,866
 RealExponent,,,,6,1827
-Reals,,,,4,102
+Reals,The domain of real numbers used with Element and related functions,✅,none,4,102
 RealSign,Returns the sign assuming real input,✅,pure,11.1,3242
 RealValuedNumberQ,Tests if an expression is a real-valued number,✅,pure,13.3,
 RealValuedNumericQ,,,,13.3,
@@ -5524,7 +5524,7 @@ TextWords,,,,10.1,1295
 Therefore,Represents a therefore logical relation,✅,pure,3,3972
 ThermodynamicData,,🚫,,10,1368
 ThermometerGauge,,,,9,2867
-Thick,,,,6,112
+Thick,Graphics directive equivalent to AbsoluteThickness[2],✅,none,6,112
 Thickness,Sets relative line thickness in graphics,✅,pure,1,85
 Thin,,,,6,443
 Thinning,,,,8,1582
