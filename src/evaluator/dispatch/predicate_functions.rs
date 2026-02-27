@@ -17,6 +17,9 @@ pub fn dispatch_predicate_functions(
     "Element" if args.len() == 2 => {
       return Some(element_ast(&args[0], &args[1]));
     }
+    "NotElement" if args.len() == 2 => {
+      return Some(not_element_ast(&args[0], &args[1]));
+    }
     "IntegerQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::integer_q_ast(args));
     }

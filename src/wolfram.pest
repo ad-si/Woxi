@@ -38,6 +38,8 @@ UnsignedNumericValue = { BasePrefix | UnsignedReal | UnsignedInteger | UnsignedC
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
 PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
+// NamedCharIdentifier: named character sequences that act as identifiers
+NamedCharIdentifier = { "\\[Euro]" | "\u{20AC}" | "\\[Epsilon]" | "\u{03F5}" }
 Identifier = @{ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
@@ -83,7 +85,9 @@ RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 BaseFunctionCall = { Identifier ~ DerivativePrime? ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 Operator = {
-    "\\[Element]" | "\u{2208}" // Named character operator: Element (∈)
+    "\\[NotElement]" | "\u{2209}" // Named character operator: NotElement (∉)
+  | "\\[ReverseElement]" | "\u{220B}" // Named character operator: ReverseElement (∋)
+  | "\\[Element]" | "\u{2208}" // Named character operator: Element (∈)
   | "/@"     // keep first
   | "@@@"    // MapApply operator (must be before @@)
   | "@@"     // Apply operator (must be before single @)
@@ -226,6 +230,7 @@ Term = _{
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | InformationQuery
+  | NamedCharIdentifier
   | Identifier
   | SlotSequence
   | Slot
@@ -239,6 +244,7 @@ SimpleTerm = _{
     UnsignedNumericValue
   | FunctionCall
   | DerivativeIdentifier
+  | NamedCharIdentifier
   | Identifier
   | SlotSequence
   | Slot
@@ -269,6 +275,7 @@ TermNoImplicit = _{
   | PreDecrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
+  | NamedCharIdentifier
   | Identifier
   | SlotSequence
   | Slot
@@ -297,7 +304,9 @@ ConditionExpr = {
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 ConditionOp = {
-    "\\[Element]" | "\u{2208}"       // Named character operator: Element (∈)
+    "\\[NotElement]" | "\u{2209}"       // Named character operator: NotElement (∉)
+  | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
+  | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
   | "===" | "=!=" | "==" | "!="  // Comparison
   | "<=" | ">=" | "<" | ">"       // Order comparison
   | "+" | "-" | "*" | "/" | "^"   // Arithmetic

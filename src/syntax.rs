@@ -986,6 +986,14 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         args: vec![Expr::Identifier(symbol_name)],
       }
     }
+    Rule::NamedCharIdentifier => {
+      let s = pair.as_str();
+      match s {
+        "\\[Euro]" | "\u{20AC}" => Expr::Identifier("\u{20AC}".to_string()),
+        "\\[Epsilon]" | "\u{03F5}" => Expr::Identifier("\u{03F5}".to_string()),
+        _ => Expr::Identifier(s.to_string()),
+      }
+    }
     Rule::Identifier => Expr::Identifier(pair.as_str().to_string()),
     Rule::DerivativeIdentifier => {
       // Standalone f' → Derivative[1][f], f'' → Derivative[2][f], etc.
@@ -2314,10 +2322,12 @@ fn operator_precedence(op: &str) -> u8 {
     "->" | ":>" => 3, // Rule/RuleDelayed (lower than boolean operators)
     "||" => 4, // Or
     "&&" => 5, // And
+    "\\[NotElement]" | "\u{2209}" => 6, // NotElement (same level as comparisons)
+    "\\[ReverseElement]" | "\u{220B}" => 6, // ReverseElement (same level as comparisons)
     "\\[Element]" | "\u{2208}" => 6, // Element (same level as comparisons)
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 6, // Comparisons
-    "~~" => 7, // StringExpression (lower than Alternatives)
-    "|" => 8,  // Alternatives (higher than StringExpression, Or, And, Rule)
+    "~~" => 7,          // StringExpression (lower than Alternatives)
+    "|" => 8, // Alternatives (higher than StringExpression, Or, And, Rule)
     "+" | "-" => 9, // Plus/Minus
     "*" | "/" => 10, // Times/Divide
     "<>" => 9, // StringJoin (same level as Plus)
@@ -2449,6 +2459,14 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[Element]" | "\u{2208}" => Expr::FunctionCall {
       name: "Element".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    "\\[NotElement]" | "\u{2209}" => Expr::FunctionCall {
+      name: "NotElement".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    "\\[ReverseElement]" | "\u{220B}" => Expr::FunctionCall {
+      name: "ReverseElement".to_string(),
       args: vec![left.clone(), right.clone()],
     },
     "~~" => {

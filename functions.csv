@@ -3830,7 +3830,7 @@ NotebookSelection,,,,3,1141
 NotebooksMenu,,,,4,4052
 NotebookTemplate,,,,10,4479
 NotebookWrite,,,,3,974
-NotElement,,,,6,1921
+NotElement,Test non-membership of an expression in a mathematical domain,✅,pure,6,1921
 NotEqualTilde,,,,3,5390
 NotExists,,,,3,5486
 NotGreater,,,,3,5390
@@ -4694,7 +4694,7 @@ ReturnTextPacket,,,,3,
 Reverse,Returns a list with elements in reverse order,✅,pure,1,204
 ReverseApplied,,,,12.1,
 ReverseBiorthogonalSplineWavelet,,,,8,3785
-ReverseElement,,,,3,5184
+ReverseElement,Symbolic reverse element relation,✅,pure,3,5184
 ReverseEquilibrium,,,,3,5390
 ReverseGraph,,,,8,3537
 ReverseSort,Sorts a list in reverse order,✅,pure,11.1,2449
