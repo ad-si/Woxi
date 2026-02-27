@@ -260,11 +260,84 @@ pub fn n_eval_arbitrary(
   // rounds up to 64-bit word boundaries, giving us the correct
   // number of output digits.
   let bits = nominal_bits(precision);
-  let result = expr_to_bigfloat(expr, bits, rm, &mut cc)?;
 
-  let decimal = bigfloat_to_string(&result, None)?;
+  // Try full conversion to BigFloat first (fast path for purely numeric expressions)
+  match expr_to_bigfloat(expr, bits, rm, &mut cc) {
+    Ok(result) => {
+      let decimal = bigfloat_to_string(&result, None)?;
+      Ok(Expr::BigFloat(decimal, precision))
+    }
+    Err(_) => {
+      // Fall back to partial evaluation: convert numeric sub-expressions
+      // to arbitrary precision while leaving symbolic parts as-is
+      n_eval_arbitrary_partial(expr, precision, bits, rm, &mut cc)
+    }
+  }
+}
 
-  Ok(Expr::BigFloat(decimal, precision))
+/// Recursively apply arbitrary-precision evaluation to sub-expressions.
+/// Numeric parts are converted to BigFloat; symbolic parts are left as-is.
+fn n_eval_arbitrary_partial(
+  expr: &Expr,
+  precision: usize,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  // If the whole expression can be converted to BigFloat, do it
+  if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
+    let decimal = bigfloat_to_string(&result, None)?;
+    return Ok(Expr::BigFloat(decimal, precision));
+  }
+
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      let new_args: Result<Vec<Expr>, _> = args
+        .iter()
+        .map(|a| n_eval_arbitrary_partial(a, precision, bits, rm, cc))
+        .collect();
+      let new_expr = Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args?,
+      };
+      // Try to re-evaluate after converting numeric args
+      match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
+        Ok(result) => Ok(result),
+        Err(_) => Ok(new_expr),
+      }
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let l = n_eval_arbitrary_partial(left, precision, bits, rm, cc)?;
+      let r = n_eval_arbitrary_partial(right, precision, bits, rm, cc)?;
+      Ok(Expr::BinaryOp {
+        op: *op,
+        left: Box::new(l),
+        right: Box::new(r),
+      })
+    }
+    Expr::UnaryOp { op, operand } => {
+      let inner = n_eval_arbitrary_partial(operand, precision, bits, rm, cc)?;
+      Ok(Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(inner),
+      })
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Ok(Expr::Rule {
+      pattern: pattern.clone(),
+      replacement: Box::new(n_eval_arbitrary_partial(
+        replacement,
+        precision,
+        bits,
+        rm,
+        cc,
+      )?),
+    }),
+    // Identifiers, symbols, and other non-numeric expressions: leave as-is
+    _ => Ok(expr.clone()),
+  }
 }
 
 /// Recursively convert an Expr to a BigFloat with the given precision.
