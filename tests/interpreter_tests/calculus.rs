@@ -1109,6 +1109,65 @@ mod minimize {
       "{Infinity, {x -> -Infinity}}"
     );
   }
+
+  #[test]
+  fn constrained_chained_comparison() {
+    // Chained comparison 0 <= x <= 30 should be split into two constraints
+    assert_eq!(
+      interpret("Minimize[{x, 0 <= x <= 30}, {x}]").unwrap(),
+      "{0, {x -> 0}}"
+    );
+  }
+
+  #[test]
+  fn ilp_with_element_constraints() {
+    // ILP with inline Element[x, Integers] constraints
+    // 2x + 3y = 12, x,y >= 0: (0,4)=4, (3,2)=5, (6,0)=6 → min is 4
+    assert_eq!(
+      interpret(
+        "Minimize[{x + y, 2*x + 3*y == 12, x >= 0, y >= 0, Element[x, Integers], Element[y, Integers]}, {x, y}]"
+      )
+      .unwrap(),
+      "{4, {x -> 0, y -> 4}}"
+    );
+  }
+
+  #[test]
+  fn ilp_decimal_coefficients() {
+    // ILP with decimal (non-integer) coefficients that need scaling
+    assert_eq!(
+      interpret(
+        "Minimize[{x + y, 8.5*x + 7.5*y == 100, x >= 0, y >= 0, Element[x, Integers], Element[y, Integers]}, {x, y}]"
+      )
+      .unwrap(),
+      "{12., {x -> 10, y -> 2}}"
+    );
+  }
+
+  #[test]
+  fn ilp_with_upper_bounds() {
+    // ILP with upper bound constraints
+    // 2x + 3y = 12, 0<=x<=30, 0<=y<=30: (0,4)=4, (3,2)=5, (6,0)=6 → min is 4
+    assert_eq!(
+      interpret(
+        "Minimize[{x + y, 2*x + 3*y == 12, 0 <= x <= 30, 0 <= y <= 30, Element[x, Integers], Element[y, Integers]}, {x, y}]"
+      )
+      .unwrap(),
+      "{4, {x -> 0, y -> 4}}"
+    );
+  }
+
+  #[test]
+  fn ilp_coin_change_problem() {
+    // Full coin-change style problem similar to the euro coins problem
+    assert_eq!(
+      interpret(
+        "coins = {\"2\\[Euro]\" -> 8.50, \"1\\[Euro]\" -> 7.50, \"50c\" -> 7.80, \"20c\" -> 5.74, \"10c\" -> 4.10, \"5c\" -> 3.92, \"2c\" -> 3.06, \"1c\" -> 2.30}; weights = coins[[All, 2]]; nTypes = Length[weights]; result = Minimize[{Total[Array[n, nTypes]], Total[Array[n, nTypes] * weights] == 100 && And @@ Table[0 <= n[i] <= 30, {i, nTypes}] && And @@ Table[n[i] \\[Element] Integers, {i, nTypes}]}, Array[n, nTypes]]; result"
+      )
+      .unwrap(),
+      "{12., {n[1] -> 10, n[2] -> 2, n[3] -> 0, n[4] -> 0, n[5] -> 0, n[6] -> 0, n[7] -> 0, n[8] -> 0}}"
+    );
+  }
 }
 
 mod integrate_rational {

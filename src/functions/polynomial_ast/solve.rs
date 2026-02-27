@@ -2124,6 +2124,19 @@ fn flatten_and_expr(expr: &Expr, result: &mut Vec<Expr>) {
         flatten_and_expr(item, result);
       }
     }
+    // Split chained comparisons like 0 <= x <= 30 into pairwise:
+    // 0 <= x and x <= 30
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() > 2 => {
+      for i in 0..operators.len() {
+        result.push(Expr::Comparison {
+          operands: vec![operands[i].clone(), operands[i + 1].clone()],
+          operators: vec![operators[i]],
+        });
+      }
+    }
     _ => result.push(expr.clone()),
   }
 }
@@ -2212,35 +2225,67 @@ fn minimize_try_ilp(
     None => return Ok(None), // non-linear objective
   };
 
-  // Extract linear constraints: one equality + non-negativity inequalities
+  // Extract linear constraints: one equality + bound inequalities
   let mut equalities: Vec<(Vec<f64>, f64)> = Vec::new(); // (coeffs, rhs)
-  let mut lb: Vec<f64> = vec![0.0; vars.len()]; // lower bounds (default 0)
+  let mut lb: Vec<f64> = vec![f64::NEG_INFINITY; vars.len()]; // lower bounds
+  let mut ub: Vec<f64> = vec![f64::INFINITY; vars.len()]; // upper bounds
 
   for con in &actual_constraints {
     if let Some((coeffs, rhs, sense)) =
       minimize_extract_linear_constraint(con, vars)
     {
+      // Check if it's a simple bound on a single variable
+      let nonzero: Vec<usize> = coeffs
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.abs() > 1e-12)
+        .map(|(i, _)| i)
+        .collect();
       match sense {
         0 => equalities.push((coeffs, rhs)), // ==
         1 => {
-          // coeffs · x >= rhs  →  update lower bounds if simple bound
-          // Check if it's x_i >= c (single variable)
-          let nonzero: Vec<usize> = coeffs
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.abs() > 1e-12)
-            .map(|(i, _)| i)
-            .collect();
+          // coeffs · x >= rhs
           if nonzero.len() == 1 {
             let i = nonzero[0];
             let bound = rhs / coeffs[i];
-            if bound > lb[i] {
-              lb[i] = bound;
+            if coeffs[i] > 0.0 {
+              // x_i >= bound
+              if bound > lb[i] {
+                lb[i] = bound;
+              }
+            } else {
+              // x_i <= -bound (flipped sign)
+              let upper = rhs / coeffs[i];
+              if upper < ub[i] {
+                ub[i] = upper;
+              }
             }
           }
-          // Multi-variable ineq: only handle non-negativity for ILP DP
         }
-        _ => {} // LessEqual and other constraints not handled in DP
+        -1 => {
+          // coeffs · x <= rhs  (sense -1 means LessEqual)
+          // This means: lhs - rhs <= 0, so lhs <= rhs
+          // From the extraction: diff = lhs - rhs, coeffs · x + constant >= 0 for sense 1
+          // For sense -1: diff = lhs - rhs, coeffs · x + constant <= 0
+          // i.e., sum(coeffs[i] * x[i]) <= -constant = rhs
+          if nonzero.len() == 1 {
+            let i = nonzero[0];
+            if coeffs[i] > 0.0 {
+              // x_i <= rhs / coeffs[i]
+              let bound = rhs / coeffs[i];
+              if bound < ub[i] {
+                ub[i] = bound;
+              }
+            } else {
+              // x_i >= rhs / coeffs[i] (flipped sign)
+              let bound = rhs / coeffs[i];
+              if bound > lb[i] {
+                lb[i] = bound;
+              }
+            }
+          }
+        }
+        _ => {}
       }
     } else {
       return Ok(None); // non-linear constraint
@@ -2253,28 +2298,76 @@ fn minimize_try_ilp(
   }
   let (eq_coeffs, eq_rhs) = &equalities[0];
 
-  // All lb must be 0 (non-negativity only) and all eq_coeffs must be positive integers
-  if lb.iter().any(|&b| b.abs() > 1e-12) {
-    // Non-zero lower bounds: shift variables and recurse? For now, skip.
+  // Default lower bounds to 0 for non-negative variables
+  for i in 0..vars.len() {
+    if lb[i] == f64::NEG_INFINITY {
+      lb[i] = 0.0;
+    }
+  }
+
+  // All lower bounds must be non-negative integers for DP
+  let lb_int: Vec<i64> = lb.iter().map(|&b| b.ceil() as i64).collect();
+  if lb_int.iter().any(|&b| b < 0) {
     return Ok(None);
   }
 
-  // Verify all equality coefficients are positive integers and rhs is positive integer
+  // Upper bounds (default to a large number if infinite)
+  let ub_int: Vec<i64> = ub
+    .iter()
+    .map(|&b| {
+      if b.is_infinite() {
+        i64::MAX
+      } else {
+        b.floor() as i64
+      }
+    })
+    .collect();
+
+  // Scale decimal coefficients to integers.
+  // Find a common scale factor that makes all coefficients integers.
+  let mut all_values: Vec<f64> = eq_coeffs.to_vec();
+  all_values.push(*eq_rhs);
+  let scale = find_integer_scale(&all_values);
+  if scale == 0 {
+    return Ok(None);
+  }
+
   let mut weights: Vec<i64> = Vec::with_capacity(vars.len());
   for &c in eq_coeffs {
-    let ci = c.round() as i64;
-    if (c - ci as f64).abs() > 1e-8 || ci <= 0 {
-      return Ok(None); // non-integer or non-positive weight
+    let scaled = c * scale as f64;
+    let ci = scaled.round() as i64;
+    if (scaled - ci as f64).abs() > 1e-4 || ci <= 0 {
+      return Ok(None);
     }
     weights.push(ci);
   }
-  let target_f = eq_rhs.round();
-  if (eq_rhs - target_f).abs() > 1e-8 || target_f < 0.0 {
+  let target_f = *eq_rhs * scale as f64;
+  let target_i = target_f.round() as i64;
+  if (target_f - target_i as f64).abs() > 1e-4 || target_i < 0 {
     return Ok(None);
   }
-  let target = target_f as usize;
+  let target = target_i as usize;
 
-  // Verify objective coefficients are non-negative integers (for DP correctness)
+  // Shift variables by lower bounds: x_i' = x_i - lb_i
+  // New target = target - sum(weights[i] * lb_i)
+  let mut shifted_target = target as i64;
+  for i in 0..vars.len() {
+    shifted_target -= weights[i] * lb_int[i];
+  }
+  if shifted_target < 0 {
+    // Infeasible
+    return Ok(Some(minimize_neg_infinity_result(vars, maximize)));
+  }
+  let shifted_target = shifted_target as usize;
+
+  // Shifted upper bounds
+  let shifted_ub: Vec<i64> = ub_int
+    .iter()
+    .zip(lb_int.iter())
+    .map(|(&u, &l)| if u == i64::MAX { i64::MAX } else { u - l })
+    .collect();
+
+  // Verify objective coefficients are non-negative integers
   let mut obj_int: Vec<i64> = Vec::with_capacity(vars.len());
   for &c in &obj_coeffs {
     let ci = c.round() as i64;
@@ -2284,28 +2377,38 @@ fn minimize_try_ilp(
     obj_int.push(ci);
   }
 
-  // DP: dp[t] = minimum objective value to achieve weight t
-  // dp[0] = 0, dp[t] = min_i(dp[t - weights[i]] + obj_int[i]) for t >= weights[i]
+  // Guard: if the target is too large for DP (> 10M), bail out
+  if shifted_target > 10_000_000 {
+    return Ok(None);
+  }
+
+  // Bounded DP: dp[t] = minimum objective to achieve shifted weight t
+  // Each variable i can be used at most shifted_ub[i] times
   let n = vars.len();
   const INF: i64 = i64::MAX / 2;
-  let mut dp = vec![INF; target + 1];
-  let mut coin_used = vec![0usize; target + 1];
+  let mut dp = vec![INF; shifted_target + 1];
+  // Store full assignment at each DP state for bounded tracking
+  let mut dp_assign: Vec<Vec<i64>> = vec![vec![0; n]; shifted_target + 1];
   dp[0] = 0;
 
-  for t in 1..=target {
+  for t in 1..=shifted_target {
     for i in 0..n {
       let wi = weights[i] as usize;
       if wi <= t && dp[t - wi] != INF {
-        let new_val = dp[t - wi] + obj_int[i];
-        if new_val < dp[t] {
-          dp[t] = new_val;
-          coin_used[t] = i;
+        // Check upper bound: can we use one more of item i?
+        if dp_assign[t - wi][i] < shifted_ub[i] {
+          let new_val = dp[t - wi] + obj_int[i];
+          if new_val < dp[t] {
+            dp[t] = new_val;
+            dp_assign[t] = dp_assign[t - wi].clone();
+            dp_assign[t][i] += 1;
+          }
         }
       }
     }
   }
 
-  if dp[target] == INF {
+  if dp[shifted_target] == INF {
     // Infeasible
     return Ok(Some(Expr::FunctionCall {
       name: func_name.to_string(),
@@ -2316,20 +2419,25 @@ fn minimize_try_ilp(
     }));
   }
 
-  // Backtrack to find variable assignments
-  let mut x = vec![0i64; n];
-  let mut t = target;
-  while t > 0 {
-    let i = coin_used[t];
-    x[i] += 1;
-    t -= weights[i] as usize;
+  // Recover variable assignments (add back lower bounds)
+  let mut x = dp_assign[shifted_target].clone();
+  for i in 0..n {
+    x[i] += lb_int[i];
   }
 
-  let obj_val = dp[target];
-  let result_val = if maximize {
-    Expr::Integer(-(obj_val as i128))
+  // Compute the actual objective value using the original coefficients
+  let obj_val: f64 = obj_coeffs
+    .iter()
+    .zip(x.iter())
+    .map(|(&c, &xi)| c * xi as f64)
+    .sum();
+  let obj_val = if maximize { -obj_val } else { obj_val };
+  // If the constraint coefficients were non-integer (scale > 1),
+  // Wolfram returns a Real result
+  let result_val = if scale > 1 {
+    Expr::Real(obj_val)
   } else {
-    Expr::Integer(obj_val as i128)
+    minimize_recognize_exact(obj_val)
   };
   let rules: Vec<Expr> = vars
     .iter()
@@ -2340,6 +2448,21 @@ fn minimize_try_ilp(
     })
     .collect();
   Ok(Some(Expr::List(vec![result_val, Expr::List(rules)])))
+}
+
+/// Find a scale factor that makes all values close to integers.
+/// Tries powers of 10 up to 10^6.
+fn find_integer_scale(values: &[f64]) -> i64 {
+  for &scale in &[1i64, 10, 100, 1_000, 10_000, 100_000, 1_000_000] {
+    let all_int = values.iter().all(|&v| {
+      let scaled = v * scale as f64;
+      (scaled - scaled.round()).abs() < 1e-6
+    });
+    if all_int {
+      return scale;
+    }
+  }
+  0 // could not find a suitable scale
 }
 
 /// Extract linear expression coefficients: f = sum(coeffs[i] * vars[i]) + constant.
