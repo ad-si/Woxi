@@ -3822,12 +3822,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "Power" && args.len() == 2 {
         let base_str = expr_to_string(&args[0]);
         let exp_str = expr_to_string(&args[1]);
-        // Wrap base in parens if it's a Plus (lower precedence than Power)
-        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus")
+        // Wrap base in parens if it's lower precedence than Power
+        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
           || matches!(
             &args[0],
             Expr::BinaryOp {
-              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              op: BinaryOperator::Plus
+                | BinaryOperator::Minus
+                | BinaryOperator::Times
+                | BinaryOperator::Divide,
               ..
             }
           ) {
@@ -4092,7 +4095,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       // Add parens when a lower-precedence expr is inside a higher-precedence one,
       // or when the numerator of a division is a product (Wolfram convention)
       let left_needs_parens = (is_multiplicative && is_additive(left))
-        || (matches!(op, BinaryOperator::Divide)
+        || (matches!(op, BinaryOperator::Divide | BinaryOperator::Power)
           && (matches!(
             left.as_ref(),
             Expr::BinaryOp {
@@ -4102,7 +4105,15 @@ pub fn expr_to_string(expr: &Expr) -> String {
           ) || matches!(
             left.as_ref(),
             Expr::FunctionCall { name, .. } if name == "Times"
-          )));
+          )))
+        || (matches!(op, BinaryOperator::Power)
+          && matches!(
+            left.as_ref(),
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              ..
+            }
+          ));
       let left_formatted = if left_needs_parens {
         format!("({})", left_str)
       } else {
@@ -4850,12 +4861,15 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "Power" && args.len() == 2 {
         let base_str = expr_to_output(&args[0]);
         let exp_str = expr_to_output(&args[1]);
-        // Wrap base in parens if it's a Plus (lower precedence than Power)
-        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus")
+        // Wrap base in parens if it's lower precedence than Power
+        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
           || matches!(
             &args[0],
             Expr::BinaryOp {
-              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              op: BinaryOperator::Plus
+                | BinaryOperator::Minus
+                | BinaryOperator::Times
+                | BinaryOperator::Divide,
               ..
             }
           ) {

@@ -2087,6 +2087,201 @@ mod expand_denominator {
   }
 }
 
+mod power_expand {
+  use super::*;
+
+  #[test]
+  fn product_power() {
+    assert_eq!(interpret("PowerExpand[(a*b)^s]").unwrap(), "a^s*b^s");
+  }
+
+  #[test]
+  fn product_power_three_factors() {
+    assert_eq!(interpret("PowerExpand[(a*b*c)^s]").unwrap(), "a^s*b^s*c^s");
+  }
+
+  #[test]
+  fn nested_power() {
+    assert_eq!(interpret("PowerExpand[(a^r)^s]").unwrap(), "a^(r*s)");
+  }
+
+  #[test]
+  fn quotient_power() {
+    assert_eq!(interpret("PowerExpand[(x/y)^n]").unwrap(), "x^n/y^n");
+  }
+
+  #[test]
+  fn integer_exponent() {
+    assert_eq!(interpret("PowerExpand[(x*y)^2]").unwrap(), "x^2*y^2");
+  }
+
+  #[test]
+  fn numeric_factor_power() {
+    assert_eq!(interpret("PowerExpand[(2*x)^n]").unwrap(), "2^n*x^n");
+  }
+
+  #[test]
+  fn compound_powers_in_product() {
+    assert_eq!(
+      interpret("PowerExpand[(x^a*y^b)^c]").unwrap(),
+      "x^(a*c)*y^(b*c)"
+    );
+  }
+
+  #[test]
+  fn sqrt_product() {
+    assert_eq!(
+      interpret("PowerExpand[Sqrt[a*b]]").unwrap(),
+      "Sqrt[a]*Sqrt[b]"
+    );
+  }
+
+  #[test]
+  fn sqrt_power_product() {
+    assert_eq!(interpret("PowerExpand[Sqrt[x^2*y^4]]").unwrap(), "x*y^2");
+  }
+
+  #[test]
+  fn sqrt_squared() {
+    assert_eq!(interpret("PowerExpand[Sqrt[x^2]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn fractional_power() {
+    assert_eq!(interpret("PowerExpand[(x^2)^(1/3)]").unwrap(), "x^(2/3)");
+  }
+
+  #[test]
+  fn sqrt_three_factors() {
+    assert_eq!(
+      interpret("PowerExpand[(a*b*c)^(1/2)]").unwrap(),
+      "Sqrt[a]*Sqrt[b]*Sqrt[c]"
+    );
+  }
+
+  #[test]
+  fn half_power_compound() {
+    assert_eq!(
+      interpret("PowerExpand[(x^2*y^3)^(1/2)]").unwrap(),
+      "x*y^(3/2)"
+    );
+  }
+
+  #[test]
+  fn log_product() {
+    assert_eq!(
+      interpret("PowerExpand[Log[a*b]]").unwrap(),
+      "Log[a] + Log[b]"
+    );
+  }
+
+  #[test]
+  fn log_product_three() {
+    assert_eq!(
+      interpret("PowerExpand[Log[a*b*c]]").unwrap(),
+      "Log[a] + Log[b] + Log[c]"
+    );
+  }
+
+  #[test]
+  fn log_power() {
+    assert_eq!(interpret("PowerExpand[Log[a^b]]").unwrap(), "b*Log[a]");
+  }
+
+  #[test]
+  fn log_quotient() {
+    assert_eq!(
+      interpret("PowerExpand[Log[a/b]]").unwrap(),
+      "Log[a] - Log[b]"
+    );
+  }
+
+  #[test]
+  fn log_sqrt() {
+    assert_eq!(interpret("PowerExpand[Log[Sqrt[x]]]").unwrap(), "Log[x]/2");
+  }
+
+  #[test]
+  fn log_e_power() {
+    assert_eq!(interpret("PowerExpand[Log[E^x]]").unwrap(), "x");
+  }
+
+  #[test]
+  fn log_compound_product_powers() {
+    assert_eq!(
+      interpret("PowerExpand[Log[x^2*y^3]]").unwrap(),
+      "2*Log[x] + 3*Log[y]"
+    );
+  }
+
+  #[test]
+  fn log_symbolic_powers() {
+    assert_eq!(
+      interpret("PowerExpand[Log[x^a*y^b*z^c]]").unwrap(),
+      "a*Log[x] + b*Log[y] + c*Log[z]"
+    );
+  }
+
+  #[test]
+  fn exp_log_identity() {
+    assert_eq!(interpret("PowerExpand[Exp[x*Log[y]]]").unwrap(), "y^x");
+  }
+
+  #[test]
+  fn sum_passthrough() {
+    assert_eq!(interpret("PowerExpand[(a+b)^n]").unwrap(), "(a + b)^n");
+  }
+
+  #[test]
+  fn log_sum_passthrough() {
+    assert_eq!(interpret("PowerExpand[Log[a+b]]").unwrap(), "Log[a + b]");
+  }
+
+  #[test]
+  fn atom_passthrough() {
+    assert_eq!(interpret("PowerExpand[x]").unwrap(), "x");
+    assert_eq!(interpret("PowerExpand[5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn additive_passthrough() {
+    assert_eq!(interpret("PowerExpand[x+y]").unwrap(), "x + y");
+  }
+
+  #[test]
+  fn thread_over_list() {
+    assert_eq!(
+      interpret("PowerExpand[{(a*b)^s, Log[a*b], Sqrt[x*y]}]").unwrap(),
+      "{a^s*b^s, Log[a] + Log[b], Sqrt[x]*Sqrt[y]}"
+    );
+  }
+
+  #[test]
+  fn nested_in_function() {
+    assert_eq!(
+      interpret("PowerExpand[Sin[(a*b)^s]]").unwrap(),
+      "Sin[a^s*b^s]"
+    );
+  }
+
+  #[test]
+  fn sum_of_powers() {
+    assert_eq!(
+      interpret("PowerExpand[(x+y)^n + (a*b)^s]").unwrap(),
+      "(x + y)^n + a^s*b^s"
+    );
+  }
+
+  #[test]
+  fn with_assumptions() {
+    // Second argument (Assumptions) is accepted
+    assert_eq!(
+      interpret("PowerExpand[(a*b)^s, Assumptions -> a > 0]").unwrap(),
+      "a^s*b^s"
+    );
+  }
+}
+
 mod resultant {
   use super::*;
 
