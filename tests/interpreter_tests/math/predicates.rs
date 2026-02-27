@@ -140,6 +140,87 @@ mod element {
   fn non_prime_in_primes() {
     assert_eq!(interpret("Element[4, Primes]").unwrap(), "False");
   }
+
+  #[test]
+  fn pi_in_reals() {
+    assert_eq!(interpret("Element[Pi, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn e_in_reals() {
+    assert_eq!(interpret("Element[E, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn euler_gamma_in_reals() {
+    assert_eq!(interpret("Element[EulerGamma, Reals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn pi_not_in_integers() {
+    assert_eq!(interpret("Element[Pi, Integers]").unwrap(), "False");
+  }
+
+  #[test]
+  fn pi_not_in_rationals() {
+    assert_eq!(interpret("Element[Pi, Rationals]").unwrap(), "False");
+  }
+
+  #[test]
+  fn rational_not_in_integers() {
+    assert_eq!(interpret("Element[1/2, Integers]").unwrap(), "False");
+  }
+
+  #[test]
+  fn rational_in_rationals() {
+    assert_eq!(interpret("Element[3/4, Rationals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn i_not_in_reals() {
+    assert_eq!(interpret("Element[I, Reals]").unwrap(), "False");
+  }
+
+  #[test]
+  fn i_in_complexes() {
+    assert_eq!(interpret("Element[I, Complexes]").unwrap(), "True");
+  }
+
+  #[test]
+  fn pi_in_complexes() {
+    assert_eq!(interpret("Element[Pi, Complexes]").unwrap(), "True");
+  }
+
+  #[test]
+  fn true_in_booleans() {
+    assert_eq!(interpret("Element[True, Booleans]").unwrap(), "True");
+  }
+
+  #[test]
+  fn list_all_known() {
+    // Element[{2, 3}, Integers] → True (all known members)
+    assert_eq!(interpret("Element[{2, 3}, Integers]").unwrap(), "True");
+  }
+
+  #[test]
+  fn list_with_non_member() {
+    // Element[{2, 1/2}, Integers] → False (1/2 is not an integer)
+    assert_eq!(interpret("Element[{2, 1/2}, Integers]").unwrap(), "False");
+  }
+
+  #[test]
+  fn list_with_symbolic() {
+    // Element[{x, y}, Reals] → Element[x | y, Reals] (symbolic remains)
+    assert_eq!(
+      interpret("Element[{x, y}, Reals]").unwrap(),
+      "Element[x | y, Reals]"
+    );
+  }
+
+  #[test]
+  fn element_attributes() {
+    assert_eq!(interpret("Attributes[Element]").unwrap(), "{Protected}");
+  }
 }
 
 mod conditional_expression {

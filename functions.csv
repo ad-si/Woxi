@@ -1661,7 +1661,7 @@ ElectricFluxDensityValue,,,,14,
 ElectricPotentialCondition,,,,14,
 ElectricSymmetryValue,,,,14,
 ElectrostaticPDEComponent,,,,14,
-Element,,,,4,84
+Element,Test or assert membership of an expression in a mathematical domain,✅,pure,4,84
 ElementData,,🚫,,6,546
 ElementwiseLayer,,,,11,1566
 ElidedForms,,,,10,5184
@@ -2075,7 +2075,7 @@ FoldWhileList,,,,12.2,3070
 FollowRedirects,,,,11,4947
 FontColor,,,,3,175
 FontFamily,,,,3,103
-FontSize,,,,3,96
+FontSize,Option specifying the default font size in printer's points,✅,none,3,96
 FontSlant,,,,3,856
 FontSubstitutions,,,,3,5013
 FontTracking,,,,3,935

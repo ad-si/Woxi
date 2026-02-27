@@ -2417,3 +2417,41 @@ mod image_size {
     );
   }
 }
+
+mod font_size {
+  use super::*;
+
+  #[test]
+  fn font_size_is_symbol() {
+    assert_eq!(interpret("FontSize").unwrap(), "FontSize");
+  }
+
+  #[test]
+  fn font_size_attributes() {
+    assert_eq!(
+      interpret("Attributes[FontSize]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn font_size_head() {
+    assert_eq!(interpret("Head[FontSize]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn font_size_in_rule() {
+    assert_eq!(
+      interpret("FontSize -> 14").unwrap(),
+      "FontSize -> 14"
+    );
+  }
+
+  #[test]
+  fn font_size_in_style() {
+    assert_eq!(
+      interpret("Style[\"hello\", FontSize -> 24]").unwrap(),
+      "Style[hello, FontSize -> 24]"
+    );
+  }
+}
