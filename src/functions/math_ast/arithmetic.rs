@@ -801,6 +801,20 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
+      // When both terms lack polynomial pairs, are algebraic (priority 0),
+      // and have free variables, compare by earliest variable name
+      // (Wolfram sorts by leading variable). Skip for transcendental
+      // functions where function-name ordering takes priority.
+      if !a_has_pairs && !b_has_pairs && pa == 0 && pb == 0 {
+        let a_var = extract_earliest_variable(&base_a);
+        let b_var = extract_earliest_variable(&base_b);
+        if let (Some(av), Some(bv)) = (&a_var, &b_var) {
+          let cmp = av.cmp(bv);
+          if cmp != std::cmp::Ordering::Equal {
+            return cmp;
+          }
+        }
+      }
       // Fall back: try structural comparison of function call arguments,
       // then string comparison for non-polynomial terms.
       // This ensures e.g. Log[1 - x] sorts before Log[1 + x] to match Wolfram.
