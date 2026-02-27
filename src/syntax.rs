@@ -3239,6 +3239,13 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let unit_str = quantity_unit_to_string(&args[1]);
         return format!("Quantity[{}, {}]", mag_str, unit_str);
       }
+      // Special case: InterpolatingFunction[domain, data] — hide data with <>
+      if name == "InterpolatingFunction" && args.len() == 2 {
+        return format!(
+          "InterpolatingFunction[{}, <>]",
+          expr_to_string(&args[0])
+        );
+      }
       // Special case: Skeleton[n] displays as <<n>>
       if name == "Skeleton" && args.len() == 1 {
         return format!("<<{}>>", expr_to_string(&args[0]));
@@ -4342,6 +4349,13 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "FortranForm" && args.len() == 1 {
         return format!("FortranForm[{}]", expr_to_output(&args[0]));
       }
+      // Special case: InterpolatingFunction[domain, data] — hide data with <>
+      if name == "InterpolatingFunction" && args.len() == 2 {
+        return format!(
+          "InterpolatingFunction[{}, <>]",
+          expr_to_output(&args[0])
+        );
+      }
       // Special case: Skeleton[n] displays as <<n>>
       if name == "Skeleton" && args.len() == 1 {
         return format!("<<{}>>", expr_to_output(&args[0]));
@@ -4902,6 +4916,13 @@ pub fn expr_to_output(expr: &Expr) -> String {
           return format!("Derivative[{}][{}][{}]", n_str, f_str, x_str);
         }
         return format!("Derivative[{}][{}]", n_str, f_str);
+      }
+      // Special case: InterpolatingFunction[domain, data] — hide data
+      if name == "InterpolatingFunction" && args.len() == 2 {
+        return format!(
+          "InterpolatingFunction[{}, <>]",
+          expr_to_output(&args[0])
+        );
       }
       let parts: Vec<String> = args.iter().map(expr_to_output).collect();
       format!("{}[{}]", name, parts.join(", "))
