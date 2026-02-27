@@ -1011,11 +1011,12 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// PowerExpand[expr] - expand powers of products and powers
 /// Rules: (a^b)^c -> a^(b*c), (a*b)^c -> a^c * b^c
 pub fn power_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "PowerExpand expects exactly 1 argument".into(),
+      "PowerExpand expects 1 or 2 arguments".into(),
     ));
   }
+  // Second argument (Assumptions) is accepted but not used
   Ok(power_expand_recursive(&args[0]))
 }
 
@@ -1049,20 +1050,47 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
     }
   };
 
-  // Helper to extract Times factors
-  let extract_times = |e: &Expr| -> Option<Vec<Expr>> {
+  // Helper to recursively collect all Times factors (flattening nested Times
+  // and converting Divide to Times with Power[..., -1])
+  fn collect_times_factors(e: &Expr) -> Vec<Expr> {
     match e {
       Expr::FunctionCall { name, args }
         if name == "Times" && args.len() >= 2 =>
       {
-        Some(args.clone())
+        args.iter().flat_map(collect_times_factors).collect()
       }
       Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Times,
         left,
         right,
-      } => Some(vec![*left.clone(), *right.clone()]),
-      _ => None,
+      } => {
+        let mut factors = collect_times_factors(left);
+        factors.extend(collect_times_factors(right));
+        factors
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        let mut factors = collect_times_factors(left);
+        factors.push(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        });
+        factors
+      }
+      _ => vec![e.clone()],
+    }
+  }
+
+  let extract_times = |e: &Expr| -> Option<Vec<Expr>> {
+    let factors = collect_times_factors(e);
+    if factors.len() >= 2 {
+      Some(factors)
+    } else {
+      None
     }
   };
 
@@ -1093,13 +1121,39 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
       }
 
       // (a*b*...)^c -> a^c * b^c * ...
+      // Also applies (a^r)^c -> a^(r*c) for each factor
       if let Some(factors) = extract_times(&base) {
         let expanded: Vec<Expr> = factors
           .iter()
-          .map(|factor| Expr::BinaryOp {
-            op: crate::syntax::BinaryOperator::Power,
-            left: Box::new(factor.clone()),
-            right: Box::new(exp.clone()),
+          .map(|factor| {
+            // If factor is itself a power, apply (a^r)^c -> a^(r*c)
+            if let Some((inner_base, inner_exp)) = extract_power(factor) {
+              let new_exp = match times_ast(&[inner_exp.clone(), exp.clone()]) {
+                Ok(r) => r,
+                Err(_) => Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(inner_exp),
+                  right: Box::new(exp.clone()),
+                },
+              };
+              match power_two(&inner_base, &new_exp) {
+                Ok(r) => r,
+                Err(_) => Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left: Box::new(inner_base),
+                  right: Box::new(new_exp),
+                },
+              }
+            } else {
+              match power_two(factor, &exp) {
+                Ok(r) => r,
+                Err(_) => Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Power,
+                  left: Box::new(factor.clone()),
+                  right: Box::new(exp.clone()),
+                },
+              }
+            }
           })
           .collect();
         return match times_ast(&expanded) {
@@ -1109,6 +1163,55 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
             args: expanded,
           },
         };
+      }
+
+      // E^(a*Log[b]) -> b^a  and  E^Log[b] -> b
+      if matches!(&base, Expr::Constant(c) if c == "E") {
+        // Check if exponent is Log[b]
+        if let Expr::FunctionCall { name: ln, args: la } = &exp
+          && ln == "Log"
+          && la.len() == 1
+        {
+          return la[0].clone();
+        }
+        // Check if exponent is a product containing Log[b]
+        let exp_factors = collect_times_factors(&exp);
+        if exp_factors.len() >= 2 {
+          // Find the Log factor
+          let log_idx = exp_factors.iter().position(|f| {
+            matches!(f, Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1)
+          });
+          if let Some(idx) = log_idx
+            && let Expr::FunctionCall { args: la, .. } = &exp_factors[idx]
+          {
+            let log_arg = la[0].clone();
+            // Remaining factors form the new exponent
+            let mut remaining: Vec<Expr> = exp_factors.clone();
+            remaining.remove(idx);
+            let new_exp = if remaining.len() == 1 {
+              remaining.into_iter().next().unwrap()
+            } else {
+              match times_ast(&remaining) {
+                Ok(r) => r,
+                Err(_) => {
+                  return Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Power,
+                    left: Box::new(base),
+                    right: Box::new(exp),
+                  };
+                }
+              }
+            };
+            return match power_two(&log_arg, &new_exp) {
+              Ok(r) => r,
+              Err(_) => Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: Box::new(log_arg),
+                right: Box::new(new_exp),
+              },
+            };
+          }
+        }
       }
 
       Expr::BinaryOp {
@@ -1167,10 +1270,14 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
 
       // Log of a power: Log[a^b] -> b*Log[a]
       if let Some((base, exp)) = extract_power(&expanded_arg) {
-        let log_base = power_expand_recursive(&Expr::FunctionCall {
+        let log_expr = Expr::FunctionCall {
           name: "Log".to_string(),
           args: vec![base],
-        });
+        };
+        // Evaluate Log[base] to simplify cases like Log[E] -> 1
+        let log_base = crate::evaluator::evaluate_expr_to_expr(&log_expr)
+          .unwrap_or(log_expr);
+        let log_base = power_expand_recursive(&log_base);
         return match times_ast(&[exp, log_base]) {
           Ok(r) => r,
           Err(_) => Expr::FunctionCall {
@@ -1180,10 +1287,12 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
         };
       }
 
-      Expr::FunctionCall {
+      // Evaluate Log to simplify cases like Log[E] -> 1, Log[1] -> 0
+      let log_expr = Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![expanded_arg],
-      }
+        args: vec![expanded_arg.clone()],
+      };
+      crate::evaluator::evaluate_expr_to_expr(&log_expr).unwrap_or(log_expr)
     }
     Expr::FunctionCall { name, args } => {
       let new_args: Vec<Expr> =

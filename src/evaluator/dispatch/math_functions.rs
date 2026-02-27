@@ -776,7 +776,7 @@ pub fn dispatch_math_functions(
     "Chop" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::chop_ast(args));
     }
-    "PowerExpand" if args.len() == 1 => {
+    "PowerExpand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::power_expand_ast(args));
     }
     "Variables" if args.len() == 1 => {
