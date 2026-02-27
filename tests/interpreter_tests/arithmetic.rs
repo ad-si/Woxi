@@ -838,6 +838,72 @@ mod infinity_arithmetic {
   }
 }
 
+mod infinity_comparisons {
+  use super::*;
+
+  #[test]
+  fn less_than_infinity() {
+    assert_eq!(interpret("5 < Infinity").unwrap(), "True");
+    assert_eq!(interpret("0 < Infinity").unwrap(), "True");
+    assert_eq!(interpret("-100 < Infinity").unwrap(), "True");
+    assert_eq!(interpret("Infinity < 5").unwrap(), "False");
+    assert_eq!(interpret("Infinity < Infinity").unwrap(), "False");
+    assert_eq!(interpret("-Infinity < Infinity").unwrap(), "True");
+    assert_eq!(interpret("-Infinity < 0").unwrap(), "True");
+  }
+
+  #[test]
+  fn greater_than_infinity() {
+    assert_eq!(interpret("Infinity > 5").unwrap(), "True");
+    assert_eq!(interpret("Infinity > 0").unwrap(), "True");
+    assert_eq!(interpret("Greater[Infinity, -100]").unwrap(), "True");
+    assert_eq!(interpret("5 > Infinity").unwrap(), "False");
+    assert_eq!(interpret("Infinity > Infinity").unwrap(), "False");
+    assert_eq!(interpret("Greater[Infinity, -Infinity]").unwrap(), "True");
+    assert_eq!(interpret("Greater[0, -Infinity]").unwrap(), "True");
+  }
+
+  #[test]
+  fn less_equal_infinity() {
+    assert_eq!(interpret("5 <= Infinity").unwrap(), "True");
+    assert_eq!(interpret("Infinity <= Infinity").unwrap(), "True");
+    assert_eq!(interpret("Infinity <= 5").unwrap(), "False");
+    assert_eq!(interpret("-Infinity <= Infinity").unwrap(), "True");
+    assert_eq!(
+      interpret("LessEqual[-Infinity, -Infinity]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn greater_equal_infinity() {
+    assert_eq!(interpret("Infinity >= 5").unwrap(), "True");
+    assert_eq!(interpret("Infinity >= Infinity").unwrap(), "True");
+    assert_eq!(interpret("5 >= Infinity").unwrap(), "False");
+    assert_eq!(
+      interpret("GreaterEqual[Infinity, -Infinity]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("GreaterEqual[-Infinity, -Infinity]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn infinity_in_if_condition() {
+    clear_state();
+    assert_eq!(
+      interpret("If[5 < Infinity, \"yes\", \"no\"]").unwrap(),
+      "yes"
+    );
+    assert_eq!(
+      interpret("If[Infinity < 5, \"yes\", \"no\"]").unwrap(),
+      "no"
+    );
+  }
+}
+
 mod length_atoms {
   use super::*;
 

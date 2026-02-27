@@ -1438,8 +1438,8 @@ pub fn evaluate_expr_to_expr_inner(
         .collect::<Result<_, _>>()?;
 
       // Evaluate comparison chain
-      // Use try_eval_to_f64 for numeric comparisons (handles symbolic Pi, E, Degree, Sin[...], etc.)
-      use crate::functions::math_ast::try_eval_to_f64;
+      // Use try_eval_to_f64_with_infinity for numeric comparisons (handles symbolic Pi, E, Degree, Sin[...], Infinity, etc.)
+      use crate::functions::math_ast::try_eval_to_f64_with_infinity as try_eval_to_f64;
       for i in 0..operators.len() {
         let left = &values[i];
         let right = &values[i + 1];

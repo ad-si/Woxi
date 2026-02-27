@@ -342,9 +342,9 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Helper to extract numeric value from Expr — delegates to try_eval_to_f64 for full recursive evaluation
+/// Helper to extract numeric value from Expr — delegates to try_eval_to_f64_with_infinity for full recursive evaluation
 fn expr_to_num(expr: &Expr) -> Option<f64> {
-  crate::functions::math_ast::try_eval_to_f64(expr)
+  crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
 }
 
 /// Less[a, b] or a < b - Tests if a is less than b
