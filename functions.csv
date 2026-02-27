@@ -2644,7 +2644,7 @@ ImageAlign,,,,8,3083
 ImageApply,Applies a function to each pixel of an image,✅,pure,7,1272
 ImageApplyIndexed,,,,10,3916
 ImageAspectRatio,,,,8,3008
-ImageAssemble,,,,7,1385
+ImageAssemble,Assembles a grid of images into a single image,✅,pure,7,1385
 ImageAugmentationLayer,,,,11.1,4315
 ImageBoundingBoxes,,,,12,5013
 ImageCapture,,,,8,4225
@@ -2652,7 +2652,7 @@ ImageCaptureFunction,,,,11.3,
 ImageCases,,,,12,4947
 ImageChannels,Returns the number of channels in an image,✅,pure,7,2767
 ImageClip,,,,8,2767
-ImageCollage,,,,10,1641
+ImageCollage,Creates a collage from a list of images with optional weights and fitting,✅,pure,10,1641
 ImageColorSpace,Returns the color space of an image,✅,pure,8,2755
 ImageCompose,Overlays one image on another,✅,pure,7,1214
 ImageContainsQ,,,,12,5587

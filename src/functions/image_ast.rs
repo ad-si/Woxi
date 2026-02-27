@@ -1772,6 +1772,634 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── ImageCollage ─────────────────────────────────────────────────────────
+
+/// Rectangle for collage layout
+struct LayoutRect {
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
+}
+
+/// Lay out weighted items in rows on a canvas.
+///
+/// Chooses the number of rows so that cells are as square as possible,
+/// distributes items across rows to balance total weight per row,
+/// then assigns widths proportional to weight within each row.
+/// Returns (item_index, rectangle) pairs.
+fn layout_rows(
+  items: &[(usize, f64)],
+  canvas_w: f64,
+  canvas_h: f64,
+) -> Vec<(usize, LayoutRect)> {
+  let n = items.len();
+  if n == 0 {
+    return vec![];
+  }
+  if n == 1 {
+    return vec![(
+      items[0].0,
+      LayoutRect {
+        x: 0.0,
+        y: 0.0,
+        w: canvas_w,
+        h: canvas_h,
+      },
+    )];
+  }
+
+  // Choose number of rows so cells are closest to square.
+  // For n items on a W×H canvas with r rows, each cell is roughly
+  // (W * r / n) wide and (H / r) tall.  Aspect ratio = W·r² / (n·H).
+  // Setting that to 1 gives r = sqrt(n · H / W).
+  let r_ideal = (n as f64 * canvas_h / canvas_w).sqrt();
+  let num_rows = r_ideal.round().max(1.0) as usize;
+  let num_rows = num_rows.min(n); // can't have more rows than items
+
+  // Distribute items across rows as evenly as possible.
+  // base = items per row, remainder rows get one extra.
+  let base = n / num_rows;
+  let remainder = n % num_rows;
+  let mut rows: Vec<&[(usize, f64)]> = Vec::with_capacity(num_rows);
+  let mut offset = 0;
+  for r in 0..num_rows {
+    let count = base + if r < remainder { 1 } else { 0 };
+    rows.push(&items[offset..offset + count]);
+    offset += count;
+  }
+
+  // Assign each row equal height, then within each row
+  // assign widths proportional to weight.
+  let row_h = canvas_h / num_rows as f64;
+  let mut result = Vec::with_capacity(n);
+  let mut y = 0.0;
+
+  for row_items in &rows {
+    let row_weight: f64 = row_items.iter().map(|(_, w)| w).sum();
+    let mut x = 0.0;
+    for (i, &(idx, w)) in row_items.iter().enumerate() {
+      let cell_w = if i == row_items.len() - 1 {
+        // Last item in row: fill remaining width to avoid rounding gaps
+        canvas_w - x
+      } else {
+        (w / row_weight) * canvas_w
+      };
+      result.push((
+        idx,
+        LayoutRect {
+          x,
+          y,
+          w: cell_w,
+          h: row_h,
+        },
+      ));
+      x += cell_w;
+    }
+    y += row_h;
+  }
+
+  result
+}
+
+/// Extract an (image, weight) pair from an expression.
+/// Handles: Image (weight=1), w*Image, Image*w, {Image, w}
+fn extract_image_weight(
+  expr: &Expr,
+) -> Option<(u32, u32, u8, &std::sync::Arc<Vec<f64>>, &ImageType, f64)> {
+  // Direct image → weight 1.0
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = expr
+  {
+    return Some((*width, *height, *channels, data, image_type, 1.0));
+  }
+
+  // w * Image or Image * w
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    if let Some(w) = crate::functions::math_ast::try_eval_to_f64(left)
+      && let Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        image_type,
+      } = right.as_ref()
+    {
+      return Some((*width, *height, *channels, data, image_type, w));
+    }
+    if let Some(w) = crate::functions::math_ast::try_eval_to_f64(right)
+      && let Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        image_type,
+      } = left.as_ref()
+    {
+      return Some((*width, *height, *channels, data, image_type, w));
+    }
+  }
+
+  // Times[w, Image] as FunctionCall
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && args.len() == 2
+  {
+    if let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+      && let Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        image_type,
+      } = &args[1]
+    {
+      return Some((*width, *height, *channels, data, image_type, w));
+    }
+    if let Some(w) = crate::functions::math_ast::try_eval_to_f64(&args[1])
+      && let Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        image_type,
+      } = &args[0]
+    {
+      return Some((*width, *height, *channels, data, image_type, w));
+    }
+  }
+
+  None
+}
+
+/// ImageCollage[{img1, img2, ...}] — create a collage from images.
+/// ImageCollage[{w1*img1, w2*img2, ...}] — weighted collage.
+/// ImageCollage[{{img1, w1}, ...}] — paired format.
+/// Optional fitting argument: "Fill", "Fit", "Stretch".
+/// Optional size argument: width or {width, height}.
+pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageCollage expects 1 to 3 arguments".into(),
+    ));
+  }
+
+  // Parse fitting mode (2nd arg is always the fitting string)
+  let fitting = if args.len() >= 2 {
+    match &args[1] {
+      Expr::String(s) => match s.as_str() {
+        "Fill" | "Fit" | "Stretch" => s.clone(),
+        _ => "Fit".to_string(),
+      },
+      _ => "Fit".to_string(),
+    }
+  } else {
+    "Fit".to_string()
+  };
+
+  // Parse output size (3rd arg only)
+  let explicit_size: Option<(u32, u32)> = if args.len() == 3 {
+    match &args[2] {
+      Expr::Integer(w) => Some((*w as u32, 0)), // width only, height computed later
+      Expr::Real(w) => Some((*w as u32, 0)),
+      Expr::List(dims) if dims.len() == 2 => {
+        let w = crate::functions::math_ast::try_eval_to_f64(&dims[0])
+          .unwrap_or(800.0) as u32;
+        let h = crate::functions::math_ast::try_eval_to_f64(&dims[1])
+          .unwrap_or(600.0) as u32;
+        Some((w, h))
+      }
+      _ => None,
+    }
+  } else {
+    None
+  };
+
+  // Parse image list from first argument
+  struct ImageEntry {
+    dyn_img: image::DynamicImage,
+    orig_w: u32,
+    orig_h: u32,
+    weight: f64,
+  }
+
+  let mut entries: Vec<ImageEntry> = Vec::new();
+
+  let list = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ImageCollage: first argument must be a list of images".into(),
+      ));
+    }
+  };
+
+  for item in list {
+    // Try direct image/weighted image
+    if let Some((w, h, ch, data, _, weight)) = extract_image_weight(item) {
+      entries.push(ImageEntry {
+        dyn_img: expr_to_dynamic_image(w, h, ch, data),
+        orig_w: w,
+        orig_h: h,
+        weight,
+      });
+      continue;
+    }
+
+    // Try paired format: {image, weight}
+    if let Expr::List(pair) = item
+      && pair.len() == 2
+      && let Expr::Image {
+        width,
+        height,
+        channels,
+        data,
+        ..
+      } = &pair[0]
+    {
+      let weight =
+        crate::functions::math_ast::try_eval_to_f64(&pair[1]).unwrap_or(1.0);
+      entries.push(ImageEntry {
+        dyn_img: expr_to_dynamic_image(*width, *height, *channels, data),
+        orig_w: *width,
+        orig_h: *height,
+        weight,
+      });
+      continue;
+    }
+
+    return Err(InterpreterError::EvaluationError(
+      "ImageCollage: list elements must be images, weighted images, or {image, weight} pairs".into(),
+    ));
+  }
+
+  if entries.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ImageCollage: no images provided".into(),
+    ));
+  }
+
+  // Normalize weights
+  let total_weight: f64 = entries.iter().map(|e| e.weight.abs()).sum();
+  if total_weight < 1e-12 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageCollage: total weight must be positive".into(),
+    ));
+  }
+  let norm_weights: Vec<f64> = entries
+    .iter()
+    .map(|e| e.weight.abs() / total_weight)
+    .collect();
+
+  // Determine canvas size
+  let total_area: f64 = entries
+    .iter()
+    .map(|e| (e.orig_w as f64) * (e.orig_h as f64))
+    .sum();
+  let (canvas_w, canvas_h) = match explicit_size {
+    Some((w, 0)) => {
+      // Width only: compute height from total area
+      let h = (total_area / w as f64).max(1.0).round() as u32;
+      (w, h)
+    }
+    Some((w, h)) => (w, h),
+    None => {
+      // Default: roughly preserve total area with 4:3 aspect
+      let cw = (total_area * 4.0 / 3.0).sqrt().round() as u32;
+      let ch = (total_area / cw as f64).round() as u32;
+      (cw.max(1), ch.max(1))
+    }
+  };
+
+  // Build layout items (index, weight)
+  let items: Vec<(usize, f64)> = norm_weights
+    .iter()
+    .enumerate()
+    .map(|(i, &w)| (i, w))
+    .collect();
+
+  let layout = layout_rows(&items, canvas_w as f64, canvas_h as f64);
+
+  // Create canvas with background GrayLevel[0.2] = ~51
+  let bg = image::Rgba([51u8, 51, 51, 255]);
+  let mut canvas = image::RgbaImage::from_pixel(canvas_w, canvas_h, bg);
+
+  // Place each image in its allocated rectangle
+  for (idx, rect) in &layout {
+    let entry = &entries[*idx];
+    let cell_w = rect.w.round() as u32;
+    let cell_h = rect.h.round() as u32;
+    if cell_w == 0 || cell_h == 0 {
+      continue;
+    }
+
+    let rgba_img = entry.dyn_img.to_rgba8();
+    let placed = fit_image_to_cell(
+      &rgba_img,
+      entry.orig_w,
+      entry.orig_h,
+      cell_w,
+      cell_h,
+      &fitting,
+      bg,
+    );
+
+    // Paste onto canvas
+    image::imageops::overlay(
+      &mut canvas,
+      &placed,
+      rect.x.round() as i64,
+      rect.y.round() as i64,
+    );
+  }
+
+  Ok(dynamic_image_to_expr(&image::DynamicImage::ImageRgba8(
+    canvas,
+  )))
+}
+
+// ─── ImageAssemble ────────────────────────────────────────────────────────
+
+/// Extract an image from an Expr, returning (DynamicImage, width, height).
+/// Returns None for non-image exprs (e.g. Missing[]).
+fn extract_image_for_assemble(
+  expr: &Expr,
+) -> Option<(image::DynamicImage, u32, u32)> {
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  } = expr
+  {
+    Some((
+      expr_to_dynamic_image(*width, *height, *channels, data),
+      *width,
+      *height,
+    ))
+  } else {
+    None
+  }
+}
+
+/// Resize or fit an image into a target cell according to fitting mode.
+/// Returns an RGBA image of exactly (cell_w, cell_h).
+fn fit_image_to_cell(
+  img: &image::RgbaImage,
+  orig_w: u32,
+  orig_h: u32,
+  cell_w: u32,
+  cell_h: u32,
+  fitting: &str,
+  bg: image::Rgba<u8>,
+) -> image::RgbaImage {
+  match fitting {
+    "Stretch" => image::imageops::resize(
+      img,
+      cell_w,
+      cell_h,
+      image::imageops::FilterType::Lanczos3,
+    ),
+    "Fit" => {
+      let scale_w = cell_w as f64 / orig_w as f64;
+      let scale_h = cell_h as f64 / orig_h as f64;
+      let scale = scale_w.min(scale_h);
+      let new_w = (orig_w as f64 * scale).round() as u32;
+      let new_h = (orig_h as f64 * scale).round() as u32;
+      let resized = image::imageops::resize(
+        img,
+        new_w.max(1),
+        new_h.max(1),
+        image::imageops::FilterType::Lanczos3,
+      );
+      let mut cell = image::RgbaImage::from_pixel(cell_w, cell_h, bg);
+      let ox = cell_w.saturating_sub(new_w) / 2;
+      let oy = cell_h.saturating_sub(new_h) / 2;
+      image::imageops::overlay(&mut cell, &resized, ox as i64, oy as i64);
+      cell
+    }
+    "Fill" => {
+      let scale_w = cell_w as f64 / orig_w as f64;
+      let scale_h = cell_h as f64 / orig_h as f64;
+      let scale = scale_w.max(scale_h);
+      let new_w = (orig_w as f64 * scale).round() as u32;
+      let new_h = (orig_h as f64 * scale).round() as u32;
+      let resized = image::imageops::resize(
+        img,
+        new_w.max(1),
+        new_h.max(1),
+        image::imageops::FilterType::Lanczos3,
+      );
+      let cx = new_w.saturating_sub(cell_w) / 2;
+      let cy = new_h.saturating_sub(cell_h) / 2;
+      image::imageops::crop_imm(
+        &resized,
+        cx,
+        cy,
+        cell_w.min(new_w),
+        cell_h.min(new_h),
+      )
+      .to_image()
+    }
+    _ => {
+      // None / default: place as-is, centered, with background fill
+      let mut cell = image::RgbaImage::from_pixel(cell_w, cell_h, bg);
+      let ox = cell_w.saturating_sub(orig_w) / 2;
+      let oy = cell_h.saturating_sub(orig_h) / 2;
+      image::imageops::overlay(&mut cell, img, ox as i64, oy as i64);
+      cell
+    }
+  }
+}
+
+/// ImageAssemble[{{im11,...,im1n},...,{imm1,...,immn}}] — assemble grid.
+/// ImageAssemble[{im1,...,imn}] — assemble as single row.
+/// ImageAssemble[grid, fitting] — with fitting mode.
+pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageAssemble expects 1 or 2 arguments".into(),
+    ));
+  }
+
+  // Parse fitting mode
+  let fitting = if args.len() == 2 {
+    match &args[1] {
+      Expr::String(s) => s.clone(),
+      Expr::Identifier(s) if s == "None" => "None".to_string(),
+      _ => "None".to_string(),
+    }
+  } else {
+    "None".to_string()
+  };
+
+  let bg = image::Rgba([0u8, 0, 0, 255]); // Black background (Automatic)
+
+  // Parse the grid from the first argument
+  let outer = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "ImageAssemble: first argument must be a list".into(),
+      ));
+    }
+  };
+
+  if outer.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ImageAssemble: empty list".into(),
+    ));
+  }
+
+  // Determine if it's a 2D grid or a flat list (single row)
+  let is_2d = outer.iter().all(|e| matches!(e, Expr::List(_)));
+
+  // Build grid: Vec<Vec<Option<(DynamicImage, w, h)>>>
+  let grid: Vec<Vec<Option<(image::DynamicImage, u32, u32)>>> = if is_2d {
+    outer
+      .iter()
+      .map(|row_expr| {
+        if let Expr::List(row_items) = row_expr {
+          row_items.iter().map(extract_image_for_assemble).collect()
+        } else {
+          vec![extract_image_for_assemble(row_expr)]
+        }
+      })
+      .collect()
+  } else {
+    // Flat list → single row
+    vec![outer.iter().map(extract_image_for_assemble).collect()]
+  };
+
+  let num_rows = grid.len();
+  let num_cols = grid.iter().map(|row| row.len()).max().unwrap_or(0);
+  if num_cols == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageAssemble: no images found".into(),
+    ));
+  }
+
+  // Compute column widths and row heights
+  // Each column gets the max width of images in that column
+  // Each row gets the max height of images in that row
+  let mut col_widths = vec![0u32; num_cols];
+  let mut row_heights = vec![0u32; num_rows];
+
+  for (r, row) in grid.iter().enumerate() {
+    for (c, cell) in row.iter().enumerate() {
+      if let Some((_, w, h)) = cell {
+        if *w > col_widths[c] {
+          col_widths[c] = *w;
+        }
+        if *h > row_heights[r] {
+          row_heights[r] = *h;
+        }
+      }
+    }
+  }
+
+  // When no fitting is specified, verify commensurate sizes:
+  // all images in a row must have the same height,
+  // all images in a column must have the same width.
+  if fitting == "None" && args.len() < 2 {
+    for (r, row) in grid.iter().enumerate() {
+      let expected_h = row_heights[r];
+      for cell in row.iter() {
+        if let Some((_, _, h)) = cell
+          && *h != expected_h
+        {
+          eprintln!(
+            "\nImageAssemble::row: \
+               Expecting images of the same height in one row."
+          );
+          return Ok(Expr::FunctionCall {
+            name: "ImageAssemble".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    for c in 0..num_cols {
+      let expected_w = col_widths[c];
+      for row in &grid {
+        if let Some(Some((_, w, _))) = row.get(c)
+          && *w != expected_w
+        {
+          eprintln!(
+            "\nImageAssemble::col: \
+               Expecting images of the same width in one column."
+          );
+          return Ok(Expr::FunctionCall {
+            name: "ImageAssemble".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+  }
+
+  // Total canvas size
+  let canvas_w: u32 = col_widths.iter().sum();
+  let canvas_h: u32 = row_heights.iter().sum();
+  if canvas_w == 0 || canvas_h == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageAssemble: resulting image has zero dimensions".into(),
+    ));
+  }
+
+  // Create canvas
+  let mut canvas = image::RgbaImage::from_pixel(canvas_w, canvas_h, bg);
+
+  // Place each image
+  let mut y_offset = 0u32;
+  for (r, row) in grid.iter().enumerate() {
+    let mut x_offset = 0u32;
+    for (c, cell) in row.iter().enumerate() {
+      let cell_w = col_widths[c];
+      let cell_h = row_heights[r];
+
+      if cell_w > 0
+        && cell_h > 0
+        && let Some((dyn_img, orig_w, orig_h)) = cell
+      {
+        let rgba = dyn_img.to_rgba8();
+        let placed = if *orig_w == cell_w && *orig_h == cell_h {
+          rgba
+        } else {
+          fit_image_to_cell(
+            &rgba, *orig_w, *orig_h, cell_w, cell_h, &fitting, bg,
+          )
+        };
+        image::imageops::overlay(
+          &mut canvas,
+          &placed,
+          x_offset as i64,
+          y_offset as i64,
+        );
+      }
+      // Missing cells stay as background
+
+      x_offset += cell_w;
+    }
+    y_offset += row_heights[r];
+  }
+
+  Ok(dynamic_image_to_expr(&image::DynamicImage::ImageRgba8(
+    canvas,
+  )))
+}
+
 // ─── I/O functions (Phase 4) ──────────────────────────────────────────────
 
 /// Decode raw image bytes (PNG, JPEG, etc.) into an Expr::Image.
