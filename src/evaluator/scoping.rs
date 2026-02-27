@@ -226,16 +226,37 @@ const VALID_DOMAINS: &[&str] = &[
   "Booleans",
 ];
 
+/// Known real-valued constants (parsed as Constant or Identifier)
+const REAL_CONSTANTS: &[&str] = &[
+  "Pi", "E", "Degree", "EulerGamma", "GoldenRatio", "Catalan", "Khinchin",
+  "Glaisher",
+];
+
 /// Check if an expression is a member of a given domain
 pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
   match domain {
     "Integers" => match expr {
       Expr::Integer(_) | Expr::BigInteger(_) => Some(true),
       Expr::Real(f) => Some(*f == f.floor() && f.is_finite()),
+      // Rational[n, d] with d != 1 is not an integer
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(_), Expr::Integer(1)) => Some(true),
+          (Expr::Integer(_), Expr::Integer(_)) => Some(false),
+          _ => None,
+        }
+      }
+      // Known constants like Pi, E are not integers
+      Expr::Constant(c) if REAL_CONSTANTS.contains(&c.as_str()) => Some(false),
+      Expr::Identifier(name) if name == "I" => Some(false),
       _ => None,
     },
     "Primes" => match expr {
       Expr::Integer(n) => Some(*n >= 2 && is_prime_simple(*n)),
+      Expr::Real(_) => Some(false),
+      Expr::Constant(_) => Some(false),
       _ => None,
     },
     "Rationals" => match expr {
@@ -245,6 +266,8 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       {
         Some(true)
       }
+      // Known irrational constants
+      Expr::Constant(c) if REAL_CONSTANTS.contains(&c.as_str()) => Some(false),
       _ => None,
     },
     "Reals" => match expr {
@@ -252,6 +275,11 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       Expr::FunctionCall { name, args }
         if name == "Rational" && args.len() == 2 =>
       {
+        Some(true)
+      }
+      // Known real constants
+      Expr::Constant(c) if REAL_CONSTANTS.contains(&c.as_str()) => Some(true),
+      Expr::Identifier(name) if REAL_CONSTANTS.contains(&name.as_str()) => {
         Some(true)
       }
       Expr::Identifier(name) if name == "I" => Some(false),
@@ -274,6 +302,11 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       Expr::FunctionCall { name, args }
         if name == "Rational" && args.len() == 2 =>
       {
+        Some(true)
+      }
+      // Known constants are complex numbers too
+      Expr::Constant(c) if REAL_CONSTANTS.contains(&c.as_str()) => Some(true),
+      Expr::Identifier(name) if REAL_CONSTANTS.contains(&name.as_str()) => {
         Some(true)
       }
       Expr::Identifier(name) if name == "I" => Some(true),
@@ -382,6 +415,24 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       name: "Element".to_string(),
       args: vec![alt_expr, domain.clone()],
     });
+  }
+
+  // Handle lists: Element[{a, b, c}, dom] → Element[a | b | c, dom]
+  if let Expr::List(items) = x {
+    if items.is_empty() {
+      return Ok(Expr::Identifier("True".to_string()));
+    }
+    // Convert list to Alternatives and recurse
+    let alt_expr = items
+      .iter()
+      .cloned()
+      .reduce(|acc, e| Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Alternatives,
+        left: Box::new(acc),
+        right: Box::new(e),
+      })
+      .unwrap();
+    return element_ast(&alt_expr, domain);
   }
 
   // Simple case: check single element
