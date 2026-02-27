@@ -3390,6 +3390,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{2212} ");
       }
+      // Special case: ReverseElement[a, b] displays as a ∋ b
+      if name == "ReverseElement" && args.len() == 2 {
+        return format!(
+          "{} \u{220B} {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
       // Special case: Dot[a, b] displays as a . b (infix notation)
       if name == "Dot" && args.len() == 2 {
         return format!(
@@ -5067,6 +5075,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
           expr_to_output(&args[0])
         );
       }
+      // Special case: ReverseElement[a, b] displays as a ∋ b
+      if name == "ReverseElement" && args.len() == 2 {
+        return format!(
+          "{} \u{220B} {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
+      }
       let parts: Vec<String> = args.iter().map(expr_to_output).collect();
       format!("{}[{}]", name, parts.join(", "))
     }
@@ -5351,6 +5367,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
           | "Blank"
           | "BlankSequence"
           | "BlankNullSequence"
+          | "ReverseElement"
       ) =>
     {
       if args.is_empty() {
