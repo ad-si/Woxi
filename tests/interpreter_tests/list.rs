@@ -2352,6 +2352,59 @@ mod part_multi_index {
   fn part_multi_index_head() {
     assert_eq!(interpret("Part[{f[a, b], g[c, d]}, 2, 0]").unwrap(), "g");
   }
+
+  #[test]
+  fn part_rule_first() {
+    // Part 1 of a Rule gives the pattern (left-hand side)
+    assert_eq!(interpret("Part[a -> b, 1]").unwrap(), "a");
+  }
+
+  #[test]
+  fn part_rule_second() {
+    // Part 2 of a Rule gives the replacement (right-hand side)
+    assert_eq!(interpret("Part[a -> b, 2]").unwrap(), "b");
+  }
+
+  #[test]
+  fn part_rule_head() {
+    // Part 0 of a Rule gives the head "Rule"
+    assert_eq!(interpret("Part[a -> b, 0]").unwrap(), "Rule");
+  }
+
+  #[test]
+  fn part_rule_negative_index() {
+    // Part -1 of a Rule gives the last element (replacement)
+    assert_eq!(interpret("Part[a -> b, -1]").unwrap(), "b");
+  }
+
+  #[test]
+  fn part_rule_delayed_second() {
+    // Part 2 of a RuleDelayed gives the replacement
+    assert_eq!(interpret("Part[a :> b, 2]").unwrap(), "b");
+  }
+
+  #[test]
+  fn part_rule_delayed_head() {
+    assert_eq!(interpret("Part[a :> b, 0]").unwrap(), "RuleDelayed");
+  }
+
+  #[test]
+  fn part_all_from_list_of_rules() {
+    // Extracting second element from each rule in a list
+    assert_eq!(
+      interpret("x = {a -> 1, b -> 2, c -> 3}; x[[All, 2]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn part_all_first_from_list_of_rules() {
+    // Extracting first element (pattern) from each rule in a list
+    assert_eq!(
+      interpret("x = {a -> 1, b -> 2, c -> 3}; x[[All, 1]]").unwrap(),
+      "{a, b, c}"
+    );
+  }
 }
 
 mod part_span {

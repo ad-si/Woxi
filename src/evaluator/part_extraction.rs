@@ -297,6 +297,35 @@ pub fn extract_part_ast(
         Ok(part_take_unevaluated(expr, index))
       }
     }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      // Rule[a, b] has Part 0 = Rule/RuleDelayed, Part 1 = a, Part 2 = b
+      if idx == 0 {
+        let head_name = if matches!(expr, Expr::Rule { .. }) {
+          "Rule"
+        } else {
+          "RuleDelayed"
+        };
+        return Ok(Expr::Identifier(head_name.to_string()));
+      }
+      let parts: [&Expr; 2] = [pattern, replacement];
+      let len = 2i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(parts[actual_idx as usize].clone())
+      } else {
+        let expr_str = crate::syntax::expr_to_string(expr);
+        eprintln!();
+        eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
+        Ok(part_take_unevaluated(expr, index))
+      }
+    }
     Expr::String(s) => {
       let chars: Vec<char> = s.chars().collect();
       let len = chars.len() as i64;
