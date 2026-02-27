@@ -193,6 +193,102 @@ mod date_string {
       "Thu 6 Jun 1991 12:00:00"
     );
   }
+
+  #[test]
+  fn date_string_iso_datetime() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27, 19, 54, 40}, \"ISODateTime\"]")
+        .unwrap(),
+      "2026-02-27T19:54:40"
+    );
+  }
+
+  #[test]
+  fn date_string_iso_date() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27, 19, 54, 40}, \"ISODate\"]").unwrap(),
+      "2026-02-27"
+    );
+  }
+
+  #[test]
+  fn date_string_datetime() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27, 20, 5, 43}, \"DateTime\"]").unwrap(),
+      "Friday 27 February 2026 20:05:43"
+    );
+  }
+
+  #[test]
+  fn date_string_datetime_short() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27, 20, 5, 43}, \"DateTimeShort\"]")
+        .unwrap(),
+      "Fri 27 Feb 2026 20:05:43"
+    );
+  }
+
+  #[test]
+  fn date_string_date() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27}, \"Date\"]").unwrap(),
+      "Friday 27 February 2026"
+    );
+  }
+
+  #[test]
+  fn date_string_date_short() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27}, \"DateShort\"]").unwrap(),
+      "Fri 27 Feb 2026"
+    );
+  }
+
+  #[test]
+  fn date_string_time() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27, 14, 30, 15}, \"Time\"]").unwrap(),
+      "14:30:15"
+    );
+  }
+
+  #[test]
+  fn date_string_single_element_year() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27}, \"Year\"]").unwrap(),
+      "2026"
+    );
+  }
+
+  #[test]
+  fn date_string_single_element_month_name() {
+    assert_eq!(
+      interpret("DateString[{2026, 2, 27}, \"MonthName\"]").unwrap(),
+      "February"
+    );
+  }
+
+  #[test]
+  fn date_string_with_date_object() {
+    assert_eq!(
+      interpret("DateString[DateObject[{2026, 2, 27, 19, 54, 40}, \"Instant\", \"Gregorian\", 0.], \"ISODateTime\"]").unwrap(),
+      "2026-02-27T19:54:40"
+    );
+  }
+
+  #[test]
+  fn date_string_now_iso_datetime() {
+    let result = interpret("DateString[Now, \"ISODateTime\"]").unwrap();
+    // Should match YYYY-MM-DDTHH:MM:SS pattern
+    assert!(
+      result.len() == 19
+        && result.contains("T")
+        && result.contains("-")
+        && result.contains(":"),
+      "DateString[Now, \"ISODateTime\"] should return ISO format, got: {}",
+      result
+    );
+  }
 }
 
 /// Helper: extract {y, m, d} from "DateObject[{y, m, d}, Day]tz]"
