@@ -355,6 +355,40 @@ mod power_expand {
   fn sqrt_of_square() {
     assert_eq!(interpret("PowerExpand[(x ^ 2) ^ (1/2)]").unwrap(), "x");
   }
+
+  #[test]
+  fn log_of_product() {
+    assert_eq!(
+      interpret("PowerExpand[Log[x*y]]").unwrap(),
+      "Log[x] + Log[y]"
+    );
+  }
+
+  #[test]
+  fn log_of_power() {
+    assert_eq!(interpret("PowerExpand[Log[x^y]]").unwrap(), "y*Log[x]");
+  }
+
+  #[test]
+  fn log_of_product_three() {
+    assert_eq!(
+      interpret("PowerExpand[Log[x*y*z]]").unwrap(),
+      "Log[x] + Log[y] + Log[z]"
+    );
+  }
+
+  #[test]
+  fn log_of_quotient() {
+    assert_eq!(
+      interpret("PowerExpand[Log[x/y]]").unwrap(),
+      "Log[x] - Log[y]"
+    );
+  }
+
+  #[test]
+  fn log_of_sqrt() {
+    assert_eq!(interpret("PowerExpand[Log[Sqrt[x]]]").unwrap(), "Log[x]/2");
+  }
 }
 
 mod log_rational_simplification {

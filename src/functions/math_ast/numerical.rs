@@ -1117,6 +1117,74 @@ pub fn power_expand_recursive(expr: &Expr) -> Expr {
         right: Box::new(exp),
       }
     }
+    // Log expansion rules (assuming positive reals):
+    // Log[a*b*...] -> Log[a] + Log[b] + ...
+    // Log[a^b] -> b*Log[a]
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+      // First, recursively expand the argument
+      let expanded_arg = power_expand_recursive(&args[0]);
+
+      // Log of a quotient: Log[a/b] -> Log[a] - Log[b]
+      // Convert a/b to Times[a, Power[b, -1]] and fall through to product rule
+      let expanded_arg = match &expanded_arg {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left,
+          right,
+        } => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            *left.clone(),
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: right.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            },
+          ],
+        },
+        _ => expanded_arg,
+      };
+
+      // Log of a product: Log[a*b*...] -> Log[a] + Log[b] + ...
+      if let Some(factors) = extract_times(&expanded_arg) {
+        let log_terms: Vec<Expr> = factors
+          .iter()
+          .map(|f| {
+            power_expand_recursive(&Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![f.clone()],
+            })
+          })
+          .collect();
+        return match plus_ast(&log_terms) {
+          Ok(r) => r,
+          Err(_) => Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: log_terms,
+          },
+        };
+      }
+
+      // Log of a power: Log[a^b] -> b*Log[a]
+      if let Some((base, exp)) = extract_power(&expanded_arg) {
+        let log_base = power_expand_recursive(&Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![base],
+        });
+        return match times_ast(&[exp, log_base]) {
+          Ok(r) => r,
+          Err(_) => Expr::FunctionCall {
+            name: "Log".to_string(),
+            args: vec![expanded_arg],
+          },
+        };
+      }
+
+      Expr::FunctionCall {
+        name: "Log".to_string(),
+        args: vec![expanded_arg],
+      }
+    }
     Expr::FunctionCall { name, args } => {
       let new_args: Vec<Expr> =
         args.iter().map(power_expand_recursive).collect();
