@@ -266,6 +266,136 @@ mod element {
   }
 }
 
+mod not_element {
+  use super::*;
+
+  #[test]
+  fn integer_not_in_primes() {
+    // 4 is not prime
+    assert_eq!(interpret("NotElement[4, Primes]").unwrap(), "True");
+  }
+
+  #[test]
+  fn prime_in_primes() {
+    // 5 is prime, so NotElement returns False
+    assert_eq!(interpret("NotElement[5, Primes]").unwrap(), "False");
+  }
+
+  #[test]
+  fn integer_not_in_reals() {
+    // 5 is real, so NotElement returns False
+    assert_eq!(interpret("NotElement[5, Reals]").unwrap(), "False");
+  }
+
+  #[test]
+  fn pi_not_in_integers() {
+    assert_eq!(interpret("NotElement[Pi, Integers]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("NotElement[x, Reals]").unwrap(),
+      "NotElement[x, Reals]"
+    );
+  }
+
+  #[test]
+  fn infix_named_char() {
+    assert_eq!(interpret("5 \\[NotElement] Primes").unwrap(), "False");
+  }
+
+  #[test]
+  fn infix_named_char_true() {
+    assert_eq!(interpret("Pi \\[NotElement] Integers").unwrap(), "True");
+  }
+
+  #[test]
+  fn infix_unicode() {
+    assert_eq!(interpret("5 \u{2209} Primes").unwrap(), "False");
+  }
+
+  #[test]
+  fn infix_unicode_true() {
+    assert_eq!(interpret("Pi \u{2209} Integers").unwrap(), "True");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(interpret("Attributes[NotElement]").unwrap(), "{Protected}");
+  }
+}
+
+mod reverse_element {
+  use super::*;
+
+  #[test]
+  fn function_form_stays_unevaluated() {
+    assert_eq!(
+      interpret("ReverseElement[Reals, 5]").unwrap(),
+      "ReverseElement[Reals, 5]"
+    );
+  }
+
+  #[test]
+  fn infix_named_char() {
+    assert_eq!(
+      interpret("Reals \\[ReverseElement] 5").unwrap(),
+      "ReverseElement[Reals, 5]"
+    );
+  }
+
+  #[test]
+  fn infix_unicode() {
+    assert_eq!(
+      interpret("Reals \u{220B} 5").unwrap(),
+      "ReverseElement[Reals, 5]"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("Reals \\[ReverseElement] x").unwrap(),
+      "ReverseElement[Reals, x]"
+    );
+  }
+}
+
+mod named_characters {
+  use super::*;
+
+  #[test]
+  fn epsilon_named_char() {
+    assert_eq!(interpret("\\[Epsilon]").unwrap(), "\u{03F5}");
+  }
+
+  #[test]
+  fn epsilon_unicode() {
+    assert_eq!(interpret("\u{03F5}").unwrap(), "\u{03F5}");
+  }
+
+  #[test]
+  fn epsilon_as_variable() {
+    assert_eq!(interpret("\\[Epsilon] = 42; \\[Epsilon]").unwrap(), "42");
+  }
+
+  #[test]
+  fn euro_named_char() {
+    assert_eq!(interpret("\\[Euro]").unwrap(), "\u{20AC}");
+  }
+
+  #[test]
+  fn euro_unicode() {
+    assert_eq!(interpret("\u{20AC}").unwrap(), "\u{20AC}");
+  }
+
+  #[test]
+  fn euro_as_variable() {
+    assert_eq!(interpret("\\[Euro] = 100; \\[Euro]").unwrap(), "100");
+  }
+}
+
 mod conditional_expression {
   use super::*;
 

@@ -452,6 +452,29 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// NotElement[x, domain] - Test non-membership of an expression in a mathematical domain
+pub fn not_element_ast(
+  x: &Expr,
+  domain: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let result = element_ast(x, domain)?;
+  match &result {
+    Expr::Identifier(name) if name == "True" => {
+      Ok(Expr::Identifier("False".to_string()))
+    }
+    Expr::Identifier(name) if name == "False" => {
+      Ok(Expr::Identifier("True".to_string()))
+    }
+    _ => {
+      // Element returned unevaluated, so NotElement stays unevaluated too
+      Ok(Expr::FunctionCall {
+        name: "NotElement".to_string(),
+        args: vec![x.clone(), domain.clone()],
+      })
+    }
+  }
+}
+
 /// Collect all alternatives from a nested Alternatives expression
 pub fn collect_alternatives(expr: &Expr) -> Vec<Expr> {
   match expr {
