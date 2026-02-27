@@ -2314,6 +2314,7 @@ fn operator_precedence(op: &str) -> u8 {
     "->" | ":>" => 3, // Rule/RuleDelayed (lower than boolean operators)
     "||" => 4, // Or
     "&&" => 5, // And
+    "\\[Element]" | "\u{2208}" => 6, // Element (same level as comparisons)
     "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 6, // Comparisons
     "~~" => 7, // StringExpression (lower than Alternatives)
     "|" => 8,  // Alternatives (higher than StringExpression, Or, And, Rule)
@@ -2445,6 +2446,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       op: BinaryOperator::Alternatives,
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
+    },
+    "\\[Element]" | "\u{2208}" => Expr::FunctionCall {
+      name: "Element".to_string(),
+      args: vec![left.clone(), right.clone()],
     },
     "~~" => {
       // Flatten nested StringExpression (it's Flat/associative)

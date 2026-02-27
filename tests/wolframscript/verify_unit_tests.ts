@@ -34,6 +34,9 @@ function unescapeRust(s: string): string {
   return s
     .replace(/\\"/g, '"')
     .replace(/\\n/g, "\n")
+    .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
     .replace(/\\\\/g, "\\");
 }
 
@@ -506,6 +509,7 @@ function main() {
     (c) =>
       !c.expr.includes("\n") &&
       !c.expr.includes("Interrupt[]") &&
+      !/[^\x00-\x7F]/.test(c.expr) && // Non-ASCII chars get garbled by wolframscript encoding
       !(c.expr.match(/^Goto\[/) && !c.expr.includes("Label[")) &&
       !IMPL_SPECIFIC_PATTERNS.some((p) => p.test(c.expr))
   );
