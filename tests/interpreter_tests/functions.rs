@@ -1935,6 +1935,91 @@ mod alternatives {
       "{x, x, x, d}"
     );
   }
+
+  #[test]
+  fn alternatives_function_call_form() {
+    // Alternatives[a, b, c] displays as a | b | c
+    assert_eq!(interpret("Alternatives[a, b, c]").unwrap(), "a | b | c");
+  }
+
+  #[test]
+  fn alternatives_single_arg() {
+    // Alternatives[a] reduces to a (OneIdentity)
+    assert_eq!(interpret("Alternatives[a]").unwrap(), "a");
+  }
+
+  #[test]
+  fn alternatives_flattening() {
+    // Alternatives is Flat: nested Alternatives are flattened
+    assert_eq!(
+      interpret("Alternatives[Alternatives[a, b], c]").unwrap(),
+      "a | b | c"
+    );
+  }
+
+  #[test]
+  fn alternatives_attributes() {
+    assert_eq!(
+      interpret("Attributes[Alternatives]").unwrap(),
+      "{Flat, OneIdentity, Protected}"
+    );
+  }
+
+  #[test]
+  fn alternatives_head() {
+    assert_eq!(interpret("Head[a | b | c]").unwrap(), "Alternatives");
+    assert_eq!(
+      interpret("Head[Alternatives[a, b]]").unwrap(),
+      "Alternatives"
+    );
+  }
+
+  #[test]
+  fn alternatives_match_q_function_form() {
+    // MatchQ with Alternatives as FunctionCall
+    assert_eq!(
+      interpret("MatchQ[1, Alternatives[1, 2, 3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[5, Alternatives[1, 2, 3]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn alternatives_cases_function_form() {
+    assert_eq!(
+      interpret("Cases[{1, 2, 3, 4, 5}, Alternatives[1, 3, 5]]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn alternatives_string_replace() {
+    assert_eq!(
+      interpret("StringReplace[\"abcabc\", \"a\" | \"b\" -> \"x\"]").unwrap(),
+      "xxcxxc"
+    );
+  }
+
+  #[test]
+  fn alternatives_string_cases() {
+    assert_eq!(
+      interpret("StringCases[\"the cat sat on the mat\", \"cat\" | \"mat\"]")
+        .unwrap(),
+      "{cat, mat}"
+    );
+  }
+
+  #[test]
+  fn alternatives_precedence_over_rule() {
+    // | binds tighter than -> so "a" | "b" -> "x" is Rule[Alternatives["a","b"], "x"]
+    assert_eq!(
+      interpret("Head[\"a\" | \"b\" -> \"x\"]").unwrap(),
+      "Rule"
+    );
+  }
 }
 
 mod filter_rules {
@@ -2235,5 +2320,100 @@ mod unique {
   fn unique_symbolic_unevaluated() {
     // Non-symbol, non-string, non-list args return unevaluated
     assert_eq!(interpret("Unique[1]").unwrap(), "Unique[1]");
+  }
+}
+
+mod entity {
+  use super::*;
+
+  #[test]
+  fn entity_preserves_string_args() {
+    // Entity preserves string quotes in output
+    assert_eq!(
+      interpret("Entity[\"Country\", \"France\"]").unwrap(),
+      "Entity[\"Country\", \"France\"]"
+    );
+  }
+
+  #[test]
+  fn entity_single_arg() {
+    assert_eq!(
+      interpret("Entity[\"Country\"]").unwrap(),
+      "Entity[\"Country\"]"
+    );
+  }
+
+  #[test]
+  fn entity_head() {
+    assert_eq!(
+      interpret("Head[Entity[\"Country\", \"France\"]]").unwrap(),
+      "Entity"
+    );
+  }
+
+  #[test]
+  fn entity_attributes() {
+    assert_eq!(
+      interpret("Attributes[Entity]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn entity_stays_symbolic() {
+    // Entity expressions are inert - they evaluate to themselves
+    assert_eq!(
+      interpret("Entity[\"City\", \"Paris\"]").unwrap(),
+      "Entity[\"City\", \"Paris\"]"
+    );
+  }
+
+  #[test]
+  fn entity_mixed_args() {
+    // Entity with mixed arg types preserves strings but evaluates others
+    assert_eq!(
+      interpret("Entity[\"Planet\", \"Mars\"]").unwrap(),
+      "Entity[\"Planet\", \"Mars\"]"
+    );
+  }
+}
+
+mod image_size {
+  use super::*;
+
+  #[test]
+  fn image_size_is_symbol() {
+    // ImageSize evaluates to itself as a symbol
+    assert_eq!(interpret("ImageSize").unwrap(), "ImageSize");
+  }
+
+  #[test]
+  fn image_size_attributes() {
+    assert_eq!(
+      interpret("Attributes[ImageSize]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn image_size_head() {
+    assert_eq!(interpret("Head[ImageSize]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn image_size_in_rule() {
+    // ImageSize used as option name in a Rule
+    assert_eq!(
+      interpret("ImageSize -> 300").unwrap(),
+      "ImageSize -> 300"
+    );
+  }
+
+  #[test]
+  fn image_size_in_list_of_rules() {
+    assert_eq!(
+      interpret("{ImageSize -> 400, PlotRange -> All}").unwrap(),
+      "{ImageSize -> 400, PlotRange -> All}"
+    );
   }
 }

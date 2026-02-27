@@ -213,6 +213,13 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       left,
       right,
     } => matches_pattern_ast(expr, left) || matches_pattern_ast(expr, right),
+    // Alternatives[a, b, ...] as FunctionCall - matches if any alternative matches
+    Expr::FunctionCall {
+      name: pat_name,
+      args: pat_args,
+    } if pat_name == "Alternatives" && !pat_args.is_empty() => {
+      pat_args.iter().any(|alt| matches_pattern_ast(expr, alt))
+    }
     // Structural matching for lists: {_, _} matches {1, 2}
     Expr::List(pat_items) => {
       if let Expr::List(expr_items) = expr {

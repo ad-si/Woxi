@@ -199,7 +199,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "And" | "Or" => vec!["Flat", "HoldAll", "OneIdentity", "Protected"],
 
     // Flat + OneIdentity + Protected
-    "NonCommutativeMultiply" => vec!["Flat", "OneIdentity", "Protected"],
+    "Alternatives" | "NonCommutativeMultiply" => vec!["Flat", "OneIdentity", "Protected"],
 
     // Constants
     "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Catalan" | "Degree"
@@ -210,7 +210,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Locked" => vec!["Locked", "Protected"],
     "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
     | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "ListPlot3D"
-    | "Input" | "SeriesData" | "RunThrough" | "AbsolutePointSize" => {
+    | "Input" | "SeriesData" | "RunThrough" | "AbsolutePointSize"
+    | "ImageSize" | "Entity" => {
       vec!["Protected", "ReadProtected"]
     }
     // HoldAll + Protected + ReadProtected

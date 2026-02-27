@@ -475,25 +475,60 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let s = expr_to_str(&args[0])?;
 
-  fn extract_rule(expr: &Expr) -> Result<(String, String), InterpreterError> {
-    match expr {
+  /// A replacement rule: either a simple literal pattern or a regex pattern.
+  enum ReplaceRule {
+    Simple { pattern: String, replacement: String },
+    Regex { regex: regex::Regex, replacement: String },
+  }
+
+  fn extract_rule(expr: &Expr) -> Result<ReplaceRule, InterpreterError> {
+    let (pattern_expr, replacement_expr) = match expr {
       Expr::Rule {
         pattern,
         replacement,
-      } => Ok((expr_to_str(pattern)?, expr_to_str(replacement)?)),
+      } => (pattern.as_ref(), replacement.as_ref()),
       Expr::RuleDelayed {
         pattern,
         replacement,
-      } => Ok((expr_to_str(pattern)?, expr_to_str(replacement)?)),
-      _ => Err(InterpreterError::EvaluationError(
-        "StringReplace: rules must be of the form pattern -> replacement"
-          .into(),
-      )),
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "StringReplace: rules must be of the form pattern -> replacement"
+            .into(),
+        ));
+      }
+    };
+
+    let replacement = expr_to_str(replacement_expr)?;
+
+    // For simple string literals, use direct matching
+    if let Expr::String(pat_str) = pattern_expr {
+      return Ok(ReplaceRule::Simple { pattern: pat_str.clone(), replacement });
     }
+
+    // For complex patterns (Alternatives, StringExpression, etc.), use regex
+    if let Some(regex_str) = string_pattern_to_regex(pattern_expr) {
+      let re = regex::Regex::new(&regex_str).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "StringReplace: invalid pattern regex: {}",
+          e
+        ))
+      })?;
+      return Ok(ReplaceRule::Regex { regex: re, replacement });
+    }
+
+    // Fallback: try expr_to_str for identifiers etc.
+    if let Ok(pat_str) = expr_to_str(pattern_expr) {
+      return Ok(ReplaceRule::Simple { pattern: pat_str, replacement });
+    }
+
+    Err(InterpreterError::EvaluationError(
+      "StringReplace: unsupported pattern type".into(),
+    ))
   }
 
   // Collect all rules into a vec
-  let rules: Vec<(String, String)> = match &args[1] {
+  let rules: Vec<ReplaceRule> = match &args[1] {
     Expr::List(rule_list) => {
       let mut v = Vec::new();
       for rule in rule_list {
@@ -507,36 +542,46 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Scan-based replacement: scan left-to-right, at each position try each rule
   fn scan_replace(
     s: &str,
-    rules: &[(String, String)],
+    rules: &[ReplaceRule],
     max: Option<usize>,
   ) -> String {
     let mut result = String::new();
     let mut count = 0usize;
     let mut i = 0;
-    let bytes = s.as_bytes();
     while i < s.len() {
       if max.is_some() && count >= max.unwrap() {
-        // Limit reached, append the rest
         result.push_str(&s[i..]);
         break;
       }
       let mut matched = false;
-      for (pattern, replacement) in rules {
-        if pattern.is_empty() {
-          continue;
-        }
-        if i + pattern.len() <= bytes.len()
-          && &s[i..i + pattern.len()] == pattern.as_str()
-        {
-          result.push_str(replacement);
-          i += pattern.len();
-          count += 1;
-          matched = true;
-          break;
+      for rule in rules {
+        match rule {
+          ReplaceRule::Simple { pattern, replacement } => {
+            if pattern.is_empty() {
+              continue;
+            }
+            if s[i..].starts_with(pattern.as_str()) {
+              result.push_str(replacement);
+              i += pattern.len();
+              count += 1;
+              matched = true;
+              break;
+            }
+          }
+          ReplaceRule::Regex { regex, replacement } => {
+            if let Some(m) = regex.find(&s[i..]) {
+              if m.start() == 0 && !m.as_str().is_empty() {
+                result.push_str(replacement);
+                i += m.len();
+                count += 1;
+                matched = true;
+                break;
+              }
+            }
+          }
         }
       }
       if !matched {
-        // Advance by one character
         let ch = s[i..].chars().next().unwrap();
         result.push(ch);
         i += ch.len_utf8();
