@@ -321,6 +321,138 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       times_ast(&[Expr::Identifier("I".to_string()), sqrt_pos])
     }
     Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
+    // Sqrt[expr^2] → expr, Sqrt[expr^(2n)] → expr^n
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0) => {
+      if let Expr::Integer(n) = exp.as_ref() {
+        let half = n / 2;
+        if half == 1 {
+          return Ok(*base.clone());
+        } else {
+          return Ok(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: base.clone(),
+            right: Box::new(Expr::Integer(half)),
+          });
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    // Sqrt of a product: Sqrt[n * expr^2 * ...] → simplify factors
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      ..
+    }
+    | Expr::FunctionCall { name: _, args: _ }
+      if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Times") =>
+    {
+      let factors =
+        crate::functions::polynomial_ast::collect_multiplicative_factors(
+          &args[0],
+        );
+      // Separate into: integer part, squared symbolic factors, remainder
+      let mut int_product: i128 = 1;
+      let mut outside: Vec<Expr> = Vec::new(); // factors to move outside sqrt
+      let mut inside: Vec<Expr> = Vec::new(); // factors to keep inside sqrt
+
+      for f in &factors {
+        match f {
+          Expr::Integer(n) => {
+            int_product *= n;
+          }
+          // expr^2 → move expr outside
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: base,
+            right: exp,
+          } if matches!(exp.as_ref(), Expr::Integer(2)) => {
+            outside.push(*base.clone());
+          }
+          // expr^(2n) → move expr^n outside
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: base,
+            right: exp,
+          } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0) => {
+            if let Expr::Integer(n) = exp.as_ref() {
+              outside.push(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Power,
+                left: base.clone(),
+                right: Box::new(Expr::Integer(n / 2)),
+              });
+            }
+          }
+          _ => {
+            inside.push(f.clone());
+          }
+        }
+      }
+
+      // Handle the integer part: extract perfect square factors
+      let sign = if int_product < 0 { -1i128 } else { 1i128 };
+      let abs_int = (int_product * sign) as u64;
+      let mut int_outside = 1u64;
+      let mut int_inside = abs_int;
+      let mut factor = 2u64;
+      while factor * factor <= int_inside {
+        while int_inside.is_multiple_of(factor * factor) {
+          int_outside *= factor;
+          int_inside /= factor * factor;
+        }
+        factor += 1;
+      }
+
+      if int_outside <= 1 && outside.is_empty() {
+        // No simplification possible
+        if let Some(result) = try_sqrt_gaussian(&args[0]) {
+          return Ok(result);
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: args.to_vec(),
+        });
+      }
+
+      // Build outside factors
+      if int_outside > 1 {
+        outside.insert(0, Expr::Integer(int_outside as i128));
+      }
+
+      // Build inside factors
+      if int_inside > 1 {
+        inside.insert(0, Expr::Integer(int_inside as i128));
+      }
+      if sign < 0 {
+        inside.insert(0, Expr::Integer(-1));
+      }
+
+      let outside_expr = if outside.len() == 1 {
+        outside.remove(0)
+      } else {
+        crate::functions::polynomial_ast::build_product(outside)
+      };
+
+      if inside.is_empty() {
+        Ok(outside_expr)
+      } else {
+        let inside_expr = if inside.len() == 1 {
+          inside.remove(0)
+        } else {
+          crate::functions::polynomial_ast::build_product(inside)
+        };
+        let sqrt_part = Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![inside_expr],
+        };
+        times_ast(&[outside_expr, sqrt_part])
+      }
+    }
     // Sqrt[a + b*I] for Gaussian integers — try to find exact Gaussian integer sqrt
     _ => {
       if let Some(result) = try_sqrt_gaussian(&args[0]) {

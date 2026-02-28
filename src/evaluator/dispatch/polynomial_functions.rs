@@ -49,8 +49,11 @@ pub fn dispatch_polynomial_functions(
     "FactorList" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::factor_list_ast(args));
     }
-    "Simplify" if args.len() == 1 => {
+    "Simplify" if args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::simplify_ast(args));
+    }
+    "FullSimplify" if args.len() <= 2 => {
+      return Some(crate::functions::polynomial_ast::full_simplify_ast(args));
     }
     "Coefficient" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::polynomial_ast::coefficient_ast(args));

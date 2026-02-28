@@ -7,14 +7,158 @@ use crate::functions::calculus_ast::simplify;
 
 // ─── Simplify ───────────────────────────────────────────────────────
 
-/// Simplify[expr] - User-facing simplification
+/// Simplify[expr] or Simplify[expr, Assumptions -> cond] - User-facing simplification
 pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Simplify expects exactly 1 argument".into(),
+      "Simplify expects 1 or 2 arguments".into(),
     ));
   }
+  if args.len() == 2 {
+    return simplify_with_assumptions(&args[0], &args[1], false);
+  }
   Ok(simplify_expr(&args[0]))
+}
+
+/// FullSimplify[expr] or FullSimplify[expr, Assumptions -> cond]
+pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() || args.len() > 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FullSimplify expects 1 or 2 arguments".into(),
+    ));
+  }
+  if args.len() == 2 {
+    return simplify_with_assumptions(&args[0], &args[1], true);
+  }
+  // Thread over Lists
+  if let Expr::List(items) = &args[0] {
+    let results: Vec<Expr> = items.iter().map(full_simplify_expr).collect();
+    return Ok(Expr::List(results));
+  }
+  Ok(full_simplify_expr(&args[0]))
+}
+
+/// Apply Simplify or FullSimplify with an Assumptions option.
+fn simplify_with_assumptions(
+  expr: &Expr,
+  opts: &Expr,
+  full: bool,
+) -> Result<Expr, InterpreterError> {
+  // Extract Assumptions -> value from the options argument
+  let assumption = match opts {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      if let Expr::Identifier(name) = pattern.as_ref() {
+        if name == "Assumptions" {
+          Some(replacement.as_ref().clone())
+        } else {
+          None
+        }
+      } else {
+        None
+      }
+    }
+    _ => None,
+  };
+
+  if let Some(assumption_val) = assumption {
+    // Save previous $Assumptions
+    let prev = crate::ENV.with(|e| e.borrow().get("$Assumptions").cloned());
+
+    // Set $Assumptions
+    let val = expr_to_string(&assumption_val);
+    crate::ENV.with(|e| {
+      e.borrow_mut()
+        .insert("$Assumptions".to_string(), crate::StoredValue::Raw(val))
+    });
+
+    let result = if full {
+      full_simplify_expr(expr)
+    } else {
+      simplify_expr(expr)
+    };
+
+    // Restore previous $Assumptions
+    crate::ENV.with(|e| {
+      let mut env = e.borrow_mut();
+      if let Some(v) = prev {
+        env.insert("$Assumptions".to_string(), v);
+      } else {
+        env.remove("$Assumptions");
+      }
+    });
+
+    Ok(result)
+  } else {
+    // Unknown option, just simplify normally
+    if full {
+      Ok(full_simplify_expr(expr))
+    } else {
+      Ok(simplify_expr(expr))
+    }
+  }
+}
+
+/// FullSimplify: more aggressive than Simplify.
+/// Expands, applies trig identities, factors out common terms, and tries factoring.
+pub fn full_simplify_expr(expr: &Expr) -> Expr {
+  // Thread over Lists
+  if let Expr::List(items) = expr {
+    let results: Vec<Expr> = items.iter().map(full_simplify_expr).collect();
+    return Expr::List(results);
+  }
+
+  // First apply regular simplification
+  let simplified = simplify_expr(expr);
+
+  // Then expand fully and combine
+  let expanded = expand_and_combine(&simplified);
+
+  // Apply trig identities
+  let trig_simplified = apply_trig_identities(&expanded);
+
+  // Keep track of the best (simplest) form using leaf count as complexity
+  let mut best = trig_simplified.clone();
+  let mut best_complexity = leaf_count(&best);
+
+  // Try factoring (Factor[expr]) — prefer factored forms (use <=)
+  if let Ok(factored) =
+    crate::functions::polynomial_ast::factor_ast(&[trig_simplified.clone()])
+  {
+    let c = leaf_count(&factored);
+    if c <= best_complexity {
+      best = factored;
+      best_complexity = c;
+    }
+  }
+
+  // Try FactorTerms to factor out common numeric/symbolic terms
+  let terms = collect_additive_terms(&trig_simplified);
+  if terms.len() >= 2 {
+    if let Ok(factored) = crate::functions::polynomial_ast::factor_terms_ast(&[
+      trig_simplified.clone(),
+    ]) {
+      let c = leaf_count(&factored);
+      if c <= best_complexity {
+        best = factored;
+        best_complexity = c;
+      }
+    }
+
+    // Try extracting common symbolic factors from all terms
+    if let Some(factored) = factor_common_symbolic(&trig_simplified, &terms) {
+      let c = leaf_count(&factored);
+      if c <= best_complexity {
+        best = factored;
+        best_complexity = c;
+      }
+    }
+  }
+
+  let _ = best_complexity; // suppress unused warning
+  best
 }
 
 /// Full simplification: expand, combine like terms, simplify.
@@ -491,4 +635,212 @@ pub fn coeffs_to_expr(coeffs: &[i128], var: &str) -> Expr {
   } else {
     build_sum(terms)
   }
+}
+
+/// Count the complexity of an expression (leaf nodes + internal nodes).
+/// Used as a metric for choosing the simplest form.
+fn leaf_count(expr: &Expr) -> usize {
+  match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::String(_)
+    | Expr::Constant(_)
+    | Expr::Identifier(_) => 1,
+    Expr::BinaryOp { left, right, .. } => {
+      1 + leaf_count(left) + leaf_count(right)
+    }
+    Expr::UnaryOp { operand, .. } => 1 + leaf_count(operand),
+    Expr::FunctionCall { args, .. } => {
+      1 + args.iter().map(leaf_count).sum::<usize>()
+    }
+    Expr::List(items) => items.iter().map(leaf_count).sum::<usize>().max(1),
+    _ => 1,
+  }
+}
+
+/// Factor out common symbolic factors from additive terms.
+/// e.g., `2*a^2 - 2*a^2*Sin[theta]` → `2*a^2*(1 - Sin[theta])`
+fn factor_common_symbolic(_expr: &Expr, terms: &[Expr]) -> Option<Expr> {
+  if terms.len() < 2 {
+    return None;
+  }
+
+  // For each term, get the set of multiplicative factor strings
+  let term_factor_sets: Vec<Vec<(String, Expr)>> = terms
+    .iter()
+    .map(|t| {
+      let factors = collect_multiplicative_factors(t);
+      // Flatten negation but track it
+      let mut result: Vec<(String, Expr)> = Vec::new();
+      for f in &factors {
+        match f {
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } => {
+            let inner = collect_multiplicative_factors(operand);
+            result.push(("-1".to_string(), Expr::Integer(-1)));
+            for i in &inner {
+              result.push((expr_to_string(i), i.clone()));
+            }
+          }
+          _ => result.push((expr_to_string(f), f.clone())),
+        }
+      }
+      result
+    })
+    .collect();
+
+  // Find factors common to ALL terms (by string comparison)
+  // Exclude integer factors (handled by factor_terms_numeric already)
+  let first_factors: Vec<(String, Expr)> = term_factor_sets[0]
+    .iter()
+    .filter(|(s, _)| {
+      // Skip pure integers and -1
+      s != "-1" && s.parse::<i128>().is_err()
+    })
+    .cloned()
+    .collect();
+
+  let mut common_factors: Vec<(String, Expr)> = Vec::new();
+  for (s, e) in &first_factors {
+    if term_factor_sets[1..]
+      .iter()
+      .all(|tfs| tfs.iter().any(|(ts, _)| ts == s))
+    {
+      // Check for duplicates in common_factors
+      if !common_factors.iter().any(|(cs, _)| cs == s) {
+        common_factors.push((s.clone(), e.clone()));
+      }
+    }
+  }
+
+  if common_factors.is_empty() {
+    return None;
+  }
+
+  // Remove common factors from each term
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for tfs in &term_factor_sets {
+    let mut remaining: Vec<Expr> = Vec::new();
+    let mut used: Vec<bool> = vec![false; common_factors.len()];
+
+    for (s, e) in tfs {
+      let mut is_common = false;
+      for (ci, (cs, _)) in common_factors.iter().enumerate() {
+        if !used[ci] && s == cs {
+          used[ci] = true;
+          is_common = true;
+          break;
+        }
+      }
+      if !is_common {
+        remaining.push(e.clone());
+      }
+    }
+
+    if remaining.is_empty() {
+      new_terms.push(Expr::Integer(1));
+    } else if remaining.len() == 1 {
+      new_terms.push(remaining.remove(0));
+    } else {
+      new_terms.push(build_product(remaining));
+    }
+  }
+
+  // Build result: common_factor * (sum of new_terms)
+  let common_expr = if common_factors.len() == 1 {
+    common_factors[0].1.clone()
+  } else {
+    build_product(common_factors.into_iter().map(|(_, e)| e).collect())
+  };
+
+  let sum = expand_and_combine(&build_sum(new_terms));
+
+  // Also try to factor numeric GCD from the inner sum
+  let inner = if let Ok(factored) =
+    crate::functions::polynomial_ast::factor_terms_ast(&[sum.clone()])
+  {
+    factored
+  } else {
+    sum
+  };
+
+  // Build result with proper ordering: numeric_coeff * symbolic_factors * (inner_sum)
+  // Extract numeric factor from inner if present
+  let (num_factor, remainder) = match &inner {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(_)) => {
+      (Some(*left.clone()), *right.clone())
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      // -expr → factor of -1
+      match operand.as_ref() {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Integer(n) if *n > 0) => {
+          if let Expr::Integer(n) = left.as_ref() {
+            (Some(Expr::Integer(-n)), *right.clone())
+          } else {
+            (Some(Expr::Integer(-1)), *operand.clone())
+          }
+        }
+        _ => (Some(Expr::Integer(-1)), *operand.clone()),
+      }
+    }
+    _ => (None, inner),
+  };
+
+  // Check if we should negate the coefficient and inner sum to match canonical form.
+  // Wolfram convention: the first symbolic (non-constant) term in the inner sum
+  // should have a positive coefficient. If not, negate both.
+  let (final_num, final_remainder) = {
+    let inner_terms = collect_additive_terms(&remainder);
+    // Find first non-constant term
+    let first_symbolic =
+      inner_terms.iter().find(|t| !matches!(t, Expr::Integer(_)));
+    let should_negate = if let Some(sym_term) = first_symbolic {
+      // Check if it has a negative leading coefficient
+      matches!(
+        sym_term,
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          ..
+        }
+      ) || matches!(sym_term, Expr::BinaryOp { op: BinaryOperator::Times, left, .. }
+            if matches!(left.as_ref(), Expr::Integer(n) if *n < 0)
+              || matches!(left.as_ref(), Expr::UnaryOp { op: UnaryOperator::Minus, .. }))
+    } else {
+      false
+    };
+    if should_negate {
+      let negated_remainder = expand_and_combine(&negate_term(&remainder));
+      let negated_num = num_factor
+        .map(|nf| match nf {
+          Expr::Integer(n) => Expr::Integer(-n),
+          _ => negate_term(&nf),
+        })
+        .unwrap_or(Expr::Integer(-1));
+      (Some(negated_num), negated_remainder)
+    } else {
+      (num_factor, remainder)
+    }
+  };
+
+  let mut factors: Vec<Expr> = Vec::new();
+  if let Some(nf) = final_num {
+    factors.push(nf);
+  }
+  factors.push(common_expr);
+  factors.push(final_remainder);
+
+  Some(build_product(factors))
 }
