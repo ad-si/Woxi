@@ -893,17 +893,21 @@ impl WoxiStudio {
       .menu_style(dropdown_menu_style),
     );
 
+    let trash_svg = svg::Handle::from_memory(
+      TRASH_ICON_SVG.as_bytes().to_vec(),
+    );
     gutter = gutter.push(
       button(
-        text("\u{1F5D1}") // 🗑
-          .size(12)
-          .font(Font::DEFAULT),
+        svg::Svg::new(trash_svg)
+          .width(14)
+          .height(14)
+          .style(trash_icon_style),
       )
       .on_press_maybe(
         (self.cell_editors.len() > 1)
           .then_some(Message::DeleteCell(idx)),
       )
-      .padding([1, 4])
+      .padding([2, 4])
       .style(trash_button_style),
     );
 
@@ -1185,6 +1189,20 @@ fn trash_button_style(
   style
 }
 
+fn trash_icon_style(
+  theme: &Theme,
+  _status: svg::Status,
+) -> svg::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  svg::Style {
+    color: Some(if is_dark {
+      Color::from_rgb(0.65, 0.65, 0.70)
+    } else {
+      Color::from_rgb(0.40, 0.40, 0.45)
+    }),
+  }
+}
+
 fn export_button_style(
   theme: &Theme,
   status: pick_list::Status,
@@ -1258,6 +1276,8 @@ fn dropdown_menu_style(theme: &Theme) -> menu::Style {
   }
   style
 }
+
+const TRASH_ICON_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>"#;
 
 // ── CellStyle display/picklist support ──────────────────────────────
 
