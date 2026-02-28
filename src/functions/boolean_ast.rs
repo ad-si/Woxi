@@ -355,6 +355,13 @@ pub fn less_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Handle Interval comparisons
+  if let Some(result) =
+    crate::functions::interval_ast::try_interval_compare(args, "Less")
+  {
+    return result;
+  }
+
   let mut prev = match expr_to_num(&args[0]) {
     Some(n) => n,
     None => {
@@ -389,6 +396,13 @@ pub fn greater_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Greater expects at least 2 arguments".into(),
     ));
+  }
+
+  // Handle Interval comparisons
+  if let Some(result) =
+    crate::functions::interval_ast::try_interval_compare(args, "Greater")
+  {
+    return result;
   }
 
   let mut prev = match expr_to_num(&args[0]) {
@@ -427,6 +441,13 @@ pub fn less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Handle Interval comparisons
+  if let Some(result) =
+    crate::functions::interval_ast::try_interval_compare(args, "LessEqual")
+  {
+    return result;
+  }
+
   let mut prev = match expr_to_num(&args[0]) {
     Some(n) => n,
     None => {
@@ -461,6 +482,13 @@ pub fn greater_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "GreaterEqual expects at least 2 arguments".into(),
     ));
+  }
+
+  // Handle Interval comparisons
+  if let Some(result) =
+    crate::functions::interval_ast::try_interval_compare(args, "GreaterEqual")
+  {
+    return result;
   }
 
   let mut prev = match expr_to_num(&args[0]) {
