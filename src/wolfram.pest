@@ -38,8 +38,11 @@ UnsignedNumericValue = { BasePrefix | UnsignedReal | UnsignedInteger | UnsignedC
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
 PatternName = @{ (ASCII_ALPHA | LETTER) ~ (ASCII_ALPHANUMERIC | LETTER)* }
-// NamedCharIdentifier: named character sequences that act as identifiers
-NamedCharIdentifier = { "\\[Euro]" | "\u{20AC}" | "\\[Epsilon]" | "\u{03F5}" }
+// NamedCharIdentifier: named character sequences like \[Phi], \[Alpha], etc.
+// Matches \[Name] syntax or direct Unicode chars for common symbols
+// Excludes operator named chars (\[Element], \[NotElement], \[ReverseElement])
+// which must be parsed as infix operators, not as identifiers in implicit multiplication.
+NamedCharIdentifier = { !("\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" }
 Identifier = @{ (ASCII_ALPHA | LETTER | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | "_")* }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
