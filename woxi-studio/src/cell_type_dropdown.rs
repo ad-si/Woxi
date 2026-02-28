@@ -349,10 +349,16 @@ impl<Message: Clone>
     theme: &Theme,
     _style: &renderer::Style,
     layout: Layout<'_>,
-    _cursor: mouse::Cursor,
+    cursor: mouse::Cursor,
   ) {
     let is_dark = !matches!(theme, Theme::Light);
     let bounds = layout.bounds();
+
+    // Compute hover from cursor position directly (overlay is
+    // recreated each frame so persistent state is lost).
+    let hovered = cursor
+      .position()
+      .and_then(|pos| self.item_index_at(pos, bounds));
 
     // Draw menu background
     renderer.fill_quad(
@@ -410,7 +416,7 @@ impl<Message: Clone>
 
     for (i, &style) in self.options.iter().enumerate() {
       let is_selected = style == self.current;
-      let is_hovered = self.hovered == Some(i);
+      let is_hovered = hovered == Some(i);
 
       let item_bounds = Rectangle {
         x: bounds.x + MENU_PADDING,
