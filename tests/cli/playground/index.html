@@ -40,12 +40,14 @@
       <div class="editor-container" id="editor"></div>
 
       <div class="controls">
-        <button id="runBtn" disabled>
-          Run
-          <div class="spinner" id="runSpinner"></div>
-        </button>
         <button id="clearBtn">Clear</button>
-        <span class="shortcut-hint">Shift+Enter to run</span>
+        <div class="controls-right">
+          <button id="shareBtn">Share</button>
+          <button id="runBtn" disabled data-tooltip="Run code (&#8679; + Enter)">
+            Run
+            <div class="spinner" id="runSpinner"></div>
+          </button>
+        </div>
       </div>
 
       <div class="output-container">
