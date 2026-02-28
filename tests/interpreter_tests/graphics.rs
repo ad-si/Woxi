@@ -93,9 +93,7 @@ mod graphics {
 
     #[test]
     fn circle_elliptical() {
-      insta::assert_snapshot!(export_svg(
-        "Graphics[Circle[{0, 0}, {2, 1}]]"
-      ));
+      insta::assert_snapshot!(export_svg("Graphics[Circle[{0, 0}, {2, 1}]]"));
     }
 
     #[test]
@@ -947,6 +945,27 @@ mod plot3d {
     #[test]
     fn list_line_plot() {
       insta::assert_snapshot!(export_svg("ListLinePlot[{1, 2, 3, 2, 1}]"));
+    }
+
+    #[test]
+    fn list_line_plot_plot_style() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 2, 3, 2, 1}, PlotStyle -> Green]"
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_plot_style_rgb() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 2, 3, 2, 1}, PlotStyle -> RGBColor[1, 0, 0]]"
+      ));
+    }
+
+    #[test]
+    fn list_plot_plot_style() {
+      insta::assert_snapshot!(export_svg(
+        "ListPlot[{1, 4, 9}, PlotStyle -> Red]"
+      ));
     }
 
     #[test]

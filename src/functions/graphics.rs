@@ -2044,11 +2044,15 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.extend(gbox::line_box(segments));
       }
-      Primitive::CircleArc { cx, cy, rx, style, .. } => {
+      Primitive::CircleArc {
+        cx, cy, rx, style, ..
+      } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::circle_box(*cx, *cy, *rx));
       }
-      Primitive::Disk { cx, cy, rx, style, .. } => {
+      Primitive::Disk {
+        cx, cy, rx, style, ..
+      } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::disk_box(*cx, *cy, *rx));
       }

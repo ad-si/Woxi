@@ -508,18 +508,18 @@ fn series_color(plot_style: &[WoxiColor], idx: usize) -> (u8, u8, u8) {
   }
 }
 
-/// Generate SVG for a scatter plot using plotters.
-/// Each series is drawn with circles (markers) in its assigned color.
-pub(crate) fn generate_scatter_svg(
+/// Generate SVG for a scatter plot with full option support (including PlotStyle).
+pub(crate) fn generate_scatter_svg_with_options(
   all_series: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
   y_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
-  full_width: bool,
+  opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
+  let svg_width = opts.svg_width;
+  let svg_height = opts.svg_height;
+  let full_width = opts.full_width;
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
@@ -602,7 +602,7 @@ pub(crate) fn generate_scatter_svg(
     // Draw scatter points using plotters Circle markers
     let marker_size = 3 * RESOLUTION_SCALE;
     for (series_idx, points) in all_series.iter().enumerate() {
-      let (r, g, b) = PLOT_COLORS[series_idx % PLOT_COLORS.len()];
+      let (r, g, b) = series_color(&opts.plot_style, series_idx);
       let color = RGBColor(r, g, b);
       let finite_pts: Vec<(f64, f64)> = points
         .iter()
