@@ -742,6 +742,33 @@ mod plot3d {
         "-Graphics-"
       );
     }
+
+    #[test]
+    fn plot_piecewise_prefix_apply() {
+      // Piecewise @ {{...}} should produce a valid plot (not empty)
+      let svg = export_svg(
+        "Plot[Piecewise @ {{1, 0 <= t < 1}, {-1, 1 <= t < 2}}, {t, 0, 2}]",
+      );
+      assert!(svg.contains("polyline"), "expected plot line in SVG");
+    }
+
+    #[test]
+    fn plot_piecewise_with_table() {
+      // Plot with Piecewise built from Table should produce a valid plot
+      let svg = export_svg(
+        "With[{l = {1, 2, 1}}, Plot[Piecewise @ Table[{(-1)^i, Accumulate[Prepend[l, 0]][[i]] <= t < Accumulate[Prepend[l, 0]][[i + 1]]}, {i, 1, Length[l]}], {t, 0, Total[l]}, PlotRange -> {-1.5, 1.5}, Exclusions -> None]]",
+      );
+      assert!(svg.contains("polyline"), "expected plot line in SVG");
+    }
+
+    #[test]
+    fn plot_piecewise_chained_inequality() {
+      // Plot with chained inequality conditions (a <= t < b) should work
+      let svg = export_svg(
+        "Plot[Piecewise[{{-1, 0 <= t < 1}, {1, 1 <= t < 3}, {-1, 3 <= t < 4}}], {t, 0, 4}, PlotRange -> {-1.5, 1.5}]",
+      );
+      assert!(svg.contains("polyline"), "expected plot line in SVG");
+    }
   }
 
   mod plot_options {

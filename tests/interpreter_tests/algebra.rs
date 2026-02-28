@@ -655,6 +655,55 @@ mod piecewise {
       "2"
     );
   }
+
+  #[test]
+  fn prefix_apply() {
+    // Piecewise @ {{...}} should work the same as Piecewise[{{...}}]
+    assert_eq!(
+      interpret("Piecewise @ {{1, True}, {2, False}}").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Piecewise @ {{1, False}, {2, True}}").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn prefix_apply_with_conditions() {
+    clear_state();
+    assert_eq!(
+      interpret("x = 3; Piecewise @ {{1, x < 0}, {2, x >= 0}}").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn with_chained_inequality() {
+    clear_state();
+    assert_eq!(
+      interpret("x = 0.5; Piecewise[{{1, 0 <= x < 1}, {2, 1 <= x < 2}}]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("x = 1.5; Piecewise[{{1, 0 <= x < 1}, {2, 1 <= x < 2}}]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn via_table_prefix_apply() {
+    assert_eq!(
+      interpret("With[{l = {1, 2, 1}}, Piecewise @ Table[{(-1)^i, Accumulate[Prepend[l, 0]][[i]] <= t < Accumulate[Prepend[l, 0]][[i + 1]]}, {i, 1, Length[l]}] /. t -> 0.5]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("With[{l = {1, 2, 1}}, Piecewise @ Table[{(-1)^i, Accumulate[Prepend[l, 0]][[i]] <= t < Accumulate[Prepend[l, 0]][[i + 1]]}, {i, 1, Length[l]}] /. t -> 1.5]").unwrap(),
+      "1"
+    );
+  }
 }
 
 mod match_q {
