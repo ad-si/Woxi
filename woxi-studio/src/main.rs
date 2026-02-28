@@ -1313,7 +1313,7 @@ impl WoxiStudio {
       };
 
     let cell_row = row![gutter, content_el, right_side]
-      .spacing(4)
+      .spacing(2)
       .padding([3, 6]);
 
     container(cell_row).width(Fill).into()
