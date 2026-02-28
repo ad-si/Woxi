@@ -3,8 +3,8 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::parse_color;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  Filling, PlotOptions, generate_scatter_svg_with_options,
-  generate_svg_with_filling, parse_image_size,
+  PlotOptions, adjust_y_range_for_filling, generate_scatter_svg_with_options,
+  generate_svg_with_filling, parse_filling, parse_image_size,
 };
 use crate::syntax::Expr;
 
@@ -129,10 +129,7 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
           }
         }
         "Filling" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Axis")
-          {
-            opts.filling = Filling::Axis;
-          }
+          opts.filling = parse_filling(replacement);
         }
         "PlotStyle" => {
           let val =
@@ -219,6 +216,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = parse_list_data(&args[0])?;
   let (opts, joined) = parse_plot_options(args);
   let (x_range, y_range) = compute_ranges(&all_series);
+  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
 
   let svg = if joined {
     generate_svg_with_filling(&all_series, x_range, y_range, &opts)?
@@ -235,15 +233,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (opts, _) = parse_plot_options(args);
   let (x_range, mut y_range) = compute_ranges(&all_series);
 
-  // When filling to axis, ensure y=0 is included in the range
-  if opts.filling == Filling::Axis {
-    if y_range.0 > 0.0 {
-      y_range.0 = 0.0 - (y_range.1 - 0.0) * 0.04;
-    }
-    if y_range.1 < 0.0 {
-      y_range.1 = 0.0 + (0.0 - y_range.0) * 0.04;
-    }
-  }
+  y_range = adjust_y_range_for_filling(opts.filling, y_range);
 
   let svg = generate_svg_with_filling(&all_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
@@ -270,6 +260,7 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&step_series);
+  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
   let svg = generate_svg_with_filling(&step_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
@@ -290,6 +281,7 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&log_series);
+  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
   let svg = generate_svg_with_filling(&log_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
@@ -316,6 +308,7 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&log_series);
+  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
   let svg = generate_svg_with_filling(&log_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
@@ -338,6 +331,7 @@ pub fn list_log_linear_plot_ast(
     .collect();
 
   let (x_range, y_range) = compute_ranges(&log_series);
+  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
   let svg = generate_svg_with_filling(&log_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
@@ -363,6 +357,7 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   let (x_range, y_range) = compute_ranges(&polar_series);
+  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
   let svg = generate_svg_with_filling(&polar_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
