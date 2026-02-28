@@ -662,6 +662,59 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// BooleanTable[expr, {var1, var2, ...}] - Truth table for a boolean expression
+/// Evaluates expr for all 2^n combinations of True/False for the given variables.
+/// First variable cycles slowest (MSB), last variable cycles fastest (LSB).
+pub fn boolean_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BooleanTable expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let body = &args[0];
+  let vars = match &args[1] {
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::Identifier(name) => Ok(name.clone()),
+        _ => Err(InterpreterError::EvaluationError(
+          "BooleanTable: variables must be symbols".into(),
+        )),
+      })
+      .collect::<Result<Vec<String>, _>>()?,
+    Expr::Identifier(name) => vec![name.clone()],
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "BooleanTable: second argument must be a list of variables".into(),
+      ));
+    }
+  };
+
+  let n = vars.len();
+  let num_combos = 1usize << n;
+  let mut results = Vec::with_capacity(num_combos);
+
+  for i in 0..num_combos {
+    // Build substitutions: first variable = MSB, last = LSB
+    let mut substituted = body.clone();
+    for (j, var_name) in vars.iter().enumerate() {
+      let bit = (i >> (n - 1 - j)) & 1;
+      let val = if bit == 0 {
+        Expr::Identifier("True".to_string())
+      } else {
+        Expr::Identifier("False".to_string())
+      };
+      substituted =
+        crate::syntax::substitute_variable(&substituted, var_name, &val);
+    }
+    let result = evaluate_expr_to_expr(&substituted)?;
+    results.push(result);
+  }
+
+  Ok(Expr::List(results))
+}
+
 /// LogicalExpand[expr] - expand logical expression to disjunctive normal form
 pub fn logical_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
