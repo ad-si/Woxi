@@ -665,10 +665,10 @@ impl WoxiStudio {
   }
 
   fn subscription(&self) -> Subscription<Message> {
-    keyboard::on_key_press(|key, modifiers| {
-      let msg = Message::KeyPressed(key, modifiers);
-      Some(msg)
-    })
+    // Use event::listen_with instead of keyboard::on_key_press
+    // because on_key_press only fires for Status::Ignored events,
+    // which means it never fires when a text_editor has focus.
+    iced::event::listen_with(handle_event)
   }
 
   fn view(&self) -> Element<'_, Message> {
@@ -964,6 +964,44 @@ impl WoxiStudio {
     .width(Fill)
     .into()
   }
+}
+
+// ── Event handling ──────────────────────────────────────────────────
+
+fn handle_event(
+  event: iced::Event,
+  _status: iced::event::Status,
+  _id: iced::window::Id,
+) -> Option<Message> {
+  if let iced::Event::Keyboard(
+    keyboard::Event::KeyPressed {
+      key, modifiers, ..
+    },
+  ) = event
+  {
+    // Shift+Enter: always handle (even when text editor has focus)
+    if modifiers.shift() {
+      if let keyboard::Key::Named(
+        keyboard::key::Named::Enter,
+      ) = key.as_ref()
+      {
+        return Some(Message::KeyPressed(key, modifiers));
+      }
+    }
+
+    // Cmd/Ctrl shortcuts
+    if modifiers.command() {
+      match key.as_ref() {
+        keyboard::Key::Character("s")
+        | keyboard::Key::Character("o")
+        | keyboard::Key::Character("n") => {
+          return Some(Message::KeyPressed(key, modifiers));
+        }
+        _ => {}
+      }
+    }
+  }
+  None
 }
 
 // ── Custom styles ───────────────────────────────────────────────────
