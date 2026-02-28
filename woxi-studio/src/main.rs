@@ -1128,24 +1128,6 @@ impl WoxiStudio {
           move |s| Message::CellStyleChanged(idx, s),
         ),
       );
-
-      let trash_svg = svg::Handle::from_memory(
-        TRASH_ICON_SVG.as_bytes().to_vec(),
-      );
-      gutter = gutter.push(
-        button(
-          svg::Svg::new(trash_svg)
-            .width(14)
-            .height(14)
-            .style(trash_icon_style),
-        )
-        .on_press_maybe(
-          (self.cell_editors.len() > 1)
-            .then_some(Message::DeleteCell(idx)),
-        )
-        .padding([2, 4])
-        .style(trash_button_style),
-      );
     }
 
     // ── Text editor ──
@@ -1297,20 +1279,39 @@ impl WoxiStudio {
       content_col.into()
     };
 
-    // ── Right side: play button for input cells ──
-    let right_side: Element<'a, Message> =
-      if !self.preview_mode && is_input {
-        container(
+    // ── Right side: play button + trash ──
+    let right_side: Element<'a, Message> = if !self.preview_mode
+    {
+      let trash_svg = svg::Handle::from_memory(
+        TRASH_ICON_SVG.as_bytes().to_vec(),
+      );
+      let trash_btn = button(
+        svg::Svg::new(trash_svg)
+          .width(14)
+          .height(14)
+          .style(trash_icon_style),
+      )
+      .on_press_maybe(
+        (self.cell_editors.len() > 1)
+          .then_some(Message::DeleteCell(idx)),
+      )
+      .padding([2, 4])
+      .style(trash_button_style);
+
+      let mut right_col = Column::new().spacing(2);
+      if is_input {
+        right_col = right_col.push(
           button(text("\u{25B6}").size(14))
             .on_press(Message::EvaluateCell(idx))
             .padding([4, 8])
             .style(muted_button_style),
-        )
-        .into()
-      } else {
-        // Empty spacer
-        text("").into()
-      };
+        );
+      }
+      right_col = right_col.push(trash_btn);
+      right_col.into()
+    } else {
+      text("").into()
+    };
 
     let cell_row = row![gutter, content_el, right_side]
       .spacing(2)
