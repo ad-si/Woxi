@@ -5,7 +5,7 @@ use iced::keyboard;
 use iced::widget::{
   button, column, container, focus_next, horizontal_rule,
   horizontal_space, pick_list, row, rule, scrollable, svg,
-  text, text_editor, Column, Stack,
+  text, text_editor, Column,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font,
@@ -70,6 +70,10 @@ struct CellEditor {
   stdout: Option<String>,
   /// SVG data from Graphics/Plot evaluation.
   graphics_svg: Option<String>,
+  /// Undo stack: previous text snapshots.
+  undo_stack: Vec<String>,
+  /// Redo stack: snapshots restored via undo.
+  redo_stack: Vec<String>,
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -91,6 +95,8 @@ enum Message {
 
   // Cell editing
   CellAction(usize, text_editor::Action),
+  Undo(usize),
+  Redo(usize),
   CellStyleChanged(usize, CellStyle),
   FocusCell(usize),
 
@@ -259,6 +265,8 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
           });
         }
         CellEntry::Group(group) => {
@@ -301,6 +309,8 @@ impl WoxiStudio {
                 output,
                 stdout,
                 graphics_svg: None,
+                undo_stack: Vec::new(),
+                redo_stack: Vec::new(),
               });
               i = j;
             } else if matches!(
@@ -318,6 +328,8 @@ impl WoxiStudio {
                 output: None,
                 stdout: None,
                 graphics_svg: None,
+                undo_stack: Vec::new(),
+                redo_stack: Vec::new(),
               });
               i += 1;
             }
@@ -544,8 +556,53 @@ impl WoxiStudio {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
           let is_edit = action.is_edit();
+          if is_edit {
+            // Snapshot current text for undo
+            let snap =
+              self.cell_editors[idx].content.text();
+            self.cell_editors[idx]
+              .undo_stack
+              .push(snap);
+            self.cell_editors[idx].redo_stack.clear();
+          }
           self.cell_editors[idx].content.perform(action);
           if is_edit {
+            self.is_dirty = true;
+          }
+        }
+        Task::none()
+      }
+
+      Message::Undo(idx) => {
+        if idx < self.cell_editors.len() {
+          if let Some(prev) =
+            self.cell_editors[idx].undo_stack.pop()
+          {
+            let current =
+              self.cell_editors[idx].content.text();
+            self.cell_editors[idx]
+              .redo_stack
+              .push(current);
+            self.cell_editors[idx].content =
+              text_editor::Content::with_text(&prev);
+            self.is_dirty = true;
+          }
+        }
+        Task::none()
+      }
+
+      Message::Redo(idx) => {
+        if idx < self.cell_editors.len() {
+          if let Some(next) =
+            self.cell_editors[idx].redo_stack.pop()
+          {
+            let current =
+              self.cell_editors[idx].content.text();
+            self.cell_editors[idx]
+              .undo_stack
+              .push(current);
+            self.cell_editors[idx].content =
+              text_editor::Content::with_text(&next);
             self.is_dirty = true;
           }
         }
@@ -594,6 +651,8 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
           },
         );
         self.focused_cell = Some(insert_at);
@@ -611,6 +670,8 @@ impl WoxiStudio {
             output: None,
             stdout: None,
             graphics_svg: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
           },
         );
         self.focused_cell = Some(insert_at);
@@ -955,6 +1016,12 @@ impl WoxiStudio {
         let is_focused = self.focused_cell == Some(idx);
         col =
           col.push(self.view_cell(idx, editor, is_focused));
+
+        // Show cell type dropdown below the cell if open
+        if self.cell_type_menu_open == Some(idx) {
+          col = col
+            .push(self.view_cell_type_menu(idx, editor));
+        }
       }
 
       if !self.preview_mode {
@@ -1118,6 +1185,33 @@ impl WoxiStudio {
       .on_action(move |action| {
         Message::CellAction(idx, action)
       })
+      .key_binding(move |key_press| {
+        let text_editor::KeyPress {
+          key, modifiers, ..
+        } = &key_press;
+        if modifiers.command() {
+          match key.as_ref() {
+            keyboard::Key::Character("z")
+              if modifiers.shift() =>
+            {
+              return Some(
+                text_editor::Binding::Custom(
+                  Message::Redo(idx),
+                ),
+              );
+            }
+            keyboard::Key::Character("z") => {
+              return Some(
+                text_editor::Binding::Custom(
+                  Message::Undo(idx),
+                ),
+              );
+            }
+            _ => {}
+          }
+        }
+        text_editor::Binding::from_key_press(key_press)
+      })
       .height(iced::Length::Shrink)
       .padding(6)
       .size(font_size)
@@ -1221,58 +1315,55 @@ impl WoxiStudio {
       .spacing(4)
       .padding([3, 6]);
 
-    // Overlay the cell type dropdown menu when open
-    if self.cell_type_menu_open == Some(idx) {
-      let mut menu_col =
-        Column::new().spacing(1).padding(4);
-      for &style in CELL_STYLES {
-        let icon_svg = svg::Handle::from_memory(
-          cell_style_icon(style).as_bytes().to_vec(),
-        );
-        let is_selected = editor.style == style;
-        menu_col = menu_col.push(
-          button(
-            row![
-              svg::Svg::new(icon_svg)
-                .width(12)
-                .height(12)
-                .style(if is_selected {
-                  gutter_icon_selected_style
-                } else {
-                  gutter_icon_style
-                }),
-              text(style.as_str()).size(9),
-            ]
-            .align_y(Center)
-            .spacing(4),
-          )
-          .on_press(Message::CellStyleChanged(idx, style))
-          .padding([2, 6])
-          .width(Fill)
-          .style(if is_selected {
-            cell_type_menu_selected_style
-          } else {
-            cell_type_menu_item_style
-          }),
-        );
-      }
+    container(cell_row).width(Fill).into()
+  }
 
-      let menu_overlay = container(menu_col)
-        .style(cell_type_menu_container_style)
-        .padding(2);
-
-      // Position the menu below the icon button
-      let overlay = container(menu_overlay)
+  /// Build the cell type dropdown menu (shown below the cell).
+  fn view_cell_type_menu<'a>(
+    &'a self,
+    idx: usize,
+    editor: &'a CellEditor,
+  ) -> Element<'a, Message> {
+    let mut menu_col = Column::new().spacing(1).padding(4);
+    for &style in CELL_STYLES {
+      let icon_svg = svg::Handle::from_memory(
+        cell_style_icon(style).as_bytes().to_vec(),
+      );
+      let is_selected = editor.style == style;
+      menu_col = menu_col.push(
+        button(
+          row![
+            svg::Svg::new(icon_svg)
+              .width(12)
+              .height(12)
+              .style(if is_selected {
+                gutter_icon_selected_style
+              } else {
+                gutter_icon_style
+              }),
+            text(style.as_str()).size(9),
+          ]
+          .align_y(Center)
+          .spacing(4),
+        )
+        .on_press(Message::CellStyleChanged(idx, style))
+        .padding([2, 6])
         .width(Fill)
-        .padding(iced::Padding::default().top(28).left(6));
-
-      Stack::new()
-        .push(container(cell_row).width(Fill))
-        .push(overlay)
-        .into()
-    } else {
-      container(cell_row).width(Fill).into()
+        .style(if is_selected {
+          cell_type_menu_selected_style
+        } else {
+          cell_type_menu_item_style
+        }),
+      );
     }
+
+    container(
+      container(menu_col)
+        .style(cell_type_menu_container_style)
+        .padding(2),
+    )
+    .padding(iced::Padding::default().left(12))
+    .into()
   }
 }
 
