@@ -26,7 +26,18 @@ fn main() -> iced::Result {
     WoxiStudio::update,
     WoxiStudio::view,
   )
-  .title("Woxi Studio")
+  .title(|state: &WoxiStudio| {
+    match &state.file_path {
+      Some(path) => {
+        let name = path
+          .file_name()
+          .map(|n| n.to_string_lossy().into_owned())
+          .unwrap_or_else(|| path.display().to_string());
+        format!("Woxi Studio | {name}")
+      }
+      None => String::from("Woxi Studio"),
+    }
+  })
   .subscription(WoxiStudio::subscription)
   .theme(|state: &WoxiStudio| state.theme.clone())
   .default_font(Font::MONOSPACE)
@@ -1294,7 +1305,14 @@ impl WoxiStudio {
       .padding([2, 4])
       .style(trash_button_style);
 
-      let mut right_col = Column::new().spacing(2);
+      let mut right_col = Column::new()
+        .spacing(2)
+        .padding(iced::Padding {
+          top: 0.0,
+          right: 0.0,
+          bottom: 0.0,
+          left: 4.0,
+        });
       if is_input {
         right_col = right_col.push(
           button(text("\u{25B6}").size(14))
