@@ -1202,16 +1202,16 @@ fn cell_editor_style(
   match cell_style {
     CellStyle::Title => {
       style.value = if is_dark {
-        Color::from_rgb(0.45, 0.65, 0.95)
+        Color::from_rgb(0.92, 0.45, 0.28)
       } else {
-        Color::from_rgb(0.15, 0.35, 0.75)
+        Color::from_rgb(0.78, 0.30, 0.15)
       };
     }
     CellStyle::Subtitle => {
       style.value = if is_dark {
-        Color::from_rgb(0.40, 0.55, 0.78)
+        Color::from_rgb(0.90, 0.60, 0.25)
       } else {
-        Color::from_rgb(0.22, 0.40, 0.65)
+        Color::from_rgb(0.75, 0.48, 0.10)
       };
     }
     _ => {}
