@@ -71,6 +71,10 @@ enum Message {
   SaveFileAs,
   FileSaved(Result<PathBuf, FileError>),
 
+  // Export
+  ExportAs(ExportFormat),
+  FileExported(Result<PathBuf, FileError>),
+
   // Cell editing
   CellAction(usize, text_editor::Action),
   CellStyleChanged(usize, CellStyle),
@@ -116,6 +120,44 @@ impl std::fmt::Display for ThemeChoice {
 impl ThemeChoice {
   const ALL: &'static [ThemeChoice] =
     &[ThemeChoice::Light, ThemeChoice::Dark];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExportFormat {
+  MathematicaNotebook,
+  JupyterNotebook,
+  Markdown,
+  LaTeX,
+  Typst,
+}
+
+impl std::fmt::Display for ExportFormat {
+  fn fmt(
+    &self,
+    f: &mut std::fmt::Formatter<'_>,
+  ) -> std::fmt::Result {
+    match self {
+      ExportFormat::MathematicaNotebook => {
+        write!(f, "Mathematica Notebook")
+      }
+      ExportFormat::JupyterNotebook => {
+        write!(f, "Jupyter Notebook")
+      }
+      ExportFormat::Markdown => write!(f, "Markdown"),
+      ExportFormat::LaTeX => write!(f, "LaTeX"),
+      ExportFormat::Typst => write!(f, "Typst"),
+    }
+  }
+}
+
+impl ExportFormat {
+  const ALL: &'static [ExportFormat] = &[
+    ExportFormat::MathematicaNotebook,
+    ExportFormat::JupyterNotebook,
+    ExportFormat::Markdown,
+    ExportFormat::LaTeX,
+    ExportFormat::Typst,
+  ];
 }
 
 // ── Application Logic ───────────────────────────────────────────────
@@ -302,6 +344,69 @@ impl WoxiStudio {
           Err(FileError::IoError(e)) => {
             self.status =
               format!("Error saving: {e:?}");
+          }
+        }
+        Task::none()
+      }
+
+      Message::ExportAs(format) => {
+        if self.is_loading {
+          return Task::none();
+        }
+        self.sync_notebook_from_editors();
+        let (content, filter_name, extension) = match format
+        {
+          ExportFormat::MathematicaNotebook => (
+            self.notebook.to_string(),
+            String::from("Mathematica Notebook"),
+            String::from("nb"),
+          ),
+          ExportFormat::JupyterNotebook => (
+            self.notebook.to_jupyter(),
+            String::from("Jupyter Notebook"),
+            String::from("ipynb"),
+          ),
+          ExportFormat::Markdown => (
+            self.notebook.to_markdown(),
+            String::from("Markdown"),
+            String::from("md"),
+          ),
+          ExportFormat::LaTeX => (
+            self.notebook.to_latex(),
+            String::from("LaTeX"),
+            String::from("tex"),
+          ),
+          ExportFormat::Typst => (
+            self.notebook.to_typst(),
+            String::from("Typst"),
+            String::from("typ"),
+          ),
+        };
+        self.is_loading = true;
+        self.status =
+          format!("Exporting as {format}...");
+        Task::perform(
+          export_file(filter_name, extension, content),
+          Message::FileExported,
+        )
+      }
+
+      Message::FileExported(result) => {
+        self.is_loading = false;
+        match result {
+          Ok(path) => {
+            self.status = format!(
+              "Exported: {}",
+              path.display()
+            );
+          }
+          Err(FileError::DialogClosed) => {
+            self.status =
+              String::from("Export cancelled");
+          }
+          Err(FileError::IoError(e)) => {
+            self.status =
+              format!("Error exporting: {e:?}");
           }
         }
         Task::none()
@@ -536,6 +641,14 @@ impl WoxiStudio {
       button("Save As")
         .on_press(Message::SaveFileAs)
         .padding([4, 12]),
+      pick_list(
+        ExportFormat::ALL,
+        None::<ExportFormat>,
+        Message::ExportAs,
+      )
+      .placeholder("Export")
+      .text_size(14)
+      .padding([2, 8]),
       text(" | ").size(14),
       button("Eval All")
         .on_press(Message::EvaluateAll)
@@ -778,6 +891,26 @@ async fn save_file(
       .map(|h| h.path().to_owned())
       .ok_or(FileError::DialogClosed)?
   };
+
+  tokio::fs::write(&path, &contents)
+    .await
+    .map_err(|e| FileError::IoError(e.kind()))?;
+
+  Ok(path)
+}
+
+async fn export_file(
+  filter_name: String,
+  extension: String,
+  contents: String,
+) -> Result<PathBuf, FileError> {
+  let path = rfd::AsyncFileDialog::new()
+    .set_title("Export Notebook")
+    .add_filter(&filter_name, &[&extension])
+    .save_file()
+    .await
+    .map(|h| h.path().to_owned())
+    .ok_or(FileError::DialogClosed)?;
 
   tokio::fs::write(&path, &contents)
     .await
