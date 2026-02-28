@@ -1,0 +1,13 @@
+[package]
+name = "woxi-studio"
+description = "A notebook editor for Wolfram Language .nb files"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/ad-si/Woxi"
+
+[dependencies]
+woxi = { path = ".." }
+iced = { version = "0.13", features = ["tokio"] }
+rfd = "0.15"
+tokio = { version = "1", features = ["full"] }
