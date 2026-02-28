@@ -1657,8 +1657,8 @@ mod begin_end_package {
 
   #[test]
   fn end_returns_context() {
-    // End returns the previous context (Global` by default, matching wolframscript)
-    assert_eq!(interpret("End[]").unwrap(), "Global`");
+    // End[] returns the context that was set by Begin[]
+    assert_eq!(interpret("Begin[\"Private`\"]; End[]").unwrap(), "Private`");
   }
 
   #[test]

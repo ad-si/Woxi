@@ -39,6 +39,8 @@ thread_local! {
     static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
     // Reap/Sow stack: each Reap call pushes a Vec to collect (value, tag) pairs
     pub static SOW_STACK: RefCell<Vec<Vec<(syntax::Expr, syntax::Expr)>>> = const { RefCell::new(Vec::new()) };
+    // Context stack for Begin/End: stores the context strings pushed by Begin[]
+    static CONTEXT_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Error, Debug)]
@@ -437,6 +439,17 @@ pub fn get_defined_names() -> Vec<String> {
   names
 }
 
+/// Push a context onto the Begin/End context stack.
+pub fn push_context(ctx: String) {
+  CONTEXT_STACK.with(|s| s.borrow_mut().push(ctx));
+}
+
+/// Pop a context from the Begin/End context stack.
+/// Returns the popped context, or None if the stack is empty.
+pub fn pop_context() -> Option<String> {
+  CONTEXT_STACK.with(|s| s.borrow_mut().pop())
+}
+
 /// Clear all thread-local interpreter state (environment variables
 /// and user-defined functions).  Useful for isolating test runs.
 pub fn clear_state() {
@@ -446,6 +459,7 @@ pub fn clear_state() {
   FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
   UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
+  CONTEXT_STACK.with(|s| s.borrow_mut().clear());
   unseed_rng();
   clear_captured_stdout();
   clear_captured_graphics();
