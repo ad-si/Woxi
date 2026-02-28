@@ -190,10 +190,10 @@ a:hover {
   align-items: center;
 }
 
-.shortcut-hint {
-  color: var(--text-hint);
-  font-size: 13px;
-  margin-left: 0.5rem;
+.controls-right {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
 #runBtn {
@@ -211,12 +211,22 @@ a:hover {
 }
 
 #clearBtn {
+  background: none;
+  color: var(--text-muted);
+}
+
+#clearBtn:hover {
   background-color: var(--clear-bg);
   color: white;
 }
 
-#clearBtn:hover {
-  background-color: var(--clear-bg-hover);
+#shareBtn {
+  background: none;
+  color: var(--text-muted);
+}
+
+#shareBtn:hover {
+  background-color: color-mix(in srgb, var(--border-focus) 15%, transparent);
 }
 
 button {
@@ -230,6 +240,32 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: normal;
+  white-space: nowrap;
+  background: var(--text);
+  color: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
 }
 
 .output-container {
@@ -340,14 +376,14 @@ pre.output-box {
   }
 
   .controls {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
 
-  .shortcut-hint {
-    display: none;
-  }
-
-  button {
+  .controls-right {
     width: 100%;
+  }
+
+  .controls-right button {
+    flex: 1;
   }
 }

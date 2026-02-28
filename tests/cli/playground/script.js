@@ -15,6 +15,7 @@ import {
   mathematica,
 } from "https://esm.sh/@codemirror/legacy-modes@6/mode/mathematica"
 import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6"
+import LZString from "https://esm.sh/lz-string@1"
 
 
 let worker = null
@@ -77,6 +78,20 @@ editorView = new EditorView({
   ],
   parent: document.getElementById("editor"),
 })
+
+// Restore code from shared URL
+const params = new URLSearchParams(window.location.search)
+const sharedCode = params.get("code")
+if (sharedCode) {
+  try {
+    const decoded = LZString.decompressFromEncodedURIComponent(sharedCode)
+    if (decoded) {
+      setEditorContent(decoded)
+    }
+  } catch (_) { /* ignore corrupt share links */ }
+  // Clean the URL without reloading
+  window.history.replaceState(null, "", window.location.pathname)
+}
 
 editorView.focus()
 
@@ -257,6 +272,23 @@ document.getElementById("clearBtn").addEventListener("click", () => {
   if (worker) {
     worker.postMessage({ type: "clear" })
   }
+})
+
+// Share button
+document.getElementById("shareBtn").addEventListener("click", () => {
+  const code = getEditorContent().trim()
+  if (!code) return
+
+  const compressed = LZString.compressToEncodedURIComponent(code)
+  const url = new URL(window.location.pathname, window.location.origin)
+  url.searchParams.set("code", compressed)
+
+  navigator.clipboard.writeText(url.toString()).then(() => {
+    showStatus("Link copied to clipboard", "info")
+  }, () => {
+    // Fallback: select the URL in a prompt
+    prompt("Copy this link to share:", url.toString())
+  })
 })
 
 // Example buttons
