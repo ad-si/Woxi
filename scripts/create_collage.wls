@@ -14,7 +14,9 @@ grid = Grid[
   Alignment -> Center,
   Spacings -> {0, 1}
 ];
-finalImage = Rasterize[grid, ImageResolution -> 300];
+finalImage = Rasterize[grid, ImageResolution -> 200];
 nowStr = DateString[Now, {"Year", "-", "Month", "-", "Day", "T", "Hour", "Minute"}];
+outPath = "images/" <> nowStr <> "_collage.png";
 
-Export["images/" <> nowStr <> "_collage.png", finalImage];
+Export[outPath, finalImage];
+Print[outPath];

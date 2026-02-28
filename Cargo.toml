@@ -70,7 +70,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.resvg]
 version = "0.47"
 default-features = false
-features = ["text"]
+features = ["text", "raster-images"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"

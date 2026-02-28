@@ -3614,12 +3614,15 @@ version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9be183ad6a216aa96f33e4c8033b0988b8b3ea6fd2359d19af5bac4643fd8e81"
 dependencies = [
+ "gif 0.14.1",
+ "image-webp",
  "log",
  "pico-args",
  "rgb",
  "svgtypes 0.16.1",
  "tiny-skia 0.12.0",
  "usvg 0.47.0",
+ "zune-jpeg 0.5.12",
 ]
 
 [[package]]
