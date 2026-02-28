@@ -721,6 +721,9 @@ impl WoxiStudio {
     } else {
       let mut col = Column::new().spacing(0).width(Fill);
 
+      // Add cell divider above the first cell
+      col = col.push(self.view_add_cell_divider_above(0));
+
       for (idx, editor) in
         self.cell_editors.iter().enumerate()
       {
@@ -775,6 +778,21 @@ impl WoxiStudio {
     column![toolbar, horizontal_rule(1).style(separator_style), cells, status_bar,]
       .spacing(0)
       .into()
+  }
+
+  /// Small "+" divider above a cell (inserts before it).
+  fn view_add_cell_divider_above(
+    &self,
+    idx: usize,
+  ) -> Element<'_, Message> {
+    container(
+      button(text("+").size(10))
+        .on_press(Message::AddCellAbove(idx))
+        .padding([0, 8]),
+    )
+    .center_x(Fill)
+    .padding([2, 0])
+    .into()
   }
 
   /// Small "+" divider between cells.
