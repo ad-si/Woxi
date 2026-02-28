@@ -95,6 +95,10 @@ pub fn dispatch_image_functions(
     "ImageAssemble" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_assemble_ast(args));
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    "Rasterize" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::rasterize_ast(args));
+    }
     "Import" if args.len() == 1 => {
       let path = match &args[0] {
         Expr::String(s) => s.clone(),

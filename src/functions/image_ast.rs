@@ -5,7 +5,7 @@ use std::sync::Arc;
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /// Convert an Expr::Image to an `image::DynamicImage`.
-fn expr_to_dynamic_image(
+pub fn expr_to_dynamic_image(
   width: u32,
   height: u32,
   channels: u8,
@@ -2485,6 +2485,127 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
     )));
   }
   import_image_from_bytes(&output.stdout)
+}
+
+// ─── Rasterize ──────────────────────────────────────────────────────────────
+
+/// Rasterize[expr] or Rasterize[expr, ImageResolution -> n]
+/// Converts a Graphics, Grid, or other visual expression to a raster image.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // If input is already an image, return it directly
+  if let Expr::Image { .. } = &args[0] {
+    return Ok(args[0].clone());
+  }
+
+  // Parse ImageResolution option (default 96 DPI to match usvg default)
+  let mut dpi: f64 = 96.0;
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(k) = pattern.as_ref()
+      && k == "ImageResolution"
+    {
+      match replacement.as_ref() {
+        Expr::Integer(n) => dpi = *n as f64,
+        Expr::Real(f) => dpi = *f,
+        _ => {}
+      }
+    }
+  }
+
+  // Get SVG string from the expression
+  let svg_str = match &args[0] {
+    Expr::Graphics { svg, .. } => svg.clone(),
+    Expr::FunctionCall { name, args: fargs } if name == "Grid" => {
+      crate::functions::graphics::grid_svg_with_gaps(fargs, &[])?
+    }
+    Expr::FunctionCall { name, args: fargs } if name == "Column" => {
+      crate::functions::graphics::column_to_svg(fargs).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Rasterize: failed to render Column".into(),
+        )
+      })?
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Rasterize: unsupported expression type".into(),
+      ));
+    }
+  };
+
+  rasterize_svg(&svg_str, dpi)
+}
+
+/// Rasterize an SVG string to an Expr::Image at the given DPI.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn rasterize_svg(
+  svg_str: &str,
+  dpi: f64,
+) -> Result<Expr, InterpreterError> {
+  use std::sync::Arc as StdArc;
+
+  // Set up font database with embedded monospace font
+  let mut fontdb = resvg::usvg::fontdb::Database::new();
+  fontdb.load_font_data(
+    include_bytes!("../../resources/CourierPrime-Regular.ttf").to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/CourierPrime-Bold.ttf").to_vec(),
+  );
+  // Set monospace family to our embedded font
+  fontdb.set_monospace_family("Courier Prime");
+
+  // Parse SVG
+  let mut opt = resvg::usvg::Options::default();
+  opt.fontdb = StdArc::new(fontdb);
+
+  let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "Rasterize: SVG parse error: {}",
+      e
+    ))
+  })?;
+
+  // Compute output pixel dimensions scaled by DPI
+  let svg_size = tree.size();
+  let scale = dpi / 96.0; // usvg default DPI is 96
+  let pix_w = (svg_size.width() as f64 * scale).ceil() as u32;
+  let pix_h = (svg_size.height() as f64 * scale).ceil() as u32;
+
+  if pix_w == 0 || pix_h == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "Rasterize: resulting image has zero size".into(),
+    ));
+  }
+
+  // Create pixmap and fill with white background
+  let mut pixmap =
+    resvg::tiny_skia::Pixmap::new(pix_w, pix_h).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Rasterize: failed to create pixel buffer".into(),
+      )
+    })?;
+  pixmap.fill(resvg::tiny_skia::Color::WHITE);
+
+  // Render SVG into pixmap
+  let transform =
+    resvg::tiny_skia::Transform::from_scale(scale as f32, scale as f32);
+  resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+  // Convert RGBA pixel data to Expr::Image (normalized f64 values)
+  let rgba_data = pixmap.data();
+  let data: Vec<f64> = rgba_data.iter().map(|&v| v as f64 / 255.0).collect();
+
+  Ok(Expr::Image {
+    width: pix_w,
+    height: pix_h,
+    channels: 4,
+    data: Arc::new(data),
+    image_type: ImageType::Byte,
+  })
 }
 
 /// Export an Expr::Image to a file

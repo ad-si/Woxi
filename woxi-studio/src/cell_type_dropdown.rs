@@ -10,8 +10,8 @@ use iced::advanced::{Clipboard, Renderer as _, Shell};
 use iced::mouse;
 use iced::widget::{button, row, svg};
 use iced::{
-  alignment, Background, Border, Center, Color, Element, Event,
-  Font, Length, Pixels, Point, Rectangle, Size, Theme, Vector,
+  Background, Border, Center, Color, Element, Event, Font, Length, Pixels,
+  Point, Rectangle, Size, Theme, Vector, alignment,
 };
 
 use iced::advanced::svg::{self as svg_core, Renderer as SvgRenderer};
@@ -92,9 +92,8 @@ fn make_trigger_button<'a, Message: Clone + 'a>(
   current: CellStyle,
   on_toggle: Message,
 ) -> Element<'a, Message> {
-  let icon_svg = svg::Handle::from_memory(
-    cell_style_icon(current).as_bytes().to_vec(),
-  );
+  let icon_svg =
+    svg::Handle::from_memory(cell_style_icon(current).as_bytes().to_vec());
   let chevron_svg =
     svg::Handle::from_memory(CHEVRON_DOWN_SVG.as_bytes().to_vec());
 
@@ -131,10 +130,11 @@ impl<'a, Message: Clone + 'a> Widget<Message, Theme, iced::Renderer>
     renderer: &iced::Renderer,
     limits: &layout::Limits,
   ) -> layout::Node {
-    self
-      .underlay
-      .as_widget_mut()
-      .layout(&mut tree.children[0], renderer, limits)
+    self.underlay.as_widget_mut().layout(
+      &mut tree.children[0],
+      renderer,
+      limits,
+    )
   }
 
   fn draw(
@@ -221,8 +221,7 @@ impl<'a, Message: Clone + 'a> Widget<Message, Theme, iced::Renderer>
     _renderer: &iced::Renderer,
     _viewport: &Rectangle,
     translation: Vector,
-  ) -> Option<overlay::Element<'b, Message, Theme, iced::Renderer>>
-  {
+  ) -> Option<overlay::Element<'b, Message, Theme, iced::Renderer>> {
     if !self.is_open {
       return None;
     }
@@ -277,8 +276,7 @@ impl<Message: Clone> DropdownOverlay<'_, Message> {
   }
 }
 
-impl<Message: Clone>
-  overlay::Overlay<Message, Theme, iced::Renderer>
+impl<Message: Clone> overlay::Overlay<Message, Theme, iced::Renderer>
   for DropdownOverlay<'_, Message>
 {
   fn layout(
@@ -301,9 +299,7 @@ impl<Message: Clone>
     let bounds = layout.bounds();
 
     match event {
-      Event::Mouse(mouse::Event::ButtonPressed(
-        mouse::Button::Left,
-      )) => {
+      Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
         if let Some(pos) = cursor.position() {
           if bounds.contains(pos) {
             if let Some(idx) = self.item_index_at(pos, bounds) {
@@ -436,11 +432,7 @@ impl<Message: Clone>
             },
             ..Quad::default()
           },
-          Background::Color(if is_selected {
-            selected_bg
-          } else {
-            hover_bg
-          }),
+          Background::Color(if is_selected { selected_bg } else { hover_bg }),
         );
       }
 
@@ -452,9 +444,8 @@ impl<Message: Clone>
         height: ICON_SIZE,
       };
 
-      let handle = svg::Handle::from_memory(
-        cell_style_icon(style).as_bytes().to_vec(),
-      );
+      let handle =
+        svg::Handle::from_memory(cell_style_icon(style).as_bytes().to_vec());
       renderer.draw_svg(
         svg_core::Svg {
           handle,
@@ -471,14 +462,14 @@ impl<Message: Clone>
       );
 
       // Draw text
-      let text_x =
-        item_bounds.x + ITEM_PADDING_X + ICON_SIZE + ICON_TEXT_GAP;
+      let text_x = item_bounds.x + ITEM_PADDING_X + ICON_SIZE + ICON_TEXT_GAP;
 
       renderer.fill_text(
         Text {
           content: style.as_str().to_string(),
           bounds: Size::new(
-            item_bounds.width - ITEM_PADDING_X * 2.0
+            item_bounds.width
+              - ITEM_PADDING_X * 2.0
               - ICON_SIZE
               - ICON_TEXT_GAP,
             item_bounds.height,
@@ -505,10 +496,7 @@ impl<Message: Clone>
 
 // ── Styles ─────────────────────────────────────────────────────────
 
-fn gutter_icon_style(
-  theme: &Theme,
-  _status: svg::Status,
-) -> svg::Style {
+fn gutter_icon_style(theme: &Theme, _status: svg::Status) -> svg::Style {
   let is_dark = !matches!(theme, Theme::Light);
   svg::Style {
     color: Some(if is_dark {
@@ -528,12 +516,11 @@ fn trigger_button_style(
   style.border.radius = 4.0.into();
   match status {
     button::Status::Hovered | button::Status::Pressed => {
-      style.background =
-        Some(Background::Color(if is_dark {
-          Color::from_rgba(1.0, 1.0, 1.0, 0.10)
-        } else {
-          Color::from_rgba(0.0, 0.0, 0.0, 0.08)
-        }));
+      style.background = Some(Background::Color(if is_dark {
+        Color::from_rgba(1.0, 1.0, 1.0, 0.10)
+      } else {
+        Color::from_rgba(0.0, 0.0, 0.0, 0.08)
+      }));
     }
     _ => {
       style.background = None;

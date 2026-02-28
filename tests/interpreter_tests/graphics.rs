@@ -2213,6 +2213,151 @@ mod graphics_grid {
     .unwrap();
     assert_eq!(result, "-Graphics-");
   }
+
+  #[test]
+  fn grid_style_bold() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{Style[\"Header\", Bold], \"value\"}}]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("font-weight=\"bold\""),
+      "Style[..., Bold] should produce font-weight=\"bold\" in SVG, got: {}",
+      svg
+    );
+  }
+
+  #[test]
+  fn grid_style_italic() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{Style[\"Title\", Italic]}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("font-style=\"italic\""),
+      "Style[..., Italic] should produce font-style=\"italic\" in SVG"
+    );
+  }
+
+  #[test]
+  fn grid_style_font_size() {
+    clear_state();
+    let result = interpret_with_stdout("Grid[{{Style[\"Big\", 20]}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("font-size=\"20\""),
+      "Style[..., 20] should produce font-size=\"20\" in SVG, got: {}",
+      svg
+    );
+  }
+
+  #[test]
+  fn grid_style_bold_and_size() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Grid[{{Style[\"CLI\", 14, Bold]}}]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("font-weight=\"bold\""), "Should have bold");
+    assert!(svg.contains("font-size=\"14\""), "Should have font-size 14");
+  }
+
+  #[test]
+  fn grid_with_image_cell() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "img = Image[{{0, 0.5, 1}, {1, 0.5, 0}}]; \
+       Grid[{{img}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("<image"),
+      "Image cell in Grid should produce <image> SVG element, got: {}",
+      &svg[..200.min(svg.len())]
+    );
+    assert!(
+      svg.contains("data:image/png;base64,"),
+      "Image should be base64-encoded PNG"
+    );
+  }
+
+  #[test]
+  fn grid_with_styled_image() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "img = Image[{{0, 0.5, 1}, {1, 0.5, 0}}]; \
+       Grid[{{Style[\"Label\", Bold]}, {img}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains("font-weight=\"bold\""),
+      "Should have bold header"
+    );
+    assert!(svg.contains("<image"), "Should have image element");
+  }
+}
+
+mod grid_rasterize {
+  use super::*;
+
+  #[test]
+  fn rasterize_grid_returns_image() {
+    clear_state();
+    let result =
+      interpret("Rasterize[Grid[{{\"a\", \"b\"}, {\"c\", \"d\"}}]]").unwrap();
+    assert_eq!(result, "-Image-");
+  }
+
+  #[test]
+  fn rasterize_preserves_existing_image() {
+    clear_state();
+    let result =
+      interpret("img = Image[{{0, 0.5, 1}, {1, 0.5, 0}}]; Rasterize[img]")
+        .unwrap();
+    assert_eq!(result, "-Image-");
+  }
+
+  #[test]
+  fn rasterize_image_resolution_scales() {
+    clear_state();
+    // Default DPI (96)
+    let dim1 =
+      interpret("ImageDimensions[Rasterize[Grid[{{\"a\", \"b\"}}]]]").unwrap();
+    // Higher DPI (288 = 3x default)
+    let dim2 = interpret(
+      "ImageDimensions[Rasterize[Grid[{{\"a\", \"b\"}}], ImageResolution -> 288]]",
+    )
+    .unwrap();
+    // Parse dimensions
+    let parse_dims = |s: &str| -> (i64, i64) {
+      let s = s.trim_matches(|c| c == '{' || c == '}');
+      let parts: Vec<&str> = s.split(", ").collect();
+      (
+        parts[0].parse::<i64>().unwrap(),
+        parts[1].parse::<i64>().unwrap(),
+      )
+    };
+    let (w1, h1) = parse_dims(&dim1);
+    let (w2, h2) = parse_dims(&dim2);
+    // At 3x DPI, dimensions should be ~3x larger
+    assert!(
+      w2 >= w1 * 2 && h2 >= h1 * 2,
+      "Higher DPI should produce larger image: {}x{} vs {}x{}",
+      w1,
+      h1,
+      w2,
+      h2
+    );
+  }
+
+  #[test]
+  fn rasterize_graphics() {
+    clear_state();
+    let result = interpret("Rasterize[Graphics[{Circle[]}]]").unwrap();
+    assert_eq!(result, "-Image-");
+  }
 }
 
 mod color_swatches {

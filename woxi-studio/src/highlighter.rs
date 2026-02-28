@@ -29,8 +29,7 @@ pub struct WolframHighlighter {
 impl Highlighter for WolframHighlighter {
   type Settings = WolframSettings;
   type Highlight = WolframHighlight;
-  type Iterator<'a> =
-    std::vec::IntoIter<(Range<usize>, WolframHighlight)>;
+  type Iterator<'a> = std::vec::IntoIter<(Range<usize>, WolframHighlight)>;
 
   fn new(settings: &Self::Settings) -> Self {
     WolframHighlighter {
@@ -49,10 +48,7 @@ impl Highlighter for WolframHighlighter {
     }
   }
 
-  fn highlight_line(
-    &mut self,
-    line: &str,
-  ) -> Self::Iterator<'_> {
+  fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
     self.current_line += 1;
     if !self.enabled || line.is_empty() {
       return Vec::new().into_iter();
@@ -171,9 +167,7 @@ fn is_keyword(word: &str) -> bool {
   )
 }
 
-fn tokenize_line(
-  line: &str,
-) -> Vec<(Range<usize>, WolframHighlight)> {
+fn tokenize_line(line: &str) -> Vec<(Range<usize>, WolframHighlight)> {
   let mut tokens = Vec::new();
   let bytes = line.as_bytes();
   let mut i = 0;
@@ -198,10 +192,7 @@ fn tokenize_line(
     }
 
     // Comment: (* ... *)
-    if c == '('
-      && i + 1 < bytes.len()
-      && bytes[i + 1] == b'*'
-    {
+    if c == '(' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
       i += 2;
       loop {
         if i + 1 >= bytes.len() {
@@ -238,9 +229,7 @@ fn tokenize_line(
 
     // Number
     if c.is_ascii_digit() {
-      while i < bytes.len()
-        && (bytes[i].is_ascii_digit() || bytes[i] == b'.')
-      {
+      while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
         i += 1;
       }
       tokens.push((start..i, WolframHighlight::Number));
@@ -250,20 +239,16 @@ fn tokenize_line(
     // Identifier
     if c.is_ascii_alphabetic() || c == '$' {
       while i < bytes.len()
-        && (bytes[i].is_ascii_alphanumeric()
-          || bytes[i] == b'$')
+        && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'$')
       {
         i += 1;
       }
       let word = &line[start..i];
-      let next_is_bracket =
-        i < bytes.len() && bytes[i] == b'[';
+      let next_is_bracket = i < bytes.len() && bytes[i] == b'[';
 
       let highlight = if is_keyword(word) {
         WolframHighlight::Keyword
-      } else if next_is_bracket
-        || bytes[start].is_ascii_uppercase()
-      {
+      } else if next_is_bracket || bytes[start].is_ascii_uppercase() {
         WolframHighlight::Function
       } else {
         WolframHighlight::Normal
@@ -279,8 +264,7 @@ fn tokenize_line(
         i += 1;
       }
       while i < bytes.len()
-        && (bytes[i].is_ascii_alphanumeric()
-          || bytes[i] == b'$')
+        && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'$')
       {
         i += 1;
       }
@@ -291,9 +275,7 @@ fn tokenize_line(
     // Slot: #, ##, #1
     if c == '#' {
       i += 1;
-      while i < bytes.len()
-        && (bytes[i] == b'#' || bytes[i].is_ascii_digit())
-      {
+      while i < bytes.len() && (bytes[i] == b'#' || bytes[i].is_ascii_digit()) {
         i += 1;
       }
       tokens.push((start..i, WolframHighlight::Pattern));
@@ -303,9 +285,7 @@ fn tokenize_line(
     // Operators
     if "+-*/^@~!<>=&|;:,.?%".contains(c) {
       i += 1;
-      while i < bytes.len()
-        && "=>&|:->".contains(bytes[i] as char)
-      {
+      while i < bytes.len() && "=>&|:->".contains(bytes[i] as char) {
         i += 1;
       }
       tokens.push((start..i, WolframHighlight::Operator));

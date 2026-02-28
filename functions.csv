@@ -4497,7 +4497,7 @@ RankedMin,,,,8,2263
 RarerProbability,,,,12,
 Raster,Graphics primitive representing raster image data,✅,none,2,747
 Raster3D,,,,9,2317
-Rasterize,,,,6,539
+Rasterize,Converts expression to raster image,✅,pure,6,539
 RasterSize,,,,6,1499
 Rational,Head type for rational numbers,✅,pure,1,206
 RationalExpressionQ,,,,12.2,5486
