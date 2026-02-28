@@ -197,22 +197,98 @@ impl WoxiStudio {
   }
 
   /// Build editor state from a notebook.
+  /// Output/Print cells within a group are attached to the
+  /// preceding Input/Code cell rather than shown separately.
   fn editors_from_notebook(
     notebook: &Notebook,
   ) -> Vec<CellEditor> {
-    let flat = notebook.flat_cells();
-    flat
-      .into_iter()
-      .map(|(_, cell)| CellEditor {
-        content: text_editor::Content::with_text(
-          &cell.content,
-        ),
-        style: cell.style,
-        output: None,
-        stdout: None,
-        graphics_svg: None,
-      })
-      .collect()
+    let mut editors = Vec::new();
+
+    for entry in &notebook.cells {
+      match entry {
+        CellEntry::Single(cell) => {
+          if matches!(
+            cell.style,
+            CellStyle::Output | CellStyle::Print
+          ) {
+            continue;
+          }
+          editors.push(CellEditor {
+            content: text_editor::Content::with_text(
+              &cell.content,
+            ),
+            style: cell.style,
+            output: None,
+            stdout: None,
+            graphics_svg: None,
+          });
+        }
+        CellEntry::Group(group) => {
+          let cells = &group.cells;
+          let mut i = 0;
+          while i < cells.len() {
+            let cell = &cells[i];
+            if matches!(
+              cell.style,
+              CellStyle::Input | CellStyle::Code
+            ) {
+              // Collect following Output/Print cells
+              let mut output = None;
+              let mut stdout = None;
+              let mut j = i + 1;
+              while j < cells.len()
+                && matches!(
+                  cells[j].style,
+                  CellStyle::Output | CellStyle::Print
+                )
+              {
+                match cells[j].style {
+                  CellStyle::Output => {
+                    output =
+                      Some(cells[j].content.clone());
+                  }
+                  CellStyle::Print => {
+                    stdout =
+                      Some(cells[j].content.clone());
+                  }
+                  _ => {}
+                }
+                j += 1;
+              }
+              editors.push(CellEditor {
+                content: text_editor::Content::with_text(
+                  &cell.content,
+                ),
+                style: cell.style,
+                output,
+                stdout,
+                graphics_svg: None,
+              });
+              i = j;
+            } else if matches!(
+              cell.style,
+              CellStyle::Output | CellStyle::Print
+            ) {
+              // Skip standalone output/print in groups
+              i += 1;
+            } else {
+              editors.push(CellEditor {
+                content: text_editor::Content::with_text(
+                  &cell.content,
+                ),
+                style: cell.style,
+                output: None,
+                stdout: None,
+                graphics_svg: None,
+              });
+              i += 1;
+            }
+          }
+        }
+      }
+    }
+
+    editors
   }
 
   /// Synchronize the notebook model from the editor state.
