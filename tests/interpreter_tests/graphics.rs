@@ -1003,6 +1003,90 @@ mod plot3d {
     }
 
     #[test]
+    fn list_line_plot_filling_bottom() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Bottom]"
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_filling_top() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Top]"
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_filling_value() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 4, 2, 5, 3}, Filling -> 2.5]"
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_filling_none() {
+      insta::assert_snapshot!(export_svg(
+        "ListLinePlot[{1, 4, 2, 5, 3}, Filling -> None]"
+      ));
+    }
+
+    #[test]
+    fn list_plot_filling_axis() {
+      insta::assert_snapshot!(export_svg(
+        "ListPlot[{1, 4, 9, 16}, Filling -> Axis]"
+      ));
+    }
+
+    #[test]
+    fn list_plot_filling_bottom() {
+      insta::assert_snapshot!(export_svg(
+        "ListPlot[{1, 4, 9, 16}, Filling -> Bottom]"
+      ));
+    }
+
+    #[test]
+    fn list_plot_filling_value() {
+      insta::assert_snapshot!(export_svg(
+        "ListPlot[{1, 4, 9, 16}, Filling -> 5]"
+      ));
+    }
+
+    #[test]
+    fn plot_filling_axis() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Filling -> Axis]"
+      ));
+    }
+
+    #[test]
+    fn plot_filling_bottom() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[x^2, {x, 0, 3}, Filling -> Bottom]"
+      ));
+    }
+
+    #[test]
+    fn plot_filling_top() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Filling -> Top]"
+      ));
+    }
+
+    #[test]
+    fn plot_filling_value() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Filling -> 0.5]"
+      ));
+    }
+
+    #[test]
+    fn plot_filling_none() {
+      insta::assert_snapshot!(export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Filling -> None]"
+      ));
+    }
+
+    #[test]
     fn list_step_plot() {
       insta::assert_snapshot!(export_svg("ListStepPlot[{1, 3, 2, 4}]"));
     }

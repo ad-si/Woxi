@@ -2,8 +2,8 @@ use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, NUM_SAMPLES, evaluate_at_point, generate_svg,
-  parse_image_size,
+  NUM_SAMPLES, PlotOptions, adjust_y_range_for_filling, evaluate_at_point,
+  generate_svg_with_filling, parse_filling, parse_image_size,
 };
 use crate::syntax::Expr;
 
@@ -19,20 +19,27 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let iter_spec = &args[1];
 
   // Parse options
-  let mut svg_width = DEFAULT_WIDTH;
-  let mut svg_height = DEFAULT_HEIGHT;
-  let mut full_width = false;
+  let mut plot_opts = PlotOptions::default();
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
       replacement,
     } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Expr::Identifier(name) = pattern.as_ref()
     {
-      svg_width = w;
-      svg_height = h;
-      full_width = fw;
+      match name.as_str() {
+        "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            plot_opts.svg_width = w;
+            plot_opts.svg_height = h;
+            plot_opts.full_width = fw;
+          }
+        }
+        "Filling" => {
+          plot_opts.filling = parse_filling(replacement);
+        }
+        _ => {}
+      }
     }
   }
 
@@ -89,6 +96,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute ranges
   let (x_range, y_range) = compute_data_ranges(&all_points);
+  let y_range = adjust_y_range_for_filling(plot_opts.filling, y_range);
 
   // Adjust aspect ratio to match data (so circles render round)
   let data_w = x_range.1 - x_range.0;
@@ -96,18 +104,13 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if data_w > 0.0 && data_h > 0.0 {
     let data_aspect = data_h / data_w;
     if data_aspect.is_finite() {
-      svg_height = (svg_width as f64 * data_aspect).round() as u32;
+      plot_opts.svg_height =
+        (plot_opts.svg_width as f64 * data_aspect).round() as u32;
     }
   }
 
-  let svg = generate_svg(
-    &all_points,
-    x_range,
-    y_range,
-    svg_width,
-    svg_height,
-    full_width,
-  )?;
+  let svg =
+    generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
 
   Ok(crate::graphics_result(svg))
 }
@@ -124,20 +127,27 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let iter_spec = &args[1];
 
   // Parse options
-  let mut svg_width = DEFAULT_WIDTH;
-  let mut svg_height = DEFAULT_HEIGHT;
-  let mut full_width = false;
+  let mut plot_opts = PlotOptions::default();
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
       replacement,
     } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "ImageSize")
-      && let Some((w, h, fw)) = parse_image_size(replacement)
+      && let Expr::Identifier(name) = pattern.as_ref()
     {
-      svg_width = w;
-      svg_height = h;
-      full_width = fw;
+      match name.as_str() {
+        "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            plot_opts.svg_width = w;
+            plot_opts.svg_height = h;
+            plot_opts.full_width = fw;
+          }
+        }
+        "Filling" => {
+          plot_opts.filling = parse_filling(replacement);
+        }
+        _ => {}
+      }
     }
   }
 
@@ -168,6 +178,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (x_range, y_range) = compute_data_ranges(&all_points);
+  let y_range = adjust_y_range_for_filling(plot_opts.filling, y_range);
 
   // Adjust aspect ratio to match data (so circles render round)
   let data_w = x_range.1 - x_range.0;
@@ -175,18 +186,13 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if data_w > 0.0 && data_h > 0.0 {
     let data_aspect = data_h / data_w;
     if data_aspect.is_finite() {
-      svg_height = (svg_width as f64 * data_aspect).round() as u32;
+      plot_opts.svg_height =
+        (plot_opts.svg_width as f64 * data_aspect).round() as u32;
     }
   }
 
-  let svg = generate_svg(
-    &all_points,
-    x_range,
-    y_range,
-    svg_width,
-    svg_height,
-    full_width,
-  )?;
+  let svg =
+    generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
 
   Ok(crate::graphics_result(svg))
 }

@@ -182,6 +182,72 @@ pub(crate) fn format_tick(v: f64) -> String {
 pub(crate) enum Filling {
   None,
   Axis,
+  Bottom,
+  Top,
+  Value(f64),
+}
+
+impl Filling {
+  /// Compute the y-value to fill to, given the current plot y-range.
+  /// Returns `None` for `Filling::None`.
+  pub fn reference_y(&self, y_min: f64, y_max: f64) -> Option<f64> {
+    match self {
+      Filling::None => None,
+      Filling::Axis => Some(0.0),
+      Filling::Bottom => Some(y_min),
+      Filling::Top => Some(y_max),
+      Filling::Value(v) => Some(*v),
+    }
+  }
+}
+
+/// Parse a `Filling` option value from an expression.
+pub(crate) fn parse_filling(replacement: &Expr) -> Filling {
+  match replacement {
+    Expr::Identifier(v) if v == "Axis" => Filling::Axis,
+    Expr::Identifier(v) if v == "Bottom" => Filling::Bottom,
+    Expr::Identifier(v) if v == "Top" => Filling::Top,
+    Expr::Identifier(v) if v == "None" => Filling::None,
+    other => {
+      let evaled =
+        evaluate_expr_to_expr(other).unwrap_or_else(|_| other.clone());
+      if let Some(v) = try_eval_to_f64(&evaled) {
+        Filling::Value(v)
+      } else {
+        Filling::None
+      }
+    }
+  }
+}
+
+/// Adjust y-range so the fill reference level is included.
+/// For `Axis`, ensures y=0 is in range. For `Value(v)`, ensures v is in range.
+/// `Bottom`/`Top`/`None` don't need adjustment (they use the range edges).
+pub(crate) fn adjust_y_range_for_filling(
+  filling: Filling,
+  y_range: (f64, f64),
+) -> (f64, f64) {
+  let (mut y_lo, mut y_hi) = y_range;
+  match filling {
+    Filling::Axis => {
+      if y_lo > 0.0 {
+        y_lo = 0.0 - (y_hi - 0.0) * 0.04;
+      }
+      if y_hi < 0.0 {
+        y_hi = 0.0 + (0.0 - y_lo) * 0.04;
+      }
+    }
+    Filling::Value(v) => {
+      if y_lo > v {
+        y_lo = v - (y_hi - v) * 0.04;
+      }
+      if y_hi < v {
+        y_hi = v + (v - y_lo) * 0.04;
+      }
+    }
+    _ => {}
+  }
+  (y_lo, y_hi)
 }
 
 /// Options for line-based plots (Plot, ListLinePlot, etc.).
@@ -443,16 +509,16 @@ fn generate_svg_with_options(
       let segments = split_into_segments(points);
 
       // Draw filled area before the line so the line renders on top
-      if filling == Filling::Axis {
+      if let Some(ref_y) = filling.reference_y(y_min, y_max) {
         let fill_style = RGBColor(r, g, b).mix(0.2).filled();
         for segment in &segments {
           if segment.len() < 2 {
             continue;
           }
           let mut poly_points: Vec<(f64, f64)> = segment.clone();
-          // Close the polygon along y=0 (the axis)
-          poly_points.push((segment.last().unwrap().0, 0.0));
-          poly_points.push((segment.first().unwrap().0, 0.0));
+          // Close the polygon along the reference y level
+          poly_points.push((segment.last().unwrap().0, ref_y));
+          poly_points.push((segment.first().unwrap().0, ref_y));
           chart
             .draw_series(std::iter::once(Polygon::new(poly_points, fill_style)))
             .map_err(|e| {
@@ -680,6 +746,23 @@ pub(crate) fn generate_scatter_svg_with_options(
         .copied()
         .filter(|(x, y)| x.is_finite() && y.is_finite())
         .collect();
+
+      // Draw stem lines from each point to the fill reference level
+      if let Some(ref_y) = opts.filling.reference_y(y_min, y_max) {
+        let stem_style =
+          RGBColor(r, g, b).mix(0.2).stroke_width(RESOLUTION_SCALE);
+        for &(x, y) in &finite_pts {
+          chart
+            .draw_series(std::iter::once(PathElement::new(
+              vec![(x, y), (x, ref_y)],
+              stem_style,
+            )))
+            .map_err(|e| {
+              InterpreterError::EvaluationError(format!("Plot: {e}"))
+            })?;
+        }
+      }
+
       chart
         .draw_series(
           finite_pts
@@ -1555,6 +1638,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => {}
           }
         }
+        "Filling" => {
+          plot_opts.filling = parse_filling(replacement);
+        }
         "Ticks" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "None" => plot_opts.ticks = false,
           Expr::Identifier(s) if s == "Automatic" || s == "All" => {
@@ -1657,6 +1743,8 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let y_auto_min = y_data_min - padding;
   let y_auto_max = y_data_max + padding;
+  let (y_auto_min, y_auto_max) =
+    adjust_y_range_for_filling(plot_opts.filling, (y_auto_min, y_auto_max));
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
   let (x_display_min, x_display_max) = plot_range_x.unwrap_or((x_min, x_max));
