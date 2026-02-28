@@ -1310,8 +1310,8 @@ impl WoxiStudio {
     };
 
     let cell_row = row![gutter, content_el, right_side]
-      .spacing(2)
-      .padding([3, 6]);
+      .spacing(0)
+      .padding([3, 2]);
 
     container(cell_row).width(Fill).into()
   }
@@ -1696,14 +1696,18 @@ fn export_button_style(
       ),
     }
   } else {
-    let base = pick_list::default(theme, status);
-    return pick_list::Style {
-      border: Border {
-        radius: 2.0.into(),
-        ..base.border
-      },
-      ..base
-    };
+    match status {
+      pick_list::Status::Hovered | pick_list::Status::Opened { .. } => (
+        Color::from_rgb(0.22, 0.42, 0.72),
+        Color::WHITE,
+        Color::from_rgb(0.22, 0.42, 0.72),
+      ),
+      _ => (
+        Color::from_rgb(0.18, 0.36, 0.65),
+        Color::WHITE,
+        Color::from_rgb(0.18, 0.36, 0.65),
+      ),
+    }
   };
   pick_list::Style {
     text_color,
