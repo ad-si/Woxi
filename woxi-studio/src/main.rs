@@ -1,9 +1,10 @@
+mod highlighter;
 mod notebook;
 
 use iced::keyboard;
 use iced::widget::{
   button, column, container, horizontal_rule, pick_list, row,
-  scrollable, text, text_editor, Column,
+  scrollable, svg, text, text_editor, Column,
 };
 use iced::{
   Center, Element, Fill, Font, Subscription, Task, Theme,
@@ -54,8 +55,12 @@ struct WoxiStudio {
 struct CellEditor {
   content: text_editor::Content,
   style: CellStyle,
-  /// Cached output from evaluating this cell.
+  /// Cached output from evaluating this cell (raw text).
   output: Option<String>,
+  /// Captured Print output.
+  stdout: Option<String>,
+  /// SVG data from Graphics/Plot evaluation.
+  graphics_svg: Option<String>,
 }
 
 // ── Messages ────────────────────────────────────────────────────────
@@ -197,9 +202,13 @@ impl WoxiStudio {
     flat
       .into_iter()
       .map(|(_, cell)| CellEditor {
-        content: text_editor::Content::with_text(&cell.content),
+        content: text_editor::Content::with_text(
+          &cell.content,
+        ),
         style: cell.style,
         output: None,
+        stdout: None,
+        graphics_svg: None,
       })
       .collect()
   }
@@ -210,7 +219,8 @@ impl WoxiStudio {
     let mut i = 0;
     while i < self.cell_editors.len() {
       let editor = &self.cell_editors[i];
-      let content = editor.content.text().trim_end().to_string();
+      let content =
+        editor.content.text().trim_end().to_string();
       let cell = Cell::new(editor.style, content);
 
       // Group input cells with their output
@@ -447,6 +457,8 @@ impl WoxiStudio {
             content: text_editor::Content::new(),
             style: self.new_cell_style,
             output: None,
+            stdout: None,
+            graphics_svg: None,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -462,6 +474,8 @@ impl WoxiStudio {
             content: text_editor::Content::new(),
             style: self.new_cell_style,
             output: None,
+            stdout: None,
+            graphics_svg: None,
           },
         );
         self.focused_cell = Some(insert_at);
@@ -513,10 +527,18 @@ impl WoxiStudio {
             .to_string();
           if !code.is_empty() {
             woxi::clear_state();
-            match woxi::interpret(&code) {
+            match woxi::interpret_with_stdout(&code) {
               Ok(result) => {
                 self.cell_editors[idx].output =
-                  Some(result);
+                  Some(result.result);
+                self.cell_editors[idx].stdout =
+                  if result.stdout.is_empty() {
+                    None
+                  } else {
+                    Some(result.stdout)
+                  };
+                self.cell_editors[idx].graphics_svg =
+                  result.graphics;
                 self.status = format!(
                   "Evaluated cell {} successfully",
                   idx + 1
@@ -525,6 +547,8 @@ impl WoxiStudio {
               Err(e) => {
                 self.cell_editors[idx].output =
                   Some(format!("Error: {e}"));
+                self.cell_editors[idx].stdout = None;
+                self.cell_editors[idx].graphics_svg = None;
                 self.status = format!(
                   "Cell {} evaluation error",
                   idx + 1
@@ -547,14 +571,25 @@ impl WoxiStudio {
               .trim()
               .to_string();
             if !code.is_empty() {
-              match woxi::interpret(&code) {
+              match woxi::interpret_with_stdout(&code) {
                 Ok(result) => {
                   self.cell_editors[idx].output =
-                    Some(result);
+                    Some(result.result);
+                  self.cell_editors[idx].stdout =
+                    if result.stdout.is_empty() {
+                      None
+                    } else {
+                      Some(result.stdout)
+                    };
+                  self.cell_editors[idx].graphics_svg =
+                    result.graphics;
                 }
                 Err(e) => {
                   self.cell_editors[idx].output =
                     Some(format!("Error: {e}"));
+                  self.cell_editors[idx].stdout = None;
+                  self.cell_editors[idx].graphics_svg =
+                    None;
                 }
               }
             }
@@ -627,42 +662,42 @@ impl WoxiStudio {
     let toolbar = row![
       button("New")
         .on_press(Message::NewNotebook)
-        .padding([4, 12]),
+        .padding([3, 10]),
       button("Open")
         .on_press_maybe(
           (!self.is_loading).then_some(Message::OpenFile)
         )
-        .padding([4, 12]),
+        .padding([3, 10]),
       button("Save")
         .on_press_maybe(
           self.is_dirty.then_some(Message::SaveFile)
         )
-        .padding([4, 12]),
+        .padding([3, 10]),
       button("Save As")
         .on_press(Message::SaveFileAs)
-        .padding([4, 12]),
+        .padding([3, 10]),
       pick_list(
         ExportFormat::ALL,
         None::<ExportFormat>,
         Message::ExportAs,
       )
       .placeholder("Export")
-      .text_size(14)
-      .padding([2, 8]),
-      text(" | ").size(14),
+      .text_size(12)
+      .padding([2, 6]),
+      text(" | ").size(12),
       button("Eval All")
         .on_press(Message::EvaluateAll)
-        .padding([4, 12]),
-      text(" | ").size(14),
-      text("New cell: ").size(14),
+        .padding([3, 10]),
+      text(" | ").size(12),
+      text("New cell: ").size(12),
       pick_list(
         CELL_STYLES,
         Some(self.new_cell_style),
         Message::NewCellStyleChanged,
       )
-      .text_size(14)
-      .padding([2, 8]),
-      text("  ").size(14),
+      .text_size(12)
+      .padding([2, 6]),
+      text("  ").size(12),
       pick_list(
         ThemeChoice::ALL,
         Some(match self.theme {
@@ -671,11 +706,11 @@ impl WoxiStudio {
         }),
         Message::ThemeChanged,
       )
-      .text_size(14)
-      .padding([2, 8]),
+      .text_size(12)
+      .padding([2, 6]),
     ]
-    .spacing(6)
-    .padding(8)
+    .spacing(4)
+    .padding(6)
     .align_y(Center);
 
     // ── Cell editors ──
@@ -685,33 +720,33 @@ impl WoxiStudio {
     {
       container(
         text("Empty notebook. Click '+' to add a cell.")
-          .size(16),
+          .size(13),
       )
       .center_x(Fill)
       .padding(40)
       .into()
     } else {
-      let mut col = Column::new().spacing(2).width(Fill);
+      let mut col = Column::new().spacing(0).width(Fill);
 
       for (idx, editor) in
         self.cell_editors.iter().enumerate()
       {
+        // Add cell divider between cells
+        if idx > 0 {
+          col = col.push(self.view_add_cell_divider(
+            idx.saturating_sub(1),
+          ));
+        }
+
         let is_focused = self.focused_cell == Some(idx);
-        col = col.push(self.view_cell(idx, editor, is_focused));
+        col =
+          col.push(self.view_cell(idx, editor, is_focused));
       }
 
-      // Add cell button at the bottom
-      col = col.push(
-        container(
-          button("+ Add Cell")
-            .on_press(Message::AddCellBelow(
-              self.cell_editors.len().saturating_sub(1),
-            ))
-            .padding([4, 16]),
-        )
-        .center_x(Fill)
-        .padding(10),
-      );
+      // Final add-cell divider after last cell
+      col = col.push(self.view_add_cell_divider(
+        self.cell_editors.len().saturating_sub(1),
+      ));
 
       scrollable(col).height(Fill).into()
     };
@@ -733,20 +768,35 @@ impl WoxiStudio {
       if self.is_dirty { " [modified]" } else { "" };
 
     let status_bar = row![
-      text(format!("{file_label}{dirty_marker}")).size(12),
-      text("  |  ").size(12),
-      text(&self.status).size(12),
-      text("  |  ").size(12),
+      text(format!("{file_label}{dirty_marker}")).size(11),
+      text("  |  ").size(11),
+      text(&self.status).size(11),
+      text("  |  ").size(11),
       text(format!("{} cells", self.cell_editors.len()))
-        .size(12),
+        .size(11),
     ]
     .spacing(4)
-    .padding([4, 10]);
+    .padding([3, 8]);
 
     // ── Layout ──
     column![toolbar, horizontal_rule(1), cells, status_bar,]
       .spacing(0)
       .into()
+  }
+
+  /// Small "+" divider between cells.
+  fn view_add_cell_divider(
+    &self,
+    idx: usize,
+  ) -> Element<'_, Message> {
+    container(
+      button(text("+").size(10))
+        .on_press(Message::AddCellBelow(idx))
+        .padding([0, 8]),
+    )
+    .center_x(Fill)
+    .padding([2, 0])
+    .into()
   }
 
   fn view_cell<'a>(
@@ -755,44 +805,43 @@ impl WoxiStudio {
     editor: &'a CellEditor,
     _is_focused: bool,
   ) -> Element<'a, Message> {
+    let is_input = editor.style == CellStyle::Input
+      || editor.style == CellStyle::Code;
 
-    // Cell bracket / gutter
-    let gutter = column![
+    // ── Left gutter: style picker + delete ──
+    let mut gutter =
+      Column::new().spacing(2).width(60);
+
+    gutter = gutter.push(
       pick_list(
         CELL_STYLES,
         Some(editor.style),
         move |s| Message::CellStyleChanged(idx, s),
       )
-      .text_size(11)
-      .padding([2, 4]),
-      button(text("Eval").size(11))
-        .on_press_maybe(
-          (editor.style == CellStyle::Input)
-            .then_some(Message::EvaluateCell(idx))
-        )
-        .padding([2, 6]),
-      button(text("+").size(11))
-        .on_press(Message::AddCellBelow(idx))
-        .padding([2, 6]),
-      button(text("-").size(11))
-        .on_press_maybe(
-          (self.cell_editors.len() > 1)
-            .then_some(Message::DeleteCell(idx))
-        )
-        .padding([2, 6]),
-    ]
-    .spacing(2)
-    .width(70);
+      .text_size(10)
+      .padding([1, 3]),
+    );
 
-    // Text editor for the cell content
+    gutter = gutter.push(
+      button(
+        text("\u{1F5D1}") // 🗑
+          .size(10),
+      )
+      .on_press_maybe(
+        (self.cell_editors.len() > 1)
+          .then_some(Message::DeleteCell(idx)),
+      )
+      .padding([1, 4]),
+    );
+
+    // ── Text editor ──
     let font_size = match editor.style {
-      CellStyle::Title => 24.0,
-      CellStyle::Subtitle => 20.0,
-      CellStyle::Section => 18.0,
-      CellStyle::Subsection => 16.0,
-      CellStyle::Subsubsection => 15.0,
-      CellStyle::Text => 14.0,
-      _ => 14.0,
+      CellStyle::Title => 20.0,
+      CellStyle::Subtitle => 16.0,
+      CellStyle::Section => 15.0,
+      CellStyle::Subsection => 14.0,
+      CellStyle::Subsubsection => 13.0,
+      _ => 13.0,
     };
 
     let cell_editor = text_editor(&editor.content)
@@ -800,34 +849,87 @@ impl WoxiStudio {
         Message::CellAction(idx, action)
       })
       .height(iced::Length::Shrink)
-      .padding(8)
-      .size(font_size);
+      .padding(6)
+      .size(font_size)
+      .highlight_with::<highlighter::WolframHighlighter>(
+        highlighter::WolframSettings {
+          enabled: is_input,
+        },
+        highlighter::format_highlight,
+      );
 
-    // Output display (if any)
-    let mut content_col = Column::new().spacing(4).width(Fill);
+    // ── Content column: editor + outputs ──
+    let mut content_col =
+      Column::new().spacing(3).width(Fill);
     content_col = content_col.push(cell_editor);
 
-    if let Some(ref output) = editor.output {
-      let output_display = container(
-        text(output).size(14).font(Font::MONOSPACE),
+    // Stdout (Print output)
+    if let Some(ref stdout) = editor.stdout {
+      let stdout_display = container(
+        text(stdout).size(12).font(Font::MONOSPACE),
       )
-      .padding(8)
+      .padding(6)
       .width(Fill)
       .style(container::rounded_box);
 
-      content_col = content_col.push(output_display);
+      content_col = content_col.push(stdout_display);
     }
 
-    let cell_row = row![gutter, content_col]
-      .spacing(4)
-      .padding([4, 8]);
+    // Graphics SVG rendering
+    if let Some(ref svg_data) = editor.graphics_svg {
+      let handle = svg::Handle::from_memory(
+        svg_data.as_bytes().to_vec(),
+      );
+      let svg_widget =
+        svg::Svg::new(handle).width(Fill);
 
-    // Wrap in a container with focus indicator
-    let cell_container = container(cell_row).width(Fill);
+      content_col = content_col.push(
+        container(svg_widget).padding(4).width(Fill),
+      );
+    }
+
+    // Text output (filter out graphics placeholders)
+    if let Some(ref output) = editor.output {
+      let display = output
+        .replace("-Graphics-", "")
+        .replace("-Graphics3D-", "")
+        .replace("-Image-", "");
+      let display = display.trim().to_string();
+      if !display.is_empty() {
+        let output_display = container(
+          text(display).size(12).font(Font::MONOSPACE),
+        )
+        .padding(6)
+        .width(Fill)
+        .style(container::rounded_box);
+
+        content_col = content_col.push(output_display);
+      }
+    }
+
+    // ── Right side: play button for input cells ──
+    let right_side: Element<'a, Message> = if is_input {
+      container(
+        button(text("\u{25B6}").size(14))
+          .on_press(Message::EvaluateCell(idx))
+          .padding([4, 8]),
+      )
+      .into()
+    } else {
+      // Empty spacer
+      text("").into()
+    };
+
+    let cell_row = row![gutter, content_col, right_side]
+      .spacing(4)
+      .padding([3, 6]);
 
     container(
-      column![cell_container, horizontal_rule(1)]
-        .spacing(0),
+      column![
+        container(cell_row).width(Fill),
+        horizontal_rule(1)
+      ]
+      .spacing(0),
     )
     .width(Fill)
     .into()
