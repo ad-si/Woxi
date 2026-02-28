@@ -5,6 +5,186 @@ use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
+// ─── NSolve ─────────────────────────────────────────────────────────
+
+/// NSolve[equation, var] — solve an equation numerically.
+///
+/// For quadratic polynomials, uses Kahan's numerically stable formula to
+/// match Wolfram's machine-precision output. For all other equations,
+/// solves symbolically first, then converts to numerical form via N[].
+pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Try numerically stable quadratic formula for degree-2 polynomials
+  if let Some(result) = try_nsolve_quadratic(args) {
+    return result;
+  }
+  // Fall back to symbolic solve + numerize
+  let symbolic = solve_ast(args)?;
+  nsolve_numerize(&symbolic)
+}
+
+/// Try to solve a quadratic equation using Kahan's numerically stable formula.
+/// Returns None if the equation is not a degree-2 polynomial with numeric coefficients.
+fn try_nsolve_quadratic(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 2 {
+    return None;
+  }
+
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.clone(),
+    _ => return None,
+  };
+
+  // Extract equation: lhs == rhs → lhs - rhs
+  let poly = match &args[0] {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.len() == 1
+      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Equal" && fargs.len() == 2 =>
+    {
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(fargs[0].clone()),
+        right: Box::new(fargs[1].clone()),
+      }
+    }
+    _ => return None,
+  };
+
+  // Expand and collect polynomial coefficients
+  let expanded_raw = expand_and_combine(&poly);
+  let expanded = {
+    let together = together_expr(&expanded_raw);
+    match &together {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: numerator,
+        right: _,
+      } => expand_and_combine(numerator),
+      _ => expanded_raw,
+    }
+  };
+  let terms = collect_additive_terms(&expanded);
+  let degree = max_power(&expanded, &var)? as usize;
+
+  // Only handle quadratics
+  if degree != 2 {
+    return None;
+  }
+
+  // Extract f64 coefficients
+  let mut coeffs_f64 = [0.0f64; 3];
+  for d in 0..=2 {
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, &var, d as i128) {
+        let val = crate::functions::math_ast::try_eval_to_f64(&simplify(c))?;
+        coeffs_f64[d] += val;
+      }
+    }
+  }
+
+  let a = coeffs_f64[2];
+  let b = coeffs_f64[1];
+  let c = coeffs_f64[0];
+  let disc = b * b - 4.0 * a * c;
+
+  let make_rule = |val: Expr| -> Expr {
+    Expr::List(vec![Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.clone())),
+      replacement: Box::new(val),
+    }])
+  };
+
+  if disc >= 0.0 {
+    let sqrt_disc = disc.sqrt();
+    // Kahan's method: compute the well-conditioned root first,
+    // then use Vieta's formula (c/q) for the other root.
+    // This avoids cancellation when -b and sqrt(disc) nearly cancel.
+    let q = if b >= 0.0 {
+      -0.5 * (b + sqrt_disc)
+    } else {
+      -0.5 * (b - sqrt_disc)
+    };
+    let r1 = q / a;
+    let r2 = if q.abs() > 0.0 { c / q } else { r1 };
+    let mut roots = [r1, r2];
+    roots.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    Some(Ok(Expr::List(vec![
+      make_rule(Expr::Real(roots[0])),
+      make_rule(Expr::Real(roots[1])),
+    ])))
+  } else {
+    let sqrt_neg_disc = (-disc).sqrt();
+    let re = -b / (2.0 * a);
+    let im = sqrt_neg_disc / (2.0 * a);
+    let c1 = crate::evaluator::evaluate_function_call_ast(
+      "Complex",
+      &[Expr::Real(re), Expr::Real(-im.abs())],
+    )
+    .unwrap_or(Expr::Real(re));
+    let c2 = crate::evaluator::evaluate_function_call_ast(
+      "Complex",
+      &[Expr::Real(re), Expr::Real(im.abs())],
+    )
+    .unwrap_or(Expr::Real(re));
+    Some(Ok(Expr::List(vec![make_rule(c1), make_rule(c2)])))
+  }
+}
+
+/// Recursively convert a Solve result to numerical form.
+/// Handles nested lists and rules, converting replacement values to floats.
+fn nsolve_numerize(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, _> =
+        items.iter().map(nsolve_numerize).collect();
+      Ok(Expr::List(results?))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Ok(Expr::Rule {
+      pattern: pattern.clone(),
+      replacement: Box::new(nsolve_numerize(replacement)?),
+    }),
+    _ => {
+      // Try pure real first
+      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(expr) {
+        return Ok(Expr::Real(v));
+      }
+      // Try complex (handles I, -I, a + b*I, etc.)
+      if let Some((re, im)) =
+        crate::functions::math_ast::try_extract_complex_float(expr)
+      {
+        if im == 0.0 {
+          return Ok(Expr::Real(re));
+        }
+        return Ok(
+          crate::evaluator::evaluate_function_call_ast(
+            "Complex",
+            &[Expr::Real(re), Expr::Real(im)],
+          )
+          .unwrap_or_else(|_| expr.clone()),
+        );
+      }
+      // Fall back to N[]
+      crate::functions::math_ast::n_eval(expr)
+    }
+  }
+}
+
 // ─── Solve ──────────────────────────────────────────────────────────
 
 /// Roots[equation, var] — find roots of a polynomial equation.

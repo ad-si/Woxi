@@ -508,16 +508,18 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
-  // Begin["ctx`"] / BeginPackage["ctx`"] return the context string
+  // Begin["ctx`"] / BeginPackage["ctx`"] push context and return the context string
   if (name == "Begin" || name == "BeginPackage")
     && args.len() == 1
     && let Expr::String(ctx) = &args[0]
   {
+    crate::push_context(ctx.clone());
     return Ok(Expr::String(ctx.clone()));
   }
-  // End[] returns the previous context (default: "Global`" matching wolframscript)
+  // End[] pops the context stack and returns the ended context
   if name == "End" && args.is_empty() {
-    return Ok(Expr::String("Global`".to_string()));
+    let ctx = crate::pop_context().unwrap_or_else(|| "Global`".to_string());
+    return Ok(Expr::String(ctx));
   }
   // EndPackage[] returns Null (matching wolframscript)
   if name == "EndPackage" && args.is_empty() {

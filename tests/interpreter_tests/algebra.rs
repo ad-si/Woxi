@@ -1621,6 +1621,63 @@ mod reduce {
   }
 }
 
+mod nsolve {
+  use super::*;
+
+  #[test]
+  fn linear_equation() {
+    assert_eq!(interpret("NSolve[x - 5 == 0, x]").unwrap(), "{{x -> 5.}}");
+  }
+
+  #[test]
+  fn quadratic_integer_roots() {
+    assert_eq!(
+      interpret("NSolve[x^2 - 4 == 0, x]").unwrap(),
+      "{{x -> -2.}, {x -> 2.}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_irrational_roots() {
+    assert_eq!(
+      interpret("NSolve[x^2 + x - 1 == 0, x]").unwrap(),
+      "{{x -> -1.618033988749895}, {x -> 0.6180339887498948}}"
+    );
+  }
+
+  #[test]
+  fn quadratic_complex_roots() {
+    assert_eq!(
+      interpret("NSolve[x^2 + 1 == 0, x]").unwrap(),
+      "{{x -> 0. - 1.*I}, {x -> 0. + 1.*I}}"
+    );
+  }
+
+  #[test]
+  fn cubic_roots() {
+    assert_eq!(
+      interpret("NSolve[x^3 - 3*x^2 + 2*x == 0, x]").unwrap(),
+      "{{x -> 0.}, {x -> 1.}, {x -> 2.}}"
+    );
+  }
+
+  #[test]
+  fn with_user_defined_function() {
+    assert_eq!(
+      interpret("f[x_] := x^2 + x + 1; NSolve[f[b] - 2 == 0, b]").unwrap(),
+      "{{b -> -1.618033988749895}, {b -> 0.6180339887498948}}"
+    );
+  }
+
+  #[test]
+  fn rational_solution() {
+    assert_eq!(
+      interpret("NSolve[2*x - 1 == 0, x]").unwrap(),
+      "{{x -> 0.5}}"
+    );
+  }
+}
+
 mod find_root {
   use super::*;
 

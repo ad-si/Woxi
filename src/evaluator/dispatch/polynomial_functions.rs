@@ -67,6 +67,9 @@ pub fn dispatch_polynomial_functions(
     "Solve" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::solve_ast(args));
     }
+    "NSolve" if args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::nsolve_ast(args));
+    }
     "SolveAlways" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::solve_always_ast(args));
     }
