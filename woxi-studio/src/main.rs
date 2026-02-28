@@ -1681,33 +1681,17 @@ fn export_button_style(
   theme: &Theme,
   status: pick_list::Status,
 ) -> pick_list::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  let (bg, text_color, border_color) = if is_dark {
-    match status {
-      pick_list::Status::Hovered | pick_list::Status::Opened { .. } => (
-        Color::from_rgb(0.22, 0.32, 0.48),
-        Color::from_rgb(0.78, 0.82, 0.90),
-        Color::from_rgb(0.22, 0.32, 0.48),
-      ),
-      _ => (
-        Color::from_rgb(0.18, 0.26, 0.40),
-        Color::from_rgb(0.78, 0.82, 0.90),
-        Color::from_rgb(0.18, 0.26, 0.40),
-      ),
-    }
-  } else {
-    match status {
-      pick_list::Status::Hovered | pick_list::Status::Opened { .. } => (
-        Color::from_rgb(0.22, 0.42, 0.72),
-        Color::WHITE,
-        Color::from_rgb(0.22, 0.42, 0.72),
-      ),
-      _ => (
-        Color::from_rgb(0.18, 0.36, 0.65),
-        Color::WHITE,
-        Color::from_rgb(0.18, 0.36, 0.65),
-      ),
-    }
+  let palette = theme.extended_palette();
+  let (bg, text_color) = match status {
+    pick_list::Status::Hovered
+    | pick_list::Status::Opened { .. } => (
+      palette.primary.strong.color,
+      palette.primary.strong.text,
+    ),
+    _ => (
+      palette.primary.base.color,
+      palette.primary.base.text,
+    ),
   };
   pick_list::Style {
     text_color,
@@ -1715,7 +1699,7 @@ fn export_button_style(
     handle_color: text_color,
     background: Background::Color(bg),
     border: Border {
-      color: border_color,
+      color: bg,
       width: 1.0,
       radius: 2.0.into(),
     },
