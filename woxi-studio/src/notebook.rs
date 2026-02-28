@@ -580,6 +580,459 @@ impl Cell {
   }
 }
 
+// ── Export formats ──────────────────────────────────────────────
+
+/// Escape a string for JSON output.
+fn escape_json(s: &str) -> String {
+  let mut result = String::with_capacity(s.len() + 8);
+  for c in s.chars() {
+    match c {
+      '"' => result.push_str("\\\""),
+      '\\' => result.push_str("\\\\"),
+      '\n' => result.push_str("\\n"),
+      '\r' => result.push_str("\\r"),
+      '\t' => result.push_str("\\t"),
+      c if (c as u32) < 0x20 => {
+        result.push_str(&format!("\\u{:04x}", c as u32));
+      }
+      _ => result.push(c),
+    }
+  }
+  result
+}
+
+/// Format a string as a JSON array of source lines (Jupyter convention).
+fn json_source_lines(content: &str) -> String {
+  if content.is_empty() {
+    return "[\"\"]".to_string();
+  }
+  let lines: Vec<&str> = content.split('\n').collect();
+  let mut parts = Vec::new();
+  for (i, line) in lines.iter().enumerate() {
+    if i < lines.len() - 1 {
+      parts.push(format!("\"{}\\n\"", escape_json(line)));
+    } else {
+      parts.push(format!("\"{}\"", escape_json(line)));
+    }
+  }
+  format!("[{}]", parts.join(", "))
+}
+
+/// Convert a cell to its Markdown heading representation.
+fn heading_markdown(cell: &Cell) -> String {
+  match cell.style {
+    CellStyle::Title => format!("# {}", cell.content),
+    CellStyle::Subtitle => format!("*{}*", cell.content),
+    CellStyle::Section => format!("## {}", cell.content),
+    CellStyle::Subsection => format!("### {}", cell.content),
+    CellStyle::Subsubsection => {
+      format!("#### {}", cell.content)
+    }
+    _ => cell.content.clone(),
+  }
+}
+
+/// Escape special LaTeX characters in text.
+fn escape_latex(s: &str) -> String {
+  let mut result = String::with_capacity(s.len() + 8);
+  for c in s.chars() {
+    match c {
+      '#' => result.push_str("\\#"),
+      '$' => result.push_str("\\$"),
+      '%' => result.push_str("\\%"),
+      '&' => result.push_str("\\&"),
+      '_' => result.push_str("\\_"),
+      '{' => result.push_str("\\{"),
+      '}' => result.push_str("\\}"),
+      '~' => result.push_str("\\textasciitilde{}"),
+      '^' => result.push_str("\\textasciicircum{}"),
+      '\\' => result.push_str("\\textbackslash{}"),
+      _ => result.push(c),
+    }
+  }
+  result
+}
+
+fn jupyter_markdown_cell(source: &str) -> String {
+  let mut out = String::new();
+  out.push_str("    {\n");
+  out.push_str("      \"cell_type\": \"markdown\",\n");
+  out.push_str("      \"metadata\": {},\n");
+  out.push_str(&format!(
+    "      \"source\": {}\n",
+    json_source_lines(source)
+  ));
+  out.push_str("    }");
+  out
+}
+
+fn jupyter_code_cell(
+  source: &str,
+  outputs: &[&Cell],
+  exec_count: u32,
+) -> String {
+  let mut out = String::new();
+  out.push_str("    {\n");
+  out.push_str("      \"cell_type\": \"code\",\n");
+  out.push_str(&format!(
+    "      \"execution_count\": {exec_count},\n"
+  ));
+  out.push_str("      \"metadata\": {},\n");
+  out.push_str(&format!(
+    "      \"source\": {},\n",
+    json_source_lines(source)
+  ));
+
+  if outputs.is_empty() {
+    out.push_str("      \"outputs\": []\n");
+  } else {
+    out.push_str("      \"outputs\": [\n");
+    let mut output_parts = Vec::new();
+    for cell in outputs {
+      let mut o = String::new();
+      if cell.style == CellStyle::Print {
+        o.push_str("        {\n");
+        o.push_str(
+          "          \"output_type\": \"stream\",\n",
+        );
+        o.push_str("          \"name\": \"stdout\",\n");
+        o.push_str(&format!(
+          "          \"text\": {}\n",
+          json_source_lines(&cell.content)
+        ));
+        o.push_str("        }");
+      } else {
+        o.push_str("        {\n");
+        o.push_str(
+          "          \"output_type\": \"execute_result\",\n",
+        );
+        o.push_str(&format!(
+          "          \"execution_count\": {exec_count},\n"
+        ));
+        o.push_str("          \"data\": {\n");
+        o.push_str(&format!(
+          "            \"text/plain\": {}\n",
+          json_source_lines(&cell.content)
+        ));
+        o.push_str("          },\n");
+        o.push_str("          \"metadata\": {}\n");
+        o.push_str("        }");
+      }
+      output_parts.push(o);
+    }
+    out.push_str(&output_parts.join(",\n"));
+    out.push('\n');
+    out.push_str("      ]\n");
+  }
+
+  out.push_str("    }");
+  out
+}
+
+impl Notebook {
+  /// Export as Markdown.
+  pub fn to_markdown(&self) -> String {
+    let mut out = String::new();
+    for (_, cell) in self.flat_cells() {
+      match cell.style {
+        CellStyle::Title => {
+          out.push_str(&format!(
+            "# {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Subtitle => {
+          out.push_str(&format!(
+            "*{}*\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Section => {
+          out.push_str(&format!(
+            "## {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Subsection => {
+          out.push_str(&format!(
+            "### {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Subsubsection => {
+          out.push_str(&format!(
+            "#### {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Text => {
+          out.push_str(&format!(
+            "{}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Input | CellStyle::Code => {
+          out.push_str(&format!(
+            "```wolfram\n{}\n```\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Output | CellStyle::Print => {
+          out.push_str(&format!(
+            "```\n{}\n```\n\n",
+            cell.content
+          ));
+        }
+      }
+    }
+    out.trim_end().to_string()
+  }
+
+  /// Export as LaTeX.
+  pub fn to_latex(&self) -> String {
+    let flat = self.flat_cells();
+    let mut out = String::new();
+
+    out.push_str("\\documentclass{article}\n");
+    out.push_str("\\usepackage[utf8]{inputenc}\n\n");
+
+    // Extract first title for \title{} / \maketitle
+    let has_title = flat
+      .iter()
+      .any(|(_, c)| c.style == CellStyle::Title);
+    if let Some((_, cell)) = flat
+      .iter()
+      .find(|(_, c)| c.style == CellStyle::Title)
+    {
+      out.push_str(&format!(
+        "\\title{{{}}}\n",
+        escape_latex(&cell.content)
+      ));
+      out.push_str("\\date{}\n");
+    }
+
+    out.push_str("\n\\begin{document}\n\n");
+
+    if has_title {
+      out.push_str("\\maketitle\n\n");
+    }
+
+    let mut first_title_skipped = false;
+    for (_, cell) in &flat {
+      match cell.style {
+        CellStyle::Title => {
+          if !first_title_skipped {
+            first_title_skipped = true;
+            continue;
+          }
+          out.push_str(&format!(
+            "\\section*{{{}}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
+        CellStyle::Subtitle => {
+          out.push_str(&format!(
+            "\\begin{{center}}\n\\large \\textit{{{}}}\n\\end{{center}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
+        CellStyle::Section => {
+          out.push_str(&format!(
+            "\\section{{{}}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
+        CellStyle::Subsection => {
+          out.push_str(&format!(
+            "\\subsection{{{}}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
+        CellStyle::Subsubsection => {
+          out.push_str(&format!(
+            "\\subsubsection{{{}}}\n\n",
+            escape_latex(&cell.content)
+          ));
+        }
+        CellStyle::Text => {
+          out.push_str(&escape_latex(&cell.content));
+          out.push_str("\n\n");
+        }
+        CellStyle::Input | CellStyle::Code => {
+          out.push_str("\\begin{verbatim}\n");
+          out.push_str(&cell.content);
+          out.push_str("\n\\end{verbatim}\n\n");
+        }
+        CellStyle::Output | CellStyle::Print => {
+          out.push_str("\\begin{verbatim}\n");
+          out.push_str(&cell.content);
+          out.push_str("\n\\end{verbatim}\n\n");
+        }
+      }
+    }
+
+    out.push_str("\\end{document}\n");
+    out
+  }
+
+  /// Export as Typst.
+  pub fn to_typst(&self) -> String {
+    let mut out = String::new();
+    for (_, cell) in self.flat_cells() {
+      match cell.style {
+        CellStyle::Title => {
+          out.push_str(&format!(
+            "= {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Subtitle => {
+          out.push_str(&format!(
+            "_{}_\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Section => {
+          out.push_str(&format!(
+            "== {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Subsection => {
+          out.push_str(&format!(
+            "=== {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Subsubsection => {
+          out.push_str(&format!(
+            "==== {}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Text => {
+          out.push_str(&format!(
+            "{}\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Input | CellStyle::Code => {
+          out.push_str(&format!(
+            "```wl\n{}\n```\n\n",
+            cell.content
+          ));
+        }
+        CellStyle::Output | CellStyle::Print => {
+          out.push_str(&format!(
+            "```\n{}\n```\n\n",
+            cell.content
+          ));
+        }
+      }
+    }
+    out.trim_end().to_string()
+  }
+
+  /// Export as Jupyter Notebook (JSON).
+  pub fn to_jupyter(&self) -> String {
+    let mut cells_json = Vec::new();
+    let mut exec_count = 1u32;
+
+    for entry in &self.cells {
+      match entry {
+        CellEntry::Single(cell) => match cell.style {
+          CellStyle::Input | CellStyle::Code => {
+            cells_json.push(jupyter_code_cell(
+              &cell.content,
+              &[],
+              exec_count,
+            ));
+            exec_count += 1;
+          }
+          CellStyle::Output | CellStyle::Print => {
+            cells_json.push(jupyter_markdown_cell(
+              &format!(
+                "```\n{}\n```",
+                cell.content
+              ),
+            ));
+          }
+          _ => {
+            cells_json.push(jupyter_markdown_cell(
+              &heading_markdown(cell),
+            ));
+          }
+        },
+        CellEntry::Group(group) => {
+          let first = match group.cells.first() {
+            Some(c) => c,
+            None => continue,
+          };
+          if first.style == CellStyle::Input
+            || first.style == CellStyle::Code
+          {
+            let outputs: Vec<&Cell> = group.cells[1..]
+              .iter()
+              .filter(|c| {
+                c.style == CellStyle::Output
+                  || c.style == CellStyle::Print
+              })
+              .collect();
+            cells_json.push(jupyter_code_cell(
+              &first.content,
+              &outputs,
+              exec_count,
+            ));
+            exec_count += 1;
+          } else {
+            for cell in &group.cells {
+              match cell.style {
+                CellStyle::Input | CellStyle::Code => {
+                  cells_json.push(jupyter_code_cell(
+                    &cell.content,
+                    &[],
+                    exec_count,
+                  ));
+                  exec_count += 1;
+                }
+                _ => {
+                  cells_json.push(
+                    jupyter_markdown_cell(
+                      &heading_markdown(cell),
+                    ),
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    let mut out = String::new();
+    out.push_str("{\n");
+    out.push_str("  \"nbformat\": 4,\n");
+    out.push_str("  \"nbformat_minor\": 5,\n");
+    out.push_str("  \"metadata\": {\n");
+    out.push_str("    \"kernelspec\": {\n");
+    out.push_str(
+      "      \"display_name\": \"Wolfram Language\",\n",
+    );
+    out.push_str(
+      "      \"language\": \"wolfram\",\n",
+    );
+    out.push_str("      \"name\": \"wolfram\"\n");
+    out.push_str("    }\n");
+    out.push_str("  },\n");
+    out.push_str("  \"cells\": [\n");
+    out.push_str(&cells_json.join(",\n"));
+    out.push('\n');
+    out.push_str("  ]\n");
+    out.push_str("}\n");
+    out
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -678,5 +1131,159 @@ Cell[BoxData["5"], "Output"]
     assert_eq!(parts[1].trim(), "\"b\"");
     assert_eq!(parts[2].trim(), "Cell[1, 2]");
     assert_eq!(parts[3].trim(), "\"c\"");
+  }
+
+  #[test]
+  fn test_export_markdown() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(CellStyle::Title, "My Notebook"));
+    nb.push_cell(Cell::new(CellStyle::Text, "Some text"));
+    nb.push_cell(Cell::new(
+      CellStyle::Section,
+      "Introduction",
+    ));
+    nb.push_group(vec![
+      Cell::new(CellStyle::Input, "1 + 1"),
+      Cell::new(CellStyle::Output, "2"),
+    ]);
+
+    let md = nb.to_markdown();
+    assert!(md.contains("# My Notebook"));
+    assert!(md.contains("Some text"));
+    assert!(md.contains("## Introduction"));
+    assert!(md.contains("```wolfram\n1 + 1\n```"));
+    assert!(md.contains("```\n2\n```"));
+  }
+
+  #[test]
+  fn test_export_latex() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(CellStyle::Title, "My Notebook"));
+    nb.push_cell(Cell::new(
+      CellStyle::Section,
+      "Introduction",
+    ));
+    nb.push_cell(Cell::new(CellStyle::Text, "Some text"));
+    nb.push_group(vec![
+      Cell::new(CellStyle::Input, "1 + 1"),
+      Cell::new(CellStyle::Output, "2"),
+    ]);
+
+    let tex = nb.to_latex();
+    assert!(tex.contains("\\documentclass{article}"));
+    assert!(tex.contains("\\title{My Notebook}"));
+    assert!(tex.contains("\\maketitle"));
+    assert!(tex.contains("\\section{Introduction}"));
+    assert!(tex.contains("Some text"));
+    assert!(tex
+      .contains("\\begin{verbatim}\n1 + 1\n\\end{verbatim}"));
+    assert!(tex
+      .contains("\\begin{verbatim}\n2\n\\end{verbatim}"));
+  }
+
+  #[test]
+  fn test_export_latex_special_chars() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(
+      CellStyle::Text,
+      "Price is $10 & 50% off",
+    ));
+
+    let tex = nb.to_latex();
+    assert!(tex.contains("\\$"));
+    assert!(tex.contains("\\&"));
+    assert!(tex.contains("\\%"));
+  }
+
+  #[test]
+  fn test_export_typst() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(CellStyle::Title, "My Notebook"));
+    nb.push_cell(Cell::new(
+      CellStyle::Section,
+      "Introduction",
+    ));
+    nb.push_cell(Cell::new(CellStyle::Text, "Some text"));
+    nb.push_group(vec![
+      Cell::new(CellStyle::Input, "1 + 1"),
+      Cell::new(CellStyle::Output, "2"),
+    ]);
+
+    let typ = nb.to_typst();
+    assert!(typ.contains("= My Notebook"));
+    assert!(typ.contains("== Introduction"));
+    assert!(typ.contains("Some text"));
+    assert!(typ.contains("```wl\n1 + 1\n```"));
+    assert!(typ.contains("```\n2\n```"));
+  }
+
+  #[test]
+  fn test_export_jupyter() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(CellStyle::Title, "My Notebook"));
+    nb.push_group(vec![
+      Cell::new(CellStyle::Input, "1 + 1"),
+      Cell::new(CellStyle::Output, "2"),
+    ]);
+
+    let ipynb = nb.to_jupyter();
+    assert!(ipynb.contains("\"nbformat\": 4"));
+    assert!(ipynb.contains("\"cell_type\": \"markdown\""));
+    assert!(ipynb.contains("\"cell_type\": \"code\""));
+    assert!(ipynb.contains("\"execute_result\""));
+    assert!(ipynb.contains("# My Notebook"));
+    assert!(ipynb.contains("1 + 1"));
+  }
+
+  #[test]
+  fn test_export_jupyter_print_output() {
+    let mut nb = Notebook::new();
+    nb.push_group(vec![
+      Cell::new(CellStyle::Input, "Print[42]"),
+      Cell::new(CellStyle::Print, "42"),
+    ]);
+
+    let ipynb = nb.to_jupyter();
+    assert!(ipynb.contains("\"output_type\": \"stream\""));
+    assert!(ipynb.contains("\"name\": \"stdout\""));
+  }
+
+  #[test]
+  fn test_export_markdown_all_heading_levels() {
+    let mut nb = Notebook::new();
+    nb.push_cell(Cell::new(CellStyle::Title, "T"));
+    nb.push_cell(Cell::new(CellStyle::Subtitle, "ST"));
+    nb.push_cell(Cell::new(CellStyle::Section, "S"));
+    nb.push_cell(Cell::new(CellStyle::Subsection, "SS"));
+    nb.push_cell(Cell::new(
+      CellStyle::Subsubsection,
+      "SSS",
+    ));
+
+    let md = nb.to_markdown();
+    assert!(md.contains("# T"));
+    assert!(md.contains("*ST*"));
+    assert!(md.contains("## S"));
+    assert!(md.contains("### SS"));
+    assert!(md.contains("#### SSS"));
+  }
+
+  #[test]
+  fn test_escape_json() {
+    assert_eq!(escape_json("hello"), "hello");
+    assert_eq!(escape_json("he\"llo"), "he\\\"llo");
+    assert_eq!(escape_json("a\\b"), "a\\\\b");
+    assert_eq!(escape_json("a\nb"), "a\\nb");
+    assert_eq!(escape_json("a\tb"), "a\\tb");
+  }
+
+  #[test]
+  fn test_json_source_lines() {
+    assert_eq!(json_source_lines(""), "[\"\"]");
+    assert_eq!(json_source_lines("hello"), "[\"hello\"]");
+    assert_eq!(
+      json_source_lines("a\nb"),
+      "[\"a\\n\", \"b\"]"
+    );
   }
 }
