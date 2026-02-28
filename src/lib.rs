@@ -785,7 +785,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
           let result_expr = render_color_if_needed(result_expr);
           let result_expr = render_tableform_if_needed(result_expr);
           let result_expr = render_matrixform_if_needed(result_expr);
-          render_column_if_needed(result_expr)
+          let result_expr = render_column_if_needed(result_expr);
+          render_framed_if_needed(result_expr)
         } else {
           result_expr
         };
@@ -1027,7 +1028,7 @@ fn is_3d_list(items: &[syntax::Expr]) -> bool {
 fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
-      if name == "TableForm" && args.len() == 1 =>
+      if name == "TableForm" && !args.is_empty() =>
     {
       let data = &args[0];
       // Skip if content contains Graphics placeholders (handled by render_graphics_list_if_needed)
@@ -1098,10 +1099,13 @@ fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
         }
         _ => return expr,
       };
+      // Forward extra args (options like TableHeadings) to grid rendering
+      let mut grid_args = vec![grid_data];
+      grid_args.extend(args[1..].iter().cloned());
       let result = if group_gaps.is_empty() {
-        functions::graphics::grid_ast(&[grid_data])
+        functions::graphics::grid_ast(&grid_args)
       } else {
-        functions::graphics::grid_ast_with_gaps(&[grid_data], &group_gaps)
+        functions::graphics::grid_ast_with_gaps(&grid_args, &group_gaps)
       };
       match result {
         Ok(result) => result,
@@ -1188,6 +1192,43 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
       }
     }
     _ => expr,
+  }
+}
+
+/// If `expr` is a `Framed[expr]` call, render it as an SVG box with a border
+/// and return `-Graphics-`. If the expression is a list containing any
+/// `Framed` elements, render the whole list as a Row-like Grid so all
+/// elements appear together in a single graphical output.
+fn render_framed_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty() =>
+    {
+      if let Some(svg) = functions::graphics::framed_to_svg(args) {
+        graphics_result(svg)
+      } else {
+        expr
+      }
+    }
+    syntax::Expr::List(items) if items.iter().any(contains_framed) => {
+      // Render the whole list as a Row-style SVG so all items
+      // (text and Framed) appear together in one graphic.
+      if let Some(svg) = functions::graphics::row_with_framed_to_svg(items) {
+        graphics_result(svg)
+      } else {
+        expr
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// Check if an expression is or contains a Framed call.
+fn contains_framed(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, .. } if name == "Framed" => true,
+    syntax::Expr::List(items) => items.iter().any(contains_framed),
+    _ => false,
   }
 }
 

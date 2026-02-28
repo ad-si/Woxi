@@ -1255,6 +1255,7 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "GraphicsRow"
         || name == "GraphicsColumn"
         || name == "GraphicsGrid"
+        || name == "BooleanTable"
       {
         // Flatten Sequence even in held args (unless SequenceHold)
         let args = flatten_sequences(name, args);

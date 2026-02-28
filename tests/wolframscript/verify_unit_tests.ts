@@ -498,6 +498,7 @@ function main() {
     /\bSeedRandom\[/,
     /\bShare\[/,
     /\bNames\[/,
+    /\bRasterize\[/,
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.

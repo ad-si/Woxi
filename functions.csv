@@ -568,7 +568,7 @@ BooleanQ,Tests if an expression is True or False,✅,pure,10,2845
 BooleanRegion,,,,10,2251
 Booleans,,,,4,3008
 BooleanStrings,,,,10,5184
-BooleanTable,,,,7,1464
+BooleanTable,Truth table for a boolean expression over all variable combinations,✅,pure,7,1464
 BooleanVariables,,,,7,3566
 BorderDimensions,,,,8,2587
 BorelTannerDistribution,,,,8,3697
@@ -2135,7 +2135,7 @@ FractionBoxOptions,,,,4,4138
 Frame,Option specifying whether a frame is drawn around a plot,✅,none,2,97
 FrameBox,,,,3,2374
 FrameBoxOptions,,,,4,4660
-Framed,,,,6,390
+Framed,Display wrapper that draws a frame around its argument,✅,pure,6,390
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2,221
 FrameListVideo,,,,12.3,
 FrameMargins,,,,6,755

@@ -3076,7 +3076,7 @@ fn grid_svg_internal(
 ) -> Result<String, InterpreterError> {
   // Extract rows from args[0]
   let data = evaluate_expr_to_expr(&args[0])?;
-  let rows: Vec<Vec<Expr>> = match &data {
+  let mut rows: Vec<Vec<Expr>> = match &data {
     Expr::List(items) => {
       // Check if it's a list of lists (matrix) or a flat list (single row)
       if items.iter().all(|item| matches!(item, Expr::List(_))) {
@@ -3104,6 +3104,8 @@ fn grid_svg_internal(
 
   // Parse options from remaining args
   let mut frame_all = false;
+  let mut row_headings: Vec<Expr> = Vec::new();
+  let mut col_headings: Vec<Expr> = Vec::new();
   for raw_opt in &args[1..] {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
@@ -3112,11 +3114,76 @@ fn grid_svg_internal(
       replacement,
     } = &opt
       && let Expr::Identifier(name) = pattern.as_ref()
-      && name == "Frame"
-      && let Expr::Identifier(val) = replacement.as_ref()
-      && val == "All"
     {
-      frame_all = true;
+      match name.as_str() {
+        "Frame" => {
+          if let Expr::Identifier(val) = replacement.as_ref()
+            && val == "All"
+          {
+            frame_all = true;
+          }
+        }
+        "TableHeadings" => {
+          // TableHeadings -> {{row_h...}, {col_h...}}
+          if let Expr::List(lists) = replacement.as_ref() {
+            if !lists.is_empty()
+              && let Expr::List(rh) = &lists[0]
+            {
+              row_headings = rh.clone();
+            }
+            if lists.len() >= 2
+              && let Expr::List(ch) = &lists[1]
+            {
+              col_headings = ch.clone();
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  // Inject TableHeadings into the grid data
+  if !col_headings.is_empty() {
+    // Add column headings as the first row (bold)
+    let mut heading_row: Vec<Expr> = col_headings
+      .into_iter()
+      .map(|h| Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: vec![h, Expr::Identifier("Bold".to_string())],
+      })
+      .collect();
+    if !row_headings.is_empty() {
+      // Insert empty top-left corner cell
+      heading_row.insert(0, Expr::Identifier(String::new()));
+    }
+    rows.insert(0, heading_row);
+  }
+  if !row_headings.is_empty() {
+    // Add row headings as the first column (bold)
+    let start = if rows.first().is_some_and(|r| {
+      r.first()
+        .is_some_and(|c| matches!(c, Expr::Identifier(s) if s.is_empty()))
+    }) {
+      1 // Skip the heading row (already has corner cell)
+    } else {
+      0
+    };
+    for (i, row) in rows.iter_mut().enumerate() {
+      if i >= start {
+        let idx = i - start;
+        if let Some(h) = row_headings.get(idx) {
+          row.insert(
+            0,
+            Expr::FunctionCall {
+              name: "Style".to_string(),
+              args: vec![h.clone(), Expr::Identifier("Bold".to_string())],
+            },
+          );
+        } else {
+          row.insert(0, Expr::Identifier(String::new()));
+        }
+      }
     }
   }
 
@@ -4837,6 +4904,260 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
       expr_to_svg_markup(item)
     ));
   }
+
+  svg.push_str("</svg>");
+  Some(svg)
+}
+
+/// Render `Framed[expr]` as an SVG box with a rectangular border around the content.
+/// Handles nested Framed by recursively rendering inner content as embedded SVG.
+pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
+  if args.is_empty() {
+    return None;
+  }
+
+  let content = &args[0];
+
+  // Layout constants
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let margin: f64 = 6.0; // padding between content and frame border
+  let stroke_width: f64 = 1.0;
+  let rounding: f64 = 3.0;
+
+  // Check if content is itself a Framed (nested) or already a Graphics
+  let (inner_svg, inner_w, inner_h): (Option<String>, f64, f64) =
+    if let Expr::FunctionCall {
+      name,
+      args: inner_args,
+    } = content
+    {
+      if name == "Framed" {
+        // Recursively render inner Framed
+        if let Some(svg) = framed_to_svg(inner_args) {
+          let (w, h) = parse_svg_wh(&svg);
+          (Some(svg), w, h)
+        } else {
+          (None, 0.0, 0.0)
+        }
+      } else {
+        (None, 0.0, 0.0)
+      }
+    } else if let Expr::Graphics { svg, .. } = content {
+      let (w, h) = parse_svg_wh(svg);
+      (Some(svg.clone()), w, h)
+    } else {
+      (None, 0.0, 0.0)
+    };
+
+  if let Some(ref child_svg) = inner_svg {
+    // Embed child SVG inside a frame
+    let total_w = inner_w + 2.0 * margin;
+    let total_h = inner_h + 2.0 * margin;
+    let svg_w = total_w.ceil() as u32;
+    let svg_h = total_h.ceil() as u32;
+
+    let mut svg = String::with_capacity(child_svg.len() + 512);
+    svg.push_str(&format!(
+      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+    // Border rectangle
+    svg.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"rgb(190,190,190)\" stroke-width=\"{stroke_width}\"/>\n",
+      stroke_width / 2.0, stroke_width / 2.0,
+      total_w - stroke_width, total_h - stroke_width,
+    ));
+    // Embed child SVG
+    svg.push_str(&format!(
+      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\">\n"
+    ));
+    // Strip outer <svg> and </svg> tags from child to embed its content
+    let inner_content = strip_svg_wrapper(child_svg);
+    svg.push_str(inner_content);
+    svg.push_str("</svg>\n");
+    svg.push_str("</svg>");
+    Some(svg)
+  } else {
+    // Text content — measure and render
+    let content_w = estimate_display_width(content) * char_width;
+    let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
+    let content_h = font_size + frac_extra;
+
+    let total_w = content_w + 2.0 * margin;
+    let total_h = content_h + 2.0 * margin;
+    let svg_w = total_w.ceil() as u32;
+    let svg_h = total_h.ceil() as u32;
+
+    let mut svg = String::with_capacity(512);
+    svg.push_str(&format!(
+      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+    ));
+    // Border rectangle
+    svg.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"rgb(190,190,190)\" stroke-width=\"{stroke_width}\"/>\n",
+      stroke_width / 2.0, stroke_width / 2.0,
+      total_w - stroke_width, total_h - stroke_width,
+    ));
+    // Text centered inside
+    let cx = total_w / 2.0;
+    let cy = total_h / 2.0;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      expr_to_svg_markup(content)
+    ));
+    svg.push_str("</svg>");
+    Some(svg)
+  }
+}
+
+/// Parse width and height from an SVG's root element attributes.
+fn parse_svg_wh(svg: &str) -> (f64, f64) {
+  let w = svg
+    .find("width=\"")
+    .and_then(|i| {
+      let start = i + 7;
+      svg[start..].find('"').map(|end| &svg[start..start + end])
+    })
+    .and_then(|s| s.parse::<f64>().ok())
+    .unwrap_or(100.0);
+  let h = svg
+    .find("height=\"")
+    .and_then(|i| {
+      let start = i + 8;
+      svg[start..].find('"').map(|end| &svg[start..start + end])
+    })
+    .and_then(|s| s.parse::<f64>().ok())
+    .unwrap_or(30.0);
+  (w, h)
+}
+
+/// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
+fn strip_svg_wrapper(svg: &str) -> &str {
+  let start = svg.find('>').map(|i| i + 1).unwrap_or(0);
+  let end = svg.rfind("</svg>").unwrap_or(svg.len());
+  &svg[start..end]
+}
+
+/// Render a list that contains Framed elements as a horizontal row SVG.
+/// Plain items are rendered as text; Framed items are fully rendered via
+/// `framed_to_svg` (which handles arbitrary nesting) and embedded as child SVGs.
+/// The result looks like `{x, |a|, ||b||}` with visual brackets and commas.
+pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
+  if items.is_empty() {
+    return None;
+  }
+
+  let char_width: f64 = 8.4;
+  let font_size: f64 = 14.0;
+  let sep_width: f64 = 2.0 * char_width; // ", " between items
+  let brace_width: f64 = char_width; // "{" and "}"
+
+  // Pre-compute each item: either a pre-rendered SVG or plain text metrics
+  enum CellContent {
+    /// Pre-rendered SVG string (for Framed items)
+    Svg(String),
+    /// Plain expression rendered as text
+    Text(Expr),
+  }
+
+  struct CellInfo {
+    width: f64,
+    height: f64,
+    content: CellContent,
+  }
+
+  let mut cells: Vec<CellInfo> = Vec::with_capacity(items.len());
+  for item in items {
+    if let Expr::FunctionCall { name, args } = item
+      && name == "Framed"
+      && !args.is_empty()
+    {
+      // Render the entire Framed (with any nesting) as SVG
+      if let Some(child_svg) = framed_to_svg(args) {
+        let (w, h) = parse_svg_wh(&child_svg);
+        cells.push(CellInfo {
+          width: w,
+          height: h,
+          content: CellContent::Svg(child_svg),
+        });
+        continue;
+      }
+    }
+    let content_w = estimate_display_width(item) * char_width;
+    let frac_extra = if has_fraction(item) { 10.0 } else { 0.0 };
+    cells.push(CellInfo {
+      width: content_w,
+      height: font_size + frac_extra,
+      content: CellContent::Text(item.clone()),
+    });
+  }
+
+  // Total width: { + items + separators + }
+  let items_width: f64 = cells.iter().map(|c| c.width).sum::<f64>();
+  let seps_width = if cells.len() > 1 {
+    (cells.len() - 1) as f64 * sep_width
+  } else {
+    0.0
+  };
+  let total_w = brace_width + items_width + seps_width + brace_width;
+  let max_h = cells.iter().map(|c| c.height).fold(font_size, f64::max);
+  // Add vertical padding so text items are not cramped
+  let total_h = max_h + 4.0;
+
+  let svg_w = total_w.ceil() as u32;
+  let svg_h = total_h.ceil() as u32;
+
+  let mut svg = String::with_capacity(2048);
+  svg.push_str(&format!(
+    "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
+  ));
+
+  let mid_y = total_h / 2.0;
+
+  // Opening brace
+  svg.push_str(&format!(
+    "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{{</text>\n",
+    brace_width / 2.0
+  ));
+
+  let mut x = brace_width;
+  for (i, cell) in cells.iter().enumerate() {
+    if i > 0 {
+      // Draw comma separator
+      svg.push_str(&format!(
+        "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">,</text>\n",
+        x + sep_width / 2.0
+      ));
+      x += sep_width;
+    }
+
+    match &cell.content {
+      CellContent::Svg(child_svg) => {
+        // Embed pre-rendered Framed SVG, vertically centered
+        let ey = (total_h - cell.height) / 2.0;
+        svg.push_str(&format!(
+          "<svg x=\"{x:.1}\" y=\"{ey:.1}\" width=\"{:.1}\" height=\"{:.1}\">\n",
+          cell.width, cell.height
+        ));
+        svg.push_str(strip_svg_wrapper(child_svg));
+        svg.push_str("</svg>\n");
+      }
+      CellContent::Text(expr) => {
+        let cx = x + cell.width / 2.0;
+        svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          expr_to_svg_markup(expr)
+        ));
+      }
+    }
+    x += cell.width;
+  }
+
+  // Closing brace
+  svg.push_str(&format!(
+    "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">}}</text>\n",
+    x + brace_width / 2.0
+  ));
 
   svg.push_str("</svg>");
   Some(svg)

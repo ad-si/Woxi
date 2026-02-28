@@ -1757,6 +1757,28 @@ mod graphics_list {
   }
 
   #[test]
+  fn tableform_with_table_headings() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "TableForm[{{1, 2}, {3, 4}}, TableHeadings -> {{\"a\", \"b\"}, {\"x\", \"y\"}}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // Data cells should appear
+    assert!(svg.contains(">1</text>"));
+    assert!(svg.contains(">4</text>"));
+    // Column headings should appear bold
+    assert!(svg.contains("font-weight=\"bold\""));
+    assert!(svg.contains(">x</text>"));
+    assert!(svg.contains(">y</text>"));
+    // Row headings should appear bold
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">b</text>"));
+  }
+
+  #[test]
   fn tableform_3d_list_transposed_blocks() {
     // TableForm on 3D list: each block is transposed (sub-lists become columns),
     // blocks stacked vertically.
@@ -2357,6 +2379,96 @@ mod grid_rasterize {
     clear_state();
     let result = interpret("Rasterize[Graphics[{Circle[]}]]").unwrap();
     assert_eq!(result, "-Image-");
+  }
+}
+
+mod framed {
+  use super::*;
+
+  #[test]
+  fn framed_visual_renders_svg() {
+    clear_state();
+    let result = interpret_with_stdout("Framed[x]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    // Should have a border rectangle
+    assert!(svg.contains("<rect"), "Should have a rect element");
+    // Should have the text content
+    assert!(svg.contains(">x</text>"));
+  }
+
+  #[test]
+  fn framed_evaluates_content() {
+    clear_state();
+    let result = interpret_with_stdout("Framed[1 + 2]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">3</text>"));
+  }
+
+  #[test]
+  fn framed_nested_renders_nested_rects() {
+    clear_state();
+    let result = interpret_with_stdout("Framed[Framed[x]]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // Should have two rect elements (outer and inner frame)
+    let rect_count = svg.matches("<rect").count();
+    assert!(
+      rect_count >= 2,
+      "Nested Framed should have at least 2 rect elements, found {rect_count}"
+    );
+    assert!(svg.contains(">x</text>"));
+  }
+
+  #[test]
+  fn framed_text_mode_stays_symbolic() {
+    // In non-visual mode, Framed stays symbolic
+    assert_eq!(interpret("Framed[x]").unwrap(), "Framed[x]");
+    assert_eq!(interpret("Framed[1 + 2]").unwrap(), "Framed[3]");
+  }
+
+  #[test]
+  fn nestlist_framed_text_mode() {
+    assert_eq!(
+      interpret("NestList[Framed, x, 3]").unwrap(),
+      "{x, Framed[x], Framed[Framed[x]], Framed[Framed[Framed[x]]]}"
+    );
+  }
+
+  #[test]
+  fn list_with_framed_renders_all_visual() {
+    // A list containing Framed should render entirely as graphics,
+    // not split between text and graphic output.
+    clear_state();
+    let result = interpret_with_stdout("{x, Framed[a]}").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // Both x and a should appear in the SVG
+    assert!(svg.contains(">x</text>"), "plain item x should be in SVG");
+    assert!(svg.contains(">a</text>"), "framed item a should be in SVG");
+    // Should have a border rect for the Framed element
+    assert!(svg.contains("<rect"), "Should have a rect for Framed[a]");
+  }
+
+  #[test]
+  fn nestlist_framed_visual_has_nested_rects() {
+    // NestList[Framed, x, 3] produces {x, Framed[x], Framed[Framed[x]], ...}
+    // Each deeper nesting level should have more rect elements.
+    clear_state();
+    let result = interpret_with_stdout("NestList[Framed, x, 3]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    // Framed[x] = 1 rect, Framed[Framed[x]] = 2 rects, Framed[Framed[Framed[x]]] = 3 rects
+    // Total: at least 6 rects
+    let rect_count = svg.matches("<rect").count();
+    assert!(
+      rect_count >= 6,
+      "NestList[Framed, x, 3] should have at least 6 rects (1+2+3), found {rect_count}"
+    );
+    // All x text nodes should be present
+    assert!(svg.contains(">x</text>"));
   }
 }
 

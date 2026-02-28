@@ -3373,6 +3373,118 @@ mod v2_option_symbols {
   }
 }
 
+mod tableform_headings {
+  use super::*;
+
+  #[test]
+  fn tableform_with_options_stays_symbolic() {
+    // In text mode, TableForm with options stays symbolic (evaluated args)
+    assert_eq!(
+      interpret("TableForm[{{1, 2}, {3, 4}}, TableHeadings -> {{\"a\", \"b\"}, {\"x\", \"y\"}}]").unwrap(),
+      "TableForm[{{1, 2}, {3, 4}}, TableHeadings -> {{a, b}, {x, y}}]"
+    );
+  }
+
+  #[test]
+  fn tableform_single_arg_stays_symbolic() {
+    // TableForm with just data stays symbolic in text mode
+    assert_eq!(
+      interpret("TableForm[{{1, 2}, {3, 4}}]").unwrap(),
+      "TableForm[{{1, 2}, {3, 4}}]"
+    );
+  }
+}
+
+mod boolean_table {
+  use super::*;
+
+  #[test]
+  fn or_two_vars() {
+    assert_eq!(
+      interpret("BooleanTable[p || q, {p, q}]").unwrap(),
+      "{True, True, True, False}"
+    );
+  }
+
+  #[test]
+  fn and_two_vars() {
+    assert_eq!(
+      interpret("BooleanTable[p && q, {p, q}]").unwrap(),
+      "{True, False, False, False}"
+    );
+  }
+
+  #[test]
+  fn not_single_var() {
+    assert_eq!(
+      interpret("BooleanTable[Not[p], {p}]").unwrap(),
+      "{False, True}"
+    );
+  }
+
+  #[test]
+  fn implies_two_vars() {
+    assert_eq!(
+      interpret("BooleanTable[Implies[p, q], {p, q}]").unwrap(),
+      "{True, False, True, True}"
+    );
+  }
+
+  #[test]
+  fn xor_two_vars() {
+    assert_eq!(
+      interpret("BooleanTable[Xor[p, q], {p, q}]").unwrap(),
+      "{False, True, True, False}"
+    );
+  }
+
+  #[test]
+  fn equivalent_two_vars() {
+    assert_eq!(
+      interpret("BooleanTable[Equivalent[p, q], {p, q}]").unwrap(),
+      "{True, False, False, True}"
+    );
+  }
+
+  #[test]
+  fn and_three_vars() {
+    assert_eq!(
+      interpret("BooleanTable[p && q && r, {p, q, r}]").unwrap(),
+      "{True, False, False, False, False, False, False, False}"
+    );
+  }
+
+  #[test]
+  fn constant_true() {
+    assert_eq!(
+      interpret("BooleanTable[True, {p, q}]").unwrap(),
+      "{True, True, True, True}"
+    );
+  }
+}
+
+mod framed {
+  use super::*;
+
+  #[test]
+  fn framed_symbolic() {
+    assert_eq!(interpret("Framed[x]").unwrap(), "Framed[x]");
+  }
+
+  #[test]
+  fn framed_evaluates_args() {
+    assert_eq!(interpret("Framed[1 + 2]").unwrap(), "Framed[3]");
+  }
+
+  #[test]
+  fn nestlist_framed() {
+    assert_eq!(
+      interpret("NestList[Framed, x, 3]").unwrap(),
+      "{x, Framed[x], Framed[Framed[x]], Framed[Framed[Framed[x]]]}"
+    );
+  }
+}
+
 mod plus_rendering {
   use super::*;
 
