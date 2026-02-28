@@ -180,6 +180,15 @@ impl WoxiStudio {
 
     let cell_editors = Self::editors_from_notebook(&notebook);
 
+    let task = if let Some(path) = load_last_file_path() {
+      Task::perform(
+        open_file_path(path),
+        Message::FileOpened,
+      )
+    } else {
+      Task::none()
+    };
+
     (
       Self {
         file_path: None,
@@ -192,7 +201,7 @@ impl WoxiStudio {
         theme: Theme::Dark,
         new_cell_style: CellStyle::Input,
       },
-      Task::none(),
+      task,
     )
   }
 
@@ -363,6 +372,7 @@ impl WoxiStudio {
                   "Opened: {}",
                   path.display()
                 );
+                save_last_file_path(&path);
                 self.file_path = Some(path);
                 self.is_dirty = false;
                 self.focused_cell =
@@ -423,6 +433,7 @@ impl WoxiStudio {
           Ok(path) => {
             self.status =
               format!("Saved: {}", path.display());
+            save_last_file_path(&path);
             self.file_path = Some(path);
             self.is_dirty = false;
           }
@@ -1373,12 +1384,51 @@ const CELL_STYLES: &[CellStyle] = &[
 ];
 
 
+// ── State persistence ────────────────────────────────────────────────
+
+fn state_dir() -> Option<PathBuf> {
+  let home = std::env::var("HOME").ok()?;
+  Some(
+    PathBuf::from(home)
+      .join(".config")
+      .join("woxi-studio"),
+  )
+}
+
+fn save_last_file_path(path: &std::path::Path) {
+  if let Some(dir) = state_dir() {
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(
+      dir.join("last_file"),
+      path.display().to_string(),
+    );
+  }
+}
+
+fn load_last_file_path() -> Option<PathBuf> {
+  let dir = state_dir()?;
+  let content =
+    std::fs::read_to_string(dir.join("last_file")).ok()?;
+  let path = PathBuf::from(content.trim());
+  if path.exists() { Some(path) } else { None }
+}
+
 // ── File I/O ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 enum FileError {
   DialogClosed,
   IoError(std::io::ErrorKind),
+}
+
+async fn open_file_path(
+  path: PathBuf,
+) -> Result<(PathBuf, Arc<String>), FileError> {
+  let contents = tokio::fs::read_to_string(&path)
+    .await
+    .map(Arc::new)
+    .map_err(|e| FileError::IoError(e.kind()))?;
+  Ok((path, contents))
 }
 
 async fn open_file(
