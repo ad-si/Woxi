@@ -2861,13 +2861,13 @@ Interrupt,Interrupts evaluation,✅,effectful,2,3972
 IntersectedEntityClass,,,,12.1,
 IntersectingQ,,,,10,2650
 Intersection,Returns sorted intersection of lists,✅,pure,1,553
-Interval,,,,3,236
-IntervalIntersection,,,,3,2179
+Interval,Represents a closed real interval with auto-merged sub-intervals,✅,pure,3,236
+IntervalIntersection,Computes the intersection of intervals,✅,pure,3,2179
 IntervalMarkers,,,,12,2587
 IntervalMarkersStyle,,,,12,2632
-IntervalMemberQ,,,,3,605
+IntervalMemberQ,Tests if a point or sub-interval is contained in an interval,✅,pure,3,605
 IntervalSlider,,,,10,2389
-IntervalUnion,,,,3,2786
+IntervalUnion,Computes the union of intervals,✅,pure,3,2786
 Inverse,Computes the inverse of a matrix,✅,pure,1,214
 InverseBetaRegularized,,,,3,4006
 InverseBilateralLaplaceTransform,,,,12.3,

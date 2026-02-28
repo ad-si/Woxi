@@ -15,6 +15,12 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Handle Interval arithmetic
+  if let Some(result) = crate::functions::interval_ast::try_interval_plus(args)
+  {
+    return result;
+  }
+
   // Flatten nested Plus arguments (recursive to handle deeply nested Plus)
   let mut flat_args: Vec<Expr> = Vec::new();
   let mut stack: Vec<&Expr> = args.iter().rev().collect();
@@ -1278,6 +1284,12 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Handle Interval arithmetic
+  if let Some(result) = crate::functions::interval_ast::try_interval_times(args)
+  {
+    return result;
+  }
+
   // Flatten nested Times arguments
   let mut flat_args: Vec<Expr> = Vec::new();
   for arg in args {
@@ -1750,6 +1762,13 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // Handle Interval division
+  if let Some(result) =
+    crate::functions::interval_ast::try_interval_divide(a, b)
+  {
+    return result;
+  }
+
   // For two integers, keep as Rational (fraction)
   if let (Expr::Integer(numer), Expr::Integer(denom)) = (a, b) {
     if *denom == 0 {
@@ -2018,6 +2037,13 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // Handle Quantity^n
   if let Some(result) =
     crate::functions::quantity_ast::try_quantity_power(base, exp)
+  {
+    return result;
+  }
+
+  // Handle Interval^n
+  if let Some(result) =
+    crate::functions::interval_ast::try_interval_power(base, exp)
   {
     return result;
   }
@@ -2442,6 +2468,11 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("-Infinity".to_string()));
   }
 
+  // Handle Interval in Max
+  if let Some(result) = crate::functions::interval_ast::try_interval_max(args) {
+    return result;
+  }
+
   // Flatten all nested lists
   let items = flatten_lists(args);
   if items.is_empty() {
@@ -2498,6 +2529,11 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // Handle Interval in Min
+  if let Some(result) = crate::functions::interval_ast::try_interval_min(args) {
+    return result;
   }
 
   // Flatten all nested lists

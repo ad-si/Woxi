@@ -150,6 +150,7 @@ mod interpreter_tests {
   mod functions;
   mod graphics;
   mod image;
+  mod interval;
   mod io;
   mod linear_algebra;
   mod list;

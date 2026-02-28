@@ -20,6 +20,7 @@ mod complex_and_special;
 mod datetime_functions;
 mod evaluation_control;
 mod image_functions;
+mod interval_functions;
 mod io_functions;
 mod linear_algebra_functions;
 mod list_operations;
@@ -39,6 +40,7 @@ pub use complex_and_special::*;
 pub use datetime_functions::*;
 pub use evaluation_control::*;
 pub use image_functions::*;
+pub use interval_functions::*;
 pub use io_functions::*;
 pub use linear_algebra_functions::*;
 pub use list_operations::*;
@@ -304,6 +306,11 @@ pub fn evaluate_function_call_ast_inner(
   }
   if let Some(result) =
     quantity_functions::dispatch_quantity_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    interval_functions::dispatch_interval_functions(name, args)
   {
     return result;
   }
