@@ -5,10 +5,13 @@
 An interpreter for the Wolfram Language powered by Rust.
 
 
+![Collage of apps using Woxi](images/2026-02-28T1201_collage.png)
+
+
 ## Features
 
 The initial focus is to implement a subset of the Wolfram Language
-so that it can be used for CLI scripting and Jupyter notebooks.
+so that it can be used for CLI scripting and notebooks.
 For example:
 
 ```wolfram
