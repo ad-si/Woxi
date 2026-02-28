@@ -2597,6 +2597,12 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           svg_escape(&crate::functions::string_ast::expr_to_fortran(&args[0]))
         }
 
+        // Style[content, directives...] → render content only
+        "Style" if !args.is_empty() => expr_to_svg_markup(&args[0]),
+
+        // HoldForm[expr] → render content
+        "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
+
         // General FunctionCall: name[arg1, arg2, ...]
         _ => {
           let parts: Vec<String> =
@@ -2608,6 +2614,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           }
         }
       }
+    }
+
+    // ── Expr::Image → placeholder text (actual embedding happens in grid) ──
+    Expr::Image { width, height, .. } => {
+      format!("-Image ({}×{})-", width, height)
     }
 
     // ── Everything else → fallback to expr_to_output ──
@@ -2793,6 +2804,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           + 1.0
           + estimate_unit_abbrev_width(&args[1])
       }
+      // Style[content, ...] → width of content
+      "Style" if !args.is_empty() => estimate_display_width(&args[0]),
+      // HoldForm[expr] → width of content
+      "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
       _ => {
         let args_width: f64 = args.iter().map(estimate_display_width).sum();
         let seps = if args.len() > 1 {
@@ -2803,6 +2818,9 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         name.len() as f64 + 2.0 + args_width + seps
       }
     },
+
+    // Expr::Image → width in character units (pixel width / char_width)
+    Expr::Image { width, .. } => *width as f64 / 8.4,
 
     // Fallback
     _ => expr_to_output(expr).len() as f64,
@@ -2973,6 +2991,14 @@ pub fn grid_svg_with_parens(args: &[Expr]) -> Result<String, InterpreterError> {
   grid_svg_internal(args, &[], true)
 }
 
+/// Render a grid and return the raw SVG string.
+pub fn grid_svg_with_gaps(
+  args: &[Expr],
+  group_gaps: &[usize],
+) -> Result<String, InterpreterError> {
+  grid_svg_internal(args, group_gaps, false)
+}
+
 /// Render a grid with optional extra vertical gaps before certain rows.
 /// `group_gaps` lists row indices that should have extra spacing before them.
 pub fn grid_ast_with_gaps(
@@ -2989,6 +3015,58 @@ fn grid_ast_internal(
 ) -> Result<Expr, InterpreterError> {
   let svg = grid_svg_internal(args, group_gaps, parens)?;
   Ok(crate::graphics_result(svg))
+}
+
+/// Extract style info from a Style[content, directives...] cell.
+/// Returns (content, font_size, font_weight, font_style).
+fn extract_cell_style(cell: &Expr) -> (&Expr, Option<f64>, &str, &str) {
+  if let Expr::FunctionCall { name, args } = cell
+    && name == "Style"
+    && !args.is_empty()
+  {
+    let content = &args[0];
+    let mut fs: Option<f64> = None;
+    let mut fw = "normal";
+    let mut fst = "normal";
+    for directive in &args[1..] {
+      match directive {
+        Expr::Identifier(s) if s == "Bold" => fw = "bold",
+        Expr::Identifier(s) if s == "Italic" => fst = "italic",
+        Expr::Integer(n) => fs = Some(*n as f64),
+        Expr::Real(f) => fs = Some(*f),
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => {
+          if let Expr::Identifier(k) = pattern.as_ref()
+            && k == "FontSize"
+          {
+            match replacement.as_ref() {
+              Expr::Integer(n) => fs = Some(*n as f64),
+              Expr::Real(f) => fs = Some(*f),
+              _ => {}
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+    return (content, fs, fw, fst);
+  }
+  (cell, None, "normal", "normal")
+}
+
+/// Check if a cell is or contains an Expr::Image (unwrapping Style).
+fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
+  match cell {
+    Expr::Image { .. } => Some(cell),
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      unwrap_to_image(&args[0])
+    }
+    _ => None,
+  }
 }
 
 fn grid_svg_internal(
@@ -3068,15 +3146,37 @@ fn grid_svg_internal(
     }
   }
 
-  // Compute per-row heights (taller when a row contains a fraction)
+  // Compute per-row heights (taller for fractions or images)
   let row_heights: Vec<f64> = rows
     .iter()
     .map(|row| {
-      if row.iter().any(has_fraction) {
+      let mut max_h = if row.iter().any(has_fraction) {
         frac_row_height
       } else {
         base_row_height
+      };
+      // Check for Image cells — scale to fit column width, compute height
+      for (j, cell) in row.iter().enumerate() {
+        if let Some(img) = unwrap_to_image(cell)
+          && let Expr::Image {
+            width: iw,
+            height: ih,
+            ..
+          } = img
+        {
+          let col_w = if j < col_widths.len() {
+            col_widths[j] - pad_x
+          } else {
+            200.0
+          };
+          let scale = col_w / (*iw as f64);
+          let img_h = (*ih as f64) * scale + pad_y;
+          if img_h > max_h {
+            max_h = img_h;
+          }
+        }
       }
+      max_h
     })
     .collect();
 
@@ -3123,7 +3223,7 @@ fn grid_svg_internal(
     ));
   }
 
-  // Draw cell text (shifted right by paren_margin when parens are enabled)
+  // Draw cell contents (shifted right by paren_margin when parens are enabled)
   let mut y_offset: f64 = 0.0;
   for (i, row) in rows.iter().enumerate() {
     // Add group gap before this row if it's a group boundary
@@ -3136,10 +3236,62 @@ fn grid_svg_internal(
       let col_w = col_widths[j];
       let cx = x_offset + col_w / 2.0;
       let cy = y_offset + rh / 2.0;
-      svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
-        expr_to_svg_markup(cell)
-      ));
+
+      // Check if the cell (possibly inside Style) is an Image
+      if let Some(img) = unwrap_to_image(cell) {
+        if let Expr::Image {
+          width: iw,
+          height: ih,
+          channels,
+          data,
+          ..
+        } = img
+        {
+          let avail_w = col_w - pad_x;
+          let scale = avail_w / (*iw as f64);
+          let draw_w = avail_w;
+          let draw_h = (*ih as f64) * scale;
+          let ix = x_offset + pad_x / 2.0;
+          let iy = y_offset + (rh - draw_h) / 2.0;
+
+          // Encode image as base64 PNG
+          let dyn_img = crate::functions::image_ast::expr_to_dynamic_image(
+            *iw, *ih, *channels, data,
+          );
+          let mut buf = Vec::new();
+          dyn_img
+            .write_to(
+              &mut std::io::Cursor::new(&mut buf),
+              image::ImageFormat::Png,
+            )
+            .expect("PNG encoding failed");
+          let b64 = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &buf,
+          );
+          svg.push_str(&format!(
+            "<image x=\"{ix:.1}\" y=\"{iy:.1}\" width=\"{draw_w:.1}\" height=\"{draw_h:.1}\" href=\"data:image/png;base64,{b64}\" preserveAspectRatio=\"xMidYMid meet\"/>\n"
+          ));
+        }
+      } else {
+        // Text cell — extract optional Style attributes
+        let (content, cell_fs, cell_fw, cell_fst) = extract_cell_style(cell);
+        let fs = cell_fs.unwrap_or(font_size);
+        let fw_attr = if cell_fw != "normal" {
+          format!(" font-weight=\"{}\"", cell_fw)
+        } else {
+          String::new()
+        };
+        let fst_attr = if cell_fst != "normal" {
+          format!(" font-style=\"{}\"", cell_fst)
+        } else {
+          String::new()
+        };
+        svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          expr_to_svg_markup(content)
+        ));
+      }
       x_offset += col_w;
     }
     y_offset += rh;

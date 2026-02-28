@@ -119,10 +119,7 @@ pub fn parse_notebook(input: &str) -> Result<Notebook, String> {
 }
 
 /// Strip `Name[{ ... }]` and return the inner content.
-fn strip_wrapper<'a>(
-  s: &'a str,
-  name: &str,
-) -> Option<&'a str> {
+fn strip_wrapper<'a>(s: &'a str, name: &str) -> Option<&'a str> {
   let s = s.trim();
   let rest = s.strip_prefix(name)?;
   let rest = rest.trim();
@@ -238,11 +235,8 @@ fn parse_single_cell(s: &str) -> Result<Cell, String> {
   }
 
   let style_str = parts.last().unwrap().trim();
-  let style_str = style_str
-    .trim_matches('"')
-    .trim();
-  let style =
-    CellStyle::from_str(style_str).unwrap_or(CellStyle::Text);
+  let style_str = style_str.trim_matches('"').trim();
+  let style = CellStyle::from_str(style_str).unwrap_or(CellStyle::Text);
 
   // Join all parts except the last as the content
   let content_parts = &parts[..parts.len() - 1];
@@ -259,18 +253,14 @@ fn extract_cell_content(s: &str) -> String {
   // Handle BoxData[RowBox[{...}]]  or BoxData["..."]
   if s.starts_with("BoxData[") {
     let inner = &s[8..];
-    let inner = inner
-      .strip_suffix(']')
-      .unwrap_or(inner);
+    let inner = inner.strip_suffix(']').unwrap_or(inner);
     return extract_cell_content(inner);
   }
 
   // Handle RowBox[{"...", ...}]
   if s.starts_with("RowBox[") {
     let inner = &s[7..];
-    let inner = inner
-      .strip_suffix(']')
-      .unwrap_or(inner);
+    let inner = inner.strip_suffix(']').unwrap_or(inner);
     return extract_rowbox_content(inner);
   }
 
@@ -289,8 +279,7 @@ fn extract_rowbox_content(s: &str) -> String {
   let mut result = String::new();
   for part in parts {
     let part = part.trim();
-    if part.starts_with('"') && part.ends_with('"') && part.len() >= 2
-    {
+    if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
       result.push_str(&unescape_string(&part[1..part.len() - 1]));
     } else if part.starts_with("RowBox[") {
       result.push_str(&extract_rowbox_content(
@@ -354,9 +343,7 @@ fn unescape_string(s: &str) -> String {
 
 /// Find the matching `}` for content that starts right after `{`.
 /// Returns (content_inside_braces, remainder_after_brace).
-fn find_matching_brace(
-  s: &str,
-) -> Result<(&str, &str), String> {
+fn find_matching_brace(s: &str) -> Result<(&str, &str), String> {
   let mut depth = 1i32;
   let mut in_string = false;
   let mut prev_backslash = false;
@@ -474,11 +461,7 @@ impl fmt::Display for CellGroup {
       write!(f, "{cell}")?;
     }
     writeln!(f)?;
-    write!(
-      f,
-      "}}, {}]]",
-      if self.open { "Open" } else { "Closed" }
-    )
+    write!(f, "}}, {}]]", if self.open { "Open" } else { "Closed" })
   }
 }
 
@@ -487,8 +470,7 @@ impl fmt::Display for Cell {
     match self.style {
       CellStyle::Input | CellStyle::Code => {
         // For input cells, wrap content in BoxData
-        let lines: Vec<&str> =
-          self.content.lines().collect();
+        let lines: Vec<&str> = self.content.lines().collect();
         if lines.len() <= 1 {
           write!(
             f,
@@ -545,10 +527,9 @@ impl Notebook {
   /// Add a cell group (e.g. input + output pair).
   #[allow(dead_code)]
   pub fn push_group(&mut self, cells: Vec<Cell>) {
-    self.cells.push(CellEntry::Group(CellGroup {
-      cells,
-      open: true,
-    }));
+    self
+      .cells
+      .push(CellEntry::Group(CellGroup { cells, open: true }));
   }
 
   /// Flatten all cells into a flat ordered list with their group
@@ -674,9 +655,7 @@ fn jupyter_code_cell(
   let mut out = String::new();
   out.push_str("    {\n");
   out.push_str("      \"cell_type\": \"code\",\n");
-  out.push_str(&format!(
-    "      \"execution_count\": {exec_count},\n"
-  ));
+  out.push_str(&format!("      \"execution_count\": {exec_count},\n"));
   out.push_str("      \"metadata\": {},\n");
   out.push_str(&format!(
     "      \"source\": {},\n",
@@ -692,9 +671,7 @@ fn jupyter_code_cell(
       let mut o = String::new();
       if cell.style == CellStyle::Print {
         o.push_str("        {\n");
-        o.push_str(
-          "          \"output_type\": \"stream\",\n",
-        );
+        o.push_str("          \"output_type\": \"stream\",\n");
         o.push_str("          \"name\": \"stdout\",\n");
         o.push_str(&format!(
           "          \"text\": {}\n",
@@ -703,12 +680,8 @@ fn jupyter_code_cell(
         o.push_str("        }");
       } else {
         o.push_str("        {\n");
-        o.push_str(
-          "          \"output_type\": \"execute_result\",\n",
-        );
-        o.push_str(&format!(
-          "          \"execution_count\": {exec_count},\n"
-        ));
+        o.push_str("          \"output_type\": \"execute_result\",\n");
+        o.push_str(&format!("          \"execution_count\": {exec_count},\n"));
         o.push_str("          \"data\": {\n");
         o.push_str(&format!(
           "            \"text/plain\": {}\n",
@@ -736,52 +709,28 @@ impl Notebook {
     for (_, cell) in self.flat_cells() {
       match cell.style {
         CellStyle::Title => {
-          out.push_str(&format!(
-            "# {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("# {}\n\n", cell.content));
         }
         CellStyle::Subtitle => {
-          out.push_str(&format!(
-            "*{}*\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("*{}*\n\n", cell.content));
         }
         CellStyle::Section => {
-          out.push_str(&format!(
-            "## {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("## {}\n\n", cell.content));
         }
         CellStyle::Subsection => {
-          out.push_str(&format!(
-            "### {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("### {}\n\n", cell.content));
         }
         CellStyle::Subsubsection => {
-          out.push_str(&format!(
-            "#### {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("#### {}\n\n", cell.content));
         }
         CellStyle::Text => {
-          out.push_str(&format!(
-            "{}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("{}\n\n", cell.content));
         }
         CellStyle::Input | CellStyle::Code => {
-          out.push_str(&format!(
-            "```wolfram\n{}\n```\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("```wolfram\n{}\n```\n\n", cell.content));
         }
         CellStyle::Output | CellStyle::Print => {
-          out.push_str(&format!(
-            "```\n{}\n```\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("```\n{}\n```\n\n", cell.content));
         }
       }
     }
@@ -797,17 +746,11 @@ impl Notebook {
     out.push_str("\\usepackage[utf8]{inputenc}\n\n");
 
     // Extract first title for \title{} / \maketitle
-    let has_title = flat
-      .iter()
-      .any(|(_, c)| c.style == CellStyle::Title);
-    if let Some((_, cell)) = flat
-      .iter()
-      .find(|(_, c)| c.style == CellStyle::Title)
+    let has_title = flat.iter().any(|(_, c)| c.style == CellStyle::Title);
+    if let Some((_, cell)) =
+      flat.iter().find(|(_, c)| c.style == CellStyle::Title)
     {
-      out.push_str(&format!(
-        "\\title{{{}}}\n",
-        escape_latex(&cell.content)
-      ));
+      out.push_str(&format!("\\title{{{}}}\n", escape_latex(&cell.content)));
       out.push_str("\\date{}\n");
     }
 
@@ -881,52 +824,28 @@ impl Notebook {
     for (_, cell) in self.flat_cells() {
       match cell.style {
         CellStyle::Title => {
-          out.push_str(&format!(
-            "= {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("= {}\n\n", cell.content));
         }
         CellStyle::Subtitle => {
-          out.push_str(&format!(
-            "_{}_\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("_{}_\n\n", cell.content));
         }
         CellStyle::Section => {
-          out.push_str(&format!(
-            "== {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("== {}\n\n", cell.content));
         }
         CellStyle::Subsection => {
-          out.push_str(&format!(
-            "=== {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("=== {}\n\n", cell.content));
         }
         CellStyle::Subsubsection => {
-          out.push_str(&format!(
-            "==== {}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("==== {}\n\n", cell.content));
         }
         CellStyle::Text => {
-          out.push_str(&format!(
-            "{}\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("{}\n\n", cell.content));
         }
         CellStyle::Input | CellStyle::Code => {
-          out.push_str(&format!(
-            "```wl\n{}\n```\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("```wl\n{}\n```\n\n", cell.content));
         }
         CellStyle::Output | CellStyle::Print => {
-          out.push_str(&format!(
-            "```\n{}\n```\n\n",
-            cell.content
-          ));
+          out.push_str(&format!("```\n{}\n```\n\n", cell.content));
         }
       }
     }
@@ -942,25 +861,17 @@ impl Notebook {
       match entry {
         CellEntry::Single(cell) => match cell.style {
           CellStyle::Input | CellStyle::Code => {
-            cells_json.push(jupyter_code_cell(
-              &cell.content,
-              &[],
-              exec_count,
-            ));
+            cells_json.push(jupyter_code_cell(&cell.content, &[], exec_count));
             exec_count += 1;
           }
           CellStyle::Output | CellStyle::Print => {
-            cells_json.push(jupyter_markdown_cell(
-              &format!(
-                "```\n{}\n```",
-                cell.content
-              ),
-            ));
+            cells_json.push(jupyter_markdown_cell(&format!(
+              "```\n{}\n```",
+              cell.content
+            )));
           }
           _ => {
-            cells_json.push(jupyter_markdown_cell(
-              &heading_markdown(cell),
-            ));
+            cells_json.push(jupyter_markdown_cell(&heading_markdown(cell)));
           }
         },
         CellEntry::Group(group) => {
@@ -968,14 +879,11 @@ impl Notebook {
             Some(c) => c,
             None => continue,
           };
-          if first.style == CellStyle::Input
-            || first.style == CellStyle::Code
-          {
+          if first.style == CellStyle::Input || first.style == CellStyle::Code {
             let outputs: Vec<&Cell> = group.cells[1..]
               .iter()
               .filter(|c| {
-                c.style == CellStyle::Output
-                  || c.style == CellStyle::Print
+                c.style == CellStyle::Output || c.style == CellStyle::Print
               })
               .collect();
             cells_json.push(jupyter_code_cell(
@@ -996,11 +904,8 @@ impl Notebook {
                   exec_count += 1;
                 }
                 _ => {
-                  cells_json.push(
-                    jupyter_markdown_cell(
-                      &heading_markdown(cell),
-                    ),
-                  );
+                  cells_json
+                    .push(jupyter_markdown_cell(&heading_markdown(cell)));
                 }
               }
             }
@@ -1015,12 +920,8 @@ impl Notebook {
     out.push_str("  \"nbformat_minor\": 5,\n");
     out.push_str("  \"metadata\": {\n");
     out.push_str("    \"kernelspec\": {\n");
-    out.push_str(
-      "      \"display_name\": \"Wolfram Language\",\n",
-    );
-    out.push_str(
-      "      \"language\": \"wolfram\",\n",
-    );
+    out.push_str("      \"display_name\": \"Wolfram Language\",\n");
+    out.push_str("      \"language\": \"wolfram\",\n");
     out.push_str("      \"name\": \"wolfram\"\n");
     out.push_str("    }\n");
     out.push_str("  },\n");
@@ -1138,10 +1039,7 @@ Cell[BoxData["5"], "Output"]
     let mut nb = Notebook::new();
     nb.push_cell(Cell::new(CellStyle::Title, "My Notebook"));
     nb.push_cell(Cell::new(CellStyle::Text, "Some text"));
-    nb.push_cell(Cell::new(
-      CellStyle::Section,
-      "Introduction",
-    ));
+    nb.push_cell(Cell::new(CellStyle::Section, "Introduction"));
     nb.push_group(vec![
       Cell::new(CellStyle::Input, "1 + 1"),
       Cell::new(CellStyle::Output, "2"),
@@ -1159,10 +1057,7 @@ Cell[BoxData["5"], "Output"]
   fn test_export_latex() {
     let mut nb = Notebook::new();
     nb.push_cell(Cell::new(CellStyle::Title, "My Notebook"));
-    nb.push_cell(Cell::new(
-      CellStyle::Section,
-      "Introduction",
-    ));
+    nb.push_cell(Cell::new(CellStyle::Section, "Introduction"));
     nb.push_cell(Cell::new(CellStyle::Text, "Some text"));
     nb.push_group(vec![
       Cell::new(CellStyle::Input, "1 + 1"),
@@ -1175,19 +1070,14 @@ Cell[BoxData["5"], "Output"]
     assert!(tex.contains("\\maketitle"));
     assert!(tex.contains("\\section{Introduction}"));
     assert!(tex.contains("Some text"));
-    assert!(tex
-      .contains("\\begin{verbatim}\n1 + 1\n\\end{verbatim}"));
-    assert!(tex
-      .contains("\\begin{verbatim}\n2\n\\end{verbatim}"));
+    assert!(tex.contains("\\begin{verbatim}\n1 + 1\n\\end{verbatim}"));
+    assert!(tex.contains("\\begin{verbatim}\n2\n\\end{verbatim}"));
   }
 
   #[test]
   fn test_export_latex_special_chars() {
     let mut nb = Notebook::new();
-    nb.push_cell(Cell::new(
-      CellStyle::Text,
-      "Price is $10 & 50% off",
-    ));
+    nb.push_cell(Cell::new(CellStyle::Text, "Price is $10 & 50% off"));
 
     let tex = nb.to_latex();
     assert!(tex.contains("\\$"));
@@ -1199,10 +1089,7 @@ Cell[BoxData["5"], "Output"]
   fn test_export_typst() {
     let mut nb = Notebook::new();
     nb.push_cell(Cell::new(CellStyle::Title, "My Notebook"));
-    nb.push_cell(Cell::new(
-      CellStyle::Section,
-      "Introduction",
-    ));
+    nb.push_cell(Cell::new(CellStyle::Section, "Introduction"));
     nb.push_cell(Cell::new(CellStyle::Text, "Some text"));
     nb.push_group(vec![
       Cell::new(CellStyle::Input, "1 + 1"),
@@ -1255,10 +1142,7 @@ Cell[BoxData["5"], "Output"]
     nb.push_cell(Cell::new(CellStyle::Subtitle, "ST"));
     nb.push_cell(Cell::new(CellStyle::Section, "S"));
     nb.push_cell(Cell::new(CellStyle::Subsection, "SS"));
-    nb.push_cell(Cell::new(
-      CellStyle::Subsubsection,
-      "SSS",
-    ));
+    nb.push_cell(Cell::new(CellStyle::Subsubsection, "SSS"));
 
     let md = nb.to_markdown();
     assert!(md.contains("# T"));
@@ -1281,9 +1165,6 @@ Cell[BoxData["5"], "Output"]
   fn test_json_source_lines() {
     assert_eq!(json_source_lines(""), "[\"\"]");
     assert_eq!(json_source_lines("hello"), "[\"hello\"]");
-    assert_eq!(
-      json_source_lines("a\nb"),
-      "[\"a\\n\", \"b\"]"
-    );
+    assert_eq!(json_source_lines("a\nb"), "[\"a\\n\", \"b\"]");
   }
 }

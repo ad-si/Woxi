@@ -3,31 +3,24 @@ mod highlighter;
 mod notebook;
 
 use iced::keyboard;
-use iced::widget::{
-  button, column, container, pick_list, row, rule, scrollable,
-  space, svg, text, text_editor, Column,
-};
-use iced::widget::operation::focus_next;
-use iced::{
-  Background, Border, Center, Color, Element, Fill, Font,
-  Subscription, Task, Theme,
-};
 use iced::overlay::menu;
-
-use notebook::{
-  Cell, CellEntry, CellGroup, CellStyle, Notebook,
+use iced::widget::operation::focus_next;
+use iced::widget::{
+  Column, button, column, container, pick_list, row, rule, scrollable, space,
+  svg, text, text_editor,
 };
+use iced::{
+  Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
+  Theme,
+};
+
+use notebook::{Cell, CellEntry, CellGroup, CellStyle, Notebook};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 fn main() -> iced::Result {
-  iced::application(
-    WoxiStudio::new,
-    WoxiStudio::update,
-    WoxiStudio::view,
-  )
-  .title(|state: &WoxiStudio| {
-    match &state.file_path {
+  iced::application(WoxiStudio::new, WoxiStudio::update, WoxiStudio::view)
+    .title(|state: &WoxiStudio| match &state.file_path {
       Some(path) => {
         let name = path
           .file_name()
@@ -36,12 +29,11 @@ fn main() -> iced::Result {
         format!("Woxi Studio | {name}")
       }
       None => String::from("Woxi Studio"),
-    }
-  })
-  .subscription(WoxiStudio::subscription)
-  .theme(|state: &WoxiStudio| state.theme.clone())
-  .default_font(Font::MONOSPACE)
-  .run()
+    })
+    .subscription(WoxiStudio::subscription)
+    .theme(|state: &WoxiStudio| state.theme.clone())
+    .default_font(Font::MONOSPACE)
+    .run()
 }
 
 // ── Application State ───────────────────────────────────────────────
@@ -146,10 +138,7 @@ enum ThemeChoice {
 }
 
 impl std::fmt::Display for ThemeChoice {
-  fn fmt(
-    &self,
-    f: &mut std::fmt::Formatter<'_>,
-  ) -> std::fmt::Result {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ThemeChoice::Auto => write!(f, "Auto"),
       ThemeChoice::Light => write!(f, "Light"),
@@ -159,11 +148,8 @@ impl std::fmt::Display for ThemeChoice {
 }
 
 impl ThemeChoice {
-  const ALL: &'static [ThemeChoice] = &[
-    ThemeChoice::Auto,
-    ThemeChoice::Light,
-    ThemeChoice::Dark,
-  ];
+  const ALL: &'static [ThemeChoice] =
+    &[ThemeChoice::Auto, ThemeChoice::Light, ThemeChoice::Dark];
 }
 
 /// Detect the OS theme, falling back to Dark.
@@ -184,10 +170,7 @@ enum ExportFormat {
 }
 
 impl std::fmt::Display for ExportFormat {
-  fn fmt(
-    &self,
-    f: &mut std::fmt::Formatter<'_>,
-  ) -> std::fmt::Result {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       ExportFormat::MathematicaNotebook => {
         write!(f, "Mathematica Notebook")
@@ -217,19 +200,13 @@ impl ExportFormat {
 impl WoxiStudio {
   fn new() -> (Self, Task<Message>) {
     let mut notebook = Notebook::new();
-    notebook.push_cell(Cell::new(
-      CellStyle::Title,
-      "Untitled Notebook",
-    ));
+    notebook.push_cell(Cell::new(CellStyle::Title, "Untitled Notebook"));
     notebook.push_cell(Cell::new(CellStyle::Input, ""));
 
     let cell_editors = Self::editors_from_notebook(&notebook);
 
     let task = if let Some(path) = load_last_file_path() {
-      Task::perform(
-        open_file_path(path),
-        Message::FileOpened,
-      )
+      Task::perform(open_file_path(path), Message::FileOpened)
     } else {
       Task::none()
     };
@@ -256,24 +233,17 @@ impl WoxiStudio {
   /// Build editor state from a notebook.
   /// Output/Print cells within a group are attached to the
   /// preceding Input/Code cell rather than shown separately.
-  fn editors_from_notebook(
-    notebook: &Notebook,
-  ) -> Vec<CellEditor> {
+  fn editors_from_notebook(notebook: &Notebook) -> Vec<CellEditor> {
     let mut editors = Vec::new();
 
     for entry in &notebook.cells {
       match entry {
         CellEntry::Single(cell) => {
-          if matches!(
-            cell.style,
-            CellStyle::Output | CellStyle::Print
-          ) {
+          if matches!(cell.style, CellStyle::Output | CellStyle::Print) {
             continue;
           }
           editors.push(CellEditor {
-            content: text_editor::Content::with_text(
-              &cell.content,
-            ),
+            content: text_editor::Content::with_text(&cell.content),
             style: cell.style,
             output: None,
             stdout: None,
@@ -287,10 +257,7 @@ impl WoxiStudio {
           let mut i = 0;
           while i < cells.len() {
             let cell = &cells[i];
-            if matches!(
-              cell.style,
-              CellStyle::Input | CellStyle::Code
-            ) {
+            if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
               // Collect following Output/Print cells
               let mut output = None;
               let mut stdout = None;
@@ -303,21 +270,17 @@ impl WoxiStudio {
               {
                 match cells[j].style {
                   CellStyle::Output => {
-                    output =
-                      Some(cells[j].content.clone());
+                    output = Some(cells[j].content.clone());
                   }
                   CellStyle::Print => {
-                    stdout =
-                      Some(cells[j].content.clone());
+                    stdout = Some(cells[j].content.clone());
                   }
                   _ => {}
                 }
                 j += 1;
               }
               editors.push(CellEditor {
-                content: text_editor::Content::with_text(
-                  &cell.content,
-                ),
+                content: text_editor::Content::with_text(&cell.content),
                 style: cell.style,
                 output,
                 stdout,
@@ -326,17 +289,13 @@ impl WoxiStudio {
                 redo_stack: Vec::new(),
               });
               i = j;
-            } else if matches!(
-              cell.style,
-              CellStyle::Output | CellStyle::Print
-            ) {
+            } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
+            {
               // Skip standalone output/print in groups
               i += 1;
             } else {
               editors.push(CellEditor {
-                content: text_editor::Content::with_text(
-                  &cell.content,
-                ),
+                content: text_editor::Content::with_text(&cell.content),
                 style: cell.style,
                 output: None,
                 stdout: None,
@@ -360,15 +319,13 @@ impl WoxiStudio {
     let mut i = 0;
     while i < self.cell_editors.len() {
       let editor = &self.cell_editors[i];
-      let content =
-        editor.content.text().trim_end().to_string();
+      let content = editor.content.text().trim_end().to_string();
       let cell = Cell::new(editor.style, content);
 
       // Group input cells with their output
       if editor.style == CellStyle::Input {
         if let Some(ref output) = editor.output {
-          let output_cell =
-            Cell::new(CellStyle::Output, output.clone());
+          let output_cell = Cell::new(CellStyle::Output, output.clone());
           cells.push(CellEntry::Group(CellGroup {
             cells: vec![cell, output_cell],
             open: true,
@@ -390,14 +347,11 @@ impl WoxiStudio {
       Message::NewNotebook => {
         self.file_path = None;
         self.notebook = Notebook::new();
-        self.notebook.push_cell(Cell::new(
-          CellStyle::Title,
-          "Untitled Notebook",
-        ));
-        self.notebook
-          .push_cell(Cell::new(CellStyle::Input, ""));
-        self.cell_editors =
-          Self::editors_from_notebook(&self.notebook);
+        self
+          .notebook
+          .push_cell(Cell::new(CellStyle::Title, "Untitled Notebook"));
+        self.notebook.push_cell(Cell::new(CellStyle::Input, ""));
+        self.cell_editors = Self::editors_from_notebook(&self.notebook);
         self.focused_cell = Some(1);
         self.is_dirty = false;
         self.status = String::from("New notebook created");
@@ -416,38 +370,29 @@ impl WoxiStudio {
       Message::FileOpened(result) => {
         self.is_loading = false;
         match result {
-          Ok((path, contents)) => {
-            match notebook::parse_notebook(&contents) {
-              Ok(nb) => {
-                self.cell_editors =
-                  Self::editors_from_notebook(&nb);
-                self.notebook = nb;
-                self.status = format!(
-                  "Opened: {}",
-                  path.display()
-                );
-                save_last_file_path(&path);
-                self.file_path = Some(path);
-                self.is_dirty = false;
-                self.focused_cell =
-                  if self.cell_editors.is_empty() {
-                    None
-                  } else {
-                    Some(0)
-                  };
-              }
-              Err(e) => {
-                self.status =
-                  format!("Parse error: {e}");
-              }
+          Ok((path, contents)) => match notebook::parse_notebook(&contents) {
+            Ok(nb) => {
+              self.cell_editors = Self::editors_from_notebook(&nb);
+              self.notebook = nb;
+              self.status = format!("Opened: {}", path.display());
+              save_last_file_path(&path);
+              self.file_path = Some(path);
+              self.is_dirty = false;
+              self.focused_cell = if self.cell_editors.is_empty() {
+                None
+              } else {
+                Some(0)
+              };
             }
-          }
+            Err(e) => {
+              self.status = format!("Parse error: {e}");
+            }
+          },
           Err(FileError::DialogClosed) => {
             self.status = String::from("Open cancelled");
           }
           Err(FileError::IoError(e)) => {
-            self.status =
-              format!("Error opening file: {e:?}");
+            self.status = format!("Error opening file: {e:?}");
           }
         }
         Task::none()
@@ -475,18 +420,14 @@ impl WoxiStudio {
         let content = self.notebook.to_string();
         self.is_loading = true;
         self.status = String::from("Saving as...");
-        Task::perform(
-          save_file(None, content),
-          Message::FileSaved,
-        )
+        Task::perform(save_file(None, content), Message::FileSaved)
       }
 
       Message::FileSaved(result) => {
         self.is_loading = false;
         match result {
           Ok(path) => {
-            self.status =
-              format!("Saved: {}", path.display());
+            self.status = format!("Saved: {}", path.display());
             save_last_file_path(&path);
             self.file_path = Some(path);
             self.is_dirty = false;
@@ -495,8 +436,7 @@ impl WoxiStudio {
             self.status = String::from("Save cancelled");
           }
           Err(FileError::IoError(e)) => {
-            self.status =
-              format!("Error saving: {e:?}");
+            self.status = format!("Error saving: {e:?}");
           }
         }
         Task::none()
@@ -507,8 +447,7 @@ impl WoxiStudio {
           return Task::none();
         }
         self.sync_notebook_from_editors();
-        let (content, filter_name, extension) = match format
-        {
+        let (content, filter_name, extension) = match format {
           ExportFormat::MathematicaNotebook => (
             self.notebook.to_string(),
             String::from("Mathematica Notebook"),
@@ -536,8 +475,7 @@ impl WoxiStudio {
           ),
         };
         self.is_loading = true;
-        self.status =
-          format!("Exporting as {format}...");
+        self.status = format!("Exporting as {format}...");
         Task::perform(
           export_file(filter_name, extension, content),
           Message::FileExported,
@@ -548,18 +486,13 @@ impl WoxiStudio {
         self.is_loading = false;
         match result {
           Ok(path) => {
-            self.status = format!(
-              "Exported: {}",
-              path.display()
-            );
+            self.status = format!("Exported: {}", path.display());
           }
           Err(FileError::DialogClosed) => {
-            self.status =
-              String::from("Export cancelled");
+            self.status = String::from("Export cancelled");
           }
           Err(FileError::IoError(e)) => {
-            self.status =
-              format!("Error exporting: {e:?}");
+            self.status = format!("Error exporting: {e:?}");
           }
         }
         Task::none()
@@ -571,11 +504,8 @@ impl WoxiStudio {
           let is_edit = action.is_edit();
           if is_edit {
             // Snapshot current text for undo
-            let snap =
-              self.cell_editors[idx].content.text();
-            self.cell_editors[idx]
-              .undo_stack
-              .push(snap);
+            let snap = self.cell_editors[idx].content.text();
+            self.cell_editors[idx].undo_stack.push(snap);
             self.cell_editors[idx].redo_stack.clear();
           }
           self.cell_editors[idx].content.perform(action);
@@ -588,14 +518,9 @@ impl WoxiStudio {
 
       Message::Undo(idx) => {
         if idx < self.cell_editors.len() {
-          if let Some(prev) =
-            self.cell_editors[idx].undo_stack.pop()
-          {
-            let current =
-              self.cell_editors[idx].content.text();
-            self.cell_editors[idx]
-              .redo_stack
-              .push(current);
+          if let Some(prev) = self.cell_editors[idx].undo_stack.pop() {
+            let current = self.cell_editors[idx].content.text();
+            self.cell_editors[idx].redo_stack.push(current);
             self.cell_editors[idx].content =
               text_editor::Content::with_text(&prev);
             self.is_dirty = true;
@@ -606,14 +531,9 @@ impl WoxiStudio {
 
       Message::Redo(idx) => {
         if idx < self.cell_editors.len() {
-          if let Some(next) =
-            self.cell_editors[idx].redo_stack.pop()
-          {
-            let current =
-              self.cell_editors[idx].content.text();
-            self.cell_editors[idx]
-              .undo_stack
-              .push(current);
+          if let Some(next) = self.cell_editors[idx].redo_stack.pop() {
+            let current = self.cell_editors[idx].content.text();
+            self.cell_editors[idx].undo_stack.push(current);
             self.cell_editors[idx].content =
               text_editor::Content::with_text(&next);
             self.is_dirty = true;
@@ -654,8 +574,7 @@ impl WoxiStudio {
       }
 
       Message::AddCellBelow(idx) => {
-        let insert_at =
-          (idx + 1).min(self.cell_editors.len());
+        let insert_at = (idx + 1).min(self.cell_editors.len());
         self.cell_editors.insert(
           insert_at,
           CellEditor {
@@ -693,9 +612,7 @@ impl WoxiStudio {
       }
 
       Message::DeleteCell(idx) => {
-        if self.cell_editors.len() > 1
-          && idx < self.cell_editors.len()
-        {
+        if self.cell_editors.len() > 1 && idx < self.cell_editors.len() {
           self.cell_editors.remove(idx);
           self.is_dirty = true;
           if let Some(ref mut focused) = self.focused_cell {
@@ -732,39 +649,26 @@ impl WoxiStudio {
             CellStyle::Input | CellStyle::Code
           )
         {
-          let code = self.cell_editors[idx]
-            .content
-            .text()
-            .trim()
-            .to_string();
+          let code = self.cell_editors[idx].content.text().trim().to_string();
           if !code.is_empty() {
             woxi::clear_state();
             match woxi::interpret_with_stdout(&code) {
               Ok(result) => {
-                self.cell_editors[idx].output =
-                  Some(result.result);
-                self.cell_editors[idx].stdout =
-                  if result.stdout.is_empty() {
-                    None
-                  } else {
-                    Some(result.stdout)
-                  };
-                self.cell_editors[idx].graphics_svg =
-                  result.graphics;
-                self.status = format!(
-                  "Evaluated cell {} successfully",
-                  idx + 1
-                );
+                self.cell_editors[idx].output = Some(result.result);
+                self.cell_editors[idx].stdout = if result.stdout.is_empty() {
+                  None
+                } else {
+                  Some(result.stdout)
+                };
+                self.cell_editors[idx].graphics_svg = result.graphics;
+                self.status =
+                  format!("Evaluated cell {} successfully", idx + 1);
               }
               Err(e) => {
-                self.cell_editors[idx].output =
-                  Some(format!("Error: {e}"));
+                self.cell_editors[idx].output = Some(format!("Error: {e}"));
                 self.cell_editors[idx].stdout = None;
                 self.cell_editors[idx].graphics_svg = None;
-                self.status = format!(
-                  "Cell {} evaluation error",
-                  idx + 1
-                );
+                self.status = format!("Cell {} evaluation error", idx + 1);
               }
             }
           }
@@ -779,38 +683,28 @@ impl WoxiStudio {
             self.cell_editors[idx].style,
             CellStyle::Input | CellStyle::Code
           ) {
-            let code = self.cell_editors[idx]
-              .content
-              .text()
-              .trim()
-              .to_string();
+            let code = self.cell_editors[idx].content.text().trim().to_string();
             if !code.is_empty() {
               match woxi::interpret_with_stdout(&code) {
                 Ok(result) => {
-                  self.cell_editors[idx].output =
-                    Some(result.result);
-                  self.cell_editors[idx].stdout =
-                    if result.stdout.is_empty() {
-                      None
-                    } else {
-                      Some(result.stdout)
-                    };
-                  self.cell_editors[idx].graphics_svg =
-                    result.graphics;
+                  self.cell_editors[idx].output = Some(result.result);
+                  self.cell_editors[idx].stdout = if result.stdout.is_empty() {
+                    None
+                  } else {
+                    Some(result.stdout)
+                  };
+                  self.cell_editors[idx].graphics_svg = result.graphics;
                 }
                 Err(e) => {
-                  self.cell_editors[idx].output =
-                    Some(format!("Error: {e}"));
+                  self.cell_editors[idx].output = Some(format!("Error: {e}"));
                   self.cell_editors[idx].stdout = None;
-                  self.cell_editors[idx].graphics_svg =
-                    None;
+                  self.cell_editors[idx].graphics_svg = None;
                 }
               }
             }
           }
         }
-        self.status =
-          String::from("All cells evaluated");
+        self.status = String::from("All cells evaluated");
         Task::none()
       }
 
@@ -850,14 +744,11 @@ impl WoxiStudio {
 
         // Ctrl+D: delete forward
         if modifiers.control() {
-          if let keyboard::Key::Character("d") = key.as_ref()
-          {
+          if let keyboard::Key::Character("d") = key.as_ref() {
             if let Some(idx) = self.focused_cell {
-              self.cell_editors[idx].content.perform(
-                text_editor::Action::Edit(
-                  text_editor::Edit::Delete,
-                ),
-              );
+              self.cell_editors[idx]
+                .content
+                .perform(text_editor::Action::Edit(text_editor::Edit::Delete));
               self.is_dirty = true;
             }
             return Task::none();
@@ -866,18 +757,13 @@ impl WoxiStudio {
 
         // Ctrl+W: delete previous word
         if modifiers.control() {
-          if let keyboard::Key::Character("w") = key.as_ref()
-          {
+          if let keyboard::Key::Character("w") = key.as_ref() {
             if let Some(idx) = self.focused_cell {
               self.cell_editors[idx].content.perform(
-                text_editor::Action::Select(
-                  text_editor::Motion::WordLeft,
-                ),
+                text_editor::Action::Select(text_editor::Motion::WordLeft),
               );
               self.cell_editors[idx].content.perform(
-                text_editor::Action::Edit(
-                  text_editor::Edit::Backspace,
-                ),
+                text_editor::Action::Edit(text_editor::Edit::Backspace),
               );
               self.is_dirty = true;
             }
@@ -887,19 +773,15 @@ impl WoxiStudio {
 
         // Shift+Enter to evaluate current cell
         if modifiers.shift() {
-          if let keyboard::Key::Named(
-            keyboard::key::Named::Enter,
-          ) = key.as_ref()
+          if let keyboard::Key::Named(keyboard::key::Named::Enter) =
+            key.as_ref()
           {
             if let Some(idx) = self.focused_cell {
               // Undo the newline the text editor just inserted
               self.cell_editors[idx].content.perform(
-                text_editor::Action::Edit(
-                  text_editor::Edit::Backspace,
-                ),
+                text_editor::Action::Edit(text_editor::Edit::Backspace),
               );
-              return self
-                .update(Message::EvaluateCell(idx));
+              return self.update(Message::EvaluateCell(idx));
             }
           }
         }
@@ -918,9 +800,8 @@ impl WoxiStudio {
 
   fn view(&self) -> Element<'_, Message> {
     // ── Toolbar ──
-    let eval_all_svg = svg::Handle::from_memory(
-      PLAY_CIRCLE_SVG.as_bytes().to_vec(),
-    );
+    let eval_all_svg =
+      svg::Handle::from_memory(PLAY_CIRCLE_SVG.as_bytes().to_vec());
     let toolbar = row![
       button(
         svg::Svg::new(eval_all_svg)
@@ -937,31 +818,23 @@ impl WoxiStudio {
         .padding([3, 8])
         .style(muted_button_style),
       button(text("Open").size(11))
-        .on_press_maybe(
-          (!self.is_loading).then_some(Message::OpenFile)
-        )
+        .on_press_maybe((!self.is_loading).then_some(Message::OpenFile))
         .padding([3, 8])
         .style(muted_button_style),
       button(text("Save").size(11))
-        .on_press_maybe(
-          self.is_dirty.then_some(Message::SaveFile)
-        )
+        .on_press_maybe(self.is_dirty.then_some(Message::SaveFile))
         .padding([3, 8])
         .style(muted_button_style),
       button(text("Save As").size(11))
         .on_press(Message::SaveFileAs)
         .padding([3, 8])
         .style(muted_button_style),
-      pick_list(
-        ExportFormat::ALL,
-        None::<ExportFormat>,
-        Message::ExportAs,
-      )
-      .placeholder("Export")
-      .text_size(11)
-      .padding([3, 8])
-      .style(export_button_style)
-      .menu_style(dropdown_menu_style),
+      pick_list(ExportFormat::ALL, None::<ExportFormat>, Message::ExportAs,)
+        .placeholder("Export")
+        .text_size(11)
+        .padding([3, 8])
+        .style(export_button_style)
+        .menu_style(dropdown_menu_style),
       text(" | ").size(11),
       pick_list(
         ThemeChoice::ALL,
@@ -996,54 +869,41 @@ impl WoxiStudio {
     .align_y(Center);
 
     // ── Cell editors ──
-    let cells: Element<'_, Message> = if self
-      .cell_editors
-      .is_empty()
-    {
-      container(
-        text("Empty notebook. Click '+' to add a cell.")
-          .size(13),
-      )
-      .center_x(Fill)
-      .padding(40)
-      .into()
+    let cells: Element<'_, Message> = if self.cell_editors.is_empty() {
+      container(text("Empty notebook. Click '+' to add a cell.").size(13))
+        .center_x(Fill)
+        .padding(40)
+        .into()
     } else {
       let mut col = Column::new().spacing(0).width(Fill);
 
       if !self.preview_mode {
         // Add cell divider above the first cell
-        col =
-          col.push(self.view_add_cell_divider_above(0));
+        col = col.push(self.view_add_cell_divider_above(0));
       }
 
-      for (idx, editor) in
-        self.cell_editors.iter().enumerate()
-      {
+      for (idx, editor) in self.cell_editors.iter().enumerate() {
         // Add cell divider between cells
         if !self.preview_mode && idx > 0 {
-          col = col.push(self.view_add_cell_divider(
-            idx.saturating_sub(1),
-          ));
+          col = col.push(self.view_add_cell_divider(idx.saturating_sub(1)));
         }
 
         let is_focused = self.focused_cell == Some(idx);
-        col =
-          col.push(self.view_cell(idx, editor, is_focused));
+        col = col.push(self.view_cell(idx, editor, is_focused));
       }
 
       if !self.preview_mode {
         // Final add-cell divider after last cell
-        col = col.push(self.view_add_cell_divider(
-          self.cell_editors.len().saturating_sub(1),
-        ));
+        col =
+          col
+            .push(self.view_add_cell_divider(
+              self.cell_editors.len().saturating_sub(1),
+            ));
       }
 
-      scrollable(
-        container(col.max_width(800))
-          .center_x(Fill),
-      )
-      .height(Fill)
-      .into()
+      scrollable(container(col.max_width(800)).center_x(Fill))
+        .height(Fill)
+        .into()
     };
 
     // ── Status bar ──
@@ -1059,31 +919,31 @@ impl WoxiStudio {
       None => String::from("Untitled"),
     };
 
-    let dirty_marker =
-      if self.is_dirty { " [modified]" } else { "" };
+    let dirty_marker = if self.is_dirty { " [modified]" } else { "" };
 
     let status_bar = row![
       text(format!("{file_label}{dirty_marker}")).size(11),
       text("  |  ").size(11),
       text(&self.status).size(11),
       text("  |  ").size(11),
-      text(format!("{} cells", self.cell_editors.len()))
-        .size(11),
+      text(format!("{} cells", self.cell_editors.len())).size(11),
     ]
     .spacing(4)
     .padding([3, 8]);
 
     // ── Layout ──
-    column![toolbar, rule::horizontal(1).style(separator_style), cells, status_bar,]
-      .spacing(0)
-      .into()
+    column![
+      toolbar,
+      rule::horizontal(1).style(separator_style),
+      cells,
+      status_bar,
+    ]
+    .spacing(0)
+    .into()
   }
 
   /// Small "+" divider above a cell (inserts before it).
-  fn view_add_cell_divider_above(
-    &self,
-    idx: usize,
-  ) -> Element<'_, Message> {
+  fn view_add_cell_divider_above(&self, idx: usize) -> Element<'_, Message> {
     container(
       button(text("+").size(10))
         .on_press(Message::AddCellAbove(idx))
@@ -1096,10 +956,7 @@ impl WoxiStudio {
   }
 
   /// Small "+" divider between cells.
-  fn view_add_cell_divider(
-    &self,
-    idx: usize,
-  ) -> Element<'_, Message> {
+  fn view_add_cell_divider(&self, idx: usize) -> Element<'_, Message> {
     container(
       button(text("+").size(10))
         .on_press(Message::AddCellBelow(idx))
@@ -1117,24 +974,21 @@ impl WoxiStudio {
     editor: &'a CellEditor,
     _is_focused: bool,
   ) -> Element<'a, Message> {
-    let is_input = editor.style == CellStyle::Input
-      || editor.style == CellStyle::Code;
+    let is_input =
+      editor.style == CellStyle::Input || editor.style == CellStyle::Code;
 
     // ── Left gutter: style picker + delete ──
-    let mut gutter =
-      Column::new().spacing(2).width(iced::Length::Shrink);
+    let mut gutter = Column::new().spacing(2).width(iced::Length::Shrink);
 
     if !self.preview_mode {
       // Cell type: icon button with overlay dropdown
-      gutter = gutter.push(
-        cell_type_dropdown::cell_type_dropdown(
-          editor.style,
-          self.cell_type_menu_open == Some(idx),
-          CELL_STYLES,
-          Message::ToggleCellTypeMenu(idx),
-          move |s| Message::CellStyleChanged(idx, s),
-        ),
-      );
+      gutter = gutter.push(cell_type_dropdown::cell_type_dropdown(
+        editor.style,
+        self.cell_type_menu_open == Some(idx),
+        CELL_STYLES,
+        Message::ToggleCellTypeMenu(idx),
+        move |s| Message::CellStyleChanged(idx, s),
+      ));
     }
 
     // ── Text editor ──
@@ -1159,42 +1013,25 @@ impl WoxiStudio {
     let in_preview = self.preview_mode;
     let has_output = editor.stdout.is_some()
       || editor.graphics_svg.is_some()
-      || editor
-        .output
-        .as_ref()
-        .map_or(false, |o| {
-          let d = o
-            .replace("-Graphics-", "")
-            .replace("-Graphics3D-", "")
-            .replace("-Image-", "");
-          !d.trim().is_empty()
-        });
+      || editor.output.as_ref().map_or(false, |o| {
+        let d = o
+          .replace("-Graphics-", "")
+          .replace("-Graphics3D-", "")
+          .replace("-Image-", "");
+        !d.trim().is_empty()
+      });
     let is_grouped = is_input && has_output && !in_preview;
     let cell_editor = text_editor(&editor.content)
-      .on_action(move |action| {
-        Message::CellAction(idx, action)
-      })
+      .on_action(move |action| Message::CellAction(idx, action))
       .key_binding(move |key_press| {
-        let text_editor::KeyPress {
-          key, modifiers, ..
-        } = &key_press;
+        let text_editor::KeyPress { key, modifiers, .. } = &key_press;
         if modifiers.command() {
           match key.as_ref() {
-            keyboard::Key::Character("z")
-              if modifiers.shift() =>
-            {
-              return Some(
-                text_editor::Binding::Custom(
-                  Message::Redo(idx),
-                ),
-              );
+            keyboard::Key::Character("z") if modifiers.shift() => {
+              return Some(text_editor::Binding::Custom(Message::Redo(idx)));
             }
             keyboard::Key::Character("z") => {
-              return Some(
-                text_editor::Binding::Custom(
-                  Message::Undo(idx),
-                ),
-              );
+              return Some(text_editor::Binding::Custom(Message::Undo(idx)));
             }
             _ => {}
           }
@@ -1215,47 +1052,37 @@ impl WoxiStudio {
         }
       })
       .highlight_with::<highlighter::WolframHighlighter>(
-        highlighter::WolframSettings {
-          enabled: is_input,
-        },
+        highlighter::WolframSettings { enabled: is_input },
         highlighter::format_highlight,
       );
 
     // ── Content column: editor + outputs ──
 
-    let mut content_col =
-      Column::new().spacing(0).width(Fill);
+    let mut content_col = Column::new().spacing(0).width(Fill);
     content_col = content_col.push(cell_editor);
 
     if is_grouped {
       // Thin separator between input and output
-      content_col = content_col.push(
-        rule::horizontal(1).style(separator_style),
-      );
+      content_col =
+        content_col.push(rule::horizontal(1).style(separator_style));
     }
 
     // Stdout (Print output)
     if let Some(ref stdout) = editor.stdout {
-      let stdout_display = container(
-        text(stdout).size(12).font(Font::MONOSPACE),
-      )
-      .padding(6)
-      .width(Fill);
+      let stdout_display =
+        container(text(stdout).size(12).font(Font::MONOSPACE))
+          .padding(6)
+          .width(Fill);
 
       content_col = content_col.push(stdout_display);
     }
 
     // Graphics SVG rendering
     if let Some(ref svg_data) = editor.graphics_svg {
-      let handle = svg::Handle::from_memory(
-        svg_data.as_bytes().to_vec(),
-      );
-      let svg_widget = svg::Svg::new(handle)
-        .width(iced::Length::Shrink);
+      let handle = svg::Handle::from_memory(svg_data.as_bytes().to_vec());
+      let svg_widget = svg::Svg::new(handle).width(iced::Length::Shrink);
 
-      content_col = content_col.push(
-        container(svg_widget).padding(4),
-      );
+      content_col = content_col.push(container(svg_widget).padding(4));
     }
 
     // Text output (filter out graphics placeholders)
@@ -1266,11 +1093,10 @@ impl WoxiStudio {
         .replace("-Image-", "");
       let display = display.trim().to_string();
       if !display.is_empty() {
-        let output_display = container(
-          text(display).size(12).font(Font::MONOSPACE),
-        )
-        .padding(6)
-        .width(Fill);
+        let output_display =
+          container(text(display).size(12).font(Font::MONOSPACE))
+            .padding(6)
+            .width(Fill);
 
         content_col = content_col.push(output_display);
       }
@@ -1287,11 +1113,9 @@ impl WoxiStudio {
     };
 
     // ── Right side: play button + trash ──
-    let right_side: Element<'a, Message> = if !self.preview_mode
-    {
-      let trash_svg = svg::Handle::from_memory(
-        TRASH_ICON_SVG.as_bytes().to_vec(),
-      );
+    let right_side: Element<'a, Message> = if !self.preview_mode {
+      let trash_svg =
+        svg::Handle::from_memory(TRASH_ICON_SVG.as_bytes().to_vec());
       let trash_btn = button(
         svg::Svg::new(trash_svg)
           .width(14)
@@ -1299,20 +1123,17 @@ impl WoxiStudio {
           .style(trash_icon_style),
       )
       .on_press_maybe(
-        (self.cell_editors.len() > 1)
-          .then_some(Message::DeleteCell(idx)),
+        (self.cell_editors.len() > 1).then_some(Message::DeleteCell(idx)),
       )
       .padding([2, 4])
       .style(trash_button_style);
 
-      let mut right_col = Column::new()
-        .spacing(2)
-        .padding(iced::Padding {
-          top: 0.0,
-          right: 0.0,
-          bottom: 0.0,
-          left: 4.0,
-        });
+      let mut right_col = Column::new().spacing(2).padding(iced::Padding {
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 4.0,
+      });
       if is_input {
         right_col = right_col.push(
           button(text("\u{25B6}").size(14))
@@ -1333,7 +1154,6 @@ impl WoxiStudio {
 
     container(cell_row).width(Fill).into()
   }
-
 }
 
 // ── Event handling ──────────────────────────────────────────────────
@@ -1343,18 +1163,15 @@ fn handle_event(
   _status: iced::event::Status,
   _id: iced::window::Id,
 ) -> Option<Message> {
-  if let iced::Event::Keyboard(
-    keyboard::Event::KeyPressed {
-      key, modifiers, ..
-    },
-  ) = event
+  if let iced::Event::Keyboard(keyboard::Event::KeyPressed {
+    key,
+    modifiers,
+    ..
+  }) = event
   {
     // Shift+Enter: always handle (even when text editor has focus)
     if modifiers.shift() {
-      if let keyboard::Key::Named(
-        keyboard::key::Named::Enter,
-      ) = key.as_ref()
-      {
+      if let keyboard::Key::Named(keyboard::key::Named::Enter) = key.as_ref() {
         return Some(Message::KeyPressed(key, modifiers));
       }
     }
@@ -1362,8 +1179,7 @@ fn handle_event(
     // Ctrl shortcuts for text editing
     if modifiers.control() {
       match key.as_ref() {
-        keyboard::Key::Character("d")
-        | keyboard::Key::Character("w") => {
+        keyboard::Key::Character("d") | keyboard::Key::Character("w") => {
           return Some(Message::KeyPressed(key, modifiers));
         }
         _ => {}
@@ -1401,7 +1217,6 @@ fn separator_style(theme: &Theme) -> rule::Style {
   }
 }
 
-
 fn editor_style(
   theme: &Theme,
   status: text_editor::Status,
@@ -1412,20 +1227,16 @@ fn editor_style(
   if is_dark {
     style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
     // Slightly brighter than the app background
-    style.background =
-      Background::Color(Color::from_rgb(0.16, 0.16, 0.18));
+    style.background = Background::Color(Color::from_rgb(0.16, 0.16, 0.18));
     if matches!(status, text_editor::Status::Focused { .. }) {
-      style.border.color =
-        Color::from_rgb(0.30, 0.30, 0.38);
+      style.border.color = Color::from_rgb(0.30, 0.30, 0.38);
     }
   } else {
     // Light mode: subtle off-white background for input cells
-    style.background =
-      Background::Color(Color::from_rgb(0.97, 0.97, 0.98));
+    style.background = Background::Color(Color::from_rgb(0.97, 0.97, 0.98));
     style.border.color = Color::from_rgb(0.82, 0.82, 0.85);
     if matches!(status, text_editor::Status::Focused { .. }) {
-      style.border.color =
-        Color::from_rgb(0.55, 0.55, 0.65);
+      style.border.color = Color::from_rgb(0.55, 0.55, 0.65);
     }
   }
   style
@@ -1562,47 +1373,32 @@ fn preview_editor_style(
   style
 }
 
-fn muted_button_style(
-  theme: &Theme,
-  status: button::Status,
-) -> button::Style {
+fn muted_button_style(theme: &Theme, status: button::Status) -> button::Style {
   let mut style = button::primary(theme, status);
   let is_dark = !matches!(theme, Theme::Light);
   if is_dark {
     style.background = Some(Background::Color(match status {
-      button::Status::Active => {
-        Color::from_rgb(0.18, 0.26, 0.40)
-      }
-      button::Status::Hovered => {
-        Color::from_rgb(0.22, 0.32, 0.48)
-      }
-      button::Status::Pressed => {
-        Color::from_rgb(0.15, 0.22, 0.35)
-      }
-      button::Status::Disabled => {
-        Color::from_rgb(0.14, 0.16, 0.22)
-      }
+      button::Status::Active => Color::from_rgb(0.18, 0.26, 0.40),
+      button::Status::Hovered => Color::from_rgb(0.22, 0.32, 0.48),
+      button::Status::Pressed => Color::from_rgb(0.15, 0.22, 0.35),
+      button::Status::Disabled => Color::from_rgb(0.14, 0.16, 0.22),
     }));
     style.text_color = Color::from_rgb(0.78, 0.82, 0.90);
   }
   style
 }
 
-fn trash_button_style(
-  theme: &Theme,
-  status: button::Status,
-) -> button::Style {
+fn trash_button_style(theme: &Theme, status: button::Status) -> button::Style {
   let mut style = button::text(theme, status);
   // Only show background on hover
   match status {
     button::Status::Hovered | button::Status::Pressed => {
       let is_dark = !matches!(theme, Theme::Light);
-      style.background =
-        Some(Background::Color(if is_dark {
-          Color::from_rgba(1.0, 1.0, 1.0, 0.08)
-        } else {
-          Color::from_rgba(0.0, 0.0, 0.0, 0.06)
-        }));
+      style.background = Some(Background::Color(if is_dark {
+        Color::from_rgba(1.0, 1.0, 1.0, 0.08)
+      } else {
+        Color::from_rgba(0.0, 0.0, 0.0, 0.06)
+      }));
     }
     _ => {
       style.background = None;
@@ -1653,10 +1449,7 @@ fn add_cell_button_style(
   }
 }
 
-fn eval_all_icon_style(
-  theme: &Theme,
-  _status: svg::Status,
-) -> svg::Style {
+fn eval_all_icon_style(theme: &Theme, _status: svg::Status) -> svg::Style {
   let is_dark = !matches!(theme, Theme::Light);
   svg::Style {
     color: Some(if is_dark {
@@ -1667,10 +1460,7 @@ fn eval_all_icon_style(
   }
 }
 
-fn trash_icon_style(
-  theme: &Theme,
-  _status: svg::Status,
-) -> svg::Style {
+fn trash_icon_style(theme: &Theme, _status: svg::Status) -> svg::Style {
   let is_dark = !matches!(theme, Theme::Light);
   svg::Style {
     color: Some(if is_dark {
@@ -1681,10 +1471,7 @@ fn trash_icon_style(
   }
 }
 
-fn gutter_icon_style(
-  theme: &Theme,
-  _status: svg::Status,
-) -> svg::Style {
+fn gutter_icon_style(theme: &Theme, _status: svg::Status) -> svg::Style {
   let is_dark = !matches!(theme, Theme::Light);
   svg::Style {
     color: Some(if is_dark {
@@ -1701,15 +1488,10 @@ fn export_button_style(
 ) -> pick_list::Style {
   let palette = theme.extended_palette();
   let (bg, text_color) = match status {
-    pick_list::Status::Hovered
-    | pick_list::Status::Opened { .. } => (
-      palette.primary.strong.color,
-      palette.primary.strong.text,
-    ),
-    _ => (
-      palette.primary.base.color,
-      palette.primary.base.text,
-    ),
+    pick_list::Status::Hovered | pick_list::Status::Opened { .. } => {
+      (palette.primary.strong.color, palette.primary.strong.text)
+    }
+    _ => (palette.primary.base.color, palette.primary.base.text),
   };
   pick_list::Style {
     text_color,
@@ -1732,15 +1514,13 @@ fn dropdown_style(
   style.border.radius = 6.0.into();
   let is_dark = !matches!(theme, Theme::Light);
   if is_dark {
-    style.background =
-      Background::Color(Color::from_rgb(0.14, 0.14, 0.16));
+    style.background = Background::Color(Color::from_rgb(0.14, 0.14, 0.16));
     style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
     if matches!(
       status,
       pick_list::Status::Hovered | pick_list::Status::Opened { .. }
     ) {
-      style.border.color =
-        Color::from_rgb(0.30, 0.30, 0.38);
+      style.border.color = Color::from_rgb(0.30, 0.30, 0.38);
     }
   }
   style
@@ -1750,8 +1530,7 @@ fn dropdown_menu_style(theme: &Theme) -> menu::Style {
   let mut style = menu::default(theme);
   let is_dark = !matches!(theme, Theme::Light);
   if is_dark {
-    style.background =
-      Background::Color(Color::from_rgb(0.14, 0.14, 0.16));
+    style.background = Background::Color(Color::from_rgb(0.14, 0.14, 0.16));
     style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
   }
   style
@@ -1779,32 +1558,23 @@ const CELL_STYLES: &[CellStyle] = &[
   CellStyle::Code,
 ];
 
-
 // ── State persistence ────────────────────────────────────────────────
 
 fn state_dir() -> Option<PathBuf> {
   let home = std::env::var("HOME").ok()?;
-  Some(
-    PathBuf::from(home)
-      .join(".config")
-      .join("woxi-studio"),
-  )
+  Some(PathBuf::from(home).join(".config").join("woxi-studio"))
 }
 
 fn save_last_file_path(path: &std::path::Path) {
   if let Some(dir) = state_dir() {
     let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(
-      dir.join("last_file"),
-      path.display().to_string(),
-    );
+    let _ = std::fs::write(dir.join("last_file"), path.display().to_string());
   }
 }
 
 fn load_last_file_path() -> Option<PathBuf> {
   let dir = state_dir()?;
-  let content =
-    std::fs::read_to_string(dir.join("last_file")).ok()?;
+  let content = std::fs::read_to_string(dir.join("last_file")).ok()?;
   let path = PathBuf::from(content.trim());
   if path.exists() { Some(path) } else { None }
 }
@@ -1827,8 +1597,7 @@ async fn open_file_path(
   Ok((path, contents))
 }
 
-async fn open_file(
-) -> Result<(PathBuf, Arc<String>), FileError> {
+async fn open_file() -> Result<(PathBuf, Arc<String>), FileError> {
   let handle = rfd::AsyncFileDialog::new()
     .set_title("Open Notebook")
     .add_filter("Mathematica Notebook", &["nb"])

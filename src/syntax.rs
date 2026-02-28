@@ -348,6 +348,105 @@ pub enum Expr {
   Graphics { svg: String, is_3d: bool },
 }
 
+/// Convert a Wolfram named character like `\[Phi]` to its Unicode equivalent.
+fn named_char_to_expr(s: &str) -> Expr {
+  // Direct Unicode character input
+  match s {
+    "\u{20AC}" => return Expr::Identifier("\u{20AC}".to_string()), // €
+    "\u{03F5}" => return Expr::Identifier("\u{03F5}".to_string()), // ϵ
+    _ => {}
+  }
+
+  // Extract name from \[Name] syntax
+  let name = if s.starts_with("\\[") && s.ends_with(']') {
+    &s[2..s.len() - 1]
+  } else {
+    return Expr::Identifier(s.to_string());
+  };
+
+  // Special cases that map to constants
+  match name {
+    "Pi" => return Expr::Constant("Pi".to_string()),
+    "ExponentialE" => return Expr::Constant("E".to_string()),
+    "Degree" => return Expr::Constant("Degree".to_string()),
+    _ => {}
+  }
+
+  // Special cases that map to known identifiers
+  match name {
+    "Infinity" => return Expr::Identifier("Infinity".to_string()),
+    "ImaginaryI" | "ImaginaryJ" => return Expr::Identifier("I".to_string()),
+    _ => {}
+  }
+
+  // Greek letters and other named characters → Unicode
+  let unicode = match name {
+    // Lowercase Greek
+    "Alpha" => "\u{03B1}",
+    "Beta" => "\u{03B2}",
+    "Gamma" => "\u{03B3}",
+    "Delta" => "\u{03B4}",
+    "Epsilon" => "\u{03F5}",
+    "Zeta" => "\u{03B6}",
+    "Eta" => "\u{03B7}",
+    "Theta" => "\u{03B8}",
+    "Iota" => "\u{03B9}",
+    "Kappa" => "\u{03BA}",
+    "Lambda" => "\u{03BB}",
+    "Mu" => "\u{03BC}",
+    "Nu" => "\u{03BD}",
+    "Xi" => "\u{03BE}",
+    "Omicron" => "\u{03BF}",
+    "Rho" => "\u{03C1}",
+    "Sigma" => "\u{03C3}",
+    "FinalSigma" => "\u{03C2}",
+    "Tau" => "\u{03C4}",
+    "Upsilon" => "\u{03C5}",
+    "Phi" => "\u{03D5}",
+    "CurlyPhi" => "\u{03C6}",
+    "Chi" => "\u{03C7}",
+    "Psi" => "\u{03C8}",
+    "Omega" => "\u{03C9}",
+    // Uppercase Greek
+    "CapitalAlpha" => "\u{0391}",
+    "CapitalBeta" => "\u{0392}",
+    "CapitalGamma" => "\u{0393}",
+    "CapitalDelta" => "\u{0394}",
+    "CapitalEpsilon" => "\u{0395}",
+    "CapitalZeta" => "\u{0396}",
+    "CapitalEta" => "\u{0397}",
+    "CapitalTheta" => "\u{0398}",
+    "CapitalIota" => "\u{0399}",
+    "CapitalKappa" => "\u{039A}",
+    "CapitalLambda" => "\u{039B}",
+    "CapitalMu" => "\u{039C}",
+    "CapitalNu" => "\u{039D}",
+    "CapitalXi" => "\u{039E}",
+    "CapitalOmicron" => "\u{039F}",
+    "CapitalPi" => "\u{03A0}",
+    "CapitalRho" => "\u{03A1}",
+    "CapitalSigma" => "\u{03A3}",
+    "CapitalTau" => "\u{03A4}",
+    "CapitalUpsilon" => "\u{03A5}",
+    "CapitalPhi" => "\u{03A6}",
+    "CapitalChi" => "\u{03A7}",
+    "CapitalPsi" => "\u{03A8}",
+    "CapitalOmega" => "\u{03A9}",
+    // Common symbols
+    "Euro" => "\u{20AC}",
+    "Micro" => "\u{00B5}",
+    "Angstrom" => "\u{212B}",
+    "HBar" => "\u{210F}",
+    // Element/set operators (when used as identifiers)
+    "Element" => "\u{2208}",
+    "NotElement" => "\u{2209}",
+    "ReverseElement" => "\u{220B}",
+    // Unknown: keep original name as identifier
+    _ => return Expr::Identifier(name.to_string()),
+  };
+  Expr::Identifier(unicode.to_string())
+}
+
 /// Extract all child `Expr` nodes from a variant, leaving it childless.
 /// Used by the iterative `Drop` implementation.
 fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
@@ -988,11 +1087,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::NamedCharIdentifier => {
       let s = pair.as_str();
-      match s {
-        "\\[Euro]" | "\u{20AC}" => Expr::Identifier("\u{20AC}".to_string()),
-        "\\[Epsilon]" | "\u{03F5}" => Expr::Identifier("\u{03F5}".to_string()),
-        _ => Expr::Identifier(s.to_string()),
-      }
+      named_char_to_expr(s)
     }
     Rule::Identifier => Expr::Identifier(pair.as_str().to_string()),
     Rule::DerivativeIdentifier => {
