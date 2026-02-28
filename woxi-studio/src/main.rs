@@ -1,12 +1,13 @@
+mod cell_type_dropdown;
 mod highlighter;
 mod notebook;
 
 use iced::keyboard;
 use iced::widget::{
-  button, column, container, focus_next, horizontal_rule,
-  horizontal_space, pick_list, row, rule, scrollable, svg,
-  text, text_editor, Column,
+  button, column, container, pick_list, row, rule, scrollable,
+  space, svg, text, text_editor, Column,
 };
+use iced::widget::operation::focus_next;
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font,
   Subscription, Task, Theme,
@@ -21,14 +22,15 @@ use std::sync::Arc;
 
 fn main() -> iced::Result {
   iced::application(
-    "Woxi Studio",
+    WoxiStudio::new,
     WoxiStudio::update,
     WoxiStudio::view,
   )
+  .title("Woxi Studio")
   .subscription(WoxiStudio::subscription)
   .theme(|state: &WoxiStudio| state.theme.clone())
   .default_font(Font::MONOSPACE)
-  .run_with(WoxiStudio::new)
+  .run()
 }
 
 // ── Application State ───────────────────────────────────────────────
@@ -52,6 +54,8 @@ struct WoxiStudio {
   theme: Theme,
   /// User's theme choice (Auto / Light / Dark).
   theme_choice: ThemeChoice,
+  /// Which cell has its type menu open (if any).
+  cell_type_menu_open: Option<usize>,
   /// Style to use for new cells.
   new_cell_style: CellStyle,
   /// Whether preview mode is active (hides gutter, borders, etc).
@@ -113,6 +117,8 @@ enum Message {
   ThemeChanged(ThemeChoice),
   NewCellStyleChanged(CellStyle),
 
+  // Cell type menu
+  ToggleCellTypeMenu(usize),
 
   // Preview mode
   TogglePreview,
@@ -228,6 +234,7 @@ impl WoxiStudio {
         status: String::from("Ready"),
         theme: detect_system_theme(),
         theme_choice: ThemeChoice::Auto,
+        cell_type_menu_open: None,
         new_cell_style: CellStyle::Input,
         preview_mode: false,
       },
@@ -609,6 +616,16 @@ impl WoxiStudio {
           self.cell_editors[idx].style = style;
           self.is_dirty = true;
         }
+        self.cell_type_menu_open = None;
+        Task::none()
+      }
+
+      Message::ToggleCellTypeMenu(idx) => {
+        if self.cell_type_menu_open == Some(idx) {
+          self.cell_type_menu_open = None;
+        } else {
+          self.cell_type_menu_open = Some(idx);
+        }
         Task::none()
       }
 
@@ -621,6 +638,7 @@ impl WoxiStudio {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
         }
+        self.cell_type_menu_open = None;
         Task::none()
       }
 
@@ -943,7 +961,7 @@ impl WoxiStudio {
       .padding([3, 8])
       .style(dropdown_style)
       .menu_style(dropdown_menu_style),
-      horizontal_space(),
+      space::horizontal(),
       button(
         svg::Svg::new(svg::Handle::from_memory(
           if self.preview_mode {
@@ -1045,7 +1063,7 @@ impl WoxiStudio {
     .padding([3, 8]);
 
     // ── Layout ──
-    column![toolbar, horizontal_rule(1).style(separator_style), cells, status_bar,]
+    column![toolbar, rule::horizontal(1).style(separator_style), cells, status_bar,]
       .spacing(0)
       .into()
   }
@@ -1100,18 +1118,15 @@ impl WoxiStudio {
       });
 
     if !self.preview_mode {
-      // Cell type picker (uses native overlay for dropdown)
+      // Cell type: icon button with overlay dropdown
       gutter = gutter.push(
-        pick_list(
+        cell_type_dropdown::cell_type_dropdown(
+          editor.style,
+          self.cell_type_menu_open == Some(idx),
           CELL_STYLES,
-          Some(editor.style),
+          Message::ToggleCellTypeMenu(idx),
           move |s| Message::CellStyleChanged(idx, s),
-        )
-        .text_size(9)
-        .padding([2, 4])
-        .width(iced::Length::Fixed(56.0))
-        .style(gutter_pick_list_style)
-        .menu_style(dropdown_menu_style),
+        ),
       );
 
       let trash_svg = svg::Handle::from_memory(
@@ -1226,7 +1241,7 @@ impl WoxiStudio {
     if is_grouped {
       // Thin separator between input and output
       content_col = content_col.push(
-        horizontal_rule(1).style(separator_style),
+        rule::horizontal(1).style(separator_style),
       );
     }
 
@@ -1365,9 +1380,9 @@ fn separator_style(theme: &Theme) -> rule::Style {
     } else {
       Color::from_rgb(0.82, 0.82, 0.82)
     },
-    width: 1,
     radius: 0.0.into(),
     fill_mode: rule::FillMode::Full,
+    snap: true,
   }
 }
 
@@ -1384,7 +1399,7 @@ fn editor_style(
     // Slightly brighter than the app background
     style.background =
       Background::Color(Color::from_rgb(0.16, 0.16, 0.18));
-    if matches!(status, text_editor::Status::Focused) {
+    if matches!(status, text_editor::Status::Focused { .. }) {
       style.border.color =
         Color::from_rgb(0.30, 0.30, 0.38);
     }
@@ -1393,7 +1408,7 @@ fn editor_style(
     style.background =
       Background::Color(Color::from_rgb(0.97, 0.97, 0.98));
     style.border.color = Color::from_rgb(0.82, 0.82, 0.85);
-    if matches!(status, text_editor::Status::Focused) {
+    if matches!(status, text_editor::Status::Focused { .. }) {
       style.border.color =
         Color::from_rgb(0.55, 0.55, 0.65);
     }
@@ -1500,7 +1515,6 @@ fn preview_editor_style(
       width: 0.0,
       radius: 0.0.into(),
     },
-    icon: Color::TRANSPARENT,
     placeholder: Color::TRANSPARENT,
     value: if is_dark {
       Color::from_rgb(0.85, 0.85, 0.88)
@@ -1666,42 +1680,6 @@ fn gutter_icon_style(
   }
 }
 
-fn gutter_pick_list_style(
-  theme: &Theme,
-  status: pick_list::Status,
-) -> pick_list::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  let mut style = pick_list::default(theme, status);
-  style.text_color = if is_dark {
-    Color::from_rgb(0.65, 0.70, 0.78)
-  } else {
-    Color::from_rgb(0.35, 0.35, 0.40)
-  };
-  style.background = Background::Color(if is_dark {
-    match status {
-      pick_list::Status::Hovered | pick_list::Status::Opened => {
-        Color::from_rgba(1.0, 1.0, 1.0, 0.08)
-      }
-      _ => Color::TRANSPARENT,
-    }
-  } else {
-    match status {
-      pick_list::Status::Hovered | pick_list::Status::Opened => {
-        Color::from_rgba(0.0, 0.0, 0.0, 0.06)
-      }
-      _ => Color::TRANSPARENT,
-    }
-  });
-  style.border = Border {
-    radius: 4.0.into(),
-    width: 0.0,
-    color: Color::TRANSPARENT,
-  };
-  style.handle_color = style.text_color;
-  style.placeholder_color = style.text_color;
-  style
-}
-
 fn export_button_style(
   theme: &Theme,
   status: pick_list::Status,
@@ -1709,7 +1687,7 @@ fn export_button_style(
   let is_dark = !matches!(theme, Theme::Light);
   let (bg, text_color, border_color) = if is_dark {
     match status {
-      pick_list::Status::Hovered | pick_list::Status::Opened => (
+      pick_list::Status::Hovered | pick_list::Status::Opened { .. } => (
         Color::from_rgb(0.22, 0.32, 0.48),
         Color::from_rgb(0.78, 0.82, 0.90),
         Color::from_rgb(0.22, 0.32, 0.48),
@@ -1756,7 +1734,7 @@ fn dropdown_style(
     style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
     if matches!(
       status,
-      pick_list::Status::Hovered | pick_list::Status::Opened
+      pick_list::Status::Hovered | pick_list::Status::Opened { .. }
     ) {
       style.border.color =
         Color::from_rgb(0.30, 0.30, 0.38);
