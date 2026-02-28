@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "woxi-studio"]
+resolver = "3"
+
 [package]
 name = "woxi"
 description = "Interpreter for a subset of the Wolfram Language"
