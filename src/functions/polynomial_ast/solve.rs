@@ -430,7 +430,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Expand and collect polynomial coefficients
-  // Clear denominators: (poly/constant) → poly (same roots)
+  // Clear denominators: f(x)/g(x) == 0 ↔ f(x) == 0
   let expanded_raw = expand_and_combine(&poly);
   let expanded = {
     let together = together_expr(&expanded_raw);
@@ -438,8 +438,8 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: numerator,
-        right: denominator,
-      } if is_constant_wrt(denominator, var) => expand_and_combine(numerator),
+        right: _denominator,
+      } => expand_and_combine(numerator),
       _ => expanded_raw,
     }
   };
@@ -449,6 +449,10 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let degree = match max_power(&expanded, var) {
     Some(d) => d,
     None => {
+      // Non-polynomial: try factoring out common fractional-power sub-expressions
+      if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
+        return result;
+      }
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
         args: args.to_vec(),
@@ -735,6 +739,49 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       // Non-integer coefficients: use general symbolic formula
+
+      // Special case: when b=0 and a is integer, solutions are x = ±Sqrt[c_expr] / Sqrt[|a_int|]
+      // This produces cleaner output matching Wolfram (e.g., a/Sqrt[2] instead of 1/2*Sqrt[2]*a)
+      if matches!(b, Expr::Integer(0))
+        && let Expr::Integer(a_int) = a
+      {
+        // x^2 = -c/a, and we want to present as Sqrt[c_expr] / Sqrt[neg_a]
+        // For a<0: x = ±Sqrt[c] / Sqrt[-a]
+        // For a>0: x = ±Sqrt[-c] / Sqrt[a]  (requires -c >= 0 somehow)
+        let (numer_under_sqrt, denom_under_sqrt) = if *a_int < 0 {
+          (c.clone(), Expr::Integer(-a_int))
+        } else {
+          (negate_expr(c), Expr::Integer(*a_int))
+        };
+        let sqrt_numer = {
+          let raw = crate::functions::sqrt_ast(&[numer_under_sqrt.clone()])
+            .unwrap_or_else(|_| Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![numer_under_sqrt],
+            });
+          let evaled =
+            crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw);
+          simplify(evaled)
+        };
+        let sqrt_denom =
+          crate::functions::sqrt_ast(&[denom_under_sqrt.clone()])
+            .unwrap_or_else(|_| Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![denom_under_sqrt],
+            });
+        let sol_pos = if matches!(&sqrt_denom, Expr::Integer(1)) {
+          sqrt_numer.clone()
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(sqrt_numer.clone()),
+            right: Box::new(sqrt_denom),
+          }
+        };
+        let sol_neg = negate_expr(&sol_pos);
+        return Ok(Expr::List(vec![make_rule(sol_neg), make_rule(sol_pos)]));
+      }
+
       // First evaluate the discriminant to simplify complex arithmetic (e.g., (3+I)^2 - 4*(2+2I) → -2I)
       let disc_eval = crate::evaluator::evaluate_expr_to_expr(&discriminant)
         .unwrap_or(discriminant.clone());
@@ -777,6 +824,394 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// Factor out multiplicative factors that are constant w.r.t. the solve variable.
+/// For example: `2*a^2*k*q - 4*k*q*x^2` → `a^2 - 2*x^2` (factoring out `2*k*q`)
+fn factor_out_constant_factors(expr: &Expr, var: &str) -> Expr {
+  let terms = collect_additive_terms(expr);
+  if terms.len() < 2 {
+    return expr.clone();
+  }
+
+  // For each term, extract (integer_coeff, non_integer_const_factors, var_factors)
+  struct TermParts {
+    int_coeff: i128,
+    const_factors: Vec<String>, // non-integer constant factor strings
+    all_factors: Vec<Expr>,     // all multiplicative factors
+  }
+
+  fn decompose_term(term: &Expr, var: &str) -> TermParts {
+    let factors = collect_multiplicative_factors(term);
+    let mut int_coeff: i128 = 1;
+    let mut sign = 1i128;
+    let mut expanded_factors: Vec<Expr> = Vec::new();
+
+    // Flatten negation
+    for f in &factors {
+      match f {
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } => {
+          sign *= -1;
+          let inner_factors = collect_multiplicative_factors(operand);
+          expanded_factors.extend(inner_factors);
+        }
+        _ => expanded_factors.push(f.clone()),
+      }
+    }
+
+    // Extract integer coefficients
+    let mut remaining: Vec<Expr> = Vec::new();
+    for f in &expanded_factors {
+      if let Expr::Integer(n) = f {
+        int_coeff *= n;
+      } else {
+        remaining.push(f.clone());
+      }
+    }
+    int_coeff *= sign;
+
+    let const_strs: Vec<String> = remaining
+      .iter()
+      .filter(|f| is_constant_wrt(f, var))
+      .map(expr_to_string)
+      .collect();
+
+    TermParts {
+      int_coeff,
+      const_factors: const_strs,
+      all_factors: remaining,
+    }
+  }
+
+  let parts: Vec<TermParts> =
+    terms.iter().map(|t| decompose_term(t, var)).collect();
+
+  // Compute numeric GCD of all integer coefficients
+  let num_gcd = parts
+    .iter()
+    .map(|p| p.int_coeff)
+    .filter(|&n| n != 0)
+    .fold(0i128, gcd_i128)
+    .abs();
+
+  // Find symbolic constant factors common to ALL terms
+  let mut common_symbolic: Vec<String> = Vec::new();
+  if !parts.is_empty() && !parts[0].const_factors.is_empty() {
+    for candidate in &parts[0].const_factors {
+      if parts[1..]
+        .iter()
+        .all(|p| p.const_factors.iter().any(|s| s == candidate))
+      {
+        common_symbolic.push(candidate.clone());
+      }
+    }
+  }
+
+  if num_gcd <= 1 && common_symbolic.is_empty() {
+    return expr.clone();
+  }
+
+  // Rebuild terms with common factors removed
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for part in &parts {
+    let new_coeff = if num_gcd > 1 {
+      part.int_coeff / num_gcd
+    } else {
+      part.int_coeff
+    };
+
+    let mut remaining: Vec<Expr> = Vec::new();
+    let mut used_common: Vec<bool> = vec![false; common_symbolic.len()];
+
+    for f in &part.all_factors {
+      if is_constant_wrt(f, var) {
+        // Check if this is a common symbolic factor
+        let f_str = expr_to_string(f);
+        let mut is_common = false;
+        for (ci, cs) in common_symbolic.iter().enumerate() {
+          if !used_common[ci] && f_str == *cs {
+            used_common[ci] = true;
+            is_common = true;
+            break;
+          }
+        }
+        if !is_common {
+          remaining.push(f.clone());
+        }
+      } else {
+        remaining.push(f.clone());
+      }
+    }
+
+    // Build the term: new_coeff * remaining_factors
+    let var_part = if remaining.is_empty() {
+      None
+    } else {
+      Some(build_product(remaining))
+    };
+
+    let term = match (new_coeff, var_part) {
+      (0, _) => Expr::Integer(0),
+      (1, Some(v)) => v,
+      (-1, Some(v)) => negate_term(&v),
+      (c, Some(v)) => Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(c)),
+        right: Box::new(v),
+      },
+      (c, None) => Expr::Integer(c),
+    };
+    new_terms.push(term);
+  }
+
+  expand_and_combine(&build_sum(new_terms))
+}
+
+/// Try to solve a non-polynomial equation by factoring out common
+/// sub-expressions with fractional exponents.
+///
+/// For example: `2*k*q*(a²+x²)^(3/2) - 6*k*q*x²*(a²+x²)^(1/2) == 0`
+/// - Common base: `(a²+x²)`, min exponent: `1/2`
+/// - After factoring out `(a²+x²)^(1/2)`: `2*k*q*(a²+x²) - 6*k*q*x²`
+/// - Solve the remaining polynomial: `x = ±a/Sqrt[2]`
+fn try_solve_factoring_powers(
+  expanded: &Expr,
+  var: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let terms = collect_additive_terms(expanded);
+  if terms.is_empty() {
+    return None;
+  }
+
+  // For each term, collect multiplicative factors and find factors of
+  // the form base^(p/q) where base contains the solve variable.
+  // We represent exponents as (numerator, denominator) rationals.
+  struct PowerFactor {
+    base_str: String,
+    exp_num: i128, // exponent numerator
+    exp_den: i128, // exponent denominator
+  }
+
+  fn extract_power_factors(term: &Expr, var: &str) -> Vec<PowerFactor> {
+    let factors = collect_multiplicative_factors(term);
+    let mut result = Vec::new();
+    for f in &factors {
+      // Handle Sqrt[expr] as expr^(1/2)
+      if let Expr::FunctionCall { name, args } = f
+        && name == "Sqrt"
+        && args.len() == 1
+        && !is_constant_wrt(&args[0], var)
+      {
+        result.push(PowerFactor {
+          base_str: expr_to_string(&args[0]),
+          exp_num: 1,
+          exp_den: 2,
+        });
+        continue;
+      }
+      let (base, exp) = extract_base_and_exp(f);
+      if is_constant_wrt(&base, var) {
+        continue;
+      }
+      let (num, den) = match &exp {
+        Expr::Integer(n) => (*n, 1i128),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+            (*n, *d)
+          } else {
+            continue;
+          }
+        }
+        _ => continue,
+      };
+      result.push(PowerFactor {
+        base_str: expr_to_string(&base),
+        exp_num: num,
+        exp_den: den,
+      });
+    }
+    result
+  }
+
+  // Collect power factors for each term
+  let all_power_factors: Vec<Vec<PowerFactor>> = terms
+    .iter()
+    .map(|t| extract_power_factors(t, var))
+    .collect();
+
+  // Find bases common to ALL terms
+  if all_power_factors.iter().any(|pf| pf.is_empty()) {
+    return None;
+  }
+
+  // Collect candidate base strings from the first term
+  let candidate_bases: Vec<String> = all_power_factors[0]
+    .iter()
+    .map(|pf| pf.base_str.clone())
+    .collect();
+
+  for candidate_base in &candidate_bases {
+    // Check if this base appears in ALL terms
+    let mut min_exp: Option<(i128, i128)> = None;
+    let mut all_have = true;
+    for term_factors in &all_power_factors {
+      let mut found = false;
+      for pf in term_factors {
+        if &pf.base_str == candidate_base {
+          // Compute min exponent (as rational)
+          let exp = (pf.exp_num, pf.exp_den);
+          min_exp = Some(match min_exp {
+            None => exp,
+            Some((mn, md)) => {
+              // Compare mn/md vs exp_num/exp_den
+              if mn * exp.1 <= exp.0 * md {
+                (mn, md)
+              } else {
+                exp
+              }
+            }
+          });
+          found = true;
+          break;
+        }
+      }
+      if !found {
+        all_have = false;
+        break;
+      }
+    }
+
+    if !all_have || min_exp.is_none() {
+      continue;
+    }
+    let (min_n, min_d) = min_exp.unwrap();
+    if min_n == 0 {
+      continue;
+    }
+
+    // Factor out base^(min_n/min_d) from each term
+    let mut new_terms: Vec<Expr> = Vec::new();
+    for (term, term_factors) in terms.iter().zip(all_power_factors.iter()) {
+      // Find the matching factor and subtract exponent
+      let mut remaining_factors: Vec<Expr> =
+        collect_multiplicative_factors(term);
+      let mut factored = false;
+
+      // Helper: get the base string from a factor (handles Sqrt and Power)
+      let factor_base_str = |f: &Expr| -> Option<String> {
+        if let Expr::FunctionCall { name, args } = f
+          && name == "Sqrt"
+          && args.len() == 1
+        {
+          return Some(expr_to_string(&args[0]));
+        }
+        let (base, _) = extract_base_and_exp(f);
+        if expr_to_string(&base) != expr_to_string(f)
+          || matches!(
+            f,
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              ..
+            }
+          )
+        {
+          Some(expr_to_string(&base))
+        } else {
+          // It's just a plain identifier (exponent = 1), which we also need
+          if matches!(f, Expr::Identifier(_)) {
+            Some(expr_to_string(f))
+          } else {
+            None
+          }
+        }
+      };
+
+      for idx in 0..remaining_factors.len() {
+        let f = &remaining_factors[idx];
+        if let Some(base_s) = factor_base_str(f)
+          && base_s == *candidate_base
+        {
+          // Find exponent for this factor
+          for pf in term_factors {
+            if pf.base_str == *candidate_base {
+              // New exponent = (pf.exp_num/pf.exp_den) - (min_n/min_d)
+              let new_num = pf.exp_num * min_d - min_n * pf.exp_den;
+              let new_den = pf.exp_den * min_d;
+              let g = gcd_i128(new_num.abs(), new_den.abs());
+              let new_num = new_num / g;
+              let new_den = new_den / g;
+
+              // Get the base expression
+              let base_expr = if let Expr::FunctionCall { name, args } =
+                &remaining_factors[idx]
+              {
+                if name == "Sqrt" && args.len() == 1 {
+                  args[0].clone()
+                } else {
+                  extract_base_and_exp(&remaining_factors[idx]).0
+                }
+              } else {
+                extract_base_and_exp(&remaining_factors[idx]).0
+              };
+
+              if new_num == 0 {
+                // Remove this factor entirely
+                remaining_factors.remove(idx);
+              } else {
+                // Replace with base^(new_num/new_den)
+                let new_exp = if new_den == 1 {
+                  Expr::Integer(new_num)
+                } else {
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(new_num), Expr::Integer(new_den)],
+                  }
+                };
+                remaining_factors[idx] = Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(base_expr),
+                  right: Box::new(new_exp),
+                };
+              }
+              factored = true;
+              break;
+            }
+          }
+          break;
+        }
+      }
+      if !factored {
+        return None;
+      }
+      if remaining_factors.is_empty() {
+        new_terms.push(Expr::Integer(1));
+      } else {
+        new_terms.push(build_product(remaining_factors));
+      }
+    }
+
+    // Build the remaining expression and try to solve it
+    let remaining = expand_and_combine(&build_sum(new_terms));
+    // Factor out common terms that are constant w.r.t. the solve variable
+    // e.g. 2*a^2*k*q - 4*k*q*x^2 → factor out 2*k*q → a^2 - 2*x^2
+    let remaining = factor_out_constant_factors(&remaining, var);
+    if max_power(&remaining, var).is_some() {
+      // Recursively solve
+      let new_eq = Expr::Comparison {
+        operands: vec![remaining, Expr::Integer(0)],
+        operators: vec![crate::syntax::ComparisonOp::Equal],
+      };
+      return Some(solve_ast(&[new_eq, args[1].clone()]));
+    }
+  }
+
+  None
 }
 
 /// Divide two expressions symbolically, simplifying integer cases.

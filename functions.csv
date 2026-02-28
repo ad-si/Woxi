@@ -2188,7 +2188,7 @@ FullGraphics,,,,2,2688
 FullInformationOutputRegulator,,,,10,4173
 FullMoon,,,,14,
 FullRegion,,,,10,2260
-FullSimplify,,,,3,114
+FullSimplify,Performs aggressive algebraic simplification including factoring and trig identities,✅,pure,1,114
 Function,Represents a pure function,✅,pure,1,19
 FunctionAnalytic,,,,12.2,3717
 FunctionBijective,,,,12.2,4262

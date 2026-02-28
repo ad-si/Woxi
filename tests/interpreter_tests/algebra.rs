@@ -1132,6 +1132,85 @@ mod solve {
       "Solve[E + x == 0, E]"
     );
   }
+
+  #[test]
+  fn fractional_power_equation() {
+    // Physics: find extrema of E-field on axis of ring charge
+    assert_eq!(
+      interpret(
+        "Solve[(2*k*q*(a^2 + x^2)^(3/2) - 6*k*q*x^2*(a^2 + x^2)^(1/2))/(a^2 + x^2)^3 == 0, x]"
+      )
+      .unwrap(),
+      "{{x -> -(a/Sqrt[2])}, {x -> a/Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_quadratic_simple() {
+    assert_eq!(
+      interpret("Solve[a^2 - 2*x^2 == 0, x]").unwrap(),
+      "{{x -> -(a/Sqrt[2])}, {x -> a/Sqrt[2]}}"
+    );
+  }
+}
+
+mod full_simplify {
+  use super::*;
+
+  #[test]
+  fn algebraic_factoring() {
+    assert_eq!(
+      interpret("FullSimplify[x^2 + 2*x + 1]").unwrap(),
+      "(1 + x)^2"
+    );
+  }
+
+  #[test]
+  fn trig_identity() {
+    assert_eq!(interpret("FullSimplify[Sin[x]^2 + Cos[x]^2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn trig_with_symbolic_coefficients() {
+    assert_eq!(
+      interpret(
+        "FullSimplify[{a^2*((-1 + Sin[theta])^2 + Cos[theta]^2), a^2*((1 + Sin[theta])^2 + Cos[theta]^2)}]"
+      )
+      .unwrap(),
+      "{-2*a^2*(-1 + Sin[theta]), 2*a^2*(1 + Sin[theta])}"
+    );
+  }
+
+  #[test]
+  fn numeric_factoring() {
+    assert_eq!(interpret("FullSimplify[3*x + 6]").unwrap(), "3*(2 + x)");
+  }
+
+  #[test]
+  fn trivial() {
+    assert_eq!(interpret("FullSimplify[5]").unwrap(), "5");
+    assert_eq!(interpret("FullSimplify[x]").unwrap(), "x");
+  }
+}
+
+mod simplify_assumptions {
+  use super::*;
+
+  #[test]
+  fn simplify_with_assumptions_option() {
+    assert_eq!(
+      interpret("Simplify[x + x, Assumptions -> x > 0]").unwrap(),
+      "2*x"
+    );
+  }
+
+  #[test]
+  fn full_simplify_with_assumptions_option() {
+    assert_eq!(
+      interpret("FullSimplify[x + x, Assumptions -> x > 0]").unwrap(),
+      "2*x"
+    );
+  }
 }
 
 mod roots {

@@ -515,9 +515,9 @@ pub fn evaluate_function_call_ast_inner(
   {
     return Ok(Expr::String(ctx.clone()));
   }
-  // End[] returns the context being ended (matches wolframscript default: "Private`")
+  // End[] returns the previous context (default: "Global`" matching wolframscript)
   if name == "End" && args.is_empty() {
-    return Ok(Expr::String("Private`".to_string()));
+    return Ok(Expr::String("Global`".to_string()));
   }
   // EndPackage[] returns Null (matching wolframscript)
   if name == "EndPackage" && args.is_empty() {
