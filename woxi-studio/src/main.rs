@@ -1081,7 +1081,8 @@ impl WoxiStudio {
     container(
       button(text("+").size(10))
         .on_press(Message::AddCellAbove(idx))
-        .padding([0, 8]),
+        .padding([0, 8])
+        .style(add_cell_button_style),
     )
     .center_x(Fill)
     .padding([2, 0])
@@ -1096,7 +1097,8 @@ impl WoxiStudio {
     container(
       button(text("+").size(10))
         .on_press(Message::AddCellBelow(idx))
-        .padding([0, 8]),
+        .padding([0, 8])
+        .style(add_cell_button_style),
     )
     .center_x(Fill)
     .padding([2, 0])
@@ -1650,6 +1652,48 @@ fn trash_button_style(
     }
   }
   style
+}
+
+fn add_cell_button_style(
+  theme: &Theme,
+  status: button::Status,
+) -> button::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let text_color = match status {
+    button::Status::Hovered | button::Status::Pressed => {
+      if is_dark {
+        Color::from_rgb(0.7, 0.7, 0.7)
+      } else {
+        Color::from_rgb(0.3, 0.3, 0.3)
+      }
+    }
+    _ => {
+      if is_dark {
+        Color::from_rgb(0.45, 0.45, 0.45)
+      } else {
+        Color::from_rgb(0.6, 0.6, 0.6)
+      }
+    }
+  };
+  let background = match status {
+    button::Status::Hovered | button::Status::Pressed => {
+      Some(Background::Color(if is_dark {
+        Color::from_rgba(1.0, 1.0, 1.0, 0.06)
+      } else {
+        Color::from_rgba(0.0, 0.0, 0.0, 0.04)
+      }))
+    }
+    _ => None,
+  };
+  button::Style {
+    text_color,
+    background,
+    border: Border {
+      radius: 4.0.into(),
+      ..Border::default()
+    },
+    ..button::text(theme, status)
+  }
 }
 
 fn eval_all_icon_style(
