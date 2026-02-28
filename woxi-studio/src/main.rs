@@ -1081,12 +1081,15 @@ fn output_box_style(theme: &Theme) -> container::Style {
   let is_dark = !matches!(theme, Theme::Light);
   if is_dark {
     container::Style {
+      background: Some(Background::Color(
+        Color::from_rgb(0.10, 0.10, 0.12),
+      )),
       border: Border {
-        color: Color::from_rgb(0.22, 0.22, 0.25),
+        color: Color::from_rgb(0.20, 0.20, 0.23),
         width: 1.0,
         radius: 4.0.into(),
       },
-      ..container::rounded_box(theme)
+      ..container::Style::default()
     }
   } else {
     container::rounded_box(theme)
@@ -1123,16 +1126,16 @@ fn cell_editor_style(
   match cell_style {
     CellStyle::Title => {
       style.value = if is_dark {
-        Color::from_rgb(0.90, 0.90, 0.95)
+        Color::from_rgb(0.45, 0.65, 0.95)
       } else {
-        Color::from_rgb(0.10, 0.10, 0.15)
+        Color::from_rgb(0.15, 0.35, 0.75)
       };
     }
     CellStyle::Subtitle => {
       style.value = if is_dark {
-        Color::from_rgb(0.60, 0.62, 0.70)
+        Color::from_rgb(0.40, 0.55, 0.78)
       } else {
-        Color::from_rgb(0.35, 0.35, 0.42)
+        Color::from_rgb(0.22, 0.40, 0.65)
       };
     }
     _ => {}
@@ -1149,19 +1152,19 @@ fn muted_button_style(
   if is_dark {
     style.background = Some(Background::Color(match status {
       button::Status::Active => {
-        Color::from_rgb(0.24, 0.36, 0.55)
+        Color::from_rgb(0.18, 0.26, 0.40)
       }
       button::Status::Hovered => {
-        Color::from_rgb(0.28, 0.42, 0.62)
+        Color::from_rgb(0.22, 0.32, 0.48)
       }
       button::Status::Pressed => {
-        Color::from_rgb(0.20, 0.32, 0.50)
+        Color::from_rgb(0.15, 0.22, 0.35)
       }
       button::Status::Disabled => {
-        Color::from_rgb(0.18, 0.22, 0.30)
+        Color::from_rgb(0.14, 0.16, 0.22)
       }
     }));
-    style.text_color = Color::from_rgb(0.85, 0.88, 0.95);
+    style.text_color = Color::from_rgb(0.78, 0.82, 0.90);
   }
   style
 }
@@ -1211,21 +1214,21 @@ fn export_button_style(
   let (bg, text_color, border_color) = if is_dark {
     match status {
       pick_list::Status::Hovered | pick_list::Status::Opened => (
-        Color::from_rgb(0.28, 0.42, 0.62),
-        Color::from_rgb(0.85, 0.88, 0.95),
-        Color::from_rgb(0.28, 0.42, 0.62),
+        Color::from_rgb(0.22, 0.32, 0.48),
+        Color::from_rgb(0.78, 0.82, 0.90),
+        Color::from_rgb(0.22, 0.32, 0.48),
       ),
       _ => (
-        Color::from_rgb(0.24, 0.36, 0.55),
-        Color::from_rgb(0.85, 0.88, 0.95),
-        Color::from_rgb(0.24, 0.36, 0.55),
+        Color::from_rgb(0.18, 0.26, 0.40),
+        Color::from_rgb(0.78, 0.82, 0.90),
+        Color::from_rgb(0.18, 0.26, 0.40),
       ),
     }
   } else {
     let base = pick_list::default(theme, status);
     return pick_list::Style {
       border: Border {
-        radius: 6.0.into(),
+        radius: 2.0.into(),
         ..base.border
       },
       ..base
@@ -1239,7 +1242,7 @@ fn export_button_style(
     border: Border {
       color: border_color,
       width: 1.0,
-      radius: 6.0.into(),
+      radius: 2.0.into(),
     },
   }
 }
