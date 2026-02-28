@@ -1223,6 +1223,53 @@ fn render_axes(
   }
 }
 
+/// Truncate a BigFloat digit string to `prec` significant digits for graphical display.
+/// E.g. digits="0.84147098480789650665" with prec=3 → "0.841"
+fn truncate_bigfloat_digits(digits: &str, prec: usize) -> String {
+  if prec == 0 {
+    return digits.to_string();
+  }
+  let negative = digits.starts_with('-');
+  let d = if negative { &digits[1..] } else { digits };
+
+  // Count leading zeros after decimal point (they are not significant)
+  // e.g. "0.00123" has 2 leading zeros
+  let mut sig_seen = 0;
+  let mut cut_pos = d.len();
+  let mut past_dot = false;
+  let mut leading_zeros = true;
+  for (i, ch) in d.char_indices() {
+    if ch == '.' {
+      past_dot = true;
+      continue;
+    }
+    if !ch.is_ascii_digit() {
+      cut_pos = i;
+      break;
+    }
+    if leading_zeros && past_dot && ch == '0' {
+      continue; // leading fractional zeros are not significant
+    }
+    if ch != '0' || !leading_zeros {
+      leading_zeros = false;
+      sig_seen += 1;
+      if sig_seen == prec {
+        cut_pos = i + ch.len_utf8();
+        break;
+      }
+    }
+  }
+
+  let truncated = &d[..cut_pos];
+  // Remove trailing dot if nothing follows
+  let truncated = truncated.strip_suffix('.').unwrap_or(truncated);
+  if negative {
+    format!("-{}", truncated)
+  } else {
+    truncated.to_string()
+  }
+}
+
 pub(crate) fn svg_escape(s: &str) -> String {
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
@@ -2290,10 +2337,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── Atoms ──
     Expr::String(s) => svg_escape(s),
     Expr::Identifier(s) => svg_escape(s),
+    Expr::BigFloat(digits, prec) => {
+      // Graphical output shows only `prec` significant digits (no backtick notation)
+      svg_escape(&truncate_bigfloat_digits(digits, *prec))
+    }
     Expr::Integer(_)
     | Expr::Real(_)
     | Expr::BigInteger(_)
-    | Expr::BigFloat(..)
     | Expr::Constant(_)
     | Expr::Slot(_) => svg_escape(&expr_to_output(expr)),
 
@@ -2582,10 +2632,12 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     // Atoms
     Expr::String(s) => s.len() as f64,
     Expr::Identifier(s) => s.len() as f64,
+    Expr::BigFloat(digits, prec) => {
+      truncate_bigfloat_digits(digits, *prec).len() as f64
+    }
     Expr::Integer(_)
     | Expr::Real(_)
     | Expr::BigInteger(_)
-    | Expr::BigFloat(..)
     | Expr::Constant(_)
     | Expr::Slot(_) => expr_to_output(expr).len() as f64,
 
