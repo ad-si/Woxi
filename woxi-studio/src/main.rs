@@ -640,6 +640,43 @@ impl WoxiStudio {
           }
         }
 
+        // Ctrl+D: delete forward
+        if modifiers.control() {
+          if let keyboard::Key::Character("d") = key.as_ref()
+          {
+            if let Some(idx) = self.focused_cell {
+              self.cell_editors[idx].content.perform(
+                text_editor::Action::Edit(
+                  text_editor::Edit::Delete,
+                ),
+              );
+              self.is_dirty = true;
+            }
+            return Task::none();
+          }
+        }
+
+        // Ctrl+W: delete previous word
+        if modifiers.control() {
+          if let keyboard::Key::Character("w") = key.as_ref()
+          {
+            if let Some(idx) = self.focused_cell {
+              self.cell_editors[idx].content.perform(
+                text_editor::Action::Select(
+                  text_editor::Motion::WordLeft,
+                ),
+              );
+              self.cell_editors[idx].content.perform(
+                text_editor::Action::Edit(
+                  text_editor::Edit::Backspace,
+                ),
+              );
+              self.is_dirty = true;
+            }
+            return Task::none();
+          }
+        }
+
         // Shift+Enter to evaluate current cell
         if modifiers.shift() {
           if let keyboard::Key::Named(
@@ -701,8 +738,8 @@ impl WoxiStudio {
       )
       .placeholder("Export")
       .text_size(12)
-      .padding([2, 6])
-      .style(dropdown_style)
+      .padding([3, 10])
+      .style(export_button_style)
       .menu_style(dropdown_menu_style),
       text(" | ").size(12),
       button("Eval All")
@@ -965,15 +1002,9 @@ impl WoxiStudio {
       .spacing(4)
       .padding([3, 6]);
 
-    container(
-      column![
-        container(cell_row).width(Fill),
-        horizontal_rule(1).style(separator_style)
-      ]
-      .spacing(0),
-    )
-    .width(Fill)
-    .into()
+    container(cell_row)
+      .width(Fill)
+      .into()
   }
 }
 
@@ -997,6 +1028,17 @@ fn handle_event(
       ) = key.as_ref()
       {
         return Some(Message::KeyPressed(key, modifiers));
+      }
+    }
+
+    // Ctrl shortcuts for text editing
+    if modifiers.control() {
+      match key.as_ref() {
+        keyboard::Key::Character("d")
+        | keyboard::Key::Character("w") => {
+          return Some(Message::KeyPressed(key, modifiers));
+        }
+        _ => {}
       }
     }
 
@@ -1141,6 +1183,47 @@ fn trash_button_style(
     }
   }
   style
+}
+
+fn export_button_style(
+  theme: &Theme,
+  status: pick_list::Status,
+) -> pick_list::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let (bg, text_color, border_color) = if is_dark {
+    match status {
+      pick_list::Status::Hovered | pick_list::Status::Opened => (
+        Color::from_rgb(0.28, 0.42, 0.62),
+        Color::from_rgb(0.85, 0.88, 0.95),
+        Color::from_rgb(0.28, 0.42, 0.62),
+      ),
+      _ => (
+        Color::from_rgb(0.24, 0.36, 0.55),
+        Color::from_rgb(0.85, 0.88, 0.95),
+        Color::from_rgb(0.24, 0.36, 0.55),
+      ),
+    }
+  } else {
+    let base = pick_list::default(theme, status);
+    return pick_list::Style {
+      border: Border {
+        radius: 6.0.into(),
+        ..base.border
+      },
+      ..base
+    };
+  };
+  pick_list::Style {
+    text_color,
+    placeholder_color: text_color,
+    handle_color: text_color,
+    background: Background::Color(bg),
+    border: Border {
+      color: border_color,
+      width: 1.0,
+      radius: 6.0.into(),
+    },
+  }
 }
 
 fn dropdown_style(
