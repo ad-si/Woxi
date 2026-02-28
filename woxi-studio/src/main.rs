@@ -1166,6 +1166,14 @@ impl WoxiStudio {
       _ => 13.0,
     };
 
+    let cell_font = match editor.style {
+      CellStyle::Title | CellStyle::Subtitle => Font {
+        weight: iced::font::Weight::Bold,
+        ..Font::MONOSPACE
+      },
+      _ => Font::MONOSPACE,
+    };
+
     let cell_style = editor.style;
     let in_preview = self.preview_mode;
     let has_output = editor.stdout.is_some()
@@ -1212,6 +1220,7 @@ impl WoxiStudio {
         }
         text_editor::Binding::from_key_press(key_press)
       })
+      .font(cell_font)
       .height(iced::Length::Shrink)
       .padding(6)
       .size(font_size)
