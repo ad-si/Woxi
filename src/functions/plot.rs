@@ -17,27 +17,98 @@ pub(crate) const NUM_SAMPLES: usize = 500;
 
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
+  let sub = |e: &Expr| substitute_var(e, var, value);
   match expr {
     Expr::Identifier(name) if name == var => value.clone(),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args.iter().map(|a| substitute_var(a, var, value)).collect(),
+      args: args.iter().map(sub).collect(),
     },
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
-      left: Box::new(substitute_var(left, var, value)),
-      right: Box::new(substitute_var(right, var, value)),
+      left: Box::new(sub(left)),
+      right: Box::new(sub(right)),
     },
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
-      operand: Box::new(substitute_var(operand, var, value)),
+      operand: Box::new(sub(operand)),
     },
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(|i| substitute_var(i, var, value))
-        .collect(),
-    ),
+    Expr::List(items) => Expr::List(items.iter().map(sub).collect()),
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(sub).collect(),
+      operators: operators.clone(),
+    },
+    Expr::CompoundExpr(exprs) => {
+      Expr::CompoundExpr(exprs.iter().map(sub).collect())
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(sub(pattern)),
+      replacement: Box::new(sub(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(sub(pattern)),
+      replacement: Box::new(sub(replacement)),
+    },
+    Expr::ReplaceAll { expr, rules } => Expr::ReplaceAll {
+      expr: Box::new(sub(expr)),
+      rules: Box::new(sub(rules)),
+    },
+    Expr::ReplaceRepeated { expr, rules } => Expr::ReplaceRepeated {
+      expr: Box::new(sub(expr)),
+      rules: Box::new(sub(rules)),
+    },
+    Expr::Map { func, list } => Expr::Map {
+      func: Box::new(sub(func)),
+      list: Box::new(sub(list)),
+    },
+    Expr::Apply { func, list } => Expr::Apply {
+      func: Box::new(sub(func)),
+      list: Box::new(sub(list)),
+    },
+    Expr::MapApply { func, list } => Expr::MapApply {
+      func: Box::new(sub(func)),
+      list: Box::new(sub(list)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(sub(func)),
+      arg: Box::new(sub(arg)),
+    },
+    Expr::Postfix { expr, func } => Expr::Postfix {
+      expr: Box::new(sub(expr)),
+      func: Box::new(sub(func)),
+    },
+    Expr::Part { expr, index } => Expr::Part {
+      expr: Box::new(sub(expr)),
+      index: Box::new(sub(index)),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(sub(func)),
+      args: args.iter().map(sub).collect(),
+    },
+    Expr::Function { body } => Expr::Function {
+      body: Box::new(sub(body)),
+    },
+    Expr::Association(pairs) => {
+      Expr::Association(pairs.iter().map(|(k, v)| (sub(k), sub(v))).collect())
+    }
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => Expr::PatternOptional {
+      name: name.clone(),
+      head: head.clone(),
+      default: Box::new(sub(default)),
+    },
     other => other.clone(),
   }
 }

@@ -136,6 +136,9 @@ pub fn dispatch_evaluation_control(
       }
       return Some(Ok(Expr::Identifier("False".to_string())));
     }
+    "Piecewise" if !args.is_empty() && args.len() <= 2 => {
+      return Some(crate::functions::control_flow_ast::piecewise_ast(args));
+    }
     "If" => {
       if args.len() >= 2 && args.len() <= 4 {
         let cond = match evaluate_expr_to_expr(&args[0]) {
