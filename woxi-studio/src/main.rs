@@ -4,10 +4,11 @@ mod notebook;
 use iced::keyboard;
 use iced::widget::{
   button, column, container, horizontal_rule, pick_list, row,
-  scrollable, svg, text, text_editor, Column,
+  rule, scrollable, svg, text, text_editor, Column,
 };
 use iced::{
-  Center, Element, Fill, Font, Subscription, Task, Theme,
+  Border, Center, Color, Element, Fill, Font, Subscription,
+  Task, Theme,
 };
 
 use notebook::{
@@ -771,7 +772,7 @@ impl WoxiStudio {
     .padding([3, 8]);
 
     // ── Layout ──
-    column![toolbar, horizontal_rule(1), cells, status_bar,]
+    column![toolbar, horizontal_rule(1).style(separator_style), cells, status_bar,]
       .spacing(0)
       .into()
   }
@@ -862,7 +863,7 @@ impl WoxiStudio {
       )
       .padding(6)
       .width(Fill)
-      .style(container::rounded_box);
+      .style(output_box_style);
 
       content_col = content_col.push(stdout_display);
     }
@@ -893,7 +894,7 @@ impl WoxiStudio {
         )
         .padding(6)
         .width(Fill)
-        .style(container::rounded_box);
+        .style(output_box_style);
 
         content_col = content_col.push(output_display);
       }
@@ -919,12 +920,44 @@ impl WoxiStudio {
     container(
       column![
         container(cell_row).width(Fill),
-        horizontal_rule(1)
+        horizontal_rule(1).style(separator_style)
       ]
       .spacing(0),
     )
     .width(Fill)
     .into()
+  }
+}
+
+// ── Custom styles ───────────────────────────────────────────────────
+
+fn separator_style(theme: &Theme) -> rule::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  rule::Style {
+    color: if is_dark {
+      Color::from_rgb(0.22, 0.22, 0.25)
+    } else {
+      Color::from_rgb(0.82, 0.82, 0.82)
+    },
+    width: 1,
+    radius: 0.0.into(),
+    fill_mode: rule::FillMode::Full,
+  }
+}
+
+fn output_box_style(theme: &Theme) -> container::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  if is_dark {
+    container::Style {
+      border: Border {
+        color: Color::from_rgb(0.22, 0.22, 0.25),
+        width: 1.0,
+        radius: 4.0.into(),
+      },
+      ..container::rounded_box(theme)
+    }
+  } else {
+    container::rounded_box(theme)
   }
 }
 
