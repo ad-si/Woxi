@@ -1,0 +1,10 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[Table[Disk[{3 n, 0}, {n/4, 2 - n/4}], {n, 4}]]\")"
+---
+<svg width="360" height="123" viewBox="0 0 360 123" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<ellipse cx="21.46" cy="61.50" rx="8.13" ry="56.91" fill="rgb(0,0,0)"/>
+<ellipse cx="119.02" cy="61.50" rx="16.26" ry="48.78" fill="rgb(0,0,0)"/>
+<ellipse cx="216.59" cy="61.50" rx="24.39" ry="40.65" fill="rgb(0,0,0)"/>
+<ellipse cx="314.15" cy="61.50" rx="32.52" ry="32.52" fill="rgb(0,0,0)"/>
+</svg>

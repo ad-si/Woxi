@@ -85,6 +85,20 @@ mod graphics {
     }
 
     #[test]
+    fn disk_elliptical() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[Table[Disk[{3 n, 0}, {n/4, 2 - n/4}], {n, 4}]]"
+      ));
+    }
+
+    #[test]
+    fn circle_elliptical() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[Circle[{0, 0}, {2, 1}]]"
+      ));
+    }
+
+    #[test]
     fn disk_sector() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Disk[{0, 0}, 1, {0, Pi}]}]"

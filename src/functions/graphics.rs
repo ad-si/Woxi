@@ -242,19 +242,22 @@ enum Primitive {
   CircleArc {
     cx: f64,
     cy: f64,
-    r: f64,
+    rx: f64,
+    ry: f64,
     style: StyleState,
   },
   Disk {
     cx: f64,
     cy: f64,
-    r: f64,
+    rx: f64,
+    ry: f64,
     style: StyleState,
   },
   DiskSector {
     cx: f64,
     cy: f64,
-    r: f64,
+    rx: f64,
+    ry: f64,
     angle1: f64,
     angle2: f64,
     style: StyleState,
@@ -728,15 +731,21 @@ fn parse_circle(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   } else {
     (0.0, 0.0)
   };
-  let r = if args.len() >= 2 {
-    expr_to_f64(&args[1]).unwrap_or(1.0)
+  let (rx, ry) = if args.len() >= 2 {
+    if let Some((a, b)) = expr_to_point(&args[1]) {
+      (a, b)
+    } else {
+      let r = expr_to_f64(&args[1]).unwrap_or(1.0);
+      (r, r)
+    }
   } else {
-    1.0
+    (1.0, 1.0)
   };
   prims.push(Primitive::CircleArc {
     cx,
     cy,
-    r,
+    rx,
+    ry,
     style: style.clone(),
   });
 }
@@ -747,10 +756,15 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   } else {
     (0.0, 0.0)
   };
-  let r = if args.len() >= 2 {
-    expr_to_f64(&args[1]).unwrap_or(1.0)
+  let (rx, ry) = if args.len() >= 2 {
+    if let Some((a, b)) = expr_to_point(&args[1]) {
+      (a, b)
+    } else {
+      let r = expr_to_f64(&args[1]).unwrap_or(1.0);
+      (r, r)
+    }
   } else {
-    1.0
+    (1.0, 1.0)
   };
   // Disk[center, r, {angle1, angle2}] creates a sector
   if args.len() >= 3
@@ -759,7 +773,8 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     prims.push(Primitive::DiskSector {
       cx,
       cy,
-      r,
+      rx,
+      ry,
       angle1: a1,
       angle2: a2,
       style: style.clone(),
@@ -769,7 +784,8 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   prims.push(Primitive::Disk {
     cx,
     cy,
-    r,
+    rx,
+    ry,
     style: style.clone(),
   });
 }
@@ -990,15 +1006,16 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
         }
       }
     }
-    Primitive::CircleArc { cx, cy, r, .. }
-    | Primitive::Disk { cx, cy, r, .. } => {
-      bb.include_point(cx - r, cy - r);
-      bb.include_point(cx + r, cy + r);
+    Primitive::CircleArc { cx, cy, rx, ry, .. }
+    | Primitive::Disk { cx, cy, rx, ry, .. } => {
+      bb.include_point(cx - rx, cy - ry);
+      bb.include_point(cx + rx, cy + ry);
     }
     Primitive::DiskSector {
       cx,
       cy,
-      r,
+      rx,
+      ry,
       angle1,
       angle2,
       ..
@@ -1006,8 +1023,8 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
       // Include center point (sector always connects to center)
       bb.include_point(*cx, *cy);
       // Include the two endpoint arcs
-      bb.include_point(cx + r * angle1.cos(), cy + r * angle1.sin());
-      bb.include_point(cx + r * angle2.cos(), cy + r * angle2.sin());
+      bb.include_point(cx + rx * angle1.cos(), cy + ry * angle1.sin());
+      bb.include_point(cx + rx * angle2.cos(), cy + ry * angle2.sin());
       // Include axis-aligned extremes if the arc crosses them
       let mut a = *angle1 % (2.0 * std::f64::consts::PI);
       if a < 0.0 {
@@ -1022,7 +1039,7 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
           diff += 2.0 * std::f64::consts::PI;
         }
         if diff < span {
-          bb.include_point(cx + r * cardinal.cos(), cy + r * cardinal.sin());
+          bb.include_point(cx + rx * cardinal.cos(), cy + ry * cardinal.sin());
         }
       }
     }
@@ -1424,11 +1441,17 @@ fn render_primitive(
         ));
       }
     }
-    Primitive::CircleArc { cx, cy, r, style } => {
+    Primitive::CircleArc {
+      cx,
+      cy,
+      rx,
+      ry,
+      style,
+    } => {
       let scx = coord_x(*cx, bb, svg_w);
       let scy = coord_y(*cy, bb, svg_h);
-      let srx = *r / bb.width() * svg_w;
-      let sry = *r / bb.height() * svg_h;
+      let srx = *rx / bb.width() * svg_w;
+      let sry = *ry / bb.height() * svg_h;
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(&style.dashing, bb, svg_w);
@@ -1439,11 +1462,17 @@ fn render_primitive(
         dash,
       ));
     }
-    Primitive::Disk { cx, cy, r, style } => {
+    Primitive::Disk {
+      cx,
+      cy,
+      rx,
+      ry,
+      style,
+    } => {
       let scx = coord_x(*cx, bb, svg_w);
       let scy = coord_y(*cy, bb, svg_h);
-      let srx = *r / bb.width() * svg_w;
-      let sry = *r / bb.height() * svg_h;
+      let srx = *rx / bb.width() * svg_w;
+      let sry = *ry / bb.height() * svg_h;
       let color = style.effective_color();
       // Edge form for stroke
       let (stroke_color, stroke_width) = if let Some(ref ef) = style.edge_form {
@@ -1484,15 +1513,16 @@ fn render_primitive(
     Primitive::DiskSector {
       cx,
       cy,
-      r,
+      rx,
+      ry,
       angle1,
       angle2,
       style,
     } => {
       let scx = coord_x(*cx, bb, svg_w);
       let scy = coord_y(*cy, bb, svg_h);
-      let srx = *r / bb.width() * svg_w;
-      let sry = *r / bb.height() * svg_h;
+      let srx = *rx / bb.width() * svg_w;
+      let sry = *ry / bb.height() * svg_h;
       // Start point of arc (in SVG coords: negate y because SVG y is flipped)
       let x1 = scx + srx * angle1.cos();
       let y1 = scy - sry * angle1.sin();
@@ -2014,24 +2044,25 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.extend(gbox::line_box(segments));
       }
-      Primitive::CircleArc { cx, cy, r, style } => {
+      Primitive::CircleArc { cx, cy, rx, style, .. } => {
         elements.extend(tracker.emit_style_changes(style));
-        elements.push(gbox::circle_box(*cx, *cy, *r));
+        elements.push(gbox::circle_box(*cx, *cy, *rx));
       }
-      Primitive::Disk { cx, cy, r, style } => {
+      Primitive::Disk { cx, cy, rx, style, .. } => {
         elements.extend(tracker.emit_style_changes(style));
-        elements.push(gbox::disk_box(*cx, *cy, *r));
+        elements.push(gbox::disk_box(*cx, *cy, *rx));
       }
       Primitive::DiskSector {
         cx,
         cy,
-        r,
+        rx,
         angle1,
         angle2,
         style,
+        ..
       } => {
         elements.extend(tracker.emit_style_changes(style));
-        elements.push(gbox::disk_sector_box(*cx, *cy, *r, *angle1, *angle2));
+        elements.push(gbox::disk_sector_box(*cx, *cy, *rx, *angle1, *angle2));
       }
       Primitive::RectPrim {
         x_min,
