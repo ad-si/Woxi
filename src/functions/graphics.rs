@@ -2995,8 +2995,9 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       }
     },
 
-    // Expr::Image → width in character units (pixel width / char_width)
-    Expr::Image { width, .. } => *width as f64 / 8.4,
+    // Expr::Image → width in character units, capped at standard display size.
+    // Mathematica's default image display width is ~180pt (= 240 CSS px at 96 DPI).
+    Expr::Image { width, .. } => (*width as f64).min(240.0) / 8.4,
 
     // Fallback
     _ => expr_to_output(expr).len() as f64,
@@ -3282,6 +3283,8 @@ fn grid_svg_internal(
   let mut frame_all = false;
   let mut row_headings: Vec<Expr> = Vec::new();
   let mut col_headings: Vec<Expr> = Vec::new();
+  let mut spacings_h: Option<f64> = None; // horizontal spacing override
+  let mut spacings_v: Option<f64> = None; // vertical spacing override
   for raw_opt in &args[1..] {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
@@ -3297,6 +3300,36 @@ fn grid_svg_internal(
             && val == "All"
           {
             frame_all = true;
+          }
+        }
+        "Spacings" => {
+          // Spacings -> {h, v} or Spacings -> n
+          match replacement.as_ref() {
+            Expr::Integer(n) => {
+              spacings_h = Some(*n as f64);
+              spacings_v = Some(*n as f64);
+            }
+            Expr::Real(f) => {
+              spacings_h = Some(*f);
+              spacings_v = Some(*f);
+            }
+            Expr::List(items) => {
+              if !items.is_empty() {
+                match &items[0] {
+                  Expr::Integer(n) => spacings_h = Some(*n as f64),
+                  Expr::Real(f) => spacings_h = Some(*f),
+                  _ => {}
+                }
+              }
+              if items.len() >= 2 {
+                match &items[1] {
+                  Expr::Integer(n) => spacings_v = Some(*n as f64),
+                  Expr::Real(f) => spacings_v = Some(*f),
+                  _ => {}
+                }
+              }
+            }
+            _ => {}
           }
         }
         "TableHeadings" => {
@@ -3373,8 +3406,16 @@ fn grid_svg_internal(
   // Compute column widths based on estimated display width
   let char_width: f64 = 8.4; // approximate monospace char width at font-size 14
   let font_size: f64 = 14.0;
-  let pad_x: f64 = 12.0; // horizontal padding per cell (each side = 6)
+  // Apply Spacings option: values are in ems (multiples of char_width / font_size)
+  let pad_x: f64 = match spacings_h {
+    Some(h) => h * char_width, // Spacings h in ems → pixel padding
+    None => 12.0,              // default horizontal padding per cell
+  };
   let pad_y: f64 = 8.0; // vertical padding per cell (each side = 4)
+  let row_gap: f64 = match spacings_v {
+    Some(v) => v * font_size, // Spacings v in ems → pixel gap between rows
+    None => 0.0,              // default: no extra row gap
+  };
   let group_gap: f64 = 6.0; // extra spacing between groups
   let base_row_height = font_size + pad_y;
   let frac_row_height = font_size + pad_y + 10.0; // taller for stacked fractions
@@ -3425,7 +3466,14 @@ fn grid_svg_internal(
 
   let grid_width: f64 = col_widths.iter().sum();
   let total_gap: f64 = group_gaps.len() as f64 * group_gap;
-  let total_height: f64 = row_heights.iter().sum::<f64>() + total_gap;
+  // Add row_gap between each pair of adjacent rows
+  let row_gaps_total: f64 = if num_rows > 1 {
+    (num_rows - 1) as f64 * row_gap
+  } else {
+    0.0
+  };
+  let total_height: f64 =
+    row_heights.iter().sum::<f64>() + total_gap + row_gaps_total;
 
   // When parentheses are enabled, reserve space on left and right
   let paren_margin: f64 = if parens { 12.0 } else { 0.0 };
@@ -3538,6 +3586,10 @@ fn grid_svg_internal(
       x_offset += col_w;
     }
     y_offset += rh;
+    // Add row_gap between rows (not after the last row)
+    if i + 1 < num_rows {
+      y_offset += row_gap;
+    }
   }
 
   // Draw frame lines if Frame -> All
@@ -3551,6 +3603,9 @@ fn grid_svg_internal(
       ));
       if i < num_rows {
         y += row_heights[i];
+        if i + 1 < num_rows {
+          y += row_gap;
+        }
       }
     }
     // Vertical lines (num_cols + 1 lines)
