@@ -1,0 +1,10 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[Raster[{{0, 1}, {1, 0}}, {{-1, -1}, {1, 1}}]]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect x="13.33" y="180.00" width="166.67" height="166.67" fill="rgb(0,0,0)"/>
+<rect x="180.00" y="180.00" width="166.67" height="166.67" fill="rgb(255,255,255)"/>
+<rect x="13.33" y="13.33" width="166.67" height="166.67" fill="rgb(255,255,255)"/>
+<rect x="180.00" y="13.33" width="166.67" height="166.67" fill="rgb(0,0,0)"/>
+</svg>
