@@ -285,6 +285,14 @@ enum Primitive {
     points: Vec<(f64, f64)>,
     style: StyleState,
   },
+  RasterPrim {
+    /// rows x cols grid of RGBA colors (row 0 = bottom in Wolfram coords)
+    data: Vec<Vec<Color>>,
+    x_min: f64,
+    y_min: f64,
+    x_max: f64,
+    y_max: f64,
+  },
 }
 
 // ── Parsing helpers ──────────────────────────────────────────────────────
@@ -649,6 +657,9 @@ fn collect_primitives(
           // Inset[text, pos] is similar to Text
           parse_text(args, style, prims);
         }
+        "Raster" if !args.is_empty() => {
+          parse_raster(args, prims);
+        }
 
         _ => {
           // Try as directive first
@@ -884,6 +895,80 @@ fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   }
 }
 
+fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
+  // Raster[data] or Raster[data, {{xmin, ymin}, {xmax, ymax}}]
+  // data is a 2D array of grayscale values (0-1) or {r,g,b}/{r,g,b,a} lists
+  let data_expr = &args[0];
+  let rows = match data_expr {
+    Expr::List(rows) => rows,
+    _ => return,
+  };
+  if rows.is_empty() {
+    return;
+  }
+
+  let mut grid: Vec<Vec<Color>> = Vec::with_capacity(rows.len());
+  for row in rows {
+    let cols = match row {
+      Expr::List(cols) => cols,
+      _ => return,
+    };
+    let mut row_colors: Vec<Color> = Vec::with_capacity(cols.len());
+    for cell in cols {
+      if let Expr::List(components) = cell
+        && (components.len() == 3 || components.len() == 4)
+      {
+        // RGB or RGBA list
+        let r = expr_to_f64(&components[0]).unwrap_or(0.0).clamp(0.0, 1.0);
+        let g = expr_to_f64(&components[1]).unwrap_or(0.0).clamp(0.0, 1.0);
+        let b = expr_to_f64(&components[2]).unwrap_or(0.0).clamp(0.0, 1.0);
+        let a = if components.len() == 4 {
+          expr_to_f64(&components[3]).unwrap_or(1.0).clamp(0.0, 1.0)
+        } else {
+          1.0
+        };
+        row_colors.push(Color::new(r, g, b).with_alpha(a));
+      } else if let Some(v) = expr_to_f64(cell) {
+        // Grayscale value: single number maps to gray (0=black, 1=white)
+        let v = v.clamp(0.0, 1.0);
+        row_colors.push(Color::new(v, v, v));
+      } else {
+        row_colors.push(Color::new(0.0, 0.0, 0.0));
+      }
+    }
+    grid.push(row_colors);
+  }
+
+  let nrows = grid.len();
+  let ncols = grid.iter().map(|r| r.len()).max().unwrap_or(0);
+  if ncols == 0 {
+    return;
+  }
+
+  // Parse optional coordinate range: Raster[data, {{xmin, ymin}, {xmax, ymax}}]
+  let (x_min, y_min, x_max, y_max) = if args.len() >= 2 {
+    if let Expr::List(range) = &args[1]
+      && range.len() == 2
+      && let Some((x0, y0)) = expr_to_point(&range[0])
+      && let Some((x1, y1)) = expr_to_point(&range[1])
+    {
+      (x0, y0, x1, y1)
+    } else {
+      (0.0, 0.0, ncols as f64, nrows as f64)
+    }
+  } else {
+    (0.0, 0.0, ncols as f64, nrows as f64)
+  };
+
+  prims.push(Primitive::RasterPrim {
+    data: grid,
+    x_min,
+    y_min,
+    x_max,
+    y_max,
+  });
+}
+
 // ── Bounding box computation ─────────────────────────────────────────────
 
 fn primitive_bbox(prim: &Primitive) -> BBox {
@@ -963,6 +1048,16 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
     }
     Primitive::TextPrim { x, y, .. } => {
       bb.include_point(*x, *y);
+    }
+    Primitive::RasterPrim {
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+      ..
+    } => {
+      bb.include_point(*x_min, *y_min);
+      bb.include_point(*x_max, *y_max);
     }
   }
   bb
@@ -1748,6 +1843,49 @@ fn render_primitive(
         dash,
       ));
     }
+    Primitive::RasterPrim {
+      data,
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+    } => {
+      let nrows = data.len();
+      if nrows == 0 {
+        return;
+      }
+      let ncols = data.iter().map(|r| r.len()).max().unwrap_or(0);
+      if ncols == 0 {
+        return;
+      }
+
+      let cell_w = (x_max - x_min) / ncols as f64;
+      let cell_h = (y_max - y_min) / nrows as f64;
+
+      // Row 0 in Wolfram is at the bottom (y_min), so iterate bottom-to-top
+      for (ri, row) in data.iter().enumerate() {
+        let y = y_min + ri as f64 * cell_h;
+        for (ci, color) in row.iter().enumerate() {
+          let x = x_min + ci as f64 * cell_w;
+
+          let sx = coord_x(x, bb, svg_w);
+          let sy = coord_y(y + cell_h, bb, svg_h); // top edge in SVG
+          let sw = cell_w / bb.width() * svg_w;
+          let sh = cell_h / bb.height() * svg_h;
+
+          let opacity_attr = if color.a < 1.0 {
+            format!(" fill-opacity=\"{}\"", color.a)
+          } else {
+            String::new()
+          };
+          out.push_str(&format!(
+            "<rect x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" fill=\"{}\"{}/>\n",
+            color.to_svg_rgb(),
+            opacity_attr,
+          ));
+        }
+      }
+    }
   }
 }
 
@@ -1924,6 +2062,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       Primitive::BezierCurvePrim { points, style } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::bezier_curve_box(points));
+      }
+      Primitive::RasterPrim { .. } => {
+        // RasterBox is not yet supported in .nb export; skip
       }
     }
   }

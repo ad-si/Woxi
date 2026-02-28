@@ -2799,3 +2799,51 @@ mod named_colors {
     woxi::clear_state();
   }
 }
+
+mod raster {
+  use super::*;
+
+  #[test]
+  fn raster_grayscale() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[Raster[{{0, 0.5, 1}, {1, 0.5, 0}}]]"
+    ));
+  }
+
+  #[test]
+  fn raster_rgb() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[Raster[{{{1,0,0}, {0,1,0}, {0,0,1}}}]]"
+    ));
+  }
+
+  #[test]
+  fn raster_with_coordinate_range() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[Raster[{{0, 1}, {1, 0}}, {{-1, -1}, {1, 1}}]]"
+    ));
+  }
+
+  #[test]
+  fn raster_from_table() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[Raster[Table[Mod[i, j]/3, {i, 4}, {j, 4}] // N]]"
+    ));
+  }
+
+  #[test]
+  fn raster_output_matches_wolframscript() {
+    assert_eq!(
+      interpret("Graphics[Raster[{{0, 1}, {1, 0}}]]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn raster_standalone_is_symbolic() {
+    assert_eq!(
+      interpret("Raster[{{0, 1}, {1, 0}}]").unwrap(),
+      "Raster[{{0, 1}, {1, 0}}]"
+    );
+  }
+}
