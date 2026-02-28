@@ -5,7 +5,7 @@ use iced::keyboard;
 use iced::widget::{
   button, column, container, focus_next, horizontal_rule,
   horizontal_space, pick_list, row, rule, scrollable, svg,
-  text, text_editor, Column,
+  text, text_editor, Column, Stack,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font,
@@ -50,6 +50,10 @@ struct WoxiStudio {
   status: String,
   /// Application theme.
   theme: Theme,
+  /// User's theme choice (Auto / Light / Dark).
+  theme_choice: ThemeChoice,
+  /// Which cell has its type menu open (if any).
+  cell_type_menu_open: Option<usize>,
   /// Style to use for new cells.
   new_cell_style: CellStyle,
   /// Whether preview mode is active (hides gutter, borders, etc).
@@ -105,6 +109,9 @@ enum Message {
   ThemeChanged(ThemeChoice),
   NewCellStyleChanged(CellStyle),
 
+  // Cell type menu
+  ToggleCellTypeMenu(usize),
+
   // Preview mode
   TogglePreview,
 
@@ -114,6 +121,7 @@ enum Message {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThemeChoice {
+  Auto,
   Light,
   Dark,
 }
@@ -124,6 +132,7 @@ impl std::fmt::Display for ThemeChoice {
     f: &mut std::fmt::Formatter<'_>,
   ) -> std::fmt::Result {
     match self {
+      ThemeChoice::Auto => write!(f, "Auto"),
       ThemeChoice::Light => write!(f, "Light"),
       ThemeChoice::Dark => write!(f, "Dark"),
     }
@@ -131,8 +140,19 @@ impl std::fmt::Display for ThemeChoice {
 }
 
 impl ThemeChoice {
-  const ALL: &'static [ThemeChoice] =
-    &[ThemeChoice::Light, ThemeChoice::Dark];
+  const ALL: &'static [ThemeChoice] = &[
+    ThemeChoice::Auto,
+    ThemeChoice::Light,
+    ThemeChoice::Dark,
+  ];
+}
+
+/// Detect the OS theme, falling back to Dark.
+fn detect_system_theme() -> Theme {
+  match dark_light::detect() {
+    Ok(dark_light::Mode::Light) => Theme::Light,
+    _ => Theme::Dark,
+  }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,7 +224,9 @@ impl WoxiStudio {
         is_dirty: false,
         is_loading: false,
         status: String::from("Ready"),
-        theme: Theme::Dark,
+        theme: detect_system_theme(),
+        theme_choice: ThemeChoice::Auto,
+        cell_type_menu_open: None,
         new_cell_style: CellStyle::Input,
         preview_mode: false,
       },
@@ -535,6 +557,16 @@ impl WoxiStudio {
           self.cell_editors[idx].style = style;
           self.is_dirty = true;
         }
+        self.cell_type_menu_open = None;
+        Task::none()
+      }
+
+      Message::ToggleCellTypeMenu(idx) => {
+        if self.cell_type_menu_open == Some(idx) {
+          self.cell_type_menu_open = None;
+        } else {
+          self.cell_type_menu_open = Some(idx);
+        }
         Task::none()
       }
 
@@ -547,6 +579,7 @@ impl WoxiStudio {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
         }
+        self.cell_type_menu_open = None;
         Task::none()
       }
 
@@ -708,7 +741,9 @@ impl WoxiStudio {
       }
 
       Message::ThemeChanged(choice) => {
+        self.theme_choice = choice;
         self.theme = match choice {
+          ThemeChoice::Auto => detect_system_theme(),
           ThemeChoice::Light => Theme::Light,
           ThemeChoice::Dark => Theme::Dark,
         };
@@ -856,10 +891,7 @@ impl WoxiStudio {
       text(" | ").size(11),
       pick_list(
         ThemeChoice::ALL,
-        Some(match self.theme {
-          Theme::Light => ThemeChoice::Light,
-          _ => ThemeChoice::Dark,
-        }),
+        Some(self.theme_choice),
         Message::ThemeChanged,
       )
       .text_size(11)
@@ -1022,28 +1054,20 @@ impl WoxiStudio {
       });
 
     if !self.preview_mode {
-      // Cell type icon + pick_list
+      // Cell type: icon-only button; opens menu as overlay
       let current_icon_svg = svg::Handle::from_memory(
         cell_style_icon(editor.style).as_bytes().to_vec(),
       );
       gutter = gutter.push(
-        row![
+        button(
           svg::Svg::new(current_icon_svg)
-            .width(14)
-            .height(14)
+            .width(16)
+            .height(16)
             .style(gutter_icon_style),
-          pick_list(
-            CELL_STYLES,
-            Some(editor.style),
-            move |s| Message::CellStyleChanged(idx, s),
-          )
-          .text_size(8)
-          .padding([1, 2])
-          .style(cell_type_pick_list_style)
-          .menu_style(dropdown_menu_style),
-        ]
-        .align_y(Center)
-        .spacing(2),
+        )
+        .on_press(Message::ToggleCellTypeMenu(idx))
+        .padding([3, 4])
+        .style(cell_type_button_style),
       );
 
       let trash_svg = svg::Handle::from_memory(
@@ -1197,9 +1221,58 @@ impl WoxiStudio {
       .spacing(4)
       .padding([3, 6]);
 
-    container(cell_row)
-      .width(Fill)
-      .into()
+    // Overlay the cell type dropdown menu when open
+    if self.cell_type_menu_open == Some(idx) {
+      let mut menu_col =
+        Column::new().spacing(1).padding(4);
+      for &style in CELL_STYLES {
+        let icon_svg = svg::Handle::from_memory(
+          cell_style_icon(style).as_bytes().to_vec(),
+        );
+        let is_selected = editor.style == style;
+        menu_col = menu_col.push(
+          button(
+            row![
+              svg::Svg::new(icon_svg)
+                .width(12)
+                .height(12)
+                .style(if is_selected {
+                  gutter_icon_selected_style
+                } else {
+                  gutter_icon_style
+                }),
+              text(style.as_str()).size(9),
+            ]
+            .align_y(Center)
+            .spacing(4),
+          )
+          .on_press(Message::CellStyleChanged(idx, style))
+          .padding([2, 6])
+          .width(Fill)
+          .style(if is_selected {
+            cell_type_menu_selected_style
+          } else {
+            cell_type_menu_item_style
+          }),
+        );
+      }
+
+      let menu_overlay = container(menu_col)
+        .style(cell_type_menu_container_style)
+        .padding(2);
+
+      // Position the menu below the icon button
+      let overlay = container(menu_overlay)
+        .width(Fill)
+        .padding(iced::Padding::default().top(28).left(6));
+
+      Stack::new()
+        .push(container(cell_row).width(Fill))
+        .push(overlay)
+        .into()
+    } else {
+      container(cell_row).width(Fill).into()
+    }
   }
 }
 
@@ -1284,6 +1357,15 @@ fn editor_style(
     if matches!(status, text_editor::Status::Focused) {
       style.border.color =
         Color::from_rgb(0.30, 0.30, 0.38);
+    }
+  } else {
+    // Light mode: subtle off-white background for input cells
+    style.background =
+      Background::Color(Color::from_rgb(0.97, 0.97, 0.98));
+    style.border.color = Color::from_rgb(0.82, 0.82, 0.85);
+    if matches!(status, text_editor::Status::Focused) {
+      style.border.color =
+        Color::from_rgb(0.55, 0.55, 0.65);
     }
   }
   style
@@ -1484,6 +1566,120 @@ fn eval_all_icon_style(
   }
 }
 
+fn cell_type_button_style(
+  theme: &Theme,
+  status: button::Status,
+) -> button::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let mut style = button::text(theme, status);
+  style.border.radius = 4.0.into();
+  match status {
+    button::Status::Hovered | button::Status::Pressed => {
+      style.background =
+        Some(Background::Color(if is_dark {
+          Color::from_rgba(1.0, 1.0, 1.0, 0.10)
+        } else {
+          Color::from_rgba(0.0, 0.0, 0.0, 0.08)
+        }));
+    }
+    _ => {
+      style.background = None;
+    }
+  }
+  style
+}
+
+fn cell_type_menu_item_style(
+  theme: &Theme,
+  status: button::Status,
+) -> button::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let mut style = button::text(theme, status);
+  style.border.radius = 3.0.into();
+  style.text_color = if is_dark {
+    Color::from_rgb(0.70, 0.72, 0.78)
+  } else {
+    Color::from_rgb(0.30, 0.30, 0.35)
+  };
+  match status {
+    button::Status::Hovered | button::Status::Pressed => {
+      style.background =
+        Some(Background::Color(if is_dark {
+          Color::from_rgba(1.0, 1.0, 1.0, 0.08)
+        } else {
+          Color::from_rgba(0.0, 0.0, 0.0, 0.06)
+        }));
+    }
+    _ => {
+      style.background = None;
+    }
+  }
+  style
+}
+
+fn cell_type_menu_selected_style(
+  theme: &Theme,
+  status: button::Status,
+) -> button::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let mut style = button::text(theme, status);
+  style.border.radius = 3.0.into();
+  style.text_color = if is_dark {
+    Color::from_rgb(0.50, 0.70, 1.0)
+  } else {
+    Color::from_rgb(0.15, 0.40, 0.80)
+  };
+  style.background =
+    Some(Background::Color(if is_dark {
+      Color::from_rgba(0.30, 0.50, 1.0, 0.12)
+    } else {
+      Color::from_rgba(0.15, 0.40, 0.80, 0.08)
+    }));
+  style
+}
+
+fn cell_type_menu_container_style(
+  theme: &Theme,
+) -> container::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  container::Style {
+    background: Some(Background::Color(if is_dark {
+      Color::from_rgb(0.14, 0.14, 0.16)
+    } else {
+      Color::from_rgb(0.98, 0.98, 0.98)
+    })),
+    border: Border {
+      color: if is_dark {
+        Color::from_rgb(0.25, 0.25, 0.28)
+      } else {
+        Color::from_rgb(0.80, 0.80, 0.82)
+      },
+      width: 1.0,
+      radius: 6.0.into(),
+    },
+    shadow: iced::Shadow {
+      color: Color::from_rgba(0.0, 0.0, 0.0, 0.15),
+      offset: iced::Vector::new(0.0, 2.0),
+      blur_radius: 8.0,
+    },
+    ..container::Style::default()
+  }
+}
+
+fn gutter_icon_selected_style(
+  theme: &Theme,
+  _status: svg::Status,
+) -> svg::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  svg::Style {
+    color: Some(if is_dark {
+      Color::from_rgb(0.50, 0.70, 1.0)
+    } else {
+      Color::from_rgb(0.15, 0.40, 0.80)
+    }),
+  }
+}
+
 fn trash_icon_style(
   theme: &Theme,
   _status: svg::Status,
@@ -1510,38 +1706,6 @@ fn gutter_icon_style(
       Color::from_rgb(0.35, 0.35, 0.40)
     }),
   }
-}
-
-fn cell_type_pick_list_style(
-  theme: &Theme,
-  status: pick_list::Status,
-) -> pick_list::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  let mut style = pick_list::default(theme, status);
-  style.border = Border {
-    color: Color::TRANSPARENT,
-    width: 0.0,
-    radius: 3.0.into(),
-  };
-  style.background = Background::Color(Color::TRANSPARENT);
-  style.text_color = if is_dark {
-    Color::from_rgb(0.60, 0.62, 0.68)
-  } else {
-    Color::from_rgb(0.35, 0.35, 0.40)
-  };
-  style.placeholder_color = style.text_color;
-  if matches!(
-    status,
-    pick_list::Status::Hovered | pick_list::Status::Opened
-  ) {
-    style.background =
-      Background::Color(if is_dark {
-        Color::from_rgba(1.0, 1.0, 1.0, 0.08)
-      } else {
-        Color::from_rgba(0.0, 0.0, 0.0, 0.06)
-      });
-  }
-  style
 }
 
 fn export_button_style(
