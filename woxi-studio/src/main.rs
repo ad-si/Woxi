@@ -424,6 +424,7 @@ impl WoxiStudio {
 
       Message::CellAction(idx, action) => {
         if idx < self.cell_editors.len() {
+          self.focused_cell = Some(idx);
           let is_edit = action.is_edit();
           self.cell_editors[idx].content.perform(action);
           if is_edit {
