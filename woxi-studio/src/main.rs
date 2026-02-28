@@ -7,9 +7,10 @@ use iced::widget::{
   rule, scrollable, svg, text, text_editor, Column,
 };
 use iced::{
-  Border, Center, Color, Element, Fill, Font, Subscription,
-  Task, Theme,
+  Background, Border, Center, Color, Element, Fill, Font,
+  Subscription, Task, Theme,
 };
+use iced::overlay::menu;
 
 use notebook::{
   Cell, CellEntry, CellGroup, CellStyle, Notebook,
@@ -646,6 +647,12 @@ impl WoxiStudio {
           ) = key.as_ref()
           {
             if let Some(idx) = self.focused_cell {
+              // Undo the newline the text editor just inserted
+              self.cell_editors[idx].content.perform(
+                text_editor::Action::Edit(
+                  text_editor::Edit::Backspace,
+                ),
+              );
               return self
                 .update(Message::EvaluateCell(idx));
             }
@@ -690,7 +697,9 @@ impl WoxiStudio {
       )
       .placeholder("Export")
       .text_size(12)
-      .padding([2, 6]),
+      .padding([2, 6])
+      .style(dropdown_style)
+      .menu_style(dropdown_menu_style),
       text(" | ").size(12),
       button("Eval All")
         .on_press(Message::EvaluateAll)
@@ -705,7 +714,9 @@ impl WoxiStudio {
         Message::ThemeChanged,
       )
       .text_size(12)
-      .padding([2, 6]),
+      .padding([2, 6])
+      .style(dropdown_style)
+      .menu_style(dropdown_menu_style),
     ]
     .spacing(4)
     .padding(6)
@@ -835,7 +846,9 @@ impl WoxiStudio {
         move |s| Message::CellStyleChanged(idx, s),
       )
       .text_size(10)
-      .padding([1, 3]),
+      .padding([1, 3])
+      .style(dropdown_style)
+      .menu_style(dropdown_menu_style),
     );
 
     gutter = gutter.push(
@@ -867,6 +880,7 @@ impl WoxiStudio {
       .height(iced::Length::Shrink)
       .padding(6)
       .size(font_size)
+      .style(editor_style)
       .highlight_with::<highlighter::WolframHighlighter>(
         highlighter::WolframSettings {
           enabled: is_input,
@@ -982,6 +996,56 @@ fn output_box_style(theme: &Theme) -> container::Style {
   } else {
     container::rounded_box(theme)
   }
+}
+
+fn editor_style(
+  theme: &Theme,
+  status: text_editor::Status,
+) -> text_editor::Style {
+  let mut style = text_editor::default(theme, status);
+  style.border.radius = 6.0.into();
+  let is_dark = !matches!(theme, Theme::Light);
+  if is_dark {
+    style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
+    if matches!(status, text_editor::Status::Focused) {
+      style.border.color =
+        Color::from_rgb(0.30, 0.30, 0.38);
+    }
+  }
+  style
+}
+
+fn dropdown_style(
+  theme: &Theme,
+  status: pick_list::Status,
+) -> pick_list::Style {
+  let mut style = pick_list::default(theme, status);
+  style.border.radius = 6.0.into();
+  let is_dark = !matches!(theme, Theme::Light);
+  if is_dark {
+    style.background =
+      Background::Color(Color::from_rgb(0.14, 0.14, 0.16));
+    style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
+    if matches!(
+      status,
+      pick_list::Status::Hovered | pick_list::Status::Opened
+    ) {
+      style.border.color =
+        Color::from_rgb(0.30, 0.30, 0.38);
+    }
+  }
+  style
+}
+
+fn dropdown_menu_style(theme: &Theme) -> menu::Style {
+  let mut style = menu::default(theme);
+  let is_dark = !matches!(theme, Theme::Light);
+  if is_dark {
+    style.background =
+      Background::Color(Color::from_rgb(0.14, 0.14, 0.16));
+    style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
+  }
+  style
 }
 
 // ── CellStyle display/picklist support ──────────────────────────────
