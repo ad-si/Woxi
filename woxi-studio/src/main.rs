@@ -5,7 +5,7 @@ use iced::keyboard;
 use iced::widget::{
   button, column, container, focus_next, horizontal_rule,
   horizontal_space, pick_list, row, rule, scrollable, svg,
-  text, text_editor, Column, Stack,
+  text, text_editor, Column,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font,
@@ -52,8 +52,6 @@ struct WoxiStudio {
   theme: Theme,
   /// User's theme choice (Auto / Light / Dark).
   theme_choice: ThemeChoice,
-  /// Which cell has its type menu open (if any).
-  cell_type_menu_open: Option<usize>,
   /// Style to use for new cells.
   new_cell_style: CellStyle,
   /// Whether preview mode is active (hides gutter, borders, etc).
@@ -115,8 +113,6 @@ enum Message {
   ThemeChanged(ThemeChoice),
   NewCellStyleChanged(CellStyle),
 
-  // Cell type menu
-  ToggleCellTypeMenu(usize),
 
   // Preview mode
   TogglePreview,
@@ -232,7 +228,6 @@ impl WoxiStudio {
         status: String::from("Ready"),
         theme: detect_system_theme(),
         theme_choice: ThemeChoice::Auto,
-        cell_type_menu_open: None,
         new_cell_style: CellStyle::Input,
         preview_mode: false,
       },
@@ -614,16 +609,6 @@ impl WoxiStudio {
           self.cell_editors[idx].style = style;
           self.is_dirty = true;
         }
-        self.cell_type_menu_open = None;
-        Task::none()
-      }
-
-      Message::ToggleCellTypeMenu(idx) => {
-        if self.cell_type_menu_open == Some(idx) {
-          self.cell_type_menu_open = None;
-        } else {
-          self.cell_type_menu_open = Some(idx);
-        }
         Task::none()
       }
 
@@ -636,7 +621,6 @@ impl WoxiStudio {
         if idx < self.cell_editors.len() {
           self.focused_cell = Some(idx);
         }
-        self.cell_type_menu_open = None;
         Task::none()
       }
 
@@ -1014,25 +998,8 @@ impl WoxiStudio {
         }
 
         let is_focused = self.focused_cell == Some(idx);
-        let cell_el = self.view_cell(idx, editor, is_focused);
-
-        // Overlay the cell type dropdown on top of the cell
-        if self.cell_type_menu_open == Some(idx) {
-          let menu_el = container(
-            self.view_cell_type_menu(idx, editor),
-          )
-          .width(Fill)
-          .align_y(iced::alignment::Vertical::Bottom);
-
-          col = col.push(
-            Stack::new()
-              .push(cell_el)
-              .push(menu_el)
-              .width(Fill),
-          );
-        } else {
-          col = col.push(cell_el);
-        }
+        col =
+          col.push(self.view_cell(idx, editor, is_focused));
       }
 
       if !self.preview_mode {
@@ -1133,20 +1100,18 @@ impl WoxiStudio {
       });
 
     if !self.preview_mode {
-      // Cell type: icon-only button; opens menu as overlay
-      let current_icon_svg = svg::Handle::from_memory(
-        cell_style_icon(editor.style).as_bytes().to_vec(),
-      );
+      // Cell type picker (uses native overlay for dropdown)
       gutter = gutter.push(
-        button(
-          svg::Svg::new(current_icon_svg)
-            .width(16)
-            .height(16)
-            .style(gutter_icon_style),
+        pick_list(
+          CELL_STYLES,
+          Some(editor.style),
+          move |s| Message::CellStyleChanged(idx, s),
         )
-        .on_press(Message::ToggleCellTypeMenu(idx))
-        .padding([3, 4])
-        .style(cell_type_button_style),
+        .text_size(9)
+        .padding([2, 4])
+        .width(iced::Length::Fixed(56.0))
+        .style(gutter_pick_list_style)
+        .menu_style(dropdown_menu_style),
       );
 
       let trash_svg = svg::Handle::from_memory(
@@ -1339,53 +1304,6 @@ impl WoxiStudio {
     container(cell_row).width(Fill).into()
   }
 
-  /// Build the cell type dropdown menu (shown below the cell).
-  fn view_cell_type_menu<'a>(
-    &'a self,
-    idx: usize,
-    editor: &'a CellEditor,
-  ) -> Element<'a, Message> {
-    let mut menu_col = Column::new().spacing(1).padding(4);
-    for &style in CELL_STYLES {
-      let icon_svg = svg::Handle::from_memory(
-        cell_style_icon(style).as_bytes().to_vec(),
-      );
-      let is_selected = editor.style == style;
-      menu_col = menu_col.push(
-        button(
-          row![
-            svg::Svg::new(icon_svg)
-              .width(12)
-              .height(12)
-              .style(if is_selected {
-                gutter_icon_selected_style
-              } else {
-                gutter_icon_style
-              }),
-            text(style.as_str()).size(9),
-          ]
-          .align_y(Center)
-          .spacing(4),
-        )
-        .on_press(Message::CellStyleChanged(idx, style))
-        .padding([2, 6])
-        .width(Fill)
-        .style(if is_selected {
-          cell_type_menu_selected_style
-        } else {
-          cell_type_menu_item_style
-        }),
-      );
-    }
-
-    container(
-      container(menu_col)
-        .style(cell_type_menu_container_style)
-        .padding(2),
-    )
-    .padding(iced::Padding::default().left(12))
-    .into()
-  }
 }
 
 // ── Event handling ──────────────────────────────────────────────────
@@ -1720,120 +1638,6 @@ fn eval_all_icon_style(
   }
 }
 
-fn cell_type_button_style(
-  theme: &Theme,
-  status: button::Status,
-) -> button::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  let mut style = button::text(theme, status);
-  style.border.radius = 4.0.into();
-  match status {
-    button::Status::Hovered | button::Status::Pressed => {
-      style.background =
-        Some(Background::Color(if is_dark {
-          Color::from_rgba(1.0, 1.0, 1.0, 0.10)
-        } else {
-          Color::from_rgba(0.0, 0.0, 0.0, 0.08)
-        }));
-    }
-    _ => {
-      style.background = None;
-    }
-  }
-  style
-}
-
-fn cell_type_menu_item_style(
-  theme: &Theme,
-  status: button::Status,
-) -> button::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  let mut style = button::text(theme, status);
-  style.border.radius = 3.0.into();
-  style.text_color = if is_dark {
-    Color::from_rgb(0.70, 0.72, 0.78)
-  } else {
-    Color::from_rgb(0.30, 0.30, 0.35)
-  };
-  match status {
-    button::Status::Hovered | button::Status::Pressed => {
-      style.background =
-        Some(Background::Color(if is_dark {
-          Color::from_rgba(1.0, 1.0, 1.0, 0.08)
-        } else {
-          Color::from_rgba(0.0, 0.0, 0.0, 0.06)
-        }));
-    }
-    _ => {
-      style.background = None;
-    }
-  }
-  style
-}
-
-fn cell_type_menu_selected_style(
-  theme: &Theme,
-  status: button::Status,
-) -> button::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  let mut style = button::text(theme, status);
-  style.border.radius = 3.0.into();
-  style.text_color = if is_dark {
-    Color::from_rgb(0.50, 0.70, 1.0)
-  } else {
-    Color::from_rgb(0.15, 0.40, 0.80)
-  };
-  style.background =
-    Some(Background::Color(if is_dark {
-      Color::from_rgba(0.30, 0.50, 1.0, 0.12)
-    } else {
-      Color::from_rgba(0.15, 0.40, 0.80, 0.08)
-    }));
-  style
-}
-
-fn cell_type_menu_container_style(
-  theme: &Theme,
-) -> container::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  container::Style {
-    background: Some(Background::Color(if is_dark {
-      Color::from_rgb(0.14, 0.14, 0.16)
-    } else {
-      Color::from_rgb(0.98, 0.98, 0.98)
-    })),
-    border: Border {
-      color: if is_dark {
-        Color::from_rgb(0.25, 0.25, 0.28)
-      } else {
-        Color::from_rgb(0.80, 0.80, 0.82)
-      },
-      width: 1.0,
-      radius: 6.0.into(),
-    },
-    shadow: iced::Shadow {
-      color: Color::from_rgba(0.0, 0.0, 0.0, 0.15),
-      offset: iced::Vector::new(0.0, 2.0),
-      blur_radius: 8.0,
-    },
-    ..container::Style::default()
-  }
-}
-
-fn gutter_icon_selected_style(
-  theme: &Theme,
-  _status: svg::Status,
-) -> svg::Style {
-  let is_dark = !matches!(theme, Theme::Light);
-  svg::Style {
-    color: Some(if is_dark {
-      Color::from_rgb(0.50, 0.70, 1.0)
-    } else {
-      Color::from_rgb(0.15, 0.40, 0.80)
-    }),
-  }
-}
-
 fn trash_icon_style(
   theme: &Theme,
   _status: svg::Status,
@@ -1860,6 +1664,42 @@ fn gutter_icon_style(
       Color::from_rgb(0.35, 0.35, 0.40)
     }),
   }
+}
+
+fn gutter_pick_list_style(
+  theme: &Theme,
+  status: pick_list::Status,
+) -> pick_list::Style {
+  let is_dark = !matches!(theme, Theme::Light);
+  let mut style = pick_list::default(theme, status);
+  style.text_color = if is_dark {
+    Color::from_rgb(0.65, 0.70, 0.78)
+  } else {
+    Color::from_rgb(0.35, 0.35, 0.40)
+  };
+  style.background = Background::Color(if is_dark {
+    match status {
+      pick_list::Status::Hovered | pick_list::Status::Opened => {
+        Color::from_rgba(1.0, 1.0, 1.0, 0.08)
+      }
+      _ => Color::TRANSPARENT,
+    }
+  } else {
+    match status {
+      pick_list::Status::Hovered | pick_list::Status::Opened => {
+        Color::from_rgba(0.0, 0.0, 0.0, 0.06)
+      }
+      _ => Color::TRANSPARENT,
+    }
+  });
+  style.border = Border {
+    radius: 4.0.into(),
+    width: 0.0,
+    color: Color::TRANSPARENT,
+  };
+  style.handle_color = style.text_color;
+  style.placeholder_color = style.text_color;
+  style
 }
 
 fn export_button_style(
@@ -1940,46 +1780,9 @@ const TRASH_ICON_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="2
 
 const PLAY_CIRCLE_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 9.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997A1 1 0 0 1 9 14.996z"/><circle cx="12" cy="12" r="10"/></svg>"#;
 
-// ── Cell type icons (Lucide) ─────────────────────────────────────────
-
-const ICON_HEADING_1: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="m17 12 3-2v8"/></svg>"#;
-
-const ICON_HEADING_2: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/></svg>"#;
-
-const ICON_HEADING_3: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2"/><path d="M17 17.5c2 1.5 4 .3 4-1.5a2 2 0 0 0-2-2"/></svg>"#;
-
-const ICON_HEADING_4: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 18V6"/><path d="M17 10v3a1 1 0 0 0 1 1h3"/><path d="M21 10v8"/><path d="M4 12h8"/><path d="M4 18V6"/></svg>"#;
-
-const ICON_HEADING_5: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17 13v-3h4"/><path d="M17 17.7c.4.2.8.3 1.3.3 1.5 0 2.7-1.1 2.7-2.5S19.8 13 18.3 13H17"/></svg>"#;
-
-const ICON_CODE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>"#;
-
-const ICON_RECTANGLE_ELLIPSIS: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="12" x="2" y="6" rx="2"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/></svg>"#;
-
-const ICON_TYPE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg>"#;
-
-const ICON_FILE_BRACES: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/></svg>"#;
-
-const ICON_TERMINAL: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19h8"/><path d="m4 17 6-6-6-6"/></svg>"#;
-
 const ICON_EYE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>"#;
 
 const ICON_EYE_OFF: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>"#;
-
-fn cell_style_icon(style: CellStyle) -> &'static str {
-  match style {
-    CellStyle::Title => ICON_HEADING_1,
-    CellStyle::Subtitle => ICON_HEADING_2,
-    CellStyle::Section => ICON_HEADING_3,
-    CellStyle::Subsection => ICON_HEADING_4,
-    CellStyle::Subsubsection => ICON_HEADING_5,
-    CellStyle::Text => ICON_TYPE,
-    CellStyle::Input => ICON_CODE,
-    CellStyle::Output => ICON_RECTANGLE_ELLIPSIS,
-    CellStyle::Code => ICON_FILE_BRACES,
-    CellStyle::Print => ICON_TERMINAL,
-  }
-}
 
 // ── CellStyle display/picklist support ──────────────────────────────
 
