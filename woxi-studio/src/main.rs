@@ -5,7 +5,7 @@ use iced::keyboard;
 use iced::widget::{
   button, column, container, focus_next, horizontal_rule,
   horizontal_space, pick_list, row, rule, scrollable, svg,
-  text, text_editor, Column,
+  text, text_editor, Column, Stack,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font,
@@ -1014,13 +1014,24 @@ impl WoxiStudio {
         }
 
         let is_focused = self.focused_cell == Some(idx);
-        col =
-          col.push(self.view_cell(idx, editor, is_focused));
+        let cell_el = self.view_cell(idx, editor, is_focused);
 
-        // Show cell type dropdown below the cell if open
+        // Overlay the cell type dropdown on top of the cell
         if self.cell_type_menu_open == Some(idx) {
-          col = col
-            .push(self.view_cell_type_menu(idx, editor));
+          let menu_el = container(
+            self.view_cell_type_menu(idx, editor),
+          )
+          .width(Fill)
+          .align_y(iced::alignment::Vertical::Bottom);
+
+          col = col.push(
+            Stack::new()
+              .push(cell_el)
+              .push(menu_el)
+              .width(Fill),
+          );
+        } else {
+          col = col.push(cell_el);
         }
       }
 
@@ -1032,8 +1043,7 @@ impl WoxiStudio {
       }
 
       scrollable(
-        container(col)
-          .max_width(800)
+        container(col.max_width(800))
           .center_x(Fill),
       )
       .height(Fill)
