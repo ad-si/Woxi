@@ -676,20 +676,24 @@ impl WoxiStudio {
     let toolbar = row![
       button("New")
         .on_press(Message::NewNotebook)
-        .padding([3, 10]),
+        .padding([3, 10])
+        .style(muted_button_style),
       button("Open")
         .on_press_maybe(
           (!self.is_loading).then_some(Message::OpenFile)
         )
-        .padding([3, 10]),
+        .padding([3, 10])
+        .style(muted_button_style),
       button("Save")
         .on_press_maybe(
           self.is_dirty.then_some(Message::SaveFile)
         )
-        .padding([3, 10]),
+        .padding([3, 10])
+        .style(muted_button_style),
       button("Save As")
         .on_press(Message::SaveFileAs)
-        .padding([3, 10]),
+        .padding([3, 10])
+        .style(muted_button_style),
       pick_list(
         ExportFormat::ALL,
         None::<ExportFormat>,
@@ -703,7 +707,8 @@ impl WoxiStudio {
       text(" | ").size(12),
       button("Eval All")
         .on_press(Message::EvaluateAll)
-        .padding([3, 10]),
+        .padding([3, 10])
+        .style(muted_button_style),
       text(" | ").size(12),
       pick_list(
         ThemeChoice::ALL,
@@ -854,13 +859,15 @@ impl WoxiStudio {
     gutter = gutter.push(
       button(
         text("\u{1F5D1}") // 🗑
-          .size(10),
+          .size(12)
+          .font(Font::DEFAULT),
       )
       .on_press_maybe(
         (self.cell_editors.len() > 1)
           .then_some(Message::DeleteCell(idx)),
       )
-      .padding([1, 4]),
+      .padding([1, 4])
+      .style(trash_button_style),
     );
 
     // ── Text editor ──
@@ -873,6 +880,7 @@ impl WoxiStudio {
       _ => 13.0,
     };
 
+    let cell_style = editor.style;
     let cell_editor = text_editor(&editor.content)
       .on_action(move |action| {
         Message::CellAction(idx, action)
@@ -880,7 +888,9 @@ impl WoxiStudio {
       .height(iced::Length::Shrink)
       .padding(6)
       .size(font_size)
-      .style(editor_style)
+      .style(move |theme, status| {
+        cell_editor_style(theme, status, cell_style)
+      })
       .highlight_with::<highlighter::WolframHighlighter>(
         highlighter::WolframSettings {
           enabled: is_input,
@@ -942,7 +952,8 @@ impl WoxiStudio {
       container(
         button(text("\u{25B6}").size(14))
           .on_press(Message::EvaluateCell(idx))
-          .padding([4, 8]),
+          .padding([4, 8])
+          .style(muted_button_style),
       )
       .into()
     } else {
@@ -1045,9 +1056,88 @@ fn editor_style(
   let is_dark = !matches!(theme, Theme::Light);
   if is_dark {
     style.border.color = Color::from_rgb(0.22, 0.22, 0.25);
+    // Slightly brighter than the app background
+    style.background =
+      Background::Color(Color::from_rgb(0.16, 0.16, 0.18));
     if matches!(status, text_editor::Status::Focused) {
       style.border.color =
         Color::from_rgb(0.30, 0.30, 0.38);
+    }
+  }
+  style
+}
+
+fn cell_editor_style(
+  theme: &Theme,
+  status: text_editor::Status,
+  cell_style: CellStyle,
+) -> text_editor::Style {
+  let mut style = editor_style(theme, status);
+  let is_dark = !matches!(theme, Theme::Light);
+  match cell_style {
+    CellStyle::Title => {
+      style.value = if is_dark {
+        Color::from_rgb(0.90, 0.90, 0.95)
+      } else {
+        Color::from_rgb(0.10, 0.10, 0.15)
+      };
+    }
+    CellStyle::Subtitle => {
+      style.value = if is_dark {
+        Color::from_rgb(0.60, 0.62, 0.70)
+      } else {
+        Color::from_rgb(0.35, 0.35, 0.42)
+      };
+    }
+    _ => {}
+  }
+  style
+}
+
+fn muted_button_style(
+  theme: &Theme,
+  status: button::Status,
+) -> button::Style {
+  let mut style = button::primary(theme, status);
+  let is_dark = !matches!(theme, Theme::Light);
+  if is_dark {
+    style.background = Some(Background::Color(match status {
+      button::Status::Active => {
+        Color::from_rgb(0.24, 0.36, 0.55)
+      }
+      button::Status::Hovered => {
+        Color::from_rgb(0.28, 0.42, 0.62)
+      }
+      button::Status::Pressed => {
+        Color::from_rgb(0.20, 0.32, 0.50)
+      }
+      button::Status::Disabled => {
+        Color::from_rgb(0.18, 0.22, 0.30)
+      }
+    }));
+    style.text_color = Color::from_rgb(0.85, 0.88, 0.95);
+  }
+  style
+}
+
+fn trash_button_style(
+  theme: &Theme,
+  status: button::Status,
+) -> button::Style {
+  let mut style = button::text(theme, status);
+  // Only show background on hover
+  match status {
+    button::Status::Hovered | button::Status::Pressed => {
+      let is_dark = !matches!(theme, Theme::Light);
+      style.background =
+        Some(Background::Color(if is_dark {
+          Color::from_rgba(1.0, 1.0, 1.0, 0.08)
+        } else {
+          Color::from_rgba(0.0, 0.0, 0.0, 0.06)
+        }));
+    }
+    _ => {
+      style.background = None;
     }
   }
   style
