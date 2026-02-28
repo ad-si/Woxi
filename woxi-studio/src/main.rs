@@ -689,15 +689,6 @@ impl WoxiStudio {
         .on_press(Message::EvaluateAll)
         .padding([3, 10]),
       text(" | ").size(12),
-      text("New cell: ").size(12),
-      pick_list(
-        CELL_STYLES,
-        Some(self.new_cell_style),
-        Message::NewCellStyleChanged,
-      )
-      .text_size(12)
-      .padding([2, 6]),
-      text("  ").size(12),
       pick_list(
         ThemeChoice::ALL,
         Some(match self.theme {
