@@ -3886,7 +3886,7 @@ NoWhitespace,,,,10.3,5587
 NProbability,,,,8,1534
 NProduct,Numerical product of a sequence,implemented,none,1,2229
 NRoots,Symbol for numerical root counting,✅,pure,1,2462
-NSolve,,,,2,252
+NSolve,Solves equations numerically,✅,pure,2,252
 NSolveValues,,,,12.3,
 NSum,Numerical approximation of a sum using polynomial extrapolation,✅,pure,1,784
 NSurfaceIntegrate,,,,14,
