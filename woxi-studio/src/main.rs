@@ -520,7 +520,10 @@ impl WoxiStudio {
 
       Message::EvaluateCell(idx) => {
         if idx < self.cell_editors.len()
-          && self.cell_editors[idx].style == CellStyle::Input
+          && matches!(
+            self.cell_editors[idx].style,
+            CellStyle::Input | CellStyle::Code
+          )
         {
           let code = self.cell_editors[idx]
             .content
@@ -565,8 +568,10 @@ impl WoxiStudio {
       Message::EvaluateAll => {
         woxi::clear_state();
         for idx in 0..self.cell_editors.len() {
-          if self.cell_editors[idx].style == CellStyle::Input
-          {
+          if matches!(
+            self.cell_editors[idx].style,
+            CellStyle::Input | CellStyle::Code
+          ) {
             let code = self.cell_editors[idx]
               .content
               .text()
