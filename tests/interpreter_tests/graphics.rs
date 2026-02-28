@@ -1050,6 +1050,18 @@ mod plot3d {
     }
 
     #[test]
+    fn histogram_bin_count() {
+      // With 2 bins, data {1..6} should produce 2 bars
+      let svg2 = export_svg("Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 5, 6}, 2]");
+      let svg5 = export_svg("Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 5, 6}, 5]");
+      // Count <rect elements (bars + 1 background rect)
+      let bars2 = svg2.matches("<rect").count() - 1;
+      let bars5 = svg5.matches("<rect").count() - 1;
+      assert_eq!(bars2, 2, "expected 2 bins");
+      assert_eq!(bars5, 5, "expected 5 bins");
+    }
+
+    #[test]
     fn box_whisker_chart() {
       insta::assert_snapshot!(export_svg(
         "BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]"

@@ -881,6 +881,7 @@ fn html_escape(s: &str) -> String {
 /// Generate SVG for a histogram using plotters.
 pub(crate) fn generate_histogram_svg(
   values: &[f64],
+  bin_count: Option<usize>,
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
@@ -888,9 +889,10 @@ pub(crate) fn generate_histogram_svg(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
-  // Sturges' rule for bin count
+  // Use provided bin count or fall back to Sturges' rule
   let n = values.len();
-  let num_bins = ((1.0 + (n as f64).log2()).ceil() as usize).max(1);
+  let num_bins = bin_count
+    .unwrap_or_else(|| ((1.0 + (n as f64).log2()).ceil() as usize).max(1));
   let d_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
   let d_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
   let range = d_max - d_min;

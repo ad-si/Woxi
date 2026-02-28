@@ -320,7 +320,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// Histogram[{d1, d2, ...}]
+/// Histogram[{d1, d2, ...}] or Histogram[{d1, d2, ...}, nbins]
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let values = extract_values(&args[0])?;
   if values.is_empty() {
@@ -328,11 +328,26 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
+
+  // Check if args[1] is a bin count (integer) rather than a Rule (option)
+  let bin_count = if args.len() > 1 {
+    if let Some(f) = try_eval_to_f64(&args[1]) {
+      let n = f as usize;
+      if n > 0 { Some(n) } else { None }
+    } else {
+      None
+    }
+  } else {
+    None
+  };
+
   let opts = parse_chart_options(args);
   let (svg_width, svg_height, full_width) =
     (opts.svg_width, opts.svg_height, opts.full_width);
 
-  let svg = generate_histogram_svg(&values, svg_width, svg_height, full_width)?;
+  let svg = generate_histogram_svg(
+    &values, bin_count, svg_width, svg_height, full_width,
+  )?;
   Ok(crate::graphics_result(svg))
 }
 
