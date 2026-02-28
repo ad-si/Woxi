@@ -1111,11 +1111,7 @@ impl WoxiStudio {
 
     // ── Left gutter: style picker + delete ──
     let mut gutter =
-      Column::new().spacing(2).width(if self.preview_mode {
-        iced::Length::Shrink
-      } else {
-        iced::Length::Fixed(60.0)
-      });
+      Column::new().spacing(2).width(iced::Length::Shrink);
 
     if !self.preview_mode {
       // Cell type: icon button with overlay dropdown
