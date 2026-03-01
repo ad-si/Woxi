@@ -28,6 +28,7 @@
             gnused
             lld
             mdbook
+            prek
             rustc
             rustfmt
             wasm-pack
