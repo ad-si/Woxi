@@ -324,11 +324,11 @@ pub enum Expr {
   },
   /// Pattern: name_ or name_Head
   Pattern { name: String, head: Option<String> },
-  /// Optional pattern: name_ : default or name_Head : default
+  /// Optional pattern: name_ : default, name_Head : default, name_., or name_Head.
   PatternOptional {
     name: String,
     head: Option<String>,
-    default: Box<Self>,
+    default: Option<Box<Self>>,
   },
   /// PatternTest: _?test or x_?test — matches if test[x] is True
   PatternTest { name: String, test: Box<Self> },
@@ -528,7 +528,9 @@ fn take_expr_children(expr: &mut Expr, stack: &mut Vec<Expr>) {
       stack.push(*std::mem::replace(body, Box::new(Expr::Integer(0))));
     }
     Expr::PatternOptional { default, .. } => {
-      stack.push(*std::mem::replace(default, Box::new(Expr::Integer(0))));
+      if let Some(d) = default {
+        stack.push(*std::mem::replace(d, Box::new(Expr::Integer(0))));
+      }
     }
     Expr::PatternTest { test, .. } => {
       stack.push(*std::mem::replace(test, Box::new(Expr::Integer(0))));
@@ -632,7 +634,7 @@ impl Clone for Expr {
       CurriedCall(usize),
       Function,
       NamedFunction(Vec<String>),
-      PatternOptional(String, Option<String>),
+      PatternOptional(String, Option<String>, bool), // name, head, has_default
       PatternTest(String),
     }
 
@@ -797,11 +799,15 @@ impl Clone for Expr {
             head,
             default,
           } => {
+            let has_default = default.is_some();
             tasks.push(CloneTask::Build(CloneFrame::PatternOptional(
               name.clone(),
               head.clone(),
+              has_default,
             )));
-            tasks.push(CloneTask::Visit(default));
+            if let Some(d) = default {
+              tasks.push(CloneTask::Visit(d));
+            }
           }
           Self::PatternTest { name, test } => {
             tasks.push(CloneTask::Build(CloneFrame::PatternTest(name.clone())));
@@ -929,8 +935,12 @@ impl Clone for Expr {
               let body = Box::new(results.pop().unwrap());
               Self::NamedFunction { params, body }
             }
-            CloneFrame::PatternOptional(name, head) => {
-              let default = Box::new(results.pop().unwrap());
+            CloneFrame::PatternOptional(name, head, has_default) => {
+              let default = if has_default {
+                Some(Box::new(results.pop().unwrap()))
+              } else {
+                None
+              };
               Self::PatternOptional {
                 name,
                 head,
@@ -1751,7 +1761,31 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::PatternOptional {
         name,
         head: None,
-        default: Box::new(default),
+        default: Some(Box::new(default)),
+      }
+    }
+    Rule::PatternOptionalDefaultSimple => {
+      // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
+      let mut inner = pair.into_inner();
+      let name = inner
+        .next()
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_default();
+      Expr::PatternOptional {
+        name,
+        head: None,
+        default: None,
+      }
+    }
+    Rule::PatternOptionalDefaultWithHead => {
+      // PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." }
+      let mut inner = pair.into_inner();
+      let name = inner.next().unwrap().as_str().to_string();
+      let head = Some(inner.next().unwrap().as_str().to_string());
+      Expr::PatternOptional {
+        name,
+        head,
+        default: None,
       }
     }
     Rule::PatternOptionalWithHead => {
@@ -1764,7 +1798,7 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       Expr::PatternOptional {
         name,
         head,
-        default: Box::new(default),
+        default: Some(Box::new(default)),
       }
     }
     Rule::PatternTest => {
@@ -2414,23 +2448,24 @@ fn operator_precedence(op: &str) -> u8 {
     "/:" => 1, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
     "=" | ":=" => 2, // Assignment
     "^=" | "^:=" => 2, // UpSet/UpSetDelayed (same as assignment)
-    "->" | ":>" => 3, // Rule/RuleDelayed (lower than boolean operators)
-    "||" => 4, // Or
-    "&&" => 5, // And
-    "\\[NotElement]" | "\u{2209}" => 6, // NotElement (same level as comparisons)
-    "\\[ReverseElement]" | "\u{220B}" => 6, // ReverseElement (same level as comparisons)
-    "\\[Element]" | "\u{2208}" => 6, // Element (same level as comparisons)
-    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 6, // Comparisons
-    "~~" => 7,          // StringExpression (lower than Alternatives)
-    "|" => 8, // Alternatives (higher than StringExpression, Or, And, Rule)
-    "+" | "-" => 9, // Plus/Minus
-    "*" | "/" => 10, // Times/Divide
-    "<>" => 9, // StringJoin (same level as Plus)
-    "." => 11, // Dot (higher than arithmetic)
-    "@@@" | "@@" => 12, // Apply/MapApply
-    "/@" => 13, // Map (higher than Apply)
-    "@" => 14, // Prefix application (higher than Map)
-    "^" => 15, // Power (highest)
+    "/;" => 3, // Condition (higher than assignment, lower than Rule)
+    "->" | ":>" => 4, // Rule/RuleDelayed (lower than boolean operators)
+    "||" => 5, // Or
+    "&&" => 6, // And
+    "\\[NotElement]" | "\u{2209}" => 7, // NotElement (same level as comparisons)
+    "\\[ReverseElement]" | "\u{220B}" => 7, // ReverseElement (same level as comparisons)
+    "\\[Element]" | "\u{2208}" => 7, // Element (same level as comparisons)
+    "==" | "!=" | "<" | "<=" | ">" | ">=" | "===" | "=!=" => 7, // Comparisons
+    "~~" => 8,          // StringExpression (lower than Alternatives)
+    "|" => 9, // Alternatives (higher than StringExpression, Or, And, Rule)
+    "+" | "-" => 10, // Plus/Minus
+    "*" | "/" => 11, // Times/Divide
+    "<>" => 10, // StringJoin (same level as Plus)
+    "." => 12, // Dot (higher than arithmetic)
+    "@@@" | "@@" => 13, // Apply/MapApply
+    "/@" => 14, // Map (higher than Apply)
+    "@" => 15, // Prefix application (higher than Map)
+    "^" => 16, // Power (highest)
     _ => 0,
   }
 }
@@ -2634,6 +2669,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     ":=" => Expr::FunctionCall {
       name: "SetDelayed".to_string(),
+      args: vec![left.clone(), right.clone()],
+    },
+    "/;" => Expr::FunctionCall {
+      name: "Condition".to_string(),
       args: vec![left.clone(), right.clone()],
     },
     "/:" => {
@@ -4455,13 +4494,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
       name,
       head,
       default,
-    } => {
-      if let Some(h) = head {
-        format!("{}_{}:{}", name, h, expr_to_string(default))
-      } else {
-        format!("{}_:{}", name, expr_to_string(default))
-      }
-    }
+    } => match (head, default) {
+      (Some(h), Some(d)) => format!("{}_{}:{}", name, h, expr_to_string(d)),
+      (None, Some(d)) => format!("{}_:{}", name, expr_to_string(d)),
+      (Some(h), None) => format!("{}_{}.", name, h),
+      (None, None) => format!("{}_.", name),
+    },
     Expr::PatternTest { name, test } => {
       let test_str = expr_to_string(test);
       // If test is a simple identifier, use x_?Test form; otherwise wrap in parens
@@ -5959,7 +5997,9 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
     } => Expr::PatternOptional {
       name: name.clone(),
       head: head.clone(),
-      default: Box::new(substitute_slots(default, values)),
+      default: default
+        .as_ref()
+        .map(|d| Box::new(substitute_slots(d, values))),
     },
     Expr::PatternTest { name, test } => Expr::PatternTest {
       name: name.clone(),
@@ -6106,7 +6146,9 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
     } => Expr::PatternOptional {
       name: name.clone(),
       head: head.clone(),
-      default: Box::new(substitute_variable(default, var_name, value)),
+      default: default
+        .as_ref()
+        .map(|d| Box::new(substitute_variable(d, var_name, value))),
     },
     Expr::PatternTest { name, test } => Expr::PatternTest {
       name: name.clone(),

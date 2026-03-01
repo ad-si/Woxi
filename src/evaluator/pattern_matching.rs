@@ -289,7 +289,9 @@ pub fn try_one_identity_match(
     match arg {
       Expr::PatternOptional { name, default, .. } => {
         // Bind optional pattern to its default value
-        bindings.push((name.clone(), *default.clone()));
+        if let Some(d) = default {
+          bindings.push((name.clone(), *d.clone()));
+        }
       }
       Expr::Pattern { .. } | Expr::Identifier(_) => {
         required_indices.push(i);

@@ -107,7 +107,7 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
     } => Expr::PatternOptional {
       name: name.clone(),
       head: head.clone(),
-      default: Box::new(sub(default)),
+      default: default.as_ref().map(|d| Box::new(sub(d))),
     },
     other => other.clone(),
   }

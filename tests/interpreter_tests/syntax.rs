@@ -2247,6 +2247,71 @@ mod optional_function {
     assert_eq!(interpret("f[x_ : 0] := x; f[]").unwrap(), "0");
     assert_eq!(interpret("f[x_ : 0] := x; f[5]").unwrap(), "5");
   }
+
+  #[test]
+  fn optional_default_dot_syntax_parses() {
+    // x_. is Optional[Pattern[x, Blank[]]] — system-determined default
+    assert_eq!(interpret("x_.").unwrap(), "x_.");
+  }
+
+  #[test]
+  fn optional_default_dot_with_head_parses() {
+    // x_Integer. is Optional[Pattern[x, Blank[Integer]]]
+    assert_eq!(interpret("x_Integer.").unwrap(), "x_Integer.");
+  }
+
+  #[test]
+  fn optional_default_dot_anonymous_parses() {
+    // _. is Optional[Blank[]] — anonymous system-determined default
+    assert_eq!(interpret("_.").unwrap(), "_.");
+  }
+
+  #[test]
+  fn optional_default_dot_in_expression() {
+    // m_. can appear in expressions like Power patterns
+    assert_eq!(interpret("x_^m_.").unwrap(), "x_^m_.");
+  }
+
+  #[test]
+  fn optional_default_dot_in_function_definition() {
+    // The original failing expression should parse without error
+    assert_eq!(
+      interpret(
+        "Int[x_^m_., x_Symbol] := x^(m + 1)/(m + 1) /; FreeQ[m, x] && NeQ[m, -1]"
+      )
+      .unwrap(),
+      "Null"
+    );
+  }
+}
+
+mod condition_operator {
+  use super::*;
+
+  #[test]
+  fn condition_in_set_delayed() {
+    // f[x_] := body /; condition
+    assert_eq!(interpret("g[x_] := x^2 /; x > 0; g[3]").unwrap(), "9");
+  }
+
+  #[test]
+  fn condition_in_set_delayed_rejects_when_false() {
+    // When condition is false, definition should not match
+    assert_eq!(interpret("g[x_] := x^2 /; x > 0; g[-3]").unwrap(), "g[-3]");
+  }
+
+  #[test]
+  fn condition_with_multiple_conditions() {
+    // Multiple conditions via &&
+    assert_eq!(
+      interpret("h[x_] := x + 1 /; x > 0 && x < 10; h[5]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("h[x_] := x + 1 /; x > 0 && x < 10; h[15]").unwrap(),
+      "h[15]"
+    );
+  }
 }
 
 mod integer_symbol {
