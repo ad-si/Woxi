@@ -840,55 +840,30 @@ pub fn integer_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// and decimal_exponent is the number of integer digits (position of decimal point).
 pub fn bigfloat_to_digits(
   bf: &astro_float::BigFloat,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
 ) -> Result<(Vec<u8>, i64), InterpreterError> {
-  use num_bigint::BigUint;
-  use num_traits::Zero;
-
-  let (words, sig_bits, _sign, exponent, _inexact) =
-    bf.as_raw_parts().ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "RealDigits: cannot extract NaN or Inf".into(),
-      )
-    })?;
-
-  if sig_bits == 0 || words.iter().all(|&w| w == 0) {
+  if bf.is_zero() {
     return Ok((vec![b'0'], 0));
   }
 
-  let mantissa = BigUint::from_bytes_le(
-    &words
-      .iter()
-      .flat_map(|w| w.to_le_bytes())
-      .collect::<Vec<u8>>(),
-  );
+  let (_sign, digits, exponent) = bf
+    .convert_to_radix(astro_float::Radix::Dec, rm, cc)
+    .map_err(|e| {
+      InterpreterError::EvaluationError(format!(
+        "RealDigits: conversion error: {}",
+        e
+      ))
+    })?;
 
-  let mantissa_bits = words.len() * 64;
-  let shift = exponent as i64 - mantissa_bits as i64;
+  if digits.is_empty() || digits.iter().all(|&d| d == 0) {
+    return Ok((vec![b'0'], 0));
+  }
 
-  let target_digits =
-    (mantissa_bits as f64 / std::f64::consts::LOG2_10).ceil() as usize + 2;
+  // Convert digit values (0-9) to ASCII bytes
+  let ascii_digits: Vec<u8> = digits.iter().map(|&d| b'0' + d).collect();
 
-  let (int_digits, decimal_exp) = if shift >= 0 {
-    let int_val = &mantissa << (shift as u64);
-    let s = int_val.to_string();
-    let len = s.len();
-    (s, len as i64)
-  } else {
-    let neg_shift = (-shift) as u64;
-    let scale = BigUint::from(10u32).pow(target_digits as u32);
-    let scaled = &mantissa * &scale;
-    let result = &scaled >> neg_shift;
-
-    if result.is_zero() {
-      return Ok((vec![b'0'], 0));
-    }
-
-    let s = result.to_string();
-    let decimal_exp = s.len() as i64 - target_digits as i64;
-    (s, decimal_exp)
-  };
-
-  Ok((int_digits.into_bytes(), decimal_exp))
+  Ok((ascii_digits, exponent as i64))
 }
 
 /// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
@@ -976,7 +951,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let bf = expr_to_bigfloat(&abs_expr, bits, rm, &mut cc)?;
 
-  let (raw_digits, decimal_exp) = bigfloat_to_digits(&bf)?;
+  let (raw_digits, decimal_exp) = bigfloat_to_digits(&bf, rm, &mut cc)?;
 
   // raw_digits are the significant digits, decimal_exp is the exponent
   // (number of digits before the decimal point).
