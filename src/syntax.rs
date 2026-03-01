@@ -2857,6 +2857,78 @@ fn format_real_scientific(f: f64) -> String {
   format!("{}*^{}", mantissa, exp)
 }
 
+/// Format a BigFloat (arbitrary-precision real) for display.
+/// Uses Wolfram's backtick notation: `digits`precision.`
+/// Uses scientific notation (*^) for very large or very small numbers,
+/// matching Wolfram's thresholds (|value| >= 1e6 or < 1e-5).
+pub fn format_bigfloat(digits: &str, prec: usize) -> String {
+  let (is_negative, abs_digits) = if let Some(rest) = digits.strip_prefix('-') {
+    (true, rest)
+  } else {
+    (false, digits)
+  };
+  let prefix = if is_negative { "-" } else { "" };
+
+  // Find the decimal point position
+  let dot_pos = abs_digits.find('.');
+  let int_part = if let Some(dp) = dot_pos {
+    &abs_digits[..dp]
+  } else {
+    abs_digits
+  };
+  let frac_part = if let Some(dp) = dot_pos {
+    if dp + 1 < abs_digits.len() {
+      &abs_digits[dp + 1..]
+    } else {
+      ""
+    }
+  } else {
+    ""
+  };
+
+  // Check if integer part has 6+ digits (value >= 1e6) → scientific notation
+  // But skip if integer part is all zeros (like "0" or "00")
+  let int_nonzero_len = int_part.trim_start_matches('0').len();
+  if int_part.len() >= 6 && int_nonzero_len > 0 {
+    // Collect all significant digits (integer + fractional)
+    let all_digits: String =
+      int_part.chars().chain(frac_part.chars()).collect();
+    let sig_digits = all_digits.trim_end_matches('0');
+    if sig_digits.is_empty() {
+      return format!("{}0.`{}.", prefix, prec);
+    }
+    let exp = int_part.len() as i64 - 1;
+    let mantissa = if sig_digits.len() > 1 {
+      format!("{}{}.{}", prefix, &sig_digits[..1], &sig_digits[1..])
+    } else {
+      format!("{}{}.", prefix, &sig_digits[..1])
+    };
+    return format!("{}`{}.*^{}", mantissa, prec, exp);
+  }
+
+  // Check if number is very small: "0.00000..." with 5+ leading zeros
+  if (int_part == "0" || int_part.is_empty()) && !frac_part.is_empty() {
+    let leading_zeros = frac_part.chars().take_while(|&c| c == '0').count();
+    if leading_zeros >= 5 {
+      let sig_part = &frac_part[leading_zeros..];
+      let sig_digits = sig_part.trim_end_matches('0');
+      if sig_digits.is_empty() {
+        return format!("{}0.`{}.", prefix, prec);
+      }
+      let exp = -(leading_zeros as i64 + 1);
+      let mantissa = if sig_digits.len() > 1 {
+        format!("{}{}.{}", prefix, &sig_digits[..1], &sig_digits[1..])
+      } else {
+        format!("{}{}.", prefix, &sig_digits[..1])
+      };
+      return format!("{}`{}.*^{}", mantissa, prec, exp);
+    }
+  }
+
+  // Normal format (no scientific notation needed)
+  format!("{}`{}.", digits, prec)
+}
+
 /// If expr is Times[negative_coeff, rest...], return Some(Times[abs(coeff), rest...]).
 /// Works for both BinaryOp{Times} and FunctionCall{Times} forms.
 fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
@@ -3374,7 +3446,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
     Expr::Real(f) => format_real(*f),
-    Expr::BigFloat(digits, prec) => format!("{}`{}.", digits, prec),
+    Expr::BigFloat(digits, prec) => format_bigfloat(digits, *prec),
     Expr::String(s) => {
       let escaped = escape_string_for_input_form(s);
       format!("\"{}\"", escaped)

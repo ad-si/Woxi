@@ -142,6 +142,75 @@ mod n_arbitrary_precision {
     // N[Exp[-2]] — should return f64 precision
     assert_eq!(interpret("N[Exp[-2]]").unwrap(), "0.1353352832366127");
   }
+
+  #[test]
+  fn n_bigfloat_scientific_notation_large() {
+    // N[Exp[1000], 10] should use *^ scientific notation (value >= 1e6)
+    let result = interpret("N[Exp[1000], 10]").unwrap();
+    assert!(
+      result.starts_with("1.9700711140170469"),
+      "Expected mantissa starting with 1.97..., got: {}",
+      result
+    );
+    assert!(
+      result.contains("`10.*^434"),
+      "Expected scientific notation *^434, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_bigfloat_scientific_notation_small() {
+    // N[Exp[-1000], 10] should use *^ scientific notation (value < 1e-5)
+    let result = interpret("N[Exp[-1000], 10]").unwrap();
+    assert!(
+      result.starts_with("5.0759588975494"),
+      "Expected mantissa starting with 5.07..., got: {}",
+      result
+    );
+    assert!(
+      result.contains("`10.*^-435"),
+      "Expected scientific notation *^-435, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_bigfloat_scientific_notation_medium() {
+    // N[Exp[100], 10] should use *^ (value ~ 2.69e43)
+    let result = interpret("N[Exp[100], 10]").unwrap();
+    assert!(
+      result.starts_with("2.688117141816"),
+      "Expected mantissa starting with 2.688..., got: {}",
+      result
+    );
+    assert!(
+      result.contains("`10.*^43"),
+      "Expected scientific notation *^43, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_bigfloat_no_scientific_notation() {
+    // N[Exp[10], 10] — value ~ 22026, should NOT use *^ (< 1e6)
+    let result = interpret("N[Exp[10], 10]").unwrap();
+    assert!(
+      result.starts_with("22026.465794806"),
+      "Expected normal notation, got: {}",
+      result
+    );
+    assert!(
+      result.ends_with("`10."),
+      "Expected plain backtick notation, got: {}",
+      result
+    );
+    assert!(
+      !result.contains("*^"),
+      "Should not use scientific notation, got: {}",
+      result
+    );
+  }
 }
 
 mod real_precision {

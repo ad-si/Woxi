@@ -58,7 +58,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     Expr::BigInteger(n) => ExprForm::Atom(n.to_string()),
     Expr::Real(f) => ExprForm::Atom(format_real_helper(*f)),
     Expr::BigFloat(digits, prec) => {
-      ExprForm::Atom(format!("{}`{}.", digits, prec))
+      ExprForm::Atom(crate::syntax::format_bigfloat(digits, *prec))
     }
     Expr::String(s) => ExprForm::Atom(format!("\"{}\"", s)),
     Expr::Identifier(s) => ExprForm::Atom(s.clone()),
