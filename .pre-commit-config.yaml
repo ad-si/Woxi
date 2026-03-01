@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: clippy-fix
+        name: Clippy Fix
+        language: unsupported
+        entry: cargo clippy --fix --allow-dirty
+        pass_filenames: false
+
+      - id: cargo-fmt
+        name: Cargo Format
+        language: unsupported
+        entry: cargo fmt
+        pass_filenames: false
