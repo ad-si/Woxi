@@ -2140,6 +2140,30 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         defaults.push(Some(default_expr));
         heads.push(Some(head_name));
       }
+      Rule::PatternOptionalDefaultSimple => {
+        // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
+        let mut pat_inner = item.into_inner();
+        let param_name = pat_inner
+          .next()
+          .map(|p| p.as_str().to_owned())
+          .unwrap_or_default();
+        params.push(param_name);
+        conditions.push(None);
+        // System-determined default (None means use Default[f, position])
+        defaults.push(None);
+        heads.push(None);
+      }
+      Rule::PatternOptionalDefaultWithHead => {
+        // PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." }
+        let mut pat_inner = item.into_inner();
+        let param_name = pat_inner.next().unwrap().as_str().to_owned();
+        let head_name = pat_inner.next().unwrap().as_str().to_owned();
+        params.push(param_name);
+        conditions.push(None);
+        // System-determined default (None means use Default[f, position])
+        defaults.push(None);
+        heads.push(Some(head_name));
+      }
       Rule::PatternWithHead => {
         // Extract parameter name and head (e.g., "x_List" -> name="x", head="List")
         let mut pat_inner = item.into_inner();
@@ -2191,9 +2215,37 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
   }
 
   // Convert body to AST instead of storing as string
-  let body_expr = syntax::pair_to_expr(body_pair.ok_or_else(|| {
+  let raw_body_expr = syntax::pair_to_expr(body_pair.ok_or_else(|| {
     InterpreterError::EvaluationError("Missing function body".into())
   })?);
+
+  // Unwrap Condition: f[x_] := body /; test is parsed as body being Condition[actual_body, test]
+  let body_expr = if let syntax::Expr::FunctionCall { ref name, ref args } =
+    raw_body_expr
+    && name == "Condition"
+    && args.len() == 2
+  {
+    // Attach the condition to a parameter condition slot
+    let mut attached = false;
+    for c in conditions.iter_mut() {
+      if c.is_none() {
+        *c = Some(args[1].clone());
+        attached = true;
+        break;
+      }
+    }
+    if !attached && !conditions.is_empty() {
+      let existing = conditions[0].take().unwrap();
+      conditions[0] = Some(syntax::Expr::FunctionCall {
+        name: "And".to_string(),
+        args: vec![existing, args[1].clone()],
+      });
+    }
+    has_any_condition = true;
+    args[0].clone()
+  } else {
+    raw_body_expr
+  };
 
   FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();

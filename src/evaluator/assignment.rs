@@ -307,6 +307,17 @@ pub fn set_delayed_ast(
   lhs: &Expr,
   body: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Unwrap Condition: f[x_] := body /; test is parsed as
+  // SetDelayed[f[x_], Condition[body, test]]. Extract the body and condition.
+  let (body, body_condition) = if let Expr::FunctionCall { name, args } = body
+    && name == "Condition"
+    && args.len() == 2
+  {
+    (&args[0], Some(&args[1]))
+  } else {
+    (body, None)
+  };
+
   // Handle Attributes[f] := value — set attributes on symbol f
   if let Expr::FunctionCall {
     name: func_name,
@@ -416,6 +427,26 @@ pub fn set_delayed_ast(
             &part_expr,
           );
         }
+      }
+    }
+
+    // If there's a body-level condition (from /;), attach it to a condition slot
+    if let Some(body_cond) = body_condition {
+      let mut attached = false;
+      for c in conditions.iter_mut() {
+        if c.is_none() {
+          *c = Some(body_cond.clone());
+          attached = true;
+          break;
+        }
+      }
+      if !attached && !conditions.is_empty() {
+        // All slots have conditions - combine with first using And
+        let existing = conditions[0].take().unwrap();
+        conditions[0] = Some(Expr::FunctionCall {
+          name: "And".to_string(),
+          args: vec![existing, body_cond.clone()],
+        });
       }
     }
 

@@ -349,9 +349,13 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         name: "Pattern".to_string(),
         args: vec![Expr::Identifier(name.clone()), blank],
       };
+      let mut children = vec![pattern];
+      if let Some(d) = default {
+        children.push(d.as_ref().clone());
+      }
       ExprForm::Composite {
         head: "Optional".to_string(),
-        children: vec![pattern, default.as_ref().clone()],
+        children,
       }
     }
     Expr::PatternTest { name, test } => {

@@ -622,7 +622,9 @@ pub fn dispatch_complex_and_special(
               }
             }
             Expr::PatternOptional { default, .. } => {
-              collect_identifiers(default, out)
+              if let Some(d) = default {
+                collect_identifiers(d, out)
+              }
             }
             Expr::PatternTest { test, .. } => collect_identifiers(test, out),
             _ => {}
