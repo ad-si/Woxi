@@ -87,6 +87,8 @@ if (sharedCode) {
     const decoded = LZString.decompressFromEncodedURIComponent(sharedCode)
     if (decoded) {
       setEditorContent(decoded)
+      clearOutputs()
+      localStorage.removeItem(STORAGE_KEY_OUTPUTS)
     }
   } catch (_) { /* ignore corrupt share links */ }
   // Clean the URL without reloading
