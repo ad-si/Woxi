@@ -3,7 +3,7 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics3D[Cylinder[{{0,0,0},{0,0,1}}, 0.5]]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="360" fill="white"/>
+<rect width="360" height="360" fill="rgb(255,255,255)"/>
 <polygon points="205.4,205.3 177.6,30.0 177.6,203.5" fill="rgb(71,97,136)" stroke="#00000018" stroke-width="0.5"/>
 <polygon points="177.6,203.5 149.9,32.5 149.9,206.0" fill="rgb(72,99,139)" stroke="#00000018" stroke-width="0.5"/>
 <polygon points="231.6,211.3 205.4,31.8 205.4,205.3" fill="rgb(67,91,128)" stroke="#00000018" stroke-width="0.5"/>

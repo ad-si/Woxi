@@ -119,15 +119,17 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
 
 /// Simple SVG header for plots without plotters axes (ArrayPlot, MatrixPlot).
 fn svg_header(w: u32, h: u32, full_width: bool) -> String {
+  let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+  let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
   if full_width {
     format!(
       "<svg width=\"100%\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\n"
+       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
     )
   } else {
     format!(
       "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\n"
+       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
     )
   }
 }
@@ -374,9 +376,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Draw contour line segments
+    let contour_stroke = crate::functions::graphics::theme().text_primary;
     for (a, b) in &segments {
       svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#333\" stroke-width=\"{}\" stroke-opacity=\"0.7\"/>\n",
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{contour_stroke}\" stroke-width=\"{}\" stroke-opacity=\"0.7\"/>\n",
         a.0, a.1, b.0, b.1, area.render_width as f64 / 1000.0 * 3.0
       ));
     }
@@ -773,8 +776,9 @@ pub fn stream_density_plot_ast(
       }
 
       if points.len() > 1 {
+        let stream_stroke = crate::functions::graphics::theme().text_primary;
         svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"#333\" stroke-width=\"{stroke_w:.1}\" stroke-opacity=\"0.6\"/>\n",
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{stream_stroke}\" stroke-width=\"{stroke_w:.1}\" stroke-opacity=\"0.6\"/>\n",
           points.join(" ")
         ));
       }
@@ -1401,9 +1405,10 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
+    let contour_stroke = crate::functions::graphics::theme().text_primary;
     for (a, b) in &segments {
       svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#333\" stroke-width=\"{}\" stroke-opacity=\"0.7\"/>\n",
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{contour_stroke}\" stroke-width=\"{}\" stroke-opacity=\"0.7\"/>\n",
         a.0, a.1, b.0, b.1, area.render_width as f64 / 1000.0 * 3.0
       ));
     }

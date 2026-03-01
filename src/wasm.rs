@@ -93,6 +93,12 @@ pub fn clear() {
   clear_state();
 }
 
+/// Enable or disable dark mode for SVG output colors.
+#[wasm_bindgen]
+pub fn set_dark_mode(enabled: bool) {
+  crate::set_dark_mode(enabled);
+}
+
 /// Evaluate all top-level statements and return a JSON array of output items.
 /// Each item has a "type" field ("text", "graphics", "print", "warning", "error")
 /// and corresponding content fields.

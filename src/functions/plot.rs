@@ -15,6 +15,29 @@ pub(crate) const DEFAULT_HEIGHT: u32 = 225;
 pub(crate) const RESOLUTION_SCALE: u32 = 10;
 pub(crate) const NUM_SAMPLES: usize = 500;
 
+/// Return plotters colors adapted to the current light/dark theme.
+pub(crate) fn plot_theme()
+-> (RGBColor, RGBColor, RGBColor, &'static str, &'static str) {
+  if crate::is_dark_mode() {
+    // (background, axis_gray, origin_line_gray, label_fill, title_default_fill)
+    (
+      RGBColor(0x1a, 0x1a, 0x1a), // dark background
+      RGBColor(0x99, 0x99, 0x99), // lighter axes for dark bg
+      RGBColor(0x44, 0x44, 0x44), // subtle origin lines
+      "#999",                     // axis label fill
+      "#e0e0e0",                  // default plot label fill
+    )
+  } else {
+    (
+      RGBColor(0xFF, 0xFF, 0xFF), // white background
+      RGBColor(0x66, 0x66, 0x66), // dark gray axes
+      RGBColor(0xCC, 0xCC, 0xCC), // light gray origin lines
+      "#666",                     // axis label fill
+      "#333",                     // default plot label fill
+    )
+  }
+}
+
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);
@@ -471,17 +494,18 @@ fn generate_svg_with_options(
     5 * s as u32
   };
 
+  let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
+    plot_theme();
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
       .into_drawing_area();
     root
-      .fill(&WHITE)
+      .fill(&bg_color)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
     let tick = 4 * s;
-    let dark_gray = RGBColor(0x66, 0x66, 0x66);
-    let light_gray = RGBColor(0xCC, 0xCC, 0xCC);
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
@@ -533,7 +557,7 @@ fn generate_svg_with_options(
     let axis_style = if any_axis {
       dark_gray.stroke_width(RESOLUTION_SCALE)
     } else {
-      ShapeStyle::from(&WHITE).stroke_width(0)
+      ShapeStyle::from(&bg_color).stroke_width(0)
     };
     chart
       .configure_mesh()
@@ -662,7 +686,7 @@ fn generate_svg_with_options(
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"#666\">{}</text>\n",
+             fill=\"{label_fill}\">{}</text>\n",
             html_escape(x_label)
           ));
         }
@@ -672,7 +696,7 @@ fn generate_svg_with_options(
           labels_svg.push_str(&format!(
             "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"#666\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+             fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
             html_escape(y_label)
           ));
         }
@@ -689,7 +713,7 @@ fn generate_svg_with_options(
           .color
           .as_ref()
           .map(|c| c.to_svg_rgb())
-          .unwrap_or_else(|| "#333".to_string());
+          .unwrap_or_else(|| title_default_fill.to_string());
         let mut style_attrs = String::new();
         if sl.bold {
           style_attrs.push_str(" font-weight=\"bold\"");
@@ -741,18 +765,19 @@ pub(crate) fn generate_scatter_svg_with_options(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
+  let (bg_color, dark_gray, light_gray, _label_fill, _title_fill) =
+    plot_theme();
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
       .into_drawing_area();
     root
-      .fill(&WHITE)
+      .fill(&bg_color)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
     let s = RESOLUTION_SCALE as i32;
     let tick = 4 * s;
-    let dark_gray = RGBColor(0x66, 0x66, 0x66);
-    let light_gray = RGBColor(0xCC, 0xCC, 0xCC);
 
     let mut chart = ChartBuilder::on(&root)
       .margin(10 * s)
@@ -908,16 +933,18 @@ pub(crate) fn generate_bar_svg(
   let x_label_area = 25 * RESOLUTION_SCALE + bottom_extra as u32;
   let y_label_area = 40 * RESOLUTION_SCALE;
 
+  let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
+    plot_theme();
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
       .into_drawing_area();
-    root.fill(&WHITE).map_err(|e| {
+    root.fill(&bg_color).map_err(|e| {
       InterpreterError::EvaluationError(format!("BarChart: {e}"))
     })?;
 
     let tick = 4 * s;
-    let dark_gray = RGBColor(0x66, 0x66, 0x66);
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
@@ -1025,14 +1052,14 @@ pub(crate) fn generate_bar_svg(
         let (ly, fill) = match chart_label_position {
           LabelPosition::Above => {
             let bar_top = map_y_val(values[i]);
-            (bar_top - font_size * 0.5, "#333")
+            (bar_top - font_size * 0.5, title_default_fill)
           }
           LabelPosition::Center => {
             let bar_top = map_y_val(values[i]);
             let bar_center = (bar_top + axis_y) / 2.0 + font_size * 0.4;
             (bar_center, "white")
           }
-          LabelPosition::Below => (axis_y + font_size * 1.5, "#666"),
+          LabelPosition::Below => (axis_y + font_size * 1.5, label_fill),
         };
         labels_svg.push_str(&format!(
           "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
@@ -1056,7 +1083,7 @@ pub(crate) fn generate_bar_svg(
         labels_svg.push_str(&format!(
           "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-           fill=\"#666\">{}</text>\n",
+           fill=\"{label_fill}\">{}</text>\n",
           html_escape(x_label)
         ));
       }
@@ -1066,7 +1093,7 @@ pub(crate) fn generate_bar_svg(
         labels_svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-           fill=\"#666\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+           fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
           html_escape(y_label)
         ));
       }
@@ -1083,7 +1110,7 @@ pub(crate) fn generate_bar_svg(
         .color
         .as_ref()
         .map(|c| c.to_svg_rgb())
-        .unwrap_or_else(|| "#333".to_string());
+        .unwrap_or_else(|| title_default_fill.to_string());
       let mut style_attrs = String::new();
       if sl.bold {
         style_attrs.push_str(" font-weight=\"bold\"");
@@ -1152,13 +1179,14 @@ pub(crate) fn generate_histogram_svg(
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
       .into_drawing_area();
-    root.fill(&WHITE).map_err(|e| {
+    let (bg_color, dark_gray, _light_gray, _label_fill, _title_fill) =
+      plot_theme();
+    root.fill(&bg_color).map_err(|e| {
       InterpreterError::EvaluationError(format!("Histogram: {e}"))
     })?;
 
     let s = RESOLUTION_SCALE as i32;
     let tick = 4 * s;
-    let dark_gray = RGBColor(0x66, 0x66, 0x66);
 
     let mut chart = ChartBuilder::on(&root)
       .margin(10 * s)
@@ -1297,17 +1325,19 @@ pub(crate) fn generate_axes_only_opts(
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
+  let (bg_color, dark_gray, _light_gray, label_fill, _title_fill) =
+    plot_theme();
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
       .into_drawing_area();
     root
-      .fill(&WHITE)
+      .fill(&bg_color)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
     let s = RESOLUTION_SCALE as i32;
     let tick = 4 * s;
-    let dark_gray = RGBColor(0x66, 0x66, 0x66);
 
     let top_margin = margins
       .map(|m| m.top_margin)
@@ -1438,10 +1468,11 @@ pub(crate) fn generate_axes_only_opts(
     let stroke_w = s;
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut ticks_svg = String::new();
+      let tick_color = label_fill;
       for &pos in positions {
         let x = plot_x0 + (pos - x_min) / (x_max - x_min) * plot_w;
         ticks_svg.push_str(&format!(
-          "<line x1=\"{x:.1}\" y1=\"{:.1}\" x2=\"{x:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-width=\"{stroke_w:.0}\"/>\n",
+          "<line x1=\"{x:.1}\" y1=\"{:.1}\" x2=\"{x:.1}\" y2=\"{:.1}\" stroke=\"{tick_color}\" stroke-width=\"{stroke_w:.0}\"/>\n",
           axis_y, axis_y + tick_len
         ));
       }

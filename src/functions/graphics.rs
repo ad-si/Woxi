@@ -81,6 +81,61 @@ const BLACK: Color = Color {
   a: 1.0,
 };
 
+// ── Theme colors for light/dark mode ────────────────────────────────────
+
+pub struct ThemeColors {
+  pub text_primary: &'static str,
+  pub text_secondary: &'static str,
+  pub text_muted: &'static str,
+  pub stroke_default: &'static str,
+  pub axis_stroke: &'static str,
+  pub tick_label_fill: &'static str,
+  pub table_header_bg: &'static str,
+  pub table_row_num_bg: &'static str,
+  pub table_row_num_header_bg: &'static str,
+  pub table_border_strong: &'static str,
+  pub table_border_light: &'static str,
+  pub framed_border: &'static str,
+}
+
+const LIGHT_THEME: ThemeColors = ThemeColors {
+  text_primary: "#333",
+  text_secondary: "#555",
+  text_muted: "#888",
+  stroke_default: "black",
+  axis_stroke: "#b3b3b3",
+  tick_label_fill: "#555555",
+  table_header_bg: "#f0f0f0",
+  table_row_num_bg: "#eef2f7",
+  table_row_num_header_bg: "#dde4ed",
+  table_border_strong: "#999",
+  table_border_light: "#ccc",
+  framed_border: "rgb(190,190,190)",
+};
+
+const DARK_THEME: ThemeColors = ThemeColors {
+  text_primary: "#e0e0e0",
+  text_secondary: "#b0b0b0",
+  text_muted: "#777",
+  stroke_default: "#e0e0e0",
+  axis_stroke: "#555",
+  tick_label_fill: "#a0a0a0",
+  table_header_bg: "#2a2a2a",
+  table_row_num_bg: "#1e2830",
+  table_row_num_header_bg: "#252d35",
+  table_border_strong: "#555",
+  table_border_light: "#3a3a3a",
+  framed_border: "rgb(80,80,80)",
+};
+
+pub fn theme() -> &'static ThemeColors {
+  if crate::is_dark_mode() {
+    &DARK_THEME
+  } else {
+    &LIGHT_THEME
+  }
+}
+
 pub(crate) fn named_color(name: &str) -> Option<Color> {
   Some(match name {
     // Basic colors (matching Wolfram Language values)
@@ -1262,8 +1317,9 @@ fn render_axes(
   svg_w: f64,
   svg_h: f64,
 ) {
-  const AXIS_STROKE: &str = "#b3b3b3";
-  const TICK_LABEL_FILL: &str = "#555555";
+  let t = theme();
+  let axis_stroke = t.axis_stroke;
+  let tick_label_fill = t.tick_label_fill;
 
   if !axes.0 && !axes.1 {
     return;
@@ -1284,7 +1340,7 @@ fn render_axes(
 
   if axes.0 {
     svg.push_str(&format!(
-      "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n"
+      "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
     ));
     for t in generate_ticks(bb.x_min, bb.x_max, 6) {
       let x = coord_x(t, bb, svg_w);
@@ -1292,7 +1348,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n",
+        "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n",
         axis_y_px - 4.0,
         axis_y_px + 4.0
       ));
@@ -1301,7 +1357,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{TICK_LABEL_FILL}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
+        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
         axis_y_px + 6.0,
         svg_escape(&label),
       ));
@@ -1310,7 +1366,7 @@ fn render_axes(
 
   if axes.1 {
     svg.push_str(&format!(
-      "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n"
+      "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
     ));
     for t in generate_ticks(bb.y_min, bb.y_max, 6) {
       let y = coord_y(t, bb, svg_h);
@@ -1318,7 +1374,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{AXIS_STROKE}\" stroke-width=\"1\"/>\n",
+        "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n",
         axis_x_px - 4.0,
         axis_x_px + 4.0
       ));
@@ -1327,7 +1383,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{TICK_LABEL_FILL}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
+        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"11\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
         axis_x_px - 6.0,
         svg_escape(&label),
       ));
@@ -3516,11 +3572,12 @@ fn grid_svg_internal(
     let h = total_height;
     let inset = 8.0; // how far the curve bows inward
     let stroke_w = 1.2;
+    let stroke_color = theme().stroke_default;
     // Left parenthesis: smooth arc from top to bottom, bowing left
     // Cubic Bézier: start at (margin, 0), control points pull left, end at (margin, h)
     let lx = paren_margin;
     svg.push_str(&format!(
-      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{stroke_w}\"/>\n",
       lx, 0.0,
       lx - inset, h * 0.33,
       lx - inset, h * 0.67,
@@ -3529,7 +3586,7 @@ fn grid_svg_internal(
     // Right parenthesis: smooth arc from top to bottom, bowing right
     let rx = paren_margin + grid_width;
     svg.push_str(&format!(
-      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{stroke_w}\"/>\n",
       rx, 0.0,
       rx + inset, h * 0.33,
       rx + inset, h * 0.67,
@@ -3601,8 +3658,9 @@ fn grid_svg_internal(
         } else {
           String::new()
         };
+        let text_fill = theme().text_primary;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{fs}\"{fw_attr}{fst_attr} fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(content)
         ));
       }
@@ -3617,11 +3675,12 @@ fn grid_svg_internal(
 
   // Draw frame lines if Frame -> All
   if frame_all {
+    let frame_stroke = theme().stroke_default;
     // Horizontal lines (num_rows + 1 lines)
     let mut y = 0.0_f64;
     for i in 0..=num_rows {
       svg.push_str(&format!(
-        "<line x1=\"{paren_margin:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"black\" stroke-width=\"1\"/>\n",
+        "<line x1=\"{paren_margin:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
         paren_margin + grid_width
       ));
       if i < num_rows {
@@ -3635,7 +3694,7 @@ fn grid_svg_internal(
     let mut x_offset: f64 = paren_margin;
     for j in 0..=num_cols {
       svg.push_str(&format!(
-        "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"black\" stroke-width=\"1\"/>\n"
+        "<line x1=\"{x_offset:.1}\" y1=\"0\" x2=\"{x_offset:.1}\" y2=\"{total_height:.1}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
       ));
       if j < num_cols {
         x_offset += col_widths[j];
@@ -3749,8 +3808,9 @@ pub fn matrixform_3d_ast(
   let lx = outer_paren_margin;
   let h = total_height;
   let stroke_w = 1.2;
+  let stroke_color = theme().stroke_default;
   svg.push_str(&format!(
-    "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+    "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{stroke_w}\"/>\n",
     lx, 0.0,
     lx - outer_paren_inset, h * 0.33,
     lx - outer_paren_inset, h * 0.67,
@@ -3758,7 +3818,7 @@ pub fn matrixform_3d_ast(
   ));
   let rx = outer_paren_margin + grid_width;
   svg.push_str(&format!(
-    "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{stroke_w}\"/>\n",
+    "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{stroke_w}\"/>\n",
     rx, 0.0,
     rx + outer_paren_inset, h * 0.33,
     rx + outer_paren_inset, h * 0.67,
@@ -3793,14 +3853,14 @@ pub fn matrixform_3d_ast(
       let sub_stroke = 1.0;
 
       svg.push_str(&format!(
-        "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{sub_stroke}\"/>\n",
+        "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{sub_stroke}\"/>\n",
         sub_lx, sub_top,
         sub_lx - paren_inset, sub_top + sub_h * 0.33,
         sub_lx - paren_inset, sub_top + sub_h * 0.67,
         sub_lx, sub_bot
       ));
       svg.push_str(&format!(
-        "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"black\" stroke-width=\"{sub_stroke}\"/>\n",
+        "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{sub_stroke}\"/>\n",
         sub_rx, sub_top,
         sub_rx + paren_inset, sub_top + sub_h * 0.33,
         sub_rx + paren_inset, sub_top + sub_h * 0.67,
@@ -3808,11 +3868,12 @@ pub fn matrixform_3d_ast(
       ));
 
       // Draw sub-items as text, vertically stacked
+      let text_fill = theme().text_primary;
       for (k, item) in sub_items.iter().enumerate() {
         let cx = x_off + cell_w / 2.0;
         let cy = sub_y_start + k as f64 * row_height + row_height / 2.0;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(item)
         ));
       }
@@ -3938,31 +3999,37 @@ fn dataset_assoc_to_svg(pairs: &[(Expr, Expr)]) -> Option<String> {
     svg_w, svg_h, svg_w, svg_h
   ));
 
+  let t = theme();
+
   // Key column background
   svg.push_str(&format!(
-    "<rect x=\"0\" y=\"0\" width=\"{key_col_w:.1}\" height=\"{total_height:.1}\" fill=\"#f0f0f0\"/>\n"
+    "<rect x=\"0\" y=\"0\" width=\"{key_col_w:.1}\" height=\"{total_height:.1}\" fill=\"{}\"/>\n",
+    t.table_header_bg
   ));
 
   // Rows
   let mut y_offset: f64 = 0.0;
+  let text_fill = t.text_primary;
   for (i, (_, v)) in pairs.iter().enumerate() {
     let cy = y_offset + row_height / 2.0;
     // Key (bold, in left column)
     let kx = key_col_w / 2.0;
     svg.push_str(&format!(
-      "<text x=\"{kx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" font-weight=\"bold\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      "<text x=\"{kx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" font-weight=\"bold\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
       keys[i]
     ));
     // Value (in right column)
     let vx = key_col_w + val_col_w / 2.0;
     svg.push_str(&format!(
-      "<text x=\"{vx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      "<text x=\"{vx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
       expr_to_svg_markup(v)
     ));
     y_offset += row_height;
   }
 
   // Grid lines
+  let border_color = t.table_border_strong;
+  let light_color = t.table_border_light;
   // Horizontal lines
   let mut y = 0.0_f64;
   for i in 0..=num_rows {
@@ -3972,9 +4039,9 @@ fn dataset_assoc_to_svg(pairs: &[(Expr, Expr)]) -> Option<String> {
       "0.5"
     };
     let color = if i == 0 || i == num_rows {
-      "#999"
+      border_color
     } else {
-      "#ccc"
+      light_color
     };
     svg.push_str(&format!(
       "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_width}\"/>\n"
@@ -3983,13 +4050,13 @@ fn dataset_assoc_to_svg(pairs: &[(Expr, Expr)]) -> Option<String> {
   }
   // Vertical lines: outer borders + separator between key and value columns
   svg.push_str(&format!(
-    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
   svg.push_str(&format!(
-    "<line x1=\"{key_col_w:.1}\" y1=\"0\" x2=\"{key_col_w:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"{key_col_w:.1}\" y1=\"0\" x2=\"{key_col_w:.1}\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
   svg.push_str(&format!(
-    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
 
   svg.push_str("</svg>");
@@ -4080,12 +4147,16 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
     svg_w, svg_h, svg_w, svg_h
   ));
 
+  let t = theme();
+
   // Header background
   svg.push_str(&format!(
-    "<rect x=\"0\" y=\"0\" width=\"{total_width:.1}\" height=\"{header_row_height:.1}\" fill=\"#f0f0f0\"/>\n"
+    "<rect x=\"0\" y=\"0\" width=\"{total_width:.1}\" height=\"{header_row_height:.1}\" fill=\"{}\"/>\n",
+    t.table_header_bg
   ));
 
   // Header text (bold)
+  let text_fill = t.text_primary;
   {
     let mut x_offset: f64 = 0.0;
     for (j, header) in headers.iter().enumerate() {
@@ -4093,7 +4164,7 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
       let cx = x_offset + col_w / 2.0;
       let cy = header_row_height / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" font-weight=\"bold\" text-anchor=\"middle\" dominant-baseline=\"central\">{header}</text>\n"
+        "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" font-weight=\"bold\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{header}</text>\n"
       ));
       x_offset += col_w;
     }
@@ -4109,7 +4180,7 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
         let cx = x_offset + col_w / 2.0;
         let cy = y_offset + row_height / 2.0;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(cell)
         ));
         x_offset += col_w;
@@ -4119,6 +4190,8 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
   }
 
   // Grid lines
+  let border_color = t.table_border_strong;
+  let light_color = t.table_border_light;
   // Horizontal lines
   let mut y = 0.0_f64;
   for i in 0..=num_total_rows {
@@ -4128,9 +4201,9 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
       "0.5"
     };
     let color = if i == 0 || i == 1 || i == num_total_rows {
-      "#999"
+      border_color
     } else {
-      "#ccc"
+      light_color
     };
     svg.push_str(&format!(
       "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_width}\"/>\n"
@@ -4143,10 +4216,10 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
   }
   // Vertical lines (only outer borders)
   svg.push_str(&format!(
-    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
   svg.push_str(&format!(
-    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
 
   svg.push_str("</svg>");
@@ -4278,10 +4351,12 @@ pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
 
   let mut x = 0.0_f64;
 
+  let text_fill = theme().text_primary;
+
   // Opening brace
   out.push_str(&format!(
     "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-     font-size=\"{font_size}\" text-anchor=\"middle\" \
+     font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
      dominant-baseline=\"central\">{{</text>\n",
     x + brace_w / 2.0,
   ));
@@ -4292,7 +4367,7 @@ pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
       // Comma separator
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-         font-size=\"{font_size}\" text-anchor=\"middle\" \
+         font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
          dominant-baseline=\"central\">,</text>\n",
         x + comma_w / 2.0,
       ));
@@ -4315,7 +4390,7 @@ pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
   // Closing brace
   out.push_str(&format!(
     "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-     font-size=\"{font_size}\" text-anchor=\"middle\" \
+     font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
      dominant-baseline=\"central\">}}</text>\n",
     x + brace_w / 2.0,
   ));
@@ -4993,23 +5068,29 @@ fn render_tabular_svg_grid(
     svg_w, svg_h, svg_w, svg_h
   ));
 
+  let t = theme();
+
   // Row-number column background (light blue-gray)
   svg.push_str(&format!(
-    "<rect x=\"0\" y=\"0\" width=\"{row_num_col_w:.1}\" height=\"{total_height:.1}\" fill=\"#eef2f7\"/>\n"
+    "<rect x=\"0\" y=\"0\" width=\"{row_num_col_w:.1}\" height=\"{total_height:.1}\" fill=\"{}\"/>\n",
+    t.table_row_num_bg
   ));
 
   // Header row background (if applicable)
   if num_header_rows > 0 {
     svg.push_str(&format!(
-      "<rect x=\"{row_num_col_w:.1}\" y=\"0\" width=\"{data_width:.1}\" height=\"{header_row_height:.1}\" fill=\"#f0f0f0\"/>\n"
+      "<rect x=\"{row_num_col_w:.1}\" y=\"0\" width=\"{data_width:.1}\" height=\"{header_row_height:.1}\" fill=\"{}\"/>\n",
+      t.table_header_bg
     ));
     // Also extend the row-number column header background
     svg.push_str(&format!(
-      "<rect x=\"0\" y=\"0\" width=\"{row_num_col_w:.1}\" height=\"{header_row_height:.1}\" fill=\"#dde4ed\"/>\n"
+      "<rect x=\"0\" y=\"0\" width=\"{row_num_col_w:.1}\" height=\"{header_row_height:.1}\" fill=\"{}\"/>\n",
+      t.table_row_num_header_bg
     ));
   }
 
   // Header text (bold)
+  let text_fill = t.text_primary;
   if num_header_rows > 0 && !col_keys.is_empty() {
     let mut x_offset: f64 = row_num_col_w;
     for (j, header) in col_keys.iter().enumerate() {
@@ -5020,7 +5101,7 @@ fn render_tabular_svg_grid(
       let cx = x_offset + col_w / 2.0;
       let cy = header_row_height / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" font-weight=\"bold\" text-anchor=\"middle\" dominant-baseline=\"central\">{header}</text>\n"
+        "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" font-weight=\"bold\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{header}</text>\n"
       ));
       x_offset += col_w;
     }
@@ -5032,6 +5113,7 @@ fn render_tabular_svg_grid(
   } else {
     0.0
   };
+  let row_num_fill = t.text_muted;
   let mut y_offset: f64 = y_start;
   for (i, row) in grid.iter().enumerate() {
     // Row number (1-based, in left column)
@@ -5039,7 +5121,7 @@ fn render_tabular_svg_grid(
     let rx = row_num_col_w / 2.0;
     let cy = y_offset + row_height / 2.0;
     svg.push_str(&format!(
-      "<text x=\"{rx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"#888\" text-anchor=\"middle\" dominant-baseline=\"central\">{row_num}</text>\n"
+      "<text x=\"{rx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{row_num_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{row_num}</text>\n"
     ));
 
     // Data cells
@@ -5049,7 +5131,7 @@ fn render_tabular_svg_grid(
         let col_w = col_widths[j];
         let cx = x_offset + col_w / 2.0;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(cell)
         ));
         x_offset += col_w;
@@ -5059,6 +5141,8 @@ fn render_tabular_svg_grid(
   }
 
   // Grid lines
+  let border_color = t.table_border_strong;
+  let light_color = t.table_border_light;
   // Horizontal lines
   let num_total_rows = num_header_rows + num_data_rows;
   let mut y = 0.0_f64;
@@ -5066,7 +5150,7 @@ fn render_tabular_svg_grid(
     let is_border =
       i == 0 || i == num_total_rows || (num_header_rows > 0 && i == 1);
     let stroke_width = if is_border { "1.5" } else { "0.5" };
-    let color = if is_border { "#999" } else { "#ccc" };
+    let color = if is_border { border_color } else { light_color };
     svg.push_str(&format!(
       "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_width}\"/>\n"
     ));
@@ -5079,13 +5163,13 @@ fn render_tabular_svg_grid(
 
   // Vertical lines: outer borders + separator after row-number column
   svg.push_str(&format!(
-    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
   svg.push_str(&format!(
-    "<line x1=\"{row_num_col_w:.1}\" y1=\"0\" x2=\"{row_num_col_w:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"{row_num_col_w:.1}\" y1=\"0\" x2=\"{row_num_col_w:.1}\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
   svg.push_str(&format!(
-    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"#999\" stroke-width=\"1.5\"/>\n"
+    "<line x1=\"{total_width:.1}\" y1=\"0\" x2=\"{total_width:.1}\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
   ));
 
   svg.push_str("</svg>");
@@ -5151,10 +5235,11 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
     _ => pad_x / 2.0, // "start"
   };
 
+  let text_fill = theme().text_primary;
   for (i, item) in items.iter().enumerate() {
     let cy = i as f64 * row_height + row_height / 2.0;
     svg.push_str(&format!(
-      "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
+      "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"{alignment}\" dominant-baseline=\"central\">{}</text>\n",
       expr_to_svg_markup(item)
     ));
   }
@@ -5216,8 +5301,9 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
       "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
     // Border rectangle
+    let framed_border = theme().framed_border;
     svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"rgb(190,190,190)\" stroke-width=\"{stroke_width}\"/>\n",
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
       stroke_width / 2.0, stroke_width / 2.0,
       total_w - stroke_width, total_h - stroke_width,
     ));
@@ -5247,16 +5333,18 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
       "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
     // Border rectangle
+    let framed_border = theme().framed_border;
     svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"rgb(190,190,190)\" stroke-width=\"{stroke_width}\"/>\n",
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"none\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
       stroke_width / 2.0, stroke_width / 2.0,
       total_w - stroke_width, total_h - stroke_width,
     ));
     // Text centered inside
     let cx = total_w / 2.0;
     let cy = total_h / 2.0;
+    let text_fill = theme().text_primary;
     svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
       expr_to_svg_markup(content)
     ));
     svg.push_str("</svg>");
@@ -5368,9 +5456,11 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
 
   let mid_y = total_h / 2.0;
 
+  let text_fill = theme().text_primary;
+
   // Opening brace
   svg.push_str(&format!(
-    "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{{</text>\n",
+    "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{{</text>\n",
     brace_width / 2.0
   ));
 
@@ -5379,7 +5469,7 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
     if i > 0 {
       // Draw comma separator
       svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">,</text>\n",
+        "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">,</text>\n",
         x + sep_width / 2.0
       ));
       x += sep_width;
@@ -5399,7 +5489,7 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
       CellContent::Text(expr) => {
         let cx = x + cell.width / 2.0;
         svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+          "<text x=\"{cx:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
           expr_to_svg_markup(expr)
         ));
       }
@@ -5409,7 +5499,7 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
 
   // Closing brace
   svg.push_str(&format!(
-    "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" text-anchor=\"middle\" dominant-baseline=\"central\">}}</text>\n",
+    "<text x=\"{:.1}\" y=\"{mid_y:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">}}</text>\n",
     x + brace_width / 2.0
   ));
 

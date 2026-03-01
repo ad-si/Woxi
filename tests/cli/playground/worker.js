@@ -55,6 +55,11 @@ self.onmessage = async function (e) {
     return
   }
 
+  if (type === "set_theme") {
+    if (wasm) wasm.set_dark_mode(e.data.dark)
+    return
+  }
+
   if (type === "evaluate") {
     if (!wasm) {
       postMessage({
