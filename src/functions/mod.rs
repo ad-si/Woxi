@@ -1,7 +1,6 @@
 // Functions are organized by categories
 pub mod association_ast;
 pub mod boolean_ast;
-pub mod calculus;
 pub mod calculus_ast;
 pub mod cellular_automaton_ast;
 pub mod chart;
@@ -34,7 +33,6 @@ pub mod tree_form;
 // Re-export all function implementations
 pub use association_ast::*;
 pub use boolean_ast::*;
-pub use calculus::*;
 pub use calculus_ast::*;
 pub use cellular_automaton_ast::*;
 pub use control_flow_ast::*;

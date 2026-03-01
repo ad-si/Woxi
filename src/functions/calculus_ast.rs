@@ -1946,6 +1946,13 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               left: right.clone(),
               right: Box::new(Expr::Integer(1)),
             });
+            // Special case: ∫ x^(-1) dx = Log[x]
+            if matches!(&new_exp, Expr::Integer(0)) {
+              return Some(Expr::FunctionCall {
+                name: "Log".to_string(),
+                args: vec![Expr::Identifier(var.to_string())],
+              });
+            }
             let power_expr = Expr::BinaryOp {
               op: Power,
               left: left.clone(),

@@ -1179,6 +1179,17 @@ mod integrate_rational {
   }
 
   #[test]
+  fn integrate_x_pow_neg1() {
+    // x^-1 is the same as 1/x, should give Log[x]
+    assert_eq!(interpret("Integrate[x^-1, x]").unwrap(), "Log[x]");
+  }
+
+  #[test]
+  fn integrate_x_pow_neg1_parens() {
+    assert_eq!(interpret("Integrate[x^(-1), x]").unwrap(), "Log[x]");
+  }
+
+  #[test]
   fn integrate_x4_over_x2_minus_1() {
     // Polynomial long division + partial fractions with linear factors
     assert_eq!(
