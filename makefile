@@ -78,7 +78,7 @@ format:
 
 .PHONY: install
 install:
-	cargo install --path .
+	cargo install --debug --path .
 
 
 .PHONY: wasm-build
