@@ -1135,6 +1135,41 @@ mod zeta {
     let result: f64 = interpret("Zeta[-0.5]").unwrap().parse().unwrap();
     assert!((result - (-0.20788622497735454)).abs() < 1e-6);
   }
+
+  #[test]
+  fn complex_on_critical_line() {
+    // Zeta[1/2 + 13 I] ≈ 0.443... - 0.655...*I
+    let result = interpret("N[Zeta[1/2 + 13 I]]").unwrap();
+    assert!(
+      result.contains("0.44300478250536")
+        && result.contains("0.65548309832117"),
+      "Expected Zeta[1/2+13I] ≈ 0.443...-0.655...*I, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn complex_positive_real_part() {
+    // Zeta[2 + 3 I] ≈ 0.798... - 0.114...*I
+    let result = interpret("N[Zeta[2 + 3 I]]").unwrap();
+    assert!(
+      result.contains("0.798021985146275")
+        && result.contains("0.113744308052938"),
+      "Expected Zeta[2+3I] ≈ 0.798...-0.114...*I, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn complex_with_precision() {
+    // N[Zeta[1/2 + 13 I], 40] should evaluate (at machine precision)
+    let result = interpret("N[Zeta[1/2 + 13 I], 40]").unwrap();
+    assert!(
+      result.contains("0.443") && result.contains("I"),
+      "Expected numeric complex result, got: {}",
+      result
+    );
+  }
 }
 
 mod jacobi_dn {

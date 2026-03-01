@@ -1559,9 +1559,12 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => other.clone(),
   };
 
-  // Compute derivative symbolically
-  let deriv = crate::functions::calculus_ast::differentiate_expr(&func, &var)?;
-  let deriv = simplify(deriv);
+  // Try symbolic derivative; fall back to numerical if unavailable
+  let deriv_expr =
+    crate::functions::calculus_ast::differentiate_expr(&func, &var)
+      .ok()
+      .map(simplify)
+      .filter(|d| !contains_unevaluated_d(d));
 
   // Newton's method
   let max_iter = 100;
@@ -1573,7 +1576,18 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if fx.abs() < tol {
       break;
     }
-    let fpx = find_root_eval_at(&deriv, &var, x)?;
+    // Compute derivative: symbolic if available, else numerical
+    let fpx = if let Some(ref d) = deriv_expr {
+      find_root_eval_at(d, &var, x)?
+    } else {
+      // 4th-order central difference for high-precision derivative
+      let h = x.abs().max(1.0) * 1e-4;
+      let fp1 = find_root_eval_at(&func, &var, x + h)?;
+      let fm1 = find_root_eval_at(&func, &var, x - h)?;
+      let fp2 = find_root_eval_at(&func, &var, x + 2.0 * h)?;
+      let fm2 = find_root_eval_at(&func, &var, x - 2.0 * h)?;
+      (-fp2 + 8.0 * fp1 - 8.0 * fm1 + fm2) / (12.0 * h)
+    };
     if fpx.abs() < 1e-30 {
       // Derivative too small — try secant method step
       let h = 1e-8;
@@ -1667,6 +1681,19 @@ pub fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
         )),
       }
     }
+  }
+}
+
+/// Check if an expression contains an unevaluated D[...] or Dt[...] call.
+fn contains_unevaluated_d(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "D" || name == "Dt" => true,
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_unevaluated_d),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_unevaluated_d(left) || contains_unevaluated_d(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_unevaluated_d(operand),
+    _ => false,
   }
 }
 

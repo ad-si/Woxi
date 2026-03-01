@@ -2588,6 +2588,20 @@ pub fn exp_integral_e1(z: f64) -> f64 {
   }
 }
 
+/// Check if an expression contains any float-valued components (Real or BigFloat).
+fn contains_float(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_float(left) || contains_float(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_float(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_float),
+    Expr::List(items) => items.iter().any(contains_float),
+    _ => false,
+  }
+}
+
 /// Zeta[s] - Riemann zeta function
 pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -2636,6 +2650,24 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Real(result))
     }
     _ => {
+      // Only evaluate numerically if the argument contains float components
+      // (e.g., Zeta[0.5 + 3.0*I] evaluates, but Zeta[1/2 + 3*I] stays symbolic)
+      if contains_float(&args[0]) {
+        if let Some((re, im)) =
+          crate::functions::math_ast::try_extract_complex_float(&args[0])
+        {
+          if im != 0.0 {
+            let (res_re, res_im) = zeta_numeric_complex(re, im);
+            return Ok(
+              crate::functions::math_ast::build_complex_float_expr(
+                res_re, res_im,
+              ),
+            );
+          } else {
+            return Ok(Expr::Real(zeta_numeric(re)));
+          }
+        }
+      }
       // Symbolic argument: return unevaluated
       Ok(Expr::FunctionCall {
         name: "Zeta".to_string(),
@@ -2830,6 +2862,156 @@ pub fn zeta_numeric(s: f64) -> f64 {
       rising *= s + j as f64;
     }
     sum += coeff * rising * nf.powf(-(s + (two_p - 1) as f64));
+  }
+
+  sum
+}
+
+// ─── Complex arithmetic helpers ──────────────────────────────────────
+
+fn cmul(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+
+fn cdiv(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+
+fn cexp(z: (f64, f64)) -> (f64, f64) {
+  let mag = z.0.exp();
+  (mag * z.1.cos(), mag * z.1.sin())
+}
+
+fn cln(z: (f64, f64)) -> (f64, f64) {
+  let r = (z.0 * z.0 + z.1 * z.1).sqrt();
+  (r.ln(), z.1.atan2(z.0))
+}
+
+fn cpow(base: (f64, f64), exp: (f64, f64)) -> (f64, f64) {
+  if base.0 == 0.0 && base.1 == 0.0 {
+    return (0.0, 0.0);
+  }
+  cexp(cmul(exp, cln(base)))
+}
+
+fn csin(z: (f64, f64)) -> (f64, f64) {
+  (z.0.sin() * z.1.cosh(), z.0.cos() * z.1.sinh())
+}
+
+/// Complex Gamma function using the Lanczos approximation.
+fn gamma_complex(re: f64, im: f64) -> (f64, f64) {
+  // Reflection for Re(z) < 0.5
+  if re < 0.5 {
+    // Gamma(z) = pi / (sin(pi*z) * Gamma(1-z))
+    let sin_piz = csin((std::f64::consts::PI * re, std::f64::consts::PI * im));
+    let g1z = gamma_complex(1.0 - re, -im);
+    let prod = cmul(sin_piz, g1z);
+    return cdiv((std::f64::consts::PI, 0.0), prod);
+  }
+
+  // Lanczos approximation with g=7, n=9
+  const P: [f64; 9] = [
+    0.999_999_999_999_809_9,
+    676.5203681218851,
+    -1259.1392167224028,
+    771.323_428_777_653_1,
+    -176.615_029_162_140_6,
+    12.507343278686905,
+    -0.13857109526572012,
+    9.984_369_578_019_572e-6,
+    1.5056327351493116e-7,
+  ];
+
+  let z = (re - 1.0, im);
+  let mut x = (P[0], 0.0);
+  for i in 1..P.len() {
+    let denom = (z.0 + i as f64, z.1);
+    let term = cdiv((P[i], 0.0), denom);
+    x.0 += term.0;
+    x.1 += term.1;
+  }
+  let t = (z.0 + 7.5, z.1);
+  let sqrt_2pi = (2.0 * std::f64::consts::PI).sqrt();
+  let pow = cpow(t, (z.0 + 0.5, z.1));
+  let exp_neg_t = cexp((-t.0, -t.1));
+  let r = cmul(cmul(pow, exp_neg_t), x);
+  (sqrt_2pi * r.0, sqrt_2pi * r.1)
+}
+
+/// Compute Zeta(s) numerically for complex s using Euler-Maclaurin formula
+/// with functional equation for Re(s) < 0.5.
+pub fn zeta_numeric_complex(s_re: f64, s_im: f64) -> (f64, f64) {
+  use std::f64::consts::PI;
+  let s = (s_re, s_im);
+
+  // Check for pole at s=1
+  if (s_re - 1.0).abs() < 1e-15 && s_im.abs() < 1e-15 {
+    return (f64::INFINITY, 0.0);
+  }
+
+  // For Re(s) < 0.5, use the reflection formula:
+  // zeta(s) = 2^s * pi^(s-1) * sin(pi*s/2) * Gamma(1-s) * zeta(1-s)
+  if s_re < 0.5 {
+    let two_s = cpow((2.0, 0.0), s);
+    let pi_s1 = cpow((PI, 0.0), (s_re - 1.0, s_im));
+    let sin_ps2 = csin((PI * s_re / 2.0, PI * s_im / 2.0));
+    let g = gamma_complex(1.0 - s_re, -s_im);
+    let z = zeta_numeric_complex(1.0 - s_re, -s_im);
+    let r = cmul(cmul(cmul(two_s, pi_s1), sin_ps2), cmul(g, z));
+    return r;
+  }
+
+  // Euler-Maclaurin summation for Re(s) >= 0.5
+  let n: usize = 30;
+  let nf = n as f64;
+
+  let mut sum = (0.0, 0.0);
+
+  // Direct sum: sum_{k=1}^{N-1} k^{-s}
+  for k in 1..n {
+    let term = cpow((k as f64, 0.0), (-s_re, -s_im));
+    sum.0 += term.0;
+    sum.1 += term.1;
+  }
+
+  // Integral correction: N^{1-s} / (s-1)
+  let n1s = cpow((nf, 0.0), (1.0 - s_re, -s_im));
+  let int_c = cdiv(n1s, (s_re - 1.0, s_im));
+  sum.0 += int_c.0;
+  sum.1 += int_c.1;
+
+  // Endpoint correction: N^{-s} / 2
+  let ns = cpow((nf, 0.0), (-s_re, -s_im));
+  sum.0 += 0.5 * ns.0;
+  sum.1 += 0.5 * ns.1;
+
+  // Bernoulli corrections
+  let bof: [f64; 10] = [
+    1.0 / 12.0,
+    -1.0 / 720.0,
+    1.0 / 30240.0,
+    -1.0 / 1209600.0,
+    1.0 / 47900160.0,
+    -691.0 / 1307674368000.0,
+    7.0 / 523069747200.0,
+    -3617.0 / 10670622842880000.0,
+    43867.0 / 5109094217170944000.0,
+    -174611.0 / 802857662698291200000.0,
+  ];
+
+  for (p_idx, &coeff) in bof.iter().enumerate() {
+    let two_p = 2 * (p_idx + 1);
+    // Rising factorial: prod_{j=0}^{2p-2} (s+j)
+    let mut rising = (1.0, 0.0);
+    for j in 0..(two_p - 1) {
+      rising = cmul(rising, (s_re + j as f64, s_im));
+    }
+    // N^(-(s + 2p-1))
+    let pow = cpow((nf, 0.0), (-(s_re + (two_p - 1) as f64), -s_im));
+    let term = cmul(rising, pow);
+    sum.0 += coeff * term.0;
+    sum.1 += coeff * term.1;
   }
 
   sum
