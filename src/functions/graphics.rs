@@ -1438,6 +1438,92 @@ fn truncate_bigfloat_digits(digits: &str, prec: usize) -> String {
   }
 }
 
+/// Information about how a BigFloat should be displayed graphically.
+/// For normal numbers, only `mantissa` is set.
+/// For scientific notation, `exponent` contains the power of 10.
+struct BigFloatDisplay {
+  mantissa: String,
+  exponent: Option<i64>,
+}
+
+/// Prepare BigFloat digits for graphical display, using scientific notation
+/// when the number is very large (>= 1e6) or very small (< 1e-5).
+/// Returns a struct with the truncated mantissa and optional exponent.
+fn bigfloat_display_parts(digits: &str, prec: usize) -> BigFloatDisplay {
+  let negative = digits.starts_with('-');
+  let d = if negative { &digits[1..] } else { digits };
+  let prefix = if negative { "-" } else { "" };
+
+  let dot_pos = d.find('.');
+  let int_part = if let Some(dp) = dot_pos { &d[..dp] } else { d };
+  let frac_part = if let Some(dp) = dot_pos {
+    if dp + 1 < d.len() { &d[dp + 1..] } else { "" }
+  } else {
+    ""
+  };
+
+  let int_nonzero_len = int_part.trim_start_matches('0').len();
+
+  // Large number (6+ integer digits) → scientific notation
+  if int_part.len() >= 6 && int_nonzero_len > 0 {
+    let all_digits: String =
+      int_part.chars().chain(frac_part.chars()).collect();
+    let sig_digits = all_digits.trim_end_matches('0');
+    if sig_digits.is_empty() {
+      return BigFloatDisplay {
+        mantissa: format!("{}0.", prefix),
+        exponent: Some(0),
+      };
+    }
+    let exp = int_part.len() as i64 - 1;
+    // Truncate to prec significant digits
+    let trunc_len = prec.min(sig_digits.len());
+    let trunc = &sig_digits[..trunc_len];
+    let mantissa = if trunc.len() > 1 {
+      format!("{}{}.{}", prefix, &trunc[..1], &trunc[1..])
+    } else {
+      format!("{}{}.", prefix, &trunc[..1])
+    };
+    return BigFloatDisplay {
+      mantissa,
+      exponent: Some(exp),
+    };
+  }
+
+  // Very small number (5+ leading fractional zeros) → scientific notation
+  if (int_part == "0" || int_part.is_empty()) && !frac_part.is_empty() {
+    let leading_zeros = frac_part.chars().take_while(|&c| c == '0').count();
+    if leading_zeros >= 5 {
+      let sig_part = &frac_part[leading_zeros..];
+      let sig_digits = sig_part.trim_end_matches('0');
+      if sig_digits.is_empty() {
+        return BigFloatDisplay {
+          mantissa: format!("{}0.", prefix),
+          exponent: Some(0),
+        };
+      }
+      let exp = -(leading_zeros as i64 + 1);
+      let trunc_len = prec.min(sig_digits.len());
+      let trunc = &sig_digits[..trunc_len];
+      let mantissa = if trunc.len() > 1 {
+        format!("{}{}.{}", prefix, &trunc[..1], &trunc[1..])
+      } else {
+        format!("{}{}.", prefix, &trunc[..1])
+      };
+      return BigFloatDisplay {
+        mantissa,
+        exponent: Some(exp),
+      };
+    }
+  }
+
+  // Normal range — just truncate
+  BigFloatDisplay {
+    mantissa: truncate_bigfloat_digits(digits, prec),
+    exponent: None,
+  }
+}
+
 pub(crate) fn svg_escape(s: &str) -> String {
   s.replace('&', "&amp;")
     .replace('<', "&lt;")
@@ -2570,8 +2656,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     Expr::String(s) => svg_escape(s),
     Expr::Identifier(s) => svg_escape(s),
     Expr::BigFloat(digits, prec) => {
-      // Graphical output shows only `prec` significant digits (no backtick notation)
-      svg_escape(&truncate_bigfloat_digits(digits, *prec))
+      // Graphical output shows `prec` significant digits with ×10^exp for large/small numbers
+      let parts = bigfloat_display_parts(digits, *prec);
+      if let Some(exp) = parts.exponent {
+        format!(
+          "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+          svg_escape(&parts.mantissa),
+          exp
+        )
+      } else {
+        svg_escape(&parts.mantissa)
+      }
     }
     Expr::Integer(_)
     | Expr::Real(_)
@@ -2891,7 +2986,14 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     Expr::String(s) => s.len() as f64,
     Expr::Identifier(s) => s.len() as f64,
     Expr::BigFloat(digits, prec) => {
-      truncate_bigfloat_digits(digits, *prec).len() as f64
+      let parts = bigfloat_display_parts(digits, *prec);
+      if let Some(exp) = parts.exponent {
+        // mantissa + "×10" (3 chars) + superscript exponent at 70% width
+        let exp_str = exp.to_string();
+        parts.mantissa.len() as f64 + 3.0 + exp_str.len() as f64 * 0.7
+      } else {
+        parts.mantissa.len() as f64
+      }
     }
     Expr::Integer(_)
     | Expr::Real(_)
