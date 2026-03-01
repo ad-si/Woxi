@@ -3,7 +3,7 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics3D[{Sphere[{0,0,0}, 0.5], Cuboid[{1,1,1}, {2,2,2}]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="360" fill="white"/>
+<rect width="360" height="360" fill="rgb(255,255,255)"/>
 <polygon points="85.8,265.9 75.9,274.4 75.8,265.2" fill="rgb(92,126,177)" stroke="#00000018" stroke-width="0.5"/>
 <polygon points="75.8,265.2 75.9,274.4 67.4,275.1" fill="rgb(93,128,179)" stroke="#00000018" stroke-width="0.5"/>
 <polygon points="75.7,256.2 75.8,265.2 65.8,266.1" fill="rgb(90,123,172)" stroke="#00000018" stroke-width="0.5"/>

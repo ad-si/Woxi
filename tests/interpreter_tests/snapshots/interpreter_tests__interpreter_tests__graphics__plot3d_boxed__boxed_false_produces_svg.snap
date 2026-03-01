@@ -3,7 +3,7 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, Boxed -> False]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="360" fill="white"/>
+<rect width="360" height="360" fill="rgb(255,255,255)"/>
 <polygon points="145.3,103.9 142.0,103.4 143.5,106.5" fill="rgb(84,147,61)"  stroke="#00000018" stroke-width="0.5"/>
 <polygon points="140.1,106.0 143.5,106.5 142.0,103.4" fill="rgb(83,147,62)"  stroke="#00000018" stroke-width="0.5"/>
 <polygon points="148.7,104.3 145.3,103.9 146.9,106.9" fill="rgb(86,147,61)"  stroke="#00000018" stroke-width="0.5"/>

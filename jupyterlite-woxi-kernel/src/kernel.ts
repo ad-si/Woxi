@@ -11,6 +11,7 @@ interface WoxiWasm {
   default: () => Promise<void>;
   evaluate_all: (code: string) => string;
   clear: () => void;
+  set_dark_mode: (enabled: boolean) => void;
 }
 
 export class WoxiKernel extends BaseKernel implements IKernel {
@@ -58,6 +59,14 @@ export class WoxiKernel extends BaseKernel implements IKernel {
     this._wasm = module;
   }
 
+  private _isDarkTheme(): boolean {
+    const attr = document.body.getAttribute('data-jp-theme-light');
+    if (attr !== null) {
+      return attr === 'false';
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
   async kernelInfoRequest(): Promise<KernelMessage.IInfoReplyMsg['content']> {
     return {
       implementation: 'Woxi',
@@ -96,6 +105,7 @@ export class WoxiKernel extends BaseKernel implements IKernel {
     }
 
     try {
+      this._wasm!.set_dark_mode(this._isDarkTheme());
       const json = this._wasm!.evaluate_all(code);
       const items: OutputItem[] = JSON.parse(json);
 

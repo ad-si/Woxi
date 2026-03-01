@@ -157,6 +157,19 @@ thread_local! {
     static VISUAL_MODE: RefCell<bool> = const { RefCell::new(false) };
 }
 
+// Dark mode flag — when true, SVG output uses a dark color palette
+thread_local! {
+    static DARK_MODE: RefCell<bool> = const { RefCell::new(false) };
+}
+
+pub fn is_dark_mode() -> bool {
+  DARK_MODE.with(|d| *d.borrow())
+}
+
+pub fn set_dark_mode(enabled: bool) {
+  DARK_MODE.with(|d| *d.borrow_mut() = enabled);
+}
+
 // Captured graphical output (SVG) from Plot and related functions
 thread_local! {
     static CAPTURED_GRAPHICS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -1482,9 +1495,10 @@ fn generate_output_svg(expr: &syntax::Expr) {
   } else {
     (font_size + 4, font_size)
   };
+  let text_fill = functions::graphics::theme().text_primary;
   let svg = format!(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\">\
-     <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\">{markup}</text>\
+     <text x=\"0\" y=\"{text_y}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\">{markup}</text>\
      </svg>",
     width, height
   );

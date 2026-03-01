@@ -507,10 +507,13 @@ fn generate_svg(
         ));
   }
 
-  svg.push_str(&format!(
-    "<rect width=\"{}\" height=\"{}\" fill=\"white\"/>\n",
-    svg_width, svg_height
-  ));
+  {
+    let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+    svg.push_str(&format!(
+      "<rect width=\"{}\" height=\"{}\" fill=\"rgb({},{},{})\"/>\n",
+      svg_width, svg_height, bg.0, bg.1, bg.2
+    ));
+  }
 
   // Render triangles
   let mesh_attrs = if show_mesh {
@@ -594,7 +597,8 @@ fn draw_axes(
   y_range: (f64, f64),
   z_range: (f64, f64),
 ) {
-  let axis_color = "#666666";
+  let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
+  let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
   let font_size = 10;
 
   // Find the bottom corner (z=-1) closest to the viewer (smallest depth)
@@ -1433,10 +1437,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg_width, svg_height, svg_width, svg_height
     ));
   }
-  svg.push_str(&format!(
-    "<rect width=\"{}\" height=\"{}\" fill=\"white\"/>\n",
-    svg_width, svg_height
-  ));
+  {
+    let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+    svg.push_str(&format!(
+      "<rect width=\"{}\" height=\"{}\" fill=\"rgb({},{},{})\"/>\n",
+      svg_width, svg_height, bg.0, bg.1, bg.2
+    ));
+  }
 
   // Render triangles
   for tri in &all_triangles {
@@ -1451,6 +1458,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Render lines and points
+  let prim_color = crate::functions::graphics::theme().text_primary;
   for prim in &prims {
     match prim {
       Primitive3D::Line3D { segments } => {
@@ -1464,7 +1472,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             })
             .collect();
           svg.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"#333\" stroke-width=\"1.5\"/>\n",
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{prim_color}\" stroke-width=\"1.5\"/>\n",
             pts.join(" ")
           ));
         }
@@ -1474,7 +1482,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (sx, sy) =
             to_svg(project(*pt, &camera).0, project(*pt, &camera).1);
           svg.push_str(&format!(
-            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"#333\"/>\n",
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"3\" fill=\"{prim_color}\"/>\n",
             sx, sy
           ));
         }
@@ -1489,7 +1497,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .collect();
         svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"#333\" stroke-width=\"1.5\"/>\n",
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{prim_color}\" stroke-width=\"1.5\"/>\n",
           pts.join(" ")
         ));
         // Arrowhead
@@ -1515,7 +1523,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let bx2 = sx2 - ux * hl - (-uy) * hw;
           let by2 = sy2 - uy * hl - ux * hw;
           svg.push_str(&format!(
-            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"#333\"/>\n",
+            "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{prim_color}\"/>\n",
             sx2, sy2, bx1, by1, bx2, by2
           ));
         }

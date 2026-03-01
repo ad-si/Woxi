@@ -102,6 +102,9 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
   editorView.dispatch({
     effects: themeConfig.reconfigure(getThemeExtension()),
   })
+  if (worker) {
+    worker.postMessage({ type: "set_theme", dark: isDark() })
+  }
 })
 
 
@@ -219,6 +222,7 @@ function initWorker() {
       if (success) {
         showStatus("")
         document.getElementById("runBtn").disabled = false
+        worker.postMessage({ type: "set_theme", dark: isDark() })
       }
       else {
         showStatus("Failed to load Woxi: " + message, "error")
@@ -261,6 +265,7 @@ document.getElementById("runBtn").addEventListener("click", () => {
   showSpinner("runSpinner")
   clearOutputs()
 
+  worker.postMessage({ type: "set_theme", dark: isDark() })
   worker.postMessage({ type: "evaluate", code: code })
 })
 

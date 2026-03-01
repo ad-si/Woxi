@@ -230,15 +230,17 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
 }
 
 fn svg_header(w: u32, h: u32, full_width: bool) -> String {
+  let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+  let bg_fill = format!("rgb({},{},{})", bg.0, bg.1, bg.2);
   if full_width {
     format!(
       "<svg width=\"100%\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\n"
+       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
     )
   } else {
     format!(
       "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n\
-       <rect width=\"{w}\" height=\"{h}\" fill=\"white\"/>\n"
+       <rect width=\"{w}\" height=\"{h}\" fill=\"{bg_fill}\"/>\n"
     )
   }
 }
@@ -528,19 +530,22 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let box_half_w = slot_w * 0.3;
     let cap_half_w = box_half_w * 0.5;
 
+    let (_bg, _dg, _lg, whisker_fill, _tf) =
+      crate::functions::plot::plot_theme();
+    let whisker_color = whisker_fill;
     // Whisker line (vertical)
     svg.push_str(&format!(
-      "<line x1=\"{cx:.1}\" y1=\"{:.1}\" x2=\"{cx:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      "<line x1=\"{cx:.1}\" y1=\"{:.1}\" x2=\"{cx:.1}\" y2=\"{:.1}\" stroke=\"{whisker_color}\" stroke-width=\"{stroke_w:.1}\"/>\n",
       map_y(hi), map_y(lo)
     ));
     // Top whisker cap
     svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{whisker_color}\" stroke-width=\"{stroke_w:.1}\"/>\n",
       cx - cap_half_w, map_y(hi), cx + cap_half_w, map_y(hi)
     ));
     // Bottom whisker cap
     svg.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{whisker_color}\" stroke-width=\"{stroke_w:.1}\"/>\n",
       cx - cap_half_w, map_y(lo), cx + cap_half_w, map_y(lo)
     ));
     // Box (Q1 to Q3)
@@ -548,7 +553,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let box_bot = map_y(q1);
     let box_h = box_bot - box_top;
     svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{box_top:.1}\" width=\"{:.1}\" height=\"{box_h:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"#666\" stroke-width=\"{stroke_w:.1}\"/>\n",
+      "<rect x=\"{:.1}\" y=\"{box_top:.1}\" width=\"{:.1}\" height=\"{box_h:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"{whisker_color}\" stroke-width=\"{stroke_w:.1}\"/>\n",
       cx - box_half_w, box_half_w * 2.0
     ));
     // Median line
@@ -565,6 +570,9 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let margin_left = 10.0 * sf;
   let mut labels_svg = String::new();
 
+  let (_bg, _dg, _lg, chart_label_fill, chart_title_fill) =
+    crate::functions::plot::plot_theme();
+
   // ChartLabels: centered below each box
   if has_chart_labels {
     for (i, label) in opts.chart_labels.iter().enumerate().take(n) {
@@ -573,7 +581,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"#666\">{}</text>\n",
+         fill=\"{chart_label_fill}\">{}</text>\n",
         html_escape(label)
       ));
     }
@@ -592,7 +600,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"#666\">{}</text>\n",
+         fill=\"{chart_label_fill}\">{}</text>\n",
         html_escape(x_label)
       ));
     }
@@ -602,7 +610,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       labels_svg.push_str(&format!(
         "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"#666\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+         fill=\"{chart_label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
         html_escape(y_label)
       ));
     }
@@ -619,7 +627,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .color
       .as_ref()
       .map(|c| c.to_svg_rgb())
-      .unwrap_or_else(|| "#333".to_string());
+      .unwrap_or_else(|| chart_title_fill.to_string());
     let mut style_attrs = String::new();
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");

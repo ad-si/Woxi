@@ -3,7 +3,7 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="360" fill="white"/>
+<rect width="360" height="360" fill="rgb(255,255,255)"/>
 <polygon points="140.1,105.4 143.5,102.6 142.0,103.4" fill="rgb(48,80,33)"  stroke="#00000018" stroke-width="0.5"/>
 <polygon points="145.3,100.6 142.0,103.4 143.5,102.6" fill="rgb(50,79,32)"  stroke="#00000018" stroke-width="0.5"/>
 <polygon points="138.3,107.4 141.7,104.7 140.1,105.4" fill="rgb(48,81,33)"  stroke="#00000018" stroke-width="0.5"/>
@@ -5004,27 +5004,27 @@ expression: "export_svg(\"Plot3D[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}]\")
 <polygon points="221.7,252.6 218.3,255.3 219.9,254.6" fill="rgb(46,81,36)"  stroke="#00000018" stroke-width="0.5"/>
 <polygon points="214.7,259.4 218.0,256.6 216.5,257.4" fill="rgb(45,79,37)"  stroke="#00000018" stroke-width="0.5"/>
 <polygon points="219.9,254.6 216.5,257.4 218.0,256.6" fill="rgb(45,80,36)"  stroke="#00000018" stroke-width="0.5"/>
-<line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="#666666" stroke-width="1"/>
-<line x1="80.5" y1="243.2" x2="81.8" y2="239.4" stroke="#666666" stroke-width="0.5"/>
-<text x="84.2" y="231.8" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">-2</text>
-<line x1="134.0" y1="260.5" x2="135.2" y2="256.6" stroke="#666666" stroke-width="0.5"/>
-<text x="137.7" y="249.0" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">0</text>
-<line x1="187.5" y1="277.7" x2="188.7" y2="273.9" stroke="#666666" stroke-width="0.5"/>
-<text x="191.2" y="266.3" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">2</text>
-<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="#666666" stroke-width="1"/>
-<line x1="234.7" y1="269.6" x2="237.7" y2="272.3" stroke="#666666" stroke-width="0.5"/>
-<text x="243.5" y="277.7" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">-2</text>
-<line x1="264.0" y1="238.0" x2="266.9" y2="240.8" stroke="#666666" stroke-width="0.5"/>
-<text x="272.8" y="246.2" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">0</text>
-<line x1="293.3" y1="206.5" x2="296.2" y2="209.3" stroke="#666666" stroke-width="0.5"/>
-<text x="302.1" y="214.7" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">2</text>
-<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="#666666" stroke-width="1"/>
-<line x1="218.0" y1="272.1" x2="222.0" y2="272.1" stroke="#666666" stroke-width="0.5"/>
-<text x="230.0" y="272.1" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">-0.5</text>
-<line x1="218.0" y1="256.6" x2="222.0" y2="256.6" stroke="#666666" stroke-width="0.5"/>
-<text x="230.0" y="256.6" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">0</text>
-<line x1="218.0" y1="241.1" x2="222.0" y2="241.1" stroke="#666666" stroke-width="0.5"/>
-<text x="230.0" y="241.1" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">0.5</text>
-<line x1="218.0" y1="225.6" x2="222.0" y2="225.6" stroke="#666666" stroke-width="0.5"/>
-<text x="230.0" y="225.6" font-size="10" fill="#666666" text-anchor="middle" dominant-baseline="middle">1</text>
+<line x1="218.0" y1="287.5" x2="50.0" y2="233.4" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="80.5" y1="243.2" x2="81.8" y2="239.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="84.2" y="231.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
+<line x1="134.0" y1="260.5" x2="135.2" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="137.7" y="249.0" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="187.5" y1="277.7" x2="188.7" y2="273.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="191.2" y="266.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
+<line x1="218.0" y1="287.5" x2="310.0" y2="188.6" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="234.7" y1="269.6" x2="237.7" y2="272.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="243.5" y="277.7" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
+<line x1="264.0" y1="238.0" x2="266.9" y2="240.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="272.8" y="246.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="293.3" y1="206.5" x2="296.2" y2="209.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="302.1" y="214.7" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
+<line x1="218.0" y1="287.5" x2="218.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="218.0" y1="272.1" x2="222.0" y2="272.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="230.0" y="272.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
+<line x1="218.0" y1="256.6" x2="222.0" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="230.0" y="256.6" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<line x1="218.0" y1="241.1" x2="222.0" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="230.0" y="241.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
+<line x1="218.0" y1="225.6" x2="222.0" y2="225.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<text x="230.0" y="225.6" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
 </svg>
