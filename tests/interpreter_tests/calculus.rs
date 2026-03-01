@@ -1203,6 +1203,26 @@ mod integrate_rational {
   }
 
   #[test]
+  fn integrate_1_over_x2_plus_c_simplifies_arctan() {
+    // Regression: ArcTan argument and coefficient must be fully simplified
+    // by extracting perfect square factors from the discriminant.
+    // e.g. 1/(x^2+50): neg_disc=200=100*2, so sqrt(200)=10*sqrt(2),
+    // and the factor of 2 cancels: 2x/(10*sqrt(2)) -> x/(5*sqrt(2))
+    assert_eq!(
+      interpret("Integrate[1/(x^2+50), x]").unwrap(),
+      "ArcTan[x/(5*Sqrt[2])]/(5*Sqrt[2])"
+    );
+    assert_eq!(
+      interpret("Integrate[1/(x^2+3), x]").unwrap(),
+      "ArcTan[x/Sqrt[3]]/Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("Integrate[1/(x^2+2*x+5), x]").unwrap(),
+      "ArcTan[(1 + x)/2]/2"
+    );
+  }
+
+  #[test]
   fn integrate_x_over_1_minus_x3() {
     // Mixed linear + irreducible quadratic factors
     assert_eq!(
