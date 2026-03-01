@@ -204,20 +204,76 @@ impl WoxiKernel {
     };
     self.iopub.send(execute_input.as_child_of(parent)).await?;
 
-    // Execute the code
-    let (execution_result, graphics) =
-      match woxi::interpret_with_stdout(&req.code) {
+    // Execute each statement separately (like the playground)
+    let statements = woxi::split_into_statements(&req.code);
+
+    for stmt in &statements {
+      match woxi::interpret_with_stdout(stmt) {
         Ok(result) => {
-          if !result.stdout.is_empty() {
+          // Print output → stream to stdout
+          let trimmed_stdout = result.stdout.trim_end();
+          if !trimmed_stdout.is_empty() {
             self
               .iopub
               .send(
-                jupyter_protocol::StreamContent::stdout(&result.stdout)
+                jupyter_protocol::StreamContent::stdout(&format!(
+                  "{}\n",
+                  trimmed_stdout
+                ))
+                .as_child_of(parent),
+              )
+              .await?;
+          }
+
+          // Warnings → stream to stderr
+          for w in &result.warnings {
+            self
+              .iopub
+              .send(
+                jupyter_protocol::StreamContent::stderr(&format!("{}\n", w))
                   .as_child_of(parent),
               )
               .await?;
           }
-          (result.result, result.graphics)
+
+          // Graphics result
+          if let Some(ref svg) = result.graphics {
+            if result.result != "Null" && result.result != "\0" {
+              let mut media = jupyter_protocol::media::Media::default();
+              media
+                .content
+                .push(jupyter_protocol::MediaType::Svg(svg.clone()));
+              media
+                .content
+                .push(jupyter_protocol::MediaType::Plain(String::new()));
+              let execute_result = ExecuteResult {
+                execution_count: self.execution_count,
+                data: media,
+                metadata: Default::default(),
+                transient: None,
+              };
+              self.iopub.send(execute_result.as_child_of(parent)).await?;
+            }
+          } else if result.result != "Null" && result.result != "\0" {
+            // Text result with optional SVG rendering
+            let mut media = jupyter_protocol::media::Media::default();
+            media
+              .content
+              .push(jupyter_protocol::MediaType::Plain(result.result));
+            if let Some(svg) = result.output_svg {
+              media.content.push(jupyter_protocol::MediaType::Svg(svg));
+            }
+            let execute_result = ExecuteResult {
+              execution_count: self.execution_count,
+              data: media,
+              metadata: Default::default(),
+              transient: None,
+            };
+            self.iopub.send(execute_result.as_child_of(parent)).await?;
+          }
+        }
+        Err(woxi::InterpreterError::EmptyInput) => {
+          // Function definitions etc. produce no output
         }
         Err(e) => {
           self
@@ -230,28 +286,8 @@ impl WoxiKernel {
               .as_child_of(parent),
             )
             .await?;
-          (format!("Error: {}", e), None)
         }
-      };
-
-    // Send execute_result only if it's not "Null"
-    if execution_result != "Null" {
-      let mut media = jupyter_protocol::media::Media::default();
-      media
-        .content
-        .push(jupyter_protocol::MediaType::Plain(execution_result));
-
-      if let Some(svg) = graphics {
-        media.content.push(jupyter_protocol::MediaType::Svg(svg));
       }
-
-      let execute_result = ExecuteResult {
-        execution_count: self.execution_count,
-        data: media,
-        metadata: Default::default(),
-        transient: None,
-      };
-      self.iopub.send(execute_result.as_child_of(parent)).await?;
     }
 
     // Send execute_reply

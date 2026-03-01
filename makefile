@@ -110,14 +110,17 @@ wasm-build-production:
 
 .PHONY: jupyterlite-kernel-build
 jupyterlite-kernel-build:
-	cd jupyterlite-woxi-kernel && jlpm install && jlpm build:prod
+	cd jupyterlite-woxi-kernel && npm install && npx tsc
+	cd jupyterlite-woxi-kernel && \
+		uvx --python 3.12 --with jupyterlab jupyter labextension build .
 
 
 .PHONY: jupyterlite-build
 jupyterlite-build: wasm-build jupyterlite-kernel-build
 	rm -f .jupyterlite.doit.db
 	uvx \
-		--refresh \
+		--python 3.12 \
+		--no-cache \
 		--with jupyterlite-core \
 		--with jupyterlab \
 		--with ./jupyterlite-woxi-kernel \
