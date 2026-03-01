@@ -49,15 +49,18 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install JupyterLab
-        run: uv pip install --system jupyterlab
-
       - name: Build JupyterLite kernel extension
-        run: cd jupyterlite-woxi-kernel && jlpm install && jlpm build:prod
+        run: |
+          cd jupyterlite-woxi-kernel && npm install && npx tsc
+          cd jupyterlite-woxi-kernel && \
+            uvx --python 3.12 --with jupyterlab \
+              jupyter labextension build .
 
       - name: Build JupyterLite
         run: |
           uvx \
+            --python 3.12 \
+            --no-cache \
             --with jupyterlite-core \
             --with jupyterlab \
             --with ./jupyterlite-woxi-kernel \

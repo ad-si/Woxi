@@ -1,10 +1,15 @@
 import { KernelMessage } from '@jupyterlab/services';
 import { BaseKernel, IKernel } from '@jupyterlite/kernel';
 
+interface OutputItem {
+  type: 'text' | 'graphics' | 'print' | 'warning' | 'error';
+  text?: string;
+  svg?: string;
+}
+
 interface WoxiWasm {
   default: () => Promise<void>;
-  evaluate: (code: string) => string;
-  get_graphics: () => string;
+  evaluate_all: (code: string) => string;
   clear: () => void;
 }
 
@@ -91,25 +96,66 @@ export class WoxiKernel extends BaseKernel implements IKernel {
     }
 
     try {
-      const result = this._wasm!.evaluate(code);
-      const graphics = this._wasm!.get_graphics();
+      const json = this._wasm!.evaluate_all(code);
+      const items: OutputItem[] = JSON.parse(json);
 
-      if (graphics) {
-        // Render SVG graphics (from Plot, images, etc.)
-        this.publishExecuteResult({
-          execution_count: this.executionCount,
-          data: {
-            'image/svg+xml': graphics,
-            'text/plain': '',
-          },
-          metadata: {},
-        });
-      } else if (result) {
-        this.publishExecuteResult({
-          execution_count: this.executionCount,
-          data: { 'text/plain': result },
-          metadata: {},
-        });
+      for (const item of items) {
+        switch (item.type) {
+          case 'print':
+            this.publishExecuteResult({
+              execution_count: this.executionCount,
+              data: { 'text/plain': item.text ?? '' },
+              metadata: {},
+            });
+            break;
+
+          case 'warning':
+            this.publishExecuteError({
+              ename: 'Warning',
+              evalue: item.text ?? '',
+              traceback: [item.text ?? ''],
+            });
+            break;
+
+          case 'error':
+            this.publishExecuteError({
+              ename: 'EvaluationError',
+              evalue: item.text ?? '',
+              traceback: [item.text ?? ''],
+            });
+            break;
+
+          case 'graphics':
+            this.publishExecuteResult({
+              execution_count: this.executionCount,
+              data: {
+                'text/html': item.svg ?? '',
+                'text/plain': '',
+              },
+              metadata: {},
+            });
+            break;
+
+          case 'text': {
+            if (item.svg) {
+              this.publishExecuteResult({
+                execution_count: this.executionCount,
+                data: {
+                  'text/html': item.svg,
+                  'text/plain': item.text ?? '',
+                },
+                metadata: {},
+              });
+            } else {
+              this.publishExecuteResult({
+                execution_count: this.executionCount,
+                data: { 'text/plain': item.text ?? '' },
+                metadata: {},
+              });
+            }
+            break;
+          }
+        }
       }
 
       return {

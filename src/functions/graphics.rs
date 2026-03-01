@@ -2540,6 +2540,21 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
     // ── BinaryOp (Power already handled above) ──
     Expr::BinaryOp { op, left, right } => {
+      // Power should already be caught by as_power() above, but handle
+      // it gracefully as a superscript instead of panicking.
+      if matches!(op, BinaryOperator::Power) {
+        let base_markup = expr_to_svg_markup(left);
+        let exp_markup = expr_to_svg_markup(right);
+        let base_fmt = if is_additive_expr(left) {
+          format!("({})", base_markup)
+        } else {
+          base_markup
+        };
+        return format!(
+          "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+          base_fmt, exp_markup
+        );
+      }
       let (op_str, needs_space) = match op {
         BinaryOperator::Plus => ("+", true),
         BinaryOperator::Minus => ("-", true),
@@ -2844,6 +2859,14 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 
     // BinaryOp
     Expr::BinaryOp { op, left, right } => {
+      // Power should already be caught by as_power() above, but handle
+      // it gracefully instead of panicking.
+      if matches!(op, BinaryOperator::Power) {
+        let parens = if is_additive_expr(left) { 2.0 } else { 0.0 };
+        return estimate_display_width(left)
+          + parens
+          + estimate_display_width(right) * 0.7;
+      }
       let is_mult =
         matches!(op, BinaryOperator::Times | BinaryOperator::Divide);
       let op_len: f64 = match op {

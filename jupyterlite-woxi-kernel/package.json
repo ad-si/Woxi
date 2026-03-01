@@ -20,7 +20,7 @@
     "build": "tsc",
     "build:lib": "tsc",
     "build:labextension": "jupyter labextension build .",
-    "build:prod": "jlpm build:lib && jlpm build:labextension",
+    "build:prod": "npm run build:lib && npm run build:labextension",
     "clean": "rimraf lib tsconfig.tsbuildinfo jupyterlite_woxi_kernel/labextension"
   },
   "dependencies": {

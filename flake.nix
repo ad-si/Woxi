@@ -28,9 +28,11 @@
             gnused
             lld
             mdbook
+            nodejs
             prek
             rustc
             rustfmt
+            uv
             wasm-pack
           ];
         };

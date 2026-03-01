@@ -244,8 +244,7 @@ dependencies = [
 [[package]]
 name = "astro-float-num"
 version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86887daca11d02e0b04f37a9cb81888aae881397fb48ff66494e356aea97554a"
+source = "git+https://github.com/stencillogic/astro-float?rev=f92380e025deb8e1743ed93c6d5bf0783ac28717#f92380e025deb8e1743ed93c6d5bf0783ac28717"
 dependencies = [
  "itertools",
  "lazy_static",
