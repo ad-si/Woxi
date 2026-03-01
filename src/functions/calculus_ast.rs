@@ -1538,43 +1538,91 @@ fn try_integrate_rational(
     // ArcTan part coefficient: (2*big_c_int - big_b_int*b) / (common_den * sqrt(4c - b^2))
     let arctan_coeff_num = 2 * big_c_int - big_b_int * b;
     if arctan_coeff_num != 0 {
-      // Check if neg_disc is a perfect square
-      let sqrt_neg_disc = {
-        let s = (neg_disc as f64).sqrt().round() as i128;
-        if s * s == neg_disc {
-          Expr::Integer(s)
-        } else {
-          Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::Integer(neg_disc)],
+      // Extract perfect square factor from neg_disc: neg_disc = k^2 * m (m square-free)
+      let (k, m) = {
+        let mut outside = 1i128;
+        let mut inside = neg_disc;
+        let mut factor = 2i128;
+        while factor * factor <= inside {
+          while inside % (factor * factor) == 0 {
+            outside *= factor;
+            inside /= factor * factor;
           }
+          factor += 1;
         }
+        (outside, inside)
+      };
+      // sqrt(neg_disc) = k * sqrt(m), where sqrt(1) = 1
+
+      // Simplify ArcTan argument: (b + 2*x) / (k * sqrt(m))
+      // The numerator coefficients are b and 2; divide both and k by their common factor.
+      let inner_gcd = if b == 0 { 2 } else { gcd_i128(b.abs(), 2) };
+      let g = gcd_i128(inner_gcd, k);
+      let k_reduced = k / g;
+      let b_simplified = b / g;
+      let two_simplified = 2 / g;
+      let arctan_coeff_num = arctan_coeff_num / g;
+
+      // Build ArcTan argument denominator expression
+      let sqrt_denom = if m == 1 {
+        if k_reduced <= 1 {
+          None // denominator is 1
+        } else {
+          Some(Expr::Integer(k_reduced))
+        }
+      } else if k_reduced <= 1 {
+        Some(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::Integer(m)],
+        })
+      } else {
+        Some(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(k_reduced)),
+          right: Box::new(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(m)],
+          }),
+        })
       };
 
-      // ArcTan argument: (b + 2*x) / sqrt(neg_disc)
-      let arctan_inner = {
-        let numerator = if b == 0 {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(2)),
-            right: Box::new(Expr::Identifier(var.to_string())),
-          }
+      // Build ArcTan argument numerator: b_simplified + two_simplified * x
+      let arctan_numerator = if b_simplified == 0 {
+        if two_simplified == 1 {
+          Expr::Identifier(var.to_string())
         } else {
           Expr::BinaryOp {
-            op: BinaryOperator::Plus,
-            left: Box::new(Expr::Integer(b)),
-            right: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(2)),
-              right: Box::new(Expr::Identifier(var.to_string())),
-            }),
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(two_simplified)),
+            right: Box::new(Expr::Identifier(var.to_string())),
+          }
+        }
+      } else {
+        let x_term = if two_simplified == 1 {
+          Expr::Identifier(var.to_string())
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(Expr::Integer(two_simplified)),
+            right: Box::new(Expr::Identifier(var.to_string())),
           }
         };
         Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(numerator),
-          right: Box::new(sqrt_neg_disc.clone()),
+          op: BinaryOperator::Plus,
+          left: Box::new(Expr::Integer(b_simplified)),
+          right: Box::new(x_term),
         }
+      };
+
+      // ArcTan argument: numerator / denom (or just numerator if denom is 1)
+      let arctan_inner = if let Some(denom) = &sqrt_denom {
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: Box::new(arctan_numerator),
+          right: Box::new(denom.clone()),
+        }
+      } else {
+        arctan_numerator
       };
 
       let arctan_expr = Expr::FunctionCall {
@@ -1582,24 +1630,29 @@ fn try_integrate_rational(
         args: vec![arctan_inner],
       };
 
-      // Full coefficient: arctan_coeff_num / (common_den * sqrt(neg_disc))
+      // Full coefficient: arctan_coeff_num / (common_den * k_reduced * sqrt(m))
       // Reduce: arctan_coeff_num / common_den first
       let g_at = gcd_i128(arctan_coeff_num.abs(), common_den);
       let at_num = arctan_coeff_num / g_at;
       let at_den_int = common_den / g_at;
 
-      // If at_den_int > 1, multiply into the sqrt denominator
-      let effective_sqrt = if at_den_int == 1 {
-        sqrt_neg_disc.clone()
-      } else if let Expr::Integer(s) = &sqrt_neg_disc {
-        // Combine: at_den_int * s
-        Expr::Integer(at_den_int * s)
+      // Build effective sqrt expression combining at_den_int, k_reduced, and sqrt(m)
+      let int_factor = at_den_int * k_reduced;
+      let effective_sqrt = if m == 1 {
+        Expr::Integer(int_factor)
+      } else if int_factor == 1 {
+        Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::Integer(m)],
+        }
       } else {
-        // at_den_int * Sqrt[neg_disc]
         Expr::BinaryOp {
           op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(at_den_int)),
-          right: Box::new(sqrt_neg_disc.clone()),
+          left: Box::new(Expr::Integer(int_factor)),
+          right: Box::new(Expr::FunctionCall {
+            name: "Sqrt".to_string(),
+            args: vec![Expr::Integer(m)],
+          }),
         }
       };
 
