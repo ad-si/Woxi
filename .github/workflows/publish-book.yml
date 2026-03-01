@@ -52,9 +52,8 @@ jobs:
       - name: Build JupyterLite kernel extension
         run: |
           cd jupyterlite-woxi-kernel && npm install && npx tsc
-          cd jupyterlite-woxi-kernel && \
-            uvx --python 3.12 --with jupyterlab \
-              jupyter labextension build .
+          uvx --python 3.12 --with jupyterlab \
+            jupyter labextension build .
 
       - name: Build JupyterLite
         run: |
