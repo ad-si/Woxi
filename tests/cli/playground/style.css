@@ -327,9 +327,9 @@ pre.output-box {
 }
 
 
-/* .output-box.text-box svg {
+.output-box.text-box svg {
   display: block;
-} */
+}
 
 .output-box.graphics-box {
   background: var(--surface);
