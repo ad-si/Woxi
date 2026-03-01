@@ -201,6 +201,21 @@ mod differentiate_plus_times {
   }
 
   #[test]
+  fn d_x_to_the_x() {
+    // Logarithmic differentiation: d/dx[x^x] = x^x*(1 + Log[x])
+    assert_eq!(interpret("D[x^x, x]").unwrap(), "x^x*(1 + Log[x])");
+  }
+
+  #[test]
+  fn d_general_power_f_to_g() {
+    // d/dx[x^(2*x)] where both base and exponent depend on x
+    assert_eq!(
+      interpret("D[x^(2*x), x]").unwrap(),
+      "x^(2*x)*(2 + 2*Log[x])"
+    );
+  }
+
+  #[test]
   fn d_times_three_factors() {
     // D[4*(3 + 2*x)*x, x] should work with 3-factor Times
     assert_eq!(
