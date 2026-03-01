@@ -282,6 +282,9 @@ button {
   padding: 0.4rem 0.6rem;
   border: 2px solid var(--output-border);
   border-radius: 4px;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 500px;
 }
 
 pre.output-box {
@@ -297,6 +300,11 @@ pre.output-box {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 15px;
   line-height: 1.5;
+}
+
+.output-box.text-box svg {
+  max-width: none;
+  display: block;
 }
 
 .output-box.graphics-box {
