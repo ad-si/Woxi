@@ -251,6 +251,10 @@ pub fn n_eval_arbitrary(
       Ok(Expr::BigFloat(decimal, precision))
     }
     Err(_) => {
+      // Try complex BigFloat evaluation (handles expressions with I)
+      if let Ok((re, im)) = expr_to_complex_bigfloat(expr, bits, rm, &mut cc) {
+        return build_complex_bigfloat_result(re, im, precision, rm, &mut cc);
+      }
       // Fall back to partial evaluation: convert numeric sub-expressions
       // to arbitrary precision while leaving symbolic parts as-is
       n_eval_arbitrary_partial(expr, precision, bits, rm, &mut cc)
@@ -504,6 +508,332 @@ pub fn expr_to_bigfloat(
       "N: cannot evaluate expression to arbitrary precision: {}",
       crate::syntax::expr_to_string(expr)
     ))),
+  }
+}
+
+/// Convert an expression to a complex (BigFloat, BigFloat) pair with given precision.
+/// Returns (real_part, imaginary_part) as BigFloats.
+/// Handles expressions involving the imaginary unit I.
+fn expr_to_complex_bigfloat(
+  expr: &Expr,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
+  use crate::syntax::BinaryOperator;
+  use astro_float::BigFloat;
+
+  // Fast path: if purely real, delegate
+  if let Ok(val) = expr_to_bigfloat(expr, bits, rm, cc) {
+    return Ok((val, BigFloat::from_i32(0, bits)));
+  }
+
+  match expr {
+    // I → (0, 1)
+    Expr::Identifier(name) if name == "I" => {
+      Ok((BigFloat::from_i32(0, bits), BigFloat::from_i32(1, bits)))
+    }
+    // Unary minus
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let (re, im) = expr_to_complex_bigfloat(operand, bits, rm, cc)?;
+      Ok((re.neg(), im.neg()))
+    }
+    // Binary operations
+    Expr::BinaryOp { op, left, right } => {
+      let (lr, li) = expr_to_complex_bigfloat(left, bits, rm, cc)?;
+      let (rr, ri) = expr_to_complex_bigfloat(right, bits, rm, cc)?;
+      match op {
+        BinaryOperator::Plus => {
+          Ok((lr.add(&rr, bits, rm), li.add(&ri, bits, rm)))
+        }
+        BinaryOperator::Minus => {
+          Ok((lr.sub(&rr, bits, rm), li.sub(&ri, bits, rm)))
+        }
+        BinaryOperator::Times => {
+          // (lr + li*i) * (rr + ri*i) = (lr*rr - li*ri) + (lr*ri + li*rr)*i
+          let re = lr.mul(&rr, bits, rm).sub(&li.mul(&ri, bits, rm), bits, rm);
+          let im = lr.mul(&ri, bits, rm).add(&li.mul(&rr, bits, rm), bits, rm);
+          Ok((re, im))
+        }
+        BinaryOperator::Divide => {
+          // (lr + li*i) / (rr + ri*i)
+          let denom =
+            rr.mul(&rr, bits, rm).add(&ri.mul(&ri, bits, rm), bits, rm);
+          let re = lr.mul(&rr, bits, rm).add(&li.mul(&ri, bits, rm), bits, rm);
+          let im = li.mul(&rr, bits, rm).sub(&lr.mul(&ri, bits, rm), bits, rm);
+          Ok((re.div(&denom, bits, rm), im.div(&denom, bits, rm)))
+        }
+        BinaryOperator::Power => {
+          // Only handle real^integer for now
+          if li.is_zero()
+            && ri.is_zero()
+            && let Some(n) = try_as_integer(right)
+          {
+            return Ok((
+              bigfloat_powi(&lr, n, bits, rm),
+              BigFloat::from_i32(0, bits),
+            ));
+          }
+          Err(InterpreterError::EvaluationError(
+            "N: complex Power not supported yet".into(),
+          ))
+        }
+        _ => Err(InterpreterError::EvaluationError(
+          "N: unsupported binary operator for complex arbitrary precision"
+            .into(),
+        )),
+      }
+    }
+    // Function calls
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Times" => {
+        let mut result =
+          (BigFloat::from_i32(1, bits), BigFloat::from_i32(0, bits));
+        for arg in args {
+          let (rr, ri) = expr_to_complex_bigfloat(arg, bits, rm, cc)?;
+          let (lr, li) = result;
+          let re = lr.mul(&rr, bits, rm).sub(&li.mul(&ri, bits, rm), bits, rm);
+          let im = lr.mul(&ri, bits, rm).add(&li.mul(&rr, bits, rm), bits, rm);
+          result = (re, im);
+        }
+        Ok(result)
+      }
+      "Plus" => {
+        let mut result =
+          (BigFloat::from_i32(0, bits), BigFloat::from_i32(0, bits));
+        for arg in args {
+          let (rr, ri) = expr_to_complex_bigfloat(arg, bits, rm, cc)?;
+          result = (result.0.add(&rr, bits, rm), result.1.add(&ri, bits, rm));
+        }
+        Ok(result)
+      }
+      "Complex" if args.len() == 2 => {
+        let re = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+        let im = expr_to_bigfloat(&args[1], bits, rm, cc)?;
+        Ok((re, im))
+      }
+      "Sin" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // sin(a+bi) = sin(a)*cosh(b) + i*cos(a)*sinh(b)
+        let sin_a = a.sin(bits, rm, cc);
+        let cos_a = a.cos(bits, rm, cc);
+        let cosh_b = b.cosh(bits, rm, cc);
+        let sinh_b = b.sinh(bits, rm, cc);
+        Ok((sin_a.mul(&cosh_b, bits, rm), cos_a.mul(&sinh_b, bits, rm)))
+      }
+      "Cos" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // cos(a+bi) = cos(a)*cosh(b) - i*sin(a)*sinh(b)
+        let sin_a = a.sin(bits, rm, cc);
+        let cos_a = a.cos(bits, rm, cc);
+        let cosh_b = b.cosh(bits, rm, cc);
+        let sinh_b = b.sinh(bits, rm, cc);
+        Ok((
+          cos_a.mul(&cosh_b, bits, rm),
+          sin_a.mul(&sinh_b, bits, rm).neg(),
+        ))
+      }
+      "Tan" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // tan(z) = sin(z)/cos(z)
+        let sin_a = a.sin(bits, rm, cc);
+        let cos_a = a.cos(bits, rm, cc);
+        let cosh_b = b.cosh(bits, rm, cc);
+        let sinh_b = b.sinh(bits, rm, cc);
+        // sin(z) = sin(a)*cosh(b) + i*cos(a)*sinh(b)
+        let sr = sin_a.mul(&cosh_b, bits, rm);
+        let si = cos_a.mul(&sinh_b, bits, rm);
+        // cos(z) = cos(a)*cosh(b) - i*sin(a)*sinh(b)
+        let cr = cos_a.mul(&cosh_b, bits, rm);
+        let ci = sin_a.mul(&sinh_b, bits, rm).neg();
+        // (sr + si*i) / (cr + ci*i)
+        let denom = cr.mul(&cr, bits, rm).add(&ci.mul(&ci, bits, rm), bits, rm);
+        let re = sr.mul(&cr, bits, rm).add(&si.mul(&ci, bits, rm), bits, rm);
+        let im = si.mul(&cr, bits, rm).sub(&sr.mul(&ci, bits, rm), bits, rm);
+        Ok((re.div(&denom, bits, rm), im.div(&denom, bits, rm)))
+      }
+      "Exp" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // exp(a+bi) = exp(a)*(cos(b) + i*sin(b))
+        let exp_a = a.exp(bits, rm, cc);
+        let cos_b = b.cos(bits, rm, cc);
+        let sin_b = b.sin(bits, rm, cc);
+        Ok((exp_a.mul(&cos_b, bits, rm), exp_a.mul(&sin_b, bits, rm)))
+      }
+      "Sinh" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // sinh(a+bi) = sinh(a)*cos(b) + i*cosh(a)*sin(b)
+        let sinh_a = a.sinh(bits, rm, cc);
+        let cosh_a = a.cosh(bits, rm, cc);
+        let cos_b = b.cos(bits, rm, cc);
+        let sin_b = b.sin(bits, rm, cc);
+        Ok((sinh_a.mul(&cos_b, bits, rm), cosh_a.mul(&sin_b, bits, rm)))
+      }
+      "Cosh" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // cosh(a+bi) = cosh(a)*cos(b) + i*sinh(a)*sin(b)
+        let sinh_a = a.sinh(bits, rm, cc);
+        let cosh_a = a.cosh(bits, rm, cc);
+        let cos_b = b.cos(bits, rm, cc);
+        let sin_b = b.sin(bits, rm, cc);
+        Ok((cosh_a.mul(&cos_b, bits, rm), sinh_a.mul(&sin_b, bits, rm)))
+      }
+      "Tanh" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // tanh(z) = sinh(z)/cosh(z)
+        let sinh_a = a.sinh(bits, rm, cc);
+        let cosh_a = a.cosh(bits, rm, cc);
+        let cos_b = b.cos(bits, rm, cc);
+        let sin_b = b.sin(bits, rm, cc);
+        let sr = sinh_a.mul(&cos_b, bits, rm);
+        let si = cosh_a.mul(&sin_b, bits, rm);
+        let cr = cosh_a.mul(&cos_b, bits, rm);
+        let ci = sinh_a.mul(&sin_b, bits, rm);
+        let denom = cr.mul(&cr, bits, rm).add(&ci.mul(&ci, bits, rm), bits, rm);
+        let re = sr.mul(&cr, bits, rm).add(&si.mul(&ci, bits, rm), bits, rm);
+        let im = si.mul(&cr, bits, rm).sub(&sr.mul(&ci, bits, rm), bits, rm);
+        Ok((re.div(&denom, bits, rm), im.div(&denom, bits, rm)))
+      }
+      "Log" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        // log(a+bi) = ln(|z|) + i*arg(z)
+        // |z| = sqrt(a^2 + b^2), arg(z) = atan2(b, a)
+        let abs_sq = a.mul(&a, bits, rm).add(&b.mul(&b, bits, rm), bits, rm);
+        let abs_val = abs_sq.sqrt(bits, rm);
+        let ln_abs = abs_val.ln(bits, rm, cc);
+        // atan2(b, a) implemented using atan
+        let arg = if a.is_zero() {
+          let half_pi =
+            cc.pi(bits, rm).div(&BigFloat::from_i32(2, bits), bits, rm);
+          if b.is_negative() {
+            half_pi.neg()
+          } else {
+            half_pi
+          }
+        } else if a.is_negative() {
+          let atan_val = b.div(&a, bits, rm).atan(bits, rm, cc);
+          if b.is_negative() {
+            atan_val.sub(&cc.pi(bits, rm), bits, rm)
+          } else {
+            atan_val.add(&cc.pi(bits, rm), bits, rm)
+          }
+        } else {
+          b.div(&a, bits, rm).atan(bits, rm, cc)
+        };
+        Ok((ln_abs, arg))
+      }
+      "Sqrt" if args.len() == 1 => {
+        // sqrt(a+bi) = sqrt((|z|+a)/2) + i*sign(b)*sqrt((|z|-a)/2)
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        let abs_sq = a.mul(&a, bits, rm).add(&b.mul(&b, bits, rm), bits, rm);
+        let abs_val = abs_sq.sqrt(bits, rm);
+        let two = BigFloat::from_i32(2, bits);
+        let re = abs_val.add(&a, bits, rm).div(&two, bits, rm).sqrt(bits, rm);
+        let mut im =
+          abs_val.sub(&a, bits, rm).div(&two, bits, rm).sqrt(bits, rm);
+        if b.is_negative() {
+          im = im.neg();
+        }
+        Ok((re, im))
+      }
+      "Rational" if args.len() == 2 => {
+        let n = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+        let d = expr_to_bigfloat(&args[1], bits, rm, cc)?;
+        Ok((n.div(&d, bits, rm), BigFloat::from_i32(0, bits)))
+      }
+      "Power" if args.len() == 2 => {
+        if let Some(n) = try_as_integer(&args[1]) {
+          let (re, im) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+          if im.is_zero() {
+            return Ok((
+              bigfloat_powi(&re, n, bits, rm),
+              BigFloat::from_i32(0, bits),
+            ));
+          }
+        }
+        Err(InterpreterError::EvaluationError(
+          "N: complex Power not fully supported".into(),
+        ))
+      }
+      "Abs" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        let abs_sq = a.mul(&a, bits, rm).add(&b.mul(&b, bits, rm), bits, rm);
+        Ok((abs_sq.sqrt(bits, rm), BigFloat::from_i32(0, bits)))
+      }
+      _ => Err(InterpreterError::EvaluationError(format!(
+        "N: cannot evaluate {}[...] to complex arbitrary precision",
+        name
+      ))),
+    },
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "N: cannot evaluate expression to complex arbitrary precision: {}",
+      crate::syntax::expr_to_string(expr)
+    ))),
+  }
+}
+
+/// Build a properly formatted complex result from BigFloat real and imaginary parts.
+fn build_complex_bigfloat_result(
+  re: astro_float::BigFloat,
+  im: astro_float::BigFloat,
+  precision: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  let i_expr = Expr::Identifier("I".to_string());
+
+  if im.is_zero() {
+    let re_str = bigfloat_to_string(&re, None, rm, cc)?;
+    return Ok(Expr::BigFloat(re_str, precision));
+  }
+
+  let im_negative = im.is_negative();
+  let im_abs = if im_negative { im.neg() } else { im.clone() };
+  let im_str = bigfloat_to_string(&im_abs, None, rm, cc)?;
+
+  let im_bf = Expr::BigFloat(im_str, precision);
+
+  // Build |im| * I term (always positive coefficient)
+  let abs_im_term = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(im_bf),
+    right: Box::new(i_expr),
+  };
+
+  if re.is_zero() {
+    if im_negative {
+      // Pure negative imaginary: -|im|*I
+      let neg_im_str = bigfloat_to_string(&im, None, rm, cc)?;
+      let neg_im_bf = Expr::BigFloat(neg_im_str, precision);
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(neg_im_bf),
+        right: Box::new(Expr::Identifier("I".to_string())),
+      });
+    }
+    return Ok(abs_im_term);
+  }
+
+  let re_str = bigfloat_to_string(&re, None, rm, cc)?;
+  let re_bf = Expr::BigFloat(re_str, precision);
+
+  if im_negative {
+    // re - |im|*I
+    Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(re_bf),
+      right: Box::new(abs_im_term),
+    })
+  } else {
+    // re + |im|*I
+    Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(re_bf),
+      right: Box::new(abs_im_term),
+    })
   }
 }
 

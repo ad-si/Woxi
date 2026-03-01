@@ -626,8 +626,117 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.sin()));
   }
+  // Exact complex: sin(a+bi) = sin(a)*cosh(b) + i*cos(a)*sinh(b)
+  // For purely imaginary (a=0): sin(bi) = i*sinh(b)
+  if let Some(((re_num, re_den), (im_num, im_den))) =
+    try_extract_complex_exact(&args[0])
+    && im_num != 0
+  {
+    if re_num == 0 {
+      // Pure imaginary: Sin[b*I] → I*Sinh[b]
+      let im_expr = make_rational(im_num, im_den);
+      let sinh_val =
+        crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
+      // I * sinh_val
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Identifier("I".to_string()), sinh_val],
+      );
+    }
+    // General complex with exact Pi-fraction real part:
+    // sin(a+bi) = sin(a)*cosh(b) + i*cos(a)*sinh(b)
+    let re_expr = make_rational(re_num, re_den);
+    if let Some((k, n)) = try_symbolic_pi_fraction(&re_expr)
+      && let (Some(sin_a), Some(cos_a)) = (exact_sin(k, n), exact_cos(k, n))
+    {
+      let im_expr = make_rational(im_num, im_den);
+      let cosh_b = crate::evaluator::evaluate_function_call_ast(
+        "Cosh",
+        &[im_expr.clone()],
+      )?;
+      let sinh_b =
+        crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
+      // sin(a)*cosh(b)
+      let real_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[sin_a, cosh_b],
+      )?;
+      // cos(a)*sinh(b)
+      let im_coeff = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[cos_a, sinh_b],
+      )?;
+      // I * im_coeff
+      let im_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Identifier("I".to_string()), im_coeff],
+      )?;
+      // real_term + im_term
+      return crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[real_term, im_term],
+      );
+    }
+    // Non-Pi-fraction real part: leave unevaluated (matches Wolfram)
+    return Ok(Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  // General complex with non-float components: try splitting into
+  // real_part + im*I where real_part can be any expression (e.g., Pi, Pi/6)
+  if !contains_float(&args[0])
+    && let Some((real_part, (im_num, im_den))) = try_split_real_imag(&args[0])
+    && im_num != 0
+  {
+    if matches!(&real_part, Expr::Integer(0)) {
+      // Pure imaginary (shouldn't reach here normally, but handle it)
+      let im_expr = make_rational(im_num, im_den);
+      let sinh_val =
+        crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Identifier("I".to_string()), sinh_val],
+      );
+    }
+    // Check if the real part is a Pi-fraction
+    if let Some((k, n)) = try_symbolic_pi_fraction(&real_part)
+      && let (Some(sin_a), Some(cos_a)) = (exact_sin(k, n), exact_cos(k, n))
+    {
+      let im_expr = make_rational(im_num, im_den);
+      let cosh_b = crate::evaluator::evaluate_function_call_ast(
+        "Cosh",
+        &[im_expr.clone()],
+      )?;
+      let sinh_b =
+        crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
+      let real_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[sin_a, cosh_b],
+      )?;
+      let im_coeff = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[cos_a, sinh_b],
+      )?;
+      let im_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Identifier("I".to_string()), im_coeff],
+      )?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[real_term, im_term],
+      );
+    }
+    // Non-Pi-fraction real part: leave unevaluated
+    return Ok(Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: args.to_vec(),
+    });
+  }
   // Complex float: sin(a+bi) = sin(a)cosh(b) + i*cos(a)sinh(b)
-  if let Some((re, im)) = try_extract_complex_float(&args[0])
+  // Only use float path when the argument actually contains a float value
+  if contains_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     let sin_re = re.sin() * im.cosh();
@@ -659,8 +768,102 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.cos()));
   }
+  // Exact complex: cos(a+bi) = cos(a)*cosh(b) - i*sin(a)*sinh(b)
+  // For purely imaginary (a=0): cos(bi) = cosh(b)
+  if let Some(((re_num, re_den), (im_num, im_den))) =
+    try_extract_complex_exact(&args[0])
+    && im_num != 0
+  {
+    if re_num == 0 {
+      // Pure imaginary: Cos[b*I] → Cosh[b]
+      let im_expr = make_rational(im_num, im_den);
+      return crate::evaluator::evaluate_function_call_ast("Cosh", &[im_expr]);
+    }
+    // General complex with exact Pi-fraction real part:
+    // cos(a+bi) = cos(a)*cosh(b) - i*sin(a)*sinh(b)
+    let re_expr = make_rational(re_num, re_den);
+    if let Some((k, n)) = try_symbolic_pi_fraction(&re_expr)
+      && let (Some(sin_a), Some(cos_a)) = (exact_sin(k, n), exact_cos(k, n))
+    {
+      let im_expr = make_rational(im_num, im_den);
+      let cosh_b = crate::evaluator::evaluate_function_call_ast(
+        "Cosh",
+        &[im_expr.clone()],
+      )?;
+      let sinh_b =
+        crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
+      // cos(a)*cosh(b)
+      let real_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[cos_a, cosh_b],
+      )?;
+      // -sin(a)*sinh(b) (note the minus sign)
+      let im_coeff = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[negate_expr(sin_a), sinh_b],
+      )?;
+      // I * im_coeff
+      let im_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Identifier("I".to_string()), im_coeff],
+      )?;
+      // real_term + im_term
+      return crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[real_term, im_term],
+      );
+    }
+    // Non-Pi-fraction real part: leave unevaluated
+    return Ok(Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  // General complex with non-float components: try splitting into
+  // real_part + im*I
+  if !contains_float(&args[0])
+    && let Some((real_part, (im_num, im_den))) = try_split_real_imag(&args[0])
+    && im_num != 0
+  {
+    if matches!(&real_part, Expr::Integer(0)) {
+      let im_expr = make_rational(im_num, im_den);
+      return crate::evaluator::evaluate_function_call_ast("Cosh", &[im_expr]);
+    }
+    if let Some((k, n)) = try_symbolic_pi_fraction(&real_part)
+      && let (Some(sin_a), Some(cos_a)) = (exact_sin(k, n), exact_cos(k, n))
+    {
+      let im_expr = make_rational(im_num, im_den);
+      let cosh_b = crate::evaluator::evaluate_function_call_ast(
+        "Cosh",
+        &[im_expr.clone()],
+      )?;
+      let sinh_b =
+        crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
+      let real_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[cos_a, cosh_b],
+      )?;
+      let im_coeff = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[negate_expr(sin_a), sinh_b],
+      )?;
+      let im_term = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Identifier("I".to_string()), im_coeff],
+      )?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[real_term, im_term],
+      );
+    }
+    return Ok(Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: args.to_vec(),
+    });
+  }
   // Complex float: cos(a+bi) = cos(a)cosh(b) - i*sin(a)sinh(b)
-  if let Some((re, im)) = try_extract_complex_float(&args[0])
+  if contains_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     let cos_re = re.cos() * im.cosh();
@@ -690,8 +893,30 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(f) = &args[0] {
     return Ok(num_to_expr(f.tan()));
   }
+  // Exact complex: for purely imaginary: tan(bi) = i*tanh(b)
+  if let Some(((re_num, _re_den), (im_num, im_den))) =
+    try_extract_complex_exact(&args[0])
+    && im_num != 0
+  {
+    if re_num == 0 {
+      // Pure imaginary: Tan[b*I] → I*Tanh[b]
+      let im_expr = make_rational(im_num, im_den);
+      let tanh_val =
+        crate::evaluator::evaluate_function_call_ast("Tanh", &[im_expr])?;
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Identifier("I".to_string()), tanh_val],
+      );
+    }
+    // Non-zero real part: leave unevaluated (matches Wolfram)
+    return Ok(Expr::FunctionCall {
+      name: "Tan".to_string(),
+      args: args.to_vec(),
+    });
+  }
   // Complex float: tan(z) = sin(z)/cos(z)
-  if let Some((re, im)) = try_extract_complex_float(&args[0])
+  if contains_float(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
     && im != 0.0
   {
     // sin(a+bi)
@@ -1401,7 +1626,205 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// Try to split an expression into real part and exact imaginary coefficient.
+/// Returns Some((real_part_expr, (im_num, im_den))) if the expression
+/// has the form `real_part + (im_num/im_den)*I` where the imaginary
+/// coefficient is exact (integer or rational).
+/// This is more general than try_extract_complex_exact since real_part
+/// can be any expression (e.g., Pi, Pi/6, symbolic).
+fn try_split_real_imag(expr: &Expr) -> Option<(Expr, (i128, i128))> {
+  use crate::syntax::BinaryOperator;
+
+  // Helper: check if expr is purely I*rational (no real part)
+  fn as_imag_only(e: &Expr) -> Option<(i128, i128)> {
+    match e {
+      Expr::Identifier(name) if name == "I" => Some((1, 1)),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => {
+        let (n, d) = as_imag_only(operand)?;
+        Some((-n, d))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        if matches!(&**right, Expr::Identifier(s) if s == "I")
+          && let Some((n, d)) = expr_to_rational(left)
+        {
+          return Some((n, d));
+        }
+        if matches!(&**left, Expr::Identifier(s) if s == "I")
+          && let Some((n, d)) = expr_to_rational(right)
+        {
+          return Some((n, d));
+        }
+        None
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() >= 2 =>
+      {
+        // Check if I is one of the args
+        let mut i_idx = None;
+        for (idx, arg) in args.iter().enumerate() {
+          if matches!(arg, Expr::Identifier(s) if s == "I") {
+            i_idx = Some(idx);
+            break;
+          }
+        }
+        let i_idx = i_idx?;
+        // Remaining args should form a rational
+        let remaining: Vec<&Expr> = args
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| *i != i_idx)
+          .map(|(_, a)| a)
+          .collect();
+        if remaining.len() == 1
+          && let Some((n, d)) = expr_to_rational(remaining[0])
+        {
+          return Some((n, d));
+        }
+        None
+      }
+      _ => None,
+    }
+  }
+
+  // Pure imaginary
+  if let Some(im) = as_imag_only(expr) {
+    return Some((Expr::Integer(0), im));
+  }
+
+  // a + b*I or a - b*I
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      if let Some(im) = as_imag_only(right) {
+        return Some((*left.clone(), im));
+      }
+      if let Some(im) = as_imag_only(left) {
+        return Some((*right.clone(), im));
+      }
+      None
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      if let Some((n, d)) = as_imag_only(right) {
+        return Some((*left.clone(), (-n, d)));
+      }
+      None
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      // Check if one of the args is purely imaginary
+      for (idx, arg) in args.iter().enumerate() {
+        if let Some(im) = as_imag_only(arg) {
+          let remaining: Vec<Expr> = args
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != idx)
+            .map(|(_, a)| a.clone())
+            .collect();
+          let real_part = if remaining.len() == 1 {
+            remaining.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: remaining,
+            }
+          };
+          return Some((real_part, im));
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
 // ─── Hyperbolic Trig Functions ────────────────────────────────────
+
+/// Try to extract a "negated" form of an expression.
+/// Returns Some(positive_expr) if the expression looks negative
+/// (negative integer, negative rational, unary minus, Times[-1, x]).
+fn try_extract_negated(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => Some((**operand).clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        if *n < 0 {
+          Some(make_rational(n.abs(), *d))
+        } else {
+          None
+        }
+      } else {
+        None
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if let Some(negated) = try_extract_negated(left) {
+        if matches!(&negated, Expr::Integer(1)) {
+          Some((**right).clone())
+        } else {
+          Some(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(negated),
+            right: right.clone(),
+          })
+        }
+      } else {
+        None
+      }
+    }
+    // Handle evaluated Times[-1, x, ...] function call form
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      if let Some(negated_first) = try_extract_negated(&args[0]) {
+        if args.len() == 1 {
+          return Some(negated_first);
+        }
+        if matches!(&negated_first, Expr::Integer(1)) {
+          if args.len() == 2 {
+            return Some(args[1].clone());
+          }
+          return Some(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: args[1..].to_vec(),
+          });
+        }
+        let mut new_args = vec![negated_first];
+        new_args.extend_from_slice(&args[1..]);
+        Some(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: new_args,
+        })
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
 
 /// Sinh[x] - Hyperbolic sine
 pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1417,6 +1840,11 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.sinh())),
     _ => {}
+  }
+  // Odd function: Sinh[-x] → -Sinh[x]
+  if let Some(pos) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Sinh", &[pos])?;
+    return Ok(negate_expr(inner));
   }
   Ok(Expr::FunctionCall {
     name: "Sinh".to_string(),
@@ -1439,6 +1867,10 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(f) => return Ok(Expr::Real(f.cosh())),
     _ => {}
   }
+  // Even function: Cosh[-x] → Cosh[x]
+  if let Some(pos) = try_extract_negated(&args[0]) {
+    return crate::evaluator::evaluate_function_call_ast("Cosh", &[pos]);
+  }
   Ok(Expr::FunctionCall {
     name: "Cosh".to_string(),
     args: args.to_vec(),
@@ -1459,6 +1891,11 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => return Ok(Expr::Real(f.tanh())),
     _ => {}
+  }
+  // Odd function: Tanh[-x] → -Tanh[x]
+  if let Some(pos) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Tanh", &[pos])?;
+    return Ok(negate_expr(inner));
   }
   Ok(Expr::FunctionCall {
     name: "Tanh".to_string(),
@@ -1489,6 +1926,11 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {}
   }
+  // Odd function: Coth[-x] → -Coth[x]
+  if let Some(pos) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Coth", &[pos])?;
+    return Ok(negate_expr(inner));
+  }
   Ok(Expr::FunctionCall {
     name: "Coth".to_string(),
     args: args.to_vec(),
@@ -1509,6 +1951,10 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0) => return Ok(Expr::Integer(1)),
     Expr::Real(f) => return Ok(Expr::Real(1.0 / f.cosh())),
     _ => {}
+  }
+  // Even function: Sech[-x] → Sech[x]
+  if let Some(pos) = try_extract_negated(&args[0]) {
+    return crate::evaluator::evaluate_function_call_ast("Sech", &[pos]);
   }
   Ok(Expr::FunctionCall {
     name: "Sech".to_string(),
@@ -1534,6 +1980,11 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     return Ok(Expr::Real(1.0 / s));
+  }
+  // Odd function: Csch[-x] → -Csch[x]
+  if let Some(pos) = try_extract_negated(&args[0]) {
+    let inner = crate::evaluator::evaluate_function_call_ast("Csch", &[pos])?;
+    return Ok(negate_expr(inner));
   }
   Ok(Expr::FunctionCall {
     name: "Csch".to_string(),
