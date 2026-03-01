@@ -913,6 +913,20 @@ pub fn contains_infinity(expr: &Expr) -> bool {
   }
 }
 
+/// Check if an expression contains any float (Real or BigFloat) values.
+pub fn contains_float(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_float(left) || contains_float(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_float(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_float),
+    Expr::List(items) => items.iter().any(contains_float),
+    _ => false,
+  }
+}
+
 /// Extract f64 from various numeric expression types
 pub fn expr_to_f64(expr: &Expr) -> Option<f64> {
   match expr {

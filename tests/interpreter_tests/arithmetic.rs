@@ -1805,4 +1805,119 @@ mod expand_threading {
     assert_eq!(interpret("ProductLog[0]").unwrap(), "0");
     assert_eq!(interpret("ProductLog[E]").unwrap(), "1");
   }
+
+  // ─── Trig with exact complex arguments ────────────────────────────
+
+  #[test]
+  fn sin_pure_imaginary() {
+    assert_eq!(interpret("Sin[I]").unwrap(), "I*Sinh[1]");
+    assert_eq!(interpret("Sin[2*I]").unwrap(), "I*Sinh[2]");
+    assert_eq!(interpret("Sin[-I]").unwrap(), "-I*Sinh[1]");
+  }
+
+  #[test]
+  fn cos_pure_imaginary() {
+    assert_eq!(interpret("Cos[I]").unwrap(), "Cosh[1]");
+    assert_eq!(interpret("Cos[2*I]").unwrap(), "Cosh[2]");
+    assert_eq!(interpret("Cos[-I]").unwrap(), "Cosh[1]");
+  }
+
+  #[test]
+  fn tan_pure_imaginary() {
+    assert_eq!(interpret("Tan[I]").unwrap(), "I*Tanh[1]");
+    assert_eq!(interpret("Tan[-I]").unwrap(), "-I*Tanh[1]");
+  }
+
+  #[test]
+  fn sin_exact_complex_unevaluated() {
+    // Non-Pi-fraction real part: stays unevaluated
+    assert_eq!(interpret("Sin[1 + I]").unwrap(), "Sin[1 + I]");
+    assert_eq!(interpret("Sin[1/2 + I]").unwrap(), "Sin[1/2 + I]");
+  }
+
+  #[test]
+  fn sin_pi_fraction_complex() {
+    // Pi-fraction real part: decomposes symbolically
+    assert_eq!(interpret("Sin[Pi + I]").unwrap(), "-I*Sinh[1]");
+  }
+
+  // ─── Hyperbolic parity ────────────────────────────────────────────
+
+  #[test]
+  fn sinh_negative_arg() {
+    assert_eq!(interpret("Sinh[-1]").unwrap(), "-Sinh[1]");
+    assert_eq!(interpret("Sinh[-2]").unwrap(), "-Sinh[2]");
+    assert_eq!(interpret("Sinh[-x]").unwrap(), "-Sinh[x]");
+  }
+
+  #[test]
+  fn cosh_negative_arg() {
+    assert_eq!(interpret("Cosh[-1]").unwrap(), "Cosh[1]");
+    assert_eq!(interpret("Cosh[-x]").unwrap(), "Cosh[x]");
+  }
+
+  #[test]
+  fn tanh_negative_arg() {
+    assert_eq!(interpret("Tanh[-1]").unwrap(), "-Tanh[1]");
+    assert_eq!(interpret("Tanh[-x]").unwrap(), "-Tanh[x]");
+  }
+
+  // ─── N[trig, prec] with complex arguments ─────────────────────────
+
+  #[test]
+  fn n_sin_i_100_digits() {
+    let result = interpret("N[Sin[I], 100]").unwrap();
+    // Should start with correct digits and end with *I
+    assert!(
+      result.starts_with("1.175201193643801456882381850595600815"),
+      "N[Sin[I],100] should have correct digits, got: {}",
+      result
+    );
+    assert!(
+      result.contains("*I"),
+      "N[Sin[I],100] should be purely imaginary, got: {}",
+      result
+    );
+    assert!(
+      !result.contains("+") && !result.contains("0.`"),
+      "N[Sin[I],100] should not have a real part, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_cos_i_100_digits() {
+    let result = interpret("N[Cos[I], 100]").unwrap();
+    assert!(
+      result.starts_with("1.543080634815243778477905620757061682"),
+      "N[Cos[I],100] digits wrong, got: {}",
+      result
+    );
+    assert!(
+      !result.contains("I"),
+      "N[Cos[I],100] should be purely real, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_sin_complex_100_digits() {
+    let result = interpret("N[Sin[1 + I], 100]").unwrap();
+    // Both real and imaginary parts should be present
+    assert!(
+      result.starts_with("1.298457581415977294826042365807815"),
+      "N[Sin[1+I],100] real part wrong, got: {}",
+      result
+    );
+    assert!(
+      result.contains("0.634963914784736108255082202991509"),
+      "N[Sin[1+I],100] imaginary part wrong, got: {}",
+      result
+    );
+    assert!(
+      result.contains("*I"),
+      "N[Sin[1+I],100] should have imaginary part, got: {}",
+      result
+    );
+  }
 }
