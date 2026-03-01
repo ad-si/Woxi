@@ -120,6 +120,87 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   try_eval_to_f64(&result)
 }
 
+/// Adaptively sample a function, adding more points where the function changes rapidly.
+fn adaptive_sample(
+  func_body: &Expr,
+  var_name: &str,
+  x_min: f64,
+  x_max: f64,
+  initial_n: usize,
+  max_total: usize,
+) -> Vec<(f64, f64)> {
+  // Initial uniform sampling
+  let step = (x_max - x_min) / (initial_n - 1) as f64;
+  let mut points: Vec<(f64, f64)> = (0..initial_n)
+    .map(|i| {
+      let x = x_min + i as f64 * step;
+      let y = evaluate_at_point(func_body, var_name, x).unwrap_or(f64::NAN);
+      (x, y)
+    })
+    .collect();
+
+  // Adaptive refinement passes
+  let max_depth = 6;
+  for _ in 0..max_depth {
+    if points.len() >= max_total {
+      break;
+    }
+    let mut new_points: Vec<(f64, f64)> = Vec::new();
+    let budget = max_total - points.len();
+
+    for i in 0..points.len().saturating_sub(1) {
+      if new_points.len() >= budget {
+        break;
+      }
+      let (x0, y0) = points[i];
+      let (x1, y1) = points[i + 1];
+
+      // Skip if interval is too small
+      if (x1 - x0) < (x_max - x_min) * 1e-10 {
+        continue;
+      }
+
+      let needs_refine = if !y0.is_finite() || !y1.is_finite() {
+        // Refine near discontinuities to find the boundary
+        true
+      } else if i + 2 < points.len() {
+        // Check curvature using three consecutive points
+        let (x2, y2) = points[i + 2];
+        if y2.is_finite() {
+          // Linear interpolation error: how much does the middle point
+          // deviate from the line connecting its neighbors?
+          let y_interp = y0 + (y2 - y0) * (x1 - x0) / (x2 - x0);
+          let y_range = (y2 - y0).abs().max(1e-10);
+          let deviation = (y1 - y_interp).abs() / y_range;
+          deviation > 0.05
+        } else {
+          true
+        }
+      } else {
+        false
+      };
+
+      if needs_refine {
+        let xm = (x0 + x1) / 2.0;
+        let ym = evaluate_at_point(func_body, var_name, xm).unwrap_or(f64::NAN);
+        new_points.push((xm, ym));
+      }
+    }
+
+    if new_points.is_empty() {
+      break;
+    }
+
+    // Merge new points into sorted order
+    points.extend(new_points);
+    points.sort_by(|a, b| {
+      a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
+  }
+
+  points
+}
+
 /// Split points into contiguous finite segments, breaking at NaN/Infinity
 pub(crate) fn split_into_segments(
   points: &[(f64, f64)],
@@ -1698,21 +1779,20 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![body],
   };
 
-  // Sample each function using the configured number of sample points
-  let n_samples = plot_opts.plot_points.max(2);
-  let step = (x_max - x_min) / (n_samples - 1) as f64;
+  // Adaptive sampling: start with initial points, then refine where needed
+  let initial_samples = plot_opts.plot_points.max(2).min(200);
+  let max_total = plot_opts.plot_points.max(500);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
 
   for func_body in &bodies {
-    let mut points = Vec::with_capacity(n_samples);
-    for i in 0..n_samples {
-      let x = x_min + i as f64 * step;
-      if let Some(y) = evaluate_at_point(func_body, &var_name, x) {
-        points.push((x, y));
-      } else {
-        points.push((x, f64::NAN));
-      }
-    }
+    let points = adaptive_sample(
+      func_body,
+      &var_name,
+      x_min,
+      x_max,
+      initial_samples,
+      max_total,
+    );
     all_points.push(points);
   }
 

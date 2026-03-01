@@ -2101,6 +2101,129 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // (a + b*I)^n for exact complex base with positive integer exponent
+  if let Expr::Integer(n) = exp
+    && *n >= 2
+    && let Some(((re_n, re_d), (im_n, im_d))) = try_extract_complex_exact(base)
+    && im_n != 0
+  {
+    use num_bigint::BigInt;
+    use num_traits::{ToPrimitive, Zero};
+
+    // BigInt GCD helper
+    fn bigint_gcd(a: &BigInt, b: &BigInt) -> BigInt {
+      let mut a = if *a < BigInt::from(0) {
+        -a.clone()
+      } else {
+        a.clone()
+      };
+      let mut b = if *b < BigInt::from(0) {
+        -b.clone()
+      } else {
+        b.clone()
+      };
+      while !b.is_zero() {
+        let t = &a % &b;
+        a = b;
+        b = t;
+      }
+      a
+    }
+
+    // Normalize denominators to be positive
+    let (re_n, re_d) = if re_d < 0 {
+      (-re_n, -re_d)
+    } else {
+      (re_n, re_d)
+    };
+    let (im_n, im_d) = if im_d < 0 {
+      (-im_n, -im_d)
+    } else {
+      (im_n, im_d)
+    };
+
+    // Common denominator: k = lcm(re_d, im_d)
+    let g = gcd_i128(re_d, im_d);
+    let k_val = re_d / g * im_d;
+    let a = re_n * (k_val / re_d);
+    let b_val = im_n * (k_val / im_d);
+
+    // Compute (a + b*I)^n using BigInt exponentiation by squaring
+    let a_big = BigInt::from(a);
+    let b_big = BigInt::from(b_val);
+    let mut result_re = BigInt::from(1);
+    let mut result_im = BigInt::from(0);
+    let mut sq_re = a_big.clone();
+    let mut sq_im = b_big.clone();
+    let mut remaining = *n as u64;
+    while remaining > 0 {
+      if remaining & 1 == 1 {
+        let new_re = &result_re * &sq_re - &result_im * &sq_im;
+        let new_im = &result_re * &sq_im + &result_im * &sq_re;
+        result_re = new_re;
+        result_im = new_im;
+      }
+      remaining >>= 1;
+      if remaining > 0 {
+        let new_re = &sq_re * &sq_re - &sq_im * &sq_im;
+        let new_im = BigInt::from(2) * &sq_re * &sq_im;
+        sq_re = new_re;
+        sq_im = new_im;
+      }
+    }
+
+    // Result = result_re / k^n + (result_im / k^n) * I
+    let k_big = BigInt::from(k_val);
+    let k_n = num_traits::pow::pow(k_big, *n as usize);
+
+    // Reduce fractions
+    let g_re = bigint_gcd(&result_re, &k_n);
+    let final_re_n = &result_re / &g_re;
+    let final_re_d = &k_n / &g_re;
+    let g_im = bigint_gcd(&result_im, &k_n);
+    let final_im_n = &result_im / &g_im;
+    let final_im_d = &k_n / &g_im;
+
+    // Try to convert back to i128
+    if let (Some(rn), Some(rd), Some(imn), Some(imd)) = (
+      final_re_n.to_i128(),
+      final_re_d.to_i128(),
+      final_im_n.to_i128(),
+      final_im_d.to_i128(),
+    ) {
+      return Ok(complex_rational_to_expr(rn, rd, imn, imd));
+    }
+
+    // BigInt result: build expression for integer denominators
+    if final_re_d == BigInt::from(1) && final_im_d == BigInt::from(1) {
+      let re_expr = bigint_to_expr(final_re_n);
+      let i_expr = Expr::Identifier("I".to_string());
+      if result_im.is_zero() {
+        return Ok(re_expr);
+      }
+      let im_expr = bigint_to_expr(final_im_n);
+      let imag_term = if matches!(&im_expr, Expr::Integer(1)) {
+        i_expr.clone()
+      } else if matches!(&im_expr, Expr::Integer(-1)) {
+        negate_expr(i_expr.clone())
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(im_expr),
+          right: Box::new(i_expr),
+        }
+      };
+      if result_re.is_zero() {
+        return Ok(imag_term);
+      }
+      return Ok(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(re_expr),
+        right: Box::new(imag_term),
+      });
+    }
+  }
+
   // E^(complex) → Euler's formula: E^(a + b*I) = E^a * (Cos[b] + I*Sin[b])
   if matches!(base, Expr::Constant(c) if c == "E") {
     // Try float complex extraction for the exponent

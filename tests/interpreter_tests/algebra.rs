@@ -1790,6 +1790,17 @@ mod find_root {
       "{x -> 99999.99999000001}"
     );
   }
+
+  #[test]
+  fn bessel_j_root() {
+    // FindRoot should work with BesselJ using numerical derivatives
+    let result = interpret("FindRoot[BesselJ[0,x], {x,10.5}]").unwrap();
+    assert!(
+      result.starts_with("{x -> 18.07106396"),
+      "Expected root near 18.071..., got: {}",
+      result
+    );
+  }
 }
 
 mod replace {

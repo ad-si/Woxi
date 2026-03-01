@@ -626,3 +626,37 @@ mod complex_number {
     assert_eq!(interpret("Re[E^(I*0.5)]").unwrap(), "0.8775825618903728");
   }
 }
+
+mod complex_power_tests {
+  use woxi::interpret;
+
+  #[test]
+  fn complex_power_3_4i_squared() {
+    assert_eq!(interpret("(3 + 4I)^2").unwrap(), "-7 + 24*I");
+  }
+
+  #[test]
+  fn complex_power_3_4i_10() {
+    assert_eq!(interpret("(3 + 4I)^10").unwrap(), "-9653287 + 1476984*I");
+  }
+
+  #[test]
+  fn complex_power_1_i_squared() {
+    assert_eq!(interpret("(1 + I)^2").unwrap(), "2*I");
+  }
+
+  #[test]
+  fn complex_power_1_i_4() {
+    assert_eq!(interpret("(1 + I)^4").unwrap(), "-4");
+  }
+
+  #[test]
+  fn complex_power_2_3i_cubed() {
+    assert_eq!(interpret("(2 + 3I)^3").unwrap(), "-46 + 9*I");
+  }
+
+  #[test]
+  fn complex_power_rational_base() {
+    assert_eq!(interpret("(1/2 + I/3)^4").unwrap(), "-119/1296 + (5*I)/54");
+  }
+}
