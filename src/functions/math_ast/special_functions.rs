@@ -2652,20 +2652,17 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       // Only evaluate numerically if the argument contains float components
       // (e.g., Zeta[0.5 + 3.0*I] evaluates, but Zeta[1/2 + 3*I] stays symbolic)
-      if contains_float(&args[0]) {
-        if let Some((re, im)) =
+      if contains_float(&args[0])
+        && let Some((re, im)) =
           crate::functions::math_ast::try_extract_complex_float(&args[0])
-        {
-          if im != 0.0 {
-            let (res_re, res_im) = zeta_numeric_complex(re, im);
-            return Ok(
-              crate::functions::math_ast::build_complex_float_expr(
-                res_re, res_im,
-              ),
-            );
-          } else {
-            return Ok(Expr::Real(zeta_numeric(re)));
-          }
+      {
+        if im != 0.0 {
+          let (res_re, res_im) = zeta_numeric_complex(re, im);
+          return Ok(crate::functions::math_ast::build_complex_float_expr(
+            res_re, res_im,
+          ));
+        } else {
+          return Ok(Expr::Real(zeta_numeric(re)));
         }
       }
       // Symbolic argument: return unevaluated
