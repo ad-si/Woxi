@@ -596,11 +596,38 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               right: Box::new(dg),
             })
           } else {
-            // General case - return unevaluated
-            Ok(Expr::FunctionCall {
-              name: "D".to_string(),
-              args: vec![expr.clone(), Expr::Identifier(var.to_string())],
-            })
+            // General case: d/dx[f(x)^g(x)] = f(x)^g(x) * (g'(x)*Log[f(x)] + g(x)*f'(x)/f(x))
+            // This is logarithmic differentiation
+            let df = differentiate(left, var)?;
+            let dg = differentiate(right, var)?;
+            Ok(simplify(Expr::BinaryOp {
+              op: Times,
+              left: Box::new(expr.clone()), // f^g
+              right: Box::new(Expr::BinaryOp {
+                op: Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: Times,
+                  left: Box::new(dg), // g'
+                  right: Box::new(Expr::FunctionCall {
+                    name: "Log".to_string(),
+                    args: vec![*left.clone()], // Log[f]
+                  }),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: Times,
+                  left: right.clone(), // g
+                  right: Box::new(Expr::BinaryOp {
+                    op: Times,
+                    left: Box::new(df), // f'
+                    right: Box::new(Expr::BinaryOp {
+                      op: Power,
+                      left: left.clone(),                 // f
+                      right: Box::new(Expr::Integer(-1)), // f^(-1)
+                    }),
+                  }),
+                }),
+              }),
+            }))
           }
         }
         _ => Ok(Expr::FunctionCall {
