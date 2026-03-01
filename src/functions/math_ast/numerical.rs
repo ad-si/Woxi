@@ -117,273 +117,80 @@ fn try_as_integer(expr: &Expr) -> Option<i128> {
   }
 }
 
-/// Compute base^n for integer n using repeated squaring with mul().
-/// This avoids BigFloat::pow (which internally uses exp(n*ln(base)))
-/// and panics on wasm32 because exp() calls int_as_usize() which
-/// requires usize >= Word (u64).
+/// Compute base^n for integer n, handling negative exponents.
+/// Uses BigFloat::powi for the absolute value, then inverts if needed.
 fn bigfloat_powi(
   base: &astro_float::BigFloat,
   n: i128,
   bits: usize,
   rm: astro_float::RoundingMode,
-) -> Result<astro_float::BigFloat, InterpreterError> {
+) -> astro_float::BigFloat {
   use astro_float::BigFloat;
 
   if n == 0 {
-    return Ok(BigFloat::from_i32(1, bits));
+    return BigFloat::from_i32(1, bits);
   }
 
-  let abs_n = n.unsigned_abs();
-  // Use extra precision for intermediate computations
-  let work_bits = bits + 64;
-  let mut result = BigFloat::from_i32(1, work_bits);
-  let mut current = base.clone();
-  let mut remaining = abs_n;
-
-  while remaining > 0 {
-    if remaining & 1 == 1 {
-      result = result.mul(&current, work_bits, rm);
-    }
-    remaining >>= 1;
-    if remaining > 0 {
-      current = current.mul(&current, work_bits, rm);
-    }
-  }
+  let abs_n = n.unsigned_abs() as usize;
+  let result = base.powi(abs_n, bits, rm);
 
   if n < 0 {
-    let one = BigFloat::from_i32(1, work_bits);
-    result = one.div(&result, bits, rm);
-  }
-
-  Ok(result)
-}
-
-/// Extract the integer part of a BigFloat as i64, using raw parts
-/// to avoid int_as_usize() which panics on wasm32.
-fn bigfloat_int_to_i64(bf: &astro_float::BigFloat) -> Option<i64> {
-  let (words, _sig_bits, sign, exponent, _inexact) = bf.as_raw_parts()?;
-  if exponent <= 0 {
-    return Some(0);
-  }
-  let exp = exponent as u64;
-  if exp > 63 {
-    return None; // Too large for i64
-  }
-  // Words are little-endian; most significant word is last.
-  // Each Word is u64 on non-x86 platforms (including wasm32).
-  let msw = *words.last()?;
-  let word_bits = (std::mem::size_of::<astro_float::Word>() * 8) as u64;
-  if exp > word_bits {
-    return None; // Would need multiple words
-  }
-  let shift = word_bits - exp;
-  let value = (msw >> shift) as i64;
-  if sign.is_negative() {
-    Some(-value)
+    BigFloat::from_i32(1, bits).div(&result, bits, rm)
   } else {
-    Some(value)
+    result
   }
 }
 
-/// Compute exp(x) safely, avoiding the wasm32 panic in astro-float's
-/// exp_positive_arg which calls int_as_usize().
-/// Splits x into integer + fractional parts and computes
-/// exp(x) = e^int * exp(frac), where e^int uses repeated squaring
-/// and exp(frac) uses the native BigFloat::exp (safe since |frac| < 1).
-fn bigfloat_exp_safe(
-  x: &astro_float::BigFloat,
-  bits: usize,
-  rm: astro_float::RoundingMode,
-  cc: &mut astro_float::Consts,
-) -> Result<astro_float::BigFloat, InterpreterError> {
-  use astro_float::BigFloat;
-
-  if x.is_zero() {
-    return Ok(BigFloat::from_i32(1, bits));
-  }
-
-  let x_abs = x.abs();
-  let int_val = bigfloat_int_to_i64(&x_abs);
-
-  match int_val {
-    Some(0) => {
-      // No integer part, native exp is safe (exponent <= 0)
-      Ok(x.exp(bits, rm, cc))
-    }
-    Some(n) if n > 0 => {
-      let work_bits = bits + 64;
-
-      // Compute e^int using repeated squaring
-      let e_const = cc.e(work_bits, rm);
-      let e_int = bigfloat_powi(&e_const, n as i128, work_bits, rm)?;
-
-      // Compute exp(frac) using native exp (safe: 0 <= frac < 1)
-      let frac_part = x_abs.fract();
-      let e_frac = if frac_part.is_zero() {
-        BigFloat::from_i32(1, work_bits)
-      } else {
-        frac_part.exp(work_bits, rm, cc)
-      };
-
-      // Combine: exp(|x|) = e^int * exp(frac)
-      let result = e_int.mul(&e_frac, bits, rm);
-
-      if x.is_negative() {
-        let one = BigFloat::from_i32(1, bits);
-        Ok(one.div(&result, bits, rm))
-      } else {
-        Ok(result)
-      }
-    }
-    _ => {
-      // Fallback for very large values
-      Ok(x.exp(bits, rm, cc))
-    }
-  }
-}
-
-/// Compute base^exp safely for arbitrary (non-integer) exponents.
-/// Uses exp(exp * ln(base)) with the safe exp implementation.
-fn bigfloat_pow_safe(
-  base: &astro_float::BigFloat,
-  exp: &astro_float::BigFloat,
-  bits: usize,
-  rm: astro_float::RoundingMode,
-  cc: &mut astro_float::Consts,
-) -> Result<astro_float::BigFloat, InterpreterError> {
-  use astro_float::BigFloat;
-
-  // Handle special cases matching BigFloat::pow behavior
-  if exp.is_zero() {
-    return Ok(BigFloat::from_i32(1, bits));
-  }
-  if base.is_zero() {
-    return Ok(BigFloat::from_i32(0, bits));
-  }
-
-  let work_bits = bits + 64;
-
-  // base^exp = exp(exp * ln(base))
-  let ln_base = base.abs().ln(work_bits, rm, cc);
-  if ln_base.is_nan() {
-    return Err(InterpreterError::EvaluationError(
-      "N: logarithm of non-positive number".into(),
-    ));
-  }
-  let product = exp.mul(&ln_base, work_bits, rm);
-  bigfloat_exp_safe(&product, bits, rm, cc)
-}
-
-/// Convert a BigFloat to a decimal string using num-bigint for the base
-/// conversion, avoiding astro-float's `format()` which panics on wasm32.
+/// Convert a BigFloat to a decimal string.
 /// If `max_digits` is Some(n), truncate the output to at most n significant digits.
 pub fn bigfloat_to_string(
   bf: &astro_float::BigFloat,
   max_digits: Option<usize>,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
 ) -> Result<String, InterpreterError> {
-  use num_bigint::BigUint;
-  use num_traits::Zero;
-
-  // Extract raw parts: mantissa words, significant bits, sign, exponent
-  let (words, sig_bits, sign, exponent, _inexact) =
-    bf.as_raw_parts().ok_or_else(|| {
-      InterpreterError::EvaluationError("N: cannot format NaN or Inf".into())
-    })?;
-
-  if sig_bits == 0 || words.iter().all(|&w| w == 0) {
+  if bf.is_zero() {
     return Ok("0.".to_string());
   }
 
-  // Build a BigUint from the mantissa words (little-endian u64 words).
-  let mantissa = BigUint::from_bytes_le(
-    &words
-      .iter()
-      .flat_map(|w| w.to_le_bytes())
-      .collect::<Vec<u8>>(),
-  );
+  let (sign, digits, exponent) = bf
+    .convert_to_radix(astro_float::Radix::Dec, rm, cc)
+    .map_err(|e| {
+      InterpreterError::EvaluationError(format!("N: format error: {}", e))
+    })?;
 
-  // The value is: sign * mantissa * 2^(exponent - mantissa_bit_length)
-  // where mantissa_bit_length = words.len() * 64.
-  let mantissa_bits = words.len() * 64;
-  let shift = exponent as i64 - mantissa_bits as i64;
+  if digits.is_empty() || digits.iter().all(|&d| d == 0) {
+    return Ok("0.".to_string());
+  }
 
-  // Compute target digits: use max_digits if given (from requested precision),
-  // otherwise derive from the mantissa bit count.
-  let target_digits = if let Some(d) = max_digits {
-    // Add a few extra digits for rounding, we'll truncate the output later
-    d + 5
-  } else {
-    (mantissa_bits as f64 / std::f64::consts::LOG2_10).ceil() as usize + 2
-  };
-
-  // Strategy: compute mantissa * 10^target_digits * 2^shift, then divide
-  // by 10^target_digits later to place the decimal point.
-  //
-  // If shift >= 0: integer_part = mantissa << shift
-  // If shift < 0: we need to compute mantissa * 10^target_digits >> (-shift)
-  //   to get target_digits of fractional precision.
-
-  let (int_digits, decimal_exp) = if shift >= 0 {
-    // Value = mantissa * 2^shift (an integer, possibly very large)
-    let int_val = &mantissa << (shift as u64);
-    let s = int_val.to_string();
-    let len = s.len();
-    // decimal_exp = number of digits in integer part
-    (s, len as i64)
-  } else {
-    // Value = mantissa / 2^(-shift)
-    // Multiply mantissa by 10^target_digits first to preserve fractional digits
-    let neg_shift = (-shift) as u64;
-    let scale = BigUint::from(10u32).pow(target_digits as u32);
-    let scaled = &mantissa * &scale;
-
-    // Now divide by 2^(-shift) with rounding
-    let divisor = BigUint::from(1u32) << neg_shift;
-    let result = (&scaled + (&divisor >> 1u32)) / &divisor;
-
-    if result.is_zero() {
-      return Ok("0.".to_string());
-    }
-
-    let s = result.to_string();
-    // The decimal point should be placed target_digits from the right
-    let decimal_exp = s.len() as i64 - target_digits as i64;
-    (s, decimal_exp)
-  };
-
-  // Build the decimal string with the decimal point
-  let is_negative = sign.is_negative();
+  let is_negative = sign == astro_float::Sign::Neg;
   let prefix = if is_negative { "-" } else { "" };
 
-  // Truncate significant digits if max_digits is specified.
-  // This removes noise from guard bits.
-  let int_digits = if let Some(max_d) = max_digits {
-    // Count significant digits (excluding leading zeros for numbers < 1)
-    let sig_start = if decimal_exp <= 0 {
-      // For 0.00xxx, all digits are significant
-      0
+  // Convert digit values to ASCII string
+  let digit_str: String = digits.iter().map(|&d| (b'0' + d) as char).collect();
+
+  // Truncate to max_digits if specified
+  let digit_str = if let Some(max_d) = max_digits {
+    if digit_str.len() > max_d {
+      digit_str[..max_d].to_string()
     } else {
-      0
-    };
-    let sig_count = int_digits.len() - sig_start;
-    if sig_count > max_d {
-      int_digits[..sig_start + max_d].to_string()
-    } else {
-      int_digits
+      digit_str
     }
   } else {
-    int_digits
+    digit_str
   };
-  let digits = int_digits.as_bytes();
+
+  // exponent from convert_to_radix: value = 0.d1d2d3... * 10^exponent
+  let decimal_exp = exponent as i64;
 
   if decimal_exp <= 0 {
     // Number like 0.000xxxx
     let zeros = (-decimal_exp) as usize;
-    let trimmed = int_digits.trim_end_matches('0');
+    let trimmed = digit_str.trim_end_matches('0');
     if trimmed.is_empty() {
       Ok(format!("{}0.", prefix))
     } else {
-      let frac: String = format!("{}{}", "0".repeat(zeros), trimmed);
+      let frac = format!("{}{}", "0".repeat(zeros), trimmed);
       let frac = frac.trim_end_matches('0');
       if frac.is_empty() {
         Ok(format!("{}0.", prefix))
@@ -393,14 +200,15 @@ pub fn bigfloat_to_string(
     }
   } else {
     let dp = decimal_exp as usize;
-    if dp >= digits.len() {
+    if dp >= digit_str.len() {
       // All digits are in the integer part
-      let padded = format!("{}{}", int_digits, "0".repeat(dp - digits.len()));
+      let padded =
+        format!("{}{}", &digit_str, "0".repeat(dp - digit_str.len()));
       Ok(format!("{}{}.", prefix, padded))
     } else {
       // Some digits before decimal, some after
-      let int_part = &int_digits[..dp];
-      let frac_part = int_digits[dp..].trim_end_matches('0');
+      let int_part = &digit_str[..dp];
+      let frac_part = digit_str[dp..].trim_end_matches('0');
       if frac_part.is_empty() {
         Ok(format!("{}{}.", prefix, int_part))
       } else {
@@ -439,7 +247,7 @@ pub fn n_eval_arbitrary(
   // Try full conversion to BigFloat first (fast path for purely numeric expressions)
   match expr_to_bigfloat(expr, bits, rm, &mut cc) {
     Ok(result) => {
-      let decimal = bigfloat_to_string(&result, None)?;
+      let decimal = bigfloat_to_string(&result, None, rm, &mut cc)?;
       Ok(Expr::BigFloat(decimal, precision))
     }
     Err(_) => {
@@ -461,7 +269,7 @@ fn n_eval_arbitrary_partial(
 ) -> Result<Expr, InterpreterError> {
   // If the whole expression can be converted to BigFloat, do it
   if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
-    let decimal = bigfloat_to_string(&result, None)?;
+    let decimal = bigfloat_to_string(&result, None, rm, cc)?;
     return Ok(Expr::BigFloat(decimal, precision));
   }
 
@@ -564,14 +372,12 @@ pub fn expr_to_bigfloat(
       Ok(val.neg())
     }
     Expr::BinaryOp { op, left, right } => {
-      // For integer exponents, use repeated squaring via mul() instead of
-      // BigFloat::pow which calls exp(n*ln(base)) and panics on wasm32
-      // due to int_as_usize() requiring usize >= Word (u64).
+      // For integer exponents, use powi (repeated squaring) for efficiency
       if matches!(op, BinaryOperator::Power)
         && let Some(n) = try_as_integer(right)
       {
         let base = expr_to_bigfloat(left, bits, rm, cc)?;
-        return bigfloat_powi(&base, n, bits, rm);
+        return Ok(bigfloat_powi(&base, n, bits, rm));
       }
       let l = expr_to_bigfloat(left, bits, rm, cc)?;
       let r = expr_to_bigfloat(right, bits, rm, cc)?;
@@ -580,7 +386,7 @@ pub fn expr_to_bigfloat(
         BinaryOperator::Minus => Ok(l.sub(&r, bits, rm)),
         BinaryOperator::Times => Ok(l.mul(&r, bits, rm)),
         BinaryOperator::Divide => Ok(l.div(&r, bits, rm)),
-        BinaryOperator::Power => bigfloat_pow_safe(&l, &r, bits, rm, cc),
+        BinaryOperator::Power => Ok(l.pow(&r, bits, rm, cc)),
         _ => Err(InterpreterError::EvaluationError(
           "N: unsupported binary operator for arbitrary precision".into(),
         )),
@@ -611,7 +417,7 @@ pub fn expr_to_bigfloat(
         }
         "Exp" if args.len() == 1 => {
           let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
-          bigfloat_exp_safe(&v, bits, rm, cc)
+          Ok(v.exp(bits, rm, cc))
         }
         "Log" if args.len() == 1 => {
           let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
@@ -682,11 +488,11 @@ pub fn expr_to_bigfloat(
         "Power" if args.len() == 2 => {
           if let Some(n) = try_as_integer(&args[1]) {
             let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
-            return bigfloat_powi(&base, n, bits, rm);
+            return Ok(bigfloat_powi(&base, n, bits, rm));
           }
           let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           let exp = expr_to_bigfloat(&args[1], bits, rm, cc)?;
-          bigfloat_pow_safe(&base, &exp, bits, rm, cc)
+          Ok(base.pow(&exp, bits, rm, cc))
         }
         _ => Err(InterpreterError::EvaluationError(format!(
           "N: cannot evaluate {}[...] to arbitrary precision",
