@@ -99,6 +99,181 @@ pub fn nominal_bits(precision: usize) -> usize {
   bits.max(128)
 }
 
+/// Extract an integer value from an Expr, if it is one.
+fn try_as_integer(expr: &Expr) -> Option<i128> {
+  match expr {
+    Expr::Integer(n) => Some(*n),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      if let Expr::Integer(n) = operand.as_ref() {
+        Some(-n)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Compute base^n for integer n using repeated squaring with mul().
+/// This avoids BigFloat::pow (which internally uses exp(n*ln(base)))
+/// and panics on wasm32 because exp() calls int_as_usize() which
+/// requires usize >= Word (u64).
+fn bigfloat_powi(
+  base: &astro_float::BigFloat,
+  n: i128,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> Result<astro_float::BigFloat, InterpreterError> {
+  use astro_float::BigFloat;
+
+  if n == 0 {
+    return Ok(BigFloat::from_i32(1, bits));
+  }
+
+  let abs_n = n.unsigned_abs();
+  // Use extra precision for intermediate computations
+  let work_bits = bits + 64;
+  let mut result = BigFloat::from_i32(1, work_bits);
+  let mut current = base.clone();
+  let mut remaining = abs_n;
+
+  while remaining > 0 {
+    if remaining & 1 == 1 {
+      result = result.mul(&current, work_bits, rm);
+    }
+    remaining >>= 1;
+    if remaining > 0 {
+      current = current.mul(&current, work_bits, rm);
+    }
+  }
+
+  if n < 0 {
+    let one = BigFloat::from_i32(1, work_bits);
+    result = one.div(&result, bits, rm);
+  }
+
+  Ok(result)
+}
+
+/// Extract the integer part of a BigFloat as i64, using raw parts
+/// to avoid int_as_usize() which panics on wasm32.
+fn bigfloat_int_to_i64(bf: &astro_float::BigFloat) -> Option<i64> {
+  let (words, _sig_bits, sign, exponent, _inexact) = bf.as_raw_parts()?;
+  if exponent <= 0 {
+    return Some(0);
+  }
+  let exp = exponent as u64;
+  if exp > 63 {
+    return None; // Too large for i64
+  }
+  // Words are little-endian; most significant word is last.
+  // Each Word is u64 on non-x86 platforms (including wasm32).
+  let msw = *words.last()?;
+  let word_bits = (std::mem::size_of::<astro_float::Word>() * 8) as u64;
+  if exp > word_bits {
+    return None; // Would need multiple words
+  }
+  let shift = word_bits - exp;
+  let value = (msw >> shift) as i64;
+  if sign.is_negative() {
+    Some(-value)
+  } else {
+    Some(value)
+  }
+}
+
+/// Compute exp(x) safely, avoiding the wasm32 panic in astro-float's
+/// exp_positive_arg which calls int_as_usize().
+/// Splits x into integer + fractional parts and computes
+/// exp(x) = e^int * exp(frac), where e^int uses repeated squaring
+/// and exp(frac) uses the native BigFloat::exp (safe since |frac| < 1).
+fn bigfloat_exp_safe(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<astro_float::BigFloat, InterpreterError> {
+  use astro_float::BigFloat;
+
+  if x.is_zero() {
+    return Ok(BigFloat::from_i32(1, bits));
+  }
+
+  let x_abs = x.abs();
+  let int_val = bigfloat_int_to_i64(&x_abs);
+
+  match int_val {
+    Some(0) => {
+      // No integer part, native exp is safe (exponent <= 0)
+      Ok(x.exp(bits, rm, cc))
+    }
+    Some(n) if n > 0 => {
+      let work_bits = bits + 64;
+
+      // Compute e^int using repeated squaring
+      let e_const = cc.e(work_bits, rm);
+      let e_int = bigfloat_powi(&e_const, n as i128, work_bits, rm)?;
+
+      // Compute exp(frac) using native exp (safe: 0 <= frac < 1)
+      let frac_part = x_abs.fract();
+      let e_frac = if frac_part.is_zero() {
+        BigFloat::from_i32(1, work_bits)
+      } else {
+        frac_part.exp(work_bits, rm, cc)
+      };
+
+      // Combine: exp(|x|) = e^int * exp(frac)
+      let result = e_int.mul(&e_frac, bits, rm);
+
+      if x.is_negative() {
+        let one = BigFloat::from_i32(1, bits);
+        Ok(one.div(&result, bits, rm))
+      } else {
+        Ok(result)
+      }
+    }
+    _ => {
+      // Fallback for very large values
+      Ok(x.exp(bits, rm, cc))
+    }
+  }
+}
+
+/// Compute base^exp safely for arbitrary (non-integer) exponents.
+/// Uses exp(exp * ln(base)) with the safe exp implementation.
+fn bigfloat_pow_safe(
+  base: &astro_float::BigFloat,
+  exp: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<astro_float::BigFloat, InterpreterError> {
+  use astro_float::BigFloat;
+
+  // Handle special cases matching BigFloat::pow behavior
+  if exp.is_zero() {
+    return Ok(BigFloat::from_i32(1, bits));
+  }
+  if base.is_zero() {
+    return Ok(BigFloat::from_i32(0, bits));
+  }
+
+  let work_bits = bits + 64;
+
+  // base^exp = exp(exp * ln(base))
+  let ln_base = base.abs().ln(work_bits, rm, cc);
+  if ln_base.is_nan() {
+    return Err(InterpreterError::EvaluationError(
+      "N: logarithm of non-positive number".into(),
+    ));
+  }
+  let product = exp.mul(&ln_base, work_bits, rm);
+  bigfloat_exp_safe(&product, bits, rm, cc)
+}
+
 /// Convert a BigFloat to a decimal string using num-bigint for the base
 /// conversion, avoiding astro-float's `format()` which panics on wasm32.
 /// If `max_digits` is Some(n), truncate the output to at most n significant digits.
@@ -389,6 +564,15 @@ pub fn expr_to_bigfloat(
       Ok(val.neg())
     }
     Expr::BinaryOp { op, left, right } => {
+      // For integer exponents, use repeated squaring via mul() instead of
+      // BigFloat::pow which calls exp(n*ln(base)) and panics on wasm32
+      // due to int_as_usize() requiring usize >= Word (u64).
+      if matches!(op, BinaryOperator::Power)
+        && let Some(n) = try_as_integer(right)
+      {
+        let base = expr_to_bigfloat(left, bits, rm, cc)?;
+        return bigfloat_powi(&base, n, bits, rm);
+      }
       let l = expr_to_bigfloat(left, bits, rm, cc)?;
       let r = expr_to_bigfloat(right, bits, rm, cc)?;
       match op {
@@ -396,7 +580,7 @@ pub fn expr_to_bigfloat(
         BinaryOperator::Minus => Ok(l.sub(&r, bits, rm)),
         BinaryOperator::Times => Ok(l.mul(&r, bits, rm)),
         BinaryOperator::Divide => Ok(l.div(&r, bits, rm)),
-        BinaryOperator::Power => Ok(l.pow(&r, bits, rm, cc)),
+        BinaryOperator::Power => bigfloat_pow_safe(&l, &r, bits, rm, cc),
         _ => Err(InterpreterError::EvaluationError(
           "N: unsupported binary operator for arbitrary precision".into(),
         )),
@@ -427,7 +611,7 @@ pub fn expr_to_bigfloat(
         }
         "Exp" if args.len() == 1 => {
           let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
-          Ok(v.exp(bits, rm, cc))
+          bigfloat_exp_safe(&v, bits, rm, cc)
         }
         "Log" if args.len() == 1 => {
           let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
@@ -496,9 +680,13 @@ pub fn expr_to_bigfloat(
           Ok(result)
         }
         "Power" if args.len() == 2 => {
+          if let Some(n) = try_as_integer(&args[1]) {
+            let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+            return bigfloat_powi(&base, n, bits, rm);
+          }
           let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           let exp = expr_to_bigfloat(&args[1], bits, rm, cc)?;
-          Ok(base.pow(&exp, bits, rm, cc))
+          bigfloat_pow_safe(&base, &exp, bits, rm, cc)
         }
         _ => Err(InterpreterError::EvaluationError(format!(
           "N: cannot evaluate {}[...] to arbitrary precision",
