@@ -125,6 +125,18 @@ pub fn expand_expr(expr: &Expr) -> Expr {
       }
     }
 
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let expanded_operands: Vec<Expr> =
+        operands.iter().map(expand_and_combine).collect();
+      Expr::Comparison {
+        operands: expanded_operands,
+        operators: operators.clone(),
+      }
+    }
+
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Plus" => {
         let expanded_args: Vec<Expr> = args.iter().map(expand_expr).collect();
@@ -601,6 +613,23 @@ pub fn expand_all_recursive(expr: &Expr) -> Expr {
         op: *op,
         operand: Box::new(operand_exp),
       })
+    }
+
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let expanded_operands: Vec<Expr> = operands
+        .iter()
+        .map(|op| {
+          let expanded = expand_all_recursive(op);
+          expand_and_combine(&expanded)
+        })
+        .collect();
+      Expr::Comparison {
+        operands: expanded_operands,
+        operators: operators.clone(),
+      }
     }
 
     Expr::FunctionCall { name, args } => {

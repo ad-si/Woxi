@@ -155,6 +155,30 @@ mod expand {
       "1 + 2*x + x^2 + 2*y + 2*x*y + y^2"
     );
   }
+
+  #[test]
+  fn expand_inside_equal() {
+    assert_eq!(
+      interpret("Expand[(x - 1)*(x^2 + 1) == 0]").unwrap(),
+      "-1 + x - x^2 + x^3 == 0"
+    );
+  }
+
+  #[test]
+  fn expand_inside_comparison() {
+    assert_eq!(
+      interpret("Expand[(a + b)^2 == (c + d)^2]").unwrap(),
+      "a^2 + 2*a*b + b^2 == c^2 + 2*c*d + d^2"
+    );
+  }
+
+  #[test]
+  fn expand_inside_inequality() {
+    assert_eq!(
+      interpret("Expand[(x + 1)^2 > x]").unwrap(),
+      "1 + 2*x + x^2 > x"
+    );
+  }
 }
 
 mod simplify {
