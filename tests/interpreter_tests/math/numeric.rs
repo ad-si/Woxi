@@ -100,6 +100,48 @@ mod n_arbitrary_precision {
     // NumberQ[N[Pi, 50]] should be True
     assert_eq!(interpret("NumberQ[N[Pi, 50]]").unwrap(), "True");
   }
+
+  #[test]
+  fn n_exp_negative_integer() {
+    // N[Exp[-2], 10] — uses E^(-2) with integer power
+    let result = interpret("N[Exp[-2], 10]").unwrap();
+    assert!(result.starts_with("0.13533528323661269"));
+    assert!(result.ends_with("`10."));
+
+    // N[Exp[-2], 20]
+    let result = interpret("N[Exp[-2], 20]").unwrap();
+    assert!(result.starts_with("0.13533528323661269189"));
+    assert!(result.ends_with("`20."));
+
+    // N[Exp[-1], 10]
+    let result = interpret("N[Exp[-1], 10]").unwrap();
+    assert!(result.starts_with("0.36787944117144232"));
+    assert!(result.ends_with("`10."));
+
+    // N[Exp[-3], 10]
+    let result = interpret("N[Exp[-3], 10]").unwrap();
+    assert!(result.starts_with("0.049787068367863942"));
+    assert!(result.ends_with("`10."));
+  }
+
+  #[test]
+  fn n_exp_positive_integer_power() {
+    // N[E^2, 10] — integer power of E
+    let result = interpret("N[E^2, 10]").unwrap();
+    assert!(result.starts_with("7.38905609893065022"));
+    assert!(result.ends_with("`10."));
+
+    // N[Pi^2, 10] — integer power of Pi
+    let result = interpret("N[Pi^2, 10]").unwrap();
+    assert!(result.starts_with("9.86960440108935861"));
+    assert!(result.ends_with("`10."));
+  }
+
+  #[test]
+  fn n_exp_default_precision() {
+    // N[Exp[-2]] — should return f64 precision
+    assert_eq!(interpret("N[Exp[-2]]").unwrap(), "0.1353352832366127");
+  }
 }
 
 mod real_precision {
