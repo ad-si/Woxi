@@ -612,11 +612,14 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
     Expr::Integer(n) => Some((*n as f64, 0.0)),
     Expr::Real(f) => Some((*f, 0.0)),
     Expr::BigFloat(digits, _) => Some((digits.parse::<f64>().ok()?, 0.0)),
-    Expr::Constant(name) => Some((match name.as_str() {
-      "Pi" => std::f64::consts::PI,
-      "E" => std::f64::consts::E,
-      _ => return None,
-    }, 0.0)),
+    Expr::Constant(name) => Some((
+      match name.as_str() {
+        "Pi" => std::f64::consts::PI,
+        "E" => std::f64::consts::E,
+        _ => return None,
+      },
+      0.0,
+    )),
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
