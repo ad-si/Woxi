@@ -173,16 +173,16 @@ function renderOutputItems(items) {
       div.innerHTML = item.svg
       outputsEl.appendChild(div)
     } else if (item.type === "text") {
-      if (item.svg) {
-        const div = document.createElement("div")
-        div.className = "output-box text-box"
-        div.innerHTML = item.svg
-        outputsEl.appendChild(div)
-      } else {
+      if (item.text) {
         const pre = document.createElement("pre")
         pre.className = "output-box text-box"
         pre.textContent = item.text
         outputsEl.appendChild(pre)
+      } else if (item.svg) {
+        const div = document.createElement("div")
+        div.className = "output-box text-box"
+        div.innerHTML = item.svg
+        outputsEl.appendChild(div)
       }
     } else if (item.type === "print") {
       const pre = document.createElement("pre")

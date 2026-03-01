@@ -282,9 +282,6 @@ button {
   padding: 0.4rem 0.6rem;
   border: 2px solid var(--output-border);
   border-radius: 4px;
-  overflow-x: auto;
-  overflow-y: auto;
-  max-height: 500px;
 }
 
 pre.output-box {
@@ -302,19 +299,16 @@ pre.output-box {
   line-height: 1.5;
 }
 
-.output-box.text-box svg {
-  max-width: none;
-  display: block;
-}
-
 .output-box.graphics-box {
   background: var(--surface);
   text-align: center;
 }
 
 .output-box.graphics-box svg {
+  width: 100%;
   max-width: 100%;
   height: auto;
+  display: block;
 }
 
 .output-box.warning-box {
