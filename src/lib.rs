@@ -1710,14 +1710,24 @@ pub fn insert_statement_separators(input: &str) -> String {
     if ch == '\n' && depth == 0 {
       // Only add `;` if the current line had actual code (not just comments/whitespace)
       // and doesn't already end with `;` or `:=` or `/:` (TagSet continuation)
+      // or an operator character (indicating the expression continues on the next line)
       let ends_with_set_delayed =
         last_code_char == Some('=') && prev_code_char == Some(':');
       let ends_with_tag_set =
         last_code_char == Some(':') && prev_code_char == Some('/');
+      // Line ending with an operator means the expression continues on the next line
+      let ends_with_operator = matches!(
+        last_code_char,
+        Some('+' | '-' | '*' | '/' | '^' | '@' | '~' | ',' | '=' | '<' | '|')
+      ) || (last_code_char == Some('>')
+        && matches!(prev_code_char, Some('-' | ':' | '>')))  // -> or :> or >> or >>>
+        || (last_code_char == Some('&')
+        && prev_code_char == Some('&')); // &&
       let needs_semi = line_has_code
         && last_code_char != Some(';')
         && !ends_with_set_delayed
-        && !ends_with_tag_set;
+        && !ends_with_tag_set
+        && !ends_with_operator;
 
       if needs_semi {
         // Defer the semicolon — record position before the newline

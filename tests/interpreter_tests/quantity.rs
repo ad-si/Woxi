@@ -1449,3 +1449,44 @@ fn unit_convert_singular_target_playground_display() {
   .unwrap();
   assert_eq!(result.result, "44.442 km/h");
 }
+
+/// Regression tests for Gigapascals, Megapascals, Kilopascals unit support
+#[test]
+fn gigapascals_to_pascals() {
+  clear_state();
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Gigapascals\"], \"Pascals\"]")
+      .unwrap(),
+    "Quantity[1000000000, Pascals]"
+  );
+}
+
+#[test]
+fn megapascals_to_pascals() {
+  clear_state();
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Megapascals\"], \"Pascals\"]")
+      .unwrap(),
+    "Quantity[1000000, Pascals]"
+  );
+}
+
+#[test]
+fn kilopascals_to_pascals() {
+  clear_state();
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Kilopascals\"], \"Pascals\"]")
+      .unwrap(),
+    "Quantity[1000, Pascals]"
+  );
+}
+
+#[test]
+fn gigapascals_200_to_pascals() {
+  clear_state();
+  assert_eq!(
+    interpret("UnitConvert[Quantity[200, \"Gigapascals\"], \"Pascals\"]")
+      .unwrap(),
+    "Quantity[200000000000, Pascals]"
+  );
+}

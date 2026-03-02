@@ -176,11 +176,11 @@ LeadingNot = { "!" ~ !"=" ~ !"!" }
 // Must not be followed by "=" (which would be != operator)
 FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (Operator ~ Term ~ FactorialSuffix?)*
+    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (Operator ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ (Operator ~ Term)* ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
+    ~ (AnonymousFunctionSuffix ~ (Operator ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -295,11 +295,11 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?) ~ (Operator ~ TermNoImplicit ~ FactorialSuffix?)*
+    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?) ~ (Operator ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
-    ~ (AnonymousFunctionSuffix ~ (Operator ~ TermNoImplicit)* ~ ("//" ~ PostfixFunction)*)?
+    ~ (AnonymousFunctionSuffix ~ (Operator ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
@@ -310,7 +310,7 @@ PatternTest = { PatternName? ~ "_" ~ "?" ~ PatternTestFunc }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
-    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (ConditionOp ~ Term ~ FactorialSuffix?)*
+    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (ConditionOp ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 ConditionOp = {
@@ -321,7 +321,14 @@ ConditionOp = {
   | "<=" | ">=" | "<" | ">"       // Order comparison
   | "+" | "-" | "*" | "/" | "^"   // Arithmetic
   | "&&" | "||"                   // Logical
-  | "/@" | "@@"                   // Map/Apply
+  | "/@"                          // Map (must be before @)
+  | "@@@"                         // MapApply (must be before @@)
+  | "@@"                          // Apply (must be before @)
+  | "@"                           // Prefix application
+  | "|"                           // Alternatives
+  | "<>"                          // StringJoin
+  | "~~"                          // StringExpression
+  | "." ~ !ASCII_DIGIT ~ !"."    // Dot operator
 }
 PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
 // PatternOptional: x_ : default or x_Head : default (Optional pattern with default value)

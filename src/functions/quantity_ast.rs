@@ -218,6 +218,21 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       to_si_numer: 101325,
       to_si_denom: 1,
     },
+    "Kilopascals" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
+      to_si_numer: 1000,
+      to_si_denom: 1,
+    },
+    "Megapascals" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
+      to_si_numer: 1_000_000,
+      to_si_denom: 1,
+    },
+    "Gigapascals" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, -1), (Time, -2)]),
+      to_si_numer: 1_000_000_000,
+      to_si_denom: 1,
+    },
 
     // ── Energy: Joules = kg⋅m²/s² ────────────────────────────────────
     "Joules" => UnitInfo {
@@ -637,6 +652,9 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "C" => "Coulombs",
     "N" => "Newtons",
     "Pa" => "Pascals",
+    "kPa" => "Kilopascals",
+    "MPa" => "Megapascals",
+    "GPa" => "Gigapascals",
     "bar" => "Bars",
     "atm" => "Atmospheres",
     "Ω" => "Ohms",
@@ -1105,6 +1123,9 @@ pub fn unit_to_abbreviation(name: &str) -> Option<&'static str> {
     "Coulombs" => Some("C"),
     "Newtons" => Some("N"),
     "Pascals" => Some("Pa"),
+    "Kilopascals" => Some("kPa"),
+    "Megapascals" => Some("MPa"),
+    "Gigapascals" => Some("GPa"),
     "Bars" => Some("bar"),
     "Atmospheres" => Some("atm"),
     "Ohms" => Some("\u{03a9}"),     // Ω

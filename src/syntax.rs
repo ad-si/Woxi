@@ -2263,8 +2263,11 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
   for item in inner {
     match item.as_rule() {
       Rule::LeadingMinus => {
-        // Insert synthetic 0 and "-" operator so that -x^2 becomes 0 - x^2
-        // This ensures ^ binds tighter than unary minus
+        // Insert synthetic 0 and "NEGATE" operator so that -x^2 becomes 0 - x^2
+        // NEGATE has higher precedence than * but lower than ^, matching
+        // Wolfram Language's PreMinus precedence (between Times and Power).
+        // This ensures ^ binds tighter than unary minus, and also works
+        // correctly after other operators: a * -b^2 → a * (-(b^2))
         leading_minus = true;
       }
       Rule::LeadingNot => {
@@ -2291,7 +2294,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       _ => {
         if leading_minus {
           terms.push(Expr::Integer(0));
-          operators.push("-".to_string());
+          operators.push("NEGATE".to_string());
           leading_minus = false;
         }
         let expr = pair_to_expr(item);
@@ -2436,8 +2439,17 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       while let Some(op_pair) = iter.next() {
         if op_pair.as_rule() == Rule::Operator {
           post_ops.push(op_pair.as_str().to_string());
-          if let Some(term_pair) = iter.next() {
-            post_terms.push(pair_to_expr(term_pair));
+          // Check for LeadingMinus after operator
+          if let Some(next_pair) = iter.next() {
+            if next_pair.as_rule() == Rule::LeadingMinus {
+              post_terms.push(Expr::Integer(0));
+              post_ops.push("NEGATE".to_string());
+              if let Some(term_pair) = iter.next() {
+                post_terms.push(pair_to_expr(term_pair));
+              }
+            } else {
+              post_terms.push(pair_to_expr(next_pair));
+            }
           }
         }
       }
@@ -2484,6 +2496,7 @@ fn operator_precedence(op: &str) -> u8 {
     "@@@" | "@@" => 13, // Apply/MapApply
     "/@" => 14, // Map (higher than Apply)
     "@" => 15, // Prefix application (higher than Map)
+    "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
     "^" => 16, // Power (highest)
     _ => 0,
   }
@@ -2566,7 +2579,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),
     },
-    "-" => Expr::BinaryOp {
+    "-" | "NEGATE" => Expr::BinaryOp {
       op: BinaryOperator::Minus,
       left: Box::new(left.clone()),
       right: Box::new(right.clone()),

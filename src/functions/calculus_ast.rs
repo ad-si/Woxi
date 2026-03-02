@@ -883,6 +883,40 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           },
           var,
         ),
+        "Sqrt" if args.len() == 1 => {
+          // d/dx[sqrt(f(x))] = f'(x) / (2 * sqrt(f(x)))
+          let df = differentiate(&args[0], var)?;
+          if matches!(df, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(df),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(Expr::Integer(2)),
+              right: Box::new(Expr::FunctionCall {
+                name: "Sqrt".to_string(),
+                args: args.clone(),
+              }),
+            }),
+          }))
+        }
+        // Handle Abs[f(x)]: d/dx[|f|] = f'*Sign[f] (for real f ≠ 0)
+        "Abs" if args.len() == 1 => {
+          let df = differentiate(&args[0], var)?;
+          if matches!(df, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(df),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sign".to_string(),
+              args: args.clone(),
+            }),
+          }))
+        }
         // Handle Rational[n, d] as constant
         "Rational" if args.len() == 2 => Ok(Expr::Integer(0)),
         _ => Ok(Expr::FunctionCall {
