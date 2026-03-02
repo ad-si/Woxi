@@ -333,6 +333,9 @@ pub fn dispatch_predicate_functions(
     "SubsetQ" if args.len() == 2 => {
       return Some(crate::functions::predicate_ast::subset_q_ast(args));
     }
+    "PossibleZeroQ" => {
+      return Some(crate::functions::predicate_ast::possible_zero_q_ast(args));
+    }
     "OptionQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::option_q_ast(args));
     }

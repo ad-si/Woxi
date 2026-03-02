@@ -679,3 +679,167 @@ mod abs_infinity {
     assert_eq!(interpret("Abs[ComplexInfinity]").unwrap(), "Infinity");
   }
 }
+
+mod possible_zero_q {
+  use super::*;
+
+  #[test]
+  fn literal_zero() {
+    assert_eq!(interpret("PossibleZeroQ[0]").unwrap(), "True");
+  }
+
+  #[test]
+  fn real_zero() {
+    assert_eq!(interpret("PossibleZeroQ[0.0]").unwrap(), "True");
+  }
+
+  #[test]
+  fn nonzero_integer() {
+    assert_eq!(interpret("PossibleZeroQ[1]").unwrap(), "False");
+  }
+
+  #[test]
+  fn nonzero_negative() {
+    assert_eq!(interpret("PossibleZeroQ[-3]").unwrap(), "False");
+  }
+
+  #[test]
+  fn nonzero_real() {
+    assert_eq!(interpret("PossibleZeroQ[1.5]").unwrap(), "False");
+  }
+
+  #[test]
+  fn nonzero_rational() {
+    assert_eq!(interpret("PossibleZeroQ[1/2]").unwrap(), "False");
+  }
+
+  #[test]
+  fn rational_cancel_to_zero() {
+    assert_eq!(interpret("PossibleZeroQ[3/4 - 3/4]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_cancel() {
+    assert_eq!(interpret("PossibleZeroQ[x - x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_cancel_with_coeff() {
+    assert_eq!(interpret("PossibleZeroQ[2*a - 2*a]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_cancel_power() {
+    assert_eq!(interpret("PossibleZeroQ[a^2 - a^2]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_unknown_false() {
+    assert_eq!(interpret("PossibleZeroQ[x]").unwrap(), "False");
+  }
+
+  #[test]
+  fn sin_zero() {
+    assert_eq!(interpret("PossibleZeroQ[Sin[0]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn sin_pi() {
+    assert_eq!(interpret("PossibleZeroQ[Sin[Pi]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn cos_pi_half() {
+    assert_eq!(interpret("PossibleZeroQ[Cos[Pi/2]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn cos_zero_minus_one() {
+    assert_eq!(interpret("PossibleZeroQ[Cos[0] - 1]").unwrap(), "True");
+  }
+
+  #[test]
+  fn log_one() {
+    assert_eq!(interpret("PossibleZeroQ[Log[1]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn sqrt_cancel() {
+    assert_eq!(
+      interpret("PossibleZeroQ[Sqrt[2] - Sqrt[2]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn constant_subtract() {
+    assert_eq!(interpret("PossibleZeroQ[E - E]").unwrap(), "True");
+  }
+
+  #[test]
+  fn nonzero_constant_pi() {
+    assert_eq!(interpret("PossibleZeroQ[Pi]").unwrap(), "False");
+  }
+
+  #[test]
+  fn nonzero_sum() {
+    assert_eq!(interpret("PossibleZeroQ[2 + 3]").unwrap(), "False");
+  }
+
+  #[test]
+  fn complex_i_false() {
+    assert_eq!(interpret("PossibleZeroQ[I]").unwrap(), "False");
+  }
+
+  #[test]
+  fn complex_zero() {
+    assert_eq!(interpret("PossibleZeroQ[0 + 0*I]").unwrap(), "True");
+  }
+
+  #[test]
+  fn zero_times_i() {
+    assert_eq!(interpret("PossibleZeroQ[0*I]").unwrap(), "True");
+  }
+
+  #[test]
+  fn infinity_false() {
+    assert_eq!(interpret("PossibleZeroQ[Infinity]").unwrap(), "False");
+  }
+
+  #[test]
+  fn neg_infinity_false() {
+    assert_eq!(interpret("PossibleZeroQ[-Infinity]").unwrap(), "False");
+  }
+
+  #[test]
+  fn complex_infinity_false() {
+    assert_eq!(
+      interpret("PossibleZeroQ[ComplexInfinity]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn boolean_false() {
+    assert_eq!(interpret("PossibleZeroQ[True]").unwrap(), "False");
+  }
+
+  #[test]
+  fn string_false() {
+    assert_eq!(interpret("PossibleZeroQ[\"hello\"]").unwrap(), "False");
+  }
+
+  #[test]
+  fn x_squared_plus_one_false() {
+    assert_eq!(interpret("PossibleZeroQ[x^2 + 1]").unwrap(), "False");
+  }
+
+  #[test]
+  fn wrong_arg_count_unevaluated() {
+    assert_eq!(interpret("PossibleZeroQ[]").unwrap(), "PossibleZeroQ[]");
+    assert_eq!(
+      interpret("PossibleZeroQ[1, 2]").unwrap(),
+      "PossibleZeroQ[1, 2]"
+    );
+  }
+}
