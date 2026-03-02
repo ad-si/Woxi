@@ -157,6 +157,26 @@ pub fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
+  // Try combining like-denominator terms
+  let with_fracs = combine_like_denominator_terms(&best);
+  {
+    let c = leaf_count(&with_fracs);
+    if c < best_complexity {
+      best = with_fracs;
+      best_complexity = c;
+    }
+  }
+
+  // Try Together + factor + cancel
+  let together = try_together_simplify(&best);
+  {
+    let c = leaf_count(&together);
+    if c < best_complexity {
+      best = together;
+      best_complexity = c;
+    }
+  }
+
   let _ = best_complexity; // suppress unused warning
   best
 }
@@ -211,7 +231,23 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
       ..
     } => {
       let combined = expand_and_combine(expr);
-      apply_trig_identities(&combined)
+      let trig = apply_trig_identities(&combined);
+      let mut best = trig;
+      let mut best_c = leaf_count(&best);
+      // Try combining like-denominator terms
+      let with_fracs = combine_like_denominator_terms(&best);
+      let c = leaf_count(&with_fracs);
+      if c < best_c {
+        best = with_fracs;
+        best_c = c;
+      }
+      // Try Together + factor + cancel
+      let together = try_together_simplify(&best);
+      let c = leaf_count(&together);
+      if c < best_c {
+        best = together;
+      }
+      best
     }
 
     Expr::UnaryOp { op, operand } => {
@@ -226,7 +262,21 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Plus" => {
         let combined = expand_and_combine(expr);
-        apply_trig_identities(&combined)
+        let trig = apply_trig_identities(&combined);
+        let mut best = trig;
+        let mut best_c = leaf_count(&best);
+        let with_fracs = combine_like_denominator_terms(&best);
+        let c = leaf_count(&with_fracs);
+        if c < best_c {
+          best = with_fracs;
+          best_c = c;
+        }
+        let together = try_together_simplify(&best);
+        let c = leaf_count(&together);
+        if c < best_c {
+          best = together;
+        }
+        best
       }
       "Times" if args.len() == 2 => {
         let l = simplify_expr(&args[0]);
@@ -635,6 +685,143 @@ pub fn coeffs_to_expr(coeffs: &[i128], var: &str) -> Expr {
   } else {
     build_sum(terms)
   }
+}
+
+/// Group additive terms by their denominator and combine like-denominator groups.
+/// E.g. a/x + b/x + c/y → (a + b)/x + c/y
+fn combine_like_denominator_terms(expr: &Expr) -> Expr {
+  let terms = collect_additive_terms(expr);
+  if terms.len() < 2 {
+    return expr.clone();
+  }
+
+  // Extract (numerator, denominator) for each term
+  let fractions: Vec<(Expr, Expr)> =
+    terms.iter().map(extract_num_den).collect();
+
+  // Group terms by denominator string
+  let mut groups: Vec<(String, Expr, Vec<Expr>)> = Vec::new(); // (den_str, den_expr, numerators)
+  for (num, den) in &fractions {
+    let den_str = expr_to_string(den);
+    if let Some(group) = groups.iter_mut().find(|(ds, _, _)| *ds == den_str) {
+      group.2.push(num.clone());
+    } else {
+      groups.push((den_str, den.clone(), vec![num.clone()]));
+    }
+  }
+
+  // If no group has >1 term, no combining happened
+  if groups.iter().all(|(_, _, nums)| nums.len() <= 1) {
+    return expr.clone();
+  }
+
+  // Build combined terms
+  let mut result_terms: Vec<Expr> = Vec::new();
+  for (_, den, nums) in groups {
+    let combined_num = if nums.len() == 1 {
+      nums.into_iter().next().unwrap()
+    } else {
+      expand_and_combine(&build_sum(nums))
+    };
+    if matches!(&den, Expr::Integer(1)) {
+      result_terms.push(combined_num);
+    } else {
+      result_terms.push(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(combined_num),
+        right: Box::new(den),
+      });
+    }
+  }
+
+  if result_terms.len() == 1 {
+    result_terms.remove(0)
+  } else {
+    build_sum(result_terms)
+  }
+}
+
+/// Try Together + factor + cancel to simplify a sum of fractions.
+fn try_together_simplify(expr: &Expr) -> Expr {
+  let combined = together_expr(expr);
+
+  // If result is a fraction, try to factor and cancel
+  match &combined {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let num = *left.clone();
+      let den = *right.clone();
+
+      // Factor the numerator aggressively: extract numeric GCD, then symbolic common factors
+      let factored_num = factor_numerator_fully(&num);
+
+      // Cancel common factors between numerator and denominator
+      cancel_symbolic_factors(&factored_num, &den)
+    }
+    _ => combined,
+  }
+}
+
+/// Factor a numerator fully: extract numeric GCD, then factor common symbolic terms.
+fn factor_numerator_fully(num: &Expr) -> Expr {
+  // First try FactorTerms (numeric GCD)
+  let after_numeric = if let Ok(f) =
+    crate::functions::polynomial_ast::factor_terms_ast(&[num.clone()])
+  {
+    f
+  } else {
+    num.clone()
+  };
+
+  // If FactorTerms produced coeff * inner_sum, try factor_common_symbolic on the inner sum
+  let factored = extract_and_factor_inner_sum(&after_numeric);
+
+  // Also try factor_common_symbolic directly on the original (in case FactorTerms didn't help)
+  let terms = collect_additive_terms(num);
+  if terms.len() >= 2
+    && let Some(f) = factor_common_symbolic(num, &terms)
+  {
+    // Pick the more factored form (fewer leaves)
+    if leaf_count(&f) <= leaf_count(&factored) {
+      return f;
+    }
+  }
+
+  factored
+}
+
+/// If expr is a product containing a sum factor, try factor_common_symbolic on that sum.
+/// E.g. 2*(a^4*k*q + a^4*k*q*(1+s)^(15/4)) → 2*a^4*k*q*(1 + (1+s)^(15/4))
+fn extract_and_factor_inner_sum(expr: &Expr) -> Expr {
+  let factors = collect_multiplicative_factors(expr);
+  if factors.len() < 2 {
+    return expr.clone();
+  }
+
+  // Find a factor that is a sum (has multiple additive terms)
+  for (idx, f) in factors.iter().enumerate() {
+    let terms = collect_additive_terms(f);
+    if terms.len() >= 2 {
+      // Try to factor out common symbolic factors from this sum
+      if let Some(factored_sum) = factor_common_symbolic(f, &terms) {
+        // Rebuild the product with the factored sum replacing the original
+        let mut new_factors: Vec<Expr> = Vec::new();
+        for (j, g) in factors.iter().enumerate() {
+          if j == idx {
+            new_factors.push(factored_sum.clone());
+          } else {
+            new_factors.push(g.clone());
+          }
+        }
+        return build_product(new_factors);
+      }
+    }
+  }
+
+  expr.clone()
 }
 
 /// Count the complexity of an expression (leaf nodes + internal nodes).

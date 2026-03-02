@@ -219,6 +219,30 @@ mod simplify {
   fn pythagorean_with_extra_terms() {
     assert_eq!(interpret("Simplify[Sin[y]^2 + Cos[y]^2 + 1]").unwrap(), "2");
   }
+
+  #[test]
+  fn combine_like_denominator_fractions() {
+    assert_eq!(interpret("Simplify[a/x + b/x]").unwrap(), "(a + b)/x");
+  }
+
+  #[test]
+  fn combine_like_denominator_with_extra() {
+    assert_eq!(
+      interpret("Simplify[a/x + b/x + c/y]").unwrap(),
+      "(a + b)/x + c/y"
+    );
+  }
+
+  #[test]
+  fn combine_fractions_different_denominators() {
+    assert_eq!(
+      interpret(
+        "Simplify[k*q/(2*a^4*(1 + s)^(3/2)) + k*q*(1 + s)^(9/4)/(2*a^4)]"
+      )
+      .unwrap(),
+      "(k*q*(1 + (1 + s)^(15/4)))/(2*(1 + s)^(3/2)*a^4)"
+    );
+  }
 }
 
 mod factor {
@@ -1263,6 +1287,22 @@ mod full_simplify {
   fn trivial() {
     assert_eq!(interpret("FullSimplify[5]").unwrap(), "5");
     assert_eq!(interpret("FullSimplify[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn combine_like_denominator_fractions() {
+    assert_eq!(interpret("FullSimplify[a/x + b/x]").unwrap(), "(a + b)/x");
+  }
+
+  #[test]
+  fn combine_fractions_different_denominators() {
+    assert_eq!(
+      interpret(
+        "FullSimplify[k*q/(2*a^4*(1 + s)^(3/2)) + k*q*(1 + s)^(9/4)/(2*a^4)]"
+      )
+      .unwrap(),
+      "(k*q*(1 + (1 + s)^(15/4)))/(2*(1 + s)^(3/2)*a^4)"
+    );
   }
 }
 
