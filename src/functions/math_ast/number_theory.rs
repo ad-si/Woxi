@@ -180,6 +180,23 @@ pub fn gcd_helper(a: i128, b: i128) -> i128 {
   if b == 0 { a } else { gcd_helper(b, a % b) }
 }
 
+/// Compute the product of all integers in [lo, hi] using a balanced
+/// product tree. This keeps intermediate results smaller than the
+/// naive left-to-right accumulation, which is faster for BigInt
+/// multiplication (see Fateman, "Comments on Factorial Programs").
+fn product_tree(lo: i128, hi: i128) -> BigInt {
+  if lo > hi {
+    BigInt::from(1)
+  } else if lo == hi {
+    BigInt::from(lo)
+  } else if hi - lo == 1 {
+    BigInt::from(lo) * BigInt::from(hi)
+  } else {
+    let mid = lo + (hi - lo) / 2;
+    product_tree(lo, mid) * product_tree(mid + 1, hi)
+  }
+}
+
 /// Factorial[n] or n!
 pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -193,11 +210,10 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Factorial: argument must be non-negative".into(),
       ));
     }
-    let mut result = BigInt::from(1);
-    for i in 2..=n {
-      result *= i;
+    if n <= 1 {
+      return Ok(Expr::Integer(1));
     }
-    Ok(bigint_to_expr(result))
+    Ok(bigint_to_expr(product_tree(2, n)))
   } else {
     Ok(Expr::FunctionCall {
       name: "Factorial".to_string(),
