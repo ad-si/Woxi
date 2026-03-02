@@ -446,13 +446,54 @@ pub fn evaluate_function_call_ast_inner(
 
       // Check all conditions (if any) by substituting params with args and evaluating
       let mut conditions_met = true;
+      // Collect bindings from structural pattern matches for body substitution
+      let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
       for cond_opt in conditions.iter() {
         if let Some(cond_expr) = cond_opt {
+          // Check for __StructuralPattern__ marker — use match_pattern instead of eval
+          if let Expr::FunctionCall {
+            name: marker_name,
+            args: marker_args,
+          } = cond_expr
+            && marker_name == "__StructuralPattern__"
+            && marker_args.len() == 2
+            && let Expr::Identifier(param_name) = &marker_args[0]
+          {
+            let pattern = &marker_args[1];
+            // Find the effective arg for this structural param
+            if let Some(idx) = params.iter().position(|p| p == param_name) {
+              if idx < effective_args.len() {
+                if let Some(bindings) =
+                  crate::evaluator::pattern_matching::match_pattern(
+                    &effective_args[idx],
+                    pattern,
+                  )
+                {
+                  structural_bindings.extend(bindings);
+                } else {
+                  conditions_met = false;
+                  break;
+                }
+              } else {
+                conditions_met = false;
+                break;
+              }
+            }
+            continue;
+          }
           // Substitute all parameters with their argument values in the condition
           let mut substituted_cond = cond_expr.clone();
           for (param, arg) in params.iter().zip(effective_args.iter()) {
             substituted_cond =
               crate::syntax::substitute_variable(&substituted_cond, param, arg);
+          }
+          // Also substitute structural pattern bindings into conditions
+          for (bind_name, bind_val) in &structural_bindings {
+            substituted_cond = crate::syntax::substitute_variable(
+              &substituted_cond,
+              bind_name,
+              bind_val,
+            );
           }
           // Evaluate the condition - it must return True
           match evaluate_expr_to_expr(&substituted_cond) {
@@ -472,6 +513,11 @@ pub fn evaluate_function_call_ast_inner(
       for (param, arg) in params.iter().zip(effective_args.iter()) {
         substituted =
           crate::syntax::substitute_variable(&substituted, param, arg);
+      }
+      // Also substitute structural pattern bindings (e.g., x from 1/x_ matching 1/y → x=y)
+      for (bind_name, bind_val) in &structural_bindings {
+        substituted =
+          crate::syntax::substitute_variable(&substituted, bind_name, bind_val);
       }
       // Tail-call: return body for the trampoline to evaluate.
       // Catch Return[] at the function call boundary via local trampoline.

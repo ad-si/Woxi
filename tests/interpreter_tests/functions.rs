@@ -790,6 +790,47 @@ mod set_delayed {
     assert_eq!(interpret("g[4]").unwrap(), "2");
     assert_eq!(interpret("g[3]").unwrap(), "10");
   }
+
+  mod structural_patterns {
+    use super::*;
+
+    #[test]
+    fn reciprocal_pattern_does_not_match_plain_variable() {
+      // Regression: 1/x_ should NOT match plain x
+      clear_state();
+      assert_eq!(
+        interpret("Int[1/x_, x_Symbol] := Log[x]; Int[x, x]").unwrap(),
+        "Int[x, x]"
+      );
+    }
+
+    #[test]
+    fn reciprocal_pattern_matches_reciprocal() {
+      clear_state();
+      assert_eq!(
+        interpret("Int[1/x_, x_Symbol] := Log[x]; Int[1/y, y]").unwrap(),
+        "Log[y]"
+      );
+    }
+
+    #[test]
+    fn simple_reciprocal_pattern() {
+      clear_state();
+      assert_eq!(interpret("f[1/x_] := Log[x]; f[1/y]").unwrap(), "Log[y]");
+    }
+
+    #[test]
+    fn sum_pattern() {
+      clear_state();
+      assert_eq!(interpret("f[a_ + b_] := a * b; f[x + y]").unwrap(), "x*y");
+    }
+
+    #[test]
+    fn sum_pattern_does_not_match_non_sum() {
+      clear_state();
+      assert_eq!(interpret("f[a_ + b_] := a * b; f[3]").unwrap(), "f[3]");
+    }
+  }
 }
 
 mod down_values {
