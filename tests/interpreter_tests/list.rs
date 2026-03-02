@@ -954,6 +954,43 @@ mod length_function {
   }
 }
 
+mod part_paren_extended {
+  use super::*;
+
+  #[test]
+  fn paren_part_basic() {
+    // (expr)[[index]] should work for parenthesized expressions
+    assert_eq!(interpret("({a, b, c})[[2]]").unwrap(), "b");
+  }
+
+  #[test]
+  fn paren_part_with_set() {
+    // (var = expr)[[index]] should evaluate the Set and then extract Part
+    assert_eq!(interpret("(x = {10, 20, 30})[[2]]").unwrap(), "20");
+  }
+
+  #[test]
+  fn paren_part_function_result() {
+    // (FunctionCall)[[index]] where function returns a list
+    assert_eq!(interpret("(MonomialFactor[u, x])[[1]]").unwrap(), "u");
+  }
+
+  #[test]
+  fn paren_part_unsameq() {
+    // (expr)[[1]] =!= 0 should work
+    assert_eq!(
+      interpret("(MonomialFactor[u, x])[[1]] =!= 0").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn paren_part_nested_index() {
+    // (expr)[[1]][[2]] should apply Part twice
+    assert_eq!(interpret("({{a, b}, {c, d}})[[1]][[2]]").unwrap(), "b");
+  }
+}
+
 mod part_out_of_bounds {
   use super::*;
 

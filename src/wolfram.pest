@@ -78,6 +78,10 @@ ListExtended = {
       | ListCallSuffix                           // List[...] (ListCall)
     )?
 }
+// ParenExtended handles Part extraction on parenthesized expressions: (expr)[[index]]
+ParenExtended = {
+    "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" ~ PartIndexSuffix
+}
 // PartAnonymousFunction handles PartExtract& - for expressions like #[[2]]& or #[[1]] + #[[2]]&
 // Only for non-FunctionCall bases (List/Slot/Identifier). FC-based handled by FunctionCallExtended.
 // Optional BracketArgs allow direct calls: #[[2]]&[{3, 4, 5}]
@@ -239,6 +243,7 @@ Term = _{
   | SlotSequence
   | Slot
   | Association
+  | ParenExtended
   | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
@@ -284,6 +289,7 @@ TermNoImplicit = _{
   | SlotSequence
   | Slot
   | Association
+  | ParenExtended
   | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
