@@ -2310,7 +2310,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         has_any_condition = true;
       }
       Rule::PatternSimple => {
-        // Extract parameter name from pattern (e.g., "x_" -> "x")
+        // Extract parameter name from pattern (e.g., "x_" -> "x", "u__" -> "u")
         let param = item.as_str().trim_end_matches('_').to_owned();
         let param = param.split('_').next().unwrap_or(&param).to_owned();
         params.push(param);
