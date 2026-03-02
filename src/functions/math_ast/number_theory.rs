@@ -180,6 +180,23 @@ pub fn gcd_helper(a: i128, b: i128) -> i128 {
   if b == 0 { a } else { gcd_helper(b, a % b) }
 }
 
+/// Split-recursive factorial helper based on Fateman's `kg` algorithm.
+/// k(n, m) computes n * (n-m) * (n-2m) * … (down to a value ≤ m).
+/// When n is even and m > 1, factors of 2 are extracted and deferred
+/// to a single left-shift at the end, avoiding redundant bignum work.
+/// See Fateman, "Comments on Factorial Programs" (2006).
+fn kg_inner(n: i128, m: i128, shift: &mut u64) -> BigInt {
+  if n & 1 == 0 && m > 1 {
+    // n is even, m > 1: factor out 2s — k(n,m) = 2^(n/2) * k(n/2, m/2)
+    *shift += (n >> 1) as u64;
+    kg_inner(n >> 1, m >> 1, shift)
+  } else if n <= m {
+    BigInt::from(n)
+  } else {
+    kg_inner(n, m << 1, shift) * kg_inner(n - m, m << 1, shift)
+  }
+}
+
 /// Factorial[n] or n!
 pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -193,11 +210,12 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Factorial: argument must be non-negative".into(),
       ));
     }
-    let mut result = BigInt::from(1);
-    for i in 2..=n {
-      result *= i;
+    if n <= 1 {
+      return Ok(Expr::Integer(1));
     }
-    Ok(bigint_to_expr(result))
+    let mut shift: u64 = 0;
+    let result = kg_inner(n, 1, &mut shift);
+    Ok(bigint_to_expr(result << shift))
   } else {
     Ok(Expr::FunctionCall {
       name: "Factorial".to_string(),
