@@ -1841,6 +1841,16 @@ fn gcd_i128_local(a: i128, b: i128) -> i128 {
 
 /// Integrate an expression with respect to a variable
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
+  // General constant check: ∫ c dy = c*y for any expression c independent of y
+  // (handles compound expressions like x^2, Sin[x], etc. when integrating w.r.t. a different variable)
+  if is_constant_wrt(expr, var) {
+    return Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(expr.clone()),
+      right: Box::new(Expr::Identifier(var.to_string())),
+    });
+  }
+
   match expr {
     // Constant: ∫ c dx = c*x
     Expr::Integer(n) => Some(Expr::BinaryOp {

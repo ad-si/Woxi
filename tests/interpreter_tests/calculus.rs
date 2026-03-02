@@ -4,6 +4,14 @@ mod integrate_with_sum {
   use super::*;
 
   #[test]
+  fn integrate_constant_wrt_other_var() {
+    assert_eq!(interpret("Integrate[x*x, y]").unwrap(), "x^2*y");
+    assert_eq!(interpret("Integrate[Sin[x], y]").unwrap(), "y*Sin[x]");
+    assert_eq!(interpret("Integrate[Log[x], y]").unwrap(), "y*Log[x]");
+    assert_eq!(interpret("Integrate[x^2 + y, y]").unwrap(), "x^2*y + y^2/2");
+  }
+
+  #[test]
   fn integrate_polynomial() {
     assert_eq!(interpret("Integrate[x^2, x]").unwrap(), "x^3/3");
   }
