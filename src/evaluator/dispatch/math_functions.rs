@@ -23,12 +23,10 @@ pub fn dispatch_math_functions(
       if args.len() == 2 {
         return Some(crate::functions::math_ast::divide_ast(args));
       } else {
-        println!(
-          "\nDivide::argrx: Divide called with {} arguments; 2 arguments are expected.",
+        crate::emit_message(&format!(
+          "Divide::argrx: Divide called with {} arguments; 2 arguments are expected.",
           args.len()
-        );
-        use std::io::{self, Write};
-        io::stdout().flush().ok();
+        ));
         return Some(Ok(Expr::FunctionCall {
           name: "Divide".to_string(),
           args: args.to_vec(),

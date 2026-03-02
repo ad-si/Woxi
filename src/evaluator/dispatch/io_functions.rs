@@ -26,7 +26,10 @@ pub fn dispatch_io_functions(
       let content = match std::fs::read_to_string(&filename) {
         Ok(c) => c,
         Err(_) => {
-          eprintln!("Get::noopen: Cannot open {}.", filename);
+          crate::emit_message(&format!(
+            "Get::noopen: Cannot open {}.",
+            filename
+          ));
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
       };
@@ -66,7 +69,10 @@ pub fn dispatch_io_functions(
       match std::fs::write(&filename, to_write) {
         Ok(_) => return Some(Ok(Expr::Identifier("Null".to_string()))),
         Err(_e) => {
-          eprintln!("Put::noopen: Cannot open {}.", filename);
+          crate::emit_message(&format!(
+            "Put::noopen: Cannot open {}.",
+            filename
+          ));
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }
       }
@@ -99,12 +105,18 @@ pub fn dispatch_io_functions(
         {
           Ok(mut file) => {
             if file.write_all(to_write.as_bytes()).is_err() {
-              eprintln!("PutAppend::noopen: Cannot open {}.", filename);
+              crate::emit_message(&format!(
+                "PutAppend::noopen: Cannot open {}.",
+                filename
+              ));
               return Some(Ok(Expr::Identifier("$Failed".to_string())));
             }
           }
           Err(_) => {
-            eprintln!("PutAppend::noopen: Cannot open {}.", filename);
+            crate::emit_message(&format!(
+              "PutAppend::noopen: Cannot open {}.",
+              filename
+            ));
             return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
         }
@@ -358,7 +370,10 @@ pub fn dispatch_io_functions(
         }
       };
       if !std::path::Path::new(&filename).exists() {
-        eprintln!("OpenRead::noopen: Cannot open {}.", filename);
+        crate::emit_message(&format!(
+          "OpenRead::noopen: Cannot open {}.",
+          filename
+        ));
         return Some(Ok(Expr::Identifier("$Failed".to_string())));
       }
       let id = crate::register_stream(
@@ -492,7 +507,7 @@ pub fn dispatch_io_functions(
             Some(name) => return Some(Ok(Expr::Identifier(name))),
             None => {
               let stream_str = crate::syntax::expr_to_string(&args[0]);
-              eprintln!("{} is not open.", stream_str);
+              crate::emit_message(&format!("{} is not open.", stream_str));
               return Some(Ok(Expr::FunctionCall {
                 name: "Close".to_string(),
                 args: args.to_vec(),
@@ -501,7 +516,7 @@ pub fn dispatch_io_functions(
           }
         }
         Expr::String(s) => {
-          eprintln!("{} is not open.", s);
+          crate::emit_message(&format!("{} is not open.", s));
           return Some(Ok(Expr::FunctionCall {
             name: "Close".to_string(),
             args: args.to_vec(),
@@ -880,7 +895,10 @@ pub fn dispatch_io_functions(
         match std::fs::write(&filename, &content) {
           Ok(_) => {}
           Err(_e) => {
-            eprintln!("Save::noopen: Cannot open {}.", filename);
+            crate::emit_message(&format!(
+              "Save::noopen: Cannot open {}.",
+              filename
+            ));
             return Some(Ok(Expr::Identifier("$Failed".to_string())));
           }
         }

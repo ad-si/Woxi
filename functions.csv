@@ -4443,7 +4443,7 @@ QuestionSelector,,,,13.1,
 QueueingNetworkProcess,,,,9,2889
 QueueingProcess,,,,9,2129
 QueueProperties,,,,9,2435
-Quiet,,,,6,284
+Quiet,Evaluate expression suppressing messages,✅,contextual,6,284
 QuietEcho,,,,12.2,
 Quit,Terminates the kernel session with optional exit code,✅,effectful,1,788
 Quotient,Returns the integer quotient of division,✅,pure,1,649

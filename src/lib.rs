@@ -195,6 +195,16 @@ thread_local! {
     static CAPTURED_WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+// Captured Wolfram-style messages (printed inline, tracked for Check/Quiet interaction)
+thread_local! {
+    static CAPTURED_MESSAGES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+// Quiet level: when > 0, message printing is suppressed
+thread_local! {
+    static QUIET_LEVEL: RefCell<usize> = const { RefCell::new(0) };
+}
+
 // Stream registry for open streams (InputStream/OutputStream)
 #[derive(Clone, Debug)]
 pub enum StreamKind {
@@ -291,12 +301,15 @@ fn get_captured_stdout() -> String {
   CAPTURED_STDOUT.with(|buffer| buffer.borrow().clone())
 }
 
-/// Clears the captured warnings and unimplemented calls buffers
+/// Clears the captured warnings, messages, and unimplemented calls buffers
 fn clear_captured_warnings() {
   UNIMPLEMENTED_CALLS.with(|buffer| {
     buffer.borrow_mut().clear();
   });
   CAPTURED_WARNINGS.with(|buffer| {
+    buffer.borrow_mut().clear();
+  });
+  CAPTURED_MESSAGES.with(|buffer| {
     buffer.borrow_mut().clear();
   });
 }
@@ -315,7 +328,8 @@ pub fn capture_warning(text: &str) {
   });
 }
 
-/// Gets the captured warnings, consolidating unimplemented function calls into a single message
+/// Gets the captured warnings, consolidating unimplemented function calls into a single message.
+/// Includes both general warnings and Wolfram-style messages.
 pub fn get_captured_warnings() -> Vec<String> {
   let mut warnings = Vec::new();
 
@@ -334,7 +348,87 @@ pub fn get_captured_warnings() -> Vec<String> {
     warnings.extend(buffer.borrow().clone());
   });
 
+  // Include messages (used by Check[] to detect message generation)
+  CAPTURED_MESSAGES.with(|buffer| {
+    warnings.extend(buffer.borrow().clone());
+  });
+
   warnings
+}
+
+/// Gets warnings suitable for end-of-interpretation display.
+/// Excludes CAPTURED_MESSAGES since those are already printed inline by emit_message.
+fn get_warnings_for_display() -> Vec<String> {
+  let mut warnings = Vec::new();
+
+  let calls = UNIMPLEMENTED_CALLS.with(|buffer| buffer.borrow().clone());
+  if !calls.is_empty() {
+    let joined = calls.join(", ");
+    let verb = if calls.len() == 1 {
+      "is a built-in Wolfram Language function"
+    } else {
+      "are built-in Wolfram Language functions"
+    };
+    warnings.push(format!("{} {} not yet implemented in Woxi.", joined, verb));
+  }
+
+  CAPTURED_WARNINGS.with(|buffer| {
+    warnings.extend(buffer.borrow().clone());
+  });
+
+  warnings
+}
+
+/// Gets the raw CAPTURED_MESSAGES buffer
+pub fn get_captured_messages_raw() -> Vec<String> {
+  CAPTURED_MESSAGES.with(|buffer| buffer.borrow().clone())
+}
+
+/// Returns true if currently inside a Quiet[] evaluation
+pub fn is_quiet() -> bool {
+  QUIET_LEVEL.with(|level| *level.borrow() > 0)
+}
+
+/// Increment the quiet level (enter a Quiet[] block)
+pub fn push_quiet() {
+  QUIET_LEVEL.with(|level| *level.borrow_mut() += 1);
+}
+
+/// Decrement the quiet level (leave a Quiet[] block)
+pub fn pop_quiet() {
+  QUIET_LEVEL.with(|level| {
+    let mut l = level.borrow_mut();
+    if *l > 0 {
+      *l -= 1;
+    }
+  });
+}
+
+/// Snapshot the current state of all warning/message buffers (for Quiet save/restore)
+pub fn snapshot_warnings() -> (Vec<String>, Vec<String>, Vec<String>) {
+  let unimpl = UNIMPLEMENTED_CALLS.with(|b| b.borrow().clone());
+  let warns = CAPTURED_WARNINGS.with(|b| b.borrow().clone());
+  let msgs = CAPTURED_MESSAGES.with(|b| b.borrow().clone());
+  (unimpl, warns, msgs)
+}
+
+/// Restore all warning/message buffers to a previous snapshot
+pub fn restore_warnings(snapshot: (Vec<String>, Vec<String>, Vec<String>)) {
+  UNIMPLEMENTED_CALLS.with(|b| *b.borrow_mut() = snapshot.0);
+  CAPTURED_WARNINGS.with(|b| *b.borrow_mut() = snapshot.1);
+  CAPTURED_MESSAGES.with(|b| *b.borrow_mut() = snapshot.2);
+}
+
+/// Emit a Wolfram-style message (e.g. "Power::infy: Infinite expression 1/0 encountered.").
+/// Suppressed when inside Quiet[]. Tracked in CAPTURED_MESSAGES for Check[] interaction.
+pub fn emit_message(msg: &str) {
+  CAPTURED_MESSAGES.with(|buffer| {
+    buffer.borrow_mut().push(msg.to_string());
+  });
+  if !is_quiet() {
+    eprintln!();
+    eprintln!("{}", msg);
+  }
 }
 
 /// Clears the captured graphics buffer
@@ -780,7 +874,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               }
             }
             let tag_str = syntax::expr_to_string(&tag);
-            eprintln!("Goto::nolabel: Label {} not found.", tag_str);
+            emit_message(&format!(
+              "Goto::nolabel: Label {} not found.",
+              tag_str
+            ));
             syntax::Expr::Identifier("Null".to_string())
           }
           other => other?,
@@ -860,8 +957,9 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
   }
 
   // Print consolidated unimplemented-function warning to stderr (top-level only)
+  // Uses get_warnings_for_display() to avoid re-printing messages already shown by emit_message.
   if depth == 0 {
-    for w in get_captured_warnings() {
+    for w in get_warnings_for_display() {
       eprintln!("{}", w);
     }
   }
@@ -1911,8 +2009,10 @@ fn try_fast_function_call(
       let inner = &list_str[1..list_str.len() - 1];
       let elems = split_args(inner);
       if elems.is_empty() {
-        eprintln!();
-        eprintln!("{} has zero length and no first element.", list_str);
+        emit_message(&format!(
+          "{} has zero length and no first element.",
+          list_str
+        ));
         return Some(Ok("First[{}]".to_string()));
       }
       Some(Ok(elems[0].trim().to_string()))
@@ -1947,8 +2047,7 @@ fn try_fast_function_call(
       let inner = &list_str[1..list_str.len() - 1];
       let elems = split_args(inner);
       if elems.is_empty() {
-        eprintln!();
-        eprintln!("Cannot take Rest of expression {{}} with length zero.");
+        emit_message("Cannot take Rest of expression {} with length zero.");
         return Some(Ok("Rest[{}]".to_string()));
       }
       let rest: Vec<_> = elems.iter().skip(1).map(|s| s.trim()).collect();

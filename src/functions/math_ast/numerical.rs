@@ -2134,7 +2134,7 @@ pub fn fourier_impl(
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
-      crate::capture_warning(&format!(
+      crate::emit_message(&format!(
         "{}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
         func_name,
         crate::syntax::expr_to_string(&args[0])
@@ -2152,7 +2152,7 @@ pub fn fourier_impl(
     if let Some((re, im)) = try_extract_complex_float(item) {
       data.push((re, im));
     } else {
-      crate::capture_warning(&format!(
+      crate::emit_message(&format!(
         "{}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
         func_name,
         crate::syntax::expr_to_string(&args[0])

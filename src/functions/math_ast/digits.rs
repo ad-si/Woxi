@@ -1088,11 +1088,10 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       Some(b) => {
-        eprintln!();
-        eprintln!(
+        crate::emit_message(&format!(
           "IntegerLength::ibase: Base {} is not an integer greater than 1.",
           b
-        );
+        ));
         return Ok(Expr::FunctionCall {
           name: "IntegerLength".to_string(),
           args: args.to_vec(),

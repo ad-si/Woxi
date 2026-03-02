@@ -1629,13 +1629,10 @@ pub fn try_quantity_plus(
       // Incompatible units — print error and return unevaluated
       let u1_name = crate::syntax::expr_to_string(first_unit);
       let u2_name = crate::syntax::expr_to_string(u);
-      eprintln!();
-      eprintln!(
+      crate::emit_message(&format!(
         "Quantity::compat: {} and {} are incompatible units.",
         u1_name, u2_name
-      );
-      use std::io::{self, Write};
-      io::stderr().flush().ok();
+      ));
       // Return unevaluated Plus
       return Some(Ok(Expr::FunctionCall {
         name: "Plus".to_string(),

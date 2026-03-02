@@ -157,12 +157,10 @@ pub fn dispatch_evaluation_control(
           return Some(evaluate_expr_to_expr(&args[3]));
         }
       } else if args.len() < 2 || args.len() > 4 {
-        println!(
-          "\nIf::argb: If called with {} arguments; between 2 and 4 arguments are expected.",
+        crate::emit_message(&format!(
+          "If::argb: If called with {} arguments; between 2 and 4 arguments are expected.",
           args.len()
-        );
-        use std::io::{self, Write};
-        io::stdout().flush().ok();
+        ));
       }
     }
     _ => {}

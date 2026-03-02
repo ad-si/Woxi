@@ -177,7 +177,10 @@ pub fn set_attributes_from_value(
       .is_some_and(|attrs| attrs.contains(&"Locked".to_string()))
   });
   if is_locked {
-    eprintln!("Attributes::locked: Symbol {} is locked.", sym_name);
+    crate::emit_message(&format!(
+      "Attributes::locked: Symbol {} is locked.",
+      sym_name
+    ));
     return Ok(rhs_value.clone());
   }
 
@@ -196,7 +199,10 @@ pub fn set_attributes_from_value(
     } else {
       // Non-symbol attribute — emit warning
       let attr_str = expr_to_string(attr_expr);
-      eprintln!("Attributes::attnf: {} is not a known attribute.", attr_str);
+      crate::emit_message(&format!(
+        "Attributes::attnf: {} is not a known attribute.",
+        attr_str
+      ));
       has_error = true;
     }
   }
@@ -256,7 +262,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // Check Protected attribute
     if is_symbol_protected(&var_name) {
       let rhs_value = evaluate_expr_to_expr(rhs)?;
-      eprintln!("Part::wrsym: Symbol {} is Protected.", var_name);
+      crate::emit_message(&format!(
+        "Part::wrsym: Symbol {} is Protected.",
+        var_name
+      ));
       return Ok(rhs_value);
     }
 
@@ -338,7 +347,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
     // Check Protected attribute
     if is_symbol_protected(var_name) {
-      eprintln!("Set::wrsym: Symbol {} is Protected.", var_name);
+      crate::emit_message(&format!(
+        "Set::wrsym: Symbol {} is Protected.",
+        var_name
+      ));
       return Ok(rhs_value);
     }
 
@@ -426,7 +438,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
     });
     if is_user_protected {
-      eprintln!("Set::wrsym: Symbol {} is Protected.", func_name);
+      crate::emit_message(&format!(
+        "Set::wrsym: Symbol {} is Protected.",
+        func_name
+      ));
       return Ok(rhs_value);
     }
 
@@ -507,7 +522,10 @@ pub fn set_delayed_ast(
         .is_some_and(|attrs| attrs.contains(&"Protected".to_string()))
     });
     if is_user_protected {
-      eprintln!("SetDelayed::wrsym: Symbol {} is Protected.", func_name);
+      crate::emit_message(&format!(
+        "SetDelayed::wrsym: Symbol {} is Protected.",
+        func_name
+      ));
       return Ok(Expr::Identifier("Null".to_string()));
     }
 
@@ -668,7 +686,10 @@ pub fn set_delayed_ast(
   // Handle simple identifier assignment: a := expr (OwnValues)
   if let Expr::Identifier(var_name) = lhs {
     if is_symbol_protected(var_name) {
-      eprintln!("SetDelayed::wrsym: Symbol {} is Protected.", var_name);
+      crate::emit_message(&format!(
+        "SetDelayed::wrsym: Symbol {} is Protected.",
+        var_name
+      ));
       return Ok(Expr::Identifier("Null".to_string()));
     }
     // Store the unevaluated body — it will be re-evaluated each time the symbol is accessed

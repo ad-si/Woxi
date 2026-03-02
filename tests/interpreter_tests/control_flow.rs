@@ -393,6 +393,117 @@ mod abort {
   }
 }
 
+mod quiet {
+  use super::*;
+
+  #[test]
+  fn quiet_basic_no_message() {
+    clear_state();
+    // Quiet should evaluate and return the result
+    assert_eq!(interpret("Quiet[1 + 2]").unwrap(), "3");
+  }
+
+  #[test]
+  fn quiet_suppresses_part_warning() {
+    clear_state();
+    // Part out of bounds generates a message; Quiet suppresses it
+    assert_eq!(
+      interpret("Quiet[Part[{1, 2, 3}, 5]]").unwrap(),
+      "{1, 2, 3}[[5]]"
+    );
+  }
+
+  #[test]
+  fn quiet_suppresses_first_empty_warning() {
+    clear_state();
+    assert_eq!(interpret("Quiet[First[{}]]").unwrap(), "First[{}]");
+  }
+
+  #[test]
+  fn quiet_returns_evaluated_result() {
+    clear_state();
+    assert_eq!(interpret("Head[Quiet[3 + 4]]").unwrap(), "Integer");
+  }
+
+  #[test]
+  fn quiet_with_all() {
+    clear_state();
+    // Quiet[expr, All] is same as Quiet[expr]
+    assert_eq!(
+      interpret("Quiet[Part[{1, 2, 3}, 5], All]").unwrap(),
+      "{1, 2, 3}[[5]]"
+    );
+  }
+
+  #[test]
+  fn quiet_with_none() {
+    clear_state();
+    // Quiet[expr, None] suppresses nothing — message still present in warnings
+    // But the result should still be returned
+    assert_eq!(
+      interpret("Quiet[Part[{1, 2, 3}, 5], None]").unwrap(),
+      "{1, 2, 3}[[5]]"
+    );
+  }
+
+  #[test]
+  fn quiet_no_args_error() {
+    clear_state();
+    // Quiet[] with no args returns unevaluated with error message
+    assert_eq!(interpret("Quiet[]").unwrap(), "Quiet[]");
+  }
+
+  #[test]
+  fn quiet_check_outer_quiet() {
+    clear_state();
+    // Check[Quiet[expr], failexpr] — Quiet suppresses message so Check doesn't see it
+    assert_eq!(
+      interpret("Check[Quiet[Part[{1, 2, 3}, 5]], \"failed\"]").unwrap(),
+      "{1, 2, 3}[[5]]"
+    );
+  }
+
+  #[test]
+  fn quiet_check_inner_quiet() {
+    clear_state();
+    // Quiet[Check[expr, failexpr]] — Check sees the message first, triggers failexpr
+    assert_eq!(
+      interpret("Quiet[Check[Part[{1, 2, 3}, 5], \"failed\"]]").unwrap(),
+      "failed"
+    );
+  }
+
+  #[test]
+  fn quiet_attributes() {
+    clear_state();
+    assert_eq!(
+      interpret("Attributes[Quiet]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+
+  #[test]
+  fn quiet_nested() {
+    clear_state();
+    // Nested Quiet should work
+    assert_eq!(interpret("Quiet[Quiet[1 + 2]]").unwrap(), "3");
+  }
+
+  #[test]
+  fn quiet_preserves_side_effects() {
+    clear_state();
+    // Side effects (variable assignment) should still happen inside Quiet
+    assert_eq!(interpret("Quiet[x = 42]; x").unwrap(), "42");
+  }
+
+  #[test]
+  fn quiet_with_compound_expr() {
+    clear_state();
+    // Quiet wrapping a compound expression
+    assert_eq!(interpret("Quiet[1 + 1; 2 + 2]").unwrap(), "4");
+  }
+}
+
 mod implies {
   use super::*;
 

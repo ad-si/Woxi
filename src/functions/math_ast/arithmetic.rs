@@ -1783,11 +1783,10 @@ pub fn minus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     times_ast(&[Expr::Integer(-1), args[0].clone()])
   } else {
     // Wrong arity - print error to stderr and return unevaluated expression
-    eprintln!();
-    eprintln!(
+    crate::emit_message(&format!(
       "Minus::argx: Minus called with {} arguments; 1 argument is expected.",
       args.len()
-    );
+    ));
     // Return unevaluated (like Wolfram) — expr_to_string handles display
     Ok(Expr::FunctionCall {
       name: "Minus".to_string(),
@@ -2359,12 +2358,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // "Power::indet: Indeterminate expression " is 39 chars
     // Exponent starts at column 39 + len(base), right-align needs + len(exp)
     let padding = 39 + base_str.len() + exp_str.len();
-    eprintln!();
-    eprintln!("{:>width$}", exp_str, width = padding);
-    eprintln!(
-      "Power::indet: Indeterminate expression {}  encountered.",
-      base_str
-    );
+    crate::emit_message(&format!(
+      "{:>width$}\nPower::indet: Indeterminate expression {}  encountered.",
+      exp_str,
+      base_str,
+      width = padding
+    ));
     return Ok(Expr::Identifier("Indeterminate".to_string()));
   }
 
