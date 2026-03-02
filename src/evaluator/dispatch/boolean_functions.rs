@@ -16,12 +16,10 @@ pub fn dispatch_boolean_functions(
       if args.len() == 1 {
         return Some(crate::functions::boolean_ast::not_ast(args));
       } else {
-        println!(
-          "\nNot::argx: Not called with {} arguments; 1 argument is expected.",
+        crate::emit_message(&format!(
+          "Not::argx: Not called with {} arguments; 1 argument is expected.",
           args.len()
-        );
-        use std::io::{self, Write};
-        io::stdout().flush().ok();
+        ));
       }
     }
     "Xor" if !args.is_empty() => {

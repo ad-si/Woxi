@@ -377,11 +377,10 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
 
   // Validate domain name
   if !VALID_DOMAINS.contains(&domain_name) {
-    eprintln!();
-    eprintln!(
+    crate::emit_message(&format!(
       "Element::bset: The second argument {} of Element should be one of: Primes, Integers, Rationals, Algebraics, Reals, Complexes or Booleans.",
       domain_name
-    );
+    ));
     return Ok(Expr::FunctionCall {
       name: "Element".to_string(),
       args: vec![x.clone(), domain.clone()],

@@ -1225,11 +1225,10 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(_) => {
       // Concrete non-positive integer: emit message like wolframscript
       let arg_str = crate::syntax::expr_to_string(&args[0]);
-      eprintln!();
-      eprintln!(
+      crate::emit_message(&format!(
         "Prime::intpp: Positive integer argument expected in Prime[{}].",
         arg_str
-      );
+      ));
       Ok(unevaluated)
     }
     None => {
@@ -1237,11 +1236,10 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Symbolic arguments return unevaluated silently
       if matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
         let arg_str = crate::syntax::expr_to_string(&args[0]);
-        eprintln!();
-        eprintln!(
+        crate::emit_message(&format!(
           "Prime::intpp: Positive integer argument expected in Prime[{}].",
           arg_str
-        );
+        ));
       }
       Ok(unevaluated)
     }
@@ -2123,12 +2121,11 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (Some(base), Some(exp), Some(modulus)) => {
       use num_traits::Zero;
       if modulus.is_zero() {
-        eprintln!();
-        eprintln!(
+        crate::emit_message(&format!(
           "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
           crate::syntax::expr_to_string(&args[0]),
           crate::syntax::expr_to_string(&args[1])
-        );
+        ));
         return Ok(Expr::FunctionCall {
           name: "PowerMod".to_string(),
           args: args.to_vec(),
@@ -2146,12 +2143,11 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 mod_pow_unsigned(inv as u128, pos_exp, m.unsigned_abs());
               Ok(Expr::Integer(result as i128))
             } else {
-              eprintln!();
-              eprintln!(
+              crate::emit_message(&format!(
                 "PowerMod::ninv: {} is not invertible modulo {}.",
                 crate::syntax::expr_to_string(&args[0]),
                 crate::syntax::expr_to_string(&args[2])
-              );
+              ));
               Ok(Expr::FunctionCall {
                 name: "PowerMod".to_string(),
                 args: args.to_vec(),

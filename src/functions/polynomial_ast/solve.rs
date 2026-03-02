@@ -594,7 +594,10 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(name) => name.as_str(),
     // Constants (E, Pi, Degree) are not valid variables
     Expr::Constant(name) => {
-      eprintln!("Solve::ivar: {} is not a valid variable.", name);
+      crate::emit_message(&format!(
+        "Solve::ivar: {} is not a valid variable.",
+        name
+      ));
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
         args: args.to_vec(),
@@ -615,7 +618,10 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .is_some_and(|attrs| attrs.contains(&"Constant".to_string()))
   });
   if is_constant {
-    eprintln!("Solve::ivar: {} is not a valid variable.", var);
+    crate::emit_message(&format!(
+      "Solve::ivar: {} is not a valid variable.",
+      var
+    ));
     return Ok(Expr::FunctionCall {
       name: "Solve".to_string(),
       args: args.to_vec(),

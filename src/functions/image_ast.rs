@@ -2349,9 +2349,9 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some((_, _, h)) = cell
           && *h != expected_h
         {
-          eprintln!(
-            "\nImageAssemble::row: \
-               Expecting images of the same height in one row."
+          crate::emit_message(
+            "ImageAssemble::row: \
+               Expecting images of the same height in one row.",
           );
           return Ok(Expr::FunctionCall {
             name: "ImageAssemble".to_string(),
@@ -2366,9 +2366,9 @@ pub fn image_assemble_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(Some((_, w, _))) = row.get(c)
           && *w != expected_w
         {
-          eprintln!(
-            "\nImageAssemble::col: \
-               Expecting images of the same width in one column."
+          crate::emit_message(
+            "ImageAssemble::col: \
+               Expecting images of the same width in one column.",
           );
           return Ok(Expr::FunctionCall {
             name: "ImageAssemble".to_string(),

@@ -34,11 +34,10 @@ fn part_take_unevaluated(expr: &Expr, index: &Expr) -> Expr {
 
 fn part_take_warn(expr: &Expr, start: i64, end: i64) {
   let expr_str = crate::syntax::expr_to_string(expr);
-  eprintln!();
-  eprintln!(
+  crate::emit_message(&format!(
     "Part::take: Cannot take positions {} through {} in {}.",
     start, end, expr_str
-  );
+  ));
 }
 
 fn extract_span_from_items(
@@ -276,8 +275,10 @@ pub fn extract_part_ast(
       } else {
         // Print warning to stderr and return unevaluated Part expression
         let expr_str = crate::syntax::expr_to_string(expr);
-        eprintln!();
-        eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        ));
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -292,8 +293,10 @@ pub fn extract_part_ast(
         Ok(args[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
-        eprintln!();
-        eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        ));
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -321,8 +324,10 @@ pub fn extract_part_ast(
         Ok(parts[actual_idx as usize].clone())
       } else {
         let expr_str = crate::syntax::expr_to_string(expr);
-        eprintln!();
-        eprintln!("Part::partw: Part {} of {} does not exist.", idx, expr_str);
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        ));
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -334,8 +339,10 @@ pub fn extract_part_ast(
         Ok(Expr::String(chars[actual_idx as usize].to_string()))
       } else {
         // Print warning to stderr and return unevaluated Part expression
-        eprintln!();
-        eprintln!("Part::partw: Part {} of \"{}\" does not exist.", idx, s);
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of \"{}\" does not exist.",
+          idx, s
+        ));
         Ok(part_take_unevaluated(expr, index))
       }
     }

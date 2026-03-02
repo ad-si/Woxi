@@ -1217,6 +1217,20 @@ pub fn evaluate_expr_to_expr_inner(
           }
         }
       }
+      // Special handling for Quiet[expr], Quiet[expr, msgs], Quiet[expr, moff, mon]
+      if name == "Quiet" {
+        if args.is_empty() || args.len() > 3 {
+          crate::emit_message(&format!(
+            "Quiet::argb: Quiet called with {} arguments; between 1 and 3 arguments are expected.",
+            args.len()
+          ));
+          return Ok(Expr::FunctionCall {
+            name: "Quiet".to_string(),
+            args: args.to_vec(),
+          });
+        }
+        return crate::functions::control_flow_ast::quiet_ast(args);
+      }
       // Special handling for Switch - lazy evaluation of branches
       if name == "Switch" && args.len() >= 3 {
         return crate::functions::control_flow_ast::switch_ast(args);
@@ -1751,11 +1765,10 @@ pub fn evaluate_expr_to_expr_inner(
             index: index.clone(),
           };
           let part_str = crate::syntax::expr_to_string(&original);
-          eprintln!();
-          eprintln!(
+          crate::emit_message(&format!(
             "Part::partd: Part specification {} is longer than depth of object.",
             part_str
-          );
+          ));
         }
       }
       Ok(result)

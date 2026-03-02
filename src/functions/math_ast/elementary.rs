@@ -880,10 +880,10 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   {
     if nn == 0 && nd != 0 {
       // Mod[m, 0] => Indeterminate
-      eprintln!(
+      crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
         crate::syntax::expr_to_string(m)
-      );
+      ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // Convert to common denominator: m = mn/md, n = nn/nd
@@ -899,10 +899,10 @@ pub fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // Float fallback
   if let (Some(a), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n)) {
     if b == 0.0 {
-      eprintln!(
+      crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
         crate::syntax::expr_to_string(m)
-      );
+      ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     let result = ((a % b) + b) % b;
@@ -927,11 +927,11 @@ pub fn mod3_ast(
     (try_as_rational(m), try_as_rational(n), try_as_rational(d))
   {
     if nn == 0 && nd != 0 {
-      eprintln!(
+      crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
         crate::syntax::expr_to_string(m),
         crate::syntax::expr_to_string(d)
-      );
+      ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     // m - d = (mn*dd - dn*md) / (md*dd)
@@ -953,11 +953,11 @@ pub fn mod3_ast(
     (try_eval_to_f64(m), try_eval_to_f64(n), try_eval_to_f64(d))
   {
     if b == 0.0 {
-      eprintln!(
+      crate::emit_message(&format!(
         "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
         crate::syntax::expr_to_string(m),
         crate::syntax::expr_to_string(d)
-      );
+      ));
       return Ok(Expr::Identifier("Indeterminate".to_string()));
     }
     let result = a - b * ((a - c) / b).floor();

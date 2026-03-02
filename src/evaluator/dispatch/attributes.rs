@@ -43,7 +43,10 @@ pub fn dispatch_attributes(
             if let Some(existing) = attrs.get(func_name)
               && existing.contains(&"Locked".to_string())
             {
-              eprintln!("Attributes::locked: Symbol {} is locked.", func_name);
+              crate::emit_message(&format!(
+                "Attributes::locked: Symbol {} is locked.",
+                func_name
+              ));
               locked = true;
               continue;
             }
@@ -97,7 +100,10 @@ pub fn dispatch_attributes(
             if let Some(existing) = attrs.get(func_name)
               && existing.contains(&"Locked".to_string())
             {
-              eprintln!("Attributes::locked: Symbol {} is locked.", func_name);
+              crate::emit_message(&format!(
+                "Attributes::locked: Symbol {} is locked.",
+                func_name
+              ));
               continue;
             }
             if let Some(entry) = attrs.get_mut(func_name) {
@@ -141,7 +147,10 @@ pub fn dispatch_attributes(
             }
           };
           if is_locked {
-            eprintln!("Protect::locked: Symbol {} is locked.", sym);
+            crate::emit_message(&format!(
+              "Protect::locked: Symbol {} is locked.",
+              sym
+            ));
             continue;
           }
           let was_protected = crate::FUNC_ATTRS.with(|m| {
