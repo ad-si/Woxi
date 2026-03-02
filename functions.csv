@@ -4307,7 +4307,7 @@ PositiveQ,Tests if a number is positive,✅,pure,,
 PositiveRationals,,,,12,4479
 PositiveReals,,,,12,1388
 PositiveSemidefiniteMatrixQ,,,,10,2837
-PossibleZeroQ,,,,6,1369
+PossibleZeroQ,Tests if an expression is possibly zero,✅,pure,6,1369
 Postfix,Symbol for postfix display formatting,✅,pure,1,3070
 Power,Raises a number to a power,✅,pure,1,4
 PowerDistribution,,,,8,3224

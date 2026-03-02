@@ -1316,6 +1316,99 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// PossibleZeroQ[expr] - Tests if expr is possibly zero
+/// Uses symbolic simplification and numeric evaluation to determine
+/// whether an expression could be zero.
+pub fn possible_zero_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "PossibleZeroQ".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let expr = &args[0];
+
+  // 1. Structural zero check
+  if is_structural_zero(expr) {
+    return Ok(bool_expr(true));
+  }
+
+  // 2. Non-numeric atoms that can never be zero
+  match expr {
+    Expr::String(_) => return Ok(bool_expr(false)),
+    Expr::Identifier(name) => match name.as_str() {
+      "True" | "False" | "Infinity" | "ComplexInfinity" | "Indeterminate" => {
+        return Ok(bool_expr(false));
+      }
+      _ => {}
+    },
+    _ => {}
+  }
+
+  // 3. Known nonzero constants
+  if let Expr::Constant(c) = expr {
+    match c.as_str() {
+      "Pi" | "E" | "Degree" | "EulerGamma" | "Catalan" | "GoldenRatio"
+      | "Glaisher" | "Khinchin" => {
+        return Ok(bool_expr(false));
+      }
+      _ => {}
+    }
+  }
+
+  // 4. Known positive/negative numbers are not zero
+  if let Some(true) = is_known_positive(expr) {
+    return Ok(bool_expr(false));
+  }
+  if let Some(true) = is_known_negative(expr) {
+    return Ok(bool_expr(false));
+  }
+
+  // 5. Simplify the expression and check
+  let simplified = crate::functions::polynomial_ast::simplify_expr(expr);
+  if is_structural_zero(&simplified) {
+    return Ok(bool_expr(true));
+  }
+
+  // 6. Try numeric evaluation on the simplified expression
+  if let Some(val) = crate::functions::math_ast::try_eval_to_f64(&simplified) {
+    return Ok(bool_expr(val.abs() < 1e-10));
+  }
+
+  // 7. Try numeric evaluation on the original expression
+  if let Some(val) = crate::functions::math_ast::try_eval_to_f64(expr) {
+    return Ok(bool_expr(val.abs() < 1e-10));
+  }
+
+  // 8. For expressions we can't evaluate numerically, return False
+  // (matches Wolfram behavior for symbolic unknowns like x)
+  Ok(bool_expr(false))
+}
+
+/// Check if an expression is structurally zero (literal 0, 0.0, 0/1, Complex[0,0], etc.)
+fn is_structural_zero(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(0) => true,
+    Expr::Real(f) => *f == 0.0,
+    Expr::BigInteger(n) => {
+      use num_traits::Zero;
+      n.is_zero()
+    }
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().is_ok_and(|f| f == 0.0),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      is_structural_zero(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      is_structural_zero(&args[0]) && is_structural_zero(&args[1])
+    }
+    _ => false,
+  }
+}
+
 /// OptionQ[expr] - Tests if expr is a Rule or RuleDelayed or a list thereof
 pub fn option_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
