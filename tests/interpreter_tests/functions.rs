@@ -347,6 +347,41 @@ mod replace_all_top_level {
     // Should replace inside function call arguments
     assert_eq!(interpret("f[a, b, c] /. b -> x").unwrap(), "f[a, x, c]");
   }
+
+  #[test]
+  fn replace_all_descends_into_binary_op_divide() {
+    // ReplaceAll must recurse into BinaryOp::Divide nodes
+    assert_eq!(interpret("(a/b) /. {a -> 1, b -> 2}").unwrap(), "1/2");
+    assert_eq!(interpret("(Sin[x]/Cos[x]) /. x -> 0").unwrap(), "0");
+  }
+
+  #[test]
+  fn replace_all_descends_into_binary_op_power() {
+    // ReplaceAll must recurse into BinaryOp::Power nodes
+    assert_eq!(interpret("x^2 /. x -> 3").unwrap(), "9");
+  }
+
+  #[test]
+  fn replace_all_descends_into_unary_op() {
+    // ReplaceAll must recurse into UnaryOp (negation)
+    assert_eq!(interpret("(-x) /. x -> 5").unwrap(), "-5");
+  }
+
+  #[test]
+  fn replace_all_descends_into_nested_division_in_plus() {
+    // Regression: ReplaceAll failed to substitute inside Divide within Plus
+    assert_eq!(interpret("(x/y + x) /. {x -> 1, y -> 2}").unwrap(), "3/2");
+  }
+
+  #[test]
+  fn replace_all_normalize_with_division() {
+    // Regression: Normalize produces BinaryOp::Divide that ReplaceAll must descend into
+    assert_eq!(
+      interpret("(Normalize[{Cos[x] - Sin[x], Cos[x]}] /. x -> 0)[[1]]")
+        .unwrap(),
+      "1/Sqrt[2]"
+    );
+  }
 }
 
 mod protect_unprotect {
