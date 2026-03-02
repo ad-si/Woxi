@@ -907,6 +907,61 @@ mod pattern_matching {
     }
   }
 
+  mod anonymous_blank_in_set {
+    use super::*;
+
+    #[test]
+    fn anonymous_blank_downvalue() {
+      // f[_] = value — anonymous Blank pattern via Set should match any argument
+      assert_eq!(
+        interpret("ProductQ[_] = False; ProductQ[4]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn anonymous_blank_downvalue_multiple_args() {
+      assert_eq!(interpret("h[_, _] = True; h[1, 2]").unwrap(), "True");
+    }
+
+    #[test]
+    fn named_blank_downvalue_via_set() {
+      // Named pattern in Set should also work
+      assert_eq!(interpret("sq[x_] = x^2; sq[5]").unwrap(), "25");
+    }
+  }
+
+  mod blank_sequence_pattern {
+    use super::*;
+
+    #[test]
+    fn blank_sequence_in_set_delayed() {
+      // u__ (BlankSequence) matches one or more arguments
+      assert_eq!(
+        interpret("HalfIntegerQ[u__] := False; HalfIntegerQ[1/2]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn blank_sequence_with_body_reference() {
+      // Named BlankSequence used in the body
+      assert_eq!(interpret("g[u__] := u; g[42]").unwrap(), "42");
+    }
+
+    #[test]
+    fn blank_null_sequence_in_set_delayed() {
+      // u___ (BlankNullSequence) also matches single arguments
+      assert_eq!(interpret("f[u___] := u; f[7]").unwrap(), "7");
+    }
+
+    #[test]
+    fn double_underscore_with_head() {
+      // x__Integer — BlankSequence with head constraint
+      assert_eq!(interpret("f[x__Integer] := x + 1; f[5]").unwrap(), "6");
+    }
+  }
+
   mod conditional_pattern {
     use super::*;
 

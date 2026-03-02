@@ -326,8 +326,10 @@ PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ Term }
 // The dot must not be followed by a digit (decimal) or another dot (.. or ...)
 PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." ~ !ASCII_DIGIT ~ !"." }
 PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." ~ !ASCII_DIGIT ~ !"." }
-PatternWithHead = { PatternName ~ "_" ~ Identifier }
-PatternSimple = { PatternName ~ "_" }
+// PatternBlanks: silent atomic rule matching 1-3 underscores (Blank, BlankSequence, BlankNullSequence)
+PatternBlanks = _{ "___" | "__" | "_" }
+PatternWithHead = { PatternName ~ PatternBlanks ~ !("_") ~ Identifier }
+PatternSimple = { PatternName ~ PatternBlanks }
 Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)

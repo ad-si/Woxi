@@ -24,5 +24,5 @@ check() {
   fi
 }
 
-check 'Integrate[E^(2x) / (2*x), x]'
-check 'Refine[Sqrt[x^2], x > 0]'
+check 'ProductQ[_] = False; ProductQ[4]'
+check 'HalfIntegerQ[u__] := False; HalfIntegerQ[1/2]' # See https://reference.wolfram.com/language/ref/BlankSequence.html
