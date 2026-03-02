@@ -24,6 +24,13 @@ let editorView = null
 const wolframLanguage = StreamLanguage.define(mathematica)
 const themeConfig = new Compartment()
 const STORAGE_KEY_THEME = "woxi-playground-theme"
+const THEME_MODES = ["auto", "light", "dark"]
+const THEME_ICONS = { auto: "\u25D0", light: "\u2600", dark: "\u263E" }
+const THEME_LABELS = { auto: "Auto", light: "Light", dark: "Dark" }
+
+function systemDark() {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+}
 
 function isDark() {
   return document.documentElement.classList.contains("dark")
@@ -33,28 +40,33 @@ function getThemeExtension() {
   return isDark() ? oneDark : []
 }
 
-function applyTheme(dark) {
+let currentMode = localStorage.getItem(STORAGE_KEY_THEME) ?? "auto"
+if (!THEME_MODES.includes(currentMode)) currentMode = "auto"
+
+function applyMode(mode) {
+  currentMode = mode
+  const dark = mode === "dark" || (mode === "auto" && systemDark())
   document.documentElement.classList.toggle("dark", dark)
-  document.getElementById("themeBtn").textContent = dark ? "\u2600" : "\u263E"
+  const btn = document.getElementById("themeBtn")
+  btn.textContent = THEME_ICONS[mode]
+  btn.dataset.tooltip = `Theme: ${THEME_LABELS[mode]}`
 }
 
-// Initialize theme: use stored preference, or fall back to system
-const storedTheme = localStorage.getItem(STORAGE_KEY_THEME)
-if (storedTheme !== null) {
-  applyTheme(storedTheme === "dark")
-} else {
-  applyTheme(window.matchMedia("(prefers-color-scheme: dark)").matches)
-}
+applyMode(currentMode)
 
 document.getElementById("themeBtn").addEventListener("click", () => {
-  const dark = !isDark()
-  applyTheme(dark)
-  localStorage.setItem(STORAGE_KEY_THEME, dark ? "dark" : "light")
+  const next = THEME_MODES[(THEME_MODES.indexOf(currentMode) + 1) % THEME_MODES.length]
+  applyMode(next)
+  if (next === "auto") {
+    localStorage.removeItem(STORAGE_KEY_THEME)
+  } else {
+    localStorage.setItem(STORAGE_KEY_THEME, next)
+  }
   editorView.dispatch({
     effects: themeConfig.reconfigure(getThemeExtension()),
   })
   if (worker) {
-    worker.postMessage({ type: "set_theme", dark })
+    worker.postMessage({ type: "set_theme", dark: isDark() })
   }
 })
 
@@ -123,10 +135,10 @@ if (sharedCode) {
 
 editorView.focus()
 
-// Follow system preference changes when no manual override is stored
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
-  if (localStorage.getItem(STORAGE_KEY_THEME) !== null) return
-  applyTheme(e.matches)
+// Follow system preference changes when in auto mode
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (currentMode !== "auto") return
+  applyMode("auto")
   editorView.dispatch({
     effects: themeConfig.reconfigure(getThemeExtension()),
   })
