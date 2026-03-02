@@ -88,14 +88,13 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// Minimum 128 bits (2 words) to avoid precision issues with small values.
 pub fn nominal_bits(precision: usize) -> usize {
   // Compute the minimum bits for the requested decimal precision, then
-  // round up to the next 64-bit word boundary. Add one extra word of
-  // guard bits to match Wolfram's output behavior (which displays all
-  // digits from the full word-aligned precision, giving slightly more
-  // digits than requested).
+  // round up to the next 64-bit word boundary to match Wolfram's output
+  // behavior (which displays all digits from the full word-aligned
+  // precision, giving slightly more digits than requested).
   let base_bits =
     (precision as f64 * std::f64::consts::LOG2_10).ceil() as usize;
-  // Round up to next word boundary, then add one extra word for guard bits
-  let bits = ((base_bits + 63) & !63) + 64;
+  // Round up to next word boundary
+  let bits = (base_bits + 63) & !63;
   bits.max(128)
 }
 
@@ -497,6 +496,20 @@ pub fn expr_to_bigfloat(
           let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           let exp = expr_to_bigfloat(&args[1], bits, rm, cc)?;
           Ok(base.pow(&exp, bits, rm, cc))
+        }
+        "Erf" if args.len() == 1 => {
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(bigfloat_erf(&x, bits, rm, cc))
+        }
+        "Erfc" if args.len() == 1 => {
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let erf_val = bigfloat_erf(&x, bits, rm, cc);
+          let one = BigFloat::from_i32(1, bits);
+          Ok(one.sub(&erf_val, bits, rm))
+        }
+        "ExpIntegralEi" if args.len() == 1 => {
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(bigfloat_exp_integral_ei(&x, bits, rm, cc))
         }
         _ => Err(InterpreterError::EvaluationError(format!(
           "N: cannot evaluate {}[...] to arbitrary precision",
@@ -2455,4 +2468,132 @@ pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_function_call_ast("Abs", &[diff])
     }
   }
+}
+
+/// Compute the error function erf(x) using BigFloat arithmetic.
+/// Uses the Taylor series: erf(x) = (2/sqrt(π)) * Σ_{n=0}^{∞} (-1)^n * x^(2n+1) / (n! * (2n+1))
+fn bigfloat_erf(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  if x.is_zero() {
+    return BigFloat::from_i32(0, bits);
+  }
+
+  // erf is odd: erf(-x) = -erf(x)
+  let is_negative = x.is_negative();
+  let x_abs = x.abs();
+
+  // Taylor series: term_0 = x, term_n = term_{n-1} * x^2 / n
+  // contribution_n = term_n / (2n+1), alternating sign
+  // sum = Σ (-1)^n * contribution_n
+  //
+  // Use the target precision for all computations to match Wolfram's
+  // rounding behavior.
+  let x2 = x_abs.mul(&x_abs, bits, rm);
+  let mut term = x_abs.clone();
+  let mut sum = x_abs.clone();
+
+  let max_iterations = bits * 2 + 100;
+  for n in 1..max_iterations {
+    term = term.mul(&x2, bits, rm);
+    let n_bf = BigFloat::from_i32(n as i32, bits);
+    term = term.div(&n_bf, bits, rm);
+
+    let denom = BigFloat::from_i32((2 * n + 1) as i32, bits);
+    let contribution = term.div(&denom, bits, rm);
+
+    if n % 2 == 1 {
+      sum = sum.sub(&contribution, bits, rm);
+    } else {
+      sum = sum.add(&contribution, bits, rm);
+    }
+
+    if contribution.is_zero() {
+      break;
+    }
+    if let (Some(c_exp), Some(s_exp)) =
+      (contribution.exponent(), sum.exponent())
+      && s_exp - c_exp > (bits as i32)
+    {
+      break;
+    }
+  }
+
+  // Multiply by 2/sqrt(π)
+  let two = BigFloat::from_i32(2, bits);
+  let pi = cc.pi(bits, rm);
+  let sqrt_pi = pi.sqrt(bits, rm);
+  let factor = two.div(&sqrt_pi, bits, rm);
+  let result = sum.mul(&factor, bits, rm);
+
+  if is_negative { result.neg() } else { result }
+}
+
+/// Compute the exponential integral Ei(x) using BigFloat arithmetic.
+/// For real x: Ei(x) = γ + ln|x| + Σ_{n=1}^{∞} x^n / (n * n!)
+/// where γ is the Euler-Mascheroni constant.
+fn bigfloat_exp_integral_ei(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  let work_bits = bits + 64;
+
+  // γ (Euler-Mascheroni constant)
+  let euler_gamma = compute_euler_gamma(work_bits, rm, cc);
+
+  // ln(|x|)
+  let ln_x = x.abs().ln(work_bits, rm, cc);
+
+  // Power series: Σ_{n=1}^{∞} x^n / (n * n!)
+  let mut sum = BigFloat::from_i32(0, work_bits);
+  let mut x_pow = x.clone(); // x^1
+  let mut factorial = BigFloat::from_i32(1, work_bits); // 1!
+
+  let max_iterations = bits * 2 + 100;
+  for n in 1..max_iterations {
+    let n_bf = BigFloat::from_i32(n as i32, work_bits);
+    if n > 1 {
+      x_pow = x_pow.mul(x, work_bits, rm);
+      factorial = factorial.mul(&n_bf, work_bits, rm);
+    }
+    // term = x^n / (n * n!)
+    let denom = n_bf.mul(&factorial, work_bits, rm);
+    let term = x_pow.div(&denom, work_bits, rm);
+    sum = sum.add(&term, work_bits, rm);
+
+    if term.abs().is_zero() {
+      break;
+    }
+    if let (Some(t_exp), Some(s_exp)) =
+      (term.abs().exponent(), sum.abs().exponent())
+      && s_exp - t_exp > (work_bits as i32)
+    {
+      break;
+    }
+  }
+
+  // Ei(x) = γ + ln(|x|) + sum (final result rounded to requested bits)
+  euler_gamma.add(&ln_x, work_bits, rm).add(&sum, bits, rm)
+}
+
+/// Compute the Euler-Mascheroni constant γ to the given precision.
+fn compute_euler_gamma(
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  // High-precision string for Euler-Mascheroni constant (105 digits)
+  let gamma_str = "0.5772156649015328606065120900824024310421593359399235988057672348848677267776646709369470632917467495";
+  BigFloat::parse(gamma_str, astro_float::Radix::Dec, bits, rm, cc)
 }

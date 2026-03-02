@@ -24,4 +24,5 @@ check() {
   fi
 }
 
-check 'Integrate[x * Sin[x],x]'
+check 'Integrate[E^(2x) / (2*x), x]'
+check 'Refine[Sqrt[x^2], x > 0]'

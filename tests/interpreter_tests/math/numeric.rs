@@ -312,4 +312,52 @@ mod overflow_safety {
       "245850922/78256779"
     );
   }
+
+  #[test]
+  fn n_erf_evaluates_numerically() {
+    // N[Erf[1], 20] should produce a numeric result, not stay symbolic
+    let result = interpret("N[Erf[1], 20]").unwrap();
+    assert!(
+      result.starts_with("0.8427007929497148693412"),
+      "N[Erf[1],20] should start with correct first 22 digits: {}",
+      result
+    );
+    assert!(
+      result.ends_with("`20."),
+      "Should have precision marker `20.: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_erf_zero() {
+    let result = interpret("N[Erf[0], 20]").unwrap();
+    assert!(
+      result.starts_with("0"),
+      "N[Erf[0],20] should be 0: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_erfc_evaluates_numerically() {
+    // Erfc[1] = 1 - Erf[1] ≈ 0.1572992...
+    let result = interpret("N[Erfc[1], 20]").unwrap();
+    assert!(
+      result.starts_with("0.1572992070502851306587"),
+      "N[Erfc[1],20] should start correctly: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn n_exp_integral_ei_evaluates_numerically() {
+    // ExpIntegralEi[1] ≈ 1.895117816355937...
+    let result = interpret("N[ExpIntegralEi[1], 20]").unwrap();
+    assert!(
+      result.starts_with("1.89511781635593675546"),
+      "N[ExpIntegralEi[1],20] should start correctly: {}",
+      result
+    );
+  }
 }

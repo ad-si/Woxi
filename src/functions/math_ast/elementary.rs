@@ -3,6 +3,36 @@ use super::*;
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
+/// Check if an expression is known to be non-negative without assumptions.
+/// Used for simplifications like Sqrt[x^2] → x (only valid when x >= 0).
+fn is_known_non_negative(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n >= 0,
+    Expr::Real(f) => *f >= 0.0,
+    // Known positive constants
+    Expr::Constant(name) => matches!(
+      name.as_str(),
+      "Pi"
+        | "E"
+        | "EulerGamma"
+        | "GoldenRatio"
+        | "Degree"
+        | "Catalan"
+        | "Glaisher"
+        | "Khinchin"
+    ),
+    // Abs[anything] is always non-negative
+    Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+      true
+    }
+    // Sqrt[anything] is always non-negative (for real results)
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      true
+    }
+    _ => false,
+  }
+}
+
 /// Abs[x] - Absolute value
 pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
@@ -321,12 +351,14 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       times_ast(&[Expr::Identifier("I".to_string()), sqrt_pos])
     }
     Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
-    // Sqrt[expr^2] → expr, Sqrt[expr^(2n)] → expr^n
+    // Sqrt[base^(2n)] → base^n only when base is known non-negative
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left: base,
       right: exp,
-    } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0) => {
+    } if matches!(exp.as_ref(), Expr::Integer(n) if *n > 0 && n % 2 == 0)
+      && is_known_non_negative(base) =>
+    {
       if let Expr::Integer(n) = exp.as_ref() {
         let half = n / 2;
         if half == 1 {

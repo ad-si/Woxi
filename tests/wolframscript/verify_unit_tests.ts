@@ -499,6 +499,8 @@ function main() {
     /\bShare\[/,
     /\bNames\[/,
     /\bRasterize\[/,
+    /\bN\[Erf\[/,    // Arbitrary-precision Erf differs in low-order digits (different algorithm)
+    /\bN\[Erfc\[/,   // Same as Erf (Erfc = 1 - Erf)
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.

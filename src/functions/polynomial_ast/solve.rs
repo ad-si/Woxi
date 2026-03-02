@@ -5,6 +5,60 @@ use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 
+/// In Solve context, simplify Sqrt[expr^(2n)] → expr^n since ± handles the sign.
+/// Also simplifies products containing such terms.
+fn strip_sqrt_square(expr: Expr) -> Expr {
+  match &expr {
+    // Sqrt[base^(2n)] → base^n
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base,
+        right: exp,
+      } = &args[0]
+        && let Expr::Integer(n) = exp.as_ref()
+        && *n > 0
+        && n % 2 == 0
+      {
+        let half = n / 2;
+        if half == 1 {
+          return *base.clone();
+        } else {
+          return Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: base.clone(),
+            right: Box::new(Expr::Integer(half)),
+          };
+        }
+      }
+      expr
+    }
+    // c * Sqrt[base^(2n)] → c * base^n
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let new_left = strip_sqrt_square(*left.clone());
+      let new_right = strip_sqrt_square(*right.clone());
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(new_left),
+        right: Box::new(new_right),
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let new_args: Vec<Expr> =
+        args.iter().map(|a| strip_sqrt_square(a.clone())).collect();
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
+      }
+    }
+    _ => expr,
+  }
+}
+
 // ─── NSolve ─────────────────────────────────────────────────────────
 
 /// NSolve[equation, var] — solve an equation numerically.
@@ -941,6 +995,8 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             });
           let evaled =
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw);
+          // In Solve context, Sqrt[expr^2] → expr because ± handles sign
+          let evaled = strip_sqrt_square(evaled);
           simplify(evaled)
         };
         let sqrt_denom =
