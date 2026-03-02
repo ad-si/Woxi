@@ -642,7 +642,32 @@ fn try_symbol_replace_all(
       }
     }
 
-    // Recurse into other compound expressions
+    // Recurse into BinaryOp (Plus, Times, Divide, Power, etc.)
+    Expr::BinaryOp { op, left, right } => {
+      let new_left = try_symbol_replace_all(left, pattern_sym, replacement);
+      let new_right = try_symbol_replace_all(right, pattern_sym, replacement);
+      if new_left.is_some() || new_right.is_some() {
+        Some(Expr::BinaryOp {
+          op: *op,
+          left: Box::new(new_left.unwrap_or_else(|| left.as_ref().clone())),
+          right: Box::new(new_right.unwrap_or_else(|| right.as_ref().clone())),
+        })
+      } else {
+        None
+      }
+    }
+
+    // Recurse into UnaryOp (Minus, Not, etc.)
+    Expr::UnaryOp { op, operand } => {
+      try_symbol_replace_all(operand, pattern_sym, replacement).map(
+        |new_operand| Expr::UnaryOp {
+          op: *op,
+          operand: Box::new(new_operand),
+        },
+      )
+    }
+
+    // Recurse into Rule
     Expr::Rule {
       pattern: pat,
       replacement: repl,
@@ -656,6 +681,113 @@ fn try_symbol_replace_all(
             new_repl.unwrap_or_else(|| repl.as_ref().clone()),
           ),
         })
+      } else {
+        None
+      }
+    }
+
+    // Recurse into RuleDelayed
+    Expr::RuleDelayed {
+      pattern: pat,
+      replacement: repl,
+    } => {
+      let new_pat = try_symbol_replace_all(pat, pattern_sym, replacement);
+      let new_repl = try_symbol_replace_all(repl, pattern_sym, replacement);
+      if new_pat.is_some() || new_repl.is_some() {
+        Some(Expr::RuleDelayed {
+          pattern: Box::new(new_pat.unwrap_or_else(|| pat.as_ref().clone())),
+          replacement: Box::new(
+            new_repl.unwrap_or_else(|| repl.as_ref().clone()),
+          ),
+        })
+      } else {
+        None
+      }
+    }
+
+    // Recurse into CurriedCall
+    Expr::CurriedCall { func, args } => {
+      let new_func = try_symbol_replace_all(func, pattern_sym, replacement);
+      let mut new_args = Vec::with_capacity(args.len());
+      let mut any_arg_changed = false;
+      for arg in args {
+        if let Some(new_arg) =
+          try_symbol_replace_all(arg, pattern_sym, replacement)
+        {
+          new_args.push(new_arg);
+          any_arg_changed = true;
+        } else {
+          new_args.push(arg.clone());
+        }
+      }
+      if new_func.is_some() || any_arg_changed {
+        Some(Expr::CurriedCall {
+          func: Box::new(new_func.unwrap_or_else(|| func.as_ref().clone())),
+          args: new_args,
+        })
+      } else {
+        None
+      }
+    }
+
+    // Recurse into Part
+    Expr::Part { expr: e, index } => {
+      let new_expr = try_symbol_replace_all(e, pattern_sym, replacement);
+      let new_index = try_symbol_replace_all(index, pattern_sym, replacement);
+      if new_expr.is_some() || new_index.is_some() {
+        Some(Expr::Part {
+          expr: Box::new(new_expr.unwrap_or_else(|| e.as_ref().clone())),
+          index: Box::new(new_index.unwrap_or_else(|| index.as_ref().clone())),
+        })
+      } else {
+        None
+      }
+    }
+
+    // Recurse into Comparison
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let mut new_operands = Vec::with_capacity(operands.len());
+      let mut any_changed = false;
+      for operand in operands {
+        if let Some(new_op) =
+          try_symbol_replace_all(operand, pattern_sym, replacement)
+        {
+          new_operands.push(new_op);
+          any_changed = true;
+        } else {
+          new_operands.push(operand.clone());
+        }
+      }
+      if any_changed {
+        Some(Expr::Comparison {
+          operands: new_operands,
+          operators: operators.clone(),
+        })
+      } else {
+        None
+      }
+    }
+
+    // Recurse into Association
+    Expr::Association(pairs) => {
+      let mut new_pairs = Vec::with_capacity(pairs.len());
+      let mut any_changed = false;
+      for (k, v) in pairs {
+        let new_k = try_symbol_replace_all(k, pattern_sym, replacement);
+        let new_v = try_symbol_replace_all(v, pattern_sym, replacement);
+        if new_k.is_some() || new_v.is_some() {
+          any_changed = true;
+        }
+        new_pairs.push((
+          new_k.unwrap_or_else(|| k.clone()),
+          new_v.unwrap_or_else(|| v.clone()),
+        ));
+      }
+      if any_changed {
+        Some(Expr::Association(new_pairs))
       } else {
         None
       }
