@@ -1738,9 +1738,21 @@ pub fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
       match &evaled {
         Expr::Integer(n) => Ok(*n as f64),
         Expr::Real(r) => Ok(*r),
-        _ => Err(InterpreterError::EvaluationError(
-          "FindRoot: starting point must be numeric".into(),
-        )),
+        _ => {
+          // Try N[] to convert symbolic expressions (e.g. Pi/4) to numeric
+          let n_expr = Expr::FunctionCall {
+            name: "N".to_string(),
+            args: vec![evaled.clone()],
+          };
+          let n_result = crate::evaluator::evaluate_expr_to_expr(&n_expr)?;
+          match &n_result {
+            Expr::Real(r) => Ok(*r),
+            Expr::Integer(n) => Ok(*n as f64),
+            _ => Err(InterpreterError::EvaluationError(
+              "FindRoot: starting point must be numeric".into(),
+            )),
+          }
+        }
       }
     }
   }
@@ -4530,6 +4542,363 @@ pub fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
         _ => Err(InterpreterError::EvaluationError(
           "Cannot evaluate expression numerically".into(),
         )),
+      }
+    }
+  }
+}
+
+// ─── NMinimize / NMaximize ──────────────────────────────────────────
+
+/// NMinimize[{f, constraints...}, vars] / NMaximize[{f, constraints...}, vars]
+/// Numerical global optimization using sampling + local refinement.
+/// Returns {opt_value, {var -> val, ...}}.
+pub fn nminimize_ast(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  let func_name = if maximize { "NMaximize" } else { "NMinimize" };
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{func_name} expects 2 arguments"
+    )));
+  }
+
+  // Parse objective and constraints from first argument
+  let (objective, constraints) = minimize_parse_objective(&args[0]);
+
+  // Parse variable(s) from second argument
+  let vars: Vec<String> = match &args[1] {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::List(items) => {
+      let mut v = Vec::new();
+      for item in items {
+        if let Expr::Identifier(name) = item {
+          v.push(name.clone());
+        } else {
+          return Err(InterpreterError::EvaluationError(format!(
+            "{func_name}: variables must be symbols"
+          )));
+        }
+      }
+      v
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "{func_name}: second argument must be a variable or list of variables"
+      )));
+    }
+  };
+
+  // Extract bounds from constraints (e.g. 0 < x < Pi/2)
+  let bounds = extract_bounds(&constraints, &vars)?;
+
+  // Evaluate expression at a given point
+  let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
+    let mut e = expr.clone();
+    for (i, var) in vars.iter().enumerate() {
+      e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
+    }
+    let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
+    expr_to_f64(&evaled)
+  };
+
+  let n = vars.len();
+
+  // Phase 1: Grid sampling to find best starting point
+  let samples_per_dim = 50;
+  let mut best_x = vec![0.0; n];
+  let mut best_f = if maximize {
+    f64::NEG_INFINITY
+  } else {
+    f64::INFINITY
+  };
+
+  // Generate sample points
+  let mut sample_points: Vec<Vec<f64>> = vec![vec![]];
+  for i in 0..n {
+    let (lo, hi) = bounds[i];
+    let mut new_points = Vec::new();
+    for pt in &sample_points {
+      for j in 0..=samples_per_dim {
+        let t = j as f64 / samples_per_dim as f64;
+        let val = lo + t * (hi - lo);
+        let mut new_pt = pt.clone();
+        new_pt.push(val);
+        new_points.push(new_pt);
+      }
+    }
+    sample_points = new_points;
+  }
+
+  for pt in &sample_points {
+    if let Ok(fval) = eval_at(&objective, pt)
+      && fval.is_finite()
+      && ((maximize && fval > best_f) || (!maximize && fval < best_f))
+    {
+      best_f = fval;
+      best_x = pt.clone();
+    }
+  }
+
+  // Phase 2: Local refinement using golden section / gradient-free search
+  // For each variable, refine using Brent-like narrowing
+  let sign = if maximize { -1.0 } else { 1.0 };
+  let max_iter = 200;
+  let tol = 1e-12;
+
+  // Try to compute symbolic gradients for gradient-based refinement
+  let grad_exprs: Option<Vec<Expr>> = {
+    let mut grads = Vec::new();
+    let mut ok = true;
+    for var in &vars {
+      match crate::functions::calculus_ast::differentiate_expr(&objective, var)
+      {
+        Ok(d) => {
+          let d = simplify(d);
+          // Check for unevaluated D
+          if contains_unevaluated_d(&d) {
+            ok = false;
+            break;
+          }
+          grads.push(d);
+        }
+        Err(_) => {
+          ok = false;
+          break;
+        }
+      }
+    }
+    if ok { Some(grads) } else { None }
+  };
+
+  let mut x = best_x;
+
+  if let Some(ref grads) = grad_exprs {
+    // Gradient-based refinement (projected gradient descent)
+    for _ in 0..max_iter {
+      let mut grad = vec![0.0; n];
+      let mut grad_ok = true;
+      for i in 0..n {
+        match eval_at(&grads[i], &x) {
+          Ok(g) if g.is_finite() => grad[i] = g,
+          _ => {
+            grad_ok = false;
+            break;
+          }
+        }
+      }
+      if !grad_ok {
+        break;
+      }
+
+      let grad_norm: f64 = grad.iter().map(|g| g * g).sum::<f64>().sqrt();
+      if grad_norm < tol {
+        break;
+      }
+
+      // Backtracking line search with projection onto bounds
+      let mut alpha = 0.1 / grad_norm.max(1.0);
+      let current_f = eval_at(&objective, &x).unwrap_or(f64::INFINITY) * sign;
+
+      for _ in 0..30 {
+        let x_new: Vec<f64> = x
+          .iter()
+          .enumerate()
+          .map(|(i, xi)| {
+            let raw = xi - sign * alpha * grad[i];
+            raw.clamp(bounds[i].0, bounds[i].1)
+          })
+          .collect();
+        if let Ok(new_f) = eval_at(&objective, &x_new)
+          && new_f.is_finite()
+          && new_f * sign < current_f
+        {
+          x = x_new;
+          break;
+        }
+        alpha *= 0.5;
+        if alpha < 1e-20 {
+          break;
+        }
+      }
+    }
+  } else {
+    // Gradient-free refinement: coordinate-wise golden section
+    let golden_ratio = 0.6180339887498949;
+    for _ in 0..max_iter {
+      let mut improved = false;
+      for i in 0..n {
+        let (mut lo, mut hi) = bounds[i];
+        // Narrow around current best
+        let range = (hi - lo) * 0.1;
+        lo = (x[i] - range).max(bounds[i].0);
+        hi = (x[i] + range).min(bounds[i].1);
+
+        let mut a = lo;
+        let mut b = hi;
+        let mut c = b - golden_ratio * (b - a);
+        let mut d = a + golden_ratio * (b - a);
+
+        for _ in 0..100 {
+          if (b - a).abs() < tol {
+            break;
+          }
+          let mut xc = x.clone();
+          xc[i] = c;
+          let mut xd = x.clone();
+          xd[i] = d;
+
+          let fc = eval_at(&objective, &xc).unwrap_or(f64::INFINITY) * sign;
+          let fd = eval_at(&objective, &xd).unwrap_or(f64::INFINITY) * sign;
+
+          if fc < fd {
+            b = d;
+            d = c;
+            c = b - golden_ratio * (b - a);
+          } else {
+            a = c;
+            c = d;
+            d = a + golden_ratio * (b - a);
+          }
+        }
+
+        let new_val = (a + b) / 2.0;
+        if (new_val - x[i]).abs() > tol {
+          x[i] = new_val;
+          improved = true;
+        }
+      }
+      if !improved {
+        break;
+      }
+    }
+  }
+
+  // Compute final value
+  let opt_val = eval_at(&objective, &x)?;
+
+  // Build result: {opt_val, {var -> val, ...}}
+  let rules: Vec<Expr> = vars
+    .iter()
+    .zip(x.iter())
+    .map(|(var, val)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var.clone())),
+      replacement: Box::new(Expr::Real(*val)),
+    })
+    .collect();
+
+  Ok(Expr::List(vec![Expr::Real(opt_val), Expr::List(rules)]))
+}
+
+/// Extract variable bounds from constraints.
+/// Handles patterns like: 0 < x < Pi/2, x > 0, x < 1, etc.
+/// Returns (lower_bound, upper_bound) for each variable.
+fn extract_bounds(
+  constraints: &[Expr],
+  vars: &[String],
+) -> Result<Vec<(f64, f64)>, InterpreterError> {
+  let mut bounds: Vec<(f64, f64)> = vars.iter().map(|_| (-1e6, 1e6)).collect();
+
+  for constraint in constraints {
+    // Flatten And expressions
+    let mut flat = Vec::new();
+    flatten_and_constraints_ref(constraint, &mut flat);
+    for c in flat {
+      extract_bound_from_comparison(c, vars, &mut bounds)?;
+    }
+  }
+
+  Ok(bounds)
+}
+
+fn flatten_and_constraints_ref<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => {
+      flatten_and_constraints_ref(left, out);
+      flatten_and_constraints_ref(right, out);
+    }
+    _ => out.push(expr),
+  }
+}
+
+fn extract_bound_from_comparison(
+  expr: &Expr,
+  vars: &[String],
+  bounds: &mut [(f64, f64)],
+) -> Result<(), InterpreterError> {
+  use crate::syntax::ComparisonOp;
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+  {
+    // Handle chained comparisons like 0 < x < Pi/2
+    for i in 0..operators.len() {
+      let left = &operands[i];
+      let right = &operands[i + 1];
+      let op = &operators[i];
+
+      // Try to identify if left or right is a variable and the other is a number
+      for (vi, var) in vars.iter().enumerate() {
+        let left_is_var = matches!(left, Expr::Identifier(n) if n == var);
+        let right_is_var = matches!(right, Expr::Identifier(n) if n == var);
+
+        if left_is_var {
+          // var < value or var <= value
+          if let Ok(val) = eval_to_f64(right) {
+            match op {
+              ComparisonOp::Less | ComparisonOp::LessEqual => {
+                bounds[vi].1 = bounds[vi].1.min(val);
+              }
+              ComparisonOp::Greater | ComparisonOp::GreaterEqual => {
+                bounds[vi].0 = bounds[vi].0.max(val);
+              }
+              _ => {}
+            }
+          }
+        } else if right_is_var {
+          // value < var or value <= var
+          if let Ok(val) = eval_to_f64(left) {
+            match op {
+              ComparisonOp::Less | ComparisonOp::LessEqual => {
+                bounds[vi].0 = bounds[vi].0.max(val);
+              }
+              ComparisonOp::Greater | ComparisonOp::GreaterEqual => {
+                bounds[vi].1 = bounds[vi].1.min(val);
+              }
+              _ => {}
+            }
+          }
+        }
+      }
+    }
+  }
+  Ok(())
+}
+
+/// Try to evaluate an expression to f64.
+fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
+  match expr {
+    Expr::Integer(n) => Ok(*n as f64),
+    Expr::Real(r) => Ok(*r),
+    _ => {
+      // Try evaluating via N[]
+      let n_expr = Expr::FunctionCall {
+        name: "N".to_string(),
+        args: vec![expr.clone()],
+      };
+      let evaled = crate::evaluator::evaluate_expr_to_expr(&n_expr)?;
+      match &evaled {
+        Expr::Real(r) => Ok(*r),
+        Expr::Integer(n) => Ok(*n as f64),
+        _ => {
+          let evaled2 = crate::evaluator::evaluate_expr_to_expr(expr)?;
+          expr_to_f64(&evaled2)
+        }
       }
     }
   }

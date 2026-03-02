@@ -3757,9 +3757,9 @@ NicholsPlot,,,,8,3363
 NightHemisphere,,,,10,3242
 NIntegrate,Computes a numerical integral,✅,pure,1,176
 NLineIntegrate,,,,14,
-NMaximize,,,,5,794
+NMaximize,Numerical global maximization with constraints using sampling and gradient refinement,✅,pure,5,794
 NMaxValue,,,,7,2020
-NMinimize,,,,5,587
+NMinimize,Numerical global minimization with constraints using sampling and gradient refinement,✅,pure,5,587
 NMinValue,,,,7,2475
 NominalScale,,,,13.1,
 NominalVariables,,,,7,2851

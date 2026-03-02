@@ -1921,3 +1921,82 @@ mod expand_threading {
     );
   }
 }
+
+/// Regression tests for unary minus after operators (issues 2 & 5)
+mod unary_minus_after_operator {
+  use super::*;
+
+  #[test]
+  fn times_minus_var() {
+    // a * -b should parse as a * (-b)
+    assert_eq!(interpret("2 * -3").unwrap(), "-6");
+  }
+
+  #[test]
+  fn times_minus_expr() {
+    // a*(b + c)*-d
+    assert_eq!(
+      interpret("a*(b + c)*-d /. {a -> 2, b -> 3, c -> 4, d -> 5}").unwrap(),
+      "-70"
+    );
+  }
+
+  #[test]
+  fn assign_minus_map() {
+    // y = -f /@ list should parse (unary minus before /@ )
+    let result = interpret("f[x_] := x^2; y = -f /@ {1,2,3}; y").unwrap();
+    // -f mapped over list: (-f)[1] etc. — depends on evaluation
+    assert!(
+      result.contains("{"),
+      "Expected list result, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn minus_power_precedence() {
+    // a * -b^2 should be a * (-(b^2)), not a * (-b)^2
+    assert_eq!(interpret("a * -b^2 /. {a -> 2, b -> 3}").unwrap(), "-18");
+  }
+
+  #[test]
+  fn plus_minus() {
+    // a + -b should be a - b
+    assert_eq!(interpret("5 + -3").unwrap(), "2");
+  }
+}
+
+/// Regression test for @ prefix application in ReplaceAll context (issue 3)
+mod prefix_apply_in_replace_all {
+  use super::*;
+
+  #[test]
+  fn first_at_list_in_replace_all() {
+    assert_eq!(interpret("x /. First@{x -> 42}").unwrap(), "42");
+  }
+
+  #[test]
+  fn last_at_list_in_replace_all() {
+    assert_eq!(interpret("x /. Last@{x -> 10, x -> 20}").unwrap(), "20");
+  }
+}
+
+/// Regression test for multi-line expression continuation (issue 4)
+mod multiline_continuation {
+  use super::*;
+
+  #[test]
+  fn division_across_lines() {
+    assert_eq!(interpret("a = 6 /\n  2\na").unwrap(), "3");
+  }
+
+  #[test]
+  fn plus_across_lines() {
+    assert_eq!(interpret("a = 3 +\n  4\na").unwrap(), "7");
+  }
+
+  #[test]
+  fn times_across_lines() {
+    assert_eq!(interpret("a = 3 *\n  4\na").unwrap(), "12");
+  }
+}

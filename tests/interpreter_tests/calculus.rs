@@ -1720,3 +1720,75 @@ mod integrate_exp_integral_ei {
     );
   }
 }
+
+mod sqrt_differentiation {
+  use super::*;
+
+  #[test]
+  fn d_sqrt_x() {
+    assert_eq!(interpret("D[Sqrt[x], x]").unwrap(), "1/(2*Sqrt[x])");
+  }
+
+  #[test]
+  fn d_sqrt_chain_rule() {
+    // D[Sqrt[1 + x^2], x] = (2*x)/(2*Sqrt[1 + x^2])
+    assert_eq!(
+      interpret("D[Sqrt[1 + x^2], x]").unwrap(),
+      "(2*x)/(2*Sqrt[1 + x^2])"
+    );
+  }
+
+  #[test]
+  fn d_sqrt_constant() {
+    assert_eq!(interpret("D[Sqrt[5], x]").unwrap(), "0");
+  }
+}
+
+mod nmaximize {
+  use super::*;
+
+  #[test]
+  fn nmaximize_sin() {
+    // NMaximize[{Sin[x], 0 < x < 2*Pi}, x] should find max near Pi/2
+    let result = interpret("NMaximize[{Sin[x], 0 < x < 2*Pi}, x]").unwrap();
+    assert!(
+      result.starts_with("{"),
+      "Expected list result, got: {}",
+      result
+    );
+    // Check that the max value is close to 1
+    assert!(
+      result.contains("0.99999"),
+      "Max should be ~1, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn nminimize_quadratic() {
+    // NMinimize[{x^2 - 4*x + 5, -10 < x < 10}, x] should find min at x=2
+    let result =
+      interpret("NMinimize[{x^2 - 4*x + 5, -10 < x < 10}, x]").unwrap();
+    assert!(
+      result.starts_with("{"),
+      "Expected list result, got: {}",
+      result
+    );
+    assert!(result.contains("1."), "Min should be ~1, got: {}", result);
+  }
+}
+
+mod findroot_symbolic_start {
+  use super::*;
+
+  #[test]
+  fn findroot_pi_over_4() {
+    // FindRoot should accept Pi/4 as starting point
+    let result = interpret("FindRoot[Sin[x] - 0.5, {x, Pi/4}]").unwrap();
+    assert!(
+      result.contains("x ->"),
+      "Expected rule result, got: {}",
+      result
+    );
+  }
+}
