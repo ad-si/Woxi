@@ -5,6 +5,189 @@ use crate::syntax::{BinaryOperator, Expr, UnaryOperator, expr_to_string};
 
 use crate::functions::calculus_ast::simplify;
 
+// ─── Refine ─────────────────────────────────────────────────────────
+
+/// Refine[expr, assumption] - Simplify an expression under assumptions.
+/// E.g. Refine[Sqrt[x^2], x > 0] → x
+pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Refine expects exactly 2 arguments".into(),
+    ));
+  }
+  let expr = &args[0];
+  let assumption = &args[1];
+
+  // Extract variables assumed positive from the assumption
+  let positive_vars = extract_positive_vars(assumption);
+
+  // Recursively simplify the expression under the assumption
+  let result = refine_expr(expr, &positive_vars, assumption);
+
+  Ok(result)
+}
+
+/// Extract variable names that are assumed positive from an assumption expression.
+/// Handles: x > 0, x >= 0, x ∈ Reals && x > 0, etc.
+fn extract_positive_vars(assumption: &Expr) -> Vec<String> {
+  let mut vars = Vec::new();
+  extract_positive_vars_inner(assumption, &mut vars);
+  vars
+}
+
+fn extract_positive_vars_inner(assumption: &Expr, vars: &mut Vec<String>) {
+  match assumption {
+    // x > 0 or x >= 0
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      if operands.len() == 2 && operators.len() == 1 {
+        let is_gt = matches!(
+          operators[0],
+          crate::syntax::ComparisonOp::Greater
+            | crate::syntax::ComparisonOp::GreaterEqual
+        );
+        if is_gt
+          && let Expr::Identifier(name) = &operands[0]
+          && matches!(&operands[1], Expr::Integer(0))
+        {
+          vars.push(name.clone());
+        }
+        // 0 < x or 0 <= x
+        let is_lt = matches!(
+          operators[0],
+          crate::syntax::ComparisonOp::Less
+            | crate::syntax::ComparisonOp::LessEqual
+        );
+        if is_lt
+          && let Expr::Identifier(name) = &operands[1]
+          && matches!(&operands[0], Expr::Integer(0))
+        {
+          vars.push(name.clone());
+        }
+      }
+    }
+    // And[cond1, cond2, ...] or cond1 && cond2
+    Expr::FunctionCall { name, args } if name == "And" => {
+      for arg in args {
+        extract_positive_vars_inner(arg, vars);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Recursively apply Refine simplification rules.
+fn refine_expr(
+  expr: &Expr,
+  positive_vars: &[String],
+  assumption: &Expr,
+) -> Expr {
+  match expr {
+    // Sqrt[var^2] → var when var > 0
+    // Sqrt[var^(2n)] → var^n when var > 0
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      if let Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: base,
+        right: exp,
+      } = &args[0]
+        && let Expr::Integer(n) = exp.as_ref()
+        && *n > 0
+        && n % 2 == 0
+      {
+        // Check if base is a positive variable
+        if let Expr::Identifier(var_name) = base.as_ref()
+          && positive_vars.contains(var_name)
+        {
+          let half = n / 2;
+          if half == 1 {
+            return *base.clone();
+          } else {
+            return Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: base.clone(),
+              right: Box::new(Expr::Integer(half)),
+            };
+          }
+        }
+      }
+      // Recurse into the Sqrt argument
+      let refined_arg = refine_expr(&args[0], positive_vars, assumption);
+      Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // Abs[var] → var when var > 0
+    Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+      if let Expr::Identifier(var_name) = &args[0]
+        && positive_vars.contains(var_name)
+      {
+        return args[0].clone();
+      }
+      let refined_arg = refine_expr(&args[0], positive_vars, assumption);
+      Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![refined_arg],
+      }
+    }
+
+    // ConditionalExpression[val, cond] → val if cond matches assumption
+    Expr::FunctionCall { name, args }
+      if name == "ConditionalExpression" && args.len() == 2 =>
+    {
+      let cond_str = expr_to_string(&args[1]);
+      let assumption_str = expr_to_string(assumption);
+      if cond_str == assumption_str {
+        return refine_expr(&args[0], positive_vars, assumption);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| refine_expr(a, positive_vars, assumption))
+          .collect(),
+      }
+    }
+
+    // Recurse into function calls
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| refine_expr(a, positive_vars, assumption))
+        .collect(),
+    },
+
+    // Recurse into binary ops
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(refine_expr(left, positive_vars, assumption)),
+      right: Box::new(refine_expr(right, positive_vars, assumption)),
+    },
+
+    // Recurse into unary ops
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(refine_expr(operand, positive_vars, assumption)),
+    },
+
+    // Recurse into lists
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|i| refine_expr(i, positive_vars, assumption))
+        .collect(),
+    ),
+
+    // Everything else: return as-is
+    _ => expr.clone(),
+  }
+}
+
 // ─── Simplify ───────────────────────────────────────────────────────
 
 /// Simplify[expr] or Simplify[expr, Assumptions -> cond] - User-facing simplification

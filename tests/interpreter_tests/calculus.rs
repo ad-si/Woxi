@@ -1619,3 +1619,43 @@ mod integrate_by_parts {
     assert_eq!(interpret("D[e^x, x]").unwrap(), "e^x*Log[e]");
   }
 }
+
+mod integrate_exp_integral_ei {
+  use super::*;
+
+  #[test]
+  fn exp_2x_over_2x() {
+    // ∫ E^(2x) / (2*x) dx = ExpIntegralEi[2*x] / 2
+    assert_eq!(
+      interpret("Integrate[E^(2x) / (2*x), x]").unwrap(),
+      "ExpIntegralEi[2*x]/2"
+    );
+  }
+
+  #[test]
+  fn exp_x_over_x() {
+    // ∫ E^x / x dx = ExpIntegralEi[x]
+    assert_eq!(
+      interpret("Integrate[E^x / x, x]").unwrap(),
+      "ExpIntegralEi[x]"
+    );
+  }
+
+  #[test]
+  fn exp_3x_over_x() {
+    // ∫ E^(3x) / x dx = ExpIntegralEi[3*x]
+    assert_eq!(
+      interpret("Integrate[E^(3x) / x, x]").unwrap(),
+      "ExpIntegralEi[3*x]"
+    );
+  }
+
+  #[test]
+  fn exp_x_over_3x() {
+    // ∫ E^x / (3*x) dx = ExpIntegralEi[x] / 3
+    assert_eq!(
+      interpret("Integrate[E^x / (3*x), x]").unwrap(),
+      "ExpIntegralEi[x]/3"
+    );
+  }
+}

@@ -2699,3 +2699,60 @@ mod factor_terms_list {
     );
   }
 }
+
+mod refine {
+  use super::*;
+
+  #[test]
+  fn sqrt_x_squared_positive() {
+    assert_eq!(interpret("Refine[Sqrt[x^2], x > 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn sqrt_y_squared_positive() {
+    assert_eq!(interpret("Refine[Sqrt[y^2], y > 0]").unwrap(), "y");
+  }
+
+  #[test]
+  fn abs_x_positive() {
+    assert_eq!(interpret("Refine[Abs[x], x > 0]").unwrap(), "x");
+  }
+
+  #[test]
+  fn abs_y_positive() {
+    assert_eq!(interpret("Refine[Abs[y], y > 0]").unwrap(), "y");
+  }
+
+  #[test]
+  fn sqrt_x_squared_no_assumption() {
+    // Without assumptions, Sqrt[x^2] should stay as Sqrt[x^2]
+    assert_eq!(interpret("Sqrt[x^2]").unwrap(), "Sqrt[x^2]");
+  }
+
+  #[test]
+  fn sqrt_integer_squared() {
+    // Sqrt[4] = 2, Sqrt[9] = 3 (exact integers, no assumptions needed)
+    assert_eq!(interpret("Sqrt[4]").unwrap(), "2");
+    assert_eq!(interpret("Sqrt[9]").unwrap(), "3");
+  }
+
+  #[test]
+  fn sqrt_known_non_negative_squared() {
+    // Sqrt[(positive_constant)^2] should simplify without Refine
+    assert_eq!(interpret("Sqrt[Pi^2]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn refine_nested_expression() {
+    assert_eq!(
+      interpret("Refine[Sqrt[x^2] + Sqrt[y^2], x > 0 && y > 0]").unwrap(),
+      "x + y"
+    );
+  }
+
+  #[test]
+  fn refine_no_simplification_needed() {
+    // Expression that doesn't benefit from assumptions
+    assert_eq!(interpret("Refine[x + 1, x > 0]").unwrap(), "1 + x");
+  }
+}

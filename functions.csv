@@ -4551,7 +4551,7 @@ Red,Named color evaluating to RGBColor[1 0 0],✅,pure,5.1,65
 Reduce,Reduces equations and inequalities to canonical disjunctive form,✅,pure,1,213
 ReferenceAltitude,,,,14.1,
 ReferenceLineStyle,,,,8,4225
-Refine,,,,5,764
+Refine,Simplifies expressions using assumptions,✅,pure,5,764
 ReflectionMatrix,,,,6,2203
 ReflectionTransform,,,,6,1536
 Refresh,,,,6,1145

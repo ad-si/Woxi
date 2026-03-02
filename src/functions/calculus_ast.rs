@@ -1146,6 +1146,101 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// Try to match ∫ E^(a*x) / (c*x) dx = ExpIntegralEi[a*x] / c
+/// Handles: E^(a*x) / x, E^(a*x) / (c*x), E^x / x, E^x / (c*x)
+/// Also handles Exp[a*x] function form.
+fn try_match_exp_over_linear(
+  numerator: &Expr,
+  denominator: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  // Check if numerator is E^(a*x) (Power form or Exp function form)
+  let exp_linear_arg = match numerator {
+    // E^(a*x) as BinaryOp::Power
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } if matches!(base.as_ref(), Expr::Constant(c) if c == "E") => {
+      try_match_linear_arg(exp, var)
+    }
+    // Exp[a*x] as FunctionCall
+    Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
+      try_match_linear_arg(&args[0], var)
+    }
+    _ => None,
+  };
+
+  let linear_coeff = exp_linear_arg?; // a in E^(a*x)
+
+  // Check if denominator is c*x or just x
+  let denom_const = match denominator {
+    // Just x
+    Expr::Identifier(name) if name == var => Some(Expr::Integer(1)),
+    // c*x (BinaryOp form)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if is_constant_wrt(left, var)
+        && matches!(right.as_ref(), Expr::Identifier(name) if name == var)
+      {
+        Some(*left.clone())
+      } else if is_constant_wrt(right, var)
+        && matches!(left.as_ref(), Expr::Identifier(name) if name == var)
+      {
+        Some(*right.clone())
+      } else {
+        None
+      }
+    }
+    // Times[c, x] (FunctionCall form)
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      if is_constant_wrt(&args[0], var)
+        && matches!(&args[1], Expr::Identifier(name) if name == var)
+      {
+        Some(args[0].clone())
+      } else if is_constant_wrt(&args[1], var)
+        && matches!(&args[0], Expr::Identifier(name) if name == var)
+      {
+        Some(args[1].clone())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  };
+
+  let denom_const = denom_const?; // c in c*x
+
+  // Build ExpIntegralEi[a*x]
+  let ei_arg = if matches!(&linear_coeff, Expr::Integer(1)) {
+    Expr::Identifier(var.to_string())
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(linear_coeff),
+      right: Box::new(Expr::Identifier(var.to_string())),
+    }
+  };
+  let ei_expr = Expr::FunctionCall {
+    name: "ExpIntegralEi".to_string(),
+    args: vec![ei_arg],
+  };
+
+  // Return ExpIntegralEi[a*x] / c
+  if matches!(&denom_const, Expr::Integer(1)) {
+    Some(ei_expr)
+  } else {
+    Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(ei_expr),
+      right: Box::new(denom_const),
+    })
+  }
+}
+
 /// Try to integrate a rational function (numerator/denominator where both are polynomials).
 /// Uses polynomial long division + partial fraction decomposition.
 fn try_integrate_rational(
@@ -2394,6 +2489,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               if let Some(result) = integrate(&rewritten, var) {
                 return Some(result);
               }
+            }
+            // ∫ E^(a*x) / (c*x) dx = ExpIntegralEi[a*x] / c
+            // ∫ E^(a*x) / x dx = ExpIntegralEi[a*x]
+            if let Some(result) = try_match_exp_over_linear(left, right, var) {
+              return Some(result);
             }
             // Try rational function integration (partial fractions)
             try_integrate_rational(left, right, var)
