@@ -1958,6 +1958,25 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
       result
     }
+    Rule::ParenExtended => {
+      // (expr)[[index]] -> Part[expr, index]
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      // First inner pair is the expression, then PartIndexSuffix elements
+      let base_expr = pair_to_expr(inner_pairs[0].clone());
+      let part_indices: Vec<Expr> = inner_pairs
+        .iter()
+        .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+        .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+        .collect();
+      let mut result = base_expr;
+      for idx in &part_indices {
+        result = Expr::Part {
+          expr: Box::new(result),
+          index: Box::new(idx.clone()),
+        };
+      }
+      result
+    }
     Rule::Increment => {
       // x++ -> Increment[x]
       let inner = pair.into_inner().next().unwrap();

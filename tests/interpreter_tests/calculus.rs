@@ -1618,6 +1618,67 @@ mod integrate_by_parts {
   fn general_exp_differentiation() {
     assert_eq!(interpret("D[e^x, x]").unwrap(), "e^x*Log[e]");
   }
+
+  #[test]
+  fn x4_exp_x_half() {
+    // ∫ x^4 * E^(x/2) dx using closed-form poly × E^(cx) integration
+    assert_eq!(
+      interpret("Integrate[x^4 * E^(x/2), x]").unwrap(),
+      "E^(x/2)*(768 - 384*x + 96*x^2 - 16*x^3 + 2*x^4)"
+    );
+  }
+
+  #[test]
+  fn exp_x_half() {
+    // ∫ E^(x/2) dx = 2*E^(x/2)
+    assert_eq!(interpret("Integrate[E^(x/2), x]").unwrap(), "2*E^(x/2)");
+  }
+
+  #[test]
+  fn exp_x_third() {
+    // ∫ E^(x/3) dx = 3*E^(x/3)
+    assert_eq!(interpret("Integrate[E^(x/3), x]").unwrap(), "3*E^(x/3)");
+  }
+
+  #[test]
+  fn x_exp_x_half() {
+    // ∫ x * E^(x/2) dx
+    assert_eq!(
+      interpret("Integrate[x * E^(x/2), x]").unwrap(),
+      "E^(x/2)*(-4 + 2*x)"
+    );
+  }
+}
+
+mod integrate_polynomial_power {
+  use super::*;
+
+  #[test]
+  fn x_plus_1_squared() {
+    // ∫ (x+1)^2 dx = x + x^2 + x^3/3
+    assert_eq!(
+      interpret("Integrate[(x + 1)^2, x]").unwrap(),
+      "x + x^2 + x^3/3"
+    );
+  }
+
+  #[test]
+  fn x_plus_1_cubed() {
+    // ∫ (x+1)^3 dx - woxi expands and integrates term by term
+    // wolframscript returns (1 + x)^4/4 (factored form) — both are correct
+    // but since woxi expands first, it returns the expanded antiderivative
+    let result = interpret("Integrate[(x + 1)^3, x]").unwrap();
+    assert_eq!(result, "x + (3*x^2)/2 + x^3 + x^4/4");
+  }
+
+  #[test]
+  fn two_x_minus_1_squared() {
+    // ∫ (2x-1)^2 dx = expand to 4x^2 - 4x + 1, integrate to x - 2*x^2 + (4*x^3)/3
+    assert_eq!(
+      interpret("Integrate[(2*x - 1)^2, x]").unwrap(),
+      "x - 2*x^2 + (4*x^3)/3"
+    );
+  }
 }
 
 mod integrate_exp_integral_ei {

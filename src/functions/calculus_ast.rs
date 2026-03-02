@@ -904,6 +904,40 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
 fn make_divided(expr: Expr, divisor: Expr) -> Expr {
   match &divisor {
     Expr::Integer(1) => expr,
+    // expr / (a/b) → expr * b/a = (b * expr) / a
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: num,
+      right: den,
+    } => {
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: den.clone(),
+          right: Box::new(expr),
+        }),
+        right: num.clone(),
+      };
+      simplify(result)
+    }
+    // expr / Rational[a, b] → (b * expr) / a
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      let num = &args[0]; // a
+      let den = &args[1]; // b
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(den.clone()),
+          right: Box::new(expr),
+        }),
+        right: Box::new(num.clone()),
+      };
+      simplify(result)
+    }
     _ => Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left: Box::new(expr),
@@ -1043,6 +1077,50 @@ fn try_match_linear_arg(expr: &Expr, var: &str) -> Option<Expr> {
         && matches!(left.as_ref(), Expr::Identifier(name) if name == var)
       {
         Some(*right.clone())
+      } else {
+        None
+      }
+    }
+    // x/c form: var/const → coefficient is 1/const (i.e., Rational[1,c] for integer c)
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Identifier(name) if name == var)
+        && is_constant_wrt(right, var)
+      {
+        // coefficient = 1/right — use division_ast for proper Rational creation
+        if let Ok(result) = crate::functions::math_ast::divide_ast(&[
+          Expr::Integer(1),
+          *right.clone(),
+        ]) {
+          Some(result)
+        } else {
+          Some(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Integer(1)),
+            right: right.clone(),
+          })
+        }
+      } else if is_constant_wrt(right, var) {
+        // (expr)/const where expr might be a*x → coefficient is a/const
+        if let Some(inner_coeff) = try_match_linear_arg(left, var) {
+          if let Ok(result) = crate::functions::math_ast::divide_ast(&[
+            inner_coeff.clone(),
+            *right.clone(),
+          ]) {
+            Some(result)
+          } else {
+            Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(inner_coeff),
+              right: right.clone(),
+            })
+          }
+        } else {
+          None
+        }
       } else {
         None
       }
@@ -2095,15 +2173,21 @@ fn try_integrate_poly_times_const_exp(
 ) -> Option<Expr> {
   use crate::syntax::BinaryOperator::*;
 
-  let log_base = Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![base.clone()],
+  // For base E, Log[E] = 1, so rate = coeff directly.
+  // For other bases, rate = coeff * Log[base].
+  let rate = if matches!(base, Expr::Constant(c) if c == "E") {
+    simplify(coeff.clone())
+  } else {
+    let log_base = Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![base.clone()],
+    };
+    simplify(Expr::BinaryOp {
+      op: Times,
+      left: Box::new(coeff.clone()),
+      right: Box::new(log_base),
+    })
   };
-  let rate = simplify(Expr::BinaryOp {
-    op: Times,
-    left: Box::new(coeff.clone()),
-    right: Box::new(log_base),
-  });
 
   // Collect derivatives of poly until we reach 0
   let mut derivs = vec![poly.clone()];
@@ -2122,74 +2206,139 @@ fn try_integrate_poly_times_const_exp(
     }
   }
 
+  // For numeric rates (e.g., base E with fractional coeff), compute each term
+  // directly with 1/rate^(k+1) to get clean integer coefficients.
+  // For symbolic rates (non-E bases involving Log), use the common-denominator
+  // form: (exponential * Σ P^(k)(x)*rate^(n-1-k)) / rate^n.
+  let is_numeric_rate = matches!(&rate, Expr::Integer(_))
+    || matches!(&rate, Expr::FunctionCall { name, .. } if name == "Rational");
+
   let n = derivs.len();
 
-  // Build numerator: Σ_{k=0}^{n-1} (-1)^k * P^(k)(x) * rate^(n-1-k)
-  let mut num_terms = Vec::new();
-  for (k, deriv) in derivs.iter().enumerate() {
-    let rate_power = n as i128 - 1 - k as i128;
-    let rate_factor = if rate_power == 0 {
-      Expr::Integer(1)
-    } else if rate_power == 1 {
-      rate.clone()
+  if is_numeric_rate {
+    // Direct approach: Σ (-1)^k * P^(k)(x) / rate^(k+1)
+    let inv_rate =
+      crate::functions::math_ast::divide_ast(&[Expr::Integer(1), rate.clone()])
+        .unwrap_or_else(|_| Expr::BinaryOp {
+          op: Divide,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(rate.clone()),
+        });
+
+    let mut num_terms = Vec::new();
+    for (k, deriv) in derivs.iter().enumerate() {
+      let k1 = k as i128 + 1;
+      let inv_rate_factor = if k1 == 1 {
+        inv_rate.clone()
+      } else {
+        crate::functions::math_ast::power_two(&inv_rate, &Expr::Integer(k1))
+          .unwrap_or_else(|_| Expr::BinaryOp {
+            op: Power,
+            left: Box::new(inv_rate.clone()),
+            right: Box::new(Expr::Integer(k1)),
+          })
+      };
+
+      let mut term = simplify(Expr::BinaryOp {
+        op: Times,
+        left: Box::new(deriv.clone()),
+        right: Box::new(inv_rate_factor),
+      });
+
+      if k % 2 == 1 {
+        term = simplify(Expr::BinaryOp {
+          op: Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(term),
+        });
+      }
+
+      num_terms.push(term);
+    }
+
+    let numerator = if num_terms.len() == 1 {
+      num_terms.into_iter().next().unwrap()
+    } else {
+      let combined = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: num_terms,
+      };
+      crate::functions::polynomial_ast::expand_and_combine(&combined)
+    };
+
+    let result = simplify(Expr::BinaryOp {
+      op: Times,
+      left: Box::new(exponential.clone()),
+      right: Box::new(numerator),
+    });
+
+    Some(result)
+  } else {
+    // Common-denominator approach: (exponential * Σ P^(k)(x)*rate^(n-1-k)) / rate^n
+    let mut num_terms = Vec::new();
+    for (k, deriv) in derivs.iter().enumerate() {
+      let rate_power = n as i128 - 1 - k as i128;
+      let rate_factor = if rate_power == 0 {
+        Expr::Integer(1)
+      } else if rate_power == 1 {
+        rate.clone()
+      } else {
+        Expr::BinaryOp {
+          op: Power,
+          left: Box::new(rate.clone()),
+          right: Box::new(Expr::Integer(rate_power)),
+        }
+      };
+
+      let mut term = simplify(Expr::BinaryOp {
+        op: Times,
+        left: Box::new(deriv.clone()),
+        right: Box::new(rate_factor),
+      });
+
+      if k % 2 == 1 {
+        term = simplify(Expr::BinaryOp {
+          op: Times,
+          left: Box::new(Expr::Integer(-1)),
+          right: Box::new(term),
+        });
+      }
+
+      num_terms.push(term);
+    }
+
+    let numerator = if num_terms.len() == 1 {
+      num_terms.into_iter().next().unwrap()
+    } else {
+      let combined = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: num_terms,
+      };
+      crate::functions::polynomial_ast::expand_and_combine(&combined)
+    };
+
+    let denom = if n == 1 {
+      rate
     } else {
       Expr::BinaryOp {
         op: Power,
-        left: Box::new(rate.clone()),
-        right: Box::new(Expr::Integer(rate_power)),
+        left: Box::new(rate),
+        right: Box::new(Expr::Integer(n as i128)),
       }
     };
 
-    let mut term = simplify(Expr::BinaryOp {
+    let result_num = simplify(Expr::BinaryOp {
       op: Times,
-      left: Box::new(deriv.clone()),
-      right: Box::new(rate_factor),
+      left: Box::new(exponential.clone()),
+      right: Box::new(numerator),
     });
 
-    if k % 2 == 1 {
-      term = simplify(Expr::BinaryOp {
-        op: Times,
-        left: Box::new(Expr::Integer(-1)),
-        right: Box::new(term),
-      });
-    }
-
-    num_terms.push(term);
+    Some(Expr::BinaryOp {
+      op: Divide,
+      left: Box::new(result_num),
+      right: Box::new(denom),
+    })
   }
-
-  let numerator = if num_terms.len() == 1 {
-    num_terms.into_iter().next().unwrap()
-  } else {
-    let combined = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: num_terms,
-    };
-    crate::functions::polynomial_ast::expand_and_combine(&combined)
-  };
-
-  // Denominator: rate^n
-  let denom = if n == 1 {
-    rate
-  } else {
-    Expr::BinaryOp {
-      op: Power,
-      left: Box::new(rate),
-      right: Box::new(Expr::Integer(n as i128)),
-    }
-  };
-
-  // Result: (exponential * numerator) / denom
-  let result_num = simplify(Expr::BinaryOp {
-    op: Times,
-    left: Box::new(exponential.clone()),
-    right: Box::new(numerator),
-  });
-
-  Some(Expr::BinaryOp {
-    op: Divide,
-    left: Box::new(result_num),
-    right: Box::new(denom),
-  })
 }
 
 /// Try integration by parts: ∫ u dv = u*v - ∫ v du
@@ -2227,8 +2376,9 @@ fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
     .map(|(_, f)| *f)
     .collect();
 
-  // Special case: polynomial × constant-base exponential (non-E base)
+  // Special case: polynomial × constant-base exponential (including E base)
   // Use closed-form formula: ∫ P(x)*a^(cx) dx = a^(cx) * Σ (-1)^k P^(k)(x) / (c*Log[a])^(k+1)
+  // For a=E, rate = c*Log[E] = c, giving direct polynomial-times-E^(cx) integration.
   if dv_factors.len() == 1
     && let Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
@@ -2237,7 +2387,6 @@ fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
     } = dv_factors[0]
     && is_constant_wrt(base, var)
     && !is_constant_wrt(exp, var)
-    && !matches!(base.as_ref(), Expr::Constant(c) if c == "E")
     && let Some(coeff) = try_match_linear_arg(exp, var)
     && is_polynomial_in(u, var)
   {
@@ -2607,6 +2756,17 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             && let Some(result) = try_integrate_trig_squared(left, var)
           {
             return Some(result);
+          }
+          // ∫ f(x)^n dx where n is a positive integer: try expanding
+          if let Expr::Integer(n) = right.as_ref()
+            && *n >= 2
+            && !is_constant_wrt(left, var)
+          {
+            let expanded =
+              crate::functions::polynomial_ast::expand_and_combine(expr);
+            if !expr_str_eq(&expanded, expr) {
+              return integrate(&expanded, var);
+            }
           }
           None
         }
