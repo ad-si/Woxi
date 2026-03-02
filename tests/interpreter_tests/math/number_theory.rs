@@ -1056,6 +1056,48 @@ mod prime_power_q {
   }
 }
 
+mod factorial {
+  use super::*;
+
+  #[test]
+  fn factorial_small() {
+    assert_eq!(interpret("Factorial[0]").unwrap(), "1");
+    assert_eq!(interpret("Factorial[1]").unwrap(), "1");
+    assert_eq!(interpret("Factorial[2]").unwrap(), "2");
+    assert_eq!(interpret("Factorial[3]").unwrap(), "6");
+    assert_eq!(interpret("Factorial[4]").unwrap(), "24");
+    assert_eq!(interpret("Factorial[5]").unwrap(), "120");
+  }
+
+  #[test]
+  fn factorial_medium() {
+    assert_eq!(interpret("Factorial[10]").unwrap(), "3628800");
+    assert_eq!(interpret("Factorial[12]").unwrap(), "479001600");
+    assert_eq!(interpret("Factorial[20]").unwrap(), "2432902008176640000");
+  }
+
+  #[test]
+  fn factorial_big() {
+    assert_eq!(
+      interpret("Factorial[50]").unwrap(),
+      "30414093201713378043612608166064768844377641568960512000000000000"
+    );
+  }
+
+  #[test]
+  fn factorial_100() {
+    assert_eq!(
+      interpret("Factorial[100]").unwrap(),
+      "93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000"
+    );
+  }
+
+  #[test]
+  fn factorial_symbolic() {
+    assert_eq!(interpret("Factorial[n]").unwrap(), "n!");
+  }
+}
+
 mod factorial2 {
   use super::*;
 
