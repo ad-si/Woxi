@@ -1,6 +1,169 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Collect all pattern variable names from an expression.
+/// Returns pairs of (name, head) for each Pattern node found.
+fn collect_pattern_vars(expr: &Expr) -> Vec<(String, Option<String>)> {
+  let mut vars = Vec::new();
+  collect_pattern_vars_inner(expr, &mut vars);
+  vars
+}
+
+fn collect_pattern_vars_inner(
+  expr: &Expr,
+  vars: &mut Vec<(String, Option<String>)>,
+) {
+  match expr {
+    Expr::Pattern { name, head } => {
+      if !vars.iter().any(|(n, _)| n == name) {
+        vars.push((name.clone(), head.clone()));
+      }
+    }
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => {
+      if !vars.iter().any(|(n, _)| n == name) {
+        vars.push((name.clone(), head.clone()));
+      }
+      if let Some(d) = default {
+        collect_pattern_vars_inner(d, vars);
+      }
+    }
+    Expr::PatternTest { name, test } => {
+      if !vars.iter().any(|(n, _)| n == name) {
+        vars.push((name.clone(), None));
+      }
+      collect_pattern_vars_inner(test, vars);
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_pattern_vars_inner(left, vars);
+      collect_pattern_vars_inner(right, vars);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_pattern_vars_inner(operand, vars);
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_pattern_vars_inner(a, vars);
+      }
+    }
+    Expr::List(items) => {
+      for item in items {
+        collect_pattern_vars_inner(item, vars);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Replace pattern variables with placeholder identifiers in an expression.
+/// Returns the substituted expression.
+fn replace_patterns_with_placeholders(
+  expr: &Expr,
+  vars: &[(String, Option<String>)],
+) -> Expr {
+  match expr {
+    Expr::Pattern { name, .. } | Expr::PatternOptional { name, .. } => {
+      if vars.iter().any(|(n, _)| n == name) {
+        Expr::Identifier(format!("__patvar{}__", name))
+      } else {
+        expr.clone()
+      }
+    }
+    Expr::PatternTest { name, .. } => {
+      if vars.iter().any(|(n, _)| n == name) {
+        Expr::Identifier(format!("__patvar{}__", name))
+      } else {
+        expr.clone()
+      }
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_patterns_with_placeholders(left, vars)),
+      right: Box::new(replace_patterns_with_placeholders(right, vars)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_patterns_with_placeholders(operand, vars)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| replace_patterns_with_placeholders(a, vars))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| replace_patterns_with_placeholders(a, vars))
+        .collect(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
+/// Replace placeholder identifiers back with Pattern nodes.
+fn replace_placeholders_with_patterns(
+  expr: &Expr,
+  vars: &[(String, Option<String>)],
+) -> Expr {
+  match expr {
+    Expr::Identifier(name) => {
+      if let Some(stripped) = name
+        .strip_prefix("__patvar")
+        .and_then(|s| s.strip_suffix("__"))
+        && let Some((pat_name, head)) = vars.iter().find(|(n, _)| n == stripped)
+      {
+        return Expr::Pattern {
+          name: pat_name.clone(),
+          head: head.clone(),
+        };
+      }
+      expr.clone()
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(replace_placeholders_with_patterns(left, vars)),
+      right: Box::new(replace_placeholders_with_patterns(right, vars)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_placeholders_with_patterns(operand, vars)),
+    },
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| replace_placeholders_with_patterns(a, vars))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| replace_placeholders_with_patterns(a, vars))
+        .collect(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
+/// Normalize a structural pattern by evaluating it with placeholder variables.
+/// E.g., `1/x_` (BinaryOp Divide) → `Power[x_, -1]` (canonical form).
+fn normalize_structural_pattern(pattern: &Expr) -> Expr {
+  let vars = collect_pattern_vars(pattern);
+  if vars.is_empty() {
+    return pattern.clone();
+  }
+  let with_placeholders = replace_patterns_with_placeholders(pattern, &vars);
+  match evaluate_expr_to_expr(&with_placeholders) {
+    Ok(evaluated) => replace_placeholders_with_patterns(&evaluated, &vars),
+    Err(_) => pattern.clone(), // fallback to raw pattern
+  }
+}
+
 /// Helper for Attributes[f] = value / Attributes[f] := value
 /// Extracts attribute symbols from value, validates, and sets them on the symbol.
 pub fn set_attributes_from_value(
@@ -387,15 +550,27 @@ pub fn set_delayed_ast(
         _ => {
           let (pat_name, head) = extract_pattern_info(arg);
           if pat_name.is_empty() && head.is_none() {
-            // Literal value (not a pattern) — create a SameQ condition
-            // e.g., f[1] := ... should only match when arg === 1
-            let param_name = format!("_dv{}", i);
-            let eval_arg = evaluate_expr_to_expr(arg)?;
-            conditions.push(Some(Expr::Comparison {
-              operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-              operators: vec![crate::syntax::ComparisonOp::SameQ],
-            }));
-            params.push(param_name);
+            if crate::evaluator::pattern_matching::contains_pattern(arg) {
+              // Structural pattern (e.g., 1/x_, a_ + b_) — normalize and store
+              // the pattern AST in a __StructuralPattern__ marker for dispatch-time matching.
+              let param_name = format!("__sp{}", i);
+              let normalized = normalize_structural_pattern(arg);
+              conditions.push(Some(Expr::FunctionCall {
+                name: "__StructuralPattern__".to_string(),
+                args: vec![Expr::Identifier(param_name.clone()), normalized],
+              }));
+              params.push(param_name);
+            } else {
+              // Literal value (not a pattern) — create a SameQ condition
+              // e.g., f[1] := ... should only match when arg === 1
+              let param_name = format!("_dv{}", i);
+              let eval_arg = evaluate_expr_to_expr(arg)?;
+              conditions.push(Some(Expr::Comparison {
+                operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+                operators: vec![crate::syntax::ComparisonOp::SameQ],
+              }));
+              params.push(param_name);
+            }
           } else {
             params.push(pat_name);
             conditions.push(None);
@@ -441,12 +616,26 @@ pub fn set_delayed_ast(
         }
       }
       if !attached && !conditions.is_empty() {
-        // All slots have conditions - combine with first using And
-        let existing = conditions[0].take().unwrap();
-        conditions[0] = Some(Expr::FunctionCall {
-          name: "And".to_string(),
-          args: vec![existing, body_cond.clone()],
+        // All slots have conditions - combine with first non-structural-pattern using And
+        let combine_idx = conditions.iter().position(|c| {
+          !matches!(
+            c,
+            Some(Expr::FunctionCall { name, .. }) if name == "__StructuralPattern__"
+          )
         });
+        if let Some(idx) = combine_idx {
+          let existing = conditions[idx].take().unwrap();
+          conditions[idx] = Some(Expr::FunctionCall {
+            name: "And".to_string(),
+            args: vec![existing, body_cond.clone()],
+          });
+        } else {
+          // All conditions are structural patterns — append as extra condition
+          conditions.push(Some(body_cond.clone()));
+          params.push(String::new());
+          defaults.push(None);
+          heads.push(None);
+        }
       }
     }
 
@@ -501,6 +690,10 @@ pub fn set_delayed_ast(
 /// e.g., x_Integer -> ("x", Some("Integer")), x_ -> ("x", None)
 pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>) {
   match expr {
+    // AST Pattern node: Pattern { name: "x", head: Some("Integer") }
+    Expr::Pattern { name, head } => (name.clone(), head.clone()),
+    // AST PatternOptional node: x_:default or x_Head:default
+    Expr::PatternOptional { name, head, .. } => (name.clone(), head.clone()),
     Expr::Identifier(name) => {
       // Could be a pattern like "x_Integer" or "x_" in text form
       if let Some(pos) = name.find('_') {
@@ -538,19 +731,9 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>) {
       (String::new(), None)
     }
     _ => {
-      // Try to extract from string representation
-      let s = expr_to_string(expr);
-      if let Some(pos) = s.find('_') {
-        let pat_name = s[..pos].to_string();
-        let head = &s[pos + 1..];
-        if head.is_empty() {
-          (pat_name, None)
-        } else {
-          (pat_name, Some(head.to_string()))
-        }
-      } else {
-        (String::new(), None)
-      }
+      // Structural patterns (e.g., BinaryOp containing patterns) are not
+      // simple named patterns — return empty to signal special handling.
+      (String::new(), None)
     }
   }
 }
