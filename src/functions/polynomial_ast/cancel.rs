@@ -110,9 +110,13 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
 
 /// Cancel common symbolic factors between numerator and denominator.
 /// E.g. (a*b)/(a*c) → b/c, (a^2*b)/(a*b^2) → a/b
+/// Supports rational exponents: a^(3/2)/a^(1/2) → a
 pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
-  // Extract base and exponent from a factor
-  fn base_and_exp(f: &Expr) -> (String, i128) {
+  // Rational exponent as (numerator, denominator) pair
+  type RatExp = (i128, i128);
+
+  // Extract base string and rational exponent from a factor
+  fn base_and_exp(f: &Expr) -> (String, RatExp) {
     match f {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
@@ -120,29 +124,158 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
         right: exp,
       } => {
         let base_str = expr_to_string(left);
-        if let Expr::Integer(n) = exp.as_ref() {
-          (base_str, *n)
-        } else {
-          (expr_to_string(f), 1)
+        match exp.as_ref() {
+          Expr::Integer(n) => (base_str, (*n, 1)),
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+              (base_str, (*n, *d))
+            } else {
+              (expr_to_string(f), (1, 1))
+            }
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: n,
+            right: d,
+          } => {
+            if let (Expr::Integer(nv), Expr::Integer(dv)) =
+              (n.as_ref(), d.as_ref())
+            {
+              (base_str, (*nv, *dv))
+            } else {
+              (expr_to_string(f), (1, 1))
+            }
+          }
+          _ => (expr_to_string(f), (1, 1)),
         }
       }
-      _ => (expr_to_string(f), 1),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        let base_str = expr_to_string(&args[0]);
+        match &args[1] {
+          Expr::Integer(n) => (base_str, (*n, 1)),
+          Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } if rname == "Rational" && rargs.len() == 2 => {
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
+            {
+              (base_str, (*n, *d))
+            } else {
+              (expr_to_string(f), (1, 1))
+            }
+          }
+          _ => (expr_to_string(f), (1, 1)),
+        }
+      }
+      // Sqrt[x] → base=x, exp=1/2
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
+      {
+        (expr_to_string(&args[0]), (1, 2))
+      }
+      _ => (expr_to_string(f), (1, 1)),
     }
   }
 
-  // Reconstruct a factor from base expr and exponent
-  fn make_factor(base: &Expr, exp: i128) -> Option<Expr> {
-    if exp == 0 {
+  // Extract the base expression (without exponent) from a factor
+  fn base_expr(f: &Expr) -> Expr {
+    match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match right.as_ref() {
+        Expr::Integer(_) => left.as_ref().clone(),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          left.as_ref().clone()
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left: n,
+          right: d,
+        } if matches!(n.as_ref(), Expr::Integer(_))
+          && matches!(d.as_ref(), Expr::Integer(_)) =>
+        {
+          left.as_ref().clone()
+        }
+        _ => f.clone(),
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match &args[1] {
+          Expr::Integer(_) => args[0].clone(),
+          Expr::FunctionCall {
+            name: rname,
+            args: rargs,
+          } if rname == "Rational" && rargs.len() == 2 => args[0].clone(),
+          _ => f.clone(),
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
+      {
+        args[0].clone()
+      }
+      _ => f.clone(),
+    }
+  }
+
+  // Reconstruct a factor from base expr and rational exponent
+  fn make_factor(base: &Expr, exp: RatExp) -> Option<Expr> {
+    let (n, d) = exp;
+    if n == 0 {
       None
-    } else if exp == 1 {
+    } else if d == 1 && n == 1 {
       Some(base.clone())
-    } else {
+    } else if d == 1 {
       Some(Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: Box::new(base.clone()),
-        right: Box::new(Expr::Integer(exp)),
+        right: Box::new(Expr::Integer(n)),
+      })
+    } else {
+      // Rational exponent: base^Rational[n, d]
+      Some(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(n), Expr::Integer(d)],
+        }),
       })
     }
+  }
+
+  // Subtract two rational exponents: (a/b) - (c/d)
+  fn rat_sub(a: RatExp, b: RatExp) -> RatExp {
+    let num = a.0 * b.1 - b.0 * a.1;
+    let den = a.1 * b.1;
+    let g = gcd_i128(num.abs(), den.abs());
+    if g > 0 {
+      (num / g, den / g)
+    } else {
+      (num, den)
+    }
+  }
+
+  // Check if rational exponent is positive
+  fn rat_positive(r: RatExp) -> bool {
+    (r.0 > 0 && r.1 > 0) || (r.0 < 0 && r.1 < 0)
+  }
+
+  // Minimum of two positive rational exponents
+  fn rat_min(a: RatExp, b: RatExp) -> RatExp {
+    // Compare a/b with c/d: a*d vs c*b
+    let lhs = a.0 * b.1;
+    let rhs = b.0 * a.1;
+    if lhs <= rhs { a } else { b }
   }
 
   let mut num_factors = collect_multiplicative_factors(num);
@@ -182,49 +315,22 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
     }
   }
 
-  // Build maps of base → (original_expr, exponent) for numerator and denominator
-  let mut num_map: Vec<(Expr, String, i128)> = num_factors
+  // Build maps of base → (original_expr, base_str, exponent) for numerator and denominator
+  let mut num_map: Vec<(Expr, String, RatExp)> = num_factors
     .iter()
     .map(|f| {
       let (base_str, exp) = base_and_exp(f);
-      // Find the base expression (without exponent)
-      let base_expr = match f {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left,
-          right,
-        } => {
-          if let Expr::Integer(_) = right.as_ref() {
-            left.as_ref().clone()
-          } else {
-            f.clone()
-          }
-        }
-        _ => f.clone(),
-      };
-      (base_expr, base_str, exp)
+      let be = base_expr(f);
+      (be, base_str, exp)
     })
     .collect();
 
-  let mut den_map: Vec<(Expr, String, i128)> = den_factors
+  let mut den_map: Vec<(Expr, String, RatExp)> = den_factors
     .iter()
     .map(|f| {
       let (base_str, exp) = base_and_exp(f);
-      let base_expr = match f {
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left,
-          right,
-        } => {
-          if let Expr::Integer(_) = right.as_ref() {
-            left.as_ref().clone()
-          } else {
-            f.clone()
-          }
-        }
-        _ => f.clone(),
-      };
-      (base_expr, base_str, exp)
+      let be = base_expr(f);
+      (be, base_str, exp)
     })
     .collect();
 
@@ -232,10 +338,13 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   let mut changed = false;
   for (_, num_base_str, num_exp) in num_map.iter_mut() {
     for (_, den_base_str, den_exp) in den_map.iter_mut() {
-      if *num_base_str == *den_base_str && *num_exp > 0 && *den_exp > 0 {
-        let common = (*num_exp).min(*den_exp);
-        *num_exp -= common;
-        *den_exp -= common;
+      if *num_base_str == *den_base_str
+        && rat_positive(*num_exp)
+        && rat_positive(*den_exp)
+      {
+        let common = rat_min(*num_exp, *den_exp);
+        *num_exp = rat_sub(*num_exp, common);
+        *den_exp = rat_sub(*den_exp, common);
         changed = true;
       }
     }
@@ -252,21 +361,21 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
 
   // Rebuild numerator and denominator
   let mut new_num_factors: Vec<Expr> = Vec::new();
-  if num_coeff != 1 || (num_map.iter().all(|(_, _, e)| *e == 0)) {
+  if num_coeff != 1 || (num_map.iter().all(|(_, _, e)| e.0 == 0)) {
     new_num_factors.push(Expr::Integer(num_coeff));
   }
-  for (base_expr, _, exp) in &num_map {
-    if let Some(f) = make_factor(base_expr, *exp) {
+  for (be, _, exp) in &num_map {
+    if let Some(f) = make_factor(be, *exp) {
       new_num_factors.push(f);
     }
   }
 
   let mut new_den_factors: Vec<Expr> = Vec::new();
-  if den_coeff != 1 || (den_map.iter().all(|(_, _, e)| *e == 0)) {
+  if den_coeff != 1 || (den_map.iter().all(|(_, _, e)| e.0 == 0)) {
     new_den_factors.push(Expr::Integer(den_coeff));
   }
-  for (base_expr, _, exp) in &den_map {
-    if let Some(f) = make_factor(base_expr, *exp) {
+  for (be, _, exp) in &den_map {
+    if let Some(f) = make_factor(be, *exp) {
       new_den_factors.push(f);
     }
   }
