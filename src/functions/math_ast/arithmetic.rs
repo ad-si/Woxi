@@ -821,6 +821,28 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
+      // When both terms are transcendental (priority >= 1) and lack polynomial pairs,
+      // compare by primary function name, then by polynomial degree within the product.
+      // This sorts x*Cos[x] before Sin[x] (because "Cos" < "Sin"), matching Wolfram.
+      if !a_has_pairs && !b_has_pairs && pa >= 1 && pb >= 1 {
+        let fn_a = extract_primary_fn_name(&base_a);
+        let fn_b = extract_primary_fn_name(&base_b);
+        if let (Some(ref na), Some(ref nb)) = (fn_a, fn_b) {
+          let cmp = na.cmp(nb);
+          if cmp != std::cmp::Ordering::Equal {
+            return cmp;
+          }
+          // Same function: compare by polynomial degree (lower degree first)
+          let deg_a = extract_poly_degree_in_product(&base_a);
+          let deg_b = extract_poly_degree_in_product(&base_b);
+          let cmp = deg_a
+            .partial_cmp(&deg_b)
+            .unwrap_or(std::cmp::Ordering::Equal);
+          if cmp != std::cmp::Ordering::Equal {
+            return cmp;
+          }
+        }
+      }
       // Fall back: try structural comparison of function call arguments,
       // then string comparison for non-polynomial terms.
       // This ensures e.g. Log[1 - x] sorts before Log[1 + x] to match Wolfram.
@@ -832,6 +854,72 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       let sb = term_sort_key(b);
       sa.cmp(&sb)
     }
+  }
+}
+
+/// Extract the primary transcendental function name from a term.
+/// For `Sin[x]` → Some("Sin"), for `x*Cos[x]` → Some("Cos") (looking inside Times).
+/// Returns None for non-transcendental terms.
+fn extract_primary_fn_name(e: &Expr) -> Option<String> {
+  match e {
+    // Look inside Times products for the transcendental function first
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for arg in args {
+        if let Some(n) = extract_primary_fn_name(arg) {
+          return Some(n);
+        }
+      }
+      None
+    }
+    // Bare transcendental function
+    Expr::FunctionCall { name, .. } if term_priority(e) >= 1 => {
+      Some(name.clone())
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      extract_primary_fn_name(left).or_else(|| extract_primary_fn_name(right))
+    }
+    _ => None,
+  }
+}
+
+/// Extract the maximum polynomial degree from a Times product's variable factors.
+/// For `x*Cos[x]` → 1.0, `x^2*Sin[x]` → 2.0, `Sin[x]` → 0.0.
+fn extract_poly_degree_in_product(e: &Expr) -> f64 {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut max_deg = 0.0f64;
+      for arg in args {
+        if let Some(pairs) = extract_var_exp_pairs(arg) {
+          for (_, exp) in pairs {
+            max_deg = max_deg.max(exp);
+          }
+        }
+      }
+      max_deg
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut deg: f64 = 0.0;
+      if let Some(pairs) = extract_var_exp_pairs(left) {
+        for (_, exp) in pairs {
+          deg = deg.max(exp);
+        }
+      }
+      if let Some(pairs) = extract_var_exp_pairs(right) {
+        for (_, exp) in pairs {
+          deg = deg.max(exp);
+        }
+      }
+      deg
+    }
+    _ => 0.0,
   }
 }
 
@@ -1053,8 +1141,9 @@ pub fn term_priority(e: &Expr) -> i32 {
     Expr::Identifier(_) => 0,
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
+      left,
       ..
-    } => 0,
+    } => term_priority(left),
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Divide,
       left,
@@ -1067,7 +1156,8 @@ pub fn term_priority(e: &Expr) -> i32 {
     } => term_priority(left).max(term_priority(right)),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Times" => args.iter().map(term_priority).max().unwrap_or(0),
-      "Power" | "Plus" | "Rational" => 0,
+      "Power" if !args.is_empty() => term_priority(&args[0]),
+      "Plus" | "Rational" => 0,
       "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh"
       | "Tanh" | "Coth" | "Sech" | "Csch" | "ArcSin" | "ArcCos" | "ArcTan"
       | "ArcCot" | "ArcSec" | "ArcCsc" | "Exp" | "Log" | "Factorial"
@@ -1438,7 +1528,7 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // but leaves Times[I, Pi/2] intact (no explicit rational coefficient).
   let has_rational_coeff_in_args = args.iter().any(|a| {
     matches!(a, Expr::FunctionCall { name, .. } if name == "Rational")
-      || matches!(a, Expr::Integer(n) if *n != 1 && *n != -1)
+      || matches!(a, Expr::Integer(n) if *n != 1)
   });
 
   for arg in args {

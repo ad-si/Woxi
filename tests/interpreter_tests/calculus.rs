@@ -1482,3 +1482,140 @@ mod ndsolve {
     assert!((val - (-1.0)).abs() < 0.01, "Expected -1.0, got {}", val);
   }
 }
+
+mod sinh_cosh {
+  use super::*;
+
+  #[test]
+  fn d_sinh() {
+    assert_eq!(interpret("D[Sinh[x], x]").unwrap(), "Cosh[x]");
+  }
+
+  #[test]
+  fn d_cosh() {
+    assert_eq!(interpret("D[Cosh[x], x]").unwrap(), "Sinh[x]");
+  }
+
+  #[test]
+  fn d_sinh_chain_rule() {
+    assert_eq!(interpret("D[Sinh[2*x], x]").unwrap(), "2*Cosh[2*x]");
+  }
+
+  #[test]
+  fn d_cosh_chain_rule() {
+    assert_eq!(interpret("D[Cosh[3*x], x]").unwrap(), "3*Sinh[3*x]");
+  }
+
+  #[test]
+  fn integrate_sinh() {
+    assert_eq!(interpret("Integrate[Sinh[x], x]").unwrap(), "Cosh[x]");
+  }
+
+  #[test]
+  fn integrate_cosh() {
+    assert_eq!(interpret("Integrate[Cosh[x], x]").unwrap(), "Sinh[x]");
+  }
+
+  #[test]
+  fn integrate_sinh_linear_arg() {
+    assert_eq!(interpret("Integrate[Sinh[2*x], x]").unwrap(), "Cosh[2*x]/2");
+  }
+
+  #[test]
+  fn integrate_cosh_linear_arg() {
+    assert_eq!(interpret("Integrate[Cosh[3*x], x]").unwrap(), "Sinh[3*x]/3");
+  }
+}
+
+mod integrate_log {
+  use super::*;
+
+  #[test]
+  fn integrate_log_x() {
+    assert_eq!(interpret("Integrate[Log[x], x]").unwrap(), "-x + x*Log[x]");
+  }
+}
+
+mod integrate_by_parts {
+  use super::*;
+
+  #[test]
+  fn x_sin_x() {
+    assert_eq!(
+      interpret("Integrate[x*Sin[x], x]").unwrap(),
+      "-(x*Cos[x]) + Sin[x]"
+    );
+  }
+
+  #[test]
+  fn x_exp_x() {
+    assert_eq!(interpret("Integrate[x*Exp[x], x]").unwrap(), "E^x*(-1 + x)");
+  }
+
+  #[test]
+  fn x_squared_exp_x() {
+    assert_eq!(
+      interpret("Integrate[x^2*Exp[x], x]").unwrap(),
+      "E^x*(2 - 2*x + x^2)"
+    );
+  }
+
+  #[test]
+  fn x_cos_x() {
+    assert_eq!(
+      interpret("Integrate[x*Cos[x], x]").unwrap(),
+      "Cos[x] + x*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn x_sinh_x() {
+    assert_eq!(
+      interpret("Integrate[x*Sinh[x], x]").unwrap(),
+      "x*Cosh[x] - Sinh[x]"
+    );
+  }
+
+  #[test]
+  fn x_cosh_x() {
+    assert_eq!(
+      interpret("Integrate[x*Cosh[x], x]").unwrap(),
+      "-Cosh[x] + x*Sinh[x]"
+    );
+  }
+
+  #[test]
+  fn x_log_x() {
+    assert_eq!(
+      interpret("Integrate[x*Log[x], x]").unwrap(),
+      "-1/4*x^2 + (x^2*Log[x])/2"
+    );
+  }
+
+  // General constant-base exponential (lowercase e is a symbol, not Euler's E)
+  #[test]
+  fn general_exp_basic() {
+    assert_eq!(interpret("Integrate[e^x, x]").unwrap(), "e^x/Log[e]");
+  }
+
+  #[test]
+  fn x_general_exp() {
+    assert_eq!(
+      interpret("Integrate[x * e^x, x]").unwrap(),
+      "(e^x*(-1 + x*Log[e]))/Log[e]^2"
+    );
+  }
+
+  #[test]
+  fn x_squared_general_exp() {
+    assert_eq!(
+      interpret("Integrate[x^2 * e^x, x]").unwrap(),
+      "(e^x*(2 - 2*x*Log[e] + x^2*Log[e]^2))/Log[e]^3"
+    );
+  }
+
+  #[test]
+  fn general_exp_differentiation() {
+    assert_eq!(interpret("D[e^x, x]").unwrap(), "e^x*Log[e]");
+  }
+}

@@ -583,7 +583,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           } else if is_constant_wrt(left, var) {
             // d/dx[a^g(x)] = a^g(x) * ln(a) * g'(x)
             let dg = differentiate(right, var)?;
-            Ok(Expr::BinaryOp {
+            Ok(simplify(Expr::BinaryOp {
               op: Times,
               left: Box::new(Expr::BinaryOp {
                 op: Times,
@@ -594,7 +594,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 }),
               }),
               right: Box::new(dg),
-            })
+            }))
           } else {
             // General case: d/dx[f(x)^g(x)] = f(x)^g(x) * (g'(x)*Log[f(x)] + g(x)*f'(x)/f(x))
             // This is logarithmic differentiation
@@ -756,6 +756,30 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 }),
                 right: Box::new(Expr::Integer(2)),
               }),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Sinh" if args.len() == 1 => {
+          // d/dx[sinh(f(x))] = cosh(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::FunctionCall {
+              name: "Cosh".to_string(),
+              args: args.clone(),
+            }),
+            right: Box::new(df),
+          }))
+        }
+        "Cosh" if args.len() == 1 => {
+          // d/dx[cosh(f(x))] = sinh(f(x)) * f'(x)
+          let df = differentiate(&args[0], var)?;
+          Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::FunctionCall {
+              name: "Sinh".to_string(),
+              args: args.clone(),
             }),
             right: Box::new(df),
           }))
@@ -1839,6 +1863,408 @@ fn gcd_i128_local(a: i128, b: i128) -> i128 {
   a
 }
 
+/// LIATE priority for integration by parts: higher = choose as u first
+/// Log > Inverse trig > Algebraic > Trig > Exponential
+fn liate_priority(expr: &Expr, var: &str) -> i32 {
+  match expr {
+    Expr::FunctionCall { name, .. } => match name.as_str() {
+      "Log" => 5,
+      "ArcSin" | "ArcCos" | "ArcTan" => 4,
+      "Sin" | "Cos" | "Tan" | "Sec" | "Csc" | "Cot" | "Sinh" | "Cosh" => 2,
+      "Exp" => 1,
+      _ => 3,
+    },
+    // x, x^n => algebraic
+    Expr::Identifier(_) => 3,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      // Any constant^(var-dependent) is exponential (E^x, e^x, 2^x, etc.)
+      if is_constant_wrt(left, var) && !is_constant_wrt(right, var) {
+        1
+      } else {
+        3
+      }
+    }
+    _ => 3,
+  }
+}
+
+/// Convert FunctionCall("Power", [base, exp]) → BinaryOp(Power, base, exp)
+/// so that times_ast can combine powers with matching bases.
+fn normalize_power(expr: Expr) -> Expr {
+  if let Expr::FunctionCall { ref name, ref args } = expr
+    && name == "Power"
+    && args.len() == 2
+  {
+    return Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: Box::new(args[0].clone()),
+      right: Box::new(args[1].clone()),
+    };
+  }
+  expr
+}
+
+/// Check if an expression is a pure exponential E^f(x).
+fn is_exponential(expr: &Expr) -> bool {
+  matches!(expr, Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left,
+    ..
+  } if matches!(left.as_ref(), Expr::Constant(c) if c == "E"))
+}
+
+/// Compare two expressions by their string representation.
+fn expr_str_eq(a: &Expr, b: &Expr) -> bool {
+  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+}
+
+/// Try to remove a specific factor from a product expression.
+/// E.g., try_remove_factor(Times[2, E^x, (-1+x)], E^x) → Some(Times[2, (-1+x)])
+/// E.g., try_remove_factor(E^x, E^x) → Some(Integer(1))
+fn try_remove_factor(expr: &Expr, factor: &Expr) -> Option<Expr> {
+  if expr_str_eq(expr, factor) {
+    return Some(Expr::Integer(1));
+  }
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for (i, arg) in args.iter().enumerate() {
+        if expr_str_eq(arg, factor) {
+          let remaining: Vec<_> = args
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .map(|(_, a)| a.clone())
+            .collect();
+          return Some(if remaining.len() == 1 {
+            remaining.into_iter().next().unwrap()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: remaining,
+            }
+          });
+        }
+      }
+      None
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if expr_str_eq(left, factor) {
+        Some(*right.clone())
+      } else if expr_str_eq(right, factor) {
+        Some(*left.clone())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+std::thread_local! {
+  // Recursion depth counter for integration by parts
+  static IBP_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Check if expr is a polynomial in var (derivatives eventually reach 0).
+fn is_polynomial_in(expr: &Expr, var: &str) -> bool {
+  let mut current = expr.clone();
+  for _ in 0..20 {
+    if matches!(&current, Expr::Integer(0)) {
+      return true;
+    }
+    match differentiate(&current, var) {
+      Ok(d) => current = simplify(d),
+      Err(_) => return false,
+    }
+  }
+  false
+}
+
+/// Closed-form integration of polynomial × constant-base exponential:
+/// ∫ P(x) * a^(c*x) dx = a^(c*x) * Σ_{k=0}^{deg} (-1)^k * P^(k)(x) / r^(k+1)
+/// where r = c * Log[a] is the effective rate.
+fn try_integrate_poly_times_const_exp(
+  poly: &Expr,
+  exponential: &Expr,
+  base: &Expr,
+  coeff: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  use crate::syntax::BinaryOperator::*;
+
+  let log_base = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![base.clone()],
+  };
+  let rate = simplify(Expr::BinaryOp {
+    op: Times,
+    left: Box::new(coeff.clone()),
+    right: Box::new(log_base),
+  });
+
+  // Collect derivatives of poly until we reach 0
+  let mut derivs = vec![poly.clone()];
+  let mut current = poly.clone();
+  for _ in 0..20 {
+    match differentiate(&current, var) {
+      Ok(d) => {
+        let d = simplify(d);
+        if matches!(&d, Expr::Integer(0)) {
+          break;
+        }
+        derivs.push(d.clone());
+        current = d;
+      }
+      Err(_) => return None,
+    }
+  }
+
+  let n = derivs.len();
+
+  // Build numerator: Σ_{k=0}^{n-1} (-1)^k * P^(k)(x) * rate^(n-1-k)
+  let mut num_terms = Vec::new();
+  for (k, deriv) in derivs.iter().enumerate() {
+    let rate_power = n as i128 - 1 - k as i128;
+    let rate_factor = if rate_power == 0 {
+      Expr::Integer(1)
+    } else if rate_power == 1 {
+      rate.clone()
+    } else {
+      Expr::BinaryOp {
+        op: Power,
+        left: Box::new(rate.clone()),
+        right: Box::new(Expr::Integer(rate_power)),
+      }
+    };
+
+    let mut term = simplify(Expr::BinaryOp {
+      op: Times,
+      left: Box::new(deriv.clone()),
+      right: Box::new(rate_factor),
+    });
+
+    if k % 2 == 1 {
+      term = simplify(Expr::BinaryOp {
+        op: Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(term),
+      });
+    }
+
+    num_terms.push(term);
+  }
+
+  let numerator = if num_terms.len() == 1 {
+    num_terms.into_iter().next().unwrap()
+  } else {
+    let combined = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: num_terms,
+    };
+    crate::functions::polynomial_ast::expand_and_combine(&combined)
+  };
+
+  // Denominator: rate^n
+  let denom = if n == 1 {
+    rate
+  } else {
+    Expr::BinaryOp {
+      op: Power,
+      left: Box::new(rate),
+      right: Box::new(Expr::Integer(n as i128)),
+    }
+  };
+
+  // Result: (exponential * numerator) / denom
+  let result_num = simplify(Expr::BinaryOp {
+    op: Times,
+    left: Box::new(exponential.clone()),
+    right: Box::new(numerator),
+  });
+
+  Some(Expr::BinaryOp {
+    op: Divide,
+    left: Box::new(result_num),
+    right: Box::new(denom),
+  })
+}
+
+/// Try integration by parts: ∫ u dv = u*v - ∫ v du
+/// `factors` are the factors that depend on `var`.
+/// We pick `u` using the LIATE heuristic and `dv` is the product of the remaining factors.
+fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
+  if factors.len() < 2 {
+    return None;
+  }
+
+  // Limit recursion depth to prevent infinite loops
+  let depth = IBP_DEPTH.with(|d| d.get());
+  if depth >= 5 {
+    return None;
+  }
+
+  // Find the factor with the highest LIATE priority → that becomes u
+  let mut best_u_idx = 0;
+  let mut best_priority = liate_priority(factors[0], var);
+  for (i, f) in factors.iter().enumerate().skip(1) {
+    let p = liate_priority(f, var);
+    if p > best_priority {
+      best_priority = p;
+      best_u_idx = i;
+    }
+  }
+
+  let u = factors[best_u_idx];
+
+  // dv is the product of the remaining factors
+  let dv_factors: Vec<&Expr> = factors
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != best_u_idx)
+    .map(|(_, f)| *f)
+    .collect();
+
+  // Special case: polynomial × constant-base exponential (non-E base)
+  // Use closed-form formula: ∫ P(x)*a^(cx) dx = a^(cx) * Σ (-1)^k P^(k)(x) / (c*Log[a])^(k+1)
+  if dv_factors.len() == 1
+    && let Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left: base,
+      right: exp,
+    } = dv_factors[0]
+    && is_constant_wrt(base, var)
+    && !is_constant_wrt(exp, var)
+    && !matches!(base.as_ref(), Expr::Constant(c) if c == "E")
+    && let Some(coeff) = try_match_linear_arg(exp, var)
+    && is_polynomial_in(u, var)
+  {
+    return try_integrate_poly_times_const_exp(
+      u,
+      dv_factors[0],
+      base,
+      &coeff,
+      var,
+    );
+  }
+
+  let dv_expr = if dv_factors.len() == 1 {
+    dv_factors[0].clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: dv_factors.iter().map(|f| (*f).clone()).collect(),
+    }
+  };
+
+  // v = ∫ dv
+  let v = integrate(&dv_expr, var)?;
+
+  // du = D[u, var]
+  let du = differentiate(u, var).ok()?;
+  let du = simplify(du);
+
+  // Decompose v into (v_core, v_denom) where v = v_core / v_denom
+  // This allows proper fraction handling: u*v = (u*v_core)/v_denom
+  let (v_core, v_denom) = if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: v_num,
+    right: v_den,
+  } = &v
+  {
+    if is_constant_wrt(v_den, var) {
+      (*v_num.clone(), Some(*v_den.clone()))
+    } else {
+      (v.clone(), None)
+    }
+  } else {
+    (v.clone(), None)
+  };
+
+  // Result: u*v - ∫ v*du dx
+  // When v is a fraction a/b, compute uv as (u*a)/b for proper display
+  // e.g. Log[x] * (x^2/2) → (x^2*Log[x])/2 instead of x^2/2*Log[x]
+  let uv = {
+    let u_times_core = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(u.clone()),
+      right: Box::new(v_core.clone()),
+    });
+    if let Some(ref denom) = v_denom {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(u_times_core),
+        right: Box::new(denom.clone()),
+      }
+    } else {
+      u_times_core
+    }
+  };
+
+  // If du is 0, the integral is just u*v
+  if matches!(&du, Expr::Integer(0)) {
+    return Some(uv);
+  }
+
+  // Normalize du: convert FunctionCall("Power", [base, exp]) → BinaryOp(Power)
+  // so that times_ast can combine powers like x^2 * x^(-1) → x
+  let du = normalize_power(du);
+
+  // Compute v*du, decomposing v = numerator/constant for better simplification
+  // (e.g., v = x^2/2, du = x^(-1) → numerator*du = x^2 * x^(-1) = x → v*du = x/2)
+  let v_du = if let Some(ref denom) = v_denom {
+    let num_du =
+      crate::functions::math_ast::times_ast(&[v_core.clone(), du]).ok()?;
+    simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(num_du),
+      right: Box::new(denom.clone()),
+    })
+  } else {
+    crate::functions::math_ast::times_ast(&[v, du]).ok()?
+  };
+
+  // Integrate v*du with increased depth
+  IBP_DEPTH.with(|d| d.set(depth + 1));
+  let int_v_du = integrate(&v_du, var);
+  IBP_DEPTH.with(|d| d.set(depth));
+
+  let int_v_du = int_v_du?;
+  // Simplify to flatten nested products (e.g., BinaryOp(Times, 2, E^x*...) → Times[2, E^x, ...])
+  let int_v_du = simplify(int_v_du);
+
+  // Try to factor out common exponential factor (e.g., E^x from E^x*x - E^x → E^x*(-1+x))
+  // This matches Wolfram's output form for exponential integrals.
+  if is_exponential(&v_core)
+    && let Some(quotient) = try_remove_factor(&int_v_du, &v_core)
+  {
+    // result = v_core * (u - quotient)
+    // Expand the inner expression so e.g. x^2 - 2*(-1+x) becomes 2 - 2*x + x^2
+    let inner =
+      crate::functions::math_ast::subtract_ast(&[u.clone(), quotient]).ok()?;
+    let inner = crate::functions::polynomial_ast::expand_and_combine(&inner);
+    let result = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(v_core),
+      right: Box::new(inner),
+    });
+    return Some(result);
+  }
+
+  Some(simplify(Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(uv),
+    right: Box::new(int_v_du),
+  }))
+}
+
 /// Integrate an expression with respect to a variable
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   // General constant check: ∫ c dy = c*y for any expression c independent of y
@@ -1927,7 +2353,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(int_a),
             })
           } else {
-            None
+            // Both factors depend on var: try integration by parts
+            try_integration_by_parts(&[left, right], var)
           }
         }
         Divide => {
@@ -2042,6 +2469,38 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               return Some(make_gaussian_antiderivative(var, &coeff));
             }
           }
+          // ∫ a^x dx = a^x / Log[a], ∫ a^(c*x) dx = a^(c*x) / (c*Log[a])
+          // where a is any constant base (not E, which is handled above)
+          if is_constant_wrt(left, var) && !is_constant_wrt(right, var) {
+            let exp_arg = right.as_ref();
+            let log_a = Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![*left.clone()],
+            };
+            // ∫ a^x dx = a^x / Log[a]
+            if let Expr::Identifier(n) = exp_arg
+              && n == var
+            {
+              return Some(Expr::BinaryOp {
+                op: Divide,
+                left: Box::new(expr.clone()),
+                right: Box::new(log_a),
+              });
+            }
+            // ∫ a^(c*x) dx = a^(c*x) / (c * Log[a])
+            if let Some(coeff) = try_match_linear_arg(exp_arg, var) {
+              let divisor = simplify(Expr::BinaryOp {
+                op: Times,
+                left: Box::new(coeff),
+                right: Box::new(log_a),
+              });
+              return Some(Expr::BinaryOp {
+                op: Divide,
+                left: Box::new(expr.clone()),
+                right: Box::new(divisor),
+              });
+            }
+          }
           // ∫ Sin[x]^2 dx = x/2 - Sin[2*x]/4
           // ∫ Cos[x]^2 dx = x/2 + Sin[2*x]/4
           if matches!(right.as_ref(), Expr::Integer(2))
@@ -2114,6 +2573,52 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           }
           None
         }
+        "Sinh" if args.len() == 1 => {
+          // ∫ sinh(a*x) dx = cosh(a*x)/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let cosh_expr = Expr::FunctionCall {
+              name: "Cosh".to_string(),
+              args: args.clone(),
+            };
+            return Some(make_divided(cosh_expr, coeff));
+          }
+          None
+        }
+        "Cosh" if args.len() == 1 => {
+          // ∫ cosh(a*x) dx = sinh(a*x)/a
+          if let Some(coeff) = try_match_linear_arg(&args[0], var) {
+            let sinh_expr = Expr::FunctionCall {
+              name: "Sinh".to_string(),
+              args: args.clone(),
+            };
+            return Some(make_divided(sinh_expr, coeff));
+          }
+          None
+        }
+        "Log" if args.len() == 1 => {
+          // ∫ Log[x] dx = -x + x*Log[x]
+          if let Expr::Identifier(name) = &args[0]
+            && name == var
+          {
+            let x = Expr::Identifier(var.to_string());
+            return Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(x.clone()),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(x),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Log".to_string(),
+                  args: args.clone(),
+                }),
+              }),
+            });
+          }
+          None
+        }
         "Times" => {
           // ∫ (c1 * c2 * ... * f(x)) dx = c1 * c2 * ... * ∫ f(x) dx
           let (const_factors, var_factors): (Vec<_>, Vec<_>) =
@@ -2147,7 +2652,30 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(Expr::Identifier(var.to_string())),
             })
           } else {
-            None
+            // Multiple variable-dependent factors: try integration by parts
+            let var_refs: Vec<&Expr> = var_factors.to_vec();
+            if let Some(ibp_result) = try_integration_by_parts(&var_refs, var) {
+              // Multiply back the constant factors
+              if const_factors.is_empty() {
+                Some(ibp_result)
+              } else {
+                let const_expr = if const_factors.len() == 1 {
+                  const_factors[0].clone()
+                } else {
+                  Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: const_factors.into_iter().cloned().collect(),
+                  }
+                };
+                Some(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(const_expr),
+                  right: Box::new(ibp_result),
+                })
+              }
+            } else {
+              None
+            }
           }
         }
         _ => None,
