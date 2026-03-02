@@ -155,6 +155,7 @@ mod interpreter_tests {
   mod linear_algebra;
   mod list;
   mod math;
+  mod property;
   mod quantity;
   mod statistics;
   mod string;

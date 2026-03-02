@@ -252,10 +252,33 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Coefficient: either exact rational or approximate real
+fn bigint_gcd(
+  a: &num_bigint::BigInt,
+  b: &num_bigint::BigInt,
+) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
+  use num_bigint::Sign;
+  let mut a = match a.sign() {
+    Sign::Minus => -a,
+    _ => a.clone(),
+  };
+  let mut b = match b.sign() {
+    Sign::Minus => -b,
+    _ => b.clone(),
+  };
+  while b != BigInt::from(0) {
+    let t = &a % &b;
+    a = b;
+    b = t;
+  }
+  a
+}
+
+/// Coefficient: either exact rational (i128 or BigInt) or approximate real
 #[derive(Clone)]
 pub enum Coeff {
   Exact(i128, i128), // (numer, denom)
+  BigExact(num_bigint::BigInt, num_bigint::BigInt), // (numer, denom)
   Real(f64),
 }
 
@@ -263,51 +286,161 @@ impl Coeff {
   fn is_zero(&self) -> bool {
     match self {
       Self::Exact(n, _) => *n == 0,
+      Self::BigExact(n, _) => n.sign() == num_bigint::Sign::NoSign,
       Self::Real(f) => *f == 0.0,
     }
   }
   fn is_one(&self) -> bool {
     match self {
       Self::Exact(n, d) => *n == 1 && *d == 1,
+      Self::BigExact(n, d) => {
+        use num_traits::One;
+        n.is_one() && d.is_one()
+      }
       Self::Real(f) => *f == 1.0,
     }
   }
   fn to_f64(&self) -> f64 {
     match self {
       Self::Exact(n, d) => *n as f64 / *d as f64,
+      Self::BigExact(n, d) => {
+        use num_traits::ToPrimitive;
+        n.to_f64().unwrap_or(f64::INFINITY) / d.to_f64().unwrap_or(1.0)
+      }
       Self::Real(f) => *f,
     }
   }
+  fn to_big(n: i128, d: i128) -> (num_bigint::BigInt, num_bigint::BigInt) {
+    (num_bigint::BigInt::from(n), num_bigint::BigInt::from(d))
+  }
   fn add(&self, other: &Self) -> Self {
+    use num_bigint::BigInt;
+
     match (self, other) {
       (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
-        let mut sn = n1 * d2 + n2 * d1;
+        // Try i128 first; on overflow, promote to BigInt
+        if let (Some(a), Some(b), Some(c)) = (
+          n1.checked_mul(*d2),
+          n2.checked_mul(*d1),
+          d1.checked_mul(*d2),
+        ) && let Some(sn) = a.checked_add(b)
+        {
+          let mut sd = c;
+          let mut sn = sn;
+          let g = gcd(sn, sd);
+          sn /= g;
+          sd /= g;
+          if sd < 0 {
+            sn = -sn;
+            sd = -sd;
+          }
+          return Self::Exact(sn, sd);
+        }
+        // Overflow: promote to BigInt
+        let (n1, d1) = Self::to_big(*n1, *d1);
+        let (n2, d2) = Self::to_big(*n2, *d2);
+        let mut sn = &n1 * &d2 + &n2 * &d1;
         let mut sd = d1 * d2;
-        let g = gcd(sn, sd);
-        sn /= g;
+        let g = bigint_gcd(&sn, &sd);
+        sn /= &g;
         sd /= g;
-        if sd < 0 {
+        if sd < BigInt::from(0) {
           sn = -sn;
           sd = -sd;
         }
-        Self::Exact(sn, sd)
+        Self::BigExact(sn, sd)
+      }
+      (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
+        let mut sn = n1 * d2 + n2 * d1;
+        let mut sd = d1 * d2;
+        let g = bigint_gcd(&sn, &sd);
+        sn /= &g;
+        sd /= g;
+        if sd < BigInt::from(0) {
+          sn = -sn;
+          sd = -sd;
+        }
+        Self::BigExact(sn, sd)
+      }
+      (Self::Exact(n, d), Self::BigExact(..))
+      | (Self::BigExact(..), Self::Exact(n, d)) => {
+        let big_self;
+        let big_other;
+        match self {
+          Self::BigExact(bn, bd) => {
+            big_self = Self::BigExact(bn.clone(), bd.clone());
+            big_other = Self::BigExact(BigInt::from(*n), BigInt::from(*d));
+          }
+          _ => {
+            let (bn, bd) = Self::to_big(*n, *d);
+            big_self = Self::BigExact(bn, bd);
+            big_other = other.clone();
+          }
+        }
+        big_self.add(&big_other)
       }
       _ => Self::Real(self.to_f64() + other.to_f64()),
     }
   }
   fn mul(&self, other: &Self) -> Self {
+    use num_bigint::BigInt;
+
     match (self, other) {
       (Self::Exact(n1, d1), Self::Exact(n2, d2)) => {
-        let mut sn = n1 * n2;
+        if let (Some(sn), Some(sd)) = (n1.checked_mul(*n2), d1.checked_mul(*d2))
+        {
+          let mut sn = sn;
+          let mut sd = sd;
+          let g = gcd(sn, sd);
+          sn /= g;
+          sd /= g;
+          if sd < 0 {
+            sn = -sn;
+            sd = -sd;
+          }
+          return Self::Exact(sn, sd);
+        }
+        let (n1, d1) = Self::to_big(*n1, *d1);
+        let (n2, d2) = Self::to_big(*n2, *d2);
+        let mut sn = &n1 * &n2;
         let mut sd = d1 * d2;
-        let g = gcd(sn, sd);
-        sn /= g;
+        let g = bigint_gcd(&sn, &sd);
+        sn /= &g;
         sd /= g;
-        if sd < 0 {
+        if sd < BigInt::from(0) {
           sn = -sn;
           sd = -sd;
         }
-        Self::Exact(sn, sd)
+        Self::BigExact(sn, sd)
+      }
+      (Self::BigExact(n1, d1), Self::BigExact(n2, d2)) => {
+        let mut sn = n1 * n2;
+        let mut sd = d1 * d2;
+        let g = bigint_gcd(&sn, &sd);
+        sn /= &g;
+        sd /= g;
+        if sd < BigInt::from(0) {
+          sn = -sn;
+          sd = -sd;
+        }
+        Self::BigExact(sn, sd)
+      }
+      (Self::Exact(n, d), Self::BigExact(..))
+      | (Self::BigExact(..), Self::Exact(n, d)) => {
+        let big_self;
+        let big_other;
+        match self {
+          Self::BigExact(bn, bd) => {
+            big_self = Self::BigExact(bn.clone(), bd.clone());
+            big_other = Self::BigExact(BigInt::from(*n), BigInt::from(*d));
+          }
+          _ => {
+            let (bn, bd) = Self::to_big(*n, *d);
+            big_self = Self::BigExact(bn, bd);
+            big_other = other.clone();
+          }
+        }
+        big_self.mul(&big_other)
       }
       _ => Self::Real(self.to_f64() * other.to_f64()),
     }
@@ -315,12 +448,26 @@ impl Coeff {
   fn negate(&self) -> Self {
     match self {
       Self::Exact(n, d) => Self::Exact(-n, *d),
+      Self::BigExact(n, d) => Self::BigExact(-n, d.clone()),
       Self::Real(f) => Self::Real(-f),
     }
   }
   fn to_expr(&self) -> Expr {
     match self {
       Self::Exact(n, d) => make_rational(*n, *d),
+      Self::BigExact(n, d) => {
+        use num_traits::{One, ToPrimitive};
+        if d.is_one() {
+          bigint_to_expr(n.clone())
+        } else if let (Some(ni), Some(di)) = (n.to_i128(), d.to_i128()) {
+          make_rational(ni, di)
+        } else {
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![bigint_to_expr(n.clone()), bigint_to_expr(d.clone())],
+          }
+        }
+      }
       Self::Real(f) => Expr::Real(*f),
     }
   }
@@ -332,32 +479,31 @@ impl Coeff {
 pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
   match e {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
-      // Check if first arg is a numeric coefficient (integer/rational)
-      if let Some((n, d)) = expr_to_rational(&args[0]) {
-        let base = if args.len() == 2 {
+      let base_from = |args: &[Expr]| -> Expr {
+        if args.len() == 2 {
           args[1].clone()
         } else {
           Expr::FunctionCall {
             name: "Times".to_string(),
             args: args[1..].to_vec(),
           }
-        };
-        // Recursively decompose the base in case it's also Times[coeff, ...]
-        let (inner_c, inner_base) = decompose_term(&base);
+        }
+      };
+      // Check if first arg is a numeric coefficient (integer/rational)
+      if let Some((n, d)) = expr_to_rational(&args[0]) {
+        let (inner_c, inner_base) = decompose_term(&base_from(args));
         let outer_c = Coeff::Exact(n, d);
+        return (outer_c.mul(&inner_c), inner_base);
+      }
+      // Check if first arg is a BigInteger coefficient
+      if let Expr::BigInteger(n) = &args[0] {
+        let (inner_c, inner_base) = decompose_term(&base_from(args));
+        let outer_c = Coeff::BigExact(n.clone(), num_bigint::BigInt::from(1));
         return (outer_c.mul(&inner_c), inner_base);
       }
       // Check if first arg is a Real coefficient
       if let Expr::Real(f) = &args[0] {
-        let base = if args.len() == 2 {
-          args[1].clone()
-        } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: args[1..].to_vec(),
-          }
-        };
-        let (inner_c, inner_base) = decompose_term(&base);
+        let (inner_c, inner_base) = decompose_term(&base_from(args));
         let outer_c = Coeff::Real(*f);
         return (outer_c.mul(&inner_c), inner_base);
       }
@@ -370,6 +516,11 @@ pub fn decompose_term(e: &Expr) -> (Coeff, Expr) {
       if let Some((n, d)) = expr_to_rational(left) {
         let (inner_c, inner_base) = decompose_term(right);
         let outer_c = Coeff::Exact(n, d);
+        return (outer_c.mul(&inner_c), inner_base);
+      }
+      if let Expr::BigInteger(n) = left.as_ref() {
+        let (inner_c, inner_base) = decompose_term(right);
+        let outer_c = Coeff::BigExact(n.clone(), num_bigint::BigInt::from(1));
         return (outer_c.mul(&inner_c), inner_base);
       }
       if let Expr::Real(f) = left.as_ref() {
