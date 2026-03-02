@@ -55,7 +55,10 @@ function applyMode(mode) {
 applyMode(currentMode)
 
 document.getElementById("themeBtn").addEventListener("click", () => {
-  const next = THEME_MODES[(THEME_MODES.indexOf(currentMode) + 1) % THEME_MODES.length]
+  // From auto, jump to the opposite of what's currently shown
+  const next = currentMode === "auto"
+    ? (isDark() ? "light" : "dark")
+    : THEME_MODES[(THEME_MODES.indexOf(currentMode) + 1) % THEME_MODES.length]
   applyMode(next)
   if (next === "auto") {
     localStorage.removeItem(STORAGE_KEY_THEME)
