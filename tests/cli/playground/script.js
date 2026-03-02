@@ -23,14 +23,40 @@ let editorView = null
 
 const wolframLanguage = StreamLanguage.define(mathematica)
 const themeConfig = new Compartment()
+const STORAGE_KEY_THEME = "woxi-playground-theme"
 
 function isDark() {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
+  return document.documentElement.classList.contains("dark")
 }
 
 function getThemeExtension() {
   return isDark() ? oneDark : []
 }
+
+function applyTheme(dark) {
+  document.documentElement.classList.toggle("dark", dark)
+  document.getElementById("themeBtn").textContent = dark ? "\u2600" : "\u263E"
+}
+
+// Initialize theme: use stored preference, or fall back to system
+const storedTheme = localStorage.getItem(STORAGE_KEY_THEME)
+if (storedTheme !== null) {
+  applyTheme(storedTheme === "dark")
+} else {
+  applyTheme(window.matchMedia("(prefers-color-scheme: dark)").matches)
+}
+
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const dark = !isDark()
+  applyTheme(dark)
+  localStorage.setItem(STORAGE_KEY_THEME, dark ? "dark" : "light")
+  editorView.dispatch({
+    effects: themeConfig.reconfigure(getThemeExtension()),
+  })
+  if (worker) {
+    worker.postMessage({ type: "set_theme", dark })
+  }
+})
 
 // Custom keybinding: Shift+Enter to run
 const runKeymap = keymap.of([{
@@ -97,8 +123,10 @@ if (sharedCode) {
 
 editorView.focus()
 
-// Switch CodeMirror theme when system preference changes
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+// Follow system preference changes when no manual override is stored
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+  if (localStorage.getItem(STORAGE_KEY_THEME) !== null) return
+  applyTheme(e.matches)
   editorView.dispatch({
     effects: themeConfig.reconfigure(getThemeExtension()),
   })
