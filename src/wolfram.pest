@@ -78,9 +78,12 @@ ListExtended = {
       | ListCallSuffix                           // List[...] (ListCall)
     )?
 }
-// ParenExtended handles Part extraction on parenthesized expressions: (expr)[[index]]
+// ParenExtended handles Part extraction and bracket-call on parenthesized expressions:
+//   (expr)[[index]]  — Part extraction
+//   (expr)[args]     — function call on parenthesized expression (e.g. (D[#, x] &)[x^3])
+ParenCallSuffix = { BracketArgs+ }
 ParenExtended = {
-    "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" ~ PartIndexSuffix
+    "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" ~ (PartIndexSuffix | ParenCallSuffix)
 }
 // PartAnonymousFunction handles PartExtract& - for expressions like #[[2]]& or #[[1]] + #[[2]]&
 // Only for non-FunctionCall bases (List/Slot/Identifier). FC-based handled by FunctionCallExtended.

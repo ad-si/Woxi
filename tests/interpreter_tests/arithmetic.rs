@@ -1964,6 +1964,36 @@ mod unary_minus_after_operator {
     // a + -b should be a - b
     assert_eq!(interpret("5 + -3").unwrap(), "2");
   }
+
+  #[test]
+  fn negative_base_power_parens() {
+    // (-1)^n should display with parentheses around -1
+    assert_eq!(interpret("Power[-1, n]").unwrap(), "(-1)^n");
+  }
+
+  #[test]
+  fn rational_exponent_parens() {
+    // (-1)^(1/3) should have parens around the Rational exponent
+    assert_eq!(interpret("Power[-1, 1/3]").unwrap(), "(-1)^(1/3)");
+  }
+
+  #[test]
+  fn neg1_rational_power_simplification() {
+    // ((-1)^(1/3))^2 = (-1)^(2/3)
+    assert_eq!(interpret("((-1)^(1/3))^2").unwrap(), "(-1)^(2/3)");
+  }
+
+  #[test]
+  fn neg_neg1_rational_power_simplification() {
+    // (-(-1)^(1/3))^2 = (-1)^(2/3)
+    assert_eq!(interpret("(-(-1)^(1/3))^2").unwrap(), "(-1)^(2/3)");
+  }
+
+  #[test]
+  fn neg1_rational_power_simplification_4_3() {
+    // ((-1)^(2/3))^2 = -(-1)^(1/3)
+    assert_eq!(interpret("((-1)^(2/3))^2").unwrap(), "-(-1)^(1/3)");
+  }
 }
 
 /// Regression test for @ prefix application in ReplaceAll context (issue 3)

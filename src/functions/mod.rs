@@ -25,6 +25,7 @@ pub mod plot3d;
 pub mod polynomial_ast;
 pub mod predicate_ast;
 pub mod quantity_ast;
+pub mod rsolve_ast;
 pub mod scoping;
 pub mod string_ast;
 pub mod tabular_ast;

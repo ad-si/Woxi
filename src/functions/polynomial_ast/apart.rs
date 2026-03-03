@@ -55,39 +55,36 @@ pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   let num_expanded = expand_and_combine(&num);
   let den_expanded = expand_and_combine(&den);
 
-  let num_coeffs = match extract_poly_coeffs(&num_expanded, var) {
-    Some(c) => c,
-    None => return Ok(expr.clone()),
-  };
-  let den_coeffs = match extract_poly_coeffs(&den_expanded, var) {
-    Some(c) => c,
-    None => return Ok(expr.clone()),
-  };
+  // Try integer-coefficient approach first
+  let num_coeffs = extract_poly_coeffs(&num_expanded, var);
+  let den_coeffs = extract_poly_coeffs(&den_expanded, var);
 
-  // If numerator degree >= denominator degree, do polynomial division first
-  if num_coeffs.len() >= den_coeffs.len() {
-    if let Some(quot_coeffs) = poly_exact_divide(&num_coeffs, &den_coeffs) {
-      // Perfectly divisible
-      return Ok(coeffs_to_expr(&quot_coeffs, var));
+  if let (Some(nc), Some(dc)) = (&num_coeffs, &den_coeffs) {
+    // If numerator degree >= denominator degree, do polynomial division first
+    if nc.len() >= dc.len() {
+      if let Some(quot_coeffs) = poly_exact_divide(nc, dc) {
+        return Ok(coeffs_to_expr(&quot_coeffs, var));
+      }
+      let (quotient, remainder) = poly_long_divide(nc, dc);
+      if remainder.iter().all(|&c| c == 0) {
+        return Ok(coeffs_to_expr(&quotient, var));
+      }
+      let quot_expr = coeffs_to_expr(&quotient, var);
+      let rem_expr = coeffs_to_expr(&remainder, var);
+      let frac = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(rem_expr),
+        right: Box::new(den_expanded.clone()),
+      };
+      let apart_remainder = apart_proper_fraction(&frac, var)?;
+      return Ok(add_exprs(&quot_expr, &apart_remainder));
     }
-    // Polynomial long division with remainder
-    let (quotient, remainder) = poly_long_divide(&num_coeffs, &den_coeffs);
-    if remainder.iter().all(|&c| c == 0) {
-      return Ok(coeffs_to_expr(&quotient, var));
-    }
-    // result = quotient + Apart[remainder/den]
-    let quot_expr = coeffs_to_expr(&quotient, var);
-    let rem_expr = coeffs_to_expr(&remainder, var);
-    let frac = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(rem_expr),
-      right: Box::new(den_expanded.clone()),
-    };
-    let apart_remainder = apart_proper_fraction(&frac, var)?;
-    return Ok(add_exprs(&quot_expr, &apart_remainder));
+
+    return apart_proper_fraction(expr, var);
   }
 
-  apart_proper_fraction(expr, var)
+  // Fall back to symbolic approach (multivariate case)
+  apart_symbolic(expr, &num_expanded, &den, var)
 }
 
 /// Perform partial fraction decomposition for a proper fraction (deg(num) < deg(den))
@@ -281,4 +278,280 @@ pub fn poly_long_divide(num: &[i128], den: &[i128]) -> (Vec<i128>, Vec<i128>) {
     }
   }
   (quotient, remainder)
+}
+
+// ─── Symbolic Apart (multivariate) ─────────────────────────────────
+
+/// Flatten a product expression into its factors.
+fn flatten_product_factors(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for a in args {
+        flatten_product_factors(a, out);
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_product_factors(left, out);
+      flatten_product_factors(right, out);
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+/// Check if expr is a polynomial of degree exactly 1 in var.
+/// Returns Some((coeff_of_var, constant_term)) if linear.
+fn extract_linear_coeffs(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
+  let expanded = expand_and_combine(expr);
+  // Constant term: substitute var=0
+  let constant =
+    crate::syntax::substitute_variable(&expanded, var, &Expr::Integer(0));
+  let constant =
+    crate::evaluator::evaluate_expr_to_expr(&constant).unwrap_or(constant);
+  // Value at var=1: substitute var=1
+  let at_one =
+    crate::syntax::substitute_variable(&expanded, var, &Expr::Integer(1));
+  let at_one =
+    crate::evaluator::evaluate_expr_to_expr(&at_one).unwrap_or(at_one);
+  // linear_coeff = at_one - constant
+  let coeff = Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(at_one),
+    right: Box::new(constant.clone()),
+  };
+  let coeff = crate::evaluator::evaluate_expr_to_expr(&coeff).unwrap_or(coeff);
+  // Check that the coefficient is not zero (otherwise not linear)
+  if matches!(&coeff, Expr::Integer(0)) {
+    return None;
+  }
+  // Verify it's actually linear (degree 1): check that at var=2, value = 2*coeff + constant
+  let at_two =
+    crate::syntax::substitute_variable(&expanded, var, &Expr::Integer(2));
+  let at_two =
+    crate::evaluator::evaluate_expr_to_expr(&at_two).unwrap_or(at_two);
+  // expected = 2*coeff + constant
+  let expected = Expr::BinaryOp {
+    op: BinaryOperator::Plus,
+    left: Box::new(Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(2)),
+      right: Box::new(coeff.clone()),
+    }),
+    right: Box::new(constant.clone()),
+  };
+  let expected =
+    crate::evaluator::evaluate_expr_to_expr(&expected).unwrap_or(expected);
+  let diff = Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(at_two),
+    right: Box::new(expected),
+  };
+  let diff = crate::evaluator::evaluate_expr_to_expr(&diff).unwrap_or(diff);
+  if !matches!(&diff, Expr::Integer(0)) {
+    return None; // Not linear
+  }
+  Some((coeff, constant))
+}
+
+/// Extract leading sign from a Times expression.
+/// Returns (sign, abs_expr) where sign is 1 or -1.
+fn extract_leading_sign(expr: &Expr) -> (i128, Expr) {
+  match expr {
+    Expr::Integer(n) if *n < 0 => (-1, Expr::Integer(-n)),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (-1, *operand.clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let (lsign, labs) = extract_leading_sign(left);
+      if lsign < 0 {
+        let rebuilt =
+          crate::functions::math_ast::times_ast(&[labs, *right.clone()])
+            .unwrap_or(*right.clone());
+        (-1, rebuilt)
+      } else {
+        (1, expr.clone())
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      let (lsign, labs) = extract_leading_sign(&args[0]);
+      if lsign < 0 {
+        let mut new_args = vec![labs];
+        new_args.extend_from_slice(&args[1..]);
+        let rebuilt = crate::functions::math_ast::times_ast(&new_args)
+          .unwrap_or(expr.clone());
+        (-1, rebuilt)
+      } else {
+        (1, expr.clone())
+      }
+    }
+    _ => (1, expr.clone()),
+  }
+}
+
+/// Symbolic partial fraction decomposition for multivariate expressions.
+/// Factor the denominator, find linear factors in var, apply cover-up method.
+fn apart_symbolic(
+  expr: &Expr,
+  num: &Expr,
+  den: &Expr,
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  // Factor the denominator
+  let den_factored = factor_ast(&[den.clone()])?;
+  // Collect factors
+  let mut factors = Vec::new();
+  flatten_product_factors(&den_factored, &mut factors);
+
+  // Separate linear (in var) factors from non-linear/constant factors
+  let mut linear_factors: Vec<Expr> = Vec::new(); // the full factor expression
+  let mut linear_roots: Vec<Expr> = Vec::new(); // root = -constant/coeff
+  let mut other_factor = Expr::Integer(1);
+
+  for f in &factors {
+    if !crate::functions::polynomial_ast::contains_var(f, var) {
+      // Constant factor (doesn't contain var)
+      other_factor = crate::functions::math_ast::times_ast(&[
+        other_factor.clone(),
+        f.clone(),
+      ])
+      .unwrap_or(other_factor);
+      continue;
+    }
+    if let Some((coeff, constant)) = extract_linear_coeffs(f, var) {
+      // Root: var = -constant/coeff
+      let neg_const = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(constant),
+      };
+      let root = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(neg_const),
+        right: Box::new(coeff),
+      };
+      let root = crate::evaluator::evaluate_expr_to_expr(&root).unwrap_or(root);
+      linear_factors.push(f.clone());
+      linear_roots.push(root);
+    } else {
+      // Non-linear factor containing var — can't decompose
+      return Ok(expr.clone());
+    }
+  }
+
+  if linear_factors.len() < 2 {
+    return Ok(expr.clone());
+  }
+
+  // Apply cover-up method for partial fractions
+  let n = linear_roots.len();
+  let mut result_terms = Vec::new();
+
+  for i in 0..n {
+    // Evaluate numerator at root_i
+    let num_val =
+      crate::syntax::substitute_variable(num, var, &linear_roots[i]);
+    let num_val =
+      crate::evaluator::evaluate_expr_to_expr(&num_val).unwrap_or(num_val);
+
+    // Compute scalar = other_factor * product_{j!=i} factor_j(r_i)
+    let mut scalar_parts: Vec<Expr> = vec![other_factor.clone()];
+    for j in 0..n {
+      if i != j {
+        let fj_at_ri = crate::syntax::substitute_variable(
+          &linear_factors[j],
+          var,
+          &linear_roots[i],
+        );
+        let fj_at_ri = crate::evaluator::evaluate_expr_to_expr(&fj_at_ri)
+          .unwrap_or(fj_at_ri);
+        scalar_parts.push(fj_at_ri);
+      }
+    }
+    let scalar = crate::functions::math_ast::times_ast(&scalar_parts)
+      .unwrap_or(Expr::Integer(1));
+
+    // Extract sign from scalar: if leading coefficient is negative, flip sign
+    let (sign, abs_scalar) = extract_leading_sign(&scalar);
+
+    // Build denominator = abs_scalar * factor_i (always positive scalar)
+    let mut denom_factors = Vec::new();
+    flatten_product_factors(&abs_scalar, &mut denom_factors);
+    denom_factors.push(linear_factors[i].clone());
+    let full_denom = crate::functions::math_ast::times_ast(&denom_factors)
+      .unwrap_or(Expr::Integer(1));
+
+    // Build positive fraction = num_val / full_denom
+    let frac = Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(num_val),
+      right: Box::new(full_denom),
+    };
+    let frac = crate::evaluator::evaluate_expr_to_expr(&frac).unwrap_or(frac);
+
+    // Apply sign: negative terms use UnaryOp::Minus for proper plus_ast handling
+    if sign < 0 {
+      result_terms.push(Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(frac),
+      });
+    } else {
+      result_terms.push(frac);
+    }
+  }
+
+  if result_terms.is_empty() {
+    return Ok(expr.clone());
+  }
+
+  // Build sum: positive terms first, then negative terms (as subtractions)
+  let mut positive: Vec<Expr> = Vec::new();
+  let mut negative: Vec<Expr> = Vec::new(); // stored as absolute values
+  for t in &result_terms {
+    match t {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => negative.push(*operand.clone()),
+      _ => positive.push(t.clone()),
+    }
+  }
+  // Build: pos1 + pos2 + ... - neg1 - neg2 - ...
+  let mut result = if positive.is_empty() {
+    // All negative: start with -neg1
+    if negative.is_empty() {
+      return Ok(expr.clone());
+    }
+    let first = negative.remove(0);
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand: Box::new(first),
+    }
+  } else {
+    positive.remove(0)
+  };
+  for p in &positive {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(result),
+      right: Box::new(p.clone()),
+    };
+  }
+  for n in &negative {
+    result = Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left: Box::new(result),
+      right: Box::new(n.clone()),
+    };
+  }
+  Ok(result)
 }

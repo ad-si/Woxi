@@ -1249,6 +1249,60 @@ mod solve {
       "{{x -> -(a/Sqrt[2])}, {x -> a/Sqrt[2]}}"
     );
   }
+
+  #[test]
+  fn quartic_factor_based() {
+    assert_eq!(
+      interpret("Solve[x^4 - x == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 1}, {x -> -(-1)^(1/3)}, {x -> (-1)^(2/3)}}"
+    );
+  }
+
+  #[test]
+  fn cubic_factor_based() {
+    assert_eq!(
+      interpret("Solve[x^3 - 1 == 0, x]").unwrap(),
+      "{{x -> 1}, {x -> -(-1)^(1/3)}, {x -> (-1)^(2/3)}}"
+    );
+  }
+
+  #[test]
+  fn cyclotomic_phi3() {
+    assert_eq!(
+      interpret("Solve[x^2 + x + 1 == 0, x]").unwrap(),
+      "{{x -> -(-1)^(1/3)}, {x -> (-1)^(2/3)}}"
+    );
+  }
+
+  #[test]
+  fn cyclotomic_phi6() {
+    assert_eq!(
+      interpret("Solve[x^2 - x + 1 == 0, x]").unwrap(),
+      "{{x -> (-1)^(1/3)}, {x -> -(-1)^(2/3)}}"
+    );
+  }
+
+  #[test]
+  fn nonlinear_system() {
+    assert_eq!(
+      interpret("Solve[{3 x ^ 2 - 3 y == 0, 3 y ^ 2 - 3 x == 0}, {x, y}]")
+        .unwrap(),
+      "{{x -> 0, y -> 0}, {x -> 1, y -> 1}, {x -> -(-1)^(1/3), y -> (-1)^(2/3)}, {x -> (-1)^(2/3), y -> -(-1)^(1/3)}}"
+    );
+  }
+}
+
+mod rsolve {
+  use super::*;
+
+  #[test]
+  fn constant_coeff_second_order() {
+    assert_eq!(
+      interpret("RSolve[{a[n + 2] == a[n], a[0] == 1, a[1] == 4}, a, n]")
+        .unwrap(),
+      "{{a -> Function[{n}, (5 - 3*(-1)^n)/2]}}"
+    );
+  }
 }
 
 mod full_simplify {
@@ -2754,5 +2808,88 @@ mod refine {
   fn refine_no_simplification_needed() {
     // Expression that doesn't benefit from assumptions
     assert_eq!(interpret("Refine[x + 1, x > 0]").unwrap(), "1 + x");
+  }
+
+  #[test]
+  fn sqrt_x_squared_x_gt_positive() {
+    // x > 2 implies x > 0, so Sqrt[x^2] → x
+    assert_eq!(interpret("Refine[Sqrt[x^2], x > 2]").unwrap(), "x");
+  }
+
+  #[test]
+  fn sqrt_x_squared_x_ge_positive() {
+    // x >= 5 implies x > 0, so Sqrt[x^2] → x
+    assert_eq!(interpret("Refine[Sqrt[x^2], x >= 5]").unwrap(), "x");
+  }
+
+  #[test]
+  fn sqrt_x_squared_positive_lt_x() {
+    // 3 < x implies x > 0, so Sqrt[x^2] → x
+    assert_eq!(interpret("Refine[Sqrt[x^2], 3 < x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn sqrt_x_squared_positive_le_x() {
+    // 1 <= x implies x > 0, so Sqrt[x^2] → x
+    assert_eq!(interpret("Refine[Sqrt[x^2], 1 <= x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn abs_x_gt_positive() {
+    // x > 7 implies x > 0, so Abs[x] → x
+    assert_eq!(interpret("Refine[Abs[x], x > 7]").unwrap(), "x");
+  }
+}
+
+mod simplify_solve_verification {
+  use super::*;
+
+  #[test]
+  fn simplify_quadratic_formula_substitution() {
+    // Substituting quadratic formula roots back into polynomial should give 0
+    assert_eq!(
+      interpret(
+        "sol = Solve[a x^2 + b x + c == 0, x]; Simplify[a x^2 + b x + c /. sol]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn simplify_threads_over_list() {
+    assert_eq!(interpret("Simplify[{1 + 1, 2 + 3}]").unwrap(), "{2, 5}");
+  }
+
+  #[test]
+  fn together_fraction_power() {
+    // Together should correctly handle (sum/product)^n terms
+    assert_eq!(
+      interpret("Together[a*(x/a)^2 + x]").unwrap(),
+      "(a^2*x + a*x^2)/a^2"
+    );
+  }
+}
+
+mod expand_fraction_power {
+  use super::*;
+
+  #[test]
+  fn expand_fraction_squared() {
+    // (x+y)^2/z^2 expanded, using z^(-2) notation for denominator
+    assert_eq!(
+      interpret("Expand[((x + y)/z)^2]").unwrap(),
+      "x^2*z^(-2) + 2*x*y*z^(-2) + y^2*z^(-2)"
+    );
+  }
+
+  #[test]
+  fn expand_product_power() {
+    assert_eq!(interpret("Expand[(2*a)^2]").unwrap(), "4*a^2");
+  }
+
+  #[test]
+  fn expand_product_power_three() {
+    assert_eq!(interpret("Expand[(3*x)^3]").unwrap(), "27*x^3");
   }
 }

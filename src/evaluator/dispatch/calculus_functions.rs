@@ -65,8 +65,11 @@ pub fn dispatch_calculus_functions(
     "Limit" if (2..=3).contains(&args.len()) => {
       return Some(crate::functions::calculus_ast::limit_ast(args));
     }
-    "Series" if args.len() == 2 => {
+    "Series" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::series_ast(args));
+    }
+    "RSolve" if args.len() == 3 => {
+      return Some(crate::functions::rsolve_ast::rsolve_ast(args));
     }
     "DSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::dsolve_ast(args));

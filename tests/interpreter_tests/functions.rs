@@ -1257,6 +1257,36 @@ mod paren_anonymous_function {
     assert_eq!(interpret("{#, #^2} &[3]").unwrap(), "{3, 9}");
     assert_eq!(interpret("{#1, #2, #1 + #2} &[2, 5]").unwrap(), "{2, 5, 7}");
   }
+
+  #[test]
+  fn paren_call_with_ampersand_inside() {
+    // (expr &)[args] — anonymous function with & inside parens, called with bracket args
+    assert_eq!(interpret("(# + 1 &)[5]").unwrap(), "6");
+    assert_eq!(interpret("(#^2 &)[3]").unwrap(), "9");
+    assert_eq!(interpret("(#1 + #2 &)[3, 4]").unwrap(), "7");
+  }
+
+  #[test]
+  fn paren_call_derivative_anonymous() {
+    // (D[#, x] &)[expr] — derivative as anonymous function with & inside parens
+    assert_eq!(
+      interpret("(D[#, x] &)[x^3 + Sin[x]]").unwrap(),
+      "3*x^2 + Cos[x]"
+    );
+  }
+
+  #[test]
+  fn paren_call_if_anonymous() {
+    // (If[...] &)[args] — If as anonymous function with & inside parens
+    assert_eq!(interpret("(If[# > 0, #, -#] &)[5]").unwrap(), "5");
+    assert_eq!(interpret("(If[# > 0, #, -#] &)[-5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn paren_call_chained() {
+    // (expr)[a][b] — chained calls on parenthesized expression
+    assert_eq!(interpret("(# &)[#^2 &][3]").unwrap(), "9");
+  }
 }
 
 mod part_anonymous_function {

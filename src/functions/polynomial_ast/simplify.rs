@@ -35,9 +35,32 @@ fn extract_positive_vars(assumption: &Expr) -> Vec<String> {
   vars
 }
 
+/// Check if an expression is a non-negative numeric constant (integer, real, or rational).
+/// This is used to determine if `x > c` implies `x > 0`.
+fn is_nonnegative_constant(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(n) => *n >= 0,
+    Expr::BigInteger(n) => *n >= num_bigint::BigInt::from(0),
+    Expr::Real(f) => *f >= 0.0,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      // Rational[a, b] is non-negative if a and b have the same sign
+      match (&args[0], &args[1]) {
+        (Expr::Integer(a), Expr::Integer(b)) => {
+          (*a >= 0 && *b > 0) || (*a <= 0 && *b < 0)
+        }
+        _ => false,
+      }
+    }
+    _ => false,
+  }
+}
+
 fn extract_positive_vars_inner(assumption: &Expr, vars: &mut Vec<String>) {
   match assumption {
-    // x > 0 or x >= 0
+    // x > 0, x >= 0, x > c (c positive), x >= c (c positive)
+    // and reverse forms: 0 < x, c < x, etc.
     Expr::Comparison {
       operands,
       operators,
@@ -48,13 +71,14 @@ fn extract_positive_vars_inner(assumption: &Expr, vars: &mut Vec<String>) {
           crate::syntax::ComparisonOp::Greater
             | crate::syntax::ComparisonOp::GreaterEqual
         );
+        // x > c where c >= 0 (implies x is positive)
         if is_gt
           && let Expr::Identifier(name) = &operands[0]
-          && matches!(&operands[1], Expr::Integer(0))
+          && is_nonnegative_constant(&operands[1])
         {
           vars.push(name.clone());
         }
-        // 0 < x or 0 <= x
+        // c < x or c <= x where c >= 0 (implies x is positive)
         let is_lt = matches!(
           operators[0],
           crate::syntax::ComparisonOp::Less
@@ -62,7 +86,7 @@ fn extract_positive_vars_inner(assumption: &Expr, vars: &mut Vec<String>) {
         );
         if is_lt
           && let Expr::Identifier(name) = &operands[1]
-          && matches!(&operands[0], Expr::Integer(0))
+          && is_nonnegative_constant(&operands[0])
         {
           vars.push(name.clone());
         }
@@ -372,6 +396,9 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
     | Expr::String(_)
     | Expr::Constant(_)
     | Expr::Identifier(_) => expr.clone(),
+
+    // Thread over Lists
+    Expr::List(items) => Expr::List(items.iter().map(simplify_expr).collect()),
 
     Expr::BinaryOp {
       op: BinaryOperator::Divide,

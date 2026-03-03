@@ -200,6 +200,16 @@ thread_local! {
     static CAPTURED_MESSAGES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
+// When true, emit_message prints to stdout instead of stderr (matching wolframscript behavior)
+thread_local! {
+    static MESSAGES_TO_STDOUT: RefCell<bool> = const { RefCell::new(false) };
+}
+
+/// Enable/disable routing messages to stdout (for eval mode, matching wolframscript).
+pub fn set_messages_to_stdout(enabled: bool) {
+  MESSAGES_TO_STDOUT.with(|f| *f.borrow_mut() = enabled);
+}
+
 // Quiet level: when > 0, message printing is suppressed
 thread_local! {
     static QUIET_LEVEL: RefCell<usize> = const { RefCell::new(0) };
@@ -421,13 +431,20 @@ pub fn restore_warnings(snapshot: (Vec<String>, Vec<String>, Vec<String>)) {
 
 /// Emit a Wolfram-style message (e.g. "Power::infy: Infinite expression 1/0 encountered.").
 /// Suppressed when inside Quiet[]. Tracked in CAPTURED_MESSAGES for Check[] interaction.
+/// When messages_to_stdout is enabled, prints to stdout (matching wolframscript).
 pub fn emit_message(msg: &str) {
   CAPTURED_MESSAGES.with(|buffer| {
     buffer.borrow_mut().push(msg.to_string());
   });
   if !is_quiet() {
-    eprintln!();
-    eprintln!("{}", msg);
+    let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());
+    if to_stdout {
+      println!();
+      println!("{}", msg);
+    } else {
+      eprintln!();
+      eprintln!("{}", msg);
+    }
   }
 }
 

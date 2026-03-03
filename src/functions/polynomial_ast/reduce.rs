@@ -1377,10 +1377,10 @@ pub fn reduce_multi_var_and(
     return Ok(Expr::Identifier("True".to_string()));
   }
 
-  // Try to find an equation to solve for the first variable
+  // Find the best (equation, variable) pair: prefer lowest degree
+  let mut best: Option<(usize, String, Expr, Expr, i128)> = None; // (eq_idx, var, lhs, rhs, degree)
   for (i, constraint) in constraints.iter().enumerate() {
     if let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(constraint) {
-      // Try to solve for first variable that appears
       for var in vars {
         let poly = Expr::BinaryOp {
           op: BinaryOperator::Minus,
@@ -1391,124 +1391,131 @@ pub fn reduce_multi_var_and(
         if is_constant_wrt(&expanded, var) {
           continue;
         }
+        if let Some(deg) = max_power(&expanded, var)
+          && (best.is_none() || deg < best.as_ref().unwrap().4)
+        {
+          best = Some((i, var.clone(), lhs.clone(), rhs.clone(), deg));
+        }
+      }
+    }
+  }
 
-        let eq = Expr::Comparison {
-          operands: vec![lhs.clone(), rhs.clone()],
-          operators: vec![crate::syntax::ComparisonOp::Equal],
-        };
-        let solve_result = solve_ast(&[eq, Expr::Identifier(var.to_string())])?;
+  if let Some((i, var, lhs, rhs, _deg)) = best {
+    let eq = Expr::Comparison {
+      operands: vec![lhs, rhs],
+      operators: vec![crate::syntax::ComparisonOp::Equal],
+    };
+    let solve_result = solve_ast(&[eq, Expr::Identifier(var.to_string())])?;
 
-        if let Expr::List(solutions) = &solve_result {
-          let mut all_results: Vec<Expr> = Vec::new();
+    if let Expr::List(solutions) = &solve_result {
+      let mut all_results: Vec<Expr> = Vec::new();
 
-          for sol in solutions {
-            if let Expr::List(rules) = sol {
-              for rule in rules {
-                if let Expr::Rule { replacement, .. } = rule {
-                  let value = replacement.as_ref();
+      for sol in solutions {
+        if let Expr::List(rules) = sol {
+          for rule in rules {
+            if let Expr::Rule { replacement, .. } = rule {
+              let value = replacement.as_ref();
 
-                  // Substitute into remaining constraints
-                  let remaining: Vec<Expr> = constraints
-                    .iter()
-                    .enumerate()
-                    .filter(|(j, _)| *j != i)
-                    .map(|(_, c)| {
-                      crate::syntax::substitute_variable(c, var, value)
-                    })
-                    .collect();
+              // Substitute into remaining constraints
+              let remaining: Vec<Expr> = constraints
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, c)| {
+                  let substituted =
+                    crate::syntax::substitute_variable(c, &var, value);
+                  // Evaluate the substituted expression
+                  crate::evaluator::evaluate_expr_to_expr(&substituted)
+                    .unwrap_or(substituted)
+                })
+                .collect();
 
-                  let remaining_vars: Vec<String> = vars
-                    .iter()
-                    .filter(|v| v.as_str() != var.as_str())
-                    .cloned()
-                    .collect();
+              let remaining_vars: Vec<String> = vars
+                .iter()
+                .filter(|v| v.as_str() != var.as_str())
+                .cloned()
+                .collect();
 
-                  if remaining.is_empty() && remaining_vars.is_empty() {
-                    // No remaining constraints
+              if remaining.is_empty() && remaining_vars.is_empty() {
+                // No remaining constraints
+                let var_eq =
+                  make_equality(&Expr::Identifier(var.to_string()), value);
+                all_results.push(var_eq);
+              } else if remaining_vars.is_empty() {
+                // Check if remaining constraints are satisfied
+                let combined = remaining.iter().skip(1).fold(
+                  remaining[0].clone(),
+                  |acc, c| Expr::BinaryOp {
+                    op: BinaryOperator::And,
+                    left: Box::new(acc),
+                    right: Box::new(c.clone()),
+                  },
+                );
+                let evaled = crate::evaluator::evaluate_expr_to_expr(&combined);
+                if let Ok(result) = evaled
+                  && !matches!(&result, Expr::Identifier(s) if s == "False")
+                {
+                  let var_eq =
+                    make_equality(&Expr::Identifier(var.to_string()), value);
+                  all_results.push(var_eq);
+                }
+              } else {
+                // Reduce remaining with fewer variables
+                let combined = remaining.iter().skip(1).fold(
+                  remaining[0].clone(),
+                  |acc, c| Expr::BinaryOp {
+                    op: BinaryOperator::And,
+                    left: Box::new(acc),
+                    right: Box::new(c.clone()),
+                  },
+                );
+                let sub_result =
+                  reduce_expr(&combined, &remaining_vars, domain)?;
+
+                if !matches!(&sub_result, Expr::Identifier(s) if s == "False") {
+                  if matches!(&sub_result, Expr::Identifier(s) if s == "True") {
                     let var_eq =
                       make_equality(&Expr::Identifier(var.to_string()), value);
                     all_results.push(var_eq);
-                  } else if remaining_vars.is_empty() {
-                    // Check if remaining constraints are satisfied
-                    let combined = remaining.iter().skip(1).fold(
-                      remaining[0].clone(),
-                      |acc, c| Expr::BinaryOp {
-                        op: BinaryOperator::And,
-                        left: Box::new(acc),
-                        right: Box::new(c.clone()),
-                      },
-                    );
-                    let evaled =
-                      crate::evaluator::evaluate_expr_to_expr(&combined);
-                    if let Ok(result) = evaled
-                      && !matches!(&result, Expr::Identifier(s) if s == "False")
-                    {
+                  } else {
+                    // Handle Or branches: each branch is a separate solution
+                    let or_branches = collect_or_terms(&sub_result);
+                    for branch in &or_branches {
+                      // Back-substitute solved values into the var expression
+                      let mut final_value = value.clone();
+                      let sub_equalities = collect_and_equalities(branch);
+                      for (sv, sval) in &sub_equalities {
+                        final_value = crate::syntax::substitute_variable(
+                          &final_value,
+                          sv,
+                          sval,
+                        );
+                      }
+                      let final_value =
+                        crate::evaluator::evaluate_expr_to_expr(&final_value)
+                          .unwrap_or(simplify(final_value));
                       let var_eq = make_equality(
                         &Expr::Identifier(var.to_string()),
-                        value,
+                        &final_value,
                       );
-                      all_results.push(var_eq);
-                    }
-                  } else {
-                    // Reduce remaining with fewer variables
-                    let combined = remaining.iter().skip(1).fold(
-                      remaining[0].clone(),
-                      |acc, c| Expr::BinaryOp {
+                      all_results.push(Expr::BinaryOp {
                         op: BinaryOperator::And,
-                        left: Box::new(acc),
-                        right: Box::new(c.clone()),
-                      },
-                    );
-                    let sub_result =
-                      reduce_expr(&combined, &remaining_vars, domain)?;
-
-                    if !matches!(&sub_result, Expr::Identifier(s) if s == "False")
-                    {
-                      if matches!(&sub_result, Expr::Identifier(s) if s == "True")
-                      {
-                        let var_eq = make_equality(
-                          &Expr::Identifier(var.to_string()),
-                          value,
-                        );
-                        all_results.push(var_eq);
-                      } else {
-                        // Back-substitute solved values into the var expression
-                        let mut final_value = value.clone();
-                        let sub_equalities =
-                          collect_and_equalities(&sub_result);
-                        for (sv, sval) in &sub_equalities {
-                          final_value = crate::syntax::substitute_variable(
-                            &final_value,
-                            sv,
-                            sval,
-                          );
-                        }
-                        let final_value =
-                          crate::evaluator::evaluate_expr_to_expr(&final_value)
-                            .unwrap_or(simplify(final_value));
-                        let var_eq = make_equality(
-                          &Expr::Identifier(var.to_string()),
-                          &final_value,
-                        );
-                        all_results.push(Expr::BinaryOp {
-                          op: BinaryOperator::And,
-                          left: Box::new(var_eq),
-                          right: Box::new(sub_result),
-                        });
-                      }
+                        left: Box::new(var_eq),
+                        right: Box::new(branch.clone()),
+                      });
                     }
                   }
                 }
               }
             }
           }
-
-          if all_results.is_empty() {
-            return Ok(Expr::Identifier("False".to_string()));
-          }
-          return Ok(build_or(all_results));
         }
       }
+
+      if all_results.is_empty() {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+      return Ok(build_or(all_results));
     }
   }
 

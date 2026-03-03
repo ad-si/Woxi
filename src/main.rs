@@ -99,6 +99,7 @@ fn main() {
       if quiet_print {
         woxi::set_quiet_print(true);
       }
+      woxi::set_messages_to_stdout(true);
       match interpret(&expression) {
         Ok(result) => {
           // "\0" is a sentinel value indicating output was already printed (e.g., Part error)
