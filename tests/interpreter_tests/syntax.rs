@@ -3572,3 +3572,98 @@ mod plus_rendering {
     assert_eq!(interpret("a - 3*b - 5*c").unwrap(), "a - 3*b - 5*c");
   }
 }
+
+mod tilde_infix {
+  use super::*;
+
+  #[test]
+  fn basic_tilde_infix() {
+    // a ~f~ b means f[a, b]
+    assert_eq!(interpret("a ~f~ b").unwrap(), "f[a, b]");
+  }
+
+  #[test]
+  fn tilde_infix_evaluates() {
+    assert_eq!(interpret("1 ~Plus~ 2").unwrap(), "3");
+  }
+
+  #[test]
+  fn tilde_infix_join() {
+    assert_eq!(
+      interpret("{1, 2, 3} ~Join~ {4, 5}").unwrap(),
+      "{1, 2, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_left_associative() {
+    // a ~f~ b ~g~ c means g[f[a, b], c]
+    assert_eq!(
+      interpret("FullForm[Hold[a ~f~ b ~g~ c]]").unwrap(),
+      "FullForm[Hold[g[f[a, b], c]]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_precedence_plus() {
+    // ~f~ binds tighter than +
+    assert_eq!(
+      interpret("FullForm[Hold[a + b ~f~ c]]").unwrap(),
+      "FullForm[Hold[a + f[b, c]]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_precedence_times() {
+    // ~f~ binds tighter than *
+    assert_eq!(
+      interpret("FullForm[Hold[a * b ~f~ c]]").unwrap(),
+      "FullForm[Hold[a*f[b, c]]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_precedence_power() {
+    // ~f~ binds tighter than ^ (right-associative)
+    assert_eq!(
+      interpret("FullForm[Hold[a^2 ~f~ c]]").unwrap(),
+      "FullForm[Hold[a^f[2, c]]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_precedence_prefix_at() {
+    // @ binds tighter than ~f~
+    assert_eq!(
+      interpret("FullForm[Hold[g @ a ~f~ b]]").unwrap(),
+      "FullForm[Hold[f[g[a], b]]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_precedence_apply() {
+    // ~f~ binds tighter than @@
+    assert_eq!(
+      interpret("FullForm[Hold[g @@ a ~f~ b]]").unwrap(),
+      "FullForm[Hold[g @@ f[a, b]]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_does_not_conflict_with_string_expression() {
+    // ~~ (StringExpression) should still work
+    assert_eq!(
+      interpret(r#"FullForm[Hold["a" ~~ "b"]]"#).unwrap(),
+      "FullForm[Hold[StringExpression[a, b]]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_caesar_cipher() {
+    // End-to-end test from the issue file
+    assert_eq!(
+      interpret(r#"caesarDecode[text_, n_] := StringReplace[text, Thread[CharacterRange["A","Z"] -> RotateLeft[CharacterRange["A","Z"], -n]] ~Join~ Thread[CharacterRange["a","z"] -> RotateLeft[CharacterRange["a","z"], -n]]]; caesarDecode["Khoor Zruog", 3]"#).unwrap(),
+      "Hello World"
+    );
+  }
+}
