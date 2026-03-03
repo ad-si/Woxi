@@ -5070,7 +5070,7 @@ SowVideo,,,,14.1,
 SpaceCurveData,,🚫,,10,4747
 Spacer,,,,6,471
 Spacings,,,,6,261
-Span,,,,6,109
+Span,Extract a span of elements using ;; notation in Part,✅,pure,6,109
 SpanFromAbove,,,,6,1687
 SpanFromBoth,,,,6,2495
 SpanFromLeft,,,,6,946
