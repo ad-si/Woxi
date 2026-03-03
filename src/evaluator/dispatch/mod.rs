@@ -359,89 +359,8 @@ pub fn evaluate_function_call_ast_inner(
     _ => {}
   }
 
-  // Dispatch through submodules in order
-  if let Some(result) = structural::dispatch_structural(name, args) {
-    return result;
-  }
-  if let Some(result) = attributes::dispatch_attributes(name, args) {
-    return result;
-  }
-  if let Some(result) =
-    evaluation_control::dispatch_evaluation_control(name, args)
-  {
-    return result;
-  }
-  if let Some(result) = list_operations::dispatch_list_operations(name, args) {
-    return result;
-  }
-  if let Some(result) = string_functions::dispatch_string_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) = image_functions::dispatch_image_functions(name, args) {
-    return result;
-  }
-  if let Some(result) = io_functions::dispatch_io_functions(name, args) {
-    return result;
-  }
-  if let Some(result) =
-    datetime_functions::dispatch_datetime_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) = plotting::dispatch_plotting(name, args) {
-    return result;
-  }
-  if let Some(result) =
-    predicate_functions::dispatch_predicate_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) =
-    association_functions::dispatch_association_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) =
-    quantity_functions::dispatch_quantity_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) =
-    interval_functions::dispatch_interval_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) = math_functions::dispatch_math_functions(name, args) {
-    return result;
-  }
-  if let Some(result) =
-    boolean_functions::dispatch_boolean_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) =
-    polynomial_functions::dispatch_polynomial_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) =
-    calculus_functions::dispatch_calculus_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) =
-    linear_algebra_functions::dispatch_linear_algebra_functions(name, args)
-  {
-    return result;
-  }
-  if let Some(result) =
-    complex_and_special::dispatch_complex_and_special(name, args)
-  {
-    return result;
-  }
-
-  // Check for user-defined functions
+  // Check for user-defined functions (before built-in dispatch, so user
+  // overrides take precedence — matching Wolfram Language semantics)
   // Clone overloads to avoid holding the borrow across evaluate calls
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
@@ -780,6 +699,88 @@ pub fn evaluate_function_call_ast_inner(
         }
       }
     }
+  }
+
+  // Dispatch through built-in submodules (after user-defined functions)
+  if let Some(result) = structural::dispatch_structural(name, args) {
+    return result;
+  }
+  if let Some(result) = attributes::dispatch_attributes(name, args) {
+    return result;
+  }
+  if let Some(result) =
+    evaluation_control::dispatch_evaluation_control(name, args)
+  {
+    return result;
+  }
+  if let Some(result) = list_operations::dispatch_list_operations(name, args) {
+    return result;
+  }
+  if let Some(result) = string_functions::dispatch_string_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) = image_functions::dispatch_image_functions(name, args) {
+    return result;
+  }
+  if let Some(result) = io_functions::dispatch_io_functions(name, args) {
+    return result;
+  }
+  if let Some(result) =
+    datetime_functions::dispatch_datetime_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) = plotting::dispatch_plotting(name, args) {
+    return result;
+  }
+  if let Some(result) =
+    predicate_functions::dispatch_predicate_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    association_functions::dispatch_association_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    quantity_functions::dispatch_quantity_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    interval_functions::dispatch_interval_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) = math_functions::dispatch_math_functions(name, args) {
+    return result;
+  }
+  if let Some(result) =
+    boolean_functions::dispatch_boolean_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    polynomial_functions::dispatch_polynomial_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    calculus_functions::dispatch_calculus_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    linear_algebra_functions::dispatch_linear_algebra_functions(name, args)
+  {
+    return result;
+  }
+  if let Some(result) =
+    complex_and_special::dispatch_complex_and_special(name, args)
+  {
+    return result;
   }
 
   // Check if the variable stores a value that can be called as a function

@@ -459,6 +459,35 @@ mod protect_unprotect {
       "{}"
     );
   }
+
+  #[test]
+  fn override_builtin_function_with_user_rule() {
+    // Regression test: user-defined rules should take precedence over built-in
+    // implementations when the function is Unprotected and a matching rule exists.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Unprotect[PolynomialQ]; PolynomialQ[u_List, x_Symbol] := Foo[u, x]; \
+         Protect[PolynomialQ]; PolynomialQ[{x + 2}, x]"
+      )
+      .unwrap(),
+      "Foo[{2 + x}, x]"
+    );
+  }
+
+  #[test]
+  fn override_builtin_falls_through_to_builtin() {
+    // When user rule doesn't match, built-in should still work
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Unprotect[PolynomialQ]; PolynomialQ[u_List, x_Symbol] := Foo[u, x]; \
+         Protect[PolynomialQ]; PolynomialQ[x^2 + 1, x]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod attributes_assignment {
