@@ -4224,7 +4224,7 @@ PlotHighlighting,,,,13.3,
 PlotLabel,Option specifying a label for a plot,✅,pure,1,104
 PlotLabels,,,,10.4,597
 PlotLayout,,,,8,2203
-PlotLegends,,,,9,100
+PlotLegends,Option for adding legends to plots identifying each series,✅,pure,9,100
 PlotMarkers,,,,6,500
 PlotPoints,Option for number of sample points in plots,✅,pure,1,193
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,39

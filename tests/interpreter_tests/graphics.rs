@@ -940,6 +940,45 @@ mod plot3d {
       let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
       assert_eq!(svg_auto, svg_default);
     }
+
+    #[test]
+    fn plot_legends_explicit() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {"Sin", "Cos"}]"#
+      ));
+    }
+
+    #[test]
+    fn plot_legends_automatic() {
+      let svg = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]",
+      );
+      // Automatic legends should use expression strings
+      assert!(
+        svg.contains("Sin[x]"),
+        "Automatic legend should contain Sin[x]"
+      );
+      assert!(
+        svg.contains("Cos[x]"),
+        "Automatic legend should contain Cos[x]"
+      );
+    }
+
+    #[test]
+    fn plot_legends_none_is_default() {
+      // PlotLegends -> None should produce the same output as no legends
+      let svg_none =
+        export_svg("Plot[Sin[x], {x, 0, 2 Pi}, PlotLegends -> None]");
+      let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
+      assert_eq!(svg_none, svg_default);
+    }
+
+    #[test]
+    fn plot_legends_with_plot_style() {
+      insta::assert_snapshot!(export_svg(
+        r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {Red, Blue}, PlotLegends -> {"Sin", "Cos"}]"#
+      ));
+    }
   }
 
   mod list_plot {
@@ -992,6 +1031,20 @@ mod plot3d {
     fn list_plot_plot_style() {
       insta::assert_snapshot!(export_svg(
         "ListPlot[{1, 4, 9}, PlotStyle -> Red]"
+      ));
+    }
+
+    #[test]
+    fn list_plot_legends() {
+      insta::assert_snapshot!(export_svg(
+        r#"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {"Series A", "Series B"}]"#
+      ));
+    }
+
+    #[test]
+    fn list_line_plot_legends() {
+      insta::assert_snapshot!(export_svg(
+        r#"ListLinePlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {"Up", "Down"}]"#
       ));
     }
 
