@@ -131,12 +131,14 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Classify arguments: exact (Integer/Rational), real (Real), or symbolic
+  // Classify arguments: exact (Integer/Rational), real (Real), bigfloat, or symbolic
   let mut has_real = false;
+  let mut has_bigfloat = false;
   let mut all_numeric = true;
   for arg in &flat_args {
     match arg {
       Expr::Real(_) => has_real = true,
+      Expr::BigFloat(_, _) => has_bigfloat = true,
       Expr::Integer(_) => {}
       Expr::FunctionCall { name, args: rargs }
         if name == "Rational"
@@ -149,8 +151,8 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // If all numeric and no Reals, use exact rational arithmetic
-  if all_numeric && !has_real {
+  // If all numeric and no Reals/BigFloats, use exact rational arithmetic
+  if all_numeric && !has_real && !has_bigfloat {
     // Sum as exact rational: (numer, denom)
     let mut sum_n: i128 = 0;
     let mut sum_d: i128 = 1;
@@ -170,6 +172,11 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     return Ok(make_rational(sum_n, sum_d));
+  }
+
+  // If all numeric with BigFloat (no machine Real), use precision-tracked arithmetic
+  if all_numeric && has_bigfloat && !has_real {
+    return bigfloat_plus(&flat_args);
   }
 
   // If all numeric but has Reals, use f64
@@ -3255,5 +3262,77 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         args: result_args,
       })
     }
+  }
+}
+
+/// Sum BigFloat (precision-tagged) numbers with precision tracking.
+/// Handles BigFloat + BigFloat and BigFloat + Integer/Rational.
+fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Extract (f64_value, precision) for each argument
+  // BigFloat: use stored precision; Integer/Rational: infinite precision
+  let mut sum_val: f64 = 0.0;
+  let mut sum_error: f64 = 0.0;
+
+  for arg in args {
+    match arg {
+      Expr::BigFloat(digits, prec) => {
+        let v: f64 = digits.parse().unwrap_or(0.0);
+        let p = *prec as f64;
+        sum_val += v;
+        sum_error += v.abs() * 10f64.powf(-p);
+      }
+      Expr::Integer(n) => {
+        sum_val += *n as f64;
+        // Integer has infinite precision, contributes 0 error
+      }
+      Expr::FunctionCall { name, args: rargs }
+        if name == "Rational" && rargs.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
+          sum_val += *n as f64 / *d as f64;
+        }
+      }
+      _ => {}
+    }
+  }
+
+  // Compute result precision
+  let result_prec = if sum_val.abs() < 1e-300 || sum_error <= 0.0 {
+    // Fallback: use min finite precision among BigFloat args
+    args
+      .iter()
+      .filter_map(|a| {
+        if let Expr::BigFloat(_, p) = a {
+          Some(*p)
+        } else {
+          None
+        }
+      })
+      .min()
+      .unwrap_or(1)
+  } else {
+    let p = sum_val.abs().log10() - sum_error.log10();
+    (p.max(0.0).round() as usize).max(1)
+  };
+
+  // Format result value with the right number of significant digits
+  let result_str = format_bigfloat_value(sum_val, result_prec);
+  Ok(Expr::BigFloat(result_str, result_prec))
+}
+
+/// Format an f64 value as a BigFloat digit string with the given significant digits.
+fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
+  if value == 0.0 {
+    return "0.".to_string();
+  }
+  let sign = if value < 0.0 { "-" } else { "" };
+  let abs_val = value.abs();
+  let magnitude = abs_val.log10().floor() as i32;
+  let decimal_places = ((sig_digits as i32) - magnitude - 1).max(0) as usize;
+  let formatted = format!("{}{:.prec$}", sign, abs_val, prec = decimal_places);
+  if !formatted.contains('.') {
+    format!("{}.", formatted)
+  } else {
+    formatted
   }
 }

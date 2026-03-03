@@ -10,6 +10,7 @@ pub fn expr_to_number(expr: &Expr) -> Option<f64> {
       n.to_f64()
     }
     Expr::Real(f) => Some(*f),
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
     Expr::Constant(name) => constant_to_f64(name),
     _ => None,
   }
