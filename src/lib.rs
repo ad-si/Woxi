@@ -1815,6 +1815,18 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
   while i < len {
     let ch = chars[i];
 
+    // Handle line continuation: backslash followed by newline
+    if !in_string
+      && !in_comment
+      && ch == '\\'
+      && i + 1 < len
+      && chars[i + 1] == '\n'
+    {
+      // Skip both the backslash and the newline — the next line continues this one
+      i += 2;
+      continue;
+    }
+
     // Track comment state: (* ... *)
     if !in_string && i + 1 < len && ch == '(' && chars[i + 1] == '*' {
       in_comment = true;
