@@ -312,15 +312,24 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     }
 
     // --- Pattern matching ---
-    Expr::Pattern { name, head } => {
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => {
+      let blank_func_name = match blank_type {
+        2 => "BlankSequence",
+        3 => "BlankNullSequence",
+        _ => "Blank",
+      };
       let blank = if let Some(h) = head {
         Expr::FunctionCall {
-          name: "Blank".to_string(),
+          name: blank_func_name.to_string(),
           args: vec![Expr::Identifier(h.clone())],
         }
       } else {
         Expr::FunctionCall {
-          name: "Blank".to_string(),
+          name: blank_func_name.to_string(),
           args: vec![],
         }
       };

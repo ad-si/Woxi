@@ -130,11 +130,13 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
     Expr::Pattern {
       name: _,
       head: None,
+      ..
     } => true,
     // Head-constrained pattern: _Integer, _List, etc.
     Expr::Pattern {
       name: _,
       head: Some(h),
+      ..
     } => get_expr_head_str(expr) == h,
     // PatternTest: _?test or x_?test — matches if test[expr] is True
     Expr::PatternTest { name: _, test } => {

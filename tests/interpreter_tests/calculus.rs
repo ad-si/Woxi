@@ -792,6 +792,12 @@ mod erf {
   fn erfc_symbolic() {
     assert_eq!(interpret("Erfc[x]").unwrap(), "Erfc[x]");
   }
+
+  #[test]
+  fn d_erf_x() {
+    // D[Erf[x], x] = 2/(E^(x^2)*Sqrt[Pi]) — tests denominator formatting
+    assert_eq!(interpret("D[Erf[x],x]").unwrap(), "2/(E^x^2*Sqrt[Pi])");
+  }
 }
 
 mod integrate_gaussian {

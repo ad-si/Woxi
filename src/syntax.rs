@@ -322,8 +322,13 @@ pub enum Expr {
     params: Vec<String>,
     body: Box<Self>,
   },
-  /// Pattern: name_ or name_Head
-  Pattern { name: String, head: Option<String> },
+  /// Pattern: name_ or name_Head or name__ (BlankSequence) or name___ (BlankNullSequence)
+  /// blank_type: 1=Blank, 2=BlankSequence, 3=BlankNullSequence
+  Pattern {
+    name: String,
+    head: Option<String>,
+    blank_type: u8,
+  },
   /// Optional pattern: name_ : default, name_Head : default, name_., or name_Head.
   PatternOptional {
     name: String,
@@ -575,10 +580,15 @@ impl Clone for Expr {
       Self::Identifier(s) => return Self::Identifier(s.clone()),
       Self::Slot(n) => return Self::Slot(*n),
       Self::SlotSequence(n) => return Self::SlotSequence(*n),
-      Self::Pattern { name, head } => {
+      Self::Pattern {
+        name,
+        head,
+        blank_type,
+      } => {
         return Self::Pattern {
           name: name.clone(),
           head: head.clone(),
+          blank_type: *blank_type,
         };
       }
       Self::Constant(s) => return Self::Constant(s.clone()),
@@ -653,9 +663,14 @@ impl Clone for Expr {
           Self::Identifier(s) => results.push(Self::Identifier(s.clone())),
           Self::Slot(n) => results.push(Self::Slot(*n)),
           Self::SlotSequence(n) => results.push(Self::SlotSequence(*n)),
-          Self::Pattern { name, head } => results.push(Self::Pattern {
+          Self::Pattern {
+            name,
+            head,
+            blank_type,
+          } => results.push(Self::Pattern {
             name: name.clone(),
             head: head.clone(),
+            blank_type: *blank_type,
           }),
           Self::Constant(s) => results.push(Self::Constant(s.clone())),
           Self::Raw(s) => results.push(Self::Raw(s.clone())),
@@ -1744,13 +1759,30 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     Rule::PatternSimple => {
       let s = pair.as_str();
       let name = s.trim_end_matches('_').to_string();
-      Expr::Pattern { name, head: None }
+      let blank_count = s.len() - name.len();
+      let blank_type = blank_count.min(3) as u8;
+      Expr::Pattern {
+        name,
+        head: None,
+        blank_type,
+      }
     }
     Rule::PatternWithHead => {
+      let full = pair.as_str();
       let mut inner = pair.into_inner();
-      let name = inner.next().unwrap().as_str().to_string();
+      let pat_name_str = inner.next().unwrap().as_str();
+      let blank_count = full[pat_name_str.len()..]
+        .chars()
+        .take_while(|&c| c == '_')
+        .count();
+      let blank_type = blank_count.min(3) as u8;
+      let name = pat_name_str.to_string();
       let head = inner.next().map(|p| p.as_str().to_string());
-      Expr::Pattern { name, head }
+      Expr::Pattern {
+        name,
+        head,
+        blank_type,
+      }
     }
     Rule::PatternOptionalSimple => {
       // PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ Term }
@@ -3417,6 +3449,15 @@ fn is_denominator_factor(expr: &Expr) -> bool {
     {
       true
     }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => true,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      ..
+    } => matches!(left.as_ref(), Expr::Integer(-1)),
     _ => false,
   }
 }
@@ -3464,11 +3505,27 @@ fn denominator_form(expr: &Expr) -> Expr {
         }
       }
     }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => operand.as_ref().clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => right.as_ref().clone(),
     _ => unreachable!(),
   };
   // If positive exponent is 1, return just the base
   if matches!(&pos_exp, Expr::Integer(1)) {
     base.clone()
+  // If positive exponent is 1/2, return Sqrt[base]
+  } else if matches!(&pos_exp, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2 && matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2))))
+  {
+    Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![base.clone()],
+    }
   } else {
     Expr::FunctionCall {
       name: "Power".to_string(),
@@ -4726,11 +4783,16 @@ pub fn expr_to_string(expr: &Expr) -> String {
         )
       }
     }
-    Expr::Pattern { name, head } => {
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => {
+      let blanks = "_".repeat(*blank_type as usize);
       if let Some(h) = head {
-        format!("{}_{}", name, h)
+        format!("{}{}{}", name, blanks, h)
       } else {
-        format!("{}_", name)
+        format!("{}{}", name, blanks)
       }
     }
     Expr::PatternOptional {

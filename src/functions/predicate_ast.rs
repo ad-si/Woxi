@@ -257,7 +257,9 @@ fn is_numeric_q(expr: &Expr) -> bool {
       crate::FUNC_DEFS.with(|m| {
         let defs = m.borrow();
         if let Some(overloads) = defs.get("NumericQ") {
-          for (params, conditions, _defaults, _heads, body) in overloads {
+          for (params, conditions, _defaults, _heads, _blank_types, body) in
+            overloads
+          {
             if params.len() == 1 {
               // Try to match this symbol against the DownValue conditions
               if let Some(Some(cond)) = conditions.first()

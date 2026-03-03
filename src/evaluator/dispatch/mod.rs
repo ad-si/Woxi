@@ -351,9 +351,194 @@ pub fn evaluate_function_call_ast_inner(
   });
 
   if let Some(overloads) = overloads {
-    for (params, conditions, param_defaults, param_heads, body_expr) in
-      &overloads
+    for (
+      params,
+      conditions,
+      param_defaults,
+      param_heads,
+      blank_types,
+      body_expr,
+    ) in &overloads
     {
+      // Check if any parameter is a sequence pattern (BlankSequence/BlankNullSequence)
+      let has_sequence_param = blank_types.iter().any(|&bt| bt >= 2);
+
+      if has_sequence_param {
+        // Variable-length argument matching for BlankSequence/BlankNullSequence
+        // Count minimum required arguments: Blank=1, BlankSequence=1, BlankNullSequence=0
+        let min_args: usize = blank_types
+          .iter()
+          .zip(param_defaults.iter())
+          .map(|(&bt, d)| {
+            if d.is_some() {
+              0
+            }
+            // optional params
+            else if bt == 3 {
+              0
+            }
+            // BlankNullSequence: 0 or more
+            else {
+              1
+            } // Blank or BlankSequence: at least 1
+          })
+          .sum();
+        // Count how many non-sequence params there are
+        let non_seq_params: usize =
+          blank_types.iter().filter(|&&bt| bt < 2).count();
+        // Sequence params can absorb extra args
+        let seq_param_count = blank_types.iter().filter(|&&bt| bt >= 2).count();
+        if seq_param_count > 1 {
+          // Multiple sequence params not supported yet; fall through
+          continue;
+        }
+
+        if args.len() < min_args {
+          continue;
+        }
+
+        // Find the sequence parameter index
+        let seq_idx = blank_types.iter().position(|&bt| bt >= 2).unwrap();
+        let seq_bt = blank_types[seq_idx];
+        // Number of args consumed by non-sequence params
+        let args_for_seq = args.len() as i64 - non_seq_params as i64;
+        if args_for_seq < 0 || (seq_bt == 2 && args_for_seq < 1) {
+          continue;
+        }
+
+        // Build effective args: assign args to params, with the sequence param
+        // getting a slice of args wrapped in Sequence[...]
+        let mut effective_args = Vec::with_capacity(params.len());
+        let mut arg_idx = 0usize;
+        let mut head_ok = true;
+        for (i, _param) in params.iter().enumerate() {
+          if i == seq_idx {
+            let seq_count = args_for_seq as usize;
+            let seq_args: Vec<Expr> =
+              args[arg_idx..arg_idx + seq_count].to_vec();
+            // Check head constraints for all sequence elements
+            if let Some(head) = &param_heads[i] {
+              for sa in &seq_args {
+                if get_expr_head(sa) != *head {
+                  head_ok = false;
+                  break;
+                }
+              }
+              if !head_ok {
+                break;
+              }
+            }
+            // Single arg: bind directly; multiple args: wrap in Sequence
+            if seq_args.len() == 1 {
+              effective_args.push(seq_args.into_iter().next().unwrap());
+            } else {
+              effective_args.push(Expr::FunctionCall {
+                name: "Sequence".to_string(),
+                args: seq_args,
+              });
+            }
+            arg_idx += seq_count;
+          } else if arg_idx >= args.len() {
+            if let Some(default) = &param_defaults[i] {
+              effective_args.push(default.clone());
+            } else {
+              head_ok = false;
+              break;
+            }
+          } else {
+            if let Some(head) = &param_heads[i]
+              && get_expr_head(&args[arg_idx]) != *head
+            {
+              head_ok = false;
+              break;
+            }
+            effective_args.push(args[arg_idx].clone());
+            arg_idx += 1;
+          }
+        }
+        if !head_ok || effective_args.len() != params.len() {
+          continue;
+        }
+
+        // Check conditions
+        let mut conditions_met = true;
+        let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
+        for cond_expr in conditions.iter().flatten() {
+          if let Expr::FunctionCall {
+            name: marker_name,
+            args: marker_args,
+          } = cond_expr
+            && marker_name == "__StructuralPattern__"
+            && marker_args.len() == 2
+            && let Expr::Identifier(param_name) = &marker_args[0]
+          {
+            let pattern = &marker_args[1];
+            if let Some(idx) = params.iter().position(|p| p == param_name) {
+              if idx < effective_args.len() {
+                if let Some(bindings) =
+                  crate::evaluator::pattern_matching::match_pattern(
+                    &effective_args[idx],
+                    pattern,
+                  )
+                {
+                  structural_bindings.extend(bindings);
+                } else {
+                  conditions_met = false;
+                  break;
+                }
+              } else {
+                conditions_met = false;
+                break;
+              }
+            }
+            continue;
+          }
+          let mut substituted_cond = cond_expr.clone();
+          for (param, arg) in params.iter().zip(effective_args.iter()) {
+            substituted_cond =
+              crate::syntax::substitute_variable(&substituted_cond, param, arg);
+          }
+          for (bind_name, bind_val) in &structural_bindings {
+            substituted_cond = crate::syntax::substitute_variable(
+              &substituted_cond,
+              bind_name,
+              bind_val,
+            );
+          }
+          match evaluate_expr_to_expr(&substituted_cond) {
+            Ok(Expr::Identifier(ref s)) if s == "True" => {}
+            _ => {
+              conditions_met = false;
+              break;
+            }
+          }
+        }
+        if !conditions_met {
+          continue;
+        }
+        // Substitute and evaluate body
+        let mut substituted = body_expr.clone();
+        for (param, arg) in params.iter().zip(effective_args.iter()) {
+          substituted =
+            crate::syntax::substitute_variable(&substituted, param, arg);
+        }
+        for (bind_name, bind_val) in &structural_bindings {
+          substituted = crate::syntax::substitute_variable(
+            &substituted,
+            bind_name,
+            bind_val,
+          );
+        }
+        let mut body = substituted;
+        loop {
+          match evaluate_expr_to_expr_inner(&body) {
+            Err(InterpreterError::TailCall(next)) => body = *next,
+            Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
+            result => return result,
+          }
+        }
+      }
+
       // Count required params (those without defaults)
       let required_count =
         param_defaults.iter().filter(|d| d.is_none()).count();

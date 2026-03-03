@@ -1754,6 +1754,45 @@ mod exp_integral_ei {
       interpret("N[ExpIntegralEi[-1]]").unwrap().parse().unwrap();
     assert!((result - (-0.21938393439552026)).abs() < 1e-10);
   }
+
+  #[test]
+  fn n_complex_evaluates() {
+    // N[ExpIntegralEi[1+I], 20] should produce a complex result
+    let result = interpret("N[ExpIntegralEi[1+I],20]").unwrap();
+    // Check the real part starts correctly (first 20 digits should match)
+    assert!(result.contains("1.7646259855638540684267381613"));
+    // Check the imaginary part starts correctly
+    assert!(result.contains("2.387769851510522419262792089103"));
+    // Check it has I
+    assert!(result.contains("*I"));
+  }
+
+  #[test]
+  fn series_at_zero_positive_assumption() {
+    assert_eq!(
+      interpret("Series[ExpIntegralEi[x], {x, 0, 5}, Assumptions -> x > 0]")
+        .unwrap(),
+      "SeriesData[x, 0, {EulerGamma + Log[x], 1, 1/4, 1/18, 1/96, 1/600}, 0, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_zero_negative_assumption() {
+    assert_eq!(
+      interpret("Series[ExpIntegralEi[x], {x, 0, 5}, Assumptions -> x < 0]")
+        .unwrap(),
+      "SeriesData[x, 0, {EulerGamma + Log[-x], 1, 1/4, 1/18, 1/96, 1/600}, 0, 6, 1]"
+    );
+  }
+
+  #[test]
+  fn series_at_infinity() {
+    assert_eq!(
+      interpret(r#"Series[ExpIntegralEi[x], {x, \[Infinity], 6}] // Normal"#)
+        .unwrap(),
+      "E^x*(120/x^6 + 24/x^5 + 6/x^4 + 2/x^3 + x^(-2) + x^(-1)) + (Log[-x^(-1)] - Log[-x] + 2*Log[x])/2"
+    );
+  }
 }
 
 mod exp_integral_e {

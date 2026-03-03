@@ -14,7 +14,7 @@ fn collect_pattern_vars_inner(
   vars: &mut Vec<(String, Option<String>)>,
 ) {
   match expr {
-    Expr::Pattern { name, head } => {
+    Expr::Pattern { name, head, .. } => {
       if !vars.iter().any(|(n, _)| n == name) {
         vars.push((name.clone(), head.clone()));
       }
@@ -120,6 +120,7 @@ fn replace_placeholders_with_patterns(
         return Expr::Pattern {
           name: pat_name.clone(),
           head: head.clone(),
+          blank_type: 1,
         };
       }
       expr.clone()
@@ -450,6 +451,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     let mut conditions: Vec<Option<Expr>> = Vec::new();
     let mut defaults = Vec::new();
     let mut heads = Vec::new();
+    let mut blank_types: Vec<u8> = Vec::new();
 
     for (i, arg) in lhs_args.iter().enumerate() {
       let param_name = format!("_dv{}", i);
@@ -464,7 +466,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       };
 
       if is_pattern {
-        let (pat_name, head) = extract_pattern_info(arg);
+        let (pat_name, head, blank_type) = extract_pattern_info(arg);
         let final_name = if pat_name.is_empty() {
           param_name
         } else {
@@ -473,6 +475,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         params.push(final_name);
         conditions.push(None);
         heads.push(head);
+        blank_types.push(blank_type);
       } else {
         // Evaluate the literal argument value
         let eval_arg = evaluate_expr_to_expr(arg)?;
@@ -483,6 +486,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         }));
         params.push(param_name);
         heads.push(None);
+        blank_types.push(1);
       }
       defaults.push(None);
     }
@@ -504,10 +508,26 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
       if has_literal_conditions {
         // Literal-match definitions go first for priority
-        entry
-          .insert(0, (params, conditions, defaults, heads, rhs_value.clone()));
+        entry.insert(
+          0,
+          (
+            params,
+            conditions,
+            defaults,
+            heads,
+            blank_types,
+            rhs_value.clone(),
+          ),
+        );
       } else {
-        entry.push((params, conditions, defaults, heads, rhs_value.clone()));
+        entry.push((
+          params,
+          conditions,
+          defaults,
+          heads,
+          blank_types,
+          rhs_value.clone(),
+        ));
       }
     });
 
@@ -574,6 +594,7 @@ pub fn set_delayed_ast(
     let mut conditions: Vec<Option<Expr>> = Vec::new();
     let mut defaults: Vec<Option<Expr>> = Vec::new();
     let mut heads: Vec<Option<String>> = Vec::new();
+    let mut blank_types: Vec<u8> = Vec::new();
     // We also need to track substitutions for list-pattern destructuring
     let mut body_substitutions: Vec<(String, Vec<(String, Option<String>)>)> =
       Vec::new();
@@ -597,17 +618,18 @@ pub fn set_delayed_ast(
           // Extract pattern names and head constraints from list elements
           let mut element_bindings = Vec::new();
           for pat in patterns {
-            let (pat_name, head) = extract_pattern_info(pat);
+            let (pat_name, head, _blank_type) = extract_pattern_info(pat);
             element_bindings.push((pat_name, head));
           }
           body_substitutions.push((param_name.clone(), element_bindings));
           params.push(param_name);
           defaults.push(None);
           heads.push(Some("List".to_string()));
+          blank_types.push(1);
         }
         // Simple pattern: x_ or x_Head
         _ => {
-          let (pat_name, head) = extract_pattern_info(arg);
+          let (pat_name, head, blank_type) = extract_pattern_info(arg);
           // Check for anonymous pattern identifiers (_, __, ___)
           let is_anonymous_pattern = pat_name.is_empty()
             && head.is_none()
@@ -616,6 +638,7 @@ pub fn set_delayed_ast(
             let param_name = format!("_dv{}", i);
             params.push(param_name);
             conditions.push(None);
+            blank_types.push(blank_type);
           } else if pat_name.is_empty() && head.is_none() {
             if crate::evaluator::pattern_matching::contains_pattern(arg) {
               // Structural pattern (e.g., 1/x_, a_ + b_) — normalize and store
@@ -627,6 +650,7 @@ pub fn set_delayed_ast(
                 args: vec![Expr::Identifier(param_name.clone()), normalized],
               }));
               params.push(param_name);
+              blank_types.push(1);
             } else {
               // Literal value (not a pattern) — create a SameQ condition
               // e.g., f[1] := ... should only match when arg === 1
@@ -637,10 +661,12 @@ pub fn set_delayed_ast(
                 operators: vec![crate::syntax::ComparisonOp::SameQ],
               }));
               params.push(param_name);
+              blank_types.push(1);
             }
           } else {
             params.push(pat_name);
             conditions.push(None);
+            blank_types.push(blank_type);
           }
           defaults.push(None);
           heads.push(head);
@@ -702,6 +728,7 @@ pub fn set_delayed_ast(
           params.push(String::new());
           defaults.push(None);
           heads.push(None);
+          blank_types.push(1);
         }
       }
     }
@@ -723,9 +750,19 @@ pub fn set_delayed_ast(
       let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
       if has_literal_conditions {
         // Literal-match definitions go first for priority
-        entry.insert(0, (params, conditions, defaults, heads, final_body));
+        entry.insert(
+          0,
+          (params, conditions, defaults, heads, blank_types, final_body),
+        );
       } else {
-        entry.push((params, conditions, defaults, heads, final_body));
+        entry.push((
+          params,
+          conditions,
+          defaults,
+          heads,
+          blank_types,
+          final_body,
+        ));
       }
     });
 
@@ -756,14 +793,20 @@ pub fn set_delayed_ast(
   })
 }
 
-/// Extract a pattern name and optional head constraint from a pattern expression.
-/// e.g., x_Integer -> ("x", Some("Integer")), x_ -> ("x", None)
-pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>) {
+/// Extract a pattern name, optional head constraint, and blank type from a pattern expression.
+/// Returns (name, head, blank_type) where blank_type is:
+///   1 = Blank (_), 2 = BlankSequence (__), 3 = BlankNullSequence (___)
+/// e.g., x_Integer -> ("x", Some("Integer"), 1), x__ -> ("x", None, 2)
+pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>, u8) {
   match expr {
-    // AST Pattern node: Pattern { name: "x", head: Some("Integer") }
-    Expr::Pattern { name, head } => (name.clone(), head.clone()),
+    // AST Pattern node: Pattern { name: "x", head: Some("Integer"), blank_type: 1 }
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => (name.clone(), head.clone(), *blank_type),
     // AST PatternOptional node: x_:default or x_Head:default
-    Expr::PatternOptional { name, head, .. } => (name.clone(), head.clone()),
+    Expr::PatternOptional { name, head, .. } => (name.clone(), head.clone(), 1),
     Expr::Identifier(name) => {
       // Could be a pattern like "x_Integer", "x_", "x__", "x___" in text form
       if let Some(pos) = name.find('_') {
@@ -771,27 +814,33 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>) {
         let rest = &name[pos..];
         // Count consecutive underscores (1=Blank, 2=BlankSequence, 3=BlankNullSequence)
         let num_underscores = rest.chars().take_while(|c| *c == '_').count();
+        let blank_type = num_underscores.min(3) as u8;
         let head_str = &rest[num_underscores..];
         if head_str.is_empty() {
-          (pat_name, None)
+          (pat_name, None, blank_type)
         } else {
-          (pat_name, Some(head_str.to_string()))
+          (pat_name, Some(head_str.to_string()), blank_type)
         }
       } else {
-        (name.clone(), None)
+        (name.clone(), None, 1)
       }
     }
     Expr::FunctionCall { name, args }
       if name == "Pattern" && args.len() == 2 =>
     {
-      // Pattern[name, Blank[head]] or Pattern[name, Blank[]]
+      // Pattern[name, Blank[head]], Pattern[name, BlankSequence[head]], Pattern[name, BlankNullSequence[head]]
       if let Expr::Identifier(pat_name) = &args[0]
         && let Expr::FunctionCall {
           name: blank_name,
           args: blank_args,
         } = &args[1]
-        && blank_name == "Blank"
       {
+        let blank_type = match blank_name.as_str() {
+          "Blank" => 1,
+          "BlankSequence" => 2,
+          "BlankNullSequence" => 3,
+          _ => 1,
+        };
         let head = blank_args.first().and_then(|a| {
           if let Expr::Identifier(h) = a {
             Some(h.clone())
@@ -799,14 +848,14 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>) {
             None
           }
         });
-        return (pat_name.clone(), head);
+        return (pat_name.clone(), head, blank_type);
       }
-      (String::new(), None)
+      (String::new(), None, 1)
     }
     _ => {
       // Structural patterns (e.g., BinaryOp containing patterns) are not
       // simple named patterns — return empty to signal special handling.
-      (String::new(), None)
+      (String::new(), None, 1)
     }
   }
 }
@@ -876,7 +925,8 @@ pub fn tag_set_delayed_ast(
         }
 
         for (j, inner_arg) in inner_args.iter().enumerate() {
-          let (pat_name, _pat_head) = extract_pattern_info(inner_arg);
+          let (pat_name, _pat_head, _blank_type) =
+            extract_pattern_info(inner_arg);
           if !pat_name.is_empty() {
             let part_expr = Expr::FunctionCall {
               name: "Part".to_string(),
@@ -897,7 +947,7 @@ pub fn tag_set_delayed_ast(
         defaults.push(None);
       }
       _ => {
-        let (pat_name, head) = extract_pattern_info(arg);
+        let (pat_name, head, _blank_type) = extract_pattern_info(arg);
         if pat_name.is_empty() && head.is_none() {
           let param_name = format!("_up{}", i);
           let eval_arg = evaluate_expr_to_expr(arg)?;
@@ -931,10 +981,14 @@ pub fn tag_set_delayed_ast(
   });
 
   // Store in FUNC_DEFS under the outer function name
+  let blank_types = vec![1u8; params.len()];
   crate::FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(outer_func).or_insert_with(Vec::new);
-    entry.insert(0, (params, conditions, defaults, heads, final_body));
+    entry.insert(
+      0,
+      (params, conditions, defaults, heads, blank_types, final_body),
+    );
   });
 
   Ok(Expr::Identifier("Null".to_string()))

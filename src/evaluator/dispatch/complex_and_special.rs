@@ -337,7 +337,7 @@ pub fn dispatch_complex_and_special(
         let down_str = if let Some(overloads) = down_values {
           let rules: Vec<String> = overloads
             .iter()
-            .map(|(params, _conds, _defaults, heads, body)| {
+            .map(|(params, _conds, _defaults, heads, _blank_types, body)| {
               let params_str = params
                 .iter()
                 .enumerate()
@@ -449,7 +449,9 @@ pub fn dispatch_complex_and_special(
           defs.get(sym).cloned()
         });
         if let Some(overloads) = down_values {
-          for (params, conds, _defaults, heads, body) in &overloads {
+          for (params, conds, _defaults, heads, _blank_types, body) in
+            &overloads
+          {
             // Check if this is a specific-value definition (SameQ conditions)
             let has_sameq_conds = conds.iter().any(|c| {
               if let Some(Expr::Comparison { operators, .. }) = c {
@@ -680,7 +682,9 @@ pub fn dispatch_complex_and_special(
             defs.get(sym).cloned()
           });
           if let Some(overloads) = down_values {
-            for (params, conds, _defaults, heads, body) in &overloads {
+            for (params, conds, _defaults, heads, _blank_types, body) in
+              &overloads
+            {
               let has_sameq_conds = conds.iter().any(|c| {
                 if let Some(Expr::Comparison { operators, .. }) = c {
                   operators
@@ -789,7 +793,9 @@ pub fn dispatch_complex_and_special(
             defs.get(sym).cloned()
           });
           if let Some(overloads) = down_values {
-            for (_params, _conds, _defaults, _heads, body) in overloads {
+            for (_params, _conds, _defaults, _heads, _blank_types, body) in
+              overloads
+            {
               bodies.push(body);
             }
           }

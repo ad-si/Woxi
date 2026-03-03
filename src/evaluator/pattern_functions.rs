@@ -27,9 +27,11 @@ pub fn evaluate_pattern_function_ast(
     Expr::Pattern {
       name: blank_name,
       head,
+      blank_type,
     } if blank_name.is_empty() => Ok(Expr::Pattern {
       name: pattern_name,
       head: head.clone(),
+      blank_type: *blank_type,
     }),
     _ => Ok(Expr::FunctionCall {
       name: "Pattern".to_string(),
@@ -80,12 +82,14 @@ pub fn evaluate_blank_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0 => Ok(Expr::Pattern {
       name: String::new(),
       head: None,
+      blank_type: 1,
     }),
     1 => {
       if let Expr::Identifier(h) = &args[0] {
         Ok(Expr::Pattern {
           name: String::new(),
           head: Some(h.clone()),
+          blank_type: 1,
         })
       } else {
         Ok(Expr::FunctionCall {

@@ -777,7 +777,9 @@ pub fn dispatch_io_functions(
           defs.get(sym).cloned()
         });
         if let Some(overloads) = down_values {
-          for (params, conditions, defaults, heads, body) in &overloads {
+          for (params, conditions, defaults, heads, _blank_types, body) in
+            &overloads
+          {
             let params_str = params
               .iter()
               .enumerate()
