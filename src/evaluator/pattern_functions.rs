@@ -63,16 +63,39 @@ pub fn evaluate_pattern_test_ast(
   })
 }
 
-/// BlankSequence/BlankNullSequence: return as symbolic FunctionCall
+/// BlankSequence[] → __ or BlankSequence[h] → __h
+/// BlankNullSequence[] → ___ or BlankNullSequence[h] → ___h
 #[inline(never)]
 pub fn evaluate_blank_sequence_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec(),
-  })
+  let blank_type: u8 = if name == "BlankNullSequence" { 3 } else { 2 };
+  match args.len() {
+    0 => Ok(Expr::Pattern {
+      name: String::new(),
+      head: None,
+      blank_type,
+    }),
+    1 => {
+      if let Expr::Identifier(h) = &args[0] {
+        Ok(Expr::Pattern {
+          name: String::new(),
+          head: Some(h.clone()),
+          blank_type,
+        })
+      } else {
+        Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    }),
+  }
 }
 
 /// Blank[] → _ or Blank[h] → _h

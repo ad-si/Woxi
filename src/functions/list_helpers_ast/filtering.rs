@@ -121,6 +121,149 @@ fn matches_pattern_simple(value: &str, pattern: &str) -> bool {
   value == pattern
 }
 
+/// Sequence pattern info for boolean matching.
+struct SeqInfoBool {
+  head: Option<String>,
+  min_count: usize,
+  test: Option<Box<Expr>>,
+}
+
+/// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
+fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
+  match pattern {
+    Expr::Pattern {
+      head, blank_type, ..
+    } if *blank_type >= 2 => {
+      let min = if *blank_type == 2 { 1 } else { 0 };
+      Some(SeqInfoBool {
+        head: head.clone(),
+        min_count: min,
+        test: None,
+      })
+    }
+    Expr::PatternTest {
+      blank_type, test, ..
+    } if *blank_type >= 2 => {
+      let min = if *blank_type == 2 { 1 } else { 0 };
+      Some(SeqInfoBool {
+        head: None,
+        min_count: min,
+        test: Some(test.clone()),
+      })
+    }
+    Expr::FunctionCall { name, args }
+      if name == "BlankSequence" || name == "BlankNullSequence" =>
+    {
+      let head = if args.len() == 1 {
+        if let Expr::Identifier(h) = &args[0] {
+          Some(h.clone())
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+      let min = if name == "BlankSequence" { 1 } else { 0 };
+      Some(SeqInfoBool {
+        head,
+        min_count: min,
+        test: None,
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Apply a PatternTest function to an expression.
+fn apply_test_bool(test: &Expr, elem: &Expr) -> bool {
+  let test_result = match test {
+    Expr::Identifier(func_name) => {
+      let call = Expr::FunctionCall {
+        name: func_name.clone(),
+        args: vec![elem.clone()],
+      };
+      crate::evaluator::evaluate_expr_to_expr(&call).ok()
+    }
+    Expr::Function { body } => {
+      let substituted = crate::syntax::substitute_slots(body, &[elem.clone()]);
+      crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
+    }
+    _ => {
+      let call_str = format!(
+        "({})[{}]",
+        crate::syntax::expr_to_string(test),
+        crate::syntax::expr_to_string(elem)
+      );
+      crate::interpret(&call_str).ok().map(|r| {
+        if r == "True" {
+          Expr::Identifier("True".to_string())
+        } else {
+          Expr::Identifier("False".to_string())
+        }
+      })
+    }
+  };
+  matches!(test_result, Some(Expr::Identifier(ref s)) if s == "True")
+}
+
+/// Check if expression args match pattern args, handling sequence patterns.
+fn args_match_with_sequences(expr_args: &[Expr], pat_args: &[Expr]) -> bool {
+  if pat_args.is_empty() {
+    return expr_args.is_empty();
+  }
+
+  let pat = &pat_args[0];
+  let rest_pats = &pat_args[1..];
+
+  if let Some(seq) = get_sequence_info_bool(pat) {
+    let rest_min: usize = rest_pats
+      .iter()
+      .map(|p| {
+        if let Some(s) = get_sequence_info_bool(p) {
+          s.min_count
+        } else {
+          1
+        }
+      })
+      .sum();
+    let max_count = if expr_args.len() >= rest_min {
+      expr_args.len() - rest_min
+    } else {
+      return false;
+    };
+
+    if max_count < seq.min_count {
+      return false;
+    }
+
+    for count in seq.min_count..=max_count {
+      let seq_args = &expr_args[..count];
+      // Check head constraints
+      if let Some(ref h) = seq.head
+        && !seq_args.iter().all(|a| get_expr_head_str(a) == h)
+      {
+        continue;
+      }
+      // Check PatternTest for all elements
+      if let Some(ref test) = seq.test
+        && !seq_args.iter().all(|a| apply_test_bool(test, a))
+      {
+        continue;
+      }
+      if args_match_with_sequences(&expr_args[count..], rest_pats) {
+        return true;
+      }
+    }
+    false
+  } else {
+    if expr_args.is_empty() {
+      return false;
+    }
+    matches_pattern_ast(&expr_args[0], pat)
+      && args_match_with_sequences(&expr_args[1..], rest_pats)
+  }
+}
+
 /// AST-based pattern matching for expressions.
 /// Supports: Blank (_), named patterns (x_), head patterns (_Integer, _List, etc.),
 /// Except, Alternatives, and literal matching.
@@ -139,7 +282,7 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       ..
     } => get_expr_head_str(expr) == h,
     // PatternTest: _?test or x_?test — matches if test[expr] is True
-    Expr::PatternTest { name: _, test } => {
+    Expr::PatternTest { test, .. } => {
       let test_result = match test.as_ref() {
         Expr::Identifier(func_name) => {
           let call = Expr::FunctionCall {
@@ -225,11 +368,18 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
     // Structural matching for lists: {_, _} matches {1, 2}
     Expr::List(pat_items) => {
       if let Expr::List(expr_items) = expr {
-        pat_items.len() == expr_items.len()
-          && pat_items
-            .iter()
-            .zip(expr_items.iter())
-            .all(|(p, e)| matches_pattern_ast(e, p))
+        let has_seq = pat_items
+          .iter()
+          .any(|p| get_sequence_info_bool(p).is_some());
+        if has_seq {
+          args_match_with_sequences(expr_items, pat_items)
+        } else {
+          pat_items.len() == expr_items.len()
+            && pat_items
+              .iter()
+              .zip(expr_items.iter())
+              .all(|(p, e)| matches_pattern_ast(e, p))
+        }
       } else {
         false
       }
@@ -252,12 +402,55 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
         args: expr_args,
       } = expr
       {
-        pat_name == expr_name
-          && pat_args.len() == expr_args.len()
-          && pat_args
-            .iter()
-            .zip(expr_args.iter())
-            .all(|(p, e)| matches_pattern_ast(e, p))
+        if pat_name != expr_name {
+          return false;
+        }
+        let has_seq =
+          pat_args.iter().any(|p| get_sequence_info_bool(p).is_some());
+        if has_seq {
+          args_match_with_sequences(expr_args, pat_args)
+        } else {
+          pat_args.len() == expr_args.len()
+            && pat_args
+              .iter()
+              .zip(expr_args.iter())
+              .all(|(p, e)| matches_pattern_ast(e, p))
+        }
+      } else {
+        false
+      }
+    }
+    // Structural matching for BinaryOp: x^n_ matches x^2, etc.
+    // (Alternatives BinaryOp is already handled above)
+    Expr::BinaryOp {
+      op: pat_op,
+      left: pat_left,
+      right: pat_right,
+    } => {
+      if let Expr::BinaryOp {
+        op: expr_op,
+        left: expr_left,
+        right: expr_right,
+      } = expr
+      {
+        pat_op == expr_op
+          && matches_pattern_ast(expr_left, pat_left)
+          && matches_pattern_ast(expr_right, pat_right)
+      } else {
+        false
+      }
+    }
+    // Structural matching for UnaryOp
+    Expr::UnaryOp {
+      op: pat_op,
+      operand: pat_operand,
+    } => {
+      if let Expr::UnaryOp {
+        op: expr_op,
+        operand: expr_operand,
+      } = expr
+      {
+        pat_op == expr_op && matches_pattern_ast(expr_operand, pat_operand)
       } else {
         false
       }
@@ -348,12 +541,10 @@ pub fn position_ast(
     }
   };
 
-  let pattern_str = crate::syntax::expr_to_string(pattern);
   let mut positions = Vec::new();
 
   for (i, item) in items.iter().enumerate() {
-    let item_str = crate::syntax::expr_to_string(item);
-    if matches_pattern_simple(&item_str, &pattern_str) {
+    if matches_pattern_ast(item, pattern) {
       // 1-indexed
       positions.push(Expr::List(vec![Expr::Integer((i + 1) as i128)]));
     }

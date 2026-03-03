@@ -367,10 +367,19 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         children,
       }
     }
-    Expr::PatternTest { name, test } => {
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } => {
+      let blank_name = match blank_type {
+        2 => "BlankSequence",
+        3 => "BlankNullSequence",
+        _ => "Blank",
+      };
       let blank_part = if name.is_empty() {
         Expr::FunctionCall {
-          name: "Blank".to_string(),
+          name: blank_name.to_string(),
           args: vec![],
         }
       } else {
@@ -379,7 +388,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
           args: vec![
             Expr::Identifier(name.clone()),
             Expr::FunctionCall {
-              name: "Blank".to_string(),
+              name: blank_name.to_string(),
               args: vec![],
             },
           ],

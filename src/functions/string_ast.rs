@@ -886,6 +886,18 @@ fn string_pattern_to_regex(expr: &Expr) -> Option<String> {
       _ => None,
     },
 
+    // Blank/BlankSequence/BlankNullSequence as Pattern AST nodes
+    Expr::Pattern {
+      name: _,
+      head: None,
+      blank_type,
+    } => match blank_type {
+      1 => Some(".".to_string()), // Blank: any single character
+      2 => Some(".+".to_string()), // BlankSequence: one or more characters
+      3 => Some(".*".to_string()), // BlankNullSequence: zero or more characters
+      _ => None,
+    },
+
     // Alternatives as BinaryOp (e.g. pat1 | pat2)
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Alternatives,

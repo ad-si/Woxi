@@ -315,7 +315,7 @@ ExpressionNoImplicit = {
 // PatternTest: x_?test or _?test or _?(expr) or x_?(expr)
 // The test can be an Identifier or a parenthesized expression (e.g. anonymous function)
 PatternTestFunc = _{ Identifier | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" }
-PatternTest = { PatternName? ~ "_" ~ "?" ~ PatternTestFunc }
+PatternTest = { PatternName? ~ PatternBlanks ~ "?" ~ PatternTestFunc }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
@@ -350,8 +350,8 @@ PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." ~ !ASCII
 PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." ~ !ASCII_DIGIT ~ !"." }
 // PatternBlanks: silent atomic rule matching 1-3 underscores (Blank, BlankSequence, BlankNullSequence)
 PatternBlanks = _{ "___" | "__" | "_" }
-PatternWithHead = { PatternName ~ PatternBlanks ~ !("_") ~ Identifier }
-PatternSimple = { PatternName ~ PatternBlanks }
+PatternWithHead = { PatternName? ~ PatternBlanks ~ !("_") ~ Identifier }
+PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
 Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)

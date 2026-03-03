@@ -31,7 +31,7 @@ fn collect_pattern_vars_inner(
         collect_pattern_vars_inner(d, vars);
       }
     }
-    Expr::PatternTest { name, test } => {
+    Expr::PatternTest { name, test, .. } => {
       if !vars.iter().any(|(n, _)| n == name) {
         vars.push((name.clone(), None));
       }

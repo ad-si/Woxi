@@ -335,8 +335,13 @@ pub enum Expr {
     head: Option<String>,
     default: Option<Box<Self>>,
   },
-  /// PatternTest: _?test or x_?test — matches if test[x] is True
-  PatternTest { name: String, test: Box<Self> },
+  /// PatternTest: _?test or x_?test or x__?test — matches if test[x] is True
+  /// blank_type: 1=Blank, 2=BlankSequence, 3=BlankNullSequence
+  PatternTest {
+    name: String,
+    blank_type: u8,
+    test: Box<Self>,
+  },
   /// Constant like Pi, E, etc.
   Constant(String),
   /// Raw unparsed text (fallback)
@@ -645,7 +650,7 @@ impl Clone for Expr {
       Function,
       NamedFunction(Vec<String>),
       PatternOptional(String, Option<String>, bool), // name, head, has_default
-      PatternTest(String),
+      PatternTest(String, u8),
     }
 
     let mut tasks: Vec<CloneTask> = vec![CloneTask::Visit(self)];
@@ -824,8 +829,15 @@ impl Clone for Expr {
               tasks.push(CloneTask::Visit(d));
             }
           }
-          Self::PatternTest { name, test } => {
-            tasks.push(CloneTask::Build(CloneFrame::PatternTest(name.clone())));
+          Self::PatternTest {
+            name,
+            blank_type,
+            test,
+          } => {
+            tasks.push(CloneTask::Build(CloneFrame::PatternTest(
+              name.clone(),
+              *blank_type,
+            )));
             tasks.push(CloneTask::Visit(test));
           }
 
@@ -962,9 +974,13 @@ impl Clone for Expr {
                 default,
               }
             }
-            CloneFrame::PatternTest(name) => {
+            CloneFrame::PatternTest(name, blank_type) => {
               let test = Box::new(results.pop().unwrap());
-              Self::PatternTest { name, test }
+              Self::PatternTest {
+                name,
+                blank_type,
+                test,
+              }
             }
             CloneFrame::CurriedCall(count) => {
               let args: Vec<Self> =
@@ -1757,9 +1773,16 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::PatternSimple => {
-      let s = pair.as_str();
-      let name = s.trim_end_matches('_').to_string();
-      let blank_count = s.len() - name.len();
+      let full = pair.as_str();
+      let inner = pair.into_inner();
+      let children: Vec<_> = inner.collect();
+      let name = if !children.is_empty() {
+        children[0].as_str().to_string()
+      } else {
+        String::new()
+      };
+      // Count underscores in the full text (reliable even with implicit whitespace)
+      let blank_count = full.chars().filter(|&c| c == '_').count();
       let blank_type = blank_count.min(3) as u8;
       Expr::Pattern {
         name,
@@ -1769,18 +1792,25 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::PatternWithHead => {
       let full = pair.as_str();
-      let mut inner = pair.into_inner();
-      let pat_name_str = inner.next().unwrap().as_str();
-      let blank_count = full[pat_name_str.len()..]
-        .chars()
-        .take_while(|&c| c == '_')
-        .count();
+      let inner = pair.into_inner();
+      // PatternName is optional; collect all children
+      let children: Vec<_> = inner.collect();
+      let (name, head_str) = if children.len() == 2 {
+        // PatternName + Identifier(head)
+        (
+          children[0].as_str().to_string(),
+          children[1].as_str().to_string(),
+        )
+      } else {
+        // Just Identifier(head), no name
+        (String::new(), children[0].as_str().to_string())
+      };
+      // Count underscores in the full text (reliable even with implicit whitespace)
+      let blank_count = full.chars().filter(|&c| c == '_').count();
       let blank_type = blank_count.min(3) as u8;
-      let name = pat_name_str.to_string();
-      let head = inner.next().map(|p| p.as_str().to_string());
       Expr::Pattern {
         name,
-        head,
+        head: Some(head_str),
         blank_type,
       }
     }
@@ -1834,7 +1864,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       }
     }
     Rule::PatternTest => {
-      // PatternTest: x_?test or _?test or _?(expr) or x_?(expr)
+      // PatternTest: x_?test or _?test or x__?test or __?test etc.
+      let full = pair.as_str();
       let mut inner = pair.into_inner();
       // PatternName is optional; if present it's the first child
       let first = inner.next().unwrap();
@@ -1844,9 +1875,13 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         // No PatternName — anonymous blank; first child is the test expression
         (String::new(), first)
       };
+      // Count underscores in the full text (reliable even with implicit whitespace)
+      let blank_count = full.chars().filter(|&c| c == '_').count();
+      let blank_type = blank_count.min(3) as u8;
       let test = pair_to_expr(test_pair);
       Expr::PatternTest {
         name,
+        blank_type,
         test: Box::new(test),
       }
     }
@@ -4805,14 +4840,19 @@ pub fn expr_to_string(expr: &Expr) -> String {
       (Some(h), None) => format!("{}_{}.", name, h),
       (None, None) => format!("{}_.", name),
     },
-    Expr::PatternTest { name, test } => {
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } => {
+      let blanks = "_".repeat(*blank_type as usize);
       let test_str = expr_to_string(test);
       // If test is a simple identifier, use x_?Test form; otherwise wrap in parens
       let needs_parens = !matches!(test.as_ref(), Expr::Identifier(_));
       if needs_parens {
-        format!("{}_?({})", name, test_str)
+        format!("{}{}?({})", name, blanks, test_str)
       } else {
-        format!("{}_?{}", name, test_str)
+        format!("{}{}?{}", name, blanks, test_str)
       }
     }
     Expr::Constant(s) => s.clone(),
@@ -6407,8 +6447,13 @@ pub fn substitute_slots(expr: &Expr, values: &[Expr]) -> Expr {
         .as_ref()
         .map(|d| Box::new(substitute_slots(d, values))),
     },
-    Expr::PatternTest { name, test } => Expr::PatternTest {
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } => Expr::PatternTest {
       name: name.clone(),
+      blank_type: *blank_type,
       test: Box::new(substitute_slots(test, values)),
     },
     // Atoms that don't contain slots
@@ -6556,8 +6601,13 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
         .as_ref()
         .map(|d| Box::new(substitute_variable(d, var_name, value))),
     },
-    Expr::PatternTest { name, test } => Expr::PatternTest {
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } => Expr::PatternTest {
       name: name.clone(),
+      blank_type: *blank_type,
       test: Box::new(substitute_variable(test, var_name, value)),
     },
     // Atoms that don't contain the variable

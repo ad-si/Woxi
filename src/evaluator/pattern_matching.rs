@@ -1198,6 +1198,202 @@ pub fn apply_rules_once(
   }
 }
 
+/// Sequence pattern info: name, head constraint, min count, optional test function.
+struct SeqInfo {
+  name: String,
+  head: Option<String>,
+  min_count: usize,
+  test: Option<Box<Expr>>,
+}
+
+/// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
+fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
+  match pattern {
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } if *blank_type >= 2 => {
+      let min = if *blank_type == 2 { 1 } else { 0 };
+      Some(SeqInfo {
+        name: name.clone(),
+        head: head.clone(),
+        min_count: min,
+        test: None,
+      })
+    }
+    // PatternTest with BlankSequence: x__?IntegerQ or __?IntegerQ
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } if *blank_type >= 2 => {
+      let min = if *blank_type == 2 { 1 } else { 0 };
+      Some(SeqInfo {
+        name: name.clone(),
+        head: None,
+        min_count: min,
+        test: Some(test.clone()),
+      })
+    }
+    // BlankSequence[] or BlankSequence[h] as FunctionCall
+    Expr::FunctionCall { name, args }
+      if name == "BlankSequence" || name == "BlankNullSequence" =>
+    {
+      let head = if args.len() == 1 {
+        if let Expr::Identifier(h) = &args[0] {
+          Some(h.clone())
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+      let min = if name == "BlankSequence" { 1 } else { 0 };
+      Some(SeqInfo {
+        name: String::new(),
+        head,
+        min_count: min,
+        test: None,
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Apply a PatternTest function to an expression, returning true if it passes.
+fn apply_pattern_test(test: &Expr, elem: &Expr) -> bool {
+  let test_result = match test {
+    Expr::Identifier(func_name) => {
+      let call = Expr::FunctionCall {
+        name: func_name.clone(),
+        args: vec![elem.clone()],
+      };
+      evaluate_expr_to_expr(&call).ok()
+    }
+    Expr::Function { body } => {
+      let substituted = crate::syntax::substitute_slots(body, &[elem.clone()]);
+      evaluate_expr_to_expr(&substituted).ok()
+    }
+    _ => {
+      let call_str =
+        format!("({})[{}]", expr_to_string(test), expr_to_string(elem));
+      interpret(&call_str).ok().map(|r| {
+        if r == "True" {
+          Expr::Identifier("True".to_string())
+        } else {
+          Expr::Identifier("False".to_string())
+        }
+      })
+    }
+  };
+  matches!(test_result, Some(Expr::Identifier(ref s)) if s == "True")
+}
+
+/// Compute the minimum number of expression args required by a slice of patterns.
+fn min_args_for_patterns(pats: &[Expr]) -> usize {
+  pats
+    .iter()
+    .map(|p| {
+      if let Some(seq) = get_sequence_info(p) {
+        seq.min_count
+      } else {
+        1 // Non-sequence patterns always need exactly 1 arg
+      }
+    })
+    .sum()
+}
+
+/// Match a slice of expression args against a slice of pattern args,
+/// handling BlankSequence (__) and BlankNullSequence (___) patterns
+/// that can consume variable numbers of arguments.
+fn match_args_with_sequences(
+  expr_args: &[Expr],
+  pat_args: &[Expr],
+) -> Option<Vec<(String, Expr)>> {
+  // Base case: no more patterns
+  if pat_args.is_empty() {
+    return if expr_args.is_empty() {
+      Some(vec![])
+    } else {
+      None
+    };
+  }
+
+  let pat = &pat_args[0];
+  let rest_pats = &pat_args[1..];
+
+  if let Some(seq) = get_sequence_info(pat) {
+    // Sequence pattern: try consuming different numbers of args
+    let rest_min = min_args_for_patterns(rest_pats);
+    let max_count = if expr_args.len() >= rest_min {
+      expr_args.len() - rest_min
+    } else {
+      return None;
+    };
+
+    if max_count < seq.min_count {
+      return None;
+    }
+
+    for count in seq.min_count..=max_count {
+      let seq_args = &expr_args[..count];
+
+      // Check head constraints for all elements
+      if let Some(ref h) = seq.head
+        && !seq_args.iter().all(|a| get_expr_head(a) == *h)
+      {
+        continue;
+      }
+
+      // Check PatternTest for all elements
+      if let Some(ref test) = seq.test
+        && !seq_args.iter().all(|a| apply_pattern_test(test, a))
+      {
+        continue;
+      }
+
+      // Recursively match the rest
+      if let Some(mut rest_bindings) =
+        match_args_with_sequences(&expr_args[count..], rest_pats)
+      {
+        // Add binding for this sequence
+        if !seq.name.is_empty() {
+          let bound_value = if count == 0 {
+            Expr::FunctionCall {
+              name: "Sequence".to_string(),
+              args: vec![],
+            }
+          } else if count == 1 {
+            seq_args[0].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Sequence".to_string(),
+              args: seq_args.to_vec(),
+            }
+          };
+          rest_bindings.insert(0, (seq.name.clone(), bound_value));
+        }
+        return Some(rest_bindings);
+      }
+    }
+    None
+  } else {
+    // Non-sequence pattern: must match exactly one expr arg
+    if expr_args.is_empty() {
+      return None;
+    }
+    if let Some(mut bindings) = match_pattern(&expr_args[0], pat)
+      && let Some(rest_bindings) =
+        match_args_with_sequences(&expr_args[1..], rest_pats)
+    {
+      bindings.extend(rest_bindings);
+      return Some(bindings);
+    }
+    None
+  }
+}
+
 /// Match a pattern against an expression, returning bindings if successful
 pub fn match_pattern(
   expr: &Expr,
@@ -1224,7 +1420,7 @@ pub fn match_pattern(
       }
       Some(vec![(name.clone(), expr.clone())])
     }
-    Expr::PatternTest { name, test } => {
+    Expr::PatternTest { name, test, .. } => {
       // _?test or x_?test — matches if test[expr] is True
       let test_result = match test.as_ref() {
         Expr::Identifier(func_name) => {
@@ -1358,18 +1554,25 @@ pub fn match_pattern(
     }
     Expr::List(pat_items) => {
       if let Expr::List(expr_items) = expr {
-        if pat_items.len() != expr_items.len() {
-          return None;
-        }
-        let mut bindings = Vec::new();
-        for (p, e) in pat_items.iter().zip(expr_items.iter()) {
-          if let Some(b) = match_pattern(e, p) {
-            bindings.extend(b);
-          } else {
+        // Check if any pattern item is a sequence pattern
+        let has_sequence =
+          pat_items.iter().any(|p| get_sequence_info(p).is_some());
+        if has_sequence {
+          match_args_with_sequences(expr_items, pat_items)
+        } else {
+          if pat_items.len() != expr_items.len() {
             return None;
           }
+          let mut bindings = Vec::new();
+          for (p, e) in pat_items.iter().zip(expr_items.iter()) {
+            if let Some(b) = match_pattern(e, p) {
+              bindings.extend(b);
+            } else {
+              return None;
+            }
+          }
+          Some(bindings)
         }
-        Some(bindings)
       } else {
         None
       }
@@ -1395,18 +1598,28 @@ pub fn match_pattern(
         args: expr_args,
       } = expr
       {
-        if pat_name != expr_name || pat_args.len() != expr_args.len() {
+        if pat_name != expr_name {
           return None;
         }
-        let mut bindings = Vec::new();
-        for (p, e) in pat_args.iter().zip(expr_args.iter()) {
-          if let Some(b) = match_pattern(e, p) {
-            bindings.extend(b);
-          } else {
+        // Check if any pattern arg is a sequence pattern
+        let has_sequence =
+          pat_args.iter().any(|p| get_sequence_info(p).is_some());
+        if has_sequence {
+          match_args_with_sequences(expr_args, pat_args)
+        } else {
+          if pat_args.len() != expr_args.len() {
             return None;
           }
+          let mut bindings = Vec::new();
+          for (p, e) in pat_args.iter().zip(expr_args.iter()) {
+            if let Some(b) = match_pattern(e, p) {
+              bindings.extend(b);
+            } else {
+              return None;
+            }
+          }
+          Some(bindings)
         }
-        Some(bindings)
       } else {
         None
       }

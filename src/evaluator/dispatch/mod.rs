@@ -165,6 +165,104 @@ pub fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
   }
 }
 
+/// Distribute function call args to params using backtracking,
+/// handling BlankSequence/BlankNullSequence params that consume variable numbers of args.
+fn distribute_args_to_params(
+  args: &[Expr],
+  blank_types: &[u8],
+  param_heads: &[Option<String>],
+  param_defaults: &[Option<Expr>],
+  param_idx: usize,
+) -> Option<Vec<Vec<Expr>>> {
+  if param_idx >= blank_types.len() {
+    return if args.is_empty() { Some(vec![]) } else { None };
+  }
+
+  let bt = blank_types[param_idx];
+  let head = &param_heads[param_idx];
+
+  if bt >= 2 {
+    // Sequence param: consume min..max args
+    let min_count: usize = if bt == 2 { 1 } else { 0 };
+    let rest_min: usize = blank_types[param_idx + 1..]
+      .iter()
+      .zip(param_defaults[param_idx + 1..].iter())
+      .map(|(&t, d)| {
+        if d.is_some() {
+          0
+        } else if t >= 2 {
+          if t == 2 { 1 } else { 0 }
+        } else {
+          1
+        }
+      })
+      .sum();
+    let max_count = if args.len() >= rest_min {
+      args.len() - rest_min
+    } else {
+      return None;
+    };
+
+    for count in min_count..=max_count {
+      let seq_args = &args[..count];
+      // Check head constraint
+      if let Some(h) = head
+        && !seq_args
+          .iter()
+          .all(|a| crate::evaluator::pattern_matching::get_expr_head(a) == *h)
+      {
+        continue;
+      }
+      if let Some(mut rest) = distribute_args_to_params(
+        &args[count..],
+        blank_types,
+        param_heads,
+        param_defaults,
+        param_idx + 1,
+      ) {
+        rest.insert(0, seq_args.to_vec());
+        return Some(rest);
+      }
+    }
+    None
+  } else {
+    // Regular param: consume 0 or 1 args
+    if args.is_empty() {
+      // Try using default
+      if param_defaults[param_idx].is_some()
+        && let Some(mut rest) = distribute_args_to_params(
+          args,
+          blank_types,
+          param_heads,
+          param_defaults,
+          param_idx + 1,
+        )
+      {
+        rest.insert(0, vec![]);
+        return Some(rest);
+      }
+      return None;
+    }
+    // Check head constraint
+    if let Some(h) = head
+      && crate::evaluator::pattern_matching::get_expr_head(&args[0]) != *h
+    {
+      return None;
+    }
+    if let Some(mut rest) = distribute_args_to_params(
+      &args[1..],
+      blank_types,
+      param_heads,
+      param_defaults,
+      param_idx + 1,
+    ) {
+      rest.insert(0, vec![args[0].clone()]);
+      return Some(rest);
+    }
+    None
+  }
+}
+
 pub fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -383,82 +481,49 @@ pub fn evaluate_function_call_ast_inner(
             } // Blank or BlankSequence: at least 1
           })
           .sum();
-        // Count how many non-sequence params there are
-        let non_seq_params: usize =
-          blank_types.iter().filter(|&&bt| bt < 2).count();
-        // Sequence params can absorb extra args
-        let seq_param_count = blank_types.iter().filter(|&&bt| bt >= 2).count();
-        if seq_param_count > 1 {
-          // Multiple sequence params not supported yet; fall through
-          continue;
-        }
-
         if args.len() < min_args {
           continue;
         }
 
-        // Find the sequence parameter index
-        let seq_idx = blank_types.iter().position(|&bt| bt >= 2).unwrap();
-        let seq_bt = blank_types[seq_idx];
-        // Number of args consumed by non-sequence params
-        let args_for_seq = args.len() as i64 - non_seq_params as i64;
-        if args_for_seq < 0 || (seq_bt == 2 && args_for_seq < 1) {
-          continue;
-        }
-
-        // Build effective args: assign args to params, with the sequence param
-        // getting a slice of args wrapped in Sequence[...]
-        let mut effective_args = Vec::with_capacity(params.len());
-        let mut arg_idx = 0usize;
-        let mut head_ok = true;
-        for (i, _param) in params.iter().enumerate() {
-          if i == seq_idx {
-            let seq_count = args_for_seq as usize;
-            let seq_args: Vec<Expr> =
-              args[arg_idx..arg_idx + seq_count].to_vec();
-            // Check head constraints for all sequence elements
-            if let Some(head) = &param_heads[i] {
-              for sa in &seq_args {
-                if get_expr_head(sa) != *head {
-                  head_ok = false;
+        // Distribute args to params using backtracking for sequence patterns
+        let distribution = distribute_args_to_params(
+          args,
+          blank_types,
+          param_heads,
+          param_defaults,
+          0,
+        );
+        let effective_args = match distribution {
+          Some(dist) => {
+            let mut eff = Vec::with_capacity(params.len());
+            for (i, param_args) in dist.iter().enumerate() {
+              if blank_types[i] >= 2 {
+                if param_args.len() == 1 {
+                  eff.push(param_args[0].clone());
+                } else {
+                  eff.push(Expr::FunctionCall {
+                    name: "Sequence".to_string(),
+                    args: param_args.clone(),
+                  });
+                }
+              } else if param_args.is_empty() {
+                // Must be a default param
+                if let Some(default) = &param_defaults[i] {
+                  eff.push(default.clone());
+                } else {
                   break;
                 }
+              } else {
+                eff.push(param_args[0].clone());
               }
-              if !head_ok {
-                break;
-              }
             }
-            // Single arg: bind directly; multiple args: wrap in Sequence
-            if seq_args.len() == 1 {
-              effective_args.push(seq_args.into_iter().next().unwrap());
-            } else {
-              effective_args.push(Expr::FunctionCall {
-                name: "Sequence".to_string(),
-                args: seq_args,
-              });
+            if eff.len() != params.len() {
+              continue;
             }
-            arg_idx += seq_count;
-          } else if arg_idx >= args.len() {
-            if let Some(default) = &param_defaults[i] {
-              effective_args.push(default.clone());
-            } else {
-              head_ok = false;
-              break;
-            }
-          } else {
-            if let Some(head) = &param_heads[i]
-              && get_expr_head(&args[arg_idx]) != *head
-            {
-              head_ok = false;
-              break;
-            }
-            effective_args.push(args[arg_idx].clone());
-            arg_idx += 1;
+            eff
           }
-        }
-        if !head_ok || effective_args.len() != params.len() {
-          continue;
-        }
+          None => continue,
+        };
 
         // Check conditions
         let mut conditions_met = true;

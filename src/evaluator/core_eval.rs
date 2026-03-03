@@ -712,12 +712,15 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       head: head.clone(),
       default: default.clone(),
     })),
-    Expr::PatternTest { name, test } => {
-      Ok(expr_to_string(&Expr::PatternTest {
-        name: name.clone(),
-        test: test.clone(),
-      }))
-    }
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } => Ok(expr_to_string(&Expr::PatternTest {
+      name: name.clone(),
+      blank_type: *blank_type,
+      test: test.clone(),
+    })),
     Expr::Raw(s) => {
       // Fallback: parse to AST and evaluate to avoid interpret() recursion
       let parsed = string_to_expr(s)?;
@@ -1807,8 +1810,13 @@ pub fn evaluate_expr_to_expr_inner(
       head: head.clone(),
       default: default.clone(),
     }),
-    Expr::PatternTest { name, test } => Ok(Expr::PatternTest {
+    Expr::PatternTest {
+      name,
+      blank_type,
+      test,
+    } => Ok(Expr::PatternTest {
       name: name.clone(),
+      blank_type: *blank_type,
       test: test.clone(),
     }),
     Expr::Raw(s) => {
