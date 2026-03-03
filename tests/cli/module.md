@@ -142,3 +142,19 @@ $ wo 'Module[{x = Pi/2}, Sin[x]]'
 $ wo 'Module[{expr = x^2}, D[expr, x]]'
 2*x
 ```
+
+
+## Module with Condition in Body
+
+Conditions (`/;`) inside Module bodies are evaluated while local variables
+are still in scope.
+
+```scrut
+$ wo 'Foo[u_, x_Symbol] := Module[{lst = u}, 3 /; lst == 1]; {Foo[1, x], Foo[x, x]}'
+{3, Foo[x, x]}
+```
+
+```scrut
+$ wo 'f[n_] := Module[{v = n}, "small" /; v < 10]; f[5]'
+small
+```

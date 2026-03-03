@@ -1018,3 +1018,89 @@ mod logical_expand {
     assert_eq!(interpret("LogicalExpand[a]").unwrap(), "a");
   }
 }
+
+mod module_condition {
+  use super::*;
+
+  #[test]
+  fn condition_in_module_body_passes() {
+    clear_state();
+    // Issue #59: Condition in Module body should be evaluated while locals are in scope
+    assert_eq!(
+      interpret(
+        "Foo[u_, x_Symbol] := Module[{lst = u}, 3 /; lst == 1]; Foo[1, x]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn condition_in_module_body_fails() {
+    clear_state();
+    // When condition fails, the function should not match
+    assert_eq!(
+      interpret(
+        "Bar[u_, x_Symbol] := Module[{lst = u}, 3 /; lst == 1]; Bar[2, x]"
+      )
+      .unwrap(),
+      "Bar[2, x]"
+    );
+  }
+
+  #[test]
+  fn condition_in_module_body_both_cases() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Baz[u_, x_Symbol] := Module[{lst = u}, 3 /; lst == 1]; {Baz[1, x], Baz[x, x]}"
+      )
+      .unwrap(),
+      "{3, Baz[x, x]}"
+    );
+  }
+
+  #[test]
+  fn condition_in_block_body_passes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "QuxB[u_, x_Symbol] := Block[{lst = u}, 3 /; lst == 1]; QuxB[1, x]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn condition_in_block_body_fails() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "QuxB2[u_, x_Symbol] := Block[{lst = u}, 3 /; lst == 1]; QuxB2[2, x]"
+      )
+      .unwrap(),
+      "QuxB2[2, x]"
+    );
+  }
+
+  #[test]
+  fn condition_in_module_complex_test() {
+    clear_state();
+    assert_eq!(
+      interpret("Qux[u_] := Module[{v = u}, 10 /; v > 0 && v < 5]; Qux[3]")
+        .unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
+  fn condition_in_module_complex_test_fails() {
+    clear_state();
+    assert_eq!(
+      interpret("Qux2[u_] := Module[{v = u}, 10 /; v > 0 && v < 5]; Qux2[10]")
+        .unwrap(),
+      "Qux2[10]"
+    );
+  }
+}

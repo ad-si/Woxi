@@ -103,6 +103,25 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Evaluate the body expression (Return propagates through Module, not caught here)
   let result = evaluate_expr_to_expr(body_expr);
 
+  // Handle Condition in body: evaluate test while locals are still in scope
+  let result = match &result {
+    Ok(Expr::FunctionCall { name, args })
+      if name == "Condition" && args.len() == 2 =>
+    {
+      match evaluate_expr_to_expr(&args[1]) {
+        Ok(Expr::Identifier(ref s)) if s == "True" => {
+          evaluate_expr_to_expr(&args[0])
+        }
+        Ok(test_val) => Ok(Expr::FunctionCall {
+          name: "Condition".to_string(),
+          args: vec![args[0].clone(), test_val],
+        }),
+        Err(e) => Err(e),
+      }
+    }
+    _ => result,
+  };
+
   // Restore previous bindings (even on error/Return)
   for (var_name, old) in prev {
     ENV.with(|e| {
@@ -199,6 +218,25 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Evaluate the body expression (Return propagates through Block, not caught here)
   let result = evaluate_expr_to_expr(body_expr);
+
+  // Handle Condition in body: evaluate test while locals are still in scope
+  let result = match &result {
+    Ok(Expr::FunctionCall { name, args })
+      if name == "Condition" && args.len() == 2 =>
+    {
+      match evaluate_expr_to_expr(&args[1]) {
+        Ok(Expr::Identifier(ref s)) if s == "True" => {
+          evaluate_expr_to_expr(&args[0])
+        }
+        Ok(test_val) => Ok(Expr::FunctionCall {
+          name: "Condition".to_string(),
+          args: vec![args[0].clone(), test_val],
+        }),
+        Err(e) => Err(e),
+      }
+    }
+    _ => result,
+  };
 
   // Restore previous bindings (even if body returned an error)
   for (var_name, old) in prev {
