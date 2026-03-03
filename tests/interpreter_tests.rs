@@ -156,6 +156,47 @@ mod interpreter_tests {
     assert_eq!(interpret("5 + (* inline *) 3").unwrap(), "8");
   }
 
+  #[test]
+  fn test_nested_comment() {
+    clear_state();
+    assert_eq!(
+      interpret("1 + (* outer (* inner *) outer *) 2").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn test_nested_comment_only() {
+    clear_state();
+    assert!(interpret("(* outer (* inner *) *)").is_err());
+  }
+
+  #[test]
+  fn test_deeply_nested_comment() {
+    clear_state();
+    assert_eq!(
+      interpret("10 + (* a (* b (* c *) b *) a *) 5").unwrap(),
+      "15"
+    );
+  }
+
+  #[test]
+  fn test_nested_comment_multiline() {
+    clear_state();
+    assert_eq!(
+      interpret("1 + (* outer\n(* inner *)\nouter *) 2").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn test_split_nested_comment() {
+    assert_eq!(
+      split_into_statements("1 + 1\n(* outer (* inner *) *)\n2 + 2"),
+      vec!["1 + 1", "(* outer (* inner *) *)\n2 + 2"]
+    );
+  }
+
   mod algebra;
   mod arithmetic;
   mod association;

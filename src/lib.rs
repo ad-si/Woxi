@@ -1635,7 +1635,7 @@ pub fn insert_statement_separators(input: &str) -> String {
   let mut result = String::with_capacity(input.len() + 32);
   let mut depth: i32 = 0; // nesting depth of [], (), {}
   let mut in_string = false;
-  let mut in_comment = false;
+  let mut comment_depth: i32 = 0;
   let mut line_has_code = false; // whether the current line has non-whitespace, non-comment content
   let mut last_code_char: Option<char> = None; // last meaningful (non-comment) character
   let mut prev_code_char: Option<char> = None; // second-to-last meaningful character
@@ -1651,21 +1651,21 @@ pub fn insert_statement_separators(input: &str) -> String {
   while i < len {
     let ch = chars[i];
 
-    // Track comment state: (* ... *)
+    // Track comment state: (* ... *) with nesting support
     if !in_string && i + 1 < len && ch == '(' && chars[i + 1] == '*' {
-      in_comment = true;
+      comment_depth += 1;
       result.push(ch);
       i += 1;
       continue;
     }
-    if in_comment && i + 1 < len && ch == '*' && chars[i + 1] == ')' {
-      in_comment = false;
+    if comment_depth > 0 && i + 1 < len && ch == '*' && chars[i + 1] == ')' {
+      comment_depth -= 1;
       result.push(ch);
       result.push(chars[i + 1]);
       i += 2;
       continue;
     }
-    if in_comment {
+    if comment_depth > 0 {
       result.push(ch);
       i += 1;
       continue;
@@ -1803,7 +1803,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
   let mut current = String::with_capacity(trimmed.len());
   let mut depth: i32 = 0;
   let mut in_string = false;
-  let mut in_comment = false;
+  let mut comment_depth: i32 = 0;
   let mut line_has_code = false;
   let mut current_has_code = false; // tracks whether the current buffer has actual code (not just comments/whitespace)
   let mut last_code_char: Option<char> = None;
@@ -1817,7 +1817,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
 
     // Handle line continuation: backslash followed by newline
     if !in_string
-      && !in_comment
+      && comment_depth == 0
       && ch == '\\'
       && i + 1 < len
       && chars[i + 1] == '\n'
@@ -1827,21 +1827,21 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
       continue;
     }
 
-    // Track comment state: (* ... *)
+    // Track comment state: (* ... *) with nesting support
     if !in_string && i + 1 < len && ch == '(' && chars[i + 1] == '*' {
-      in_comment = true;
+      comment_depth += 1;
       current.push(ch);
       i += 1;
       continue;
     }
-    if in_comment && i + 1 < len && ch == '*' && chars[i + 1] == ')' {
-      in_comment = false;
+    if comment_depth > 0 && i + 1 < len && ch == '*' && chars[i + 1] == ')' {
+      comment_depth -= 1;
       current.push(ch);
       current.push(chars[i + 1]);
       i += 2;
       continue;
     }
-    if in_comment {
+    if comment_depth > 0 {
       current.push(ch);
       i += 1;
       continue;
