@@ -122,8 +122,8 @@ AnglePath,Generate 2D points by successively turning and stepping,✅,pure,10.1,
 AnglePath3D,,,,11.1,4052
 AngleVector,,,,10.1,2074
 AngularGauge,,,,9,1860
-Animate,,,,6,417
-AnimatedImage,,,,12.2,4027
+Animate,,🚫,,6,417
+AnimatedImage,,🚫,,12.2,4027
 AnimationDirection,,,,3,2338
 AnimationRate,,,,6,1122
 AnimationRepetitions,,,,6,1552
@@ -1067,7 +1067,7 @@ ContourShading,Option specifying shading between contour lines,✅,none,2,693
 ContourStyle,Option specifying the style of contour lines,✅,none,2,424
 ContraharmonicMean,,,,7,4527
 ContrastiveLossLayer,,,,11.1,4567
-Control,,,,7,411
+Control,,🚫,,7,411
 ControlActive,,,,6,1312
 ControllabilityGramian,,,,8,4204
 ControllabilityMatrix,,,,8,3889
@@ -1075,7 +1075,7 @@ ControllableDecomposition,,,,8,4291
 ControllableModelQ,,,,8,2842
 ControllerInformation,,,,6,4527
 ControllerLinking,,,,6,2321
-ControllerManipulate,,,,6,3823
+ControllerManipulate,,🚫,,6,3823
 ControllerMethod,,,,6,4138
 ControllerPath,,,,6,3947
 ControllerState,,,,6,3344
@@ -1598,17 +1598,17 @@ DualSystemsModel,,,,8,4356
 DumpSave,,,,3,1932
 DuplicateFreeQ,,,,10,1833
 Duration,,,,11,3094
-Dynamic,,,,6,138
-DynamicEvaluationTimeout,,,,8,3462
-DynamicGeoGraphics,,,,10.4,3697
-DynamicImage,,,,10.4,3916
-DynamicModule,,,,6,409
-DynamicModuleBox,,,,6,3121
-DynamicModuleBoxOptions,,,,6,
-DynamicModuleValues,,,,6,1788
-DynamicSetting,,,,6,3785
-DynamicUpdating,,,,6,3233
-DynamicWrapper,,,,8,1846
+Dynamic,,🚫,,6,138
+DynamicEvaluationTimeout,,🚫,,8,3462
+DynamicGeoGraphics,,🚫,,10.4,3697
+DynamicImage,,🚫,,10.4,3916
+DynamicModule,,🚫,,6,409
+DynamicModuleBox,,🚫,,6,3121
+DynamicModuleBoxOptions,,🚫,,6,
+DynamicModuleValues,,🚫,,6,1788
+DynamicSetting,,🚫,,6,3785
+DynamicUpdating,,🚫,,6,3233
+DynamicWrapper,,🚫,,8,1846
 E,Represents the base of the natural logarithm,✅,pure,1,42
 EarthImpactData,,🚫,,10,4881
 EarthquakeData,,🚫,,10,2929
@@ -2093,7 +2093,7 @@ Format,Display wrapper that formats an expression in a given form,✅,pure,1,186
 FormatType,Option for output format type,✅,pure,1,1227
 FormBox,,,,3,991
 FormBoxOptions,,,,4,
-FormControl,,,,11,4225
+FormControl,,🚫,,11,4225
 FormFunction,,,,10,1303
 FormLayoutFunction,,,,10,4315
 FormObject,,,,10,2837
@@ -3218,7 +3218,7 @@ LinkWrite,,,,3,1967
 LiouvilleLambda,,,,7,3506
 List,Represents a list of elements,✅,pure,1,1
 Listable,Attribute for automatic threading over lists,✅,pure,1,568
-ListAnimate,,,,6,926
+ListAnimate,,🚫,,6,926
 ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1,902
 ListContourPlot3D,,,,6,1858
 ListConvolve,,,,4,1110
@@ -3375,9 +3375,9 @@ MandelbrotSetMemberQ,,,,10,3153
 MandelbrotSetPlot,,,,10,1748
 MangoldtLambda,,,,7,2900
 ManhattanDistance,,,,6,2462
-Manipulate,,,,6,95
-ManipulateVideo,,,,14.1,
-Manipulator,,,,6,1201
+Manipulate,,🚫,,6,95
+ManipulateVideo,,🚫,,14.1,
+Manipulator,,🚫,,6,1201
 MannedSpaceMissionData,,🚫,,10,4947
 MannWhitneyTest,,,,8,3306
 MantissaExponent,,,,2,2468
@@ -5006,10 +5006,10 @@ SliceContourPlot3D,,,,10.2,2012
 SliceDensityPlot3D,,,,10.2,2512
 SliceDistribution,,,,9,2978
 SliceVectorPlot3D,,,,10.2,2662
-Slider,,,,6,623
-Slider2D,,,,6,1608
-SliderBox,,,,6,4291
-SliderBoxOptions,,,,6,
+Slider,,🚫,,6,623
+Slider2D,,🚫,,6,1608
+SliderBox,,🚫,,6,4291
+SliderBoxOptions,,🚫,,6,
 SlideShowVideo,,,,12.3,
 SlideView,,,,6,3048
 Slot,Represents the nth argument in a pure function,✅,pure,1,17
