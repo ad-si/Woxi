@@ -80,7 +80,7 @@ AlgebraicNumberPolynomial,,,,6,3363
 AlgebraicNumberTrace,,,,6,3491
 Algebraics,,,,4,2468
 AlgebraicUnitQ,,,,6,4527
-Alignment,,,,6,189
+Alignment,Option symbol for specifying alignment in layouts,✅,pure,6,189
 AlignmentPoint,,,,6,2294
 All,Symbol used as an option value meaning all elements or the entire range,✅,pure,1,40
 AllMatch,,,,14.1,
@@ -158,7 +158,7 @@ AnyTrue,Checks if any element in a list is true,✅,pure,10,2031
 Apart,Decomposes a rational expression into partial fractions,✅,pure,1,683
 ApartSquareFree,,,,6,3755
 APIFunction,,,,10,1379
-Appearance,,,,6,197
+Appearance,Option symbol for specifying visual appearance,✅,pure,6,197
 AppearanceElements,,,,6,1031
 AppearanceRules,,,,10,2243
 AppellF1,,,,4,1168
@@ -241,7 +241,7 @@ Assert,,,,8,2483
 AssessmentFunction,,,,12.2,3678
 AssessmentResultObject,,,,12.2,
 AssociateTo,,,,10,1776
-Association,,,,10,185
+Association,Key-value data structure with <| |> syntax,✅,pure,10,185
 AssociationFormat,,,,10,4747
 AssociationMap,Maps a function over an association,✅,pure,10,1530
 AssociationQ,Tests if an expression is an association,✅,pure,10.1,2268
@@ -547,7 +547,7 @@ Blur,Applies Gaussian blur to an image,✅,pure,7,1124
 Blurring,,,,13.2,
 BodePlot,,,,8,1456
 BohmanWindow,,,,9,4387
-Bold,,,,6,207
+Bold,Style directive for bold text,✅,pure,6,207
 Bond,,,,12,2960
 BondCount,,,,12,5079
 BondLabels,,,,13,
@@ -1933,7 +1933,7 @@ FileType,,,,2,1842
 FilledCurve,,,,8,775
 FilledPolarCurve,,,,14.1,
 FilledTorus,,,,13,
-Filling,,,,6,202
+Filling,Option for filling areas under curves in plots,✅,pure,6,202
 FillingStyle,,,,6,410
 FillingTransform,,,,8,1810
 FilteredEntityClass,,,,12,3224
@@ -2073,7 +2073,7 @@ FoldPairList,,,,10.2,2268
 FoldWhile,,,,12.2,3200
 FoldWhileList,,,,12.2,3070
 FollowRedirects,,,,11,4947
-FontColor,,,,3,175
+FontColor,Option symbol for specifying text color in Style,✅,pure,3,175
 FontFamily,Option specifying the font family for text rendering,✅,none,3,103
 FontSize,Option specifying the default font size in printer's points,✅,none,3,96
 FontSlant,,,,3,856
@@ -2927,7 +2927,7 @@ IsolatingInterval,,,,6,4262
 IsomorphicGraphQ,,,,8,1930
 IsomorphicSubgraphQ,,,,13,
 IsotopeData,,🚫,,6,795
-Italic,,,,6,186
+Italic,Style directive for italic text,✅,pure,6,186
 Item,,,,6,332
 ItemAspectRatio,,,,6,4356
 ItemDisplayFunction,,,,12.1,
@@ -3536,7 +3536,7 @@ MessagePacket,,,,3,3823
 Messages,Returns the messages associated with a symbol,✅,pure,1,2503
 MetaInformation,,,,9,1855
 MeteorShowerData,,🚫,,10,5390
-Method,,,,4,212
+Method,Option symbol for specifying computational methods,✅,pure,4,212
 MexicanHatWavelet,,,,8,3257
 MeyerWavelet,,,,8,3916
 Midpoint,,,,12,2993
