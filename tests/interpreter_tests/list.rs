@@ -2581,6 +2581,41 @@ mod join_non_list {
   }
 
   #[test]
+  fn thread_rule() {
+    // Thread[{a,b} -> {c,d}] should produce {a -> c, b -> d}
+    assert_eq!(
+      interpret("Thread[{a, b} -> {c, d}]").unwrap(),
+      "{a -> c, b -> d}"
+    );
+  }
+
+  #[test]
+  fn thread_rule_delayed() {
+    assert_eq!(
+      interpret("Thread[{a, b} :> {c, d}]").unwrap(),
+      "{a :> c, b :> d}"
+    );
+  }
+
+  #[test]
+  fn thread_rule_lhs_only() {
+    // Thread[{a,b} -> c] should produce {a -> c, b -> c}
+    assert_eq!(
+      interpret("Thread[{a, b} -> c]").unwrap(),
+      "{a -> c, b -> c}"
+    );
+  }
+
+  #[test]
+  fn thread_rule_rhs_only() {
+    // Thread[a -> {c,d}] should produce {a -> c, a -> d}
+    assert_eq!(
+      interpret("Thread[a -> {c, d}]").unwrap(),
+      "{a -> c, a -> d}"
+    );
+  }
+
+  #[test]
   fn map_at_deep_position() {
     assert_eq!(
       interpret("MapAt[0&, {{1, 1}, {1, 1}}, {2, 1}]").unwrap(),

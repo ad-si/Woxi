@@ -568,6 +568,93 @@ pub fn thread_ast(
         _ => Ok(expr.clone()),
       }
     }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      // Thread[{a,b} -> {c,d}] -> {a -> c, b -> d}
+      let is_delayed = matches!(expr, Expr::RuleDelayed { .. });
+      let lhs_items = match pattern.as_ref() {
+        Expr::List(items) => Some(items),
+        _ => None,
+      };
+      let rhs_items = match replacement.as_ref() {
+        Expr::List(items) => Some(items),
+        _ => None,
+      };
+      match (lhs_items, rhs_items) {
+        (Some(lhs), Some(rhs)) => {
+          if lhs.len() != rhs.len() {
+            return Err(InterpreterError::EvaluationError(
+              "Thread: all lists must have the same length".into(),
+            ));
+          }
+          let results: Vec<Expr> = lhs
+            .iter()
+            .zip(rhs.iter())
+            .map(|(l, r)| {
+              if is_delayed {
+                Expr::RuleDelayed {
+                  pattern: Box::new(l.clone()),
+                  replacement: Box::new(r.clone()),
+                }
+              } else {
+                Expr::Rule {
+                  pattern: Box::new(l.clone()),
+                  replacement: Box::new(r.clone()),
+                }
+              }
+            })
+            .collect();
+          Ok(Expr::List(results))
+        }
+        (Some(lhs), None) => {
+          // Thread[{a,b} -> c] -> {a -> c, b -> c}
+          let results: Vec<Expr> = lhs
+            .iter()
+            .map(|l| {
+              if is_delayed {
+                Expr::RuleDelayed {
+                  pattern: Box::new(l.clone()),
+                  replacement: replacement.clone(),
+                }
+              } else {
+                Expr::Rule {
+                  pattern: Box::new(l.clone()),
+                  replacement: replacement.clone(),
+                }
+              }
+            })
+            .collect();
+          Ok(Expr::List(results))
+        }
+        (None, Some(rhs)) => {
+          // Thread[a -> {c,d}] -> {a -> c, a -> d}
+          let results: Vec<Expr> = rhs
+            .iter()
+            .map(|r| {
+              if is_delayed {
+                Expr::RuleDelayed {
+                  pattern: pattern.clone(),
+                  replacement: Box::new(r.clone()),
+                }
+              } else {
+                Expr::Rule {
+                  pattern: pattern.clone(),
+                  replacement: Box::new(r.clone()),
+                }
+              }
+            })
+            .collect();
+          Ok(Expr::List(results))
+        }
+        (None, None) => Ok(expr.clone()),
+      }
+    }
     _ => Ok(expr.clone()),
   }
 }

@@ -128,6 +128,35 @@ mod implicit_multiply_power_precedence {
   fn function_call_implicit_times_evaluates() {
     assert_eq!(interpret("Sin[0] Sin[Pi/2]").unwrap(), "0");
   }
+
+  #[test]
+  fn implicit_times_with_part_access() {
+    // Regression: 2 x[[1]] was not parsed as implicit multiplication with Part access
+    assert_eq!(interpret("x = {10, 20, 30}; 2 x[[2]]").unwrap(), "40");
+  }
+
+  #[test]
+  fn implicit_times_real_with_part_access() {
+    // Regression: 100. masses[[i]] failed to parse
+    assert_eq!(
+      interpret("masses = {1, 2, 3}; 100. masses[[2]]").unwrap(),
+      "200."
+    );
+  }
+
+  #[test]
+  fn implicit_times_part_access_multiple_factors() {
+    assert_eq!(interpret("a = {2}; b = {3}; a[[1]] b[[1]]").unwrap(), "6");
+  }
+
+  #[test]
+  fn implicit_times_function_call_with_part_access() {
+    // 2 f[x][[1]] should parse as 2 * Part[f[x], 1]
+    assert_eq!(
+      interpret("FullForm[Hold[2 f[x][[1]]]]").unwrap(),
+      "FullForm[Hold[2*f[x][[1]]]]"
+    );
+  }
 }
 
 mod max_symbolic {

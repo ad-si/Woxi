@@ -146,10 +146,16 @@ TimesBy = { Identifier ~ "*=" ~ Expression }
 DivideBy = { Identifier ~ "/=" ~ Expression }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
-// Each factor can have a power suffix so that "b y^3" parses as b*(y^3) not (b*y)^3
+// Each factor can have a Part suffix ([[...]]) and/or power suffix so that
+// "b y^3" parses as b*(y^3) not (b*y)^3 and "2 x[[1]]" parses as 2*x[[1]]
 ImplicitPowerSuffix = { "^" ~ SimpleTerm }
-ImplicitTimesFactor = _{ SimpleTerm ~ ImplicitPowerSuffix? }
+ImplicitTimesFactor = _{ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? }
 ImplicitTimes = { ImplicitTimesFactor ~ ImplicitTimesFactor+ }
+
+// TildeInfix: a ~f~ b means f[a, b] — infix function application syntax
+// The function between tildes must be an identifier or function call (BaseFunctionCall)
+// Must not be followed by ~ to avoid conflicting with ~~ (StringExpression)
+TildeInfix = { "~" ~ !"~" ~ (BaseFunctionCall | Identifier) ~ "~" ~ !"~" }
 
 // Unified Expression: parses a base term/operators, then looks for optional postfix/replace operators
 // This avoids redundant parsing by checking for special operators after the main parse
@@ -176,11 +182,11 @@ LeadingNot = { "!" ~ !"=" ~ !"!" }
 // Must not be followed by "=" (which would be != operator)
 FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
 Expression = {
-    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (Operator ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
+    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?   // Postfix: expr.. or expr...
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*               // Postfix application (lowest precedence): x // f
-    ~ (AnonymousFunctionSuffix ~ (Operator ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?  // Function: expr & (lowest precedence), then optional continuation
 }
 
 // Legacy rules kept for backward compatibility in evaluation code
@@ -217,13 +223,13 @@ FunctionCallExtended = {
 }
 
 Term = _{
-    PartAnonymousFunction
+    ImplicitTimes
+  | PartAnonymousFunction
   | PartExtract
   | Constant
   | String
   | ListExtended
   | ParenAnonymousFunction
-  | ImplicitTimes
   | FunctionCallExtended
   | NumericValue
   | Unset
@@ -264,13 +270,13 @@ SimpleTerm = _{
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
 // to prevent greedy matching across statement boundaries
 TermNoImplicit = _{
-    PartAnonymousFunction
+    ImplicitTimes
+  | PartAnonymousFunction
   | PartExtract
   | Constant
   | String
   | ListExtended
   | ParenAnonymousFunction
-  | ImplicitTimes
   | FunctionCallExtended
   | NumericValue
   | Unset
@@ -295,11 +301,11 @@ TermNoImplicit = _{
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
 ExpressionNoImplicit = {
-    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?) ~ (Operator ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))*
+    (LeadingNot ~ TermNoImplicit ~ FactorialSuffix? | LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?) ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))*
     ~ (RepeatedNullSuffix | RepeatedSuffix)?
     ~ (ReplaceRepeatedSuffix | ReplaceAllSuffix)?
     ~ ("//" ~ PostfixFunction)*
-    ~ (AnonymousFunctionSuffix ~ (Operator ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?
+    ~ (AnonymousFunctionSuffix ~ ((Operator | TildeInfix) ~ (LeadingMinus ~ TermNoImplicit ~ FactorialSuffix? | TermNoImplicit ~ FactorialSuffix?))* ~ ("//" ~ PostfixFunction)*)?
 }
 
 // Pattern: x_ or x_Head or x_?test or x_ /; condition or x_:default or x_Head:default
@@ -310,7 +316,7 @@ PatternTest = { PatternName? ~ "_" ~ "?" ~ PatternTestFunc }
 // ConditionExpr is like Expression but stops before -> and :> (rule operators)
 // This prevents the condition from consuming the replacement part of a rule
 ConditionExpr = {
-    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ (ConditionOp ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
+    (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ ((ConditionOp | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 ConditionOp = {

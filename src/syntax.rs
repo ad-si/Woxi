@@ -2064,12 +2064,25 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
     }
     Rule::ImplicitTimes => {
       // Implicit multiplication: x y z -> Times[x, y, z]
-      // Each factor can optionally have a power suffix (ImplicitPowerSuffix)
+      // Each factor can optionally have a Part suffix ([[...]]) and/or power suffix (ImplicitPowerSuffix)
       let inners: Vec<_> = pair.into_inner().collect();
       let mut factors: Vec<Expr> = Vec::new();
       let mut i = 0;
       while i < inners.len() {
-        if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
+        if inners[i].as_rule() == Rule::PartIndexSuffix {
+          // Part suffix follows the previous factor: x[[i]] -> Part[x, i]
+          if let Some(base) = factors.pop() {
+            let mut result = base;
+            for idx_pair in inners[i].clone().into_inner() {
+              let index = pair_to_expr(idx_pair);
+              result = Expr::Part {
+                expr: Box::new(result),
+                index: Box::new(index),
+              };
+            }
+            factors.push(result);
+          }
+        } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
           // Power suffix follows the previous factor
           if let Some(base) = factors.pop() {
             let exponent =
@@ -2277,6 +2290,18 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
       Rule::Operator | Rule::ConditionOp => {
         operators.push(item.as_str().trim().to_string());
       }
+      Rule::TildeInfix => {
+        // a ~f~ b → f[a, b]: encode as "~funcName~" operator string
+        // The inner pair is either BaseFunctionCall or Identifier
+        let inner = item.into_inner().next().unwrap();
+        let func_expr = pair_to_expr(inner);
+        // Store as "~<encoded>~" for make_binary_op to handle
+        let func_str = match &func_expr {
+          Expr::Identifier(name) => format!("~{}~", name),
+          _ => format!("~{}~", expr_to_string(&func_expr)),
+        };
+        operators.push(func_str);
+      }
       Rule::FactorialSuffix => {
         // n! → Factorial[n], n!! → Factorial2[n]
         if let Some(last) = terms.pop() {
@@ -2451,6 +2476,25 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
               post_terms.push(pair_to_expr(next_pair));
             }
           }
+        } else if op_pair.as_rule() == Rule::TildeInfix {
+          let inner = op_pair.into_inner().next().unwrap();
+          let func_expr = pair_to_expr(inner);
+          let func_str = match &func_expr {
+            Expr::Identifier(name) => format!("~{}~", name),
+            _ => format!("~{}~", expr_to_string(&func_expr)),
+          };
+          post_ops.push(func_str);
+          if let Some(next_pair) = iter.next() {
+            if next_pair.as_rule() == Rule::LeadingMinus {
+              post_terms.push(Expr::Integer(0));
+              post_ops.push("NEGATE".to_string());
+              if let Some(term_pair) = iter.next() {
+                post_terms.push(pair_to_expr(term_pair));
+              }
+            } else {
+              post_terms.push(pair_to_expr(next_pair));
+            }
+          }
         }
       }
 
@@ -2495,9 +2539,10 @@ fn operator_precedence(op: &str) -> u8 {
     "." => 12, // Dot (higher than arithmetic)
     "@@@" | "@@" => 13, // Apply/MapApply
     "/@" => 14, // Map (higher than Apply)
-    "@" => 15, // Prefix application (higher than Map)
     "NEGATE" => 15, // Unary minus (PreMinus): between Times/Dot and Power
-    "^" => 16, // Power (highest)
+    "^" => 16, // Power
+    s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 17, // Tilde infix: a ~f~ b (higher than ^, lower than @)
+    "@" => 18, // Prefix application (highest)
     _ => 0,
   }
 }
@@ -2762,6 +2807,38 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
             operands: vec![left.clone(), right.clone()],
             operators: vec![comp_op],
           }
+        }
+      }
+    }
+    s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => {
+      // Tilde infix: a ~f~ b → f[a, b], a ~f[x]~ b → f[x][a, b]
+      let func_name = &s[1..s.len() - 1];
+      // Check if it's a function call like f[x] by looking for brackets
+      if let Some(bracket_idx) = func_name.find('[') {
+        // Parse as CurriedCall: f[x][a, b]
+        let head = &func_name[..bracket_idx];
+        let args_str = &func_name[bracket_idx + 1..func_name.len() - 1];
+        // Build f[x] first, then apply [a, b]
+        let func_call = if args_str.is_empty() {
+          Expr::FunctionCall {
+            name: head.to_string(),
+            args: vec![],
+          }
+        } else {
+          // For simple cases, just re-parse through the evaluator
+          Expr::FunctionCall {
+            name: head.to_string(),
+            args: vec![Expr::Identifier(args_str.to_string())],
+          }
+        };
+        Expr::CurriedCall {
+          func: Box::new(func_call),
+          args: vec![left.clone(), right.clone()],
+        }
+      } else {
+        Expr::FunctionCall {
+          name: func_name.to_string(),
+          args: vec![left.clone(), right.clone()],
         }
       }
     }
