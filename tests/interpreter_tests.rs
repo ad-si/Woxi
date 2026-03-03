@@ -109,6 +109,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_split_backslash_line_continuation() {
+    assert_eq!(
+      split_into_statements(
+        "ImaginaryQ[u_] :=\\\n  Head[u]===Complex && Re[u]===0\nImaginaryQ[3 I]"
+      ),
+      vec![
+        "ImaginaryQ[u_] :=  Head[u]===Complex && Re[u]===0",
+        "ImaginaryQ[3 I]"
+      ]
+    );
+  }
+
+  #[test]
+  fn test_split_backslash_continuation_multi() {
+    assert_eq!(split_into_statements("1 +\\\n2 +\\\n3"), vec!["1 +2 +3"]);
+  }
+
+  #[test]
   fn test_comment_only_input() {
     // A standalone comment should not cause an error
     clear_state();
