@@ -110,4 +110,21 @@ mod tests {
     let pair = parse(input).unwrap().next().unwrap();
     assert_eq!(pair.as_rule(), Rule::Program);
   }
+
+  #[test]
+  fn test_parse_deeply_nested_function_calls() {
+    // Regression: deeply nested function calls must parse in linear time, not O(2^d).
+    // At 30 levels, exponential backtracking would take hours; this must finish instantly.
+    let input = "F[".repeat(30) + "x" + &"]".repeat(30);
+    let pair = parse(&input).unwrap().next().unwrap();
+    assert_eq!(pair.as_rule(), Rule::Program);
+  }
+
+  #[test]
+  fn test_parse_deeply_nested_with_implicit_times() {
+    // Ensure implicit multiplication still works correctly with deep nesting
+    let input = "F[".repeat(20) + "x" + &"]".repeat(20) + " y";
+    let pair = parse(&input).unwrap().next().unwrap();
+    assert_eq!(pair.as_rule(), Rule::Program);
+  }
 }
