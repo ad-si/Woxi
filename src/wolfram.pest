@@ -1,5 +1,5 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
+COMMENT = _{ "(*" ~ (COMMENT | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
 
 // Span expression: a;;b or a;;b;;c (with optional operands: ;;b, a;;, ;;;;c)
 // Produces Span[a, b] or Span[a, b, c] with defaults (1 for start, All for end)
