@@ -530,9 +530,7 @@ pub fn expr_to_bigfloat(
         }
         "Erfc" if args.len() == 1 => {
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
-          let erf_val = bigfloat_erf(&x, bits, rm, cc);
-          let one = BigFloat::from_i32(1, bits);
-          Ok(one.sub(&erf_val, bits, rm))
+          Ok(bigfloat_erfc(&x, bits, rm, cc))
         }
         "ExpIntegralEi" if args.len() == 1 => {
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
@@ -2631,6 +2629,78 @@ pub fn manhattan_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute the error function erf(x) using BigFloat arithmetic.
 /// Uses the Taylor series: erf(x) = (2/sqrt(π)) * Σ_{n=0}^{∞} (-1)^n * x^(2n+1) / (n! * (2n+1))
+/// Compute erfc(x) for x > 0 using the continued fraction representation.
+/// erfc(x) = exp(-x²) / (f * sqrt(π)) where f is computed via modified Lentz's method.
+fn bigfloat_erfc_cf(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  // Use extra guard bits for intermediate computation
+  let work_bits = bits + 64;
+
+  let half = BigFloat::from_i32(1, work_bits).div(
+    &BigFloat::from_i32(2, work_bits),
+    work_bits,
+    rm,
+  );
+
+  // Modified Lentz's method for the continued fraction
+  // erfc(x) = (exp(-x²)/sqrt(π)) * 1/(x + 1/(2x + 2/(x + 3/(2x + ...))))
+  // Using: a_n = n * 0.5, b_n = x
+  let mut f = x.clone();
+  let mut c = x.clone();
+  let mut d = BigFloat::from_i32(0, work_bits);
+
+  let max_iterations = work_bits * 2 + 200;
+  for n in 1..max_iterations {
+    // a_n = n * 0.5
+    let a_n = BigFloat::from_i32(n as i32, work_bits).mul(&half, work_bits, rm);
+
+    // d = x + a_n * d
+    d = x.add(&a_n.mul(&d, work_bits, rm), work_bits, rm);
+    // Guard against zero
+    if d.is_zero() {
+      d = BigFloat::min_positive_normal(work_bits);
+    }
+
+    // c = x + a_n / c
+    c = x.add(&a_n.div(&c, work_bits, rm), work_bits, rm);
+    if c.is_zero() {
+      c = BigFloat::min_positive_normal(work_bits);
+    }
+
+    // d = 1/d
+    d = BigFloat::from_i32(1, work_bits).div(&d, work_bits, rm);
+    let delta = c.mul(&d, work_bits, rm);
+    f = f.mul(&delta, work_bits, rm);
+
+    // Check convergence: |delta - 1| is negligible
+    let one = BigFloat::from_i32(1, work_bits);
+    let diff = delta.sub(&one, work_bits, rm).abs();
+    if diff.is_zero() {
+      break;
+    }
+    if let Some(diff_exp) = diff.exponent()
+      && diff_exp < -(work_bits as i32)
+    {
+      break;
+    }
+  }
+
+  // erfc(x) = exp(-x²) / (f * sqrt(π))
+  let x2 = x.mul(x, work_bits, rm);
+  let neg_x2 = x2.neg();
+  let exp_neg_x2 = neg_x2.exp(work_bits, rm, cc);
+  let pi = cc.pi(work_bits, rm);
+  let sqrt_pi = pi.sqrt(work_bits, rm);
+  let denom = f.mul(&sqrt_pi, work_bits, rm);
+  exp_neg_x2.div(&denom, bits, rm)
+}
+
 fn bigfloat_erf(
   x: &astro_float::BigFloat,
   bits: usize,
@@ -2647,29 +2717,42 @@ fn bigfloat_erf(
   let is_negative = x.is_negative();
   let x_abs = x.abs();
 
+  // For large |x|, use the continued fraction for erfc(x) and compute erf = 1 - erfc.
+  // The Taylor series suffers from catastrophic cancellation for large arguments.
+  let four = BigFloat::from_i32(4, bits);
+  if x_abs.cmp(&four) == Some(1) {
+    // |x| > 4: use continued fraction
+    let erfc_val = bigfloat_erfc_cf(&x_abs, bits, rm, cc);
+    let one = BigFloat::from_i32(1, bits);
+    let result = one.sub(&erfc_val, bits, rm);
+    return if is_negative { result.neg() } else { result };
+  }
+
+  // For small |x| (≤ 4), use the Taylor series with extra guard bits to handle cancellation.
+  // With |x| ≤ 4, the peak term is ~exp(x²/2) ≈ exp(8) ≈ 2981, needing ~12 extra bits.
+  // We use 64 guard bits for safety.
+  let work_bits = bits + 64;
+
   // Taylor series: term_0 = x, term_n = term_{n-1} * x^2 / n
   // contribution_n = term_n / (2n+1), alternating sign
   // sum = Σ (-1)^n * contribution_n
-  //
-  // Use the target precision for all computations to match Wolfram's
-  // rounding behavior.
-  let x2 = x_abs.mul(&x_abs, bits, rm);
+  let x2 = x_abs.mul(&x_abs, work_bits, rm);
   let mut term = x_abs.clone();
   let mut sum = x_abs.clone();
 
-  let max_iterations = bits * 2 + 100;
+  let max_iterations = work_bits * 2 + 100;
   for n in 1..max_iterations {
-    term = term.mul(&x2, bits, rm);
-    let n_bf = BigFloat::from_i32(n as i32, bits);
-    term = term.div(&n_bf, bits, rm);
+    term = term.mul(&x2, work_bits, rm);
+    let n_bf = BigFloat::from_i32(n as i32, work_bits);
+    term = term.div(&n_bf, work_bits, rm);
 
-    let denom = BigFloat::from_i32((2 * n + 1) as i32, bits);
-    let contribution = term.div(&denom, bits, rm);
+    let denom = BigFloat::from_i32((2 * n + 1) as i32, work_bits);
+    let contribution = term.div(&denom, work_bits, rm);
 
     if n % 2 == 1 {
-      sum = sum.sub(&contribution, bits, rm);
+      sum = sum.sub(&contribution, work_bits, rm);
     } else {
-      sum = sum.add(&contribution, bits, rm);
+      sum = sum.add(&contribution, work_bits, rm);
     }
 
     if contribution.is_zero() {
@@ -2677,20 +2760,57 @@ fn bigfloat_erf(
     }
     if let (Some(c_exp), Some(s_exp)) =
       (contribution.exponent(), sum.exponent())
-      && s_exp - c_exp > (bits as i32)
+      && s_exp - c_exp > (work_bits as i32)
     {
       break;
     }
   }
 
-  // Multiply by 2/sqrt(π)
-  let two = BigFloat::from_i32(2, bits);
-  let pi = cc.pi(bits, rm);
-  let sqrt_pi = pi.sqrt(bits, rm);
-  let factor = two.div(&sqrt_pi, bits, rm);
+  // Multiply by 2/sqrt(π), round to final precision
+  let two = BigFloat::from_i32(2, work_bits);
+  let pi = cc.pi(work_bits, rm);
+  let sqrt_pi = pi.sqrt(work_bits, rm);
+  let factor = two.div(&sqrt_pi, work_bits, rm);
   let result = sum.mul(&factor, bits, rm);
 
   if is_negative { result.neg() } else { result }
+}
+
+/// Compute erfc(x) with arbitrary precision.
+/// For large x, uses continued fraction directly. For small x, uses 1 - erf(x).
+fn bigfloat_erfc(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  if x.is_zero() {
+    return BigFloat::from_i32(1, bits);
+  }
+
+  let is_negative = x.is_negative();
+  let x_abs = x.abs();
+
+  let four = BigFloat::from_i32(4, bits);
+  let result = if x_abs.cmp(&four) == Some(1) {
+    // |x| > 4: use continued fraction directly for best precision
+    bigfloat_erfc_cf(&x_abs, bits, rm, cc)
+  } else {
+    // |x| <= 4: compute via 1 - erf(x)
+    let erf_val = bigfloat_erf(&x_abs, bits, rm, cc);
+    let one = BigFloat::from_i32(1, bits);
+    one.sub(&erf_val, bits, rm)
+  };
+
+  // erfc(-x) = 2 - erfc(x)
+  if is_negative {
+    let two = BigFloat::from_i32(2, bits);
+    two.sub(&result, bits, rm)
+  } else {
+    result
+  }
 }
 
 /// Compute the exponential integral Ei(x) using BigFloat arithmetic.
