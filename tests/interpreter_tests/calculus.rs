@@ -798,6 +798,68 @@ mod erf {
     // D[Erf[x], x] = 2/(E^(x^2)*Sqrt[Pi]) — tests denominator formatting
     assert_eq!(interpret("D[Erf[x],x]").unwrap(), "2/(E^x^2*Sqrt[Pi])");
   }
+
+  #[test]
+  fn n_erf_1() {
+    // N[Erf[1], 20] — small argument, Taylor series path
+    let result = interpret("N[Erf[1], 20]").unwrap();
+    assert!(
+      result.starts_with("0.84270079294971486934"),
+      "N[Erf[1], 20] = {result}"
+    );
+  }
+
+  #[test]
+  fn n_erf_5() {
+    // N[Erf[5], 20] — large argument, continued fraction path
+    let result = interpret("N[Erf[5], 20]").unwrap();
+    assert!(
+      result.starts_with("0.99999999999846254020"),
+      "N[Erf[5], 20] = {result}"
+    );
+  }
+
+  #[test]
+  fn n_erf_10() {
+    // N[Erf[10], 20] — very large argument, result is 1 to 20 digits
+    assert_eq!(interpret("N[Erf[10], 20]").unwrap(), "1.`20.");
+  }
+
+  #[test]
+  fn n_erf_neg_10() {
+    // Erf is odd: N[Erf[-10], 20] = -1
+    assert_eq!(interpret("N[Erf[-10], 20]").unwrap(), "-1.`20.");
+  }
+
+  #[test]
+  fn n_erfc_5() {
+    // N[Erfc[5], 20] — continued fraction path
+    let result = interpret("N[Erfc[5], 20]").unwrap();
+    assert!(
+      result.starts_with("1.53745979442803485018"),
+      "N[Erfc[5], 20] = {result}"
+    );
+  }
+
+  #[test]
+  fn n_erfc_10() {
+    // N[Erfc[10], 20] — very small result
+    let result = interpret("N[Erfc[10], 20]").unwrap();
+    assert!(
+      result.starts_with("2.08848758376254475700"),
+      "N[Erfc[10], 20] = {result}"
+    );
+  }
+
+  #[test]
+  fn n_erf_3() {
+    // N[Erf[3], 20] — moderate argument, Taylor series path
+    let result = interpret("N[Erf[3], 20]").unwrap();
+    assert!(
+      result.starts_with("0.99997790950300141455"),
+      "N[Erf[3], 20] = {result}"
+    );
+  }
 }
 
 mod integrate_gaussian {
