@@ -2330,7 +2330,8 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         blank_types.push(blank_count.min(3) as u8);
       }
       Rule::PatternTest => {
-        // PatternTest: x_?test or _?test — extract param name and test condition
+        // PatternTest: x_?test or _?test or x__?test or __?test etc.
+        let full_str = item.as_str();
         let mut pat_inner = item.into_inner();
         let first = pat_inner.next().unwrap();
         let (param_name, test_pair) = if first.as_rule() == Rule::PatternName {
@@ -2339,6 +2340,18 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
           // Anonymous blank _?test — generate a placeholder param name
           (format!("__pt{}", params.len()), first)
         };
+        // Extract blank_type from underscores between name and ?
+        // Skip auto-generated names when computing offset
+        let name_offset = if param_name.starts_with("__pt") {
+          0
+        } else {
+          param_name.len()
+        };
+        let bt = full_str[name_offset..]
+          .chars()
+          .take_while(|&c| c == '_')
+          .count()
+          .min(3) as u8;
         let test_expr = syntax::pair_to_expr(test_pair);
         // Build condition: testFunc[paramName]
         let cond_expr = syntax::Expr::FunctionCall {
@@ -2349,7 +2362,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         conditions.push(Some(cond_expr));
         defaults.push(None);
         heads.push(None);
-        blank_types.push(1);
+        blank_types.push(bt);
         has_any_condition = true;
       }
       Rule::PatternSimple => {

@@ -1016,6 +1016,115 @@ mod pattern_matching {
       // BlankNullSequence matches zero arguments
       assert_eq!(interpret("h[x___] := Length[{x}]; h[]").unwrap(), "0");
     }
+
+    #[test]
+    fn matchq_blank_sequence_basic() {
+      // Anonymous __ matches one or more args inside function patterns
+      assert_eq!(interpret("MatchQ[f[1, 2, 3], f[__]]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[f[1], f[__]]").unwrap(), "True");
+      // Must match at least one
+      assert_eq!(interpret("MatchQ[f[], f[__]]").unwrap(), "False");
+    }
+
+    #[test]
+    fn matchq_blank_null_sequence() {
+      // ___ matches zero or more
+      assert_eq!(interpret("MatchQ[f[], f[___]]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[f[1], f[___]]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[f[1, 2], f[___]]").unwrap(), "True");
+    }
+
+    #[test]
+    fn matchq_blank_sequence_with_head() {
+      // __Integer matches one or more Integer args
+      assert_eq!(
+        interpret("MatchQ[f[1, 2, 3], f[__Integer]]").unwrap(),
+        "True"
+      );
+      // Fails when any arg is not Integer
+      assert_eq!(
+        interpret("MatchQ[f[1, 2, x], f[__Integer]]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn replace_all_with_blank_sequence() {
+      // Named x__ in ReplaceAll binds to Sequence
+      assert_eq!(
+        interpret("f[1, 2, 3] /. f[x__] :> {x}").unwrap(),
+        "{1, 2, 3}"
+      );
+    }
+
+    #[test]
+    fn replace_all_blank_sequence_named_sum() {
+      assert_eq!(
+        interpret("{f[1, 2], f[3, 4, 5]} /. f[x__] :> Plus[x]").unwrap(),
+        "{3, 12}"
+      );
+    }
+
+    #[test]
+    fn cases_with_blank_sequence() {
+      assert_eq!(
+        interpret("Cases[{f[1, 2], f[3], g[4, 5]}, f[__]]").unwrap(),
+        "{f[1, 2], f[3]}"
+      );
+    }
+
+    #[test]
+    fn count_with_blank_sequence() {
+      assert_eq!(
+        interpret("Count[{f[1], f[2, 3], g[4]}, f[__]]").unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn position_with_blank_sequence() {
+      assert_eq!(
+        interpret("Position[{f[1], f[2, 3], g[4]}, f[__]]").unwrap(),
+        "{{1}, {2}}"
+      );
+    }
+
+    #[test]
+    fn multiple_blank_sequences_in_definition() {
+      // f[x__, y__] splits args: first gets minimum, rest goes to second
+      assert_eq!(
+        interpret("f[x__, y__] := {{x}, {y}}; f[1, 2, 3]").unwrap(),
+        "{{1}, {2, 3}}"
+      );
+    }
+
+    #[test]
+    fn blank_sequence_pattern_test() {
+      // __?IntegerQ matches one or more integers
+      assert_eq!(
+        interpret("MatchQ[f[1, 2, 3], f[__?IntegerQ]]").unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("MatchQ[f[1, 2, x], f[__?IntegerQ]]").unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn anonymous_blank_in_matchq() {
+      // Standalone _ matches any single expression
+      assert_eq!(interpret("MatchQ[42, _]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[{1, 2}, {_, _}]").unwrap(), "True");
+    }
+
+    #[test]
+    fn anonymous_blank_with_head() {
+      // _Integer matches integer, _Symbol matches symbol
+      assert_eq!(interpret("MatchQ[42, _Integer]").unwrap(), "True");
+      assert_eq!(interpret("MatchQ[x, _Integer]").unwrap(), "False");
+      assert_eq!(interpret("MatchQ[x, _Symbol]").unwrap(), "True");
+    }
   }
 
   mod conditional_pattern {

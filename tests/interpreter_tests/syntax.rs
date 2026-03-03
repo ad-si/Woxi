@@ -1140,6 +1140,40 @@ mod blank_null_sequence {
   fn blank_null_sequence_syntax() {
     assert_eq!(interpret("___").unwrap(), "___");
   }
+
+  #[test]
+  fn blank_sequence_display() {
+    assert_eq!(interpret("BlankSequence[]").unwrap(), "__");
+  }
+
+  #[test]
+  fn blank_sequence_with_head() {
+    assert_eq!(interpret("BlankSequence[Integer]").unwrap(), "__Integer");
+  }
+
+  #[test]
+  fn blank_sequence_head() {
+    assert_eq!(interpret("Head[BlankSequence[]]").unwrap(), "BlankSequence");
+  }
+
+  #[test]
+  fn blank_sequence_syntax() {
+    assert_eq!(interpret("__").unwrap(), "__");
+  }
+
+  #[test]
+  fn anonymous_blank_with_head_syntax() {
+    assert_eq!(interpret("_Integer").unwrap(), "_Integer");
+    assert_eq!(interpret("__Integer").unwrap(), "__Integer");
+    assert_eq!(interpret("___Integer").unwrap(), "___Integer");
+  }
+
+  #[test]
+  fn head_of_anonymous_blanks() {
+    assert_eq!(interpret("Head[_]").unwrap(), "Blank");
+    assert_eq!(interpret("Head[__]").unwrap(), "BlankSequence");
+    assert_eq!(interpret("Head[___]").unwrap(), "BlankNullSequence");
+  }
 }
 
 mod plot_label_symbol {
