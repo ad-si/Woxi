@@ -269,6 +269,19 @@ pub fn has_one_identity(name: &str) -> bool {
   })
 }
 
+/// Map a BinaryOperator to the corresponding Wolfram Language function name.
+fn binary_op_to_func_name(op: &crate::syntax::BinaryOperator) -> &'static str {
+  use crate::syntax::BinaryOperator;
+  match op {
+    BinaryOperator::Plus => "Plus",
+    BinaryOperator::Times => "Times",
+    BinaryOperator::Power => "Power",
+    BinaryOperator::And => "And",
+    BinaryOperator::Or => "Or",
+    _ => "",
+  }
+}
+
 /// Try OneIdentity matching: when a pattern is f[args...] and f has OneIdentity,
 /// match a non-f expression by filling in defaults for PatternOptional args
 /// and matching the expression against the remaining required pattern slot.
@@ -291,6 +304,19 @@ pub fn try_one_identity_match(
         // Bind optional pattern to its default value
         if let Some(d) = default {
           bindings.push((name.clone(), *d.clone()));
+        } else if let Some(def) =
+          crate::evaluator::dispatch::builtin_default_value_at_position(
+            pat_name,
+            i + 1,
+          )
+        {
+          // System-determined default (_.): use Default[f, position]
+          bindings.push((name.clone(), def));
+        } else if let Some(def) =
+          crate::evaluator::dispatch::builtin_default_value(pat_name)
+        {
+          // Fallback to position-independent Default[f]
+          bindings.push((name.clone(), def));
         }
       }
       Expr::Pattern { .. } | Expr::Identifier(_) => {
@@ -1621,7 +1647,9 @@ pub fn match_pattern(
           Some(bindings)
         }
       } else {
-        None
+        // Expression is not a FunctionCall with the same name;
+        // try OneIdentity matching as fallback
+        try_one_identity_match(expr, pat_name, pat_args)
       }
     }
     Expr::BinaryOp {
@@ -1662,7 +1690,17 @@ pub fn match_pattern(
         }
         Some(bindings)
       } else {
-        None
+        // Expression is not the same BinaryOp; try OneIdentity matching
+        let func_name = binary_op_to_func_name(pat_op);
+        if !func_name.is_empty() {
+          try_one_identity_match(
+            expr,
+            func_name,
+            &[*pat_left.clone(), *pat_right.clone()],
+          )
+        } else {
+          None
+        }
       }
     }
     Expr::UnaryOp {
