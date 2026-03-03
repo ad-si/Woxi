@@ -1,6 +1,22 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Collect all operands for an associative binary operator (Plus, Times, Alternatives),
+/// flattening nested applications of the same operator.
+fn collect_binary_children(
+  expr: &Expr,
+  target_op: &crate::syntax::BinaryOperator,
+) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp { op, left, right } if op == target_op => {
+      let mut parts = collect_binary_children(left, target_op);
+      parts.extend(collect_binary_children(right, target_op));
+      parts
+    }
+    _ => vec![expr.clone()],
+  }
+}
+
 /// Collect all pattern variable names from an expression.
 /// Returns tuples of (name, head, is_optional) for each Pattern/PatternOptional node found.
 fn collect_pattern_vars(expr: &Expr) -> Vec<(String, Option<String>, bool)> {
@@ -893,8 +909,74 @@ pub fn tag_set_delayed_ast(
   };
 
   // Extract outer function name and args from the LHS
+  // Handles FunctionCall directly, and converts BinaryOp/UnaryOp/Comparison
+  // to their canonical function call form (e.g. Plus[a, b] for a + b).
   let (outer_func, lhs_args) = match lhs {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),
+    Expr::BinaryOp { op, left, right } => {
+      let (name, args) = match op {
+        crate::syntax::BinaryOperator::Plus => {
+          ("Plus".to_string(), collect_binary_children(lhs, op))
+        }
+        crate::syntax::BinaryOperator::Times => {
+          ("Times".to_string(), collect_binary_children(lhs, op))
+        }
+        crate::syntax::BinaryOperator::Alternatives => {
+          ("Alternatives".to_string(), collect_binary_children(lhs, op))
+        }
+        crate::syntax::BinaryOperator::Minus => (
+          "Plus".to_string(),
+          vec![
+            left.as_ref().clone(),
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(Expr::Integer(-1)),
+              right: right.clone(),
+            },
+          ],
+        ),
+        crate::syntax::BinaryOperator::Divide => (
+          "Times".to_string(),
+          vec![
+            left.as_ref().clone(),
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: right.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            },
+          ],
+        ),
+        crate::syntax::BinaryOperator::Power => (
+          "Power".to_string(),
+          vec![left.as_ref().clone(), right.as_ref().clone()],
+        ),
+        crate::syntax::BinaryOperator::And => (
+          "And".to_string(),
+          vec![left.as_ref().clone(), right.as_ref().clone()],
+        ),
+        crate::syntax::BinaryOperator::Or => (
+          "Or".to_string(),
+          vec![left.as_ref().clone(), right.as_ref().clone()],
+        ),
+        crate::syntax::BinaryOperator::StringJoin => (
+          "StringJoin".to_string(),
+          vec![left.as_ref().clone(), right.as_ref().clone()],
+        ),
+      };
+      (name, args)
+    }
+    Expr::UnaryOp { op, operand } => {
+      let (name, args) = match op {
+        crate::syntax::UnaryOperator::Minus => (
+          "Times".to_string(),
+          vec![Expr::Integer(-1), operand.as_ref().clone()],
+        ),
+        crate::syntax::UnaryOperator::Not => {
+          ("Not".to_string(), vec![operand.as_ref().clone()])
+        }
+      };
+      (name, args)
+    }
     _ => {
       return Err(InterpreterError::EvaluationError(
         "TagSetDelayed: second argument must be a function call".into(),
@@ -908,6 +990,12 @@ pub fn tag_set_delayed_ast(
   let mut defaults: Vec<Option<Expr>> = Vec::new();
   let mut heads: Vec<Option<String>> = Vec::new();
   let mut final_body = body.clone();
+  // Track first occurrence of each pattern variable for SameQ conditions
+  // on repeated pattern variables (e.g. v_ appearing in multiple args).
+  let mut seen_pattern_vars: std::collections::HashMap<String, Expr> =
+    std::collections::HashMap::new();
+  // Extra conditions for repeated pattern variables
+  let mut extra_conditions: Vec<Expr> = Vec::new();
 
   for (i, arg) in lhs_args.iter().enumerate() {
     match arg {
@@ -944,6 +1032,16 @@ pub fn tag_set_delayed_ast(
                 Expr::Integer((j + 1) as i128),
               ],
             };
+            // If this pattern variable was already seen, add a SameQ
+            // condition to ensure both occurrences match the same value.
+            if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
+              extra_conditions.push(Expr::Comparison {
+                operands: vec![prev_expr.clone(), part_expr.clone()],
+                operators: vec![crate::syntax::ComparisonOp::SameQ],
+              });
+            } else {
+              seen_pattern_vars.insert(pat_name.clone(), part_expr.clone());
+            }
             final_body = crate::syntax::substitute_variable(
               &final_body,
               &pat_name,
@@ -973,6 +1071,26 @@ pub fn tag_set_delayed_ast(
         heads.push(head);
       }
     }
+  }
+
+  // Add extra conditions for repeated pattern variables to the last
+  // parameter's condition slot (merging with any existing condition).
+  if !extra_conditions.is_empty() && !conditions.is_empty() {
+    let last_idx = conditions.len() - 1;
+    let mut all_conds = extra_conditions;
+    if let Some(existing) = conditions[last_idx].take() {
+      all_conds.insert(0, existing);
+    }
+    // Combine all conditions with And
+    let combined = if all_conds.len() == 1 {
+      all_conds.remove(0)
+    } else {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: all_conds,
+      }
+    };
+    conditions[last_idx] = Some(combined);
   }
 
   // Store in UPVALUES for introspection and cleanup

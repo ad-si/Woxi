@@ -1338,6 +1338,26 @@ pub fn evaluate_expr_to_expr_inner(
       let left_val = evaluate_expr_to_expr(left)?;
       let right_val = evaluate_expr_to_expr(right)?;
 
+      // For operators with corresponding function names (Plus, Times, Power, etc.),
+      // check if there are user-defined rules (e.g. upvalues from TagSetDelayed).
+      // If so, route through evaluate_function_call_ast which checks FUNC_DEFS first.
+      let func_name = match op {
+        BinaryOperator::Plus => Some("Plus"),
+        BinaryOperator::Times => Some("Times"),
+        BinaryOperator::Power => Some("Power"),
+        BinaryOperator::And => Some("And"),
+        BinaryOperator::Or => Some("Or"),
+        BinaryOperator::StringJoin => Some("StringJoin"),
+        _ => None,
+      };
+      if let Some(name) = func_name {
+        let has_user_rules =
+          crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name));
+        if has_user_rules {
+          return evaluate_function_call_ast(name, &[left_val, right_val]);
+        }
+      }
+
       // Check for list threading (arithmetic operations thread over lists)
       let has_list = matches!(&left_val, Expr::List(_))
         || matches!(&right_val, Expr::List(_));
