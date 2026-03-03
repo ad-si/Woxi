@@ -2836,7 +2836,7 @@ IntegerPart,Returns the integer part of a number (truncation towards zero),✅,p
 IntegerPartitions,Returns the integer partitions of n,✅,pure,6,884
 IntegerQ,Tests if the expression evaluates to an integer,✅,pure,1,319
 IntegerReverse,Reverses the digits of an integer,✅,pure,10.3,2067
-Integers,,,,4,158
+Integers,Domain symbol representing the set of integers,✅,pure,4,158
 IntegerString,Converts an integer to a string in a given base,✅,pure,6,933
 Integrate,Computes the indefinite integral of an expression,✅,pure,1,54
 IntegrateChangeVariables,,,,13.1,
