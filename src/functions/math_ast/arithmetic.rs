@@ -1316,6 +1316,8 @@ pub fn term_priority(e: &Expr) -> i32 {
       _ => 0,
     },
     Expr::UnaryOp { operand, .. } => term_priority(operand),
+    // CurriedCall like Derivative[1][f][x] — treat as algebraic (priority 0)
+    Expr::CurriedCall { .. } => 0,
     _ => 0,
   }
 }
@@ -1355,6 +1357,8 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
       }
       _ => 2,
     },
+    // CurriedCall (e.g. Derivative[1][y][x]) sorts after regular function calls
+    Expr::CurriedCall { .. } => 3,
     _ => 0,
   }
 }
@@ -1370,6 +1374,20 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     let sa = times_factor_subpriority(a);
     let sb = times_factor_subpriority(b);
     if sa != sb {
+      // Special case: an additive expression (x-y) sorts BEFORE an identifier y
+      // when y appears with a negative coefficient in the additive expression.
+      // This matches Wolfram's canonical ordering: (x-y)*y not y*(x-y).
+      if sa == 0 && sb == 1 {
+        // a is Identifier, b is additive — check if a appears negated in b
+        if additive_contains_negated(b, a) {
+          return std::cmp::Ordering::Greater; // b (additive) before a (identifier)
+        }
+      } else if sa == 1 && sb == 0 {
+        // a is additive, b is Identifier — check if b appears negated in a
+        if additive_contains_negated(a, b) {
+          return std::cmp::Ordering::Less; // a (additive) before b (identifier)
+        }
+      }
       return sa.cmp(&sb);
     }
     // For FunctionCall with same head, compare arguments structurally
@@ -1397,17 +1415,128 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
   });
 }
 
+/// Check if an additive expression contains a given identifier with a negative coefficient.
+/// For example, `(x - y)` contains `y` negated, but `(x + y)` does not.
+fn additive_contains_negated(additive: &Expr, ident: &Expr) -> bool {
+  let ident_name = match ident {
+    Expr::Identifier(name) => name.as_str(),
+    Expr::Constant(name) => name.as_str(),
+    _ => return false,
+  };
+  match additive {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      right,
+      ..
+    } => {
+      // a - b: check if b == ident
+      matches!(right.as_ref(), Expr::Identifier(name) if name == ident_name)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      // Check if either side is -ident (UnaryMinus(ident) or Times(-1, ident))
+      has_negated_ident(left, ident_name)
+        || has_negated_ident(right, ident_name)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().any(|arg| has_negated_ident(arg, ident_name))
+    }
+    _ => false,
+  }
+}
+
+/// Check if an expression is a negated form of the given identifier.
+fn has_negated_ident(expr: &Expr, ident_name: &str) -> bool {
+  match expr {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      matches!(operand.as_ref(), Expr::Identifier(name) if name == ident_name)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      (matches!(left.as_ref(), Expr::Integer(n) if *n < 0)
+        && matches!(right.as_ref(), Expr::Identifier(name) if name == ident_name))
+        || (matches!(right.as_ref(), Expr::Integer(n) if *n < 0)
+          && matches!(left.as_ref(), Expr::Identifier(name) if name == ident_name))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && args.iter().any(|a| matches!(a, Expr::Integer(n) if *n < 0))
+        && args
+          .iter()
+          .any(|a| matches!(a, Expr::Identifier(n) if n == ident_name)) =>
+    {
+      true
+    }
+    _ => false,
+  }
+}
+
+/// Multiply two exponent expressions, simplifying common cases.
+/// E.g. Rational[1,2] * Integer(-1) → Rational[-1,2]
+fn multiply_exponents(a: &Expr, b: &Expr) -> Expr {
+  match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x * y),
+    (Expr::FunctionCall { name, args }, Expr::Integer(m))
+    | (Expr::Integer(m), Expr::FunctionCall { name, args })
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        make_rational(n * m, *d)
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(a.clone()),
+          right: Box::new(b.clone()),
+        }
+      }
+    }
+    _ => Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(a.clone()),
+      right: Box::new(b.clone()),
+    },
+  }
+}
+
 /// Extract (base, exponent) from an expression for power combining in Times.
 /// x → (x, 1), x^n → (x, n), Sqrt[x] → (x, 1/2)
+/// Power[Sqrt[x], n] → (x, n/2), Power[x^a, b] → (x, a*b)
 pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
   match expr {
     Expr::BinaryOp {
       op: crate::syntax::BinaryOperator::Power,
       left,
       right,
-    } => (*left.clone(), *right.clone()),
+    } => {
+      // Recursively extract base from nested powers: (x^a)^b → (x, a*b)
+      let (inner_base, inner_exp) = extract_base_exponent(left);
+      if matches!(inner_exp, Expr::Integer(1)) {
+        (*left.clone(), *right.clone())
+      } else {
+        (inner_base, multiply_exponents(&inner_exp, right))
+      }
+    }
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       (args[0].clone(), make_rational(1, 2))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      // Power[Sqrt[x], n] etc.
+      let (inner_base, inner_exp) = extract_base_exponent(&args[0]);
+      if matches!(inner_exp, Expr::Integer(1)) {
+        (args[0].clone(), args[1].clone())
+      } else {
+        (inner_base, multiply_exponents(&inner_exp, &args[1]))
+      }
     }
     _ => (expr.clone(), Expr::Integer(1)),
   }
@@ -1531,18 +1660,44 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return result;
   }
 
-  // Flatten nested Times arguments
+  // Flatten nested Times arguments (including BinaryOp forms)
   let mut flat_args: Vec<Expr> = Vec::new();
-  for arg in args {
-    match arg {
+  fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
       Expr::FunctionCall {
         name,
         args: inner_args,
       } if name == "Times" => {
-        flat_args.extend(inner_args.clone());
+        for a in inner_args {
+          flatten_times(a, out);
+        }
       }
-      _ => flat_args.push(arg.clone()),
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten_times(left, out);
+        flatten_times(right, out);
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        // a/b → a * b^(-1)
+        flatten_times(left, out);
+        out.push(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        });
+      }
+      _ => out.push(expr.clone()),
     }
+  }
+  for arg in args {
+    flatten_times(arg, &mut flat_args);
   }
   let args = &flat_args;
 
@@ -1711,6 +1866,31 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           has_rational = true;
         } else {
           symbolic_args.push(arg.clone());
+        }
+      }
+      // Power[Integer(n), Integer(neg)] → absorb into rational coefficient
+      // e.g. 2^(-1) → rat_denom *= 2, or 3^(-2) → rat_denom *= 9
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: base,
+        right: exp,
+      } if matches!(base.as_ref(), Expr::Integer(n) if *n != 0)
+        && matches!(exp.as_ref(), Expr::Integer(e) if *e < 0) =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(e)) =
+          (base.as_ref(), exp.as_ref())
+        {
+          let abs_e = (-e) as u32;
+          if let Some(pow) = n.checked_pow(abs_e) {
+            if let Some(rd) = rat_denom.checked_mul(pow) {
+              rat_denom = rd;
+              has_rational = true;
+            } else {
+              int_overflow = true;
+            }
+          } else {
+            symbolic_args.push(arg.clone());
+          }
         }
       }
       _ => {
@@ -2326,6 +2506,76 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return power_two(inner_base, &Expr::Integer(combined));
   }
 
+  // (Power[-1, Rational[p,q]])^n → simplify (-1)^(p*n/q)
+  // Handles both FunctionCall and BinaryOp representations of Power
+  if let Expr::Integer(n) = exp {
+    let (inner_base, inner_exp) = match base {
+      Expr::FunctionCall { name, args: fargs }
+        if name == "Power" && fargs.len() == 2 =>
+      {
+        (Some(&fargs[0]), Some(&fargs[1]))
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => (Some(left.as_ref()), Some(right.as_ref())),
+      _ => (None, None),
+    };
+    if let (Some(ib), Some(ie)) = (inner_base, inner_exp)
+      && matches!(ib, Expr::Integer(-1))
+      && let Some((p, q)) = extract_rational_pair(ie)
+    {
+      let new_p = p * n;
+      let new_q = q;
+      return simplify_neg1_rational_power(new_p, new_q);
+    }
+  }
+
+  // (Times[-1, Power[-1, Rational[p,q]]])^n or (UnaryMinus[Power[-1, Rational[p,q]]])^n
+  // → (-1)^n * ((-1)^(p/q))^n = (-1)^(n + n*p/q) = (-1)^(n*(q+p)/q)
+  // Handles both FunctionCall and BinaryOp representations of the inner Power
+  if let Expr::Integer(n) = exp {
+    let inner_power = match base {
+      Expr::FunctionCall { name, args: targs }
+        if name == "Times"
+          && targs.len() == 2
+          && matches!(&targs[0], Expr::Integer(-1)) =>
+      {
+        Some(&targs[1])
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => Some(operand.as_ref()),
+      _ => None,
+    };
+    if let Some(inner) = inner_power {
+      let (inner_base, inner_exp) = match inner {
+        Expr::FunctionCall {
+          name: pname,
+          args: pargs,
+        } if pname == "Power" && pargs.len() == 2 => {
+          (Some(&pargs[0]), Some(&pargs[1]))
+        }
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left,
+          right,
+        } => (Some(left.as_ref()), Some(right.as_ref())),
+        _ => (None, None),
+      };
+      if let (Some(ib), Some(ie)) = (inner_base, inner_exp)
+        && matches!(ib, Expr::Integer(-1))
+        && let Some((p, q)) = extract_rational_pair(ie)
+      {
+        let new_p = n * (q + p);
+        let new_q = q;
+        return simplify_neg1_rational_power(new_p, new_q);
+      }
+    }
+  }
+
   // I^n cycles with period 4: I^0=1, I^1=I, I^2=-1, I^3=-I
   if let Expr::Identifier(name) = base
     && name == "I"
@@ -2740,6 +2990,63 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       })
     }
   }
+}
+
+/// Extract (p, q) from a Rational[p, q] FunctionCall expression.
+fn extract_rational_pair(expr: &Expr) -> Option<(i128, i128)> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Rational"
+    && args.len() == 2
+    && let Expr::Integer(p) = &args[0]
+    && let Expr::Integer(q) = &args[1]
+  {
+    Some((*p, *q))
+  } else {
+    None
+  }
+}
+
+/// Simplify (-1)^(p/q) where p and q are integers.
+/// Reduces p mod 2q to the canonical range, then builds the expression.
+fn simplify_neg1_rational_power(
+  p: i128,
+  q: i128,
+) -> Result<Expr, InterpreterError> {
+  let g = gcd_i128(p.abs(), q.abs());
+  let (mut p, mut q) = (p / g, q / g);
+  if q < 0 {
+    p = -p;
+    q = -q;
+  }
+  // Reduce p mod 2q to canonical range [0, 2q)
+  let period = 2 * q;
+  p = ((p % period) + period) % period;
+
+  // (-1)^0 = 1
+  if p == 0 {
+    return Ok(Expr::Integer(1));
+  }
+  // (-1)^1 = -1
+  if p == q {
+    return Ok(Expr::Integer(-1));
+  }
+  // If p > q, factor out (-1)^1 = -1: (-1)^(p/q) = -(-1)^((p-q)/q)
+  if p > q {
+    let remainder = p - q;
+    let g2 = gcd_i128(remainder, q);
+    let rp = remainder / g2;
+    let rq = q / g2;
+    let inner = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Integer(-1), make_rational_pub(rp, rq)],
+    };
+    return Ok(negate_expr(inner));
+  }
+  // 0 < p < q: return (-1)^(p/q)
+  Ok(Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![Expr::Integer(-1), make_rational_pub(p, q)],
+  })
 }
 
 /// Thread a binary operation over lists

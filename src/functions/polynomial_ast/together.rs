@@ -76,7 +76,20 @@ pub(super) fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
                 });
               }
             } else {
-              num_factors.push(arg.clone());
+              // Power[fraction, n] → split base into num/den
+              let (base_num, base_den) = extract_num_den(&pargs[0]);
+              if !matches!(&base_den, Expr::Integer(1)) {
+                num_factors.push(Expr::FunctionCall {
+                  name: "Power".to_string(),
+                  args: vec![base_num, pargs[1].clone()],
+                });
+                den_factors.push(Expr::FunctionCall {
+                  name: "Power".to_string(),
+                  args: vec![base_den, pargs[1].clone()],
+                });
+              } else {
+                num_factors.push(arg.clone());
+              }
             }
           }
           Expr::BinaryOp {
@@ -94,7 +107,22 @@ pub(super) fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
                 });
               }
             } else {
-              num_factors.push(arg.clone());
+              // Power[fraction, n] → split base into num/den
+              let (base_num, base_den) = extract_num_den(left);
+              if !matches!(&base_den, Expr::Integer(1)) {
+                num_factors.push(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(base_num),
+                  right: right.clone(),
+                });
+                den_factors.push(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(base_den),
+                  right: right.clone(),
+                });
+              } else {
+                num_factors.push(arg.clone());
+              }
             }
           }
           // BinaryOp::Divide inside Times: split into num/den
@@ -124,6 +152,45 @@ pub(super) fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
         let num = build_product(num_factors);
         let den = build_product(den_factors);
         (num, den)
+      }
+    }
+    // BinaryOp::Power — handle negative exponents and Power[fraction, n]
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Some(neg_exp) = get_negative_integer(right) {
+        if neg_exp == 1 {
+          (Expr::Integer(1), *left.clone())
+        } else {
+          (
+            Expr::Integer(1),
+            Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: left.clone(),
+              right: Box::new(Expr::Integer(neg_exp as i128)),
+            },
+          )
+        }
+      } else {
+        // Power[num/den, n] → (num^n, den^n)
+        let (base_num, base_den) = extract_num_den(left);
+        if !matches!(&base_den, Expr::Integer(1)) {
+          let num = Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(base_num),
+            right: right.clone(),
+          };
+          let den = Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(base_den),
+            right: right.clone(),
+          };
+          (num, den)
+        } else {
+          (expr.clone(), Expr::Integer(1))
+        }
       }
     }
     // BinaryOp::Times — split into numerator and denominator factors
@@ -215,42 +282,34 @@ pub fn together_expr(expr: &Expr) -> Expr {
     fractions.push(extract_num_den(term));
   }
 
-  // Compute the common denominator (product of all denominators, simplified)
-  let mut common_den = Expr::Integer(1);
-  let mut unique_dens: Vec<Expr> = Vec::new();
+  // Compute the common denominator (LCM of all denominators)
+  // Decompose each denominator into base^exp pairs and take max exp for each base
+  let mut base_exp_map: Vec<(String, Expr, i128)> = Vec::new(); // (key, base, max_exp)
   for (_, den) in &fractions {
-    if !matches!(den, Expr::Integer(1)) {
-      let den_str = expr_to_string(den);
-      if !unique_dens.iter().any(|d| expr_to_string(d) == den_str) {
-        unique_dens.push(den.clone());
-        common_den = multiply_exprs(&common_den, den);
+    if matches!(den, Expr::Integer(1)) {
+      continue;
+    }
+    let den_factors = extract_den_factors(den);
+    for (base, exp) in &den_factors {
+      let key = expr_to_string(base);
+      if let Some(entry) = base_exp_map.iter_mut().find(|(k, _, _)| *k == key) {
+        entry.2 = entry.2.max(*exp); // Take max exponent (LCM)
+      } else {
+        base_exp_map.push((key, base.clone(), *exp));
       }
     }
   }
 
-  if matches!(&common_den, Expr::Integer(1)) {
+  if base_exp_map.is_empty() {
     // No fractions to combine
     return expr.clone();
   }
 
-  // Build numerator: sum of (num_i * common_den / den_i)
+  // Build numerator: for each term, multiply by (common_den / den_i)
   let mut new_num_terms = Vec::new();
   for (num, den) in &fractions {
-    if matches!(den, Expr::Integer(1)) {
-      // Multiply by full common_den
-      new_num_terms.push(multiply_exprs(num, &common_den));
-    } else {
-      // Multiply by common_den / den
-      let mut factor = Expr::Integer(1);
-      for ud in &unique_dens {
-        let ud_str = expr_to_string(ud);
-        let den_str = expr_to_string(den);
-        if ud_str != den_str {
-          factor = multiply_exprs(&factor, ud);
-        }
-      }
-      new_num_terms.push(multiply_exprs(num, &factor));
-    }
+    let missing_factor = compute_missing_factor(den, &base_exp_map);
+    new_num_terms.push(multiply_exprs(num, &missing_factor));
   }
 
   let combined_num = if new_num_terms.len() == 1 {
@@ -260,16 +319,32 @@ pub fn together_expr(expr: &Expr) -> Expr {
   };
   // Keep denominator in factored form (Wolfram behavior),
   // but canonicalize each individual factor and sort them
-  let combined_den = if unique_dens.len() == 1 {
-    expand_and_combine(&unique_dens[0])
-  } else {
-    let mut canonical_dens: Vec<Expr> =
-      unique_dens.iter().map(expand_and_combine).collect();
+  let combined_den = {
+    let mut canonical_dens: Vec<Expr> = base_exp_map
+      .iter()
+      .map(|(_, base, exp)| {
+        if *exp == 1 {
+          expand_and_combine(base)
+        } else {
+          expand_and_combine(&Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(base.clone()),
+            right: Box::new(Expr::Integer(*exp)),
+          })
+        }
+      })
+      .collect();
     canonical_dens.sort_by_key(expr_to_string);
-    build_product(canonical_dens)
+    if canonical_dens.len() == 1 {
+      canonical_dens.remove(0)
+    } else {
+      build_product(canonical_dens)
+    }
   };
 
-  if matches!(&combined_den, Expr::Integer(1)) {
+  if matches!(&combined_num, Expr::Integer(0)) {
+    Expr::Integer(0)
+  } else if matches!(&combined_den, Expr::Integer(1)) {
     combined_num
   } else {
     Expr::BinaryOp {
@@ -277,5 +352,78 @@ pub fn together_expr(expr: &Expr) -> Expr {
       left: Box::new(combined_num),
       right: Box::new(combined_den),
     }
+  }
+}
+
+/// Extract base and exponent from a denominator expression.
+/// E.g. `(2*a)^2` → [((2*a), 2)], `2*a` → [(2*a, 1)]
+/// Keeps products as single bases to allow matching: e.g. `2*a` matches base of `(2*a)^2`.
+fn extract_den_factors(den: &Expr) -> Vec<(Expr, i128)> {
+  match den {
+    Expr::Integer(1) => vec![],
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(n) = right.as_ref() {
+        vec![(*left.clone(), *n)]
+      } else {
+        vec![(den.clone(), 1)]
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1] {
+        vec![(args[0].clone(), *n)]
+      } else {
+        vec![(den.clone(), 1)]
+      }
+    }
+    _ => vec![(den.clone(), 1)],
+  }
+}
+
+/// Compute the "missing factor" needed to bring a fraction's denominator up to the common
+/// denominator. For each base in the LCM, compute base^(lcm_exp - den_exp).
+fn compute_missing_factor(
+  den: &Expr,
+  base_exp_map: &[(String, Expr, i128)],
+) -> Expr {
+  let den_factors = extract_den_factors(den);
+  let mut den_map: Vec<(String, i128)> = Vec::new();
+  for (base, exp) in &den_factors {
+    let key = expr_to_string(base);
+    if let Some(entry) = den_map.iter_mut().find(|(k, _)| *k == key) {
+      entry.1 += exp;
+    } else {
+      den_map.push((key, *exp));
+    }
+  }
+
+  let mut missing_factors: Vec<Expr> = Vec::new();
+  for (key, base, lcm_exp) in base_exp_map {
+    let den_exp = den_map
+      .iter()
+      .find(|(k, _)| k == key)
+      .map(|(_, e)| *e)
+      .unwrap_or(0);
+    let diff = lcm_exp - den_exp;
+    if diff > 0 {
+      if diff == 1 {
+        missing_factors.push(base.clone());
+      } else {
+        missing_factors.push(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(base.clone()),
+          right: Box::new(Expr::Integer(diff)),
+        });
+      }
+    }
+  }
+
+  if missing_factors.is_empty() {
+    Expr::Integer(1)
+  } else {
+    build_product(missing_factors)
   }
 }

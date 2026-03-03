@@ -23,6 +23,36 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?));
   }
 
+  // Handle D[expr, {{x, y, ...}}] — gradient/Jacobian
+  if let Expr::List(outer_items) = &args[1]
+    && outer_items.len() == 1
+    && let Expr::List(vars) = &outer_items[0]
+  {
+    if let Expr::List(_) = &args[0] {
+      // D[{f1, f2, ...}, {{x, y, ...}}] → Jacobian matrix
+      let expr_list = match &args[0] {
+        Expr::List(items) => items.clone(),
+        _ => unreachable!(),
+      };
+      let mut rows = Vec::new();
+      for f in &expr_list {
+        let mut row = Vec::new();
+        for v in vars {
+          row.push(d_ast(&[f.clone(), v.clone()])?);
+        }
+        rows.push(Expr::List(row));
+      }
+      return Ok(Expr::List(rows));
+    } else {
+      // D[f, {{x, y, ...}}] → gradient vector
+      let mut result = Vec::new();
+      for v in vars {
+        result.push(d_ast(&[args[0].clone(), v.clone()])?);
+      }
+      return Ok(Expr::List(result));
+    }
+  }
+
   // Handle D[expr, {var, n}] for higher-order derivatives
   if let Expr::List(items) = &args[1]
     && items.len() == 2
@@ -55,15 +85,121 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Get the variable name
   let var_name = match &args[1] {
     Expr::Identifier(name) => name.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Second argument of D must be a symbol".into(),
-      ));
+    // For indexed variables like x[k], differentiate with respect to the full expression
+    // This treats x[k] as an atomic unit — D[x[i], x[k]] = 0 for symbolic i, k
+    other => {
+      return differentiate_wrt_expr(&args[0], other);
     }
   };
 
   // Differentiate the expression
   differentiate(&args[0], &var_name)
+}
+
+/// Differentiate an expression with respect to a non-symbol expression (e.g., x[k]).
+/// For symbolic indexed variables, D[f[x[i]], x[k]] = 0 when we can't determine equality.
+fn differentiate_wrt_expr(
+  expr: &Expr,
+  var_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // If the expression is structurally equal to the variable, derivative is 1
+  if crate::syntax::expr_to_string(expr)
+    == crate::syntax::expr_to_string(var_expr)
+  {
+    return Ok(Expr::Integer(1));
+  }
+  // For products: use product rule
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    let dl = differentiate_wrt_expr(left, var_expr)?;
+    let dr = differentiate_wrt_expr(right, var_expr)?;
+    let term1 = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(dl),
+      right: right.clone(),
+    });
+    let term2 = simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: left.clone(),
+      right: Box::new(dr),
+    });
+    return Ok(simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(term1),
+      right: Box::new(term2),
+    }));
+  }
+  // For sums
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left,
+    right,
+  } = expr
+  {
+    let dl = differentiate_wrt_expr(left, var_expr)?;
+    let dr = differentiate_wrt_expr(right, var_expr)?;
+    return Ok(simplify(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(dl),
+      right: Box::new(dr),
+    }));
+  }
+  // For FunctionCall with Plus/Times
+  if let Expr::FunctionCall { name, args } = expr {
+    if name == "Times" && args.len() >= 2 {
+      // Product of multiple terms
+      let mut result_terms = Vec::new();
+      for (i, arg) in args.iter().enumerate() {
+        let darg = differentiate_wrt_expr(arg, var_expr)?;
+        if !matches!(darg, Expr::Integer(0)) {
+          let mut factors = Vec::new();
+          for (j, a) in args.iter().enumerate() {
+            if i == j {
+              factors.push(darg.clone());
+            } else {
+              factors.push(a.clone());
+            }
+          }
+          result_terms.push(
+            crate::functions::math_ast::times_ast(&factors).unwrap_or(
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: factors,
+              },
+            ),
+          );
+        }
+      }
+      if result_terms.is_empty() {
+        return Ok(Expr::Integer(0));
+      }
+      return crate::functions::math_ast::plus_ast(&result_terms).or(Ok(
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: result_terms,
+        },
+      ));
+    }
+    if name == "Plus" {
+      let derivs: Result<Vec<_>, _> = args
+        .iter()
+        .map(|a| differentiate_wrt_expr(a, var_expr))
+        .collect();
+      let d = derivs?;
+      return crate::functions::math_ast::plus_ast(&d).or(Ok(
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: d,
+        },
+      ));
+    }
+  }
+  // Otherwise, treat as constant w.r.t. var_expr → 0
+  Ok(Expr::Integer(0))
 }
 
 /// Integrate[expr, var] or Integrate[expr, {var, lo, hi}] - Symbolic integration
@@ -453,6 +589,9 @@ pub fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
     Expr::FunctionCall { args, .. } => {
       args.iter().all(|e| is_constant_wrt(e, var))
     }
+    Expr::CurriedCall { func, args } => {
+      is_constant_wrt(func, var) && args.iter().all(|e| is_constant_wrt(e, var))
+    }
     _ => false,
   }
 }
@@ -525,30 +664,53 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }))
         }
         Divide => {
-          // Quotient rule: d/dx[a / b] = (a' * b - a * b') / b^2
-          let da = differentiate(left, var)?;
-          let db = differentiate(right, var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: Divide,
-            left: Box::new(Expr::BinaryOp {
-              op: Minus,
-              left: Box::new(Expr::BinaryOp {
-                op: Times,
-                left: Box::new(da),
-                right: right.clone(),
-              }),
+          // Rewrite a/b as a * b^(-1) to use power+product rule
+          // instead of quotient rule (avoids exponential expression growth)
+          if is_constant_wrt(right, var) {
+            // d/dx[a / c] = (d/dx a) / c
+            // Use times_ast with b^(-1) so integer coefficients cancel
+            let da = differentiate(left, var)?;
+            let result = crate::functions::math_ast::times_ast(&[
+              da,
+              Expr::BinaryOp {
+                op: Power,
+                left: right.clone(),
+                right: Box::new(Expr::Integer(-1)),
+              },
+            ])
+            .unwrap_or_else(|_| Expr::BinaryOp {
+              op: Divide,
+              left: Box::new(
+                differentiate(left, var).unwrap_or(Expr::Integer(0)),
+              ),
+              right: right.clone(),
+            });
+            Ok(simplify(result))
+          } else if is_constant_wrt(left, var) {
+            // d/dx[c / b] = c * d/dx[b^(-1)] = -c * b' / b^2
+            let rewritten = Expr::BinaryOp {
+              op: Times,
+              left: left.clone(),
               right: Box::new(Expr::BinaryOp {
-                op: Times,
-                left: left.clone(),
-                right: Box::new(db),
+                op: Power,
+                left: right.clone(),
+                right: Box::new(Expr::Integer(-1)),
               }),
-            }),
-            right: Box::new(Expr::BinaryOp {
-              op: Power,
-              left: right.clone(),
-              right: Box::new(Expr::Integer(2)),
-            }),
-          }))
+            };
+            differentiate(&rewritten, var)
+          } else {
+            // d/dx[a / b] = d/dx[a * b^(-1)] (product rule + power rule)
+            let rewritten = Expr::BinaryOp {
+              op: Times,
+              left: left.clone(),
+              right: Box::new(Expr::BinaryOp {
+                op: Power,
+                left: right.clone(),
+                right: Box::new(Expr::Integer(-1)),
+              }),
+            };
+            differentiate(&rewritten, var)
+          }
         }
         Power => {
           // Power rule for x^n: n * x^(n-1) * x'
@@ -917,19 +1079,579 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }),
           }))
         }
+        // Sign derivative: D[Sign[f(x)], x] = Derivative[2][Abs][f(x)] * f'(x)
+        // (Wolfram uses this form instead of 2*DiracDelta[x])
+        "Sign" if args.len() == 1 => {
+          let df = differentiate(&args[0], var)?;
+          if matches!(df, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let deriv_expr = Expr::CurriedCall {
+            func: Box::new(Expr::CurriedCall {
+              func: Box::new(Expr::FunctionCall {
+                name: "Derivative".to_string(),
+                args: vec![Expr::Integer(2)],
+              }),
+              args: vec![Expr::Identifier("Abs".to_string())],
+            }),
+            args: args.clone(),
+          };
+          if matches!(df, Expr::Integer(1)) {
+            Ok(deriv_expr)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(df),
+              right: Box::new(deriv_expr),
+            }))
+          }
+        }
+        // BesselJ[n, z]: D[BesselJ[n,z], z] = (BesselJ[n-1,z] - BesselJ[n+1,z]) / 2
+        "BesselJ" if args.len() == 2 => {
+          let dn = differentiate(&args[0], var)?;
+          let dz = differentiate(&args[1], var)?;
+          if matches!(dn, Expr::Integer(0)) && matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          if !matches!(dn, Expr::Integer(0)) {
+            // Derivative w.r.t. order: leave unevaluated
+            return Ok(Expr::FunctionCall {
+              name: "D".to_string(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+            });
+          }
+          // D[BesselJ[n,z], z] = (BesselJ[n-1,z] - BesselJ[n+1,z]) / 2
+          // Use plus_ast for canonical ordering: n-1 → Plus[-1, n], n+1 → Plus[1, n]
+          let n_minus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(-1),
+            args[0].clone(),
+          ])
+          .unwrap_or_else(|_| {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(1)),
+            })
+          });
+          let n_plus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(1),
+            args[0].clone(),
+          ])
+          .unwrap_or_else(|_| {
+            simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(args[0].clone()),
+              right: Box::new(Expr::Integer(1)),
+            })
+          });
+          let bessel_nm1 = Expr::FunctionCall {
+            name: "BesselJ".to_string(),
+            args: vec![n_minus_1, args[1].clone()],
+          };
+          let bessel_np1 = Expr::FunctionCall {
+            name: "BesselJ".to_string(),
+            args: vec![n_plus_1, args[1].clone()],
+          };
+          let diff = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(bessel_nm1),
+            right: Box::new(bessel_np1),
+          });
+          let half_diff = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(diff),
+            right: Box::new(Expr::Integer(2)),
+          };
+          // Chain rule: multiply by dz
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(half_diff)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(half_diff),
+            }))
+          }
+        }
+        // ExpIntegralEi[z]: D[ExpIntegralEi[z], z] = E^z / z
+        "ExpIntegralEi" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let exp_z = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Constant("E".to_string())),
+            right: Box::new(args[0].clone()),
+          };
+          let result = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(exp_z),
+            right: Box::new(args[0].clone()),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
+        // Gamma[z]: D[Gamma[z], z] = Gamma[z] * PolyGamma[0, z]
+        "Gamma" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let result = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::FunctionCall {
+              name: "Gamma".to_string(),
+              args: args.clone(),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "PolyGamma".to_string(),
+              args: vec![Expr::Integer(0), args[0].clone()],
+            }),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
+        // UnitStep[x]: D[UnitStep[x], x] = Piecewise[{{Indeterminate, x == 0}}, 0]
+        "UnitStep" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let result = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(vec![Expr::List(vec![
+                Expr::Identifier("Indeterminate".to_string()),
+                Expr::Comparison {
+                  operands: vec![args[0].clone(), Expr::Integer(0)],
+                  operators: vec![crate::syntax::ComparisonOp::Equal],
+                },
+              ])]),
+              Expr::Integer(0),
+            ],
+          };
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
+        // Erf[z]: D[Erf[z], z] = 2*E^(-z^2)/Sqrt[Pi]
+        "Erf" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let z_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(args[0].clone()),
+            right: Box::new(Expr::Integer(2)),
+          };
+          let exp_neg_z2 = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Constant("E".to_string())),
+            right: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(z_sq),
+            }),
+          };
+          let two_over_sqrt_pi = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::Constant("Pi".to_string())],
+            }),
+          };
+          let result = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(two_over_sqrt_pi),
+            right: Box::new(exp_neg_z2),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
+        // Erfc[z]: D[Erfc[z], z] = -2*E^(-z^2)/Sqrt[Pi]
+        "Erfc" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let z_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(args[0].clone()),
+            right: Box::new(Expr::Integer(2)),
+          };
+          let neg_exp_neg_z2 = Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(Expr::Constant("E".to_string())),
+              right: Box::new(Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(z_sq),
+              }),
+            }),
+          };
+          let two_over_sqrt_pi = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::Constant("Pi".to_string())],
+            }),
+          };
+          let result = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(two_over_sqrt_pi),
+            right: Box::new(neg_exp_neg_z2),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
         // Handle Rational[n, d] as constant
         "Rational" if args.len() == 2 => Ok(Expr::Integer(0)),
-        _ => Ok(Expr::FunctionCall {
-          name: "D".to_string(),
-          args: vec![expr.clone(), Expr::Identifier(var.to_string())],
-        }),
+        // Handle Integrate[f, {t, a, b}] via Leibniz integral rule
+        "Integrate" if args.len() == 2 => {
+          if let Expr::List(spec) = &args[1]
+            && spec.len() == 3
+          {
+            // D[Integrate[f[t], {t, a(x), b(x)}], x]
+            // = f[b(x)] * b'(x) - f[a(x)] * a'(x)
+            // (Plus the partial derivative term, which vanishes if f doesn't contain x directly)
+            let integrand = &args[0];
+            let int_var = &spec[0];
+            let lo = &spec[1];
+            let hi = &spec[2];
+
+            let int_var_name = match int_var {
+              Expr::Identifier(n) => n.as_str(),
+              _ => "",
+            };
+
+            let da = differentiate(lo, var)?;
+            let db = differentiate(hi, var)?;
+
+            // Substitute integration variable with upper/lower bound in integrand
+            let f_at_hi = if !int_var_name.is_empty() {
+              crate::syntax::substitute_variable(integrand, int_var_name, hi)
+            } else {
+              integrand.clone()
+            };
+            let f_at_lo = if !int_var_name.is_empty() {
+              crate::syntax::substitute_variable(integrand, int_var_name, lo)
+            } else {
+              integrand.clone()
+            };
+
+            let mut terms = Vec::new();
+            // f[b(x)] * b'(x) term
+            if !matches!(db, Expr::Integer(0)) {
+              let term = if matches!(db, Expr::Integer(1)) {
+                simplify(f_at_hi)
+              } else {
+                simplify(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(simplify(f_at_hi)),
+                  right: Box::new(db),
+                })
+              };
+              terms.push(term);
+            }
+            // -f[a(x)] * a'(x) term
+            if !matches!(da, Expr::Integer(0)) {
+              let term = if matches!(da, Expr::Integer(1)) {
+                simplify(f_at_lo)
+              } else {
+                simplify(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(simplify(f_at_lo)),
+                  right: Box::new(da),
+                })
+              };
+              terms.push(Expr::UnaryOp {
+                op: crate::syntax::UnaryOperator::Minus,
+                operand: Box::new(term),
+              });
+            }
+
+            if terms.is_empty() {
+              Ok(Expr::Integer(0))
+            } else if terms.len() == 1 {
+              Ok(simplify(terms.remove(0)))
+            } else {
+              Ok(simplify(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(terms[0].clone()),
+                right: Box::new(terms[1].clone()),
+              }))
+            }
+          } else {
+            // Indefinite integral: return unevaluated
+            Ok(Expr::FunctionCall {
+              name: "D".to_string(),
+              args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+            })
+          }
+        }
+        // General chain rule for unknown functions: D[f[g1(x),...,gn(x)], x]
+        // = Sum_i Derivative[0,...,1,...,0][f][g1,...,gn] * D[gi, x]
+        _ => {
+          // If the function is entirely constant w.r.t. var, return 0
+          if is_constant_wrt(expr, var) {
+            return Ok(Expr::Integer(0));
+          }
+
+          // Compute derivatives of each argument
+          let n = args.len();
+          let mut dargs: Vec<Expr> = Vec::with_capacity(n);
+          for arg in args {
+            dargs.push(differentiate(arg, var)?);
+          }
+
+          // Build chain rule sum
+          let mut terms: Vec<Expr> = Vec::new();
+          for i in 0..n {
+            if matches!(&dargs[i], Expr::Integer(0)) {
+              continue;
+            }
+
+            // Build Derivative[0,...,1,...,0][f][g1,...,gn]
+            let deriv_indices: Vec<Expr> = (0..n)
+              .map(|j| {
+                if j == i {
+                  Expr::Integer(1)
+                } else {
+                  Expr::Integer(0)
+                }
+              })
+              .collect();
+
+            let deriv_expr = Expr::CurriedCall {
+              func: Box::new(Expr::CurriedCall {
+                func: Box::new(Expr::FunctionCall {
+                  name: "Derivative".to_string(),
+                  args: deriv_indices,
+                }),
+                args: vec![Expr::Identifier(name.clone())],
+              }),
+              args: args.clone(),
+            };
+
+            if matches!(&dargs[i], Expr::Integer(1)) {
+              terms.push(deriv_expr);
+            } else {
+              terms.push(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(dargs[i].clone()),
+                right: Box::new(deriv_expr),
+              });
+            }
+          }
+
+          if terms.is_empty() {
+            Ok(Expr::Integer(0))
+          } else if terms.len() == 1 {
+            Ok(simplify(terms.remove(0)))
+          } else {
+            let mut result = terms[0].clone();
+            for term in &terms[1..] {
+              result = Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(result),
+                right: Box::new(term.clone()),
+              };
+            }
+            Ok(simplify(result))
+          }
+        }
       }
     }
 
-    _ => Ok(Expr::FunctionCall {
-      name: "D".to_string(),
-      args: vec![expr.clone(), Expr::Identifier(var.to_string())],
-    }),
+    // CurriedCall: handles Derivative[n1,...,nk][f][g1,...,gk] expressions
+    // and InverseFunction[f][x]
+    Expr::CurriedCall { func, args } => {
+      // Handle InverseFunction[f][x]:
+      // D[InverseFunction[f][x], x] = 1 / Derivative[1][f][InverseFunction[f][x]]
+      if let Expr::FunctionCall {
+        name: inv_name,
+        args: inv_args,
+      } = func.as_ref()
+        && inv_name == "InverseFunction"
+        && inv_args.len() == 1
+        && args.len() == 1
+      {
+        let dx = differentiate(&args[0], var)?;
+        if matches!(dx, Expr::Integer(0)) {
+          return Ok(Expr::Integer(0));
+        }
+        // 1 / f'(InverseFunction[f][x])
+        let deriv_f_at_inv = Expr::CurriedCall {
+          func: Box::new(Expr::CurriedCall {
+            func: Box::new(Expr::FunctionCall {
+              name: "Derivative".to_string(),
+              args: vec![Expr::Integer(1)],
+            }),
+            args: inv_args.clone(),
+          }),
+          args: vec![expr.clone()],
+        };
+        let result = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(deriv_f_at_inv),
+          right: Box::new(Expr::Integer(-1)),
+        };
+        if matches!(dx, Expr::Integer(1)) {
+          return Ok(result);
+        } else {
+          return Ok(simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(dx),
+            right: Box::new(result),
+          }));
+        }
+      }
+
+      // Check if this is Derivative[...][f][args]
+      if let Expr::CurriedCall {
+        func: inner_func,
+        args: func_names,
+      } = func.as_ref()
+        && let Expr::FunctionCall {
+          name: deriv_name,
+          args: indices,
+        } = inner_func.as_ref()
+        && deriv_name == "Derivative"
+        && func_names.len() == 1
+        && indices.len() == args.len()
+      {
+        // D[Derivative[n1,...,nk][f][g1,...,gk], x]
+        // = Sum_i Derivative[n1,...,ni+1,...,nk][f][g1,...,gk] * D[gi, x]
+        let n = args.len();
+        let mut dargs: Vec<Expr> = Vec::with_capacity(n);
+        for arg in args {
+          dargs.push(differentiate(arg, var)?);
+        }
+
+        let mut terms: Vec<Expr> = Vec::new();
+        for i in 0..n {
+          if matches!(&dargs[i], Expr::Integer(0)) {
+            continue;
+          }
+
+          // Increment the i-th derivative index
+          let new_indices: Vec<Expr> = indices
+            .iter()
+            .enumerate()
+            .map(|(j, idx)| {
+              if j == i {
+                if let Expr::Integer(k) = idx {
+                  Expr::Integer(k + 1)
+                } else {
+                  Expr::BinaryOp {
+                    op: crate::syntax::BinaryOperator::Plus,
+                    left: Box::new(Expr::Integer(1)),
+                    right: Box::new(idx.clone()),
+                  }
+                }
+              } else {
+                idx.clone()
+              }
+            })
+            .collect();
+
+          let deriv_expr = Expr::CurriedCall {
+            func: Box::new(Expr::CurriedCall {
+              func: Box::new(Expr::FunctionCall {
+                name: "Derivative".to_string(),
+                args: new_indices,
+              }),
+              args: func_names.clone(),
+            }),
+            args: args.clone(),
+          };
+
+          if matches!(&dargs[i], Expr::Integer(1)) {
+            terms.push(deriv_expr);
+          } else {
+            terms.push(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dargs[i].clone()),
+              right: Box::new(deriv_expr),
+            });
+          }
+        }
+
+        return if terms.is_empty() {
+          Ok(Expr::Integer(0))
+        } else if terms.len() == 1 {
+          Ok(simplify(terms.remove(0)))
+        } else {
+          let mut result = terms[0].clone();
+          for term in &terms[1..] {
+            result = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(result),
+              right: Box::new(term.clone()),
+            };
+          }
+          Ok(simplify(result))
+        };
+      }
+      // Fallback for other CurriedCall forms
+      if is_constant_wrt(expr, var) {
+        Ok(Expr::Integer(0))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "D".to_string(),
+          args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+        })
+      }
+    }
+
+    _ => {
+      if is_constant_wrt(expr, var) {
+        Ok(Expr::Integer(0))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "D".to_string(),
+          args: vec![expr.clone(), Expr::Identifier(var.to_string())],
+        })
+      }
+    }
   }
 }
 
@@ -1256,6 +1978,336 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
   } else {
     None
   }
+}
+
+/// Compute binomial coefficient C(n, k)
+fn binomial(n: i128, k: i128) -> i128 {
+  if k < 0 || k > n {
+    return 0;
+  }
+  let k = k.min(n - k); // optimization: C(n,k) = C(n,n-k)
+  let mut result: i128 = 1;
+  for i in 0..k {
+    result = result * (n - i) / (i + 1);
+  }
+  result
+}
+
+/// Try to integrate Sin[a*x]^n or Cos[a*x]^n for positive integer n ≥ 3
+/// using Chebyshev expansion (multiple angle formula).
+///
+/// For odd n = 2m+1:
+///   sin^n(x) = (1/4^m) * Sum_{k=0}^{m} (-1)^(m-k) * C(n,k) * sin((n-2k)*x)
+///   cos^n(x) = (1/4^m) * Sum_{k=0}^{m} C(n,k) * cos((n-2k)*x)
+///
+/// For even n = 2m:
+///   sin^n(x) = (1/4^m) * [C(n,m) + 2 * Sum_{k=0}^{m-1} (-1)^(m-k) * C(n,k) * cos((n-2k)*x)]
+///   cos^n(x) = (1/4^m) * [C(n,m) + 2 * Sum_{k=0}^{m-1} C(n,k) * cos((n-2k)*x)]
+fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
+  if n < 3 {
+    return None;
+  }
+  let (name, arg) = match base {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      let is_sin = name == "Sin";
+      let is_cos = name == "Cos";
+      if !is_sin && !is_cos {
+        return None;
+      }
+      (name.as_str(), &args[0])
+    }
+    _ => return None,
+  };
+
+  // Match linear argument a*x
+  let coeff = try_match_linear_arg(arg, var)?;
+  let is_sin = name == "Sin";
+
+  // Build the Chebyshev expansion terms and integrate each
+  let mut terms: Vec<Expr> = Vec::new();
+  let m = n / 2;
+  let is_odd = n % 2 != 0;
+
+  if is_odd {
+    // Odd power: n = 2m+1
+    // For sin: integral of (-1)^(m-k)*C(n,k)*sin((n-2k)*x) → absorb -1/k into coefficient
+    //   coeff = (-1)^(m-k+1) * C(n,k), trig = Cos[(n-2k)*x]
+    // For cos: integral of C(n,k)*cos((n-2k)*x) → coeff = C(n,k)/k, trig = Sin[(n-2k)*x]
+    for k in 0..=m {
+      let freq = n - 2 * k; // always positive since k ≤ m and n=2m+1
+      let binom = binomial(n, k);
+
+      // Build the trig argument: freq * a * x
+      let freq_arg = if matches!(&coeff, Expr::Integer(1)) {
+        if freq == 1 {
+          Expr::Identifier(var.to_string())
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(freq)),
+            right: Box::new(Expr::Identifier(var.to_string())),
+          }
+        }
+      } else {
+        simplify(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(freq)),
+          right: Box::new(arg.clone()),
+        })
+      };
+
+      // For sin^n: integral coefficient includes the -1 from integrating sin
+      // sign = (-1)^(m-k) for the Chebyshev expansion, then *(-1) for integral of sin
+      // = (-1)^(m-k+1)
+      // For cos^n: sign = +1 (Chebyshev) and integral of cos gives sin (no sign change)
+      let coeff_num = if is_sin {
+        let exp = (m - k + 1) % 2;
+        if exp == 0 { binom } else { -binom }
+      } else {
+        binom
+      };
+
+      let integrated_trig = Expr::FunctionCall {
+        name: if is_sin { "Cos" } else { "Sin" }.to_string(),
+        args: vec![freq_arg],
+      };
+
+      // Total coefficient: coeff_num / (freq * 4^m)
+      let denom = freq * (1i128 << (2 * m)); // freq * 4^m
+      let term = if matches!(&coeff, Expr::Integer(1)) {
+        let g = gcd_i64(
+          coeff_num.unsigned_abs() as i128,
+          denom.unsigned_abs() as i128,
+        );
+        let num = coeff_num / g;
+        let den = denom / g;
+        make_fraction_term(num, den, integrated_trig)
+      } else {
+        let g = gcd_i64(
+          coeff_num.unsigned_abs() as i128,
+          denom.unsigned_abs() as i128,
+        );
+        let num = coeff_num / g;
+        let den = denom / g;
+        let den_expr = simplify(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(den)),
+          right: Box::new(coeff.clone()),
+        });
+        make_fraction_term_expr(num, den_expr, integrated_trig)
+      };
+      terms.push(term);
+    }
+  } else {
+    // Even power: n = 2m
+    // Constant term: C(n,m) / 4^m * x
+    let binom_mid = binomial(n, m);
+    let power_4m = 1i128 << (2 * m); // 4^m
+    let g = gcd_i64(binom_mid, power_4m);
+    let const_num = binom_mid / g;
+    let const_den = power_4m / g;
+    let const_term = if const_den == 1 {
+      if const_num == 1 {
+        Expr::Identifier(var.to_string())
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(const_num)),
+          right: Box::new(Expr::Identifier(var.to_string())),
+        }
+      }
+    } else if matches!(&coeff, Expr::Integer(1)) {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(if const_num == 1 {
+          Expr::Identifier(var.to_string())
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(const_num)),
+            right: Box::new(Expr::Identifier(var.to_string())),
+          }
+        }),
+        right: Box::new(Expr::Integer(const_den)),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(if const_num == 1 {
+          Expr::Identifier(var.to_string())
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(const_num)),
+            right: Box::new(Expr::Identifier(var.to_string())),
+          }
+        }),
+        right: Box::new(Expr::Integer(const_den)),
+      }
+    };
+    terms.push(const_term);
+
+    // Oscillating terms
+    for k in 0..m {
+      let freq = n - 2 * k;
+      let binom = binomial(n, k);
+      let sign = if is_sin {
+        if (m - k) % 2 == 0 { 1i128 } else { -1i128 }
+      } else {
+        1
+      };
+      let coeff_num = 2 * sign * binom;
+
+      let freq_arg = if matches!(&coeff, Expr::Integer(1)) {
+        if freq == 1 {
+          Expr::Identifier(var.to_string())
+        } else {
+          Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(freq)),
+            right: Box::new(Expr::Identifier(var.to_string())),
+          }
+        }
+      } else {
+        simplify(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(freq)),
+          right: Box::new(arg.clone()),
+        })
+      };
+
+      // Integrated: sin(freq*x)/(freq) for both sin^n and cos^n even powers
+      let integrated_trig = Expr::FunctionCall {
+        name: "Sin".to_string(),
+        args: vec![freq_arg],
+      };
+
+      let denom = freq * power_4m;
+      let term = if matches!(&coeff, Expr::Integer(1)) {
+        let g = gcd_i64(
+          coeff_num.unsigned_abs() as i128,
+          denom.unsigned_abs() as i128,
+        );
+        let num = coeff_num / g;
+        let den = denom / g;
+        make_fraction_term(num, den, integrated_trig)
+      } else {
+        let g = gcd_i64(
+          coeff_num.unsigned_abs() as i128,
+          denom.unsigned_abs() as i128,
+        );
+        let num = coeff_num / g;
+        let den = denom / g;
+        let den_expr = simplify(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(den)),
+          right: Box::new(coeff.clone()),
+        });
+        make_fraction_term_expr(num, den_expr, integrated_trig)
+      };
+      terms.push(term);
+    }
+  }
+
+  if terms.is_empty() {
+    return None;
+  }
+
+  // Combine terms using plus_ast for canonical ordering
+  let result = crate::functions::math_ast::plus_ast(&terms).ok()?;
+  Some(result)
+}
+
+/// Build a term: (num/den) * expr, simplified
+fn make_fraction_term(num: i128, den: i128, expr: Expr) -> Expr {
+  if den == 1 {
+    if num == 1 {
+      expr
+    } else if num == -1 {
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(expr),
+      }
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(num)),
+        right: Box::new(expr),
+      }
+    }
+  } else if num == 1 {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(expr),
+      right: Box::new(Expr::Integer(den)),
+    }
+  } else if num == -1 {
+    // -(expr/den) so plus_ast displays as "- expr/den"
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(expr),
+        right: Box::new(Expr::Integer(den)),
+      }),
+    }
+  } else if num < 0 {
+    // -(|num|*expr/den) so plus_ast displays as "- num*expr/den"
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-num)),
+          right: Box::new(expr),
+        }),
+        right: Box::new(Expr::Integer(den)),
+      }),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(num)),
+        right: Box::new(expr),
+      }),
+      right: Box::new(Expr::Integer(den)),
+    }
+  }
+}
+
+/// Build a term: (num/den_expr) * expr, simplified
+fn make_fraction_term_expr(num: i128, den_expr: Expr, expr: Expr) -> Expr {
+  let num_expr = if num == 1 {
+    expr
+  } else if num == -1 {
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(expr),
+    }
+  } else {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(Expr::Integer(num)),
+      right: Box::new(expr),
+    }
+  };
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(num_expr),
+    right: Box::new(den_expr),
+  }
+}
+
+fn gcd_i64(mut a: i128, mut b: i128) -> i128 {
+  while b != 0 {
+    let t = b;
+    b = a % b;
+    a = t;
+  }
+  a.abs()
 }
 
 /// Try to match ∫ E^(a*x) / (c*x) dx = ExpIntegralEi[a*x] / c
@@ -2784,10 +3836,14 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               });
             }
           }
-          // ∫ Sin[x]^2 dx = x/2 - Sin[2*x]/4
-          // ∫ Cos[x]^2 dx = x/2 + Sin[2*x]/4
-          if matches!(right.as_ref(), Expr::Integer(2))
-            && let Some(result) = try_integrate_trig_squared(left, var)
+          // ∫ Sin[x]^n dx, ∫ Cos[x]^n dx using Chebyshev expansion
+          if let Expr::Integer(n) = right.as_ref()
+            && *n >= 2
+            && let Some(result) = if *n == 2 {
+              try_integrate_trig_squared(left, var)
+            } else {
+              try_integrate_trig_power(left, *n, var)
+            }
           {
             return Some(result);
           }
@@ -3861,10 +4917,22 @@ fn try_fast_series(
 
 /// Series[expr, {x, x0, n}] - Taylor series expansion
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "Series expects exactly 2 arguments".into(),
+      "Series expects at least 2 arguments".into(),
     ));
+  }
+
+  // Handle multivariate: Series[expr, {x, x0, nx}, {y, y0, ny}, ...]
+  if args.len() > 2 {
+    // First expand in the first variable
+    let first_result = series_ast(&[args[0].clone(), args[1].clone()])?;
+    // Then expand coefficients in each subsequent variable
+    let mut result = first_result;
+    for spec in &args[2..] {
+      result = expand_series_data_coefficients(&result, spec)?;
+    }
+    return Ok(result);
   }
 
   // Second argument: {x, x0, n}
@@ -3971,6 +5039,23 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             crate::functions::math_ast::make_rational_pub(num, den)
           }
         }
+        // Handle Rational[n, d] / factorial → Rational[n, d*factorial] simplified
+        Expr::FunctionCall { name, args: rargs }
+          if name == "Rational"
+            && rargs.len() == 2
+            && matches!(&rargs[0], Expr::Integer(_))
+            && matches!(&rargs[1], Expr::Integer(_)) =>
+        {
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
+            crate::functions::math_ast::make_rational_pub(*n, d * factorial)
+          } else {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(value),
+              right: Box::new(Expr::Integer(factorial)),
+            }
+          }
+        }
         _ => Expr::BinaryOp {
           op: crate::syntax::BinaryOperator::Divide,
           left: Box::new(value),
@@ -4020,6 +5105,40 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(1),
     ],
   })
+}
+
+/// Expand each coefficient of a SeriesData in a new variable.
+/// Used for multivariate Series: each coefficient becomes a SeriesData in the new variable.
+fn expand_series_data_coefficients(
+  series: &Expr,
+  spec: &Expr,
+) -> Result<Expr, InterpreterError> {
+  // series should be SeriesData[var, x0, {coeffs}, nmin, nmax, den]
+  if let Expr::FunctionCall { name, args } = series
+    && name == "SeriesData"
+    && args.len() == 6
+    && let Expr::List(coeffs) = &args[2]
+  {
+    // Expand each coefficient in the new variable
+    let mut new_coeffs = Vec::new();
+    for c in coeffs {
+      let expanded = series_ast(&[c.clone(), spec.clone()])?;
+      new_coeffs.push(expanded);
+    }
+    return Ok(Expr::FunctionCall {
+      name: "SeriesData".to_string(),
+      args: vec![
+        args[0].clone(), // var
+        args[1].clone(), // x0
+        Expr::List(new_coeffs),
+        args[3].clone(), // nmin
+        args[4].clone(), // nmax
+        args[5].clone(), // den
+      ],
+    });
+  }
+  // If not a SeriesData, just expand the expression
+  series_ast(&[series.clone(), spec.clone()])
 }
 
 fn gcd(a: i128, b: i128) -> i128 {

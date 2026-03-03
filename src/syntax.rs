@@ -1959,23 +1959,56 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       result
     }
     Rule::ParenExtended => {
-      // (expr)[[index]] -> Part[expr, index]
       let inner_pairs: Vec<_> = pair.into_inner().collect();
-      // First inner pair is the expression, then PartIndexSuffix elements
       let base_expr = pair_to_expr(inner_pairs[0].clone());
-      let part_indices: Vec<Expr> = inner_pairs
+      // Check whether this is a Part extraction or a bracket call
+      let has_call_suffix = inner_pairs
         .iter()
-        .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
-        .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
-        .collect();
-      let mut result = base_expr;
-      for idx in &part_indices {
-        result = Expr::Part {
-          expr: Box::new(result),
-          index: Box::new(idx.clone()),
+        .any(|p| matches!(p.as_rule(), Rule::ParenCallSuffix));
+      if has_call_suffix {
+        // (expr)[args] -> CurriedCall: treat parenthesized expr as function head
+        let bracket_sequences: Vec<Vec<Expr>> = inner_pairs
+          .iter()
+          .filter(|p| matches!(p.as_rule(), Rule::ParenCallSuffix))
+          .flat_map(|p| p.clone().into_inner())
+          .filter(|p| matches!(p.as_rule(), Rule::BracketArgs))
+          .map(|bracket| {
+            bracket
+              .into_inner()
+              .filter(|p| {
+                p.as_str() != "[" && p.as_str() != "]" && p.as_str() != ","
+              })
+              .map(pair_to_expr)
+              .collect()
+          })
+          .collect();
+        let mut result = Expr::CurriedCall {
+          func: Box::new(base_expr),
+          args: bracket_sequences[0].clone(),
         };
+        for args in bracket_sequences.into_iter().skip(1) {
+          result = Expr::CurriedCall {
+            func: Box::new(result),
+            args,
+          };
+        }
+        result
+      } else {
+        // (expr)[[index]] -> Part[expr, index]
+        let part_indices: Vec<Expr> = inner_pairs
+          .iter()
+          .filter(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+          .flat_map(|p| p.clone().into_inner().map(pair_to_expr))
+          .collect();
+        let mut result = base_expr;
+        for idx in &part_indices {
+          result = Expr::Part {
+            expr: Box::new(result),
+            index: Box::new(idx.clone()),
+          };
+        }
+        result
       }
-      result
     }
     Rule::Increment => {
       // x++ -> Increment[x]
@@ -3498,11 +3531,21 @@ fn format_times_with_denominator(
   };
 
   // Format denominator
+  let needs_parens = |e: &Expr| -> bool {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus
+            | BinaryOperator::Minus
+            | BinaryOperator::Times,
+          ..
+        }
+      )
+  };
   let denom_str = if denom_exprs.len() == 1 {
     let s = formatter(&denom_exprs[0]);
-    // Wrap in parens if it's a Plus
-    if matches!(&denom_exprs[0], Expr::FunctionCall { name, .. } if name == "Plus")
-    {
+    if needs_parens(&denom_exprs[0]) {
       format!("({})", s)
     } else {
       s
@@ -3512,7 +3555,7 @@ fn format_times_with_denominator(
       .iter()
       .map(|a| {
         let s = formatter(a);
-        if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus") {
+        if needs_parens(a) {
           format!("({})", s)
         } else {
           s
@@ -4147,7 +4190,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "Power" && args.len() == 2 {
         let base_str = expr_to_string(&args[0]);
         let exp_str = expr_to_string(&args[1]);
-        // Wrap base in parens if it's lower precedence than Power
+        // Wrap base in parens if it's lower precedence than Power or is a negative number
         let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
           || matches!(
             &args[0],
@@ -4158,12 +4201,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
                 | BinaryOperator::Divide,
               ..
             }
-          ) {
+          )
+          || matches!(&args[0], Expr::Integer(n) if *n < 0)
+        {
           format!("({})", base_str)
         } else {
           base_str
         };
-        // Wrap exponent in parens if it's a Plus, negative, or Times with negative coefficient
+        // Wrap exponent in parens if it's a Plus, negative, Rational, or Times with negative coefficient
         let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
           || matches!(
             &args[1],
@@ -4181,7 +4226,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
             }
           )
           || matches!(&args[1], Expr::FunctionCall { name: tname, args: targs } if tname == "Times" && !targs.is_empty() && matches!(&targs[0], Expr::Integer(n) if *n < 0))
-        {
+          || matches!(&args[1], Expr::FunctionCall { name: rname, .. } if rname == "Rational")
+          || matches!(
+            &args[1],
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              ..
+            }
+          ) {
           format!("({})", exp_str)
         } else {
           exp_str
@@ -4190,7 +4242,13 @@ pub fn expr_to_string(expr: &Expr) -> String {
       }
       // Special case: Derivative[n, f, x] displays as Derivative[n][f][x]
       // and Derivative[n, f] displays as Derivative[n][f]
-      if name == "Derivative" && args.len() >= 2 {
+      // Only applies when args[1] is an Identifier (old flattened format from dispatch).
+      // If all args are integers, it's the new CurriedCall-based multi-index format
+      // and should display as Derivative[n1, n2, ...] (CurriedCall handles nesting).
+      if name == "Derivative"
+        && args.len() >= 2
+        && matches!(&args[1], Expr::Identifier(_))
+      {
         let n_str = expr_to_string(&args[0]);
         let f_str = expr_to_string(&args[1]);
         if args.len() == 3 {
@@ -4438,7 +4496,9 @@ pub fn expr_to_string(expr: &Expr) -> String {
               op: BinaryOperator::Divide,
               ..
             }
-          ));
+          ))
+        || (matches!(op, BinaryOperator::Power)
+          && matches!(left.as_ref(), Expr::Integer(n) if *n < 0));
       let left_formatted = if left_needs_parens {
         format!("({})", left_str)
       } else {
@@ -4709,6 +4769,93 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{}[{}]", expr_to_string(func), args_str.join(", "))
     }
   }
+}
+
+/// Format expression for use in Wolfram-style messages (OutputForm-like).
+/// Differences from expr_to_string:
+/// - Times uses spaces instead of `*`
+/// - Derivative[n][f][x] displays as f'[x], f''[x], etc.
+pub fn expr_to_message_form(expr: &Expr) -> String {
+  let s = expr_to_string(expr);
+  // Replace Derivative[n][f][args] with shorthand notation
+  let s = replace_derivative_shorthand(&s);
+  // Replace * with space for OutputForm-style multiplication
+  s.replace('*', " ")
+}
+
+/// Replace Derivative[n][f][args] patterns with short form: f'[args], f''[args], etc.
+fn replace_derivative_shorthand(s: &str) -> String {
+  let mut result = s.to_string();
+  loop {
+    let Some(start) = result.find("Derivative[") else {
+      break;
+    };
+    let after_prefix = start + "Derivative[".len();
+    // Parse the order n from Derivative[n]
+    let Some(close1) = result[after_prefix..].find(']') else {
+      break;
+    };
+    let n_str = &result[after_prefix..after_prefix + close1];
+    let Ok(n) = n_str.parse::<i64>() else {
+      break;
+    };
+    if n < 1 {
+      break;
+    }
+    // Expect [f] after Derivative[n]
+    let pos_after_n = after_prefix + close1 + 1;
+    if !result[pos_after_n..].starts_with('[') {
+      break;
+    }
+    let func_start = pos_after_n + 1;
+    let Some(func_end) = find_matching_bracket(&result, func_start) else {
+      break;
+    };
+    let func_name = result[func_start..func_end].to_string();
+    // Expect [args] after [f]
+    let pos_after_func = func_end + 1;
+    if !result[pos_after_func..].starts_with('[') {
+      break;
+    }
+    let args_start = pos_after_func + 1;
+    let Some(args_end) = find_matching_bracket(&result, args_start) else {
+      break;
+    };
+    let args_str = result[args_start..args_end].to_string();
+    // Build shorthand: f'[x], f''[x], f'''[x], f^(4)[x], ...
+    let primes = if n <= 3 {
+      "'".repeat(n as usize)
+    } else {
+      format!("^({})", n)
+    };
+    let replacement = format!("{}{}[{}]", func_name, primes, args_str);
+    result = format!(
+      "{}{}{}",
+      &result[..start],
+      replacement,
+      &result[args_end + 1..]
+    );
+  }
+  result
+}
+
+/// Find the position of the matching closing bracket `]` for content starting at `start`.
+/// Handles nested brackets. Returns the position of the closing `]`.
+fn find_matching_bracket(s: &str, start: usize) -> Option<usize> {
+  let mut depth = 1;
+  for (i, ch) in s[start..].char_indices() {
+    match ch {
+      '[' => depth += 1,
+      ']' => {
+        depth -= 1;
+        if depth == 0 {
+          return Some(start + i);
+        }
+      }
+      _ => {}
+    }
+  }
+  None
 }
 
 /// Render Expr for display output - strings are shown without quotes.
@@ -5186,7 +5333,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "Power" && args.len() == 2 {
         let base_str = expr_to_output(&args[0]);
         let exp_str = expr_to_output(&args[1]);
-        // Wrap base in parens if it's lower precedence than Power
+        // Wrap base in parens if it's lower precedence than Power or is a negative number
         let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
           || matches!(
             &args[0],
@@ -5197,12 +5344,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
                 | BinaryOperator::Divide,
               ..
             }
-          ) {
+          )
+          || matches!(&args[0], Expr::Integer(n) if *n < 0)
+        {
           format!("({})", base_str)
         } else {
           base_str
         };
-        // Wrap exponent in parens if it's a Plus, negative, or Times with negative coefficient
+        // Wrap exponent in parens if it's a Plus, negative, Rational, or Times with negative coefficient
         let exp = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
           || matches!(
             &args[1],
@@ -5220,7 +5369,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
             }
           )
           || matches!(&args[1], Expr::FunctionCall { name: tname, args: targs } if tname == "Times" && !targs.is_empty() && matches!(&targs[0], Expr::Integer(n) if *n < 0))
-        {
+          || matches!(&args[1], Expr::FunctionCall { name: rname, .. } if rname == "Rational")
+          || matches!(
+            &args[1],
+            Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              ..
+            }
+          ) {
           format!("({})", exp_str)
         } else {
           exp_str
@@ -5376,7 +5532,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
         return parts.concat();
       }
       // Special case: Derivative[n, f, x] displays as Derivative[n][f][x]
-      if name == "Derivative" && args.len() >= 2 {
+      // Only when args[1] is an Identifier (old flattened format).
+      if name == "Derivative"
+        && args.len() >= 2
+        && matches!(&args[1], Expr::Identifier(_))
+      {
         let n_str = expr_to_output(&args[0]);
         let f_str = expr_to_output(&args[1]);
         if args.len() == 3 {

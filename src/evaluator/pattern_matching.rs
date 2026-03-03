@@ -990,6 +990,21 @@ pub fn apply_replace_all_ast(
       replacement,
     } => (expr_to_string(pattern), expr_to_string(replacement)),
     Expr::List(items) if !items.is_empty() => {
+      // Check if this is a list of rule-lists: {{x->1}, {x->2}}
+      // In Wolfram, expr /. {{r1}, {r2}} applies each sub-list independently
+      // and returns a list of results: {expr/.{r1}, expr/.{r2}}
+      let is_list_of_rule_lists = items.iter().all(|item| {
+        matches!(item, Expr::List(sub) if sub.iter().all(|r|
+          matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        ))
+      });
+      if is_list_of_rule_lists {
+        let results: Result<Vec<Expr>, _> = items
+          .iter()
+          .map(|sub_rules| apply_replace_all_ast(expr, sub_rules))
+          .collect();
+        return results.map(Expr::List);
+      }
       // Multiple rules - apply at AST level for correctness and performance.
       // Collect (pattern_expr, replacement_expr) pairs.
       let rule_exprs: Vec<(&Expr, &Expr)> = items

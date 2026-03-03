@@ -78,6 +78,56 @@ pub fn expand_expr(expr: &Expr) -> Expr {
           {
             return expand_power(&left_exp, *n);
           }
+          // (num/den)^n → expand(num^n) / den^n
+          if let Expr::Integer(n) = &right_exp
+            && *n >= 2
+            && let Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: num,
+              right: den,
+            } = &left_exp
+          {
+            let num_expanded = expand_and_combine(&Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: num.clone(),
+              right: Box::new(Expr::Integer(*n)),
+            });
+            let den_power = expand_and_combine(&Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: den.clone(),
+              right: Box::new(Expr::Integer(*n)),
+            });
+            return distribute_product(
+              &num_expanded,
+              &Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(den_power),
+                right: Box::new(Expr::Integer(-1)),
+              },
+            );
+          }
+          // (product)^n → distribute power to each factor: (a*b)^n → a^n * b^n
+          if let Expr::Integer(n) = &right_exp
+            && *n >= 2
+            && is_product(&left_exp)
+          {
+            let factors = collect_multiplicative_factors(&left_exp);
+            let powered: Vec<Expr> = factors
+              .into_iter()
+              .map(|f| {
+                expand_and_combine(&Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(f),
+                  right: Box::new(Expr::Integer(*n)),
+                })
+              })
+              .collect();
+            let mut result = powered[0].clone();
+            for f in &powered[1..] {
+              result = distribute_product(&result, f);
+            }
+            return result;
+          }
           // Try to simplify Power (e.g. I^2 → -1, Sqrt[x]^2 → x)
           if let Ok(simplified) = crate::functions::math_ast::power_ast(&[
             left_exp.clone(),
@@ -166,6 +216,56 @@ pub fn expand_expr(expr: &Expr) -> Expr {
         {
           return expand_power(&base, *n);
         }
+        // (num/den)^n → expand(num^n) / den^n
+        if let Expr::Integer(n) = &exp
+          && *n >= 2
+          && let Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: num,
+            right: den,
+          } = &base
+        {
+          let num_expanded = expand_and_combine(&Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: num.clone(),
+            right: Box::new(Expr::Integer(*n)),
+          });
+          let den_power = expand_and_combine(&Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: den.clone(),
+            right: Box::new(Expr::Integer(*n)),
+          });
+          return distribute_product(
+            &num_expanded,
+            &Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(den_power),
+              right: Box::new(Expr::Integer(-1)),
+            },
+          );
+        }
+        // (product)^n → distribute power to each factor: (a*b)^n → a^n * b^n
+        if let Expr::Integer(n) = &exp
+          && *n >= 2
+          && is_product(&base)
+        {
+          let factors = collect_multiplicative_factors(&base);
+          let powered: Vec<Expr> = factors
+            .into_iter()
+            .map(|f| {
+              expand_and_combine(&Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(f),
+                right: Box::new(Expr::Integer(*n)),
+              })
+            })
+            .collect();
+          let mut result = powered[0].clone();
+          for f in &powered[1..] {
+            result = distribute_product(&result, f);
+          }
+          return result;
+        }
         Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![base, exp],
@@ -175,6 +275,20 @@ pub fn expand_expr(expr: &Expr) -> Expr {
     },
 
     _ => expr.clone(),
+  }
+}
+
+/// Check if an expression is a product (Times) with multiple factors.
+fn is_product(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => true,
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      true
+    }
+    _ => false,
   }
 }
 

@@ -519,10 +519,16 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &var_names,
           None,
         )?;
-      // to_rules_ast returns flat rules or list-of-list-of-rules
-      // Solve always wraps single-solution into {{...}} format
+      // to_rules_ast returns Sequence for Or (multi-solution) or List for single solution
+      // Solve always wraps into {{...}, {...}, ...} format
       let rules = to_rules_ast(&[reduce_result])?;
-      let wrapped = match &rules {
+      let mut wrapped = match &rules {
+        // Sequence of rule-lists → wrap in outer List
+        Expr::FunctionCall {
+          name,
+          args: seq_args,
+        } if name == "Sequence" => Expr::List(seq_args.clone()),
+        // Single solution as flat rules → wrap in double list
         Expr::List(items)
           if items.iter().all(|i| matches!(i, Expr::Rule { .. })) =>
         {
@@ -530,6 +536,29 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => rules,
       };
+      // Sort rules within each solution to match variable order, and sort solutions
+      if let Expr::List(ref mut solutions) = wrapped {
+        for sol in solutions.iter_mut() {
+          if let Expr::List(rules) = sol {
+            rules.sort_by_key(|rule| {
+              if let Expr::Rule { pattern, .. } = rule {
+                if let Expr::Identifier(name) = pattern.as_ref() {
+                  var_names
+                    .iter()
+                    .position(|v| v == name)
+                    .unwrap_or(usize::MAX)
+                } else {
+                  usize::MAX
+                }
+              } else {
+                usize::MAX
+              }
+            });
+          }
+        }
+        // Sort solutions: real solutions first, then complex
+        solutions.sort_by_key(|sol| if contains_complex(sol) { 1 } else { 0 });
+      }
       return Ok(wrapped);
     }
   }
@@ -604,6 +633,23 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
     _ => {
+      // Check if first arg is not an equation → emit naqs warning
+      let is_equation = matches!(&args[0],
+        Expr::Comparison { operands, operators, .. }
+          if operands.len() == 2
+            && operators.len() == 1
+            && operators[0] == crate::syntax::ComparisonOp::Equal
+      ) || matches!(&args[0],
+        Expr::FunctionCall { name, args: fargs }
+          if name == "Equal" && fargs.len() == 2
+      );
+      if !is_equation {
+        let expr_str = crate::syntax::expr_to_message_form(&args[0]);
+        crate::emit_message(&format!(
+          "Solve::naqs: {} is not a quantified system of equations and inequalities.",
+          expr_str
+        ));
+      }
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
         args: args.to_vec(),
@@ -662,6 +708,12 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(vec![]));
     }
     _ => {
+      // Solve::naqs: expr is not a quantified system of equations and inequalities.
+      let expr_str = crate::syntax::expr_to_string(&args[0]);
+      crate::emit_message(&format!(
+        "Solve::naqs: {} is not a quantified system of equations and inequalities.",
+        expr_str
+      ));
       return Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
         args: args.to_vec(),
@@ -712,7 +764,7 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if coeff_sum.is_empty() {
       coeffs.push(Expr::Integer(0));
     } else if coeff_sum.len() == 1 {
-      coeffs.push(coeff_sum.remove(0));
+      coeffs.push(simplify(coeff_sum.remove(0)));
     } else {
       let mut result = coeff_sum.remove(0);
       for c in coeff_sum {
@@ -889,6 +941,32 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
           }
         } else {
+          // Check for cyclotomic polynomials before using quadratic formula
+          // x^2 + x + 1 = 0 (Φ₃): roots are (-1)^(2/3) and -(-1)^(1/3)
+          // x^2 - x + 1 = 0 (Φ₆): roots are (-1)^(1/3) and -(-1)^(2/3)
+          if ai == 1 && ci == 1 && (bi == 1 || bi == -1) {
+            let make_neg1_pow = |p: i128, q: i128| -> Expr {
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![
+                  Expr::Integer(-1),
+                  crate::functions::math_ast::make_rational_pub(p, q),
+                ],
+              }
+            };
+            if bi == 1 {
+              // Φ₃: x^2 + x + 1 → roots: -(-1)^(1/3), (-1)^(2/3)
+              let sol1 = negate_expr(&make_neg1_pow(1, 3));
+              let sol2 = make_neg1_pow(2, 3);
+              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+            } else {
+              // Φ₆: x^2 - x + 1 → roots: (-1)^(1/3), -(-1)^(2/3)
+              let sol1 = make_neg1_pow(1, 3);
+              let sol2 = negate_expr(&make_neg1_pow(2, 3));
+              return Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]));
+            }
+          }
+
           // Complex roots: (-bi ± I*Sqrt[-disc]) / (2*ai)
           let neg_disc = -disc_int;
           let (sqrt_out, sqrt_in) = simplify_sqrt_parts(neg_disc);
@@ -1059,12 +1137,82 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(vec![make_rule(sol1), make_rule(sol2)]))
     }
     _ => {
-      // Higher degree: return unevaluated
+      // Higher degree: try Factor-based solving
+      if let Ok(factored) =
+        crate::functions::polynomial_ast::factor_ast(&[expanded.clone()])
+      {
+        let factors = extract_times_factors(&factored);
+        if factors.len() > 1 {
+          // Solve each factor separately
+          let mut all_solutions: Vec<Expr> = Vec::new();
+          for factor in &factors {
+            if is_constant_wrt(factor, var) {
+              continue; // Skip constant factors
+            }
+            let factor_eq = Expr::Comparison {
+              operands: vec![factor.clone(), Expr::Integer(0)],
+              operators: vec![crate::syntax::ComparisonOp::Equal],
+            };
+            if let Ok(Expr::List(ref sols)) =
+              solve_ast(&[factor_eq, args[1].clone()])
+            {
+              all_solutions.extend(sols.iter().cloned());
+            }
+          }
+          if !all_solutions.is_empty() {
+            return Ok(Expr::List(all_solutions));
+          }
+        }
+      }
+      // Fall back: return unevaluated
       Ok(Expr::FunctionCall {
         name: "Solve".to_string(),
         args: args.to_vec(),
       })
     }
+  }
+}
+
+/// Check if an expression contains complex elements (I, (-1)^(p/q) with q>1, etc.)
+fn contains_complex(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(s) if s == "I" => true,
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      // (-1)^(p/q) where q > 1 is complex
+      if matches!(&args[0], Expr::Integer(n) if *n < 0)
+        && let Expr::FunctionCall { name: rn, args: ra } = &args[1]
+        && rn == "Rational"
+        && ra.len() == 2
+      {
+        return true;
+      }
+      args.iter().any(contains_complex)
+    }
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_complex),
+    Expr::List(items) => items.iter().any(contains_complex),
+    Expr::Rule { replacement, .. } => contains_complex(replacement),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_complex(left) || contains_complex(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_complex(operand),
+    _ => false,
+  }
+}
+
+/// Extract multiplicative factors from a Times expression (FunctionCall or BinaryOp).
+fn extract_times_factors(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => args.clone(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut factors = extract_times_factors(left);
+      factors.extend(extract_times_factors(right));
+      factors
+    }
+    _ => vec![expr.clone()],
   }
 }
 
