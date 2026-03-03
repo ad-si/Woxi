@@ -5,6 +5,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   PlotOptions, adjust_y_range_for_filling, generate_scatter_svg_with_options,
   generate_svg_with_filling, parse_filling, parse_image_size,
+  parse_plot_legends,
 };
 use crate::syntax::Expr;
 
@@ -155,6 +156,10 @@ fn parse_plot_options(args: &[Expr]) -> (PlotOptions, bool) {
               }
             }
           }
+        }
+        "PlotLegends" => {
+          let (labels, _auto) = parse_plot_legends(replacement);
+          opts.plot_legends = labels;
         }
         _ => {}
       }

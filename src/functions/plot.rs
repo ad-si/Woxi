@@ -369,6 +369,8 @@ pub(crate) struct PlotOptions {
   pub ticks: bool,
   /// Number of sample points for Plot[] (default: NUM_SAMPLES)
   pub plot_points: usize,
+  /// Legend labels for each series (empty = no legend)
+  pub plot_legends: Vec<String>,
 }
 
 impl Default for PlotOptions {
@@ -384,6 +386,7 @@ impl Default for PlotOptions {
       axes: (true, true),
       ticks: true,
       plot_points: NUM_SAMPLES,
+      plot_legends: Vec::new(),
     }
   }
 }
@@ -733,6 +736,8 @@ fn generate_svg_with_options(
     }
   }
 
+  inject_legend(&mut buf, opts);
+
   Ok(buf)
 }
 
@@ -891,6 +896,7 @@ pub(crate) fn generate_scatter_svg_with_options(
     render_height,
     full_width,
   );
+  inject_legend(&mut buf, opts);
   Ok(buf)
 }
 
@@ -1138,6 +1144,122 @@ fn html_escape(s: &str) -> String {
     .replace('<', "&lt;")
     .replace('>', "&gt;")
     .replace('"', "&quot;")
+}
+
+/// Inject a legend into an SVG plot. Widens the SVG to make room for the legend
+/// on the right side, then draws colored line swatches with text labels.
+pub(crate) fn inject_legend(buf: &mut String, opts: &PlotOptions) {
+  if opts.plot_legends.is_empty() {
+    return;
+  }
+
+  let sf = RESOLUTION_SCALE as f64;
+  let (_bg_color, _dark_gray, _light_gray, label_fill, _title_fill) =
+    plot_theme();
+
+  let font_size = sf * 11.0;
+  let line_height = font_size * 1.6;
+  let swatch_len = sf * 20.0;
+  let swatch_gap = sf * 6.0;
+  let legend_padding = sf * 10.0;
+
+  // Measure legend width: swatch + gap + text
+  let max_text_width = opts
+    .plot_legends
+    .iter()
+    .map(|s| s.len() as f64 * font_size * 0.55)
+    .fold(0.0_f64, f64::max);
+  let legend_width = swatch_len + swatch_gap + max_text_width + legend_padding;
+
+  // Parse current viewBox to widen
+  let vb_re = regex::Regex::new(
+    r#"viewBox="(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)""#,
+  )
+  .unwrap();
+
+  let (vb_w, vb_h) = if let Some(caps) = vb_re.captures(buf) {
+    let w: f64 = caps[3].parse().unwrap_or(0.0);
+    let h: f64 = caps[4].parse().unwrap_or(0.0);
+    (w, h)
+  } else {
+    return;
+  };
+
+  let new_vb_w = vb_w + legend_width;
+
+  // Update viewBox width
+  let old_vb = format!("viewBox=\"0 0 {} {}\"", vb_w as u32, vb_h as u32);
+  let new_vb = format!("viewBox=\"0 0 {} {}\"", new_vb_w as u32, vb_h as u32);
+  *buf = buf.replacen(&old_vb, &new_vb, 1);
+
+  // Update width attribute if present (non-full-width)
+  let w_re = regex::Regex::new(r#"width="(\d+)""#).unwrap();
+  if let Some(caps) = w_re.captures(&buf.clone()) {
+    let old_w: u32 = caps[1].parse().unwrap_or(0);
+    if old_w > 0 {
+      let render_w = vb_w as u32;
+      let render_new_w = new_vb_w as u32;
+      // Scale display width proportionally
+      let new_display_w =
+        (old_w as f64 * render_new_w as f64 / render_w as f64).round() as u32;
+      let old_attr = format!("width=\"{}\"", old_w);
+      let new_attr = format!("width=\"{}\"", new_display_w);
+      *buf = buf.replacen(&old_attr, &new_attr, 1);
+
+      // Also update height if present to maintain aspect ratio
+      let h_re = regex::Regex::new(r#"height="(\d+)""#).unwrap();
+      if let Some(hcaps) = h_re.captures(&buf.clone()) {
+        let old_h: u32 = hcaps[1].parse().unwrap_or(0);
+        if old_h > 0 {
+          let new_display_h =
+            (new_display_w as f64 * vb_h / new_vb_w).round() as u32;
+          let old_hattr = format!("height=\"{}\"", old_h);
+          let new_hattr = format!("height=\"{}\"", new_display_h);
+          *buf = buf.replacen(&old_hattr, &new_hattr, 1);
+        }
+      }
+    }
+  }
+
+  // Insert legend elements before </svg>
+  if let Some(insert_pos) = buf.rfind("</svg>") {
+    let mut legend_svg = String::new();
+    let legend_x = vb_w + legend_padding * 0.5;
+    let n = opts.plot_legends.len();
+    let legend_total_h = n as f64 * line_height;
+    let legend_y0 = (vb_h - legend_total_h) / 2.0;
+
+    for (i, label) in opts.plot_legends.iter().enumerate() {
+      let (r, g, b) = series_color(&opts.plot_style, i);
+      let y = legend_y0 + i as f64 * line_height + line_height * 0.5;
+
+      // Colored line swatch
+      legend_svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
+         stroke=\"rgb({},{},{})\" stroke-width=\"{}\"/>\n",
+        legend_x,
+        y,
+        legend_x + swatch_len,
+        y,
+        r,
+        g,
+        b,
+        (sf * 1.5) as u32,
+      ));
+
+      // Text label
+      let text_x = legend_x + swatch_len + swatch_gap;
+      let text_y = y + font_size * 0.35;
+      legend_svg.push_str(&format!(
+        "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{label_fill}\">{}</text>\n",
+        html_escape(label),
+      ));
+    }
+
+    buf.insert_str(insert_pos, &legend_svg);
+  }
 }
 
 /// Generate SVG for a histogram using plotters.
@@ -1587,6 +1709,28 @@ pub(crate) fn parse_image_size(value: &Expr) -> Option<(u32, u32, bool)> {
   }
 }
 
+/// Parse PlotLegends option value into a list of legend strings.
+/// Returns (legends, is_automatic).
+pub(crate) fn parse_plot_legends(value: &Expr) -> (Vec<String>, bool) {
+  let val = evaluate_expr_to_expr(value).unwrap_or(value.clone());
+  match &val {
+    Expr::Identifier(s) if s == "Automatic" => (Vec::new(), true),
+    Expr::Identifier(s) if s == "None" => (Vec::new(), false),
+    Expr::List(items) => {
+      let labels = items
+        .iter()
+        .map(|item| {
+          crate::functions::chart::expr_to_label(item)
+            .unwrap_or_else(|| crate::syntax::expr_to_string(item))
+        })
+        .collect();
+      (labels, false)
+    }
+    Expr::String(s) => (vec![s.clone()], false),
+    _ => (Vec::new(), false),
+  }
+}
+
 /// Implementation of Plot[f, {x, xmin, xmax}]
 pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -1604,6 +1748,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut aspect_ratio: Option<f64> = None;
+  let mut legends_automatic = false;
   for opt in &args[2..] {
     if let Expr::Rule {
       pattern,
@@ -1760,6 +1905,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           _ => {}
         },
+        "PlotLegends" => {
+          let (labels, auto) = parse_plot_legends(replacement);
+          if auto {
+            legends_automatic = true;
+          } else {
+            plot_opts.plot_legends = labels;
+          }
+        }
         _ => {}
       }
     }
@@ -1809,6 +1962,15 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items.iter().collect(),
     _ => vec![body],
   };
+
+  // Fill automatic legends from expression strings
+  if legends_automatic && plot_opts.plot_legends.is_empty() {
+    for b in &bodies {
+      plot_opts
+        .plot_legends
+        .push(crate::syntax::expr_to_string(b));
+    }
+  }
 
   // Adaptive sampling: start with initial points, then refine where needed
   let initial_samples = plot_opts.plot_points.max(2).min(200);
