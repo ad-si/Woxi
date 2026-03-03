@@ -174,6 +174,36 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_condition_in_module_as_guard() {
+    // Condition inside Module should act as a guard for the function definition.
+    // If test is True, return the value. If not, the overload doesn't match.
+    clear_state();
+    interpret("Foo[u_,x_Symbol] := Module[{}, 3 /; u == 1]").unwrap();
+    // x != 1, so Foo[x, x] should remain unevaluated
+    assert_eq!(interpret("Foo[x, x]").unwrap(), "Foo[x, x]");
+    // 1 == 1 is True, so Foo[1, x] should return 3
+    assert_eq!(interpret("Foo[1, x]").unwrap(), "3");
+  }
+
+  #[test]
+  fn test_condition_in_block_as_guard() {
+    // Same behavior with Block instead of Module
+    clear_state();
+    interpret("Bar[n_] := Block[{}, n^2 /; n > 0]").unwrap();
+    assert_eq!(interpret("Bar[3]").unwrap(), "9");
+    assert_eq!(interpret("Bar[-1]").unwrap(), "Bar[-1]");
+  }
+
+  #[test]
+  fn test_condition_in_module_with_expression() {
+    // Condition guard with non-trivial expression in Module
+    clear_state();
+    interpret("Sqr[n_] := Module[{}, n^2 /; n > 0]").unwrap();
+    assert_eq!(interpret("Sqr[3]").unwrap(), "9");
+    assert_eq!(interpret("Sqr[-1]").unwrap(), "Sqr[-1]");
+  }
+
+  #[test]
   fn test_nested_comment() {
     clear_state();
     assert_eq!(

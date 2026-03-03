@@ -514,12 +514,28 @@ pub fn evaluate_function_call_ast_inner(
           );
         }
         let mut body = substituted;
-        loop {
+        let result = loop {
           match evaluate_expr_to_expr_inner(&body) {
             Err(InterpreterError::TailCall(next)) => body = *next,
-            Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
-            result => return result,
+            Err(InterpreterError::ReturnValue(val)) => break Ok(*val),
+            result => break result,
           }
+        };
+        // If the body returned Condition[expr, test], evaluate the test
+        // as a guard: True → return expr, otherwise this overload fails.
+        match &result {
+          Ok(Expr::FunctionCall {
+            name: cond_name,
+            args: cond_args,
+          }) if cond_name == "Condition" && cond_args.len() == 2 => {
+            match evaluate_expr_to_expr(&cond_args[1]) {
+              Ok(Expr::Identifier(ref s)) if s == "True" => {
+                return evaluate_expr_to_expr(&cond_args[0]);
+              }
+              _ => continue, // condition not met, try next overload
+            }
+          }
+          _ => return result,
         }
       }
 
@@ -691,12 +707,28 @@ pub fn evaluate_function_call_ast_inner(
       // Tail-call: return body for the trampoline to evaluate.
       // Catch Return[] at the function call boundary via local trampoline.
       let mut body = substituted;
-      loop {
+      let result = loop {
         match evaluate_expr_to_expr_inner(&body) {
           Err(InterpreterError::TailCall(next)) => body = *next,
-          Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
-          result => return result,
+          Err(InterpreterError::ReturnValue(val)) => break Ok(*val),
+          result => break result,
         }
+      };
+      // If the body returned Condition[expr, test], evaluate the test
+      // as a guard: True → return expr, otherwise this overload fails.
+      match &result {
+        Ok(Expr::FunctionCall {
+          name: cond_name,
+          args: cond_args,
+        }) if cond_name == "Condition" && cond_args.len() == 2 => {
+          match evaluate_expr_to_expr(&cond_args[1]) {
+            Ok(Expr::Identifier(ref s)) if s == "True" => {
+              return evaluate_expr_to_expr(&cond_args[0]);
+            }
+            _ => continue, // condition not met, try next overload
+          }
+        }
+        _ => return result,
       }
     }
   }
