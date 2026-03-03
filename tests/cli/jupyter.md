@@ -7,10 +7,17 @@ Install the kernel with:
 woxi install-kernel
 ```
 
-Then start the Jupyter server:
+Then start JupyterLab:
 
 ```sh
 cd examples && jupyter lab
+```
+
+Or use Woxi as a terminal REPL via `jupyter console`:
+
+```sh
+uv tool install jupyter-console
+jupyter console --kernel=woxi
 ```
 
 > [!TIP]
