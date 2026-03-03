@@ -1072,6 +1072,21 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         Expr::Real(s.parse().unwrap_or(0.0))
       }
     }
+    Rule::PrecisionReal | Rule::UnsignedPrecisionReal => {
+      let s = pair.as_str();
+      // Split on backtick: "0.1`5" → value="0.1", prec="5"
+      let backtick_pos = s.find('`').unwrap();
+      let value_str = &s[..backtick_pos];
+      let prec_str = &s[backtick_pos + 1..];
+      if prec_str.is_empty() {
+        // Bare backtick = machine precision, just parse as Real
+        Expr::Real(value_str.parse().unwrap_or(0.0))
+      } else {
+        let prec: f64 = prec_str.parse().unwrap_or(0.0);
+        let prec_usize = (prec.round() as usize).max(1);
+        Expr::BigFloat(value_str.to_string(), prec_usize)
+      }
+    }
     Rule::BasePrefix => {
       let s = pair.as_str();
       // Parse base^^digits format (e.g. 16^^FF = 255, 2^^1010 = 10)

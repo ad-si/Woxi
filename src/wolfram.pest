@@ -28,12 +28,26 @@ UnsignedReal = @{
     (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+)
     ~ ("*^" ~ ("-")? ~ ASCII_DIGIT+)?
 }
+// Precision-tagged real: 0.1`1 means 0.1 with precision 1 digit
+// 0.1` means machine precision (bare backtick)
+// Precision value can be integer or real: 0.1`5, 0.1`5.2
+UnsignedPrecisionReal = @{
+    (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+)
+    ~ "`"
+    ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
+}
+PrecisionReal = @{
+    ("-")?
+    ~ (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+)
+    ~ "`"
+    ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
+}
 UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
 // Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010)
 BasePrefix = @{ ASCII_DIGIT+ ~ "^^" ~ (ASCII_ALPHANUMERIC)+ }
 Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
-NumericValue = { BasePrefix | Real | Integer | Constant }
-UnsignedNumericValue = { BasePrefix | UnsignedReal | UnsignedInteger | UnsignedConstant }
+NumericValue = { BasePrefix | PrecisionReal | Real | Integer | Constant }
+UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | UnsignedInteger | UnsignedConstant }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
@@ -263,6 +277,7 @@ SimpleTerm = _{
   | FunctionCall
   | DerivativeIdentifier
   | NamedCharIdentifier
+  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | Identifier
   | SlotSequence
   | Slot

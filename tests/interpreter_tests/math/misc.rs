@@ -182,6 +182,64 @@ mod min_symbolic {
   }
 }
 
+mod implicit_times_with_patterns {
+  use super::*;
+
+  #[test]
+  fn pattern_optional_default_implicit_times() {
+    // Regression: c_. x_^2 failed to parse as implicit multiplication
+    assert_eq!(interpret("Hold[c_. x_^2]").unwrap(), "Hold[c_.*x_^2]");
+  }
+
+  #[test]
+  fn pattern_optional_default_implicit_times_with_power() {
+    // c_. x_^2 should be Times[c_., Power[x_, 2]]
+    assert_eq!(
+      interpret("Hold[c_. x_^2] // FullForm").unwrap(),
+      "FullForm[Hold[c_.*x_^2]]"
+    );
+  }
+
+  #[test]
+  fn number_times_pattern_implicit() {
+    assert_eq!(interpret("Hold[2 x_]").unwrap(), "Hold[2*x_]");
+  }
+
+  #[test]
+  fn complex_pattern_expression_implicit_times() {
+    // The expression from compare_output.sh
+    assert_eq!(
+      interpret("Int[(a_.+b_.*x_+c_. x_^2)^n_,x_Symbol] := Foo[x]").unwrap(),
+      "Null"
+    );
+  }
+}
+
+mod precision_real {
+  use super::*;
+
+  #[test]
+  fn parse_precision_real() {
+    assert_eq!(interpret("0.1`1").unwrap(), "0.1`1.");
+  }
+
+  #[test]
+  fn parse_bare_backtick_machine_precision() {
+    // Bare backtick is machine precision, displayed as normal Real
+    assert_eq!(interpret("0.1`").unwrap(), "0.1");
+  }
+
+  #[test]
+  fn precision_real_addition() {
+    assert_eq!(interpret("0.1`1 + 0.2`1").unwrap(), "0.3`1.");
+  }
+
+  #[test]
+  fn precision_real_plus_integer() {
+    assert_eq!(interpret("0.1`1 + 1").unwrap(), "1.1`2.");
+  }
+}
+
 mod max_min_flatten {
   use super::*;
 

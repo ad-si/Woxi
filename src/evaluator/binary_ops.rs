@@ -43,9 +43,16 @@ pub fn thread_binary_op(
       };
       return Ok(crate::functions::math_ast::bigint_to_expr(result));
     }
+    // BigFloat precision-tracked arithmetic
+    if (matches!(l, Expr::BigFloat(_, _)) || matches!(r, Expr::BigFloat(_, _)))
+      && let Some(result) = bigfloat_binary_op(l, r, op)
+    {
+      return Ok(result);
+    }
     let ln = expr_to_number(l);
     let rn = expr_to_number(r);
-    let any_real = matches!(l, Expr::Real(_)) || matches!(r, Expr::Real(_));
+    let any_real = matches!(l, Expr::Real(_) | Expr::BigFloat(_, _))
+      || matches!(r, Expr::Real(_) | Expr::BigFloat(_, _));
     match op {
       BinaryOperator::Plus => {
         if let (Some(a), Some(b)) = (ln, rn) {
@@ -183,6 +190,120 @@ pub fn thread_binary_op(
     }
     _ => apply_op(left, right, op),
   }
+}
+
+/// Extract (f64_value, precision_in_digits) from a numeric expression.
+/// For BigFloat, precision comes from the stored value.
+/// For Integer/BigInteger, precision is effectively infinite (use f64::INFINITY).
+/// For Real, precision is machine precision (~16 digits).
+fn bigfloat_value_prec(expr: &Expr) -> Option<(f64, f64)> {
+  match expr {
+    Expr::BigFloat(digits, prec) => {
+      let v: f64 = digits.parse().unwrap_or(0.0);
+      Some((v, *prec as f64))
+    }
+    Expr::Real(f) => Some((*f, 16.0)),
+    Expr::Integer(n) => Some((*n as f64, f64::INFINITY)),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      n.to_f64().map(|v| (v, f64::INFINITY))
+    }
+    _ => None,
+  }
+}
+
+/// Compute result precision for addition/subtraction using error propagation.
+fn precision_for_add(lv: f64, lp: f64, rv: f64, rp: f64, result: f64) -> usize {
+  let le = if lp.is_finite() {
+    lv.abs() * 10f64.powf(-lp)
+  } else {
+    0.0
+  };
+  let re = if rp.is_finite() {
+    rv.abs() * 10f64.powf(-rp)
+  } else {
+    0.0
+  };
+  let total_error = le + re;
+  if result.abs() < 1e-300 || total_error <= 0.0 {
+    if lp.is_finite() && rp.is_finite() {
+      (lp.min(rp) as usize).max(1)
+    } else if lp.is_finite() {
+      (lp as usize).max(1)
+    } else {
+      (rp as usize).max(1)
+    }
+  } else {
+    let p = result.abs().log10() - total_error.log10();
+    (p.max(0.0).round() as usize).max(1)
+  }
+}
+
+/// Format an f64 value as a BigFloat string with the given number of significant digits.
+fn format_bigfloat_value(value: f64, sig_digits: usize) -> String {
+  if value == 0.0 {
+    return "0.".to_string();
+  }
+  let sign = if value < 0.0 { "-" } else { "" };
+  let abs_val = value.abs();
+  let magnitude = abs_val.log10().floor() as i32;
+  let decimal_places = ((sig_digits as i32) - magnitude - 1).max(0) as usize;
+  let formatted = format!("{}{:.prec$}", sign, abs_val, prec = decimal_places);
+  // Ensure trailing dot if no decimal point
+  if !formatted.contains('.') {
+    format!("{}.", formatted)
+  } else {
+    formatted
+  }
+}
+
+/// Perform a binary operation on BigFloat operands with precision tracking.
+/// Returns None if operands are not numeric, so the caller can fall through.
+fn bigfloat_binary_op(l: &Expr, r: &Expr, op: BinaryOperator) -> Option<Expr> {
+  let (lv, lp) = bigfloat_value_prec(l)?;
+  let (rv, rp) = bigfloat_value_prec(r)?;
+
+  // If either operand is machine-precision Real (not BigFloat), produce Real
+  if matches!(l, Expr::Real(_)) || matches!(r, Expr::Real(_)) {
+    let result = match op {
+      BinaryOperator::Plus => lv + rv,
+      BinaryOperator::Minus => lv - rv,
+      BinaryOperator::Times => lv * rv,
+      BinaryOperator::Divide if rv != 0.0 => lv / rv,
+      BinaryOperator::Power => lv.powf(rv),
+      _ => return None,
+    };
+    return Some(Expr::Real(result));
+  }
+
+  let result_value = match op {
+    BinaryOperator::Plus => lv + rv,
+    BinaryOperator::Minus => lv - rv,
+    BinaryOperator::Times => lv * rv,
+    BinaryOperator::Divide if rv != 0.0 => lv / rv,
+    BinaryOperator::Power => lv.powf(rv),
+    _ => return None,
+  };
+
+  let result_prec = match op {
+    BinaryOperator::Plus | BinaryOperator::Minus => {
+      precision_for_add(lv, lp, rv, rp, result_value)
+    }
+    _ => {
+      // For Times/Divide/Power, use min precision
+      let p = if lp.is_finite() && rp.is_finite() {
+        lp.min(rp)
+      } else if lp.is_finite() {
+        lp
+      } else {
+        rp
+      };
+      (p.round() as usize).max(1)
+    }
+  };
+
+  let result_str = format_bigfloat_value(result_value, result_prec);
+  Some(Expr::BigFloat(result_str, result_prec))
 }
 
 /// Extract raw string content from an Expr (without quotes for strings)
