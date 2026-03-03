@@ -1693,6 +1693,13 @@ pub fn insert_statement_separators(input: &str) -> String {
       continue;
     }
 
+    // Handle line continuation: backslash followed by newline
+    if ch == '\\' && i + 1 < len && chars[i + 1] == '\n' {
+      // Skip both the backslash and the newline — the next line continues this one
+      i += 2;
+      continue;
+    }
+
     // Track nesting depth (including <| |> for associations)
     if ch == '<' && i + 1 < len && chars[i + 1] == '|' {
       depth += 1;
