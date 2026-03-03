@@ -157,6 +157,23 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_comment_after_condition_operator() {
+    // A comment after /; should not cause an infinite loop
+    clear_state();
+    assert_eq!(interpret("x /; (* foo *) True").unwrap(), "x /; True");
+  }
+
+  #[test]
+  fn test_comment_after_condition_in_set_delayed() {
+    // SetDelayed with Condition and inline comment should work
+    clear_state();
+    assert_eq!(
+      interpret("f[x_] := x^2 /; (* positive *) True; f[3]").unwrap(),
+      "9"
+    );
+  }
+
+  #[test]
   fn test_nested_comment() {
     clear_state();
     assert_eq!(

@@ -108,7 +108,11 @@ RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
 BaseFunctionCall = { Identifier ~ DerivativePrime? ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
-Operator = {
+// Atomic so that WHITESPACE/COMMENT tokens are not consumed within
+// the operator span — otherwise as_str() would include e.g. comments
+// between "/;" and the following negative lookahead, breaking operator
+// recognition in the AST builder.
+Operator = @{
     "\\[NotElement]" | "\u{2209}" // Named character operator: NotElement (∉)
   | "\\[ReverseElement]" | "\u{220B}" // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}" // Named character operator: Element (∈)
@@ -339,7 +343,8 @@ ConditionExpr = {
     (LeadingNot ~ Term ~ FactorialSuffix? | LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?) ~ ((ConditionOp | TildeInfix) ~ (LeadingMinus ~ Term ~ FactorialSuffix? | Term ~ FactorialSuffix?))*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
-ConditionOp = {
+// Atomic so that WHITESPACE/COMMENT tokens are not consumed within the operator span.
+ConditionOp = @{
     "\\[NotElement]" | "\u{2209}"       // Named character operator: NotElement (∉)
   | "\\[ReverseElement]" | "\u{220B}"   // Named character operator: ReverseElement (∋)
   | "\\[Element]" | "\u{2208}"          // Named character operator: Element (∈)
