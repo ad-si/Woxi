@@ -995,6 +995,27 @@ mod pattern_matching {
       // x__Integer — BlankSequence with head constraint
       assert_eq!(interpret("f[x__Integer] := x + 1; f[5]").unwrap(), "6");
     }
+
+    #[test]
+    fn blank_sequence_multi_arg_length() {
+      // f[x__] := Length[{x}] should match multiple args and wrap in Sequence
+      assert_eq!(
+        interpret("f[x__] := Length[{x}]; {f[x, y, z], f[]}").unwrap(),
+        "{3, f[]}"
+      );
+    }
+
+    #[test]
+    fn blank_sequence_single_arg() {
+      // Single argument should bind directly without Sequence wrapper
+      assert_eq!(interpret("g[x__] := x + 1; g[5]").unwrap(), "6");
+    }
+
+    #[test]
+    fn blank_null_sequence_zero_args() {
+      // BlankNullSequence matches zero arguments
+      assert_eq!(interpret("h[x___] := Length[{x}]; h[]").unwrap(), "0");
+    }
   }
 
   mod conditional_pattern {

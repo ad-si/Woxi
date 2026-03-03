@@ -1204,7 +1204,7 @@ pub fn match_pattern(
   pattern: &Expr,
 ) -> Option<Vec<(String, Expr)>> {
   match pattern {
-    Expr::Pattern { name, head } => {
+    Expr::Pattern { name, head, .. } => {
       // Check head constraint if present
       if let Some(h) = head {
         let expr_head = get_expr_head(expr);

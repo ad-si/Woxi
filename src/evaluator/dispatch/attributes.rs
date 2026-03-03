@@ -193,7 +193,7 @@ pub fn dispatch_attributes(
               let body_str = expr_to_string(body);
               crate::FUNC_DEFS.with(|m| {
                 if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
-                  entry.retain(|(p, _, _, _, b)| {
+                  entry.retain(|(p, _, _, _, _, b)| {
                     !(p == params && expr_to_string(b) == body_str)
                   });
                 }

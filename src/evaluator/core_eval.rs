@@ -691,11 +691,16 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         body: body.clone(),
       }))
     }
-    Expr::Pattern { name, head } => {
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => {
+      let blanks = "_".repeat(*blank_type as usize);
       if let Some(h) = head {
-        Ok(format!("{}_{}", name, h))
+        Ok(format!("{}{}{}", name, blanks, h))
       } else {
-        Ok(format!("{}_", name))
+        Ok(format!("{}{}", name, blanks))
       }
     }
     Expr::PatternOptional {
@@ -1784,9 +1789,14 @@ pub fn evaluate_expr_to_expr_inner(
         body: body.clone(),
       })
     }
-    Expr::Pattern { name, head } => Ok(Expr::Pattern {
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => Ok(Expr::Pattern {
       name: name.clone(),
       head: head.clone(),
+      blank_type: *blank_type,
     }),
     Expr::PatternOptional {
       name,

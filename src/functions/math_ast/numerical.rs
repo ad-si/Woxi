@@ -252,6 +252,33 @@ pub fn n_eval_arbitrary(
     Err(_) => {
       // Try complex BigFloat evaluation (handles expressions with I)
       if let Ok((re, im)) = expr_to_complex_bigfloat(expr, bits, rm, &mut cc) {
+        // For complex function results, compute per-component precision markers
+        if let Expr::FunctionCall { name: _, args } = expr
+          && !im.is_zero()
+          && args.len() == 1
+          && let Ok(input_complex) =
+            expr_to_complex_bigfloat(&args[0], bits, rm, &mut cc)
+          && let Ok((prec_re_str, prec_im_str)) =
+            compute_complex_precision_markers(
+              &input_complex.0,
+              &input_complex.1,
+              &re,
+              &im,
+              precision,
+              rm,
+              &mut cc,
+            )
+        {
+          return build_complex_result_with_string_precision(
+            re,
+            im,
+            &prec_re_str,
+            &prec_im_str,
+            precision,
+            rm,
+            &mut cc,
+          );
+        }
         return build_complex_bigfloat_result(re, im, precision, rm, &mut cc);
       }
       // Fall back to partial evaluation: convert numeric sub-expressions
@@ -776,6 +803,10 @@ fn expr_to_complex_bigfloat(
         let abs_sq = a.mul(&a, bits, rm).add(&b.mul(&b, bits, rm), bits, rm);
         Ok((abs_sq.sqrt(bits, rm), BigFloat::from_i32(0, bits)))
       }
+      "ExpIntegralEi" if args.len() == 1 => {
+        let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        complex_exp_integral_ei(a, b, bits, rm, cc)
+      }
       _ => Err(InterpreterError::EvaluationError(format!(
         "N: cannot evaluate {}[...] to complex arbitrary precision",
         name
@@ -797,6 +828,7 @@ fn build_complex_bigfloat_result(
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
   let i_expr = Expr::Identifier("I".to_string());
+  let max_digits: Option<usize> = None;
 
   if im.is_zero() {
     let re_str = bigfloat_to_string(&re, None, rm, cc)?;
@@ -805,7 +837,7 @@ fn build_complex_bigfloat_result(
 
   let im_negative = im.is_negative();
   let im_abs = if im_negative { im.neg() } else { im.clone() };
-  let im_str = bigfloat_to_string(&im_abs, None, rm, cc)?;
+  let im_str = bigfloat_to_string(&im_abs, max_digits, rm, cc)?;
 
   let im_bf = Expr::BigFloat(im_str, precision);
 
@@ -819,7 +851,7 @@ fn build_complex_bigfloat_result(
   if re.is_zero() {
     if im_negative {
       // Pure negative imaginary: -|im|*I
-      let neg_im_str = bigfloat_to_string(&im, None, rm, cc)?;
+      let neg_im_str = bigfloat_to_string(&im, max_digits, rm, cc)?;
       let neg_im_bf = Expr::BigFloat(neg_im_str, precision);
       return Ok(Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Times,
@@ -830,7 +862,7 @@ fn build_complex_bigfloat_result(
     return Ok(abs_im_term);
   }
 
-  let re_str = bigfloat_to_string(&re, None, rm, cc)?;
+  let re_str = bigfloat_to_string(&re, max_digits, rm, cc)?;
   let re_bf = Expr::BigFloat(re_str, precision);
 
   if im_negative {
@@ -847,6 +879,133 @@ fn build_complex_bigfloat_result(
       left: Box::new(re_bf),
       right: Box::new(abs_im_term),
     })
+  }
+}
+
+/// Build a complex result with per-component string precision markers.
+/// Uses Expr::Raw to embed the precision marker directly in the formatted string.
+fn build_complex_result_with_string_precision(
+  re: astro_float::BigFloat,
+  im: astro_float::BigFloat,
+  prec_re_str: &str,
+  prec_im_str: &str,
+  _precision: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  let re_str = bigfloat_to_string(&re, None, rm, cc)?;
+
+  let re_raw = Expr::Raw(format!("{}`{}", re_str, prec_re_str));
+
+  let im_negative = im.is_negative();
+  let im_abs_str = if im_negative {
+    bigfloat_to_string(&im.neg(), None, rm, cc)?
+  } else {
+    bigfloat_to_string(&im, None, rm, cc)?
+  };
+  let im_raw = Expr::Raw(format!("{}`{}", im_abs_str, prec_im_str));
+
+  let i_expr = Expr::Identifier("I".to_string());
+  let abs_im_term = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(im_raw),
+    right: Box::new(i_expr),
+  };
+
+  if im_negative {
+    Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Minus,
+      left: Box::new(re_raw),
+      right: Box::new(abs_im_term),
+    })
+  } else {
+    Ok(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(re_raw),
+      right: Box::new(abs_im_term),
+    })
+  }
+}
+
+/// Compute per-component precision markers for a complex function evaluation.
+///
+/// Uses the formula:
+///   accuracy = p + log10(|input|) - log10(|output|)
+///   precision_component = accuracy + log10(|component|)
+///
+/// Computes using BigFloat arithmetic for accuracy, then converts to f64.
+fn compute_complex_precision_markers(
+  in_re: &astro_float::BigFloat,
+  in_im: &astro_float::BigFloat,
+  out_re: &astro_float::BigFloat,
+  out_im: &astro_float::BigFloat,
+  precision: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(String, String), InterpreterError> {
+  use astro_float::BigFloat;
+  let pbits = 256; // high precision for the log computations
+
+  // |input| = sqrt(in_re^2 + in_im^2)
+  let in_abs_sq =
+    in_re
+      .mul(in_re, pbits, rm)
+      .add(&in_im.mul(in_im, pbits, rm), pbits, rm);
+  let in_abs = in_abs_sq.sqrt(pbits, rm);
+
+  // |output| = sqrt(out_re^2 + out_im^2)
+  let out_abs_sq = out_re.mul(out_re, pbits, rm).add(
+    &out_im.mul(out_im, pbits, rm),
+    pbits,
+    rm,
+  );
+  let out_abs = out_abs_sq.sqrt(pbits, rm);
+
+  // log10(x) = ln(x) / ln(10)
+  let ln10 = BigFloat::from_i32(10, pbits).ln(pbits, rm, cc);
+  let log10_in = in_abs.ln(pbits, rm, cc).div(&ln10, pbits, rm);
+  let log10_out = out_abs.ln(pbits, rm, cc).div(&ln10, pbits, rm);
+  let log10_re = out_re.abs().ln(pbits, rm, cc).div(&ln10, pbits, rm);
+  let log10_im = out_im.abs().ln(pbits, rm, cc).div(&ln10, pbits, rm);
+
+  let p_bf = BigFloat::from_i32(precision as i32, pbits);
+  // accuracy = p + log10(|input|) - log10(|output|)
+  let accuracy = p_bf.add(&log10_in, pbits, rm).sub(&log10_out, pbits, rm);
+
+  // precision_re = accuracy + log10(|re|)
+  let prec_re_bf = accuracy.add(&log10_re, pbits, rm);
+  // precision_im = accuracy + log10(|im|)
+  let prec_im_bf = accuracy.add(&log10_im, pbits, rm);
+
+  // Format precision markers directly from BigFloat with f64-like precision
+  // This avoids f64 rounding issues by going from BigFloat → string directly
+  let prec_re_s = format_bigfloat_as_precision_marker(&prec_re_bf, rm, cc)?;
+  let prec_im_s = format_bigfloat_as_precision_marker(&prec_im_bf, rm, cc)?;
+
+  Ok((prec_re_s, prec_im_s))
+}
+
+/// Format a BigFloat as a precision marker string, matching Wolfram's formatting.
+/// Wolfram displays precision markers with ~15-17 significant digits (f64-like precision),
+/// stripping trailing zeros.
+fn format_bigfloat_as_precision_marker(
+  bf: &astro_float::BigFloat,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<String, InterpreterError> {
+  // Format with ~17 significant digits (matching f64 precision)
+  let full_str = bigfloat_to_string(bf, Some(17), rm, cc)?;
+
+  // Parse to f64 and back to get Wolfram-style formatting
+  // Wolfram uses a formatting that shows all distinguishing digits
+  let val: f64 = full_str.trim_end_matches('.').parse().unwrap_or(0.0);
+
+  if val.fract() == 0.0 {
+    Ok(format!("{}.", val as i64))
+  } else {
+    // Use Rust's Debug format which shows the exact f64 representation
+    // with minimum digits to uniquely represent the value
+    Ok(format!("{:?}", val))
   }
 }
 
@@ -2583,6 +2742,124 @@ fn bigfloat_exp_integral_ei(
 
   // Ei(x) = γ + ln(|x|) + sum (final result rounded to requested bits)
   euler_gamma.add(&ln_x, work_bits, rm).add(&sum, bits, rm)
+}
+
+/// Compute the complex exponential integral Ei(z) using BigFloat arithmetic.
+/// For complex z = a + bi: Ei(z) = γ + Log(z) + Σ_{n=1}^{∞} z^n / (n * n!)
+/// where γ is the Euler-Mascheroni constant and Log is the complex logarithm.
+fn complex_exp_integral_ei(
+  a: astro_float::BigFloat,
+  b: astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
+  use astro_float::BigFloat;
+
+  // Use many extra guard bits to ensure the rounding to `bits` is correct
+  let work_bits = bits + 256;
+
+  // γ (Euler-Mascheroni constant) - purely real
+  let euler_gamma = compute_euler_gamma(work_bits, rm, cc);
+
+  // Complex Log(z) = ln|z| + i*arg(z)
+  // |z| = sqrt(a^2 + b^2), arg(z) = atan2(b, a)
+  let abs_sq =
+    a.mul(&a, work_bits, rm)
+      .add(&b.mul(&b, work_bits, rm), work_bits, rm);
+  let abs_z = abs_sq.sqrt(work_bits, rm);
+  let ln_abs_z = abs_z.ln(work_bits, rm, cc);
+  // atan2(b, a) via atan and quadrant adjustment
+  let arg_z = {
+    let zero = BigFloat::from_i32(0, work_bits);
+    let pi = cc.pi(work_bits, rm);
+    if !a.is_zero() {
+      let ratio = b.div(&a, work_bits, rm);
+      let atan_val = ratio.atan(work_bits, rm, cc);
+      if a.is_positive() {
+        atan_val
+      } else if b.is_negative() {
+        atan_val.sub(&pi, work_bits, rm)
+      } else {
+        atan_val.add(&pi, work_bits, rm)
+      }
+    } else if b.is_positive() {
+      pi.div(&BigFloat::from_i32(2, work_bits), work_bits, rm)
+    } else if b.is_negative() {
+      pi.div(&BigFloat::from_i32(2, work_bits), work_bits, rm)
+        .neg()
+    } else {
+      zero
+    }
+  };
+
+  // Start sum: γ + ln|z| for real part, arg(z) for imaginary part
+  let mut sum_re = euler_gamma.add(&ln_abs_z, work_bits, rm);
+  let mut sum_im = arg_z;
+
+  // Power series: Σ_{n=1}^{∞} z^n / (n * n!)
+  // Track z^n as (pow_re, pow_im), start with z^1 = (a, b)
+  let mut pow_re = a.clone();
+  let mut pow_im = b.clone();
+  let mut factorial = BigFloat::from_i32(1, work_bits); // n!
+
+  let max_iterations = bits * 2 + 100;
+  for n in 1..max_iterations {
+    let n_bf = BigFloat::from_i32(n as i32, work_bits);
+    if n > 1 {
+      // z^n = z^(n-1) * z
+      let new_re = pow_re.mul(&a, work_bits, rm).sub(
+        &pow_im.mul(&b, work_bits, rm),
+        work_bits,
+        rm,
+      );
+      let new_im = pow_re.mul(&b, work_bits, rm).add(
+        &pow_im.mul(&a, work_bits, rm),
+        work_bits,
+        rm,
+      );
+      pow_re = new_re;
+      pow_im = new_im;
+      factorial = factorial.mul(&n_bf, work_bits, rm);
+    }
+    // term = z^n / (n * n!)
+    let denom = n_bf.mul(&factorial, work_bits, rm);
+    let term_re = pow_re.div(&denom, work_bits, rm);
+    let term_im = pow_im.div(&denom, work_bits, rm);
+
+    sum_re = sum_re.add(&term_re, work_bits, rm);
+    sum_im = sum_im.add(&term_im, work_bits, rm);
+
+    // Check convergence
+    let term_abs_sq = term_re.mul(&term_re, work_bits, rm).add(
+      &term_im.mul(&term_im, work_bits, rm),
+      work_bits,
+      rm,
+    );
+    if term_abs_sq.is_zero() {
+      break;
+    }
+    let sum_abs_sq = sum_re.mul(&sum_re, work_bits, rm).add(
+      &sum_im.mul(&sum_im, work_bits, rm),
+      work_bits,
+      rm,
+    );
+    if let (Some(t_exp), Some(s_exp)) =
+      (term_abs_sq.exponent(), sum_abs_sq.exponent())
+    {
+      // Compare squared magnitudes, so convergence is 2x the bit threshold
+      if s_exp - t_exp > (2 * work_bits as i32) {
+        break;
+      }
+    }
+  }
+
+  // Perform final addition at target `bits` precision to truncate mantissa
+  let zero = BigFloat::from_i32(0, bits);
+  let result_re = sum_re.add(&zero, bits, rm);
+  let result_im = sum_im.add(&zero, bits, rm);
+
+  Ok((result_re, result_im))
 }
 
 /// Compute the Euler-Mascheroni constant γ to the given precision.

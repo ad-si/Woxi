@@ -26,8 +26,9 @@ enum StoredValue {
 }
 thread_local! {
     static ENV: RefCell<HashMap<String, StoredValue>> = RefCell::new(HashMap::new());
-    //            name         Vec of (param_names, conditions, defaults, head_constraints, body_AST) for multi-arity + condition + optional support
-    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
+    //            name         Vec of (param_names, conditions, defaults, head_constraints, blank_types, body_AST) for multi-arity + condition + optional support
+    //            blank_types: 1=Blank, 2=BlankSequence, 3=BlankNullSequence
+    static FUNC_DEFS: RefCell<HashMap<String, Vec<(Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, Vec<u8>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
     static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
     // Function options (e.g., Options[f] = {a -> 1})
@@ -2240,6 +2241,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
   let mut conditions: Vec<Option<syntax::Expr>> = Vec::new();
   let mut defaults: Vec<Option<syntax::Expr>> = Vec::new();
   let mut heads: Vec<Option<String>> = Vec::new();
+  let mut blank_types: Vec<u8> = Vec::new();
   let mut body_pair = None;
   let mut has_any_condition = false;
 
@@ -2256,6 +2258,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         conditions.push(Some(cond_expr));
         defaults.push(None);
         heads.push(None);
+        blank_types.push(1);
         has_any_condition = true;
       }
       Rule::PatternOptionalSimple => {
@@ -2268,6 +2271,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         conditions.push(None);
         defaults.push(Some(default_expr));
         heads.push(None);
+        blank_types.push(1);
       }
       Rule::PatternOptionalWithHead => {
         // PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ Term }
@@ -2280,6 +2284,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         conditions.push(None);
         defaults.push(Some(default_expr));
         heads.push(Some(head_name));
+        blank_types.push(1);
       }
       Rule::PatternOptionalDefaultSimple => {
         // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
@@ -2293,6 +2298,7 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         // System-determined default (None means use Default[f, position])
         defaults.push(None);
         heads.push(None);
+        blank_types.push(1);
       }
       Rule::PatternOptionalDefaultWithHead => {
         // PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." }
@@ -2304,16 +2310,24 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         // System-determined default (None means use Default[f, position])
         defaults.push(None);
         heads.push(Some(head_name));
+        blank_types.push(1);
       }
       Rule::PatternWithHead => {
         // Extract parameter name and head (e.g., "x_List" -> name="x", head="List")
+        let full = item.as_str();
         let mut pat_inner = item.into_inner();
-        let param_name = pat_inner.next().unwrap().as_str().to_owned();
+        let pat_name_str = pat_inner.next().unwrap().as_str();
+        let blank_count = full[pat_name_str.len()..]
+          .chars()
+          .take_while(|&c| c == '_')
+          .count();
+        let param_name = pat_name_str.to_owned();
         let head_name = pat_inner.next().unwrap().as_str().to_owned();
         params.push(param_name);
         conditions.push(None);
         defaults.push(None);
         heads.push(Some(head_name));
+        blank_types.push(blank_count.min(3) as u8);
       }
       Rule::PatternTest => {
         // PatternTest: x_?test or _?test — extract param name and test condition
@@ -2335,16 +2349,20 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         conditions.push(Some(cond_expr));
         defaults.push(None);
         heads.push(None);
+        blank_types.push(1);
         has_any_condition = true;
       }
       Rule::PatternSimple => {
-        // Extract parameter name from pattern (e.g., "x_" -> "x", "u__" -> "u")
-        let param = item.as_str().trim_end_matches('_').to_owned();
-        let param = param.split('_').next().unwrap_or(&param).to_owned();
-        params.push(param);
+        // Extract parameter name and blank type from pattern
+        // "x_" -> (name="x", blank_type=1), "u__" -> (name="u", blank_type=2), "v___" -> (name="v", blank_type=3)
+        let s = item.as_str();
+        let name = s.trim_end_matches('_');
+        let blank_count = s.len() - name.len();
+        params.push(name.to_owned());
         conditions.push(None);
         defaults.push(None);
         heads.push(None);
+        blank_types.push(blank_count.min(3) as u8);
       }
       Rule::Expression
       | Rule::ExpressionNoImplicit
@@ -2399,12 +2417,12 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
     } else {
       // Unconditional definition: remove only other unconditional defs with same arity
       // (keep conditional definitions - they are more specific)
-      entry.retain(|(p, conds, _, _, _)| {
+      entry.retain(|(p, conds, _, _, _, _)| {
         p.len() != arity || conds.iter().any(|c| c.is_some())
       });
     }
     // Add the new definition with parsed AST, conditions, defaults, and head constraints
-    entry.push((params, conditions, defaults, heads, body_expr));
+    entry.push((params, conditions, defaults, heads, blank_types, body_expr));
   });
   Ok(())
 }
@@ -2555,7 +2573,11 @@ fn store_tag_set_delayed(
     let mut defs = m.borrow_mut();
     let entry = defs.entry(outer_func).or_insert_with(Vec::new);
     // UpValue definitions go at the beginning for priority
-    entry.insert(0, (params, conditions, defaults, heads, final_body));
+    let blank_types = vec![1u8; params.len()];
+    entry.insert(
+      0,
+      (params, conditions, defaults, heads, blank_types, final_body),
+    );
   });
 
   Ok(())
@@ -2567,7 +2589,7 @@ fn extract_pattern_info_from_expr(
   expr: &syntax::Expr,
 ) -> (String, Option<String>) {
   match expr {
-    syntax::Expr::Pattern { name, head } => (name.clone(), head.clone()),
+    syntax::Expr::Pattern { name, head, .. } => (name.clone(), head.clone()),
     syntax::Expr::PatternOptional { name, head, .. } => {
       (name.clone(), head.clone())
     }

@@ -16,7 +16,14 @@ pub fn dispatch_calculus_functions(
           defs.get(func_name).cloned()
         });
         if let Some(overloads) = overloads {
-          for (params, _conditions, _defaults, _heads, body_expr) in &overloads
+          for (
+            params,
+            _conditions,
+            _defaults,
+            _heads,
+            _blank_types,
+            body_expr,
+          ) in &overloads
           {
             if params.len() == 1 {
               let param = &params[0];
