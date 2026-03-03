@@ -3067,7 +3067,7 @@ Laplacian,,,,9,718
 LaplacianFilter,,,,7,3070
 LaplacianGaussianFilter,,,,7,2421
 LaplacianPDETerm,,,,12.2,4567
-Large,,,,6,159
+Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6,159
 Larger,,,,6,1328
 Last,Returns the last element of a list,✅,pure,1,140
 Latitude,,,,7,3191
