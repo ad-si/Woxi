@@ -3133,6 +3133,68 @@ mod tag_set_delayed {
       "f[g[2]]"
     );
   }
+
+  #[test]
+  fn binary_op_plus_upvalue() {
+    // Dist /: Dist[u_,v_]+Dist[w_,v_] := Dist[u+w,v]
+    // LHS is a BinaryOp (Plus), not a FunctionCall
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dist /: Dist[u_,v_]+Dist[w_,v_] := Dist[u+w,v]; Dist[a,b]+Dist[c,b]"
+      )
+      .unwrap(),
+      "Dist[a + c, b]"
+    );
+  }
+
+  #[test]
+  fn binary_op_plus_upvalue_no_match() {
+    // When the repeated pattern variable doesn't match, the rule should not fire
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dist /: Dist[u_,v_]+Dist[w_,v_] := Dist[u+w,v]; Dist[a,b]+Dist[c,d]"
+      )
+      .unwrap(),
+      "Dist[a, b] + Dist[c, d]"
+    );
+  }
+
+  #[test]
+  fn binary_op_plus_upvalue_numeric() {
+    // Numeric arguments should also work with upvalue on Plus
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Dist /: Dist[u_,v_]+Dist[w_,v_] := Dist[u+w,v]; Dist[1,x]+Dist[2,x]"
+      )
+      .unwrap(),
+      "Dist[3, x]"
+    );
+  }
+
+  #[test]
+  fn binary_op_times_upvalue() {
+    // Upvalue on Times (BinaryOp::Times)
+    clear_state();
+    assert_eq!(
+      interpret("Foo /: Foo[x_] * Foo[y_] := Foo[x * y]; Foo[a] * Foo[b]")
+        .unwrap(),
+      "Foo[a*b]"
+    );
+  }
+
+  #[test]
+  fn binary_op_upvalue_normal_arith_unaffected() {
+    // Normal arithmetic should not be affected by upvalue definitions
+    clear_state();
+    assert_eq!(
+      interpret("Dist /: Dist[u_,v_]+Dist[w_,v_] := Dist[u+w,v]; 2 + 3")
+        .unwrap(),
+      "5"
+    );
+  }
 }
 
 mod upset {
