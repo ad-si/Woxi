@@ -1392,6 +1392,12 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
       let has_part_anon_suffix = inner_pairs
         .iter()
         .any(|p| matches!(p.as_rule(), Rule::FunctionCallPartAnonSuffix));
+      let has_implicit_suffix = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix));
+      let has_implicit_power = inner_pairs
+        .iter()
+        .any(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix));
 
       // Extract part indices if present
       let part_indices: Vec<Expr> = inner_pairs
@@ -1489,6 +1495,53 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         }
       };
 
+      // Helper: parse FunctionCallImplicitSuffix inner pairs into multiplication factors
+      // (same logic as ImplicitTimes handler)
+      let parse_implicit_factors =
+        |suffix_pair: &pest::iterators::Pair<Rule>| -> Vec<Expr> {
+          let inners: Vec<_> = suffix_pair.clone().into_inner().collect();
+          let mut factors: Vec<Expr> = Vec::new();
+          let mut i = 0;
+          while i < inners.len() {
+            if inners[i].as_rule() == Rule::PartIndexSuffix {
+              if let Some(base) = factors.pop() {
+                let mut result = base;
+                for idx_pair in inners[i].clone().into_inner() {
+                  let index = pair_to_expr(idx_pair);
+                  result = Expr::Part {
+                    expr: Box::new(result),
+                    index: Box::new(index),
+                  };
+                }
+                factors.push(result);
+              }
+            } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
+              if let Some(base) = factors.pop() {
+                let exponent =
+                  pair_to_expr(inners[i].clone().into_inner().next().unwrap());
+                factors.push(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(base),
+                  right: Box::new(exponent),
+                });
+              }
+            } else {
+              factors.push(pair_to_expr(inners[i].clone()));
+            }
+            i += 1;
+          }
+          factors
+        };
+
+      // Helper: fold a base expression with implicit multiplication factors into nested Times
+      let fold_implicit_times = |base: Expr, factors: Vec<Expr>| -> Expr {
+        factors.into_iter().fold(base, |acc, f| Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(acc),
+          right: Box::new(f),
+        })
+      };
+
       if has_part_index && has_part_anon_suffix {
         // PartAnonymousFunction: f[x][[i]] op ... &[args]
         let mut part_result = base_func;
@@ -1518,6 +1571,38 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           .unwrap();
         let anon_brackets = extract_suffix_brackets(suffix_pair);
         make_anon_func(body, anon_brackets)
+      } else if has_part_index && has_implicit_suffix {
+        // PartExtract with implicit multiplication: f[x][[i]]^2 y
+        let mut result = base_func;
+        for idx in &part_indices {
+          result = Expr::Part {
+            expr: Box::new(result),
+            index: Box::new(idx.clone()),
+          };
+        }
+        if has_implicit_power {
+          let exponent = pair_to_expr(
+            inner_pairs
+              .iter()
+              .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
+              .unwrap()
+              .clone()
+              .into_inner()
+              .next()
+              .unwrap(),
+          );
+          result = Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(result),
+            right: Box::new(exponent),
+          };
+        }
+        let suffix_pair = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix))
+          .unwrap();
+        let factors = parse_implicit_factors(suffix_pair);
+        fold_implicit_times(result, factors)
       } else if has_part_index {
         // Plain PartExtract: f[x][[i]]
         let mut result = base_func;
@@ -1545,6 +1630,32 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
           .unwrap();
         let anon_brackets = extract_suffix_brackets(suffix_pair);
         make_anon_func(body, anon_brackets)
+      } else if has_implicit_suffix {
+        // Implicit multiplication after function call: f[x] g[y] or f[x]^2 y
+        let mut result = base_func;
+        if has_implicit_power {
+          let exponent = pair_to_expr(
+            inner_pairs
+              .iter()
+              .find(|p| matches!(p.as_rule(), Rule::ImplicitPowerSuffix))
+              .unwrap()
+              .clone()
+              .into_inner()
+              .next()
+              .unwrap(),
+          );
+          result = Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(result),
+            right: Box::new(exponent),
+          };
+        }
+        let suffix_pair = inner_pairs
+          .iter()
+          .find(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix))
+          .unwrap();
+        let factors = parse_implicit_factors(suffix_pair);
+        fold_implicit_times(result, factors)
       } else {
         // Plain FunctionCall
         base_func

@@ -231,23 +231,25 @@ DerivativeIdentifier = { Identifier ~ DerivativePrime }
 // Named suffix rules so pair_to_expr can detect them reliably.
 FunctionCallAnonSuffix = { "&" ~ !"&" ~ BracketArgs* }
 FunctionCallPartAnonSuffix = { (Operator ~ SlotTerm)* ~ "&" ~ !"&" ~ BracketArgs* }
+FunctionCallImplicitSuffix = { ImplicitTimesFactor+ }
 FunctionCallExtended = {
     Identifier ~ DerivativePrime? ~ BracketArgs+
     ~ (
-        PartIndexSuffix ~ FunctionCallPartAnonSuffix?
+        PartIndexSuffix ~ (FunctionCallPartAnonSuffix | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
       | FunctionCallAnonSuffix
+      | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix
     )?
 }
 
 Term = _{
-    ImplicitTimes
+    FunctionCallExtended
+  | ImplicitTimes
   | PartAnonymousFunction
   | PartExtract
   | Constant
   | String
   | ListExtended
   | ParenAnonymousFunction
-  | FunctionCallExtended
   | NumericValue
   | Unset
   | AddTo
@@ -288,14 +290,14 @@ SimpleTerm = _{
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
 // to prevent greedy matching across statement boundaries
 TermNoImplicit = _{
-    ImplicitTimes
+    FunctionCallExtended
+  | ImplicitTimes
   | PartAnonymousFunction
   | PartExtract
   | Constant
   | String
   | ListExtended
   | ParenAnonymousFunction
-  | FunctionCallExtended
   | NumericValue
   | Unset
   | AddTo
