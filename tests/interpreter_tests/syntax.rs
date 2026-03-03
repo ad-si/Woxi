@@ -3701,3 +3701,35 @@ mod tilde_infix {
     );
   }
 }
+
+mod line_continuation {
+  use super::*;
+
+  #[test]
+  fn backslash_newline_in_definition() {
+    // Backslash at end of line continues the expression on the next line
+    assert_eq!(interpret("f[x_] :=\\\n  x^2\nf[5]").unwrap(), "25");
+  }
+
+  #[test]
+  fn backslash_newline_in_expression() {
+    assert_eq!(interpret("1 +\\\n2 +\\\n3").unwrap(), "6");
+  }
+
+  #[test]
+  fn backslash_newline_preserves_function_def() {
+    assert_eq!(
+      interpret(
+        "ImaginaryQ[u_] :=\\\n  Head[u]===Complex && Re[u]===0\nImaginaryQ[3 I]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn backslash_newline_not_in_strings() {
+    // Backslash inside strings should NOT be treated as line continuation
+    assert_eq!(interpret(r#""hello\nworld""#).unwrap(), r#"hello\nworld"#);
+  }
+}
