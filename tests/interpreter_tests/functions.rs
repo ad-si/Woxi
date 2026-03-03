@@ -325,6 +325,60 @@ mod one_identity_attribute {
       "{3, a}"
     );
   }
+
+  #[test]
+  fn one_identity_times_system_default() {
+    // a_.*x_^n_. in function definition: Times has OneIdentity,
+    // so x^2 should match with a=1 (Default[Times])
+    assert_eq!(
+      interpret("f[a_.*x_^n_.] := {a, x, n}; f[y^2]").unwrap(),
+      "{1, y, 2}"
+    );
+  }
+
+  #[test]
+  fn one_identity_times_and_power_system_default() {
+    // When only a variable is passed, both Times and Power OneIdentity
+    // should fill in defaults: a=1 (Default[Times]), n=1 (Default[Power,2])
+    assert_eq!(
+      interpret("f[a_.*x_^n_.] := {a, x, n}; f[y]").unwrap(),
+      "{1, y, 1}"
+    );
+  }
+
+  #[test]
+  fn one_identity_power_system_default() {
+    // 3*y should match a_.*x_^n_. with a=3, x=y, n=1 (Default[Power,2])
+    assert_eq!(
+      interpret("f[a_.*x_^n_.] := {a, x, n}; f[3*y]").unwrap(),
+      "{3, y, 1}"
+    );
+  }
+
+  #[test]
+  fn one_identity_times_explicit_values() {
+    // 3*y^2 should match a_.*x_^n_. with a=3, x=y, n=2
+    assert_eq!(
+      interpret("f[a_.*x_^n_.] := {a, x, n}; f[3*y^2]").unwrap(),
+      "{3, y, 2}"
+    );
+  }
+
+  #[test]
+  fn one_identity_integration_pattern() {
+    // Regression test for GitHub issue #57
+    assert_eq!(
+      interpret("Int[a_.*x_^n_.,x_Symbol] := a*x^(n+1)/(n+1); Int[x^2, x]")
+        .unwrap(),
+      "x^3/3"
+    );
+  }
+
+  #[test]
+  fn one_identity_plus_system_default() {
+    // Plus has OneIdentity with Default[Plus]=0
+    assert_eq!(interpret("g[a_. + b_] := {a, b}; g[x]").unwrap(), "{0, x}");
+  }
 }
 
 mod replace_all_top_level {

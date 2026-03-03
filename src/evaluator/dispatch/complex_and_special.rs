@@ -1024,10 +1024,25 @@ pub fn dispatch_complex_and_special(
 }
 
 /// Return the built-in Default value for a symbol as an Expr, if one exists.
-fn builtin_default_value(sym: &str) -> Option<Expr> {
+/// This is Default[f] — the position-independent default.
+pub fn builtin_default_value(sym: &str) -> Option<Expr> {
   match sym {
     "Plus" => Some(Expr::Integer(0)),
     "Times" => Some(Expr::Integer(1)),
+    _ => None,
+  }
+}
+
+/// Return the built-in Default value for a symbol at a specific position.
+/// This is Default[f, position] — position is 1-indexed.
+pub fn builtin_default_value_at_position(
+  sym: &str,
+  position: usize,
+) -> Option<Expr> {
+  match (sym, position) {
+    ("Plus", _) => Some(Expr::Integer(0)),
+    ("Times", _) => Some(Expr::Integer(1)),
+    ("Power", 2) => Some(Expr::Integer(1)),
     _ => None,
   }
 }
