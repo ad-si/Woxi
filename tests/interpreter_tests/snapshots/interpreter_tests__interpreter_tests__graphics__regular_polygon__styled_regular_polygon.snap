@@ -1,0 +1,8 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[{Red, RegularPolygon[4], Blue, EdgeForm[Black], RegularPolygon[{0.5, 0}, 0.3, 3]}]\")"
+---
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<polygon points="180.00,13.33 13.33,180.00 180.00,346.67 346.67,180.00" fill="rgb(255,0,0)"/>
+<polygon points="263.33,130.00 220.03,205.00 306.63,205.00" fill="rgb(0,0,255)" stroke="rgb(0,0,0)" stroke-width="0.50"/>
+</svg>

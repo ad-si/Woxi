@@ -4600,7 +4600,7 @@ RegisterExternalEvaluator,,,,11.2,4173
 RegularExpression,Represents a regular expression pattern for string matching,✅,pure,5.1,617
 Regularization,,,,7,2483
 RegularlySampledQ,,,,10,3843
-RegularPolygon,,,,10.2,710
+RegularPolygon,Regular polygon graphics primitive,✅,none,10.2,710
 ReIm,,,,10.1,800
 ReImLabels,,,,12,5013
 ReImPlot,,,,12,1710

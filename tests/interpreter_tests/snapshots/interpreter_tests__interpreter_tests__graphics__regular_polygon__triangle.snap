@@ -1,0 +1,7 @@
+---
+source: tests/interpreter_tests/graphics.rs
+expression: "export_svg(\"Graphics[RegularPolygon[3]]\")"
+---
+<svg width="360" height="312" viewBox="0 0 360 312" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<polygon points="180.00,11.66 13.33,300.34 346.67,300.34" fill="rgb(0,0,0)"/>
+</svg>

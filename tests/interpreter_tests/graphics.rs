@@ -3214,3 +3214,36 @@ mod graphics_complex {
     );
   }
 }
+
+mod regular_polygon {
+  use super::*;
+
+  #[test]
+  fn pentagon() {
+    insta::assert_snapshot!(export_svg("Graphics[RegularPolygon[5]]"));
+  }
+
+  #[test]
+  fn triangle() {
+    insta::assert_snapshot!(export_svg("Graphics[RegularPolygon[3]]"));
+  }
+
+  #[test]
+  fn hexagon_with_center_and_radius() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[RegularPolygon[{0.5, 0.5}, 0.3, 6]]"
+    ));
+  }
+
+  #[test]
+  fn styled_regular_polygon() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[{Red, RegularPolygon[4], Blue, EdgeForm[Black], RegularPolygon[{0.5, 0}, 0.3, 3]}]"
+    ));
+  }
+
+  #[test]
+  fn symbolic_output() {
+    assert_eq!(interpret("RegularPolygon[5]").unwrap(), "RegularPolygon[5]");
+  }
+}
