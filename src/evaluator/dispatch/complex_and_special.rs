@@ -18,6 +18,12 @@ pub fn dispatch_complex_and_special(
     "UnitStep" if !args.is_empty() => {
       return Some(crate::functions::math_ast::unit_step_ast(args));
     }
+    "HeavisideTheta" if !args.is_empty() => {
+      return Some(crate::functions::math_ast::heaviside_theta_ast(args));
+    }
+    "DiracDelta" if !args.is_empty() => {
+      return Some(crate::functions::math_ast::dirac_delta_ast(args));
+    }
     "Complex" if args.len() == 2 => {
       // Complex[a, b] -> a + b*I, evaluated to simplify iterated Complex
       let real = &args[0];
