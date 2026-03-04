@@ -3086,3 +3086,84 @@ mod raster {
     );
   }
 }
+
+mod blend {
+  use super::*;
+
+  #[test]
+  fn blend_two_colors_midpoint() {
+    assert_eq!(
+      interpret("Blend[{RGBColor[1, 0, 0], RGBColor[0, 0, 1]}]").unwrap(),
+      "RGBColor[1/2, 0, 1/2]"
+    );
+  }
+
+  #[test]
+  fn blend_two_colors_with_weight() {
+    assert_eq!(
+      interpret("Blend[{RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, 1/4]").unwrap(),
+      "RGBColor[3/4, 0, 1/4]"
+    );
+  }
+
+  #[test]
+  fn blend_at_zero() {
+    assert_eq!(
+      interpret("Blend[{RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, 0]").unwrap(),
+      "RGBColor[1, 0, 0]"
+    );
+  }
+
+  #[test]
+  fn blend_at_one() {
+    assert_eq!(
+      interpret("Blend[{RGBColor[1, 0, 0], RGBColor[0, 0, 1]}, 1]").unwrap(),
+      "RGBColor[0, 0, 1]"
+    );
+  }
+
+  #[test]
+  fn blend_three_colors_equal() {
+    assert_eq!(
+      interpret(
+        "Blend[{RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}]"
+      )
+      .unwrap(),
+      "RGBColor[1/3, 1/3, 1/3]"
+    );
+  }
+
+  #[test]
+  fn blend_three_colors_with_weight() {
+    assert_eq!(
+      interpret(
+        "Blend[{RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}, 1/4]"
+      )
+      .unwrap(),
+      "RGBColor[1/2, 1/2, 0]"
+    );
+  }
+
+  #[test]
+  fn blend_graylevel() {
+    assert_eq!(
+      interpret("Blend[{GrayLevel[1/4], GrayLevel[3/4]}]").unwrap(),
+      "GrayLevel[1/2]"
+    );
+  }
+
+  #[test]
+  fn blend_named_colors() {
+    assert_eq!(
+      interpret("Blend[{Red, Blue}]").unwrap(),
+      "RGBColor[1/2, 0, 1/2]"
+    );
+  }
+
+  #[test]
+  fn blend_in_graphics() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[{Blend[{Red, Blue}], Disk[]}]"
+    ));
+  }
+}
