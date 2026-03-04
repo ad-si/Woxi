@@ -185,6 +185,27 @@ mod graphics {
         "Graphics[{BezierCurve[{{0, 0}, {0.5, 1}, {1, 0}}]}]"
       ));
     }
+
+    #[test]
+    fn bspline_curve() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}]}]"
+      ));
+    }
+
+    #[test]
+    fn bspline_curve_closed() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}, SplineClosed -> True]}]"
+      ));
+    }
+
+    #[test]
+    fn bspline_curve_many_points() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{BSplineCurve[{{0,0},{1,3},{2,1},{3,4},{4,0},{5,2}}]}]"
+      ));
+    }
   }
 
   mod styles {
