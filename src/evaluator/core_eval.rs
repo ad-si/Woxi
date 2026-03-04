@@ -208,6 +208,28 @@ pub fn evaluate_expr_early_dispatch(
         result
       )));
     }
+    "RepeatedTiming" if args.len() == 1 => {
+      // RepeatedTiming evaluates repeatedly and returns median time
+      let mut times = Vec::new();
+      let mut last_result = String::new();
+      // Run at least 3 times, up to ~0.5s total
+      let overall_start = std::time::Instant::now();
+      for _ in 0..100 {
+        let start = std::time::Instant::now();
+        last_result = evaluate_expr(&args[0])?;
+        times.push(start.elapsed().as_secs_f64());
+        if times.len() >= 3 && overall_start.elapsed().as_secs_f64() > 0.5 {
+          break;
+        }
+      }
+      times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      let median = times[times.len() / 2];
+      return Ok(Some(format!(
+        "{{{}, {}}}",
+        format_real_result(median),
+        last_result
+      )));
+    }
     "Sum" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;
       let result = crate::functions::list_helpers_ast::sum_ast(&prepared)?;
@@ -289,6 +311,22 @@ pub fn evaluate_expr_to_expr_early_dispatch(
       let result = evaluate_expr_to_expr(&args[0])?;
       let elapsed = start.elapsed().as_secs_f64();
       return Ok(Some(Expr::List(vec![Expr::Real(elapsed), result])));
+    }
+    "RepeatedTiming" if args.len() == 1 => {
+      let mut times = Vec::new();
+      let mut last_result = Expr::Identifier("Null".to_string());
+      let overall_start = std::time::Instant::now();
+      for _ in 0..100 {
+        let start = std::time::Instant::now();
+        last_result = evaluate_expr_to_expr(&args[0])?;
+        times.push(start.elapsed().as_secs_f64());
+        if times.len() >= 3 && overall_start.elapsed().as_secs_f64() > 0.5 {
+          break;
+        }
+      }
+      times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      let median = times[times.len() / 2];
+      return Ok(Some(Expr::List(vec![Expr::Real(median), last_result])));
     }
     "Sum" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;

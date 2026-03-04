@@ -357,6 +357,31 @@ pub fn dispatch_io_functions(
         Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
       });
     }
+    "FileNameJoin" if args.len() == 1 => {
+      if let Expr::List(parts) = &args[0] {
+        let segments: Vec<String> = parts
+          .iter()
+          .filter_map(|e| {
+            if let Expr::String(s) = e {
+              Some(s.clone())
+            } else {
+              None
+            }
+          })
+          .collect();
+        if segments.len() == parts.len() {
+          let mut path = std::path::PathBuf::new();
+          for seg in &segments {
+            path.push(seg);
+          }
+          return Some(Ok(Expr::String(path.to_string_lossy().into_owned())));
+        }
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FileNameJoin".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // OpenRead[file] — open a file for reading, return InputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
     "OpenRead" if args.len() == 1 => {
