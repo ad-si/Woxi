@@ -954,6 +954,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Arrow"
     | "BezierCurve"
     | "BSplineCurve"
+    | "GraphicsComplex"
     | "Rotate"
     | "Translate"
     | "Scale"

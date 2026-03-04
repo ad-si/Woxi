@@ -3167,3 +3167,50 @@ mod blend {
     ));
   }
 }
+
+mod graphics_complex {
+  use super::*;
+
+  #[test]
+  fn polygon_with_indices() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[GraphicsComplex[{{0,0},{1,0},{1,1},{0,1}}, Polygon[{1,2,3,4}]]]"
+    ));
+  }
+
+  #[test]
+  fn line_with_indices() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[GraphicsComplex[{{0,0},{1,0},{1,1}}, Line[{1,2,3}]]]"
+    ));
+  }
+
+  #[test]
+  fn styled_primitives() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[GraphicsComplex[{{0,0},{1,0},{0.5,1}}, {Red, Polygon[{1,2,3}], Blue, Line[{1,2,3,1}]}]]"
+    ));
+  }
+
+  #[test]
+  fn point_with_indices() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[GraphicsComplex[{{0,0},{1,0},{0.5,0.5}}, Point[{1,2,3}]]]"
+    ));
+  }
+
+  #[test]
+  fn disk_with_index() {
+    insta::assert_snapshot!(export_svg(
+      "Graphics[GraphicsComplex[{{0.5,0.5},{0,0}}, {Disk[1, 0.3], Disk[2, 0.2]}]]"
+    ));
+  }
+
+  #[test]
+  fn symbolic_output() {
+    assert_eq!(
+      interpret("GraphicsComplex[{{0,0},{1,1}}, Line[{1,2}]]").unwrap(),
+      "GraphicsComplex[{{0, 0}, {1, 1}}, Line[{1, 2}]]"
+    );
+  }
+}
