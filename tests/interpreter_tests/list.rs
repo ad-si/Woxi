@@ -3156,3 +3156,37 @@ mod angle_path {
     );
   }
 }
+
+mod array_flatten {
+  use super::*;
+
+  #[test]
+  fn two_by_two_blocks() {
+    assert_eq!(
+      interpret(
+        "ArrayFlatten[{{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {{{9, 10}, {11, 12}}, {{13, 14}, {15, 16}}}}]"
+      )
+      .unwrap(),
+      "{{1, 2, 5, 6}, {3, 4, 7, 8}, {9, 10, 13, 14}, {11, 12, 15, 16}}"
+    );
+  }
+
+  #[test]
+  fn identity_with_zeros() {
+    assert_eq!(
+      interpret(
+        "ArrayFlatten[{{IdentityMatrix[2], {{0},{0}}}, {{{0, 0}}, {{1}}}}]"
+      )
+      .unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn scalar_blocks() {
+    assert_eq!(
+      interpret("ArrayFlatten[{{a, b}, {c, d}}]").unwrap(),
+      "{{a, b}, {c, d}}"
+    );
+  }
+}

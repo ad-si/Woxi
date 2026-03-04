@@ -461,6 +461,9 @@ pub fn dispatch_list_operations(
     "Drop" if args.len() == 2 => {
       return Some(list_helpers_ast::drop_ast(&args[0], &args[1]));
     }
+    "ArrayFlatten" if args.len() == 1 => {
+      return Some(array_flatten_ast(&args[0]));
+    }
     "Flatten" if args.len() == 1 => {
       return Some(list_helpers_ast::flatten_ast(&args[0]));
     }
@@ -1155,4 +1158,81 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
     }
     _ => expr.clone(),
   }
+}
+
+/// ArrayFlatten[{{block11, block12, ...}, {block21, ...}, ...}]
+/// Combines a matrix of sub-matrices (blocks) into a single matrix.
+fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+  // arg should be a list of rows, where each row is a list of blocks (sub-matrices)
+  let block_rows = match arg {
+    Expr::List(rows) => rows,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ArrayFlatten".to_string(),
+        args: vec![arg.clone()],
+      });
+    }
+  };
+
+  if block_rows.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Parse the block matrix structure
+  let mut all_block_rows: Vec<Vec<Vec<Vec<Expr>>>> = Vec::new();
+
+  for block_row in block_rows {
+    let blocks_in_row = match block_row {
+      Expr::List(blocks) => blocks,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "ArrayFlatten".to_string(),
+          args: vec![arg.clone()],
+        });
+      }
+    };
+
+    let mut parsed_blocks: Vec<Vec<Vec<Expr>>> = Vec::new();
+    for block in blocks_in_row {
+      match block {
+        Expr::List(rows) => {
+          let mut matrix: Vec<Vec<Expr>> = Vec::new();
+          for row in rows {
+            match row {
+              Expr::List(cols) => matrix.push(cols.clone()),
+              // Scalar treated as 1x1 matrix
+              other => matrix.push(vec![other.clone()]),
+            }
+          }
+          parsed_blocks.push(matrix);
+        }
+        // Scalar treated as 1x1
+        other => parsed_blocks.push(vec![vec![other.clone()]]),
+      }
+    }
+    all_block_rows.push(parsed_blocks);
+  }
+
+  // Build the result matrix by combining blocks
+  let mut result: Vec<Vec<Expr>> = Vec::new();
+
+  for block_row in &all_block_rows {
+    if block_row.is_empty() {
+      continue;
+    }
+    // Number of rows in this block-row (determined by first block)
+    let n_rows = block_row[0].len();
+
+    for r in 0..n_rows {
+      let mut result_row: Vec<Expr> = Vec::new();
+      for block in block_row {
+        if r < block.len() {
+          result_row.extend_from_slice(&block[r]);
+        }
+      }
+      result.push(result_row);
+    }
+  }
+
+  Ok(Expr::List(result.into_iter().map(Expr::List).collect()))
 }
