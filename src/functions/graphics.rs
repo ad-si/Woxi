@@ -767,6 +767,9 @@ fn collect_primitives(
             collect_primitives(&resolved, style, prims);
           }
         }
+        "RegularPolygon" if !args.is_empty() => {
+          parse_regular_polygon(args, style, prims);
+        }
 
         _ => {
           // Try as directive first
@@ -1073,6 +1076,43 @@ fn parse_polygon(
       style: style.clone(),
     });
   }
+}
+
+fn parse_regular_polygon(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  // RegularPolygon[n] — unit circumradius at origin
+  // RegularPolygon[{cx, cy}, r, n] — at center with circumradius r
+  let (cx, cy, r, n) = match args.len() {
+    1 => {
+      let n = expr_to_f64(&args[0]).unwrap_or(0.0) as usize;
+      (0.0, 0.0, 1.0, n)
+    }
+    3 => {
+      let center = expr_to_point(&args[0]).unwrap_or((0.0, 0.0));
+      let r = expr_to_f64(&args[1]).unwrap_or(1.0);
+      let n = expr_to_f64(&args[2]).unwrap_or(0.0) as usize;
+      (center.0, center.1, r, n)
+    }
+    _ => return,
+  };
+  if n < 3 {
+    return;
+  }
+  // Generate vertices starting from top (Pi/2), going counterclockwise
+  let pts: Vec<(f64, f64)> = (0..n)
+    .map(|k| {
+      let angle = std::f64::consts::FRAC_PI_2
+        + 2.0 * std::f64::consts::PI * (k as f64) / (n as f64);
+      (cx + r * angle.cos(), cy + r * angle.sin())
+    })
+    .collect();
+  prims.push(Primitive::PolygonPrim {
+    points: pts,
+    style: style.clone(),
+  });
 }
 
 fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
