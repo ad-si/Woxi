@@ -147,12 +147,14 @@ Operator = @{
 PostfixFunction = { (BaseFunctionCall | Identifier) ~ ("&" ~ !"&")? }
 
 // Increment/Decrement: x++ or x-- (postfix operators)
-Increment = { Identifier ~ "++" }
-Decrement = { Identifier ~ "--" }
+// Also supports Part extraction: x[[i]]++ or x[[i]]--
+Increment = { (PartExtract | Identifier) ~ "++" }
+Decrement = { (PartExtract | Identifier) ~ "--" }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
-PreIncrement = { "++" ~ Identifier }
-PreDecrement = { "--" ~ Identifier }
+// Also supports Part extraction: ++x[[i]] or --x[[i]]
+PreIncrement = { "++" ~ (PartExtract | Identifier) }
+PreDecrement = { "--" ~ (PartExtract | Identifier) }
 
 // InformationQuery: ?symbol shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ Identifier }
@@ -249,12 +251,6 @@ Term = _{
     FunctionCallExtended
   | ImplicitTimes
   | PartAnonymousFunction
-  | PartExtract
-  | Constant
-  | String
-  | ListExtended
-  | ParenAnonymousFunction
-  | NumericValue
   | Unset
   | AddTo
   | SubtractFrom
@@ -262,6 +258,12 @@ Term = _{
   | DivideBy
   | Increment
   | Decrement
+  | PartExtract
+  | Constant
+  | String
+  | ListExtended
+  | ParenAnonymousFunction
+  | NumericValue
   | PreIncrement
   | PreDecrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
@@ -297,12 +299,6 @@ TermNoImplicit = _{
     FunctionCallExtended
   | ImplicitTimes
   | PartAnonymousFunction
-  | PartExtract
-  | Constant
-  | String
-  | ListExtended
-  | ParenAnonymousFunction
-  | NumericValue
   | Unset
   | AddTo
   | SubtractFrom
@@ -310,6 +306,12 @@ TermNoImplicit = _{
   | DivideBy
   | Increment
   | Decrement
+  | PartExtract
+  | Constant
+  | String
+  | ListExtended
+  | ParenAnonymousFunction
+  | NumericValue
   | PreIncrement
   | PreDecrement
   | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple

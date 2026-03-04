@@ -1050,37 +1050,59 @@ pub fn evaluate_expr_to_expr_inner(
         || name == "PreIncrement"
         || name == "PreDecrement")
         && args.len() == 1
-        && let Expr::Identifier(var_name) = &args[0]
       {
-        let current = ENV.with(|e| e.borrow().get(var_name).cloned());
-        let current_val = match current {
-          Some(StoredValue::ExprVal(e)) => e,
-          Some(StoredValue::Raw(s)) => {
-            crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+        if let Expr::Identifier(var_name) = &args[0] {
+          let current = ENV.with(|e| e.borrow().get(var_name).cloned());
+          let current_val = match current {
+            Some(StoredValue::ExprVal(e)) => e,
+            Some(StoredValue::Raw(s)) => {
+              crate::syntax::string_to_expr(&s).unwrap_or(Expr::Integer(0))
+            }
+            _ => Expr::Integer(0),
+          };
+          let delta = if name == "Increment" || name == "PreIncrement" {
+            Expr::Integer(1)
+          } else {
+            Expr::Integer(-1)
+          };
+          let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(current_val.clone()),
+            right: Box::new(delta),
+          })?;
+          ENV.with(|e| {
+            e.borrow_mut().insert(
+              var_name.clone(),
+              StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
+            );
+          });
+          // Post-increment/decrement returns old value; pre returns new value
+          if name == "PreIncrement" || name == "PreDecrement" {
+            return Ok(new_val);
           }
-          _ => Expr::Integer(0),
-        };
-        let delta = if name == "Increment" || name == "PreIncrement" {
-          Expr::Integer(1)
-        } else {
-          Expr::Integer(-1)
-        };
-        let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Plus,
-          left: Box::new(current_val.clone()),
-          right: Box::new(delta),
-        })?;
-        ENV.with(|e| {
-          e.borrow_mut().insert(
-            var_name.clone(),
-            StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
-          );
-        });
-        // Post-increment/decrement returns old value; pre returns new value
-        if name == "PreIncrement" || name == "PreDecrement" {
-          return Ok(new_val);
+          return Ok(current_val);
         }
-        return Ok(current_val);
+        // Handle Part expressions: ++x[[i]], --x[[i]], x[[i]]++, x[[i]]--
+        if let Expr::Part { .. } = &args[0] {
+          // Get the current value at the part position
+          let current_val = evaluate_expr_to_expr(&args[0])?;
+          let delta = if name == "Increment" || name == "PreIncrement" {
+            Expr::Integer(1)
+          } else {
+            Expr::Integer(-1)
+          };
+          let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Plus,
+            left: Box::new(current_val.clone()),
+            right: Box::new(delta),
+          })?;
+          // Use Set to assign the new value back to the part
+          crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+          if name == "PreIncrement" || name == "PreDecrement" {
+            return Ok(new_val);
+          }
+          return Ok(current_val);
+        }
       }
       // Special handling for Unset - x =. (removes definition)
       if name == "Unset" && args.len() == 1 {

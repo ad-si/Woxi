@@ -1128,7 +1128,7 @@ Cosh,Returns the hyperbolic cosine,✅,pure,1,259
 CoshIntegral,,,,3,1347
 CosineDistance,,,,6,2911
 CosineWindow,,,,9,3862
-CosIntegral,,,,2,1178
+CosIntegral,Cosine integral Ci(z),✅,pure,2,1178
 Cot,Returns the cotangent,✅,pure,1,358
 CotDegrees,,,,14.1,
 Coth,Returns the hyperbolic cotangent,✅,pure,1,592
@@ -4994,7 +4994,7 @@ SingularValueList,,,,5,1892
 SingularValuePlot,,,,8,3755
 Sinh,Returns the hyperbolic sine,✅,pure,1,278
 SinhIntegral,,,,3,1309
-SinIntegral,,,,2,1148
+SinIntegral,Sine integral Si(z),✅,pure,2,1148
 SixJSymbol,,,,2,1217
 Skeleton,Represents omitted elements in output display as <<n>>,✅,none,1,4479
 SkeletonTransform,,,,8,3522
