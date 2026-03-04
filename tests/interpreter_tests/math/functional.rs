@@ -125,6 +125,30 @@ mod apply_head_replacement {
   fn apply_operator_form() {
     assert_eq!(interpret("Apply[f][a + b + c]").unwrap(), "f[a, b, c]");
   }
+
+  #[test]
+  fn apply_on_division() {
+    // 1/(4+5*x) is Power[Plus[4, Times[5, x]], -1] in canonical form
+    assert_eq!(
+      interpret("Apply[List, 1/(4+5*x)]").unwrap(),
+      "{4 + 5*x, -1}"
+    );
+  }
+
+  #[test]
+  fn apply_on_power() {
+    assert_eq!(interpret("Apply[List, a^b]").unwrap(), "{a, b}");
+  }
+
+  #[test]
+  fn apply_on_subtraction() {
+    assert_eq!(interpret("Apply[List, a - b]").unwrap(), "{a, -b}");
+  }
+
+  #[test]
+  fn apply_on_rule() {
+    assert_eq!(interpret("Apply[List, a -> b]").unwrap(), "{a, b}");
+  }
 }
 
 mod fixed_point {

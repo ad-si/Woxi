@@ -298,12 +298,69 @@ pub fn nest_while_list_ast(
   Ok(Expr::List(results))
 }
 
+/// Extract the children of any expression in Wolfram canonical form.
+/// Returns None for atomic expressions (Integer, Real, String, Symbol).
+fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
+  match expr {
+    Expr::List(items) => Some(items.clone()),
+    Expr::FunctionCall { args, .. } => Some(args.clone()),
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator;
+      match op {
+        // a - b → Plus[a, Times[-1, b]]
+        BinaryOperator::Minus => Some(vec![
+          left.as_ref().clone(),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), right.as_ref().clone()],
+          },
+        ]),
+        // 1/b → Power[b, -1]; a/b → Times[a, Power[b, -1]]
+        BinaryOperator::Divide => {
+          if matches!(left.as_ref(), Expr::Integer(1)) {
+            Some(vec![right.as_ref().clone(), Expr::Integer(-1)])
+          } else {
+            Some(vec![
+              left.as_ref().clone(),
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![right.as_ref().clone(), Expr::Integer(-1)],
+              },
+            ])
+          }
+        }
+        // Plus, Times, Power, And, Or, etc.
+        _ => Some(vec![left.as_ref().clone(), right.as_ref().clone()]),
+      }
+    }
+    Expr::UnaryOp { operand, .. } => Some(vec![operand.as_ref().clone()]),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some(vec![pattern.as_ref().clone(), replacement.as_ref().clone()]),
+    Expr::Association(pairs) => Some(
+      pairs
+        .iter()
+        .map(|(k, v)| Expr::Rule {
+          pattern: Box::new(k.clone()),
+          replacement: Box::new(v.clone()),
+        })
+        .collect(),
+    ),
+    // Atomic expressions have no children
+    _ => None,
+  }
+}
+
 /// Apply[f, list] - applies f to the elements of list (f @@ list)
 pub fn apply_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items.clone(),
-    Expr::FunctionCall { args, .. } => args.clone(),
-    _ => {
+  let items = match expr_children(list) {
+    Some(items) => items,
+    None => {
       return Err(InterpreterError::EvaluationError(
         "Apply expects a list or expression as second argument".into(),
       ));

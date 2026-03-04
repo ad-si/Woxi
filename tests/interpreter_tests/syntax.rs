@@ -1378,6 +1378,38 @@ mod pre_decrement_function {
       "{HoldFirst, Protected, ReadProtected}"
     );
   }
+
+  #[test]
+  fn pre_decrement_part() {
+    assert_eq!(interpret("pos = {1, 2}; --pos[[1]]").unwrap(), "0");
+    assert_eq!(interpret("pos = {10, 20}; --pos[[2]]").unwrap(), "19");
+  }
+
+  #[test]
+  fn pre_increment_part() {
+    assert_eq!(interpret("pos = {1, 2}; ++pos[[1]]").unwrap(), "2");
+    assert_eq!(interpret("pos = {10, 20}; ++pos[[2]]").unwrap(), "21");
+  }
+
+  #[test]
+  fn post_increment_part() {
+    // Post-increment returns old value
+    assert_eq!(interpret("pos = {1, 2}; pos[[1]]++").unwrap(), "1");
+    assert_eq!(
+      interpret("pos = {1, 2}; pos[[1]]++; pos").unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  #[test]
+  fn post_decrement_part() {
+    // Post-decrement returns old value
+    assert_eq!(interpret("pos = {1, 2}; pos[[1]]--").unwrap(), "1");
+    assert_eq!(
+      interpret("pos = {1, 2}; pos[[1]]--; pos").unwrap(),
+      "{0, 2}"
+    );
+  }
 }
 
 mod max_iterations_symbol {

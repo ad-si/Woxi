@@ -127,6 +127,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_split_condition_continuation() {
+    // /; (Condition) at end of line means the expression continues
+    assert_eq!(
+      split_into_statements("Foo[x_] :=\n  -x /;\nx > 1\nFoo[2]"),
+      vec!["Foo[x_] :=\n  -x /;\nx > 1", "Foo[2]"]
+    );
+  }
+
+  #[test]
+  fn test_split_operator_continuation() {
+    // Lines ending with operators should continue to the next line
+    assert_eq!(split_into_statements("x = 1 +\n2"), vec!["x = 1 +\n2"]);
+  }
+
+  #[test]
   fn test_comment_only_input() {
     // A standalone comment should not cause an error
     clear_state();

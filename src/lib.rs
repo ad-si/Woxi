@@ -1920,8 +1920,24 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
         last_code_char == Some('=') && prev_code_char == Some(':');
       let ends_with_tag_set =
         last_code_char == Some(':') && prev_code_char == Some('/');
+      // /; (Condition) at end of line means the expression continues
+      let ends_with_condition =
+        last_code_char == Some(';') && prev_code_char == Some('/');
+      // Line ending with an operator means the expression continues
+      let ends_with_operator = matches!(
+        last_code_char,
+        Some('+' | '-' | '*' | '/' | '^' | '@' | '~' | ',' | '=' | '<' | '|')
+      ) || (last_code_char == Some('>')
+        && matches!(prev_code_char, Some('-' | ':' | '>')))
+        || (last_code_char == Some('&') && prev_code_char == Some('&'));
 
-      if line_has_code && !ends_with_set_delayed && !ends_with_tag_set {
+      let should_split = line_has_code
+        && !ends_with_set_delayed
+        && !ends_with_tag_set
+        && !ends_with_condition
+        && !ends_with_operator;
+
+      if should_split {
         let stmt = current.trim().to_string();
         if !stmt.is_empty() {
           statements.push(stmt);

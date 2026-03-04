@@ -1857,6 +1857,84 @@ mod exp_integral_e {
   }
 }
 
+mod cos_integral {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("CosIntegral[0]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("CosIntegral[Infinity]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_neg_infinity() {
+    assert_eq!(interpret("CosIntegral[-Infinity]").unwrap(), "I*Pi");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("CosIntegral[x]").unwrap(), "CosIntegral[x]");
+  }
+
+  #[test]
+  fn numeric_one() {
+    let result: f64 = interpret("CosIntegral[1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.3374039229009681).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_two() {
+    let result: f64 = interpret("CosIntegral[2.0]").unwrap().parse().unwrap();
+    assert!((result - 0.422980828774865).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_small() {
+    let result: f64 = interpret("CosIntegral[0.1]").unwrap().parse().unwrap();
+    assert!((result - (-1.7278683866572964)).abs() < 1e-10);
+  }
+}
+
+mod sin_integral {
+  use super::*;
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("SinIntegral[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_infinity() {
+    assert_eq!(interpret("SinIntegral[Infinity]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn at_neg_infinity() {
+    assert_eq!(interpret("SinIntegral[-Infinity]").unwrap(), "-1/2*Pi");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("SinIntegral[x]").unwrap(), "SinIntegral[x]");
+  }
+
+  #[test]
+  fn numeric_one() {
+    let result: f64 = interpret("SinIntegral[1.0]").unwrap().parse().unwrap();
+    assert!((result - 0.946083070367183).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_two() {
+    let result: f64 = interpret("SinIntegral[2.0]").unwrap().parse().unwrap();
+    assert!((result - 1.6054129768026948).abs() < 1e-10);
+  }
+}
+
 mod chebyshev_t {
   use super::*;
 

@@ -409,6 +409,12 @@ pub fn dispatch_math_functions(
     "ExpIntegralE" if args.len() == 2 => {
       return Some(crate::functions::math_ast::exp_integral_e_ast(args));
     }
+    "CosIntegral" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::cos_integral_ast(args));
+    }
+    "SinIntegral" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::sin_integral_ast(args));
+    }
     "BesselI" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_i_ast(args));
     }

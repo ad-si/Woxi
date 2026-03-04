@@ -2467,6 +2467,187 @@ pub fn exp_integral_ei_numeric(x: f64) -> f64 {
   }
 }
 
+/// CosIntegral[z] - Cosine integral Ci(z)
+/// Ci(z) = γ + ln(z) + ∫₀ᶻ (cos(t)-1)/t dt
+pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "CosIntegral expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    // CosIntegral[0] = -Infinity
+    Expr::Integer(0) => Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
+    }),
+    // CosIntegral[Infinity] = 0
+    Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
+    // Numeric evaluation
+    Expr::Real(x) => Ok(Expr::Real(cos_integral_numeric(*x))),
+    // Check for -Infinity
+    other => {
+      if is_neg_infinity(other) {
+        // CosIntegral[-Infinity] = I*Pi
+        return Ok(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Identifier("I".to_string()),
+            Expr::Constant("Pi".to_string()),
+          ],
+        });
+      }
+      // Unevaluated
+      Ok(Expr::FunctionCall {
+        name: "CosIntegral".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute Ci(z) numerically for real z
+/// Ci(z) = γ + ln|z| + ∫₀ᶻ (cos(t)-1)/t dt
+/// = γ + ln|z| + Σ_{n=1}^∞ (-1)^n z^(2n) / (2n · (2n)!)
+fn cos_integral_numeric(z: f64) -> f64 {
+  let euler_gamma = 0.5772156649015329;
+
+  if z.abs() < 40.0 {
+    // Power series: Ci(z) = γ + ln|z| + Σ (-1)^n z^(2n) / (2n · (2n)!)
+    let mut sum = euler_gamma + z.abs().ln();
+    let z2 = z * z;
+    let mut term = 1.0; // Will build up z^(2n) / (2n)!
+    for n in 1..200 {
+      let n2 = (2 * n) as f64;
+      // term *= z^2 / ((2n-1) * 2n)
+      term *= z2 / ((n2 - 1.0) * n2);
+      let contrib = if n % 2 == 1 { -term } else { term };
+      sum += contrib / n2;
+      if (contrib / n2).abs() < 1e-16 * sum.abs().max(1e-300) {
+        break;
+      }
+    }
+    sum
+  } else {
+    // Asymptotic expansion for large |z|
+    // Ci(z) ≈ sin(z)/z * f(z) - cos(z)/z * g(z)
+    // where f(z) = Σ (-1)^n (2n)! / z^(2n)
+    //       g(z) = Σ (-1)^n (2n+1)! / z^(2n+1)
+    let mut f = 0.0;
+    let mut g = 0.0;
+    let mut f_term = 1.0;
+    let mut g_term = 1.0 / z;
+    for n in 0..100 {
+      f += if n % 2 == 0 { f_term } else { -f_term };
+      g += if n % 2 == 0 { g_term } else { -g_term };
+      let n2 = (2 * n + 1) as f64;
+      let n2p = (2 * n + 2) as f64;
+      f_term *= n2 * n2p / (z * z);
+      g_term *= n2p * (n2p + 1.0) / (z * z);
+      if f_term.abs() < 1e-16 && g_term.abs() < 1e-16 {
+        break;
+      }
+      // Divergent series: stop when terms start growing
+      if n > 0
+        && (f_term.abs() > (n2 * n2p / (z * z) * f_term).abs()
+          || g_term.abs() > 1e10)
+      {
+        break;
+      }
+    }
+    f / z * z.sin() - g * z.cos()
+  }
+}
+
+/// SinIntegral[z] - Sine integral Si(z)
+/// Si(z) = ∫₀ᶻ sin(t)/t dt
+pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "SinIntegral expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    // SinIntegral[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // SinIntegral[Infinity] = Pi/2
+    Expr::Identifier(s) if s == "Infinity" => Ok(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        crate::functions::math_ast::make_rational(1, 2),
+        Expr::Constant("Pi".to_string()),
+      ],
+    }),
+    // Numeric evaluation
+    Expr::Real(x) => Ok(Expr::Real(sin_integral_numeric(*x))),
+    // Check for -Infinity
+    other => {
+      if is_neg_infinity(other) {
+        // SinIntegral[-Infinity] = -Pi/2
+        return Ok(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            crate::functions::math_ast::make_rational(-1, 2),
+            Expr::Constant("Pi".to_string()),
+          ],
+        });
+      }
+      // Unevaluated
+      Ok(Expr::FunctionCall {
+        name: "SinIntegral".to_string(),
+        args: args.to_vec(),
+      })
+    }
+  }
+}
+
+/// Compute Si(z) numerically for real z
+/// Si(z) = Σ_{n=0}^∞ (-1)^n z^(2n+1) / ((2n+1) · (2n+1)!)
+fn sin_integral_numeric(z: f64) -> f64 {
+  if z.abs() < 40.0 {
+    let z2 = z * z;
+    let mut sum = z;
+    let mut term = z;
+    for n in 1..200 {
+      let n2 = (2 * n) as f64;
+      let n2p1 = n2 + 1.0;
+      term *= -z2 / (n2 * n2p1);
+      sum += term / n2p1;
+      if (term / n2p1).abs() < 1e-16 * sum.abs().max(1e-300) {
+        break;
+      }
+    }
+    sum
+  } else {
+    // Asymptotic expansion for large |z|
+    // Si(z) ≈ π/2 - cos(z)/z * f(z) - sin(z)/z * g(z)
+    let sign = if z > 0.0 { 1.0 } else { -1.0 };
+    let az = z.abs();
+    let mut f = 0.0;
+    let mut g = 0.0;
+    let mut f_term = 1.0;
+    let mut g_term = 1.0 / az;
+    for n in 0..100 {
+      f += if n % 2 == 0 { f_term } else { -f_term };
+      g += if n % 2 == 0 { g_term } else { -g_term };
+      let n2 = (2 * n + 1) as f64;
+      let n2p = (2 * n + 2) as f64;
+      let old_f = f_term;
+      f_term *= n2 * n2p / (az * az);
+      g_term *= n2p * (n2p + 1.0) / (az * az);
+      if f_term.abs() < 1e-16 && g_term.abs() < 1e-16 {
+        break;
+      }
+      if f_term.abs() > old_f.abs() {
+        break;
+      }
+    }
+    sign * (std::f64::consts::FRAC_PI_2 - f / az * az.cos() - g * az.sin())
+  }
+}
+
 /// ExpIntegralE[n, z] - Generalized exponential integral E_n(z)
 pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
