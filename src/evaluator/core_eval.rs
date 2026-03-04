@@ -349,6 +349,18 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         if name == "Thick" {
           return Ok("Thickness[Large]".to_string());
         }
+        // Dashed → Dashing[{Small, Small}]
+        if name == "Dashed" {
+          return Ok("Dashing[{Small, Small}]".to_string());
+        }
+        // Dotted → Dashing[{0, Small}]
+        if name == "Dotted" {
+          return Ok("Dashing[{0, Small}]".to_string());
+        }
+        // DotDashed → Dashing[{0, Small, Small, Small}]
+        if name == "DotDashed" {
+          return Ok("Dashing[{0, Small, Small, Small}]".to_string());
+        }
         // Return as symbolic
         Ok(name.clone())
       }
@@ -873,6 +885,38 @@ pub fn evaluate_expr_to_expr_inner(
           return Ok(Expr::FunctionCall {
             name: "Thickness".to_string(),
             args: vec![Expr::Identifier("Large".to_string())],
+          });
+        }
+        // Dashed → Dashing[{Small, Small}]
+        if name == "Dashed" {
+          return Ok(Expr::FunctionCall {
+            name: "Dashing".to_string(),
+            args: vec![Expr::List(vec![
+              Expr::Identifier("Small".to_string()),
+              Expr::Identifier("Small".to_string()),
+            ])],
+          });
+        }
+        // Dotted → Dashing[{0, Small}]
+        if name == "Dotted" {
+          return Ok(Expr::FunctionCall {
+            name: "Dashing".to_string(),
+            args: vec![Expr::List(vec![
+              Expr::Integer(0),
+              Expr::Identifier("Small".to_string()),
+            ])],
+          });
+        }
+        // DotDashed → Dashing[{0, Small, Small, Small}]
+        if name == "DotDashed" {
+          return Ok(Expr::FunctionCall {
+            name: "Dashing".to_string(),
+            args: vec![Expr::List(vec![
+              Expr::Integer(0),
+              Expr::Identifier("Small".to_string()),
+              Expr::Identifier("Small".to_string()),
+              Expr::Identifier("Small".to_string()),
+            ])],
           });
         }
         // Return as symbolic identifier

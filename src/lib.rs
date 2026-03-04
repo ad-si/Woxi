@@ -663,7 +663,17 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       let needs_eval = trimmed[1..trimmed.len() - 1].split(',').any(|item| {
         let item = item.trim();
         evaluator::named_color_expr_pub(item).is_some()
-          || matches!(item, "Now" | "Today" | "Tomorrow" | "Yesterday")
+          || matches!(
+            item,
+            "Now"
+              | "Today"
+              | "Tomorrow"
+              | "Yesterday"
+              | "Thick"
+              | "Dashed"
+              | "Dotted"
+              | "DotDashed"
+          )
       });
       if !needs_eval {
         // Simple list with no function calls or operators - return as-is
@@ -774,6 +784,18 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     // Thick → Thickness[Large]
     if trimmed == "Thick" {
       return Ok("Thickness[Large]".to_string());
+    }
+    // Dashed → Dashing[{Small, Small}]
+    if trimmed == "Dashed" {
+      return Ok("Dashing[{Small, Small}]".to_string());
+    }
+    // Dotted → Dashing[{0, Small}]
+    if trimmed == "Dotted" {
+      return Ok("Dashing[{0, Small}]".to_string());
+    }
+    // DotDashed → Dashing[{0, Small, Small, Small}]
+    if trimmed == "DotDashed" {
+      return Ok("Dashing[{0, Small, Small, Small}]".to_string());
     }
     // Return identifier as-is if not found
     return Ok(trimmed.to_string());

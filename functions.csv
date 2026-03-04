@@ -1230,7 +1230,7 @@ DagumDistribution,,,,8,3020
 DamData,,🚫,,10,4809
 DamerauLevenshteinDistance,,,,7,4006
 Darker,Makes a color darker,✅,pure,6,312
-Dashed,,,,6,177
+Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6,177
 Dashing,Sets line dashing in graphics,✅,pure,1,416
 DatabaseConnect,,,,12,5390
 DatabaseDisconnect,,,,12,

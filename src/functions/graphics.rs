@@ -4,6 +4,25 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::parse_image_size;
 use crate::syntax::Expr;
 
+/// Dash length for the "Small" named size in Dashing directives.
+/// This is the default dash segment length used by Dashed, Dotted, etc.
+const SMALL_DASH: f64 = 0.01;
+
+/// Convert a named size (Tiny, Small, Medium, Large) to a dash length.
+fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
+  if let Expr::Identifier(s) = expr {
+    match s.as_str() {
+      "Tiny" => Some(0.005),
+      "Small" => Some(SMALL_DASH),
+      "Medium" => Some(0.02),
+      "Large" => Some(0.04),
+      _ => None,
+    }
+  } else {
+    None
+  }
+}
+
 // ── Color ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
@@ -561,16 +580,21 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       }
       "Dashing" if !args.is_empty() => {
         // Dashing[{d1, d2, ...}] or Dashing[d]
+        // Supports named sizes: Tiny, Small, Medium, Large
         match &args[0] {
           Expr::List(items) => {
-            let dashes: Vec<f64> =
-              items.iter().filter_map(expr_to_f64).collect();
+            let dashes: Vec<f64> = items
+              .iter()
+              .filter_map(|e| dash_size_to_f64(e).or_else(|| expr_to_f64(e)))
+              .collect();
             if !dashes.is_empty() {
               style.dashing = Some(dashes);
             }
           }
           _ => {
-            if let Some(d) = expr_to_f64(&args[0]) {
+            if let Some(d) =
+              dash_size_to_f64(&args[0]).or_else(|| expr_to_f64(&args[0]))
+            {
               style.dashing = Some(vec![d, d]);
             }
           }
@@ -638,6 +662,21 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
     // Thin is equivalent to AbsoluteThickness[0.5]
     Expr::Identifier(s) if s == "Thin" => {
       style.thickness = -0.5;
+      true
+    }
+    // Dashed is equivalent to Dashing[{Small, Small}]
+    Expr::Identifier(s) if s == "Dashed" => {
+      style.dashing = Some(vec![SMALL_DASH, SMALL_DASH]);
+      true
+    }
+    // Dotted is equivalent to Dashing[{0, Small}]
+    Expr::Identifier(s) if s == "Dotted" => {
+      style.dashing = Some(vec![0.0, SMALL_DASH]);
+      true
+    }
+    // DotDashed is equivalent to Dashing[{0, Small, Small, Small}]
+    Expr::Identifier(s) if s == "DotDashed" => {
+      style.dashing = Some(vec![0.0, SMALL_DASH, SMALL_DASH, SMALL_DASH]);
       true
     }
     _ => false,

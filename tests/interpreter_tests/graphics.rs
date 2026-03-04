@@ -222,6 +222,27 @@ mod graphics {
     }
 
     #[test]
+    fn dashed_shorthand() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Dashed, Line[{{0, 0}, {1, 1}}]}]"
+      ));
+    }
+
+    #[test]
+    fn dotted_shorthand() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{Dotted, Line[{{0, 0}, {1, 1}}]}]"
+      ));
+    }
+
+    #[test]
+    fn dot_dashed_shorthand() {
+      insta::assert_snapshot!(export_svg(
+        "Graphics[{DotDashed, Line[{{0, 0}, {1, 1}}]}]"
+      ));
+    }
+
+    #[test]
     fn point_size() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{PointSize[0.03], Point[{0, 0}]}]"
