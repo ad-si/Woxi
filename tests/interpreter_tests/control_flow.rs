@@ -875,6 +875,14 @@ mod absolute_timing {
     assert!(result.starts_with('{'));
     assert!(result.contains(", 5}"));
   }
+
+  #[test]
+  fn repeated_timing_returns_list() {
+    clear_state();
+    let result = interpret("RepeatedTiming[1 + 1]").unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.contains(", 2}"));
+  }
 }
 
 mod return_in_loops {

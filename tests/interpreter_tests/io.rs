@@ -1566,3 +1566,28 @@ mod information {
     assert!(result.contains("h[x_] :> x^2"));
   }
 }
+
+mod file_name_join {
+  use super::*;
+
+  #[test]
+  fn basic_join() {
+    assert_eq!(
+      interpret(r#"FileNameJoin[{"home", "user", "file.txt"}]"#).unwrap(),
+      "home/user/file.txt"
+    );
+  }
+
+  #[test]
+  fn two_parts() {
+    assert_eq!(interpret(r#"FileNameJoin[{"a", "b"}]"#).unwrap(), "a/b");
+  }
+
+  #[test]
+  fn single_part() {
+    assert_eq!(
+      interpret(r#"FileNameJoin[{"file.txt"}]"#).unwrap(),
+      "file.txt"
+    );
+  }
+}

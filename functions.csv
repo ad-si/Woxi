@@ -1916,7 +1916,7 @@ FileHash,,,,6,3134
 FileNameDepth,,,,7,3755
 FileNameDrop,,,,7,2554
 FileNameForms,,,,11,4527
-FileNameJoin,,,,7,582
+FileNameJoin,Join file path components,✅,pure,7,582
 FileNames,,,,2,707
 FileNameSetter,,,,6,2254
 FileNameSplit,,,,7,1938
@@ -4646,7 +4646,7 @@ RenkoChart,,,,8,3298
 RepairMesh,,,,11,3947
 Repeated,Pattern that matches one or more repetitions,✅,pure,1,299
 RepeatedNull,Pattern that matches zero or more repetitions,✅,pure,1,428
-RepeatedTiming,,,,10.1,579
+RepeatedTiming,Time expression evaluation with repeated sampling,✅,effectful,10.1,579
 RepeatingElement,,,,10.1,3326
 Replace,Applies transformation rules to an expression,✅,pure,1,227
 ReplaceAll,Applies replacement rules to an expression,✅,pure,1,20
