@@ -750,6 +750,9 @@ fn collect_primitives(
         "BezierCurve" if !args.is_empty() => {
           parse_bezier(args, style, prims);
         }
+        "BSplineCurve" if !args.is_empty() => {
+          parse_bspline(args, style, prims);
+        }
         "Inset" if !args.is_empty() => {
           // Inset[text, pos] is similar to Text
           parse_text(args, style, prims);
@@ -1003,6 +1006,122 @@ fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       style: style.clone(),
     });
   }
+}
+
+/// Parse BSplineCurve[{pts...}] or BSplineCurve[{pts...}, SplineClosed -> True].
+/// Evaluates the B-spline and converts to a Line primitive.
+fn parse_bspline(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  if let Some(pts) = expr_to_point_list(&args[0])
+    && pts.len() >= 2
+  {
+    // Check for SplineClosed -> True option
+    let closed = args.iter().skip(1).any(|arg| {
+      matches!(arg,
+        Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineClosed")
+          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
+      )
+    });
+
+    let control = if closed {
+      // For closed splines, wrap the first (degree) points to the end
+      let degree = 3usize.min(pts.len() - 1);
+      let mut cp = pts.clone();
+      for i in 0..degree {
+        cp.push(pts[i]);
+      }
+      cp
+    } else {
+      pts
+    };
+
+    let sampled = evaluate_bspline(&control, 200);
+    prims.push(Primitive::Line {
+      segments: vec![sampled],
+      style: style.clone(),
+    });
+  }
+}
+
+/// Evaluate a uniform B-spline curve of degree min(3, n-1) at `num_samples` points.
+fn evaluate_bspline(
+  control_points: &[(f64, f64)],
+  num_samples: usize,
+) -> Vec<(f64, f64)> {
+  let n = control_points.len();
+  if n < 2 {
+    return control_points.to_vec();
+  }
+
+  let degree = 3usize.min(n - 1);
+  let num_knots = n + degree + 1;
+
+  // Clamped uniform knot vector
+  let mut knots = Vec::with_capacity(num_knots);
+  for _ in 0..=degree {
+    knots.push(0.0);
+  }
+  let num_internal = num_knots - 2 * (degree + 1);
+  for i in 1..=num_internal {
+    knots.push(i as f64);
+  }
+  let max_knot = (num_internal + 1) as f64;
+  for _ in 0..=degree {
+    knots.push(max_knot);
+  }
+
+  let t_min = knots[degree];
+  let t_max = knots[n];
+
+  let mut result = Vec::with_capacity(num_samples);
+  for i in 0..num_samples {
+    let t = t_min + (t_max - t_min) * i as f64 / (num_samples - 1) as f64;
+    let (mut x, mut y) = (0.0, 0.0);
+    for j in 0..n {
+      let b = bspline_basis(j, degree, t, &knots);
+      x += b * control_points[j].0;
+      y += b * control_points[j].1;
+    }
+    result.push((x, y));
+  }
+  result
+}
+
+/// Cox-de Boor recursion for B-spline basis function.
+fn bspline_basis(i: usize, k: usize, t: f64, knots: &[f64]) -> f64 {
+  if k == 0 {
+    return if knots[i] <= t && t < knots[i + 1] {
+      1.0
+    } else if (t - knots[i + 1]).abs() < 1e-12
+      && knots[i] < knots[i + 1]
+      && (i + 2 >= knots.len() || (knots[i + 1] - knots[i + 2]).abs() < 1e-12)
+    {
+      // Handle the last real knot boundary (t == t_max at last non-degenerate interval)
+      1.0
+    } else {
+      0.0
+    };
+  }
+
+  let denom1 = knots[i + k] - knots[i];
+  let term1 = if denom1 > 0.0 {
+    (t - knots[i]) / denom1 * bspline_basis(i, k - 1, t, knots)
+  } else {
+    0.0
+  };
+
+  let denom2 = knots[i + k + 1] - knots[i + 1];
+  let term2 = if denom2 > 0.0 {
+    (knots[i + k + 1] - t) / denom2 * bspline_basis(i + 1, k - 1, t, knots)
+  } else {
+    0.0
+  };
+
+  term1 + term2
 }
 
 fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {

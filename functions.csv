@@ -603,7 +603,7 @@ Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
 BrownForsytheTest,,,,8,3972
 BrownianBridgeProcess,,,,9,3280
 BSplineBasis,,,,7,1466
-BSplineCurve,,,,7,192
+BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7,192
 BSplineFunction,,,,7,1176
 BSplineSurface,,,,7,1891
 BubbleChart,Creates a bubble chart from data,✅,pure,7,1679
@@ -5133,7 +5133,7 @@ SpheroidalS2,,,,6,2642
 SpheroidalS2Prime,,,,6,2921
 Splice,,,,12.1,2650
 SplicedDistribution,,,,9,3566
-SplineClosed,,,,7,215
+SplineClosed,Option for closing B-spline curves,✅,pure,7,215
 SplineDegree,,,,7,774
 SplineKnots,,,,7,1064
 SplineWeights,,,,7,1094

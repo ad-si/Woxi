@@ -944,6 +944,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Polygon"
     | "Arrow"
     | "BezierCurve"
+    | "BSplineCurve"
     | "Rotate"
     | "Translate"
     | "Scale"
