@@ -3030,7 +3030,7 @@ KochCurve,,,,11.1,2777
 KolmogorovSmirnovTest,,,,8,2431
 KroneckerDelta,Returns 1 if all arguments are equal and 0 otherwise,✅,pure,4,591
 KroneckerModelDecomposition,,,,9,4173
-KroneckerProduct,,,,6,625
+KroneckerProduct,Kronecker (tensor) product of matrices,✅,pure,6,625
 KroneckerSymbol,,,,6,2978
 KuiperTest,,,,8,3717
 KumaraswamyDistribution,,,,8,3612
