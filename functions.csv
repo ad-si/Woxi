@@ -247,8 +247,8 @@ AssociationMap,Maps a function over an association,✅,pure,10,1530
 AssociationQ,Tests if an expression is an association,✅,pure,10.1,2268
 AssociationThread,Creates an association from lists of keys and values,✅,pure,10,865
 AssumeDeterministic,,,,11,4881
-Assuming,,,,5,452
-Assumptions,,,,3,262
+Assuming,Evaluate expression under given assumptions,✅,pure,5,452
+Assumptions,Specify assumptions for symbolic computation,✅,none,3,262
 AstroAngularSeparation,,,,13.2,
 AstroBackground,,,,13.2,
 AstroCenter,,,,13.2,
@@ -379,7 +379,7 @@ AxesLabel,Option specifying labels for the axes of a plot,✅,pure,1,71
 AxesOrigin,Option specifying the origin point for plot axes,✅,none,2,166
 AxesStyle,Option specifying the style of plot axes,✅,none,2,124
 AxiomaticTheory,,,,12,3242
-Axis,,,,3,291
+Axis,Filling reference for plots,✅,none,3,291
 AxisLabel,,,,12.3,
 AxisObject,,,,12.3,
 AxisStyle,,,,12.3,
@@ -617,7 +617,7 @@ BulletGauge,,,,9,2762
 BusinessDayQ,,,,9,4809
 ButterflyGraph,,,,8,2798
 ButterworthFilterModel,,,,9,2854
-Button,,,,6,280
+Button,Interactive button element,🚫,effectful,6,280
 ButtonBar,,,,7,2570
 ButtonBox,,,,3,1313
 ButtonBoxOptions,,,,4,3474
@@ -781,7 +781,7 @@ Chebyshev2FilterModel,,,,9,4527
 ChebyshevT,Chebyshev polynomial of the first kind,✅,pure,1,655
 ChebyshevU,Chebyshev polynomial of the second kind,✅,pure,1,761
 Check,Evaluates an expression and returns a fallback if messages are generated,✅,pure,1,804
-CheckAbort,,,,2,1991
+CheckAbort,Evaluate expression and catch aborts,✅,pure,2,1991
 CheckArguments,,,,12.2,5079
 Checkbox,,,,6,730
 CheckboxBar,,,,6,1833
@@ -888,7 +888,7 @@ CollinearPoints,,,,12.2,5184
 Colon,,,,3,2952
 ColorBalance,,,,10.2,3636
 ColorCombine,,,,7,1800
-ColorConvert,,,,7,766
+ColorConvert,Convert between color spaces,✅,pure,7,766
 ColorCoverage,,,,10,4707
 ColorData,,🚫,,6,224
 ColorDataFunction,,,,6,4225
@@ -966,7 +966,7 @@ ComplexArrayPlot,,,,12.2,4881
 ComplexContourPlot,,,,12.1,2210
 Complexes,,,,4,790
 ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
-ComplexInfinity,,,,,
+ComplexInfinity,Complex infinity constant,✅,pure,,
 ComplexityFunction,,,,3,1451
 ComplexListPlot,,,,12,999
 ComplexPlot,,,,12,1377
@@ -1061,7 +1061,7 @@ ContourDetect,,,,8,3737
 ContourIntegrate,,,,13.3,
 ContourLabels,,,,6,843
 ContourPlot,Creates a contour plot of a function,✅,pure,1,155
-ContourPlot3D,,,,6,352
+ContourPlot3D,3D contour plot,🚫,none,6,352
 Contours,Option specifying contour levels in contour plots,✅,none,2,418
 ContourShading,Option specifying shading between contour lines,✅,none,2,693
 ContourStyle,Option specifying the style of contour lines,✅,none,2,424
@@ -1222,7 +1222,7 @@ CycleIndexPolynomial,,,,9,3124
 Cycles,,,,8,941
 CyclicGroup,,,,8,3121
 Cyclotomic,n-th cyclotomic polynomial,✅,pure,1,2399
-Cylinder,,,,6,302
+Cylinder,3D cylinder graphics primitive,🚫,none,6,302
 CylindricalDecomposition,,,,5,2350
 CylindricalDecompositionFunction,,,,12.2,
 D,Computes the derivative of an expression,✅,pure,1,36
@@ -1398,7 +1398,7 @@ DeviceWrite,,,,10,3280
 DeviceWriteBuffer,,,,10,4291
 DFixedPoints,,,,14.1,
 DGaussianWavelet,,,,8,3566
-Diagonal,,,,6,932
+Diagonal,Extract diagonal of a matrix,✅,pure,6,932
 DiagonalizableMatrixQ,,,,10,2570
 DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure,1,493
 DiagonalMatrixQ,,,,12,3737
@@ -1460,7 +1460,7 @@ DirectedInfinity,Represents a directed infinity,✅,pure,1,1270
 Direction,Option specifying the direction for operations,✅,none,2,484
 DirectionalLight,,,,13,
 Directive,Combines graphics directives,✅,pure,6,33
-Directory,,,,2,1342
+Directory,Current working directory,✅,effectful,2,1342
 DirectoryName,,,,3,1646
 DirectoryQ,,,,7,1629
 DirectoryStack,,,,2,4527
@@ -1551,10 +1551,10 @@ DominantColors,Finds dominant colors in an image using k-means clustering,✅,pu
 DominatorTreeGraph,,,,13,
 DominatorVertexList,,,,13,
 Dot,Computes the dot product or matrix multiplication,✅,pure,1,51
-DotDashed,,,,6,1399
+DotDashed,Dot-dashed line style directive,✅,none,6,1399
 DotEqual,,,,3,2729
 DotLayer,,,,11.1,4356
-Dotted,,,,6,466
+Dotted,Dotted line style directive,✅,none,6,466
 DoubleBracketingBar,,,,3,3972
 DoubleDownArrow,,,,3,5390
 DoubleLeftArrow,,,,3,5390
@@ -1735,7 +1735,7 @@ EqualTilde,,,,3,5079
 EqualTo,,,,10.3,2578
 Equilibrium,,,,3,3363
 EquirippleFilterKernel,,,,9,4225
-Equivalent,,,,7,1298
+Equivalent,Logical equivalence,✅,pure,7,1298
 Erf,Returns the error function value,✅,pure,1,554
 Erfc,Returns the complementary error function value,✅,pure,2,784
 Erfi,,,,3,995
@@ -1753,7 +1753,7 @@ EstimatedProcess,,,,9,1571
 EstimatedVariogramModel,,,,13,
 EstimatorGains,,,,8,3280
 EstimatorRegulator,,,,8,4138
-EuclideanDistance,,,,6,477
+EuclideanDistance,Euclidean distance between two vectors,✅,pure,6,477
 EulerAngles,,,,10.2,2491
 EulerCharacteristic,,,,12,5486
 EulerE,Returns the nth Euler number or nth Euler polynomial,✅,pure,1,3298
@@ -2181,7 +2181,7 @@ FrontEndEventActions,,,,6,4138
 FrontEndExecute,,,,3,982
 FrontEndToken,,,,3,1293
 FrontEndTokenExecute,,,,4,1280
-Full,,,,6,294
+Full,Full-size image specification,✅,none,6,294
 FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1,4173
 FullForm,Returns the full internal form of an expression,✅,pure,1,491
 FullGraphics,,,,2,2688
@@ -2514,7 +2514,7 @@ HeaderDisplayFunction,,,,12.1,
 HeaderLines,,,,10,2650
 HeaderSize,,,,12.1,
 HeaderStyle,,,,12.1,
-Heads,,,,2,824
+Heads,Option for including heads in operations,✅,none,2,824
 HeatFluxValue,,,,12.2,5184
 HeatInsulationValue,,,,12.2,5390
 HeatOutflowValue,,,,12.2,5486
@@ -2579,7 +2579,7 @@ HoldComplete,Holds arguments completely unevaluated,✅,pure,3,78
 HolderModel,,,,14,
 HoldFirst,Attribute specifying first arg is held,✅,pure,1,570
 HoldForm,Holds an expression unevaluated for display,✅,pure,1,311
-HoldPattern,,,,3,384
+HoldPattern,Hold pattern from evaluation,✅,pure,3,384
 HoldRest,Attribute holding all but first argument,✅,pure,1,1600
 HolidayCalendar,,,,9,3462
 HorizontalGauge,,,,9,2108
@@ -2612,7 +2612,7 @@ HypergeometricDistribution,,,,6,2289
 HypergeometricPFQ,,,,3,386
 HypergeometricPFQRegularized,,,,3,791
 HypergeometricU,Confluent hypergeometric function of the second kind,✅,pure,1,1275
-Hyperlink,,,,6,209
+Hyperlink,Interactive hyperlink element,🚫,effectful,6,209
 HyperlinkAction,,,,12.1,5486
 Hyperplane,,,,10.2,2688
 Hyphenation,,,,4,2425
@@ -2781,7 +2781,7 @@ InfiniteLine,,,,10,893
 InfiniteLineThrough,,,,13.1,
 InfinitePast,,,,12.1,
 InfinitePlane,,,,10,1434
-Infinity,,,,,
+Infinity,Positive infinity constant,✅,pure,,
 Infix,Symbol for infix display formatting,✅,pure,1,2449
 InflationAdjust,,,,10,3317
 InflationMethod,,,,10,5486
@@ -2814,7 +2814,7 @@ InputOutputResponse,,,,14,
 InputOutputResponseData,,🚫,,14,
 InputPacket,,,,3,
 InputPorts,,,,12.2,4747
-InputStream,,,,2,3344
+InputStream,Input stream object,✅,effectful,2,3344
 InputString,Symbol specifying input string type for Input,✅,pure,1,2051
 InputStringPacket,,,,3,
 InscribedBall,,,,13.3,
@@ -2961,7 +2961,7 @@ JarqueBeraALMTest,,,,8,3678
 JohnsonDistribution,,,,8,2911
 Join,Concatenates multiple lists,✅,pure,1,105
 JoinAcross,,,,10,2292
-Joined,,,,6,285
+Joined,Option for joining points in list plots,✅,none,6,285
 JoinedCurve,,,,8,1754
 JoinForm,,,,7,1420
 JordanDecomposition,,,,3,844
@@ -3142,7 +3142,7 @@ LetterNumber,,,,10.1,1524
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2,2144
 Level,Extracts subexpressions at specified levels,✅,pure,1,950
 LeveneTest,,,,8,3843
-LeviCivitaTensor,,,,7,1781
+LeviCivitaTensor,Levi-Civita totally antisymmetric tensor,✅,pure,7,1781
 LevyDistribution,,,,7,3402
 LexicographicOrder,,,,12.3,
 LexicographicSort,,,,12.3,
@@ -3374,7 +3374,7 @@ MandelbrotSetIterationCount,,,,10,4006
 MandelbrotSetMemberQ,,,,10,3153
 MandelbrotSetPlot,,,,10,1748
 MangoldtLambda,,,,7,2900
-ManhattanDistance,,,,6,2462
+ManhattanDistance,Manhattan (L1) distance between two vectors,✅,pure,6,2462
 Manipulate,,🚫,,6,95
 ManipulateVideo,,🚫,,14.1,
 Manipulator,,🚫,,6,1201
@@ -3485,7 +3485,7 @@ Median,Returns the median value of a list,✅,pure,5,666
 MedianDeviation,,,,6,3402
 MedianFilter,,,,7,2031
 MedicalTestData,,🚫,,10,4809
-Medium,,,,6,287
+Medium,Medium size specification,✅,none,6,287
 MeijerG,,,,3,492
 MeijerGReduce,,,,11,2656
 MeixnerDistribution,,,,9,3413
@@ -3564,7 +3564,7 @@ MinStableDistribution,,,,8,3094
 Minus,Subtracts numbers,✅,pure,1,800
 MinusPlus,,,,3,4437
 MinValue,,,,7,1690
-Missing,,,,,
+Missing,Represents missing data or keys,✅,pure,,
 MissingBehavior,,,,10,4027
 MissingDataMethod,,,,9,3059
 MissingDataRules,,,,10,5079
@@ -3892,7 +3892,7 @@ NSum,Numerical approximation of a sum using polynomial extrapolation,✅,pure,1,
 NSurfaceIntegrate,,,,14,
 NuclearExplosionData,,🚫,,10,4660
 NuclearReactorData,,🚫,,10,4527
-Null,,,,,
+Null,Null expression producing no output,✅,pure,,
 NullRawPointerQ,,,,13.3,
 NullRecords,,,,2,3257
 NullSpace,Returns the null space of a matrix,✅,pure,1,771
@@ -3992,7 +3992,7 @@ OutputNamePacket,,,,3,4291
 OutputPorts,,,,12.2,4947
 OutputResponse,,,,8,1257
 OutputSizeLimit,,,,6,4527
-OutputStream,,,,2,3298
+OutputStream,Output stream object,✅,effectful,2,3298
 OverBar,,,,6,717
 OverDot,,,,6,1547
 Overflow,Symbol representing arithmetic overflow,✅,pure,1,1926
@@ -4087,7 +4087,7 @@ ParametricFunction,,,,9,4138
 ParametricNDSolve,,,,9,1231
 ParametricNDSolveValue,,,,9,977
 ParametricPlot,Creates a parametric plot,✅,pure,1,118
-ParametricPlot3D,,,,2,210
+ParametricPlot3D,3D parametric plot,🚫,none,2,210
 ParametricRampLayer,,,,12.1,4291
 ParametricRegion,,,,10,1400
 ParentBox,,,,10,5079
@@ -4417,7 +4417,7 @@ QPolyGamma,,,,7,3862
 QRDecomposition,,,,2,2181
 QuadraticIrrationalQ,,,,6,4747
 QuadraticOptimization,,,,12,3265
-Quantile,,,,5,739
+Quantile,Compute quantiles of a dataset,✅,pure,5,739
 QuantilePlot,,,,8,1842
 Quantity,Represents a physical quantity with a unit,✅,pure,9,47
 QuantityArray,,,,10.1,2184
@@ -4492,8 +4492,8 @@ RandomWalkProcess,,,,9,2561
 RandomWord,,,,10.3,2018
 Range,Generates a sequence of numbers,✅,pure,1,67
 RangeFilter,,,,8,3048
-RankedMax,,,,8,2355
-RankedMin,,,,8,2263
+RankedMax,k-th largest element,✅,pure,8,2355
+RankedMin,k-th smallest element,✅,pure,8,2263
 RarerProbability,,,,12,
 Raster,Graphics primitive representing raster image data,✅,none,2,747
 Raster3D,,,,9,2317
@@ -4713,7 +4713,7 @@ RiemannSiegelZ,,,,2,1675
 RiemannXi,,,,10,4479
 Riffle,Inserts an element between each pair of elements,✅,pure,6,473
 Right,Symbol for right alignment,✅,pure,1,378
-RightArrow,,,,3,235
+RightArrow,Typesetting arrow symbol,🚫,none,3,235
 RightArrowBar,,,,3,4747
 RightArrowLeftArrow,,,,3,5390
 RightComposition,,,,10,662
@@ -4769,7 +4769,7 @@ RowMinHeight,,,,3,3803
 RowReduce,Returns the row echelon form of a matrix,✅,pure,1,483
 RowsEqual,,,,3,5486
 RowSpacings,,,,3,2742
-RSolve,,,,5,695
+RSolve,Solve recurrence equations,✅,pure,5,695
 RSolveValue,,,,10,1621
 RStabilityConditions,,,,14.1,
 RudinShapiro,,,,10.2,4291
@@ -5014,7 +5014,7 @@ SlideShowVideo,,,,12.3,
 SlideView,,,,6,3048
 Slot,Represents the nth argument in a pure function,✅,pure,1,17
 SlotSequence,Represents a sequence of arguments in a pure function,✅,pure,1,216
-Small,,,,6,368
+Small,Small size specification,✅,none,6,368
 SmallCircle,,,,3,1938
 Smaller,,,,6,266
 SmithDecomposition,,,,10.2,2535
@@ -5069,7 +5069,7 @@ Sow,Sows an expression for collection by Reap,✅,stateful,5,355
 SowVideo,,,,14.1,
 SpaceCurveData,,🚫,,10,4747
 Spacer,,,,6,471
-Spacings,,,,6,261
+Spacings,Spacing specification for grids and layouts,✅,none,6,261
 Span,Extract a span of elements using ;; notation in Part,✅,pure,6,109
 SpanFromAbove,,,,6,1687
 SpanFromBoth,,,,6,2495
@@ -5108,7 +5108,7 @@ SpeechSynthesize,,,,11.2,3972
 SpellingCorrection,,,,2,3916
 SpellingCorrectionList,,,,10.4,4262
 SpellingOptions,,,,4,5587
-Sphere,,,,6,282
+Sphere,3D sphere graphics primitive,✅,none,6,282
 SpherePoints,,,,11.1,3083
 SphericalAngle,,,,14,
 SphericalBesselJ,,,,6,1001
@@ -5145,7 +5145,7 @@ Sqrt,Returns the square root of a number,✅,pure,1,18
 SqrtBox,,,,3,1999
 SqrtBoxOptions,,,,6,
 Square,,,,3,1437
-SquaredEuclideanDistance,,,,6,1946
+SquaredEuclideanDistance,Squared Euclidean distance between two vectors,✅,pure,6,1946
 SquareFreeQ,Tests if a polynomial or integer is square-free,✅,pure,6,1944
 SquareIntersection,,,,3,4809
 SquareMatrixQ,,,,10,2065
@@ -5587,7 +5587,7 @@ TimeZone,,,,2,892
 TimeZoneConvert,,,,10,2999
 TimeZoneOffset,,,,10.3,3947
 Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1,276
-Tiny,,,,6,304
+Tiny,Tiny size specification,✅,none,6,304
 TitsGroupT,,,,8,5013
 ToBoxes,,,,3,737
 ToCharacterCode,Converts characters to their character codes,✅,pure,2,846
@@ -5607,7 +5607,7 @@ Tolerance,,,,2,1583
 ToLowerCase,Converts a string to lowercase,✅,pure,2,827
 Tomorrow,Returns a DateObject representing the next calendar day,✅,contextual,10,2688
 ToNumberField,,,,6,2219
-Tooltip,,,,6,260
+Tooltip,Interactive tooltip element,🚫,effectful,6,260
 TooltipDelay,,,,7,1833
 TooltipStyle,,,,8,2002
 ToonShading,,,,12.1,
@@ -5777,7 +5777,7 @@ TypeSpecifier,,,,12,4660
 UnateQ,,,,9,4104
 Uncompress,Decompresses a string from Compress,✅,pure,6,1069
 UnconstrainedParameters,,,,12,4291
-Undefined,,,,,
+Undefined,Undefined mathematical result,✅,pure,,
 UnderBar,,,,6,3785
 Underflow,Symbol representing arithmetic underflow,✅,pure,1,2557
 Underlined,,,,6,1701
@@ -5788,7 +5788,7 @@ Underscript,,,,6,2144
 UnderscriptBox,,,,3,2452
 UnderscriptBoxOptions,,,,4,2944
 UnderseaFeatureData,,🚫,,10,
-UndirectedEdge,,,,8,201
+UndirectedEdge,Undirected graph edge,🚫,none,8,201
 UndirectedGraph,,,,8,2038
 UndirectedGraphQ,,,,8,2867
 UndoOptions,,,,10,5013
