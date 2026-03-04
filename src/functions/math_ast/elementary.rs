@@ -1607,3 +1607,115 @@ pub fn unit_step_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
   }
 }
+
+pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "HeavisideTheta expects at least 1 argument".into(),
+    ));
+  }
+
+  // Multi-arg: HeavisideTheta[x1, x2, ...] = product, 0 if any xi < 0
+  if args.len() > 1 {
+    let mut remaining = Vec::new();
+    for arg in args {
+      match arg {
+        Expr::Integer(n) => {
+          if *n < 0 {
+            return Ok(Expr::Integer(0));
+          }
+          if *n == 0 {
+            remaining.push(arg.clone());
+          }
+          // n > 0: contributes 1, skip
+        }
+        Expr::Real(f) => {
+          if *f < 0.0 {
+            return Ok(Expr::Integer(0));
+          }
+          if *f == 0.0 {
+            remaining.push(arg.clone());
+          }
+        }
+        _ => {
+          remaining.push(arg.clone());
+        }
+      }
+    }
+    if remaining.is_empty() {
+      return Ok(Expr::Integer(1));
+    }
+    return Ok(Expr::FunctionCall {
+      name: "HeavisideTheta".to_string(),
+      args: remaining,
+    });
+  }
+
+  // Single arg
+  match &args[0] {
+    Expr::Integer(n) => {
+      if *n > 0 {
+        Ok(Expr::Integer(1))
+      } else if *n < 0 {
+        Ok(Expr::Integer(0))
+      } else {
+        // HeavisideTheta[0] stays symbolic
+        Ok(Expr::FunctionCall {
+          name: "HeavisideTheta".to_string(),
+          args: vec![Expr::Integer(0)],
+        })
+      }
+    }
+    Expr::Real(f) => {
+      if *f > 0.0 {
+        Ok(Expr::Integer(1))
+      } else if *f < 0.0 {
+        Ok(Expr::Integer(0))
+      } else {
+        Ok(Expr::FunctionCall {
+          name: "HeavisideTheta".to_string(),
+          args: vec![Expr::Real(0.0)],
+        })
+      }
+    }
+    Expr::Constant(c) => match c.as_str() {
+      "Pi" | "E" | "Degree" => Ok(Expr::Integer(1)),
+      _ => Ok(Expr::FunctionCall {
+        name: "HeavisideTheta".to_string(),
+        args: args.to_vec(),
+      }),
+    },
+    Expr::Identifier(name) if name == "Infinity" => Ok(Expr::Integer(1)),
+    _ => Ok(Expr::FunctionCall {
+      name: "HeavisideTheta".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+pub fn dirac_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "DiracDelta expects at least 1 argument".into(),
+    ));
+  }
+
+  // For numeric arguments: 0 for any non-zero value, symbolic at 0
+  for arg in args {
+    match arg {
+      Expr::Integer(n) if *n != 0 => return Ok(Expr::Integer(0)),
+      Expr::Real(f) if *f != 0.0 => return Ok(Expr::Integer(0)),
+      Expr::Constant(_) => return Ok(Expr::Integer(0)), // Pi, E, etc. are non-zero
+      Expr::Identifier(name) if name == "Infinity" => {
+        return Ok(Expr::Integer(0));
+      }
+      _ => {}
+    }
+  }
+
+  // If all args are zero, or mixed with symbolic, stay symbolic
+  Ok(Expr::FunctionCall {
+    name: "DiracDelta".to_string(),
+    args: args.to_vec(),
+  })
+}

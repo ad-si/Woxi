@@ -1263,6 +1263,81 @@ mod unit_step {
   }
 }
 
+mod heaviside_theta {
+  use super::*;
+
+  #[test]
+  fn positive() {
+    assert_eq!(interpret("HeavisideTheta[1]").unwrap(), "1");
+    assert_eq!(interpret("HeavisideTheta[5]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("HeavisideTheta[-1]").unwrap(), "0");
+    assert_eq!(interpret("HeavisideTheta[-5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_zero_stays_symbolic() {
+    assert_eq!(interpret("HeavisideTheta[0]").unwrap(), "HeavisideTheta[0]");
+  }
+
+  #[test]
+  fn multi_arg_all_positive() {
+    assert_eq!(interpret("HeavisideTheta[1, 2]").unwrap(), "1");
+  }
+
+  #[test]
+  fn multi_arg_with_negative() {
+    assert_eq!(interpret("HeavisideTheta[1, -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn multi_arg_with_zero() {
+    assert_eq!(
+      interpret("HeavisideTheta[1, 0]").unwrap(),
+      "HeavisideTheta[0]"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("HeavisideTheta[x]").unwrap(), "HeavisideTheta[x]");
+  }
+
+  #[test]
+  fn constant_positive() {
+    assert_eq!(interpret("HeavisideTheta[Pi]").unwrap(), "1");
+  }
+}
+
+mod dirac_delta {
+  use super::*;
+
+  #[test]
+  fn nonzero_is_zero() {
+    assert_eq!(interpret("DiracDelta[1]").unwrap(), "0");
+    assert_eq!(interpret("DiracDelta[-1]").unwrap(), "0");
+    assert_eq!(interpret("DiracDelta[5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_zero_stays_symbolic() {
+    assert_eq!(interpret("DiracDelta[0]").unwrap(), "DiracDelta[0]");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("DiracDelta[x]").unwrap(), "DiracDelta[x]");
+  }
+
+  #[test]
+  fn constant_is_zero() {
+    assert_eq!(interpret("DiracDelta[Pi]").unwrap(), "0");
+  }
+}
+
 mod nest_while_list {
   use super::*;
 

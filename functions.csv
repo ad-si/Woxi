@@ -1451,7 +1451,7 @@ DimensionReducerFunction,,,,10.1,4707
 DimensionReduction,,,,10.1,3176
 Dimensions,Returns the dimensions of a nested list,✅,pure,1,288
 DiracComb,,,,7,3843
-DiracDelta,,,,4,624
+DiracDelta,Dirac delta generalized function,✅,pure,4,624
 DirectedEdge,,,,8,400
 DirectedEdges,,,,6,986
 DirectedGraph,,,,8,2246
@@ -2525,7 +2525,7 @@ HeatTransferPDEComponent,,,,12.2,3378
 HeatTransferValue,,,,12.2,3972
 HeavisideLambda,,,,7,2329
 HeavisidePi,,,,7,2094
-HeavisideTheta,,,,6,705
+HeavisideTheta,Heaviside step function,✅,pure,6,705
 HeldGroupHe,,,,8,5013
 HelmholtzPDEComponent,,,,12.2,5486
 Here,,,,10,1413
