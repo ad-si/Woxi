@@ -98,6 +98,9 @@ pub fn dispatch_linear_algebra_functions(
     "Cross" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::cross_ast(args));
     }
+    "KroneckerProduct" if args.len() == 2 => {
+      return Some(kronecker_product_ast(args));
+    }
     "Projection" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::projection_ast(args));
     }
@@ -199,4 +202,71 @@ pub fn dispatch_linear_algebra_functions(
     _ => {}
   }
   None
+}
+
+/// KroneckerProduct[A, B] — tensor (Kronecker) product of two matrices.
+fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let a_rows = match &args[0] {
+    Expr::List(rows) => rows,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "KroneckerProduct".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let b_rows = match &args[1] {
+    Expr::List(rows) => rows,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "KroneckerProduct".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Extract as matrix of expressions
+  let a: Vec<Vec<&Expr>> = a_rows
+    .iter()
+    .filter_map(|r| match r {
+      Expr::List(cols) => Some(cols.iter().collect()),
+      _ => None,
+    })
+    .collect();
+  let b: Vec<Vec<&Expr>> = b_rows
+    .iter()
+    .filter_map(|r| match r {
+      Expr::List(cols) => Some(cols.iter().collect()),
+      _ => None,
+    })
+    .collect();
+
+  if a.is_empty() || b.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let m = a.len();
+  let n = a[0].len();
+  let p = b.len();
+  let q = b[0].len();
+
+  let mut result = Vec::with_capacity(m * p);
+  for i in 0..m {
+    for k in 0..p {
+      let mut row = Vec::with_capacity(n * q);
+      for j in 0..n {
+        for l in 0..q {
+          // result[i*p+k][j*q+l] = a[i][j] * b[k][l]
+          let product = crate::functions::math_ast::times_ast(&[
+            a[i][j].clone(),
+            b[k][l].clone(),
+          ])?;
+          row.push(product);
+        }
+      }
+      result.push(Expr::List(row));
+    }
+  }
+
+  Ok(Expr::List(result))
 }

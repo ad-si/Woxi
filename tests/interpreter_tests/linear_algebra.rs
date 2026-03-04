@@ -904,3 +904,33 @@ mod lattice_reduce {
     assert_eq!(interpret("LatticeReduce[x]").unwrap(), "LatticeReduce[x]");
   }
 }
+
+mod kronecker_product {
+  use super::*;
+
+  #[test]
+  fn two_by_two_numeric() {
+    assert_eq!(
+      interpret("KroneckerProduct[{{1, 2}, {3, 4}}, {{0, 5}, {6, 7}}]")
+        .unwrap(),
+      "{{0, 5, 0, 10}, {6, 7, 12, 14}, {0, 15, 0, 20}, {18, 21, 24, 28}}"
+    );
+  }
+
+  #[test]
+  fn identity_with_symbolic() {
+    assert_eq!(
+      interpret("KroneckerProduct[{{1, 0}, {0, 1}}, {{a, b}, {c, d}}]")
+        .unwrap(),
+      "{{a, b, 0, 0}, {c, d, 0, 0}, {0, 0, a, b}, {0, 0, c, d}}"
+    );
+  }
+
+  #[test]
+  fn one_by_one() {
+    assert_eq!(
+      interpret("KroneckerProduct[{{2}}, {{3}}]").unwrap(),
+      "{{6}}"
+    );
+  }
+}
