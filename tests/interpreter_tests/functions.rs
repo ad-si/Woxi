@@ -2936,6 +2936,65 @@ mod thick {
   }
 }
 
+mod dashed {
+  use super::*;
+
+  #[test]
+  fn dashed_evaluates() {
+    assert_eq!(interpret("Dashed").unwrap(), "Dashing[{Small, Small}]");
+  }
+
+  #[test]
+  fn dotted_evaluates() {
+    assert_eq!(interpret("Dotted").unwrap(), "Dashing[{0, Small}]");
+  }
+
+  #[test]
+  fn dot_dashed_evaluates() {
+    assert_eq!(
+      interpret("DotDashed").unwrap(),
+      "Dashing[{0, Small, Small, Small}]"
+    );
+  }
+
+  #[test]
+  fn dashed_head() {
+    assert_eq!(interpret("Head[Dashed]").unwrap(), "Dashing");
+  }
+
+  #[test]
+  fn dashed_in_graphics() {
+    assert_eq!(
+      interpret("Graphics[{Dashed, Line[{{0, 0}, {1, 1}}]}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn dotted_in_graphics() {
+    assert_eq!(
+      interpret("Graphics[{Dotted, Line[{{0, 0}, {1, 1}}]}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn dot_dashed_in_graphics() {
+    assert_eq!(
+      interpret("Graphics[{DotDashed, Line[{{0, 0}, {1, 1}}]}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn dashing_with_named_sizes() {
+    assert_eq!(
+      interpret("Dashing[{Small, Small}]").unwrap(),
+      "Dashing[{Small, Small}]"
+    );
+  }
+}
+
 mod base_style {
   use super::*;
 
