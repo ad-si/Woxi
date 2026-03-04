@@ -925,6 +925,15 @@ pub fn evaluate_function_call_ast_inner(
     return Ok(result);
   }
 
+  // Blend[{c1, c2, ...}] and Blend[{c1, c2, ...}, t]
+  if name == "Blend"
+    && !args.is_empty()
+    && args.len() <= 2
+    && let Some(result) = evaluate_blend(args)
+  {
+    return Ok(result);
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor"
@@ -1149,4 +1158,131 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       result_rgb[2].clone(),
     ],
   })
+}
+
+/// Check if an expression is a GrayLevel color.
+fn is_graylevel(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args } if name == "GrayLevel" && !args.is_empty())
+}
+
+/// Evaluate Blend[{c1, c2, ...}] or Blend[{c1, c2, ...}, t].
+fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
+  let colors = match &args[0] {
+    Expr::List(items) if items.len() >= 2 => items,
+    _ => return None,
+  };
+
+  // Check if all colors are GrayLevel (to preserve output type)
+  let all_graylevel = colors.iter().all(is_graylevel);
+
+  // Extract RGB rationals for all colors
+  let rgbs: Vec<[(i128, i128); 3]> = colors
+    .iter()
+    .map(extract_rgb_rational)
+    .collect::<Option<Vec<_>>>()?;
+
+  let n = rgbs.len();
+
+  if args.len() == 1 {
+    // Blend[{c1, c2, ...}] — equal blend (average)
+    let mut sum = [(0i128, 1i128); 3];
+    for rgb in &rgbs {
+      for ch in 0..3 {
+        // sum[ch] += rgb[ch]: a/b + c/d = (a*d + c*b) / (b*d)
+        let (sn, sd) = sum[ch];
+        let (cn, cd) = rgb[ch];
+        sum[ch] = (sn * cd + cn * sd, sd * cd);
+      }
+    }
+    // Divide by n
+    let n_i128 = n as i128;
+    if all_graylevel {
+      let (num, den) = sum[0];
+      Some(Expr::FunctionCall {
+        name: "GrayLevel".to_string(),
+        args: vec![rational_to_expr(num, den * n_i128)],
+      })
+    } else {
+      Some(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: (0..3)
+          .map(|ch| {
+            let (num, den) = sum[ch];
+            rational_to_expr(num, den * n_i128)
+          })
+          .collect(),
+      })
+    }
+  } else {
+    // Blend[{c1, c2, ...}, t] — interpolation along the color list
+    let (t_num, t_den) = expr_to_rational(&args[1])?;
+
+    if n == 2 {
+      // Simple case: c1*(1-t) + c2*t
+      blend_two_rational(&rgbs[0], &rgbs[1], t_num, t_den, all_graylevel)
+    } else {
+      // Multi-color: map t in [0,1] to segments
+      // t=0 → first color, t=1 → last color
+      // segment_len = 1/(n-1), segment_index = floor(t * (n-1))
+      let segments = (n - 1) as i128;
+      // position = t * (n-1) = t_num * segments / t_den
+      let pos_num = t_num * segments;
+      let pos_den = t_den;
+
+      // segment index = floor(pos_num / pos_den)
+      let seg_idx = if pos_num <= 0 {
+        0usize
+      } else {
+        let idx = (pos_num / pos_den) as usize;
+        idx.min(n - 2)
+      };
+
+      // local t within the segment: local_t = pos - seg_idx
+      // = pos_num/pos_den - seg_idx = (pos_num - seg_idx*pos_den) / pos_den
+      let local_t_num = pos_num - (seg_idx as i128) * pos_den;
+      let local_t_den = pos_den;
+
+      blend_two_rational(
+        &rgbs[seg_idx],
+        &rgbs[seg_idx + 1],
+        local_t_num,
+        local_t_den,
+        all_graylevel,
+      )
+    }
+  }
+}
+
+/// Blend two colors with rational weight: c1*(1-t) + c2*t
+fn blend_two_rational(
+  c1: &[(i128, i128); 3],
+  c2: &[(i128, i128); 3],
+  t_num: i128,
+  t_den: i128,
+  as_graylevel: bool,
+) -> Option<Expr> {
+  // (1-t) = (t_den - t_num) / t_den
+  let one_minus_t_num = t_den - t_num;
+
+  let build_channel = |ch: usize| -> Expr {
+    // c1[ch] * (1-t) + c2[ch] * t
+    // = c1n/c1d * omt_n/t_den + c2n/c2d * t_num/t_den
+    let (c1n, c1d) = c1[ch];
+    let (c2n, c2d) = c2[ch];
+    let num = c1n * one_minus_t_num * c2d + c2n * t_num * c1d;
+    let den = c1d * c2d * t_den;
+    rational_to_expr(num, den)
+  };
+
+  if as_graylevel {
+    Some(Expr::FunctionCall {
+      name: "GrayLevel".to_string(),
+      args: vec![build_channel(0)],
+    })
+  } else {
+    Some(Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: (0..3).map(build_channel).collect(),
+    })
+  }
 }
