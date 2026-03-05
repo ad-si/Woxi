@@ -3043,7 +3043,7 @@ Label,Label for Goto targets,✅,pure,1,1059
 Labeled,,,,6,397
 LabelingFunction,,,,7,1085
 LabelingSize,,,,11.3,3257
-LabelStyle,,,,6,269
+LabelStyle,Option for specifying the style of labels in graphics,✅,none,6,269
 LabelVisibility,,,,12,
 LaguerreL,Laguerre polynomial,✅,pure,1,670
 LakeData,,🚫,,10,4707
