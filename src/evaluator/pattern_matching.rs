@@ -1,6 +1,30 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Merge new bindings into existing bindings, checking for consistency.
+/// If a variable name already has a binding, the new value must be
+/// structurally equal. Returns false if there is a conflict.
+fn merge_bindings(
+  existing: &mut Vec<(String, Expr)>,
+  new: Vec<(String, Expr)>,
+) -> bool {
+  for (name, value) in new {
+    if name.is_empty() {
+      continue;
+    }
+    if let Some((_, existing_value)) = existing.iter().find(|(n, _)| *n == name)
+    {
+      if !expr_equal(existing_value, &value) {
+        return false;
+      }
+      // Already bound to the same value, skip duplicate
+    } else {
+      existing.push((name, value));
+    }
+  }
+  true
+}
+
 /// Perform nested access on an association: assoc["a", "b"] -> assoc["a"]["b"]
 pub fn association_nested_access(
   var_name: &str,
@@ -332,8 +356,9 @@ pub fn try_one_identity_match(
   // try matching the expression against it
   if required_indices.len() == 1 {
     let req_pat = &pat_args[required_indices[0]];
-    if let Some(mut req_bindings) = match_pattern(expr, req_pat) {
-      req_bindings.extend(bindings);
+    if let Some(mut req_bindings) = match_pattern(expr, req_pat)
+      && merge_bindings(&mut req_bindings, bindings)
+    {
       return Some(req_bindings);
     }
   }
@@ -1412,8 +1437,8 @@ fn match_args_with_sequences(
     if let Some(mut bindings) = match_pattern(&expr_args[0], pat)
       && let Some(rest_bindings) =
         match_args_with_sequences(&expr_args[1..], rest_pats)
+      && merge_bindings(&mut bindings, rest_bindings)
     {
-      bindings.extend(rest_bindings);
       return Some(bindings);
     }
     None
@@ -1592,7 +1617,9 @@ pub fn match_pattern(
           let mut bindings = Vec::new();
           for (p, e) in pat_items.iter().zip(expr_items.iter()) {
             if let Some(b) = match_pattern(e, p) {
-              bindings.extend(b);
+              if !merge_bindings(&mut bindings, b) {
+                return None;
+              }
             } else {
               return None;
             }
@@ -1639,7 +1666,9 @@ pub fn match_pattern(
           let mut bindings = Vec::new();
           for (p, e) in pat_args.iter().zip(expr_args.iter()) {
             if let Some(b) = match_pattern(e, p) {
-              bindings.extend(b);
+              if !merge_bindings(&mut bindings, b) {
+                return None;
+              }
             } else {
               return None;
             }
@@ -1679,12 +1708,16 @@ pub fn match_pattern(
         }
         let mut bindings = Vec::new();
         if let Some(b) = match_pattern(expr_left, pat_left) {
-          bindings.extend(b);
+          if !merge_bindings(&mut bindings, b) {
+            return None;
+          }
         } else {
           return None;
         }
         if let Some(b) = match_pattern(expr_right, pat_right) {
-          bindings.extend(b);
+          if !merge_bindings(&mut bindings, b) {
+            return None;
+          }
         } else {
           return None;
         }
