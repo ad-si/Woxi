@@ -127,6 +127,35 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_split_backslash_line_continuation_crlf() {
+    // Line continuation should work with CRLF line endings (issue #70)
+    assert_eq!(
+      split_into_statements(
+        "ImaginaryQ[u_] :=\\\r\n  Head[u]===Complex && Re[u]===0\r\nImaginaryQ[3 I]"
+      ),
+      vec![
+        "ImaginaryQ[u_] :=  Head[u]===Complex && Re[u]===0",
+        "ImaginaryQ[3 I]"
+      ]
+    );
+  }
+
+  #[test]
+  fn test_split_backslash_continuation_multi_crlf() {
+    // Multiple line continuations with CRLF (issue #70)
+    assert_eq!(
+      split_into_statements("1 +\\\r\n2 +\\\r\n3"),
+      vec!["1 +2 +3"]
+    );
+  }
+
+  #[test]
+  fn test_interpret_line_continuation_crlf() {
+    // Full interpret path with CRLF line endings (issue #70)
+    assert_eq!(interpret("f[x_] :=\\\r\n  x + 1\r\nf[5]").unwrap(), "6");
+  }
+
+  #[test]
   fn test_split_condition_continuation() {
     // /; (Condition) at end of line means the expression continues
     assert_eq!(

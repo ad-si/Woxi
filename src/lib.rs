@@ -614,6 +614,13 @@ thread_local! {
 }
 
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
+  // Normalize CRLF to LF so line continuation and newline handling work
+  // consistently regardless of line ending style.
+  let input = if input.contains('\r') {
+    std::borrow::Cow::Owned(input.replace("\r\n", "\n").replace('\r', "\n"))
+  } else {
+    std::borrow::Cow::Borrowed(input)
+  };
   let trimmed = input.trim();
 
   // Fast path for simple literals that don't need parsing
@@ -1816,6 +1823,13 @@ pub fn insert_statement_separators(input: &str) -> String {
 /// Respects bracket nesting (newlines inside `[]`, `()`, `{}` are kept),
 /// strings, comments, and `:=` continuations.
 pub fn split_into_statements(input: &str) -> Vec<String> {
+  // Normalize CRLF to LF so line continuation and newline handling work
+  // consistently regardless of line ending style.
+  let input = if input.contains('\r') {
+    std::borrow::Cow::Owned(input.replace("\r\n", "\n").replace('\r', "\n"))
+  } else {
+    std::borrow::Cow::Borrowed(input)
+  };
   let trimmed = input.trim();
   if trimmed.is_empty() {
     return vec![String::new()];
