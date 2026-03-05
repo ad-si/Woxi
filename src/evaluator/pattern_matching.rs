@@ -4,7 +4,7 @@ use super::*;
 /// Merge new bindings into existing bindings, checking for consistency.
 /// If a variable name already has a binding, the new value must be
 /// structurally equal. Returns false if there is a conflict.
-fn merge_bindings(
+pub(crate) fn merge_bindings(
   existing: &mut Vec<(String, Expr)>,
   new: Vec<(String, Expr)>,
 ) -> bool {

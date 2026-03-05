@@ -533,6 +533,31 @@ pub fn evaluate_function_call_ast_inner(
                     pattern,
                   )
                 {
+                  // Check consistency: structural bindings must not conflict
+                  // with positional parameter bindings (skip the structural
+                  // param itself and synthetic names)
+                  let mut check = bindings.clone();
+                  let mut consistent = true;
+                  for (pi, param) in params.iter().enumerate() {
+                    if pi == idx
+                      || pi >= effective_args.len()
+                      || param.starts_with("__sp")
+                      || param.starts_with("_dv")
+                    {
+                      continue;
+                    }
+                    if !crate::evaluator::pattern_matching::merge_bindings(
+                      &mut check,
+                      vec![(param.clone(), effective_args[pi].clone())],
+                    ) {
+                      consistent = false;
+                      break;
+                    }
+                  }
+                  if !consistent {
+                    conditions_met = false;
+                    break;
+                  }
                   structural_bindings.extend(bindings);
                 } else {
                   conditions_met = false;
@@ -736,6 +761,31 @@ pub fn evaluate_function_call_ast_inner(
                     pattern,
                   )
                 {
+                  // Check consistency: structural bindings must not conflict
+                  // with positional parameter bindings (skip the structural
+                  // param itself and synthetic names)
+                  let mut check = bindings.clone();
+                  let mut consistent = true;
+                  for (pi, param) in params.iter().enumerate() {
+                    if pi == idx
+                      || pi >= effective_args.len()
+                      || param.starts_with("__sp")
+                      || param.starts_with("_dv")
+                    {
+                      continue;
+                    }
+                    if !crate::evaluator::pattern_matching::merge_bindings(
+                      &mut check,
+                      vec![(param.clone(), effective_args[pi].clone())],
+                    ) {
+                      consistent = false;
+                      break;
+                    }
+                  }
+                  if !consistent {
+                    conditions_met = false;
+                    break;
+                  }
                   structural_bindings.extend(bindings);
                 } else {
                   conditions_met = false;
