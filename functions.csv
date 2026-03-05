@@ -2391,7 +2391,7 @@ GradientOrientationFilter,,,,9,3143
 GrammarApply,,,,10,3947
 GrammarRules,,,,10,3862
 GrammarToken,,,,10,3717
-Graph,,,,8,303
+Graph,Represents a graph with vertices and edges,✅,pure,8,303
 Graph3D,,,,10,1740
 GraphAssortativity,,,,9,3440
 GraphAutomorphismGroup,,,,10,3862

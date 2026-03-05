@@ -1081,6 +1081,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Alternatives"
     | "Offset"
     | "RowBox"
+    | "Graph"
     | "Entity" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),

@@ -476,6 +476,10 @@ mod graphics {
         interpret("RowBox[{\"a\", \"+\", \"b\"}]").unwrap(),
         "RowBox[{a, +, b}]"
       );
+      assert_eq!(
+        interpret("Graph[{1 -> 2, 2 -> 3}]").unwrap(),
+        "Graph[{1 -> 2, 2 -> 3}]"
+      );
     }
 
     #[test]
