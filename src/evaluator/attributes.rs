@@ -500,6 +500,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "AxesOrigin"
     | "FrameStyle"
     | "GridLines"
+    | "GridLinesStyle"
     | "Epilog"
     | "FrameTicks"
     | "Contours"
