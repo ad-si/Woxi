@@ -240,7 +240,7 @@ mod simplify {
         "Simplify[k*q/(2*a^4*(1 + s)^(3/2)) + k*q*(1 + s)^(9/4)/(2*a^4)]"
       )
       .unwrap(),
-      "(k*q*(1 + (1 + s)^(15/4)))/(2*(1 + s)^(3/2)*a^4)"
+      "(k*q*(1 + (1 + s)^(15/4)))/(2*a^4*(1 + s)^(3/2))"
     );
   }
 }
@@ -1355,7 +1355,7 @@ mod full_simplify {
         "FullSimplify[k*q/(2*a^4*(1 + s)^(3/2)) + k*q*(1 + s)^(9/4)/(2*a^4)]"
       )
       .unwrap(),
-      "(k*q*(1 + (1 + s)^(15/4)))/(2*(1 + s)^(3/2)*a^4)"
+      "(k*q*(1 + (1 + s)^(15/4)))/(2*a^4*(1 + s)^(3/2))"
     );
   }
 }
@@ -2866,7 +2866,7 @@ mod simplify_solve_verification {
     // Together should correctly handle (sum/product)^n terms
     assert_eq!(
       interpret("Together[a*(x/a)^2 + x]").unwrap(),
-      "(a^2*x + a*x^2)/a^2"
+      "(a*x + x^2)/a"
     );
   }
 }
@@ -2876,10 +2876,10 @@ mod expand_fraction_power {
 
   #[test]
   fn expand_fraction_squared() {
-    // (x+y)^2/z^2 expanded, using z^(-2) notation for denominator
+    // (x+y)^2/z^2 expanded, displaying negative exponents as fractions
     assert_eq!(
       interpret("Expand[((x + y)/z)^2]").unwrap(),
-      "x^2*z^(-2) + 2*x*y*z^(-2) + y^2*z^(-2)"
+      "x^2/z^2 + (2*x*y)/z^2 + y^2/z^2"
     );
   }
 

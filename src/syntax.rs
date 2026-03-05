@@ -4626,6 +4626,21 @@ pub fn expr_to_string(expr: &Expr) -> String {
         }
       }
 
+      // BinaryOp::Times: flatten and check for denominator factors (negative exponents)
+      if matches!(op, BinaryOperator::Times) {
+        let mut factor_refs = Vec::new();
+        flatten_binary_times(expr, &mut factor_refs);
+        if factor_refs.iter().any(|f| is_denominator_factor(f)) {
+          let factors: Vec<Expr> =
+            factor_refs.iter().map(|f| (*f).clone()).collect();
+          if let Some(frac) =
+            format_times_with_denominator(&factors, expr_to_string)
+          {
+            return frac;
+          }
+        }
+      }
+
       // Mathematica uses no spaces for *, /, ^ but spaces for +, -, &&, ||
       let (op_str, needs_space) = match op {
         BinaryOperator::Plus => ("+", true),
@@ -5807,8 +5822,41 @@ pub fn expr_to_output(expr: &Expr) -> String {
         expr_to_output(replacement)
       )
     }
+    // BinaryOp::Times: flatten into factors and handle denominator formatting
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      ..
+    } => {
+      let mut factor_refs = Vec::new();
+      flatten_binary_times(expr, &mut factor_refs);
+      if factor_refs.iter().any(|f| is_denominator_factor(f)) {
+        let factors: Vec<Expr> =
+          factor_refs.iter().map(|f| (*f).clone()).collect();
+        if let Some(frac) =
+          format_times_with_denominator(&factors, expr_to_output)
+        {
+          return frac;
+        }
+      }
+      expr_to_string(expr)
+    }
     // For all other cases, delegate to expr_to_string
     _ => expr_to_string(expr),
+  }
+}
+
+/// Flatten a nested BinaryOp::Times tree into a list of factors.
+fn flatten_binary_times<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      flatten_binary_times(left, out);
+      flatten_binary_times(right, out);
+    }
+    _ => out.push(expr),
   }
 }
 

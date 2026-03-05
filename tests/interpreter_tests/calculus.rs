@@ -1723,7 +1723,7 @@ mod integrate_polynomial_power {
 
   #[test]
   fn x_plus_1_squared() {
-    // ∫ (x+1)^2 dx = x + x^2 + x^3/3
+    // ∫ (x+1)^2 dx = x + x^2 + x^3/3 (expanded polynomial form)
     assert_eq!(
       interpret("Integrate[(x + 1)^2, x]").unwrap(),
       "x + x^2 + x^3/3"
@@ -1732,16 +1732,14 @@ mod integrate_polynomial_power {
 
   #[test]
   fn x_plus_1_cubed() {
-    // ∫ (x+1)^3 dx - woxi expands and integrates term by term
-    // wolframscript returns (1 + x)^4/4 (factored form) — both are correct
-    // but since woxi expands first, it returns the expanded antiderivative
+    // ∫ (x+1)^3 dx expanded
     let result = interpret("Integrate[(x + 1)^3, x]").unwrap();
     assert_eq!(result, "x + (3*x^2)/2 + x^3 + x^4/4");
   }
 
   #[test]
   fn two_x_minus_1_squared() {
-    // ∫ (2x-1)^2 dx = expand to 4x^2 - 4x + 1, integrate to x - 2*x^2 + (4*x^3)/3
+    // ∫ (2x-1)^2 dx = x - 2*x^2 + (4*x^3)/3 (expanded polynomial form)
     assert_eq!(
       interpret("Integrate[(2*x - 1)^2, x]").unwrap(),
       "x - 2*x^2 + (4*x^3)/3"
@@ -1799,11 +1797,8 @@ mod sqrt_differentiation {
 
   #[test]
   fn d_sqrt_chain_rule() {
-    // D[Sqrt[1 + x^2], x] = (2*x)/(2*Sqrt[1 + x^2])
-    assert_eq!(
-      interpret("D[Sqrt[1 + x^2], x]").unwrap(),
-      "(2*x)/(2*Sqrt[1 + x^2])"
-    );
+    // D[Sqrt[1 + x^2], x] = x/Sqrt[1 + x^2]
+    assert_eq!(interpret("D[Sqrt[1 + x^2], x]").unwrap(), "x/Sqrt[1 + x^2]");
   }
 
   #[test]

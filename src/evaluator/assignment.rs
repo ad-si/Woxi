@@ -185,9 +185,44 @@ fn normalize_structural_pattern(pattern: &Expr) -> Expr {
   }
   let with_placeholders = replace_patterns_with_placeholders(pattern, &vars);
   match evaluate_expr_to_expr(&with_placeholders) {
-    Ok(evaluated) => replace_placeholders_with_patterns(&evaluated, &vars),
+    Ok(evaluated) => {
+      let result = replace_placeholders_with_patterns(&evaluated, &vars);
+      // For Orderless functions (Times, Plus), reorder top-level args so
+      // PatternOptional args come last. This ensures non-optional patterns
+      // match earlier canonical args (e.g., numbers before symbols),
+      // following Wolfram's convention for Orderless matching.
+      reorder_orderless_pattern_args(result)
+    }
     Err(_) => pattern.clone(), // fallback to raw pattern
   }
+}
+
+/// For FunctionCall patterns of Orderless functions, move PatternOptional
+/// args to the end so non-optional patterns get matched first.
+fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
+  if let Expr::FunctionCall { name, args } = &pattern {
+    let is_orderless = crate::evaluator::listable::is_builtin_orderless(name);
+    if is_orderless
+      && args.len() >= 2
+      && args
+        .iter()
+        .any(|a| matches!(a, Expr::PatternOptional { .. }))
+    {
+      let mut sorted_args = args.clone();
+      sorted_args.sort_by_key(|a| {
+        if matches!(a, Expr::PatternOptional { .. }) {
+          1
+        } else {
+          0
+        }
+      });
+      return Expr::FunctionCall {
+        name: name.clone(),
+        args: sorted_args,
+      };
+    }
+  }
+  pattern
 }
 
 /// Helper for Attributes[f] = value / Attributes[f] := value

@@ -92,8 +92,20 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Differentiate the expression
-  differentiate(&args[0], &var_name)
+  // Differentiate the expression and cancel common factors in fractions
+  let result = differentiate(&args[0], &var_name)?;
+  // Only apply Cancel when the result is a fraction to avoid expanding products
+  if matches!(
+    &result,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      ..
+    }
+  ) {
+    Ok(crate::functions::polynomial_ast::cancel_expr(&result))
+  } else {
+    Ok(result)
+  }
 }
 
 /// Differentiate an expression with respect to a non-symbol expression (e.g., x[k]).
@@ -1915,6 +1927,25 @@ fn try_match_linear_arg(expr: &Expr, var: &str) -> Option<Expr> {
       }
     }
     _ => None,
+  }
+}
+
+/// Extract the coefficient of `var` from a linear expression `a*var + b`.
+/// Returns `Some(a)` if the expression is linear in `var`, `None` otherwise.
+/// Works by differentiating the expression: if d/dx(expr) is constant w.r.t. var,
+/// then expr is linear and the derivative is the coefficient.
+fn extract_linear_coefficient(expr: &Expr, var: &str) -> Option<Expr> {
+  // Check that expr actually depends on var
+  if is_constant_wrt(expr, var) {
+    return None;
+  }
+  // Differentiate: if expr = a*x + b, then d/dx(expr) = a (constant)
+  let deriv = differentiate(expr, var).ok()?;
+  let deriv = simplify(deriv);
+  if is_constant_wrt(&deriv, var) {
+    Some(deriv)
+  } else {
+    None
   }
 }
 
@@ -3846,6 +3877,19 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             }
           {
             return Some(result);
+          }
+          // ∫ (a*x + b)^n dx where the base is linear in var:
+          // Expand and integrate term by term to match Wolfram's expanded polynomial form
+          if let Expr::Integer(n) = right.as_ref()
+            && *n >= 2
+            && !is_constant_wrt(left, var)
+            && extract_linear_coefficient(left, var).is_some()
+          {
+            let expanded =
+              crate::functions::polynomial_ast::expand_and_combine(expr);
+            if !expr_str_eq(&expanded, expr) {
+              return integrate(&expanded, var);
+            }
           }
           // ∫ f(x)^n dx where n is a positive integer: try expanding
           if let Expr::Integer(n) = right.as_ref()
