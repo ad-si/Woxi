@@ -626,6 +626,17 @@ pub fn set_delayed_ast(
 
     for (i, arg) in lhs_args.iter().enumerate() {
       match arg {
+        // OptionsPattern[] — matches zero or more Rule arguments
+        Expr::FunctionCall { name: fn_name, .. }
+          if fn_name == "OptionsPattern" =>
+        {
+          let param_name = format!("__opts{}", i);
+          params.push(param_name);
+          conditions.push(None);
+          defaults.push(None);
+          heads.push(None);
+          blank_types.push(3); // BlankNullSequence - matches 0 or more args
+        }
         // List pattern: {x_Integer, y_Integer} — destructure a list argument
         Expr::List(patterns) => {
           let param_name = format!("_lp{}", i);

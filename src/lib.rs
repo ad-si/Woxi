@@ -42,6 +42,9 @@ thread_local! {
     pub static SOW_STACK: RefCell<Vec<Vec<(syntax::Expr, syntax::Expr)>>> = const { RefCell::new(Vec::new()) };
     // Context stack for Begin/End: stores the context strings pushed by Begin[]
     static CONTEXT_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    // Current option bindings for OptionValue during function evaluation
+    // Stack of (function_name, Vec<(option_name, option_value)>)
+    pub static OPTION_VALUE_CONTEXT: RefCell<Vec<(String, Vec<(String, syntax::Expr)>)>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Error, Debug)]

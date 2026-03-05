@@ -535,6 +535,43 @@ pub fn dispatch_predicate_functions(
         return Some(Ok(Expr::List(matching)));
       }
     }
+    // OptionValue[name] - look up option value from current OptionsPattern context
+    "OptionValue" if args.len() == 1 => {
+      let opt_arg = match evaluate_expr_to_expr(&args[0]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let opt_name = match &opt_arg {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "OptionValue".to_string(),
+            args: vec![opt_arg],
+          }));
+        }
+      };
+      // Look up in the current option value context stack (innermost first)
+      let result = crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+        let stack = ctx.borrow();
+        for (_func_name, bindings) in stack.iter().rev() {
+          for (key, val) in bindings {
+            if *key == opt_name {
+              return Some(val.clone());
+            }
+          }
+        }
+        None
+      });
+      match result {
+        Some(val) => return Some(Ok(val)),
+        None => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "OptionValue".to_string(),
+            args: vec![opt_arg],
+          }));
+        }
+      }
+    }
     // Construct - creates function call f[a][b] etc.
     "Construct" if !args.is_empty() => {
       return Some(crate::functions::predicate_ast::construct_ast(args));

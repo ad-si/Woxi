@@ -167,3 +167,73 @@ mod options {
     );
   }
 }
+
+mod option_value {
+  use super::*;
+
+  #[test]
+  fn basic_with_explicit_option() {
+    assert_eq!(
+      interpret(
+        "Options[f] = {a -> a0, b -> b0}; f[x_, OptionsPattern[]] := {x, OptionValue[a]}; f[7, a -> uuu]"
+      )
+      .unwrap(),
+      "{7, uuu}"
+    );
+  }
+
+  #[test]
+  fn default_option_value() {
+    assert_eq!(
+      interpret(
+        "Options[f] = {a -> a0, b -> b0}; f[x_, OptionsPattern[]] := {x, OptionValue[a]}; f[7]"
+      )
+      .unwrap(),
+      "{7, a0}"
+    );
+  }
+
+  #[test]
+  fn multiple_options() {
+    assert_eq!(
+      interpret(
+        "Options[f] = {a -> a0, b -> b0}; f[x_, OptionsPattern[]] := {x, OptionValue[a], OptionValue[b]}; f[7, b -> bbb]"
+      )
+      .unwrap(),
+      "{7, a0, bbb}"
+    );
+  }
+
+  #[test]
+  fn override_all_options() {
+    assert_eq!(
+      interpret(
+        "Options[f] = {a -> 1, b -> 2}; f[x_, OptionsPattern[]] := {x, OptionValue[a], OptionValue[b]}; f[0, a -> 10, b -> 20]"
+      )
+      .unwrap(),
+      "{0, 10, 20}"
+    );
+  }
+
+  #[test]
+  fn no_options_defined() {
+    assert_eq!(
+      interpret(
+        "g[x_, OptionsPattern[]] := {x, OptionValue[a]}; g[5, a -> 10]"
+      )
+      .unwrap(),
+      "{5, 10}"
+    );
+  }
+
+  #[test]
+  fn options_pattern_no_args() {
+    assert_eq!(
+      interpret(
+        "Options[h] = {x -> 42}; h[OptionsPattern[]] := OptionValue[x]; h[]"
+      )
+      .unwrap(),
+      "42"
+    );
+  }
+}

@@ -265,6 +265,72 @@ fn distribute_args_to_params(
   }
 }
 
+/// Extract option bindings from function arguments for OptionsPattern.
+/// Merges explicit options with stored Options[func_name] defaults.
+fn collect_option_bindings(
+  func_name: &str,
+  params: &[String],
+  effective_args: &[Expr],
+) -> Option<Vec<(String, Expr)>> {
+  // Find the __opts parameter
+  let opts_idx = params.iter().position(|p| p.starts_with("__opts"))?;
+  let opts_arg = &effective_args[opts_idx];
+
+  // Get stored defaults from Options[func_name]
+  let defaults: Vec<Expr> = crate::FUNC_OPTIONS
+    .with(|m| m.borrow().get(func_name).cloned())
+    .unwrap_or_default();
+
+  // Build default bindings
+  let mut bindings: Vec<(String, Expr)> = Vec::new();
+  for rule in &defaults {
+    if let Some((key, val)) = extract_rule_pair(rule) {
+      bindings.push((key, val));
+    }
+  }
+
+  // Extract explicit options from the argument (could be a Sequence of rules)
+  let explicit_rules = match opts_arg {
+    Expr::FunctionCall { name, args } if name == "Sequence" => args.clone(),
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => vec![opts_arg.clone()],
+    _ => vec![],
+  };
+
+  // Override defaults with explicit options
+  for rule in &explicit_rules {
+    if let Some((key, val)) = extract_rule_pair(rule) {
+      if let Some(existing) = bindings.iter_mut().find(|(k, _)| k == &key) {
+        existing.1 = val;
+      } else {
+        bindings.push((key, val));
+      }
+    }
+  }
+
+  Some(bindings)
+}
+
+/// Extract the key-value pair from a Rule or RuleDelayed expression
+fn extract_rule_pair(rule: &Expr) -> Option<(String, Expr)> {
+  match rule {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      let key = match pattern.as_ref() {
+        Expr::Identifier(s) => s.clone(),
+        _ => expr_to_string(pattern),
+      };
+      Some((key, *replacement.clone()))
+    }
+    _ => None,
+  }
+}
+
 pub fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -515,6 +581,14 @@ pub fn evaluate_function_call_ast_inner(
             bind_val,
           );
         }
+        // Push option context if this overload uses OptionsPattern
+        let opt_bindings =
+          collect_option_bindings(name, params, &effective_args);
+        if let Some(ref bindings) = opt_bindings {
+          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+            ctx.borrow_mut().push((name.to_string(), bindings.clone()));
+          });
+        }
         let mut body = substituted;
         let result = loop {
           match evaluate_expr_to_expr_inner(&body) {
@@ -523,6 +597,12 @@ pub fn evaluate_function_call_ast_inner(
             result => break result,
           }
         };
+        // Pop option context
+        if opt_bindings.is_some() {
+          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+            ctx.borrow_mut().pop();
+          });
+        }
         // If the body returned Condition[expr, test], evaluate the test
         // as a guard: True → return expr, otherwise this overload fails.
         match &result {
@@ -706,6 +786,13 @@ pub fn evaluate_function_call_ast_inner(
         substituted =
           crate::syntax::substitute_variable(&substituted, bind_name, bind_val);
       }
+      // Push option context if this overload uses OptionsPattern
+      let opt_bindings = collect_option_bindings(name, params, &effective_args);
+      if let Some(ref bindings) = opt_bindings {
+        crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+          ctx.borrow_mut().push((name.to_string(), bindings.clone()));
+        });
+      }
       // Tail-call: return body for the trampoline to evaluate.
       // Catch Return[] at the function call boundary via local trampoline.
       let mut body = substituted;
@@ -716,6 +803,12 @@ pub fn evaluate_function_call_ast_inner(
           result => break result,
         }
       };
+      // Pop option context
+      if opt_bindings.is_some() {
+        crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+          ctx.borrow_mut().pop();
+        });
+      }
       // If the body returned Condition[expr, test], evaluate the test
       // as a guard: True → return expr, otherwise this overload fails.
       match &result {
