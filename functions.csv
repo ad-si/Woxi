@@ -4763,7 +4763,7 @@ Round,Returns the nearest integer to a number,✅,pure,1,279
 RoundingRadius,,,,7,988
 Row,Displays elements in a row,✅,pure,6,87
 RowAlignments,,,,3,3566
-RowBox,,,,3,277
+RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3,277
 RowLines,,,,3,2557
 RowMinHeight,,,,3,3803
 RowReduce,Returns the row echelon form of a matrix,✅,pure,1,483

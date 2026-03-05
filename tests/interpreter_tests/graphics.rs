@@ -472,6 +472,10 @@ mod graphics {
       assert_eq!(interpret("GridLinesStyle").unwrap(), "GridLinesStyle");
       assert_eq!(interpret("LabelStyle").unwrap(), "LabelStyle");
       assert_eq!(interpret("Smaller").unwrap(), "Smaller");
+      assert_eq!(
+        interpret("RowBox[{\"a\", \"+\", \"b\"}]").unwrap(),
+        "RowBox[{a, +, b}]"
+      );
     }
 
     #[test]
