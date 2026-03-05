@@ -811,6 +811,39 @@ mod pattern_function {
       "f[a, b]^2"
     );
   }
+
+  #[test]
+  fn pattern_variable_binding_consistency() {
+    // Same named pattern variable must bind to the same value
+    // f[x_, x_] should match f[a, a] but not f[a, b]
+    assert_eq!(interpret("f[a, a] /. f[x_, x_] -> yes").unwrap(), "yes");
+    assert_eq!(interpret("f[a, b] /. f[x_, x_] -> yes").unwrap(), "f[a, b]");
+  }
+
+  #[test]
+  fn pattern_variable_no_match_sqrt_vs_symbol() {
+    // Regression test for issue #65:
+    // x_ bound to Symbol x should not match Sqrt[x]
+    assert_eq!(
+      interpret(
+        "Int[1/(x_*(a_+b_.*x_)),x_Symbol] := \
+         -Log[(a+b*x)/x]/a /; FreeQ[{a,b},x]; \
+         Int[1/(Sqrt[x]*(a + b*x)), x]"
+      )
+      .unwrap(),
+      "Int[1/(Sqrt[x]*(a + b*x)), x]"
+    );
+    // But it should still match when x_ consistently binds to x
+    assert_eq!(
+      interpret(
+        "Int[1/(x_*(a_+b_.*x_)),x_Symbol] := \
+         -Log[(a+b*x)/x]/a /; FreeQ[{a,b},x]; \
+         Int[1/(x*(a + b*x)), x]"
+      )
+      .unwrap(),
+      "-(Log[(a + b*x)/x]/a)"
+    );
+  }
 }
 
 mod none_symbol {
