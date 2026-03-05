@@ -478,7 +478,7 @@ mod graphics {
       );
       assert_eq!(
         interpret("Graph[{1 -> 2, 2 -> 3}]").unwrap(),
-        "Graph[{1 -> 2, 2 -> 3}]"
+        "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3]}]"
       );
     }
 

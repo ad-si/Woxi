@@ -1081,7 +1081,8 @@ pub fn evaluate_function_call_ast_inner(
     | "Alternatives"
     | "Offset"
     | "RowBox"
-    | "Graph"
+    | "DirectedEdge"
+    | "UndirectedEdge"
     | "Entity" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
@@ -1089,6 +1090,59 @@ pub fn evaluate_function_call_ast_inner(
       });
     }
     _ => {}
+  }
+
+  // Graph[{rule1, rule2, ...}] → Graph[{sorted vertices}, {DirectedEdge[...], ...}]
+  if name == "Graph" {
+    if args.len() == 1
+      && let Expr::List(edges) = &args[0]
+    {
+      // Check if all elements are Rule expressions
+      let all_rules = edges.iter().all(|e| matches!(e, Expr::Rule { .. }));
+      if all_rules && !edges.is_empty() {
+        // Extract unique vertices
+        let mut vertex_set: Vec<Expr> = Vec::new();
+        let mut directed_edges: Vec<Expr> = Vec::new();
+        for e in edges {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = e
+          {
+            let src = (**pattern).clone();
+            let dst = (**replacement).clone();
+            // Add to vertex set if not already present
+            if !vertex_set
+              .iter()
+              .any(|v| crate::evaluator::pattern_matching::expr_equal(v, &src))
+            {
+              vertex_set.push(src.clone());
+            }
+            if !vertex_set
+              .iter()
+              .any(|v| crate::evaluator::pattern_matching::expr_equal(v, &dst))
+            {
+              vertex_set.push(dst.clone());
+            }
+            directed_edges.push(Expr::FunctionCall {
+              name: "DirectedEdge".to_string(),
+              args: vec![src, dst],
+            });
+          }
+        }
+        // Sort vertices canonically
+        vertex_set.sort_by(crate::functions::canonical_cmp);
+        return Ok(Expr::FunctionCall {
+          name: "Graph".to_string(),
+          args: vec![Expr::List(vertex_set), Expr::List(directed_edges)],
+        });
+      }
+    }
+    // Fall through: return as inert
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
   }
 
   // StringExpression[...]: when all args are string literals, concatenate them

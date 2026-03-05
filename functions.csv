@@ -1452,7 +1452,7 @@ DimensionReduction,,,,10.1,3176
 Dimensions,Returns the dimensions of a nested list,✅,pure,1,288
 DiracComb,,,,7,3843
 DiracDelta,Dirac delta generalized function,✅,pure,4,624
-DirectedEdge,,,,8,400
+DirectedEdge,Represents a directed edge between two vertices,✅,pure,8,400
 DirectedEdges,,,,6,986
 DirectedGraph,,,,8,2246
 DirectedGraphQ,,,,8,3191
@@ -5788,7 +5788,7 @@ Underscript,,,,6,2144
 UnderscriptBox,,,,3,2452
 UnderscriptBoxOptions,,,,4,2944
 UnderseaFeatureData,,🚫,,10,
-UndirectedEdge,Undirected graph edge,🚫,none,8,201
+UndirectedEdge,Undirected graph edge,✅,pure,8,201
 UndirectedGraph,,,,8,2038
 UndirectedGraphQ,,,,8,2867
 UndoOptions,,,,10,5013

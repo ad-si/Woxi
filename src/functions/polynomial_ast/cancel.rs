@@ -82,6 +82,264 @@ pub fn cancel_expr(expr: &Expr) -> Expr {
         }
       }
 
+      // Try multivariate cancellation: extract common monomial factors from
+      // additive terms in the numerator, then cancel with the denominator.
+      // E.g. (a^2*x + a*x^2) / a^2 → factor out a from numerator → a*(a*x + x^2) / a^2 → (a*x + x^2)/a
+      {
+        use super::coefficient::collect_additive_terms;
+        use super::expand::{build_product, collect_multiplicative_factors};
+        use crate::syntax::expr_to_string;
+
+        let terms = collect_additive_terms(&num);
+        if terms.len() >= 2 {
+          // For each term, extract base→exp map of its multiplicative factors
+          type BaseExpMap = Vec<(String, crate::syntax::Expr, i128)>;
+          fn term_base_exp(term: &Expr) -> BaseExpMap {
+            let factors = collect_multiplicative_factors(term);
+            let mut map: BaseExpMap = Vec::new();
+            for f in &factors {
+              let (base_str, base, exp) = match f {
+                Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left,
+                  right,
+                } => {
+                  if let Expr::Integer(n) = right.as_ref() {
+                    (expr_to_string(left), *left.clone(), *n)
+                  } else {
+                    (expr_to_string(f), f.clone(), 1)
+                  }
+                }
+                Expr::FunctionCall { name, args }
+                  if name == "Power" && args.len() == 2 =>
+                {
+                  if let Expr::Integer(n) = &args[1] {
+                    (expr_to_string(&args[0]), args[0].clone(), *n)
+                  } else {
+                    (expr_to_string(f), f.clone(), 1)
+                  }
+                }
+                Expr::Integer(_) => continue,
+                _ => (expr_to_string(f), f.clone(), 1),
+              };
+              if let Some(entry) =
+                map.iter_mut().find(|(k, _, _)| *k == base_str)
+              {
+                entry.2 += exp;
+              } else {
+                map.push((base_str, base, exp));
+              }
+            }
+            map
+          }
+
+          // Find common base^exp across all terms (min exponent for each base)
+          let first_map = term_base_exp(&terms[0]);
+          let mut common: BaseExpMap = first_map;
+          for term in &terms[1..] {
+            let tmap = term_base_exp(term);
+            common.retain_mut(|(key, _, exp)| {
+              if let Some(entry) = tmap.iter().find(|(k, _, _)| k == key) {
+                *exp = (*exp).min(entry.2);
+                *exp > 0
+              } else {
+                false
+              }
+            });
+          }
+
+          if !common.is_empty() {
+            // Build the common factor
+            let common_factors: Vec<Expr> = common
+              .iter()
+              .map(|(_, base, exp)| {
+                if *exp == 1 {
+                  base.clone()
+                } else {
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Power,
+                    left: Box::new(base.clone()),
+                    right: Box::new(Expr::Integer(*exp)),
+                  }
+                }
+              })
+              .collect();
+            let common_factor = build_product(common_factors);
+
+            // Now cancel common_factor with the denominator using symbolic factor cancellation
+            let den_factors = collect_multiplicative_factors(&den);
+            let cf_factors = collect_multiplicative_factors(&common_factor);
+
+            // Build base→exp maps for common factor and denominator
+            fn factor_base_exp(factors: &[Expr]) -> Vec<(String, Expr, i128)> {
+              let mut map: Vec<(String, Expr, i128)> = Vec::new();
+              for f in factors {
+                let (base_str, base, exp) = match f {
+                  Expr::BinaryOp {
+                    op: BinaryOperator::Power,
+                    left,
+                    right,
+                  } => {
+                    if let Expr::Integer(n) = right.as_ref() {
+                      (expr_to_string(left), *left.clone(), *n)
+                    } else {
+                      (expr_to_string(f), f.clone(), 1)
+                    }
+                  }
+                  Expr::FunctionCall { name, args }
+                    if name == "Power" && args.len() == 2 =>
+                  {
+                    if let Expr::Integer(n) = &args[1] {
+                      (expr_to_string(&args[0]), args[0].clone(), *n)
+                    } else {
+                      (expr_to_string(f), f.clone(), 1)
+                    }
+                  }
+                  Expr::Integer(_) => continue,
+                  _ => (expr_to_string(f), f.clone(), 1),
+                };
+                if let Some(entry) =
+                  map.iter_mut().find(|(k, _, _)| *k == base_str)
+                {
+                  entry.2 += exp;
+                } else {
+                  map.push((base_str, base, exp));
+                }
+              }
+              map
+            }
+
+            let cf_map = factor_base_exp(&cf_factors);
+            let mut den_map = factor_base_exp(&den_factors);
+
+            // Cancel: subtract common factor exponents from denominator
+            let mut cancelled_from_num: Vec<(String, i128)> = Vec::new();
+            for (key, _, cf_exp) in &cf_map {
+              if let Some(den_entry) =
+                den_map.iter_mut().find(|(k, _, _)| k == key)
+              {
+                let cancel_exp = (*cf_exp).min(den_entry.2);
+                if cancel_exp > 0 {
+                  den_entry.2 -= cancel_exp;
+                  cancelled_from_num.push((key.clone(), cancel_exp));
+                }
+              }
+            }
+
+            if !cancelled_from_num.is_empty() {
+              // Rebuild numerator: divide each term by cancelled factors
+              let mut new_terms = Vec::new();
+              for term in &terms {
+                let mut t_factors = collect_multiplicative_factors(term);
+                for (cancel_key, cancel_exp) in &cancelled_from_num {
+                  let mut remaining = *cancel_exp;
+                  let mut new_factors = Vec::new();
+                  for f in t_factors {
+                    if remaining <= 0 {
+                      new_factors.push(f);
+                      continue;
+                    }
+                    let (base_str, base, exp) = match &f {
+                      Expr::BinaryOp {
+                        op: BinaryOperator::Power,
+                        left,
+                        right,
+                      } => {
+                        if let Expr::Integer(n) = right.as_ref() {
+                          (expr_to_string(left), *left.clone(), *n)
+                        } else {
+                          (expr_to_string(&f), f.clone(), 1)
+                        }
+                      }
+                      Expr::FunctionCall { name, args }
+                        if name == "Power" && args.len() == 2 =>
+                      {
+                        if let Expr::Integer(n) = &args[1] {
+                          (expr_to_string(&args[0]), args[0].clone(), *n)
+                        } else {
+                          (expr_to_string(&f), f.clone(), 1)
+                        }
+                      }
+                      Expr::Integer(_) => {
+                        new_factors.push(f);
+                        continue;
+                      }
+                      _ => (expr_to_string(&f), f.clone(), 1),
+                    };
+                    if base_str == *cancel_key {
+                      let reduce = remaining.min(exp);
+                      remaining -= reduce;
+                      let new_exp = exp - reduce;
+                      if new_exp > 1 {
+                        new_factors.push(Expr::BinaryOp {
+                          op: BinaryOperator::Power,
+                          left: Box::new(base),
+                          right: Box::new(Expr::Integer(new_exp)),
+                        });
+                      } else if new_exp == 1 {
+                        new_factors.push(base);
+                      }
+                      // new_exp == 0: factor is gone
+                    } else {
+                      new_factors.push(f);
+                    }
+                  }
+                  t_factors = new_factors;
+                }
+                if t_factors.is_empty() {
+                  new_terms.push(Expr::Integer(1));
+                } else {
+                  new_terms.push(build_product(t_factors));
+                }
+              }
+
+              // Build new numerator as sum
+              let new_num_expr = if new_terms.len() == 1 {
+                expand_and_combine(&new_terms[0])
+              } else {
+                let sum = super::expand::build_sum(new_terms);
+                expand_and_combine(&sum)
+              };
+
+              // Rebuild denominator
+              let mut new_den_factors: Vec<Expr> = Vec::new();
+              // Collect integer factors from original denominator
+              for f in &den_factors {
+                if let Expr::Integer(n) = f {
+                  new_den_factors.push(Expr::Integer(*n));
+                }
+              }
+              for (_, base, exp) in &den_map {
+                if *exp > 1 {
+                  new_den_factors.push(Expr::BinaryOp {
+                    op: BinaryOperator::Power,
+                    left: Box::new(base.clone()),
+                    right: Box::new(Expr::Integer(*exp)),
+                  });
+                } else if *exp == 1 {
+                  new_den_factors.push(base.clone());
+                }
+              }
+              let new_den_expr = if new_den_factors.is_empty() {
+                Expr::Integer(1)
+              } else {
+                build_product(new_den_factors)
+              };
+
+              if matches!(&new_den_expr, Expr::Integer(1)) {
+                return new_num_expr;
+              }
+              // Recursively cancel in case more simplification is possible
+              return cancel_expr(&Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left: Box::new(new_num_expr),
+                right: Box::new(new_den_expr),
+              });
+            }
+          }
+        }
+      }
+
       // Try symbolic factor cancellation for products (e.g. (a*b)/(a*c) → b/c)
       let result = cancel_symbolic_factors(&num, &den);
       if let Expr::BinaryOp {
@@ -240,6 +498,12 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
         left: Box::new(base.clone()),
         right: Box::new(Expr::Integer(n)),
       })
+    } else if n == 1 && d == 2 {
+      // exp = 1/2: use Sqrt[base]
+      Some(Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![base.clone()],
+      })
     } else {
       // Rational exponent: base^Rational[n, d]
       Some(Expr::BinaryOp {
@@ -302,11 +566,13 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   });
 
   // Cancel numeric GCD
+  let mut numeric_changed = false;
   if num_coeff != 0 && den_coeff != 0 {
     let g = gcd_i128(num_coeff.abs(), den_coeff.abs());
     if g > 1 {
       num_coeff /= g;
       den_coeff /= g;
+      numeric_changed = true;
     }
     // Keep signs normalized: negative in numerator
     if den_coeff < 0 {
@@ -350,7 +616,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
     }
   }
 
-  if !changed && num_coeff == 1 && den_coeff == 1 {
+  if !changed && !numeric_changed {
     // Nothing was cancelled, return original
     return Expr::BinaryOp {
       op: BinaryOperator::Divide,

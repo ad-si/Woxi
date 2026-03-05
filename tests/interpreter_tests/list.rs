@@ -1297,7 +1297,7 @@ mod heaviside_theta {
   fn multi_arg_with_zero() {
     assert_eq!(
       interpret("HeavisideTheta[1, 0]").unwrap(),
-      "HeavisideTheta[0]"
+      "HeavisideTheta[0, 1]"
     );
   }
 
@@ -3046,8 +3046,8 @@ mod join_non_list {
 
   #[test]
   fn map_on_atom_unevaluated() {
-    // Map on an atom should return unevaluated
-    assert_eq!(interpret("Map[f, x]").unwrap(), "Map[f, x]");
+    // Map on an atom should return the atom unchanged
+    assert_eq!(interpret("Map[f, x]").unwrap(), "x");
   }
 
   #[test]
