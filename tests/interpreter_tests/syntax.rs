@@ -200,9 +200,8 @@ mod plus_formatting {
   #[test]
   fn plus_times_before_identifier() {
     // Times[a, b] should come before c alphabetically (a < c)
-    // FullForm displays as FullForm[output form]
     let result = interpret("FullForm[a b + c]").unwrap();
-    assert_eq!(result, "FullForm[a*b + c]");
+    assert_eq!(result, "Plus[Times[a, b], c]");
   }
 
   #[test]
@@ -269,10 +268,9 @@ mod subtraction_without_spaces {
   fn implicit_times_then_minus_constant_fraction() {
     // Regression: `2 Pi - Pi/4` must parse as subtraction, not implicit multiplication by -Pi.
     // The result is simplified: 2*Pi - Pi/4 = (8*Pi - Pi)/4 = 7*Pi/4
-    // FullForm displays as FullForm[output form] matching wolframscript
     assert_eq!(
       interpret("FullForm[2 Pi - Pi/4]").unwrap(),
-      "FullForm[(7*Pi)/4]"
+      "Times[Rational[7, 4], Pi]"
     );
   }
 
@@ -328,57 +326,64 @@ mod full_form {
 
   #[test]
   fn full_form_plus() {
-    // FullForm displays as FullForm[output form] matching wolframscript
-    assert_eq!(
-      interpret("FullForm[x + y + z]").unwrap(),
-      "FullForm[x + y + z]"
-    );
+    assert_eq!(interpret("FullForm[x + y + z]").unwrap(), "Plus[x, y, z]");
   }
 
   #[test]
   fn full_form_times() {
-    assert_eq!(interpret("FullForm[x y z]").unwrap(), "FullForm[x*y*z]");
+    assert_eq!(interpret("FullForm[x y z]").unwrap(), "Times[x, y, z]");
+  }
+
+  #[test]
+  fn full_form_times_with_number() {
+    // Regression test for https://github.com/ad-si/Woxi/issues/71
+    assert_eq!(interpret("FullForm[5*x]").unwrap(), "Times[5, x]");
   }
 
   #[test]
   fn full_form_list() {
-    assert_eq!(
-      interpret("FullForm[{1, 2, 3}]").unwrap(),
-      "FullForm[{1, 2, 3}]"
-    );
+    assert_eq!(interpret("FullForm[{1, 2, 3}]").unwrap(), "List[1, 2, 3]");
   }
 
   #[test]
   fn full_form_power() {
-    assert_eq!(interpret("FullForm[x^2]").unwrap(), "FullForm[x^2]");
+    assert_eq!(interpret("FullForm[x^2]").unwrap(), "Power[x, 2]");
   }
 
   #[test]
   fn full_form_complex() {
-    assert_eq!(interpret("FullForm[a b + c]").unwrap(), "FullForm[a*b + c]");
+    assert_eq!(
+      interpret("FullForm[a b + c]").unwrap(),
+      "Plus[Times[a, b], c]"
+    );
   }
 
   #[test]
   fn full_form_division() {
-    assert_eq!(interpret("FullForm[a/b]").unwrap(), "FullForm[a/b]");
+    assert_eq!(
+      interpret("FullForm[a/b]").unwrap(),
+      "Times[a, Power[b, -1]]"
+    );
   }
 
   #[test]
   fn full_form_reciprocal() {
-    assert_eq!(interpret("FullForm[1/z]").unwrap(), "FullForm[z^(-1)]");
+    assert_eq!(interpret("FullForm[1/z]").unwrap(), "Power[z, -1]");
   }
 
   #[test]
   fn full_form_sqrt() {
-    assert_eq!(interpret("FullForm[Sqrt[5]]").unwrap(), "FullForm[Sqrt[5]]");
+    assert_eq!(
+      interpret("FullForm[Sqrt[5]]").unwrap(),
+      "Power[5, Rational[1, 2]]"
+    );
   }
 
   #[test]
   fn full_form_complex_expression() {
-    // Regression: FullForm must show output notation wrapped in FullForm[...]
     assert_eq!(
       interpret("FullForm[x/Sqrt[5] + y^2 + 1/z]").unwrap(),
-      "FullForm[x/Sqrt[5] + y^2 + z^(-1)]"
+      "Plus[Times[Power[5, Rational[-1, 2]], x], Power[y, 2], Power[z, -1]]"
     );
   }
 
@@ -391,7 +396,7 @@ mod full_form {
       result.output_svg.is_none(),
       "FullForm should not produce SVG output"
     );
-    assert_eq!(result.result, "FullForm[z^(-1)]");
+    assert_eq!(result.result, "Power[z, -1]");
   }
 }
 
@@ -2540,7 +2545,7 @@ mod subscript_function {
   fn subscript_fullform() {
     assert_eq!(
       interpret("FullForm[Subscript[x, 1]]").unwrap(),
-      "FullForm[Subscript[x, 1]]"
+      "Subscript[x, 1]"
     );
   }
 }
@@ -3761,7 +3766,7 @@ mod tilde_infix {
     // a ~f~ b ~g~ c means g[f[a, b], c]
     assert_eq!(
       interpret("FullForm[Hold[a ~f~ b ~g~ c]]").unwrap(),
-      "FullForm[Hold[g[f[a, b], c]]]"
+      "Hold[g[f[a, b], c]]"
     );
   }
 
@@ -3770,7 +3775,7 @@ mod tilde_infix {
     // ~f~ binds tighter than +
     assert_eq!(
       interpret("FullForm[Hold[a + b ~f~ c]]").unwrap(),
-      "FullForm[Hold[a + f[b, c]]]"
+      "Hold[Plus[a, f[b, c]]]"
     );
   }
 
@@ -3779,7 +3784,7 @@ mod tilde_infix {
     // ~f~ binds tighter than *
     assert_eq!(
       interpret("FullForm[Hold[a * b ~f~ c]]").unwrap(),
-      "FullForm[Hold[a*f[b, c]]]"
+      "Hold[Times[a, f[b, c]]]"
     );
   }
 
@@ -3788,7 +3793,7 @@ mod tilde_infix {
     // ~f~ binds tighter than ^ (right-associative)
     assert_eq!(
       interpret("FullForm[Hold[a^2 ~f~ c]]").unwrap(),
-      "FullForm[Hold[a^f[2, c]]]"
+      "Hold[Power[a, f[2, c]]]"
     );
   }
 
@@ -3797,7 +3802,7 @@ mod tilde_infix {
     // @ binds tighter than ~f~
     assert_eq!(
       interpret("FullForm[Hold[g @ a ~f~ b]]").unwrap(),
-      "FullForm[Hold[f[g[a], b]]]"
+      "Hold[f[g[a], b]]"
     );
   }
 
@@ -3806,7 +3811,7 @@ mod tilde_infix {
     // ~f~ binds tighter than @@
     assert_eq!(
       interpret("FullForm[Hold[g @@ a ~f~ b]]").unwrap(),
-      "FullForm[Hold[g @@ f[a, b]]]"
+      "Hold[Apply[g, f[a, b]]]"
     );
   }
 
@@ -3815,7 +3820,7 @@ mod tilde_infix {
     // ~~ (StringExpression) should still work
     assert_eq!(
       interpret(r#"FullForm[Hold["a" ~~ "b"]]"#).unwrap(),
-      "FullForm[Hold[StringExpression[a, b]]]"
+      r#"Hold[StringExpression["a", "b"]]"#
     );
   }
 

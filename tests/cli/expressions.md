@@ -24,6 +24,11 @@ Times[x, y, z]
 ```
 
 ```scrut
+$ wo 'FullForm[5*x]'
+Times[5, x]
+```
+
+```scrut
 $ wo 'FullForm[x^n]'
 Power[x, n]
 ```

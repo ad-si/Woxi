@@ -80,14 +80,17 @@ mod implicit_multiply_power_precedence {
 
   #[test]
   fn b_y_cubed() {
-    assert_eq!(interpret("FullForm[b y^3]").unwrap(), "FullForm[b*y^3]");
+    assert_eq!(
+      interpret("FullForm[b y^3]").unwrap(),
+      "Times[b, Power[y, 3]]"
+    );
   }
 
   #[test]
   fn two_x_squared_y_cubed() {
     assert_eq!(
       interpret("FullForm[2 x^2 y^3]").unwrap(),
-      "FullForm[2*x^2*y^3]"
+      "Times[2, Power[x, 2], Power[y, 3]]"
     );
   }
 
@@ -154,7 +157,7 @@ mod implicit_multiply_power_precedence {
     // 2 f[x][[1]] should parse as 2 * Part[f[x], 1]
     assert_eq!(
       interpret("FullForm[Hold[2 f[x][[1]]]]").unwrap(),
-      "FullForm[Hold[2*f[x][[1]]]]"
+      "Hold[Times[2, Part[f[x], 1]]]"
     );
   }
 }
@@ -196,7 +199,7 @@ mod implicit_times_with_patterns {
     // c_. x_^2 should be Times[c_., Power[x_, 2]]
     assert_eq!(
       interpret("Hold[c_. x_^2] // FullForm").unwrap(),
-      "FullForm[Hold[(c_.)*(x_)^2]]"
+      "Hold[Times[Optional[Pattern[c, Blank[]]], Power[Pattern[x, Blank[]], 2]]]"
     );
   }
 
