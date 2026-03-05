@@ -2523,6 +2523,35 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
+  // (a * b * ...)^(-1) → Times[a^(-1), b^(-1), ...]
+  // This matches Wolfram's normalization: Power[Times[...], -1] distributes
+  if matches!(exp, Expr::Integer(-1)) {
+    let factors: Option<Vec<&Expr>> = match base {
+      Expr::FunctionCall { name, args: targs }
+        if name == "Times" && targs.len() >= 2 =>
+      {
+        Some(targs.iter().collect())
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => Some(vec![left.as_ref(), right.as_ref()]),
+      _ => None,
+    };
+    if let Some(factors) = factors {
+      let inv_factors: Vec<Expr> = factors
+        .into_iter()
+        .map(|f| Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Power,
+          left: Box::new(f.clone()),
+          right: Box::new(Expr::Integer(-1)),
+        })
+        .collect();
+      return times_ast(&inv_factors);
+    }
+  }
+
   // Sqrt[x]^n → x^(n/2)
   if let Expr::FunctionCall { name, args: fargs } = base
     && name == "Sqrt"

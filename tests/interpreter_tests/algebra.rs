@@ -1100,6 +1100,17 @@ mod symbolic_equal {
   }
 
   #[test]
+  fn reciprocal_product_equal() {
+    // Power[Times[...], -1] should distribute and match 1/(...) form
+    assert_eq!(interpret("1/(a*b) == (a*b)^-1").unwrap(), "True");
+    assert_eq!(interpret("1/(x*y) == (x*y)^-1").unwrap(), "True");
+    assert_eq!(
+      interpret("1/(Sqrt[x]*(a + b*x)) == (Sqrt[x]*(a + b*x))^-1").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn different_symbols_stay_symbolic() {
     assert_eq!(interpret("x == y").unwrap(), "x == y");
   }
