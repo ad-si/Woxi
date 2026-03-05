@@ -1516,6 +1516,35 @@ fn multiply_exponents(a: &Expr, b: &Expr) -> Expr {
 }
 
 /// Extract (base, exponent) from an expression for power combining in Times.
+/// Check if an expression is "numeric-like" — consists only of integers,
+/// constants (E, Pi), rationals, and products/powers thereof.
+/// Used to decide whether Sqrt merging is safe (avoids merging Sqrt[x]*Sqrt[y]).
+fn is_numeric_like(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::Constant(_) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().all(is_numeric_like)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => is_numeric_like(left) && is_numeric_like(right),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => is_numeric_like(left) && is_numeric_like(right),
+    _ => false,
+  }
+}
+
 /// x → (x, 1), x^n → (x, n), Sqrt[x] → (x, 1/2)
 /// Power[Sqrt[x], n] → (x, n/2), Power[x^a, b] → (x, a*b)
 pub fn extract_base_exponent(expr: &Expr) -> (Expr, Expr) {
@@ -1604,8 +1633,9 @@ pub fn combine_like_bases(
   }
   result.extend(non_combinable);
 
-  // Second pass: combine numeric bases with the same fractional exponent
+  // Second pass: combine bases with the same fractional exponent
   // e.g. Sqrt[2] * Sqrt[3] = 2^(1/2) * 3^(1/2) → 6^(1/2) = Sqrt[6]
+  // Also handles Sqrt[E] * Sqrt[2] → Sqrt[2*E], etc.
   let mut combined: Vec<Expr> = Vec::new();
   let mut used = vec![false; result.len()];
   for i in 0..result.len() {
@@ -1613,14 +1643,14 @@ pub fn combine_like_bases(
       continue;
     }
     let (base_i, exp_i) = extract_base_exponent(&result[i]);
-    // Only combine integer bases with rational exponents
-    let is_numeric_base =
-      matches!(&base_i, Expr::Integer(_) | Expr::BigInteger(_));
+    // Only combine bases that are numeric-like (integers, constants, or products thereof)
+    // This avoids combining purely symbolic expressions like Sqrt[x]*Sqrt[y]
+    let is_combinable_base = is_numeric_like(&base_i);
     let is_rational_exp = matches!(
       &exp_i,
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
     );
-    if !is_numeric_base || !is_rational_exp {
+    if !is_combinable_base || !is_rational_exp {
       combined.push(result[i].clone());
       continue;
     }
@@ -1631,8 +1661,8 @@ pub fn combine_like_bases(
         continue;
       }
       let (base_j, exp_j) = extract_base_exponent(&result[j]);
-      if crate::syntax::expr_to_string(&exp_j) == exp_key
-        && matches!(&base_j, Expr::Integer(_) | Expr::BigInteger(_))
+      if is_numeric_like(&base_j)
+        && crate::syntax::expr_to_string(&exp_j) == exp_key
       {
         bases_to_multiply.push(base_j);
         used[j] = true;

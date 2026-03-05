@@ -77,10 +77,15 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
-    "UniformDistribution" if args.len() == 1 => {
+    "UniformDistribution" if args.len() <= 1 => {
+      let uni_args = if args.is_empty() {
+        vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)])]
+      } else {
+        args.to_vec()
+      };
       return Some(Ok(Expr::FunctionCall {
         name: "UniformDistribution".to_string(),
-        args: args.to_vec(),
+        args: uni_args,
       }));
     }
     "NormalDistribution" => {
@@ -92,6 +97,24 @@ pub fn dispatch_evaluation_control(
       return Some(Ok(Expr::FunctionCall {
         name: "NormalDistribution".to_string(),
         args: norm_args,
+      }));
+    }
+    "ExponentialDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "ExponentialDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "PoissonDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "PoissonDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "BernoulliDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "BernoulliDistribution".to_string(),
+        args: args.to_vec(),
       }));
     }
     "Names" if args.len() <= 1 => {

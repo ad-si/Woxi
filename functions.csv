@@ -436,7 +436,7 @@ BeniniDistribution,,,,8,3537
 BenktanderGibratDistribution,,,,8,3803
 BenktanderWeibullDistribution,,,,8,3765
 BernoulliB,Returns the nth Bernoulli number,✅,pure,1,876
-BernoulliDistribution,,,,6,1274
+BernoulliDistribution,Represents a Bernoulli distribution,✅,pure,6,1274
 BernoulliGraphDistribution,,,,8,1748
 BernoulliProcess,,,,9,3636
 BernsteinBasis,,,,7,2034
@@ -1807,7 +1807,7 @@ ExpIntegralEi,Exponential integral Ei,✅,pure,1,569
 ExpirationDate,,,,11.1,5184
 Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1,829
 ExponentFunction,,,,2,1712
-ExponentialDistribution,,,,6,806
+ExponentialDistribution,Represents an exponential distribution,✅,pure,6,806
 ExponentialFamily,,,,7,3134
 ExponentialGeneratingFunction,,,,7,2503
 ExponentialMovingAverage,,,,6,2367
@@ -4133,7 +4133,7 @@ PatternTest,Tests whether a pattern matches using a predicate function (pattern?
 PauliMatrix,Returns a Pauli spin matrix,✅,pure,7,672
 PaulWavelet,,,,8,4006
 Pause,Pauses evaluation for a specified number of seconds,✅,effectful,2,728
-PDF,,,,6,254
+PDF,Probability density function,✅,pure,6,254
 PeakDetect,,,,10,2798
 PeanoCurve,,,,11.1,4437
 PearsonChiSquareTest,,,,8,2734
@@ -4254,7 +4254,7 @@ PointSize,Specifies point size in graphics,✅,pure,1,123
 PointStatisticFunction,,,,12.2,
 PointValuePlot,,,,12.2,3191
 PoissonConsulDistribution,,,,8,3678
-PoissonDistribution,,,,6,945
+PoissonDistribution,Represents a Poisson distribution,✅,pure,6,945
 PoissonPDEComponent,,,,12.2,
 PoissonPointProcess,,,,12.2,4479
 PoissonProcess,,,,9,2260
