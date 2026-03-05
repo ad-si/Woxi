@@ -464,6 +464,11 @@ mod graphics {
       assert_eq!(interpret("Disk[{1, 0}]").unwrap(), "Disk[{1, 0}]");
       assert_eq!(interpret("Point[{0, 0}]").unwrap(), "Point[{0, 0}]");
       assert_eq!(interpret("RGBColor[1, 0, 0]").unwrap(), "RGBColor[1, 0, 0]");
+      assert_eq!(
+        interpret("Offset[{10, 20}, {0, 0}]").unwrap(),
+        "Offset[{10, 20}, {0, 0}]"
+      );
+      assert_eq!(interpret("Offset[{10, 20}]").unwrap(), "Offset[{10, 20}]");
     }
 
     #[test]

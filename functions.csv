@@ -3941,7 +3941,7 @@ OceanData,,🚫,,10,1248
 Octahedron,,,,12,3506
 OddQ,Checks if a number is odd,✅,pure,1,635
 Off,Turns off messages (no-op in Woxi),✅,effectful,1,697
-Offset,,,,3,237
+Offset,Represents a position offset by a specified number of printers points,✅,pure,3,237
 On,Turns on messages (no-op in Woxi),✅,effectful,1,1095
 ONanGroupON,,,,8,5184
 Once,,,,11,3462
