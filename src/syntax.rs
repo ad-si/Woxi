@@ -7304,11 +7304,17 @@ fn box_string_to_display_form(s: &str) -> String {
   format!("DisplayForm[{}]", result)
 }
 
-/// Top-level output: like expr_to_output but Sequence[a, b, ...] displays as
-/// concatenated elements (matching Wolfram REPL behavior where Sequence splices
-/// into the output context). Only applies at the outermost level.
+/// Top-level output: like expr_to_output but with special handling for
+/// formatting wrappers. FullForm[expr] renders the inner expression in
+/// canonical FullForm notation (matching wolframscript REPL behavior).
+/// Sequence[a, b, ...] displays as concatenated elements.
 pub fn top_level_output(expr: &Expr) -> String {
   match expr {
+    Expr::FunctionCall { name, args }
+      if name == "FullForm" && args.len() == 1 =>
+    {
+      crate::functions::expr_form::render_full_form(&args[0])
+    }
     Expr::FunctionCall { name, args } if name == "Sequence" => {
       args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
     }

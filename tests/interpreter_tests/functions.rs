@@ -1619,30 +1619,27 @@ mod operator_precedence_at_map_apply {
   #[test]
   fn prefix_at_tighter_than_map() {
     // @ binds tighter than /@ — f @ g /@ h = Map[f[g], h]
-    // FullForm displays Map as /@ notation and PrefixApply as f[g]
     assert_eq!(
       interpret("FullForm[Hold[f @ g /@ h]]").unwrap(),
-      "FullForm[Hold[f[g] /@ h]]"
+      "Hold[Map[f[g], h]]"
     );
   }
 
   #[test]
   fn prefix_at_tighter_than_apply() {
     // @ binds tighter than @@ — f @ g @@ h = Apply[f[g], h]
-    // FullForm displays Apply as @@ notation and PrefixApply as f[g]
     assert_eq!(
       interpret("FullForm[Hold[f @ g @@ h]]").unwrap(),
-      "FullForm[Hold[f[g] @@ h]]"
+      "Hold[Apply[f[g], h]]"
     );
   }
 
   #[test]
   fn anon_func_map_continuation() {
     // f & /@ {1, 2} — & then /@ should work even for single-term body
-    // FullForm displays as (f & ) /@ g[h] matching wolframscript
     assert_eq!(
       interpret("FullForm[Hold[f & /@ g @ h]]").unwrap(),
-      "FullForm[Hold[(f & ) /@ g[h]]]"
+      "Hold[Map[Function[f], g[h]]]"
     );
   }
 
