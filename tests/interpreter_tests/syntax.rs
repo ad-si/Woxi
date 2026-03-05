@@ -3865,3 +3865,46 @@ mod line_continuation {
     assert_eq!(interpret(r#""hello\nworld""#).unwrap(), r#"hello\nworld"#);
   }
 }
+
+mod structural_pattern_consistency {
+  use super::*;
+
+  #[test]
+  fn structural_binding_must_not_conflict_with_positional() {
+    // Issue #73: x_ in structural pattern matched -1, but x positionally is Symbol x.
+    // The pattern should NOT match because of the inconsistent binding for x.
+    assert_eq!(
+      interpret(
+        "f[g_^(a_.+b_.*x_), x_Symbol] := {g,a,b,x} /; FreeQ[{a,b,g},x]; f[y^-1, x]"
+      )
+      .unwrap(),
+      "f[y^(-1), x]"
+    );
+  }
+
+  #[test]
+  fn structural_binding_consistent_with_positional() {
+    // When structural pattern variables don't conflict with positional params,
+    // the match should succeed normally.
+    assert_eq!(
+      interpret(
+        "g[f_^(a_.+b_.*y_), x_Symbol] := {f,a,b,y,x} /; FreeQ[{a,b,f,y},x]; g[z^(2+3*w), x]"
+      )
+      .unwrap(),
+      "{z, 2, 3, w, x}"
+    );
+  }
+
+  #[test]
+  fn integrate_pattern_no_false_match() {
+    // The original issue case: Int[1/(Sqrt[x]*(a+b*x)), x] should not match
+    // a rule where x in the structural pattern binds to -1.
+    assert_eq!(
+      interpret(
+        "Int[f_^(a_.+b_.*x_), x_Symbol] := {f,a,b,x} /; FreeQ[{a,b,f},x]; Int[1/(Sqrt[x]*(a+b*x)), x]"
+      )
+      .unwrap(),
+      "Int[1/(Sqrt[x]*(a + b*x)), x]"
+    );
+  }
+}
