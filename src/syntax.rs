@@ -1965,17 +1965,6 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         default: None,
       }
     }
-    Rule::PatternOptionalDefaultWithHead => {
-      // PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." }
-      let mut inner = pair.into_inner();
-      let name = inner.next().unwrap().as_str().to_string();
-      let head = Some(inner.next().unwrap().as_str().to_string());
-      Expr::PatternOptional {
-        name,
-        head,
-        default: None,
-      }
-    }
     Rule::PatternOptionalWithHead => {
       // PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ Term }
       let mut inner = pair.into_inner();

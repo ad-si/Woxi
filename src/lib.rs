@@ -2360,18 +2360,6 @@ fn store_function_definition(pair: Pair<Rule>) -> Result<(), InterpreterError> {
         heads.push(None);
         blank_types.push(1);
       }
-      Rule::PatternOptionalDefaultWithHead => {
-        // PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." }
-        let mut pat_inner = item.into_inner();
-        let param_name = pat_inner.next().unwrap().as_str().to_owned();
-        let head_name = pat_inner.next().unwrap().as_str().to_owned();
-        params.push(param_name);
-        conditions.push(None);
-        // System-determined default (None means use Default[f, position])
-        defaults.push(None);
-        heads.push(Some(head_name));
-        blank_types.push(1);
-      }
       Rule::PatternWithHead => {
         // Extract parameter name and head (e.g., "x_List" -> name="x", head="List")
         let full = item.as_str();
