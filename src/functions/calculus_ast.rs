@@ -3879,17 +3879,27 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             return Some(result);
           }
           // ∫ (a*x + b)^n dx where the base is linear in var:
-          // Expand and integrate term by term to match Wolfram's expanded polynomial form
+          // Use substitution: result = (a*x + b)^(n+1) / ((n+1) * a)
           if let Expr::Integer(n) = right.as_ref()
             && *n >= 2
             && !is_constant_wrt(left, var)
-            && extract_linear_coefficient(left, var).is_some()
+            && let Some(a) = extract_linear_coefficient(left, var)
           {
-            let expanded =
-              crate::functions::polynomial_ast::expand_and_combine(expr);
-            if !expr_str_eq(&expanded, expr) {
-              return integrate(&expanded, var);
-            }
+            let n1 = Expr::Integer(*n + 1);
+            let base_pow = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left: Box::new(left.as_ref().clone()),
+              right: Box::new(n1.clone()),
+            };
+            let denom = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![n1, a],
+            };
+            return Some(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(base_pow),
+              right: Box::new(denom),
+            });
           }
           // ∫ f(x)^n dx where n is a positive integer: try expanding
           if let Expr::Integer(n) = right.as_ref()

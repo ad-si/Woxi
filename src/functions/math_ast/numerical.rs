@@ -247,7 +247,7 @@ pub fn n_eval_arbitrary(
   match expr_to_bigfloat(expr, bits, rm, &mut cc) {
     Ok(result) => {
       let decimal = bigfloat_to_string(&result, None, rm, &mut cc)?;
-      Ok(Expr::BigFloat(decimal, precision))
+      Ok(Expr::BigFloat(decimal, precision as f64))
     }
     Err(_) => {
       // Try complex BigFloat evaluation (handles expressions with I)
@@ -300,7 +300,7 @@ fn n_eval_arbitrary_partial(
   // If the whole expression can be converted to BigFloat, do it
   if let Ok(result) = expr_to_bigfloat(expr, bits, rm, cc) {
     let decimal = bigfloat_to_string(&result, None, rm, cc)?;
-    return Ok(Expr::BigFloat(decimal, precision));
+    return Ok(Expr::BigFloat(decimal, precision as f64));
   }
 
   match expr {
@@ -830,14 +830,14 @@ fn build_complex_bigfloat_result(
 
   if im.is_zero() {
     let re_str = bigfloat_to_string(&re, None, rm, cc)?;
-    return Ok(Expr::BigFloat(re_str, precision));
+    return Ok(Expr::BigFloat(re_str, precision as f64));
   }
 
   let im_negative = im.is_negative();
   let im_abs = if im_negative { im.neg() } else { im.clone() };
   let im_str = bigfloat_to_string(&im_abs, max_digits, rm, cc)?;
 
-  let im_bf = Expr::BigFloat(im_str, precision);
+  let im_bf = Expr::BigFloat(im_str, precision as f64);
 
   // Build |im| * I term (always positive coefficient)
   let abs_im_term = Expr::BinaryOp {
@@ -850,7 +850,7 @@ fn build_complex_bigfloat_result(
     if im_negative {
       // Pure negative imaginary: -|im|*I
       let neg_im_str = bigfloat_to_string(&im, max_digits, rm, cc)?;
-      let neg_im_bf = Expr::BigFloat(neg_im_str, precision);
+      let neg_im_bf = Expr::BigFloat(neg_im_str, precision as f64);
       return Ok(Expr::BinaryOp {
         op: crate::syntax::BinaryOperator::Times,
         left: Box::new(neg_im_bf),
@@ -861,7 +861,7 @@ fn build_complex_bigfloat_result(
   }
 
   let re_str = bigfloat_to_string(&re, max_digits, rm, cc)?;
-  let re_bf = Expr::BigFloat(re_str, precision);
+  let re_bf = Expr::BigFloat(re_str, precision as f64);
 
   if im_negative {
     // re - |im|*I
@@ -1455,7 +1455,7 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Identifier("Infinity".to_string()))
     }
     Expr::Real(_) => Ok(Expr::Identifier("MachinePrecision".to_string())),
-    Expr::BigFloat(_, prec) => Ok(Expr::Real(*prec as f64)),
+    Expr::BigFloat(_, prec) => Ok(Expr::Real(*prec)),
     Expr::Identifier(name)
       if name == "Infinity" || name == "ComplexInfinity" =>
     {

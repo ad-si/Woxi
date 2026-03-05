@@ -1723,26 +1723,23 @@ mod integrate_polynomial_power {
 
   #[test]
   fn x_plus_1_squared() {
-    // ∫ (x+1)^2 dx = x + x^2 + x^3/3 (expanded polynomial form)
-    assert_eq!(
-      interpret("Integrate[(x + 1)^2, x]").unwrap(),
-      "x + x^2 + x^3/3"
-    );
+    // ∫ (x+1)^2 dx using substitution
+    assert_eq!(interpret("Integrate[(x + 1)^2, x]").unwrap(), "(1 + x)^3/3");
   }
 
   #[test]
   fn x_plus_1_cubed() {
-    // ∫ (x+1)^3 dx expanded
+    // ∫ (x+1)^3 dx using substitution
     let result = interpret("Integrate[(x + 1)^3, x]").unwrap();
-    assert_eq!(result, "x + (3*x^2)/2 + x^3 + x^4/4");
+    assert_eq!(result, "(1 + x)^4/4");
   }
 
   #[test]
   fn two_x_minus_1_squared() {
-    // ∫ (2x-1)^2 dx = x - 2*x^2 + (4*x^3)/3 (expanded polynomial form)
+    // ∫ (2x-1)^2 dx using substitution
     assert_eq!(
       interpret("Integrate[(2*x - 1)^2, x]").unwrap(),
-      "x - 2*x^2 + (4*x^3)/3"
+      "(-1 + 2*x)^3/6"
     );
   }
 }

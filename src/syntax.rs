@@ -254,7 +254,7 @@ pub enum Expr {
   /// Real/float literal
   Real(f64),
   /// Arbitrary-precision real: (formatted_digits, precision_in_decimal_digits)
-  BigFloat(String, usize),
+  BigFloat(String, f64),
   /// String literal (without quotes)
   String(String),
   /// Identifier/symbol
@@ -1083,8 +1083,8 @@ pub fn pair_to_expr(pair: Pair<Rule>) -> Expr {
         Expr::Real(value_str.parse().unwrap_or(0.0))
       } else {
         let prec: f64 = prec_str.parse().unwrap_or(0.0);
-        let prec_usize = (prec.round() as usize).max(1);
-        Expr::BigFloat(value_str.to_string(), prec_usize)
+        let prec = prec.max(1.0);
+        Expr::BigFloat(value_str.to_string(), prec)
       }
     }
     Rule::BasePrefix => {
@@ -3185,7 +3185,19 @@ fn format_real_scientific(f: f64) -> String {
 /// Uses Wolfram's backtick notation: `digits`precision.`
 /// Uses scientific notation (*^) for very large or very small numbers,
 /// matching Wolfram's thresholds (|value| >= 1e6 or < 1e-5).
-pub fn format_bigfloat(digits: &str, prec: usize) -> String {
+/// Format a precision value for backtick notation.
+/// Integer precisions display as "2.", non-integer as full float "2.041392685158225".
+fn format_precision(prec: f64) -> String {
+  if prec == prec.floor() {
+    format!("{}.", prec as i64)
+  } else {
+    // Format with full precision, trimming trailing zeros but keeping at least one decimal
+    let s = format!("{}", prec);
+    s
+  }
+}
+
+pub fn format_bigfloat(digits: &str, prec: f64) -> String {
   let (is_negative, abs_digits) = if let Some(rest) = digits.strip_prefix('-') {
     (true, rest)
   } else {
@@ -3219,7 +3231,7 @@ pub fn format_bigfloat(digits: &str, prec: usize) -> String {
       int_part.chars().chain(frac_part.chars()).collect();
     let sig_digits = all_digits.trim_end_matches('0');
     if sig_digits.is_empty() {
-      return format!("{}0.`{}.", prefix, prec);
+      return format!("{}0.`{}", prefix, format_precision(prec));
     }
     let exp = int_part.len() as i64 - 1;
     let mantissa = if sig_digits.len() > 1 {
@@ -3227,7 +3239,7 @@ pub fn format_bigfloat(digits: &str, prec: usize) -> String {
     } else {
       format!("{}{}.", prefix, &sig_digits[..1])
     };
-    return format!("{}`{}.*^{}", mantissa, prec, exp);
+    return format!("{}`{}*^{}", mantissa, format_precision(prec), exp);
   }
 
   // Check if number is very small: "0.00000..." with 5+ leading zeros
@@ -3237,7 +3249,7 @@ pub fn format_bigfloat(digits: &str, prec: usize) -> String {
       let sig_part = &frac_part[leading_zeros..];
       let sig_digits = sig_part.trim_end_matches('0');
       if sig_digits.is_empty() {
-        return format!("{}0.`{}.", prefix, prec);
+        return format!("{}0.`{}", prefix, format_precision(prec));
       }
       let exp = -(leading_zeros as i64 + 1);
       let mantissa = if sig_digits.len() > 1 {
@@ -3245,12 +3257,12 @@ pub fn format_bigfloat(digits: &str, prec: usize) -> String {
       } else {
         format!("{}{}.", prefix, &sig_digits[..1])
       };
-      return format!("{}`{}.*^{}", mantissa, prec, exp);
+      return format!("{}`{}*^{}", mantissa, format_precision(prec), exp);
     }
   }
 
   // Normal format (no scientific notation needed)
-  format!("{}`{}.", digits, prec)
+  format!("{}`{}", digits, format_precision(prec))
 }
 
 /// If expr is Times[negative_coeff, rest...], return Some(Times[abs(coeff), rest...]).
@@ -4250,6 +4262,8 @@ pub fn expr_to_string(expr: &Expr) -> String {
               || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
                 && args.len() == 2
                 && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
+              // Pattern expressions need parens in Times (Wolfram convention)
+              || matches!(a, Expr::Pattern { .. } | Expr::PatternOptional { .. } | Expr::PatternTest { .. })
             {
               format!("({})", s)
             } else {
@@ -4410,7 +4424,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
             }
           )
           || matches!(&args[0], Expr::Integer(n) if *n < 0)
-        {
+          || matches!(
+            &args[0],
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
+          ) {
           format!("({})", base_str)
         } else {
           base_str
@@ -4440,6 +4459,12 @@ pub fn expr_to_string(expr: &Expr) -> String {
               op: BinaryOperator::Divide,
               ..
             }
+          )
+          || matches!(
+            &args[1],
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
           ) {
           format!("({})", exp_str)
         } else {
@@ -4525,11 +4550,24 @@ pub fn expr_to_string(expr: &Expr) -> String {
           return format!("-({})", inner_str);
         }
         // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm convention)
-        // Only for simple identifiers; products, functions, and sums are handled differently
         if matches!(left.as_ref(), Expr::Integer(1))
           && let Expr::Identifier(s) = right.as_ref()
         {
           return format!("{}^(-1)", s);
+        }
+        // Special case: 1/Plus[...] → (Plus[...])^(-1) (Wolfram InputForm convention)
+        if matches!(left.as_ref(), Expr::Integer(1))
+          && (matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
+            || matches!(
+              right.as_ref(),
+              Expr::BinaryOp {
+                op: BinaryOperator::Plus | BinaryOperator::Minus,
+                ..
+              }
+            ))
+        {
+          let rhs = expr_to_string(right);
+          return format!("({})^(-1)", rhs);
         }
       }
 
@@ -4720,7 +4758,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
             }
           ))
         || (matches!(op, BinaryOperator::Power)
-          && matches!(left.as_ref(), Expr::Integer(n) if *n < 0));
+          && matches!(left.as_ref(), Expr::Integer(n) if *n < 0))
+        || (matches!(op, BinaryOperator::Power | BinaryOperator::Times)
+          && matches!(
+            left.as_ref(),
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
+          ));
       let left_formatted = if left_needs_parens {
         format!("({})", left_str)
       } else {
@@ -4767,7 +4812,14 @@ pub fn expr_to_string(expr: &Expr) -> String {
               ..
             }
           ) || is_right_multiplicative(right)
-            || is_negative_expr(right)));
+            || is_negative_expr(right)))
+        || (matches!(op, BinaryOperator::Power | BinaryOperator::Times)
+          && matches!(
+            right.as_ref(),
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
+          ));
       let right_formatted = if needs_right_parens {
         format!("({})", right_str)
       } else {
@@ -5552,6 +5604,8 @@ pub fn expr_to_output(expr: &Expr) -> String {
                   ..
                 }
               )
+              // Pattern expressions need parens in Times (Wolfram convention)
+              || matches!(a, Expr::Pattern { .. } | Expr::PatternOptional { .. } | Expr::PatternTest { .. })
             {
               format!("({})", s)
             } else {
@@ -5578,7 +5632,12 @@ pub fn expr_to_output(expr: &Expr) -> String {
             }
           )
           || matches!(&args[0], Expr::Integer(n) if *n < 0)
-        {
+          || matches!(
+            &args[0],
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
+          ) {
           format!("({})", base_str)
         } else {
           base_str
@@ -5608,6 +5667,12 @@ pub fn expr_to_output(expr: &Expr) -> String {
               op: BinaryOperator::Divide,
               ..
             }
+          )
+          || matches!(
+            &args[1],
+            Expr::Pattern { .. }
+              | Expr::PatternOptional { .. }
+              | Expr::PatternTest { .. }
           ) {
           format!("({})", exp_str)
         } else {

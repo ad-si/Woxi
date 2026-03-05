@@ -200,7 +200,7 @@ fn bigfloat_value_prec(expr: &Expr) -> Option<(f64, f64)> {
   match expr {
     Expr::BigFloat(digits, prec) => {
       let v: f64 = digits.parse().unwrap_or(0.0);
-      Some((v, *prec as f64))
+      Some((v, *prec))
     }
     Expr::Real(f) => Some((*f, 16.0)),
     Expr::Integer(n) => Some((*n as f64, f64::INFINITY)),
@@ -213,7 +213,7 @@ fn bigfloat_value_prec(expr: &Expr) -> Option<(f64, f64)> {
 }
 
 /// Compute result precision for addition/subtraction using error propagation.
-fn precision_for_add(lv: f64, lp: f64, rv: f64, rp: f64, result: f64) -> usize {
+fn precision_for_add(lv: f64, lp: f64, rv: f64, rp: f64, result: f64) -> f64 {
   let le = if lp.is_finite() {
     lv.abs() * 10f64.powf(-lp)
   } else {
@@ -227,15 +227,15 @@ fn precision_for_add(lv: f64, lp: f64, rv: f64, rp: f64, result: f64) -> usize {
   let total_error = le + re;
   if result.abs() < 1e-300 || total_error <= 0.0 {
     if lp.is_finite() && rp.is_finite() {
-      (lp.min(rp) as usize).max(1)
+      lp.min(rp).max(1.0)
     } else if lp.is_finite() {
-      (lp as usize).max(1)
+      lp.max(1.0)
     } else {
-      (rp as usize).max(1)
+      rp.max(1.0)
     }
   } else {
     let p = result.abs().log10() - total_error.log10();
-    (p.max(0.0).round() as usize).max(1)
+    p.max(1.0)
   }
 }
 
@@ -298,11 +298,12 @@ fn bigfloat_binary_op(l: &Expr, r: &Expr, op: BinaryOperator) -> Option<Expr> {
       } else {
         rp
       };
-      (p.round() as usize).max(1)
+      p.max(1.0)
     }
   };
 
-  let result_str = format_bigfloat_value(result_value, result_prec);
+  let display_prec = (result_prec.round() as usize).max(1);
+  let result_str = format_bigfloat_value(result_value, display_prec);
   Some(Expr::BigFloat(result_str, result_prec))
 }
 

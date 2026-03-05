@@ -188,7 +188,7 @@ mod implicit_times_with_patterns {
   #[test]
   fn pattern_optional_default_implicit_times() {
     // Regression: c_. x_^2 failed to parse as implicit multiplication
-    assert_eq!(interpret("Hold[c_. x_^2]").unwrap(), "Hold[c_.*x_^2]");
+    assert_eq!(interpret("Hold[c_. x_^2]").unwrap(), "Hold[(c_.)*(x_)^2]");
   }
 
   #[test]
@@ -196,13 +196,13 @@ mod implicit_times_with_patterns {
     // c_. x_^2 should be Times[c_., Power[x_, 2]]
     assert_eq!(
       interpret("Hold[c_. x_^2] // FullForm").unwrap(),
-      "FullForm[Hold[c_.*x_^2]]"
+      "FullForm[Hold[(c_.)*(x_)^2]]"
     );
   }
 
   #[test]
   fn number_times_pattern_implicit() {
-    assert_eq!(interpret("Hold[2 x_]").unwrap(), "Hold[2*x_]");
+    assert_eq!(interpret("Hold[2 x_]").unwrap(), "Hold[2*(x_)]");
   }
 
   #[test]
@@ -236,7 +236,7 @@ mod precision_real {
 
   #[test]
   fn precision_real_plus_integer() {
-    assert_eq!(interpret("0.1`1 + 1").unwrap(), "1.1`2.");
+    assert_eq!(interpret("0.1`1 + 1").unwrap(), "1.1`2.041392685158225");
   }
 }
 
