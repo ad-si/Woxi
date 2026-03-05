@@ -619,11 +619,11 @@ mod unimplemented_warnings {
   #[test]
   fn known_wolfram_function_produces_warning() {
     clear_state();
-    let result = interpret_with_stdout("Graph[{1, 2, 3}]").unwrap();
-    assert_eq!(result.result, "Graph[{1, 2, 3}]");
+    let result = interpret_with_stdout("ZTransform[1, n, z]").unwrap();
+    assert_eq!(result.result, "ZTransform[1, n, z]");
     assert_eq!(result.warnings.len(), 1);
     assert!(result.warnings[0].contains("not yet implemented"));
-    assert!(result.warnings[0].contains("Graph["));
+    assert!(result.warnings[0].contains("ZTransform["));
   }
 
   #[test]
@@ -645,7 +645,7 @@ mod unimplemented_warnings {
   #[test]
   fn warning_not_in_stdout() {
     clear_state();
-    let result = interpret_with_stdout("Graph[{1}]").unwrap();
+    let result = interpret_with_stdout("ZTransform[1]").unwrap();
     assert!(!result.stdout.contains("not yet implemented"));
     assert!(!result.warnings.is_empty());
   }
@@ -653,9 +653,10 @@ mod unimplemented_warnings {
   #[test]
   fn multiple_unimplemented_calls_consolidated_into_single_warning() {
     clear_state();
-    let result = interpret_with_stdout("{Graph[1], GridGraph[2]}").unwrap();
+    let result =
+      interpret_with_stdout("{ZTransform[1], GridGraph[2]}").unwrap();
     assert_eq!(result.warnings.len(), 1);
-    assert!(result.warnings[0].contains("Graph[1]"));
+    assert!(result.warnings[0].contains("ZTransform[1]"));
     assert!(result.warnings[0].contains("GridGraph[2]"));
     assert!(
       result.warnings[0].contains("are built-in Wolfram Language functions")
