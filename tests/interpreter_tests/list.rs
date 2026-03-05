@@ -3024,6 +3024,48 @@ mod join_non_list {
   }
 
   #[test]
+  fn map_on_power_expression() {
+    // Map[f, x^2] applies f to each part of Power[x, 2]
+    assert_eq!(interpret("Map[f, x^2]").unwrap(), "f[x]^f[2]");
+  }
+
+  #[test]
+  fn map_on_function_call() {
+    // Map[f, g[a, b, c]] applies f to each argument of g
+    assert_eq!(
+      interpret("Map[f, g[a, b, c]]").unwrap(),
+      "g[f[a], f[b], f[c]]"
+    );
+  }
+
+  #[test]
+  fn map_on_plus_expression() {
+    // Map[f, x + y] applies f to each summand
+    assert_eq!(interpret("Map[f, x + y]").unwrap(), "f[x] + f[y]");
+  }
+
+  #[test]
+  fn map_on_atom_unevaluated() {
+    // Map on an atom should return unevaluated
+    assert_eq!(interpret("Map[f, x]").unwrap(), "Map[f, x]");
+  }
+
+  #[test]
+  fn map_recursive_user_function() {
+    // Regression test for issue #68: Map with user-defined recursive function
+    assert_eq!(
+      interpret(
+        "TrigSimplify[expr_] := expr /; AtomQ[expr]\n\
+         TrigSimplify[expr_] := expr /; Head[expr] === If\n\
+         TrigSimplify[expr_] := Map[TrigSimplify, expr]\n\
+         TrigSimplify[x^2]"
+      )
+      .unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
   fn map_at_operator_form() {
     assert_eq!(
       interpret("MapAt[f, -1][{a, b, c}]").unwrap(),
