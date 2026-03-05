@@ -40,11 +40,8 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
           crate::evaluator::evaluate_function_call_ast(&head, &mapped?)
         }
         ExprForm::Atom(_) => {
-          // Atomic expression, return unevaluated
-          Ok(Expr::FunctionCall {
-            name: "Map".to_string(),
-            args: vec![func.clone(), list.clone()],
-          })
+          // Atomic expression: Map[f, atom] returns atom unchanged
+          Ok(list.clone())
         }
       }
     }

@@ -1617,6 +1617,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Multi-arg: HeavisideTheta[x1, x2, ...] = product, 0 if any xi < 0
   if args.len() > 1 {
+    let mut has_zero = false;
     let mut remaining = Vec::new();
     for arg in args {
       match arg {
@@ -1625,6 +1626,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           if *n == 0 {
+            has_zero = true;
             remaining.push(arg.clone());
           }
           // n > 0: contributes 1, skip
@@ -1634,6 +1636,7 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           if *f == 0.0 {
+            has_zero = true;
             remaining.push(arg.clone());
           }
         }
@@ -1642,9 +1645,21 @@ pub fn heaviside_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
+    // If any arg is zero, HeavisideTheta[0] is undefined so the whole
+    // expression stays unevaluated with ALL original arguments sorted.
+    if has_zero {
+      let mut sorted_args = args.to_vec();
+      sorted_args.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
+      return Ok(Expr::FunctionCall {
+        name: "HeavisideTheta".to_string(),
+        args: sorted_args,
+      });
+    }
     if remaining.is_empty() {
       return Ok(Expr::Integer(1));
     }
+    // Sort remaining args for canonical form
+    remaining.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
     return Ok(Expr::FunctionCall {
       name: "HeavisideTheta".to_string(),
       args: remaining,
