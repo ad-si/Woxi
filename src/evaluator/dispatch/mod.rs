@@ -1080,6 +1080,7 @@ pub fn evaluate_function_call_ast_inner(
     | "Placed"
     | "Alternatives"
     | "Offset"
+    | "RowBox"
     | "Entity" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
