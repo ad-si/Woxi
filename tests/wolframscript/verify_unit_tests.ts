@@ -310,13 +310,16 @@ function runWoxi(expr: string): string {
     if (stmts.length > 1) {
       const setup = stmts.slice(0, -1);
       const last = stmts[stmts.length - 1];
-      fullExpr = setup.join("; ") + "; ToString[(" + last + "), InputForm]";
+      fullExpr = setup.join("; ") + "; Quiet[ToString[(" + last + "), InputForm]]";
     } else {
-      fullExpr = 'ToString[(' + expr + '), InputForm]';
+      fullExpr = 'Quiet[ToString[(' + expr + '), InputForm]]';
     }
   } else {
     // No function definitions — wrap the whole expression (preserves trailing ;)
-    fullExpr = 'ToString[(' + expr + '), InputForm]';
+    // Quiet suppresses messages (e.g. Prime::intpp) that would otherwise
+    // pollute stdout and cause comparison mismatches with wolframscript
+    // (which also wraps in Quiet).
+    fullExpr = 'Quiet[ToString[(' + expr + '), InputForm]]';
   }
 
   try {
