@@ -2354,9 +2354,9 @@ mod optional_function {
   }
 
   #[test]
-  fn optional_default_dot_with_head_parses() {
-    // x_Integer. is Optional[Pattern[x, Blank[Integer]]]
-    assert_eq!(interpret("x_Integer.").unwrap(), "x_Integer.");
+  fn optional_default_dot_with_head_is_syntax_error() {
+    // x_Integer. is a syntax error in Wolfram Language (only x_. and _. are valid)
+    assert!(interpret("x_Integer.").is_err());
   }
 
   #[test]

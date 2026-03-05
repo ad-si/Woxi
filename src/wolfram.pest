@@ -266,7 +266,7 @@ Term = _{
   | NumericValue
   | PreIncrement
   | PreDecrement
-  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | InformationQuery
   | NamedCharIdentifier
@@ -285,7 +285,7 @@ SimpleTerm = _{
   | FunctionCall
   | DerivativeIdentifier
   | NamedCharIdentifier
-  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | Identifier
   | SlotSequence
   | Slot
@@ -314,7 +314,7 @@ TermNoImplicit = _{
   | NumericValue
   | PreIncrement
   | PreDecrement
-  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
+  | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple
   | DerivativeIdentifier
   | NamedCharIdentifier
   | Identifier
@@ -368,15 +368,15 @@ PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
 // Note: Wolfram uses both "x_:val" and "x_ : val" syntax. The colon must NOT be ":=" (SetDelayed)
 PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ !("=" | ">") ~ Term }
 PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ Term }
-// PatternOptionalDefault: x_. or x_Head. (Optional pattern with system-determined default)
+// PatternOptionalDefault: x_. or _. (Optional pattern with system-determined default)
 // The dot must not be followed by a digit (decimal) or another dot (.. or ...)
-PatternOptionalDefaultWithHead = { PatternName ~ "_" ~ Identifier ~ "." ~ !ASCII_DIGIT ~ !"." }
+// Note: x_Head. and _Head. are NOT valid in Wolfram Language (syntax error)
 PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." ~ !ASCII_DIGIT ~ !"." }
 // PatternBlanks: silent atomic rule matching 1-3 underscores (Blank, BlankSequence, BlankNullSequence)
 PatternBlanks = _{ "___" | "__" | "_" }
 PatternWithHead = { PatternName? ~ PatternBlanks ~ !("_") ~ Identifier }
 PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
-Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
+Pattern = { PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 
 // Replacement rule: pattern -> replacement or pattern :> replacement (RuleDelayed)
 // The LHS is a ConditionExpr (expression that stops before -> and :>) with an optional /; condition.
@@ -452,7 +452,7 @@ BracketArgs = { "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]" }
 FunctionCall = { (Identifier | SimpleAnonymousFunction) ~ DerivativePrime? ~ BracketArgs+ }
 
 // FunctionDefinition supports multiple pattern arguments: f[a_, b_] := ...
-FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultWithHead | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
+FunctionDefinitionPattern = _{ PatternCondition | PatternTest | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 // Body is a simple ExpressionNoImplicit (we removed CompoundExpression option to prevent
 // greedy parsing of subsequent statements as part of the function body)
 // Compound expressions in function bodies should use explicit parentheses: f[x_] := (a; b)
