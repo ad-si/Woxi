@@ -1323,6 +1323,15 @@ mod division_flattening {
   }
 
   #[test]
+  fn division_by_one_simplifies() {
+    assert_eq!(interpret("x/1").unwrap(), "x");
+    assert_eq!(interpret("Log[x]/1").unwrap(), "Log[x]");
+    assert_eq!(interpret("Sin[x]/1").unwrap(), "Sin[x]");
+    assert_eq!(interpret("(a + b)/1").unwrap(), "a + b");
+    assert_eq!(interpret("2/1").unwrap(), "2");
+  }
+
+  #[test]
   fn numeric_division_unchanged() {
     assert_eq!(interpret("2/3").unwrap(), "2/3");
   }

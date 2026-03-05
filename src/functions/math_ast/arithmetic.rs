@@ -2196,6 +2196,11 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return result;
   }
 
+  // expr / 1 → expr
+  if matches!(b, Expr::Integer(1)) {
+    return Ok(a.clone());
+  }
+
   // For two integers, keep as Rational (fraction)
   if let (Expr::Integer(numer), Expr::Integer(denom)) = (a, b) {
     if *denom == 0 {
