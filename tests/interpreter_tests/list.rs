@@ -3232,3 +3232,135 @@ mod array_flatten {
     );
   }
 }
+
+mod pdf {
+  use super::*;
+
+  #[test]
+  fn normal_standard() {
+    assert_eq!(
+      interpret("PDF[NormalDistribution[0, 1], x]").unwrap(),
+      "1/(E^(x^2/2)*Sqrt[2*Pi])"
+    );
+  }
+
+  #[test]
+  fn normal_symbolic() {
+    assert_eq!(
+      interpret("PDF[NormalDistribution[mu, sigma], x]").unwrap(),
+      "1/(E^((-mu + x)^2/(2*sigma^2))*Sqrt[2*Pi]*sigma)"
+    );
+  }
+
+  #[test]
+  fn normal_numeric_point() {
+    assert_eq!(
+      interpret("PDF[NormalDistribution[0, 1], 0]").unwrap(),
+      "1/Sqrt[2*Pi]"
+    );
+  }
+
+  #[test]
+  fn normal_at_one() {
+    assert_eq!(
+      interpret("PDF[NormalDistribution[0, 1], 1]").unwrap(),
+      "1/Sqrt[2*E*Pi]"
+    );
+  }
+
+  #[test]
+  fn normal_default_args() {
+    assert_eq!(
+      interpret("PDF[NormalDistribution[], x]").unwrap(),
+      "1/(E^(x^2/2)*Sqrt[2*Pi])"
+    );
+  }
+
+  #[test]
+  fn uniform_standard() {
+    assert_eq!(
+      interpret("PDF[UniformDistribution[{0, 1}], x]").unwrap(),
+      "Piecewise[{{1, 0 <= x <= 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn uniform_symbolic() {
+    assert_eq!(
+      interpret("PDF[UniformDistribution[{a, b}], x]").unwrap(),
+      "Piecewise[{{1/(-a + b), a <= x <= b}}, 0]"
+    );
+  }
+
+  #[test]
+  fn uniform_default() {
+    assert_eq!(
+      interpret("PDF[UniformDistribution[], x]").unwrap(),
+      "Piecewise[{{1, 0 <= x <= 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn exponential_symbolic() {
+    assert_eq!(
+      interpret("PDF[ExponentialDistribution[lambda], x]").unwrap(),
+      "Piecewise[{{lambda/E^(lambda*x), x >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn exponential_numeric() {
+    assert_eq!(
+      interpret("PDF[ExponentialDistribution[2], x]").unwrap(),
+      "Piecewise[{{2/E^(2*x), x >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn poisson_symbolic() {
+    assert_eq!(
+      interpret("PDF[PoissonDistribution[mu], k]").unwrap(),
+      "Piecewise[{{mu^k/(E^mu*k!), k >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn bernoulli_symbolic() {
+    assert_eq!(
+      interpret("PDF[BernoulliDistribution[p], k]").unwrap(),
+      "Piecewise[{{1 - p, k == 0}, {p, k == 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn unknown_distribution_unevaluated() {
+    assert_eq!(
+      interpret("PDF[SomeDistribution[1, 2], x]").unwrap(),
+      "PDF[SomeDistribution[1, 2], x]"
+    );
+  }
+
+  #[test]
+  fn distribution_symbols_are_inert() {
+    assert_eq!(
+      interpret("ExponentialDistribution[3]").unwrap(),
+      "ExponentialDistribution[3]"
+    );
+    assert_eq!(
+      interpret("PoissonDistribution[5]").unwrap(),
+      "PoissonDistribution[5]"
+    );
+    assert_eq!(
+      interpret("BernoulliDistribution[0.5]").unwrap(),
+      "BernoulliDistribution[0.5]"
+    );
+  }
+
+  #[test]
+  fn uniform_distribution_default() {
+    assert_eq!(
+      interpret("UniformDistribution[]").unwrap(),
+      "UniformDistribution[{0, 1}]"
+    );
+  }
+}

@@ -5,6 +5,7 @@
 mod arithmetic;
 mod complex;
 mod digits;
+mod distributions;
 mod elementary;
 mod number_theory;
 mod numeric_utils;
@@ -18,6 +19,7 @@ mod trigonometric;
 pub use arithmetic::*;
 pub use complex::*;
 pub use digits::*;
+pub use distributions::*;
 pub use elementary::*;
 pub use number_theory::*;
 pub use numeric_utils::*;
