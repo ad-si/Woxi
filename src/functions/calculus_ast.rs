@@ -3878,10 +3878,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           {
             return Some(result);
           }
-          // ∫ (a*x + b)^n dx where the base is linear in var:
+          // ∫ (a*x + b)^n dx where n >= 3 and the base is linear in var:
           // Use substitution: result = (a*x + b)^(n+1) / ((n+1) * a)
+          // For n == 2, Wolfram expands instead, so we skip to the expand path.
           if let Expr::Integer(n) = right.as_ref()
-            && *n >= 2
+            && *n >= 3
             && !is_constant_wrt(left, var)
             && let Some(a) = extract_linear_coefficient(left, var)
           {
@@ -3901,7 +3902,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               right: Box::new(denom),
             });
           }
-          // ∫ f(x)^n dx where n is a positive integer: try expanding
+          // ∫ f(x)^n dx where n is a positive integer: try expanding (used for n == 2)
           if let Expr::Integer(n) = right.as_ref()
             && *n >= 2
             && !is_constant_wrt(left, var)
