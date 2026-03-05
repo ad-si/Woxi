@@ -3312,7 +3312,7 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match arg {
       Expr::BigFloat(digits, prec) => {
         let v: f64 = digits.parse().unwrap_or(0.0);
-        let p = *prec as f64;
+        let p = *prec;
         sum_val += v;
         sum_error += v.abs() * 10f64.powf(-p);
       }
@@ -3332,7 +3332,7 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Compute result precision
-  let result_prec = if sum_val.abs() < 1e-300 || sum_error <= 0.0 {
+  let result_prec: f64 = if sum_val.abs() < 1e-300 || sum_error <= 0.0 {
     // Fallback: use min finite precision among BigFloat args
     args
       .iter()
@@ -3343,15 +3343,18 @@ fn bigfloat_plus(args: &[Expr]) -> Result<Expr, InterpreterError> {
           None
         }
       })
-      .min()
-      .unwrap_or(1)
+      .fold(None, |acc: Option<f64>, p| {
+        Some(acc.map_or(p, |a: f64| a.min(p)))
+      })
+      .unwrap_or(1.0)
   } else {
     let p = sum_val.abs().log10() - sum_error.log10();
-    (p.max(0.0).round() as usize).max(1)
+    p.max(1.0)
   };
 
   // Format result value with the right number of significant digits
-  let result_str = format_bigfloat_value(sum_val, result_prec);
+  let display_prec = (result_prec.round() as usize).max(1);
+  let result_str = format_bigfloat_value(sum_val, display_prec);
   Ok(Expr::BigFloat(result_str, result_prec))
 }
 

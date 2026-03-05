@@ -3288,7 +3288,7 @@ mod pdf {
   fn uniform_symbolic() {
     assert_eq!(
       interpret("PDF[UniformDistribution[{a, b}], x]").unwrap(),
-      "Piecewise[{{1/(-a + b), a <= x <= b}}, 0]"
+      "Piecewise[{{(-a + b)^(-1), a <= x <= b}}, 0]"
     );
   }
 

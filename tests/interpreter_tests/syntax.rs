@@ -2368,7 +2368,7 @@ mod optional_function {
   #[test]
   fn optional_default_dot_in_expression() {
     // m_. can appear in expressions like Power patterns
-    assert_eq!(interpret("x_^m_.").unwrap(), "x_^m_.");
+    assert_eq!(interpret("x_^m_.").unwrap(), "(x_)^(m_.)");
   }
 
   #[test]

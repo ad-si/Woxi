@@ -1798,7 +1798,7 @@ struct BigFloatDisplay {
 /// Prepare BigFloat digits for graphical display, using scientific notation
 /// when the number is very large (>= 1e6) or very small (< 1e-5).
 /// Returns a struct with the truncated mantissa and optional exponent.
-fn bigfloat_display_parts(digits: &str, prec: usize) -> BigFloatDisplay {
+fn bigfloat_display_parts(digits: &str, prec: f64) -> BigFloatDisplay {
   let negative = digits.starts_with('-');
   let d = if negative { &digits[1..] } else { digits };
   let prefix = if negative { "-" } else { "" };
@@ -1826,7 +1826,8 @@ fn bigfloat_display_parts(digits: &str, prec: usize) -> BigFloatDisplay {
     }
     let exp = int_part.len() as i64 - 1;
     // Truncate to prec significant digits
-    let trunc_len = prec.min(sig_digits.len());
+    let prec_usize = (prec.ceil() as usize).max(1);
+    let trunc_len = prec_usize.min(sig_digits.len());
     let trunc = &sig_digits[..trunc_len];
     let mantissa = if trunc.len() > 1 {
       format!("{}{}.{}", prefix, &trunc[..1], &trunc[1..])
@@ -1852,7 +1853,8 @@ fn bigfloat_display_parts(digits: &str, prec: usize) -> BigFloatDisplay {
         };
       }
       let exp = -(leading_zeros as i64 + 1);
-      let trunc_len = prec.min(sig_digits.len());
+      let prec_usize = (prec.ceil() as usize).max(1);
+      let trunc_len = prec_usize.min(sig_digits.len());
       let trunc = &sig_digits[..trunc_len];
       let mantissa = if trunc.len() > 1 {
         format!("{}{}.{}", prefix, &trunc[..1], &trunc[1..])
@@ -1868,7 +1870,7 @@ fn bigfloat_display_parts(digits: &str, prec: usize) -> BigFloatDisplay {
 
   // Normal range — just truncate
   BigFloatDisplay {
-    mantissa: truncate_bigfloat_digits(digits, prec),
+    mantissa: truncate_bigfloat_digits(digits, (prec.ceil() as usize).max(1)),
     exponent: None,
   }
 }
