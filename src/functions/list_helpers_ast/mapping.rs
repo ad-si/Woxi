@@ -27,11 +27,26 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
       Ok(Expr::Association(results?))
     }
     _ => {
-      // Not a list or association, return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "Map".to_string(),
-        args: vec![func.clone(), list.clone()],
-      })
+      // For any compound expression, decompose into head + children,
+      // apply func to each child, and reconstruct.
+      // E.g. Map[f, Power[x, 2]] -> Power[f[x], f[2]]
+      use crate::functions::expr_form::{ExprForm, decompose_expr};
+      match decompose_expr(list) {
+        ExprForm::Composite { head, children } => {
+          let mapped: Result<Vec<Expr>, _> = children
+            .iter()
+            .map(|child| apply_func_ast(func, child))
+            .collect();
+          crate::evaluator::evaluate_function_call_ast(&head, &mapped?)
+        }
+        ExprForm::Atom(_) => {
+          // Atomic expression, return unevaluated
+          Ok(Expr::FunctionCall {
+            name: "Map".to_string(),
+            args: vec![func.clone(), list.clone()],
+          })
+        }
+      }
     }
   }
 }
