@@ -2453,7 +2453,7 @@ GridBox,,,,3,1245
 GridDefaultElement,,,,3,5587
 GridGraph,,,,8,1005
 GridLines,Option specifying grid lines in a plot,✅,none,2,211
-GridLinesStyle,,,,6,247
+GridLinesStyle,Option for specifying the style of grid lines in graphics,✅,none,6,247
 GridVideo,,,,13,
 GroebnerBasis,,,,2,1150
 GroupActionBase,,,,8,4747

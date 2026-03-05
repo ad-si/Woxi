@@ -469,6 +469,7 @@ mod graphics {
         "Offset[{10, 20}, {0, 0}]"
       );
       assert_eq!(interpret("Offset[{10, 20}]").unwrap(), "Offset[{10, 20}]");
+      assert_eq!(interpret("GridLinesStyle").unwrap(), "GridLinesStyle");
     }
 
     #[test]
