@@ -1461,7 +1461,7 @@ Direction,Option specifying the direction for operations,✅,none,2,484
 DirectionalLight,,,,13,
 Directive,Combines graphics directives,✅,pure,6,33
 Directory,Current working directory,✅,effectful,2,1342
-DirectoryName,,,,3,1646
+DirectoryName,Extract the directory name from a file path,✅,pure,3,1646
 DirectoryQ,,,,7,1629
 DirectoryStack,,,,2,4527
 DirichletBeta,,,,10,5390

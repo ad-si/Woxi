@@ -357,6 +357,62 @@ pub fn dispatch_io_functions(
         Err(err) => Err(InterpreterError::EvaluationError(err.to_string())),
       });
     }
+    // DirectoryName["path"] or DirectoryName["path", n]
+    "DirectoryName" if args.len() == 1 || args.len() == 2 => {
+      let path_str = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "DirectoryName".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      let n = if args.len() == 2 {
+        match &args[1] {
+          Expr::Integer(i) if *i >= 1 => *i as usize,
+          Expr::Integer(_) => {
+            crate::emit_message(
+              "DirectoryName::intpm: Positive machine-sized integer expected at position 2 in DirectoryName.",
+            );
+            return Some(Ok(Expr::FunctionCall {
+              name: "DirectoryName".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "DirectoryName".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+      } else {
+        1
+      };
+
+      let mut result = path_str;
+      for _ in 0..n {
+        if result.is_empty() {
+          break;
+        }
+        // "/" has no parent
+        let trimmed = result.trim_end_matches('/');
+        if trimmed.is_empty() {
+          // input was "/" or "///" etc.
+          result = String::new();
+          break;
+        }
+        // Find the last separator
+        if let Some(pos) = trimmed.rfind('/') {
+          result = trimmed[..=pos].to_string();
+        } else {
+          result = String::new();
+          break;
+        }
+      }
+      return Some(Ok(Expr::String(result)));
+    }
     "FileNameJoin" if args.len() == 1 => {
       if let Expr::List(parts) = &args[0] {
         let segments: Vec<String> = parts

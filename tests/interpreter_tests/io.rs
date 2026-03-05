@@ -1567,6 +1567,82 @@ mod information {
   }
 }
 
+mod directory_name {
+  use super::*;
+
+  #[test]
+  fn absolute_path_with_file() {
+    assert_eq!(
+      interpret(r#"DirectoryName["/home/user/file.txt"]"#).unwrap(),
+      "/home/user/"
+    );
+  }
+
+  #[test]
+  fn relative_path_with_file() {
+    assert_eq!(interpret(r#"DirectoryName["a/b/c"]"#).unwrap(), "a/b/");
+  }
+
+  #[test]
+  fn trailing_separator() {
+    assert_eq!(
+      interpret(r#"DirectoryName["/home/user/"]"#).unwrap(),
+      "/home/"
+    );
+  }
+
+  #[test]
+  fn no_directory() {
+    assert_eq!(interpret(r#"DirectoryName["file.txt"]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(interpret(r#"DirectoryName[""]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn root_directory() {
+    assert_eq!(interpret(r#"DirectoryName["/"]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn single_component_under_root() {
+    assert_eq!(interpret(r#"DirectoryName["/home"]"#).unwrap(), "/");
+  }
+
+  #[test]
+  fn with_n_parameter() {
+    assert_eq!(
+      interpret(r#"DirectoryName["/home/user/file.txt", 2]"#).unwrap(),
+      "/home/"
+    );
+  }
+
+  #[test]
+  fn with_n_exceeding_depth() {
+    assert_eq!(interpret(r#"DirectoryName["/a/b", 3]"#).unwrap(), "");
+  }
+
+  #[test]
+  fn relative_trailing_slash() {
+    assert_eq!(interpret(r#"DirectoryName["a/b/c/"]"#).unwrap(), "a/b/");
+  }
+
+  #[test]
+  fn n_equals_one_explicit() {
+    assert_eq!(interpret(r#"DirectoryName["/a/b", 1]"#).unwrap(), "/a/");
+  }
+
+  #[test]
+  fn deep_path_n3() {
+    assert_eq!(
+      interpret(r#"DirectoryName["a/b/c/d.txt", 3]"#).unwrap(),
+      "a/"
+    );
+  }
+}
+
 mod file_name_join {
   use super::*;
 
