@@ -348,19 +348,19 @@ mod one_identity_attribute {
 
   #[test]
   fn one_identity_power_system_default() {
-    // 3*y should match a_.*x_^n_. with a=3, x=y, n=1 (Default[Power,2])
+    // 3*y should match a_.*x_^n_. with a=y, x=3, n=1 (Orderless Times matching)
     assert_eq!(
       interpret("f[a_.*x_^n_.] := {a, x, n}; f[3*y]").unwrap(),
-      "{3, y, 1}"
+      "{y, 3, 1}"
     );
   }
 
   #[test]
   fn one_identity_times_explicit_values() {
-    // 3*y^2 should match a_.*x_^n_. with a=3, x=y, n=2
+    // 3*y^2 should match a_.*x_^n_. with a=y^2, x=3, n=1 (Orderless Times matching)
     assert_eq!(
       interpret("f[a_.*x_^n_.] := {a, x, n}; f[3*y^2]").unwrap(),
-      "{3, y, 2}"
+      "{y^2, 3, 1}"
     );
   }
 

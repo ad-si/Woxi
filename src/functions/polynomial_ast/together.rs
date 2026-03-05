@@ -334,7 +334,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
         }
       })
       .collect();
-    canonical_dens.sort_by_key(expr_to_string);
+    crate::functions::math_ast::sort_symbolic_factors(&mut canonical_dens);
     if canonical_dens.len() == 1 {
       canonical_dens.remove(0)
     } else {
@@ -347,10 +347,18 @@ pub fn together_expr(expr: &Expr) -> Expr {
   } else if matches!(&combined_den, Expr::Integer(1)) {
     combined_num
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(combined_num),
-      right: Box::new(combined_den),
+    // Try to cancel common monomial factors between numerator and denominator
+    // without re-expanding the denominator (preserves factored form).
+    let (simplified_num, simplified_den) =
+      cancel_common_monomial_factors(&combined_num, &combined_den);
+    if matches!(&simplified_den, Expr::Integer(1)) {
+      simplified_num
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(simplified_num),
+        right: Box::new(simplified_den),
+      }
     }
   }
 }
@@ -426,4 +434,247 @@ fn compute_missing_factor(
   } else {
     build_product(missing_factors)
   }
+}
+
+/// Cancel common monomial factors between a numerator (sum of terms) and a denominator (product).
+/// E.g. (a^2*x + a*x^2) / a^2 → (a*x + x^2) / a
+/// Does not expand the denominator, preserving its factored form.
+fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
+  let terms = collect_additive_terms(num);
+  if terms.len() < 2 {
+    return (num.clone(), den.clone());
+  }
+
+  // For each term, extract base→exp map of its multiplicative factors (ignoring integers)
+  fn term_base_exp(term: &Expr) -> Vec<(String, Expr, i128)> {
+    let factors = flatten_times_args(&[term.clone()]);
+    let mut map: Vec<(String, Expr, i128)> = Vec::new();
+    for f in &factors {
+      let (base_str, base, exp) = match f {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => {
+          if let Expr::Integer(n) = right.as_ref() {
+            if *n > 0 {
+              (expr_to_string(left), *left.clone(), *n)
+            } else {
+              continue;
+            }
+          } else {
+            continue;
+          }
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          if let Expr::Integer(n) = &args[1] {
+            if *n > 0 {
+              (expr_to_string(&args[0]), args[0].clone(), *n)
+            } else {
+              continue;
+            }
+          } else {
+            continue;
+          }
+        }
+        Expr::Integer(_) => continue,
+        _ => (expr_to_string(f), f.clone(), 1),
+      };
+      if let Some(entry) = map.iter_mut().find(|(k, _, _)| *k == base_str) {
+        entry.2 += exp;
+      } else {
+        map.push((base_str, base, exp));
+      }
+    }
+    map
+  }
+
+  // Find common base^exp across all terms (min exponent for each base)
+  let mut common = term_base_exp(&terms[0]);
+  for term in &terms[1..] {
+    let tmap = term_base_exp(term);
+    common.retain_mut(|(key, _, exp)| {
+      if let Some(entry) = tmap.iter().find(|(k, _, _)| k == key) {
+        *exp = (*exp).min(entry.2);
+        *exp > 0
+      } else {
+        false
+      }
+    });
+  }
+
+  if common.is_empty() {
+    return (num.clone(), den.clone());
+  }
+
+  // Check which common factors also appear in the denominator and can be cancelled
+  let den_factors = flatten_times_args(&[den.clone()]);
+  let mut den_map: Vec<(String, Expr, i128)> = Vec::new();
+  for f in &den_factors {
+    let (base_str, base, exp) = match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        if let Expr::Integer(n) = right.as_ref() {
+          (expr_to_string(left), *left.clone(), *n)
+        } else {
+          (expr_to_string(f), f.clone(), 1)
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        if let Expr::Integer(n) = &args[1] {
+          (expr_to_string(&args[0]), args[0].clone(), *n)
+        } else {
+          (expr_to_string(f), f.clone(), 1)
+        }
+      }
+      Expr::Integer(_) => continue,
+      _ => (expr_to_string(f), f.clone(), 1),
+    };
+    if let Some(entry) = den_map.iter_mut().find(|(k, _, _)| *k == base_str) {
+      entry.2 += exp;
+    } else {
+      den_map.push((base_str, base, exp));
+    }
+  }
+
+  // Determine how much of each common factor can be cancelled with the denominator
+  let mut cancel_map: Vec<(String, i128)> = Vec::new();
+  for (key, _, num_exp) in &common {
+    if let Some((_, _, den_exp)) = den_map.iter().find(|(k, _, _)| k == key) {
+      let cancel_exp = (*num_exp).min(*den_exp);
+      if cancel_exp > 0 {
+        cancel_map.push((key.clone(), cancel_exp));
+      }
+    }
+  }
+
+  if cancel_map.is_empty() {
+    return (num.clone(), den.clone());
+  }
+
+  // Divide each numerator term by the cancelled factors
+  let mut new_terms = Vec::new();
+  for term in &terms {
+    let mut t_factors: Vec<Expr> = flatten_times_args(&[term.clone()]);
+    for (cancel_key, cancel_exp) in &cancel_map {
+      let mut remaining = *cancel_exp;
+      let mut new_factors = Vec::new();
+      for f in t_factors {
+        if remaining <= 0 {
+          new_factors.push(f);
+          continue;
+        }
+        let (base_str, base, exp) = match &f {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => {
+            if let Expr::Integer(n) = right.as_ref() {
+              (expr_to_string(left), *left.clone(), *n)
+            } else {
+              new_factors.push(f);
+              continue;
+            }
+          }
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            if let Expr::Integer(n) = &args[1] {
+              (expr_to_string(&args[0]), args[0].clone(), *n)
+            } else {
+              new_factors.push(f);
+              continue;
+            }
+          }
+          Expr::Integer(_) => {
+            new_factors.push(f);
+            continue;
+          }
+          _ => (expr_to_string(&f), f.clone(), 1),
+        };
+        if base_str == *cancel_key {
+          let reduce = remaining.min(exp);
+          remaining -= reduce;
+          let new_exp = exp - reduce;
+          if new_exp > 1 {
+            new_factors.push(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(base),
+              right: Box::new(Expr::Integer(new_exp)),
+            });
+          } else if new_exp == 1 {
+            new_factors.push(base);
+          }
+          // new_exp == 0: factor removed
+        } else {
+          new_factors.push(f);
+        }
+      }
+      t_factors = new_factors;
+    }
+    if t_factors.is_empty() {
+      new_terms.push(Expr::Integer(1));
+    } else {
+      new_terms.push(build_product(t_factors));
+    }
+  }
+
+  // Build new numerator
+  let new_num = if new_terms.len() == 1 {
+    expand_and_combine(&new_terms[0])
+  } else {
+    expand_and_combine(&build_sum(new_terms))
+  };
+
+  // Build new denominator: reduce exponents of cancelled factors
+  let mut new_den_factors: Vec<Expr> = Vec::new();
+  // Keep integer factors
+  for f in &den_factors {
+    if let Expr::Integer(n) = f {
+      new_den_factors.push(Expr::Integer(*n));
+    }
+  }
+  let mut den_map_remaining = den_map.clone();
+  for (cancel_key, cancel_exp) in &cancel_map {
+    if let Some(entry) = den_map_remaining
+      .iter_mut()
+      .find(|(k, _, _)| k == cancel_key)
+    {
+      entry.2 -= cancel_exp;
+    }
+  }
+  for (_, base, exp) in &den_map_remaining {
+    if *exp > 1 {
+      new_den_factors.push(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(base.clone()),
+        right: Box::new(Expr::Integer(*exp)),
+      });
+    } else if *exp == 1 {
+      new_den_factors.push(base.clone());
+    }
+  }
+  // Sort non-numeric factors to match Wolfram canonical order
+  let numeric_end = new_den_factors
+    .iter()
+    .position(|f| !matches!(f, Expr::Integer(_)))
+    .unwrap_or(new_den_factors.len());
+  crate::functions::math_ast::sort_symbolic_factors(
+    &mut new_den_factors[numeric_end..],
+  );
+  let new_den = if new_den_factors.is_empty() {
+    Expr::Integer(1)
+  } else {
+    build_product(new_den_factors)
+  };
+
+  (new_num, new_den)
 }
