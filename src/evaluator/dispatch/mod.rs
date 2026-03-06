@@ -527,9 +527,11 @@ pub fn evaluate_function_call_ast_inner(
             let pattern = &marker_args[1];
             if let Some(idx) = params.iter().position(|p| p == param_name) {
               if idx < effective_args.len() {
+                // Canonicalize the expression to match the canonical pattern form
+                let canonical_arg = crate::evaluator::assignment::canonicalize_divide_in_expr(&effective_args[idx]);
                 if let Some(bindings) =
                   crate::evaluator::pattern_matching::match_pattern(
-                    &effective_args[idx],
+                    &canonical_arg,
                     pattern,
                   )
                 {
@@ -755,9 +757,12 @@ pub fn evaluate_function_call_ast_inner(
             // Find the effective arg for this structural param
             if let Some(idx) = params.iter().position(|p| p == param_name) {
               if idx < effective_args.len() {
+                // Canonicalize the expression to match the canonical pattern form
+                // (e.g., BinaryOp::Divide → Times[..., Power[..., -1]])
+                let canonical_arg = crate::evaluator::assignment::canonicalize_divide_in_expr(&effective_args[idx]);
                 if let Some(bindings) =
                   crate::evaluator::pattern_matching::match_pattern(
-                    &effective_args[idx],
+                    &canonical_arg,
                     pattern,
                   )
                 {

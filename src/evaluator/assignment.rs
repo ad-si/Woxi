@@ -186,6 +186,12 @@ fn normalize_structural_pattern(pattern: &Expr) -> Expr {
   let with_placeholders = replace_patterns_with_placeholders(pattern, &vars);
   match evaluate_expr_to_expr(&with_placeholders) {
     Ok(evaluated) => {
+      // Convert BinaryOp::Divide to canonical Times[..., Power[..., -1]] form
+      // so that patterns match regardless of how the expression was written
+      // (e.g., 1/(a*b) vs (a*b)^-1 should both match the same pattern).
+      // This is done before replacing placeholders back, since the arithmetic
+      // functions (power_two, times_ast) need plain symbols, not pattern nodes.
+      let evaluated = canonicalize_divide_in_expr(&evaluated);
       let result = replace_placeholders_with_patterns(&evaluated, &vars);
       // For Orderless functions (Times, Plus), reorder top-level args so
       // PatternOptional args come last. This ensures non-optional patterns
@@ -194,6 +200,61 @@ fn normalize_structural_pattern(pattern: &Expr) -> Expr {
       reorder_orderless_pattern_args(result)
     }
     Err(_) => pattern.clone(), // fallback to raw pattern
+  }
+}
+
+/// Recursively convert BinaryOp::Divide to canonical Times[num, Power[den, -1]]
+/// form. Uses power_two/times_ast so nested structures are properly distributed
+/// (e.g., 1/(a*Sqrt[b]) → Times[Power[a,-1], Power[b,-1/2]]).
+pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
+  match expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      let left = canonicalize_divide_in_expr(left);
+      let right = canonicalize_divide_in_expr(right);
+      match crate::functions::math_ast::power_two(
+        &right,
+        &Expr::Integer(-1),
+      ) {
+        Ok(den_inv) => {
+          if matches!(left, Expr::Integer(1)) {
+            den_inv
+          } else {
+            crate::functions::math_ast::times_ast(&[left.clone(), den_inv])
+              .unwrap_or_else(|_| Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Divide,
+                left: Box::new(left),
+                right: Box::new(right),
+              })
+          }
+        }
+        Err(_) => Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(left),
+          right: Box::new(right),
+        },
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(canonicalize_divide_in_expr).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(canonicalize_divide_in_expr(left)),
+      right: Box::new(canonicalize_divide_in_expr(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(canonicalize_divide_in_expr(operand)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(canonicalize_divide_in_expr).collect())
+    }
+    other => other.clone(),
   }
 }
 

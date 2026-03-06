@@ -2540,15 +2540,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(factors) = factors {
-      let inv_factors: Vec<Expr> = factors
+      let inv_factors: Result<Vec<Expr>, InterpreterError> = factors
         .into_iter()
-        .map(|f| Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Power,
-          left: Box::new(f.clone()),
-          right: Box::new(Expr::Integer(-1)),
-        })
+        .map(|f| power_two(f, &Expr::Integer(-1)))
         .collect();
-      return times_ast(&inv_factors);
+      return times_ast(&inv_factors?);
     }
   }
 
