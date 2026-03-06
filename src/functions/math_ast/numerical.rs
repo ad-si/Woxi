@@ -532,6 +532,10 @@ pub fn expr_to_bigfloat(
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(bigfloat_erfc(&x, bits, rm, cc))
         }
+        "Erfi" if args.len() == 1 => {
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(bigfloat_erfi(&x, bits, rm, cc))
+        }
         "ExpIntegralEi" if args.len() == 1 => {
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(bigfloat_exp_integral_ei(&x, bits, rm, cc))
@@ -2811,6 +2815,65 @@ fn bigfloat_erfc(
   } else {
     result
   }
+}
+
+/// Compute erfi(x) with arbitrary precision.
+/// erfi(x) = (2/sqrt(pi)) * sum_{n=0}^{inf} x^(2n+1) / (n! * (2n+1))
+/// Unlike erf, the terms do NOT alternate in sign.
+fn bigfloat_erfi(
+  x: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+
+  if x.is_zero() {
+    return BigFloat::from_i32(0, bits);
+  }
+
+  // erfi is odd: erfi(-x) = -erfi(x)
+  let is_negative = x.is_negative();
+  let x_abs = x.abs();
+
+  let work_bits = bits + 64;
+
+  // Taylor series: term_0 = x, term_n = term_{n-1} * x^2 / n
+  // contribution_n = term_n / (2n+1), all terms positive (no alternating sign)
+  let x2 = x_abs.mul(&x_abs, work_bits, rm);
+  let mut term = x_abs.clone();
+  let mut sum = x_abs.clone();
+
+  let max_iterations = work_bits * 2 + 100;
+  for n in 1..max_iterations {
+    term = term.mul(&x2, work_bits, rm);
+    let n_bf = BigFloat::from_i32(n as i32, work_bits);
+    term = term.div(&n_bf, work_bits, rm);
+
+    let denom = BigFloat::from_i32((2 * n + 1) as i32, work_bits);
+    let contribution = term.div(&denom, work_bits, rm);
+
+    sum = sum.add(&contribution, work_bits, rm);
+
+    if contribution.is_zero() {
+      break;
+    }
+    if let (Some(c_exp), Some(s_exp)) =
+      (contribution.exponent(), sum.exponent())
+      && s_exp - c_exp > (work_bits as i32)
+    {
+      break;
+    }
+  }
+
+  // Multiply by 2/sqrt(π), round to final precision
+  let two = BigFloat::from_i32(2, work_bits);
+  let pi = cc.pi(work_bits, rm);
+  let sqrt_pi = pi.sqrt(work_bits, rm);
+  let factor = two.div(&sqrt_pi, work_bits, rm);
+  let result = sum.mul(&factor, bits, rm);
+
+  if is_negative { result.neg() } else { result }
 }
 
 /// Compute the exponential integral Ei(x) using BigFloat arithmetic.

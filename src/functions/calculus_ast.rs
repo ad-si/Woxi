@@ -1354,6 +1354,45 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             }))
           }
         }
+        // Erfi[z]: D[Erfi[z], z] = 2*E^(z^2)/Sqrt[Pi]
+        "Erfi" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let z_sq = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(args[0].clone()),
+            right: Box::new(Expr::Integer(2)),
+          };
+          let exp_z2 = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Power,
+            left: Box::new(Expr::Constant("E".to_string())),
+            right: Box::new(z_sq),
+          };
+          let two_over_sqrt_pi = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::Integer(2)),
+            right: Box::new(Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::Constant("Pi".to_string())],
+            }),
+          };
+          let result = simplify(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(two_over_sqrt_pi),
+            right: Box::new(exp_z2),
+          });
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(dz),
+              right: Box::new(result),
+            }))
+          }
+        }
         // Handle Rational[n, d] as constant
         "Rational" if args.len() == 2 => Ok(Expr::Integer(0)),
         // Handle Integrate[f, {t, a, b}] via Leibniz integral rule

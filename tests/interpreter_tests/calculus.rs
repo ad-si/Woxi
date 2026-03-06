@@ -893,6 +893,101 @@ mod integrate_gaussian {
   }
 }
 
+mod erfi {
+  use super::*;
+
+  #[test]
+  fn erfi_zero() {
+    assert_eq!(interpret("Erfi[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn erfi_symbolic() {
+    assert_eq!(interpret("Erfi[x]").unwrap(), "Erfi[x]");
+  }
+
+  #[test]
+  fn erfi_negative_arg() {
+    // Erfi[-x] = -Erfi[x] (odd function)
+    assert_eq!(interpret("Erfi[-x]").unwrap(), "-Erfi[x]");
+  }
+
+  #[test]
+  fn erfi_negative_integer() {
+    // Erfi[-1] = -Erfi[1]
+    assert_eq!(interpret("Erfi[-1]").unwrap(), "-Erfi[1]");
+  }
+
+  #[test]
+  fn erfi_infinity() {
+    assert_eq!(interpret("Erfi[Infinity]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn erfi_neg_infinity() {
+    assert_eq!(interpret("Erfi[-Infinity]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn erfi_real() {
+    // Erfi[1.0] ≈ 1.6504257587975429
+    let result = interpret("Erfi[1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.6504257587975429).abs() < 1e-10, "Erfi[1.0] = {result}");
+  }
+
+  #[test]
+  fn erfi_real_negative() {
+    // Erfi[-1.0] = -Erfi[1.0]
+    let result = interpret("Erfi[-1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val + 1.6504257587975429).abs() < 1e-10, "Erfi[-1.0] = {result}");
+  }
+
+  #[test]
+  fn erfi_listable() {
+    assert_eq!(
+      interpret("Erfi[{0, x}]").unwrap(),
+      "{0, Erfi[x]}"
+    );
+  }
+
+  #[test]
+  fn d_erfi_x() {
+    // D[Erfi[x], x] = 2*E^(x^2)/Sqrt[Pi]
+    assert_eq!(interpret("D[Erfi[x],x]").unwrap(), "(2*E^x^2)/Sqrt[Pi]");
+  }
+
+  #[test]
+  fn n_erfi_1() {
+    // N[Erfi[1], 20] — small argument, Taylor series
+    let result = interpret("N[Erfi[1], 20]").unwrap();
+    assert!(
+      result.starts_with("1.65042575879754287602"),
+      "N[Erfi[1], 20] = {result}"
+    );
+  }
+
+  #[test]
+  fn n_erfi_0() {
+    let result = interpret("N[Erfi[0], 20]").unwrap();
+    assert!(
+      result.starts_with("0"),
+      "N[Erfi[0], 20] = {result}"
+    );
+  }
+
+  #[test]
+  fn n_erfi_half() {
+    // N[Erfi[1/2], 20] ≈ 0.61427...
+    let result = interpret("N[Erfi[1/2], 20]").unwrap();
+    assert!(
+      result.starts_with("0.61495209469651"),
+      "N[Erfi[1/2], 20] = {result}"
+    );
+  }
+}
+
 mod big_o {
   use super::*;
 
