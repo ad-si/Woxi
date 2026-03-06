@@ -532,12 +532,31 @@ pub fn evaluate_function_call_ast_inner(
                   crate::evaluator::assignment::canonicalize_divide_in_expr(
                     &effective_args[idx],
                   );
-                if let Some(bindings) =
+                // Push positional parameter bindings as context so inner
+                // Orderless matching can check compatibility (e.g. x_Symbol=r).
+                let mut positional_ctx: Vec<(String, crate::syntax::Expr)> =
+                  Vec::new();
+                for (pi, param) in params.iter().enumerate() {
+                  if pi == idx
+                    || pi >= effective_args.len()
+                    || param.starts_with("__sp")
+                    || param.starts_with("_dv")
+                  {
+                    continue;
+                  }
+                  positional_ctx
+                    .push((param.clone(), effective_args[pi].clone()));
+                }
+                crate::evaluator::pattern_matching::push_match_context_pub(
+                  &positional_ctx,
+                );
+                let match_result =
                   crate::evaluator::pattern_matching::match_pattern(
                     &canonical_arg,
                     pattern,
-                  )
-                {
+                  );
+                crate::evaluator::pattern_matching::pop_match_context_pub();
+                if let Some(bindings) = match_result {
                   // Check consistency: structural bindings must not conflict
                   // with positional parameter bindings (skip the structural
                   // param itself and synthetic names)
@@ -766,12 +785,31 @@ pub fn evaluate_function_call_ast_inner(
                   crate::evaluator::assignment::canonicalize_divide_in_expr(
                     &effective_args[idx],
                   );
-                if let Some(bindings) =
+                // Push positional parameter bindings as context so inner
+                // Orderless matching can check compatibility.
+                let mut positional_ctx: Vec<(String, crate::syntax::Expr)> =
+                  Vec::new();
+                for (pi, param) in params.iter().enumerate() {
+                  if pi == idx
+                    || pi >= effective_args.len()
+                    || param.starts_with("__sp")
+                    || param.starts_with("_dv")
+                  {
+                    continue;
+                  }
+                  positional_ctx
+                    .push((param.clone(), effective_args[pi].clone()));
+                }
+                crate::evaluator::pattern_matching::push_match_context_pub(
+                  &positional_ctx,
+                );
+                let match_result =
                   crate::evaluator::pattern_matching::match_pattern(
                     &canonical_arg,
                     pattern,
-                  )
-                {
+                  );
+                crate::evaluator::pattern_matching::pop_match_context_pub();
+                if let Some(bindings) = match_result {
                   // Check consistency: structural bindings must not conflict
                   // with positional parameter bindings (skip the structural
                   // param itself and synthetic names)
