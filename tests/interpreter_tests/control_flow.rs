@@ -571,6 +571,35 @@ mod or_logical {
     clear_state();
     assert_eq!(interpret("Or[False, False]").unwrap(), "False");
   }
+
+  #[test]
+  fn short_circuit_skips_invalid_part() {
+    clear_state();
+    // True || should not evaluate the second argument
+    assert_eq!(
+      interpret("v = ProductLog[x]; If[True || FreeQ[v[[2]], x], True, False]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn short_circuit_operator_syntax() {
+    clear_state();
+    assert_eq!(
+      interpret("v = ProductLog[x]; True || FreeQ[v[[2]], x]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn short_circuit_function_syntax() {
+    clear_state();
+    assert_eq!(
+      interpret("v = ProductLog[x]; Or[True, FreeQ[v[[2]], x]]").unwrap(),
+      "True"
+    );
+  }
 }
 
 mod and_logical {
@@ -586,6 +615,37 @@ mod and_logical {
   fn false_short_circuits() {
     clear_state();
     assert_eq!(interpret("And[True, False, a]").unwrap(), "False");
+  }
+
+  #[test]
+  fn short_circuit_skips_invalid_part() {
+    clear_state();
+    // False && should not evaluate the second argument (issue #74)
+    assert_eq!(
+      interpret("v = ProductLog[x]; If[False && FreeQ[v[[2]], x], True, False]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn short_circuit_operator_syntax() {
+    clear_state();
+    // Using && operator syntax
+    assert_eq!(
+      interpret("v = ProductLog[x]; False && FreeQ[v[[2]], x]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn short_circuit_function_syntax() {
+    clear_state();
+    // Using And[] function syntax
+    assert_eq!(
+      interpret("v = ProductLog[x]; And[False, FreeQ[v[[2]], x]]").unwrap(),
+      "False"
+    );
   }
 }
 
