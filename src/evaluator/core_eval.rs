@@ -138,6 +138,14 @@ pub fn evaluate_expr_early_dispatch(
   args: &[Expr],
 ) -> Result<Option<String>, InterpreterError> {
   match name {
+    "And" if args.len() >= 2 => {
+      let result = crate::functions::boolean_ast::and_ast(args)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
+    "Or" if args.len() >= 2 => {
+      let result = crate::functions::boolean_ast::or_ast(args)?;
+      return Ok(Some(expr_to_string(&result)));
+    }
     "If" if args.len() == 2 || args.len() == 3 => {
       let cond = evaluate_expr(&args[0])?;
       if cond == "True" {
@@ -263,6 +271,12 @@ pub fn evaluate_expr_to_expr_early_dispatch(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
   match name {
+    "And" if args.len() >= 2 => {
+      return Ok(Some(crate::functions::boolean_ast::and_ast(args)?));
+    }
+    "Or" if args.len() >= 2 => {
+      return Ok(Some(crate::functions::boolean_ast::or_ast(args)?));
+    }
     "Protect" | "Unprotect" | "Condition" | "MessageName" | "Attributes" => {
       return Ok(Some(evaluate_function_call_ast(name, args)?));
     }
@@ -1439,6 +1453,42 @@ pub fn evaluate_expr_to_expr_inner(
       evaluate_function_call_ast(name, &evaluated_args)
     }
     Expr::BinaryOp { op, left, right } => {
+      // Short-circuit evaluation for And (&&) and Or (||):
+      // Evaluate left side first, and only evaluate right side if needed.
+      match op {
+        BinaryOperator::And => {
+          let left_val = evaluate_expr_to_expr(left)?;
+          if matches!(&left_val, Expr::Identifier(s) if s == "False") {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+          let right_val = evaluate_expr_to_expr(right)?;
+          let has_user_rules =
+            crate::FUNC_DEFS.with(|m| m.borrow().contains_key("And"));
+          if has_user_rules {
+            return evaluate_function_call_ast("And", &[left_val, right_val]);
+          }
+          return crate::functions::boolean_ast::and_ast(
+            &[left_val, right_val],
+          );
+        }
+        BinaryOperator::Or => {
+          let left_val = evaluate_expr_to_expr(left)?;
+          if matches!(&left_val, Expr::Identifier(s) if s == "True") {
+            return Ok(Expr::Identifier("True".to_string()));
+          }
+          let right_val = evaluate_expr_to_expr(right)?;
+          let has_user_rules =
+            crate::FUNC_DEFS.with(|m| m.borrow().contains_key("Or"));
+          if has_user_rules {
+            return evaluate_function_call_ast("Or", &[left_val, right_val]);
+          }
+          return crate::functions::boolean_ast::or_ast(
+            &[left_val, right_val],
+          );
+        }
+        _ => {}
+      }
+
       let left_val = evaluate_expr_to_expr(left)?;
       let right_val = evaluate_expr_to_expr(right)?;
 
@@ -1449,8 +1499,6 @@ pub fn evaluate_expr_to_expr_inner(
         BinaryOperator::Plus => Some("Plus"),
         BinaryOperator::Times => Some("Times"),
         BinaryOperator::Power => Some("Power"),
-        BinaryOperator::And => Some("And"),
-        BinaryOperator::Or => Some("Or"),
         BinaryOperator::StringJoin => Some("StringJoin"),
         _ => None,
       };
@@ -1531,11 +1579,9 @@ pub fn evaluate_expr_to_expr_inner(
           // Delegate to power_ast for proper handling of Rational, Real, etc.
           crate::functions::math_ast::power_ast(&[left_val, right_val])
         }
-        BinaryOperator::And => {
-          crate::functions::boolean_ast::and_ast(&[left_val, right_val])
-        }
-        BinaryOperator::Or => {
-          crate::functions::boolean_ast::or_ast(&[left_val, right_val])
+        BinaryOperator::And | BinaryOperator::Or => {
+          // Handled above with short-circuit evaluation
+          unreachable!()
         }
         BinaryOperator::StringJoin => {
           let l = expr_to_raw_string(&left_val);
