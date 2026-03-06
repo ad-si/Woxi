@@ -768,6 +768,51 @@ mod high_level_functions_tests {
     }
   }
 
+  // ─── Scan ────────────────────────────────────────────────────────────
+  mod scan_tests {
+    use super::*;
+    #[test]
+    fn test_scan_list() {
+      // Scan returns Null and applies function for side effects
+      assert_eq!(interpret("Scan[Print, {1, 2, 3}]").unwrap(), "Null");
+    }
+    #[test]
+    fn test_scan_non_list_expression() {
+      // Scan should work on any expression, not just lists
+      assert_eq!(interpret("Scan[Print, f[a, b, c]]").unwrap(), "Null");
+    }
+    #[test]
+    fn test_scan_power_expression() {
+      // Scan over Power[x, -1] should iterate over parts x and -1
+      assert_eq!(interpret("Scan[Print, Power[x, -1]]").unwrap(), "Null");
+    }
+    #[test]
+    fn test_scan_with_throw_in_non_list() {
+      // Regression test for issue #75:
+      // Throw inside Scan on a non-list expression must propagate to Catch
+      assert_eq!(
+        interpret(
+          "FFunctionOfExpnQ[u_] := Catch[Scan[Function[Throw[False]],u];True]; FFunctionOfExpnQ[1/x]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+    #[test]
+    fn test_scan_with_throw_in_list() {
+      // Throw inside Scan on a list must also propagate to Catch
+      assert_eq!(
+        interpret("Catch[Scan[Function[Throw[False]], {1, 2, 3}]; True]").unwrap(),
+        "False"
+      );
+    }
+    #[test]
+    fn test_scan_atom() {
+      // Scan on an atom (no parts) should return Null without error
+      assert_eq!(interpret("Scan[Print, 42]").unwrap(), "Null");
+    }
+  }
+
   // ─── IntegerPartitions ──────────────────────────────────────────────
   mod integer_partitions_tests {
     use super::*;
