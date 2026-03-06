@@ -1,6 +1,47 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Check if a function has a specific Hold attribute (built-in or user-defined).
+fn has_hold_attribute(name: &str, attr: &str) -> bool {
+  get_builtin_attributes(name).contains(&attr)
+    || crate::FUNC_ATTRS.with(|m| {
+      m.borrow()
+        .get(name)
+        .is_some_and(|attrs| attrs.contains(&attr.to_string()))
+    })
+}
+
+/// Evaluate function arguments respecting Hold attributes.
+/// Returns the evaluated (or held) arguments based on the function's attributes.
+fn evaluate_args_with_hold(
+  name: &str,
+  args: &[Expr],
+) -> Result<Vec<Expr>, InterpreterError> {
+  let hold_all = has_hold_attribute(name, "HoldAll")
+    || has_hold_attribute(name, "HoldAllComplete");
+  let hold_first = has_hold_attribute(name, "HoldFirst");
+  let hold_rest = has_hold_attribute(name, "HoldRest");
+
+  if hold_all {
+    Ok(args.to_vec())
+  } else if hold_first && !args.is_empty() {
+    let mut result = vec![args[0].clone()];
+    for arg in &args[1..] {
+      result.push(evaluate_expr_to_expr(arg)?);
+    }
+    Ok(result)
+  } else if hold_rest && !args.is_empty() {
+    let mut result = vec![evaluate_expr_to_expr(&args[0])?];
+    result.extend(args[1..].to_vec());
+    Ok(result)
+  } else {
+    args
+      .iter()
+      .map(evaluate_expr_to_expr)
+      .collect::<Result<_, _>>()
+  }
+}
+
 /// Helper to construct an RGBColor Expr from numeric values.
 /// Uses Integer for whole numbers (0, 1) and Real for fractional values.
 fn rgb_color_expr(r: f64, g: f64, b: f64) -> Expr {
@@ -138,14 +179,6 @@ pub fn evaluate_expr_early_dispatch(
   args: &[Expr],
 ) -> Result<Option<String>, InterpreterError> {
   match name {
-    "And" if args.len() >= 2 => {
-      let result = crate::functions::boolean_ast::and_ast(args)?;
-      return Ok(Some(expr_to_string(&result)));
-    }
-    "Or" if args.len() >= 2 => {
-      let result = crate::functions::boolean_ast::or_ast(args)?;
-      return Ok(Some(expr_to_string(&result)));
-    }
     "If" if args.len() == 2 || args.len() == 3 => {
       let cond = evaluate_expr(&args[0])?;
       if cond == "True" {
@@ -271,12 +304,6 @@ pub fn evaluate_expr_to_expr_early_dispatch(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
   match name {
-    "And" if args.len() >= 2 => {
-      return Ok(Some(crate::functions::boolean_ast::and_ast(args)?));
-    }
-    "Or" if args.len() >= 2 => {
-      return Ok(Some(crate::functions::boolean_ast::or_ast(args)?));
-    }
     "Protect" | "Unprotect" | "Condition" | "MessageName" | "Attributes" => {
       return Ok(Some(evaluate_function_call_ast(name, args)?));
     }
@@ -443,11 +470,8 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
       if let Some(result) = evaluate_expr_early_dispatch(name, args)? {
         return Ok(result);
       }
-      // Evaluate using AST path to avoid interpret() recursion
-      let evaluated_args: Vec<Expr> = args
-        .iter()
-        .map(evaluate_expr_to_expr)
-        .collect::<Result<_, _>>()?;
+      // Evaluate using AST path to avoid interpret() recursion (respecting Hold attributes)
+      let evaluated_args = evaluate_args_with_hold(name, args)?;
       let result = evaluate_function_call_ast(name, &evaluated_args)?;
       Ok(expr_to_string(&result))
     }
@@ -1442,11 +1466,8 @@ pub fn evaluate_expr_to_expr_inner(
         return Ok(result);
       }
 
-      // Evaluate arguments
-      let evaluated_args: Vec<Expr> = args
-        .iter()
-        .map(evaluate_expr_to_expr)
-        .collect::<Result<_, _>>()?;
+      // Evaluate arguments (respecting Hold attributes)
+      let evaluated_args = evaluate_args_with_hold(name, args)?;
       // Flatten Sequence arguments (unless function has SequenceHold attribute)
       let evaluated_args = flatten_sequences(name, &evaluated_args);
       // Dispatch to function implementation
@@ -1467,9 +1488,9 @@ pub fn evaluate_expr_to_expr_inner(
           if has_user_rules {
             return evaluate_function_call_ast("And", &[left_val, right_val]);
           }
-          return crate::functions::boolean_ast::and_ast(
-            &[left_val, right_val],
-          );
+          return crate::functions::boolean_ast::and_ast(&[
+            left_val, right_val,
+          ]);
         }
         BinaryOperator::Or => {
           let left_val = evaluate_expr_to_expr(left)?;
@@ -1482,9 +1503,7 @@ pub fn evaluate_expr_to_expr_inner(
           if has_user_rules {
             return evaluate_function_call_ast("Or", &[left_val, right_val]);
           }
-          return crate::functions::boolean_ast::or_ast(
-            &[left_val, right_val],
-          );
+          return crate::functions::boolean_ast::or_ast(&[left_val, right_val]);
         }
         _ => {}
       }

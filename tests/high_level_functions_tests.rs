@@ -802,7 +802,8 @@ mod high_level_functions_tests {
     fn test_scan_with_throw_in_list() {
       // Throw inside Scan on a list must also propagate to Catch
       assert_eq!(
-        interpret("Catch[Scan[Function[Throw[False]], {1, 2, 3}]; True]").unwrap(),
+        interpret("Catch[Scan[Function[Throw[False]], {1, 2, 3}]; True]")
+          .unwrap(),
         "False"
       );
     }
@@ -1888,10 +1889,7 @@ mod high_level_functions_tests {
     #[test]
     fn test_divide_canonical_form() {
       // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
-      assert_eq!(
-        interpret("(a*b)^-1 === 1/(a*b)").unwrap(),
-        "True"
-      );
+      assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");
     }
   }
 }
