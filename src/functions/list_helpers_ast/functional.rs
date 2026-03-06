@@ -186,18 +186,28 @@ pub fn differences_n_ast(
 /// AST-based Scan: apply function to each element for side effects.
 /// Returns Null but evaluates function on each element.
 pub fn scan_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
-  let items = match list {
-    Expr::List(items) => items,
-    _ => {
-      return Ok(Expr::FunctionCall {
-        name: "Scan".to_string(),
-        args: vec![func.clone(), list.clone()],
-      });
+  match list {
+    Expr::List(items) => {
+      for item in items {
+        apply_func_ast(func, item)?;
+      }
     }
-  };
-
-  for item in items {
-    apply_func_ast(func, item)?;
+    _ => {
+      // For any compound expression, decompose into head + children,
+      // and apply func to each child for side effects.
+      // E.g. Scan[f, Power[x, 2]] applies f[x] and f[2]
+      use crate::functions::expr_form::{ExprForm, decompose_expr};
+      match decompose_expr(list) {
+        ExprForm::Composite { children, .. } => {
+          for child in &children {
+            apply_func_ast(func, child)?;
+          }
+        }
+        ExprForm::Atom(_) => {
+          // Atoms have no parts to scan over
+        }
+      }
+    }
   }
 
   Ok(Expr::Identifier("Null".to_string()))
