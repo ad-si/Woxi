@@ -1172,3 +1172,48 @@ mod module_condition {
     );
   }
 }
+
+mod module_expr_preservation {
+  use super::*;
+
+  #[test]
+  fn module_preserves_times_head() {
+    clear_state();
+    // Issue #79: Module should preserve expression structure (Head)
+    // Previously, Module converted expressions to strings and back,
+    // losing canonical form (e.g. Times[-1, a, ...] became 0 - a/b)
+    assert_eq!(interpret("Module[{v = -a*b}, Head[v]]").unwrap(), "Times");
+  }
+
+  #[test]
+  fn module_preserves_function_call_structure() {
+    clear_state();
+    assert_eq!(
+      interpret("Module[{v = f[a, b, c]}, {Head[v], Length[v]}]").unwrap(),
+      "{f, 3}"
+    );
+  }
+
+  #[test]
+  fn module_preserves_list_structure() {
+    clear_state();
+    assert_eq!(
+      interpret("Module[{v = {1, 2, 3}}, {Length[v], First[v]}]").unwrap(),
+      "{3, 1}"
+    );
+  }
+
+  #[test]
+  fn rest_evaluates_single_arg_times() {
+    clear_state();
+    // Rest[Times[a, b]] should return b (not Times[b])
+    assert_eq!(interpret("Rest[a*b]").unwrap(), "b");
+  }
+
+  #[test]
+  fn rest_evaluates_single_arg_plus() {
+    clear_state();
+    // Rest[Plus[a, b]] should return b (not Plus[b])
+    assert_eq!(interpret("Rest[a + b]").unwrap(), "b");
+  }
+}

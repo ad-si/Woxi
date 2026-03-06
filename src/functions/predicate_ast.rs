@@ -1050,8 +1050,15 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       0
     }
     Expr::FunctionCall { args, .. } => args.len() as i128,
-    Expr::BinaryOp { .. } => 2,
-    Expr::UnaryOp { .. } => 1,
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => {
+      if let Some((_head, ha_args)) =
+        crate::functions::list_helpers_ast::expr_to_head_args(&args[0])
+      {
+        ha_args.len() as i128
+      } else {
+        0
+      }
+    }
     Expr::Comparison { operands, .. } => operands.len() as i128,
     // Atoms: Integer, Real, String, Identifier, BigFloat, BigInteger, etc.
     _ => 0,
