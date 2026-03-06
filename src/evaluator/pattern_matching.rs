@@ -1663,17 +1663,44 @@ pub fn match_pattern(
           if pat_args.len() != expr_args.len() {
             return None;
           }
-          let mut bindings = Vec::new();
-          for (p, e) in pat_args.iter().zip(expr_args.iter()) {
-            if let Some(b) = match_pattern(e, p) {
-              if !merge_bindings(&mut bindings, b) {
+          // For Orderless functions (Times, Plus), try all permutations
+          let is_orderless =
+            crate::evaluator::listable::is_builtin_orderless(pat_name);
+          if is_orderless && pat_args.len() >= 2 {
+            // Try all permutations of expression args against pattern args
+            let perms = permutations(expr_args);
+            for perm in perms {
+              let mut bindings = Vec::new();
+              let mut matched = true;
+              for (p, e) in pat_args.iter().zip(perm.iter()) {
+                if let Some(b) = match_pattern(e, p) {
+                  if !merge_bindings(&mut bindings, b) {
+                    matched = false;
+                    break;
+                  }
+                } else {
+                  matched = false;
+                  break;
+                }
+              }
+              if matched {
+                return Some(bindings);
+              }
+            }
+            None
+          } else {
+            let mut bindings = Vec::new();
+            for (p, e) in pat_args.iter().zip(expr_args.iter()) {
+              if let Some(b) = match_pattern(e, p) {
+                if !merge_bindings(&mut bindings, b) {
+                  return None;
+                }
+              } else {
                 return None;
               }
-            } else {
-              return None;
             }
+            Some(bindings)
           }
-          Some(bindings)
         }
       } else {
         // Expression is not a FunctionCall with the same name;

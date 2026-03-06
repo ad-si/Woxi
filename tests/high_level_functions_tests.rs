@@ -1831,4 +1831,67 @@ mod high_level_functions_tests {
       );
     }
   }
+
+  // Regression tests for issue #76:
+  // Pattern matching with structural patterns involving Power and Sqrt
+  mod structural_pattern_matching_tests {
+    use super::*;
+
+    #[test]
+    fn test_inverted_times_sqrt_matches_pattern() {
+      // (Sqrt[x]*(a + b*x))^-1 should match 1/((a_.+b_.*x_)*Sqrt[c_.+d_.*x_])
+      assert_eq!(
+        interpret(
+          "Int[1/((a_.+b_.*x_)*Sqrt[c_.+d_.*x_]),x_Symbol] := False; \
+           Int[(Sqrt[x]*(a + b*x))^-1, x]"
+        )
+        .unwrap(),
+        "False"
+      );
+    }
+
+    #[test]
+    fn test_direct_form_matches_pattern() {
+      // 1/((a+b*x)*Sqrt[x]) should also match the same pattern
+      assert_eq!(
+        interpret(
+          "f76a[1/((a_.+b_.*x_)*Sqrt[c_.+d_.*x_]),x_Symbol] := {a,b,c,d,x}; \
+           f76a[1/((p+q*r)*Sqrt[r]), r]"
+        )
+        .unwrap(),
+        "{p, q, 0, 1, r}"
+      );
+    }
+
+    #[test]
+    fn test_inverted_form_extracts_bindings() {
+      // (Sqrt[r]*(p+q*r))^-1 should match and extract correct bindings
+      assert_eq!(
+        interpret(
+          "f76b[1/((a_.+b_.*x_)*Sqrt[c_.+d_.*x_]), x_Symbol] := {a,b,c,d,x}; \
+           f76b[(Sqrt[r]*(p+q*r))^-1, r]"
+        )
+        .unwrap(),
+        "{p, q, 0, 1, r}"
+      );
+    }
+
+    #[test]
+    fn test_power_times_distribution() {
+      // Power[Times[a, b], -1] should distribute to Times[Power[a,-1], Power[b,-1]]
+      assert_eq!(
+        interpret("FullForm[(a*Sqrt[x])^-1]").unwrap(),
+        "Times[Power[a, -1], Power[x, Rational[-1, 2]]]"
+      );
+    }
+
+    #[test]
+    fn test_divide_canonical_form() {
+      // 1/(a*b) should produce canonical Times[Power[...]] form matching (a*b)^-1
+      assert_eq!(
+        interpret("(a*b)^-1 === 1/(a*b)").unwrap(),
+        "True"
+      );
+    }
+  }
 }
