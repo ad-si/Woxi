@@ -67,6 +67,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Pochhammer"
     | "Erf"
     | "Erfc"
+    | "Erfi"
     | "Beta"
     | "Zeta"
     | "PolyGamma"

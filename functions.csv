@@ -1738,7 +1738,7 @@ EquirippleFilterKernel,,,,9,4225
 Equivalent,Logical equivalence,✅,pure,7,1298
 Erf,Returns the error function value,✅,pure,1,554
 Erfc,Returns the complementary error function value,✅,pure,2,784
-Erfi,,,,3,995
+Erfi,Returns the imaginary error function value,✅,pure,1,995
 ErlangB,,,,9,4387
 ErlangC,,,,9,4262
 ErlangDistribution,,,,8,2190

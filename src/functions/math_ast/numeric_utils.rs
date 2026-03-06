@@ -91,6 +91,29 @@ pub fn erfc_cf(x: f64) -> f64 {
   (-x * x).exp() / (f * std::f64::consts::PI.sqrt())
 }
 
+/// Compute the imaginary error function erfi(x) using the Taylor series.
+/// erfi(x) = (2/sqrt(pi)) * sum_{n=0}^{inf} x^(2n+1) / (n! * (2n+1))
+pub fn erfi_f64(x: f64) -> f64 {
+  // erfi is an odd function
+  let sign = if x < 0.0 { -1.0 } else { 1.0 };
+  let x = x.abs();
+
+  // Taylor series: erfi(x) = (2/sqrt(pi)) * sum_{n=0}^inf x^(2n+1) / (n! * (2n+1))
+  // Note: unlike erf, there is no (-1)^n factor, so all terms are positive for x > 0
+  let mut sum = 0.0;
+  let mut term = x; // first term: x
+  sum += term;
+  for n in 1..200 {
+    term *= x * x / (n as f64);
+    let contribution = term / (2 * n + 1) as f64;
+    sum += contribution;
+    if contribution.abs() < 1e-16 * sum.abs() {
+      break;
+    }
+  }
+  sign * sum * 2.0 / std::f64::consts::PI.sqrt()
+}
+
 /// Recursively try to evaluate any expression to f64.
 /// This handles constants (Pi, E, Degree), arithmetic operations, and known functions.
 /// Used by N[], comparisons, and anywhere a numeric value is needed from a symbolic expression.
@@ -202,6 +225,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Erfc" if args.len() == 1 => {
         try_eval_to_f64(&args[0]).map(|v| 1.0 - erf_f64(v))
       }
+      "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
       "Log" if args.len() == 1 => try_eval_to_f64(&args[0])
         .and_then(|v| if v > 0.0 { Some(v.ln()) } else { None }),
       "Log" if args.len() == 2 => {

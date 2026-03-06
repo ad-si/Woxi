@@ -584,6 +584,9 @@ pub fn dispatch_math_functions(
     "Erfc" if args.len() == 1 => {
       return Some(crate::functions::math_ast::erfc_ast(args));
     }
+    "Erfi" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::erfi_ast(args));
+    }
     "Log" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::log_ast(args));
     }

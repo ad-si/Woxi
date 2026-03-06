@@ -1147,6 +1147,96 @@ pub fn erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Erfi expects 1 argument".into(),
+    ));
+  }
+  // Helper: compute -Erfi[inner] by evaluating Erfi[inner] first, then negating
+  let negate_erfi = |inner: Expr| -> Result<Expr, InterpreterError> {
+    let inner_result = erfi_ast(&[inner])?;
+    Ok(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(inner_result),
+    })
+  };
+  match &args[0] {
+    // Erfi[0] = 0
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    // Erfi[Infinity] = Infinity
+    Expr::Identifier(s) if s == "Infinity" => {
+      Ok(Expr::Identifier("Infinity".to_string()))
+    }
+    // Erfi[-x] = -Erfi[x] (UnaryOp form)
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => negate_erfi(*operand.clone()),
+    // Erfi[Times[-1, x]] = -Erfi[x] (evaluated form of -x)
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Times" && fargs.len() == 2 =>
+    {
+      if matches!(&fargs[0], Expr::Integer(-1)) {
+        return negate_erfi(fargs[1].clone());
+      }
+      if matches!(&fargs[1], Expr::Integer(-1)) {
+        return negate_erfi(fargs[0].clone());
+      }
+      // Negative integer coefficient: Times[-n, x] -> -Erfi[Times[n, x]]
+      if let Expr::Integer(n) = &fargs[0]
+        && *n < 0
+      {
+        let pos_arg = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Integer(-*n), fargs[1].clone()],
+        };
+        return negate_erfi(pos_arg);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Erfi".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    // BinaryOp::Times form: -1 * x
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if matches!(left.as_ref(), Expr::Integer(-1)) {
+        return negate_erfi(*right.clone());
+      }
+      if matches!(right.as_ref(), Expr::Integer(-1)) {
+        return negate_erfi(*left.clone());
+      }
+      if let Expr::Integer(n) = left.as_ref()
+        && *n < 0
+      {
+        let pos_arg = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Times,
+          left: Box::new(Expr::Integer(-*n)),
+          right: right.clone(),
+        };
+        return negate_erfi(pos_arg);
+      }
+      Ok(Expr::FunctionCall {
+        name: "Erfi".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    // Erfi[-n] for negative integer
+    Expr::Integer(n) if *n < 0 => negate_erfi(Expr::Integer(-*n)),
+    // Numeric evaluation for Real arguments
+    Expr::Real(f) => Ok(Expr::Real(erfi_f64(*f))),
+    // Otherwise symbolic
+    _ => Ok(Expr::FunctionCall {
+      name: "Erfi".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !args.is_empty()
     && matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate")
