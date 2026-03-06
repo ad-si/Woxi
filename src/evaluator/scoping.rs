@@ -83,20 +83,17 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prev: Vec<(String, Option<StoredValue>)> = Vec::new();
 
   for (var_name, init_expr) in &local_vars {
-    let val = if let Some(expr) = init_expr {
+    let stored = if let Some(expr) = init_expr {
       // Evaluate the initialization expression
       let evaluated = evaluate_expr_to_expr(expr)?;
-      expr_to_string(&evaluated)
+      StoredValue::ExprVal(evaluated)
     } else {
       // Uninitialized variable - generate a unique symbol
-      crate::functions::scoping::unique_symbol(var_name)
+      StoredValue::Raw(crate::functions::scoping::unique_symbol(var_name))
     };
 
     // Save current binding and set new one
-    let pv = ENV.with(|e| {
-      e.borrow_mut()
-        .insert(var_name.clone(), StoredValue::Raw(val))
-    });
+    let pv = ENV.with(|e| e.borrow_mut().insert(var_name.clone(), stored));
     prev.push((var_name.clone(), pv));
   }
 
@@ -204,10 +201,9 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for (var_name, init_expr) in &local_vars {
     let pv = if let Some(expr) = init_expr {
       let evaluated = evaluate_expr_to_expr(expr)?;
-      let val = expr_to_string(&evaluated);
       ENV.with(|e| {
         e.borrow_mut()
-          .insert(var_name.clone(), StoredValue::Raw(val))
+          .insert(var_name.clone(), StoredValue::ExprVal(evaluated))
       })
     } else {
       // Block with no initializer removes the variable binding so it evaluates as a symbol

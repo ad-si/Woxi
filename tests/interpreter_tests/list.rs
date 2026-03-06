@@ -2223,6 +2223,29 @@ mod rest_nonlist {
   fn rest_error_empty() {
     assert_eq!(interpret("Rest[{}]").unwrap(), "Rest[{}]");
   }
+
+  #[test]
+  fn rest_single_element_evaluates() {
+    // Rest[Times[a, b]] should return b (not Times[b])
+    assert_eq!(interpret("Rest[Times[a, b]]").unwrap(), "b");
+  }
+
+  #[test]
+  fn rest_binary_op_power() {
+    // Issue #79: Rest should work on BinaryOp expressions (Power)
+    assert_eq!(interpret("Rest[a^b]").unwrap(), "Power[b]");
+  }
+
+  #[test]
+  fn first_binary_op_power() {
+    // Issue #79: First should work on BinaryOp expressions
+    assert_eq!(interpret("First[a^b]").unwrap(), "a");
+  }
+
+  #[test]
+  fn last_binary_op_power() {
+    assert_eq!(interpret("Last[a^b]").unwrap(), "b");
+  }
 }
 
 mod level {

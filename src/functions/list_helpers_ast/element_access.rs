@@ -3,6 +3,56 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 
+/// Decompose a BinaryOp or UnaryOp expression into canonical Wolfram
+/// (head_name, args) form so that First/Rest/Part/etc. can operate on them.
+///
+/// Returns None for atoms and already-handled types (List, FunctionCall).
+pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
+  use crate::syntax::{BinaryOperator, UnaryOperator};
+  match expr {
+    Expr::BinaryOp { op, left, right } => {
+      let (head, args) = match op {
+        BinaryOperator::Plus => ("Plus", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Minus => {
+          // a - b  =  Plus[a, Times[-1, b]]
+          let neg_right = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), *right.clone()],
+          };
+          ("Plus", vec![*left.clone(), neg_right])
+        }
+        BinaryOperator::Times => ("Times", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Divide => {
+          // a / b  =  Times[a, Power[b, -1]]
+          let inv_right = Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![*right.clone(), Expr::Integer(-1)],
+          };
+          ("Times", vec![*left.clone(), inv_right])
+        }
+        BinaryOperator::Power => ("Power", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::And => ("And", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Or => ("Or", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::StringJoin => {
+          ("StringJoin", vec![*left.clone(), *right.clone()])
+        }
+        BinaryOperator::Alternatives => {
+          ("Alternatives", vec![*left.clone(), *right.clone()])
+        }
+      };
+      Some((head.to_string(), args))
+    }
+    Expr::UnaryOp { op, operand } => match op {
+      UnaryOperator::Minus => Some((
+        "Times".to_string(),
+        vec![Expr::Integer(-1), *operand.clone()],
+      )),
+      UnaryOperator::Not => Some(("Not".to_string(), vec![*operand.clone()])),
+    },
+    _ => None,
+  }
+}
+
 /// AST-based First: return first element of list.
 /// First[list] or First[list, default] - returns default if list is empty.
 pub fn first_ast(
@@ -49,6 +99,16 @@ pub fn first_ast(
       }
     }
     _ => {
+      // Try decomposing BinaryOp/UnaryOp to canonical form
+      if let Some((_head, args)) = expr_to_head_args(list) {
+        if args.is_empty() {
+          if let Some(d) = default {
+            return Ok(d.clone());
+          }
+        } else {
+          return Ok(args[0].clone());
+        }
+      }
       if let Some(d) = default {
         Ok(d.clone())
       } else {
@@ -107,6 +167,12 @@ pub fn last_ast(
       }
     }
     _ => {
+      // Try decomposing BinaryOp/UnaryOp to canonical form
+      if let Some((_head, args)) = expr_to_head_args(list)
+        && !args.is_empty()
+      {
+        return Ok(args[args.len() - 1].clone());
+      }
       if let Some(d) = default {
         Ok(d.clone())
       } else {
@@ -149,16 +215,32 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
           args: vec![list.clone()],
         })
       } else {
-        Ok(Expr::FunctionCall {
-          name: name.clone(),
-          args: args[1..].to_vec(),
-        })
+        // Evaluate so e.g. Times[x] reduces to x
+        crate::evaluator::evaluate_function_call_ast(name, &args[1..])
       }
     }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "Nonatomic expression expected at position 1 in Rest[{}].",
-      crate::syntax::expr_to_string(list)
-    ))),
+    _ => {
+      // Try decomposing BinaryOp/UnaryOp to canonical form
+      if let Some((head, args)) = expr_to_head_args(list) {
+        if args.is_empty() {
+          let expr_str = crate::syntax::expr_to_string(list);
+          crate::emit_message(&format!(
+            "Cannot take Rest of expression {} with length zero.",
+            expr_str
+          ));
+          return Ok(Expr::FunctionCall {
+            name: "Rest".to_string(),
+            args: vec![list.clone()],
+          });
+        }
+        // Evaluate so e.g. Times[x] reduces to x
+        return crate::evaluator::evaluate_function_call_ast(&head, &args[1..]);
+      }
+      Err(InterpreterError::EvaluationError(format!(
+        "Nonatomic expression expected at position 1 in Rest[{}].",
+        crate::syntax::expr_to_string(list)
+      )))
+    }
   }
 }
 
@@ -187,10 +269,24 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         )
       }
     }
-    _ => Ok(Expr::FunctionCall {
-      name: "Most".to_string(),
-      args: vec![list.clone()],
-    }),
+    _ => {
+      // Try decomposing BinaryOp/UnaryOp to canonical form
+      if let Some((head, args)) = expr_to_head_args(list) {
+        if args.is_empty() {
+          return Err(InterpreterError::EvaluationError(
+            "Most: expression has length zero".into(),
+          ));
+        }
+        return crate::evaluator::evaluate_function_call_ast(
+          &head,
+          &args[..args.len() - 1],
+        );
+      }
+      Ok(Expr::FunctionCall {
+        name: "Most".to_string(),
+        args: vec![list.clone()],
+      })
+    }
   }
 }
 
@@ -403,6 +499,15 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
 /// Part[list, i] or list[[i]] - Extract element at position i (1-indexed)
 pub fn part_ast(list: &Expr, index: &Expr) -> Result<Expr, InterpreterError> {
+  // Try decomposing BinaryOp/UnaryOp to canonical form first
+  if let Some((head_name, ha_args)) = expr_to_head_args(list) {
+    let canonical = Expr::FunctionCall {
+      name: head_name,
+      args: ha_args,
+    };
+    return part_ast(&canonical, index);
+  }
+
   let (items, head) = match list {
     Expr::List(items) => (items.as_slice(), None),
     Expr::FunctionCall { name, args } => (args.as_slice(), Some(name.as_str())),
