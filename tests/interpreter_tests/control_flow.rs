@@ -622,8 +622,10 @@ mod and_logical {
     clear_state();
     // False && should not evaluate the second argument (issue #74)
     assert_eq!(
-      interpret("v = ProductLog[x]; If[False && FreeQ[v[[2]], x], True, False]")
-        .unwrap(),
+      interpret(
+        "v = ProductLog[x]; If[False && FreeQ[v[[2]], x], True, False]"
+      )
+      .unwrap(),
       "False"
     );
   }

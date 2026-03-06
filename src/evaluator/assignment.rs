@@ -215,10 +215,7 @@ pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
     } => {
       let left = canonicalize_divide_in_expr(left);
       let right = canonicalize_divide_in_expr(right);
-      match crate::functions::math_ast::power_two(
-        &right,
-        &Expr::Integer(-1),
-      ) {
+      match crate::functions::math_ast::power_two(&right, &Expr::Integer(-1)) {
         Ok(den_inv) => {
           if matches!(left, Expr::Integer(1)) {
             den_inv

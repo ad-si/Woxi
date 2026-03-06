@@ -97,6 +97,98 @@ mod attributes {
   }
 }
 
+mod hold_attributes {
+  use super::*;
+
+  #[test]
+  fn hold_first() {
+    assert_eq!(
+      interpret("SetAttributes[f, HoldFirst]; f[5 + 6, 5 + 6]").unwrap(),
+      "f[5 + 6, 11]"
+    );
+  }
+
+  #[test]
+  fn hold_all() {
+    assert_eq!(
+      interpret("SetAttributes[g, HoldAll]; g[5 + 6, 5 + 6]").unwrap(),
+      "g[5 + 6, 5 + 6]"
+    );
+  }
+
+  #[test]
+  fn hold_rest() {
+    assert_eq!(
+      interpret("SetAttributes[h, HoldRest]; h[5 + 6, 5 + 6]").unwrap(),
+      "h[11, 5 + 6]"
+    );
+  }
+
+  #[test]
+  fn hold_first_single_arg() {
+    assert_eq!(
+      interpret("SetAttributes[f, HoldFirst]; f[3 + 4]").unwrap(),
+      "f[3 + 4]"
+    );
+  }
+
+  #[test]
+  fn hold_rest_single_arg() {
+    assert_eq!(
+      interpret("SetAttributes[h, HoldRest]; h[3 + 4]").unwrap(),
+      "h[7]"
+    );
+  }
+
+  #[test]
+  fn hold_all_three_args() {
+    assert_eq!(
+      interpret("SetAttributes[g, HoldAll]; g[1 + 2, 3 + 4, 5 + 6]").unwrap(),
+      "g[1 + 2, 3 + 4, 5 + 6]"
+    );
+  }
+
+  #[test]
+  fn hold_first_three_args() {
+    assert_eq!(
+      interpret("SetAttributes[f, HoldFirst]; f[1 + 2, 3 + 4, 5 + 6]").unwrap(),
+      "f[1 + 2, 7, 11]"
+    );
+  }
+
+  #[test]
+  fn hold_rest_three_args() {
+    assert_eq!(
+      interpret("SetAttributes[h, HoldRest]; h[1 + 2, 3 + 4, 5 + 6]").unwrap(),
+      "h[3, 3 + 4, 5 + 6]"
+    );
+  }
+
+  #[test]
+  fn and_short_circuit() {
+    // And with HoldAll should still short-circuit
+    assert_eq!(interpret("And[False, Print[\"no\"]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn or_short_circuit() {
+    // Or with HoldAll should still short-circuit
+    assert_eq!(interpret("Or[True, Print[\"no\"]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn and_basic() {
+    assert_eq!(interpret("And[True, True]").unwrap(), "True");
+    assert_eq!(interpret("And[True, False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn or_basic() {
+    assert_eq!(interpret("Or[False, False]").unwrap(), "False");
+    assert_eq!(interpret("Or[False, True]").unwrap(), "True");
+  }
+}
+
 mod options {
   use super::*;
 
