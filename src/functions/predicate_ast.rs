@@ -991,13 +991,20 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Rule { .. } => "Rule",
     Expr::RuleDelayed { .. } => "RuleDelayed",
-    Expr::BinaryOp { op, .. } => {
+    Expr::BinaryOp { op, left, .. } => {
       use crate::syntax::BinaryOperator;
       match op {
         BinaryOperator::Plus => "Plus",
         BinaryOperator::Minus => "Plus", // Minus is represented as Plus internally
         BinaryOperator::Times => "Times",
-        BinaryOperator::Divide => "Times", // Divide is represented as Times internally
+        // In Wolfram, a/b is Times[a, Power[b, -1]], but 1/b is Power[b, -1]
+        BinaryOperator::Divide => {
+          if matches!(left.as_ref(), Expr::Integer(1)) {
+            "Power"
+          } else {
+            "Times"
+          }
+        }
         BinaryOperator::Power => "Power",
         BinaryOperator::And => "And",
         BinaryOperator::Or => "Or",

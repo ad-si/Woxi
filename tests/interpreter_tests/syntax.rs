@@ -2277,6 +2277,28 @@ mod rational_symbol {
     assert_eq!(interpret("MatchQ[1/2, _Rational]").unwrap(), "True");
     assert_eq!(interpret("MatchQ[5, _Rational]").unwrap(), "False");
   }
+
+  // Regression tests for https://github.com/ad-si/Woxi/issues/83
+  #[test]
+  fn head_of_reciprocal_is_power() {
+    assert_eq!(interpret("Head[1/x]").unwrap(), "Power");
+    assert_eq!(interpret("Head[1/(2*x - 3)]").unwrap(), "Power");
+  }
+
+  #[test]
+  fn head_of_reciprocal_via_variable() {
+    clear_state();
+    assert_eq!(
+      interpret("y = 1/(2*x - 3); Head[y]").unwrap(),
+      "Power"
+    );
+  }
+
+  #[test]
+  fn head_of_symbolic_division_is_times() {
+    assert_eq!(interpret("Head[2/x]").unwrap(), "Times");
+    assert_eq!(interpret("Head[x/(2*y)]").unwrap(), "Times");
+  }
 }
 
 mod mesh_symbol {
