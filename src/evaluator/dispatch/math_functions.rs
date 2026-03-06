@@ -33,6 +33,10 @@ pub fn dispatch_math_functions(
         }));
       }
     }
+    "Power" if args.len() == 1 => {
+      // OneIdentity: Power[x] -> x
+      return Some(Ok(args[0].clone()));
+    }
     "Power" if args.len() == 2 => {
       return Some(crate::functions::math_ast::power_ast(args));
     }

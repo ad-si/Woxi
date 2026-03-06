@@ -3891,7 +3891,7 @@ mod structural_pattern_consistency {
         "g[f_^(a_.+b_.*y_), x_Symbol] := {f,a,b,y,x} /; FreeQ[{a,b,f,y},x]; g[z^(2+3*w), x]"
       )
       .unwrap(),
-      "{z, 2, 3, w, x}"
+      "{z, 3*w, 1, 2, x}"
     );
   }
 

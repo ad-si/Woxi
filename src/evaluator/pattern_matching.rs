@@ -1,5 +1,50 @@
 #[allow(unused_imports)]
 use super::*;
+use std::cell::RefCell;
+
+// Thread-local stack of accumulated bindings from outer FunctionCall arg loops.
+// Used by Orderless matching with Optional patterns to check compatibility
+// with already-bound variables from outer pattern contexts.
+thread_local! {
+  static MATCH_CONTEXT: RefCell<Vec<Vec<(String, Expr)>>> = const { RefCell::new(Vec::new()) };
+}
+
+fn push_match_context(bindings: &[(String, Expr)]) {
+  MATCH_CONTEXT.with(|ctx| ctx.borrow_mut().push(bindings.to_vec()));
+}
+
+fn pop_match_context() {
+  MATCH_CONTEXT.with(|ctx| ctx.borrow_mut().pop());
+}
+
+/// Public wrappers for use from dispatch code.
+pub fn push_match_context_pub(bindings: &[(String, Expr)]) {
+  push_match_context(bindings);
+}
+
+pub fn pop_match_context_pub() {
+  pop_match_context();
+}
+
+/// Check if bindings are compatible with all outer context bindings.
+fn bindings_compatible_with_context(bindings: &[(String, Expr)]) -> bool {
+  MATCH_CONTEXT.with(|ctx| {
+    let stack = ctx.borrow();
+    for level in stack.iter() {
+      for (name, val) in bindings {
+        if name.is_empty() {
+          continue;
+        }
+        if let Some((_, ctx_val)) = level.iter().find(|(n, _)| n == name)
+          && !expr_equal(val, ctx_val)
+        {
+          return false;
+        }
+      }
+    }
+    true
+  })
+}
 
 /// Merge new bindings into existing bindings, checking for consistency.
 /// If a variable name already has a binding, the new value must be
@@ -294,7 +339,9 @@ pub fn has_one_identity(name: &str) -> bool {
 }
 
 /// Map a BinaryOperator to the corresponding Wolfram Language function name.
-fn binary_op_to_func_name(op: &crate::syntax::BinaryOperator) -> &'static str {
+pub fn binary_op_to_func_name(
+  op: &crate::syntax::BinaryOperator,
+) -> &'static str {
   use crate::syntax::BinaryOperator;
   match op {
     BinaryOperator::Plus => "Plus",
@@ -592,6 +639,72 @@ pub fn permutations(items: &[Expr]) -> Vec<Vec<Expr>> {
     }
   }
   result
+}
+
+/// Check if a pattern tree contains any PatternOptional nodes.
+fn pattern_contains_optional(pat: &Expr) -> bool {
+  match pat {
+    Expr::PatternOptional { .. } => true,
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(pattern_contains_optional)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      pattern_contains_optional(left) || pattern_contains_optional(right)
+    }
+    Expr::UnaryOp { operand, .. } => pattern_contains_optional(operand),
+    _ => false,
+  }
+}
+
+/// Count how many PatternOptional variables in a pattern tree have their
+/// default value in the given bindings.  Used to prefer Orderless matches
+/// that maximise default usage (Wolfram semantics).
+fn count_optional_defaults_used(
+  _outer_func: &str,
+  pat_args: &[Expr],
+  bindings: &[(String, Expr)],
+) -> usize {
+  let mut count = 0;
+  for pat in pat_args {
+    count += count_defaults_in_pat(pat, _outer_func, bindings);
+  }
+  count
+}
+
+fn count_defaults_in_pat(
+  pat: &Expr,
+  context_func: &str,
+  bindings: &[(String, Expr)],
+) -> usize {
+  match pat {
+    Expr::PatternOptional { name, default, .. } => {
+      // Determine the default value
+      let default_val = match default {
+        Some(d) => Some(d.as_ref().clone()),
+        None => crate::evaluator::builtin_default_value(context_func),
+      };
+      if let Some(def) = default_val {
+        if let Some((_, val)) = bindings.iter().find(|(n, _)| n == name) {
+          if expr_equal(val, &def) { 1 } else { 0 }
+        } else {
+          0
+        }
+      } else {
+        0
+      }
+    }
+    Expr::FunctionCall { name, args } => args
+      .iter()
+      .map(|a| count_defaults_in_pat(a, name, bindings))
+      .sum(),
+    Expr::BinaryOp { op, left, right } => {
+      let func = crate::evaluator::pattern_matching::binary_op_to_func_name(op);
+      let ctx = if func.is_empty() { context_func } else { func };
+      count_defaults_in_pat(left, ctx, bindings)
+        + count_defaults_in_pat(right, ctx, bindings)
+    }
+    _ => 0,
+  }
 }
 
 /// Try simple symbol replacement at the AST level.
@@ -1667,13 +1780,20 @@ pub fn match_pattern(
           let is_orderless =
             crate::evaluator::listable::is_builtin_orderless(pat_name);
           if is_orderless && pat_args.len() >= 2 {
-            // Try all permutations of expression args against pattern args
+            // Try all permutations of expression args against pattern args.
+            // When Optional patterns are present, prefer matches where more
+            // Optional patterns use their default values (Wolfram semantics).
             let perms = permutations(expr_args);
+            let has_optionals = pat_args.iter().any(pattern_contains_optional);
+            let mut best_match: Option<(Vec<(String, Expr)>, usize)> = None;
             for perm in perms {
               let mut bindings = Vec::new();
               let mut matched = true;
               for (p, e) in pat_args.iter().zip(perm.iter()) {
-                if let Some(b) = match_pattern(e, p) {
+                push_match_context(&bindings);
+                let result = match_pattern(e, p);
+                pop_match_context();
+                if let Some(b) = result {
                   if !merge_bindings(&mut bindings, b) {
                     matched = false;
                     break;
@@ -1684,14 +1804,59 @@ pub fn match_pattern(
                 }
               }
               if matched {
-                return Some(bindings);
+                if !has_optionals {
+                  // No optionals — return first match immediately
+                  return Some(bindings);
+                }
+                // Check compatibility with outer context bindings
+                if !bindings_compatible_with_context(&bindings) {
+                  continue;
+                }
+                let score =
+                  count_optional_defaults_used(pat_name, pat_args, &bindings);
+                if let Some((_, best_score)) = &best_match {
+                  if score > *best_score {
+                    best_match = Some((bindings, score));
+                  }
+                } else {
+                  best_match = Some((bindings, score));
+                }
               }
             }
-            None
+            // If no context-compatible match found with Optional scoring,
+            // fall back to first match without context check
+            if best_match.is_none() {
+              for perm in permutations(expr_args) {
+                let mut bindings = Vec::new();
+                let mut matched = true;
+                for (p, e) in pat_args.iter().zip(perm.iter()) {
+                  push_match_context(&bindings);
+                  let result = match_pattern(e, p);
+                  pop_match_context();
+                  if let Some(b) = result {
+                    if !merge_bindings(&mut bindings, b) {
+                      matched = false;
+                      break;
+                    }
+                  } else {
+                    matched = false;
+                    break;
+                  }
+                }
+                if matched {
+                  return Some(bindings);
+                }
+              }
+              return None;
+            }
+            best_match.map(|(b, _)| b)
           } else {
             let mut bindings = Vec::new();
             for (p, e) in pat_args.iter().zip(expr_args.iter()) {
-              if let Some(b) = match_pattern(e, p) {
+              push_match_context(&bindings);
+              let result = match_pattern(e, p);
+              pop_match_context();
+              if let Some(b) = result {
                 if !merge_bindings(&mut bindings, b) {
                   return None;
                 }
@@ -1734,14 +1899,20 @@ pub fn match_pattern(
           return None;
         }
         let mut bindings = Vec::new();
-        if let Some(b) = match_pattern(expr_left, pat_left) {
+        push_match_context(&bindings);
+        let left_result = match_pattern(expr_left, pat_left);
+        pop_match_context();
+        if let Some(b) = left_result {
           if !merge_bindings(&mut bindings, b) {
             return None;
           }
         } else {
           return None;
         }
-        if let Some(b) = match_pattern(expr_right, pat_right) {
+        push_match_context(&bindings);
+        let right_result = match_pattern(expr_right, pat_right);
+        pop_match_context();
+        if let Some(b) = right_result {
           if !merge_bindings(&mut bindings, b) {
             return None;
           }

@@ -2233,7 +2233,7 @@ mod rest_nonlist {
   #[test]
   fn rest_binary_op_power() {
     // Issue #79: Rest should work on BinaryOp expressions (Power)
-    assert_eq!(interpret("Rest[a^b]").unwrap(), "Power[b]");
+    assert_eq!(interpret("Rest[a^b]").unwrap(), "b");
   }
 
   #[test]
