@@ -112,7 +112,7 @@ wasm-build-production:
 jupyterlite-kernel-build:
 	cd jupyterlite-woxi-kernel && npm install && npx tsc
 	cd jupyterlite-woxi-kernel && \
-		uvx --python 3.12 --with jupyterlab jupyter labextension build .
+		uvx --python 3.12 --from jupyter-core --with jupyterlab jupyter labextension build .
 
 
 .PHONY: jupyterlite-build
