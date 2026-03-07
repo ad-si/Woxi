@@ -527,6 +527,9 @@ pub fn dispatch_math_functions(
     "LogIntegral" if args.len() == 1 => {
       return Some(crate::functions::math_ast::log_integral_ast(args));
     }
+    "RiemannR" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::riemann_r_ast(args));
+    }
     "HermiteH" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hermite_h_ast(args));
     }

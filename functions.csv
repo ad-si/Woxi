@@ -4707,7 +4707,7 @@ RGBColor,Specifies a color by RGB values,✅,pure,1,24
 RiccatiSolve,,,,8,3823
 RiceDistribution,,,,8,2986
 RidgeFilter,,,,8,3257
-RiemannR,,,,7,331
+RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7,331
 RiemannSiegelTheta,,,,2,1734
 RiemannSiegelZ,,,,2,1675
 RiemannXi,,,,10,4479
