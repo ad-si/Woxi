@@ -3340,7 +3340,7 @@ LQOutputRegulatorGains,,,,8,4437
 LQRegulatorGains,,,,8,3427
 LucasL,Returns the nth Lucas number,✅,pure,6,1512
 LuccioSamiComponents,,,,9,4881
-LUDecomposition,,,,3,1112
+LUDecomposition,LU decomposition with partial pivoting,✅,pure,3,1112
 LunarEclipse,,,,10,4052
 LunationNumber,,,,14,
 LUVColor,,,,10,3717

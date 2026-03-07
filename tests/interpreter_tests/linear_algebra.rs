@@ -993,3 +993,47 @@ mod find_fit {
     assert!(result.contains("b -> "), "Expected b rule, got: {}", result);
   }
 }
+
+mod lu_decomposition {
+  use super::*;
+
+  #[test]
+  fn basic_2x2() {
+    assert_eq!(
+      interpret("LUDecomposition[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{{1, 2}, {3, -2}}, {1, 2}, 0}"
+    );
+  }
+
+  #[test]
+  fn basic_3x3() {
+    assert_eq!(
+      interpret("LUDecomposition[{{1, 2, 3}, {4, 5, 6}, {7, 8, 10}}]").unwrap(),
+      "{{{1, 2, 3}, {4, -3, -6}, {7, 2, 1}}, {1, 2, 3}, 0}"
+    );
+  }
+
+  #[test]
+  fn with_pivoting() {
+    assert_eq!(
+      interpret("LUDecomposition[{{0, 1}, {1, 0}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {2, 1}, 0}"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("LUDecomposition[{{a, b}, {c, d}}]").unwrap(),
+      "{{{a, b}, {c/a, -((b*c)/a) + d}}, {1, 2}, 0}"
+    );
+  }
+
+  #[test]
+  fn identity() {
+    assert_eq!(
+      interpret("LUDecomposition[{{1, 0}, {0, 1}}]").unwrap(),
+      "{{{1, 0}, {0, 1}}, {1, 2}, 0}"
+    );
+  }
+}
