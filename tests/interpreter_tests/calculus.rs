@@ -2562,3 +2562,28 @@ mod interpolation {
     );
   }
 }
+
+mod list_interpolation {
+  use super::*;
+
+  #[test]
+  fn basic_evaluation() {
+    // ListInterpolation is an alias for Interpolation
+    let result =
+      interpret("f = ListInterpolation[{1, 4, 9, 16}]; f[1]").unwrap();
+    assert_eq!(result, "1.");
+  }
+
+  #[test]
+  fn endpoint() {
+    let result =
+      interpret("f = ListInterpolation[{1, 4, 9, 16}]; Round[f[4]]").unwrap();
+    assert_eq!(result, "16");
+  }
+
+  #[test]
+  fn returns_interpolating_function() {
+    let result = interpret("Head[ListInterpolation[{1, 4, 9, 16}]]").unwrap();
+    assert_eq!(result, "InterpolatingFunction");
+  }
+}

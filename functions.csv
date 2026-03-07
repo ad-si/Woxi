@@ -3229,7 +3229,7 @@ ListDensityPlot,Creates a density plot from a list of values or {x y z} triples,
 ListDensityPlot3D,,,,10.2,2911
 ListFormat,,,,10,4204
 ListFourierSequenceTransform,,,,9,2541
-ListInterpolation,,,,3,1186
+ListInterpolation,Creates interpolation from uniformly spaced data,✅,pure,3,1186
 ListLineIntegralConvolutionPlot,,,,7,3636
 ListLinePlot,Plots data as a line graph,✅,pure,6,169
 ListLinePlot3D,,,,12.3,
