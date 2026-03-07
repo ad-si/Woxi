@@ -317,6 +317,11 @@ pre.output-box {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 15px;
   line-height: 1.5;
+  overflow-x: auto;
+}
+
+.output-box.text-box svg {
+  display: block;
 }
 
 .output-box.graphics-box {
