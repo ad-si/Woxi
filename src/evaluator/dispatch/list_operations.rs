@@ -1153,10 +1153,160 @@ pub fn dispatch_list_operations(
     "Nearest" if (2..=3).contains(&args.len()) => {
       return Some(nearest_ast(args));
     }
+    // ArrayPad[array, n] — pad with 0
+    // ArrayPad[array, n, val] — pad with val
+    // ArrayPad[array, {left, right}] — asymmetric padding
+    // ArrayPad[array, {left, right}, val] — asymmetric padding with val
+    // Negative padding trims elements
+    "ArrayPad" if args.len() >= 2 && args.len() <= 3 => {
+      return Some(array_pad_ast(args));
+    }
 
     _ => {}
   }
   None
+}
+
+fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let arr = &args[0];
+  let pad_val = if args.len() >= 3 {
+    args[2].clone()
+  } else {
+    Expr::Integer(0)
+  };
+
+  // Parse padding spec: integer n or {left, right}
+  let (left, right) = match &args[1] {
+    Expr::Integer(n) => {
+      let n = *n;
+      (n, n)
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let l = match &items[0] {
+        Expr::Integer(n) => *n,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "ArrayPad".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let r = match &items[1] {
+        Expr::Integer(n) => *n,
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "ArrayPad".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (l, r)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ArrayPad".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  pad_array(arr, left, right, &pad_val)
+}
+
+fn pad_array(
+  arr: &Expr,
+  left: i128,
+  right: i128,
+  pad_val: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match arr {
+    Expr::List(items) => {
+      // Check if this is a multi-dimensional array (items are lists)
+      let is_nested = items.iter().all(|item| matches!(item, Expr::List(_)));
+
+      if is_nested && !items.is_empty() {
+        // Multi-dimensional: pad each sub-array, then add padding rows
+        let mut padded_items: Vec<Expr> = items
+          .iter()
+          .map(|item| pad_array(item, left, right, pad_val))
+          .collect::<Result<Vec<_>, _>>()?;
+
+        // Figure out the width of padded sub-arrays
+        let inner_len = if let Expr::List(inner) = &padded_items[0] {
+          inner.len()
+        } else {
+          0
+        };
+
+        // Create padding row
+        let pad_row = Expr::List(vec![pad_val.clone(); inner_len]);
+
+        // Add/remove rows at top and bottom
+        if left >= 0 {
+          let mut prefix = vec![pad_row.clone(); left as usize];
+          prefix.append(&mut padded_items);
+          padded_items = prefix;
+        } else {
+          let trim = (-left) as usize;
+          if trim < padded_items.len() {
+            padded_items = padded_items[trim..].to_vec();
+          } else {
+            padded_items = vec![];
+          }
+        }
+
+        if right >= 0 {
+          for _ in 0..right {
+            padded_items.push(pad_row.clone());
+          }
+        } else {
+          let trim = (-right) as usize;
+          if trim < padded_items.len() {
+            padded_items.truncate(padded_items.len() - trim);
+          } else {
+            padded_items = vec![];
+          }
+        }
+
+        Ok(Expr::List(padded_items))
+      } else {
+        // 1D array
+        let mut result = items.clone();
+
+        if left >= 0 {
+          let mut prefix = vec![pad_val.clone(); left as usize];
+          prefix.append(&mut result);
+          result = prefix;
+        } else {
+          let trim = (-left) as usize;
+          if trim < result.len() {
+            result = result[trim..].to_vec();
+          } else {
+            result = vec![];
+          }
+        }
+
+        if right >= 0 {
+          for _ in 0..right {
+            result.push(pad_val.clone());
+          }
+        } else {
+          let trim = (-right) as usize;
+          if trim < result.len() {
+            result.truncate(result.len() - trim);
+          } else {
+            result = vec![];
+          }
+        }
+
+        Ok(Expr::List(result))
+      }
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "ArrayPad".to_string(),
+      args: vec![arr.clone()],
+    }),
+  }
 }
 
 /// Convert Associations to Lists of rules within an expression.
