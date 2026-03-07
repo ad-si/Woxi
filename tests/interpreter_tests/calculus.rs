@@ -2260,6 +2260,51 @@ mod div {
   }
 }
 
+mod series_coefficient {
+  use super::*;
+
+  #[test]
+  fn geometric_series() {
+    assert_eq!(
+      interpret("SeriesCoefficient[1/(1-x), {x, 0, 5}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn exp_coefficient() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Exp[x], {x, 0, 3}]").unwrap(),
+      "1/6"
+    );
+  }
+
+  #[test]
+  fn sin_coefficient() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Sin[x], {x, 0, 5}]").unwrap(),
+      "1/120"
+    );
+  }
+
+  #[test]
+  fn log_coefficient() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Log[1+x], {x, 0, 4}]").unwrap(),
+      "-1/4"
+    );
+  }
+
+  #[test]
+  fn zero_coefficient() {
+    // Sin has no even-order terms
+    assert_eq!(
+      interpret("SeriesCoefficient[Sin[x], {x, 0, 4}]").unwrap(),
+      "0"
+    );
+  }
+}
+
 mod exp_to_trig {
   use super::*;
 

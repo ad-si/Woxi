@@ -84,6 +84,49 @@ pub fn dispatch_calculus_functions(
     "Series" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::series_ast(args));
     }
+    "SeriesCoefficient" if args.len() == 2 => {
+      // SeriesCoefficient[f, {x, x0, n}]
+      if let Expr::List(spec) = &args[1]
+        && spec.len() == 3
+        && let Some(n_val) = crate::functions::math_ast::expr_to_i128(&spec[2])
+        && n_val >= 0
+      {
+        let n = n_val as usize;
+        // Compute Series[f, {x, x0, n}]
+        let series_result = crate::functions::calculus_ast::series_ast(&[
+          args[0].clone(),
+          Expr::List(spec.clone()),
+        ]);
+        match series_result {
+          Ok(Expr::FunctionCall {
+            ref name,
+            args: ref sargs,
+          }) if name == "SeriesData" && sargs.len() >= 6 => {
+            // SeriesData[x, x0, coeffs, nmin, nmax, den]
+            if let Expr::List(ref coeffs) = sargs[2]
+              && let Some(nmin) =
+                crate::functions::math_ast::expr_to_i128(&sargs[3])
+              && let Some(den) =
+                crate::functions::math_ast::expr_to_i128(&sargs[5])
+              && den == 1
+            {
+              let idx = (n as i128 - nmin) as usize;
+              if idx < coeffs.len() {
+                return Some(Ok(coeffs[idx].clone()));
+              } else {
+                return Some(Ok(Expr::Integer(0)));
+              }
+            }
+          }
+          Ok(_) => {}
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "SeriesCoefficient".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "RSolve" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::rsolve_ast(args));
     }
