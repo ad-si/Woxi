@@ -2036,3 +2036,41 @@ mod laplace_transform {
     );
   }
 }
+
+mod grad {
+  use super::*;
+
+  #[test]
+  fn basic_2d() {
+    assert_eq!(
+      interpret("Grad[x^2 + y^3, {x, y}]").unwrap(),
+      "{2*x, 3*y^2}"
+    );
+  }
+
+  #[test]
+  fn basic_3d() {
+    assert_eq!(
+      interpret("Grad[x^2*y + y^2*z, {x, y, z}]").unwrap(),
+      "{2*x*y, x^2 + 2*y*z, y^2}"
+    );
+  }
+
+  #[test]
+  fn trig() {
+    assert_eq!(
+      interpret("Grad[Sin[x]*Cos[y], {x, y}]").unwrap(),
+      "{Cos[x]*Cos[y], -(Sin[x]*Sin[y])}"
+    );
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("Grad[5, {x, y}]").unwrap(), "{0, 0}");
+  }
+
+  #[test]
+  fn single_variable() {
+    assert_eq!(interpret("Grad[x^3, {x}]").unwrap(), "{3*x^2}");
+  }
+}

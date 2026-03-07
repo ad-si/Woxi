@@ -2383,7 +2383,7 @@ GoodmanKruskalGamma,,,,9,4052
 GoodmanKruskalGammaTest,,,,9,4567
 Goto,Jumps to a Label,✅,pure,1,1106
 GouraudShading,,,,13.1,
-Grad,,,,9,461
+Grad,Compute the gradient of a scalar function,✅,none,9,461
 Gradient,,,,2.2,2203
 GradientFilter,,,,7,1507
 GradientFittedMesh,,,,13,

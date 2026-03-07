@@ -5580,6 +5580,41 @@ fn adaptive_simpson_rec(
   }
 }
 
+/// Grad[f, {x1, x2, ...}] - Gradient of a scalar function
+pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Grad expects exactly 2 arguments".into(),
+    ));
+  }
+  let vars = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Grad".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut components = Vec::with_capacity(vars.len());
+  for var in vars {
+    let var_name = match var {
+      Expr::Identifier(s) => s,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Grad".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let deriv = differentiate_expr(&args[0], var_name)?;
+    let evald = crate::evaluator::evaluate_expr_to_expr(&deriv)?;
+    components.push(evald);
+  }
+  Ok(Expr::List(components))
+}
+
 /// Curl[{f1, f2}, {x1, x2}] - 2D curl (scalar)
 /// Curl[{f1, f2, f3}, {x1, x2, x3}] - 3D curl (vector)
 pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
