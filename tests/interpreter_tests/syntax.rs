@@ -4428,3 +4428,113 @@ mod batch_inert_symbols_2 {
     );
   }
 }
+
+mod rotation_matrix {
+  use super::*;
+
+  #[test]
+  fn symbolic_2d() {
+    assert_eq!(
+      interpret("RotationMatrix[theta]").unwrap(),
+      "{{Cos[theta], -Sin[theta]}, {Sin[theta], Cos[theta]}}"
+    );
+  }
+
+  #[test]
+  fn pi_over_4() {
+    assert_eq!(
+      interpret("RotationMatrix[Pi/4]").unwrap(),
+      "{{1/Sqrt[2], -(1/Sqrt[2])}, {1/Sqrt[2], 1/Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn pi_over_2_3d() {
+    assert_eq!(
+      interpret("RotationMatrix[Pi/2, {0, 0, 1}]").unwrap(),
+      "{{0, -1, 0}, {1, 0, 0}, {0, 0, 1}}"
+    );
+  }
+}
+
+mod batch_inert_symbols_3 {
+  use super::*;
+
+  #[test]
+  fn performance_goal() {
+    assert_eq!(
+      interpret("PerformanceGoal[x]").unwrap(),
+      "PerformanceGoal[x]"
+    );
+  }
+
+  #[test]
+  fn vertex_list() {
+    assert_eq!(interpret("VertexList[x]").unwrap(), "VertexList[x]");
+  }
+
+  #[test]
+  fn chart_labels() {
+    assert_eq!(interpret("ChartLabels[x]").unwrap(), "ChartLabels[x]");
+  }
+
+  #[test]
+  fn text_cell() {
+    assert_eq!(interpret("TextCell[x]").unwrap(), "TextCell[x]");
+  }
+
+  #[test]
+  fn plot_range_clipping() {
+    assert_eq!(
+      interpret("PlotRangeClipping[x]").unwrap(),
+      "PlotRangeClipping[x]"
+    );
+  }
+
+  #[test]
+  fn rotation_transform() {
+    assert_eq!(
+      interpret("RotationTransform[x]").unwrap(),
+      "RotationTransform[x]"
+    );
+  }
+
+  #[test]
+  fn data_range() {
+    assert_eq!(interpret("DataRange[x]").unwrap(), "DataRange[x]");
+  }
+
+  #[test]
+  fn cell_baseline() {
+    assert_eq!(interpret("CellBaseline[x]").unwrap(), "CellBaseline[x]");
+  }
+
+  #[test]
+  fn animation_running() {
+    assert_eq!(
+      interpret("AnimationRunning[x]").unwrap(),
+      "AnimationRunning[x]"
+    );
+  }
+
+  #[test]
+  fn selected_notebook() {
+    assert_eq!(
+      interpret("SelectedNotebook[x]").unwrap(),
+      "SelectedNotebook[x]"
+    );
+  }
+
+  #[test]
+  fn geometric_transformation() {
+    assert_eq!(
+      interpret("GeometricTransformation[x, y]").unwrap(),
+      "GeometricTransformation[x, y]"
+    );
+  }
+
+  #[test]
+  fn cloud_export() {
+    assert_eq!(interpret("CloudExport[x]").unwrap(), "CloudExport[x]");
+  }
+}
