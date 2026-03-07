@@ -2288,10 +2288,7 @@ mod rational_symbol {
   #[test]
   fn head_of_reciprocal_via_variable() {
     clear_state();
-    assert_eq!(
-      interpret("y = 1/(2*x - 3); Head[y]").unwrap(),
-      "Power"
-    );
+    assert_eq!(interpret("y = 1/(2*x - 3); Head[y]").unwrap(), "Power");
   }
 
   #[test]
