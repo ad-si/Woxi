@@ -428,6 +428,10 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
         if name == "Thick" {
           return Ok("Thickness[Large]".to_string());
         }
+        // Thin → Thickness[Tiny]
+        if name == "Thin" {
+          return Ok("Thickness[Tiny]".to_string());
+        }
         // Dashed → Dashing[{Small, Small}]
         if name == "Dashed" {
           return Ok("Dashing[{Small, Small}]".to_string());
@@ -961,6 +965,13 @@ pub fn evaluate_expr_to_expr_inner(
           return Ok(Expr::FunctionCall {
             name: "Thickness".to_string(),
             args: vec![Expr::Identifier("Large".to_string())],
+          });
+        }
+        // Thin → Thickness[Tiny]
+        if name == "Thin" {
+          return Ok(Expr::FunctionCall {
+            name: "Thickness".to_string(),
+            args: vec![Expr::Identifier("Tiny".to_string())],
           });
         }
         // Dashed → Dashing[{Small, Small}]

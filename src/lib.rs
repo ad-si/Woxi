@@ -684,6 +684,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
               | "Tomorrow"
               | "Yesterday"
               | "Thick"
+              | "Thin"
               | "Dashed"
               | "Dotted"
               | "DotDashed"
@@ -798,6 +799,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     // Thick → Thickness[Large]
     if trimmed == "Thick" {
       return Ok("Thickness[Large]".to_string());
+    }
+    // Thin → Thickness[Tiny]
+    if trimmed == "Thin" {
+      return Ok("Thickness[Tiny]".to_string());
     }
     // Dashed → Dashing[{Small, Small}]
     if trimmed == "Dashed" {

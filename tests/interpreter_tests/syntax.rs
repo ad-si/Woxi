@@ -1576,6 +1576,79 @@ mod traditional_form {
   }
 }
 
+mod batch_symbols {
+  use super::*;
+
+  #[test]
+  fn vertex_labels() {
+    assert_eq!(interpret("VertexLabels").unwrap(), "VertexLabels");
+  }
+
+  #[test]
+  fn plot_theme() {
+    assert_eq!(interpret("PlotTheme").unwrap(), "PlotTheme");
+  }
+
+  #[test]
+  fn exclusions() {
+    assert_eq!(interpret("Exclusions").unwrap(), "Exclusions");
+  }
+
+  #[test]
+  fn center_dot() {
+    assert_eq!(interpret("CenterDot").unwrap(), "CenterDot");
+  }
+
+  #[test]
+  fn spacer() {
+    assert_eq!(interpret("Spacer[10]").unwrap(), "Spacer[10]");
+  }
+
+  #[test]
+  fn control_placement() {
+    assert_eq!(interpret("ControlPlacement").unwrap(), "ControlPlacement");
+  }
+
+  #[test]
+  fn item_size() {
+    assert_eq!(interpret("ItemSize").unwrap(), "ItemSize");
+  }
+
+  #[test]
+  fn tracked_symbols() {
+    assert_eq!(interpret("TrackedSymbols").unwrap(), "TrackedSymbols");
+  }
+
+  #[test]
+  fn plot_markers() {
+    assert_eq!(interpret("PlotMarkers").unwrap(), "PlotMarkers");
+  }
+
+  #[test]
+  fn mesh_functions() {
+    assert_eq!(interpret("MeshFunctions").unwrap(), "MeshFunctions");
+  }
+
+  #[test]
+  fn baseline() {
+    assert_eq!(interpret("Baseline").unwrap(), "Baseline");
+  }
+
+  #[test]
+  fn ticks_style() {
+    assert_eq!(interpret("TicksStyle").unwrap(), "TicksStyle");
+  }
+}
+
+mod thin_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_thickness_tiny() {
+    assert_eq!(interpret("Thin").unwrap(), "Thickness[Tiny]");
+  }
+}
+
 mod unit_system_symbol {
   use super::*;
 
