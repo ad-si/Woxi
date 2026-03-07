@@ -2013,15 +2013,145 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   expr_to_f64(&evaluated)
 }
 
+// ─── Interpolation ─────────────────────────────────────────────────────
+
+/// Interpolation[{y1, y2, ...}] or Interpolation[{{x1,y1}, {x2,y2}, ...}]
+/// Returns InterpolatingFunction[domain, data]
+pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Interpolation".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Extract InterpolationOrder option (default 3)
+  let mut interp_order: i128 = 3;
+  let data_arg = &args[0];
+
+  for opt in args.iter().skip(1) {
+    match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        if let Expr::Identifier(name) = pattern.as_ref()
+          && name == "InterpolationOrder"
+          && let Some(n) = crate::functions::math_ast::expr_to_i128(replacement)
+        {
+          interp_order = n;
+        }
+      }
+      Expr::FunctionCall {
+        name,
+        args: rule_args,
+      } if name == "Rule" && rule_args.len() == 2 => {
+        if let Expr::Identifier(opt_name) = &rule_args[0]
+          && opt_name == "InterpolationOrder"
+          && let Some(n) =
+            crate::functions::math_ast::expr_to_i128(&rule_args[1])
+        {
+          interp_order = n;
+        }
+      }
+      _ => {}
+    }
+  }
+
+  // Evaluate the data argument
+  let data_evaluated = crate::evaluator::evaluate_expr_to_expr(data_arg)?;
+
+  let data_list = match &data_evaluated {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Interpolation".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if data_list.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Interpolation: need at least one data point".into(),
+    ));
+  }
+
+  // Determine format: list of values or list of {x, y} pairs
+  let mut points: Vec<(f64, f64)> = Vec::new();
+
+  let first = &data_list[0];
+  let is_pair_format = matches!(first, Expr::List(items) if items.len() == 2);
+
+  if is_pair_format {
+    // {{x1, y1}, {x2, y2}, ...}
+    for item in data_list {
+      let (x, y) = extract_point(item)?;
+      points.push((x, y));
+    }
+  } else {
+    // {y1, y2, ...} — x values are 1, 2, 3, ...
+    for (i, item) in data_list.iter().enumerate() {
+      let y = expr_to_f64(
+        &crate::evaluator::evaluate_expr_to_expr(item).unwrap_or(item.clone()),
+      )?;
+      points.push(((i + 1) as f64, y));
+    }
+  }
+
+  // Sort by x value
+  points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+  let n = points.len();
+  if n < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Interpolation: need at least 2 data points".into(),
+    ));
+  }
+
+  // Clamp order to valid range
+  let order = interp_order.max(1).min(3) as usize;
+  if order >= n {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Interpolation: InterpolationOrder {} requires at least {} data points, but only {} were given",
+      order,
+      order + 1,
+      n
+    )));
+  }
+
+  let x_min = points[0].0;
+  let x_max = points[n - 1].0;
+
+  let domain =
+    Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)])]);
+
+  // Store data as list of {x, y} pairs
+  let data_expr = Expr::List(
+    points
+      .iter()
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .collect(),
+  );
+
+  // Store the interpolation order as a third argument
+  let interp_func = Expr::FunctionCall {
+    name: "InterpolatingFunction".to_string(),
+    args: vec![domain, data_expr, Expr::Integer(order as i128)],
+  };
+
+  Ok(interp_func)
+}
+
 // ─── InterpolatingFunction evaluation ──────────────────────────────────
 
 /// Evaluate InterpolatingFunction[domain, data][x_val]
-/// Uses linear interpolation on the stored data points
+/// or InterpolatingFunction[domain, data, order][x_val]
 pub fn evaluate_interpolating_function(
   func_args: &[Expr],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if func_args.len() != 2 || call_args.len() != 1 {
+  if (func_args.len() != 2 && func_args.len() != 3) || call_args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "InterpolatingFunction expects domain and data, called with one argument"
         .into(),
@@ -2029,6 +2159,15 @@ pub fn evaluate_interpolating_function(
   }
 
   let data = &func_args[1];
+  let order = if func_args.len() == 3 {
+    match &func_args[2] {
+      Expr::Integer(n) => *n as usize,
+      _ => 3,
+    }
+  } else {
+    1 // Default for NDSolve-generated (backwards compat)
+  };
+
   let x_val_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
   let x_val = match &x_val_expr {
     Expr::Integer(n) => *n as f64,
@@ -2055,7 +2194,6 @@ pub fn evaluate_interpolating_function(
     }
   };
 
-  // Binary search for the interval containing x_val
   let n = data_points.len();
   if n < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2063,30 +2201,120 @@ pub fn evaluate_interpolating_function(
     ));
   }
 
-  // Extract first and last x values
+  // Extract all points for interpolation
   let (x_first, _) = extract_point(&data_points[0])?;
   let (x_last, _) = extract_point(&data_points[n - 1])?;
 
   // Clamp to domain
   let x_clamped = x_val.max(x_first).min(x_last);
 
-  // Find interval by linear index (data is uniformly spaced from RK4)
-  let h = (x_last - x_first) / (n - 1) as f64;
-  let idx = ((x_clamped - x_first) / h).floor() as usize;
-  let idx = idx.min(n - 2);
+  // Binary search for the interval containing x_clamped
+  let idx = find_interval(data_points, x_clamped, n)?;
 
-  let (x0, y0) = extract_point(&data_points[idx])?;
-  let (x1, y1) = extract_point(&data_points[idx + 1])?;
-
-  // Linear interpolation
-  let t = if (x1 - x0).abs() > 1e-15 {
-    (x_clamped - x0) / (x1 - x0)
+  if order == 1 || n <= 2 {
+    // Linear interpolation
+    let (x0, y0) = extract_point(&data_points[idx])?;
+    let (x1, y1) = extract_point(&data_points[idx + 1])?;
+    let t = if (x1 - x0).abs() > 1e-15 {
+      (x_clamped - x0) / (x1 - x0)
+    } else {
+      0.0
+    };
+    let y_val = y0 + t * (y1 - y0);
+    Ok(Expr::Real(y_val))
   } else {
-    0.0
-  };
-  let y_val = y0 + t * (y1 - y0);
+    // Cubic interpolation using natural cubic spline
+    let y_val = cubic_spline_evaluate(data_points, x_clamped, n)?;
+    Ok(Expr::Real(y_val))
+  }
+}
 
-  Ok(Expr::Real(y_val))
+/// Find the interval index for x_val using binary search.
+/// Returns idx such that x[idx] <= x_val <= x[idx+1].
+fn find_interval(
+  data_points: &[Expr],
+  x_val: f64,
+  n: usize,
+) -> Result<usize, InterpreterError> {
+  let mut lo = 0usize;
+  let mut hi = n - 1;
+  while lo < hi - 1 {
+    let mid = (lo + hi) / 2;
+    let (x_mid, _) = extract_point(&data_points[mid])?;
+    if x_val < x_mid {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  Ok(lo)
+}
+
+/// Evaluate a natural cubic spline at x_val.
+fn cubic_spline_evaluate(
+  data_points: &[Expr],
+  x_val: f64,
+  n: usize,
+) -> Result<f64, InterpreterError> {
+  // Extract all x and y values
+  let mut xs = Vec::with_capacity(n);
+  let mut ys = Vec::with_capacity(n);
+  for pt in data_points {
+    let (x, y) = extract_point(pt)?;
+    xs.push(x);
+    ys.push(y);
+  }
+
+  // Compute natural cubic spline coefficients
+  // Using the tridiagonal algorithm for natural splines
+  let nm1 = n - 1;
+  let mut h = vec![0.0; nm1];
+  for i in 0..nm1 {
+    h[i] = xs[i + 1] - xs[i];
+  }
+
+  // Set up tridiagonal system for second derivatives (moments)
+  let mut alpha = vec![0.0; nm1];
+  for i in 1..nm1 {
+    alpha[i] =
+      3.0 / h[i] * (ys[i + 1] - ys[i]) - 3.0 / h[i - 1] * (ys[i] - ys[i - 1]);
+  }
+
+  // Solve tridiagonal system (natural boundary: M[0] = M[n-1] = 0)
+  let mut l = vec![1.0; n];
+  let mut mu = vec![0.0; n];
+  let mut z = vec![0.0; n];
+
+  for i in 1..nm1 {
+    l[i] = 2.0 * (xs[i + 1] - xs[i - 1]) - h[i - 1] * mu[i - 1];
+    mu[i] = h[i] / l[i];
+    z[i] = (alpha[i] - h[i - 1] * z[i - 1]) / l[i];
+  }
+
+  let mut c = vec![0.0; n];
+  let mut b = vec![0.0; nm1];
+  let mut d = vec![0.0; nm1];
+
+  for j in (0..nm1).rev() {
+    c[j] = z[j] - mu[j] * c[j + 1];
+    b[j] = (ys[j + 1] - ys[j]) / h[j] - h[j] * (c[j + 1] + 2.0 * c[j]) / 3.0;
+    d[j] = (c[j + 1] - c[j]) / (3.0 * h[j]);
+  }
+
+  // Find the interval
+  let mut idx = 0;
+  for i in 0..nm1 {
+    if x_val >= xs[i] {
+      idx = i;
+    }
+  }
+  if idx >= nm1 {
+    idx = nm1 - 1;
+  }
+
+  let dx = x_val - xs[idx];
+  let result = ys[idx] + b[idx] * dx + c[idx] * dx * dx + d[idx] * dx * dx * dx;
+  Ok(result)
 }
 
 /// Extract (x, y) from a List[x, y] expression

@@ -1,0 +1,10 @@
+{
+  "[wolfram]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnType": false
+  },
+  "files.associations": {
+    "*.wls": "wolfram"
+  }
+}

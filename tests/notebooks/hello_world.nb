@@ -1,0 +1,59 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Wolfram 14.3' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       154,          7]
+NotebookDataLength[      1512,         51]
+NotebookOptionsPosition[      1039,         34]
+NotebookOutlinePosition[      1433,         50]
+CellTagsIndexPosition[      1390,         47]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell[BoxData[
+ RowBox[{"1", " ", "+", " ", "2", " ", "+", " ", "3", " ", "+", " ", 
+  "4"}]], "Input",
+ CellChangeTimes->{{3.979539634998089*^9, 3.979539634999322*^9}, {
+  3.979539927309093*^9, 3.979539929150152*^9}},
+ CellLabel->"In[1]:=",ExpressionUUID->"036b8a36-c26c-422e-8935-92fbb0c5b2d0"],
+
+Cell[BoxData["10"], "Output",
+ CellChangeTimes->{3.979616855730513*^9},
+ CellLabel->"Out[1]=",ExpressionUUID->"2a8c9bb2-9b87-47c6-bcad-bef10b961f62"]
+}, Open  ]]
+},
+WindowSize->{808, 911},
+WindowMargins->{{Automatic, 347}, {163, Automatic}},
+FrontEndVersion->"14.3 for Mac OS X ARM (64-bit) (July 8, 2025)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"54cdf3dc-d593-420e-b1f3-1ccb303531e3"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[576, 22, 295, 5, 29, "Input",ExpressionUUID->"036b8a36-c26c-422e-8935-92fbb0c5b2d0"],
+Cell[874, 29, 149, 2, 33, "Output",ExpressionUUID->"2a8c9bb2-9b87-47c6-bcad-bef10b961f62"]
+}, Open  ]]
+}
+]
+*)
+

@@ -3841,7 +3841,8 @@ pub fn expr_to_string(expr: &Expr) -> String {
         return format!("Quantity[{}, {}]", mag_str, unit_str);
       }
       // Special case: InterpolatingFunction[domain, data] — hide data with <>
-      if name == "InterpolatingFunction" && args.len() == 2 {
+      if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
+      {
         return format!(
           "InterpolatingFunction[{}, <>]",
           expr_to_string(&args[0])
@@ -5197,8 +5198,9 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "FortranForm" && args.len() == 1 {
         return format!("FortranForm[{}]", expr_to_output(&args[0]));
       }
-      // Special case: InterpolatingFunction[domain, data] — hide data with <>
-      if name == "InterpolatingFunction" && args.len() == 2 {
+      // Special case: InterpolatingFunction[domain, data(, order)] — hide data with <>
+      if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
+      {
         return format!(
           "InterpolatingFunction[{}, <>]",
           expr_to_output(&args[0])
@@ -5865,8 +5867,9 @@ pub fn expr_to_output(expr: &Expr) -> String {
         }
         return format!("Derivative[{}][{}]", n_str, f_str);
       }
-      // Special case: InterpolatingFunction[domain, data] — hide data
-      if name == "InterpolatingFunction" && args.len() == 2 {
+      // Special case: InterpolatingFunction[domain, data(, order)] — hide data
+      if name == "InterpolatingFunction" && (args.len() == 2 || args.len() == 3)
+      {
         return format!(
           "InterpolatingFunction[{}, <>]",
           expr_to_output(&args[0])

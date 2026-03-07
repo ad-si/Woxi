@@ -149,6 +149,9 @@ pub fn dispatch_calculus_functions(
         err => err,
       });
     }
+    "Interpolation" if !args.is_empty() => {
+      return Some(crate::functions::ode_ast::interpolation_ast(args));
+    }
     "NDSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }

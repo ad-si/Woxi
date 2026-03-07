@@ -2848,7 +2848,7 @@ IntermediateTest,,,,14,
 InternallyBalancedDecomposition,,,,8,4809
 InterpolatingFunction,Represents an interpolating function object,✅,none,2,659
 InterpolatingPolynomial,,,,2,1052
-Interpolation,,,,2,383
+Interpolation,Constructs an interpolation of data,✅,pure,2,383
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3,435
 InterpolationPoints,,,,8,3265
 Interpretation,,,,6,1905
