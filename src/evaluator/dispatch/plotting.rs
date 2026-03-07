@@ -83,6 +83,15 @@ pub fn dispatch_plotting(
     "ListStepPlot" if !args.is_empty() => {
       Some(crate::functions::list_plot::list_step_plot_ast(args))
     }
+    "LogLogPlot" if args.len() >= 2 => {
+      Some(crate::functions::plot::log_log_plot_ast(args))
+    }
+    "LogPlot" if args.len() >= 2 => {
+      Some(crate::functions::plot::log_plot_ast(args))
+    }
+    "LogLinearPlot" if args.len() >= 2 => {
+      Some(crate::functions::plot::log_linear_plot_ast(args))
+    }
     "ParametricPlot" if args.len() >= 2 => {
       Some(crate::functions::parametric_plot::parametric_plot_ast(args))
     }

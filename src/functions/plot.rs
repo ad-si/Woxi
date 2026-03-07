@@ -2056,3 +2056,284 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Return -Graphics- as the text representation
   Ok(crate::graphics_result(svg))
 }
+
+/// LogLogPlot[f, {x, xmin, xmax}] — plot f with log-scaled x and y axes.
+pub fn log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  log_scale_plot_ast(args, true, true)
+}
+
+/// LogPlot[f, {x, xmin, xmax}] — plot f with log-scaled y axis.
+pub fn log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  log_scale_plot_ast(args, false, true)
+}
+
+/// LogLinearPlot[f, {x, xmin, xmax}] — plot f with log-scaled x axis.
+pub fn log_linear_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  log_scale_plot_ast(args, true, false)
+}
+
+/// Common implementation for LogLogPlot, LogPlot, LogLinearPlot.
+/// `log_x`: whether x axis is logarithmic
+/// `log_y`: whether y axis is logarithmic
+fn log_scale_plot_ast(
+  args: &[Expr],
+  log_x: bool,
+  log_y: bool,
+) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Plot requires at least 2 arguments".into(),
+    ));
+  }
+
+  let body = &args[0];
+  let iter_spec = &args[1];
+
+  // Parse options
+  let mut plot_opts = PlotOptions::default();
+  let mut plot_range_y: Option<(f64, f64)> = None;
+  let mut legends_automatic = false;
+  for opt in &args[2..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+    {
+      match name.as_str() {
+        "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            plot_opts.svg_width = w;
+            plot_opts.svg_height = h;
+            plot_opts.full_width = fw;
+          }
+        }
+        "PlotLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Some(sl) = crate::functions::chart::parse_styled_label(&val) {
+            plot_opts.plot_label = Some(sl);
+          }
+        }
+        "AxesLabel" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::List(items) = &val
+            && items.len() >= 2
+          {
+            let x = crate::functions::chart::expr_to_label(&items[0])
+              .unwrap_or_default();
+            let y = crate::functions::chart::expr_to_label(&items[1])
+              .unwrap_or_default();
+            plot_opts.axes_label = Some((x, y));
+          }
+        }
+        "PlotStyle" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          match &val {
+            Expr::List(items) => {
+              for item in items {
+                if let Expr::List(inner) = item {
+                  for sub in inner {
+                    if let Some(c) = parse_color(sub) {
+                      plot_opts.plot_style.push(c);
+                      break;
+                    }
+                  }
+                } else if let Some(c) = parse_color(item) {
+                  plot_opts.plot_style.push(c);
+                }
+              }
+            }
+            _ => {
+              if let Some(c) = parse_color(&val) {
+                plot_opts.plot_style.push(c);
+              }
+            }
+          }
+        }
+        "PlotRange" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::List(items) = &val
+            && items.len() == 2
+          {
+            let a = try_eval_to_f64(
+              &evaluate_expr_to_expr(&items[0]).unwrap_or(items[0].clone()),
+            );
+            let b = try_eval_to_f64(
+              &evaluate_expr_to_expr(&items[1]).unwrap_or(items[1].clone()),
+            );
+            if let (Some(lo), Some(hi)) = (a, b) {
+              plot_range_y = Some((lo, hi));
+            }
+          }
+        }
+        "PlotPoints" => {
+          let val =
+            evaluate_expr_to_expr(replacement).unwrap_or(*replacement.clone());
+          if let Expr::Integer(n) = &val
+            && *n > 0
+          {
+            plot_opts.plot_points = *n as usize;
+          }
+        }
+        "Filling" => {
+          plot_opts.filling = parse_filling(replacement);
+        }
+        "PlotLegends" => {
+          let (labels, auto) = parse_plot_legends(replacement);
+          if auto {
+            legends_automatic = true;
+          } else {
+            plot_opts.plot_legends = labels;
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  // Parse iterator spec: {x, xmin, xmax}
+  let (var_name, x_min, x_max) = match iter_spec {
+    Expr::List(items) if items.len() == 3 => {
+      let var = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "Plot: iterator variable must be a symbol".into(),
+          ));
+        }
+      };
+      let x_min_expr = evaluate_expr_to_expr(&items[1])?;
+      let x_max_expr = evaluate_expr_to_expr(&items[2])?;
+      let x_min = try_eval_to_f64(&x_min_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Plot: cannot evaluate xmin to a number".into(),
+        )
+      })?;
+      let x_max = try_eval_to_f64(&x_max_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "Plot: cannot evaluate xmax to a number".into(),
+        )
+      })?;
+      (var, x_min, x_max)
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "Plot: second argument must be {x, xmin, xmax}".into(),
+      ));
+    }
+  };
+
+  // For log x-axis, xmin and xmax must be positive
+  if log_x && (x_min <= 0.0 || x_max <= 0.0) {
+    return Err(InterpreterError::EvaluationError(
+      "LogLogPlot/LogLinearPlot: x range must be positive".into(),
+    ));
+  }
+
+  // Collect function bodies
+  let bodies: Vec<&Expr> = match body {
+    Expr::List(items) => items.iter().collect(),
+    _ => vec![body],
+  };
+
+  if legends_automatic && plot_opts.plot_legends.is_empty() {
+    for b in &bodies {
+      plot_opts
+        .plot_legends
+        .push(crate::syntax::expr_to_string(b));
+    }
+  }
+
+  let num_samples = plot_opts.plot_points.max(2).min(2000);
+  let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
+
+  for func_body in &bodies {
+    let mut points = Vec::with_capacity(num_samples);
+    for i in 0..num_samples {
+      let t = i as f64 / (num_samples - 1) as f64;
+      // Sample x: log-spaced if log_x, linear otherwise
+      let x = if log_x {
+        let log_min = x_min.ln();
+        let log_max = x_max.ln();
+        (log_min + t * (log_max - log_min)).exp()
+      } else {
+        x_min + t * (x_max - x_min)
+      };
+      if let Some(y) = evaluate_at_point(func_body, &var_name, x) {
+        let px = if log_x {
+          if x > 0.0 {
+            x.log10()
+          } else {
+            continue;
+          }
+        } else {
+          x
+        };
+        let py = if log_y {
+          if y > 0.0 {
+            y.log10()
+          } else {
+            continue;
+          }
+        } else {
+          y
+        };
+        points.push((px, py));
+      }
+    }
+    all_points.push(points);
+  }
+
+  // Compute ranges
+  let finite_ys: Vec<f64> = all_points
+    .iter()
+    .flat_map(|pts| pts.iter())
+    .filter(|(_, y)| y.is_finite())
+    .map(|(_, y)| *y)
+    .collect();
+
+  if finite_ys.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let finite_xs: Vec<f64> = all_points
+    .iter()
+    .flat_map(|pts| pts.iter())
+    .filter(|(x, _)| x.is_finite())
+    .map(|(x, _)| *x)
+    .collect();
+
+  let x_min_display = finite_xs.iter().cloned().fold(f64::INFINITY, f64::min);
+  let x_max_display =
+    finite_xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  let y_data_min = finite_ys.iter().cloned().fold(f64::INFINITY, f64::min);
+  let y_data_max = finite_ys.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+  let y_range = y_data_max - y_data_min;
+  let padding = if y_range.abs() < f64::EPSILON {
+    1.0
+  } else {
+    y_range * 0.04
+  };
+  let y_auto_min = y_data_min - padding;
+  let y_auto_max = y_data_max + padding;
+  let y_auto =
+    adjust_y_range_for_filling(plot_opts.filling, (y_auto_min, y_auto_max));
+
+  let (y_display_min, y_display_max) = plot_range_y.unwrap_or(y_auto);
+
+  let svg = generate_svg_with_filling(
+    &all_points,
+    (x_min_display, x_max_display),
+    (y_display_min, y_display_max),
+    &plot_opts,
+  )?;
+
+  Ok(crate::graphics_result(svg))
+}
