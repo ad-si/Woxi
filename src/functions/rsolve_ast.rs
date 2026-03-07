@@ -657,3 +657,207 @@ fn lcm(a: i128, b: i128) -> i128 {
     (a / gcd_abs(a.abs(), b.abs())) * b.abs()
   }
 }
+
+/// RecurrenceTable[{recurrence, initial_conditions...}, a, {n, nmin, nmax}]
+/// Iteratively evaluate a recurrence relation.
+pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(recurrence_table_unevaluated(args));
+  }
+
+  // Extract function name (e.g. "a")
+  let func_name = match &args[1] {
+    Expr::Identifier(name) => name.clone(),
+    _ => return Ok(recurrence_table_unevaluated(args)),
+  };
+
+  // Extract {n, nmin, nmax} range
+  let (var_name, nmin, nmax) = match &args[2] {
+    Expr::List(items) if items.len() == 3 => {
+      let var = match &items[0] {
+        Expr::Identifier(s) => s.clone(),
+        _ => return Ok(recurrence_table_unevaluated(args)),
+      };
+      let nmin = match &items[1] {
+        Expr::Integer(n) => *n,
+        _ => return Ok(recurrence_table_unevaluated(args)),
+      };
+      let nmax = match &items[2] {
+        Expr::Integer(n) => *n,
+        _ => return Ok(recurrence_table_unevaluated(args)),
+      };
+      (var, nmin, nmax)
+    }
+    _ => return Ok(recurrence_table_unevaluated(args)),
+  };
+
+  // Extract equations from first arg
+  let equations = match &args[0] {
+    Expr::List(eqs) => eqs.clone(),
+    _ => return Ok(recurrence_table_unevaluated(args)),
+  };
+
+  // Separate initial conditions from the recurrence
+  let mut recurrence_eq: Option<(Expr, Expr)> = None;
+  let mut initial_conditions: std::collections::HashMap<i128, Expr> =
+    std::collections::HashMap::new();
+
+  for eq in &equations {
+    let (lhs, rhs) = match extract_equation(eq) {
+      Some(pair) => pair,
+      None => return Ok(recurrence_table_unevaluated(args)),
+    };
+
+    // Check if this is an initial condition: a[integer] == value
+    if let Some((name, idx)) = extract_func_at_integer(&lhs)
+      && name == func_name
+    {
+      let val = crate::evaluator::evaluate_expr_to_expr(&rhs)?;
+      initial_conditions.insert(idx, val);
+      continue;
+    }
+    if let Some((name, idx)) = extract_func_at_integer(&rhs)
+      && name == func_name
+    {
+      let val = crate::evaluator::evaluate_expr_to_expr(&lhs)?;
+      initial_conditions.insert(idx, val);
+      continue;
+    }
+
+    // This is the recurrence relation
+    if recurrence_eq.is_some() {
+      return Ok(recurrence_table_unevaluated(args));
+    }
+    recurrence_eq = Some((lhs, rhs));
+  }
+
+  let (rec_lhs, rec_rhs) = match recurrence_eq {
+    Some(r) => r,
+    None => return Ok(recurrence_table_unevaluated(args)),
+  };
+
+  // Determine which side has the "highest" a[n+k] to solve for
+  // Normalize: solve for a[n+k] on the LHS, expression on the RHS
+  // Find the highest-offset term on LHS that is just a[n+offset]
+  let (target_offset, solve_expr) = if let Some(offset) =
+    extract_single_func_offset(&rec_lhs, &func_name, &var_name)
+  {
+    // LHS is a[n+offset], RHS is the expression
+    (offset, rec_rhs)
+  } else if let Some(offset) =
+    extract_single_func_offset(&rec_rhs, &func_name, &var_name)
+  {
+    // RHS is a[n+offset], LHS is the expression
+    (offset, rec_lhs)
+  } else {
+    return Ok(recurrence_table_unevaluated(args));
+  };
+
+  // Now iterate: for each n from nmin to nmax, compute a[n]
+  let mut results = Vec::new();
+  let mut values = initial_conditions;
+
+  for n in nmin..=nmax {
+    if values.contains_key(&n) {
+      results.push(values[&n].clone());
+      continue;
+    }
+
+    // We need to compute a[n]. The recurrence says:
+    // a[var + target_offset] = solve_expr
+    // So when var = n - target_offset, we get a[n] = solve_expr(var = n - target_offset)
+    let var_val = n - target_offset;
+
+    // Substitute var_name = var_val in solve_expr
+    let substituted = crate::syntax::substitute_variable(
+      &solve_expr,
+      &var_name,
+      &Expr::Integer(var_val),
+    );
+
+    // Now substitute all a[k] references with known values
+    let resolved = substitute_func_values(&substituted, &func_name, &values);
+    let val = crate::evaluator::evaluate_expr_to_expr(&resolved)?;
+    values.insert(n, val.clone());
+    results.push(val);
+  }
+
+  Ok(Expr::List(results))
+}
+
+/// Extract the offset from an expression like a[n+k] or a[n] or a[n-1]
+/// Returns Some(k) if the expression is func_name[var_name + k]
+fn extract_single_func_offset(
+  expr: &Expr,
+  func_name: &str,
+  var_name: &str,
+) -> Option<i128> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == func_name && args.len() == 1 =>
+    {
+      extract_var_offset(&args[0], var_name)
+    }
+    _ => None,
+  }
+}
+
+/// Substitute all occurrences of func_name[integer] with known values
+fn substitute_func_values(
+  expr: &Expr,
+  func_name: &str,
+  values: &std::collections::HashMap<i128, Expr>,
+) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == func_name && args.len() == 1 =>
+    {
+      // Try to evaluate the argument to an integer
+      let evaled_arg = crate::evaluator::evaluate_expr_to_expr(&args[0])
+        .unwrap_or(args[0].clone());
+      if let Expr::Integer(n) = &evaled_arg
+        && let Some(val) = values.get(n)
+      {
+        return val.clone();
+      }
+      // Recurse into args
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| substitute_func_values(a, func_name, values))
+          .collect(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_func_values(a, func_name, values))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_func_values(a, func_name, values))
+        .collect(),
+    ),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(substitute_func_values(left, func_name, values)),
+      right: Box::new(substitute_func_values(right, func_name, values)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(substitute_func_values(operand, func_name, values)),
+    },
+    _ => expr.clone(),
+  }
+}
+
+fn recurrence_table_unevaluated(args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: "RecurrenceTable".to_string(),
+    args: args.to_vec(),
+  }
+}

@@ -2074,3 +2074,46 @@ mod grad {
     assert_eq!(interpret("Grad[x^3, {x}]").unwrap(), "{3*x^2}");
   }
 }
+
+mod recurrence_table {
+  use super::*;
+
+  #[test]
+  fn geometric() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{a[n+1] == 2*a[n], a[1] == 1}, a, {n, 1, 10}]"
+      )
+      .unwrap(),
+      "{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}"
+    );
+  }
+
+  #[test]
+  fn fibonacci() {
+    assert_eq!(
+      interpret("RecurrenceTable[{a[n+1] == a[n] + a[n-1], a[1] == 1, a[2] == 1}, a, {n, 1, 8}]")
+        .unwrap(),
+      "{1, 1, 2, 3, 5, 8, 13, 21}"
+    );
+  }
+
+  #[test]
+  fn affine() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[{a[n] == 3*a[n-1] + 1, a[0] == 0}, a, {n, 0, 5}]"
+      )
+      .unwrap(),
+      "{0, 1, 4, 13, 40, 121}"
+    );
+  }
+
+  #[test]
+  fn unevaluated_bad_args() {
+    assert_eq!(
+      interpret("RecurrenceTable[x, y]").unwrap(),
+      "RecurrenceTable[x, y]"
+    );
+  }
+}
