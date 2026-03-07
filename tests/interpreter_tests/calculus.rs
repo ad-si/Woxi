@@ -2415,3 +2415,40 @@ mod exp_to_trig {
     );
   }
 }
+
+mod trig_to_exp {
+  use super::*;
+
+  #[test]
+  fn cos_to_exp() {
+    let result = interpret("TrigToExp[Cos[x]]").unwrap();
+    // Should contain exponential terms with I
+    assert!(
+      result.contains("E^") && result.contains("I"),
+      "Expected exponential form, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn cosh_to_exp() {
+    assert_eq!(
+      interpret("TrigToExp[Cosh[x]]").unwrap(),
+      "1/2*1/E^x + E^x/2"
+    );
+  }
+
+  #[test]
+  fn sinh_to_exp() {
+    assert_eq!(
+      interpret("TrigToExp[Sinh[x]]").unwrap(),
+      "-1/2*1/E^x + E^x/2"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    // TrigToExp should not affect non-trig expressions
+    assert_eq!(interpret("TrigToExp[x + 1]").unwrap(), "1 + x");
+  }
+}

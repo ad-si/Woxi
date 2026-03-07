@@ -1324,7 +1324,7 @@ DefaultPrintPrecision,,,,11.2,3298
 DefaultTicksStyle,,,,7,5013
 DefaultTooltipStyle,,,,8,4881
 DefaultValues,Returns the default values of a symbol,✅,pure,2,3344
-Defer,,,,6,751
+Defer,Hold an expression unevaluated,✅,none,6,751
 DefineInputStreamMethod,,,,9,4947
 DefineOutputStreamMethod,,,,9,4747
 DefineResourceFunction,,,,12,5587
@@ -5746,7 +5746,7 @@ TrigFactor,,,,3,1736
 TrigFactorList,,,,3,4567
 Trigger,,,,6,1760
 TrigReduce,,,,3,954
-TrigToExp,,,,3,900
+TrigToExp,Convert trigonometric and hyperbolic functions to exponentials,✅,pure,3,900
 TrimmedMean,,,,6,2693
 TrimmedVariance,,,,11.1,4081
 TropicalStormData,,🚫,,10,4567
