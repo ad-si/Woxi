@@ -81,6 +81,9 @@ pub fn dispatch_calculus_functions(
     "RSolve" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::rsolve_ast(args));
     }
+    "RecurrenceTable" if args.len() == 3 => {
+      return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));
+    }
     "DSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::dsolve_ast(args));
     }
