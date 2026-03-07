@@ -1576,6 +1576,28 @@ mod traditional_form {
   }
 }
 
+mod item_function {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("Item[x]").unwrap(), "Item[x]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Item[x]]").unwrap(), "Item");
+  }
+
+  #[test]
+  fn with_options() {
+    assert_eq!(
+      interpret("Item[\"hello\", Background -> Red]").unwrap(),
+      "Item[hello, Background -> RGBColor[1, 0, 0]]"
+    );
+  }
+}
+
 mod cell_function {
   use super::*;
 
