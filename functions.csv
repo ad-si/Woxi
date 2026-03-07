@@ -3304,12 +3304,12 @@ LogisticDistribution,,,,6,2611
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10,1409
 LogitModelFit,,,,7,2541
 LogLikelihood,,,,8,1687
-LogLinearPlot,,,,6,912
+LogLinearPlot,Plots with logarithmic x-axis,✅,pure,6,912
 LogLogisticDistribution,,,,8,3612
-LogLogPlot,,,,6,754
+LogLogPlot,Plots with logarithmic x and y axes,✅,pure,6,754
 LogMultinormalDistribution,,,,9,3785
 LogNormalDistribution,,,,6,1102
-LogPlot,,,,6,859
+LogPlot,Plots with logarithmic y-axis,✅,pure,6,859
 LogRankTest,,,,9,3474
 LogSeriesDistribution,,,,6,3474
 Longest,,,,6,1261

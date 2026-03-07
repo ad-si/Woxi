@@ -3300,3 +3300,55 @@ mod discrete_plot {
     assert_eq!(result, "-Graphics-");
   }
 }
+
+mod log_log_plot {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    insta::assert_snapshot!(export_svg("LogLogPlot[x^2, {x, 1, 100}]"));
+  }
+
+  #[test]
+  fn returns_graphics() {
+    let result = interpret("LogLogPlot[x^2, {x, 1, 1000}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn multiple_functions() {
+    insta::assert_snapshot!(export_svg(
+      "LogLogPlot[{x, x^2, x^3}, {x, 1, 100}]"
+    ));
+  }
+}
+
+mod log_plot {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    insta::assert_snapshot!(export_svg("LogPlot[Exp[x], {x, 0, 5}]"));
+  }
+
+  #[test]
+  fn returns_graphics() {
+    let result = interpret("LogPlot[Exp[x], {x, 0, 10}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+}
+
+mod log_linear_plot {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    insta::assert_snapshot!(export_svg("LogLinearPlot[Log[x], {x, 1, 1000}]"));
+  }
+
+  #[test]
+  fn returns_graphics() {
+    let result = interpret("LogLinearPlot[x, {x, 1, 100}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+}
