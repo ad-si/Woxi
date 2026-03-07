@@ -1081,7 +1081,7 @@ ControllerPath,,,,6,3947
 ControllerState,,,,6,3344
 ControlPlacement,,,,6,486
 ControlsRendering,,,,6,4081
-ControlType,,,,6,381
+ControlType,Option for specifying the type of control in Manipulate,✅,pure,6,381
 ConvectionPDETerm,,,,12.2,3462
 Convergents,,,,6,2031
 ConversionRules,,,,3,4660
@@ -1519,7 +1519,7 @@ DistanceFunction,,,,6,1171
 DistanceMatrix,,,,10.3,1806
 DistanceTransform,,,,7,1768
 Distribute,Distribute one operator over another,✅,pure,1,1074
-Distributed,,,,8,365
+Distributed,Represents a variable distributed according to a given distribution,✅,pure,8,365
 DistributedContexts,,,,8,2662
 DistributeDefinitions,,,,7,1672
 DistributionChart,,,,8,1880
@@ -1716,7 +1716,7 @@ EntityInstance,,,,10.3,4027
 EntityList,,,,10,1100
 EntityPrefetch,,,,11.3,5390
 EntityProperties,,,,10,2147
-EntityProperty,,,,10,366
+EntityProperty,Represents a property of an entity class,✅,pure,10,366
 EntityPropertyClass,,,,10,3200
 EntityRegister,,,,11.3,4104
 EntityStore,,,,11,3697
@@ -2080,7 +2080,7 @@ FontSlant,,,,3,856
 FontSubstitutions,,,,3,5013
 FontTracking,,,,3,935
 FontVariations,,,,3,2851
-FontWeight,,,,3,377
+FontWeight,Option for specifying font weight (Bold etc),✅,pure,3,377
 For,Executes a loop with initialization and increment,✅,pure,1,146
 ForAll,,,,5,860
 ForAllType,,,,13.1,
@@ -3040,7 +3040,7 @@ KVertexConnectedComponents,,,,10,3862
 KVertexConnectedGraphQ,,,,10,4612
 LABColor,,,,10,1926
 Label,Label for Goto targets,✅,pure,1,1059
-Labeled,,,,6,397
+Labeled,Wrapper that attaches a label to an expression for display,✅,pure,6,397
 LabelingFunction,,,,7,1085
 LabelingSize,,,,11.3,3257
 LabelStyle,Option for specifying the style of labels in graphics,✅,none,6,269
@@ -4205,7 +4205,7 @@ Placed,Inert positional wrapper for label and legend placement (used with ChartL
 Placeholder,,,,7,1029
 PlaceholderLayer,,,,12.2,4707
 PlaceholderReplace,,,,8,
-Plain,,,,6,361
+Plain,Font style symbol for plain (non-bold non-italic) text,✅,pure,6,361
 PlanarAngle,,,,12,2617
 PlanarFaceList,,,,13,
 PlanarGraph,,,,10.4,2952
@@ -4229,7 +4229,7 @@ PlotMarkers,,,,6,500
 PlotPoints,Option for number of sample points in plots,✅,pure,1,193
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,39
 PlotRangeClipping,,,,6,674
-PlotRangePadding,,,,6,359
+PlotRangePadding,Option for specifying padding around plot ranges,✅,pure,6,359
 PlotRegion,,,,2,1875
 PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1,45
 PlotTheme,,,,10,459
