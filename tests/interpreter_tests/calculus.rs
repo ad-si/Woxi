@@ -933,7 +933,10 @@ mod erfi {
     // Erfi[1.0] ≈ 1.6504257587975429
     let result = interpret("Erfi[1.0]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val - 1.6504257587975429).abs() < 1e-10, "Erfi[1.0] = {result}");
+    assert!(
+      (val - 1.6504257587975429).abs() < 1e-10,
+      "Erfi[1.0] = {result}"
+    );
   }
 
   #[test]
@@ -941,15 +944,15 @@ mod erfi {
     // Erfi[-1.0] = -Erfi[1.0]
     let result = interpret("Erfi[-1.0]").unwrap();
     let val: f64 = result.parse().unwrap();
-    assert!((val + 1.6504257587975429).abs() < 1e-10, "Erfi[-1.0] = {result}");
+    assert!(
+      (val + 1.6504257587975429).abs() < 1e-10,
+      "Erfi[-1.0] = {result}"
+    );
   }
 
   #[test]
   fn erfi_listable() {
-    assert_eq!(
-      interpret("Erfi[{0, x}]").unwrap(),
-      "{0, Erfi[x]}"
-    );
+    assert_eq!(interpret("Erfi[{0, x}]").unwrap(), "{0, Erfi[x]}");
   }
 
   #[test]
@@ -971,10 +974,7 @@ mod erfi {
   #[test]
   fn n_erfi_0() {
     let result = interpret("N[Erfi[0], 20]").unwrap();
-    assert!(
-      result.starts_with("0"),
-      "N[Erfi[0], 20] = {result}"
-    );
+    assert!(result.starts_with("0"), "N[Erfi[0], 20] = {result}");
   }
 
   #[test]

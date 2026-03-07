@@ -346,6 +346,100 @@ pub fn extract_part_ast(
         Ok(part_take_unevaluated(expr, index))
       }
     }
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator;
+      // Decompose BinaryOp into head + args consistent with Head[]
+      let (head_name, parts): (&str, Vec<Expr>) = match op {
+        BinaryOperator::Plus => ("Plus", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Minus => {
+          // a - b = Plus[a, Times[-1, b]]
+          let neg_right = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), *right.clone()],
+          };
+          ("Plus", vec![*left.clone(), neg_right])
+        }
+        BinaryOperator::Times => ("Times", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Divide => {
+          if matches!(left.as_ref(), Expr::Integer(1)) {
+            // 1/b = Power[b, -1]
+            ("Power", vec![*right.clone(), Expr::Integer(-1)])
+          } else {
+            // a/b = Times[a, Power[b, -1]]
+            let inv_right = Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![*right.clone(), Expr::Integer(-1)],
+            };
+            ("Times", vec![*left.clone(), inv_right])
+          }
+        }
+        BinaryOperator::Power => ("Power", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::And => ("And", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::Or => ("Or", vec![*left.clone(), *right.clone()]),
+        BinaryOperator::StringJoin => {
+          ("StringJoin", vec![*left.clone(), *right.clone()])
+        }
+        BinaryOperator::Alternatives => {
+          ("Alternatives", vec![*left.clone(), *right.clone()])
+        }
+      };
+      if idx == 0 {
+        return Ok(Expr::Identifier(head_name.to_string()));
+      }
+      let len = parts.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(parts[actual_idx as usize].clone())
+      } else {
+        let expr_str = crate::syntax::expr_to_string(expr);
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        ));
+        Ok(part_take_unevaluated(expr, index))
+      }
+    }
+    Expr::UnaryOp { op, operand } => {
+      use crate::syntax::UnaryOperator;
+      let (head_name, parts): (&str, Vec<Expr>) = match op {
+        UnaryOperator::Minus => {
+          ("Times", vec![Expr::Integer(-1), *operand.clone()])
+        }
+        UnaryOperator::Not => ("Not", vec![*operand.clone()]),
+      };
+      if idx == 0 {
+        return Ok(Expr::Identifier(head_name.to_string()));
+      }
+      let len = parts.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(parts[actual_idx as usize].clone())
+      } else {
+        let expr_str = crate::syntax::expr_to_string(expr);
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        ));
+        Ok(part_take_unevaluated(expr, index))
+      }
+    }
+    Expr::Comparison { operands, .. } => {
+      if idx == 0 {
+        return Ok(Expr::Identifier("Comparison".to_string()));
+      }
+      let len = operands.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(operands[actual_idx as usize].clone())
+      } else {
+        let expr_str = crate::syntax::expr_to_string(expr);
+        crate::emit_message(&format!(
+          "Part::partw: Part {} of {} does not exist.",
+          idx, expr_str
+        ));
+        Ok(part_take_unevaluated(expr, index))
+      }
+    }
     _ => Ok(part_take_unevaluated(expr, index)),
   }
 }

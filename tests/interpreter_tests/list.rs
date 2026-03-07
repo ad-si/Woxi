@@ -991,6 +991,46 @@ mod part_paren_extended {
   }
 }
 
+mod part_binary_op {
+  use super::*;
+
+  #[test]
+  fn part_of_power() {
+    // Power[base, exp][[1]] = base, [[2]] = exp
+    assert_eq!(interpret("(a^b)[[1]]").unwrap(), "a");
+    assert_eq!(interpret("(a^b)[[2]]").unwrap(), "b");
+    assert_eq!(interpret("(a^b)[[0]]").unwrap(), "Power");
+  }
+
+  #[test]
+  fn part_of_reciprocal() {
+    // 1/(2*x - 3) = Power[-3 + 2*x, -1]
+    assert_eq!(interpret("(1/(2*x - 3))[[1]]").unwrap(), "-3 + 2*x");
+    assert_eq!(interpret("(1/(2*x - 3))[[2]]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn part_of_plus() {
+    assert_eq!(interpret("(a + b)[[1]]").unwrap(), "a");
+    assert_eq!(interpret("(a + b)[[2]]").unwrap(), "b");
+    assert_eq!(interpret("(a + b)[[0]]").unwrap(), "Plus");
+  }
+
+  #[test]
+  fn part_of_times() {
+    assert_eq!(interpret("(a*b)[[1]]").unwrap(), "a");
+    assert_eq!(interpret("(a*b)[[2]]").unwrap(), "b");
+    assert_eq!(interpret("(a*b)[[0]]").unwrap(), "Times");
+  }
+
+  #[test]
+  fn part_negative_index() {
+    // Negative index: [[−1]] is last part
+    assert_eq!(interpret("(a^b)[[-1]]").unwrap(), "b");
+    assert_eq!(interpret("(a^b)[[-2]]").unwrap(), "a");
+  }
+}
+
 mod part_out_of_bounds {
   use super::*;
 
