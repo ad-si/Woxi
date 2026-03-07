@@ -224,7 +224,7 @@ function renderOutputItems(items) {
         div.className = "output-box text-box"
         div.innerHTML = item.svg
         outputsEl.appendChild(div)
-      } else {
+      } else if (item.text) {
         const pre = document.createElement("pre")
         pre.className = "output-box text-box"
         pre.textContent = item.text
