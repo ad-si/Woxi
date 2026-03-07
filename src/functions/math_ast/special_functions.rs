@@ -3708,6 +3708,159 @@ fn riemann_r_numeric(x: f64) -> f64 {
   sum
 }
 
+/// HypergeometricPFQ[{a1,...,ap}, {b1,...,bq}, z]
+/// Generalized hypergeometric function pFq
+pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "HypergeometricPFQ expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let a_list = match &args[0] {
+    Expr::List(v) => v.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "HypergeometricPFQ".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let b_list = match &args[1] {
+    Expr::List(v) => v.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "HypergeometricPFQ".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let z = &args[2];
+
+  // HypergeometricPFQ[{a...}, {b...}, 0] = 1
+  match z {
+    Expr::Integer(0) => return Ok(Expr::Integer(1)),
+    Expr::Real(x) if *x == 0.0 => return Ok(Expr::Integer(1)),
+    _ => {}
+  }
+
+  // HypergeometricPFQ[{}, {}, z] = E^z
+  if a_list.is_empty() && b_list.is_empty() {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![Expr::Identifier("E".to_string()), z.clone()],
+    });
+  }
+
+  // Numeric evaluation: all parameters and z must be numeric
+  let z_val = match z {
+    Expr::Real(x) => Some(*x),
+    Expr::Integer(n) => Some(*n as f64),
+    _ => None,
+  };
+  if z_val.is_none() {
+    return Ok(Expr::FunctionCall {
+      name: "HypergeometricPFQ".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let z_val = z_val.unwrap();
+
+  let a_vals: Option<Vec<f64>> = a_list
+    .iter()
+    .map(|e| match e {
+      Expr::Real(x) => Some(*x),
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some(*n as f64 / *d as f64)
+        } else {
+          None
+        }
+      }
+      _ => None,
+    })
+    .collect();
+  let b_vals: Option<Vec<f64>> = b_list
+    .iter()
+    .map(|e| match e {
+      Expr::Real(x) => Some(*x),
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some(*n as f64 / *d as f64)
+        } else {
+          None
+        }
+      }
+      _ => None,
+    })
+    .collect();
+
+  if let (Some(a_vals), Some(b_vals)) = (a_vals, b_vals) {
+    // Check convergence at |z|=1: for p <= q+1, need sum(b) - sum(a) > 0
+    if z_val.abs() >= 1.0 && a_vals.len() <= b_vals.len() + 1 {
+      let sum_a: f64 = a_vals.iter().sum();
+      let sum_b: f64 = b_vals.iter().sum();
+      if z_val.abs() == 1.0 && sum_b - sum_a <= 0.0 {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
+    }
+    // For p > q+1 and |z| >= 1, the series diverges
+    if z_val.abs() >= 1.0 && a_vals.len() > b_vals.len() + 1 {
+      return Ok(Expr::FunctionCall {
+        name: "HypergeometricPFQ".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    let result = hypergeometric_pfq_numeric(&a_vals, &b_vals, z_val);
+    if result.is_infinite() {
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    return Ok(Expr::Real(result));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "HypergeometricPFQ".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute generalized hypergeometric function pFq numerically via series
+fn hypergeometric_pfq_numeric(a: &[f64], b: &[f64], z: f64) -> f64 {
+  let mut sum = 1.0_f64;
+  let mut term = 1.0_f64;
+
+  for n in 0..1000 {
+    // Multiply by (a1+n)(a2+n)...(ap+n) * z / ((b1+n)(b2+n)...(bq+n) * (n+1))
+    let mut num = z;
+    for &ai in a {
+      num *= ai + n as f64;
+    }
+    let mut den = (n + 1) as f64;
+    for &bi in b {
+      let bi_n = bi + n as f64;
+      if bi_n == 0.0 {
+        return f64::INFINITY; // pole in denominator
+      }
+      den *= bi_n;
+    }
+    term *= num / den;
+    sum += term;
+    if term.abs() < 1e-15 * sum.abs() {
+      break;
+    }
+    if !sum.is_finite() {
+      break;
+    }
+  }
+  sum
+}
+
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)
