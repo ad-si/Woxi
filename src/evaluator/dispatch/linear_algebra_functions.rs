@@ -366,9 +366,145 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec(),
       }));
     }
+    "LUDecomposition" if args.len() == 1 => {
+      return Some(lu_decomposition_ast(&args[0]));
+    }
     _ => {}
   }
   None
+}
+
+/// LUDecomposition[m] — compute LU decomposition with partial pivoting.
+/// Returns {lu_combined, pivots, 0} where lu_combined stores L (below diagonal)
+/// and U (on and above diagonal), and pivots is the row permutation (1-indexed).
+fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
+  let rows = match mat {
+    Expr::List(rows) => rows,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "LUDecomposition".to_string(),
+        args: vec![mat.clone()],
+      });
+    }
+  };
+
+  let n = rows.len();
+  if n == 0 {
+    return Ok(Expr::List(vec![
+      Expr::List(vec![]),
+      Expr::List(vec![]),
+      Expr::Integer(0),
+    ]));
+  }
+
+  // Extract matrix elements
+  let mut matrix: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for row in rows {
+    if let Expr::List(cols) = row {
+      if cols.len() != n {
+        return Err(InterpreterError::EvaluationError(
+          "LUDecomposition: matrix must be square".into(),
+        ));
+      }
+      matrix.push(cols.clone());
+    } else {
+      return Ok(Expr::FunctionCall {
+        name: "LUDecomposition".to_string(),
+        args: vec![mat.clone()],
+      });
+    }
+  }
+
+  // Partial pivoting LU decomposition
+  let mut pivots: Vec<usize> = (0..n).collect();
+
+  for k in 0..n {
+    // Find pivot (first non-zero in column k, from row k downward)
+    // For symbolic: just check if it's Integer(0)
+    let mut pivot_row = k;
+    for i in k..n {
+      if !is_zero_expr(&matrix[i][k]) {
+        pivot_row = i;
+        break;
+      }
+    }
+
+    // Swap rows
+    if pivot_row != k {
+      matrix.swap(k, pivot_row);
+      pivots.swap(k, pivot_row);
+    }
+
+    // Compute L and U entries
+    let pivot_val = matrix[k][k].clone();
+    if is_zero_expr(&pivot_val) {
+      continue; // Singular matrix, skip
+    }
+
+    for i in (k + 1)..n {
+      // L[i][k] = A[i][k] / A[k][k]
+      let l_ik = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          matrix[i][k].clone(),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![pivot_val.clone(), Expr::Integer(-1)],
+          },
+        ],
+      })
+      .unwrap_or(matrix[i][k].clone());
+
+      // Update row i: A[i][j] -= L[i][k] * A[k][j] for j > k
+      for j in (k + 1)..n {
+        let product = evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![l_ik.clone(), matrix[k][j].clone()],
+        })
+        .unwrap_or(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![l_ik.clone(), matrix[k][j].clone()],
+        });
+
+        let new_val = evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            matrix[i][j].clone(),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), product],
+            },
+          ],
+        })
+        .unwrap_or(matrix[i][j].clone());
+
+        matrix[i][j] = new_val;
+      }
+
+      // Store L factor in place of A[i][k]
+      matrix[i][k] = l_ik;
+    }
+  }
+
+  // Build result
+  let lu_matrix = Expr::List(matrix.into_iter().map(Expr::List).collect());
+
+  let pivot_list = Expr::List(
+    pivots
+      .into_iter()
+      .map(|p| Expr::Integer((p + 1) as i128)) // 1-indexed
+      .collect(),
+  );
+
+  Ok(Expr::List(vec![lu_matrix, pivot_list, Expr::Integer(0)]))
+}
+
+fn is_zero_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(0) => true,
+    Expr::Real(v) => *v == 0.0,
+    _ => false,
+  }
 }
 
 /// KroneckerProduct[A, B] — tensor (Kronecker) product of two matrices.
