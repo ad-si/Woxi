@@ -1965,7 +1965,7 @@ FindEulerianCycle,,,,8,2816
 FindExternalEvaluators,,,,,
 FindFaces,,,,9,2217
 FindFile,,,,7,1766
-FindFit,,,,5,535
+FindFit,Finds a least-squares fit of a model to data,✅,pure,5,535
 FindFormula,,,,10.2,1740
 FindFundamentalCycles,,,,10,4027
 FindGeneratingFunction,,,,7,1776

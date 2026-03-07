@@ -2729,3 +2729,177 @@ fn lll_reduce(basis: &mut Vec<Vec<i128>>) -> Vec<Vec<i128>> {
     .cloned()
     .collect()
 }
+
+// ─── FindFit ──────────────────────────────────────────────────────────
+
+/// FindFit[data, model, params, var]
+/// Finds parameter values that minimize the sum of squared residuals.
+/// Returns {param1 -> val1, param2 -> val2, ...}.
+pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 4 {
+    return Err(InterpreterError::EvaluationError(
+      "FindFit expects exactly 4 arguments: data, model, params, var".into(),
+    ));
+  }
+
+  let data_expr = &args[0];
+  let model = &args[1];
+  let params_expr = &args[2];
+  let var_expr = &args[3];
+
+  // Extract variable name
+  let var_name = match var_expr {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FindFit: fourth argument must be a variable".into(),
+      ));
+    }
+  };
+
+  // Extract parameter names
+  let param_names: Vec<String> = match params_expr {
+    Expr::List(items) => {
+      let mut names = Vec::new();
+      for item in items {
+        match item {
+          Expr::Identifier(name) => names.push(name.clone()),
+          Expr::List(inner) if !inner.is_empty() => {
+            // {param, init_value} form
+            if let Expr::Identifier(name) = &inner[0] {
+              names.push(name.clone());
+            }
+          }
+          _ => {
+            return Err(InterpreterError::EvaluationError(
+              "FindFit: parameters must be identifiers or {name, init} pairs"
+                .into(),
+            ));
+          }
+        }
+      }
+      names
+    }
+    Expr::Identifier(name) => vec![name.clone()],
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FindFit: third argument must be a list of parameters".into(),
+      ));
+    }
+  };
+
+  // Extract initial guesses
+  let mut param_values: Vec<f64> = vec![1.0; param_names.len()];
+  if let Expr::List(items) = params_expr {
+    for (i, item) in items.iter().enumerate() {
+      if let Expr::List(inner) = item
+        && inner.len() >= 2
+        && let Some(v) = try_eval_to_f64(&inner[1])
+      {
+        param_values[i] = v;
+      }
+    }
+  }
+
+  // Extract data points
+  let data_evaluated = evaluate_expr_to_expr(data_expr)?;
+  let data_list = match &data_evaluated {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FindFit: first argument must be a list".into(),
+      ));
+    }
+  };
+
+  let (x_vals, y_vals) = extract_fit_data(data_list)?;
+  let n_data = x_vals.len();
+  let n_params = param_names.len();
+
+  // Gauss-Newton iteration
+  let max_iter = 100;
+  let tol = 1e-12;
+
+  for _ in 0..max_iter {
+    // Evaluate model at each data point with current parameters
+    let mut residuals = vec![0.0f64; n_data];
+    let mut jacobian = vec![vec![0.0f64; n_params]; n_data];
+
+    for i in 0..n_data {
+      // Substitute variable and parameters
+      let mut expr_at_x = crate::syntax::substitute_variable(
+        model,
+        &var_name,
+        &Expr::Real(x_vals[i]),
+      );
+      for (j, pname) in param_names.iter().enumerate() {
+        expr_at_x = crate::syntax::substitute_variable(
+          &expr_at_x,
+          pname,
+          &Expr::Real(param_values[j]),
+        );
+      }
+      let val = match evaluate_expr_to_expr(&expr_at_x) {
+        Ok(ref e) => try_eval_to_f64(e).unwrap_or(f64::NAN),
+        Err(_) => f64::NAN,
+      };
+      residuals[i] = y_vals[i] - val;
+
+      // Compute Jacobian by finite differences
+      let h = 1e-8;
+      for j in 0..n_params {
+        let orig = param_values[j];
+        param_values[j] = orig + h;
+
+        let mut expr_h = crate::syntax::substitute_variable(
+          model,
+          &var_name,
+          &Expr::Real(x_vals[i]),
+        );
+        for (k, pname) in param_names.iter().enumerate() {
+          expr_h = crate::syntax::substitute_variable(
+            &expr_h,
+            pname,
+            &Expr::Real(param_values[k]),
+          );
+        }
+        let val_h = match evaluate_expr_to_expr(&expr_h) {
+          Ok(ref e) => try_eval_to_f64(e).unwrap_or(f64::NAN),
+          Err(_) => f64::NAN,
+        };
+
+        jacobian[i][j] = (val_h - val) / h;
+        param_values[j] = orig;
+      }
+    }
+
+    // Solve J^T J delta = J^T r using QR on J
+    let delta = match solve_least_squares_qr(&jacobian, &residuals) {
+      Ok(d) => d,
+      Err(_) => break,
+    };
+
+    // Update parameters
+    let mut max_change = 0.0f64;
+    for j in 0..n_params {
+      param_values[j] += delta[j];
+      max_change = max_change.max(delta[j].abs());
+    }
+
+    if max_change < tol {
+      break;
+    }
+  }
+
+  // Build result: {param1 -> val1, param2 -> val2, ...}
+  let rules: Vec<Expr> = param_names
+    .iter()
+    .zip(param_values.iter())
+    .map(|(name, val)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(name.clone())),
+      replacement: Box::new(Expr::Real(*val)),
+    })
+    .collect();
+
+  Ok(Expr::List(rules))
+}

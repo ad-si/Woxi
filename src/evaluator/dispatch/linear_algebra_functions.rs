@@ -95,6 +95,9 @@ pub fn dispatch_linear_algebra_functions(
     "Fit" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::fit_ast(args));
     }
+    "FindFit" if args.len() == 4 => {
+      return Some(crate::functions::linear_algebra_ast::find_fit_ast(args));
+    }
     "Cross" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::cross_ast(args));
     }
