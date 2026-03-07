@@ -2905,7 +2905,7 @@ InverseJacobiNS,Inverse Jacobi elliptic function ns,✅,pure,1,4173
 InverseJacobiSC,Inverse Jacobi elliptic function sc,✅,pure,1,4104
 InverseJacobiSD,Inverse Jacobi elliptic function sd,✅,pure,1,4173
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1,1905
-InverseLaplaceTransform,,,,4,583
+InverseLaplaceTransform,Compute the inverse Laplace transform,✅,none,4,583
 InverseMellinTransform,,,,11,3972
 InversePermutation,,,,8,1650
 InverseRadon,,,,8,3636

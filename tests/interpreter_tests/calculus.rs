@@ -2117,3 +2117,95 @@ mod recurrence_table {
     );
   }
 }
+
+mod inverse_laplace_transform {
+  use super::*;
+
+  #[test]
+  fn constant_one_over_s() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s, s, t]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn one_over_s_squared() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s^2, s, t]").unwrap(),
+      "t"
+    );
+  }
+
+  #[test]
+  fn two_over_s_cubed() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[2/s^3, s, t]").unwrap(),
+      "t^2"
+    );
+  }
+
+  #[test]
+  fn six_over_s_fourth() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[6/s^4, s, t]").unwrap(),
+      "t^3"
+    );
+  }
+
+  #[test]
+  fn sin_t() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s^2 + 1), s, t]").unwrap(),
+      "Sin[t]"
+    );
+  }
+
+  #[test]
+  fn cos_t() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s/(s^2 + 1), s, t]").unwrap(),
+      "Cos[t]"
+    );
+  }
+
+  #[test]
+  fn sin_at() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[a/(s^2 + a^2), s, t]").unwrap(),
+      "Sin[a*t]"
+    );
+  }
+
+  #[test]
+  fn cos_at() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[s/(s^2 + a^2), s, t]").unwrap(),
+      "Cos[a*t]"
+    );
+  }
+
+  #[test]
+  fn exp_at() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s - a), s, t]").unwrap(),
+      "E^(a*t)"
+    );
+  }
+
+  #[test]
+  fn exp_neg_at() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s + a), s, t]").unwrap(),
+      "E^(-(a*t))"
+    );
+  }
+
+  #[test]
+  fn unevaluated_unknown() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[Log[s], s, t]").unwrap(),
+      "InverseLaplaceTransform[Log[s], s, t]"
+    );
+  }
+}

@@ -93,6 +93,9 @@ pub fn dispatch_calculus_functions(
     "LaplaceTransform" if args.len() == 3 => {
       return Some(laplace_transform(&args[0], &args[1], &args[2]));
     }
+    "InverseLaplaceTransform" if args.len() == 3 => {
+      return Some(inverse_laplace_transform(&args[0], &args[1], &args[2]));
+    }
     _ => {}
   }
   None
@@ -423,4 +426,403 @@ fn extract_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
     }
   }
   None
+}
+
+/// Compute the inverse Laplace transform of expr(s) with respect to s, yielding f(t).
+fn inverse_laplace_transform(
+  expr: &Expr,
+  s_expr: &Expr,
+  t_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let s = match s_expr {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "InverseLaplaceTransform".to_string(),
+        args: vec![expr.clone(), s_expr.clone(), t_expr.clone()],
+      });
+    }
+  };
+  let t = match t_expr {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "InverseLaplaceTransform".to_string(),
+        args: vec![expr.clone(), s_expr.clone(), t_expr.clone()],
+      });
+    }
+  };
+
+  // Normalize the expression by converting BinaryOps to FunctionCall form
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+  if let Some(result) = inverse_laplace_inner(&normalized, s, t) {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "InverseLaplaceTransform".to_string(),
+      args: vec![expr.clone(), s_expr.clone(), t_expr.clone()],
+    })
+  }
+}
+
+/// Try to compute inverse Laplace transform symbolically.
+fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
+  // If expr doesn't depend on s, it's a constant * DiracDelta(t) — not commonly needed
+  // Just skip this case and return None for constants
+
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    // L^-1[s^(-n)] = t^(n-1) / Gamma[n]
+    if fname == "Power" && fargs.len() == 2 {
+      if let Expr::Identifier(base) = fargs[0]
+        && base == s
+      {
+        // s^(-n) → t^(n-1) / Gamma[n]  (where n > 0)
+        // The exponent is fargs[1], which should be negative
+        if let Expr::Integer(exp) = fargs[1]
+          && *exp < 0
+        {
+          let n = -exp; // positive
+          if n == 1 {
+            // s^(-1) → 1
+            return Some(Expr::Integer(1));
+          }
+          // s^(-n) → t^(n-1) / (n-1)!
+          return Some(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![
+                  Expr::Identifier(t.to_string()),
+                  Expr::Integer(n - 1),
+                ],
+              },
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Gamma".to_string(),
+                    args: vec![Expr::Integer(n)],
+                  },
+                  Expr::Integer(-1),
+                ],
+              },
+            ],
+          });
+        }
+      }
+
+      // L^-1[(s^2 + a^2)^(-1)] = Sin[a*t] / a
+      if matches!(fargs[1], Expr::Integer(-1))
+        && let Some(a_squared) = extract_s_squared_plus_const(fargs[0], s)
+      {
+        let a = sqrt_of_expr(&a_squared);
+        return Some(Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![a.clone(), Expr::Integer(-1)],
+            },
+            Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![a, Expr::Identifier(t.to_string())],
+              }],
+            },
+          ],
+        });
+      }
+
+      // L^-1[(s - a)^(-1)] = E^(a*t) or L^-1[(s + a)^(-1)] = E^(-a*t)
+      if let Expr::Integer(-1) = fargs[1] {
+        // Check if fargs[0] is (s + something) or (s - something)
+        if let Some(neg_a) = extract_linear_s_offset(fargs[0], s) {
+          // (s + neg_a)^(-1) → E^(-neg_a * t)
+          let exponent = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(-1),
+              neg_a,
+              Expr::Identifier(t.to_string()),
+            ],
+          };
+          return Some(Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![Expr::Constant("E".to_string()), exponent],
+          });
+        }
+      }
+    }
+
+    // L^-1[a/(s^2 + a^2)] = Sin[a*t] and L^-1[s/(s^2 + a^2)] = Cos[a*t]
+    if fname == "Times" && fargs.len() == 2 {
+      // Check for pattern: X * (s^2 + a^2)^(-1)
+      let (numerator, denom_base) = if is_power_neg1(fargs[1]) {
+        (fargs[0], get_power_base(fargs[1]))
+      } else if is_power_neg1(fargs[0]) {
+        (fargs[1], get_power_base(fargs[0]))
+      } else {
+        (fargs[0], None)
+      };
+
+      if let Some(denom) = denom_base {
+        // Check if denom is s^2 + a^2
+        if let Some(a_squared) = extract_s_squared_plus_const(denom, s) {
+          // numerator / (s^2 + a^2)
+          if let Expr::Identifier(n) = numerator
+            && n == s
+          {
+            // s / (s^2 + a^2) → Cos[a * t]
+            let a = sqrt_of_expr(&a_squared);
+            return Some(Expr::FunctionCall {
+              name: "Cos".to_string(),
+              args: vec![Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![a, Expr::Identifier(t.to_string())],
+              }],
+            });
+          }
+          // For numerator/(s^2 + a^2) → (numerator/a) * Sin[a*t]
+          if !depends_on(numerator, s) {
+            let a = sqrt_of_expr(&a_squared);
+            return Some(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![
+                numerator.clone(),
+                Expr::FunctionCall {
+                  name: "Power".to_string(),
+                  args: vec![a.clone(), Expr::Integer(-1)],
+                },
+                Expr::FunctionCall {
+                  name: "Sin".to_string(),
+                  args: vec![Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![a, Expr::Identifier(t.to_string())],
+                  }],
+                },
+              ],
+            });
+          }
+        }
+      }
+    }
+
+    // Linearity: L^-1[a + b] = L^-1[a] + L^-1[b]
+    if fname == "Plus" {
+      let mut terms = Vec::new();
+      for arg in &fargs {
+        if let Some(inv) = inverse_laplace_inner(arg, s, t) {
+          terms.push(inv);
+        } else {
+          return None;
+        }
+      }
+      return Some(Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms,
+      });
+    }
+
+    // Linearity: L^-1[c * F(s)] = c * L^-1[F(s)] where c doesn't depend on s
+    if fname == "Times" && fargs.len() >= 2 {
+      let mut constants = Vec::new();
+      let mut s_dependent = Vec::new();
+      for arg in &fargs {
+        if depends_on(arg, s) {
+          s_dependent.push((*arg).clone());
+        } else {
+          constants.push((*arg).clone());
+        }
+      }
+      if !constants.is_empty() && !s_dependent.is_empty() {
+        let s_part = if s_dependent.len() == 1 {
+          s_dependent[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: s_dependent,
+          }
+        };
+        if let Some(inv) = inverse_laplace_inner(&s_part, s, t) {
+          constants.push(inv);
+          return Some(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: constants,
+          });
+        }
+      }
+    }
+  }
+
+  None
+}
+
+/// Extract offset from s + c or Plus[s, c] form. Returns the constant part.
+fn extract_linear_s_offset(expr: &Expr, s: &str) -> Option<Expr> {
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Plus"
+    && fargs.len() == 2
+  {
+    if let Expr::Identifier(v) = fargs[0]
+      && v == s
+      && !depends_on(fargs[1], s)
+    {
+      return Some(fargs[1].clone());
+    }
+    if let Expr::Identifier(v) = fargs[1]
+      && v == s
+      && !depends_on(fargs[0], s)
+    {
+      return Some(fargs[0].clone());
+    }
+  }
+  None
+}
+
+/// Check if expr is X^(-1)
+fn is_power_neg1(expr: &Expr) -> bool {
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Power"
+    && fargs.len() == 2
+  {
+    return matches!(fargs[1], Expr::Integer(-1));
+  }
+  false
+}
+
+/// Get base from X^(-1), returning X
+fn get_power_base(expr: &Expr) -> Option<&Expr> {
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Power"
+    && fargs.len() == 2
+    && matches!(fargs[1], Expr::Integer(-1))
+  {
+    return Some(fargs[0]);
+  }
+  None
+}
+
+/// Try to extract the "a" from a^2 (i.e. Power[a, 2] → a, integer n → sqrt as integer if perfect square)
+fn sqrt_of_expr(expr: &Expr) -> Expr {
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Power"
+    && fargs.len() == 2
+    && matches!(fargs[1], Expr::Integer(2))
+  {
+    return fargs[0].clone();
+  }
+  if let Expr::Integer(n) = expr {
+    let root = (*n as f64).sqrt();
+    if root == root.floor() && root >= 0.0 {
+      return Expr::Integer(root as i128);
+    }
+  }
+  // Fallback: return Sqrt[expr]
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      expr.clone(),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      },
+    ],
+  }
+}
+
+/// Check if expr is s^2 + c where c doesn't depend on s. Returns c.
+fn extract_s_squared_plus_const(expr: &Expr, s: &str) -> Option<Expr> {
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Plus"
+    && fargs.len() == 2
+  {
+    // Check each arg: one should be s^2, other should be constant
+    for i in 0..2 {
+      let other = 1 - i;
+      if is_s_squared(fargs[i], s) && !depends_on(fargs[other], s) {
+        return Some(fargs[other].clone());
+      }
+    }
+  }
+  None
+}
+
+/// Recursively convert BinaryOp forms to FunctionCall forms
+fn normalize_to_func_calls(expr: &Expr) -> Expr {
+  match expr {
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator;
+      let left = normalize_to_func_calls(left);
+      let right = normalize_to_func_calls(right);
+      match op {
+        BinaryOperator::Plus => Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![left, right],
+        },
+        BinaryOperator::Minus => Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            left,
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), right],
+            },
+          ],
+        },
+        BinaryOperator::Times => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![left, right],
+        },
+        BinaryOperator::Divide => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            left,
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![right, Expr::Integer(-1)],
+            },
+          ],
+        },
+        BinaryOperator::Power => Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![left, right],
+        },
+        _ => expr.clone(),
+      }
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => {
+      let inner = normalize_to_func_calls(operand);
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), inner],
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(normalize_to_func_calls).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(normalize_to_func_calls).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Check if expr is s^2
+fn is_s_squared(expr: &Expr, s: &str) -> bool {
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "Power"
+    && fargs.len() == 2
+    && let Expr::Identifier(base) = fargs[0]
+  {
+    return base == s && matches!(fargs[1], Expr::Integer(2));
+  }
+  false
 }
