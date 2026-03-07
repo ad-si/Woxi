@@ -359,7 +359,9 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "InterpolatingFunction" && func_args.len() == 2 => {
+    } if name == "InterpolatingFunction"
+      && (func_args.len() == 2 || func_args.len() == 3) =>
+    {
       // InterpolatingFunction[domain, data][x] — interpolate at x
       crate::functions::ode_ast::evaluate_interpolating_function(
         func_args, args,

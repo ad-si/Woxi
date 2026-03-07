@@ -2452,3 +2452,113 @@ mod trig_to_exp {
     assert_eq!(interpret("TrigToExp[x + 1]").unwrap(), "1 + x");
   }
 }
+
+mod interpolation {
+  use super::*;
+
+  #[test]
+  fn basic_list_of_values() {
+    // Interpolation[{y1, y2, ...}] — x values are 1, 2, 3, ...
+    let result =
+      interpret("f = Interpolation[{1, 2, 3, 5, 8, 5}]; f[1]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 1.0).abs() < 0.001, "Expected 1.0, got {}", val);
+  }
+
+  #[test]
+  fn values_at_data_points() {
+    // Interpolation should return exact values at data points
+    let result =
+      interpret("f = Interpolation[{1, 2, 3, 5, 8, 5}]; f[4]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 5.0).abs() < 0.001, "Expected 5.0, got {}", val);
+  }
+
+  #[test]
+  fn last_data_point() {
+    let result =
+      interpret("f = Interpolation[{1, 2, 3, 5, 8, 5}]; f[6]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 5.0).abs() < 0.001, "Expected 5.0, got {}", val);
+  }
+
+  #[test]
+  fn explicit_xy_pairs() {
+    // Interpolation[{{x1, y1}, {x2, y2}, ...}]
+    let result =
+      interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; f[2]")
+        .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 4.0).abs() < 0.001, "Expected 4.0, got {}", val);
+  }
+
+  #[test]
+  fn interpolation_between_points() {
+    // Test interpolation at a point between data values
+    let result =
+      interpret("f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; f[1.5]")
+        .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    // Cubic interpolation of x^2 data should approximate 1.5^2 = 2.25
+    assert!((val - 2.25).abs() < 0.5, "Expected ~2.25, got {}", val);
+  }
+
+  #[test]
+  fn returns_interpolating_function() {
+    let result = interpret("Interpolation[{1, 2, 3, 4}]").unwrap();
+    assert!(
+      result.contains("InterpolatingFunction"),
+      "Expected InterpolatingFunction, got: {}",
+      result
+    );
+    assert!(
+      result.contains("<>"),
+      "Expected <> in display, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn interpolation_order_1() {
+    // Linear interpolation
+    let result = interpret(
+      "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}, InterpolationOrder -> 1]; f[0.5]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    // Linear interpolation between (0,0) and (1,1): 0.5
+    assert!((val - 0.5).abs() < 0.001, "Expected 0.5, got {}", val);
+  }
+
+  #[test]
+  fn interpolation_order_1_second_interval() {
+    let result = interpret(
+      "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}, InterpolationOrder -> 1]; f[1.5]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    // Linear interpolation between (1,1) and (2,4): 1 + 0.5*3 = 2.5
+    assert!((val - 2.5).abs() < 0.001, "Expected 2.5, got {}", val);
+  }
+
+  #[test]
+  fn domain_display() {
+    let result =
+      interpret("Interpolation[{{0, 1}, {1, 2}, {2, 3}, {3, 4}}]").unwrap();
+    assert!(
+      result.contains("{{0., 3.}}"),
+      "Expected domain {{0., 3.}}, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn symbolic_argument_returns_unevaluated() {
+    let result = interpret("f = Interpolation[{1, 2, 3, 4}]; f[x]").unwrap();
+    assert!(
+      result.contains("InterpolatingFunction"),
+      "Expected unevaluated form with symbolic arg, got: {}",
+      result
+    );
+  }
+}
