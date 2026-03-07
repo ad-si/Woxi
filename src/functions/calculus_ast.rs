@@ -5615,6 +5615,56 @@ pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(components))
 }
 
+/// Wronskian[{f1, ..., fn}, x] = determinant of matrix of derivatives
+pub fn wronskian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Wronskian expects exactly 2 arguments".into(),
+    ));
+  }
+  let funcs = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Wronskian".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let var_name = match &args[1] {
+    Expr::Identifier(s) => s,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Wronskian".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = funcs.len();
+  if n == 0 {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Build matrix: M[i][j] = D^j[funcs[i], x]
+  let mut matrix_rows = Vec::with_capacity(n);
+  for f in funcs {
+    let mut row = Vec::with_capacity(n);
+    let mut current = crate::evaluator::evaluate_expr_to_expr(f)?;
+    row.push(current.clone());
+    for _j in 1..n {
+      current = differentiate_expr(&current, var_name)?;
+      current = crate::evaluator::evaluate_expr_to_expr(&current)?;
+      row.push(current.clone());
+    }
+    matrix_rows.push(Expr::List(row));
+  }
+
+  let matrix = Expr::List(matrix_rows);
+  let det = crate::functions::linear_algebra_ast::det_ast(&[matrix])?;
+  crate::evaluator::evaluate_expr_to_expr(&det)
+}
+
 /// Div[{f1, f2, ...}, {x1, x2, ...}] = divergence = Sum[D[fi, xi]]
 pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {

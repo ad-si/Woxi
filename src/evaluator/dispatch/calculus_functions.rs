@@ -72,6 +72,9 @@ pub fn dispatch_calculus_functions(
     "Div" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::div_ast(args));
     }
+    "Wronskian" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::wronskian_ast(args));
+    }
     "Integrate" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::integrate_ast(args));
     }
@@ -135,6 +138,16 @@ pub fn dispatch_calculus_functions(
     }
     "DSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::dsolve_ast(args));
+    }
+    "DSolveValue" if args.len() == 3 => {
+      // DSolveValue[eqs, y[x], x] = value from DSolve[eqs, y[x], x]
+      let result = crate::functions::ode_ast::dsolve_ast(args);
+      return Some(match result {
+        Ok(result_expr) => extract_value_from_solve_result(&result_expr)
+          .map(Ok)
+          .unwrap_or(Ok(result_expr)),
+        err => err,
+      });
     }
     "NDSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
@@ -874,4 +887,26 @@ fn is_s_squared(expr: &Expr, s: &str) -> bool {
     return base == s && matches!(fargs[1], Expr::Integer(2));
   }
   false
+}
+
+/// Extract the value from a DSolve-like result: {{y[x] -> value}} -> value
+fn extract_value_from_solve_result(expr: &Expr) -> Option<Expr> {
+  if let Expr::List(outer) = expr
+    && !outer.is_empty()
+    && let Expr::List(inner) = &outer[0]
+    && inner.len() == 1
+  {
+    match &inner[0] {
+      Expr::Rule { replacement, .. } => {
+        return Some(replacement.as_ref().clone());
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        return Some(args[1].clone());
+      }
+      _ => {}
+    }
+  }
+  None
 }
