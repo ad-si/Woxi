@@ -4538,3 +4538,51 @@ mod batch_inert_symbols_3 {
     assert_eq!(interpret("CloudExport[x]").unwrap(), "CloudExport[x]");
   }
 }
+
+mod right_composition {
+  use super::*;
+
+  #[test]
+  fn display_two_args() {
+    assert_eq!(interpret("RightComposition[f, g]").unwrap(), "f /* g");
+  }
+
+  #[test]
+  fn display_three_args() {
+    assert_eq!(
+      interpret("RightComposition[f, g, h]").unwrap(),
+      "f /* g /* h"
+    );
+  }
+
+  #[test]
+  fn apply_two_functions() {
+    assert_eq!(interpret("RightComposition[f, g][x]").unwrap(), "g[f[x]]");
+  }
+
+  #[test]
+  fn apply_three_functions() {
+    assert_eq!(
+      interpret("RightComposition[f, g, h][x]").unwrap(),
+      "h[g[f[x]]]"
+    );
+  }
+
+  #[test]
+  fn single_function() {
+    assert_eq!(interpret("RightComposition[f][x]").unwrap(), "f[x]");
+  }
+
+  #[test]
+  fn empty_composition() {
+    assert_eq!(interpret("RightComposition[][x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn with_numeric_values() {
+    assert_eq!(
+      interpret("RightComposition[# + 1 &, #^2 &][3]").unwrap(),
+      "16"
+    );
+  }
+}
