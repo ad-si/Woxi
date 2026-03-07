@@ -2564,6 +2564,18 @@ mod part_multi_index {
   }
 
   #[test]
+  fn part_atom_head() {
+    // Part[atom, 0] returns the Head of the atom (fixes #88)
+    assert_eq!(interpret("Part[False, 0]").unwrap(), "Symbol");
+    assert_eq!(interpret("Part[True, 0]").unwrap(), "Symbol");
+    assert_eq!(interpret("Part[x, 0]").unwrap(), "Symbol");
+    assert_eq!(interpret("Part[42, 0]").unwrap(), "Integer");
+    assert_eq!(interpret("Part[3.14, 0]").unwrap(), "Real");
+    assert_eq!(interpret("(True && False)[[0]]").unwrap(), "Symbol");
+    assert_eq!(interpret("False[[0]]").unwrap(), "Symbol");
+  }
+
+  #[test]
   fn part_all_from_list_of_rules() {
     // Extracting second element from each rule in a list
     assert_eq!(
