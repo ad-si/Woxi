@@ -5,6 +5,7 @@ pub mod calculus_ast;
 pub mod cellular_automaton_ast;
 pub mod chart;
 pub mod control_flow_ast;
+pub mod csv_ast;
 pub mod dataset_ast;
 pub mod datetime_ast;
 pub mod expr_form;

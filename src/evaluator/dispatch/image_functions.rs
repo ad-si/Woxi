@@ -128,6 +128,11 @@ pub fn dispatch_image_functions(
       {
         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         match ext.as_str() {
+          "csv" => {
+            return Some(crate::functions::csv_ast::csv_import_file(
+              &path, None,
+            ));
+          }
           "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" => {
             return Some(crate::functions::image_ast::import_image(&path));
           }
@@ -145,6 +150,89 @@ pub fn dispatch_image_functions(
           "Import: local file access is not available in the browser".into(),
         )));
       }
+    }
+    "Import" if args.len() == 2 => {
+      let (path, element) = match (&args[0], &args[1]) {
+        (Expr::String(p), Expr::String(e)) => (p.clone(), e.clone()),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "Import".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+
+      #[cfg(not(target_arch = "wasm32"))]
+      {
+        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+        if ext == "csv" {
+          return Some(crate::functions::csv_ast::csv_import_file(
+            &path,
+            Some(&element),
+          ));
+        }
+      }
+
+      // Fall through for non-CSV formats
+      let _ = (path, element);
+      return Some(Ok(Expr::FunctionCall {
+        name: "Import".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "ImportString" if !args.is_empty() && args.len() <= 3 => {
+      let content = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "ImportString".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+
+      // ImportString[str] — default to CSV
+      // ImportString[str, "CSV"] — explicit CSV
+      // ImportString[str, "CSV", element] — CSV with element
+      let format = if args.len() >= 2 {
+        match &args[1] {
+          Expr::String(s) => s.as_str(),
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ImportString".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+      } else {
+        "CSV"
+      };
+
+      if format != "CSV" {
+        return Some(Ok(Expr::FunctionCall {
+          name: "ImportString".to_string(),
+          args: args.to_vec(),
+        }));
+      }
+
+      let element = if args.len() == 3 {
+        match &args[2] {
+          Expr::String(s) => Some(s.as_str()),
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "ImportString".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+      } else {
+        None
+      };
+
+      let rows = crate::functions::csv_ast::parse_csv(&content);
+      return Some(Ok(crate::functions::csv_ast::csv_import_element(
+        &rows, element,
+      )));
     }
     _ => {}
   }
