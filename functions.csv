@@ -1212,7 +1212,7 @@ CurrentDate,,,,11.1,3083
 CurrentImage,,,,8,1298
 CurrentNotebookImage,,,,11.2,5079
 CurrentScreenImage,,,,11.2,4387
-CurrentValue,,,,6,442
+CurrentValue,Returns current values of frontend settings,✅,effectful,6,442
 CurryApplied,,,,12.1,5184
 CurvatureFlowFilter,,,,8,3121
 CurveClosed,,,,8,2084
@@ -2142,7 +2142,7 @@ FrameMargins,,,,6,755
 FrameRate,,,,11.2,4527
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2,173
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2,337
-FrameTicksStyle,,,,6,540
+FrameTicksStyle,Option for specifying the style of frame ticks,✅,pure,6,540
 FRatioDistribution,,,,6,1788
 FrechetDistribution,,,,8,2671
 FreeformEvaluate,,,,14.1,
@@ -2732,7 +2732,7 @@ ImageVectorscopePlot,,,,12.2,4947
 ImageWaveformPlot,,,,12.2,4947
 ImagingDevice,,,,10,5390
 ImplicitD,,,,13.1,
-ImplicitRegion,,,,10,488
+ImplicitRegion,Represents a region defined by implicit conditions,✅,pure,10,488
 Implies,Logical implication,✅,pure,1,868
 Import,Imports data from a file (images and CSV),✅,effectful,4,178
 ImportByteArray,,,,11.2,4052
@@ -3062,7 +3062,7 @@ LanguageCategory,,,,4,3153
 LanguageData,,🚫,,10,364
 LanguageIdentify,,,,10.1,3224
 LaplaceDistribution,,,,6,1788
-LaplaceTransform,,,,4,458
+LaplaceTransform,Compute the Laplace transform of an expression,✅,none,4,458
 Laplacian,,,,9,718
 LaplacianFilter,,,,7,3070
 LaplacianGaussianFilter,,,,7,2421
@@ -4504,7 +4504,7 @@ RationalExpressionQ,,,,12.2,5486
 Rationalize,Converts a real number to a nearby rational,✅,pure,1,537
 Rationals,,,,4,1463
 Ratios,Returns successive ratios of list elements,✅,pure,7,1492
-RawBoxes,,,,6,461
+RawBoxes,Wrapper for raw box expressions in typesetting,✅,pure,6,461
 RawData,,🚫,,8,4881
 RawMemoryAllocate,,,,13.3,
 RawMemoryExport,,,,13.3,
@@ -4671,7 +4671,7 @@ ResizeLayer,,,,11.1,4567
 Resolve,,,,5,1047
 ResolveContextAliases,,,,13,
 ResourceData,,🚫,,11,836
-ResourceFunction,,,,12,519
+ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12,519
 ResourceObject,,,,11,1844
 ResourceRegister,,,,11.2,4947
 ResourceRemove,,,,11,4707
@@ -5061,7 +5061,7 @@ SortBy,Sorts a list using a function as a criterion,✅,pure,6,405
 SortedBy,,,,12,5013
 SortedEntityClass,,,,12,4262
 Sound,Represents a sound object,✅,none,2,629
-SoundNote,,,,6,479
+SoundNote,Represents a musical note for sound generation,✅,pure,6,479
 SoundVolume,,,,6,1503
 SourceLink,,,,10.4,4315
 SourcePDETerm,,,,12.2,
@@ -6162,7 +6162,7 @@ Write,Write expressions to an output stream in OutputForm,✅,effectful,1,1246
 WriteLine,,,,10,2282
 WriteString,Write a string to an output stream,✅,effectful,1,930
 Wronskian,,,,7,876
-XMLElement,,,,4.2,481
+XMLElement,Represents an XML element with tag and attributes,✅,pure,4.2,481
 XMLObject,,,,4.2,2755
 XMLTemplate,,,,10,2578
 Xnor,,,,7,3031

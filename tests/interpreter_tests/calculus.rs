@@ -1950,3 +1950,89 @@ mod findroot_symbolic_start {
     );
   }
 }
+
+mod laplace_transform {
+  use super::*;
+
+  #[test]
+  fn constant() {
+    assert_eq!(interpret("LaplaceTransform[1, t, s]").unwrap(), "s^(-1)");
+  }
+
+  #[test]
+  fn variable_t() {
+    assert_eq!(interpret("LaplaceTransform[t, t, s]").unwrap(), "s^(-2)");
+  }
+
+  #[test]
+  fn t_squared() {
+    assert_eq!(interpret("LaplaceTransform[t^2, t, s]").unwrap(), "2/s^3");
+  }
+
+  #[test]
+  fn t_cubed() {
+    assert_eq!(interpret("LaplaceTransform[t^3, t, s]").unwrap(), "6/s^4");
+  }
+
+  #[test]
+  fn sin_t() {
+    assert_eq!(
+      interpret("LaplaceTransform[Sin[t], t, s]").unwrap(),
+      "(1 + s^2)^(-1)"
+    );
+  }
+
+  #[test]
+  fn cos_t() {
+    assert_eq!(
+      interpret("LaplaceTransform[Cos[t], t, s]").unwrap(),
+      "s/(1 + s^2)"
+    );
+  }
+
+  #[test]
+  fn sin_3t() {
+    assert_eq!(
+      interpret("LaplaceTransform[Sin[3*t], t, s]").unwrap(),
+      "3/(9 + s^2)"
+    );
+  }
+
+  #[test]
+  fn exp_neg_at() {
+    assert_eq!(
+      interpret("LaplaceTransform[Exp[-a*t], t, s]").unwrap(),
+      "(a + s)^(-1)"
+    );
+  }
+
+  #[test]
+  fn exp_at() {
+    assert_eq!(
+      interpret("LaplaceTransform[Exp[a*t], t, s]").unwrap(),
+      "(-a + s)^(-1)"
+    );
+  }
+
+  #[test]
+  fn linearity_sum() {
+    assert_eq!(
+      interpret("LaplaceTransform[3*t^2 + 2*Sin[t], t, s]").unwrap(),
+      "6/s^3 + 2/(1 + s^2)"
+    );
+  }
+
+  #[test]
+  fn constant_multiple() {
+    assert_eq!(interpret("LaplaceTransform[5*t, t, s]").unwrap(), "5/s^2");
+  }
+
+  #[test]
+  fn unevaluated_unknown() {
+    // Unknown functions should return unevaluated
+    assert_eq!(
+      interpret("LaplaceTransform[BesselJ[0, t], t, s]").unwrap(),
+      "LaplaceTransform[BesselJ[0, t], t, s]"
+    );
+  }
+}
