@@ -366,3 +366,101 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = generate_svg_with_filling(&polar_series, x_range, y_range, &opts)?;
   Ok(crate::graphics_result(svg))
 }
+
+/// DiscretePlot[expr, {n, nmin, nmax}] or DiscretePlot[expr, {n, nmin, nmax, step}]
+pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::functions::plot::substitute_var;
+
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot expects at least 2 arguments".into(),
+    ));
+  }
+
+  let expr = &args[0];
+
+  // Parse iteration spec: {var, min, max} or {var, min, max, step}
+  let iter_spec = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "DiscretePlot: second argument must be an iteration specification {var, min, max}".into(),
+      ));
+    }
+  };
+
+  if iter_spec.len() < 3 || iter_spec.len() > 4 {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot: iteration spec must be {var, min, max} or {var, min, max, step}".into(),
+    ));
+  }
+
+  let var_name = match &iter_spec[0] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "DiscretePlot: first element of iteration spec must be a variable"
+          .into(),
+      ));
+    }
+  };
+
+  let n_min_expr = evaluate_expr_to_expr(&iter_spec[1])?;
+  let n_max_expr = evaluate_expr_to_expr(&iter_spec[2])?;
+  let n_min = try_eval_to_f64(&n_min_expr).ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "DiscretePlot: min must be numeric".into(),
+    )
+  })?;
+  let n_max = try_eval_to_f64(&n_max_expr).ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "DiscretePlot: max must be numeric".into(),
+    )
+  })?;
+
+  let step = if iter_spec.len() == 4 {
+    let step_expr = evaluate_expr_to_expr(&iter_spec[3])?;
+    try_eval_to_f64(&step_expr).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "DiscretePlot: step must be numeric".into(),
+      )
+    })?
+  } else {
+    1.0
+  };
+
+  if step <= 0.0 {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot: step must be positive".into(),
+    ));
+  }
+
+  // Generate data points by evaluating expr at each discrete value
+  let mut points: Vec<(f64, f64)> = Vec::new();
+  let mut n = n_min;
+  let max_points = 10000;
+  while n <= n_max + step * 0.5e-10 && points.len() < max_points {
+    let n_expr = if n == n.floor() && n.abs() < 1e15 {
+      Expr::Integer(n as i128)
+    } else {
+      Expr::Real(n)
+    };
+    let substituted = substitute_var(expr, &var_name, &n_expr);
+    if let Ok(result) = evaluate_expr_to_expr(&substituted)
+      && let Some(y) = try_eval_to_f64(&result)
+      && y.is_finite()
+    {
+      points.push((n, y));
+    }
+    n += step;
+  }
+
+  let all_series = vec![points];
+  let (opts, _) = parse_plot_options(args);
+  let (x_range, y_range) = compute_ranges(&all_series);
+  let y_range = adjust_y_range_for_filling(opts.filling, y_range);
+
+  let svg =
+    generate_scatter_svg_with_options(&all_series, x_range, y_range, &opts)?;
+  Ok(crate::graphics_result(svg))
+}
