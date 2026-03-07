@@ -934,3 +934,62 @@ mod kronecker_product {
     );
   }
 }
+
+mod find_fit {
+  use super::*;
+
+  #[test]
+  fn quadratic() {
+    let result =
+      interpret("FindFit[{{1,1},{2,4},{3,9}}, a*x^2 + b, {a,b}, x]").unwrap();
+    // a should be ~1.0, b should be ~0.0
+    assert!(
+      result.contains("a -> "),
+      "Expected a rule for a, got: {}",
+      result
+    );
+    assert!(
+      result.contains("b -> "),
+      "Expected a rule for b, got: {}",
+      result
+    );
+    // Parse a value
+    let a_val: f64 = result
+      .split("a -> ")
+      .nth(1)
+      .unwrap()
+      .split(',')
+      .next()
+      .unwrap()
+      .trim()
+      .parse()
+      .unwrap();
+    assert!(
+      (a_val - 1.0).abs() < 0.001,
+      "Expected a ≈ 1.0, got {}",
+      a_val
+    );
+  }
+
+  #[test]
+  fn simple_linear() {
+    // Fit a*x to data {1,2,3} (x=1,2,3)
+    let result = interpret("FindFit[{1,4,9}, a*x^2, {a}, x]").unwrap();
+    assert!(
+      result.contains("a -> 1."),
+      "Expected a -> 1., got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn exponential_model() {
+    let result = interpret(
+      "FindFit[{{0,1},{1,2.7},{2,7.4},{3,20.1}}, a*E^(b*x), {a,b}, x]",
+    )
+    .unwrap();
+    // a ≈ 1, b ≈ 1
+    assert!(result.contains("a -> "), "Expected a rule, got: {}", result);
+    assert!(result.contains("b -> "), "Expected b rule, got: {}", result);
+  }
+}
