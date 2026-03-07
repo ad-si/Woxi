@@ -2928,7 +2928,7 @@ IsomorphicGraphQ,,,,8,1930
 IsomorphicSubgraphQ,,,,13,
 IsotopeData,,🚫,,6,795
 Italic,Style directive for italic text,✅,pure,6,186
-Item,,,,6,332
+Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6,332
 ItemAspectRatio,,,,6,4356
 ItemDisplayFunction,,,,12.1,
 ItemSize,,,,6,490
