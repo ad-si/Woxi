@@ -203,7 +203,7 @@ ArgumentsOptions,,,,12.2,3363
 ARIMAProcess,,,,9,2442
 ArithmeticGeometricMean,Arithmetic-geometric mean of two numbers,✅,pure,1,2449
 ARMAProcess,,,,9,1553
-Around,,,,12,573
+Around,Represent a value with uncertainty,✅,none,12,573
 AroundReplace,,,,12,3678
 ARProcess,,,,9,1614
 ARPublish,,,,13.3,
@@ -410,7 +410,7 @@ BaseDecode,,,,11.3,5390
 BaseEncode,,,,11.3,4052
 BaseForm,Displays numbers in a specified base with subscript notation,✅,pure,1,789
 Baseline,Option for specifying baseline alignment,✅,pure,3,509
-BaselinePosition,,,,6,619
+BaselinePosition,Option for baseline alignment,✅,none,6,619
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6,137
 BasicRecurrentLayer,,,,11.1,3566
 BatchNormalizationLayer,,,,11,1675
@@ -579,7 +579,7 @@ BoundaryDiscretizeRegion,,,,10,1240
 BoundaryMesh,,,,10,2344
 BoundaryMeshRegion,,,,10,1586
 BoundaryMeshRegionQ,,,,10,3636
-BoundaryStyle,,,,6,644
+BoundaryStyle,Option for boundary styling in plots,✅,none,6,644
 BoundedRegionQ,,,,10,2828
 BoundingRegion,,,,10.4,2286
 BoxData,,🚫,,8,681
@@ -896,7 +896,7 @@ ColorDetect,,,,12,3755
 ColorDistance,,,,10,2071
 ColorFunction,Option specifying the color function for visualization,✅,none,2,152
 ColorFunctionBinning,,,,12.2,5184
-ColorFunctionScaling,,,,4,559
+ColorFunctionScaling,Option to scale color function input,✅,none,4,559
 Colorize,,,,8,1035
 ColorNegate,Negates colors in an image,✅,pure,7,658
 ColorProfileData,,🚫,,9,2487
@@ -1315,7 +1315,7 @@ DefaultFontProperties,,,,4,
 DefaultFrameStyle,,,,7,5390
 DefaultFrameTicksStyle,,,,7,5587
 DefaultGridLinesStyle,,,,7,5587
-DefaultLabelStyle,,,,7,653
+DefaultLabelStyle,Default style for labels,✅,none,7,653
 DefaultMenuStyle,,,,8,5184
 DefaultNaturalLanguage,,,,4,4567
 DefaultNewCellStyle,,,,3,3566
@@ -1466,7 +1466,7 @@ DirectoryQ,,,,7,1629
 DirectoryStack,,,,2,4527
 DirichletBeta,,,,10,5390
 DirichletCharacter,,,,7,2986
-DirichletCondition,,,,10,632
+DirichletCondition,Dirichlet boundary condition for PDEs,✅,none,10,632
 DirichletConvolve,,,,7,3153
 DirichletDistribution,,,,8,1733
 DirichletEta,,,,10,3059
@@ -1530,7 +1530,7 @@ Dithering,,,,8,3121
 Div,,,,9,736
 Divide,Divide numbers,✅,pure,1,572
 DivideBy,Divides a variable by a value,✅,stateful,1,1555
-Dividers,,,,6,547
+Dividers,Option for dividing lines in Grid,✅,none,6,547
 DivideSides,,,,11.3,3008
 Divisible,Tests if one number is divisible by another,✅,pure,6,1013
 Divisors,Returns all divisors of an integer,✅,pure,1,675
@@ -1707,7 +1707,7 @@ English,,,,,
 EnterExpressionPacket,,,,3,4027
 EnterTextPacket,,,,3,3843
 Entity,Symbolic representation of a real-world entity,✅,pure,10,76
-EntityClass,,,,10,651
+EntityClass,Represent a class of entities,✅,none,10,651
 EntityClassList,,,,10,3353
 EntityCopies,,,,10.3,4612
 EntityFunction,,,,12,2911
@@ -1770,7 +1770,7 @@ EvaluationData,,🚫,,10,3636
 EvaluationElements,,,,8,3972
 EvaluationEnvironment,,,,11.2,4947
 EvaluationMonitor,,,,5,1067
-EvaluationNotebook,,,,3,621
+EvaluationNotebook,Return the current evaluation notebook,✅,none,3,621
 EvaluationObject,,,,7,5013
 EvaluationPrivileges,,,,12.2,5587
 Evaluator,,,,3,1206
@@ -2344,7 +2344,7 @@ GeoNearest,,,,10,1281
 GeoOrientationData,,🚫,,12.3,
 GeoPath,,,,10,1330
 GeoPolygon,,,,12.2,5079
-GeoPosition,,,,7,618
+GeoPosition,Geographic position specification,✅,none,7,618
 GeoPositionENU,,,,7,3755
 GeoPositionXYZ,,,,7,2394
 GeoProjection,,,,10,1503
@@ -2712,7 +2712,7 @@ ImageResolution,,,,3,808
 ImageRestyle,,,,11.2,2792
 ImageRotate,Rotates an image by a given angle,✅,pure,7,1511
 ImageSaliencyFilter,,,,10,4747
-ImageScaled,,,,6,631
+ImageScaled,Coordinates scaled to image dimensions,✅,none,6,631
 ImageScan,,,,9,4437
 ImageSegmentationComponents,,,,14,
 ImageSegmentationFilter,,,,14,
@@ -2742,7 +2742,7 @@ ImportString,Imports data from a string (CSV),✅,pure,4,809
 ImprovementImportance,,,,9,4081
 In,Returns a previous input expression,✅,pure,1,248
 Inactivate,,,,10,1317
-Inactive,,,,10,606
+Inactive,Wrapper to prevent evaluation,✅,none,10,606
 IncidenceGraph,,,,8,3317
 IncidenceList,,,,9,3280
 IncidenceMatrix,,,,8,1880
@@ -2791,7 +2791,7 @@ InheritScope,,,,10,3843
 InhomogeneousPoissonPointProcess,,,,12.2,5184
 InhomogeneousPoissonProcess,,,,10.1,4173
 InitialEvaluationHistory,,,,11,4707
-Initialization,,,,6,565
+Initialization,Option for initialization code,✅,none,6,565
 InitializationCell,,,,3,3134
 InitializationObject,,,,12.3,
 InitializationObjects,,,,11.2,4567
@@ -2806,7 +2806,7 @@ Input,Reads user input (inert in Woxi),✅,effectful,1,642
 InputAliases,,,,4,1930
 InputAssumptions,,,,8,4356
 InputAutoReplacements,,,,4,3317
-InputField,,,,6,556
+InputField,Input field for interactive interfaces,✅,none,6,556
 InputForm,Converts expression to input form,✅,pure,1,354
 InputNamePacket,,,,3,4567
 InputNotebook,,,,3,926
@@ -3287,7 +3287,7 @@ LocalTime,,,,10,3121
 LocalTimeZone,,,,10,4052
 LocationEquivalenceTest,,,,8,3656
 LocationTest,,,,8,2675
-Locator,,,,6,549
+Locator,Interactive locator object,✅,none,6,549
 LocatorAutoCreate,,,,6,1490
 LocatorPane,,,,6,984
 LocatorRegion,,,,6,3803
@@ -4056,7 +4056,7 @@ PairwiseQuantilePlot,,,,14,
 PairwiseSmoothDensityHistogram,,,,14,
 PaletteNotebook,,,,6,2565
 PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
-Pane,,,,6,594
+Pane,Fixed-size display pane,✅,none,6,594
 Panel,,,,6,717
 Paneled,,,,6,2147
 PaneSelector,,,,6,1793
@@ -4222,7 +4222,7 @@ Plot,Plots a function over a range,✅,effectful,1,21
 Plot3D,Creates a three-dimensional surface plot of a function,✅,pure,1,115
 PlotHighlighting,,,,13.3,
 PlotLabel,Option specifying a label for a plot,✅,pure,1,104
-PlotLabels,,,,10.4,597
+PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 PlotLayout,,,,8,2203
 PlotLegends,Option for adding legends to plots identifying each series,✅,pure,9,100
 PlotMarkers,Option for specifying markers on plot points,✅,pure,6,500
@@ -4576,7 +4576,7 @@ RegionErosion,,,,12.3,
 RegionFarthestDistance,,,,13.3,
 RegionFillingStyle,,,,12.1,
 RegionFit,,,,13,
-RegionFunction,,,,6,558
+RegionFunction,Option to restrict plotting to a region,✅,none,6,558
 RegionHausdorffDistance,,,,13.3,
 RegionImage,,,,11.2,3462
 RegionIntersection,,,,10,853
@@ -4806,7 +4806,7 @@ SatisfiableQ,,,,7,4052
 Saturday,,,,9,1949
 Save,Saves definitions associated with symbols to a file,✅,effectful,1,1714
 SaveConnection,,,,12,3593
-SaveDefinitions,,,,6,574
+SaveDefinitions,Option to save definitions with output,✅,none,6,574
 SavitzkyGolayMatrix,,,,10,3506
 SawtoothWave,,,,7,1480
 Scale,Scales a graphics object,✅,pure,6,597
@@ -4831,8 +4831,8 @@ ScorerHi,,,,10,4660
 ScorerHiPrime,,,,10,4881
 ScreenStyleEnvironment,,,,3,2475
 ScriptBaselineShifts,,,,3,1599
-ScriptMinSize,,,,3,626
-ScriptSizeMultipliers,,,,3,614
+ScriptMinSize,Minimum size for sub/superscripts,✅,none,3,626
+ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3,614
 Scrollbars,,,,7,1803
 ScrollingOptions,,,,4,4809
 ScrollPosition,,,,7,2729
@@ -4863,7 +4863,7 @@ SelectFirst,,,,10,1514
 SelectionCreateCell,,,,3,5079
 SelectionEvaluate,,,,3,2051
 SelectionEvaluateCreateCell,,,,3,3755
-SelectionMove,,,,3,636
+SelectionMove,Move the selection in a notebook,✅,none,3,636
 SelfLoopStyle,,,,6,2656
 SemanticImport,,,,10,2100
 SemanticImportString,,,,10,2491
@@ -5100,7 +5100,7 @@ SpecificityGoal,,,,10.1,3862
 SpectralLineData,,🚫,,11.1,4006
 Spectrogram,,,,9,2034
 SpectrogramArray,,,,9,3656
-Specularity,,,,6,576
+Specularity,Graphics directive for specular highlighting,✅,none,6,576
 SpeechCases,,,,12.1,
 SpeechInterpreter,,,,12.1,
 SpeechRecognize,,,,12,3291
@@ -5197,7 +5197,7 @@ StateTransformationLinearize,,,,10,4356
 StationaryDistribution,,,,9,2944
 StationaryWaveletPacketTransform,,,,8,3059
 StationaryWaveletTransform,,,,8,2243
-StatusArea,,,,6,593
+StatusArea,Display status text on mouseover,✅,none,6,593
 StatusCentrality,,,,9,4809
 StepMonitor,,,,5,1486
 StereochemistryElements,,,,12,5184
@@ -5767,7 +5767,7 @@ Tuples,Generates all tuples of elements from a list,✅,pure,5.1,367
 TuranGraph,,,,8,3191
 TuringMachine,,,,6,2854
 TuttePolynomial,,,,10,2671
-TwoWayRule,,,,11.2,564
+TwoWayRule,Represent a two-way transformation rule,✅,none,11.2,564
 Typed,,,,12,3108
 TypeDeclaration,,,,13.1,
 TypeEvaluate,,,,13.1,

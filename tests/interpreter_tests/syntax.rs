@@ -4278,3 +4278,153 @@ mod structural_pattern_consistency {
     );
   }
 }
+
+mod two_way_rule {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("TwoWayRule[a, b]").unwrap(), "a <-> b");
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(interpret("TwoWayRule[1, 2]").unwrap(), "1 <-> 2");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[TwoWayRule[a, b]]").unwrap(), "TwoWayRule");
+  }
+}
+
+mod batch_inert_symbols_2 {
+  use super::*;
+
+  #[test]
+  fn dividers() {
+    assert_eq!(interpret("Dividers[x]").unwrap(), "Dividers[x]");
+  }
+
+  #[test]
+  fn locator() {
+    assert_eq!(interpret("Locator[x]").unwrap(), "Locator[x]");
+  }
+
+  #[test]
+  fn input_field() {
+    assert_eq!(interpret("InputField[x]").unwrap(), "InputField[x]");
+  }
+
+  #[test]
+  fn region_function() {
+    assert_eq!(interpret("RegionFunction[x]").unwrap(), "RegionFunction[x]");
+  }
+
+  #[test]
+  fn color_function_scaling() {
+    assert_eq!(
+      interpret("ColorFunctionScaling[x]").unwrap(),
+      "ColorFunctionScaling[x]"
+    );
+  }
+
+  #[test]
+  fn initialization() {
+    assert_eq!(interpret("Initialization[x]").unwrap(), "Initialization[x]");
+  }
+
+  #[test]
+  fn save_definitions() {
+    assert_eq!(
+      interpret("SaveDefinitions[x]").unwrap(),
+      "SaveDefinitions[x]"
+    );
+  }
+
+  #[test]
+  fn around() {
+    assert_eq!(interpret("Around[5, 0.3]").unwrap(), "Around[5, 0.3]");
+  }
+
+  #[test]
+  fn specularity() {
+    assert_eq!(
+      interpret("Specularity[White, 10]").unwrap(),
+      "Specularity[GrayLevel[1], 10]"
+    );
+  }
+
+  #[test]
+  fn status_area() {
+    assert_eq!(interpret("StatusArea[x, y]").unwrap(), "StatusArea[x, y]");
+  }
+
+  #[test]
+  fn pane() {
+    assert_eq!(interpret("Pane[x]").unwrap(), "Pane[x]");
+  }
+
+  #[test]
+  fn plot_labels() {
+    assert_eq!(interpret("PlotLabels[x]").unwrap(), "PlotLabels[x]");
+  }
+
+  #[test]
+  fn inactive() {
+    assert_eq!(
+      interpret("Inactive[Plus][2, 3]").unwrap(),
+      "Inactive[Plus][2, 3]"
+    );
+  }
+
+  #[test]
+  fn geo_position() {
+    assert_eq!(
+      interpret("GeoPosition[{40, -74}]").unwrap(),
+      "GeoPosition[{40, -74}]"
+    );
+  }
+
+  #[test]
+  fn baseline_position() {
+    assert_eq!(
+      interpret("BaselinePosition[x]").unwrap(),
+      "BaselinePosition[x]"
+    );
+  }
+
+  #[test]
+  fn image_scaled() {
+    assert_eq!(
+      interpret("ImageScaled[{0.5, 0.5}]").unwrap(),
+      "ImageScaled[{0.5, 0.5}]"
+    );
+  }
+
+  #[test]
+  fn dirichlet_condition() {
+    assert_eq!(
+      interpret("DirichletCondition[u[x] == 0, x == 0]").unwrap(),
+      "DirichletCondition[u[x] == 0, x == 0]"
+    );
+  }
+
+  #[test]
+  fn boundary_style() {
+    assert_eq!(interpret("BoundaryStyle[x]").unwrap(), "BoundaryStyle[x]");
+  }
+
+  #[test]
+  fn entity_class() {
+    assert_eq!(interpret("EntityClass[x, y]").unwrap(), "EntityClass[x, y]");
+  }
+
+  #[test]
+  fn default_label_style() {
+    assert_eq!(
+      interpret("DefaultLabelStyle[x]").unwrap(),
+      "DefaultLabelStyle[x]"
+    );
+  }
+}

@@ -3913,6 +3913,13 @@ pub fn expr_to_string(expr: &Expr) -> String {
           expr_to_string(&args[1])
         );
       }
+      if name == "TwoWayRule" && args.len() == 2 {
+        return format!(
+          "{} <-> {}",
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
+        );
+      }
       if name == "RuleDelayed" && args.len() == 2 {
         return format!(
           "{} :> {}",
@@ -5260,6 +5267,14 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // Special case: Factorial[n] displays as n!
       if name == "Factorial" && args.len() == 1 {
         return format!("{}!", expr_to_output(&args[0]));
+      }
+      // Special case: TwoWayRule[a, b] displays as a <-> b
+      if name == "TwoWayRule" && args.len() == 2 {
+        return format!(
+          "{} <-> {}",
+          expr_to_output(&args[0]),
+          expr_to_output(&args[1])
+        );
       }
       // Special case: Minus[a, b, ...] with wrong arity displays with Unicode minus
       if name == "Minus" && args.len() >= 2 {
