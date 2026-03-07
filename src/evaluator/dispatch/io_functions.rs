@@ -989,9 +989,180 @@ pub fn dispatch_io_functions(
 
       return Some(Ok(Expr::Identifier("Null".to_string())));
     }
+    // FileNames[] — list all files in current directory
+    // FileNames["pattern"] — list files matching pattern
+    // FileNames["pattern", "dir"] — list files in dir matching pattern
+    // FileNames["pattern", "dir", Infinity] — recursive search
+    #[cfg(not(target_arch = "wasm32"))]
+    "FileNames" if args.len() <= 3 => {
+      let pattern = if args.is_empty() {
+        "*".to_string()
+      } else {
+        match &args[0] {
+          Expr::String(s) => s.clone(),
+          _ => {
+            return Some(Ok(Expr::FunctionCall {
+              name: "FileNames".to_string(),
+              args: args.to_vec(),
+            }));
+          }
+        }
+      };
+
+      let dir = if args.len() >= 2 {
+        match &args[1] {
+          Expr::String(s) => s.clone(),
+          Expr::List(dirs) => {
+            // FileNames["pat", {"dir1", "dir2"}] — search multiple dirs
+            let mut all_files = Vec::new();
+            let recursive = args.len() >= 3
+              && matches!(&args[2], Expr::Identifier(s) if s == "Infinity");
+            for d in dirs {
+              if let Expr::String(dir_str) = d {
+                let mut files =
+                  collect_file_names(&pattern, dir_str, recursive);
+                all_files.append(&mut files);
+              }
+            }
+            all_files.sort();
+            return Some(Ok(Expr::List(
+              all_files.into_iter().map(Expr::String).collect(),
+            )));
+          }
+          _ => ".".to_string(),
+        }
+      } else {
+        ".".to_string()
+      };
+
+      let recursive = args.len() >= 3
+        && matches!(&args[2], Expr::Identifier(s) if s == "Infinity");
+
+      let mut files = collect_file_names(&pattern, &dir, recursive);
+      files.sort();
+      return Some(Ok(Expr::List(
+        files.into_iter().map(Expr::String).collect(),
+      )));
+    }
+    // SetDirectory["dir"] — set the current working directory
+    #[cfg(not(target_arch = "wasm32"))]
+    "SetDirectory" if args.len() == 1 => {
+      let dir = match &args[0] {
+        Expr::String(s) => s.clone(),
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "SetDirectory".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+      match std::env::set_current_dir(&dir) {
+        Ok(_) => {
+          let new_dir = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or(dir);
+          return Some(Ok(Expr::String(new_dir)));
+        }
+        Err(e) => {
+          return Some(Err(InterpreterError::EvaluationError(format!(
+            "SetDirectory: {}",
+            e
+          ))));
+        }
+      }
+    }
     _ => {}
   }
   None
+}
+
+/// Collect file names matching a glob pattern in a directory.
+#[cfg(not(target_arch = "wasm32"))]
+fn collect_file_names(
+  pattern: &str,
+  dir: &str,
+  recursive: bool,
+) -> Vec<String> {
+  use std::path::Path;
+
+  let dir_path = Path::new(dir);
+  if !dir_path.is_dir() {
+    return Vec::new();
+  }
+
+  let mut results = Vec::new();
+  collect_files_recursive(dir_path, dir, pattern, recursive, &mut results);
+  results
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn collect_files_recursive(
+  path: &std::path::Path,
+  base_dir: &str,
+  pattern: &str,
+  recursive: bool,
+  results: &mut Vec<String>,
+) {
+  let entries = match std::fs::read_dir(path) {
+    Ok(e) => e,
+    Err(_) => return,
+  };
+
+  for entry in entries.flatten() {
+    let file_name = entry.file_name().to_string_lossy().to_string();
+    let file_type = entry.file_type();
+
+    if let Ok(ft) = file_type {
+      if glob_match(pattern, &file_name) {
+        if base_dir == "." {
+          results.push(file_name.clone());
+        } else {
+          let rel = entry.path();
+          let rel_str = rel.to_string_lossy().to_string();
+          results.push(rel_str);
+        }
+      }
+      if ft.is_dir() && recursive {
+        collect_files_recursive(
+          &entry.path(),
+          base_dir,
+          pattern,
+          true,
+          results,
+        );
+      }
+    }
+  }
+}
+
+/// Simple glob pattern matching supporting * and ?
+#[cfg(not(target_arch = "wasm32"))]
+fn glob_match(pattern: &str, text: &str) -> bool {
+  let p: Vec<char> = pattern.chars().collect();
+  let t: Vec<char> = text.chars().collect();
+  glob_match_impl(&p, &t)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn glob_match_impl(pattern: &[char], text: &[char]) -> bool {
+  if pattern.is_empty() {
+    return text.is_empty();
+  }
+  if pattern[0] == '*' {
+    // Try matching * with 0 or more characters
+    for i in 0..=text.len() {
+      if glob_match_impl(&pattern[1..], &text[i..]) {
+        return true;
+      }
+    }
+    false
+  } else if text.is_empty() {
+    false
+  } else if pattern[0] == '?' || pattern[0] == text[0] {
+    glob_match_impl(&pattern[1..], &text[1..])
+  } else {
+    false
+  }
 }
 
 /// Generate a minimal valid PDF containing the given text.
