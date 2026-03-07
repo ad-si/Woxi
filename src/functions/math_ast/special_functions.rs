@@ -3666,6 +3666,48 @@ pub fn log_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// RiemannR[x] - Riemann's prime counting function estimate
+/// Uses the Gram series: R(x) = 1 + Σ_{n=1}^∞ (ln x)^n / (n * n! * ζ(n+1))
+pub fn riemann_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RiemannR expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    // RiemannR[1] = 1 (exact special value)
+    Expr::Integer(1) => Ok(Expr::Integer(1)),
+    // Numeric evaluation for real values
+    Expr::Real(x) if *x > 0.0 => Ok(Expr::Real(riemann_r_numeric(*x))),
+    // Unevaluated for symbolic and other args
+    _ => Ok(Expr::FunctionCall {
+      name: "RiemannR".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// Compute Riemann R function numerically using the Gram series
+fn riemann_r_numeric(x: f64) -> f64 {
+  let ln_x = x.ln();
+  let mut sum = 1.0_f64;
+  let mut ln_x_pow = 1.0_f64; // (ln x)^n
+  let mut factorial = 1.0_f64; // n!
+
+  for n in 1..=200 {
+    ln_x_pow *= ln_x;
+    factorial *= n as f64;
+    let zeta_val = zeta_numeric((n + 1) as f64);
+    let term = ln_x_pow / (n as f64 * factorial * zeta_val);
+    sum += term;
+    if term.abs() < 1e-15 * sum.abs() {
+      break;
+    }
+  }
+  sum
+}
+
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)

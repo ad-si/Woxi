@@ -3017,3 +3017,50 @@ mod inverse_jacobi {
     );
   }
 }
+
+mod riemann_r {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("RiemannR[x]").unwrap(), "RiemannR[x]");
+  }
+
+  #[test]
+  fn integer_symbolic() {
+    assert_eq!(interpret("RiemannR[100]").unwrap(), "RiemannR[100]");
+  }
+
+  #[test]
+  fn one() {
+    assert_eq!(interpret("RiemannR[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn zero_symbolic() {
+    assert_eq!(interpret("RiemannR[0]").unwrap(), "RiemannR[0]");
+  }
+
+  #[test]
+  fn numeric_10() {
+    assert_eq!(interpret("RiemannR[10.]").unwrap(), "4.564583141005088");
+  }
+
+  #[test]
+  fn numeric_100() {
+    assert_eq!(interpret("RiemannR[100.]").unwrap(), "25.661633266924188");
+  }
+
+  #[test]
+  fn numeric_1000() {
+    assert_eq!(interpret("RiemannR[1000.]").unwrap(), "168.35944628116727");
+  }
+
+  #[test]
+  fn n_wrapper() {
+    assert_eq!(
+      interpret("N[RiemannR[1000000]]").unwrap(),
+      "78527.39942912769"
+    );
+  }
+}
