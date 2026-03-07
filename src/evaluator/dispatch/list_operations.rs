@@ -1173,6 +1173,10 @@ pub fn dispatch_list_operations(
     "ListConvolve" if args.len() == 2 => {
       return Some(list_convolve_ast(&args[0], &args[1]));
     }
+    // ListCorrelate[kernel, list] — discrete cross-correlation
+    "ListCorrelate" if args.len() == 2 => {
+      return Some(list_correlate_ast(&args[0], &args[1]));
+    }
 
     _ => {}
   }
@@ -1674,6 +1678,59 @@ fn list_convolve_ast(
       let product = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![ker[k - 1 - j].clone(), data[i + j].clone()],
+      };
+      terms.push(product);
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    };
+    let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
+    result.push(evaluated);
+  }
+
+  Ok(Expr::List(result))
+}
+
+fn list_correlate_ast(
+  kernel: &Expr,
+  list: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let ker = match kernel {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ListCorrelate".to_string(),
+        args: vec![kernel.clone(), list.clone()],
+      });
+    }
+  };
+  let data = match list {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "ListCorrelate".to_string(),
+        args: vec![kernel.clone(), list.clone()],
+      });
+    }
+  };
+
+  let k = ker.len();
+  let n = data.len();
+  if k == 0 || n == 0 || k > n {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let out_len = n - k + 1;
+  let mut result = Vec::with_capacity(out_len);
+
+  for i in 0..out_len {
+    // Sum kernel[j] * data[i+j] for j in 0..k (no reversal)
+    let mut terms = Vec::with_capacity(k);
+    for j in 0..k {
+      let product = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![ker[j].clone(), data[i + j].clone()],
       };
       terms.push(product);
     }

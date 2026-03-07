@@ -3649,3 +3649,31 @@ mod list_convolve {
     assert_eq!(interpret("ListConvolve[{1, 2}, {3, 4}]").unwrap(), "{10}");
   }
 }
+
+mod list_correlate {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("ListCorrelate[{1, -1}, {1, 2, 4, 8, 16}]").unwrap(),
+      "{-1, -2, -4, -8}"
+    );
+  }
+
+  #[test]
+  fn symmetric_kernel() {
+    assert_eq!(
+      interpret("ListCorrelate[{1, 1, 1}, {a, b, c, d, e}]").unwrap(),
+      "{a + b + c, b + c + d, c + d + e}"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("ListCorrelate[{1, 2, 1}, {1, 0, 0, 1, 0}]").unwrap(),
+      "{1, 1, 2}"
+    );
+  }
+}
