@@ -390,7 +390,7 @@ Background,Option specifying the background color or style,✅,none,2,108
 Backslash,,,,3,3291
 Backward,,,,6,3242
 Ball,,,,10,989
-Band,,,,6,732
+Band,Specify a band of a matrix,✅,none,6,732
 BandpassFilter,,,,9,2952
 BandstopFilter,,,,9,3612
 BarabasiAlbertGraphDistribution,,,,8,2777
@@ -476,7 +476,7 @@ BinCounts,Counts data points in equal-width bins,✅,pure,6,1225
 BinLists,,,,6,2149
 BinnedVariogramList,,,,13,
 Binomial,Returns the binomial coefficient,✅,pure,1,225
-BinomialDistribution,,,,6,729
+BinomialDistribution,Binomial probability distribution,✅,none,6,729
 BinomialPointProcess,,,,12.2,5390
 BinomialProcess,,,,9,2503
 BinormalDistribution,,,,8,1056
@@ -1777,7 +1777,7 @@ Evaluator,,,,3,1206
 EvaluatorNames,,,,4,3233
 EvenQ,Checks if a number is even,✅,pure,1,510
 EventData,,🚫,,9,2167
-EventHandler,,,,6,823
+EventHandler,Handle interactive events,✅,none,6,823
 EventLabels,,,,8,4809
 EventSeries,,,,10,2452
 ExactBlackmanWindow,,,,9,4387
@@ -1930,7 +1930,7 @@ FileSystemTree,,,,13.2,
 FileTemplate,,,,10,4204
 FileTemplateApply,,,,10,3889
 FileType,,,,2,1842
-FilledCurve,,,,8,775
+FilledCurve,Filled curve graphics primitive,✅,none,8,775
 FilledPolarCurve,,,,14.1,
 FilledTorus,,,,13,
 Filling,Option for filling areas under curves in plots,✅,pure,6,202
@@ -2082,7 +2082,7 @@ FontTracking,,,,3,935
 FontVariations,,,,3,2851
 FontWeight,Option for specifying font weight (Bold etc),✅,pure,3,377
 For,Executes a loop with initialization and increment,✅,pure,1,146
-ForAll,,,,5,860
+ForAll,Universal quantifier,✅,none,5,860
 ForAllType,,,,13.1,
 ForceVersionInstall,,,,12.1,5390
 ForeignCallback,,,,13.3,
@@ -2770,7 +2770,7 @@ IndependentUnitDimension,,,,11.3,
 IndependentVertexSetQ,,,,8,4437
 Indeterminate,,,,,
 IndeterminateThreshold,,,,10,4881
-Indexed,,,,10,861
+Indexed,Indexed element of a symbolic vector,✅,none,10,861
 IndexEdgeTaggedGraph,,,,12.1,4315
 IndexGraph,,,,8,3094
 InertEvaluate,,,,13.1,
@@ -3198,7 +3198,7 @@ LineIndentMaxFraction,,,,3,4809
 LineIntegralConvolutionPlot,,,,7,2404
 LineIntegralConvolutionScale,,,,7,3306
 LineIntegrate,,,,13.3,
-LineLegend,,,,9,760
+LineLegend,Legend with line samples,✅,none,9,760
 LineSpacing,,,,3,1601
 LinkActivate,,,,3,4052
 LinkClose,,,,3,2786
@@ -3667,7 +3667,7 @@ NContourIntegrate,,,,14,
 NDEigensystem,,,,10.2,1641
 NDEigenvalues,,,,10.2,2329
 NDSolve,Solves ordinary differential equations numerically,✅,contextual,2,157
-NDSolveValue,,,,9,439
+NDSolveValue,Numerically solve a differential equation and return the solution,✅,pure,9,439
 Nearest,Find the nearest elements in a list to a given value,✅,none,6,602
 NearestFunction,,,,6,3656
 NearestMeshCells,,,,12.1,4315
@@ -3809,7 +3809,7 @@ NotebookAutoSave,,,,3,3755
 NotebookCellData,,🚫,,14.1,
 NotebookClose,,,,3,1517
 NotebookDelete,,,,3,1740
-NotebookDirectory,,,,6,719
+NotebookDirectory,Directory of the current notebook,✅,none,6,719
 NotebookDynamicExpression,,,,8,3048
 NotebookEvaluate,,,,8,2112
 NotebookEventActions,,,,6,2045
@@ -4292,7 +4292,7 @@ PolynomialReduce,,,,3,1574
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1,1353
 PolynomialSumOfSquaresList,,,,13,
 PoolingLayer,,,,11,1737
-PopupMenu,,,,6,792
+PopupMenu,Interactive popup menu control,✅,none,6,792
 PopupView,,,,6,3522
 PopupWindow,,,,6,1975
 Position,Finds all positions of a pattern in a list,✅,pure,1,218
@@ -4465,14 +4465,14 @@ RamanujanTauZ,,,,6,3462
 Ramp,Returns the ramp function (max of 0 and x),✅,pure,11,976
 RandomArrayLayer,,,,12.2,4947
 RandomChoice,Random selection with replacement,✅,contextual,6,338
-RandomColor,,,,10,756
+RandomColor,Generate a random color,✅,none,10,756
 RandomComplex,,,,6,1258
 RandomDate,,,,13.2,
 RandomEntity,,,,10.2,2807
 RandomFunction,,,,9,773
 RandomGeneratorState,,,,12.2,
 RandomGeoPosition,,,,12,
-RandomGraph,,,,8,810
+RandomGraph,Generate a random graph,✅,none,8,810
 RandomImage,Generates a random image with given dimensions,✅,pure,8,1723
 RandomInstance,,,,12,1736
 RandomInteger,Generate random integers,✅,contextual,6,156
@@ -5478,7 +5478,7 @@ Temporary,,,,2,1912
 TensorContract,,,,9,1484
 TensorDimensions,,,,9,3008
 TensorExpand,,,,9,2167
-TensorProduct,,,,9,797
+TensorProduct,Tensor product of arrays,✅,none,9,797
 TensorRank,,,,9,1938
 TensorReduce,,,,9,2108
 TensorSymmetry,,,,9,2993
@@ -5939,7 +5939,7 @@ VertexColors,Option for specifying vertex colors in graphics,✅,none,6,699
 VertexComponent,,,,8,2971
 VertexConnectivity,,,,9,3440
 VertexContract,,,,10,3378
-VertexCoordinates,,,,8,713
+VertexCoordinates,Option for vertex coordinates in graphs,✅,none,8,713
 VertexCorrelationSimilarity,,,,9,4947
 VertexCosineSimilarity,,,,9,4947
 VertexCount,,,,8,1225
@@ -6096,7 +6096,7 @@ WeightedGraphQ,,,,8,3916
 Weights,,,,7,1537
 WelchWindow,,,,9,4262
 WheelGraph,,,,8,2286
-WhenEvent,,,,9,780
+WhenEvent,Specify events in differential equations,✅,none,9,780
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1,226
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1,220
 White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163

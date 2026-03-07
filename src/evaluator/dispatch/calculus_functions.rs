@@ -152,6 +152,15 @@ pub fn dispatch_calculus_functions(
     "NDSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }
+    "NDSolveValue" if args.len() == 3 => {
+      let result = crate::functions::ode_ast::ndsolve_ast(args);
+      return Some(match result {
+        Ok(result_expr) => extract_value_from_solve_result(&result_expr)
+          .map(Ok)
+          .unwrap_or(Ok(result_expr)),
+        err => err,
+      });
+    }
     "LaplaceTransform" if args.len() == 3 => {
       return Some(laplace_transform(&args[0], &args[1], &args[2]));
     }

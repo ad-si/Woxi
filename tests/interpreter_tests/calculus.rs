@@ -2280,6 +2280,31 @@ mod dsolve_value {
   }
 }
 
+mod ndsolve_value {
+  use super::*;
+
+  #[test]
+  fn returns_interpolating_function() {
+    let result =
+      interpret("NDSolveValue[{y'[x] == -y[x], y[0] == 1}, y, {x, 0, 10}]")
+        .unwrap();
+    assert!(
+      result.contains("InterpolatingFunction"),
+      "Expected InterpolatingFunction, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn can_evaluate() {
+    let result = interpret(
+      "f = NDSolveValue[{y'[x] == -y[x], y[0] == 1}, y, {x, 0, 10}]; f[0]",
+    )
+    .unwrap();
+    assert_eq!(result, "1.");
+  }
+}
+
 mod wronskian {
   use super::*;
 
