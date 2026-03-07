@@ -63,6 +63,9 @@ pub fn dispatch_calculus_functions(
     "Curl" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::curl_ast(args));
     }
+    "Grad" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::grad_ast(args));
+    }
     "Integrate" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::integrate_ast(args));
     }
