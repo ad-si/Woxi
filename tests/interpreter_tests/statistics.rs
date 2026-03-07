@@ -596,3 +596,66 @@ mod skewness {
     );
   }
 }
+
+mod cdf {
+  use super::*;
+
+  #[test]
+  fn normal_at_zero() {
+    assert_eq!(interpret("CDF[NormalDistribution[], 0]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn normal_symbolic() {
+    assert_eq!(
+      interpret("CDF[NormalDistribution[mu, sigma], x]").unwrap(),
+      "Erfc[(mu - x)/(Sqrt[2]*sigma)]/2"
+    );
+  }
+
+  #[test]
+  fn normal_numeric() {
+    let result = interpret("N[CDF[NormalDistribution[], 1]]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - 0.8413447460685429).abs() < 1e-10,
+      "Expected ~0.8413, got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn exponential() {
+    assert_eq!(
+      interpret("CDF[ExponentialDistribution[1], x]").unwrap(),
+      "Piecewise[{{1 - E^(-x), x >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn uniform_default() {
+    assert_eq!(
+      interpret("CDF[UniformDistribution[{0, 1}], x]").unwrap(),
+      "Piecewise[{{x, 0 <= x <= 1}, {1, x > 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn bernoulli() {
+    assert_eq!(
+      interpret("CDF[BernoulliDistribution[p], k]").unwrap(),
+      "Piecewise[{{0, k < 0}, {1 - p, 0 <= k < 1}}, 1]"
+    );
+  }
+
+  #[test]
+  fn normal_at_one_exact() {
+    // CDF[NormalDistribution[], 1] = Erfc[-1/Sqrt[2]]/2
+    let result = interpret("CDF[NormalDistribution[], 1]").unwrap();
+    assert!(
+      result.contains("Erfc"),
+      "Expected Erfc expression, got: {}",
+      result
+    );
+  }
+}
