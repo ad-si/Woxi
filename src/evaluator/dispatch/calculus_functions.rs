@@ -66,6 +66,12 @@ pub fn dispatch_calculus_functions(
     "Grad" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::grad_ast(args));
     }
+    "Laplacian" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::laplacian_ast(args));
+    }
+    "Div" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::div_ast(args));
+    }
     "Integrate" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::integrate_ast(args));
     }

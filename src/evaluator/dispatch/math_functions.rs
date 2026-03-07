@@ -863,7 +863,168 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "ExpToTrig" if args.len() == 1 => {
+      return Some(exp_to_trig_ast(&args[0]));
+    }
     _ => {}
   }
   None
+}
+
+/// ExpToTrig[expr] — replace Exp[z] with trig/hyperbolic forms.
+/// Exp[I*x] → Cos[x] + I*Sin[x], Exp[x] → Cosh[x] + Sinh[x].
+fn exp_to_trig_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let transformed = exp_to_trig_recursive(expr);
+  crate::evaluator::evaluate_expr_to_expr(&transformed)
+}
+
+fn exp_to_trig_recursive(expr: &Expr) -> Expr {
+  match expr {
+    // E^z where E is the constant
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Constant(c) if c == "E")
+      || matches!(left.as_ref(), Expr::Identifier(c) if c == "E") =>
+    {
+      let z = exp_to_trig_recursive(right);
+      exp_to_trig_expand(&z)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && (matches!(&args[0], Expr::Constant(c) if c == "E")
+          || matches!(&args[0], Expr::Identifier(c) if c == "E")) =>
+    {
+      let z = exp_to_trig_recursive(&args[1]);
+      exp_to_trig_expand(&z)
+    }
+    // Recurse into function calls
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(exp_to_trig_recursive).collect(),
+    },
+    // Recurse into binary ops
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(exp_to_trig_recursive(left)),
+      right: Box::new(exp_to_trig_recursive(right)),
+    },
+    // Recurse into unary ops
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(exp_to_trig_recursive(operand)),
+    },
+    // Recurse into lists
+    Expr::List(items) => {
+      Expr::List(items.iter().map(exp_to_trig_recursive).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Given exponent z, return Cos[x] + I*Sin[x] if z = I*x,
+/// otherwise Cosh[z] + Sinh[z].
+fn exp_to_trig_expand(z: &Expr) -> Expr {
+  // Check if z = I*x (purely imaginary)
+  if let Some(x) = extract_imaginary_part(z) {
+    // Cos[x] + I*Sin[x]
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![x.clone()],
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::FunctionCall {
+              name: "Complex".to_string(),
+              args: vec![Expr::Integer(0), Expr::Integer(1)],
+            },
+            Expr::FunctionCall {
+              name: "Sin".to_string(),
+              args: vec![x.clone()],
+            },
+          ],
+        },
+      ],
+    }
+  } else {
+    // Cosh[z] + Sinh[z]
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Cosh".to_string(),
+          args: vec![z.clone()],
+        },
+        Expr::FunctionCall {
+          name: "Sinh".to_string(),
+          args: vec![z.clone()],
+        },
+      ],
+    }
+  }
+}
+
+/// Check if an expression is the imaginary unit I
+fn is_imaginary_unit(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(s) if s == "I")
+    || matches!(expr, Expr::Constant(s) if s == "I")
+    || matches!(expr, Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2
+      && matches!(&args[0], Expr::Integer(0))
+      && matches!(&args[1], Expr::Integer(1)))
+}
+
+/// Extract x from I*x, Times[I, x], Times[n, I], etc.
+/// Returns Some(x) if z is purely imaginary, None otherwise.
+fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
+  match z {
+    // z = I itself (Complex[0, 1])
+    _ if is_imaginary_unit(z) => Some(Expr::Integer(1)),
+    // z = Times[I, x] or Times[x, I] or Times[n, I, x]
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Find the I factor
+      let mut has_i = false;
+      let mut other_factors = Vec::new();
+      for arg in args {
+        if !has_i && is_imaginary_unit(arg) {
+          has_i = true;
+        } else {
+          other_factors.push(arg.clone());
+        }
+      }
+      if has_i {
+        if other_factors.len() == 1 {
+          Some(other_factors.into_iter().next().unwrap())
+        } else {
+          Some(Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: other_factors,
+          })
+        }
+      } else {
+        None
+      }
+    }
+    // z = BinaryOp Times with I
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if is_imaginary_unit(left) {
+        Some(*right.clone())
+      } else if is_imaginary_unit(right) {
+        Some(*left.clone())
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
 }

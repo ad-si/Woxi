@@ -2209,3 +2209,94 @@ mod inverse_laplace_transform {
     );
   }
 }
+
+mod laplacian {
+  use super::*;
+
+  #[test]
+  fn laplacian_2d() {
+    assert_eq!(interpret("Laplacian[x^2 + y^2, {x, y}]").unwrap(), "4");
+  }
+
+  #[test]
+  fn laplacian_3d() {
+    assert_eq!(
+      interpret("Laplacian[x^2*y + z^3, {x, y, z}]").unwrap(),
+      "2*y + 6*z"
+    );
+  }
+
+  #[test]
+  fn laplacian_harmonic() {
+    // x^2 - y^2 is harmonic (Laplacian = 0)
+    assert_eq!(interpret("Laplacian[x^2 - y^2, {x, y}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn laplacian_single_var() {
+    assert_eq!(interpret("Laplacian[x^3, {x}]").unwrap(), "6*x");
+  }
+}
+
+mod div {
+  use super::*;
+
+  #[test]
+  fn div_3d() {
+    assert_eq!(
+      interpret("Div[{x^2, y^2, z^2}, {x, y, z}]").unwrap(),
+      "2*x + 2*y + 2*z"
+    );
+  }
+
+  #[test]
+  fn div_2d() {
+    assert_eq!(interpret("Div[{x*y, x + y}, {x, y}]").unwrap(), "1 + y");
+  }
+
+  #[test]
+  fn div_constant_field() {
+    assert_eq!(interpret("Div[{1, 2, 3}, {x, y, z}]").unwrap(), "0");
+  }
+}
+
+mod exp_to_trig {
+  use super::*;
+
+  #[test]
+  fn exp_ix() {
+    assert_eq!(
+      interpret("ExpToTrig[Exp[I x]]").unwrap(),
+      "Cos[x] + I*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn exp_real() {
+    assert_eq!(interpret("ExpToTrig[Exp[x]]").unwrap(), "Cosh[x] + Sinh[x]");
+  }
+
+  #[test]
+  fn exp_2ix() {
+    assert_eq!(
+      interpret("ExpToTrig[Exp[2 I x]]").unwrap(),
+      "Cos[2*x] + I*Sin[2*x]"
+    );
+  }
+
+  #[test]
+  fn exp_3x() {
+    assert_eq!(
+      interpret("ExpToTrig[Exp[3 x]]").unwrap(),
+      "Cosh[3*x] + Sinh[3*x]"
+    );
+  }
+
+  #[test]
+  fn in_sum() {
+    assert_eq!(
+      interpret("ExpToTrig[x + Exp[I y]]").unwrap(),
+      "x + Cos[y] + I*Sin[y]"
+    );
+  }
+}
