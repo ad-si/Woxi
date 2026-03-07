@@ -3273,3 +3273,30 @@ mod regular_polygon {
     assert_eq!(interpret("RegularPolygon[5]").unwrap(), "RegularPolygon[5]");
   }
 }
+
+mod discrete_plot {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    insta::assert_snapshot!(export_svg("DiscretePlot[n^2, {n, 1, 5}]"));
+  }
+
+  #[test]
+  fn factorial() {
+    insta::assert_snapshot!(export_svg(
+      "DiscretePlot[Factorial[n], {n, 0, 5}]"
+    ));
+  }
+
+  #[test]
+  fn with_step() {
+    insta::assert_snapshot!(export_svg("DiscretePlot[Sin[n], {n, 0, 10, 2}]"));
+  }
+
+  #[test]
+  fn returns_graphics() {
+    let result = interpret("DiscretePlot[n, {n, 1, 3}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+}

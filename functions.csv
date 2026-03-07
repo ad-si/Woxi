@@ -1489,7 +1489,7 @@ DiscreteLyapunovSolve,,,,8,4138
 DiscreteMarkovProcess,,,,9,1665
 DiscreteMaxLimit,,,,11.2,3326
 DiscreteMinLimit,,,,11.2,3402
-DiscretePlot,,,,7,487
+DiscretePlot,Plots discrete values of a function,✅,none,7,487
 DiscretePlot3D,,,,8,1375
 DiscreteRatio,,,,7,4809
 DiscreteRiccatiSolve,,,,8,4225
