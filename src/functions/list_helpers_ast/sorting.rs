@@ -119,6 +119,11 @@ fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Public wrapper for expr_to_complex_parts.
+pub fn expr_to_complex_parts_pub(e: &Expr) -> Option<(f64, f64)> {
+  expr_to_complex_parts(e)
+}
+
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Try numeric comparison (including complex numbers)
   let a_num = expr_to_complex_parts(a);

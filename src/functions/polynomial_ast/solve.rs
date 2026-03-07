@@ -1708,6 +1708,132 @@ pub fn simplify_sqrt_parts(n: i128) -> (i128, i128) {
   (outside, inside)
 }
 
+// ─── Root ─────────────────────────────────────────────────────────────
+
+/// Root[f, k] — the k-th root of the polynomial defined by pure function f.
+/// f is a pure function like `#^2 - 2 &`, and k is a positive integer.
+/// Roots are ordered: real roots first (ascending), then complex roots
+/// (by imaginary part, negative before positive).
+pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let k = match &args[1] {
+    Expr::Integer(n) => *n,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Root".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if k < 1 {
+    return Err(InterpreterError::EvaluationError(
+      "Root: index k must be a positive integer".into(),
+    ));
+  }
+
+  // Extract pure function body
+  let body = match &args[0] {
+    Expr::Function { body } => body,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Root".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Substitute Slot(1) with a temporary variable
+  let var_name = "\u{2620}root\u{2620}"; // unique internal variable
+  let poly =
+    crate::syntax::substitute_slots(body, &[Expr::Identifier(var_name.into())]);
+
+  // Solve the polynomial equation poly == 0
+  let eq = Expr::Comparison {
+    operands: vec![poly, Expr::Integer(0)],
+    operators: vec![crate::syntax::ComparisonOp::Equal],
+  };
+
+  let solutions = solve_ast(&[eq, Expr::Identifier(var_name.into())])?;
+
+  // Extract root values from {{var -> val1}, {var -> val2}, ...}
+  let mut roots: Vec<Expr> = Vec::new();
+  if let Expr::List(outer) = &solutions {
+    for item in outer {
+      if let Expr::List(inner) = item {
+        for rule in inner {
+          if let Expr::Rule { replacement, .. } = rule {
+            roots.push(*replacement.clone());
+          }
+        }
+      }
+    }
+  }
+
+  if roots.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Sort roots: real roots first (ascending), then complex roots
+  roots.sort_by(root_order);
+
+  let idx = (k as usize) - 1;
+  if idx >= roots.len() {
+    return Err(InterpreterError::EvaluationError(format!(
+      "Root: index {} is out of range; polynomial has only {} roots",
+      k,
+      roots.len()
+    )));
+  }
+
+  // Simplify the result
+  crate::evaluator::evaluate_expr_to_expr(&roots[idx])
+}
+
+/// Order roots the way Wolfram does:
+/// Real roots first sorted ascending, then complex roots sorted by (Re, Im).
+fn root_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  use crate::functions::list_helpers_ast::expr_to_complex_parts_pub;
+  let pa = expr_to_complex_parts_pub(a);
+  let pb = expr_to_complex_parts_pub(b);
+
+  match (pa, pb) {
+    (Some((a_re, a_im)), Some((b_re, b_im))) => {
+      let a_real = a_im.abs() < 1e-15;
+      let b_real = b_im.abs() < 1e-15;
+      match (a_real, b_real) {
+        (true, true) => {
+          // Both real: sort ascending
+          a_re.partial_cmp(&b_re).unwrap_or(std::cmp::Ordering::Equal)
+        }
+        (true, false) => std::cmp::Ordering::Less, // real before complex
+        (false, true) => std::cmp::Ordering::Greater,
+        (false, false) => {
+          // Both complex: sort by real part, then imaginary part
+          match a_re.partial_cmp(&b_re).unwrap_or(std::cmp::Ordering::Equal) {
+            std::cmp::Ordering::Equal => {
+              a_im.partial_cmp(&b_im).unwrap_or(std::cmp::Ordering::Equal)
+            }
+            other => other,
+          }
+        }
+      }
+    }
+    (Some(_), None) => std::cmp::Ordering::Less,
+    (None, Some(_)) => std::cmp::Ordering::Greater,
+    (None, None) => std::cmp::Ordering::Equal,
+  }
+}
+
 // ─── FindRoot ────────────────────────────────────────────────────────
 
 /// FindRoot[expr, {var, x0}] — numerically find a root using Newton's method.
