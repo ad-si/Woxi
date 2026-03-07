@@ -906,6 +906,9 @@ pub fn dispatch_math_functions(
     "ExpToTrig" if args.len() == 1 => {
       return Some(exp_to_trig_ast(&args[0]));
     }
+    "TrigToExp" if args.len() == 1 => {
+      return Some(trig_to_exp_ast(&args[0]));
+    }
     _ => {}
   }
   None
@@ -1066,5 +1069,115 @@ fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
       }
     }
     _ => None,
+  }
+}
+
+/// TrigToExp[expr] — replace trig/hyperbolic functions with exponentials.
+fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let transformed = trig_to_exp_recursive(expr);
+  crate::evaluator::evaluate_expr_to_expr(&transformed)
+}
+
+fn trig_to_exp_recursive(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      let arg = trig_to_exp_recursive(&args[0]);
+      let i = Expr::Identifier("I".to_string());
+      let e = Expr::Constant("E".to_string());
+      let half = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      };
+      match name.as_str() {
+        // Cos[x] = E^(I*x)/2 + E^(-I*x)/2
+        "Cos" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          let e_ix = power(e.clone(), ix.clone());
+          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
+          plus(&[times(&[half.clone(), e_ix]), times(&[half, e_nix])])
+        }
+        // Sin[x] = -I*E^(I*x)/2 + I*E^(-I*x)/2
+        "Sin" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          let e_ix = power(e.clone(), ix.clone());
+          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
+          plus(&[
+            times(&[Expr::Integer(-1), i.clone(), half.clone(), e_ix]),
+            times(&[i, half, e_nix]),
+          ])
+        }
+        // Cosh[x] = E^x/2 + E^(-x)/2
+        "Cosh" => {
+          let e_x = power(e.clone(), arg.clone());
+          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
+          plus(&[times(&[half.clone(), e_x]), times(&[half, e_nx])])
+        }
+        // Sinh[x] = E^x/2 - E^(-x)/2
+        "Sinh" => {
+          let e_x = power(e.clone(), arg.clone());
+          let e_nx = power(e.clone(), times(&[Expr::Integer(-1), arg]));
+          plus(&[
+            times(&[half.clone(), e_x]),
+            times(&[Expr::Integer(-1), half, e_nx]),
+          ])
+        }
+        // Tan[x] = -I*(E^(I*x) - E^(-I*x))/(E^(I*x) + E^(-I*x))
+        "Tan" => {
+          let ix = times(&[i.clone(), arg.clone()]);
+          let e_ix = power(e.clone(), ix.clone());
+          let e_nix = power(e.clone(), times(&[Expr::Integer(-1), ix]));
+          times(&[
+            Expr::Integer(-1),
+            i,
+            plus(&[e_ix.clone(), times(&[Expr::Integer(-1), e_nix.clone()])]),
+            power(plus(&[e_ix, e_nix]), Expr::Integer(-1)),
+          ])
+        }
+        // Other functions: recurse into args
+        _ => Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(trig_to_exp_recursive).collect(),
+        },
+      }
+    }
+    // Recurse into function calls with != 1 arg
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(trig_to_exp_recursive).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(trig_to_exp_recursive(left)),
+      right: Box::new(trig_to_exp_recursive(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(trig_to_exp_recursive(operand)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(trig_to_exp_recursive).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
+fn times(factors: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: factors.to_vec(),
+  }
+}
+
+fn plus(terms: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.to_vec(),
+  }
+}
+
+fn power(base: Expr, exp: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, exp],
   }
 }
