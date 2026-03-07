@@ -925,7 +925,7 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
                 let a = parse_point3d(&items[0]).unwrap_or(Point3D {
                   x: 0.0,
                   y: 0.0,
-                  z: 0.0,
+                  z: -1.0,
                 });
                 let b = parse_point3d(&items[1]).unwrap_or(Point3D {
                   x: 0.0,
@@ -938,7 +938,7 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
                   Point3D {
                     x: 0.0,
                     y: 0.0,
-                    z: 0.0,
+                    z: -1.0,
                   },
                   Point3D {
                     x: 0.0,
@@ -952,7 +952,7 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
                 Point3D {
                   x: 0.0,
                   y: 0.0,
-                  z: 0.0,
+                  z: -1.0,
                 },
                 Point3D {
                   x: 0.0,
@@ -966,7 +966,7 @@ fn collect_3d_primitives(expr: &Expr, prims: &mut Vec<Primitive3D>) {
               Point3D {
                 x: 0.0,
                 y: 0.0,
-                z: 0.0,
+                z: -1.0,
               },
               Point3D {
                 x: 0.0,
