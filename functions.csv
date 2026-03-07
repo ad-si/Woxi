@@ -4742,7 +4742,7 @@ RogersTanimotoDissimilarity,,,,6,4437
 RollPitchYawAngles,,,,10.2,4809
 RollPitchYawMatrix,,,,10.2,3717
 RomanNumeral,Converts an integer to a Roman numeral string,✅,pure,10.2,1082
-Root,,,,3,396
+Root,Represents the k-th root of a polynomial,✅,pure,3,396
 RootApproximant,,,,6,1901
 RootIntervals,,,,6,3344
 RootLocusPlot,,,,8,2036

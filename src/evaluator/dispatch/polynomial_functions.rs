@@ -79,6 +79,9 @@ pub fn dispatch_polynomial_functions(
     "Roots" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::roots_ast(args));
     }
+    "Root" if args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::root_ast(args));
+    }
     "ToRules" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::to_rules_ast(args));
     }

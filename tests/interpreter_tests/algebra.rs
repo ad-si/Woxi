@@ -2904,3 +2904,65 @@ mod expand_fraction_power {
     assert_eq!(interpret("Expand[(3*x)^3]").unwrap(), "27*x^3");
   }
 }
+
+mod root {
+  use super::*;
+
+  #[test]
+  fn sqrt_2_first_root() {
+    assert_eq!(interpret("Root[#^2 - 2 &, 1]").unwrap(), "-Sqrt[2]");
+  }
+
+  #[test]
+  fn sqrt_2_second_root() {
+    assert_eq!(interpret("Root[#^2 - 2 &, 2]").unwrap(), "Sqrt[2]");
+  }
+
+  #[test]
+  fn linear() {
+    assert_eq!(interpret("Root[# &, 1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn quadratic_integer_roots() {
+    assert_eq!(interpret("Root[#^2 - 3*# + 2 &, 1]").unwrap(), "1");
+    assert_eq!(interpret("Root[#^2 - 3*# + 2 &, 2]").unwrap(), "2");
+  }
+
+  #[test]
+  fn complex_roots() {
+    assert_eq!(interpret("Root[#^2 + 1 &, 1]").unwrap(), "-I");
+    assert_eq!(interpret("Root[#^2 + 1 &, 2]").unwrap(), "I");
+  }
+
+  #[test]
+  fn fourth_roots_of_unity_minus_one() {
+    // x^4 - 1: roots are -1, 1, -I, I
+    assert_eq!(interpret("Root[#^4 - 1 &, 1]").unwrap(), "-1");
+    assert_eq!(interpret("Root[#^4 - 1 &, 2]").unwrap(), "1");
+    assert_eq!(interpret("Root[#^4 - 1 &, 3]").unwrap(), "-I");
+    assert_eq!(interpret("Root[#^4 - 1 &, 4]").unwrap(), "I");
+  }
+
+  #[test]
+  fn cubic_with_real_root() {
+    // x^3 - 1: real root is 1
+    assert_eq!(interpret("Root[#^3 - 1 &, 1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numerical_value() {
+    let result = interpret("N[Root[#^2 - 2 &, 1]]").unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - (-1.4142135623730951)).abs() < 1e-10,
+      "Expected -1.414..., got {}",
+      val
+    );
+  }
+
+  #[test]
+  fn out_of_range_error() {
+    assert!(interpret("Root[#^2 - 1 &, 3]").is_err());
+  }
+}
