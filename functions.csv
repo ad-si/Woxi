@@ -5649,7 +5649,7 @@ TrackedSymbols,,,,6,495
 TrackingFunction,,,,10,2129
 TracyWidomDistribution,,,,10.3,3862
 TradingChart,,,,8,1666
-TraditionalForm,,,,3,317
+TraditionalForm,Displays expressions in traditional mathematical notation,✅,pure,3,317
 TrainImageContentDetector,,,,13,
 TrainingProgressCheckpointing,,,,11.1,4707
 TrainingProgressFunction,,,,11.1,4225
