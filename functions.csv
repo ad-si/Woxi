@@ -5490,7 +5490,7 @@ TernaryPlotCorners,,,,13.1,
 TestCreate,,,,13.3,
 TestEvaluate,,,,13.3,
 TestEvaluationFunction,,,,13.3,
-TestID,,,,10,323
+TestID,Option symbol for specifying a test identifier in testing functions,✅,pure,10,323
 TestObject,,,,13.3,
 TestReport,,,,10,3048
 TestReportObject,,,,10,4881
