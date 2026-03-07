@@ -908,7 +908,7 @@ ColorSeparate,,,,7,1409
 ColorSetter,,,,6,1803
 ColorSlider,,,,6,1949
 ColorsNear,,,,12,3593
-ColorSpace,,,,7,419
+ColorSpace,Option for specifying the color space of images,✅,pure,7,419
 ColorToneMapping,,,,10.2,4356
 Column,Displays elements in a vertical column,✅,pure,6,174
 ColumnAlignments,,,,3,2671
@@ -1934,7 +1934,7 @@ FilledCurve,,,,8,775
 FilledPolarCurve,,,,14.1,
 FilledTorus,,,,13,
 Filling,Option for filling areas under curves in plots,✅,pure,6,202
-FillingStyle,,,,6,410
+FillingStyle,Option for specifying the style of plot filling,✅,pure,6,410
 FillingTransform,,,,8,1810
 FilteredEntityClass,,,,12,3224
 FilterRules,Filters a list of rules by allowed keys,✅,pure,6,682
@@ -2696,7 +2696,7 @@ ImageMeasurements,,,,9,2031
 ImageMesh,,,,11,2411
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7,1038
 ImagePad,,,,7,1184
-ImagePadding,,,,6,422
+ImagePadding,Option for specifying padding around plotted images,✅,pure,6,422
 ImagePartition,,,,7,1617
 ImagePeriodogram,,,,9,4052
 ImagePerspectiveTransformation,,,,8,2061
@@ -2843,13 +2843,13 @@ IntegrateChangeVariables,,,,13.1,
 Interactive,,,,9,3363
 InteractiveTradingChart,,,,8,3522
 InterfaceSwitched,,,,13,
-Interleaving,,,,7,429
+Interleaving,Option for specifying channel interleaving in images,✅,pure,7,429
 IntermediateTest,,,,14,
 InternallyBalancedDecomposition,,,,8,4809
 InterpolatingFunction,Represents an interpolating function object,✅,none,2,659
 InterpolatingPolynomial,,,,2,1052
 Interpolation,,,,2,383
-InterpolationOrder,,,,3,435
+InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3,435
 InterpolationPoints,,,,8,3265
 Interpretation,,,,6,1905
 InterpretationBox,,,,3,1652
@@ -4426,7 +4426,7 @@ QuantityForm,,,,9,3566
 QuantityMagnitude,Returns the magnitude of a quantity,✅,pure,9,733
 QuantityQ,Tests if an expression is a quantity,✅,pure,9,2914
 QuantityUnit,Returns the unit of a quantity,✅,pure,9,2134
-QuantityVariable,,,,10,425
+QuantityVariable,Represents a variable with associated physical quantity,✅,pure,10,425
 QuantityVariableCanonicalUnit,,,,10,5184
 QuantityVariableDimensions,,,,10,4947
 QuantityVariableIdentifier,,,,10,5390
@@ -5817,7 +5817,7 @@ Unitize,Returns 0 for zero and 1 for nonzero values,✅,pure,6,781
 UnitRootTest,,,,9,3785
 UnitSimplify,,,,9,2020
 UnitStep,Returns the unit step function value,✅,pure,4,273
-UnitSystem,,,,10,398
+UnitSystem,Option for specifying the unit system for computations,✅,pure,10,398
 UnitTriangle,,,,7,1944
 UnitVector,,,,6,1357
 UnitVectorLayer,,,,11.1,3413

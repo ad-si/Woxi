@@ -1576,6 +1576,75 @@ mod traditional_form {
   }
 }
 
+mod unit_system_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("UnitSystem").unwrap(), "UnitSystem");
+  }
+}
+
+mod filling_style_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("FillingStyle").unwrap(), "FillingStyle");
+  }
+}
+
+mod color_space_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("ColorSpace").unwrap(), "ColorSpace");
+  }
+}
+
+mod image_padding_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("ImagePadding").unwrap(), "ImagePadding");
+  }
+}
+
+mod quantity_variable_function {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("QuantityVariable[\"x\", \"Length\"]").unwrap(),
+      "QuantityVariable[x, Length]"
+    );
+  }
+}
+
+mod interleaving_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("Interleaving").unwrap(), "Interleaving");
+  }
+}
+
+mod interpolation_order_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(
+      interpret("InterpolationOrder").unwrap(),
+      "InterpolationOrder"
+    );
+  }
+}
+
 mod plot_range_padding_symbol {
   use super::*;
 
