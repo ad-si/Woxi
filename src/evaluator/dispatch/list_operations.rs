@@ -1125,6 +1125,9 @@ pub fn dispatch_list_operations(
     "ReplacePart" if args.len() == 2 => {
       return Some(list_helpers_ast::replace_part_ast(&args[0], &args[1]));
     }
+    "Nearest" if (2..=3).contains(&args.len()) => {
+      return Some(nearest_ast(args));
+    }
 
     _ => {}
   }
@@ -1235,4 +1238,99 @@ fn array_flatten_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   }
 
   Ok(Expr::List(result.into_iter().map(Expr::List).collect()))
+}
+
+/// Nearest[list, x] - find elements of list nearest to x
+/// Nearest[list, x, n] - find n nearest elements
+fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let items = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Nearest".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  let target = &args[1];
+  let n = if args.len() >= 3 {
+    match &args[2] {
+      Expr::Integer(n) => *n as usize,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Nearest".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    items.len() // return all, sorted by distance (we'll take the closest group)
+  };
+
+  // Compute distance for each element
+  let target_f = expr_to_f64(target);
+  let mut distances: Vec<(usize, f64)> = items
+    .iter()
+    .enumerate()
+    .filter_map(|(i, item)| {
+      let item_f = expr_to_f64(item);
+      match (target_f, item_f) {
+        (Some(t), Some(v)) => Some((i, (v - t).abs())),
+        _ => None,
+      }
+    })
+    .collect();
+
+  if distances.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "Nearest".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Sort by distance, then by original order for ties
+  distances
+    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+  if args.len() >= 3 {
+    // Return exactly n nearest
+    let result: Vec<Expr> = distances
+      .iter()
+      .take(n)
+      .map(|(i, _)| items[*i].clone())
+      .collect();
+    Ok(Expr::List(result))
+  } else {
+    // Return all elements tied for the minimum distance
+    let min_dist = distances[0].1;
+    let result: Vec<Expr> = distances
+      .iter()
+      .take_while(|(_, d)| (*d - min_dist).abs() < 1e-15)
+      .map(|(i, _)| items[*i].clone())
+      .collect();
+    Ok(Expr::List(result))
+  }
+}
+
+/// Try to convert an Expr to f64 for distance computation
+fn expr_to_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+        Some(*a as f64 / *b as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
 }
