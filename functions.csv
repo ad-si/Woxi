@@ -2609,7 +2609,7 @@ Hypergeometric1F1Regularized,,,,3,1342
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1,413
 Hypergeometric2F1Regularized,,,,3,850
 HypergeometricDistribution,,,,6,2289
-HypergeometricPFQ,,,,3,386
+HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3,386
 HypergeometricPFQRegularized,,,,3,791
 HypergeometricU,Confluent hypergeometric function of the second kind,✅,pure,1,1275
 Hyperlink,Interactive hyperlink element,🚫,effectful,6,209

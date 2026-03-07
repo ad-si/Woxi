@@ -3018,6 +3018,68 @@ mod inverse_jacobi {
   }
 }
 
+mod hypergeometric_pfq {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{a, b}, {c}, x]").unwrap(),
+      "HypergeometricPFQ[{a, b}, {c}, x]"
+    );
+  }
+
+  #[test]
+  fn zero_arg() {
+    assert_eq!(interpret("HypergeometricPFQ[{1, 2}, {3}, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn empty_lists_is_exp() {
+    assert_eq!(interpret("HypergeometricPFQ[{}, {}, x]").unwrap(), "E^x");
+  }
+
+  #[test]
+  fn numeric_2f1() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1, 2}, {3}, 0.5]").unwrap(),
+      "1.545177444479561"
+    );
+  }
+
+  #[test]
+  fn numeric_1f1() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1}, {2}, 1.0]").unwrap(),
+      "1.7182818284590455"
+    );
+  }
+
+  #[test]
+  fn divergent_at_one() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{1, 2}, {3}, 1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn rational_params() {
+    assert_eq!(
+      interpret("N[HypergeometricPFQ[{1/2}, {3/2}, -1]]").unwrap(),
+      "0.746824132812427"
+    );
+  }
+
+  #[test]
+  fn n_wrapper() {
+    assert_eq!(
+      interpret("N[HypergeometricPFQ[{1, 2}, {3}, 1/2]]").unwrap(),
+      "1.545177444479561"
+    );
+  }
+}
+
 mod riemann_r {
   use super::*;
 
