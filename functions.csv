@@ -3221,7 +3221,7 @@ Listable,Attribute for automatic threading over lists,✅,pure,1,568
 ListAnimate,,🚫,,6,926
 ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1,902
 ListContourPlot3D,,,,6,1858
-ListConvolve,,,,4,1110
+ListConvolve,Computes discrete convolution of two lists,✅,pure,4,1110
 ListCorrelate,,,,4,1129
 ListCurvePathPlot,,,,7,2509
 ListDeconvolve,,,,8,3566
