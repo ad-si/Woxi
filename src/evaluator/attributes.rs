@@ -547,7 +547,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "InterpolatingFunction"
     | "Information"
     | "Reals"
-    | "Thick" => {
+    | "Thick"
+    | "Thin" => {
       vec!["Protected", "ReadProtected"]
     }
 

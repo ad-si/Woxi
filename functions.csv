@@ -409,7 +409,7 @@ BartlettWindow,,,,9,3916
 BaseDecode,,,,11.3,5390
 BaseEncode,,,,11.3,4052
 BaseForm,Displays numbers in a specified base with subscript notation,✅,pure,1,789
-Baseline,,,,3,509
+Baseline,Option for specifying baseline alignment,✅,pure,3,509
 BaselinePosition,,,,6,619
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6,137
 BasicRecurrentLayer,,,,11.1,3566
@@ -737,7 +737,7 @@ CensoredDistribution,,,,8,2587
 Censoring,,,,8,4809
 Center,Symbol for centering alignment,✅,pure,1,199
 CenterArray,,,,11,3242
-CenterDot,,,,3,465
+CenterDot,Symbolic centered dot operator,✅,pure,3,465
 CenteredInterval,,,,13,
 CentralFeature,,,,11.1,4437
 CentralMoment,Computes the k-th central moment of a list,✅,pure,6,1349
@@ -1079,7 +1079,7 @@ ControllerManipulate,,🚫,,6,3823
 ControllerMethod,,,,6,4138
 ControllerPath,,,,6,3947
 ControllerState,,,,6,3344
-ControlPlacement,,,,6,486
+ControlPlacement,Option for specifying placement of interactive controls,✅,pure,6,486
 ControlsRendering,,,,6,4081
 ControlType,Option for specifying the type of control in Manipulate,✅,pure,6,381
 ConvectionPDETerm,,,,12.2,3462
@@ -1789,7 +1789,7 @@ ExcludedForms,,,,3,2929
 ExcludedLines,,,,10,4881
 ExcludedPhysicalQuantities,,,,10,5486
 ExcludePods,,,,8,5486
-Exclusions,,,,6,464
+Exclusions,Option for specifying points or curves to exclude from plots,✅,pure,6,464
 ExclusionsStyle,,,,6,769
 Exists,,,,5,948
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1,1692
@@ -2931,7 +2931,7 @@ Italic,Style directive for italic text,✅,pure,6,186
 Item,Wrapper for specifying individual item options in Grid and similar constructs,✅,pure,6,332
 ItemAspectRatio,,,,6,4356
 ItemDisplayFunction,,,,12.1,
-ItemSize,,,,6,490
+ItemSize,Option for specifying sizes of items in Grid and similar,✅,pure,6,490
 ItemStyle,,,,6,1431
 ItoProcess,,,,9,1659
 JaccardDissimilarity,,,,6,4104
@@ -3520,7 +3520,7 @@ MeshCellShapeFunction,,,,10.2,3697
 MeshCellStyle,,,,10,1593
 MeshConnectivityGraph,,,,12.1,3153
 MeshCoordinates,,,,10,951
-MeshFunctions,,,,6,506
+MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6,506
 MeshPrimitives,,,,10,1016
 MeshQualityGoal,,,,10,2742
 MeshRefinementFunction,,,,10,2263
@@ -4225,14 +4225,14 @@ PlotLabel,Option specifying a label for a plot,✅,pure,1,104
 PlotLabels,,,,10.4,597
 PlotLayout,,,,8,2203
 PlotLegends,Option for adding legends to plots identifying each series,✅,pure,9,100
-PlotMarkers,,,,6,500
+PlotMarkers,Option for specifying markers on plot points,✅,pure,6,500
 PlotPoints,Option for number of sample points in plots,✅,pure,1,193
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,39
 PlotRangeClipping,,,,6,674
 PlotRangePadding,Option for specifying padding around plot ranges,✅,pure,6,359
 PlotRegion,,,,2,1875
 PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1,45
-PlotTheme,,,,10,459
+PlotTheme,Option for specifying the visual theme for plots,✅,pure,10,459
 Pluralize,,,,10,4527
 Plus,Adds numbers together,✅,pure,1,6
 PlusMinus,,,,3,1014
@@ -5068,7 +5068,7 @@ SourcePDETerm,,,,12.2,
 Sow,Sows an expression for collection by Reap,✅,stateful,5,355
 SowVideo,,,,14.1,
 SpaceCurveData,,🚫,,10,4747
-Spacer,,,,6,471
+Spacer,Creates empty space of a specified size for layout,✅,pure,6,471
 Spacings,Spacing specification for grids and layouts,✅,none,6,261
 Span,Extract a span of elements using ;; notation in Part,✅,pure,6,109
 SpanFromAbove,,,,6,1687
@@ -5526,7 +5526,7 @@ ThermodynamicData,,🚫,,10,1368
 ThermometerGauge,,,,9,2867
 Thick,Graphics directive equivalent to AbsoluteThickness[2],✅,none,6,112
 Thickness,Sets relative line thickness in graphics,✅,pure,1,85
-Thin,,,,6,443
+Thin,Graphics directive equivalent to Thickness[Tiny],✅,pure,6,443
 Thinning,,,,8,1582
 ThomasPointProcess,,,,12.2,5486
 ThompsonGroupTh,,,,8,5184
@@ -5547,7 +5547,7 @@ TickLabels,,,,12.3,
 TickLengths,,,,12.3,
 TickPositions,,,,12.3,
 Ticks,Option for tick marks on plot axes,✅,pure,1,264
-TicksStyle,,,,6,531
+TicksStyle,Option for specifying the style of plot ticks,✅,pure,6,531
 TideData,,🚫,,11.2,4052
 Tilde,,,,3,3265
 TildeEqual,,,,3,4612
@@ -5645,7 +5645,7 @@ TraceOriginal,,,,2,2978
 TracePrint,,,,2,2025
 TraceScan,,,,2,2491
 TrackCellChangeTimes,,,,13.3,
-TrackedSymbols,,,,6,495
+TrackedSymbols,Option for specifying which symbols trigger dynamic updates,✅,pure,6,495
 TrackingFunction,,,,10,2129
 TracyWidomDistribution,,,,10.3,3862
 TradingChart,,,,8,1666
@@ -5954,7 +5954,7 @@ VertexInComponentGraph,,,,12.3,
 VertexInDegree,,,,8,2042
 VertexIndex,,,,8,2149
 VertexJaccardSimilarity,,,,9,4947
-VertexLabels,,,,8,453
+VertexLabels,Option for specifying labels on graph vertices,✅,pure,8,453
 VertexLabelStyle,,,,8,1419
 VertexList,,,,8,657
 VertexNormals,,,,6,1721
