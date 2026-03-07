@@ -172,10 +172,10 @@ pub fn dispatch_list_operations(
     }
 
     // Additional AST-native list functions
-    "Table" if args.len() == 2 => {
+    "Table" | "ParallelTable" if args.len() == 2 => {
       return Some(list_helpers_ast::table_ast(&args[0], &args[1]));
     }
-    "Table" if args.len() >= 3 => {
+    "Table" | "ParallelTable" if args.len() >= 3 => {
       // Multi-dimensional Table: Table[expr, iter1, iter2, ...]
       // Nest from innermost to outermost
       return Some(list_helpers_ast::table_multi_ast(&args[0], &args[1..]));

@@ -133,7 +133,7 @@ AnimationTimeIndex,,,,10,4660
 AnimationVideo,,,,12.3,
 Animator,,,,6,1573
 Annotate,,,,12.1,4881
-Annotation,,,,6,742
+Annotation,Attach an annotation to an expression,✅,none,6,742
 AnnotationDelete,,,,12,
 AnnotationKeys,,,,12.1,
 AnnotationRules,,,,12,4315
@@ -145,7 +145,7 @@ AnomalyDetection,,,,12,5390
 AnomalyDetector,,,,12.1,5184
 AnomalyDetectorFunction,,,,12,
 Anonymous,,,,11,5390
-Antialiasing,,,,6,855
+Antialiasing,Option for antialiasing in graphics,✅,none,6,855
 Antihermitian,,,,12.2,5486
 AntihermitianMatrixQ,,,,10,3947
 Antisymmetric,,,,9,2452
@@ -658,7 +658,7 @@ CantorMesh,,,,11.1,2650
 CantorStaircase,,,,10,2911
 Canvas,,,,12.2,3083
 Cap,,,,3,3020
-CapForm,,,,7,857
+CapForm,Option for line cap form in graphics,✅,none,7,857
 CapitalDifferentialD,,,,3,4387
 Capitalize,Capitalizes the first letter of a string,✅,pure,10.1,2650
 CapsuleShape,,,,10.2,2978
@@ -783,7 +783,7 @@ ChebyshevU,Chebyshev polynomial of the second kind,✅,pure,1,761
 Check,Evaluates an expression and returns a fallback if messages are generated,✅,pure,1,804
 CheckAbort,Evaluate expression and catch aborts,✅,pure,2,1991
 CheckArguments,,,,12.2,5079
-Checkbox,,,,6,730
+Checkbox,Interactive checkbox control,✅,none,6,730
 CheckboxBar,,,,6,1833
 ChemicalConvert,,,,13.1,
 ChemicalData,,🚫,,6,300
@@ -903,7 +903,7 @@ ColorProfileData,,🚫,,9,2487
 ColorQ,,,,10,2162
 ColorQuantize,,,,7,1827
 ColorReplace,,,,9,1864
-ColorRules,,,,5.1,858
+ColorRules,Option for color rules in visualizations,✅,none,5.1,858
 ColorSeparate,,,,7,1409
 ColorSetter,,,,6,1803
 ColorSlider,,,,6,1949
@@ -939,7 +939,7 @@ CommunityRegionStyle,,,,9,3344
 CompanyData,,🚫,,10,746
 CompatibleUnitQ,Tests if two quantities have compatible units,✅,pure,9,3656
 CompilationOptions,,,,8,1452
-CompilationTarget,,,,8,738
+CompilationTarget,Option for compilation target,✅,none,8,738
 Compile,Compiles a function for numerical evaluation,✅,pure,2,393
 Compiled,,,,2,1697
 CompiledCodeFunction,,,,12,
@@ -1059,7 +1059,7 @@ ContinuousWaveletData,,🚫,,8,4262
 ContinuousWaveletTransform,,,,8,2071
 ContourDetect,,,,8,3737
 ContourIntegrate,,,,13.3,
-ContourLabels,,,,6,843
+ContourLabels,Option for labeling contour lines,✅,none,6,843
 ContourPlot,Creates a contour plot of a function,✅,pure,1,155
 ContourPlot3D,3D contour plot,🚫,none,6,352
 Contours,Option specifying contour levels in contour plots,✅,none,2,418
@@ -1589,7 +1589,7 @@ DropoutLayer,,,,11,2208
 DropShadowing,,,,13.1,
 DSolve,Solves ordinary differential equations symbolically,✅,pure,2,88
 DSolveChangeVariables,,,,13.1,
-DSolveValue,,,,10,711
+DSolveValue,Solve a differential equation and return the solution value,✅,pure,10,711
 DStabilityConditions,,,,14.1,
 Dt,Total derivative treating all variables as potentially dependent,✅,pure,1,476
 DualPlanarGraph,,,,13,
@@ -1639,7 +1639,7 @@ EdgeList,,,,8,763
 EdgeQ,,,,8,3094
 EdgeRules,,,,8,3678
 EdgeShapeFunction,,,,8,1175
-EdgeStyle,,,,8,873
+EdgeStyle,Option for styling edges in graphs,✅,none,8,873
 EdgeTaggedGraph,,,,12.1,4138
 EdgeTaggedGraphQ,,,,12.1,5184
 EdgeTags,,,,12.1,5079
@@ -2076,7 +2076,7 @@ FollowRedirects,,,,11,4947
 FontColor,Option symbol for specifying text color in Style,✅,pure,3,175
 FontFamily,Option specifying the font family for text rendering,✅,none,3,103
 FontSize,Option specifying the default font size in printer's points,✅,none,3,96
-FontSlant,,,,3,856
+FontSlant,Option for font slant style,✅,none,3,856
 FontSubstitutions,,,,3,5013
 FontTracking,,,,3,935
 FontVariations,,,,3,2851
@@ -2413,7 +2413,7 @@ Graphics3D,Creates a 3D graphics object,✅,pure,1,170
 GraphicsColumn,Arranges graphics in a vertical column,✅,pure,6,1239
 GraphicsComplex,Indexed coordinate graphics container,✅,none,6,475
 GraphicsGrid,Arranges graphics in a 2D grid,✅,pure,6,620
-GraphicsGroup,,,,6,725
+GraphicsGroup,Group of graphics primitives,✅,none,6,725
 GraphicsRow,Arranges graphics in a horizontal row,✅,pure,6,494
 GraphIntersection,,,,8,3191
 GraphJoin,,,,13.1,
@@ -2690,7 +2690,7 @@ ImageLabels,,,,12.1,
 ImageLegends,,,,12.1,
 ImageLevels,,,,8,3121
 ImageLines,,,,8,1964
-ImageMargins,,,,3,842
+ImageMargins,Option for margins around an image,✅,none,3,842
 ImageMarker,,,,10.4,4104
 ImageMeasurements,,,,9,2031
 ImageMesh,,,,11,2411
@@ -4078,7 +4078,7 @@ Parallelogram,,,,10,2138
 ParallelProduct,,,,7,4660
 ParallelSubmit,,,,7,1764
 ParallelSum,,,,7,2462
-ParallelTable,,,,7,835
+ParallelTable,Parallel version of Table (evaluated sequentially),✅,pure,7,835
 ParallelTry,,,,7,3298
 ParameterEstimator,,,,8,2344
 ParameterMixtureDistribution,,,,8,1519
@@ -5216,7 +5216,7 @@ StreamDensityPlot,Creates a stream density plot of a vector field,✅,pure,7,146
 StreamMarkers,,,,11.3,4006
 StreamPlot,Creates a streamline plot of a vector field,✅,pure,7,416
 StreamPlot3D,,,,12.3,
-StreamPoints,,,,7,864
+StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7,864
 StreamPosition,,,,2,2570
 Streams,,,,2,2960
 StreamScale,,,,7,1278
@@ -5516,7 +5516,7 @@ TextString,,,,10,2059
 TextStructure,,,,10.3,2545
 TextSummarize,,,,14,
 TextTranslation,,,,11.1,2971
-Texture,,,,8,849
+Texture,Apply a texture to a surface in graphics,✅,none,8,849
 TextureCoordinateFunction,,,,8,1643
 TextureCoordinateScaling,,,,8,2720
 TextureMapping,,,,14,
@@ -5758,7 +5758,7 @@ TruncateSum,,,,14,
 TsallisQExponentialDistribution,,,,9,3947
 TsallisQGaussianDistribution,,,,9,3566
 TTest,,,,8,2203
-Tube,,,,7,720
+Tube,3D tube around a curve,✅,none,7,720
 Tuesday,,,,9,2048
 TukeyLambdaDistribution,,,,8,3402
 TukeyWindow,,,,9,3889
@@ -5965,7 +5965,7 @@ VertexQ,,,,8,3427
 VertexReplace,,,,8,2404
 VertexShape,,,,8,2184
 VertexShapeFunction,,,,8,1177
-VertexSize,,,,8,748
+VertexSize,Option for vertex size in graphs,✅,none,8,748
 VertexStyle,,,,8,969
 VertexTextureCoordinates,,,,8,1076
 VertexTransitiveGraphQ,,,,12.3,
@@ -6161,7 +6161,7 @@ WrapAround,,,,10,5587
 Write,Write expressions to an output stream in OutputForm,✅,effectful,1,1246
 WriteLine,,,,10,2282
 WriteString,Write a string to an output stream,✅,effectful,1,930
-Wronskian,,,,7,876
+Wronskian,Compute the Wronskian determinant of a list of functions,✅,pure,7,876
 XMLElement,Represents an XML element with tag and attributes,✅,pure,4.2,481
 XMLObject,,,,4.2,2755
 XMLTemplate,,,,10,2578

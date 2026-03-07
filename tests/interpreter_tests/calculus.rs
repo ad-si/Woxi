@@ -2260,6 +2260,51 @@ mod div {
   }
 }
 
+mod dsolve_value {
+  use super::*;
+
+  #[test]
+  fn simple_ode() {
+    assert_eq!(
+      interpret("DSolveValue[y'[x] == y[x], y[x], x]").unwrap(),
+      "E^x*C[1]"
+    );
+  }
+
+  #[test]
+  fn second_order() {
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + y[x] == 0, y[x], x]").unwrap(),
+      "C[1]*Cos[x] + C[2]*Sin[x]"
+    );
+  }
+}
+
+mod wronskian {
+  use super::*;
+
+  #[test]
+  fn sin_cos() {
+    assert_eq!(
+      interpret("Wronskian[{Sin[x], Cos[x]}, x]").unwrap(),
+      "-Cos[x]^2 - Sin[x]^2"
+    );
+  }
+
+  #[test]
+  fn polynomials() {
+    assert_eq!(interpret("Wronskian[{1, x, x^2}, x]").unwrap(), "2");
+  }
+
+  #[test]
+  fn exponentials() {
+    assert_eq!(
+      interpret("Wronskian[{E^x, E^(2*x)}, x]").unwrap(),
+      "E^(3*x)"
+    );
+  }
+}
+
 mod series_coefficient {
   use super::*;
 

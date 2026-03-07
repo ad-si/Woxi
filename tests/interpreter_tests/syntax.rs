@@ -4587,6 +4587,26 @@ mod right_composition {
   }
 }
 
+mod parallel_table {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("ParallelTable[i^2, {i, 5}]").unwrap(),
+      "{1, 4, 9, 16, 25}"
+    );
+  }
+
+  #[test]
+  fn multi_dim() {
+    assert_eq!(
+      interpret("ParallelTable[i + j, {i, 2}, {j, 2}]").unwrap(),
+      "{{2, 3}, {3, 4}}"
+    );
+  }
+}
+
 mod sinc {
   use super::*;
 
