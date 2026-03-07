@@ -1798,36 +1798,9 @@ mod import_string {
   }
 
   #[test]
-  fn import_string_csv_column_labels() {
-    assert_eq!(
-      interpret(r#"ImportString["name,age\nAlice,30", "CSV", "ColumnLabels"]"#)
-        .unwrap(),
-      "{name, age}"
-    );
-  }
-
-  #[test]
-  fn import_string_csv_row_count() {
-    assert_eq!(
-      interpret(r#"ImportString["a,b\n1,2\n3,4\n5,6", "CSV", "RowCount"]"#)
-        .unwrap(),
-      "3"
-    );
-  }
-
-  #[test]
-  fn import_string_csv_column_count() {
-    assert_eq!(
-      interpret(r#"ImportString["a,b,c\n1,2,3", "CSV", "ColumnCount"]"#)
-        .unwrap(),
-      "3"
-    );
-  }
-
-  #[test]
   fn import_string_quoted_fields_with_commas() {
     let result = interpret(
-      r#"ImportString["name,desc\n\"Smith, John\",\"a, b\"", "CSV", "Data"]"#,
+      r#"ImportString["name,desc\n\"Smith, John\",\"a, b\"", "CSV"]"#,
     )
     .unwrap();
     assert!(result.contains("Smith, John"));
@@ -1835,28 +1808,11 @@ mod import_string {
   }
 
   #[test]
-  fn import_string_csv_numeric_conversion() {
-    let result =
-      interpret(r#"ImportString["x,y\n1,2.5\n3,4.0", "CSV", "ColumnTypes"]"#)
-        .unwrap();
-    assert!(result.contains("Integer"));
-    assert!(result.contains("Real"));
-  }
-
-  #[test]
-  fn import_string_csv_dimensions() {
+  fn import_string_three_args_returns_unevaluated() {
+    // ImportString only accepts 1 or 2 arguments (matching wolframscript)
     assert_eq!(
-      interpret(r#"ImportString["a,b\n1,2\n3,4", "CSV", "Dimensions"]"#)
-        .unwrap(),
-      "{2, 2}"
+      interpret(r#"ImportString["a,b\n1,2", "CSV", "Data"]"#).unwrap(),
+      "ImportString[a,b\n1,2, CSV, Data]"
     );
-  }
-
-  #[test]
-  fn import_string_csv_elements() {
-    let result =
-      interpret(r#"ImportString["a\n1", "CSV", "Elements"]"#).unwrap();
-    assert!(result.contains("Data"));
-    assert!(result.contains("ColumnLabels"));
   }
 }
