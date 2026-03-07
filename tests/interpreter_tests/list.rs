@@ -3608,3 +3608,44 @@ mod position_index {
     assert_eq!(interpret("PositionIndex[{}]").unwrap(), "<||>");
   }
 }
+
+mod list_convolve {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 1, 1}, {a, b, c, d, e}]").unwrap(),
+      "{a + b + c, b + c + d, c + d + e}"
+    );
+  }
+
+  #[test]
+  fn difference() {
+    assert_eq!(
+      interpret("ListConvolve[{1, -1}, {1, 2, 4, 8, 16}]").unwrap(),
+      "{1, 2, 4, 8}"
+    );
+  }
+
+  #[test]
+  fn weighted_average() {
+    assert_eq!(
+      interpret("ListConvolve[{1, 2, 1}, {1, 0, 0, 1, 0}]").unwrap(),
+      "{1, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn single_element_kernel() {
+    assert_eq!(
+      interpret("ListConvolve[{3}, {1, 2, 3}]").unwrap(),
+      "{3, 6, 9}"
+    );
+  }
+
+  #[test]
+  fn kernel_equals_list() {
+    assert_eq!(interpret("ListConvolve[{1, 2}, {3, 4}]").unwrap(), "{10}");
+  }
+}
