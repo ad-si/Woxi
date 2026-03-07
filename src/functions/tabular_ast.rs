@@ -35,7 +35,7 @@ fn make_tabular_failure(
 }
 
 /// Infer the element type for a column of values.
-fn infer_column_type(values: &[&Expr]) -> String {
+pub(crate) fn infer_column_type(values: &[&Expr]) -> String {
   if values.is_empty() {
     return "Expression".to_string();
   }
@@ -71,7 +71,7 @@ fn infer_column_type(values: &[&Expr]) -> String {
 }
 
 /// Build a TabularSchema expression from column keys and types.
-fn build_schema(
+pub(crate) fn build_schema(
   col_keys: &[Expr],
   col_types: &[String],
   num_rows: usize,

@@ -2734,11 +2734,11 @@ ImagingDevice,,,,10,5390
 ImplicitD,,,,13.1,
 ImplicitRegion,,,,10,488
 Implies,Logical implication,✅,pure,1,868
-Import,Imports data from a file,✅,effectful,4,178
+Import,Imports data from a file (images and CSV),✅,effectful,4,178
 ImportByteArray,,,,11.2,4052
 ImportedObject,,,,12.2,5587
 ImportOptions,,,,10.2,
-ImportString,,,,4,809
+ImportString,Imports data from a string (CSV),✅,pure,4,809
 ImprovementImportance,,,,9,4081
 In,Returns a previous input expression,✅,pure,1,248
 Inactivate,,,,10,1317

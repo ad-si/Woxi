@@ -1668,3 +1668,195 @@ mod file_name_join {
     );
   }
 }
+
+mod csv_import {
+  use super::*;
+
+  #[test]
+  fn import_csv_default_returns_data() {
+    let result = interpret(r#"Import["examples/data.csv"]"#).unwrap();
+    assert!(result.starts_with("{{date, name, fruit, quantity}"));
+    assert!(result.contains("banana"));
+  }
+
+  #[test]
+  fn import_csv_elements() {
+    let result =
+      interpret(r#"Import["examples/data.csv", "Elements"]"#).unwrap();
+    assert!(result.contains("ColumnCount"));
+    assert!(result.contains("Data"));
+    assert!(result.contains("Dataset"));
+    assert!(result.contains("Tabular"));
+  }
+
+  #[test]
+  fn import_csv_column_labels() {
+    assert_eq!(
+      interpret(r#"Import["examples/data.csv", "ColumnLabels"]"#).unwrap(),
+      "{date, name, fruit, quantity}"
+    );
+  }
+
+  #[test]
+  fn import_csv_column_count() {
+    assert_eq!(
+      interpret(r#"Import["examples/data.csv", "ColumnCount"]"#).unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn import_csv_row_count() {
+    assert_eq!(
+      interpret(r#"Import["examples/data.csv", "RowCount"]"#).unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn import_csv_dimensions() {
+    assert_eq!(
+      interpret(r#"Import["examples/data.csv", "Dimensions"]"#).unwrap(),
+      "{6, 4}"
+    );
+  }
+
+  #[test]
+  fn import_csv_column_types() {
+    let result =
+      interpret(r#"Import["examples/data.csv", "ColumnTypes"]"#).unwrap();
+    assert!(result.contains("String"));
+  }
+
+  #[test]
+  fn import_csv_raw_data() {
+    let result =
+      interpret(r#"Import["examples/data.csv", "RawData"]"#).unwrap();
+    assert!(result.contains("banana"));
+    assert!(result.contains("date"));
+  }
+
+  #[test]
+  fn import_csv_data() {
+    let result = interpret(r#"Import["examples/data.csv", "Data"]"#).unwrap();
+    assert!(result.starts_with("{{date, name, fruit, quantity}"));
+    assert!(result.contains("{2025-09-24, John, banana, 3}"));
+  }
+
+  #[test]
+  fn import_csv_summary() {
+    let result =
+      interpret(r#"Import["examples/data.csv", "Summary"]"#).unwrap();
+    assert!(result.contains("Columns"));
+    assert!(result.contains("Rows"));
+    assert!(result.contains("ColumnLabels"));
+  }
+
+  #[test]
+  fn import_csv_dataset() {
+    let result =
+      interpret(r#"Import["examples/data.csv", "Dataset"]"#).unwrap();
+    // Dataset renders as graphics in the interpreter
+    assert!(
+      result == "-Graphics-" || result.starts_with("Dataset["),
+      "unexpected: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn import_csv_schema() {
+    let result = interpret(r#"Import["examples/data.csv", "Schema"]"#).unwrap();
+    assert!(result.starts_with("TabularSchema["));
+    assert!(result.contains("ColumnKeys"));
+    assert!(result.contains("RowCount"));
+  }
+
+  #[test]
+  fn import_csv_tabular() {
+    let result =
+      interpret(r#"Import["examples/data.csv", "Tabular"]"#).unwrap();
+    // Tabular renders as graphics in the interpreter
+    assert!(
+      result == "-Graphics-" || result.starts_with("Tabular["),
+      "unexpected: {}",
+      result
+    );
+  }
+}
+
+mod import_string {
+  use super::*;
+
+  #[test]
+  fn import_string_csv_default() {
+    let result =
+      interpret(r#"ImportString["name,age\nAlice,30\nBob,25", "CSV"]"#)
+        .unwrap();
+    assert!(result.contains("{name, age}"));
+    assert!(result.contains("30"));
+  }
+
+  #[test]
+  fn import_string_csv_column_labels() {
+    assert_eq!(
+      interpret(r#"ImportString["name,age\nAlice,30", "CSV", "ColumnLabels"]"#)
+        .unwrap(),
+      "{name, age}"
+    );
+  }
+
+  #[test]
+  fn import_string_csv_row_count() {
+    assert_eq!(
+      interpret(r#"ImportString["a,b\n1,2\n3,4\n5,6", "CSV", "RowCount"]"#)
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn import_string_csv_column_count() {
+    assert_eq!(
+      interpret(r#"ImportString["a,b,c\n1,2,3", "CSV", "ColumnCount"]"#)
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn import_string_quoted_fields_with_commas() {
+    let result = interpret(
+      r#"ImportString["name,desc\n\"Smith, John\",\"a, b\"", "CSV", "Data"]"#,
+    )
+    .unwrap();
+    assert!(result.contains("Smith, John"));
+    assert!(result.contains("a, b"));
+  }
+
+  #[test]
+  fn import_string_csv_numeric_conversion() {
+    let result =
+      interpret(r#"ImportString["x,y\n1,2.5\n3,4.0", "CSV", "ColumnTypes"]"#)
+        .unwrap();
+    assert!(result.contains("Integer"));
+    assert!(result.contains("Real"));
+  }
+
+  #[test]
+  fn import_string_csv_dimensions() {
+    assert_eq!(
+      interpret(r#"ImportString["a,b\n1,2\n3,4", "CSV", "Dimensions"]"#)
+        .unwrap(),
+      "{2, 2}"
+    );
+  }
+
+  #[test]
+  fn import_string_csv_elements() {
+    let result =
+      interpret(r#"ImportString["a\n1", "CSV", "Elements"]"#).unwrap();
+    assert!(result.contains("Data"));
+    assert!(result.contains("ColumnLabels"));
+  }
+}
