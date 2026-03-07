@@ -180,7 +180,7 @@ pub fn dispatch_image_functions(
         args: args.to_vec(),
       }));
     }
-    "ImportString" if !args.is_empty() && args.len() <= 3 => {
+    "ImportString" if !args.is_empty() && args.len() <= 2 => {
       let content = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => {
@@ -193,8 +193,7 @@ pub fn dispatch_image_functions(
 
       // ImportString[str] — default to CSV
       // ImportString[str, "CSV"] — explicit CSV
-      // ImportString[str, "CSV", element] — CSV with element
-      let format = if args.len() >= 2 {
+      let format = if args.len() == 2 {
         match &args[1] {
           Expr::String(s) => s.as_str(),
           _ => {
@@ -215,23 +214,9 @@ pub fn dispatch_image_functions(
         }));
       }
 
-      let element = if args.len() == 3 {
-        match &args[2] {
-          Expr::String(s) => Some(s.as_str()),
-          _ => {
-            return Some(Ok(Expr::FunctionCall {
-              name: "ImportString".to_string(),
-              args: args.to_vec(),
-            }));
-          }
-        }
-      } else {
-        None
-      };
-
       let rows = crate::functions::csv_ast::parse_csv(&content);
       return Some(Ok(crate::functions::csv_ast::csv_import_element(
-        &rows, element,
+        &rows, None,
       )));
     }
     _ => {}
