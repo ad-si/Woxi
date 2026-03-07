@@ -1717,6 +1717,16 @@ mod plot3d {
     }
 
     #[test]
+    fn graphics3d_cone_default() {
+      insta::assert_snapshot!(export_svg("Graphics3D[Cone[]]"));
+    }
+
+    #[test]
+    fn graphics3d_sphere_and_cone() {
+      insta::assert_snapshot!(export_svg("Graphics3D[{Sphere[], Cone[]}]"));
+    }
+
+    #[test]
     fn graphics3d_multiple_primitives() {
       insta::assert_snapshot!(export_svg(
         "Graphics3D[{Sphere[{0,0,0}, 0.5], Cuboid[{1,1,1}, {2,2,2}]}]"

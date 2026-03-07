@@ -991,7 +991,7 @@ ConcaveHullMesh,,,,13,
 Condition,Represents a pattern with a condition test (pattern /; test),✅,pure,1,66
 ConditionalExpression,Represents an expression valid under a condition,✅,pure,8,715
 Conditioned,,,,8,1501
-Cone,,,,7,1170
+Cone,3D cone graphics primitive,✅,none,7,1170
 ConfidenceLevel,,,,7,1578
 ConfidenceRange,,,,9,5486
 ConfidenceTransform,,,,9,5587
@@ -1222,7 +1222,7 @@ CycleIndexPolynomial,,,,9,3124
 Cycles,,,,8,941
 CyclicGroup,,,,8,3121
 Cyclotomic,n-th cyclotomic polynomial,✅,pure,1,2399
-Cylinder,3D cylinder graphics primitive,🚫,none,6,302
+Cylinder,3D cylinder graphics primitive,✅,none,6,302
 CylindricalDecomposition,,,,5,2350
 CylindricalDecompositionFunction,,,,12.2,
 D,Computes the derivative of an expression,✅,pure,1,36
