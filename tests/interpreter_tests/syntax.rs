@@ -1576,6 +1576,20 @@ mod traditional_form {
   }
 }
 
+mod test_id_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("TestID").unwrap(), "TestID");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[TestID]").unwrap(), "Symbol");
+  }
+}
+
 mod inherited_symbol {
   use super::*;
 
