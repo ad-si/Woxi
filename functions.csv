@@ -1724,7 +1724,7 @@ EntityStores,,,,11.3,
 EntityType,,,,13.3,
 EntityTypeName,,,,10,2729
 EntityUnregister,,,,11.3,5486
-EntityValue,,,,10,342
+EntityValue,Retrieves property values from entities in the Wolfram Knowledgebase,✅,effectful,10,342
 Entropy,,,,7,2124
 EntropyFilter,,,,7,3537
 Environment,Symbol representing the system environment,✅,pure,1,2720

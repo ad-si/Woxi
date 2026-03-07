@@ -1576,6 +1576,20 @@ mod traditional_form {
   }
 }
 
+mod entity_value_function {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("EntityValue[x, y]").unwrap(), "EntityValue[x, y]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[EntityValue[x, y]]").unwrap(), "EntityValue");
+  }
+}
+
 mod item_function {
   use super::*;
 
