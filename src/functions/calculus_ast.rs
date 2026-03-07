@@ -5615,6 +5615,111 @@ pub fn grad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(components))
 }
 
+/// Div[{f1, f2, ...}, {x1, x2, ...}] = divergence = Sum[D[fi, xi]]
+pub fn div_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Div expects exactly 2 arguments".into(),
+    ));
+  }
+  let funcs = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Div".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let vars = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Div".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if funcs.len() != vars.len() {
+    return Ok(Expr::FunctionCall {
+      name: "Div".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let mut terms = Vec::with_capacity(vars.len());
+  for (f, var) in funcs.iter().zip(vars.iter()) {
+    let var_name = match var {
+      Expr::Identifier(s) => s,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Div".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    let deriv = differentiate_expr(f, var_name)?;
+    let evald = crate::evaluator::evaluate_expr_to_expr(&deriv)?;
+    terms.push(evald);
+  }
+
+  if terms.len() == 1 {
+    return Ok(terms.into_iter().next().unwrap());
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms,
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}
+
+/// Laplacian[f, {x1, x2, ...}] = Sum of second partial derivatives
+pub fn laplacian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Laplacian expects exactly 2 arguments".into(),
+    ));
+  }
+  let vars = match &args[1] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Laplacian".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut terms = Vec::with_capacity(vars.len());
+  for var in vars {
+    let var_name = match var {
+      Expr::Identifier(s) => s,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Laplacian".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    };
+    // Second derivative: D[D[f, x], x]
+    let first = differentiate_expr(&args[0], var_name)?;
+    let second = differentiate_expr(&first, var_name)?;
+    let evald = crate::evaluator::evaluate_expr_to_expr(&second)?;
+    terms.push(evald);
+  }
+
+  // Sum all terms
+  if terms.len() == 1 {
+    return Ok(terms.into_iter().next().unwrap());
+  }
+  let sum = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms,
+  };
+  crate::evaluator::evaluate_expr_to_expr(&sum)
+}
+
 /// Curl[{f1, f2}, {x1, x2}] - 2D curl (scalar)
 /// Curl[{f1, f2, f3}, {x1, x2, x3}] - 3D curl (vector)
 pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

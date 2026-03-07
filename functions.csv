@@ -1359,7 +1359,7 @@ DeleteSearchIndex,,,,10.2,4881
 DeleteSmallComponents,,,,8,1334
 DeleteStopwords,,,,10.1,2012
 DelimitedSequence,,,,10,2693
-Delimiter,,,,6,698
+Delimiter,Separator element in menus and palettes,✅,none,6,698
 DelimiterAutoMatching,,,,12.3,
 DelimiterFlashTime,,,,3,4881
 Delimiters,Option symbol specifying what delimiters to use or look for,✅,none,1,3889
@@ -1527,7 +1527,7 @@ DistributionFitTest,,,,8,1343
 DistributionParameterAssumptions,,,,8,2286
 DistributionParameterQ,,,,8,2617
 Dithering,,,,8,3121
-Div,,,,9,736
+Div,Compute the divergence of a vector field,✅,pure,9,736
 Divide,Divide numbers,✅,pure,1,572
 DivideBy,Divides a variable by a value,✅,stateful,1,1555
 Dividers,Option for dividing lines in Grid,✅,none,6,547
@@ -1822,7 +1822,7 @@ ExpressionCell,,,,6,1021
 ExpressionGraph,,,,12.1,2605
 ExpressionTree,,,,12.3,
 ExpressionUUID,,,,13,
-ExpToTrig,,,,3,749
+ExpToTrig,Convert exponentials to trigonometric and hyperbolic functions,✅,pure,3,749
 ExtendedEntityClass,,,,12,4356
 ExtendedGCD,Extended greatest common divisor with Bezout coefficients,✅,pure,1,1557
 Extension,,,,3,1693
@@ -3063,7 +3063,7 @@ LanguageData,,🚫,,10,364
 LanguageIdentify,,,,10.1,3224
 LaplaceDistribution,,,,6,1788
 LaplaceTransform,Compute the Laplace transform of an expression,✅,none,4,458
-Laplacian,,,,9,718
+Laplacian,Compute the Laplacian (sum of second partial derivatives),✅,pure,9,718
 LaplacianFilter,,,,7,3070
 LaplacianGaussianFilter,,,,7,2421
 LaplacianPDETerm,,,,12.2,4567
@@ -5935,7 +5935,7 @@ VersionedPreferences,,,,12.1,
 VertexAdd,,,,8,3191
 VertexCapacity,,,,9,4027
 VertexChromaticNumber,,,,13,
-VertexColors,,,,6,699
+VertexColors,Option for specifying vertex colors in graphics,✅,none,6,699
 VertexComponent,,,,8,2971
 VertexConnectivity,,,,9,3440
 VertexContract,,,,10,3378
