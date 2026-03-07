@@ -4586,3 +4586,79 @@ mod right_composition {
     );
   }
 }
+
+mod sinc {
+  use super::*;
+
+  #[test]
+  fn sinc_zero() {
+    assert_eq!(interpret("Sinc[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn sinc_pi_half() {
+    assert_eq!(interpret("Sinc[Pi/2]").unwrap(), "2/Pi");
+  }
+
+  #[test]
+  fn sinc_pi() {
+    assert_eq!(interpret("Sinc[Pi]").unwrap(), "0");
+  }
+
+  #[test]
+  fn sinc_symbolic() {
+    assert_eq!(interpret("Sinc[x]").unwrap(), "Sinc[x]");
+  }
+
+  #[test]
+  fn sinc_numeric() {
+    assert_eq!(interpret("Sinc[1.0]").unwrap(), "0.8414709848078965");
+  }
+}
+
+mod reim {
+  use super::*;
+
+  #[test]
+  fn reim_complex() {
+    assert_eq!(interpret("ReIm[3 + 4 I]").unwrap(), "{3, 4}");
+  }
+
+  #[test]
+  fn reim_real() {
+    assert_eq!(interpret("ReIm[5]").unwrap(), "{5, 0}");
+  }
+
+  #[test]
+  fn reim_pure_imaginary() {
+    assert_eq!(interpret("ReIm[3 I]").unwrap(), "{0, 3}");
+  }
+}
+
+mod characteristic_polynomial {
+  use super::*;
+
+  #[test]
+  fn two_by_two() {
+    assert_eq!(
+      interpret("CharacteristicPolynomial[{{a, b}, {c, d}}, x]").unwrap(),
+      "-(b*c) + a*d - a*x - d*x + x^2"
+    );
+  }
+
+  #[test]
+  fn identity_matrix() {
+    assert_eq!(
+      interpret("CharacteristicPolynomial[{{1, 0}, {0, 1}}, x]").unwrap(),
+      "1 - 2*x + x^2"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("CharacteristicPolynomial[{{2, 1}, {0, 3}}, x]").unwrap(),
+      "6 - 5*x + x^2"
+    );
+  }
+}

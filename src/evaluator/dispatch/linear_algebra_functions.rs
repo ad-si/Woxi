@@ -101,6 +101,54 @@ pub fn dispatch_linear_algebra_functions(
     "KroneckerProduct" if args.len() == 2 => {
       return Some(kronecker_product_ast(args));
     }
+    "CharacteristicPolynomial" if args.len() == 2 => {
+      // CharacteristicPolynomial[A, x] = Det[A - x*IdentityMatrix[n]]
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        if n > 0
+          && rows
+            .iter()
+            .all(|r| matches!(r, Expr::List(cols) if cols.len() == n))
+        {
+          let x = &args[1];
+          // Build A - x*I
+          let mut new_rows = Vec::with_capacity(n);
+          for (i, row) in rows.iter().enumerate() {
+            if let Expr::List(cols) = row {
+              let mut new_cols = Vec::with_capacity(n);
+              for (j, elem) in cols.iter().enumerate() {
+                if i == j {
+                  // a_ij - x
+                  let entry = Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![
+                      elem.clone(),
+                      Expr::FunctionCall {
+                        name: "Times".to_string(),
+                        args: vec![Expr::Integer(-1), x.clone()],
+                      },
+                    ],
+                  };
+                  new_cols.push(entry);
+                } else {
+                  new_cols.push(elem.clone());
+                }
+              }
+              new_rows.push(Expr::List(new_cols));
+            }
+          }
+          let modified_mat = Expr::List(new_rows);
+          let det_result =
+            crate::functions::linear_algebra_ast::det_ast(&[modified_mat]);
+          match det_result {
+            Ok(det_expr) => {
+              return Some(evaluate_expr_to_expr(&det_expr));
+            }
+            Err(e) => return Some(Err(e)),
+          }
+        }
+      }
+    }
     "Projection" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::projection_ast(args));
     }

@@ -581,6 +581,35 @@ pub fn dispatch_math_functions(
     "Cot" if args.len() == 1 => {
       return Some(crate::functions::math_ast::cot_ast(args));
     }
+    "Sinc" if args.len() == 1 => {
+      // Sinc[0] = 1
+      let is_zero = match &args[0] {
+        Expr::Integer(0) => true,
+        Expr::Real(f) => *f == 0.0,
+        _ => false,
+      };
+      if is_zero {
+        return Some(Ok(Expr::Integer(1)));
+      }
+      // For numeric/exact args, compute Sin[x]/x
+      let sin_result = crate::functions::math_ast::sin_ast(args);
+      match sin_result {
+        Ok(ref sin_val) => {
+          // Only evaluate if Sin actually computed to a value (not symbolic Sin[x])
+          let is_symbolic = matches!(sin_val,
+            Expr::FunctionCall { name, .. } if name == "Sin");
+          if !is_symbolic {
+            let div_expr = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(sin_val.clone()),
+              right: Box::new(args[0].clone()),
+            };
+            return Some(crate::evaluator::evaluate_expr_to_expr(&div_expr));
+          }
+        }
+        Err(e) => return Some(Err(e)),
+      }
+    }
     "Exp" if args.len() == 1 => {
       return Some(crate::functions::math_ast::exp_ast(args));
     }
@@ -721,6 +750,17 @@ pub fn dispatch_math_functions(
     }
     "Im" if args.len() == 1 => {
       return Some(crate::functions::math_ast::im_ast(args));
+    }
+    "ReIm" if args.len() == 1 => {
+      let re = match crate::functions::math_ast::re_ast(args) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let im = match crate::functions::math_ast::im_ast(args) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(Ok(Expr::List(vec![re, im])));
     }
     "Conjugate" if args.len() == 1 => {
       return Some(crate::functions::math_ast::conjugate_ast(args));

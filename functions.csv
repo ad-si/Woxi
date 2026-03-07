@@ -369,7 +369,7 @@ AutoMultiplicationSymbol,,,,6,3972
 AutoOperatorRenderings,,,,12.3,
 AutoRefreshed,,,,10.2,5079
 AutoRemove,,,,10,4881
-AutorunSequencing,,,,6,826
+AutorunSequencing,Option controlling autorun sequence of manipulate,✅,none,6,826
 AutoScroll,,,,3,1578
 AutoSpacing,,,,3,4081
 AutoSubmitting,,,,10.2,5184
@@ -399,7 +399,7 @@ BarChart3D,,,,7,1539
 BarcodeImage,,,,10,2263
 BarcodeRecognize,,,,10,2268
 BaringhausHenzeTest,,,,10.2,4173
-BarLegend,,,,9,805
+BarLegend,Color bar legend for plots,✅,none,9,805
 BarlowProschanImportance,,,,9,4707
 BarnesG,,,,7,1727
 BarOrigin,,,,7,1058
@@ -762,7 +762,7 @@ Character,Symbol used in string patterns to represent a single character,✅,pur
 CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
 CharacterEncoding,,,,3,1434
 CharacteristicFunction,,,,6,1817
-CharacteristicPolynomial,,,,5,793
+CharacteristicPolynomial,Compute the characteristic polynomial of a matrix,✅,pure,5,793
 CharacterName,,,,10.2,3737
 CharacterNormalize,,,,12.1,
 CharacterRange,Returns a list of characters in a range,✅,pure,3,796
@@ -964,7 +964,7 @@ CompleteKaryTree,,,,8,2162
 Complex,Head type for complex numbers,✅,pure,1,541
 ComplexArrayPlot,,,,12.2,4881
 ComplexContourPlot,,,,12.1,2210
-Complexes,,,,4,790
+Complexes,Domain of complex numbers,✅,none,4,790
 ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
 ComplexInfinity,Complex infinity constant,✅,pure,,
 ComplexityFunction,,,,3,1451
@@ -1422,7 +1422,7 @@ DifferenceQuotient,,,,10.4,2911
 DifferenceRoot,,,,7,2798
 DifferenceRootReduce,,,,7,2867
 Differences,Returns successive differences between consecutive elements,✅,pure,6,470
-DifferentialD,,,,3,819
+DifferentialD,Differential d notation symbol,✅,none,3,819
 DifferentialRoot,,,,7,3491
 DifferentialRootReduce,,,,7,2851
 DifferentiatorFilter,,,,9,3717
@@ -1689,7 +1689,7 @@ EmpiricalDistribution,,,,8,1139
 EmptyGraphQ,,,,8,3785
 EmptyRegion,,,,10,2108
 EmptySpaceF,,,,12.2,5486
-Enabled,,,,6,750
+Enabled,Option for whether a control is enabled,✅,none,6,750
 Enclose,,,,12.2,3593
 Encode,,,,2,3717
 Encrypt,,,,10.1,2767
@@ -1790,7 +1790,7 @@ ExcludedLines,,,,10,4881
 ExcludedPhysicalQuantities,,,,10,5486
 ExcludePods,,,,8,5486
 Exclusions,Option for specifying points or curves to exclude from plots,✅,pure,6,464
-ExclusionsStyle,,,,6,769
+ExclusionsStyle,Option for styling exclusion lines in plots,✅,none,6,769
 Exists,,,,5,948
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1,1692
 ExoplanetData,,🚫,,10,4660
@@ -2116,7 +2116,7 @@ FourierDCTMatrix,,,,9,3889
 FourierDST,,,,6,3048
 FourierDSTMatrix,,,,9,4881
 FourierMatrix,,,,9,2642
-FourierParameters,,,,4,803
+FourierParameters,Option for Fourier transform conventions,✅,none,4,803
 FourierSequenceTransform,,,,7,2880
 FourierSeries,,,,7,1317
 FourierSinCoefficient,,,,7,2329
@@ -2138,7 +2138,7 @@ FrameBoxOptions,,,,4,4660
 Framed,Display wrapper that draws a frame around its argument,✅,pure,6,390
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2,221
 FrameListVideo,,,,12.3,
-FrameMargins,,,,6,755
+FrameMargins,Option specifying margins within a frame,✅,none,6,755
 FrameRate,,,,11.2,4527
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2,173
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2,337
@@ -2708,7 +2708,7 @@ ImageQ,Tests whether an expression is an image,✅,pure,7,2462
 ImageRecolor,,,,12,2483
 ImageReflect,Reflects an image horizontally or vertically,✅,pure,7,1951
 ImageResize,Resizes an image to specified dimensions,✅,pure,7,759
-ImageResolution,,,,3,808
+ImageResolution,Option for image resolution in DPI,✅,none,3,808
 ImageRestyle,,,,11.2,2792
 ImageRotate,Rotates an image by a given angle,✅,pure,7,1511
 ImageSaliencyFilter,,,,10,4747
@@ -3114,7 +3114,7 @@ LeftUpVectorBar,,,,3,5390
 LeftVector,,,,3,4356
 LeftVectorBar,,,,3,5390
 LegendAppearance,,,,7,3566
-Legended,,,,7,785
+Legended,Wrapper to attach a legend to a graphic,✅,none,7,785
 LegendFunction,,,,9,1499
 LegendLabel,,,,9,1371
 LegendLayout,,,,9,1348
@@ -3526,7 +3526,7 @@ MeshQualityGoal,,,,10,2742
 MeshRefinementFunction,,,,10,2263
 MeshRegion,,,,10,935
 MeshRegionQ,,,,10,3291
-MeshShading,,,,6,779
+MeshShading,Option for alternating shading between mesh lines,✅,none,6,779
 MeshStyle,Option specifying the style of mesh lines,✅,none,2,527
 Message,Issues a message (no-op in Woxi),✅,effectful,1,362
 MessageDialog,,,,6,1946
@@ -3993,7 +3993,7 @@ OutputPorts,,,,12.2,4947
 OutputResponse,,,,8,1257
 OutputSizeLimit,,,,6,4527
 OutputStream,Output stream object,✅,effectful,2,3298
-OverBar,,,,6,717
+OverBar,Display form with an overbar accent,✅,none,6,717
 OverDot,,,,6,1547
 Overflow,Symbol representing arithmetic overflow,✅,pure,1,1926
 OverHat,,,,6,970
@@ -4004,7 +4004,7 @@ Overscript,,,,3,1704
 OverscriptBox,,,,3,2223
 OverscriptBoxOptions,,,,4,5390
 OverTilde,,,,6,1288
-OverVector,,,,6,777
+OverVector,Display form with a vector arrow accent,✅,none,6,777
 OverwriteTarget,,,,11,2170
 OwenT,,,,8,4567
 OwnValues,Returns the own values of a symbol,✅,pure,2,1092
@@ -4057,7 +4057,7 @@ PairwiseSmoothDensityHistogram,,,,14,
 PaletteNotebook,,,,6,2565
 PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
 Pane,Fixed-size display pane,✅,none,6,594
-Panel,,,,6,717
+Panel,Display content in a panel frame,✅,none,6,717
 Paneled,,,,6,2147
 PaneSelector,,,,6,1793
 ParabolicCylinderD,,,,6,1392
@@ -4601,7 +4601,7 @@ RegularExpression,Represents a regular expression pattern for string matching,�
 Regularization,,,,7,2483
 RegularlySampledQ,,,,10,3843
 RegularPolygon,Regular polygon graphics primitive,✅,none,10.2,710
-ReIm,,,,10.1,800
+ReIm,Real and imaginary parts of a complex number,✅,pure,10.1,800
 ReImLabels,,,,12,5013
 ReImPlot,,,,12,1710
 ReImStyle,,,,12,5486
@@ -4700,7 +4700,7 @@ ReverseGraph,,,,8,3537
 ReverseSort,Sorts a list in reverse order,✅,pure,11.1,2449
 ReverseSortBy,,,,12,3215
 ReverseUpEquilibrium,,,,3,5390
-RevolutionAxis,,,,7,815
+RevolutionAxis,Option for axis of revolution,✅,none,7,815
 RevolutionPlot3D,,,,6,518
 RFixedPoints,,,,14.1,
 RGBColor,Specifies a color by RGB values,✅,pure,1,24
@@ -4894,7 +4894,7 @@ SequenceReverseLayer,,,,11.1,4747
 SequenceSplit,,,,11.3,3656
 SequenceType,,,,13.3,
 Series,Computes a power series expansion,✅,pure,1,195
-SeriesCoefficient,,,,3,680
+SeriesCoefficient,Extract the nth coefficient from a power series,✅,pure,3,680
 SeriesData,Represents a power series expansion,✅,pure,1,1244
 SeriesTermGoal,,,,12.1,3070
 ServiceConnect,,,,10,1914
@@ -4985,7 +4985,7 @@ SimplePolyhedronQ,,,,12,
 Simplex,,,,10,2162
 Simplify,Performs algebraic simplification of expressions,✅,pure,1,68
 Sin,Returns the sine,✅,pure,1,22
-Sinc,,,,6,798
+Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6,798
 SinDegrees,,,,14.1,
 SinghMaddalaDistribution,,,,8,3326
 SingleLetterItalics,,,,3,1897
@@ -5134,7 +5134,7 @@ SpheroidalS2Prime,,,,6,2921
 Splice,,,,12.1,2650
 SplicedDistribution,,,,9,3566
 SplineClosed,Option for closing B-spline curves,✅,pure,7,215
-SplineDegree,,,,7,774
+SplineDegree,Option for the degree of spline interpolation,✅,none,7,774
 SplineKnots,,,,7,1064
 SplineWeights,,,,7,1094
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3,615
@@ -5921,7 +5921,7 @@ VectorSizes,,,,12.1,1940
 VectorStyle,,,,7,1182
 VectorSymbol,,,,14.1,
 Vee,,,,3,3094
-Verbatim,,,,3,723
+Verbatim,Inert wrapper to prevent interpretation,✅,none,3,723
 VerificationTest,,,,10,2119
 VerifyConvergence,,,,2,3291
 VerifyDerivedKey,,,,12,
