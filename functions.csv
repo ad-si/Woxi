@@ -698,7 +698,7 @@ Ceiling,Returns the smallest integer greater than or equal to a number,✅,pure,
 CelestialSystem,,,,10,3765
 Cell,Represents a cell in a notebook with content and style information,✅,pure,3,325
 CellAutoOverwrite,,,,3,1417
-CellBaseline,,,,3,685
+CellBaseline,Option for cell baseline alignment,✅,none,3,685
 CellBracketOptions,,,,4,3889
 CellChangeTimes,,,,6,1975
 CellContext,,,,6,2333
@@ -852,7 +852,7 @@ CloudDeploy,,,,10,821
 CloudDirectory,,,,10,3215
 CloudDisconnect,,,,10,4881
 CloudEvaluate,,,,10,2742
-CloudExport,,,,10,691
+CloudExport,Export to the Wolfram Cloud,✅,none,10,691
 CloudExpression,,,,10.4,3916
 CloudExpressions,,,,10.4,4204
 CloudFunction,,,,10,5013
@@ -2338,7 +2338,7 @@ GeometricSolveValues,,,,14,
 GeometricStep,,,,12.2,3755
 GeometricStylingRules,,,,13.1,
 GeometricTest,,,,12.3,
-GeometricTransformation,,,,6,692
+GeometricTransformation,Apply a geometric transformation,✅,none,6,692
 GeoModel,,,,10,3413
 GeoNearest,,,,10,1281
 GeoOrientationData,,🚫,,12.3,
@@ -4143,7 +4143,7 @@ PenttinenPointProcess,,,,12.2,5486
 PercentForm,,,,12,2124
 PerfectNumber,,,,10.4,3947
 PerfectNumberQ,,,,10.4,4027
-PerformanceGoal,,,,6,656
+PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6,656
 Perimeter,,,,11.1,3353
 PeriodicBoundaryCondition,,,,11,1991
 Periodogram,,,,9,2108
@@ -4757,7 +4757,7 @@ RotateLabel,,,,2,890
 RotateLeft,Rotates list elements to the left,✅,pure,1,637
 RotateRight,Rotates list elements to the right,✅,pure,1,786
 RotationAction,,,,6,1661
-RotationMatrix,,,,6,674
+RotationMatrix,Compute a rotation matrix,✅,none,6,674
 RotationTransform,,,,6,676
 Round,Returns the nearest integer to a number,✅,pure,1,279
 RoundingRadius,,,,7,988
@@ -4858,7 +4858,7 @@ Select,Picks elements of a list that satisfy a criterion,✅,pure,1,149
 Selectable,,,,3,1977
 SelectComponents,,,,8,1593
 SelectedCells,,,,10,2468
-SelectedNotebook,,,,3,687
+SelectedNotebook,Return the currently selected notebook,✅,none,3,687
 SelectFirst,,,,10,1514
 SelectionCreateCell,,,,3,5079
 SelectionEvaluate,,,,3,2051
@@ -5499,7 +5499,7 @@ TeXForm,Convert expressions to LaTeX notation,✅,pure,1,782
 Text,Represents a text graphics primitive,✅,pure,1,122
 TextAlignment,,,,3,1051
 TextCases,,,,10.2,1644
-TextCell,,,,6,663
+TextCell,A text cell in a notebook,✅,none,6,663
 TextClipboardType,,,,7,3785
 TextContents,,,,12,4612
 TextData,,🚫,,8,1086

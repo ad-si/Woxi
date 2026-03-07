@@ -199,6 +199,122 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::cellular_automaton_ast::cellular_automaton_ast(args),
       );
     }
+    "RotationMatrix" if args.len() == 1 => {
+      // 2D rotation matrix: {{Cos[θ], -Sin[θ]}, {Sin[θ], Cos[θ]}}
+      let theta = &args[0];
+      let cos = Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: vec![theta.clone()],
+      };
+      let sin = Expr::FunctionCall {
+        name: "Sin".to_string(),
+        args: vec![theta.clone()],
+      };
+      let neg_sin = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), sin.clone()],
+      };
+      let mat = Expr::List(vec![
+        Expr::List(vec![cos.clone(), neg_sin]),
+        Expr::List(vec![sin, cos]),
+      ]);
+      return Some(evaluate_expr_to_expr(&mat));
+    }
+    "RotationMatrix" if args.len() == 2 => {
+      // 3D rotation matrix around axis {ux, uy, uz} by angle theta
+      // Rodrigues' rotation formula
+      if let Expr::List(axis) = &args[1]
+        && axis.len() == 3
+      {
+        let theta = &args[0];
+        let c = Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![theta.clone()],
+        };
+        let s = Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![theta.clone()],
+        };
+        let one_minus_c = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            Expr::Integer(1),
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![Expr::Integer(-1), c.clone()],
+            },
+          ],
+        };
+        let ux = &axis[0];
+        let uy = &axis[1];
+        let uz = &axis[2];
+
+        // Build the rotation matrix using Rodrigues' formula
+        // R_ij = cos(θ) δ_ij + (1-cos(θ)) u_i u_j - sin(θ) ε_ijk u_k
+        let make_entry = |i: usize, j: usize| -> Expr {
+          let u = [ux, uy, uz];
+          let delta = if i == j {
+            Expr::Integer(1)
+          } else {
+            Expr::Integer(0)
+          };
+          // Cross product sign for ε_ijk: (i,j)→k with sign
+          let cross_term = match (i, j) {
+            (0, 1) => Some((Expr::Integer(-1), uz)), // -sin*uz
+            (1, 0) => Some((Expr::Integer(1), uz)),  // +sin*uz
+            (0, 2) => Some((Expr::Integer(1), uy)),  // +sin*uy
+            (2, 0) => Some((Expr::Integer(-1), uy)), // -sin*uy
+            (1, 2) => Some((Expr::Integer(-1), ux)), // -sin*ux
+            (2, 1) => Some((Expr::Integer(1), ux)),  // +sin*ux
+            _ => None,
+          };
+
+          let mut terms = vec![
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![c.clone(), delta],
+            },
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![one_minus_c.clone(), u[i].clone(), u[j].clone()],
+            },
+          ];
+          if let Some((sign, uk)) = cross_term {
+            terms.push(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![sign, s.clone(), uk.clone()],
+            });
+          }
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: terms,
+          }
+        };
+
+        let mat = Expr::List(vec![
+          Expr::List(vec![
+            make_entry(0, 0),
+            make_entry(0, 1),
+            make_entry(0, 2),
+          ]),
+          Expr::List(vec![
+            make_entry(1, 0),
+            make_entry(1, 1),
+            make_entry(1, 2),
+          ]),
+          Expr::List(vec![
+            make_entry(2, 0),
+            make_entry(2, 1),
+            make_entry(2, 2),
+          ]),
+        ]);
+        return Some(evaluate_expr_to_expr(&mat));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "RotationMatrix".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     _ => {}
   }
   None
