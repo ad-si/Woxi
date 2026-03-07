@@ -220,7 +220,7 @@ ArrayPlot3D,,,,12.2,4006
 ArrayQ,Tests if an expression is a full array,✅,pure,5,1668
 ArrayReduce,,,,12.2,5079
 ArrayResample,,,,10,2557
-ArrayReshape,,,,9,965
+ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9,965
 ArrayRules,,,,5,1517
 Arrays,,,,9,2435
 ArraySymbol,,,,14.1,
@@ -4296,7 +4296,7 @@ PopupMenu,Interactive popup menu control,✅,none,6,792
 PopupView,,,,6,3522
 PopupWindow,,,,6,1975
 Position,Finds all positions of a pattern in a list,✅,pure,1,218
-PositionIndex,,,,10,1120
+PositionIndex,Maps each value to its list positions,✅,pure,10,1120
 PositionLargest,,,,13.2,
 PositionSmallest,,,,13.2,
 Positive,Tests if a number is positive,✅,pure,1,389
