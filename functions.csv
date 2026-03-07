@@ -3668,7 +3668,7 @@ NDEigensystem,,,,10.2,1641
 NDEigenvalues,,,,10.2,2329
 NDSolve,Solves ordinary differential equations numerically,✅,contextual,2,157
 NDSolveValue,,,,9,439
-Nearest,,,,6,602
+Nearest,Find the nearest elements in a list to a given value,✅,none,6,602
 NearestFunction,,,,6,3656
 NearestMeshCells,,,,12.1,4315
 NearestNeighborG,,,,12.2,4809

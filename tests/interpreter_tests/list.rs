@@ -3439,3 +3439,38 @@ mod pdf {
     );
   }
 }
+
+mod nearest {
+  use super::*;
+
+  #[test]
+  fn basic_tie() {
+    assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}, 4]").unwrap(), "{3, 5}");
+  }
+
+  #[test]
+  fn basic_tie_2() {
+    assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}, 6]").unwrap(), "{5, 7}");
+  }
+
+  #[test]
+  fn with_count() {
+    assert_eq!(
+      interpret("Nearest[{1, 3, 5, 7, 9}, 6, 3]").unwrap(),
+      "{5, 7, 3}"
+    );
+  }
+
+  #[test]
+  fn single_nearest() {
+    assert_eq!(
+      interpret("Nearest[{1.0, 2.5, 4.3, 7.1}, 3.0]").unwrap(),
+      "{2.5}"
+    );
+  }
+
+  #[test]
+  fn exact_match() {
+    assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}, 5]").unwrap(), "{5}");
+  }
+}
