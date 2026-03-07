@@ -260,6 +260,23 @@ mod options {
   }
 }
 
+mod options_pattern {
+  use super::*;
+
+  #[test]
+  fn bare_symbolic() {
+    assert_eq!(interpret("OptionsPattern[]").unwrap(), "OptionsPattern[]");
+  }
+
+  #[test]
+  fn bare_with_defaults_symbolic() {
+    assert_eq!(
+      interpret("OptionsPattern[{a -> 1}]").unwrap(),
+      "OptionsPattern[{a -> 1}]"
+    );
+  }
+}
+
 mod option_value {
   use super::*;
 
@@ -325,6 +342,59 @@ mod option_value {
         "Options[h] = {x -> 42}; h[OptionsPattern[]] := OptionValue[x]; h[]"
       )
       .unwrap(),
+      "42"
+    );
+  }
+
+  #[test]
+  fn inline_defaults_basic() {
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{a -> a0, b -> b0}]] := {x, OptionValue[a]}; f[7]"
+      )
+      .unwrap(),
+      "{7, a0}"
+    );
+  }
+
+  #[test]
+  fn inline_defaults_with_override() {
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{a -> a0, b -> b0}]] := {x, OptionValue[a]}; f[7, a -> uuu]"
+      )
+      .unwrap(),
+      "{7, uuu}"
+    );
+  }
+
+  #[test]
+  fn inline_defaults_multiple_option_values() {
+    assert_eq!(
+      interpret(
+        "f[x_, OptionsPattern[{a -> a0, b -> b0}]] := {x, OptionValue[a], OptionValue[b]}; f[7, b -> bbb]"
+      )
+      .unwrap(),
+      "{7, a0, bbb}"
+    );
+  }
+
+  #[test]
+  fn inline_defaults_override_options() {
+    // OptionsPattern[{...}] inline defaults take priority over Options[f]
+    assert_eq!(
+      interpret(
+        "Options[f] = {a -> fromOptions}; f[x_, OptionsPattern[{a -> fromPattern, b -> b0}]] := {x, OptionValue[a], OptionValue[b]}; f[7]"
+      )
+      .unwrap(),
+      "{7, fromPattern, b0}"
+    );
+  }
+
+  #[test]
+  fn inline_defaults_no_args_pattern() {
+    assert_eq!(
+      interpret("h[OptionsPattern[{x -> 42}]] := OptionValue[x]; h[]").unwrap(),
       "42"
     );
   }

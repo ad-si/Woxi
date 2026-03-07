@@ -716,19 +716,27 @@ pub fn set_delayed_ast(
     // We also need to track substitutions for list-pattern destructuring
     let mut body_substitutions: Vec<(String, Vec<(String, Option<String>)>)> =
       Vec::new();
+    let mut inline_opts_defaults: Option<Vec<Expr>> = None;
 
     for (i, arg) in lhs_args.iter().enumerate() {
       match arg {
-        // OptionsPattern[] — matches zero or more Rule arguments
-        Expr::FunctionCall { name: fn_name, .. }
-          if fn_name == "OptionsPattern" =>
-        {
+        // OptionsPattern[] or OptionsPattern[{defaults...}] — matches zero or more Rule arguments
+        Expr::FunctionCall {
+          name: fn_name,
+          args: op_args,
+        } if fn_name == "OptionsPattern" => {
           let param_name = format!("__opts{}", i);
           params.push(param_name);
           conditions.push(None);
           defaults.push(None);
           heads.push(None);
           blank_types.push(3); // BlankNullSequence - matches 0 or more args
+          // Extract inline defaults from OptionsPattern[{a -> a0, ...}]
+          if op_args.len() == 1
+            && let Expr::List(rules) = &op_args[0]
+          {
+            inline_opts_defaults = Some(rules.clone());
+          }
         }
         // List pattern: {x_Integer, y_Integer} — destructure a list argument
         Expr::List(patterns) => {
@@ -893,6 +901,24 @@ pub fn set_delayed_ast(
           final_body,
         ));
       }
+      // Store inline OptionsPattern defaults, keeping in sync with FUNC_DEFS entries
+      crate::FUNC_OPTS_INLINE.with(|oi| {
+        let mut inline_map = oi.borrow_mut();
+        let inline_entry =
+          inline_map.entry(func_name.clone()).or_insert_with(Vec::new);
+        // Ensure the inline_entry has the same length as the FUNC_DEFS entry
+        while inline_entry.len() < entry.len() {
+          inline_entry.push(None);
+        }
+        // Set the inline defaults for this overload
+        if let Some(ref opts) = inline_opts_defaults {
+          if has_literal_conditions {
+            inline_entry[0] = Some(opts.clone());
+          } else {
+            *inline_entry.last_mut().unwrap() = Some(opts.clone());
+          }
+        }
+      });
     });
 
     return Ok(Expr::Identifier("Null".to_string()));
