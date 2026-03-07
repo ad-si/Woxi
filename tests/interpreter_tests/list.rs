@@ -3474,3 +3474,60 @@ mod nearest {
     assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}, 5]").unwrap(), "{5}");
   }
 }
+
+mod array_pad {
+  use super::*;
+
+  #[test]
+  fn basic_pad() {
+    assert_eq!(
+      interpret("ArrayPad[{1, 2, 3}, 2]").unwrap(),
+      "{0, 0, 1, 2, 3, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn pad_with_value() {
+    assert_eq!(
+      interpret("ArrayPad[{1, 2, 3}, 2, x]").unwrap(),
+      "{x, x, 1, 2, 3, x, x}"
+    );
+  }
+
+  #[test]
+  fn asymmetric_pad() {
+    assert_eq!(
+      interpret("ArrayPad[{1, 2, 3}, {1, 2}]").unwrap(),
+      "{0, 1, 2, 3, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn negative_pad_trims() {
+    assert_eq!(
+      interpret("ArrayPad[{1, 2, 3, 4, 5}, -1]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn two_dimensional() {
+    assert_eq!(
+      interpret("ArrayPad[{{1, 2}, {3, 4}}, 1]").unwrap(),
+      "{{0, 0, 0, 0}, {0, 1, 2, 0}, {0, 3, 4, 0}, {0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn pad_zero() {
+    assert_eq!(interpret("ArrayPad[{1, 2, 3}, 0]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn asymmetric_with_value() {
+    assert_eq!(
+      interpret("ArrayPad[{1, 2}, {1, 3}, x]").unwrap(),
+      "{x, 1, 2, x, x, x}"
+    );
+  }
+}
