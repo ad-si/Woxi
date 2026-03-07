@@ -440,6 +440,12 @@ pub fn extract_part_ast(
         Ok(part_take_unevaluated(expr, index))
       }
     }
-    _ => Ok(part_take_unevaluated(expr, index)),
+    _ => {
+      // Atoms: Part[atom, 0] returns the Head of the atom
+      if idx == 0 {
+        return crate::functions::predicate_ast::head_ast(&[expr.clone()]);
+      }
+      Ok(part_take_unevaluated(expr, index))
+    }
   }
 }
