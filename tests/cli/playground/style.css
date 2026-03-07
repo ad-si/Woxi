@@ -320,13 +320,6 @@ pre.output-box {
   overflow-x: auto;
 }
 
-
-.output-box.text-box svg text,
-.output-box.text-box svg tspan {
-  fill: currentColor;
-}
-
-
 .output-box.text-box svg {
   display: block;
 }
