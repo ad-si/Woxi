@@ -1540,6 +1540,42 @@ mod hold_rest_symbol {
   }
 }
 
+mod traditional_form {
+  use super::*;
+
+  #[test]
+  fn wraps_expression() {
+    assert_eq!(
+      interpret("TraditionalForm[x + y]").unwrap(),
+      "TraditionalForm[x + y]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[TraditionalForm[x]]").unwrap(),
+      "TraditionalForm"
+    );
+  }
+
+  #[test]
+  fn evaluates_argument() {
+    assert_eq!(
+      interpret("TraditionalForm[1 + 2]").unwrap(),
+      "TraditionalForm[3]"
+    );
+  }
+
+  #[test]
+  fn nested_expression() {
+    assert_eq!(
+      interpret("TraditionalForm[Sin[Pi/4]]").unwrap(),
+      "TraditionalForm[1/Sqrt[2]]"
+    );
+  }
+}
+
 mod inherited_symbol {
   use super::*;
 

@@ -1574,6 +1574,7 @@ fn has_form_wrapper(expr: &syntax::Expr, target: &str) -> bool {
             | "StandardForm"
             | "InputForm"
             | "OutputForm"
+            | "TraditionalForm"
         ) =>
     {
       name == target || has_form_wrapper(&args[0], target)
@@ -1594,6 +1595,7 @@ fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
             | "StandardForm"
             | "InputForm"
             | "OutputForm"
+            | "TraditionalForm"
         ) =>
     {
       unwrap_form_wrappers(&args[0])
@@ -1628,9 +1630,10 @@ fn generate_output_svg(expr: &syntax::Expr) {
   {
     return;
   }
-  // Unwrap StandardForm — render SVG for the inner expression
+  // Unwrap StandardForm/TraditionalForm — render SVG for the inner expression
   let expr = if let syntax::Expr::FunctionCall { name, args } = expr {
-    if name == "StandardForm" && args.len() == 1 {
+    if (name == "StandardForm" || name == "TraditionalForm") && args.len() == 1
+    {
       &args[0]
     } else {
       expr
