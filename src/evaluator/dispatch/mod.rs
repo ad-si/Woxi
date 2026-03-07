@@ -271,15 +271,20 @@ fn collect_option_bindings(
   func_name: &str,
   params: &[String],
   effective_args: &[Expr],
+  inline_opts: Option<&Vec<Expr>>,
 ) -> Option<Vec<(String, Expr)>> {
   // Find the __opts parameter
   let opts_idx = params.iter().position(|p| p.starts_with("__opts"))?;
   let opts_arg = &effective_args[opts_idx];
 
-  // Get stored defaults from Options[func_name]
-  let defaults: Vec<Expr> = crate::FUNC_OPTIONS
-    .with(|m| m.borrow().get(func_name).cloned())
-    .unwrap_or_default();
+  // Get defaults: inline OptionsPattern[{...}] defaults take priority over Options[func_name]
+  let defaults: Vec<Expr> = if let Some(inline) = inline_opts {
+    inline.clone()
+  } else {
+    crate::FUNC_OPTIONS
+      .with(|m| m.borrow().get(func_name).cloned())
+      .unwrap_or_default()
+  };
 
   // Build default bindings
   let mut bindings: Vec<(String, Expr)> = Vec::new();
@@ -434,16 +439,16 @@ pub fn evaluate_function_call_ast_inner(
     let defs = m.borrow();
     defs.get(name).cloned()
   });
+  let inline_opts_overloads = crate::FUNC_OPTS_INLINE.with(|m| {
+    let map = m.borrow();
+    map.get(name).cloned()
+  });
 
   if let Some(overloads) = overloads {
     for (
-      params,
-      conditions,
-      param_defaults,
-      param_heads,
-      blank_types,
-      body_expr,
-    ) in &overloads
+      overload_idx,
+      (params, conditions, param_defaults, param_heads, blank_types, body_expr),
+    ) in overloads.iter().enumerate()
     {
       // Check if any parameter is a sequence pattern (BlankSequence/BlankNullSequence)
       let has_sequence_param = blank_types.iter().any(|&bt| bt >= 2);
@@ -631,8 +636,12 @@ pub fn evaluate_function_call_ast_inner(
           );
         }
         // Push option context if this overload uses OptionsPattern
+        let inline_opts = inline_opts_overloads
+          .as_ref()
+          .and_then(|v| v.get(overload_idx))
+          .and_then(|o| o.as_ref());
         let opt_bindings =
-          collect_option_bindings(name, params, &effective_args);
+          collect_option_bindings(name, params, &effective_args, inline_opts);
         if let Some(ref bindings) = opt_bindings {
           crate::OPTION_VALUE_CONTEXT.with(|ctx| {
             ctx.borrow_mut().push((name.to_string(), bindings.clone()));
@@ -886,7 +895,12 @@ pub fn evaluate_function_call_ast_inner(
           crate::syntax::substitute_variable(&substituted, bind_name, bind_val);
       }
       // Push option context if this overload uses OptionsPattern
-      let opt_bindings = collect_option_bindings(name, params, &effective_args);
+      let inline_opts2 = inline_opts_overloads
+        .as_ref()
+        .and_then(|v| v.get(overload_idx))
+        .and_then(|o| o.as_ref());
+      let opt_bindings =
+        collect_option_bindings(name, params, &effective_args, inline_opts2);
       if let Some(ref bindings) = opt_bindings {
         crate::OPTION_VALUE_CONTEXT.with(|ctx| {
           ctx.borrow_mut().push((name.to_string(), bindings.clone()));

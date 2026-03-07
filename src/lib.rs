@@ -45,6 +45,9 @@ thread_local! {
     // Current option bindings for OptionValue during function evaluation
     // Stack of (function_name, Vec<(option_name, option_value)>)
     pub static OPTION_VALUE_CONTEXT: RefCell<Vec<(String, Vec<(String, syntax::Expr)>)>> = const { RefCell::new(Vec::new()) };
+    // Inline OptionsPattern defaults: func_name -> Vec of Option<Vec<Expr>> per overload
+    // When OptionsPattern[{a -> a0, ...}] is used, stores the inline defaults for that overload
+    pub static FUNC_OPTS_INLINE: RefCell<HashMap<String, Vec<Option<Vec<syntax::Expr>>>>> = RefCell::new(HashMap::new());
 }
 
 #[derive(Error, Debug)]
@@ -585,6 +588,7 @@ pub fn clear_state() {
   FUNC_DEFS.with(|m| m.borrow_mut().clear());
   FUNC_ATTRS.with(|m| m.borrow_mut().clear());
   FUNC_OPTIONS.with(|m| m.borrow_mut().clear());
+  FUNC_OPTS_INLINE.with(|m| m.borrow_mut().clear());
   UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_STACK.with(|s| s.borrow_mut().clear());
