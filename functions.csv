@@ -696,7 +696,7 @@ CDFDeploy,,,,8,2642
 CDFWavelet,,,,8,3344
 Ceiling,Returns the smallest integer greater than or equal to a number,✅,pure,1,395
 CelestialSystem,,,,10,3765
-Cell,,,,3,325
+Cell,Represents a cell in a notebook with content and style information,✅,pure,3,325
 CellAutoOverwrite,,,,3,1417
 CellBaseline,,,,3,685
 CellBracketOptions,,,,4,3889

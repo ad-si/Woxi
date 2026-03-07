@@ -1576,6 +1576,28 @@ mod traditional_form {
   }
 }
 
+mod cell_function {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("Cell[\"hello\"]").unwrap(), "Cell[hello]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Cell[\"hello\"]]").unwrap(), "Cell");
+  }
+
+  #[test]
+  fn with_style() {
+    assert_eq!(
+      interpret("Cell[TextData[\"test\"], \"Input\"]").unwrap(),
+      "Cell[TextData[test], Input]"
+    );
+  }
+}
+
 mod test_id_symbol {
   use super::*;
 
