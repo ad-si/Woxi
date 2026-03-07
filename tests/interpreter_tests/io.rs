@@ -1816,3 +1816,60 @@ mod import_string {
     );
   }
 }
+
+mod file_names {
+  use super::*;
+
+  #[test]
+  fn returns_list() {
+    // FileNames returns a list
+    let result = interpret(r#"Head[FileNames[]]"#).unwrap();
+    assert_eq!(result, "List");
+  }
+
+  #[test]
+  fn pattern_match() {
+    // FileNames["*.toml"] should find Cargo.toml
+    let result =
+      interpret(r#"MemberQ[FileNames["*.toml"], "Cargo.toml"]"#).unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn with_directory() {
+    // FileNames["*.rs", "src"] should find lib.rs
+    let result =
+      interpret(r#"MemberQ[FileNames["*.rs", "src"], "src/lib.rs"]"#).unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn recursive() {
+    // FileNames["*.rs", "src", Infinity] should find deeply nested files
+    let result = interpret(
+      r#"Length[FileNames["*.rs", "src", Infinity]] > Length[FileNames["*.rs", "src"]]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn no_args_includes_dirs() {
+    // FileNames[] should include directories like "src"
+    let result = interpret(r#"MemberQ[FileNames[], "src"]"#).unwrap();
+    assert_eq!(result, "True");
+  }
+}
+
+mod set_directory {
+  use super::*;
+
+  #[test]
+  fn set_and_check() {
+    // SetDirectory returns the new directory path as a string
+    let result = interpret(r#"StringQ[SetDirectory["src"]]"#).unwrap();
+    assert_eq!(result, "True");
+    // Reset back
+    let _ = interpret(r#"SetDirectory[".."]"#);
+  }
+}
