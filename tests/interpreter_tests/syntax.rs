@@ -1576,6 +1576,88 @@ mod traditional_form {
   }
 }
 
+mod plot_range_padding_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("PlotRangePadding").unwrap(), "PlotRangePadding");
+  }
+}
+
+mod plain_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("Plain").unwrap(), "Plain");
+  }
+}
+
+mod distributed_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("Distributed").unwrap(), "Distributed");
+  }
+}
+
+mod entity_property_function {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("EntityProperty[\"Country\", \"Population\"]").unwrap(),
+      "EntityProperty[Country, Population]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[EntityProperty[x, y]]").unwrap(),
+      "EntityProperty"
+    );
+  }
+}
+
+mod font_weight_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("FontWeight").unwrap(), "FontWeight");
+  }
+}
+
+mod control_type_symbol {
+  use super::*;
+
+  #[test]
+  fn evaluates_to_itself() {
+    assert_eq!(interpret("ControlType").unwrap(), "ControlType");
+  }
+}
+
+mod labeled_function {
+  use super::*;
+
+  #[test]
+  fn wraps_expression() {
+    assert_eq!(
+      interpret("Labeled[x, \"label\"]").unwrap(),
+      "Labeled[x, label]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Labeled[x, y]]").unwrap(), "Labeled");
+  }
+}
+
 mod entity_value_function {
   use super::*;
 
