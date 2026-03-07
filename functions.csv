@@ -127,7 +127,7 @@ AnimatedImage,,🚫,,12.2,4027
 AnimationDirection,,,,3,2338
 AnimationRate,,,,6,1122
 AnimationRepetitions,,,,6,1552
-AnimationRunning,,,,6,686
+AnimationRunning,Option controlling whether an animation is running,✅,none,6,686
 AnimationRunTime,,,,10,4479
 AnimationTimeIndex,,,,10,4660
 AnimationVideo,,,,12.3,
@@ -770,7 +770,7 @@ Characters,Converts a string into a list of single-character strings,✅,pure,1,
 ChartBaseStyle,,,,7,1675
 ChartElementFunction,,,,7,937
 ChartElements,,,,7,2421
-ChartLabels,,,,7,661
+ChartLabels,Option for labeling elements in charts,✅,none,7,661
 ChartLayout,,,,7,1223
 ChartLegends,,,,7,1006
 ChartStyle,Style specification for chart elements,✅,pure,7,634
@@ -1241,7 +1241,7 @@ Databins,,,,10,3737
 DatabinSubmit,,,,12.2,5184
 DatabinUpload,,,,10.1,4612
 DataDistribution,,,,8,3578
-DataRange,,,,5.1,678
+DataRange,Option specifying the range of data,✅,none,5.1,678
 DataReversed,,,,6,1455
 Dataset,Wraps data with type information for structured data handling,✅,pure,10,610
 DatasetTheme,,,,12.3,
@@ -4228,7 +4228,7 @@ PlotLegends,Option for adding legends to plots identifying each series,✅,pure,
 PlotMarkers,Option for specifying markers on plot points,✅,pure,6,500
 PlotPoints,Option for number of sample points in plots,✅,pure,1,193
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,39
-PlotRangeClipping,,,,6,674
+PlotRangeClipping,Option for whether to clip plot elements at the plot range,✅,none,6,674
 PlotRangePadding,Option for specifying padding around plot ranges,✅,pure,6,359
 PlotRegion,,,,2,1875
 PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1,45
@@ -4716,7 +4716,7 @@ Right,Symbol for right alignment,✅,pure,1,378
 RightArrow,Typesetting arrow symbol,🚫,none,3,235
 RightArrowBar,,,,3,4747
 RightArrowLeftArrow,,,,3,5390
-RightComposition,,,,10,662
+RightComposition,Compose functions left-to-right,✅,pure,10,662
 RightCosetRepresentative,,,,8,4527
 RightDownTeeVector,,,,3,5390
 RightDownVector,,,,3,5390
@@ -4758,7 +4758,7 @@ RotateLeft,Rotates list elements to the left,✅,pure,1,637
 RotateRight,Rotates list elements to the right,✅,pure,1,786
 RotationAction,,,,6,1661
 RotationMatrix,Compute a rotation matrix,✅,none,6,674
-RotationTransform,,,,6,676
+RotationTransform,Represent a rotation transformation,✅,none,6,676
 Round,Returns the nearest integer to a number,✅,pure,1,279
 RoundingRadius,,,,7,988
 Row,Displays elements in a row,✅,pure,6,87
@@ -5956,7 +5956,7 @@ VertexIndex,,,,8,2149
 VertexJaccardSimilarity,,,,9,4947
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8,453
 VertexLabelStyle,,,,8,1419
-VertexList,,,,8,657
+VertexList,List of vertices in a graph,✅,none,8,657
 VertexNormals,,,,6,1721
 VertexOutComponent,,,,8,2605
 VertexOutComponentGraph,,,,12.3,

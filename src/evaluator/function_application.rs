@@ -452,6 +452,14 @@ pub fn apply_curried_call(
           result = vec![intermediate];
         }
         Ok(result.into_iter().next().unwrap())
+      } else if name == "RightComposition" && !func_args.is_empty() {
+        // RightComposition[f, g, h][x] applies functions left-to-right: h[g[f[x]]]
+        let mut result = args.to_vec();
+        for f in func_args.iter() {
+          let intermediate = apply_curried_call(f, &result)?;
+          result = vec![intermediate];
+        }
+        Ok(result.into_iter().next().unwrap())
       } else if name == "MapAt" && func_args.len() == 2 && args.len() == 1 {
         // MapAt[f, pos][expr] -> MapAt[f, expr, pos]
         let new_args =

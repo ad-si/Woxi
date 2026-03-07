@@ -1114,6 +1114,31 @@ pub fn dispatch_list_operations(
         args: flat,
       }));
     }
+    // RightComposition[] -> Identity
+    "RightComposition" if args.is_empty() => {
+      return Some(Ok(Expr::Identifier("Identity".to_string())));
+    }
+    // RightComposition[f] -> f
+    "RightComposition" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
+    }
+    // RightComposition[f, RightComposition[g, h], k] -> RightComposition[f, g, h, k]
+    "RightComposition" if args.len() >= 2 => {
+      let mut flat = Vec::new();
+      for arg in args {
+        if let Expr::FunctionCall { name: n, args: a } = arg
+          && n == "RightComposition"
+        {
+          flat.extend(a.iter().cloned());
+          continue;
+        }
+        flat.push(arg.clone());
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "RightComposition".to_string(),
+        args: flat,
+      }));
+    }
     "Outer" if args.len() >= 3 => {
       return Some(list_helpers_ast::outer_ast(&args[0], &args[1..]));
     }
