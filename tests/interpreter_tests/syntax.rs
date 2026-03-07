@@ -1540,6 +1540,25 @@ mod hold_rest_symbol {
   }
 }
 
+mod inherited_symbol {
+  use super::*;
+
+  #[test]
+  fn inherited_evaluates_to_itself() {
+    assert_eq!(interpret("Inherited").unwrap(), "Inherited");
+  }
+
+  #[test]
+  fn inherited_head() {
+    assert_eq!(interpret("Head[Inherited]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn inherited_identity() {
+    assert_eq!(interpret("Inherited === Inherited").unwrap(), "True");
+  }
+}
+
 mod off_function {
   use super::*;
 

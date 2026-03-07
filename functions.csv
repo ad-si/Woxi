@@ -2786,7 +2786,7 @@ Infix,Symbol for infix display formatting,✅,pure,1,2449
 InflationAdjust,,,,10,3317
 InflationMethod,,,,10,5486
 Information,Displays information about a symbol,✅,pure,1,320
-Inherited,,,,6,310
+Inherited,Symbol indicating a setting should be inherited from a higher level,✅,pure,6,310
 InheritScope,,,,10,3843
 InhomogeneousPoissonPointProcess,,,,12.2,5184
 InhomogeneousPoissonProcess,,,,10.1,4173
