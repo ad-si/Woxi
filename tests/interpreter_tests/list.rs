@@ -3531,3 +3531,80 @@ mod array_pad {
     );
   }
 }
+
+mod array_reshape {
+  use super::*;
+
+  #[test]
+  fn basic_2d() {
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3, 4, 5, 6}, {2, 3}]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}}"
+    );
+  }
+
+  #[test]
+  fn pad_with_zeros() {
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3}, {2, 3}]").unwrap(),
+      "{{1, 2, 3}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn truncate() {
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3, 4, 5, 6, 7}, {2, 3}]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}}"
+    );
+  }
+
+  #[test]
+  fn three_dimensional() {
+    assert_eq!(
+      interpret("ArrayReshape[Range[12], {2, 2, 3}]").unwrap(),
+      "{{{1, 2, 3}, {4, 5, 6}}, {{7, 8, 9}, {10, 11, 12}}}"
+    );
+  }
+
+  #[test]
+  fn flat_to_1d() {
+    assert_eq!(
+      interpret("ArrayReshape[{1, 2, 3, 4}, {4}]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+}
+
+mod position_index {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("PositionIndex[{a, b, c, a, b, a}]").unwrap(),
+      "<|a -> {1, 4, 6}, b -> {2, 5}, c -> {3}|>"
+    );
+  }
+
+  #[test]
+  fn all_unique() {
+    assert_eq!(
+      interpret("PositionIndex[{x, y, z}]").unwrap(),
+      "<|x -> {1}, y -> {2}, z -> {3}|>"
+    );
+  }
+
+  #[test]
+  fn all_same() {
+    assert_eq!(
+      interpret("PositionIndex[{1, 1, 1}]").unwrap(),
+      "<|1 -> {1, 2, 3}|>"
+    );
+  }
+
+  #[test]
+  fn empty() {
+    assert_eq!(interpret("PositionIndex[{}]").unwrap(), "<||>");
+  }
+}
