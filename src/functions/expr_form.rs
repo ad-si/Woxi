@@ -254,9 +254,27 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
           children: operands.clone(),
         }
       } else {
+        // Inequality[a, LessEqual, b, Less, c] — interleave operands and operators
+        let mut children = Vec::with_capacity(operands.len() + operators.len());
+        for (i, op) in operands.iter().enumerate() {
+          children.push(op.clone());
+          if i < operators.len() {
+            let op_name = match &operators[i] {
+              ComparisonOp::Equal => "Equal",
+              ComparisonOp::NotEqual => "Unequal",
+              ComparisonOp::Less => "Less",
+              ComparisonOp::LessEqual => "LessEqual",
+              ComparisonOp::Greater => "Greater",
+              ComparisonOp::GreaterEqual => "GreaterEqual",
+              ComparisonOp::SameQ => "SameQ",
+              ComparisonOp::UnsameQ => "UnsameQ",
+            };
+            children.push(Expr::Identifier(op_name.to_string()));
+          }
+        }
         ExprForm::Composite {
           head: "Inequality".to_string(),
-          children: operands.clone(),
+          children,
         }
       }
     }

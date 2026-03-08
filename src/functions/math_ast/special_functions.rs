@@ -3707,7 +3707,7 @@ fn riemann_r_numeric(x: f64) -> f64 {
     let t = sum + y;
     comp = (t - sum) - y;
     sum = t;
-    if term.abs() < 1e-15 * sum.abs() {
+    if term.abs() < 1e-16 * sum.abs() {
       break;
     }
   }
@@ -3863,7 +3863,7 @@ fn hypergeometric_pfq_numeric(a: &[f64], b: &[f64], z: f64) -> f64 {
     let t = sum + y;
     comp = (t - sum) - y;
     sum = t;
-    if term.abs() < 1e-15 * sum.abs() {
+    if term.abs() < 1e-16 * sum.abs() {
       break;
     }
     if !sum.is_finite() {

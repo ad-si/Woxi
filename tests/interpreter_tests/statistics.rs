@@ -636,7 +636,7 @@ mod cdf {
   fn uniform_default() {
     assert_eq!(
       interpret("CDF[UniformDistribution[{0, 1}], x]").unwrap(),
-      "Piecewise[{{x, 0 <= x <= 1}, {1, x > 1}}, 0]"
+      "Piecewise[{{x, Inequality[0, LessEqual, x, LessEqual, 1]}, {1, x > 1}}, 0]"
     );
   }
 
@@ -644,7 +644,7 @@ mod cdf {
   fn bernoulli() {
     assert_eq!(
       interpret("CDF[BernoulliDistribution[p], k]").unwrap(),
-      "Piecewise[{{0, k < 0}, {1 - p, 0 <= k < 1}}, 1]"
+      "Piecewise[{{0, k < 0}, {1 - p, Inequality[0, LessEqual, k, Less, 1]}}, 1]"
     );
   }
 

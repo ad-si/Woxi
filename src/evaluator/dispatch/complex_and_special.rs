@@ -1002,15 +1002,11 @@ pub fn dispatch_complex_and_special(
         args: args.to_vec(),
       }));
     }
-    // TraditionalForm[expr] → DisplayForm[FormBox[boxes, TraditionalForm]]
+    // TraditionalForm[expr] — keep as-is (formatting wrapper, not eagerly evaluated)
     "TraditionalForm" if args.len() == 1 => {
-      let boxes = expr_to_box_form(&args[0]);
       return Some(Ok(Expr::FunctionCall {
-        name: "DisplayForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "FormBox".to_string(),
-          args: vec![boxes, Expr::Identifier("TraditionalForm".to_string())],
-        }],
+        name: "TraditionalForm".to_string(),
+        args: args.to_vec(),
       }));
     }
     // Format is transparent -- returns the inner expression
@@ -1096,7 +1092,7 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
 }
 
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
-fn expr_to_box_form(expr: &Expr) -> Expr {
+pub fn expr_to_box_form(expr: &Expr) -> Expr {
   match expr {
     Expr::Integer(_)
     | Expr::Real(_)
