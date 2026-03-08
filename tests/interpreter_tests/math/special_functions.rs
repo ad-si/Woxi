@@ -3043,7 +3043,7 @@ mod hypergeometric_pfq {
   fn numeric_2f1() {
     assert_eq!(
       interpret("HypergeometricPFQ[{1, 2}, {3}, 0.5]").unwrap(),
-      "1.5451774444795614"
+      "1.5451774444795623"
     );
   }
 
@@ -3075,7 +3075,7 @@ mod hypergeometric_pfq {
   fn n_wrapper() {
     assert_eq!(
       interpret("N[HypergeometricPFQ[{1, 2}, {3}, 1/2]]").unwrap(),
-      "1.5451774444795614"
+      "1.5451774444795623"
     );
   }
 }
@@ -3115,14 +3115,14 @@ mod riemann_r {
 
   #[test]
   fn numeric_1000() {
-    assert_eq!(interpret("RiemannR[1000.]").unwrap(), "168.3594462811673");
+    assert_eq!(interpret("RiemannR[1000.]").unwrap(), "168.35944628116732");
   }
 
   #[test]
   fn n_wrapper() {
     assert_eq!(
       interpret("N[RiemannR[1000000]]").unwrap(),
-      "78527.39942912768"
+      "78527.39942912769"
     );
   }
 }

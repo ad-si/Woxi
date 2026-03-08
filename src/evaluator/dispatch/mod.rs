@@ -16,7 +16,7 @@ mod association_functions;
 mod attributes;
 mod boolean_functions;
 mod calculus_functions;
-mod complex_and_special;
+pub mod complex_and_special;
 pub use complex_and_special::builtin_default_value;
 pub use complex_and_special::builtin_default_value_at_position;
 mod datetime_functions;

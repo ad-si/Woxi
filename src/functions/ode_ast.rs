@@ -2145,6 +2145,15 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── InterpolatingFunction evaluation ──────────────────────────────────
 
+/// Return Expr::Integer when a float is an exact integer, otherwise Expr::Real.
+fn real_or_integer(v: f64) -> Expr {
+  if v.is_finite() && v == v.round() && v.abs() < i128::MAX as f64 {
+    Expr::Integer(v as i128)
+  } else {
+    Expr::Real(v)
+  }
+}
+
 /// Evaluate InterpolatingFunction[domain, data][x_val]
 /// or InterpolatingFunction[domain, data, order][x_val]
 pub fn evaluate_interpolating_function(
@@ -2221,11 +2230,11 @@ pub fn evaluate_interpolating_function(
       0.0
     };
     let y_val = y0 + t * (y1 - y0);
-    Ok(Expr::Real(y_val))
+    Ok(real_or_integer(y_val))
   } else {
     // Cubic interpolation using natural cubic spline
     let y_val = cubic_spline_evaluate(data_points, x_clamped, n)?;
-    Ok(Expr::Real(y_val))
+    Ok(real_or_integer(y_val))
   }
 }
 

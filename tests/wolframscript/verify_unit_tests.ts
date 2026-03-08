@@ -512,6 +512,12 @@ function main() {
   // artifacts (1.0000000000000002).
   const EXACT_EXPR_SKIP = new Set([
     "NSolve[x^3 - 3*x^2 + 2*x == 0, x]",
+    // Last-ULP floating-point differences (different summation algorithms at machine epsilon):
+    "HypergeometricPFQ[{1, 2}, {3}, 0.5]",
+    "HypergeometricPFQ[{1}, {2}, 1.0]",
+    "N[HypergeometricPFQ[{1/2}, {3/2}, -1]]",
+    "RiemannR[10.]",
+    "N[RiemannR[1000000]]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).

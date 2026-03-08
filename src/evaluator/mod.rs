@@ -42,7 +42,7 @@ mod assignment;
 mod attributes;
 mod binary_ops;
 mod core_eval;
-mod dispatch;
+pub mod dispatch;
 mod function_application;
 mod listable;
 mod part_extraction;

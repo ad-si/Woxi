@@ -4889,28 +4889,50 @@ pub fn expr_to_string(expr: &Expr) -> String {
       operands,
       operators,
     } => {
-      let mut result = expr_to_string(&operands[0]);
-      for (i, op) in operators.iter().enumerate() {
-        let op_str = match op {
-          ComparisonOp::Equal => "==",
-          ComparisonOp::NotEqual => "!=",
-          ComparisonOp::Less => "<",
-          ComparisonOp::LessEqual => "<=",
-          ComparisonOp::Greater => ">",
-          ComparisonOp::GreaterEqual => ">=",
-          ComparisonOp::SameQ => "===",
-          ComparisonOp::UnsameQ => "=!=",
-        };
-        if i + 1 < operands.len() {
-          result = format!(
-            "{} {} {}",
-            result,
-            op_str,
-            expr_to_string(&operands[i + 1])
-          );
+      if operators.len() >= 2 {
+        // Chained comparison: render as Inequality[a, LessEqual, b, Less, c]
+        let mut parts = Vec::with_capacity(operands.len() + operators.len());
+        for (i, operand) in operands.iter().enumerate() {
+          parts.push(expr_to_string(operand));
+          if i < operators.len() {
+            let op_name = match &operators[i] {
+              ComparisonOp::Equal => "Equal",
+              ComparisonOp::NotEqual => "Unequal",
+              ComparisonOp::Less => "Less",
+              ComparisonOp::LessEqual => "LessEqual",
+              ComparisonOp::Greater => "Greater",
+              ComparisonOp::GreaterEqual => "GreaterEqual",
+              ComparisonOp::SameQ => "SameQ",
+              ComparisonOp::UnsameQ => "UnsameQ",
+            };
+            parts.push(op_name.to_string());
+          }
         }
+        format!("Inequality[{}]", parts.join(", "))
+      } else {
+        let mut result = expr_to_string(&operands[0]);
+        for (i, op) in operators.iter().enumerate() {
+          let op_str = match op {
+            ComparisonOp::Equal => "==",
+            ComparisonOp::NotEqual => "!=",
+            ComparisonOp::Less => "<",
+            ComparisonOp::LessEqual => "<=",
+            ComparisonOp::Greater => ">",
+            ComparisonOp::GreaterEqual => ">=",
+            ComparisonOp::SameQ => "===",
+            ComparisonOp::UnsameQ => "=!=",
+          };
+          if i + 1 < operands.len() {
+            result = format!(
+              "{} {} {}",
+              result,
+              op_str,
+              expr_to_string(&operands[i + 1])
+            );
+          }
+        }
+        result
       }
-      result
     }
     Expr::CompoundExpr(exprs) => {
       let parts: Vec<String> = exprs.iter().map(expr_to_string).collect();
@@ -6246,6 +6268,30 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         format!("{}[{}]", name, parts.join(", "))
       }
     }
+    // Chained comparison with 2+ operators: render as Inequality[a, LessEqual, b, Less, c]
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() >= 2 => {
+      let mut parts = Vec::with_capacity(operands.len() + operators.len());
+      for (i, operand) in operands.iter().enumerate() {
+        parts.push(expr_to_input_form(operand));
+        if i < operators.len() {
+          let op_name = match &operators[i] {
+            ComparisonOp::Equal => "Equal",
+            ComparisonOp::NotEqual => "Unequal",
+            ComparisonOp::Less => "Less",
+            ComparisonOp::LessEqual => "LessEqual",
+            ComparisonOp::Greater => "Greater",
+            ComparisonOp::GreaterEqual => "GreaterEqual",
+            ComparisonOp::SameQ => "SameQ",
+            ComparisonOp::UnsameQ => "UnsameQ",
+          };
+          parts.push(op_name.to_string());
+        }
+      }
+      format!("Inequality[{}]", parts.join(", "))
+    }
     // Plus in InputForm: render as infix but use expr_to_input_form for args
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
       let mut result = expr_to_input_form(&args[0]);
@@ -7379,6 +7425,23 @@ pub fn top_level_output(expr: &Expr) -> String {
     }
     Expr::FunctionCall { name, args } if name == "Sequence" => {
       args.iter().map(expr_to_output).collect::<Vec<_>>().join("")
+    }
+    // TraditionalForm[expr] → DisplayForm[FormBox[boxes, TraditionalForm]] at display time
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      let boxes =
+        crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          &args[0],
+        );
+      let display_expr = Expr::FunctionCall {
+        name: "DisplayForm".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "FormBox".to_string(),
+          args: vec![boxes, Expr::Identifier("TraditionalForm".to_string())],
+        }],
+      };
+      expr_to_output(&display_expr)
     }
     _ => expr_to_output(expr),
   }

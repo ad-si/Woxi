@@ -217,7 +217,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Entity" => {
       vec!["Protected", "ReadProtected"]
     }
-    "Plot3D" => vec!["Protected", "ReadProtected"],
+    "Plot3D" => vec!["HoldAll", "Protected", "ReadProtected"],
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],
