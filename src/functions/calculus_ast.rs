@@ -5662,7 +5662,17 @@ pub fn wronskian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let matrix = Expr::List(matrix_rows);
   let det = crate::functions::linear_algebra_ast::det_ast(&[matrix])?;
-  crate::evaluator::evaluate_expr_to_expr(&det)
+  let result = crate::evaluator::evaluate_expr_to_expr(&det)?;
+  // Apply trig identities (e.g. Sin[x]^2 + Cos[x]^2 → 1) to simplify the determinant
+  let simplified =
+    crate::functions::polynomial_ast::apply_trig_identities(&result);
+  let simplified_str = crate::syntax::expr_to_string(&simplified);
+  let result_str = crate::syntax::expr_to_string(&result);
+  if simplified_str != result_str {
+    crate::evaluator::evaluate_expr_to_expr(&simplified)
+  } else {
+    Ok(result)
+  }
 }
 
 /// Div[{f1, f2, ...}, {x1, x2, ...}] = divergence = Sum[D[fi, xi]]

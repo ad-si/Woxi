@@ -996,17 +996,42 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(Expr::Raw(rendered)));
     }
     // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
-    "MathMLForm" | "StandardForm" | "InputForm" | "TraditionalForm"
-      if !args.is_empty() =>
-    {
+    "MathMLForm" | "StandardForm" | "InputForm" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
       }));
     }
+    // TraditionalForm[expr] → DisplayForm[FormBox[boxes, TraditionalForm]]
+    "TraditionalForm" if args.len() == 1 => {
+      let boxes = expr_to_box_form(&args[0]);
+      return Some(Ok(Expr::FunctionCall {
+        name: "DisplayForm".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "FormBox".to_string(),
+          args: vec![boxes, Expr::Identifier("TraditionalForm".to_string())],
+        }],
+      }));
+    }
     // Format is transparent -- returns the inner expression
     "Format" if !args.is_empty() => {
       return Some(Ok(args[0].clone()));
+    }
+
+    // Around[value, uncertainty] — convert integer value to real when uncertainty is real
+    "Around" if args.len() >= 2 => {
+      let mut new_args = args.to_vec();
+      if let Expr::Integer(n) = &new_args[0] {
+        // If any other argument is Real, convert integer to Real
+        let has_real = new_args[1..].iter().any(|a| matches!(a, Expr::Real(_)));
+        if has_real {
+          new_args[0] = Expr::Real(*n as f64);
+        }
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "Around".to_string(),
+        args: new_args,
+      }));
     }
 
     // Symbolic operators with no built-in meaning -- just return as-is with evaluated args
@@ -1067,5 +1092,207 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
     "Plus" => Some("0"),
     "Times" => Some("1"),
     _ => None,
+  }
+}
+
+/// Convert an expression to its box form representation for TraditionalForm/StandardForm.
+fn expr_to_box_form(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => expr.clone(),
+    Expr::String(s) => Expr::String(s.clone()),
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      // Plus[a, b, c] → RowBox[{box(a), "+", box(b), "+", box(c)}]
+      // Handle negative terms: Times[-1, x] → "-", box(x)
+      let mut parts = Vec::new();
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          // Check for negative term: Times[-1, x] or Times[Integer(n<0), ...]
+          let is_neg = matches!(arg,
+            Expr::FunctionCall { name: tn, args: ta }
+            if tn == "Times" && !ta.is_empty() && matches!(&ta[0], Expr::Integer(n) if *n < 0)
+          );
+          if !is_neg {
+            parts.push(Expr::String("+".to_string()));
+          }
+        }
+        parts.push(expr_to_box_form(arg));
+      }
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(-1)) =>
+    {
+      // Times[-1, x] → RowBox[{"-", box(x)}]
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(vec![
+          Expr::String("-".to_string()),
+          expr_to_box_form(&args[1]),
+        ])],
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+    {
+      // Times[-n, x] → RowBox[{"-", RowBox[{n, " ", box(x)}]}]
+      if let Expr::Integer(n) = &args[0] {
+        let pos_n = Expr::Integer(-n);
+        Expr::FunctionCall {
+          name: "RowBox".to_string(),
+          args: vec![Expr::List(vec![
+            Expr::String("-".to_string()),
+            Expr::FunctionCall {
+              name: "RowBox".to_string(),
+              args: vec![Expr::List(vec![
+                expr_to_box_form(&pos_n),
+                Expr::String(" ".to_string()),
+                expr_to_box_form(&args[1]),
+              ])],
+            },
+          ])],
+        }
+      } else {
+        box_as_output_string(expr)
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // General Times: RowBox[{a, " ", b, " ", ...}]
+      let mut parts = Vec::new();
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(Expr::String(" ".to_string()));
+        }
+        parts.push(expr_to_box_form(arg));
+      }
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::FunctionCall { name: rn, args: ra } = &args[1]
+        && rn == "Rational"
+        && ra.len() == 2
+      {
+        // Power[base, 1/2] → SqrtBox[box(base)]
+        if matches!(&ra[0], Expr::Integer(1))
+          && matches!(&ra[1], Expr::Integer(2))
+        {
+          return Expr::FunctionCall {
+            name: "SqrtBox".to_string(),
+            args: vec![expr_to_box_form(&args[0])],
+          };
+        }
+        // Power[base, -1/2] → FractionBox[1, SqrtBox[box(base)]]
+        if matches!(&ra[0], Expr::Integer(-1))
+          && matches!(&ra[1], Expr::Integer(2))
+        {
+          return Expr::FunctionCall {
+            name: "FractionBox".to_string(),
+            args: vec![
+              Expr::Integer(1),
+              Expr::FunctionCall {
+                name: "SqrtBox".to_string(),
+                args: vec![expr_to_box_form(&args[0])],
+              },
+            ],
+          };
+        }
+      }
+      // General power: SuperscriptBox[box(base), box(exp)]
+      Expr::FunctionCall {
+        name: "SuperscriptBox".to_string(),
+        args: vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Expr::FunctionCall {
+        name: "SqrtBox".to_string(),
+        args: vec![expr_to_box_form(&args[0])],
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      // Rational[n, d] → FractionBox[n, d]
+      Expr::FunctionCall {
+        name: "FractionBox".to_string(),
+        args: vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+      }
+    }
+    // BinaryOp::Divide → FractionBox
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => Expr::FunctionCall {
+      name: "FractionBox".to_string(),
+      args: vec![expr_to_box_form(left), expr_to_box_form(right)],
+    },
+    // BinaryOp::Power with rational exponents
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::FunctionCall { name: rn, args: ra } = right.as_ref()
+        && rn == "Rational"
+        && ra.len() == 2
+      {
+        if matches!(&ra[0], Expr::Integer(1))
+          && matches!(&ra[1], Expr::Integer(2))
+        {
+          return Expr::FunctionCall {
+            name: "SqrtBox".to_string(),
+            args: vec![expr_to_box_form(left)],
+          };
+        }
+        if matches!(&ra[0], Expr::Integer(-1))
+          && matches!(&ra[1], Expr::Integer(2))
+        {
+          return Expr::FunctionCall {
+            name: "FractionBox".to_string(),
+            args: vec![
+              Expr::Integer(1),
+              Expr::FunctionCall {
+                name: "SqrtBox".to_string(),
+                args: vec![expr_to_box_form(left)],
+              },
+            ],
+          };
+        }
+      }
+      Expr::FunctionCall {
+        name: "SuperscriptBox".to_string(),
+        args: vec![expr_to_box_form(left), expr_to_box_form(right)],
+      }
+    }
+    // Default: use the string representation
+    _ => box_as_output_string(expr),
+  }
+}
+
+/// Convert an expression to a string box (for expressions we don't have explicit box forms for)
+fn box_as_output_string(expr: &Expr) -> Expr {
+  let s = crate::syntax::expr_to_output(expr);
+  // If it's a simple identifier-like string, return as Identifier
+  if s
+    .chars()
+    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    && !s.is_empty()
+  {
+    Expr::Identifier(s)
+  } else {
+    Expr::String(s)
   }
 }

@@ -5417,7 +5417,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       // Special case: Times displays as infix with * (no spaces)
       if name == "Times" && args.len() >= 2 {
-        // Handle Times[Rational[n, d], Power[x, neg]] as "n/d*1/x^abs(neg)"
+        // Handle Times[Rational[n, d], Power[x, neg]] as fraction
         // Wolfram canonical form for results like Integrate[1/x^3, x]
         if args.len() == 2
           && let Expr::FunctionCall {
@@ -5433,6 +5433,10 @@ pub fn expr_to_output(expr: &Expr) -> String {
         {
           let denom_form = denominator_form(&args[1]);
           let denom_str = expr_to_output(&denom_form);
+          // When numerator is 1, render as 1/(d*denom) instead of 1/d*1/denom
+          if *n == 1 {
+            return format!("1/({}*{})", d, denom_str);
+          }
           return format!("{}/{}*1/{}", n, d, denom_str);
         }
         // Handle Times[Rational[1, d], expr] as "expr/d"
@@ -5638,6 +5642,19 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       // Special case: Power displays as infix with ^ (no spaces)
       if name == "Power" && args.len() == 2 {
+        // Special case: Power[base, Rational[-1, 2]] → 1/Sqrt[base]
+        if let Expr::FunctionCall {
+          name: rname,
+          args: rargs,
+        } = &args[1]
+          && rname == "Rational"
+          && rargs.len() == 2
+          && matches!(&rargs[0], Expr::Integer(-1))
+          && matches!(&rargs[1], Expr::Integer(2))
+        {
+          let base_str = expr_to_output(&args[0]);
+          return format!("1/Sqrt[{}]", base_str);
+        }
         let base_str = expr_to_output(&args[0]);
         let exp_str = expr_to_output(&args[1]);
         // Wrap base in parens if it's lower precedence than Power or is a negative number
@@ -5931,6 +5948,23 @@ pub fn expr_to_output(expr: &Expr) -> String {
       }
       expr_to_string(expr)
     }
+    // BinaryOp::Power with Rational[-1, 2] exponent → 1/Sqrt[base]
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(
+      right.as_ref(),
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(-1))
+          && matches!(&args[1], Expr::Integer(2))
+    ) =>
+    {
+      let base_str = expr_to_output(left);
+      format!("1/Sqrt[{}]", base_str)
+    }
     // For all other cases, delegate to expr_to_string
     _ => expr_to_string(expr),
   }
@@ -6202,6 +6236,7 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
           | "BlankSequence"
           | "BlankNullSequence"
           | "ReverseElement"
+          | "TwoWayRule"
       ) =>
     {
       if args.is_empty() {

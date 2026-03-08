@@ -3689,9 +3689,11 @@ pub fn riemann_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute Riemann R function numerically using the Gram series
+/// Uses Kahan compensated summation for improved precision.
 fn riemann_r_numeric(x: f64) -> f64 {
   let ln_x = x.ln();
   let mut sum = 1.0_f64;
+  let mut comp = 0.0_f64; // Kahan compensation
   let mut ln_x_pow = 1.0_f64; // (ln x)^n
   let mut factorial = 1.0_f64; // n!
 
@@ -3700,7 +3702,11 @@ fn riemann_r_numeric(x: f64) -> f64 {
     factorial *= n as f64;
     let zeta_val = zeta_numeric((n + 1) as f64);
     let term = ln_x_pow / (n as f64 * factorial * zeta_val);
-    sum += term;
+    // Kahan compensated addition
+    let y = term - comp;
+    let t = sum + y;
+    comp = (t - sum) - y;
+    sum = t;
     if term.abs() < 1e-15 * sum.abs() {
       break;
     }
@@ -3831,8 +3837,10 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Compute generalized hypergeometric function pFq numerically via series
+/// Uses Kahan compensated summation for improved precision.
 fn hypergeometric_pfq_numeric(a: &[f64], b: &[f64], z: f64) -> f64 {
   let mut sum = 1.0_f64;
+  let mut comp = 0.0_f64; // Kahan compensation
   let mut term = 1.0_f64;
 
   for n in 0..1000 {
@@ -3850,7 +3858,11 @@ fn hypergeometric_pfq_numeric(a: &[f64], b: &[f64], z: f64) -> f64 {
       den *= bi_n;
     }
     term *= num / den;
-    sum += term;
+    // Kahan compensated addition
+    let y = term - comp;
+    let t = sum + y;
+    comp = (t - sum) - y;
+    sum = t;
     if term.abs() < 1e-15 * sum.abs() {
       break;
     }

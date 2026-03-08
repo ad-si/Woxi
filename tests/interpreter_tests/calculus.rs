@@ -2028,11 +2028,18 @@ mod laplace_transform {
   }
 
   #[test]
-  fn unevaluated_unknown() {
-    // Unknown functions should return unevaluated
+  fn bessel_j0() {
     assert_eq!(
       interpret("LaplaceTransform[BesselJ[0, t], t, s]").unwrap(),
-      "LaplaceTransform[BesselJ[0, t], t, s]"
+      "1/Sqrt[1 + s^2]"
+    );
+  }
+
+  #[test]
+  fn bessel_j1() {
+    assert_eq!(
+      interpret("LaplaceTransform[BesselJ[1, t], t, s]").unwrap(),
+      "1/(Sqrt[1 + s^2]*(s + Sqrt[1 + s^2]))"
     );
   }
 }
@@ -2310,10 +2317,7 @@ mod wronskian {
 
   #[test]
   fn sin_cos() {
-    assert_eq!(
-      interpret("Wronskian[{Sin[x], Cos[x]}, x]").unwrap(),
-      "-Cos[x]^2 - Sin[x]^2"
-    );
+    assert_eq!(interpret("Wronskian[{Sin[x], Cos[x]}, x]").unwrap(), "-1");
   }
 
   #[test]
@@ -2434,7 +2438,7 @@ mod trig_to_exp {
   fn cosh_to_exp() {
     assert_eq!(
       interpret("TrigToExp[Cosh[x]]").unwrap(),
-      "1/2*1/E^x + E^x/2"
+      "1/(2*E^x) + E^x/2"
     );
   }
 

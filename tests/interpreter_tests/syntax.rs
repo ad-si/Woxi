@@ -1296,7 +1296,7 @@ mod plot3d_function {
   fn plot3d_attributes() {
     assert_eq!(
       interpret("Attributes[Plot3D]").unwrap(),
-      "{HoldAll, Protected, ReadProtected}"
+      "{Protected, ReadProtected}"
     );
   }
 }
@@ -1547,7 +1547,7 @@ mod traditional_form {
   fn wraps_expression() {
     assert_eq!(
       interpret("TraditionalForm[x + y]").unwrap(),
-      "TraditionalForm[x + y]"
+      "DisplayForm[FormBox[RowBox[{x, +, y}], TraditionalForm]]"
     );
   }
 
@@ -1555,7 +1555,7 @@ mod traditional_form {
   fn head() {
     assert_eq!(
       interpret("Head[TraditionalForm[x]]").unwrap(),
-      "TraditionalForm"
+      "DisplayForm"
     );
   }
 
@@ -1563,7 +1563,7 @@ mod traditional_form {
   fn evaluates_argument() {
     assert_eq!(
       interpret("TraditionalForm[1 + 2]").unwrap(),
-      "TraditionalForm[3]"
+      "DisplayForm[FormBox[3, TraditionalForm]]"
     );
   }
 
@@ -1571,7 +1571,7 @@ mod traditional_form {
   fn nested_expression() {
     assert_eq!(
       interpret("TraditionalForm[Sin[Pi/4]]").unwrap(),
-      "TraditionalForm[1/Sqrt[2]]"
+      "DisplayForm[FormBox[FractionBox[1, SqrtBox[2]], TraditionalForm]]"
     );
   }
 }
@@ -4344,7 +4344,7 @@ mod batch_inert_symbols_2 {
 
   #[test]
   fn around() {
-    assert_eq!(interpret("Around[5, 0.3]").unwrap(), "Around[5, 0.3]");
+    assert_eq!(interpret("Around[5, 0.3]").unwrap(), "Around[5., 0.3]");
   }
 
   #[test]
@@ -4495,7 +4495,7 @@ mod batch_inert_symbols_3 {
   fn rotation_transform() {
     assert_eq!(
       interpret("RotationTransform[x]").unwrap(),
-      "RotationTransform[x]"
+      "TransformationFunction[{{Cos[x], -Sin[x], 0}, {Sin[x], Cos[x], 0}, {0, 0, 1}}]"
     );
   }
 

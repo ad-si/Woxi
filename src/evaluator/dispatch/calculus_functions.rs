@@ -400,6 +400,66 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       });
     }
 
+    // L[BesselJ[n, a*t], t, s] = a^n / (Sqrt[a^2 + s^2] * (s + Sqrt[a^2 + s^2])^n)
+    if fname == "BesselJ"
+      && fargs.len() == 2
+      && !depends_on(fargs[0], t)
+      && let Some(a) = extract_linear_coeff(fargs[1], t)
+    {
+      let n = fargs[0];
+      // sqrt_term = Sqrt[a^2 + s^2]
+      let sqrt_term = Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![a.clone(), Expr::Integer(2)],
+              },
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![s.clone(), Expr::Integer(2)],
+              },
+            ],
+          },
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)],
+          },
+        ],
+      };
+      // result = a^n / (sqrt_term * (s + sqrt_term)^n)
+      //        = Times[Power[a, n], Power[sqrt_term, -1], Power[Plus[s, sqrt_term], Times[-1, n]]]
+      return Some(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![a, n.clone()],
+          },
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![sqrt_term.clone(), Expr::Integer(-1)],
+          },
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![s.clone(), sqrt_term],
+              },
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), n.clone()],
+              },
+            ],
+          },
+        ],
+      });
+    }
+
     // Linearity: L[a + b, t, s] = L[a, t, s] + L[b, t, s]
     if fname == "Plus" {
       let mut terms = Vec::new();
