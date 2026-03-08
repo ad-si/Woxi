@@ -1734,3 +1734,92 @@ pub fn dirac_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec(),
   })
 }
+
+/// UnitBox[x] = 1 for |x| <= 1/2, 0 otherwise
+pub fn unit_box_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let x = &args[0];
+  match x {
+    Expr::Integer(n) => {
+      let v = (*n).abs();
+      // |n| <= 1/2 only if n == 0
+      Ok(Expr::Integer(if v == 0 { 1 } else { 0 }))
+    }
+    Expr::Real(f) => {
+      let v = f.abs();
+      Ok(Expr::Integer(if v <= 0.5 { 1 } else { 0 }))
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Rational" && fargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&fargs[0], &fargs[1])
+        && *d != 0
+      {
+        let abs_val = (*n as f64 / *d as f64).abs();
+        return Ok(Expr::Integer(if abs_val <= 0.5 { 1 } else { 0 }));
+      }
+      Ok(Expr::FunctionCall {
+        name: "UnitBox".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "UnitBox".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// UnitTriangle[x] = 1 - |x| for |x| <= 1, 0 otherwise
+pub fn unit_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let x = &args[0];
+  match x {
+    Expr::Integer(n) => {
+      let v = (*n).abs();
+      Ok(if v <= 1 {
+        Expr::Integer(1 - v)
+      } else {
+        Expr::Integer(0)
+      })
+    }
+    Expr::Real(f) => {
+      let v = f.abs();
+      Ok(if v <= 1.0 {
+        Expr::Real(1.0 - v)
+      } else {
+        Expr::Integer(0)
+      })
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Rational" && fargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&fargs[0], &fargs[1])
+        && *d != 0
+      {
+        let abs_val = (*n as f64 / *d as f64).abs();
+        if abs_val <= 1.0 {
+          // 1 - |n/d| = (|d| - |n|) / |d|
+          let abs_n = n.abs();
+          let abs_d = d.abs();
+          let num = abs_d - abs_n;
+          if num == 0 {
+            return Ok(Expr::Integer(0));
+          }
+          return Ok(Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(num), Expr::Integer(abs_d)],
+          });
+        } else {
+          return Ok(Expr::Integer(0));
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "UnitTriangle".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "UnitTriangle".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
