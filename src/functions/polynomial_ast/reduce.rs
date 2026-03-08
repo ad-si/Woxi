@@ -1201,7 +1201,7 @@ pub fn reduce_combined_inequalities(
   let mut upper_bound: Option<(Expr, bool)> = None;
 
   for r in &reduced {
-    // Handle Inequality[low, Op1, var, Op2, high]
+    // Handle Inequality[low, Op1, var, Op2, high] or Expr::Comparison with 2 operators
     if let Expr::FunctionCall { name, args: iargs } = r
       && name == "Inequality"
       && iargs.len() == 5
@@ -1229,6 +1229,33 @@ pub fn reduce_combined_inequalities(
         let high_inc = matches!(op2_name, "LessEqual" | "GreaterEqual");
         upper_bound =
           update_bound(upper_bound, high_val.clone(), high_inc, true);
+        continue;
+      }
+    }
+
+    // Handle Expr::Comparison with 2 operators (same-operator compound inequality)
+    if let Expr::Comparison {
+      operands,
+      operators,
+    } = r
+      && operators.len() == 2
+      && operands.len() == 3
+    {
+      use crate::syntax::ComparisonOp;
+      let mid = &operands[1];
+      if expr_to_string(mid) == var {
+        let low_inc = matches!(
+          operators[0],
+          ComparisonOp::LessEqual | ComparisonOp::GreaterEqual
+        );
+        lower_bound =
+          update_bound(lower_bound, operands[0].clone(), low_inc, false);
+        let high_inc = matches!(
+          operators[1],
+          ComparisonOp::LessEqual | ComparisonOp::GreaterEqual
+        );
+        upper_bound =
+          update_bound(upper_bound, operands[2].clone(), high_inc, true);
         continue;
       }
     }

@@ -1673,10 +1673,7 @@ mod reduce {
 
   #[test]
   fn quadratic_inequality_less() {
-    assert_eq!(
-      interpret("Reduce[x^2 < 4, x]").unwrap(),
-      "Inequality[-2, Less, x, Less, 2]"
-    );
+    assert_eq!(interpret("Reduce[x^2 < 4, x]").unwrap(), "-2 < x < 2");
   }
 
   #[test]
@@ -1699,7 +1696,7 @@ mod reduce {
   fn factored_inequality_less() {
     assert_eq!(
       interpret("Reduce[(x - 1)*(x + 2) < 0, x]").unwrap(),
-      "Inequality[-2, Less, x, Less, 1]"
+      "-2 < x < 1"
     );
   }
 
@@ -1707,7 +1704,7 @@ mod reduce {
   fn factored_inequality_leq() {
     assert_eq!(
       interpret("Reduce[(x - 1)*(x + 2) <= 0, x]").unwrap(),
-      "Inequality[-2, LessEqual, x, LessEqual, 1]"
+      "-2 <= x <= 1"
     );
   }
 
@@ -1750,7 +1747,7 @@ mod reduce {
   fn combined_inequalities() {
     assert_eq!(
       interpret("Reduce[x > 0 && x < 5 && x > 3, x]").unwrap(),
-      "Inequality[3, Less, x, Less, 5]"
+      "3 < x < 5"
     );
   }
 
@@ -1758,7 +1755,7 @@ mod reduce {
   fn combined_two_bounds() {
     assert_eq!(
       interpret("Reduce[x > 2 && x < 10, x]").unwrap(),
-      "Inequality[2, Less, x, Less, 10]"
+      "2 < x < 10"
     );
   }
 

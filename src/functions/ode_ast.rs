@@ -2145,13 +2145,9 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── InterpolatingFunction evaluation ──────────────────────────────────
 
-/// Return Expr::Integer when a float is an exact integer, otherwise Expr::Real.
+/// InterpolatingFunction always returns machine-precision reals.
 fn real_or_integer(v: f64) -> Expr {
-  if v.is_finite() && v == v.round() && v.abs() < i128::MAX as f64 {
-    Expr::Integer(v as i128)
-  } else {
-    Expr::Real(v)
-  }
+  Expr::Real(v)
 }
 
 /// Evaluate InterpolatingFunction[domain, data][x_val]

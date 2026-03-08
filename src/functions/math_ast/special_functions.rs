@@ -3688,20 +3688,19 @@ pub fn riemann_r_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Compute Riemann R function numerically using the Gram series
-/// Uses Kahan compensated summation for improved precision.
+/// Compute Riemann R function numerically using the Gram series.
+/// Computes (ln x)^n / n! incrementally to avoid precision loss from
+/// large intermediate values.  Uses Kahan compensated summation.
 fn riemann_r_numeric(x: f64) -> f64 {
   let ln_x = x.ln();
   let mut sum = 1.0_f64;
   let mut comp = 0.0_f64; // Kahan compensation
-  let mut ln_x_pow = 1.0_f64; // (ln x)^n
-  let mut factorial = 1.0_f64; // n!
+  let mut ratio = 1.0_f64; // (ln x)^n / n!  (updated incrementally)
 
   for n in 1..=200 {
-    ln_x_pow *= ln_x;
-    factorial *= n as f64;
+    ratio *= ln_x / n as f64; // ratio = (ln x)^n / n!
     let zeta_val = zeta_numeric((n + 1) as f64);
-    let term = ln_x_pow / (n as f64 * factorial * zeta_val);
+    let term = ratio / (n as f64 * zeta_val);
     // Kahan compensated addition
     let y = term - comp;
     let t = sum + y;

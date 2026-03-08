@@ -3115,14 +3115,14 @@ mod riemann_r {
 
   #[test]
   fn numeric_1000() {
-    assert_eq!(interpret("RiemannR[1000.]").unwrap(), "168.35944628116732");
+    assert_eq!(interpret("RiemannR[1000.]").unwrap(), "168.3594462811673");
   }
 
   #[test]
   fn n_wrapper() {
     assert_eq!(
       interpret("N[RiemannR[1000000]]").unwrap(),
-      "78527.39942912769"
+      "78527.39942912768"
     );
   }
 }
