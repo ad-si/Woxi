@@ -430,3 +430,71 @@ mod eigensystem {
     assert_eq!(interpret("Eigensystem[m]").unwrap(), "Eigensystem[m]");
   }
 }
+
+mod unit_box {
+  use super::*;
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("UnitBox[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn inside() {
+    assert_eq!(interpret("UnitBox[0.3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn boundary() {
+    assert_eq!(interpret("UnitBox[0.5]").unwrap(), "1");
+  }
+
+  #[test]
+  fn outside() {
+    assert_eq!(interpret("UnitBox[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative_inside() {
+    assert_eq!(interpret("UnitBox[-0.3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("UnitBox[x]").unwrap(), "UnitBox[x]");
+  }
+}
+
+mod unit_triangle {
+  use super::*;
+
+  #[test]
+  fn zero() {
+    assert_eq!(interpret("UnitTriangle[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn half() {
+    assert_eq!(interpret("UnitTriangle[0.5]").unwrap(), "0.5");
+  }
+
+  #[test]
+  fn boundary() {
+    assert_eq!(interpret("UnitTriangle[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn negative() {
+    assert_eq!(interpret("UnitTriangle[-0.5]").unwrap(), "0.5");
+  }
+
+  #[test]
+  fn outside() {
+    assert_eq!(interpret("UnitTriangle[2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("UnitTriangle[x]").unwrap(), "UnitTriangle[x]");
+  }
+}

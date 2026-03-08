@@ -5810,7 +5810,7 @@ Unique,Generate a unique symbol,✅,effectful,1,944
 UniqueElements,,,,13.1,
 UnitaryMatrix,,,,14,
 UnitaryMatrixQ,,,,10,2260
-UnitBox,,,,7,1043
+UnitBox,Unit box function (1 for |x| <= 1/2),✅,pure,7,1043
 UnitConvert,Converts a quantity to a different unit,✅,pure,9,643
 UnitDimensions,,,,9,3280
 Unitize,Returns 0 for zero and 1 for nonzero values,✅,pure,6,781
@@ -5818,7 +5818,7 @@ UnitRootTest,,,,9,3785
 UnitSimplify,,,,9,2020
 UnitStep,Returns the unit step function value,✅,pure,4,273
 UnitSystem,Option for specifying the unit system for computations,✅,pure,10,398
-UnitTriangle,,,,7,1944
+UnitTriangle,Unit triangle function (1-|x| for |x| <= 1),✅,pure,7,1944
 UnitVector,,,,6,1357
 UnitVectorLayer,,,,11.1,3413
 UnityDimensions,,,,10,4747
