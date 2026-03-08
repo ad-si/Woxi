@@ -369,6 +369,36 @@ pub fn dispatch_linear_algebra_functions(
     "LUDecomposition" if args.len() == 1 => {
       return Some(lu_decomposition_ast(&args[0]));
     }
+    // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
+    "RotationTransform" if args.len() == 1 => {
+      let theta = &args[0];
+      let cos_t = Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: vec![theta.clone()],
+      };
+      let sin_t = Expr::FunctionCall {
+        name: "Sin".to_string(),
+        args: vec![theta.clone()],
+      };
+      let neg_sin_t = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), sin_t.clone()],
+      };
+      // Build the 3x3 homogeneous rotation matrix:
+      // {{Cos[x], -Sin[x], 0}, {Sin[x], Cos[x], 0}, {0, 0, 1}}
+      let matrix = Expr::List(vec![
+        Expr::List(vec![cos_t.clone(), neg_sin_t, Expr::Integer(0)]),
+        Expr::List(vec![sin_t, cos_t, Expr::Integer(0)]),
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)]),
+      ]);
+      // Evaluate the matrix to simplify trig functions (e.g. Cos[Pi/4] → 1/Sqrt[2])
+      let evaluated =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![matrix],
+        });
+      return Some(evaluated);
+    }
     _ => {}
   }
   None
