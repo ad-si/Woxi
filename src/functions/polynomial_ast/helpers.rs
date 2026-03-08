@@ -68,7 +68,8 @@ pub fn make_comparison(lhs: &Expr, rhs: &Expr, op: CompOp) -> Expr {
 }
 
 /// Build a compound inequality: low op1 var op2 high
-/// Output format: Inequality[low, Op1, var, Op2, high]
+/// When both operators are the same, produces the n-ary form (e.g. LessEqual[low, var, high])
+/// as an Expr::Comparison; when operators differ, produces Inequality[low, Op1, var, Op2, high].
 pub fn make_compound_inequality(
   low: &Expr,
   op1: CompOp,
@@ -76,6 +77,31 @@ pub fn make_compound_inequality(
   op2: CompOp,
   high: &Expr,
 ) -> Expr {
+  use crate::syntax::ComparisonOp;
+
+  let to_cmp = |op: CompOp| -> Option<ComparisonOp> {
+    match op {
+      CompOp::Less => Some(ComparisonOp::Less),
+      CompOp::LessEqual => Some(ComparisonOp::LessEqual),
+      CompOp::Greater => Some(ComparisonOp::Greater),
+      CompOp::GreaterEqual => Some(ComparisonOp::GreaterEqual),
+      _ => None,
+    }
+  };
+
+  if op1 == op2
+    && let Some(cmp_op) = to_cmp(op1)
+  {
+    return Expr::Comparison {
+      operands: vec![
+        low.clone(),
+        Expr::Identifier(var.to_string()),
+        high.clone(),
+      ],
+      operators: vec![cmp_op, cmp_op],
+    };
+  }
+
   let op1_name = match op1 {
     CompOp::Less => "Less",
     CompOp::LessEqual => "LessEqual",

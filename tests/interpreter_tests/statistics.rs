@@ -636,7 +636,7 @@ mod cdf {
   fn uniform_default() {
     assert_eq!(
       interpret("CDF[UniformDistribution[{0, 1}], x]").unwrap(),
-      "Piecewise[{{x, Inequality[0, LessEqual, x, LessEqual, 1]}, {1, x > 1}}, 0]"
+      "Piecewise[{{x, 0 <= x <= 1}, {1, x > 1}}, 0]"
     );
   }
 

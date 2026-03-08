@@ -3355,7 +3355,7 @@ mod pdf {
   fn uniform_standard() {
     assert_eq!(
       interpret("PDF[UniformDistribution[{0, 1}], x]").unwrap(),
-      "Piecewise[{{1, Inequality[0, LessEqual, x, LessEqual, 1]}}, 0]"
+      "Piecewise[{{1, 0 <= x <= 1}}, 0]"
     );
   }
 
@@ -3363,7 +3363,7 @@ mod pdf {
   fn uniform_symbolic() {
     assert_eq!(
       interpret("PDF[UniformDistribution[{a, b}], x]").unwrap(),
-      "Piecewise[{{(-a + b)^(-1), Inequality[a, LessEqual, x, LessEqual, b]}}, 0]"
+      "Piecewise[{{(-a + b)^(-1), a <= x <= b}}, 0]"
     );
   }
 
@@ -3371,7 +3371,7 @@ mod pdf {
   fn uniform_default() {
     assert_eq!(
       interpret("PDF[UniformDistribution[], x]").unwrap(),
-      "Piecewise[{{1, Inequality[0, LessEqual, x, LessEqual, 1]}}, 0]"
+      "Piecewise[{{1, 0 <= x <= 1}}, 0]"
     );
   }
 
