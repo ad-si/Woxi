@@ -1767,6 +1767,50 @@ mod reduce {
     );
   }
 
+  // ── Reduce InputForm: chained inequalities use Inequality[] head ──
+
+  #[test]
+  fn reduce_quadratic_inequality_input_form() {
+    assert_eq!(
+      interpret("ToString[Reduce[x^2 < 4, x], InputForm]").unwrap(),
+      "Inequality[-2, Less, x, Less, 2]"
+    );
+  }
+
+  #[test]
+  fn reduce_factored_inequality_input_form() {
+    assert_eq!(
+      interpret("ToString[Reduce[(x - 1)*(x + 2) < 0, x], InputForm]").unwrap(),
+      "Inequality[-2, Less, x, Less, 1]"
+    );
+  }
+
+  #[test]
+  fn reduce_factored_inequality_leq_input_form() {
+    assert_eq!(
+      interpret("ToString[Reduce[(x - 1)*(x + 2) <= 0, x], InputForm]")
+        .unwrap(),
+      "Inequality[-2, LessEqual, x, LessEqual, 1]"
+    );
+  }
+
+  #[test]
+  fn reduce_combined_inequalities_input_form() {
+    assert_eq!(
+      interpret("ToString[Reduce[x > 0 && x < 5 && x > 3, x], InputForm]")
+        .unwrap(),
+      "Inequality[3, Less, x, Less, 5]"
+    );
+  }
+
+  #[test]
+  fn reduce_two_bounds_input_form() {
+    assert_eq!(
+      interpret("ToString[Reduce[x > 2 && x < 10, x], InputForm]").unwrap(),
+      "Inequality[2, Less, x, Less, 10]"
+    );
+  }
+
   // ── Multi-variable systems ──
 
   #[test]
