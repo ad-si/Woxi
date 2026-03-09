@@ -155,6 +155,11 @@ pub fn dispatch_polynomial_functions(
     "PolynomialMod" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::polynomial_mod_ast(args));
     }
+    "InterpolatingPolynomial" if args.len() == 2 => {
+      return Some(
+        crate::functions::polynomial_ast::interpolating_polynomial_ast(args),
+      );
+    }
     _ => {}
   }
   None

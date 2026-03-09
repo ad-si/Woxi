@@ -2847,7 +2847,7 @@ Interleaving,Option for specifying channel interleaving in images,✅,pure,7,429
 IntermediateTest,,,,14,
 InternallyBalancedDecomposition,,,,8,4809
 InterpolatingFunction,Represents an interpolating function object,✅,none,2,659
-InterpolatingPolynomial,,,,2,1052
+InterpolatingPolynomial,Polynomial that interpolates given data points,✅,pure,2,1052
 Interpolation,Constructs an interpolation of data,✅,pure,2,383
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3,435
 InterpolationPoints,,,,8,3265
@@ -4284,7 +4284,7 @@ PolynomialExpressionQ,,,,12.2,
 PolynomialExtendedGCD,,,,6,2404
 PolynomialGCD,,,,2,1611
 PolynomialLCM,,,,2,2533
-PolynomialMod,,,,2,939
+PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2,939
 PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1,1167
 PolynomialQuotient,Quotient of polynomial division,✅,pure,1,1460
 PolynomialQuotientRemainder,,,,6,2157
@@ -4412,7 +4412,7 @@ QFactorial,,,,7,3008
 QGamma,,,,7,2871
 QHypergeometricPFQ,,,,7,2729
 QnDispersion,,,,11.1,4387
-QPochhammer,,,,7,871
+QPochhammer,q-Pochhammer symbol,✅,pure,7,871
 QPolyGamma,,,,7,3862
 QRDecomposition,,,,2,2181
 QuadraticIrrationalQ,,,,6,4747

@@ -3016,3 +3016,91 @@ mod polynomial_mod {
     );
   }
 }
+
+mod interpolating_polynomial {
+  use super::*;
+
+  #[test]
+  fn quadratic_explicit_points() {
+    // Through (1,1),(2,4),(3,9) → x^2
+    assert_eq!(
+      interpret("Expand[InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x]]")
+        .unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
+  fn quadratic_implicit_points() {
+    // {1,4,9} at x=1,2,3 → x^2
+    assert_eq!(
+      interpret("Expand[InterpolatingPolynomial[{1,4,9}, x]]").unwrap(),
+      "x^2"
+    );
+  }
+
+  #[test]
+  fn linear_two_points() {
+    // Through (0,0),(1,1) → x
+    assert_eq!(
+      interpret("InterpolatingPolynomial[{{0,0},{1,1}}, x]").unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn constant_one_point() {
+    // Single point → constant
+    assert_eq!(
+      interpret("InterpolatingPolynomial[{{5,3}}, x]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn cubic_values() {
+    // {0,1,8,27} at x=1,2,3,4 should give (x-1)^3
+    let result =
+      interpret("Expand[InterpolatingPolynomial[{0, 1, 8, 27}, x]]").unwrap();
+    assert_eq!(result, "-1 + 3*x - 3*x^2 + x^3");
+  }
+
+  #[test]
+  fn newton_form_structure() {
+    // InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x]
+    // Newton form: 1 + (x-1)*(1 + 3*(x-2)) = 1 + (x-1)*(1 + 3x - 6) = 1 + (-1+x)*(3*(-1+x) - 2)
+    let result =
+      interpret("InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x]").unwrap();
+    // Just verify it evaluates to correct values
+    let at1 =
+      interpret("InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x] /. x -> 1")
+        .unwrap();
+    let at2 =
+      interpret("InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x] /. x -> 2")
+        .unwrap();
+    let at3 =
+      interpret("InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x] /. x -> 3")
+        .unwrap();
+    assert_eq!(at1, "1");
+    assert_eq!(at2, "4");
+    assert_eq!(at3, "9");
+  }
+
+  #[test]
+  fn linear_three_collinear() {
+    // Through (0,0),(1,2),(2,4) → 2x
+    assert_eq!(
+      interpret("Expand[InterpolatingPolynomial[{{0,0},{1,2},{2,4}}, x]]")
+        .unwrap(),
+      "2*x"
+    );
+  }
+
+  #[test]
+  fn non_list_unevaluated() {
+    assert_eq!(
+      interpret("InterpolatingPolynomial[5, x]").unwrap(),
+      "InterpolatingPolynomial[5, x]"
+    );
+  }
+}
