@@ -1258,6 +1258,45 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // EdgeList[Graph[vertices, edges]] → edges list
+  if name == "EdgeList" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && gargs.len() == 2 {
+        if let Expr::List(_) = &gargs[1] {
+          return Ok(gargs[1].clone());
+        }
+      }
+    }
+    // Return unevaluated for non-graph input
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // VertexList[Graph[vertices, edges]] → vertices list
+  if name == "VertexList" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && gargs.len() == 2 {
+        if let Expr::List(_) = &gargs[0] {
+          return Ok(gargs[0].clone());
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // StringExpression[...]: when all args are string literals, concatenate them
   if name == "StringExpression" {
     if args.iter().all(|a| matches!(a, Expr::String(_))) {
