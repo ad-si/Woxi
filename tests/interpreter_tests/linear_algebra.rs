@@ -1037,3 +1037,81 @@ mod lu_decomposition {
     );
   }
 }
+
+mod vector_angle {
+  use super::*;
+
+  #[test]
+  fn orthogonal_2d() {
+    assert_eq!(interpret("VectorAngle[{1, 0}, {0, 1}]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn parallel_2d() {
+    assert_eq!(interpret("VectorAngle[{1, 1}, {1, 1}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn antiparallel_2d() {
+    assert_eq!(interpret("VectorAngle[{3, 4}, {-3, -4}]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn pi_over_4() {
+    assert_eq!(interpret("VectorAngle[{1, 1}, {1, 0}]").unwrap(), "Pi/4");
+  }
+
+  #[test]
+  fn orthogonal_3d() {
+    assert_eq!(
+      interpret("VectorAngle[{1, 0, 0}, {0, 1, 0}]").unwrap(),
+      "Pi/2"
+    );
+  }
+
+  #[test]
+  fn perpendicular_2d() {
+    assert_eq!(interpret("VectorAngle[{1, 2}, {-2, 1}]").unwrap(), "Pi/2");
+  }
+
+  #[test]
+  fn numeric_3d() {
+    // VectorAngle[{1,2,3},{4,5,6}] = ArcCos[32/(Sqrt[14]*Sqrt[77])]
+    let result = interpret("N[VectorAngle[{1, 2, 3}, {4, 5, 6}]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.2257261285527342).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_float_input() {
+    let result = interpret("VectorAngle[{1.0, 0}, {0, 1.0}]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - std::f64::consts::FRAC_PI_2).abs() < 1e-10);
+  }
+
+  #[test]
+  fn zero_vector_indeterminate() {
+    assert_eq!(
+      interpret("VectorAngle[{0, 0}, {1, 0}]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn different_lengths_unevaluated() {
+    assert_eq!(
+      interpret("VectorAngle[{1, 2}, {3, 4, 5}]").unwrap(),
+      "VectorAngle[{1, 2}, {3, 4, 5}]"
+    );
+  }
+
+  #[test]
+  fn non_list_args_unevaluated() {
+    assert_eq!(interpret("VectorAngle[x, y]").unwrap(), "VectorAngle[x, y]");
+  }
+
+  #[test]
+  fn one_d_vectors() {
+    assert_eq!(interpret("VectorAngle[{1}, {2}]").unwrap(), "0");
+  }
+}
