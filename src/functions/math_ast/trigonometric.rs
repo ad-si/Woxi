@@ -2519,8 +2519,6 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Recursively apply TrigExpand to an expression.
 fn trig_expand_recursive(expr: &Expr) -> Expr {
-  use crate::syntax::BinaryOperator;
-
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
       let trig_name = name.as_str();
