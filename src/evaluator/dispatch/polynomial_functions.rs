@@ -152,6 +152,9 @@ pub fn dispatch_polynomial_functions(
     "Apart" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::apart_ast(args));
     }
+    "PolynomialMod" if args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::polynomial_mod_ast(args));
+    }
     _ => {}
   }
   None
