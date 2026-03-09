@@ -2903,3 +2903,88 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(rules))
 }
+
+// ─── VectorAngle ────────────────────────────────────────────────────────
+
+/// VectorAngle[u, v] — angle between two vectors.
+/// Returns ArcCos[Dot[u,v] / (Norm[u] * Norm[v])].
+pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "VectorAngle".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let u = match &args[0] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "VectorAngle".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  let v = match &args[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "VectorAngle".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  if u.len() != v.len() {
+    return Ok(Expr::FunctionCall {
+      name: "VectorAngle".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Check for zero vectors — Norm[{0,...}] = 0 → Indeterminate
+  let norm_u_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Norm".to_string(),
+    args: vec![args[0].clone()],
+  })?;
+  let norm_v_expr = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Norm".to_string(),
+    args: vec![args[1].clone()],
+  })?;
+  if matches!(norm_u_expr, Expr::Integer(0))
+    || matches!(norm_v_expr, Expr::Integer(0))
+  {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
+  // Build ArcCos[Dot[u,v] / (Norm[u] * Norm[v])] and evaluate
+  let dot_expr = Expr::FunctionCall {
+    name: "Dot".to_string(),
+    args: vec![args[0].clone(), args[1].clone()],
+  };
+  let norm_u = Expr::FunctionCall {
+    name: "Norm".to_string(),
+    args: vec![args[0].clone()],
+  };
+  let norm_v = Expr::FunctionCall {
+    name: "Norm".to_string(),
+    args: vec![args[1].clone()],
+  };
+  let denom = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![norm_u, norm_v],
+  };
+  let ratio = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      dot_expr,
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![denom, Expr::Integer(-1)],
+      },
+    ],
+  };
+  let result = Expr::FunctionCall {
+    name: "ArcCos".to_string(),
+    args: vec![ratio],
+  };
+  evaluate_expr_to_expr(&result)
+}
