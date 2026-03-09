@@ -3069,7 +3069,7 @@ mod interpolating_polynomial {
   fn newton_form_structure() {
     // InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x]
     // Newton form: 1 + (x-1)*(1 + 3*(x-2)) = 1 + (x-1)*(1 + 3x - 6) = 1 + (-1+x)*(3*(-1+x) - 2)
-    let result =
+    let _result =
       interpret("InterpolatingPolynomial[{{1,1},{2,4},{3,9}}, x]").unwrap();
     // Just verify it evaluates to correct values
     let at1 =
