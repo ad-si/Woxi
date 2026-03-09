@@ -931,6 +931,9 @@ pub fn dispatch_math_functions(
     "TrigToExp" if args.len() == 1 => {
       return Some(trig_to_exp_ast(&args[0]));
     }
+    "TrigExpand" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::trig_expand_ast(args));
+    }
     _ => {}
   }
   None

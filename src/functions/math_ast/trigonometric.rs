@@ -2502,3 +2502,481 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args: args.to_vec(),
   })
 }
+
+// ─── TrigExpand ─────────────────────────────────────────────────────────
+
+/// TrigExpand[expr] — expand trig functions of sums and integer multiples.
+pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "TrigExpand".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let result = trig_expand_recursive(&args[0]);
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Recursively apply TrigExpand to an expression.
+fn trig_expand_recursive(expr: &Expr) -> Expr {
+  use crate::syntax::BinaryOperator;
+
+  match expr {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      let trig_name = name.as_str();
+      match trig_name {
+        "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh"
+        | "Tanh" | "Coth" | "Sech" | "Csch" => {
+          // First recursively expand the argument
+          let arg = trig_expand_recursive(&args[0]);
+          expand_trig_function(trig_name, &arg)
+        }
+        _ => {
+          // Recurse into other function calls
+          Expr::FunctionCall {
+            name: name.clone(),
+            args: args.iter().map(|a| trig_expand_recursive(a)).collect(),
+          }
+        }
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(|a| trig_expand_recursive(a)).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(trig_expand_recursive(left)),
+      right: Box::new(trig_expand_recursive(right)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|i| trig_expand_recursive(i)).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Expand a single trig function application.
+fn expand_trig_function(name: &str, arg: &Expr) -> Expr {
+  // Try to decompose the argument as a sum of terms
+  let terms = collect_additive_terms(arg);
+
+  if terms.len() >= 2 {
+    // It's a sum — apply addition formulas
+    match name {
+      "Sin" => expand_sin_sum(&terms),
+      "Cos" => expand_cos_sum(&terms),
+      "Tan" => {
+        let sin_exp = expand_sin_sum(&terms);
+        let cos_exp = expand_cos_sum(&terms);
+        make_divide(&sin_exp, &cos_exp)
+      }
+      "Cot" => {
+        let sin_exp = expand_sin_sum(&terms);
+        let cos_exp = expand_cos_sum(&terms);
+        make_divide(&cos_exp, &sin_exp)
+      }
+      "Sec" => {
+        let cos_exp = expand_cos_sum(&terms);
+        make_divide(&Expr::Integer(1), &cos_exp)
+      }
+      "Csc" => {
+        let sin_exp = expand_sin_sum(&terms);
+        make_divide(&Expr::Integer(1), &sin_exp)
+      }
+      "Sinh" => expand_sinh_sum(&terms),
+      "Cosh" => expand_cosh_sum(&terms),
+      "Tanh" => {
+        let s = expand_sinh_sum(&terms);
+        let c = expand_cosh_sum(&terms);
+        make_divide(&s, &c)
+      }
+      "Coth" => {
+        let s = expand_sinh_sum(&terms);
+        let c = expand_cosh_sum(&terms);
+        make_divide(&c, &s)
+      }
+      "Sech" => {
+        let c = expand_cosh_sum(&terms);
+        make_divide(&Expr::Integer(1), &c)
+      }
+      "Csch" => {
+        let s = expand_sinh_sum(&terms);
+        make_divide(&Expr::Integer(1), &s)
+      }
+      _ => make_fn(name, &[arg.clone()]),
+    }
+  } else {
+    // Single term — check for integer multiple
+    let (coeff, base) = extract_integer_factor(arg);
+    if coeff >= 2 {
+      match name {
+        "Sin" => expand_sin_multiple(coeff as usize, &base),
+        "Cos" => expand_cos_multiple(coeff as usize, &base),
+        "Tan" => {
+          let s = expand_sin_multiple(coeff as usize, &base);
+          let c = expand_cos_multiple(coeff as usize, &base);
+          make_divide(&s, &c)
+        }
+        "Cot" => {
+          let s = expand_sin_multiple(coeff as usize, &base);
+          let c = expand_cos_multiple(coeff as usize, &base);
+          make_divide(&c, &s)
+        }
+        "Sec" => {
+          let c = expand_cos_multiple(coeff as usize, &base);
+          make_divide(&Expr::Integer(1), &c)
+        }
+        "Csc" => {
+          let s = expand_sin_multiple(coeff as usize, &base);
+          make_divide(&Expr::Integer(1), &s)
+        }
+        "Sinh" => expand_sinh_multiple(coeff as usize, &base),
+        "Cosh" => expand_cosh_multiple(coeff as usize, &base),
+        "Tanh" => {
+          let s = expand_sinh_multiple(coeff as usize, &base);
+          let c = expand_cosh_multiple(coeff as usize, &base);
+          make_divide(&s, &c)
+        }
+        "Coth" => {
+          let s = expand_sinh_multiple(coeff as usize, &base);
+          let c = expand_cosh_multiple(coeff as usize, &base);
+          make_divide(&c, &s)
+        }
+        "Sech" => {
+          let c = expand_cosh_multiple(coeff as usize, &base);
+          make_divide(&Expr::Integer(1), &c)
+        }
+        "Csch" => {
+          let s = expand_sinh_multiple(coeff as usize, &base);
+          make_divide(&Expr::Integer(1), &s)
+        }
+        _ => make_fn(name, &[arg.clone()]),
+      }
+    } else {
+      // Nothing to expand
+      make_fn(name, &[arg.clone()])
+    }
+  }
+}
+
+/// Collect additive terms from a Plus/Minus expression.
+fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut terms = collect_additive_terms(left);
+      terms.extend(collect_additive_terms(right));
+      terms
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let mut terms = collect_additive_terms(left);
+      // Negate the right side
+      let neg = make_times(&Expr::Integer(-1), right);
+      terms.push(neg);
+      terms
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().flat_map(collect_additive_terms).collect()
+    }
+    _ => vec![expr.clone()],
+  }
+}
+
+/// Extract integer factor from n*x. Returns (n, x).
+fn extract_integer_factor(expr: &Expr) -> (i128, Expr) {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(n) = left.as_ref() {
+        return (*n, *right.clone());
+      }
+      if let Expr::Integer(n) = right.as_ref() {
+        return (*n, *left.clone());
+      }
+      (1, expr.clone())
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
+      if let Expr::Integer(n) = &args[0] {
+        return (*n, args[1].clone());
+      }
+      if let Expr::Integer(n) = &args[1] {
+        return (*n, args[0].clone());
+      }
+      (1, expr.clone())
+    }
+    _ => (1, expr.clone()),
+  }
+}
+
+// ─── Sin/Cos expansion helpers ──────────────────────────────────────
+
+/// Expand Sin[a + b + ...] using recursive addition formula.
+fn expand_sin_sum(terms: &[Expr]) -> Expr {
+  if terms.len() == 1 {
+    return make_fn("Sin", &[terms[0].clone()]);
+  }
+  // Sin[a + rest] = Sin[a]*Cos[rest] + Cos[a]*Sin[rest]
+  let a = &terms[0];
+  let rest = &terms[1..];
+  let sin_a = make_fn("Sin", &[a.clone()]);
+  let cos_a = make_fn("Cos", &[a.clone()]);
+  let sin_rest = expand_sin_sum(rest);
+  let cos_rest = expand_cos_sum(rest);
+  make_plus(
+    &make_times(&sin_a, &cos_rest),
+    &make_times(&cos_a, &sin_rest),
+  )
+}
+
+/// Expand Cos[a + b + ...] using recursive addition formula.
+fn expand_cos_sum(terms: &[Expr]) -> Expr {
+  if terms.len() == 1 {
+    return make_fn("Cos", &[terms[0].clone()]);
+  }
+  // Cos[a + rest] = Cos[a]*Cos[rest] - Sin[a]*Sin[rest]
+  let a = &terms[0];
+  let rest = &terms[1..];
+  let sin_a = make_fn("Sin", &[a.clone()]);
+  let cos_a = make_fn("Cos", &[a.clone()]);
+  let sin_rest = expand_sin_sum(rest);
+  let cos_rest = expand_cos_sum(rest);
+  make_minus(
+    &make_times(&cos_a, &cos_rest),
+    &make_times(&sin_a, &sin_rest),
+  )
+}
+
+/// Expand Sin[n*x] using Chebyshev-like formula:
+/// Sin[n*x] = Sum_{k} (-1)^k * C(n, 2k+1) * cos(x)^(n-2k-1) * sin(x)^(2k+1)
+fn expand_sin_multiple(n: usize, x: &Expr) -> Expr {
+  let sin_x = make_fn("Sin", &[x.clone()]);
+  let cos_x = make_fn("Cos", &[x.clone()]);
+  let mut terms = Vec::new();
+
+  for k in 0..=(n - 1) / 2 {
+    let sign = if k % 2 == 0 { 1i128 } else { -1 };
+    let binom = binomial(n as i128, (2 * k + 1) as i128);
+    let coeff = sign * binom;
+    let cos_pow = n - 2 * k - 1;
+    let sin_pow = 2 * k + 1;
+
+    let mut term = Expr::Integer(coeff);
+    if cos_pow > 0 {
+      term = make_times(&term, &make_power(&cos_x, cos_pow as i128));
+    }
+    if sin_pow > 0 {
+      term = make_times(&term, &make_power(&sin_x, sin_pow as i128));
+    }
+    terms.push(term);
+  }
+
+  build_sum(&terms)
+}
+
+/// Expand Cos[n*x] using Chebyshev-like formula:
+/// Cos[n*x] = Sum_{k} (-1)^k * C(n, 2k) * cos(x)^(n-2k) * sin(x)^(2k)
+fn expand_cos_multiple(n: usize, x: &Expr) -> Expr {
+  let sin_x = make_fn("Sin", &[x.clone()]);
+  let cos_x = make_fn("Cos", &[x.clone()]);
+  let mut terms = Vec::new();
+
+  for k in 0..=n / 2 {
+    let sign = if k % 2 == 0 { 1i128 } else { -1 };
+    let binom = binomial(n as i128, (2 * k) as i128);
+    let coeff = sign * binom;
+    let cos_pow = n - 2 * k;
+    let sin_pow = 2 * k;
+
+    let mut term = Expr::Integer(coeff);
+    if cos_pow > 0 {
+      term = make_times(&term, &make_power(&cos_x, cos_pow as i128));
+    }
+    if sin_pow > 0 {
+      term = make_times(&term, &make_power(&sin_x, sin_pow as i128));
+    }
+    terms.push(term);
+  }
+
+  build_sum(&terms)
+}
+
+// ─── Hyperbolic expansion helpers ───────────────────────────────────
+
+/// Expand Sinh[a + b + ...] recursively.
+fn expand_sinh_sum(terms: &[Expr]) -> Expr {
+  if terms.len() == 1 {
+    return make_fn("Sinh", &[terms[0].clone()]);
+  }
+  let a = &terms[0];
+  let rest = &terms[1..];
+  // Sinh[a + rest] = Sinh[a]*Cosh[rest] + Cosh[a]*Sinh[rest]
+  make_plus(
+    &make_times(&make_fn("Sinh", &[a.clone()]), &expand_cosh_sum(rest)),
+    &make_times(&make_fn("Cosh", &[a.clone()]), &expand_sinh_sum(rest)),
+  )
+}
+
+/// Expand Cosh[a + b + ...] recursively.
+fn expand_cosh_sum(terms: &[Expr]) -> Expr {
+  if terms.len() == 1 {
+    return make_fn("Cosh", &[terms[0].clone()]);
+  }
+  let a = &terms[0];
+  let rest = &terms[1..];
+  // Cosh[a + rest] = Cosh[a]*Cosh[rest] + Sinh[a]*Sinh[rest]
+  make_plus(
+    &make_times(&make_fn("Cosh", &[a.clone()]), &expand_cosh_sum(rest)),
+    &make_times(&make_fn("Sinh", &[a.clone()]), &expand_sinh_sum(rest)),
+  )
+}
+
+/// Expand Sinh[n*x] using the multiple-angle formula.
+fn expand_sinh_multiple(n: usize, x: &Expr) -> Expr {
+  let sinh_x = make_fn("Sinh", &[x.clone()]);
+  let cosh_x = make_fn("Cosh", &[x.clone()]);
+  let mut terms = Vec::new();
+
+  // Sinh[n*x] = Sum_{k} C(n, 2k+1) * cosh(x)^(n-2k-1) * sinh(x)^(2k+1)
+  // (same as sin but without (-1)^k)
+  for k in 0..=(n - 1) / 2 {
+    let binom = binomial(n as i128, (2 * k + 1) as i128);
+    let cosh_pow = n - 2 * k - 1;
+    let sinh_pow = 2 * k + 1;
+
+    let mut term = Expr::Integer(binom);
+    if cosh_pow > 0 {
+      term = make_times(&term, &make_power(&cosh_x, cosh_pow as i128));
+    }
+    if sinh_pow > 0 {
+      term = make_times(&term, &make_power(&sinh_x, sinh_pow as i128));
+    }
+    terms.push(term);
+  }
+
+  build_sum(&terms)
+}
+
+/// Expand Cosh[n*x] using the multiple-angle formula.
+fn expand_cosh_multiple(n: usize, x: &Expr) -> Expr {
+  let sinh_x = make_fn("Sinh", &[x.clone()]);
+  let cosh_x = make_fn("Cosh", &[x.clone()]);
+  let mut terms = Vec::new();
+
+  // Cosh[n*x] = Sum_{k} C(n, 2k) * cosh(x)^(n-2k) * sinh(x)^(2k)
+  // (same as cos but without (-1)^k)
+  for k in 0..=n / 2 {
+    let binom = binomial(n as i128, (2 * k) as i128);
+    let cosh_pow = n - 2 * k;
+    let sinh_pow = 2 * k;
+
+    let mut term = Expr::Integer(binom);
+    if cosh_pow > 0 {
+      term = make_times(&term, &make_power(&cosh_x, cosh_pow as i128));
+    }
+    if sinh_pow > 0 {
+      term = make_times(&term, &make_power(&sinh_x, sinh_pow as i128));
+    }
+    terms.push(term);
+  }
+
+  build_sum(&terms)
+}
+
+// ─── AST building helpers ───────────────────────────────────────────
+
+fn make_fn(name: &str, args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec(),
+  }
+}
+
+fn make_times(a: &Expr, b: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![a.clone(), b.clone()],
+  }
+}
+
+fn make_plus(a: &Expr, b: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![a.clone(), b.clone()],
+  }
+}
+
+fn make_minus(a: &Expr, b: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      a.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(-1), b.clone()],
+      },
+    ],
+  }
+}
+
+fn make_divide(a: &Expr, b: &Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      a.clone(),
+      Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![b.clone(), Expr::Integer(-1)],
+      },
+    ],
+  }
+}
+
+fn make_power(base: &Expr, exp: i128) -> Expr {
+  if exp == 1 {
+    base.clone()
+  } else {
+    Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![base.clone(), Expr::Integer(exp)],
+    }
+  }
+}
+
+fn build_sum(terms: &[Expr]) -> Expr {
+  if terms.is_empty() {
+    return Expr::Integer(0);
+  }
+  if terms.len() == 1 {
+    return terms[0].clone();
+  }
+  Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms.to_vec(),
+  }
+}
+
+/// Compute binomial coefficient C(n, k).
+fn binomial(n: i128, k: i128) -> i128 {
+  if k < 0 || k > n {
+    return 0;
+  }
+  let k = k.min(n - k);
+  let mut result = 1i128;
+  for i in 0..k {
+    result = result * (n - i) / (i + 1);
+  }
+  result
+}
