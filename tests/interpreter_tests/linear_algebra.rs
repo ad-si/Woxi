@@ -1115,3 +1115,75 @@ mod vector_angle {
     assert_eq!(interpret("VectorAngle[{1}, {2}]").unwrap(), "0");
   }
 }
+
+mod upper_triangularize {
+  use super::*;
+
+  #[test]
+  fn basic_3x3() {
+    assert_eq!(
+      interpret("UpperTriangularize[{{1,2,3},{4,5,6},{7,8,9}}]").unwrap(),
+      "{{1, 2, 3}, {0, 5, 6}, {0, 0, 9}}"
+    );
+  }
+
+  #[test]
+  fn with_offset_1() {
+    assert_eq!(
+      interpret("UpperTriangularize[{{1,2,3},{4,5,6},{7,8,9}}, 1]").unwrap(),
+      "{{0, 2, 3}, {0, 0, 6}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn with_offset_neg1() {
+    assert_eq!(
+      interpret("UpperTriangularize[{{1,2,3},{4,5,6},{7,8,9}}, -1]").unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}, {0, 8, 9}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_2x2() {
+    assert_eq!(
+      interpret("UpperTriangularize[{{a,b},{c,d}}]").unwrap(),
+      "{{a, b}, {0, d}}"
+    );
+  }
+
+  #[test]
+  fn non_square() {
+    assert_eq!(
+      interpret("UpperTriangularize[{{1,2},{3,4},{5,6}}]").unwrap(),
+      "{{1, 2}, {0, 4}, {0, 0}}"
+    );
+  }
+}
+
+mod lower_triangularize {
+  use super::*;
+
+  #[test]
+  fn basic_3x3() {
+    assert_eq!(
+      interpret("LowerTriangularize[{{1,2,3},{4,5,6},{7,8,9}}]").unwrap(),
+      "{{1, 0, 0}, {4, 5, 0}, {7, 8, 9}}"
+    );
+  }
+
+  #[test]
+  fn with_offset_1() {
+    assert_eq!(
+      interpret("LowerTriangularize[{{1,2,3},{4,5,6},{7,8,9}}, 1]").unwrap(),
+      "{{1, 2, 0}, {4, 5, 6}, {7, 8, 9}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_2x2() {
+    assert_eq!(
+      interpret("LowerTriangularize[{{a,b},{c,d}}]").unwrap(),
+      "{{a, 0}, {c, d}}"
+    );
+  }
+}

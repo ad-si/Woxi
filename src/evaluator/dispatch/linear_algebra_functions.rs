@@ -106,6 +106,16 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "UpperTriangularize" if args.len() == 1 || args.len() == 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::upper_triangularize_ast(args),
+      );
+    }
+    "LowerTriangularize" if args.len() == 1 || args.len() == 2 => {
+      return Some(
+        crate::functions::linear_algebra_ast::lower_triangularize_ast(args),
+      );
+    }
     "KroneckerProduct" if args.len() == 2 => {
       return Some(kronecker_product_ast(args));
     }

@@ -3330,7 +3330,7 @@ LossFunction,,,,11.3,4356
 LowerCaseQ,Tests if a string consists entirely of lowercase letters,✅,pure,2,2243
 LowerLeftArrow,,,,3,5390
 LowerRightArrow,,,,3,5390
-LowerTriangularize,,,,7,1212
+LowerTriangularize,Zero out elements above a diagonal,✅,pure,7,1212
 LowerTriangularMatrix,,,,13.1,
 LowerTriangularMatrixQ,,,,12,5587
 LowpassFilter,,,,9,1964
@@ -5847,7 +5847,7 @@ UpEquilibrium,,,,3,5013
 UpperCaseQ,Tests if a string consists entirely of uppercase letters,✅,pure,2,1857
 UpperLeftArrow,,,,3,5390
 UpperRightArrow,,,,3,4081
-UpperTriangularize,,,,7,1103
+UpperTriangularize,Zero out elements below a diagonal,✅,pure,7,1103
 UpperTriangularMatrix,,,,13.1,
 UpperTriangularMatrixQ,,,,12,4356
 Upsample,,,,9,2528

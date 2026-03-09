@@ -2988,3 +2988,98 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   evaluate_expr_to_expr(&result)
 }
+
+// ─── UpperTriangularize / LowerTriangularize ───────────────────────────
+
+/// UpperTriangularize[m] or UpperTriangularize[m, k]
+/// Zeros out elements below the k-th diagonal (default k=0).
+pub fn upper_triangularize_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  triangularize_ast(args, true)
+}
+
+/// LowerTriangularize[m] or LowerTriangularize[m, k]
+/// Zeros out elements above the k-th diagonal (default k=0).
+pub fn lower_triangularize_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  triangularize_ast(args, false)
+}
+
+fn triangularize_ast(
+  args: &[Expr],
+  upper: bool,
+) -> Result<Expr, InterpreterError> {
+  let name = if upper {
+    "UpperTriangularize"
+  } else {
+    "LowerTriangularize"
+  };
+
+  if args.is_empty() || args.len() > 2 {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let rows = match &args[0] {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let k = if args.len() == 2 {
+    match &args[1] {
+      Expr::Integer(n) => *n,
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  } else {
+    0
+  };
+
+  let nrows = rows.len();
+  let mut result_rows = Vec::with_capacity(nrows);
+
+  for (i, row) in rows.iter().enumerate() {
+    match row {
+      Expr::List(cols) => {
+        let ncols = cols.len();
+        let mut new_cols = Vec::with_capacity(ncols);
+        for (j, elem) in cols.iter().enumerate() {
+          let keep = if upper {
+            // Keep if j >= i + k (at or above the k-th diagonal)
+            (j as i128) >= (i as i128) + k
+          } else {
+            // Keep if j <= i + k (at or below the k-th diagonal)
+            (j as i128) <= (i as i128) + k
+          };
+          if keep {
+            new_cols.push(elem.clone());
+          } else {
+            new_cols.push(Expr::Integer(0));
+          }
+        }
+        result_rows.push(Expr::List(new_cols));
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  Ok(Expr::List(result_rows))
+}
