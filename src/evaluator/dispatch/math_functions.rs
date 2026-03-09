@@ -533,6 +533,9 @@ pub fn dispatch_math_functions(
     "HypergeometricPFQ" if args.len() == 3 => {
       return Some(crate::functions::math_ast::hypergeometric_pfq_ast(args));
     }
+    "MeijerG" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::meijer_g_ast(args));
+    }
     "HermiteH" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hermite_h_ast(args));
     }
