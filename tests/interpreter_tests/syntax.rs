@@ -289,6 +289,25 @@ mod subtraction_without_spaces {
     assert_eq!(interpret("ToString[x + y, InputForm]").unwrap(), "x + y");
     // Without InputForm, strings are unquoted
     assert_eq!(interpret(r#"ToString["hello"]"#).unwrap(), "hello");
+    // Chained inequalities with same operators use infix form in InputForm
+    assert_eq!(
+      interpret(
+        "ToString[Inequality[0, LessEqual, x, LessEqual, 1], InputForm]"
+      )
+      .unwrap(),
+      "0 <= x <= 1"
+    );
+    assert_eq!(
+      interpret("ToString[Inequality[a, Less, b, Less, c], InputForm]")
+        .unwrap(),
+      "a < b < c"
+    );
+    // Mixed operators use Inequality[] head in InputForm
+    assert_eq!(
+      interpret("ToString[Inequality[a, LessEqual, b, Less, c], InputForm]")
+        .unwrap(),
+      "Inequality[a, LessEqual, b, Less, c]"
+    );
   }
 
   #[test]

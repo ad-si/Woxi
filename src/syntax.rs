@@ -3834,6 +3834,43 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Special case: Inequality[a, Op, b, Op, c] — render as infix when all ops are the same
+      if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
+        let ops: Vec<&str> = args
+          .iter()
+          .skip(1)
+          .step_by(2)
+          .filter_map(|a| {
+            if let Expr::Identifier(s) = a {
+              Some(s.as_str())
+            } else {
+              None
+            }
+          })
+          .collect();
+        let all_same =
+          ops.len() == args.len() / 2 && ops.windows(2).all(|w| w[0] == w[1]);
+        if all_same {
+          if let Some(op_str) = match ops[0] {
+            "Equal" => Some(" == "),
+            "Unequal" => Some(" != "),
+            "Less" => Some(" < "),
+            "LessEqual" => Some(" <= "),
+            "Greater" => Some(" > "),
+            "GreaterEqual" => Some(" >= "),
+            "SameQ" => Some(" === "),
+            "UnsameQ" => Some(" =!= "),
+            _ => None,
+          } {
+            let operands: Vec<String> =
+              args.iter().step_by(2).map(expr_to_string).collect();
+            return operands.join(op_str);
+          }
+        }
+        // Mixed operators or unknown — use Inequality[] head form
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return format!("Inequality[{}]", parts.join(", "));
+      }
       // Special case: Quantity[n, unit] — unit shown as quoted string(s)
       if name == "Quantity" && args.len() == 2 {
         let mag_str = expr_to_string(&args[0]);
@@ -5211,6 +5248,43 @@ pub fn expr_to_output(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
+      // Inequality[a, Op, b, Op, c] — render as infix when all ops are the same
+      if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
+        let ops: Vec<&str> = args
+          .iter()
+          .skip(1)
+          .step_by(2)
+          .filter_map(|a| {
+            if let Expr::Identifier(s) = a {
+              Some(s.as_str())
+            } else {
+              None
+            }
+          })
+          .collect();
+        let all_same =
+          ops.len() == args.len() / 2 && ops.windows(2).all(|w| w[0] == w[1]);
+        if all_same {
+          if let Some(op_str) = match ops[0] {
+            "Equal" => Some(" == "),
+            "Unequal" => Some(" != "),
+            "Less" => Some(" < "),
+            "LessEqual" => Some(" <= "),
+            "Greater" => Some(" > "),
+            "GreaterEqual" => Some(" >= "),
+            "SameQ" => Some(" === "),
+            "UnsameQ" => Some(" =!= "),
+            _ => None,
+          } {
+            let operands: Vec<String> =
+              args.iter().step_by(2).map(expr_to_output).collect();
+            return operands.join(op_str);
+          }
+        }
+        // Mixed operators — use Inequality[] head form
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return format!("Inequality[{}]", parts.join(", "));
+      }
       // Sequence[] (empty sequence) displays as nothing in Wolfram output
       if name == "Sequence" && args.is_empty() {
         return String::new();
@@ -6245,6 +6319,52 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       };
       expr_to_input_form(&display_expr)
     }
+    // Inequality[a, LessEqual, b, LessEqual, c] → a <= b <= c when all operators are the same;
+    // otherwise keep the Inequality[...] head form.
+    Expr::FunctionCall { name, args }
+      if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 =>
+    {
+      // args are [operand, op, operand, op, operand, ...]
+      // Check if all operators are the same
+      let ops: Vec<&str> = args
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .filter_map(|a| {
+          if let Expr::Identifier(s) = a {
+            Some(s.as_str())
+          } else {
+            None
+          }
+        })
+        .collect();
+      let all_same =
+        ops.len() == args.len() / 2 && ops.windows(2).all(|w| w[0] == w[1]);
+      if all_same {
+        let op_str = match ops[0] {
+          "Equal" => " == ",
+          "Unequal" => " != ",
+          "Less" => " < ",
+          "LessEqual" => " <= ",
+          "Greater" => " > ",
+          "GreaterEqual" => " >= ",
+          "SameQ" => " === ",
+          "UnsameQ" => " =!= ",
+          _ => {
+            // Unknown operator — fall back to Inequality[] head form
+            let parts: Vec<String> =
+              args.iter().map(expr_to_input_form).collect();
+            return format!("Inequality[{}]", parts.join(", "));
+          }
+        };
+        let operands: Vec<String> =
+          args.iter().step_by(2).map(expr_to_input_form).collect();
+        operands.join(op_str)
+      } else {
+        let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+        format!("Inequality[{}]", parts.join(", "))
+      }
+    }
     // Generic FunctionCall: render as name[arg1, arg2, ...] with InputForm for args.
     // Known infix operators (Plus, Times, Power, etc.) fall through to expr_to_output
     // since they rarely contain string literals and need infix rendering.
@@ -6303,31 +6423,48 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
         format!("{}[{}]", name, parts.join(", "))
       }
     }
-    // Chained comparison with 2+ operators: always use Inequality[a, Less, b, Less, c]
-    // in InputForm (Wolfram always uses the Inequality head form, even when all
-    // operators are the same).
+    // Chained comparison with 2+ operators:
+    // When all operators are the same, use infix: a <= b <= c
+    // When operators differ, use Inequality[a, LessEqual, b, Less, c]
     Expr::Comparison {
       operands,
       operators,
     } if operators.len() >= 2 => {
-      let mut parts = Vec::with_capacity(operands.len() + operators.len());
-      for (i, operand) in operands.iter().enumerate() {
-        parts.push(expr_to_input_form(operand));
-        if i < operators.len() {
-          let op_name = match &operators[i] {
-            ComparisonOp::Equal => "Equal",
-            ComparisonOp::NotEqual => "Unequal",
-            ComparisonOp::Less => "Less",
-            ComparisonOp::LessEqual => "LessEqual",
-            ComparisonOp::Greater => "Greater",
-            ComparisonOp::GreaterEqual => "GreaterEqual",
-            ComparisonOp::SameQ => "SameQ",
-            ComparisonOp::UnsameQ => "UnsameQ",
-          };
-          parts.push(op_name.to_string());
+      let all_same = operators.windows(2).all(|w| w[0] == w[1]);
+      if all_same {
+        let op_str = match &operators[0] {
+          ComparisonOp::Equal => " == ",
+          ComparisonOp::NotEqual => " != ",
+          ComparisonOp::Less => " < ",
+          ComparisonOp::LessEqual => " <= ",
+          ComparisonOp::Greater => " > ",
+          ComparisonOp::GreaterEqual => " >= ",
+          ComparisonOp::SameQ => " === ",
+          ComparisonOp::UnsameQ => " =!= ",
+        };
+        let parts: Vec<String> =
+          operands.iter().map(expr_to_input_form).collect();
+        parts.join(op_str)
+      } else {
+        let mut parts = Vec::with_capacity(operands.len() + operators.len());
+        for (i, operand) in operands.iter().enumerate() {
+          parts.push(expr_to_input_form(operand));
+          if i < operators.len() {
+            let op_name = match &operators[i] {
+              ComparisonOp::Equal => "Equal",
+              ComparisonOp::NotEqual => "Unequal",
+              ComparisonOp::Less => "Less",
+              ComparisonOp::LessEqual => "LessEqual",
+              ComparisonOp::Greater => "Greater",
+              ComparisonOp::GreaterEqual => "GreaterEqual",
+              ComparisonOp::SameQ => "SameQ",
+              ComparisonOp::UnsameQ => "UnsameQ",
+            };
+            parts.push(op_name.to_string());
+          }
         }
+        format!("Inequality[{}]", parts.join(", "))
       }
-      format!("Inequality[{}]", parts.join(", "))
     }
     // Plus in InputForm: render as infix but use expr_to_input_form for args
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
