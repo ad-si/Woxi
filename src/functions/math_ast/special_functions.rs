@@ -4026,6 +4026,76 @@ pub fn hypergeometric_2f1_regularized_ast(
   Ok(result)
 }
 
+/// QPochhammer[a, q, n] — q-Pochhammer symbol.
+/// Computes Product[(1 - a*q^k), {k, 0, n-1}] for non-negative integer n.
+pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "QPochhammer".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let a = &args[0];
+  let q = &args[1];
+  let n_expr = &args[2];
+
+  // n must be a non-negative integer
+  let n = match expr_to_i128(n_expr) {
+    Some(n) if n >= 0 => n as usize,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "QPochhammer".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // QPochhammer[a, q, 0] = 1
+  if n == 0 {
+    return Ok(Expr::Integer(1));
+  }
+
+  // Compute the product symbolically: Product[(1 - a*q^k), {k, 0, n-1}]
+  // Build each factor and multiply using the evaluator
+  let mut result = Expr::Integer(1);
+  for k in 0..n {
+    // Compute q^k
+    let qk = if k == 0 {
+      Expr::Integer(1)
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![q.clone(), Expr::Integer(k as i128)],
+      })?
+    };
+    // Compute a * q^k
+    let aqk = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![a.clone(), qk],
+    })?;
+    // Compute 1 - a*q^k
+    let factor =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), aqk],
+          },
+        ],
+      })?;
+    // Multiply into result
+    result = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![result, factor],
+    })?;
+  }
+
+  Ok(result)
+}
+
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)

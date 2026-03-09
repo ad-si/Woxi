@@ -3393,3 +3393,73 @@ mod hypergeometric_2f1_regularized {
     );
   }
 }
+
+mod q_pochhammer {
+  use super::*;
+
+  #[test]
+  fn n_zero() {
+    assert_eq!(interpret("QPochhammer[a, q, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn n_one() {
+    // QPochhammer[a, q, 1] = 1 - a
+    assert_eq!(interpret("QPochhammer[a, q, 1]").unwrap(), "1 - a");
+  }
+
+  #[test]
+  fn zero_a() {
+    // QPochhammer[0, q, n] = 1 for any n
+    assert_eq!(interpret("QPochhammer[0, q, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn rational_example() {
+    // QPochhammer[1/2, 1/3, 3] = 85/216
+    assert_eq!(interpret("QPochhammer[1/2, 1/3, 3]").unwrap(), "85/216");
+  }
+
+  #[test]
+  fn integer_example() {
+    // QPochhammer[2, 3, 4] = 4505
+    assert_eq!(interpret("QPochhammer[2, 3, 4]").unwrap(), "4505");
+  }
+
+  #[test]
+  fn one_arg_n() {
+    // QPochhammer[2, 3, 1] = 1 - 2 = -1
+    assert_eq!(interpret("QPochhammer[2, 3, 1]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn numeric_float() {
+    // QPochhammer[0.5, 0.25, 4] ≈ 0.4205169677734375
+    let result = interpret("QPochhammer[0.5, 0.25, 4]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.4205169677734375).abs() < 1e-10, "got {}", val);
+  }
+
+  #[test]
+  fn four_factor_rational() {
+    // QPochhammer[1/2, 1/4, 4] = 27559/65536
+    assert_eq!(
+      interpret("QPochhammer[1/2, 1/4, 4]").unwrap(),
+      "27559/65536"
+    );
+  }
+
+  #[test]
+  fn symbolic_n_unevaluated() {
+    assert_eq!(
+      interpret("QPochhammer[a, q, n]").unwrap(),
+      "QPochhammer[a, q, n]"
+    );
+  }
+
+  #[test]
+  fn a_one_q_one() {
+    // QPochhammer[1, 1, 3] = (1-1)(1-1)(1-1) = 0
+    assert_eq!(interpret("QPochhammer[1, 1, 3]").unwrap(), "0");
+  }
+}
