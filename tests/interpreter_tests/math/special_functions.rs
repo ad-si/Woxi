@@ -3126,3 +3126,154 @@ mod riemann_r {
     );
   }
 }
+
+mod meijer_g {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("MeijerG[{{a}, {b}}, {{c}, {d}}, z]").unwrap(),
+      "MeijerG[{{a}, {b}}, {{c}, {d}}, z]"
+    );
+  }
+
+  #[test]
+  fn bad_args_unevaluated() {
+    assert_eq!(interpret("MeijerG[1, 2, 3]").unwrap(), "MeijerG[1, 2, 3]");
+  }
+
+  #[test]
+  fn z_zero_simple() {
+    assert_eq!(interpret("MeijerG[{{}, {}}, {{0}, {}}, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn numeric_simple_pole_exp() {
+    // G^{1,0}_{0,1}(z | ; 0) = e^{-z}
+    let result = interpret("MeijerG[{{}, {}}, {{0}, {}}, 3.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = (-3.0_f64).exp();
+    assert!(
+      (val - expected).abs() < 1e-8,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn numeric_double_pole() {
+    // G^{2,0}_{0,2}(z | ; 1/2, 3/2)
+    let result = interpret("MeijerG[{{}, {}}, {{0.5, 1.5}, {}}, 3.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 0.13914993366209005;
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn numeric_with_upper_params() {
+    // MeijerG[{{1, 2}, {}}, {{3}, {}}, 1.0]
+    let result = interpret("MeijerG[{{1, 2}, {}}, {{3}, {}}, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 0.2109579130304179;
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn n_wrapper_integer_args() {
+    let result = interpret("N[MeijerG[{{1, 2}, {}}, {{3}, {}}, 1]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 0.2109579130304179;
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn n_wrapper_rational_args() {
+    let result = interpret("N[MeijerG[{{}, {1/2}}, {{0}, {}}, 1/2]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 0.7978845608028653;
+    assert!(
+      (val - expected).abs() < 1e-6,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn numeric_coinciding_poles_double() {
+    // MeijerG[{{}, {}}, {{0, 1}, {}}, 2.0]
+    let result = interpret("N[MeijerG[{{}, {}}, {{0, 1}, {}}, 2]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 0.1396674740152931;
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn numeric_with_lower_rest() {
+    // MeijerG[{{}, {}}, {{0}, {1}}, 2.0] - has lower rest parameters
+    let result = interpret("N[MeijerG[{{}, {}}, {{0}, {1}}, 2]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = -0.5659599737610849;
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn numeric_non_coinciding() {
+    // MeijerG[{{1/2}, {}}, {{0, 1/2}, {}}, 1.0]
+    let result =
+      interpret("N[MeijerG[{{1/2}, {}}, {{0, 1/2}, {}}, 1]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 1.3432934216467352;
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "got {} expected {}",
+      val,
+      expected
+    );
+  }
+
+  #[test]
+  fn hdiv_positive_integer_diff() {
+    // MeijerG[{{1}, {}}, {{0}, {}}, 1.0] - a_i - b_j = 1 (positive integer) → does not exist
+    assert_eq!(
+      interpret("MeijerG[{{1}, {}}, {{0}, {}}, 1.0]").unwrap(),
+      "MeijerG[{{1}, {}}, {{0}, {}}, 1.]"
+    );
+  }
+
+  #[test]
+  fn empty_m_and_n_invalid() {
+    // MeijerG[{{}, {}}, {{}, {}}, x] - m=0, n=0 → does not exist
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{}, {}}, x]").unwrap(),
+      "MeijerG[{{}, {}}, {{}, {}}, x]"
+    );
+  }
+}

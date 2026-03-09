@@ -3486,7 +3486,7 @@ MedianDeviation,,,,6,3402
 MedianFilter,,,,7,2031
 MedicalTestData,,🚫,,10,4809
 Medium,Medium size specification,✅,none,6,287
-MeijerG,,,,3,492
+MeijerG,Meijer G-function,✅,pure,3,492
 MeijerGReduce,,,,11,2656
 MeixnerDistribution,,,,9,3413
 MellinConvolve,,,,11,5079

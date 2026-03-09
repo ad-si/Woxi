@@ -5234,3 +5234,459 @@ pub fn lerch_phi_numeric(z: f64, s: f64, a: f64) -> f64 {
 
   sum
 }
+
+/// Helper: convert a list of Expr to Vec<f64>, returning None if any element is not numeric
+fn expr_list_to_f64_vec(list: &[Expr]) -> Option<Vec<f64>> {
+  list
+    .iter()
+    .map(|e| match e {
+      Expr::Real(x) => Some(*x),
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some(*n as f64 / *d as f64)
+        } else {
+          None
+        }
+      }
+      _ => None,
+    })
+    .collect()
+}
+
+/// MeijerG[{{a1,...,an}, {an+1,...,ap}}, {{b1,...,bm}, {bm+1,...,bq}}, z]
+/// Meijer G-function
+pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "MeijerG".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Parse upper parameters: {{a1,...,an}, {an+1,...,ap}}
+  let (upper_n, upper_rest) = match &args[0] {
+    Expr::List(v) if v.len() == 2 => {
+      let list_n = match &v[0] {
+        Expr::List(l) => l.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "MeijerG".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let list_rest = match &v[1] {
+        Expr::List(l) => l.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "MeijerG".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (list_n, list_rest)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MeijerG".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Parse lower parameters: {{b1,...,bm}, {bm+1,...,bq}}
+  let (lower_m, lower_rest) = match &args[1] {
+    Expr::List(v) if v.len() == 2 => {
+      let list_m = match &v[0] {
+        Expr::List(l) => l.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "MeijerG".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      let list_rest = match &v[1] {
+        Expr::List(l) => l.clone(),
+        _ => {
+          return Ok(Expr::FunctionCall {
+            name: "MeijerG".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (list_m, list_rest)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MeijerG".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let z = &args[2];
+
+  let n = upper_n.len(); // number of a parameters in first list
+  let _p = n + upper_rest.len(); // total number of upper parameters
+  let m = lower_m.len(); // number of b parameters in first list
+  let _q = m + lower_rest.len(); // total number of lower parameters
+
+  // Consistency check: need m > 0 or n > 0, and p+q < 2(m+n) or other conditions
+  if m == 0 && n == 0 {
+    // No poles to sum over - function doesn't exist
+    return Ok(Expr::FunctionCall {
+      name: "MeijerG".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // MeijerG[{{}, {}}, {{0}, {}}, 0] = 1
+  if let Expr::Integer(0) = z {
+    if n == 0
+      && m == 1
+      && lower_rest.is_empty()
+      && upper_n.is_empty()
+      && upper_rest.is_empty()
+    {
+      if let Some(b0) = expr_to_i128(&lower_m[0]) {
+        if b0 == 0 {
+          return Ok(Expr::Integer(1));
+        }
+      }
+    }
+  }
+
+  // Try numeric evaluation
+  let z_val = match z {
+    Expr::Real(x) => Some(*x),
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some(*n as f64 / *d as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
+  };
+
+  let has_real = matches!(z, Expr::Real(_))
+    || upper_n.iter().any(|e| matches!(e, Expr::Real(_)))
+    || upper_rest.iter().any(|e| matches!(e, Expr::Real(_)))
+    || lower_m.iter().any(|e| matches!(e, Expr::Real(_)))
+    || lower_rest.iter().any(|e| matches!(e, Expr::Real(_)));
+
+  if let Some(z_val) = z_val {
+    let a_n_vals = expr_list_to_f64_vec(&upper_n);
+    let a_rest_vals = expr_list_to_f64_vec(&upper_rest);
+    let b_m_vals = expr_list_to_f64_vec(&lower_m);
+    let b_rest_vals = expr_list_to_f64_vec(&lower_rest);
+
+    if let (Some(a_n), Some(a_rest), Some(b_m), Some(b_rest)) =
+      (a_n_vals, a_rest_vals, b_m_vals, b_rest_vals)
+    {
+      // Check hdiv condition: a_i - b_j must not be a positive integer
+      // for i=1,...,n and j=1,...,m
+      for &ai in &a_n {
+        for &bj in &b_m {
+          let diff = ai - bj;
+          if diff > 0.0
+            && (diff - diff.round()).abs() < 1e-14
+            && diff.round() >= 1.0
+          {
+            // hdiv: function does not exist
+            return Ok(Expr::FunctionCall {
+              name: "MeijerG".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+      }
+
+      // All parameters are numeric - compute
+      let mut all_a = a_n.clone();
+      all_a.extend_from_slice(&a_rest);
+      let mut all_b = b_m.clone();
+      all_b.extend_from_slice(&b_rest);
+
+      if has_real || matches!(z, Expr::Real(_)) {
+        let result = meijer_g_numeric(n, m, &all_a, &all_b, z_val);
+        if result.is_finite() {
+          return Ok(Expr::Real(result));
+        }
+      } else {
+        // Integer/rational args - only evaluate via N[]
+        // Return unevaluated for pure integer/rational input
+        return Ok(Expr::FunctionCall {
+          name: "MeijerG".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "MeijerG".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Numeric evaluation of MeijerG using residue series.
+///
+/// G^{m,n}_{p,q}(z | a_1,...,a_p; b_1,...,b_q) =
+///   -Σ Res[integrand, s = b_h + k] for h=0..m-1, k=0,1,2,...
+fn meijer_g_numeric(n: usize, m: usize, a: &[f64], b: &[f64], z: f64) -> f64 {
+  let p = a.len();
+  let q = b.len();
+
+  // z = 0 special case
+  if z == 0.0 {
+    if m == 1 && b[0] == 0.0 && n == 0 && p == 0 {
+      return 1.0;
+    }
+    return f64::NAN;
+  }
+
+  // Choose convergent series:
+  // Left series (poles of Γ(b_j-s)) converges when q > p, or q = p and |z| < 1
+  // Right series (poles of Γ(1-a_j+s)) converges when p > q, or p = q and |z| > 1
+  // For right series, use the inversion formula: G^{m,n}_{p,q}(z) = G^{n,m}_{q,p}(1/z | ...)
+  let use_left = if q > p {
+    true
+  } else if p > q {
+    false
+  } else {
+    // p == q
+    z.abs() <= 1.0
+  };
+
+  if use_left {
+    meijer_g_direct_series(n, m, p, q, a, b, z)
+  } else {
+    // Apply inversion: G^{m,n}_{p,q}(z | a; b) = G^{n,m}_{q,p}(1/z | 1-b; 1-a)
+    // The parameter order is preserved: new upper = {1-b_1,...,1-b_q}
+    //                                   new lower = {1-a_1,...,1-a_p}
+    // with new_n = m (first m upper params), new_m = n (first n lower params)
+    let new_a: Vec<f64> = b.iter().map(|&bi| 1.0 - bi).collect();
+    let new_b: Vec<f64> = a.iter().map(|&ai| 1.0 - ai).collect();
+    let new_n = m;
+    let new_m = n;
+    let new_p = q;
+    let new_q = p;
+    meijer_g_direct_series(new_n, new_m, new_p, new_q, &new_a, &new_b, 1.0 / z)
+  }
+}
+
+/// Direct residue series computation for MeijerG.
+/// Computes residues numerically at each pole location, handling
+/// coinciding poles and zero-pole cancellations automatically.
+fn meijer_g_direct_series(
+  n: usize,
+  m: usize,
+  p: usize,
+  q: usize,
+  a: &[f64],
+  b: &[f64],
+  z: f64,
+) -> f64 {
+  let max_terms = 500;
+
+  // Evaluate the full MeijerG integrand at a point s (away from poles):
+  // I(s) = ∏_{j<m} Γ(b_j-s) * ∏_{j<n} Γ(1-a_j+s) / ∏_{j≥n,j<p} Γ(a_j-s) / ∏_{j≥m,j<q} Γ(1-b_j+s) * z^s
+  let eval_integrand = |s: f64| -> f64 {
+    let mut val = z.powf(s);
+    for j in 0..m {
+      val *= gamma_fn(b[j] - s);
+    }
+    for j in 0..n {
+      val *= gamma_fn(1.0 - a[j] + s);
+    }
+    for j in n..p {
+      let g = gamma_fn(a[j] - s);
+      if g.abs() < 1e-300 {
+        return 0.0;
+      }
+      val /= g;
+    }
+    for j in m..q {
+      let g = gamma_fn(1.0 - b[j] + s);
+      if g.abs() < 1e-300 {
+        return 0.0;
+      }
+      val /= g;
+    }
+    val
+  };
+
+  let mut total = 0.0;
+
+  for h in 0..m {
+    for k in 0..max_terms {
+      let s0 = b[h] + k as f64;
+
+      // Check if this pole location is already "owned" by a smaller h
+      let mut already_counted = false;
+      for j in 0..h {
+        let diff = s0 - b[j];
+        if diff >= -1e-14
+          && (diff - diff.round()).abs() < 1e-10
+          && diff.round() >= 0.0
+        {
+          already_counted = true;
+          break;
+        }
+      }
+      if already_counted {
+        continue;
+      }
+
+      // Count apparent pole order from numerator Gamma functions
+      let mut pole_order = 0;
+      for j in 0..m {
+        let diff = s0 - b[j];
+        if diff >= -1e-14 && (diff - diff.round()).abs() < 1e-10 {
+          pole_order += 1;
+        }
+      }
+      for j in 0..n {
+        let arg = 1.0 - a[j] + s0;
+        if arg <= 1e-14
+          && (arg - arg.round()).abs() < 1e-10
+          && arg.round() <= 0.0
+        {
+          pole_order += 1;
+        }
+      }
+
+      // Count zeros from denominator 1/Γ functions
+      let mut zero_order = 0;
+      for j in n..p {
+        let arg = a[j] - s0;
+        if (arg - arg.round()).abs() < 1e-10 && arg.round() <= 0.0 {
+          zero_order += 1;
+        }
+      }
+      for j in m..q {
+        let arg = 1.0 - b[j] + s0;
+        if (arg - arg.round()).abs() < 1e-10 && arg.round() <= 0.0 {
+          zero_order += 1;
+        }
+      }
+
+      let effective_order = if zero_order >= pole_order {
+        0
+      } else {
+        pole_order - zero_order
+      };
+
+      if effective_order == 0 {
+        continue; // no pole here
+      }
+
+      // Compute residue numerically using:
+      // g(s) = (s-s₀)^{pole_order} * I(s)  [regularized integrand]
+      // The effective pole is of order effective_order in g.
+      // Residue of I at s₀ = g^{(pole_order-1)}(s₀) / (pole_order-1)!
+      let res = meijer_g_numerical_residue(&eval_integrand, s0, pole_order);
+
+      if !res.is_finite() || res.is_nan() {
+        continue;
+      }
+
+      let prev_total = total;
+      total -= res; // G = -Σ Res
+
+      // Convergence check
+      if k > 5 && res.abs() < 1e-14 * total.abs().max(1e-100) {
+        break;
+      }
+      if k > 5
+        && prev_total != 0.0
+        && (total - prev_total).abs() < 1e-14 * total.abs().max(1e-100)
+      {
+        break;
+      }
+    }
+  }
+
+  total
+}
+
+/// Compute residue of f(s) at a pole of given apparent order using numerical differentiation.
+/// Uses the regularized function g(s) = (s-s₀)^order * f(s).
+/// Residue = g^{(order-1)}(s₀) / (order-1)!
+///
+/// IMPORTANT: We never evaluate g(s) at exactly s₀ because of 0*∞ issues.
+/// Instead we use symmetric sample points offset from s₀.
+fn meijer_g_numerical_residue(
+  f: &dyn Fn(f64) -> f64,
+  s0: f64,
+  order: usize,
+) -> f64 {
+  let delta = 1e-4;
+
+  let eval_g = |s: f64| -> f64 {
+    let eps = s - s0;
+    eps.powi(order as i32) * f(s)
+  };
+
+  let factorial = |n: usize| -> f64 {
+    let mut fac = 1.0;
+    for i in 2..=n {
+      fac *= i as f64;
+    }
+    fac
+  };
+
+  if order == 1 {
+    // Residue = g(s₀) = lim_{ε→0} ε * f(s₀+ε)
+    // Use multiple points for Richardson extrapolation
+    let g1 = eval_g(s0 + delta);
+    let g2 = eval_g(s0 + delta / 2.0);
+    let g3 = eval_g(s0 + delta / 4.0);
+    // g should converge to the residue as δ→0
+    // Use Richardson: 2*g2 - g1 (if linear error)
+    let r1 = 2.0 * g2 - g1;
+    let r2 = 2.0 * g3 - g2;
+    // Second level Richardson
+    let result = (4.0 * r2 - r1) / 3.0;
+    if result.is_finite() { result } else { g3 }
+  } else if order == 2 {
+    // First derivative of g at s₀ using central difference (avoiding s₀)
+    // g'(s₀) ≈ [g(s₀+δ) - g(s₀-δ)] / (2δ)
+    // Use Richardson extrapolation for better accuracy
+    let d1 = (eval_g(s0 + delta) - eval_g(s0 - delta)) / (2.0 * delta);
+    let d2 = (eval_g(s0 + delta / 2.0) - eval_g(s0 - delta / 2.0)) / delta;
+    // Richardson: (4*d2 - d1) / 3
+    let result = (4.0 * d2 - d1) / 3.0;
+    if result.is_finite() { result } else { d2 }
+  } else {
+    // Higher order: compute (order-1)-th derivative using finite differences
+    // Use half-step offsets to avoid sampling at s₀ (where 0*∞ issues occur)
+    let n_pts = order + 4;
+    let values: Vec<f64> = (0..n_pts)
+      .map(|i| {
+        let s = s0 + (i as f64 - (n_pts as f64 - 1.0) / 2.0 + 0.5) * delta;
+        eval_g(s)
+      })
+      .collect();
+
+    let target_deriv = order - 1;
+    let mut diff = values;
+    for _ in 0..target_deriv {
+      let new_len = diff.len() - 1;
+      diff = (0..new_len)
+        .map(|i| (diff[i + 1] - diff[i]) / delta)
+        .collect();
+    }
+
+    let center = diff.len() / 2;
+    diff[center] / factorial(target_deriv)
+  }
+}
