@@ -2591,3 +2591,99 @@ mod list_interpolation {
     assert_eq!(result, "InterpolatingFunction");
   }
 }
+
+mod trig_expand {
+  use super::*;
+
+  #[test]
+  fn sin_double_angle() {
+    assert_eq!(interpret("TrigExpand[Sin[2x]]").unwrap(), "2*Cos[x]*Sin[x]");
+  }
+
+  #[test]
+  fn cos_double_angle() {
+    assert_eq!(
+      interpret("TrigExpand[Cos[2x]]").unwrap(),
+      "Cos[x]^2 - Sin[x]^2"
+    );
+  }
+
+  #[test]
+  fn sin_triple_angle() {
+    assert_eq!(
+      interpret("TrigExpand[Sin[3x]]").unwrap(),
+      "-Sin[x]^3 + 3*Cos[x]^2*Sin[x]"
+    );
+  }
+
+  #[test]
+  fn cos_triple_angle() {
+    assert_eq!(
+      interpret("TrigExpand[Cos[3x]]").unwrap(),
+      "Cos[x]^3 - 3*Cos[x]*Sin[x]^2"
+    );
+  }
+
+  #[test]
+  fn sin_sum() {
+    assert_eq!(
+      interpret("TrigExpand[Sin[a + b]]").unwrap(),
+      "Cos[a]*Sin[b] + Cos[b]*Sin[a]"
+    );
+  }
+
+  #[test]
+  fn cos_sum() {
+    assert_eq!(
+      interpret("TrigExpand[Cos[a + b]]").unwrap(),
+      "Cos[a]*Cos[b] - Sin[a]*Sin[b]"
+    );
+  }
+
+  #[test]
+  fn tan_double_angle() {
+    assert_eq!(
+      interpret("TrigExpand[Tan[2x]]").unwrap(),
+      "(2*Cos[x]*Sin[x])/(Cos[x]^2 - Sin[x]^2)"
+    );
+  }
+
+  #[test]
+  fn sinh_double_angle() {
+    assert_eq!(
+      interpret("TrigExpand[Sinh[2x]]").unwrap(),
+      "2*Cosh[x]*Sinh[x]"
+    );
+  }
+
+  #[test]
+  fn cosh_double_angle() {
+    assert_eq!(
+      interpret("TrigExpand[Cosh[2x]]").unwrap(),
+      "Cosh[x]^2 + Sinh[x]^2"
+    );
+  }
+
+  #[test]
+  fn sin_no_expand() {
+    // Sin[x] alone should not be expanded
+    assert_eq!(interpret("TrigExpand[Sin[x]]").unwrap(), "Sin[x]");
+  }
+
+  #[test]
+  fn non_trig_passthrough() {
+    // Non-trig expressions should pass through
+    assert_eq!(
+      interpret("TrigExpand[x + Sin[2y]]").unwrap(),
+      "x + 2*Cos[y]*Sin[y]"
+    );
+  }
+
+  #[test]
+  fn sin_quadruple_angle() {
+    assert_eq!(
+      interpret("TrigExpand[Sin[4x]]").unwrap(),
+      "-4*Cos[x]*Sin[x]^3 + 4*Cos[x]^3*Sin[x]"
+    );
+  }
+}
