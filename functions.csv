@@ -3607,7 +3607,7 @@ MoleculeQ,,,,12,4947
 MoleculeRecognize,,,,12.1,4881
 MoleculeSubstructureCount,,,,12.3,
 MoleculeValue,,,,12,4225
-Moment,,,,8,1104
+Moment,Raw statistical moment,✅,pure,8,1104
 MomentConvert,,,,8,3678
 MomentEvaluate,,,,8,3737
 MomentGeneratingFunction,,,,8,2094

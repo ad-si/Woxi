@@ -659,3 +659,34 @@ mod cdf {
     );
   }
 }
+
+mod moment {
+  use super::*;
+
+  #[test]
+  fn first_moment_is_mean() {
+    assert_eq!(interpret("Moment[{1,2,3,4,5}, 1]").unwrap(), "3");
+  }
+
+  #[test]
+  fn second_moment() {
+    // Sum[x^2]/5 = (1+4+9+16+25)/5 = 55/5 = 11
+    assert_eq!(interpret("Moment[{1,2,3,4,5}, 2]").unwrap(), "11");
+  }
+
+  #[test]
+  fn third_moment() {
+    // Sum[x^3]/5 = (1+8+27+64+125)/5 = 225/5 = 45
+    assert_eq!(interpret("Moment[{1,2,3,4,5}, 3]").unwrap(), "45");
+  }
+
+  #[test]
+  fn zeroth_moment() {
+    assert_eq!(interpret("Moment[{1,2,3}, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("Moment[{a,b,c}, 1]").unwrap(), "(a + b + c)/3");
+  }
+}
