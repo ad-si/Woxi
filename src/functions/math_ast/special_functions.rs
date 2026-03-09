@@ -3872,6 +3872,129 @@ fn hypergeometric_pfq_numeric(a: &[f64], b: &[f64], z: f64) -> f64 {
   sum
 }
 
+/// HypergeometricPFQRegularized[{a1,...,ap}, {b1,...,bq}, z]
+/// = HypergeometricPFQ[{a1,...,ap}, {b1,...,bq}, z] / (Gamma[b1] * ... * Gamma[bq])
+pub fn hypergeometric_pfq_regularized_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "HypergeometricPFQRegularized expects exactly 3 arguments".into(),
+    ));
+  }
+
+  let b_list = match &args[1] {
+    Expr::List(v) => v.clone(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "HypergeometricPFQRegularized".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // If b_list is empty, this is the same as HypergeometricPFQ
+  if b_list.is_empty() {
+    return hypergeometric_pfq_ast(args);
+  }
+
+  // Try to evaluate the underlying HypergeometricPFQ first
+  let pfq_result = hypergeometric_pfq_ast(args)?;
+
+  // If it stays symbolic, return regularized form
+  match &pfq_result {
+    Expr::FunctionCall { name, .. } if name == "HypergeometricPFQ" => {
+      return Ok(Expr::FunctionCall {
+        name: "HypergeometricPFQRegularized".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    _ => {}
+  }
+
+  // Handle Infinity result
+  if matches!(&pfq_result, Expr::Identifier(s) if s == "Infinity") {
+    // Check if any denominator Gamma is infinite (non-positive integer b)
+    for b_expr in &b_list {
+      if let Some(n) = expr_to_i128(b_expr) {
+        if n <= 0 {
+          // Gamma has a pole, so regularized form is finite (indeterminate) - return unevaluated
+          return Ok(Expr::FunctionCall {
+            name: "HypergeometricPFQRegularized".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      }
+    }
+    return Ok(Expr::Identifier("Infinity".to_string()));
+  }
+
+  // Check if any argument is Real (to decide numeric vs symbolic evaluation)
+  let has_real = matches!(&pfq_result, Expr::Real(_))
+    || b_list.iter().any(|e| matches!(e, Expr::Real(_)));
+
+  // Try numeric path: if pfq_result is numeric and all b values yield numeric gamma
+  if has_real {
+    if let Some(pfq_val) = match &pfq_result {
+      Expr::Real(x) => Some(*x),
+      Expr::Integer(n) => Some(*n as f64),
+      Expr::Identifier(s) if s == "Infinity" => Some(f64::INFINITY),
+      _ => None,
+    } {
+      // Compute product of Gamma[b_i] numerically
+      let b_vals: Option<Vec<f64>> = b_list
+        .iter()
+        .map(|e| match e {
+          Expr::Real(x) => Some(*x),
+          Expr::Integer(n) => Some(*n as f64),
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+              Some(*n as f64 / *d as f64)
+            } else {
+              None
+            }
+          }
+          _ => None,
+        })
+        .collect();
+
+      if let Some(b_vals) = b_vals {
+        let mut gamma_prod = 1.0_f64;
+        for bv in &b_vals {
+          gamma_prod *= gamma_fn(*bv);
+        }
+        if gamma_prod.is_infinite() {
+          return Ok(Expr::Integer(0)); // 1/Γ(pole) = 0 for regularization
+        }
+        let result = pfq_val / gamma_prod;
+        if result.is_infinite() {
+          return Ok(Expr::Identifier("Infinity".to_string()));
+        }
+        return Ok(Expr::Real(result));
+      }
+    }
+  }
+
+  // Symbolic path: construct the division
+  let mut gamma_product = Expr::Integer(1);
+  for b_expr in &b_list {
+    let gamma_val = gamma_ast(&[b_expr.clone()])?;
+    gamma_product = crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left: Box::new(gamma_product),
+      right: Box::new(gamma_val),
+    })?;
+  }
+
+  crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Divide,
+    left: Box::new(pfq_result),
+    right: Box::new(gamma_product),
+  })
+}
+
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)

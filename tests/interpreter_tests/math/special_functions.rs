@@ -3277,3 +3277,64 @@ mod meijer_g {
     );
   }
 }
+
+mod hypergeometric_pfq_regularized {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("HypergeometricPFQRegularized[{a, b}, {c}, z]").unwrap(),
+      "HypergeometricPFQRegularized[{a, b}, {c}, z]"
+    );
+  }
+
+  #[test]
+  fn z_zero_exact() {
+    assert_eq!(
+      interpret("HypergeometricPFQRegularized[{1, 2}, {3}, 0]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn empty_b_list() {
+    assert_eq!(
+      interpret("HypergeometricPFQRegularized[{}, {}, x]").unwrap(),
+      "E^x"
+    );
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result =
+      interpret("HypergeometricPFQRegularized[{1, 2}, {3}, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.7725887222397811).abs() < 1e-10, "got {}", val);
+  }
+
+  #[test]
+  fn n_wrapper_rational() {
+    let result =
+      interpret("N[HypergeometricPFQRegularized[{1/2}, {3/2}, -1]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.8427007929497148).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn infinity_case() {
+    assert_eq!(
+      interpret("HypergeometricPFQRegularized[{1, 2}, {3}, 1]").unwrap(),
+      "Infinity"
+    );
+  }
+
+  #[test]
+  fn multiple_b_params() {
+    let result =
+      interpret("N[HypergeometricPFQRegularized[{1, 2}, {3, 4}, 1/2]]")
+        .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.09083551648531873).abs() < 1e-8, "got {}", val);
+  }
+}

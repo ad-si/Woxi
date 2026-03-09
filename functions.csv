@@ -2610,7 +2610,7 @@ Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1,413
 Hypergeometric2F1Regularized,,,,3,850
 HypergeometricDistribution,,,,6,2289
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3,386
-HypergeometricPFQRegularized,,,,3,791
+HypergeometricPFQRegularized,Regularized generalized hypergeometric function,✅,pure,3,791
 HypergeometricU,Confluent hypergeometric function of the second kind,✅,pure,1,1275
 Hyperlink,Interactive hyperlink element,🚫,effectful,6,209
 HyperlinkAction,,,,12.1,5486
@@ -3363,7 +3363,7 @@ MailServerConnect,,,,11.3,4660
 MailServerConnection,,,,11.3,
 MailSettings,,,,11.2,4660
 Majority,,,,7,3291
-MakeBoxes,,,,3,516
+MakeBoxes,Construct box form of an expression,🚫,pure,3,516
 MakeExpression,,,,3,1239
 ManagedLibraryExpressionID,,,,10,3737
 ManagedLibraryExpressionQ,,,,10,4479
@@ -3773,7 +3773,7 @@ NondimensionalizationTransform,,,,11.3,4262
 None,Symbol representing no value or absence of an option,✅,pure,1,23
 NoneMatch,,,,14.1,
 NoneTrue,Checks if no element in a list is true,✅,pure,10,3491
-NonlinearModelFit,,,,7,496
+NonlinearModelFit,Construct a nonlinear model fit,🚫,stateful,7,496
 NonlinearStateSpaceModel,,,,10,1914
 NonlocalMeansFilter,,,,9,4881
 NonNegative,Tests if a number is non-negative,✅,pure,1,1036
