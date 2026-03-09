@@ -2963,3 +2963,56 @@ mod root {
     assert!(interpret("Root[#^2 - 1 &, 3]").is_err());
   }
 }
+
+mod polynomial_mod {
+  use super::*;
+
+  #[test]
+  fn basic_cubic() {
+    assert_eq!(
+      interpret("PolynomialMod[x^3 + 2x + 1, 3]").unwrap(),
+      "1 + 2*x + x^3"
+    );
+  }
+
+  #[test]
+  fn all_coefficients_zero() {
+    assert_eq!(interpret("PolynomialMod[6x^2 + 9x + 12, 3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn mod_one() {
+    assert_eq!(interpret("PolynomialMod[x + y + z, 1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn constant_polynomial() {
+    assert_eq!(interpret("PolynomialMod[7, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn zero_polynomial() {
+    assert_eq!(interpret("PolynomialMod[0, 5]").unwrap(), "0");
+  }
+
+  #[test]
+  fn with_large_coefficients() {
+    assert_eq!(
+      interpret("PolynomialMod[5x^2 + 3x + 7, 4]").unwrap(),
+      "3 + 3*x + x^2"
+    );
+  }
+
+  #[test]
+  fn multivariate() {
+    assert_eq!(interpret("PolynomialMod[3x + 4y + 5, 3]").unwrap(), "2 + y");
+  }
+
+  #[test]
+  fn symbolic_modulus_unevaluated() {
+    assert_eq!(
+      interpret("PolynomialMod[x^2, m]").unwrap(),
+      "PolynomialMod[x^2, m]"
+    );
+  }
+}
