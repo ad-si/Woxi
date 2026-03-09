@@ -307,6 +307,16 @@ impl Coeff {
       Self::Real(f) => *f == 1.0,
     }
   }
+  fn is_negative(&self) -> bool {
+    match self {
+      Self::Exact(n, d) => (*n < 0) != (*d < 0),
+      Self::BigExact(n, d) => {
+        (n.sign() == num_bigint::Sign::Minus)
+          != (d.sign() == num_bigint::Sign::Minus)
+      }
+      Self::Real(f) => *f < 0.0,
+    }
+  }
   fn to_f64(&self) -> f64 {
     match self {
       Self::Exact(n, d) => *n as f64 / *d as f64,
@@ -918,7 +928,14 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
       }
       // If all compared pairs equal, shorter comes first
-      va.len().cmp(&vb.len())
+      let cmp = va.len().cmp(&vb.len());
+      if cmp != std::cmp::Ordering::Equal {
+        return cmp;
+      }
+      // Tiebreaker: positive coefficients before negative
+      let (coeff_a, _) = decompose_term(a);
+      let (coeff_b, _) = decompose_term(b);
+      coeff_a.is_negative().cmp(&coeff_b.is_negative())
     }
     _ => {
       // If exactly one term has polynomial pairs and the other doesn't,
@@ -999,6 +1016,13 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           if cmp != std::cmp::Ordering::Equal {
             return cmp;
           }
+          // For products of transcendental functions (e.g. Cos[b]*Sin[a] vs
+          // Cos[a]*Sin[b]), Wolfram sorts by the highest-alphabetical trig factor
+          // first, then by argument, then by exponent.
+          let cmp = compare_trig_products(&base_a, &base_b);
+          if cmp != std::cmp::Ordering::Equal {
+            return cmp;
+          }
         }
       }
       // Fall back: try structural comparison of function call arguments,
@@ -1010,7 +1034,14 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       }
       let sa = term_sort_key(a);
       let sb = term_sort_key(b);
-      sa.cmp(&sb)
+      let cmp = sa.cmp(&sb);
+      if cmp != std::cmp::Ordering::Equal {
+        return cmp;
+      }
+      // Tiebreaker: positive coefficients before negative
+      let (coeff_a, _) = decompose_term(a);
+      let (coeff_b, _) = decompose_term(b);
+      coeff_a.is_negative().cmp(&coeff_b.is_negative())
     }
   }
 }
@@ -1020,14 +1051,24 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 /// Returns None for non-transcendental terms.
 fn extract_primary_fn_name(e: &Expr) -> Option<String> {
   match e {
-    // Look inside Times products for the transcendental function first
+    // Look inside Times products for the earliest (alphabetically) transcendental function
     Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut best: Option<String> = None;
       for arg in args {
         if let Some(n) = extract_primary_fn_name(arg) {
-          return Some(n);
+          best = Some(match best {
+            Some(b) if b <= n => b,
+            _ => n,
+          });
         }
       }
-      None
+      best
+    }
+    // Power[f, n] — look inside the base
+    Expr::FunctionCall { name, args }
+      if name == "Power" && !args.is_empty() =>
+    {
+      extract_primary_fn_name(&args[0])
     }
     // Bare transcendental function
     Expr::FunctionCall { name, .. } if term_priority(e) >= 1 => {
@@ -1038,10 +1079,117 @@ fn extract_primary_fn_name(e: &Expr) -> Option<String> {
       left,
       right,
     } => {
-      extract_primary_fn_name(left).or_else(|| extract_primary_fn_name(right))
+      let l = extract_primary_fn_name(left);
+      let r = extract_primary_fn_name(right);
+      match (l, r) {
+        (Some(a), Some(b)) => Some(if a <= b { a } else { b }),
+        (Some(a), None) => Some(a),
+        (None, b) => b,
+      }
     }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } => extract_primary_fn_name(left),
     _ => None,
   }
+}
+
+/// Extract (function_name, argument, exponent) triples from a product of transcendental
+/// functions. For `Cos[x]^2*Sin[x]` → [("Cos", x, 2), ("Sin", x, 1)].
+fn extract_trig_factors(e: &Expr) -> Vec<(String, Expr, i64)> {
+  let mut factors = Vec::new();
+  let extract_one = |e: &Expr, factors: &mut Vec<(String, Expr, i64)>| match e {
+    Expr::FunctionCall { name, args }
+      if term_priority(e) >= 1 && args.len() == 1 =>
+    {
+      factors.push((name.clone(), args[0].clone(), 1));
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::FunctionCall {
+        name: fn_name,
+        args: fn_args,
+      } = &args[0]
+      {
+        if term_priority(&args[0]) >= 1 && fn_args.len() == 1 {
+          let exp = match &args[1] {
+            Expr::Integer(n) => *n as i64,
+            _ => 0,
+          };
+          factors.push((fn_name.clone(), fn_args[0].clone(), exp));
+        }
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::FunctionCall {
+        name: fn_name,
+        args: fn_args,
+      } = left.as_ref()
+      {
+        if term_priority(left) >= 1 && fn_args.len() == 1 {
+          let exp = match right.as_ref() {
+            Expr::Integer(n) => *n as i64,
+            _ => 0,
+          };
+          factors.push((fn_name.clone(), fn_args[0].clone(), exp));
+        }
+      }
+    }
+    _ => {}
+  };
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for arg in args {
+        extract_one(arg, &mut factors);
+      }
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      extract_one(left, &mut factors);
+      extract_one(right, &mut factors);
+    }
+    _ => extract_one(e, &mut factors),
+  }
+  // Sort by function name descending (highest-alphabetical first)
+  factors.sort_by(|a, b| b.0.cmp(&a.0));
+  factors
+}
+
+/// Compare two transcendental product terms by their trig factors.
+/// Wolfram sorts by the highest-alphabetical function factor first (e.g., Sin before Cos),
+/// then by argument, then by exponent.
+fn compare_trig_products(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  let fa = extract_trig_factors(a);
+  let fb = extract_trig_factors(b);
+  if fa.is_empty() || fb.is_empty() {
+    return std::cmp::Ordering::Equal;
+  }
+  for (ta, tb) in fa.iter().zip(fb.iter()) {
+    // Compare function name (descending sort means we compare in ascending for position)
+    let cmp = ta.0.cmp(&tb.0);
+    if cmp != std::cmp::Ordering::Equal {
+      return cmp;
+    }
+    // Compare argument
+    let cmp = compare_expr_canonical(&ta.1, &tb.1);
+    if cmp != std::cmp::Ordering::Equal {
+      return cmp;
+    }
+    // Compare exponent (lower first)
+    let cmp = ta.2.cmp(&tb.2);
+    if cmp != std::cmp::Ordering::Equal {
+      return cmp;
+    }
+  }
+  fa.len().cmp(&fb.len())
 }
 
 /// Extract the maximum polynomial degree from a Times product's variable factors.
