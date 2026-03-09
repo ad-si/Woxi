@@ -2612,7 +2612,7 @@ mod trig_expand {
   fn sin_triple_angle() {
     assert_eq!(
       interpret("TrigExpand[Sin[3x]]").unwrap(),
-      "-Sin[x]^3 + 3*Cos[x]^2*Sin[x]"
+      "3*Cos[x]^2*Sin[x] - Sin[x]^3"
     );
   }
 
@@ -2628,7 +2628,7 @@ mod trig_expand {
   fn sin_sum() {
     assert_eq!(
       interpret("TrigExpand[Sin[a + b]]").unwrap(),
-      "Cos[a]*Sin[b] + Cos[b]*Sin[a]"
+      "Cos[b]*Sin[a] + Cos[a]*Sin[b]"
     );
   }
 
@@ -2683,7 +2683,7 @@ mod trig_expand {
   fn sin_quadruple_angle() {
     assert_eq!(
       interpret("TrigExpand[Sin[4x]]").unwrap(),
-      "-4*Cos[x]*Sin[x]^3 + 4*Cos[x]^3*Sin[x]"
+      "4*Cos[x]^3*Sin[x] - 4*Cos[x]*Sin[x]^3"
     );
   }
 }

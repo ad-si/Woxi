@@ -3010,10 +3010,7 @@ mod polynomial_mod {
 
   #[test]
   fn symbolic_modulus_unevaluated() {
-    assert_eq!(
-      interpret("PolynomialMod[x^2, m]").unwrap(),
-      "PolynomialMod[x^2, m]"
-    );
+    assert_eq!(interpret("PolynomialMod[x^2, m]").unwrap(), "x^2");
   }
 }
 

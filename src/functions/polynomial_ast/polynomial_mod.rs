@@ -14,10 +14,9 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let m = match &args[1] {
     Expr::Integer(n) if *n > 0 => *n,
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PolynomialMod".to_string(),
-        args: args.to_vec(),
-      });
+      // Symbolic modulus: return the expanded polynomial
+      let expanded = super::expand_ast(&[args[0].clone()])?;
+      return evaluate_expr_to_expr(&expanded);
     }
   };
 
