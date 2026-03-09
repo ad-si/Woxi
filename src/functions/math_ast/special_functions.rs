@@ -4096,6 +4096,57 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(result)
 }
 
+/// SphericalBesselJ[n, z] — spherical Bessel function of the first kind.
+/// SphericalBesselJ[n, z] = Sqrt[Pi/(2z)] * BesselJ[n + 1/2, z]
+pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "SphericalBesselJ".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  // Handle z = 0 case: SphericalBesselJ[0, 0] = 1, SphericalBesselJ[n, 0] = 0 for n > 0
+  if matches!(z_expr, Expr::Integer(0)) {
+    if let Some(n) = expr_to_i128(n_expr) {
+      if n == 0 {
+        return Ok(Expr::Integer(1));
+      } else if n > 0 {
+        return Ok(Expr::Integer(0));
+      }
+    }
+  }
+
+  // For numeric evaluation, compute Sqrt[Pi/(2z)] * BesselJ[n + 1/2, z]
+  let has_real =
+    matches!(n_expr, Expr::Real(_)) || matches!(z_expr, Expr::Real(_));
+  let n_f64 = try_eval_to_f64(n_expr);
+  let z_f64 = try_eval_to_f64(z_expr);
+
+  if has_real {
+    if let (Some(n_val), Some(z_val)) = (n_f64, z_f64) {
+      let bessel_result =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "BesselJ".to_string(),
+          args: vec![Expr::Real(n_val + 0.5), Expr::Real(z_val)],
+        })?;
+      if let Some(bj) = try_eval_to_f64(&bessel_result) {
+        let result = (std::f64::consts::PI / (2.0 * z_val)).sqrt() * bj;
+        return Ok(Expr::Real(result));
+      }
+    }
+  }
+
+  // Return unevaluated for symbolic case
+  Ok(Expr::FunctionCall {
+    name: "SphericalBesselJ".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)
