@@ -3521,3 +3521,60 @@ mod spherical_bessel_j {
     );
   }
 }
+
+mod log_gamma {
+  use super::*;
+
+  #[test]
+  fn at_one() {
+    assert_eq!(interpret("LogGamma[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_two() {
+    assert_eq!(interpret("LogGamma[2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn at_five() {
+    // LogGamma[5] = Log[24]
+    assert_eq!(interpret("LogGamma[5]").unwrap(), "Log[24]");
+  }
+
+  #[test]
+  fn at_half_numeric() {
+    // LogGamma[1/2] = Log[Sqrt[Pi]] ≈ 0.5723649429247001
+    let result = interpret("N[LogGamma[1/2]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.5723649429247001).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(interpret("LogGamma[0]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn at_neg_one() {
+    assert_eq!(interpret("LogGamma[-1]").unwrap(), "Infinity");
+  }
+
+  #[test]
+  fn numeric_real() {
+    let result = interpret("LogGamma[1.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-0.12078223763524526)).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn n_wrapper() {
+    let result = interpret("N[LogGamma[3/2]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-0.12078223763524526)).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("LogGamma[x]").unwrap(), "LogGamma[x]");
+  }
+}
