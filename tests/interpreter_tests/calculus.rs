@@ -2575,7 +2575,7 @@ mod list_interpolation {
     // ListInterpolation is an alias for Interpolation
     let result =
       interpret("f = ListInterpolation[{1, 4, 9, 16}]; f[1]").unwrap();
-    assert_eq!(result, "1.");
+    assert_eq!(result, "1");
   }
 
   #[test]

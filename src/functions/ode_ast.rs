@@ -2126,11 +2126,40 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let domain =
     Expr::List(vec![Expr::List(vec![Expr::Real(x_min), Expr::Real(x_max)])]);
 
-  // Store data as list of {x, y} pairs
+  // Store data as list of {x, y} pairs, preserving original y-value types
+  // (e.g. Integer for integer inputs) so that evaluation at exact grid points
+  // returns the original type, matching Wolfram behavior.
   let data_expr = Expr::List(
     points
       .iter()
-      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .enumerate()
+      .map(|(i, (x, _y))| {
+        // Use original y-expression when available (non-pair format)
+        let y_expr = if !is_pair_format {
+          let orig = &data_list[i];
+          let evaluated = crate::evaluator::evaluate_expr_to_expr(orig)
+            .unwrap_or(orig.clone());
+          match &evaluated {
+            Expr::Integer(_) | Expr::Real(_) => evaluated,
+            _ => Expr::Real(*_y),
+          }
+        } else {
+          // For pair format, extract y from original {x, y} pair
+          if let Expr::List(pair) = &data_list[i]
+            && pair.len() == 2
+          {
+            let y_eval = crate::evaluator::evaluate_expr_to_expr(&pair[1])
+              .unwrap_or(pair[1].clone());
+            match &y_eval {
+              Expr::Integer(_) | Expr::Real(_) => y_eval,
+              _ => Expr::Real(*_y),
+            }
+          } else {
+            Expr::Real(*_y)
+          }
+        };
+        Expr::List(vec![Expr::Real(*x), y_expr])
+      })
       .collect(),
   );
 
@@ -2145,7 +2174,7 @@ pub fn interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── InterpolatingFunction evaluation ──────────────────────────────────
 
-/// InterpolatingFunction always returns machine-precision reals.
+/// InterpolatingFunction returns machine-precision reals for interpolated values.
 fn real_or_integer(v: f64) -> Expr {
   Expr::Real(v)
 }
@@ -2212,6 +2241,22 @@ pub fn evaluate_interpolating_function(
 
   // Clamp to domain
   let x_clamped = x_val.max(x_first).min(x_last);
+
+  // Check for exact grid point match — return the stored y-value directly
+  // to preserve original types (e.g. Integer for ListInterpolation with integer data).
+  for pt in data_points {
+    if let Expr::List(pair) = pt
+      && pair.len() == 2
+      && let Some(xp) = match &pair[0] {
+        Expr::Real(f) => Some(*f),
+        Expr::Integer(n) => Some(*n as f64),
+        _ => None,
+      }
+      && (xp - x_clamped).abs() < 1e-15
+    {
+      return Ok(pair[1].clone());
+    }
+  }
 
   // Binary search for the interval containing x_clamped
   let idx = find_interval(data_points, x_clamped, n)?;
