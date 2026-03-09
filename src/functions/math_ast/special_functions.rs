@@ -4147,6 +4147,79 @@ pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// LogGamma[z] — logarithm of the gamma function.
+pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "LogGamma".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let z = &args[0];
+
+  // Handle exact integer cases
+  if let Some(n) = expr_to_i128(z) {
+    if n <= 0 {
+      // LogGamma[0] = LogGamma[-n] = Infinity
+      return Ok(Expr::Identifier("Infinity".to_string()));
+    }
+    if n == 1 || n == 2 {
+      return Ok(Expr::Integer(0)); // Log[0!] = Log[1!] = 0
+    }
+    // LogGamma[n] = Log[(n-1)!]
+    let gamma_result = gamma_ast(&[z.clone()])?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Log".to_string(),
+      args: vec![gamma_result],
+    });
+  }
+
+  // Handle Rational arguments — compute Gamma then Log
+  if let Expr::FunctionCall { name, args: fargs } = z {
+    if name == "Rational" && fargs.len() == 2 {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&fargs[0], &fargs[1]) {
+        if *d == 2 && *n > 0 {
+          // Half-integer: LogGamma[k/2] = Log[Gamma[k/2]]
+          let gamma_result = gamma_ast(&[z.clone()])?;
+          return crate::evaluator::evaluate_expr_to_expr(
+            &Expr::FunctionCall {
+              name: "Log".to_string(),
+              args: vec![gamma_result],
+            },
+          );
+        }
+        if *n <= 0 && *d > 0 && *n % *d == 0 {
+          // Non-positive integer
+          return Ok(Expr::Identifier("Infinity".to_string()));
+        }
+      }
+    }
+  }
+
+  // Handle numeric (Real) — use lgamma
+  if let Some(f) = try_eval_to_f64(z) {
+    if matches!(z, Expr::Real(_))
+      || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational")
+        && try_eval_to_f64(z).is_some()
+    {
+      if f <= 0.0 && f == f.floor() {
+        return Ok(Expr::Identifier("Infinity".to_string()));
+      }
+      if matches!(z, Expr::Real(_)) {
+        let result = gamma_fn(f).abs().ln();
+        return Ok(Expr::Real(result));
+      }
+    }
+  }
+
+  // Return unevaluated for symbolic case
+  Ok(Expr::FunctionCall {
+    name: "LogGamma".to_string(),
+    args: args.to_vec(),
+  })
+}
+
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)

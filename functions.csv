@@ -3296,7 +3296,7 @@ Log,Returns the natural logarithm of a number,✅,pure,1,58
 Log10,Returns the base-10 logarithm of a number,✅,pure,7,598
 Log2,Returns the base-2 logarithm of a number,✅,pure,7,904
 LogBarnesG,,,,7,4104
-LogGamma,,,,2,1116
+LogGamma,Logarithm of the gamma function,✅,pure,2,1116
 LogGammaDistribution,,,,8,3678
 LogicalExpand,Expand logical expression to disjunctive normal form,✅,pure,1,1501
 LogIntegral,Logarithmic integral function Li(x) = Ei(ln(x)),✅,pure,1,727
