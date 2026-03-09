@@ -541,6 +541,11 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::hypergeometric_pfq_regularized_ast(args),
       );
     }
+    "Hypergeometric2F1Regularized" if args.len() == 4 => {
+      return Some(
+        crate::functions::math_ast::hypergeometric_2f1_regularized_ast(args),
+      );
+    }
     "HermiteH" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hermite_h_ast(args));
     }

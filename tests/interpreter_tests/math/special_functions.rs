@@ -3338,3 +3338,58 @@ mod hypergeometric_pfq_regularized {
     assert!((val - 0.09083551648531873).abs() < 1e-8, "got {}", val);
   }
 }
+
+mod hypergeometric_2f1_regularized {
+  use super::*;
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("Hypergeometric2F1Regularized[a, b, c, z]").unwrap(),
+      "Hypergeometric2F1Regularized[a, b, c, z]"
+    );
+  }
+
+  #[test]
+  fn z_zero_exact() {
+    // Hypergeometric2F1Regularized[1, 2, 3, 0] = 1/Gamma[3] = 1/2
+    assert_eq!(
+      interpret("Hypergeometric2F1Regularized[1, 2, 3, 0]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn z_zero_c_one() {
+    // Hypergeometric2F1Regularized[1, 1, 1, 0] = 1/Gamma[1] = 1
+    assert_eq!(
+      interpret("Hypergeometric2F1Regularized[1, 1, 1, 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn numeric_real() {
+    // Hypergeometric2F1Regularized[1.0, 2.0, 3.0, 0.5] ≈ 0.7725887222397809
+    let result =
+      interpret("Hypergeometric2F1Regularized[1.0, 2.0, 3.0, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.7725887222397809).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn n_wrapper() {
+    let result =
+      interpret("N[Hypergeometric2F1Regularized[1, 2, 3, 1/4]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.6029131592284935).abs() < 1e-8, "got {}", val);
+  }
+
+  #[test]
+  fn wrong_arg_count() {
+    assert_eq!(
+      interpret("Hypergeometric2F1Regularized[1, 2, 3]").unwrap(),
+      "Hypergeometric2F1Regularized[1, 2, 3]"
+    );
+  }
+}
