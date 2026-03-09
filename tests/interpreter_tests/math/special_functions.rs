@@ -3463,3 +3463,61 @@ mod q_pochhammer {
     assert_eq!(interpret("QPochhammer[1, 1, 3]").unwrap(), "0");
   }
 }
+
+mod spherical_bessel_j {
+  use super::*;
+
+  #[test]
+  fn z_zero_n_zero() {
+    assert_eq!(interpret("SphericalBesselJ[0, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn z_zero_n_one() {
+    assert_eq!(interpret("SphericalBesselJ[1, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn z_zero_n_two() {
+    assert_eq!(interpret("SphericalBesselJ[2, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn numeric_n0() {
+    // SphericalBesselJ[0, 1.0] = sin(1)/1 ≈ 0.8414709848078965
+    let result = interpret("SphericalBesselJ[0, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.8414709848078965).abs() < 1e-10, "got {}", val);
+  }
+
+  #[test]
+  fn numeric_n1() {
+    // SphericalBesselJ[1, 1.0] ≈ 0.30116867893975674
+    let result = interpret("SphericalBesselJ[1, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.30116867893975674).abs() < 1e-10, "got {}", val);
+  }
+
+  #[test]
+  fn n_wrapper() {
+    let result = interpret("N[SphericalBesselJ[2, 3]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.2986374970757335).abs() < 1e-10, "got {}", val);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("SphericalBesselJ[0, x]").unwrap(),
+      "SphericalBesselJ[0, x]"
+    );
+  }
+
+  #[test]
+  fn wrong_arg_count() {
+    assert_eq!(
+      interpret("SphericalBesselJ[1]").unwrap(),
+      "SphericalBesselJ[1]"
+    );
+  }
+}

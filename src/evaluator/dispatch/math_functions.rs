@@ -549,6 +549,9 @@ pub fn dispatch_math_functions(
     "QPochhammer" if args.len() == 3 => {
       return Some(crate::functions::math_ast::q_pochhammer_ast(args));
     }
+    "SphericalBesselJ" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::spherical_bessel_j_ast(args));
+    }
     "HermiteH" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hermite_h_ast(args));
     }
