@@ -1048,4 +1048,41 @@ pub fn quantile_single(
   Ok(sorted[idx - 1].clone())
 }
 
+// ─── Moment ──────────────────────────────────────────────────────────
+
+/// Moment[data, r] — the r-th raw moment: Sum[x_i^r] / n.
+pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "Moment".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let items = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Moment".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let r = &args[1];
+
+  // Raise each element to power r and evaluate, then compute mean
+  let mut powered = Vec::with_capacity(items.len());
+  for x in items {
+    let p = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![x.clone(), r.clone()],
+    })?;
+    powered.push(p);
+  }
+
+  let powered_list = Expr::List(powered);
+  mean_ast(&[powered_list])
+}
+
 // ─── PowerExpand ──────────────────────────────────────────────────────

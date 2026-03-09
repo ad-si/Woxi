@@ -279,6 +279,9 @@ pub fn dispatch_math_functions(
     "Mean" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mean_ast(args));
     }
+    "Moment" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::moment_ast(args));
+    }
     "Variance" if args.len() == 1 => {
       return Some(crate::functions::math_ast::variance_ast(args));
     }
