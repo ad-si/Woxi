@@ -3995,6 +3995,37 @@ pub fn hypergeometric_pfq_regularized_ast(
   })
 }
 
+/// Hypergeometric2F1Regularized[a, b, c, z] = HypergeometricPFQRegularized[{a,b},{c},z]
+pub fn hypergeometric_2f1_regularized_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 4 {
+    return Ok(Expr::FunctionCall {
+      name: "Hypergeometric2F1Regularized".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let a = args[0].clone();
+  let b = args[1].clone();
+  let c = args[2].clone();
+  let z = args[3].clone();
+
+  let pfq_args = vec![Expr::List(vec![a, b]), Expr::List(vec![c]), z];
+  let result = hypergeometric_pfq_regularized_ast(&pfq_args)?;
+
+  // If the result stayed as HypergeometricPFQRegularized, convert back to 2F1 form
+  if let Expr::FunctionCall { name, .. } = &result {
+    if name == "HypergeometricPFQRegularized" {
+      return Ok(Expr::FunctionCall {
+        name: "Hypergeometric2F1Regularized".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  }
+
+  Ok(result)
+}
+
 /// Compute parts of Gamma at half-integer: Gamma(k/2) for integer k > 0
 /// Returns (numerator, denominator, pi_power) where result = (num/den) * Pi^(pi_power/2)
 /// pi_power is 0 or 1 (representing sqrt(Pi)^pi_power)
