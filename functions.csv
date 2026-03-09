@@ -3348,7 +3348,7 @@ LyapunovSolve,,,,8,3389
 LyonsGroupLy,,,,8,5184
 M,,,,,
 MachineNumberQ,,,,2,2059
-MachinePrecision,,,,5,886
+MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5,886
 Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
 Magnification,,,,3,1145
 Magnify,,,,6,1599
