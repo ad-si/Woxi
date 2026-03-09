@@ -1672,17 +1672,24 @@ mod file_name_join {
 mod csv_import {
   use super::*;
 
+  fn csv_path() -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest}/examples/data.csv")
+  }
+
   #[test]
   fn import_csv_default_returns_data() {
-    let result = interpret(r#"Import["examples/data.csv"]"#).unwrap();
+    let path = csv_path();
+    let result = interpret(&format!(r#"Import["{path}"]"#)).unwrap();
     assert!(result.starts_with("{{date, name, fruit, quantity}"));
     assert!(result.contains("banana"));
   }
 
   #[test]
   fn import_csv_elements() {
+    let path = csv_path();
     let result =
-      interpret(r#"Import["examples/data.csv", "Elements"]"#).unwrap();
+      interpret(&format!(r#"Import["{path}", "Elements"]"#)).unwrap();
     assert!(result.contains("ColumnCount"));
     assert!(result.contains("Data"));
     assert!(result.contains("Dataset"));
@@ -1691,62 +1698,68 @@ mod csv_import {
 
   #[test]
   fn import_csv_column_labels() {
+    let path = csv_path();
     assert_eq!(
-      interpret(r#"Import["examples/data.csv", "ColumnLabels"]"#).unwrap(),
+      interpret(&format!(r#"Import["{path}", "ColumnLabels"]"#)).unwrap(),
       "{date, name, fruit, quantity}"
     );
   }
 
   #[test]
   fn import_csv_column_count() {
+    let path = csv_path();
     assert_eq!(
-      interpret(r#"Import["examples/data.csv", "ColumnCount"]"#).unwrap(),
+      interpret(&format!(r#"Import["{path}", "ColumnCount"]"#)).unwrap(),
       "4"
     );
   }
 
   #[test]
   fn import_csv_row_count() {
+    let path = csv_path();
     assert_eq!(
-      interpret(r#"Import["examples/data.csv", "RowCount"]"#).unwrap(),
+      interpret(&format!(r#"Import["{path}", "RowCount"]"#)).unwrap(),
       "6"
     );
   }
 
   #[test]
   fn import_csv_dimensions() {
+    let path = csv_path();
     assert_eq!(
-      interpret(r#"Import["examples/data.csv", "Dimensions"]"#).unwrap(),
+      interpret(&format!(r#"Import["{path}", "Dimensions"]"#)).unwrap(),
       "{6, 4}"
     );
   }
 
   #[test]
   fn import_csv_column_types() {
+    let path = csv_path();
     let result =
-      interpret(r#"Import["examples/data.csv", "ColumnTypes"]"#).unwrap();
+      interpret(&format!(r#"Import["{path}", "ColumnTypes"]"#)).unwrap();
     assert!(result.contains("String"));
   }
 
   #[test]
   fn import_csv_raw_data() {
-    let result =
-      interpret(r#"Import["examples/data.csv", "RawData"]"#).unwrap();
+    let path = csv_path();
+    let result = interpret(&format!(r#"Import["{path}", "RawData"]"#)).unwrap();
     assert!(result.contains("banana"));
     assert!(result.contains("date"));
   }
 
   #[test]
   fn import_csv_data() {
-    let result = interpret(r#"Import["examples/data.csv", "Data"]"#).unwrap();
+    let path = csv_path();
+    let result = interpret(&format!(r#"Import["{path}", "Data"]"#)).unwrap();
     assert!(result.starts_with("{{date, name, fruit, quantity}"));
     assert!(result.contains("{2025-09-24, John, banana, 3}"));
   }
 
   #[test]
   fn import_csv_summary() {
-    let result =
-      interpret(r#"Import["examples/data.csv", "Summary"]"#).unwrap();
+    let path = csv_path();
+    let result = interpret(&format!(r#"Import["{path}", "Summary"]"#)).unwrap();
     assert!(result.contains("Columns"));
     assert!(result.contains("Rows"));
     assert!(result.contains("ColumnLabels"));
@@ -1754,8 +1767,8 @@ mod csv_import {
 
   #[test]
   fn import_csv_dataset() {
-    let result =
-      interpret(r#"Import["examples/data.csv", "Dataset"]"#).unwrap();
+    let path = csv_path();
+    let result = interpret(&format!(r#"Import["{path}", "Dataset"]"#)).unwrap();
     // Dataset renders as graphics in the interpreter
     assert!(
       result == "-Graphics-" || result.starts_with("Dataset["),
@@ -1766,7 +1779,8 @@ mod csv_import {
 
   #[test]
   fn import_csv_schema() {
-    let result = interpret(r#"Import["examples/data.csv", "Schema"]"#).unwrap();
+    let path = csv_path();
+    let result = interpret(&format!(r#"Import["{path}", "Schema"]"#)).unwrap();
     assert!(result.starts_with("TabularSchema["));
     assert!(result.contains("ColumnKeys"));
     assert!(result.contains("RowCount"));
@@ -1774,8 +1788,8 @@ mod csv_import {
 
   #[test]
   fn import_csv_tabular() {
-    let result =
-      interpret(r#"Import["examples/data.csv", "Tabular"]"#).unwrap();
+    let path = csv_path();
+    let result = interpret(&format!(r#"Import["{path}", "Tabular"]"#)).unwrap();
     // Tabular renders as graphics in the interpreter
     assert!(
       result == "-Graphics-" || result.starts_with("Tabular["),
