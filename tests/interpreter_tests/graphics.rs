@@ -3352,3 +3352,93 @@ mod log_linear_plot {
     assert_eq!(result, "-Graphics-");
   }
 }
+
+mod edge_list {
+  use super::*;
+
+  #[test]
+  fn basic_directed_graph() {
+    assert_eq!(
+      interpret("EdgeList[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[2, 3]}"
+    );
+  }
+
+  #[test]
+  fn single_edge() {
+    assert_eq!(
+      interpret("EdgeList[Graph[{1 -> 2}]]").unwrap(),
+      "{DirectedEdge[1, 2]}"
+    );
+  }
+
+  #[test]
+  fn triangle_graph() {
+    assert_eq!(
+      interpret("EdgeList[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}"
+    );
+  }
+
+  #[test]
+  fn unevaluated_for_non_graph() {
+    assert_eq!(interpret("EdgeList[5]").unwrap(), "EdgeList[5]");
+  }
+
+  #[test]
+  fn unevaluated_no_args() {
+    assert_eq!(interpret("EdgeList[]").unwrap(), "EdgeList[]");
+  }
+
+  #[test]
+  fn from_explicit_graph() {
+    assert_eq!(
+      interpret(
+        "EdgeList[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3]}]]"
+      )
+      .unwrap(),
+      "{DirectedEdge[1, 2], DirectedEdge[2, 3]}"
+    );
+  }
+}
+
+mod vertex_list {
+  use super::*;
+
+  #[test]
+  fn basic_directed_graph() {
+    assert_eq!(
+      interpret("VertexList[Graph[{1 -> 2, 2 -> 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn single_edge() {
+    assert_eq!(interpret("VertexList[Graph[{1 -> 2}]]").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn triangle_graph() {
+    assert_eq!(
+      interpret("VertexList[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn unevaluated_for_non_graph() {
+    assert_eq!(interpret("VertexList[5]").unwrap(), "VertexList[5]");
+  }
+
+  #[test]
+  fn from_explicit_graph() {
+    assert_eq!(
+      interpret(
+        "VertexList[Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3]}]]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}

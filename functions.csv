@@ -848,7 +848,7 @@ Closing,,,,7,1916
 CloudAccountData,,🚫,,10,3612
 CloudBase,,,,10,5013
 CloudConnect,,,,10,3612
-CloudDeploy,,🚫,io,10,821
+CloudDeploy,,,,10,821
 CloudDirectory,,,,10,3215
 CloudDisconnect,,,,10,4881
 CloudEvaluate,,,,10,2742
@@ -859,7 +859,7 @@ CloudFunction,,,,10,5013
 CloudGet,,,,10,1284
 CloudImport,,,,10,1912
 CloudLoggingData,,🚫,,10.2,3697
-CloudObject,,🚫,io,10,928
+CloudObject,,,,10,928
 CloudObjectNameFormat,,,,12,4479
 CloudObjects,,,,10,2828
 CloudObjectURLType,,,,12,3257
@@ -968,7 +968,7 @@ Complexes,Domain of complex numbers,✅,none,4,790
 ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
 ComplexInfinity,Complex infinity constant,✅,pure,,
 ComplexityFunction,,,,3,1451
-ComplexListPlot,,🚫,pure,12,999
+ComplexListPlot,,,,12,999
 ComplexPlot,,,,12,1377
 ComplexPlot3D,,,,12,1311
 ComplexRegionPlot,,,,12.1,1468
@@ -1635,7 +1635,7 @@ EdgeForm,Specifies edge styling for filled graphics,✅,pure,1,120
 EdgeIndex,,,,8,3242
 EdgeLabels,,,,8,1057
 EdgeLabelStyle,,,,8,2519
-EdgeList,,,,8,763
+EdgeList,List of edges in a graph,✅,none,8,763
 EdgeQ,,,,8,3094
 EdgeRules,,,,8,3678
 EdgeShapeFunction,,,,8,1175
@@ -2301,7 +2301,7 @@ GeoDistance,,,,7,1351
 GeoDistanceList,,,,10.4,3537
 GeoElevationData,,🚫,,10,1717
 GeoEntities,,,,10,2094
-GeoGraphics,,🚫,pure,10,741
+GeoGraphics,,,,10,741
 GeoGraphPlot,,,,12.3,
 GeoGraphValuePlot,,,,13,
 GeogravityModelData,,🚫,,10.1,3972
@@ -2422,7 +2422,7 @@ GraphLayerStyle,,,,12.3,
 GraphLayout,,,,8,888
 GraphLinkEfficiency,,,,9,4660
 GraphPeriphery,,,,8,2889
-GraphPlot,,🚫,pure,6,849
+GraphPlot,,,,6,849
 GraphPlot3D,,,,6,1864
 GraphPower,,,,8,3506
 GraphProduct,,,,13.1,
@@ -2855,7 +2855,7 @@ Interpretation,,,,6,1905
 InterpretationBox,,,,3,1652
 InterpretationBoxOptions,,,,4,5587
 InterpretationFunction,,,,12.2,2561
-Interpreter,,🚫,io,10,813
+Interpreter,,,,10,813
 InterquartileRange,,,,6,2431
 Interrupt,Interrupts evaluation,✅,effectful,2,3972
 IntersectedEntityClass,,,,12.1,
@@ -3242,7 +3242,7 @@ ListPickerBoxOptions,,,,9,
 ListPlay,,,,2,2360
 ListPlot,Plots data as a scatter plot,✅,pure,1,93
 ListPlot3D,Creates a 3D plot from data,✅,pure,1,622
-ListPointPlot3D,,🚫,pure,6,694
+ListPointPlot3D,,,,6,694
 ListPolarPlot,Plots data in polar coordinates,✅,pure,6,1119
 ListQ,Tests if expression is a list,✅,pure,2,679
 ListSliceContourPlot3D,,,,10.2,2786
@@ -3912,7 +3912,7 @@ NumberFieldRootsOfUnity,,,,6,4707
 NumberFieldSignature,,,,6,4315
 NumberForm,Displays a number with specified formatting,✅,pure,1,336
 NumberFormat,,,,2,1960
-NumberLinePlot,,🚫,pure,10,913
+NumberLinePlot,,,,10,913
 NumberMarks,,,,3,2734
 NumberMultiplier,,,,3,3737
 NumberPadding,,,,2,1035
@@ -4587,7 +4587,7 @@ RegionMoment,,,,10.4,3200
 RegionNearest,,,,10,1507
 RegionNearestFunction,,,,10,4947
 RegionPlot,Creates a plot of a region satisfying inequalities,✅,pure,6,406
-RegionPlot3D,,🚫,pure,6,603
+RegionPlot3D,,,,6,603
 RegionProduct,,,,10,2129
 RegionQ,,,,10,2208
 RegionResize,,,,11,3765
@@ -4701,7 +4701,7 @@ ReverseSort,Sorts a list in reverse order,✅,pure,11.1,2449
 ReverseSortBy,,,,12,3215
 ReverseUpEquilibrium,,,,3,5390
 RevolutionAxis,Option for axis of revolution,✅,none,7,815
-RevolutionPlot3D,,🚫,pure,6,518
+RevolutionPlot3D,,,,6,518
 RFixedPoints,,,,14.1,
 RGBColor,Specifies a color by RGB values,✅,pure,1,24
 RiccatiSolve,,,,8,3823
@@ -5117,7 +5117,7 @@ SphericalDistance,,,,13.3,
 SphericalHankelH1,,,,6,2219
 SphericalHankelH2,,,,6,3566
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1,811
-SphericalPlot3D,,🚫,pure,6,744
+SphericalPlot3D,,,,6,744
 SphericalRegion,Option specifying spherical region in 3D plots,✅,none,2,802
 SphericalShell,,,,10.2,3070
 SpheroidalEigenvalue,,,,6,2707
@@ -5399,7 +5399,7 @@ SystemModelSimulate,,,,11.3,4437
 SystemModelSimulateSensitivity,,,,11.3,
 SystemModelSimulationData,,🚫,,11.3,
 SystemModelUncertaintyPlot,,,,14,
-SystemOpen,,🚫,io,7,1007
+SystemOpen,,,,7,1007
 SystemOptions,,,,6,1867
 SystemProcessData,,🚫,,11.3,
 SystemProcesses,,,,11.3,
@@ -5911,7 +5911,7 @@ VectorLess,,,,12,
 VectorLessEqual,,,,12,4612
 VectorMarkers,,,,11.3,2214
 VectorPlot,Creates a vector field plot,✅,pure,7,445
-VectorPlot3D,,🚫,pure,7,1018
+VectorPlot3D,,,,7,1018
 VectorPoints,,,,7,1039
 VectorQ,Tests if an expression is a vector,✅,pure,1,468
 VectorRange,,,,12.1,4747
