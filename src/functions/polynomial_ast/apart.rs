@@ -40,16 +40,19 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
-  // Extract numerator and denominator
-  let (num, den) = match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => (*left.clone(), *right.clone()),
-    _ => {
-      return Ok(expr.clone());
-    }
+  // Extract numerator and denominator using the general-purpose extractor
+  // which handles BinaryOp::Divide, Times[..., Power[..., -1]], etc.
+  let (num, den) = super::together::extract_num_den(expr);
+  if matches!(&den, Expr::Integer(1)) {
+    // Not a fraction — return as-is
+    return Ok(expr.clone());
+  }
+
+  // Rebuild the expression in Divide form for downstream functions
+  let divide_expr = Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(num.clone()),
+    right: Box::new(den.clone()),
   };
 
   let num_expanded = expand_and_combine(&num);
@@ -80,11 +83,11 @@ pub fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       return Ok(add_exprs(&quot_expr, &apart_remainder));
     }
 
-    return apart_proper_fraction(expr, var);
+    return apart_proper_fraction(&divide_expr, var);
   }
 
   // Fall back to symbolic approach (multivariate case)
-  apart_symbolic(expr, &num_expanded, &den, var)
+  apart_symbolic(&divide_expr, &num_expanded, &den, var)
 }
 
 /// Perform partial fraction decomposition for a proper fraction (deg(num) < deg(den))
