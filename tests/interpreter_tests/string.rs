@@ -1531,6 +1531,70 @@ mod tex_form_standalone {
   fn sqrt() {
     assert_eq!(interpret("TeXForm[Sqrt[x]]").unwrap(), "TeXForm[Sqrt[x]]");
   }
+
+  #[test]
+  fn negative_power_reciprocal() {
+    assert_eq!(
+      interpret("ToString[TeXForm[Power[a,-1]]]").unwrap(),
+      "\\frac{1}{a}"
+    );
+  }
+
+  #[test]
+  fn negative_power_squared() {
+    assert_eq!(
+      interpret("ToString[TeXForm[Power[a,-2]]]").unwrap(),
+      "\\frac{1}{a^{2}}"
+    );
+  }
+
+  #[test]
+  fn negative_power_compound_base() {
+    assert_eq!(
+      interpret("ToString[TeXForm[Power[x+1,-2]]]").unwrap(),
+      "\\frac{1}{(x+1)^{2}}"
+    );
+  }
+
+  #[test]
+  fn negative_power_compound_base_reciprocal() {
+    assert_eq!(
+      interpret("ToString[TeXForm[Power[x+1,-1]]]").unwrap(),
+      "\\frac{1}{x+1}"
+    );
+  }
+
+  #[test]
+  fn times_with_negative_power() {
+    assert_eq!(
+      interpret("ToString[TeXForm[2*Power[a,-1]]]").unwrap(),
+      "\\frac{2}{a}"
+    );
+  }
+
+  #[test]
+  fn times_symbolic_over_symbolic() {
+    assert_eq!(
+      interpret("ToString[TeXForm[a*Power[b,-1]]]").unwrap(),
+      "\\frac{a}{b}"
+    );
+  }
+
+  #[test]
+  fn times_multiple_denom_factors() {
+    assert_eq!(
+      interpret("ToString[TeXForm[a*Power[b,-1]*Power[c,-1]]]").unwrap(),
+      "\\frac{a}{b c}"
+    );
+  }
+
+  #[test]
+  fn negative_symbolic_power_unchanged() {
+    assert_eq!(
+      interpret("ToString[TeXForm[Power[a,-n]]]").unwrap(),
+      "a^{-n}"
+    );
+  }
 }
 
 mod fortran_form {
