@@ -1674,7 +1674,7 @@ mod csv_import {
 
   fn csv_path() -> String {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest}/examples/data.csv")
+    format!("{manifest}/tests/data/data.csv")
   }
 
   #[test]
