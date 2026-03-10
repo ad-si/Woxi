@@ -529,9 +529,6 @@ pub fn get_captured_output_svg() -> Option<String> {
   CAPTURED_OUTPUT_SVG.with(|buffer| buffer.borrow().clone())
 }
 
-// Re-export evaluate_expr from evaluator module
-pub use evaluator::evaluate_expr;
-
 /// Set a system variable (like $ScriptCommandLine) in the environment
 pub fn set_system_variable(name: &str, value: &str) {
   ENV.with(|e| {
@@ -2239,17 +2236,6 @@ pub fn interpret_with_stdout(
     output_svg,
     warnings,
   })
-}
-
-fn format_result(result: f64) -> String {
-  if result.fract() == 0.0 && result.abs() < 1e15 {
-    // Integer result - format without trailing dot
-    format!("{}", result as i64)
-  } else if result.abs() >= 1e6 || (result != 0.0 && result.abs() < 1e-5) {
-    syntax::format_real(result)
-  } else {
-    format!("{}", result)
-  }
 }
 
 /// Format a result as a real number (with trailing dot for whole numbers)

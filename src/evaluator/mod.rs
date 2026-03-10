@@ -1,10 +1,7 @@
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
 };
-use crate::{
-  ENV, InterpreterError, PART_DEPTH, StoredValue, format_real_result,
-  format_result, interpret,
-};
+use crate::{ENV, InterpreterError, PART_DEPTH, StoredValue, interpret};
 
 use std::collections::HashSet;
 use std::sync::LazyLock;

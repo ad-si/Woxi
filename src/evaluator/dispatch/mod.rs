@@ -8,8 +8,7 @@ pub(crate) use crate::syntax::{
 };
 #[allow(unused_imports)]
 pub(crate) use crate::{
-  ENV, InterpreterError, PART_DEPTH, StoredValue, format_real_result,
-  format_result, interpret,
+  ENV, InterpreterError, PART_DEPTH, StoredValue, format_real_result, interpret,
 };
 
 mod association_functions;
