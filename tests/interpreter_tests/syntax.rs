@@ -308,6 +308,21 @@ mod subtraction_without_spaces {
         .unwrap(),
       "Inequality[a, LessEqual, b, Less, c]"
     );
+    // Chained comparison with same operators uses infix in InputForm
+    assert_eq!(
+      interpret("ToString[0 <= x <= 1, InputForm]").unwrap(),
+      "0 <= x <= 1"
+    );
+    assert_eq!(
+      interpret("ToString[a < b < c, InputForm]").unwrap(),
+      "a < b < c"
+    );
+    // Chained comparison with mixed operators uses Inequality head in InputForm
+    assert_eq!(
+      interpret("ToString[Inequality[a, LessEqual, b, Less, c], InputForm]")
+        .unwrap(),
+      "Inequality[a, LessEqual, b, Less, c]"
+    );
   }
 
   #[test]
