@@ -693,23 +693,20 @@ mod image_io {
   }
 
   #[test]
-  fn import_url_jpeg() {
+  fn import_local_jpeg() {
     clear_state();
-    let result = interpret(
-      "ImageQ[Import[\"https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/Usamljeni_jasen_-_panoramio_%28cropped%29.jpg/500px-Usamljeni_jasen_-_panoramio_%28cropped%29.jpg\"]]",
-    )
-    .unwrap();
+    let result =
+      interpret(r#"ImageQ[Import["tests/cli/images/logo.jpeg"]]"#).unwrap();
     assert_eq!(result, "True");
   }
 
   #[test]
-  fn import_url_dimensions() {
+  fn import_local_dimensions() {
     clear_state();
-    let result = interpret(
-      "ImageDimensions[Import[\"https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/Usamljeni_jasen_-_panoramio_%28cropped%29.jpg/500px-Usamljeni_jasen_-_panoramio_%28cropped%29.jpg\"]]",
-    )
-    .unwrap();
-    assert_eq!(result, "{500, 564}");
+    let result =
+      interpret(r#"ImageDimensions[Import["tests/cli/images/logo.jpeg"]]"#)
+        .unwrap();
+    assert_eq!(result, "{887, 265}");
   }
 
   #[test]
