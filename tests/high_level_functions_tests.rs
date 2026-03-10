@@ -1892,4 +1892,50 @@ mod high_level_functions_tests {
       assert_eq!(interpret("(a*b)^-1 === 1/(a*b)").unwrap(), "True");
     }
   }
+
+  mod apart_tests {
+    use super::*;
+
+    #[test]
+    fn test_apart_basic() {
+      assert_eq!(
+        interpret("Apart[1/((1 + x) (5 + x))]").unwrap(),
+        "1/(4*(1 + x)) - 1/(4*(5 + x))"
+      );
+    }
+
+    #[test]
+    fn test_apart_canonical_times_power_form() {
+      // Apart should handle Times[Power[...,-1], ...] form (issue #91)
+      assert_eq!(
+        interpret("Apart[Times[Power[Plus[1, x], -1], Power[Plus[5, x], -1]]]")
+          .unwrap(),
+        "1/(4*(1 + x)) - 1/(4*(5 + x))"
+      );
+    }
+
+    #[test]
+    fn test_apart_fullform_roundtrip() {
+      // Using the result of FullForm should give the same Apart result
+      assert_eq!(
+        interpret("Apart[1/((1 + x) (5 + x))]").unwrap(),
+        interpret("Apart[Times[Power[Plus[1, x], -1], Power[Plus[5, x], -1]]]")
+          .unwrap()
+      );
+    }
+
+    #[test]
+    fn test_apart_simple_fraction() {
+      assert_eq!(
+        interpret("Apart[(5 + 2*x)/(1 + x)]").unwrap(),
+        "2 + 3/(1 + x)"
+      );
+    }
+
+    #[test]
+    fn test_apart_no_denominator() {
+      // Non-fractions should be returned as-is
+      assert_eq!(interpret("Apart[x + 1]").unwrap(), "1 + x");
+    }
+  }
 }
