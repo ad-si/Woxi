@@ -1280,17 +1280,115 @@ fn tex_identifier(name: &str) -> String {
   }
 }
 
-/// Handle multiplication in TeX (space-separated)
+/// Handle binary multiplication in TeX (space-separated).
+/// Delegates to `tex_times_nary` for fraction handling.
 fn tex_times(left: &Expr, right: &Expr) -> String {
-  let l = expr_to_tex(left);
-  let r = expr_to_tex(right);
+  tex_times_nary(&[left.clone(), right.clone()])
+}
 
-  // -1 * x → -x
-  if matches!(left, Expr::Integer(-1)) {
-    return format!("-{}", r);
+/// Check if an expression is Power[base, negative_integer]
+/// and return (base, positive_exponent) if so.
+fn as_neg_int_power(expr: &Expr) -> Option<(&Expr, i128)> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::Integer(n) = &args[1]
+        && *n < 0
+      {
+        return Some((&args[0], -n));
+      }
+      None
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Integer(n) = right.as_ref()
+        && *n < 0
+      {
+        return Some((left.as_ref(), -n));
+      }
+      // Also handle UnaryOp Minus wrapping an integer
+      if let Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } = right.as_ref()
+        && let Expr::Integer(n) = operand.as_ref()
+        && *n > 0
+      {
+        return Some((left.as_ref(), *n));
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Render a denominator factor: base^exp with exp omitted if 1.
+/// Uses plain parens `(...)` for compound bases (matching wolframscript),
+/// and only wraps in parens when exponent > 1.
+fn tex_denom_factor(base: &Expr, pos_exp: i128) -> String {
+  if pos_exp == 1 {
+    // No parens needed in denominator when exponent is 1
+    expr_to_tex(base)
+  } else {
+    format!("{}^{{{}}}", tex_parens_plain(base), pos_exp)
+  }
+}
+
+/// Wrap compound expressions in plain parens `(...)` for use in
+/// denominators (matching wolframscript style, not `\left(\right)`).
+fn tex_parens_plain(expr: &Expr) -> String {
+  let needs_parens = match expr {
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => true,
+    Expr::FunctionCall { name, args } if args.len() >= 2 => {
+      matches!(name.as_str(), "Plus" | "Times")
+    }
+    _ => false,
+  };
+  if needs_parens {
+    format!("({})", expr_to_tex(expr))
+  } else {
+    expr_to_tex(expr)
+  }
+}
+
+/// Handle n-ary Times in TeX, splitting into \frac when negative-integer
+/// Power factors are present (matching Wolfram TeXForm).
+fn tex_times_nary(args: &[Expr]) -> String {
+  // Check for -1 leading factor
+  let (negate, factors) = if matches!(&args[0], Expr::Integer(-1)) {
+    (true, &args[1..])
+  } else {
+    (false, args)
+  };
+
+  // Partition into numerator factors and denominator factors
+  let mut numer: Vec<String> = Vec::new();
+  let mut denom: Vec<String> = Vec::new();
+  for arg in factors {
+    if let Some((base, pos_exp)) = as_neg_int_power(arg) {
+      denom.push(tex_denom_factor(base, pos_exp));
+    } else {
+      numer.push(expr_to_tex(arg));
+    }
   }
 
-  format!("{} {}", l, r)
+  let sign = if negate { "-" } else { "" };
+
+  if denom.is_empty() {
+    // No denominator factors — simple product
+    let body = numer.join(" ");
+    format!("{}{}", sign, body)
+  } else {
+    let numer_tex = if numer.is_empty() {
+      "1".to_string()
+    } else {
+      numer.join(" ")
+    };
+    let denom_tex = denom.join(" ");
+    format!("{}\\frac{{{}}}{{{}}}", sign, numer_tex, denom_tex)
+  }
 }
 
 /// Handle power expressions in TeX
@@ -1325,6 +1423,13 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
     }
   }
 
+  // Negative integer exponent: Power[x, -n] → \frac{1}{x^n}
+  if let Expr::Integer(n) = exp
+    && *n < 0
+  {
+    return format!("\\frac{{1}}{{{}}}", tex_denom_factor(base, -n));
+  }
+
   let base_tex = tex_base_with_parens(base);
   let exp_tex = expr_to_tex(exp);
 
@@ -1338,11 +1443,17 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
 
 /// Wrap base in parens if needed for power
 fn tex_base_with_parens(base: &Expr) -> String {
-  match base {
-    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => {
-      format!("\\left({}\\right)", expr_to_tex(base))
+  let needs_parens = match base {
+    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } => true,
+    Expr::FunctionCall { name, args } if args.len() >= 2 => {
+      matches!(name.as_str(), "Plus" | "Times")
     }
-    _ => expr_to_tex(base),
+    _ => false,
+  };
+  if needs_parens {
+    format!("\\left({}\\right)", expr_to_tex(base))
+  } else {
+    expr_to_tex(base)
   }
 }
 
@@ -1431,15 +1542,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       result
     }
     // Times (n-ary)
-    "Times" if args.len() >= 2 => {
-      // Check for -1 factor
-      if matches!(&args[0], Expr::Integer(-1)) {
-        let rest: Vec<String> = args[1..].iter().map(expr_to_tex).collect();
-        return format!("-{}", rest.join(" "));
-      }
-      let parts: Vec<String> = args.iter().map(expr_to_tex).collect();
-      parts.join(" ")
-    }
+    "Times" if args.len() >= 2 => tex_times_nary(args),
     // Power
     "Power" if args.len() == 2 => tex_power(&args[0], &args[1]),
     // Exp
