@@ -97,6 +97,9 @@ pub fn dispatch_polynomial_functions(
     "Reduce" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::polynomial_ast::reduce_ast(args));
     }
+    "FindInstance" if args.len() >= 2 && args.len() <= 4 => {
+      return Some(crate::functions::polynomial_ast::find_instance_ast(args));
+    }
     "FindRoot" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::find_root_ast(args));
     }

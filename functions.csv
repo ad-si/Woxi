@@ -1982,7 +1982,7 @@ FindImageShapes,,,,13.3,
 FindImageText,,,,12.1,5013
 FindIndependentEdgeSet,,,,8,3344
 FindIndependentVertexSet,,,,8,2978
-FindInstance,,,,5,650
+FindInstance,finds instances of variables that satisfy constraints,implemented,pure,5,650
 FindIntegerNullVector,,,,8,2929
 FindIsomers,,,,13,
 FindIsomorphicSubgraph,,,,13,
