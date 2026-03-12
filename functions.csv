@@ -4587,7 +4587,7 @@ RegionMoment,,,,10.4,3200
 RegionNearest,,,,10,1507
 RegionNearestFunction,,,,10,4947
 RegionPlot,Creates a plot of a region satisfying inequalities,✅,pure,6,406
-RegionPlot3D,,,,6,603
+RegionPlot3D,plots the 3D region where a condition is true,implemented,pure,6,603
 RegionProduct,,,,10,2129
 RegionQ,,,,10,2208
 RegionResize,,,,11,3765

@@ -764,6 +764,84 @@ mod plot3d {
     }
   }
 
+  mod region_plot3d {
+    use super::*;
+
+    mod basic {
+      use super::*;
+
+      #[test]
+      fn sphere_region() {
+        insta::assert_snapshot!(export_svg(
+          "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
+        ));
+      }
+
+      #[test]
+      fn cube_region() {
+        // Always true - should show a solid cube
+        insta::assert_snapshot!(export_svg(
+          "RegionPlot3D[True, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
+        ));
+      }
+
+      #[test]
+      fn cylinder_region() {
+        insta::assert_snapshot!(export_svg(
+          "RegionPlot3D[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
+        ));
+      }
+
+      #[test]
+      fn combined_condition() {
+        insta::assert_snapshot!(export_svg(
+          "RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 2}, {z, -2, 2}]"
+        ));
+      }
+    }
+
+    mod options {
+      use super::*;
+
+      #[test]
+      fn image_size() {
+        insta::assert_snapshot!(export_svg(
+          "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ImageSize -> 200]"
+        ));
+      }
+
+      #[test]
+      fn mesh_none() {
+        insta::assert_snapshot!(export_svg(
+          "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None]"
+        ));
+      }
+    }
+
+    mod errors {
+      use super::*;
+
+      #[test]
+      fn too_few_args() {
+        let result =
+          interpret("RegionPlot3D[x^2 < 1, {x, -1, 1}, {y, -1, 1}]").unwrap();
+        assert!(
+          result.contains("RegionPlot3D"),
+          "Should return unevaluated: {}",
+          result
+        );
+      }
+
+      #[test]
+      fn invalid_iterator() {
+        assert!(
+          interpret("RegionPlot3D[x^2 < 1, {x, -1, 1}, {y, -1, 1}, 5]")
+            .is_err()
+        );
+      }
+    }
+  }
+
   mod revolution_plot3d {
     use super::*;
 

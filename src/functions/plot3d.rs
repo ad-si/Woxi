@@ -2204,7 +2204,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics3d_result(svg))
 }
 
-fn parse_iterator_rev(
+fn parse_iterator_generic(
   spec: &Expr,
   func_name: &str,
   label: &str,
@@ -2237,4 +2237,325 @@ fn parse_iterator_rev(
       "{func_name}: {label} iterator must be {{var, min, max}}"
     ))),
   }
+}
+
+// Keep old name for RevolutionPlot3D
+fn parse_iterator_rev(
+  spec: &Expr,
+  func_name: &str,
+  label: &str,
+) -> Result<(String, f64, f64), InterpreterError> {
+  parse_iterator_generic(spec, func_name, label)
+}
+
+// ── RegionPlot3D implementation ──────────────────────────────────────
+
+const REGION3D_GRID: usize = 30;
+
+/// Evaluate a 3D boolean condition at (x, y, z).
+fn evaluate_condition_3d(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  zvar: &str,
+  xval: f64,
+  yval: f64,
+  zval: f64,
+) -> bool {
+  let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
+  let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
+  let sub3 = substitute_var(&sub2, zvar, &Expr::Real(zval));
+  if let Ok(result) = evaluate_expr_to_expr(&sub3) {
+    matches!(result, Expr::Identifier(ref s) if s == "True")
+  } else {
+    false
+  }
+}
+
+/// RegionPlot3D[cond, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
+pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 4 {
+    return Err(InterpreterError::EvaluationError(
+      "RegionPlot3D requires at least 4 arguments: RegionPlot3D[cond, {x,xmin,xmax}, {y,ymin,ymax}, {z,zmin,zmax}]".into(),
+    ));
+  }
+
+  let body = &args[0];
+  let (xvar, x_min, x_max) =
+    parse_iterator_generic(&args[1], "RegionPlot3D", "first")?;
+  let (yvar, y_min, y_max) =
+    parse_iterator_generic(&args[2], "RegionPlot3D", "second")?;
+  let (zvar, z_min, z_max) =
+    parse_iterator_generic(&args[3], "RegionPlot3D", "third")?;
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let mut show_mesh = true;
+  let mut show_axes = true;
+
+  for opt in &args[4..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      match pattern.as_ref() {
+        Expr::Identifier(name) if name == "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        Expr::Identifier(name) if name == "Mesh" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+          {
+            show_mesh = false;
+          }
+        }
+        Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
+        {
+          Expr::Identifier(s) if s == "False" => show_axes = false,
+          Expr::Identifier(s) if s == "True" => show_axes = true,
+          _ => {}
+        },
+        _ => {}
+      }
+    }
+  }
+
+  let n = REGION3D_GRID;
+  let x_step = (x_max - x_min) / n as f64;
+  let y_step = (y_max - y_min) / n as f64;
+  let z_step = (z_max - z_min) / n as f64;
+
+  // Sample the boolean field on a 3D grid
+  let mut field = vec![vec![vec![false; n + 1]; n + 1]; n + 1];
+  for i in 0..=n {
+    let xval = x_min + i as f64 * x_step;
+    for j in 0..=n {
+      let yval = y_min + j as f64 * y_step;
+      for k in 0..=n {
+        let zval = z_min + k as f64 * z_step;
+        field[i][j][k] =
+          evaluate_condition_3d(body, &xvar, &yvar, &zvar, xval, yval, zval);
+      }
+    }
+  }
+
+  // Normalize coordinates to [-1, 1] for x,y and [-Z_SCALE, Z_SCALE] for z
+  let nx = |i: usize| -> f64 { (i as f64 / n as f64) * 2.0 - 1.0 };
+  let ny = |j: usize| -> f64 { (j as f64 / n as f64) * 2.0 - 1.0 };
+  let nz =
+    |k: usize| -> f64 { (k as f64 / n as f64) * 2.0 * Z_SCALE - Z_SCALE };
+
+  let camera = Camera::default();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+
+  // Default surface color (Mathematica-like blue with opacity)
+  let base_r = 0x5E_u8;
+  let base_g = 0x81_u8;
+  let base_b = 0xB5_u8;
+
+  // For each voxel, emit faces between true and false cells
+  // Each face is a quad split into two triangles
+  for i in 0..=n {
+    for j in 0..=n {
+      for k in 0..=n {
+        if !field[i][j][k] {
+          continue;
+        }
+
+        // Check each of 6 neighbor directions; if neighbor is false or out of bounds,
+        // emit the face
+        let neighbors: [(i32, i32, i32); 6] = [
+          (1, 0, 0),
+          (-1, 0, 0),
+          (0, 1, 0),
+          (0, -1, 0),
+          (0, 0, 1),
+          (0, 0, -1),
+        ];
+
+        for &(di, dj, dk) in &neighbors {
+          let ni = i as i32 + di;
+          let nj = j as i32 + dj;
+          let nk = k as i32 + dk;
+
+          let is_outside = ni < 0
+            || nj < 0
+            || nk < 0
+            || ni > n as i32
+            || nj > n as i32
+            || nk > n as i32;
+
+          let neighbor_true = if is_outside {
+            false
+          } else {
+            field[ni as usize][nj as usize][nk as usize]
+          };
+
+          if neighbor_true {
+            continue; // internal face, skip
+          }
+
+          // Emit a face quad at the boundary between cell (i,j,k) and neighbor
+          // The face center is between (i,j,k) and (ni,nj,nk)
+          let half = 0.5 / n as f64;
+          let cx = nx(i) + di as f64 * half * 2.0;
+          let cy = ny(j) + dj as f64 * half * 2.0;
+          // For z, half step is Z_SCALE/n
+          let z_half = Z_SCALE / n as f64;
+          let cz = nz(k) + dk as f64 * z_half;
+
+          // Build face vertices depending on which axis the face is perpendicular to
+          let s = 1.0 / n as f64; // half-size of voxel in normalized xy coords
+          let sz = Z_SCALE / n as f64; // half-size in z
+
+          let (v0, v1, v2, v3) = if di != 0 {
+            // Face perpendicular to x-axis
+            (
+              Point3D {
+                x: cx,
+                y: cy - s,
+                z: cz - sz,
+              },
+              Point3D {
+                x: cx,
+                y: cy + s,
+                z: cz - sz,
+              },
+              Point3D {
+                x: cx,
+                y: cy + s,
+                z: cz + sz,
+              },
+              Point3D {
+                x: cx,
+                y: cy - s,
+                z: cz + sz,
+              },
+            )
+          } else if dj != 0 {
+            // Face perpendicular to y-axis
+            (
+              Point3D {
+                x: cx - s,
+                y: cy,
+                z: cz - sz,
+              },
+              Point3D {
+                x: cx + s,
+                y: cy,
+                z: cz - sz,
+              },
+              Point3D {
+                x: cx + s,
+                y: cy,
+                z: cz + sz,
+              },
+              Point3D {
+                x: cx - s,
+                y: cy,
+                z: cz + sz,
+              },
+            )
+          } else {
+            // Face perpendicular to z-axis
+            (
+              Point3D {
+                x: cx - s,
+                y: cy - s,
+                z: cz,
+              },
+              Point3D {
+                x: cx + s,
+                y: cy - s,
+                z: cz,
+              },
+              Point3D {
+                x: cx + s,
+                y: cy + s,
+                z: cz,
+              },
+              Point3D {
+                x: cx - s,
+                y: cy + s,
+                z: cz,
+              },
+            )
+          };
+
+          // Triangle 1: v0, v1, v2
+          {
+            let normal = triangle_normal(v0, v1, v2);
+            let color = apply_lighting((base_r, base_g, base_b), normal);
+            let p0 = project(v0, &camera);
+            let p1 = project(v1, &camera);
+            let p2 = project(v2, &camera);
+            let center = Point3D {
+              x: (v0.x + v1.x + v2.x) / 3.0,
+              y: (v0.y + v1.y + v2.y) / 3.0,
+              z: (v0.z + v1.z + v2.z) / 3.0,
+            };
+            all_triangles.push(Triangle {
+              projected: [p0, p1, p2],
+              depth: depth(center, &camera),
+              color,
+            });
+          }
+
+          // Triangle 2: v0, v2, v3
+          {
+            let normal = triangle_normal(v0, v2, v3);
+            let color = apply_lighting((base_r, base_g, base_b), normal);
+            let p0 = project(v0, &camera);
+            let p2 = project(v2, &camera);
+            let p3 = project(v3, &camera);
+            let center = Point3D {
+              x: (v0.x + v2.x + v3.x) / 3.0,
+              y: (v0.y + v2.y + v3.y) / 3.0,
+              z: (v0.z + v2.z + v3.z) / 3.0,
+            };
+            all_triangles.push(Triangle {
+              projected: [p0, p2, p3],
+              depth: depth(center, &camera),
+              color,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if all_triangles.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "RegionPlot3D: no region satisfies the condition in the given range"
+        .into(),
+    ));
+  }
+
+  // Painter's algorithm
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg = generate_svg(
+    &all_triangles,
+    &camera,
+    (x_min, x_max),
+    (y_min, y_max),
+    (z_min, z_max),
+    svg_width,
+    svg_height,
+    full_width,
+    show_mesh,
+    show_axes,
+  )?;
+
+  Ok(crate::graphics3d_result(svg))
 }
