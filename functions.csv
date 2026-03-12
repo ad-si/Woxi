@@ -5745,7 +5745,7 @@ TrigExpand,Expand trigonometric functions of sums and multiples,✅,pure,3,852
 TrigFactor,,,,3,1736
 TrigFactorList,,,,3,4567
 Trigger,,,,6,1760
-TrigReduce,,,,3,954
+TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3,954
 TrigToExp,Convert trigonometric and hyperbolic functions to exponentials,✅,pure,3,900
 TrimmedMean,,,,6,2693
 TrimmedVariance,,,,11.1,4081
