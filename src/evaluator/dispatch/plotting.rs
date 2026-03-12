@@ -62,6 +62,9 @@ pub fn dispatch_plotting(
     "RevolutionPlot3D" if args.len() >= 2 => {
       Some(crate::functions::plot3d::revolution_plot3d_ast(args))
     }
+    "RegionPlot3D" if args.len() >= 4 => {
+      Some(crate::functions::plot3d::region_plot3d_ast(args))
+    }
     "ListPlot" if !args.is_empty() => {
       Some(crate::functions::list_plot::list_plot_ast(args))
     }
