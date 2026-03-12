@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::InterpreterError;
+use crate::evaluator::evaluate_expr_to_expr;
 use crate::syntax::{BinaryOperator, ComparisonOp, Expr};
 
 /// Helper to build a binary operation expression
@@ -684,4 +685,418 @@ fn extract_bound(
     }
   }
   None
+}
+
+// ─── Expectation ─────────────────────────────────────────────────────
+
+/// Expectation[f(x), x \[Distributed] dist]
+/// Computes E[f(x)] for known distributions.
+pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Expectation expects 2 arguments".into(),
+    ));
+  }
+
+  let expr = &args[0];
+  let dist_spec = &args[1];
+
+  // Parse Distributed[var, dist]
+  let (var_name, dist) = match dist_spec {
+    Expr::FunctionCall { name, args: dargs }
+      if name == "Distributed" && dargs.len() == 2 =>
+    {
+      if let Expr::Identifier(v) = &dargs[0] {
+        (v.clone(), &dargs[1])
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Expectation".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Expectation".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Get distribution name and parameters
+  let (dist_name, dargs) = match dist {
+    Expr::FunctionCall { name, args: da } => (name.as_str(), da.as_slice()),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Expectation".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Compute E[f(x)] using known moment formulas
+  // First try to get mean and variance for common distributions
+  let (mean, variance) = distribution_mean_variance(dist_name, dargs)?;
+
+  // Check if expr is just the variable (E[x] = mean)
+  if matches!(expr, Expr::Identifier(n) if *n == var_name) {
+    return eval(mean);
+  }
+
+  // Check if expr is x^2 (E[x^2] = Var + Mean^2)
+  if is_power_of_var(expr, &var_name, 2) {
+    let result = plus(variance.clone(), power(mean.clone(), int(2)));
+    return eval(result);
+  }
+
+  // Check for linear expressions: a*x + b
+  if let Some((a, b)) = extract_linear(expr, &var_name) {
+    // E[a*x + b] = a*E[x] + b
+    let result = plus(times(a, mean), b);
+    return eval(result);
+  }
+
+  // For more complex expressions, use numerical integration
+  expectation_numerical(expr, &var_name, dist_name, dargs)
+}
+
+/// Returns (Mean, Variance) as symbolic expressions for known distributions.
+fn distribution_mean_variance(
+  dist_name: &str,
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  match dist_name {
+    "NormalDistribution" => {
+      let (mu, sigma) = match dargs.len() {
+        0 => (int(0), int(1)),
+        2 => (dargs[0].clone(), dargs[1].clone()),
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "NormalDistribution expects 0 or 2 arguments".into(),
+          ));
+        }
+      };
+      // Mean = mu, Var = sigma^2
+      Ok((mu, power(sigma, int(2))))
+    }
+    "UniformDistribution" => {
+      let (a, b) = match dargs.len() {
+        0 => (int(0), int(1)),
+        1 => {
+          if let Expr::List(bounds) = &dargs[0] {
+            if bounds.len() == 2 {
+              (bounds[0].clone(), bounds[1].clone())
+            } else {
+              return Err(InterpreterError::EvaluationError(
+                "UniformDistribution: expected {min, max}".into(),
+              ));
+            }
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "UniformDistribution: expected a list".into(),
+            ));
+          }
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "UniformDistribution expects 0 or 1 argument".into(),
+          ));
+        }
+      };
+      // Mean = (a+b)/2, Var = (b-a)^2/12
+      let mean = divide(plus(a.clone(), b.clone()), int(2));
+      let var = divide(power(minus(b, a), int(2)), int(12));
+      Ok((mean, var))
+    }
+    "ExponentialDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "ExponentialDistribution expects 1 argument".into(),
+        ));
+      }
+      let lambda = dargs[0].clone();
+      // Mean = 1/lambda, Var = 1/lambda^2
+      let mean = divide(int(1), lambda.clone());
+      let var = divide(int(1), power(lambda, int(2)));
+      Ok((mean, var))
+    }
+    "PoissonDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "PoissonDistribution expects 1 argument".into(),
+        ));
+      }
+      let mu = dargs[0].clone();
+      // Mean = mu, Var = mu
+      Ok((mu.clone(), mu))
+    }
+    "BernoulliDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "BernoulliDistribution expects 1 argument".into(),
+        ));
+      }
+      let p = dargs[0].clone();
+      // Mean = p, Var = p(1-p)
+      let var = times(p.clone(), minus(int(1), p.clone()));
+      Ok((p, var))
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "Expectation: unsupported distribution {dist_name}"
+    ))),
+  }
+}
+
+/// Check if expression is var^n
+fn is_power_of_var(expr: &Expr, var: &str, n: i128) -> bool {
+  match expr {
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Power =>
+    {
+      matches!(left.as_ref(), Expr::Identifier(v) if v == var)
+        && matches!(right.as_ref(), Expr::Integer(k) if *k == n)
+    }
+    _ => false,
+  }
+}
+
+/// Try to extract a linear expression a*x + b from expr.
+/// Returns Some((a, b)) if expr is linear in var.
+fn extract_linear(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
+  match expr {
+    // Pure variable: x → (1, 0)
+    Expr::Identifier(n) if n == var => Some((int(1), int(0))),
+    // a * x
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Times =>
+    {
+      if matches!(right.as_ref(), Expr::Identifier(n) if n == var)
+        && !contains_var(left, var)
+      {
+        Some((left.as_ref().clone(), int(0)))
+      } else if matches!(left.as_ref(), Expr::Identifier(n) if n == var)
+        && !contains_var(right, var)
+      {
+        Some((right.as_ref().clone(), int(0)))
+      } else {
+        None
+      }
+    }
+    // a + b (try linear decomposition)
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Plus =>
+    {
+      // If left is linear in var and right is constant (or vice versa)
+      if !contains_var(right, var) {
+        if let Some((a, b)) = extract_linear(left, var) {
+          let new_b = plus(b, right.as_ref().clone());
+          return Some((a, new_b));
+        }
+      }
+      if !contains_var(left, var) {
+        if let Some((a, b)) = extract_linear(right, var) {
+          let new_b = plus(left.as_ref().clone(), b);
+          return Some((a, new_b));
+        }
+      }
+      None
+    }
+    Expr::BinaryOp { op, left, right }
+      if *op == crate::syntax::BinaryOperator::Minus =>
+    {
+      if !contains_var(right, var) {
+        if let Some((a, b)) = extract_linear(left, var) {
+          let new_b = minus(b, right.as_ref().clone());
+          return Some((a, new_b));
+        }
+      }
+      None
+    }
+    // FunctionCall Times[...] form
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      // Find which arg is the variable and which are constants
+      let mut var_idx = None;
+      for (i, arg) in args.iter().enumerate() {
+        if contains_var(arg, var) {
+          if var_idx.is_some() {
+            return None; // multiple args contain var
+          }
+          var_idx = Some(i);
+        }
+      }
+      if let Some(vi) = var_idx {
+        if !matches!(&args[vi], Expr::Identifier(n) if n == var) {
+          return None;
+        }
+        let mut coeff_parts: Vec<Expr> = Vec::new();
+        for (i, arg) in args.iter().enumerate() {
+          if i != vi {
+            coeff_parts.push(arg.clone());
+          }
+        }
+        let coeff = if coeff_parts.len() == 1 {
+          coeff_parts.pop().unwrap()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: coeff_parts,
+          }
+        };
+        Some((coeff, int(0)))
+      } else {
+        None
+      }
+    }
+    // FunctionCall Plus[...] form
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let mut total_a = int(0);
+      let mut total_b = int(0);
+      for arg in args {
+        if contains_var(arg, var) {
+          if let Some((a, b)) = extract_linear(arg, var) {
+            total_a = plus(total_a, a);
+            total_b = plus(total_b, b);
+          } else {
+            return None;
+          }
+        } else {
+          total_b = plus(total_b, arg.clone());
+        }
+      }
+      Some((total_a, total_b))
+    }
+    // Constant (no var)
+    _ if !contains_var(expr, var) => None, // Not linear, it's constant - caller handles
+    _ => None,
+  }
+}
+
+fn contains_var(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == var,
+    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) => false,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_var(left, var) || contains_var(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_var(operand, var),
+    Expr::FunctionCall { name, args } => {
+      if name == "Rational" && args.len() == 2 {
+        return false; // Rational[n, d] is a constant
+      }
+      args.iter().any(|a| contains_var(a, var))
+    }
+    Expr::List(items) => items.iter().any(|a| contains_var(a, var)),
+    _ => true, // conservative
+  }
+}
+
+/// Numerical expectation via Monte Carlo or numerical integration.
+fn expectation_numerical(
+  expr: &Expr,
+  var: &str,
+  dist_name: &str,
+  dargs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::functions::plot::substitute_var;
+
+  // Get integration range and PDF for quadrature
+  let n_points = 1000;
+
+  // Determine integration bounds based on distribution
+  let (lo, hi): (f64, f64) = match dist_name {
+    "UniformDistribution" => {
+      let (a, b) = match dargs.len() {
+        0 => (0.0, 1.0),
+        1 => {
+          if let Expr::List(bounds) = &dargs[0] {
+            if bounds.len() == 2 {
+              let a = try_eval_to_f64(&bounds[0]).unwrap_or(0.0);
+              let b = try_eval_to_f64(&bounds[1]).unwrap_or(1.0);
+              (a, b)
+            } else {
+              (0.0, 1.0)
+            }
+          } else {
+            (0.0, 1.0)
+          }
+        }
+        _ => (0.0, 1.0),
+      };
+      (a, b)
+    }
+    "ExponentialDistribution" => {
+      // Integrate from 0 to ~10/lambda
+      let lambda = try_eval_to_f64(&dargs[0]).unwrap_or(1.0);
+      (0.0, 10.0 / lambda)
+    }
+    "NormalDistribution" => {
+      let (mu, sigma) = match dargs.len() {
+        0 => (0.0, 1.0),
+        2 => {
+          let m = try_eval_to_f64(&dargs[0]).unwrap_or(0.0);
+          let s = try_eval_to_f64(&dargs[1]).unwrap_or(1.0);
+          (m, s)
+        }
+        _ => (0.0, 1.0),
+      };
+      (mu - 6.0 * sigma, mu + 6.0 * sigma)
+    }
+    _ => {
+      // Return unevaluated for unsupported distributions
+      return Ok(Expr::FunctionCall {
+        name: "Expectation".to_string(),
+        args: vec![
+          expr.clone(),
+          Expr::FunctionCall {
+            name: "Distributed".to_string(),
+            args: vec![
+              Expr::Identifier(var.to_string()),
+              Expr::FunctionCall {
+                name: dist_name.to_string(),
+                args: dargs.to_vec(),
+              },
+            ],
+          },
+        ],
+      });
+    }
+  };
+
+  // Numerical integration: E[f(x)] = integral f(x) * pdf(x) dx
+  let dx = (hi - lo) / n_points as f64;
+  let mut sum = 0.0;
+  let dist_expr = Expr::FunctionCall {
+    name: dist_name.to_string(),
+    args: dargs.to_vec(),
+  };
+
+  for i in 0..=n_points {
+    let x = lo + i as f64 * dx;
+    let x_expr = Expr::Real(x);
+
+    // Evaluate f(x)
+    let fx_sub = substitute_var(expr, var, &x_expr);
+    let fx_val = evaluate_expr_to_expr(&fx_sub)
+      .ok()
+      .and_then(|e| try_eval_to_f64(&e))
+      .unwrap_or(0.0);
+
+    // Evaluate pdf(x)
+    let pdf_val = pdf_ast(&[dist_expr.clone(), x_expr])
+      .ok()
+      .and_then(|e| try_eval_to_f64(&e))
+      .unwrap_or(0.0);
+
+    let weight = if i == 0 || i == n_points { 0.5 } else { 1.0 };
+    sum += weight * fx_val * pdf_val;
+  }
+  sum *= dx;
+
+  // Round to reasonable precision
+  let result = (sum * 1e10).round() / 1e10;
+  if (result - result.round()).abs() < 1e-8 {
+    Ok(Expr::Integer(result.round() as i128))
+  } else {
+    Ok(Expr::Real(result))
+  }
 }
