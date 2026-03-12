@@ -4701,7 +4701,7 @@ ReverseSort,Sorts a list in reverse order,✅,pure,11.1,2449
 ReverseSortBy,,,,12,3215
 ReverseUpEquilibrium,,,,3,5390
 RevolutionAxis,Option for axis of revolution,✅,none,7,815
-RevolutionPlot3D,,,,6,518
+RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,implemented,pure,6,518
 RFixedPoints,,,,14.1,
 RGBColor,Specifies a color by RGB values,✅,pure,1,24
 RiccatiSolve,,,,8,3823

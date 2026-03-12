@@ -764,6 +764,98 @@ mod plot3d {
     }
   }
 
+  mod revolution_plot3d {
+    use super::*;
+
+    mod basic {
+      use super::*;
+
+      #[test]
+      fn parametric_curve() {
+        // Revolve {t^2, t} around the z-axis
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{t^2, t}, {t, 0, 2}]"
+        ));
+      }
+
+      #[test]
+      fn scalar_function() {
+        // Revolve (t, t^4 - t^2) → r=t, z=t^4-t^2
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[t^4 - t^2, {t, 0, 1}]"
+        ));
+      }
+
+      #[test]
+      fn trig_function() {
+        // Revolve (t, Sin[t]+t)
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[Sin[t] + t, {t, 0, 2 Pi}]"
+        ));
+      }
+
+      #[test]
+      fn with_theta_range() {
+        // Partial revolution (half)
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{t^2, t}, {t, 0, 2}, {theta, 0, Pi}]"
+        ));
+      }
+
+      #[test]
+      fn parametric_trig() {
+        // Revolve a sine-wave profile
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]"
+        ));
+      }
+    }
+
+    mod options {
+      use super::*;
+
+      #[test]
+      fn image_size() {
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{t^2, t}, {t, 0, 2}, ImageSize -> 200]"
+        ));
+      }
+
+      #[test]
+      fn mesh_none() {
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{t^2, t}, {t, 0, 2}, Mesh -> None]"
+        ));
+      }
+
+      #[test]
+      fn plot_range() {
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{t^2, t}, {t, 0, 2}, PlotRange -> {0, 1.5}]"
+        ));
+      }
+    }
+
+    mod errors {
+      use super::*;
+
+      #[test]
+      fn too_few_args() {
+        let result = interpret("RevolutionPlot3D[t^2]").unwrap();
+        assert!(
+          result.contains("RevolutionPlot3D"),
+          "Should return unevaluated: {}",
+          result
+        );
+      }
+
+      #[test]
+      fn invalid_iterator() {
+        assert!(interpret("RevolutionPlot3D[t^2, 5]").is_err());
+      }
+    }
+  }
+
   mod graphics3d {
     use super::*;
 
