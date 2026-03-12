@@ -1544,7 +1544,7 @@ mod tex_form_standalone {
   fn negative_power_squared() {
     assert_eq!(
       interpret("ToString[TeXForm[Power[a,-2]]]").unwrap(),
-      "\\frac{1}{a^{2}}"
+      "\\frac{1}{a^2}"
     );
   }
 
@@ -1552,7 +1552,7 @@ mod tex_form_standalone {
   fn negative_power_compound_base() {
     assert_eq!(
       interpret("ToString[TeXForm[Power[x+1,-2]]]").unwrap(),
-      "\\frac{1}{(x+1)^{2}}"
+      "\\frac{1}{(x+1)^2}"
     );
   }
 

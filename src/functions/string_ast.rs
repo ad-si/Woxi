@@ -1332,7 +1332,12 @@ fn tex_denom_factor(base: &Expr, pos_exp: i128) -> String {
     // No parens needed in denominator when exponent is 1
     expr_to_tex(base)
   } else {
-    format!("{}^{{{}}}", tex_parens_plain(base), pos_exp)
+    let exp_str = pos_exp.to_string();
+    if exp_str.len() == 1 {
+      format!("{}^{}", tex_parens_plain(base), exp_str)
+    } else {
+      format!("{}^{{{}}}", tex_parens_plain(base), exp_str)
+    }
   }
 }
 
