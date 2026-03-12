@@ -2873,3 +2873,238 @@ fn generate_scatter_svg(
   svg.push_str("</svg>");
   Ok(svg)
 }
+
+// ── SphericalPlot3D implementation ───────────────────────────────────
+
+const SPHERICAL_GRID: usize = 50;
+
+/// SphericalPlot3D[r, {theta, t0, t1}, {phi, p0, p1}]
+/// Plots r(theta, phi) in spherical coordinates.
+pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 3 {
+    return Err(InterpreterError::EvaluationError(
+      "SphericalPlot3D requires at least 3 arguments".into(),
+    ));
+  }
+
+  let body = &args[0];
+
+  // Parse theta iterator {theta, t0, t1}
+  let (theta_var, theta_min, theta_max) =
+    parse_iterator_generic(&args[1], "SphericalPlot3D", "theta")?;
+  // Parse phi iterator {phi, p0, p1}
+  let (phi_var, phi_min, phi_max) =
+    parse_iterator_generic(&args[2], "SphericalPlot3D", "phi")?;
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let mut show_mesh = true;
+  let mut show_axes = true;
+
+  for opt in &args[3..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      match pattern.as_ref() {
+        Expr::Identifier(name) if name == "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        Expr::Identifier(name) if name == "Mesh" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+          {
+            show_mesh = false;
+          }
+        }
+        Expr::Identifier(name) if name == "Axes" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False")
+          {
+            show_axes = false;
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  let n_theta = SPHERICAL_GRID;
+  let n_phi = SPHERICAL_GRID;
+  let theta_range = theta_max - theta_min;
+  let phi_range = phi_max - phi_min;
+
+  // Sample the function on a theta x phi grid
+  let mut grid_pts: Vec<Vec<Option<Point3D>>> =
+    vec![vec![None; n_phi + 1]; n_theta + 1];
+
+  for i in 0..=n_theta {
+    let theta = theta_min + (i as f64 / n_theta as f64) * theta_range;
+    for j in 0..=n_phi {
+      let phi = phi_min + (j as f64 / n_phi as f64) * phi_range;
+      if let Some(r) =
+        evaluate_at_t_theta(body, &theta_var, theta, &phi_var, phi)
+      {
+        if r.is_finite() {
+          let x = r * theta.sin() * phi.cos();
+          let y = r * theta.sin() * phi.sin();
+          let z = r * theta.cos();
+          if x.is_finite() && y.is_finite() && z.is_finite() {
+            grid_pts[i][j] = Some(Point3D { x, y, z });
+          }
+        }
+      }
+    }
+  }
+
+  // Find coordinate ranges
+  let mut x_min = f64::INFINITY;
+  let mut x_max = f64::NEG_INFINITY;
+  let mut y_min = f64::INFINITY;
+  let mut y_max = f64::NEG_INFINITY;
+  let mut z_min = f64::INFINITY;
+  let mut z_max = f64::NEG_INFINITY;
+
+  for row in &grid_pts {
+    for pt in row {
+      if let Some(p) = pt {
+        x_min = x_min.min(p.x);
+        x_max = x_max.max(p.x);
+        y_min = y_min.min(p.y);
+        y_max = y_max.max(p.y);
+        z_min = z_min.min(p.z);
+        z_max = z_max.max(p.z);
+      }
+    }
+  }
+
+  if !x_min.is_finite() || !z_min.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "SphericalPlot3D: no valid points computed".into(),
+    ));
+  }
+
+  let x_range_v = (x_max - x_min).max(1e-15);
+  let y_range_v = (y_max - y_min).max(1e-15);
+  let z_range_v = (z_max - z_min).max(1e-15);
+
+  let camera = Camera::default();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+
+  // Normalize a point to [-1,1] box
+  let normalize = |p: Point3D| -> Point3D {
+    Point3D {
+      x: ((p.x - x_min) / x_range_v) * 2.0 - 1.0,
+      y: ((p.y - y_min) / y_range_v) * 2.0 - 1.0,
+      z: ((p.z - z_min) / z_range_v) * 2.0 * Z_SCALE - Z_SCALE,
+    }
+  };
+
+  // Build triangles from grid
+  for i in 0..n_theta {
+    for j in 0..n_phi {
+      let p00 = grid_pts[i][j];
+      let p10 = grid_pts[i + 1][j];
+      let p01 = grid_pts[i][j + 1];
+      let p11 = grid_pts[i + 1][j + 1];
+
+      // Triangle 1: (i,j), (i+1,j), (i,j+1)
+      if let (Some(a), Some(b), Some(c)) = (p00, p10, p01) {
+        let na = normalize(a);
+        let nb = normalize(b);
+        let nc = normalize(c);
+
+        let avg_z = ((a.z - z_min) / z_range_v
+          + (b.z - z_min) / z_range_v
+          + (c.z - z_min) / z_range_v)
+          / 3.0;
+        let base_color = height_color(avg_z);
+        let normal = triangle_normal(na, nb, nc);
+        let color = apply_lighting(base_color, normal);
+
+        let pa = project(na, &camera);
+        let pb = project(nb, &camera);
+        let pc = project(nc, &camera);
+        let center = Point3D {
+          x: (na.x + nb.x + nc.x) / 3.0,
+          y: (na.y + nb.y + nc.y) / 3.0,
+          z: (na.z + nb.z + nc.z) / 3.0,
+        };
+
+        all_triangles.push(Triangle {
+          projected: [pa, pb, pc],
+          depth: depth(center, &camera),
+          color,
+        });
+      }
+
+      // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
+      if let (Some(a), Some(b), Some(c)) = (p11, p01, p10) {
+        let na = normalize(a);
+        let nb = normalize(b);
+        let nc = normalize(c);
+
+        let avg_z = ((a.z - z_min) / z_range_v
+          + (b.z - z_min) / z_range_v
+          + (c.z - z_min) / z_range_v)
+          / 3.0;
+        let base_color = height_color(avg_z);
+        let normal = triangle_normal(na, nb, nc);
+        let color = apply_lighting(base_color, normal);
+
+        let pa = project(na, &camera);
+        let pb = project(nb, &camera);
+        let pc = project(nc, &camera);
+        let center = Point3D {
+          x: (na.x + nb.x + nc.x) / 3.0,
+          y: (na.y + nb.y + nc.y) / 3.0,
+          z: (na.z + nb.z + nc.z) / 3.0,
+        };
+
+        all_triangles.push(Triangle {
+          projected: [pa, pb, pc],
+          depth: depth(center, &camera),
+          color,
+        });
+      }
+    }
+  }
+
+  if all_triangles.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "SphericalPlot3D: no renderable triangles".into(),
+    ));
+  }
+
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let (z_axis_min, z_axis_max) = if (z_min - z_max).abs() < 1e-15 {
+    (z_min - 0.5, z_max + 0.5)
+  } else {
+    (z_min, z_max)
+  };
+
+  let svg = generate_svg(
+    &all_triangles,
+    &camera,
+    (x_min, x_max),
+    (y_min, y_max),
+    (z_axis_min, z_axis_max),
+    svg_width,
+    svg_height,
+    full_width,
+    show_mesh,
+    show_axes,
+  )?;
+
+  Ok(crate::graphics3d_result(svg))
+}

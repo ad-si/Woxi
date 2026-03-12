@@ -5117,7 +5117,7 @@ SphericalDistance,,,,13.3,
 SphericalHankelH1,,,,6,2219
 SphericalHankelH2,,,,6,3566
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1,811
-SphericalPlot3D,,,,6,744
+SphericalPlot3D,3D plot in spherical coordinates,✅,pure,6,744
 SphericalRegion,Option specifying spherical region in 3D plots,✅,none,2,802
 SphericalShell,,,,10.2,3070
 SpheroidalEigenvalue,,,,6,2707
