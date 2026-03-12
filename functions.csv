@@ -1800,7 +1800,7 @@ ExpandAll,Expands all products and powers in an expression,✅,pure,1,700
 ExpandDenominator,Expands the denominator of a rational expression,✅,pure,1,2435
 ExpandFileName,,,,7,2807
 ExpandNumerator,Expands the numerator of a rational expression,✅,pure,1,2605
-Expectation,,,,8,954
+Expectation,Compute expected value of a function of a random variable,✅,pure,8,954
 ExpGammaDistribution,,,,8,3506
 ExpIntegralE,Generalized exponential integral E_n(z),✅,pure,1,1397
 ExpIntegralEi,Exponential integral Ei,✅,pure,1,569

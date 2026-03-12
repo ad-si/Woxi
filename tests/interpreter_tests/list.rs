@@ -3778,3 +3778,79 @@ mod probability {
     );
   }
 }
+
+mod expectation {
+  use super::*;
+
+  #[test]
+  fn normal_mean() {
+    assert_eq!(
+      interpret("Expectation[x, Distributed[x, NormalDistribution[3, 1]]]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn uniform_mean() {
+    assert_eq!(
+      interpret("Expectation[x, Distributed[x, UniformDistribution[{0, 1}]]]")
+        .unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn exponential_mean() {
+    assert_eq!(
+      interpret("Expectation[x, Distributed[x, ExponentialDistribution[3]]]")
+        .unwrap(),
+      "1/3"
+    );
+  }
+
+  #[test]
+  fn poisson_mean() {
+    assert_eq!(
+      interpret("Expectation[x, Distributed[x, PoissonDistribution[5]]]")
+        .unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn bernoulli_mean() {
+    assert_eq!(
+      interpret("Expectation[x, Distributed[x, BernoulliDistribution[1/3]]]")
+        .unwrap(),
+      "1/3"
+    );
+  }
+
+  #[test]
+  fn normal_x_squared() {
+    // E[x^2] for N[0,1] = Var + Mean^2 = 1 + 0 = 1
+    assert_eq!(
+      interpret("Expectation[x^2, Distributed[x, NormalDistribution[0, 1]]]")
+        .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn linear_expression() {
+    // E[2x + 1] for Uniform[0,1] = 2*(1/2) + 1 = 2
+    assert_eq!(
+      interpret(
+        "Expectation[2 x + 1, Distributed[x, UniformDistribution[{0, 1}]]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn unevaluated_wrong_args() {
+    assert_eq!(interpret("Expectation[x]").unwrap(), "Expectation[x]");
+  }
+}
