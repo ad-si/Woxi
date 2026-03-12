@@ -3145,3 +3145,63 @@ mod interpolating_polynomial {
     );
   }
 }
+
+mod find_instance {
+  use super::*;
+
+  #[test]
+  fn simple_equation() {
+    assert_eq!(
+      interpret("FindInstance[x^2 == 4, x]").unwrap(),
+      "{{x -> -2}}"
+    );
+  }
+
+  #[test]
+  fn multiple_solutions() {
+    assert_eq!(
+      interpret("FindInstance[x^2 == 4, x, 3]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn quadratic() {
+    assert_eq!(
+      interpret("FindInstance[x^2 - 5 x + 6 == 0, x]").unwrap(),
+      "{{x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn two_variable_equation() {
+    assert_eq!(
+      interpret("FindInstance[x^2 + y^2 == 1, {x, y}]").unwrap(),
+      "{{x -> -1, y -> 0}}"
+    );
+  }
+
+  #[test]
+  fn integer_domain_inequality() {
+    assert_eq!(
+      interpret("FindInstance[x > 3 && x < 5, x, Integers]").unwrap(),
+      "{{x -> 4}}"
+    );
+  }
+
+  #[test]
+  fn no_solution() {
+    assert_eq!(
+      interpret("FindInstance[x^2 == -1, x, Reals]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn single_var_in_list() {
+    assert_eq!(
+      interpret("FindInstance[x^2 == 9, {x}]").unwrap(),
+      "{{x -> -3}}"
+    );
+  }
+}

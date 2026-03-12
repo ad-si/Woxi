@@ -5177,3 +5177,234 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
     }
   }
 }
+
+// ── FindInstance implementation ──────────────────────────────────────
+
+/// FindInstance[cond, vars] — find 1 instance satisfying condition
+/// FindInstance[cond, vars, n] — find n instances
+/// FindInstance[cond, vars, domain] — find in domain (Integers, Reals, etc.)
+/// FindInstance[cond, vars, domain, n] — find n instances in domain
+pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 4 {
+    return Err(InterpreterError::EvaluationError(
+      "FindInstance requires 2 to 4 arguments".into(),
+    ));
+  }
+
+  let cond = &args[0];
+  let vars = &args[1];
+
+  // Parse optional n and domain from args[2..]
+  let mut n: usize = 1;
+  let mut domain: Option<String> = None;
+
+  for arg in &args[2..] {
+    match arg {
+      Expr::Integer(k) if *k >= 0 => {
+        n = *k as usize;
+      }
+      Expr::Identifier(name)
+        if matches!(
+          name.as_str(),
+          "Integers" | "Reals" | "Complexes" | "Rationals" | "Booleans"
+        ) =>
+      {
+        domain = Some(name.clone());
+      }
+      _ => {}
+    }
+  }
+
+  // Extract variable names
+  let var_names: Vec<String> = match vars {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|v| {
+        if let Expr::Identifier(name) = v {
+          Some(name.clone())
+        } else {
+          None
+        }
+      })
+      .collect(),
+    Expr::Identifier(name) => vec![name.clone()],
+    _ => vec![],
+  };
+
+  // Try Solve first (suppress warnings from Solve)
+  let mut solutions: Vec<Expr> = {
+    crate::push_quiet();
+    let solve_result = solve_ast(&[cond.clone(), vars.clone()]);
+    crate::pop_quiet();
+    match &solve_result {
+      Ok(Expr::List(sols)) if !sols.is_empty() => sols.clone(),
+      _ => Vec::new(),
+    }
+  };
+
+  // If Solve failed or returned no solutions, try numerical search
+  if solutions.is_empty() && !var_names.is_empty() {
+    solutions = find_instance_numerical(cond, &var_names, n, domain.as_deref());
+  }
+
+  if solutions.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Filter by domain if specified
+  let filtered = if let Some(ref dom) = domain {
+    match dom.as_str() {
+      "Integers" => solutions
+        .into_iter()
+        .filter(|sol| solution_is_integer(sol))
+        .collect::<Vec<_>>(),
+      "Reals" => solutions
+        .into_iter()
+        .filter(|sol| solution_is_real(sol))
+        .collect::<Vec<_>>(),
+      _ => solutions,
+    }
+  } else {
+    solutions
+  };
+
+  if filtered.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Take at most n solutions
+  let result: Vec<Expr> = filtered.into_iter().take(n).collect();
+  Ok(Expr::List(result))
+}
+
+/// Try to find instances numerically by evaluating the condition at sample points.
+fn find_instance_numerical(
+  cond: &Expr,
+  var_names: &[String],
+  n: usize,
+  domain: Option<&str>,
+) -> Vec<Expr> {
+  use crate::evaluator::evaluate_expr_to_expr;
+  use crate::functions::plot::substitute_var;
+
+  let is_integer_domain = domain == Some("Integers");
+
+  // Sample range and step
+  let (range_lo, range_hi, step) = if is_integer_domain {
+    (-100i64, 100i64, 1i64)
+  } else {
+    // Use integer grid for simplicity, then convert
+    (-100i64, 100i64, 1i64)
+  };
+
+  let mut results: Vec<Expr> = Vec::new();
+
+  // For single variable, simple scan
+  if var_names.len() == 1 {
+    let var = &var_names[0];
+    let mut val = range_lo;
+    while val <= range_hi && results.len() < n {
+      let test_val: Expr = if is_integer_domain {
+        Expr::Integer(val as i128)
+      } else {
+        Expr::Integer(val as i128)
+      };
+      let subst = substitute_var(cond, var, &test_val);
+      if let Ok(evaled) = evaluate_expr_to_expr(&subst) {
+        if matches!(evaled, Expr::Identifier(ref s) if s == "True") {
+          results.push(Expr::List(vec![Expr::Rule {
+            pattern: Box::new(Expr::Identifier(var.clone())),
+            replacement: Box::new(test_val),
+          }]));
+        }
+      }
+      val += step;
+    }
+  } else if var_names.len() == 2 {
+    // For two variables, scan a grid
+    let var1 = &var_names[0];
+    let var2 = &var_names[1];
+    let step2 = if is_integer_domain { 1i64 } else { 1i64 };
+    let mut val1 = range_lo;
+    'outer: while val1 <= range_hi && results.len() < n {
+      let test1 = Expr::Integer(val1 as i128);
+      let mut val2 = range_lo;
+      while val2 <= range_hi && results.len() < n {
+        let test2 = Expr::Integer(val2 as i128);
+        let subst =
+          substitute_var(&substitute_var(cond, var1, &test1), var2, &test2);
+        if let Ok(evaled) = evaluate_expr_to_expr(&subst) {
+          if matches!(evaled, Expr::Identifier(ref s) if s == "True") {
+            results.push(Expr::List(vec![
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(var1.clone())),
+                replacement: Box::new(test1.clone()),
+              },
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier(var2.clone())),
+                replacement: Box::new(test2),
+              },
+            ]));
+            if results.len() >= n {
+              break 'outer;
+            }
+          }
+        }
+        val2 += step2;
+      }
+      val1 += step;
+    }
+  }
+  // For 3+ variables, could extend but keep simple for now
+
+  results
+}
+
+/// Check if all values in a solution are integers
+fn solution_is_integer(sol: &Expr) -> bool {
+  if let Expr::List(rules) = sol {
+    rules.iter().all(|rule| {
+      if let Expr::Rule { replacement, .. } = rule {
+        is_integer_expr(replacement)
+      } else {
+        false
+      }
+    })
+  } else {
+    false
+  }
+}
+
+/// Check if an expression is an integer value
+fn is_integer_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_) => true,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_integer_expr(operand),
+    _ => {
+      // Try evaluating to see if it's an integer
+      if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(expr) {
+        matches!(evaled, Expr::Integer(_))
+      } else {
+        false
+      }
+    }
+  }
+}
+
+/// Check if all values in a solution are real (not complex)
+fn solution_is_real(sol: &Expr) -> bool {
+  if let Expr::List(rules) = sol {
+    rules.iter().all(|rule| {
+      if let Expr::Rule { replacement, .. } = rule {
+        !contains_complex(replacement)
+      } else {
+        true
+      }
+    })
+  } else {
+    true
+  }
+}
