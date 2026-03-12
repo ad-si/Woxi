@@ -585,6 +585,9 @@ pub fn dispatch_math_functions(
     "CDF" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::cdf_ast(args));
     }
+    "Probability" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::probability_ast(args));
+    }
     "SeedRandom" if args.len() <= 1 => {
       return Some(crate::functions::math_ast::seed_random_ast(args));
     }
