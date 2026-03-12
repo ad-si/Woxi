@@ -934,6 +934,77 @@ mod plot3d {
     }
   }
 
+  mod list_point_plot3d {
+    use super::*;
+
+    mod basic {
+      use super::*;
+
+      #[test]
+      fn simple_points() {
+        insta::assert_snapshot!(export_svg(
+          "ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}]"
+        ));
+      }
+
+      #[test]
+      fn grid_of_points() {
+        insta::assert_snapshot!(export_svg(
+          "ListPointPlot3D[Table[{i, j, i^2 + j^2}, {i, 5}, {j, 5}] // Flatten[#, 1] &]"
+        ));
+      }
+
+      #[test]
+      fn multiple_datasets() {
+        insta::assert_snapshot!(export_svg(
+          "ListPointPlot3D[{Table[{i, i, i^2}, {i, 5}], Table[{i, i, i^3}, {i, 5}]}]"
+        ));
+      }
+
+      #[test]
+      fn negative_coords() {
+        insta::assert_snapshot!(export_svg(
+          "ListPointPlot3D[{{-1,-1,0},{0,0,1},{1,1,0}}]"
+        ));
+      }
+    }
+
+    mod options {
+      use super::*;
+
+      #[test]
+      fn image_size() {
+        insta::assert_snapshot!(export_svg(
+          "ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize -> 200]"
+        ));
+      }
+    }
+
+    mod errors {
+      use super::*;
+
+      #[test]
+      fn too_few_args() {
+        let result = interpret("ListPointPlot3D[]").unwrap();
+        assert!(
+          result.contains("ListPointPlot3D"),
+          "Should return unevaluated: {}",
+          result
+        );
+      }
+
+      #[test]
+      fn empty_list() {
+        assert!(interpret("ListPointPlot3D[{}]").is_err());
+      }
+
+      #[test]
+      fn invalid_data() {
+        assert!(interpret("ListPointPlot3D[{{1, 2}}]").is_err());
+      }
+    }
+  }
+
   mod graphics3d {
     use super::*;
 

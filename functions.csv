@@ -3242,7 +3242,7 @@ ListPickerBoxOptions,,,,9,
 ListPlay,,,,2,2360
 ListPlot,Plots data as a scatter plot,✅,pure,1,93
 ListPlot3D,Creates a 3D plot from data,✅,pure,1,622
-ListPointPlot3D,,,,6,694
+ListPointPlot3D,3D scatter plot of points,✅,pure,6,694
 ListPolarPlot,Plots data in polar coordinates,✅,pure,6,1119
 ListQ,Tests if expression is a list,✅,pure,2,679
 ListSliceContourPlot3D,,,,10.2,2786
