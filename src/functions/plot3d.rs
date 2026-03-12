@@ -1878,3 +1878,363 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(crate::graphics3d_result(svg))
 }
+
+// ── RevolutionPlot3D implementation ──────────────────────────────────
+
+/// Evaluate a single-variable expression at a given value.
+fn evaluate_at_t(body: &Expr, tvar: &str, tval: f64) -> Option<f64> {
+  let sub = substitute_var(body, tvar, &Expr::Real(tval));
+  let result = evaluate_expr_to_expr(&sub).ok()?;
+  try_eval_to_f64(&result)
+}
+
+/// Evaluate a two-variable expression (t, theta) at given values.
+fn evaluate_at_t_theta(
+  body: &Expr,
+  tvar: &str,
+  tval: f64,
+  theta_var: &str,
+  theta_val: f64,
+) -> Option<f64> {
+  let sub1 = substitute_var(body, tvar, &Expr::Real(tval));
+  let sub2 = substitute_var(&sub1, theta_var, &Expr::Real(theta_val));
+  let result = evaluate_expr_to_expr(&sub2).ok()?;
+  try_eval_to_f64(&result)
+}
+
+/// RevolutionPlot3D[f, {t, tmin, tmax}]
+/// RevolutionPlot3D[{r, z}, {t, tmin, tmax}]
+/// RevolutionPlot3D[f, {t, tmin, tmax}, {θ, θmin, θmax}]
+pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "RevolutionPlot3D requires at least 2 arguments".into(),
+    ));
+  }
+
+  let body = &args[0];
+
+  // Parse t iterator
+  let (tvar, t_min, t_max) =
+    parse_iterator_rev(&args[1], "RevolutionPlot3D", "first")?;
+
+  // Check if we have an explicit theta range
+  let mut opt_start = 2;
+  let (theta_var, theta_min, theta_max) = if args.len() > 2
+    && matches!(&args[2], Expr::List(items) if items.len() == 3
+      && matches!(&items[0], Expr::Identifier(_)))
+  {
+    match parse_iterator_rev(&args[2], "RevolutionPlot3D", "second") {
+      Ok((v, lo, hi)) => {
+        opt_start = 3;
+        (Some(v), lo, hi)
+      }
+      Err(_) => (None, 0.0, 2.0 * std::f64::consts::PI),
+    }
+  } else {
+    (None, 0.0, 2.0 * std::f64::consts::PI)
+  };
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let mut show_mesh = true;
+  let mut show_axes = true;
+  let mut z_clip: Option<(f64, f64)> = None;
+
+  for opt in &args[opt_start..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      match pattern.as_ref() {
+        Expr::Identifier(name) if name == "ImageSize" => {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+        Expr::Identifier(name) if name == "Mesh" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
+          {
+            show_mesh = false;
+          }
+        }
+        Expr::Identifier(name) if name == "PlotRange" => {
+          if let Expr::List(items) = replacement.as_ref()
+            && items.len() == 2
+          {
+            let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0])?);
+            let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1])?);
+            if let (Some(lo), Some(hi)) = (lo, hi) {
+              z_clip = Some((lo, hi));
+            }
+          }
+        }
+        Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
+        {
+          Expr::Identifier(s) if s == "False" => show_axes = false,
+          Expr::Identifier(s) if s == "True" => show_axes = true,
+          _ => {}
+        },
+        _ => {}
+      }
+    }
+  }
+
+  // Determine if body is {r_expr, z_expr} (parametric) or scalar f(t)
+  let is_parametric = matches!(body, Expr::List(items) if items.len() == 2);
+
+  let has_theta = theta_var.is_some();
+
+  let camera = Camera::default();
+  let n_t = GRID_N;
+  let n_theta = GRID_N;
+  let t_step = (t_max - t_min) / n_t as f64;
+  let theta_step = (theta_max - theta_min) / n_theta as f64;
+
+  // Sample the surface grid: grid[i][j] = (x, y, z)
+  let mut grid: Vec<Vec<Option<Point3D>>> =
+    vec![vec![None; n_theta + 1]; n_t + 1];
+  let mut global_z_min = f64::INFINITY;
+  let mut global_z_max = f64::NEG_INFINITY;
+  let mut global_r_max: f64 = 0.0;
+
+  for i in 0..=n_t {
+    let tval = t_min + i as f64 * t_step;
+    for j in 0..=n_theta {
+      let theta = theta_min + j as f64 * theta_step;
+
+      let (r, z) = if has_theta {
+        let theta_v = theta_var.as_ref().unwrap();
+        if is_parametric {
+          if let Expr::List(items) = body {
+            let r_val =
+              evaluate_at_t_theta(&items[0], &tvar, tval, theta_v, theta);
+            let z_val =
+              evaluate_at_t_theta(&items[1], &tvar, tval, theta_v, theta);
+            match (r_val, z_val) {
+              (Some(r), Some(z)) if r.is_finite() && z.is_finite() => (r, z),
+              _ => continue,
+            }
+          } else {
+            continue;
+          }
+        } else {
+          // Scalar: r = f(t, θ), z = t
+          match evaluate_at_t_theta(body, &tvar, tval, theta_v, theta) {
+            Some(r) if r.is_finite() => (r, tval),
+            _ => continue,
+          }
+        }
+      } else if is_parametric {
+        if let Expr::List(items) = body {
+          let r_val = evaluate_at_t(&items[0], &tvar, tval);
+          let z_val = evaluate_at_t(&items[1], &tvar, tval);
+          match (r_val, z_val) {
+            (Some(r), Some(z)) if r.is_finite() && z.is_finite() => (r, z),
+            _ => continue,
+          }
+        } else {
+          continue;
+        }
+      } else {
+        // Scalar f(t): revolve (t, f(t)) → r = t, z = f(t)
+        match evaluate_at_t(body, &tvar, tval) {
+          Some(z) if z.is_finite() => (tval, z),
+          _ => continue,
+        }
+      };
+
+      let x = r * theta.cos();
+      let y = r * theta.sin();
+
+      grid[i][j] = Some(Point3D { x, y, z });
+
+      global_z_min = global_z_min.min(z);
+      global_z_max = global_z_max.max(z);
+      global_r_max = global_r_max.max(r.abs());
+    }
+  }
+
+  if !global_z_min.is_finite()
+    || !global_z_max.is_finite()
+    || global_r_max == 0.0
+  {
+    return Err(InterpreterError::EvaluationError(
+      "RevolutionPlot3D: function produced no finite values in the given range"
+        .into(),
+    ));
+  }
+
+  let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
+  let z_range = if (z_hi - z_lo).abs() < 1e-15 {
+    1.0
+  } else {
+    z_hi - z_lo
+  };
+
+  let r_scale = if global_r_max < 1e-15 {
+    1.0
+  } else {
+    global_r_max
+  };
+
+  let nz = |z: f64| -> f64 {
+    let cz = z.clamp(z_lo, z_hi);
+    ((cz - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
+  };
+
+  // Build triangles
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+
+  for i in 0..n_t {
+    for j in 0..n_theta {
+      let p00 = grid[i][j];
+      let p10 = grid[i + 1][j];
+      let p01 = grid[i][j + 1];
+      let p11 = grid[i + 1][j + 1];
+
+      let normalize = |p: Point3D| -> Point3D {
+        Point3D {
+          x: p.x / r_scale,
+          y: p.y / r_scale,
+          z: nz(p.z),
+        }
+      };
+
+      let z_norm_of = |p: Point3D| -> f64 {
+        ((p.z.clamp(z_lo, z_hi) - z_lo) / z_range).clamp(0.0, 1.0)
+      };
+
+      // Triangle 1: p00, p10, p01
+      if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
+        let v0 = normalize(pp00);
+        let v1 = normalize(pp10);
+        let v2 = normalize(pp01);
+
+        let avg_z_norm =
+          (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
+        let base_color = height_color(avg_z_norm);
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+
+        let proj0 = project(v0, &camera);
+        let proj1 = project(v1, &camera);
+        let proj2 = project(v2, &camera);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+
+        all_triangles.push(Triangle {
+          projected: [proj0, proj1, proj2],
+          depth: depth(center, &camera),
+          color,
+        });
+      }
+
+      // Triangle 2: p11, p01, p10
+      if let (Some(pp11), Some(pp01), Some(pp10)) = (p11, p01, p10) {
+        let v0 = normalize(pp11);
+        let v1 = normalize(pp01);
+        let v2 = normalize(pp10);
+
+        let avg_z_norm =
+          (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
+        let base_color = height_color(avg_z_norm);
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+
+        let proj0 = project(v0, &camera);
+        let proj1 = project(v1, &camera);
+        let proj2 = project(v2, &camera);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+
+        all_triangles.push(Triangle {
+          projected: [proj0, proj1, proj2],
+          depth: depth(center, &camera),
+          color,
+        });
+      }
+    }
+  }
+
+  if all_triangles.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "RevolutionPlot3D: function produced no finite values in the given range"
+        .into(),
+    ));
+  }
+
+  // Sort for painter's algorithm
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let (z_axis_min, z_axis_max) = if (z_lo - z_hi).abs() < 1e-15 {
+    (z_lo - 0.5, z_hi + 0.5)
+  } else {
+    (z_lo, z_hi)
+  };
+
+  let svg = generate_svg(
+    &all_triangles,
+    &camera,
+    (-global_r_max, global_r_max),
+    (-global_r_max, global_r_max),
+    (z_axis_min, z_axis_max),
+    svg_width,
+    svg_height,
+    full_width,
+    show_mesh,
+    show_axes,
+  )?;
+
+  Ok(crate::graphics3d_result(svg))
+}
+
+fn parse_iterator_rev(
+  spec: &Expr,
+  func_name: &str,
+  label: &str,
+) -> Result<(String, f64, f64), InterpreterError> {
+  match spec {
+    Expr::List(items) if items.len() == 3 => {
+      let var = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "{func_name}: {label} iterator variable must be a symbol"
+          )));
+        }
+      };
+      let min_expr = evaluate_expr_to_expr(&items[1])?;
+      let max_expr = evaluate_expr_to_expr(&items[2])?;
+      let min_val = try_eval_to_f64(&min_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "{func_name}: cannot evaluate {label} iterator min to a number"
+        ))
+      })?;
+      let max_val = try_eval_to_f64(&max_expr).ok_or_else(|| {
+        InterpreterError::EvaluationError(format!(
+          "{func_name}: cannot evaluate {label} iterator max to a number"
+        ))
+      })?;
+      Ok((var, min_val, max_val))
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "{func_name}: {label} iterator must be {{var, min, max}}"
+    ))),
+  }
+}
