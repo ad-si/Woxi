@@ -3677,3 +3677,104 @@ mod list_correlate {
     );
   }
 }
+
+mod probability {
+  use super::*;
+
+  #[test]
+  fn uniform_greater_than() {
+    // P(x > 1/2) for Uniform[0,1] = 1/2
+    assert_eq!(
+      interpret("Probability[x > 1/2, Distributed[x, UniformDistribution[]]]")
+        .unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn uniform_less_than() {
+    // P(x < 1/4) for Uniform[0,1] = 1/4
+    assert_eq!(
+      interpret("Probability[x < 1/4, Distributed[x, UniformDistribution[]]]")
+        .unwrap(),
+      "1/4"
+    );
+  }
+
+  #[test]
+  fn uniform_range() {
+    // P(1/4 < x < 3/4) for Uniform[0,1] = 1/2
+    assert_eq!(
+      interpret(
+        "Probability[1/4 < x < 3/4, Distributed[x, UniformDistribution[]]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn bernoulli_equals_one() {
+    // P(x == 1) for Bernoulli[1/3] = 1/3
+    assert_eq!(
+      interpret(
+        "Probability[x == 1, Distributed[x, BernoulliDistribution[1/3]]]"
+      )
+      .unwrap(),
+      "1/3"
+    );
+  }
+
+  #[test]
+  fn bernoulli_equals_zero() {
+    // P(x == 0) for Bernoulli[1/4] = 3/4
+    assert_eq!(
+      interpret(
+        "Probability[x == 0, Distributed[x, BernoulliDistribution[1/4]]]"
+      )
+      .unwrap(),
+      "3/4"
+    );
+  }
+
+  #[test]
+  fn poisson_equals() {
+    // P(x == 3) for Poisson[5] = 125/(6*E^5)
+    assert_eq!(
+      interpret("Probability[x == 3, Distributed[x, PoissonDistribution[5]]]")
+        .unwrap(),
+      "125/(6*E^5)"
+    );
+  }
+
+  #[test]
+  fn exponential_less_than() {
+    // P(x < 2) for Exp[1] = 1 - E^(-2)
+    assert_eq!(
+      interpret(
+        "Probability[x < 2, Distributed[x, ExponentialDistribution[1]]]"
+      )
+      .unwrap(),
+      "1 - E^(-2)"
+    );
+  }
+
+  #[test]
+  fn normal_less_than() {
+    // P(x < 0) for N[0,1] = 1/2 (by symmetry, CDF(0) = 1/2)
+    assert_eq!(
+      interpret("Probability[x < 0, Distributed[x, NormalDistribution[0, 1]]]")
+        .unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn unevaluated_wrong_args() {
+    // Wrong number of args returns unevaluated
+    assert_eq!(
+      interpret("Probability[x > 0]").unwrap(),
+      "Probability[x > 0]"
+    );
+  }
+}

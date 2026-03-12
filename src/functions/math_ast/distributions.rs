@@ -203,7 +203,7 @@ fn pdf_uniform(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond =
     comparison3(a, ComparisonOp::LessEqual, x, ComparisonOp::LessEqual, b);
 
-  Ok(piecewise(vec![(density, cond)], int(0)))
+  eval(piecewise(vec![(density, cond)], int(0)))
 }
 
 /// PDF[ExponentialDistribution[lambda], x] = Piecewise[{{lambda*E^(-lambda*x), x >= 0}}, 0]
@@ -219,7 +219,7 @@ fn pdf_exponential(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     eval(divide(lambda.clone(), power(e(), times(lambda, x.clone()))))?;
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
 
-  Ok(piecewise(vec![(density, cond)], int(0)))
+  eval(piecewise(vec![(density, cond)], int(0)))
 }
 
 /// PDF[PoissonDistribution[mu], k] = Piecewise[{{mu^k/(E^mu * k!), k >= 0}}, 0]
@@ -236,7 +236,7 @@ fn pdf_poisson(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let density = eval(divide(numerator, denominator))?;
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
 
-  Ok(piecewise(vec![(density, cond)], int(0)))
+  eval(piecewise(vec![(density, cond)], int(0)))
 }
 
 fn plus(a: Expr, b: Expr) -> Expr {
@@ -256,7 +256,7 @@ fn pdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let cond0 = comparison(x.clone(), ComparisonOp::Equal, int(0));
   let cond1 = comparison(x, ComparisonOp::Equal, int(1));
 
-  Ok(piecewise(vec![(one_minus_p, cond0), (p, cond1)], int(0)))
+  eval(piecewise(vec![(one_minus_p, cond0), (p, cond1)], int(0)))
 }
 
 // ─── CDF ──────────────────────────────────────────────────────────────
@@ -377,7 +377,7 @@ fn cdf_uniform(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
   let cond_above = comparison(x, ComparisonOp::Greater, b);
 
-  Ok(piecewise(
+  eval(piecewise(
     vec![(value, cond_middle), (int(1), cond_above)],
     int(0),
   ))
@@ -407,7 +407,7 @@ fn cdf_exponential(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   ))?;
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
 
-  Ok(piecewise(vec![(value, cond)], int(0)))
+  eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 /// CDF[PoissonDistribution[mu], k] = Piecewise[{{GammaRegularized[Floor[k]+1, mu], k >= 0}}, 0]
@@ -457,8 +457,231 @@ fn cdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     int(1),
   );
 
-  Ok(piecewise(
+  eval(piecewise(
     vec![(int(0), cond_neg), (one_minus_p, cond_middle)],
     int(1),
   ))
+}
+
+// ─── Probability ─────────────────────────────────────────────────────
+
+/// Probability[event, x \[Distributed] dist]
+/// event can be: x > a, x < a, x >= a, x <= a, x == k, a < x < b, etc.
+pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Probability expects 2 arguments".into(),
+    ));
+  }
+
+  let event = &args[0];
+  let dist_spec = &args[1];
+
+  // Parse Distributed[var, dist] from the second argument
+  let (var_name, dist) = match dist_spec {
+    Expr::FunctionCall { name, args: dargs }
+      if name == "Distributed" && dargs.len() == 2 =>
+    {
+      if let Expr::Identifier(v) = &dargs[0] {
+        (v.as_str(), &dargs[1])
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "Probability".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Probability".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Determine if distribution is discrete
+  let is_discrete = matches!(
+    dist,
+    Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "PoissonDistribution" | "BernoulliDistribution" | "BinomialDistribution" | "GeometricDistribution")
+  );
+
+  // Parse the event condition and compute probability
+  probability_from_event(event, var_name, dist, is_discrete)
+}
+
+fn probability_from_event(
+  event: &Expr,
+  var: &str,
+  dist: &Expr,
+  is_discrete: bool,
+) -> Result<Expr, InterpreterError> {
+  // Handle And conditions: a < x && x < b  →  a < x < b
+  if let Expr::FunctionCall { name, args } = event {
+    if name == "And" && args.len() == 2 {
+      // Try to extract compound inequality: lower < x && x < upper
+      if let (Some((lo, lo_op)), Some((hi, hi_op))) = (
+        extract_bound(&args[0], var, true),
+        extract_bound(&args[1], var, false),
+      ) {
+        // P[lo < x < hi] = CDF[dist, hi] - CDF[dist, lo]
+        let cdf_hi = cdf_ast(&[dist.clone(), hi])?;
+        let cdf_lo = cdf_ast(&[dist.clone(), lo])?;
+        let result = minus(cdf_hi, cdf_lo);
+        // Adjust for inclusive/exclusive bounds if needed (for continuous, same)
+        let _ = (lo_op, hi_op); // For continuous distributions, < vs <= doesn't matter
+        return eval(result);
+      }
+      // Try reversed: x < upper && lower < x
+      if let (Some((hi, hi_op)), Some((lo, lo_op))) = (
+        extract_bound(&args[0], var, false),
+        extract_bound(&args[1], var, true),
+      ) {
+        let cdf_hi = cdf_ast(&[dist.clone(), hi])?;
+        let cdf_lo = cdf_ast(&[dist.clone(), lo])?;
+        let result = minus(cdf_hi, cdf_lo);
+        let _ = (lo_op, hi_op);
+        return eval(result);
+      }
+    }
+  }
+
+  // Handle Comparison: a < x, x > a, a <= x <= b, etc.
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = event
+  {
+    // Two-operand comparison: x > a, x < a, x >= a, x <= a, x == a
+    if operands.len() == 2 && operators.len() == 1 {
+      let op = &operators[0];
+      let (left, right) = (&operands[0], &operands[1]);
+
+      let is_left_var = matches!(left, Expr::Identifier(n) if n == var);
+      let is_right_var = matches!(right, Expr::Identifier(n) if n == var);
+
+      // x == k → PDF[dist, k] for discrete distributions
+      if *op == ComparisonOp::Equal {
+        if is_left_var {
+          return pdf_ast(&[dist.clone(), right.clone()]);
+        }
+        if is_right_var {
+          return pdf_ast(&[dist.clone(), left.clone()]);
+        }
+      }
+
+      // x > a → 1 - CDF[dist, a]
+      if is_left_var
+        && (*op == ComparisonOp::Greater || *op == ComparisonOp::GreaterEqual)
+      {
+        let cdf_val = cdf_ast(&[dist.clone(), right.clone()])?;
+        return eval(minus(int(1), cdf_val));
+      }
+      // x < a → CDF[dist, a]
+      if is_left_var
+        && (*op == ComparisonOp::Less || *op == ComparisonOp::LessEqual)
+      {
+        return cdf_ast(&[dist.clone(), right.clone()]);
+      }
+      // a > x → CDF[dist, a]  (same as x < a)
+      if is_right_var
+        && (*op == ComparisonOp::Greater || *op == ComparisonOp::GreaterEqual)
+      {
+        return cdf_ast(&[dist.clone(), left.clone()]);
+      }
+      // a < x → 1 - CDF[dist, a]
+      if is_right_var
+        && (*op == ComparisonOp::Less || *op == ComparisonOp::LessEqual)
+      {
+        let cdf_val = cdf_ast(&[dist.clone(), left.clone()])?;
+        return eval(minus(int(1), cdf_val));
+      }
+    }
+
+    // Three-operand comparison: a < x < b, a <= x <= b
+    if operands.len() == 3 && operators.len() == 2 {
+      let (lo, mid, hi) = (&operands[0], &operands[1], &operands[2]);
+      if matches!(mid, Expr::Identifier(n) if n == var) {
+        // lo < x < hi → CDF[dist, hi] - CDF[dist, lo]
+        let both_less = matches!(
+          (&operators[0], &operators[1]),
+          (
+            ComparisonOp::Less | ComparisonOp::LessEqual,
+            ComparisonOp::Less | ComparisonOp::LessEqual
+          )
+        );
+        if both_less {
+          let cdf_hi = cdf_ast(&[dist.clone(), hi.clone()])?;
+          let cdf_lo = cdf_ast(&[dist.clone(), lo.clone()])?;
+          return eval(minus(cdf_hi, cdf_lo));
+        }
+      }
+    }
+  }
+
+  let _ = is_discrete;
+
+  // Unevaluated fallback
+  Ok(Expr::FunctionCall {
+    name: "Probability".to_string(),
+    args: vec![
+      event.clone(),
+      Expr::FunctionCall {
+        name: "Distributed".to_string(),
+        args: vec![Expr::Identifier(var.to_string()), dist.clone()],
+      },
+    ],
+  })
+}
+
+/// Extract a bound from a comparison involving the variable.
+/// If `lower` is true, look for patterns like "a < x" or "a <= x" (lower bound = a).
+/// If `lower` is false, look for patterns like "x < b" or "x <= b" (upper bound = b).
+/// Returns (bound_value, operator).
+fn extract_bound(
+  expr: &Expr,
+  var: &str,
+  lower: bool,
+) -> Option<(Expr, ComparisonOp)> {
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+  {
+    if operands.len() == 2 && operators.len() == 1 {
+      let op = &operators[0];
+      let (left, right) = (&operands[0], &operands[1]);
+      let is_left_var = matches!(left, Expr::Identifier(n) if n == var);
+      let is_right_var = matches!(right, Expr::Identifier(n) if n == var);
+
+      if lower {
+        // Looking for: a < x or a <= x (lower bound is a)
+        if is_right_var
+          && matches!(op, ComparisonOp::Less | ComparisonOp::LessEqual)
+        {
+          return Some((left.clone(), *op));
+        }
+        // x > a or x >= a (lower bound is a)
+        if is_left_var
+          && matches!(op, ComparisonOp::Greater | ComparisonOp::GreaterEqual)
+        {
+          return Some((right.clone(), *op));
+        }
+      } else {
+        // Looking for: x < b or x <= b (upper bound is b)
+        if is_left_var
+          && matches!(op, ComparisonOp::Less | ComparisonOp::LessEqual)
+        {
+          return Some((right.clone(), *op));
+        }
+        // b > x or b >= x (upper bound is b)
+        if is_right_var
+          && matches!(op, ComparisonOp::Greater | ComparisonOp::GreaterEqual)
+        {
+          return Some((left.clone(), *op));
+        }
+      }
+    }
+  }
+  None
 }

@@ -4366,7 +4366,7 @@ PrivateCellOptions,,,,10,4479
 PrivateFontOptions,,,,3,2617
 PrivateKey,,,,10.1,4612
 PrivateNotebookOptions,,,,4,4173
-Probability,,,,8,671
+Probability,Compute probability of an event given a distribution,✅,pure,8,671
 ProbabilityDistribution,,,,8,967
 ProbabilityPlot,,,,8,2198
 ProbabilityScalePlot,,,,8,2278
