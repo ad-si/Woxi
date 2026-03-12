@@ -170,6 +170,12 @@ pub fn dispatch_calculus_functions(
     "InverseLaplaceTransform" if args.len() == 3 => {
       return Some(inverse_laplace_transform(&args[0], &args[1], &args[2]));
     }
+    "FourierTransform" if args.len() == 3 => {
+      return Some(fourier_transform(&args[0], &args[1], &args[2]));
+    }
+    "InverseFourierTransform" if args.len() == 3 => {
+      return Some(inverse_fourier_transform(&args[0], &args[1], &args[2]));
+    }
     _ => {}
   }
   None
@@ -959,6 +965,546 @@ fn is_s_squared(expr: &Expr, s: &str) -> bool {
     return base == s && matches!(fargs[1], Expr::Integer(2));
   }
   false
+}
+
+// ── FourierTransform implementation ──────────────────────────────────
+// Convention: F[f(t), t, ω] = (1/√(2π)) ∫_{-∞}^{∞} f(t) e^{iωt} dt
+
+/// Helper to build Sqrt[expr]
+fn make_sqrt(expr: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      expr,
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      },
+    ],
+  }
+}
+
+/// Helper to build Times[args...]
+fn make_times(args: Vec<Expr>) -> Expr {
+  if args.len() == 1 {
+    args.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args,
+    }
+  }
+}
+
+/// Helper to build Plus[args...]
+fn make_plus(args: Vec<Expr>) -> Expr {
+  if args.len() == 1 {
+    args.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args,
+    }
+  }
+}
+
+/// Helper to build Power[base, exp]
+fn make_power(base: Expr, exp: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![base, exp],
+  }
+}
+
+/// Helper to build DiracDelta[x]
+fn make_dirac_delta(arg: Expr) -> Expr {
+  Expr::FunctionCall {
+    name: "DiracDelta".to_string(),
+    args: vec![arg],
+  }
+}
+
+/// Compute Fourier transform of expr w.r.t. variable t, into variable w.
+fn fourier_transform(
+  expr: &Expr,
+  t_expr: &Expr,
+  w_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let t = match t_expr {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FourierTransform".to_string(),
+        args: vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+      });
+    }
+  };
+
+  // Normalize expression
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+
+  if let Some(result) = fourier_transform_inner(&normalized, t, w_expr) {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "FourierTransform".to_string(),
+      args: vec![expr.clone(), t_expr.clone(), w_expr.clone()],
+    })
+  }
+}
+
+/// Try to compute Fourier transform symbolically. Returns None if not recognized.
+fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
+  // F[constant] = constant * Sqrt[2*Pi] * DiracDelta[w]
+  if !depends_on(expr, t) {
+    return Some(make_times(vec![
+      expr.clone(),
+      make_sqrt(make_times(vec![
+        Expr::Integer(2),
+        Expr::Constant("Pi".to_string()),
+      ])),
+      make_dirac_delta(w.clone()),
+    ]));
+  }
+
+  // F[DiracDelta[t]] = 1/Sqrt[2*Pi]
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "DiracDelta"
+    && fargs.len() == 1
+  {
+    if let Expr::Identifier(v) = fargs[0]
+      && v == t
+    {
+      return Some(make_power(
+        make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(-1), Expr::Integer(2)],
+        },
+      ));
+    }
+    // F[DiracDelta[t - a]] = E^(i*a*w) / Sqrt[2*Pi]
+    if let Some(neg_a) = extract_linear_s_offset(fargs[0], t) {
+      // DiracDelta[t + neg_a] means shift by -neg_a
+      // F = E^(i*(-neg_a)*w) / Sqrt[2*Pi]
+      return Some(make_times(vec![
+        make_power(
+          Expr::Constant("E".to_string()),
+          make_times(vec![
+            Expr::Constant("I".to_string()),
+            make_times(vec![Expr::Integer(-1), neg_a]),
+            w.clone(),
+          ]),
+        ),
+        make_power(
+          make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(2)],
+          },
+        ),
+      ]));
+    }
+  }
+
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    // F[E^(-a*t^2)] = E^(-w^2/(4a)) / Sqrt[2a]
+    if fname == "Power" && fargs.len() == 2 {
+      let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")
+        || matches!(fargs[0], Expr::Constant(b) if b == "E");
+      if is_e {
+        if let Some(a) = match_neg_a_t_squared(fargs[1], t) {
+          // F[E^(-a*t^2)] = E^(-w^2/(4a)) / Sqrt[2a]
+          return Some(make_times(vec![
+            make_power(
+              Expr::Constant("E".to_string()),
+              make_times(vec![
+                Expr::Integer(-1),
+                make_power(w.clone(), Expr::Integer(2)),
+                make_power(
+                  make_times(vec![Expr::Integer(4), a.clone()]),
+                  Expr::Integer(-1),
+                ),
+              ]),
+            ),
+            make_power(
+              make_times(vec![Expr::Integer(2), a]),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(-1), Expr::Integer(2)],
+              },
+            ),
+          ]));
+        }
+        // F[E^(-a*|t|)] = Sqrt[2/Pi] * a / (a^2 + w^2)
+        if let Some(a) = match_neg_a_abs_t(fargs[1], t) {
+          return Some(make_times(vec![
+            make_sqrt(make_times(vec![
+              Expr::Integer(2),
+              make_power(Expr::Constant("Pi".to_string()), Expr::Integer(-1)),
+            ])),
+            a.clone(),
+            make_power(
+              make_plus(vec![
+                make_power(a, Expr::Integer(2)),
+                make_power(w.clone(), Expr::Integer(2)),
+              ]),
+              Expr::Integer(-1),
+            ),
+          ]));
+        }
+      }
+    }
+
+    // F[Sin[a*t]] = I*Sqrt[Pi/2] * (DiracDelta[w-a] - DiracDelta[w+a])
+    // Wait, Mathematica gives: I*Sqrt[Pi/2]*DiracDelta[-a + w] - I*Sqrt[Pi/2]*DiracDelta[a + w]
+    if fname == "Sin"
+      && fargs.len() == 1
+      && let Some(a) = extract_linear_coeff(fargs[0], t)
+    {
+      let coeff = make_times(vec![
+        Expr::Constant("I".to_string()),
+        make_sqrt(make_times(vec![
+          Expr::Constant("Pi".to_string()),
+          make_power(Expr::Integer(2), Expr::Integer(-1)),
+        ])),
+      ]);
+      return Some(make_plus(vec![
+        make_times(vec![
+          coeff.clone(),
+          make_dirac_delta(make_plus(vec![
+            make_times(vec![Expr::Integer(-1), a.clone()]),
+            w.clone(),
+          ])),
+        ]),
+        make_times(vec![
+          Expr::Integer(-1),
+          coeff,
+          make_dirac_delta(make_plus(vec![a, w.clone()])),
+        ]),
+      ]));
+    }
+
+    // F[Cos[a*t]] = Sqrt[Pi/2] * (DiracDelta[w-a] + DiracDelta[w+a])
+    if fname == "Cos"
+      && fargs.len() == 1
+      && let Some(a) = extract_linear_coeff(fargs[0], t)
+    {
+      let coeff = make_sqrt(make_times(vec![
+        Expr::Constant("Pi".to_string()),
+        make_power(Expr::Integer(2), Expr::Integer(-1)),
+      ]));
+      return Some(make_plus(vec![
+        make_times(vec![
+          coeff.clone(),
+          make_dirac_delta(make_plus(vec![
+            make_times(vec![Expr::Integer(-1), a.clone()]),
+            w.clone(),
+          ])),
+        ]),
+        make_times(vec![
+          coeff,
+          make_dirac_delta(make_plus(vec![a, w.clone()])),
+        ]),
+      ]));
+    }
+
+    // F[t] => special: derivative of delta => not commonly useful, skip
+    // F[1/t] = I*Sqrt[Pi/2] * Sign[w]
+    if fname == "Power"
+      && fargs.len() == 2
+      && let Expr::Identifier(base) = fargs[0]
+      && base == t
+      && matches!(fargs[1], Expr::Integer(-1))
+    {
+      return Some(make_times(vec![
+        Expr::Constant("I".to_string()),
+        make_sqrt(make_times(vec![
+          Expr::Constant("Pi".to_string()),
+          make_power(Expr::Integer(2), Expr::Integer(-1)),
+        ])),
+        Expr::FunctionCall {
+          name: "Sign".to_string(),
+          args: vec![w.clone()],
+        },
+      ]));
+    }
+
+    // Linearity: F[a + b] = F[a] + F[b]
+    if fname == "Plus" {
+      let mut terms = Vec::new();
+      for arg in &fargs {
+        if let Some(ft) = fourier_transform_inner(arg, t, w) {
+          terms.push(ft);
+        } else {
+          return None;
+        }
+      }
+      return Some(make_plus(terms));
+    }
+
+    // Linearity: F[c * f(t)] = c * F[f(t)] where c doesn't depend on t
+    if fname == "Times" && fargs.len() >= 2 {
+      let mut constants = Vec::new();
+      let mut t_dependent = Vec::new();
+      for arg in &fargs {
+        if depends_on(arg, t) {
+          t_dependent.push((*arg).clone());
+        } else {
+          constants.push((*arg).clone());
+        }
+      }
+      if !constants.is_empty() && !t_dependent.is_empty() {
+        let t_part = if t_dependent.len() == 1 {
+          t_dependent[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: t_dependent,
+          }
+        };
+        if let Some(ft) = fourier_transform_inner(&t_part, t, w) {
+          constants.push(ft);
+          return Some(make_times(constants));
+        }
+      }
+    }
+  }
+
+  // F[t] (just the variable itself)
+  if let Expr::Identifier(name) = expr
+    && name == t
+  {
+    // F[t] = -I * Sqrt[2*Pi] * DiracDelta'[w]
+    // This involves derivative of DiracDelta, return unevaluated
+    return None;
+  }
+
+  None
+}
+
+/// Match exponent of form -a*t^2 where a > 0 and return a.
+fn match_neg_a_t_squared(exp: &Expr, t: &str) -> Option<Expr> {
+  // After normalization, -t^2 might appear as Times[-1, Power[t, 2]]
+  // and -a*t^2 as Times[-1, a, Power[t, 2]] or Times[Times[-1, a], Power[t, 2]]
+  if let Some((fname, fargs)) = as_func_args(exp) {
+    if fname == "Times" {
+      // Find t^2 factor and collect the rest
+      let mut t_sq_idx = None;
+      for (i, arg) in fargs.iter().enumerate() {
+        if let Some(("Power", pargs)) = as_func_args(arg)
+          && pargs.len() == 2
+          && let Expr::Identifier(v) = pargs[0]
+          && v == t
+          && matches!(pargs[1], Expr::Integer(2))
+        {
+          t_sq_idx = Some(i);
+          break;
+        }
+      }
+      if let Some(idx) = t_sq_idx {
+        let rest: Vec<_> = fargs
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| *i != idx)
+          .map(|(_, a)| (*a).clone())
+          .collect();
+        if rest.iter().all(|a| !depends_on(a, t)) {
+          // The coefficient of t^2 is the product of rest
+          // We need it to be negative (i.e. -a where a > 0)
+          // Return a = -coefficient
+          let coeff = if rest.len() == 1 {
+            rest[0].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: rest,
+            }
+          };
+          // a = -coeff (negate)
+          return Some(make_times(vec![Expr::Integer(-1), coeff]));
+        }
+      }
+    }
+  }
+  None
+}
+
+/// Match exponent of form -a*Abs[t] and return a.
+fn match_neg_a_abs_t(exp: &Expr, t: &str) -> Option<Expr> {
+  if let Some((fname, fargs)) = as_func_args(exp) {
+    if fname == "Times" {
+      // Find Abs[t] factor
+      let mut abs_idx = None;
+      for (i, arg) in fargs.iter().enumerate() {
+        if let Some(("Abs", aargs)) = as_func_args(arg)
+          && aargs.len() == 1
+          && let Expr::Identifier(v) = aargs[0]
+          && v == t
+        {
+          abs_idx = Some(i);
+          break;
+        }
+      }
+      if let Some(idx) = abs_idx {
+        let rest: Vec<_> = fargs
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| *i != idx)
+          .map(|(_, a)| (*a).clone())
+          .collect();
+        if rest.iter().all(|a| !depends_on(a, t)) {
+          let coeff = if rest.len() == 1 {
+            rest[0].clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: rest,
+            }
+          };
+          return Some(make_times(vec![Expr::Integer(-1), coeff]));
+        }
+      }
+    }
+  }
+  None
+}
+
+// ── InverseFourierTransform implementation ───────────────────────────
+// Convention: F^-1[g(w), w, t] = (1/√(2π)) ∫_{-∞}^{∞} g(w) e^{-iwt} dw
+
+fn inverse_fourier_transform(
+  expr: &Expr,
+  w_expr: &Expr,
+  t_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let w = match w_expr {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "InverseFourierTransform".to_string(),
+        args: vec![expr.clone(), w_expr.clone(), t_expr.clone()],
+      });
+    }
+  };
+
+  let normalized = normalize_to_func_calls(expr);
+  let normalized =
+    crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+
+  if let Some(result) = inverse_fourier_inner(&normalized, w, t_expr) {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "InverseFourierTransform".to_string(),
+      args: vec![expr.clone(), w_expr.clone(), t_expr.clone()],
+    })
+  }
+}
+
+fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
+  // F^-1[constant] = constant * Sqrt[2*Pi] * DiracDelta[t]
+  if !depends_on(expr, w) {
+    return Some(make_times(vec![
+      expr.clone(),
+      make_sqrt(make_times(vec![
+        Expr::Integer(2),
+        Expr::Constant("Pi".to_string()),
+      ])),
+      make_dirac_delta(t.clone()),
+    ]));
+  }
+
+  // F^-1[DiracDelta[w]] = 1/Sqrt[2*Pi]
+  if let Some((fname, fargs)) = as_func_args(expr)
+    && fname == "DiracDelta"
+    && fargs.len() == 1
+    && let Expr::Identifier(v) = fargs[0]
+    && v == w
+  {
+    return Some(make_power(
+      make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(-1), Expr::Integer(2)],
+      },
+    ));
+  }
+
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    // F^-1[E^(-a*w^2)] = E^(-t^2/(4a)) / Sqrt[2a]
+    if fname == "Power" && fargs.len() == 2 {
+      let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")
+        || matches!(fargs[0], Expr::Constant(b) if b == "E");
+      if is_e {
+        if let Some(a) = match_neg_a_t_squared(fargs[1], w) {
+          return Some(make_times(vec![
+            make_power(
+              Expr::Constant("E".to_string()),
+              make_times(vec![
+                Expr::Integer(-1),
+                make_power(t.clone(), Expr::Integer(2)),
+                make_power(
+                  make_times(vec![Expr::Integer(4), a.clone()]),
+                  Expr::Integer(-1),
+                ),
+              ]),
+            ),
+            make_power(
+              make_times(vec![Expr::Integer(2), a]),
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(-1), Expr::Integer(2)],
+              },
+            ),
+          ]));
+        }
+      }
+    }
+
+    // Linearity
+    if fname == "Plus" {
+      let mut terms = Vec::new();
+      for arg in &fargs {
+        if let Some(ft) = inverse_fourier_inner(arg, w, t) {
+          terms.push(ft);
+        } else {
+          return None;
+        }
+      }
+      return Some(make_plus(terms));
+    }
+
+    if fname == "Times" && fargs.len() >= 2 {
+      let mut constants = Vec::new();
+      let mut w_dependent = Vec::new();
+      for arg in &fargs {
+        if depends_on(arg, w) {
+          w_dependent.push((*arg).clone());
+        } else {
+          constants.push((*arg).clone());
+        }
+      }
+      if !constants.is_empty() && !w_dependent.is_empty() {
+        let w_part = if w_dependent.len() == 1 {
+          w_dependent[0].clone()
+        } else {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: w_dependent,
+          }
+        };
+        if let Some(inv) = inverse_fourier_inner(&w_part, w, t) {
+          constants.push(inv);
+          return Some(make_times(constants));
+        }
+      }
+    }
+  }
+
+  None
 }
 
 /// Extract the value from a DSolve-like result: {{y[x] -> value}} -> value

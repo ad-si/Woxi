@@ -2122,7 +2122,7 @@ FourierSeries,,,,7,1317
 FourierSinCoefficient,,,,7,2329
 FourierSinSeries,,,,7,1842
 FourierSinTransform,,,,4,2553
-FourierTransform,,,,4,639
+FourierTransform,computes the symbolic Fourier transform of an expression,implemented,pure,4,639
 FourierTrigSeries,,,,7,1085
 FoxH,,,,12.3,
 FoxHReduce,,,,13,
@@ -2883,7 +2883,7 @@ InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1,1260
 InverseFourierCosTransform,,,,4,3537
 InverseFourierSequenceTransform,,,,7,3257
 InverseFourierSinTransform,,,,4,3121
-InverseFourierTransform,,,,4,1124
+InverseFourierTransform,computes the symbolic inverse Fourier transform,implemented,pure,4,1124
 InverseFunction,Represents the inverse of a function,✅,none,2,584
 InverseFunctions,,,,2,2431
 InverseGammaDistribution,,,,7,2605

@@ -2687,3 +2687,127 @@ mod trig_expand {
     );
   }
 }
+
+mod fourier_transform {
+  use super::*;
+
+  #[test]
+  fn gaussian() {
+    assert_eq!(
+      interpret("FourierTransform[Exp[-t^2], t, w]").unwrap(),
+      "E^(-1/4*w^2)/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn exp_neg_abs_t() {
+    assert_eq!(
+      interpret("FourierTransform[Exp[-Abs[t]], t, w]").unwrap(),
+      "Sqrt[2/Pi]/(1 + w^2)"
+    );
+  }
+
+  #[test]
+  fn dirac_delta() {
+    assert_eq!(
+      interpret("FourierTransform[DiracDelta[t], t, w]").unwrap(),
+      "1/Sqrt[2*Pi]"
+    );
+  }
+
+  #[test]
+  fn constant_one() {
+    assert_eq!(
+      interpret("FourierTransform[1, t, w]").unwrap(),
+      "Sqrt[2*Pi]*DiracDelta[w]"
+    );
+  }
+
+  #[test]
+  fn cos_3t() {
+    assert_eq!(
+      interpret("FourierTransform[Cos[3 t], t, w]").unwrap(),
+      "Sqrt[Pi/2]*DiracDelta[-3 + w] + Sqrt[Pi/2]*DiracDelta[3 + w]"
+    );
+  }
+
+  #[test]
+  fn sin_t() {
+    assert_eq!(
+      interpret("FourierTransform[Sin[t], t, w]").unwrap(),
+      "I*Sqrt[Pi/2]*DiracDelta[-1 + w] - I*Sqrt[Pi/2]*DiracDelta[1 + w]"
+    );
+  }
+
+  #[test]
+  fn reciprocal_t() {
+    assert_eq!(
+      interpret("FourierTransform[1/t, t, w]").unwrap(),
+      "I*Sqrt[Pi/2]*Sign[w]"
+    );
+  }
+
+  #[test]
+  fn linearity_constant_factor() {
+    assert_eq!(
+      interpret("FourierTransform[3*Exp[-t^2], t, w]").unwrap(),
+      "(3*E^(-1/4*w^2))/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn linearity_sum() {
+    assert_eq!(
+      interpret("FourierTransform[Sin[t] + Cos[t], t, w]").unwrap(),
+      "I*Sqrt[Pi/2]*DiracDelta[-1 + w] - I*Sqrt[Pi/2]*DiracDelta[1 + w] + Sqrt[Pi/2]*DiracDelta[-1 + w] + Sqrt[Pi/2]*DiracDelta[1 + w]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_for_unknown() {
+    let result = interpret("FourierTransform[f[t], t, w]").unwrap();
+    assert!(
+      result.contains("FourierTransform"),
+      "Should return unevaluated: {}",
+      result
+    );
+  }
+}
+
+mod inverse_fourier_transform {
+  use super::*;
+
+  #[test]
+  fn gaussian() {
+    assert_eq!(
+      interpret("InverseFourierTransform[Exp[-w^2], w, t]").unwrap(),
+      "E^(-1/4*t^2)/Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn dirac_delta() {
+    assert_eq!(
+      interpret("InverseFourierTransform[DiracDelta[w], w, t]").unwrap(),
+      "1/Sqrt[2*Pi]"
+    );
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(
+      interpret("InverseFourierTransform[1, w, t]").unwrap(),
+      "Sqrt[2*Pi]*DiracDelta[t]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_for_unknown() {
+    let result = interpret("InverseFourierTransform[g[w], w, t]").unwrap();
+    assert!(
+      result.contains("InverseFourierTransform"),
+      "Should return unevaluated: {}",
+      result
+    );
+  }
+}
