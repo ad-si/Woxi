@@ -2559,3 +2559,317 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(crate::graphics3d_result(svg))
 }
+
+// ── ListPointPlot3D implementation ───────────────────────────────────
+
+/// A projected point for scatter rendering.
+struct ScatterPoint {
+  sx: f64,
+  sy: f64,
+  depth: f64,
+  color: (u8, u8, u8),
+}
+
+pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      if let Expr::Identifier(name) = pattern.as_ref() {
+        if name == "ImageSize" {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+      }
+    }
+  }
+
+  // Evaluate the data argument
+  let evaled_data = evaluate_expr_to_expr(&args[0])?;
+
+  // Parse data: accept list of {x,y,z} or list of lists of {x,y,z}
+  let mut datasets: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+
+  match &evaled_data {
+    Expr::List(outer) if !outer.is_empty() => {
+      // Check if first element is {x,y,z} or a list of {x,y,z}
+      match &outer[0] {
+        Expr::List(inner)
+          if inner.len() == 3 && !matches!(&inner[0], Expr::List(_)) =>
+        {
+          // Single dataset: {{x,y,z}, {x,y,z}, ...}
+          let pts = parse_xyz_points(outer);
+          if !pts.is_empty() {
+            datasets.push(pts);
+          }
+        }
+        Expr::List(_) => {
+          // Multiple datasets: {{{x,y,z},...}, {{x,y,z},...}, ...}
+          for item in outer {
+            if let Expr::List(inner) = item {
+              let pts = parse_xyz_points(inner);
+              if !pts.is_empty() {
+                datasets.push(pts);
+              }
+            }
+          }
+        }
+        _ => {
+          // Try as single dataset anyway
+          let pts = parse_xyz_points(outer);
+          if !pts.is_empty() {
+            datasets.push(pts);
+          }
+        }
+      }
+    }
+    _ => {}
+  }
+
+  if datasets.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "ListPointPlot3D: no valid data points found".into(),
+    ));
+  }
+
+  // Find global ranges
+  let mut x_min = f64::INFINITY;
+  let mut x_max = f64::NEG_INFINITY;
+  let mut y_min = f64::INFINITY;
+  let mut y_max = f64::NEG_INFINITY;
+  let mut z_min = f64::INFINITY;
+  let mut z_max = f64::NEG_INFINITY;
+
+  for ds in &datasets {
+    for &(x, y, z) in ds {
+      x_min = x_min.min(x);
+      x_max = x_max.max(x);
+      y_min = y_min.min(y);
+      y_max = y_max.max(y);
+      z_min = z_min.min(z);
+      z_max = z_max.max(z);
+    }
+  }
+
+  if !z_min.is_finite() || !z_max.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "ListPointPlot3D: data produced no finite values".into(),
+    ));
+  }
+
+  let x_range_v = if (x_max - x_min).abs() < 1e-15 {
+    1.0
+  } else {
+    x_max - x_min
+  };
+  let y_range_v = if (y_max - y_min).abs() < 1e-15 {
+    1.0
+  } else {
+    y_max - y_min
+  };
+  let z_range_v = if (z_max - z_min).abs() < 1e-15 {
+    1.0
+  } else {
+    z_max - z_min
+  };
+
+  let camera = Camera::default();
+
+  // Dataset colors (Mathematica-like palette)
+  let palette: [(u8, u8, u8); 6] = [
+    (68, 114, 196),  // blue
+    (237, 125, 49),  // orange
+    (165, 165, 165), // gray
+    (255, 192, 0),   // gold
+    (91, 155, 213),  // light blue
+    (112, 173, 71),  // green
+  ];
+
+  let mut scatter_points: Vec<ScatterPoint> = Vec::new();
+
+  for (di, ds) in datasets.iter().enumerate() {
+    let base_color = palette[di % palette.len()];
+    for &(x, y, z) in ds {
+      let nx = if x_range_v > 1e-15 {
+        ((x - x_min) / x_range_v) * 2.0 - 1.0
+      } else {
+        0.0
+      };
+      let ny = if y_range_v > 1e-15 {
+        ((y - y_min) / y_range_v) * 2.0 - 1.0
+      } else {
+        0.0
+      };
+      let nz = if z_range_v > 1e-15 {
+        ((z - z_min) / z_range_v) * 2.0 * Z_SCALE - Z_SCALE
+      } else {
+        0.0
+      };
+      let p3 = Point3D {
+        x: nx,
+        y: ny,
+        z: nz,
+      };
+      let (sx, sy) = project(p3, &camera);
+      let d = depth(p3, &camera);
+      scatter_points.push(ScatterPoint {
+        sx,
+        sy,
+        depth: d,
+        color: base_color,
+      });
+    }
+  }
+
+  // Sort far-to-near (painter's)
+  scatter_points.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  // Generate SVG
+  let (z_axis_min, z_axis_max) = if (z_min - z_max).abs() < 1e-15 {
+    (z_min - 0.5, z_max + 0.5)
+  } else {
+    (z_min, z_max)
+  };
+
+  let svg = generate_scatter_svg(
+    &scatter_points,
+    &camera,
+    (x_min, x_max),
+    (y_min, y_max),
+    (z_axis_min, z_axis_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+
+  Ok(crate::graphics3d_result(svg))
+}
+
+fn parse_xyz_points(items: &[Expr]) -> Vec<(f64, f64, f64)> {
+  let mut pts = Vec::new();
+  for item in items {
+    if let Expr::List(coords) = item {
+      if coords.len() == 3 {
+        let x = try_eval_to_f64(&coords[0]);
+        let y = try_eval_to_f64(&coords[1]);
+        let z = try_eval_to_f64(&coords[2]);
+        if let (Some(x), Some(y), Some(z)) = (x, y, z) {
+          if x.is_finite() && y.is_finite() && z.is_finite() {
+            pts.push((x, y, z));
+          }
+        }
+      }
+    }
+  }
+  pts
+}
+
+fn generate_scatter_svg(
+  points: &[ScatterPoint],
+  camera: &Camera,
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  z_range: (f64, f64),
+  svg_width: u32,
+  svg_height: u32,
+  full_width: bool,
+) -> Result<String, InterpreterError> {
+  // Find bounding box
+  let mut px_min = f64::INFINITY;
+  let mut px_max = f64::NEG_INFINITY;
+  let mut py_min = f64::INFINITY;
+  let mut py_max = f64::NEG_INFINITY;
+
+  for pt in points {
+    px_min = px_min.min(pt.sx);
+    px_max = px_max.max(pt.sx);
+    py_min = py_min.min(pt.sy);
+    py_max = py_max.max(pt.sy);
+  }
+
+  let bbox_corners = bounding_box_corners();
+  for &corner in &bbox_corners {
+    let (px, py) = project(corner, camera);
+    px_min = px_min.min(px);
+    px_max = px_max.max(px);
+    py_min = py_min.min(py);
+    py_max = py_max.max(py);
+  }
+
+  let p_width = px_max - px_min;
+  let p_height = py_max - py_min;
+  if p_width < 1e-15 || p_height < 1e-15 {
+    return Err(InterpreterError::EvaluationError(
+      "ListPointPlot3D: degenerate projection".into(),
+    ));
+  }
+
+  let margin = 50.0;
+  let draw_w = svg_width as f64 - 2.0 * margin;
+  let draw_h = svg_height as f64 - 2.0 * margin;
+  let scale = (draw_w / p_width).min(draw_h / p_height);
+  let cx = margin + draw_w / 2.0;
+  let cy = margin + draw_h / 2.0;
+  let p_cx = (px_min + px_max) / 2.0;
+  let p_cy = (py_min + py_max) / 2.0;
+
+  let to_svg = |px: f64, py: f64| -> (f64, f64) {
+    let sx = cx + (px - p_cx) * scale;
+    let sy = cy - (py - p_cy) * scale;
+    (sx, sy)
+  };
+
+  let mut svg = String::with_capacity(points.len() * 80 + 2000);
+
+  if full_width {
+    svg.push_str(&format!(
+      "<svg width=\"100%\" viewBox=\"0 0 {} {}\" preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height
+    ));
+  } else {
+    svg.push_str(&format!(
+      "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+      svg_width, svg_height, svg_width, svg_height
+    ));
+  }
+
+  {
+    let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+    svg.push_str(&format!(
+      "<rect width=\"{}\" height=\"{}\" fill=\"rgb({},{},{})\"/>\n",
+      svg_width, svg_height, bg.0, bg.1, bg.2
+    ));
+  }
+
+  // Draw axes first (behind points)
+  draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+
+  // Render points as circles
+  let radius = 3.0;
+  for pt in points {
+    let (sx, sy) = to_svg(pt.sx, pt.sy);
+    let (r, g, b) = pt.color;
+    svg.push_str(&format!(
+      "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
+      sx, sy, radius, r, g, b,
+      (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
+    ));
+  }
+
+  svg.push_str("</svg>");
+  Ok(svg)
+}

@@ -59,6 +59,9 @@ pub fn dispatch_plotting(
     "ListPlot3D" if !args.is_empty() => {
       Some(crate::functions::plot3d::list_plot3d_ast(args))
     }
+    "ListPointPlot3D" if !args.is_empty() => {
+      Some(crate::functions::plot3d::list_point_plot3d_ast(args))
+    }
     "RevolutionPlot3D" if args.len() >= 2 => {
       Some(crate::functions::plot3d::revolution_plot3d_ast(args))
     }
