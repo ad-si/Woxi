@@ -415,9 +415,25 @@ mod full_form {
 
   #[test]
   fn full_form_complex_expression() {
+    // decompose_expr does structural decomposition only — no canonicalization.
+    // x/Sqrt[5] remains as Times[x, Power[Sqrt[5], -1]] internally.
     assert_eq!(
       interpret("FullForm[x/Sqrt[5] + y^2 + 1/z]").unwrap(),
-      "Plus[Times[Power[5, Rational[-1, 2]], x], Power[y, 2], Power[z, -1]]"
+      "Plus[Times[x, Power[Power[5, Rational[1, 2]], -1]], Power[y, 2], Power[z, -1]]"
+    );
+  }
+
+  #[test]
+  fn full_form_no_canonicalization_regression() {
+    // Regression test for issue #91: FullForm must not canonicalize Divide.
+    // Pasting FullForm output back should give the same behavior as the original.
+    let full_form = interpret("FullForm[1/((1 + x) (5 + x))]").unwrap();
+    let apart_original = interpret("Apart[1/((1 + x) (5 + x))]").unwrap();
+    let apart_from_full_form =
+      interpret(&format!("Apart[{}]", full_form)).unwrap();
+    assert_eq!(
+      apart_original, apart_from_full_form,
+      "Apart of FullForm output should match Apart of original"
     );
   }
 

@@ -170,32 +170,26 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         ],
       },
       BinaryOperator::Divide => {
-        // Canonicalize: a/b → simplified form using power and times
-        // This handles cases like 1/z → Power[z, -1],
-        // x/Sqrt[5] → Times[Power[5, Rational[-1, 2]], x]
-        if let Ok(b_inv) =
-          crate::functions::power_two(right, &Expr::Integer(-1))
-        {
-          if matches!(left.as_ref(), Expr::Integer(1)) {
-            return decompose_expr(&b_inv);
+        // Structural decomposition only: a/b → Times[a, Power[b, -1]]
+        // No evaluation — canonicalization happens during Divide evaluation
+        if matches!(left.as_ref(), Expr::Integer(1)) {
+          // 1/b → Power[b, -1]
+          ExprForm::Composite {
+            head: "Power".to_string(),
+            children: vec![right.as_ref().clone(), Expr::Integer(-1)],
           }
-          if let Ok(product) =
-            crate::functions::times_ast(&[left.as_ref().clone(), b_inv])
-          {
-            return decompose_expr(&product);
+        } else {
+          ExprForm::Composite {
+            head: "Times".to_string(),
+            children: vec![
+              left.as_ref().clone(),
+              Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: right.clone(),
+                right: Box::new(Expr::Integer(-1)),
+              },
+            ],
           }
-        }
-        // Fallback to structural decomposition
-        ExprForm::Composite {
-          head: "Times".to_string(),
-          children: vec![
-            left.as_ref().clone(),
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: right.clone(),
-              right: Box::new(Expr::Integer(-1)),
-            },
-          ],
         }
       }
       // Simple binary → named head
