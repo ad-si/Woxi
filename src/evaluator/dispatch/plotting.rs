@@ -68,6 +68,9 @@ pub fn dispatch_plotting(
     "RegionPlot3D" if args.len() >= 4 => {
       Some(crate::functions::plot3d::region_plot3d_ast(args))
     }
+    "SphericalPlot3D" if args.len() >= 3 => {
+      Some(crate::functions::plot3d::spherical_plot3d_ast(args))
+    }
     "ListPlot" if !args.is_empty() => {
       Some(crate::functions::list_plot::list_plot_ast(args))
     }

@@ -934,6 +934,79 @@ mod plot3d {
     }
   }
 
+  mod spherical_plot3d {
+    use super::*;
+
+    mod basic {
+      use super::*;
+
+      #[test]
+      fn unit_sphere() {
+        insta::assert_snapshot!(export_svg(
+          "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]"
+        ));
+      }
+
+      #[test]
+      fn bumpy_sphere() {
+        insta::assert_snapshot!(export_svg(
+          "SphericalPlot3D[1 + Sin[5 theta] Sin[5 phi]/5, {theta, 0, Pi}, {phi, 0, 2 Pi}]"
+        ));
+      }
+
+      #[test]
+      fn cardioid() {
+        insta::assert_snapshot!(export_svg(
+          "SphericalPlot3D[1 - Cos[theta], {theta, 0, Pi}, {phi, 0, 2 Pi}]"
+        ));
+      }
+
+      #[test]
+      fn half_sphere() {
+        insta::assert_snapshot!(export_svg(
+          "SphericalPlot3D[1, {theta, 0, Pi/2}, {phi, 0, 2 Pi}]"
+        ));
+      }
+    }
+
+    mod options {
+      use super::*;
+
+      #[test]
+      fn image_size() {
+        insta::assert_snapshot!(export_svg(
+          "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, ImageSize -> 200]"
+        ));
+      }
+
+      #[test]
+      fn mesh_none() {
+        insta::assert_snapshot!(export_svg(
+          "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mesh -> None]"
+        ));
+      }
+    }
+
+    mod errors {
+      use super::*;
+
+      #[test]
+      fn too_few_args() {
+        let result = interpret("SphericalPlot3D[1, {theta, 0, Pi}]").unwrap();
+        assert!(
+          result.contains("SphericalPlot3D"),
+          "Should return unevaluated: {}",
+          result
+        );
+      }
+
+      #[test]
+      fn invalid_iterator() {
+        assert!(interpret("SphericalPlot3D[1, 5, 6]").is_err());
+      }
+    }
+  }
+
   mod list_point_plot3d {
     use super::*;
 
