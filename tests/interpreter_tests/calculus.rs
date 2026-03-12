@@ -2811,3 +2811,76 @@ mod inverse_fourier_transform {
     );
   }
 }
+
+mod trig_reduce {
+  use super::*;
+
+  #[test]
+  fn sin_squared() {
+    assert_eq!(
+      interpret("TrigReduce[Sin[x]^2]").unwrap(),
+      "1/2 - Cos[2*x]/2"
+    );
+  }
+
+  #[test]
+  fn cos_squared() {
+    assert_eq!(
+      interpret("TrigReduce[Cos[x]^2]").unwrap(),
+      "1/2 + Cos[2*x]/2"
+    );
+  }
+
+  #[test]
+  fn sin_cos_product() {
+    assert_eq!(
+      interpret("TrigReduce[Sin[x] Cos[x]]").unwrap(),
+      "Sin[2*x]/2"
+    );
+  }
+
+  #[test]
+  fn sin_cubed() {
+    assert_eq!(
+      interpret("TrigReduce[Sin[x]^3]").unwrap(),
+      "(3*Sin[x])/4 - Sin[3*x]/4"
+    );
+  }
+
+  #[test]
+  fn cos_cubed() {
+    assert_eq!(
+      interpret("TrigReduce[Cos[x]^3]").unwrap(),
+      "(3*Cos[x])/4 + Cos[3*x]/4"
+    );
+  }
+
+  #[test]
+  fn sin_a_cos_b() {
+    assert_eq!(
+      interpret("TrigReduce[Sin[a] Cos[b]]").unwrap(),
+      "(Sin[a - b] + Sin[a + b])/2"
+    );
+  }
+
+  #[test]
+  fn cos_a_cos_b() {
+    assert_eq!(
+      interpret("TrigReduce[Cos[a] Cos[b]]").unwrap(),
+      "(Cos[a - b] + Cos[a + b])/2"
+    );
+  }
+
+  #[test]
+  fn sin_a_sin_b() {
+    assert_eq!(
+      interpret("TrigReduce[Sin[a] Sin[b]]").unwrap(),
+      "(Cos[a - b] - Cos[a + b])/2"
+    );
+  }
+
+  #[test]
+  fn unevaluated_wrong_args() {
+    assert_eq!(interpret("TrigReduce[]").unwrap(), "TrigReduce[]");
+  }
+}

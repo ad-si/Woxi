@@ -2978,3 +2978,364 @@ fn binomial(n: i128, k: i128) -> i128 {
   }
   result
 }
+
+// ─── TrigReduce ─────────────────────────────────────────────────────────
+
+/// TrigReduce[expr] — rewrite products and powers of trig functions as
+/// sums of trig functions with linear arguments.
+pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "TrigReduce".to_string(),
+      args: args.to_vec(),
+    });
+  }
+  let result = trig_reduce_recursive(&args[0]);
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Recursively apply TrigReduce.
+fn trig_reduce_recursive(expr: &Expr) -> Expr {
+  match expr {
+    // Handle Times[...] — look for products of trig functions
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      trig_reduce_product(args)
+    }
+    // Handle BinaryOp Times — two-factor product
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let l = trig_reduce_recursive(left);
+      let r = trig_reduce_recursive(right);
+      reduce_two_factor_product(&l, &r)
+    }
+    // Handle Power[Sin[x], n] or Power[Cos[x], n]
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let base = trig_reduce_recursive(left);
+      if let Expr::Integer(n) = right.as_ref() {
+        if *n >= 2 {
+          if let Some(result) = reduce_trig_power(&base, *n) {
+            return result;
+          }
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left: Box::new(base),
+        right: Box::new(trig_reduce_recursive(right)),
+      }
+    }
+    // Recurse into other structures
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(|a| trig_reduce_recursive(a)).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(trig_reduce_recursive(left)),
+      right: Box::new(trig_reduce_recursive(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(trig_reduce_recursive(operand)),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|i| trig_reduce_recursive(i)).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Handle Times[a1, a2, ...] — find pairs of trig functions to reduce.
+fn trig_reduce_product(factors: &[Expr]) -> Expr {
+  let mut reduced: Vec<Expr> =
+    factors.iter().map(|f| trig_reduce_recursive(f)).collect();
+
+  // Repeatedly try to find and reduce pairs of trig functions
+  let mut changed = true;
+  while changed {
+    changed = false;
+    for i in 0..reduced.len() {
+      for j in (i + 1)..reduced.len() {
+        if let Some(result) = try_reduce_trig_pair(&reduced[i], &reduced[j]) {
+          // Replace i with the result, remove j
+          let mut new_factors = Vec::new();
+          for (k, f) in reduced.iter().enumerate() {
+            if k == i {
+              new_factors.push(result.clone());
+            } else if k != j {
+              new_factors.push(f.clone());
+            }
+          }
+          reduced = new_factors;
+          changed = true;
+          break;
+        }
+      }
+      if changed {
+        break;
+      }
+    }
+  }
+
+  if reduced.len() == 1 {
+    reduced.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: reduced,
+    }
+  }
+}
+
+/// Try to reduce product of two terms using product-to-sum identities.
+fn reduce_two_factor_product(a: &Expr, b: &Expr) -> Expr {
+  if let Some(result) = try_reduce_trig_pair(a, b) {
+    return result;
+  }
+  // Check if either factor is a trig power
+  if let Some(result) = try_reduce_with_power(a, b) {
+    return result;
+  }
+  if let Some(result) = try_reduce_with_power(b, a) {
+    return result;
+  }
+  Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Times,
+    left: Box::new(a.clone()),
+    right: Box::new(b.clone()),
+  }
+}
+
+/// Try product-to-sum for Sin[a]*Cos[b], Sin[a]*Sin[b], Cos[a]*Cos[b].
+fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
+  let (a_name, a_arg) = extract_trig(a)?;
+  let (b_name, b_arg) = extract_trig(b)?;
+
+  let sum = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(a_arg.clone()),
+    right: Box::new(b_arg.clone()),
+  };
+  let diff = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Minus,
+    left: Box::new(a_arg.clone()),
+    right: Box::new(b_arg.clone()),
+  };
+
+  let half = |e: Expr| -> Expr {
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(e),
+      right: Box::new(Expr::Integer(2)),
+    }
+  };
+
+  let sin = |e: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![e],
+    }
+  };
+  let cos = |e: Expr| -> Expr {
+    Expr::FunctionCall {
+      name: "Cos".to_string(),
+      args: vec![e],
+    }
+  };
+
+  match (a_name, b_name) {
+    // Sin[a]*Cos[b] = (Sin[a+b] + Sin[a-b])/2
+    ("Sin", "Cos") | ("Cos", "Sin") => {
+      let (sin_arg, cos_arg) = if a_name == "Sin" {
+        (a_arg, b_arg)
+      } else {
+        (b_arg, a_arg)
+      };
+      let s = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(sin_arg.clone()),
+        right: Box::new(cos_arg.clone()),
+      };
+      let d = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(sin_arg),
+        right: Box::new(cos_arg),
+      };
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(sin(s)),
+        right: Box::new(sin(d)),
+      };
+      Some(half(result))
+    }
+    // Cos[a]*Cos[b] = (Cos[a-b] + Cos[a+b])/2
+    ("Cos", "Cos") => {
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(cos(diff)),
+        right: Box::new(cos(sum)),
+      };
+      Some(half(result))
+    }
+    // Sin[a]*Sin[b] = (Cos[a-b] - Cos[a+b])/2
+    ("Sin", "Sin") => {
+      let result = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(cos(diff)),
+        right: Box::new(cos(sum)),
+      };
+      Some(half(result))
+    }
+    _ => None,
+  }
+}
+
+/// Reduce trig power: Sin[x]^n or Cos[x]^n using direct formulas.
+fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
+  let (trig_name, arg) = extract_trig(base)?;
+  if !matches!(trig_name, "Sin" | "Cos") {
+    return None;
+  }
+
+  // Use the power-reduction formulas directly:
+  // For even n:
+  //   cos^n(x) = 1/2^n * C(n,n/2) + 2/2^n * sum_{k=0}^{n/2-1} C(n,k) cos((n-2k)x)
+  //   sin^n(x) = 1/2^n * C(n,n/2) + 2/2^n * sum_{k=0}^{n/2-1} (-1)^(n/2-k) C(n,k) cos((n-2k)x)
+  // For odd n:
+  //   cos^n(x) = 2/2^n * sum_{k=0}^{(n-1)/2} C(n,k) cos((n-2k)x)
+  //   sin^n(x) = 2/2^n * sum_{k=0}^{(n-1)/2} (-1)^((n-1)/2-k) C(n,k) sin((n-2k)x)
+
+  let is_cos = trig_name == "Cos";
+  let nu = n as usize;
+  let denom = 1i128 << n; // 2^n
+
+  let make_int_times_arg = |coeff: i128, m: i128| -> Expr {
+    if m == 1 {
+      arg.clone()
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(coeff)),
+        right: Box::new(arg.clone()),
+      }
+    }
+  };
+
+  let mut terms: Vec<Expr> = Vec::new();
+
+  if nu % 2 == 0 {
+    // Even power
+    let half_n = nu / 2;
+    // Constant term: C(n, n/2) / 2^n
+    let const_binom = binomial(n, half_n as i128);
+    terms.push(Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(const_binom), Expr::Integer(denom)],
+    });
+
+    // Sum terms
+    for k in 0..half_n {
+      let m = n - 2 * k as i128;
+      let binom_val = binomial(n, k as i128);
+      let coeff = 2 * binom_val;
+      let sign = if is_cos {
+        1
+      } else {
+        if (half_n - k) % 2 == 0 { 1 } else { -1 }
+      };
+      let trig_arg = make_int_times_arg(m, m);
+      let trig_call = Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: vec![trig_arg],
+      };
+      let term = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(sign * coeff), Expr::Integer(denom)],
+      };
+      terms.push(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(term),
+        right: Box::new(trig_call),
+      });
+    }
+  } else {
+    // Odd power
+    let half_n = (nu - 1) / 2;
+    let trig_fn = if is_cos { "Cos" } else { "Sin" };
+    for k in 0..=half_n {
+      let m = n - 2 * k as i128;
+      let binom_val = binomial(n, k as i128);
+      let coeff = 2 * binom_val;
+      let sign = if is_cos {
+        1
+      } else {
+        if (half_n - k) % 2 == 0 { 1 } else { -1 }
+      };
+      let trig_arg = make_int_times_arg(m, m);
+      let trig_call = Expr::FunctionCall {
+        name: trig_fn.to_string(),
+        args: vec![trig_arg],
+      };
+      let term = Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(sign * coeff), Expr::Integer(denom)],
+      };
+      terms.push(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(term),
+        right: Box::new(trig_call),
+      });
+    }
+  }
+
+  if terms.len() == 1 {
+    Some(terms.pop().unwrap())
+  } else {
+    Some(Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    })
+  }
+}
+
+fn try_reduce_with_power(a: &Expr, b: &Expr) -> Option<Expr> {
+  // Check if a is Sin[x]^n or Cos[x]^n
+  if let Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Power,
+    left,
+    right,
+  } = a
+  {
+    if let Expr::Integer(n) = right.as_ref() {
+      if *n >= 2 {
+        if let Some(reduced_power) = reduce_trig_power(left, *n) {
+          return Some(reduce_two_factor_product(&reduced_power, b));
+        }
+      }
+    }
+  }
+  None
+}
+
+/// Extract trig function name and argument.
+fn extract_trig(expr: &Expr) -> Option<(&str, Expr)> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(
+          name.as_str(),
+          "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc"
+        ) =>
+    {
+      Some((name.as_str(), args[0].clone()))
+    }
+    _ => None,
+  }
+}

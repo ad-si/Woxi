@@ -946,6 +946,9 @@ pub fn dispatch_math_functions(
     "TrigExpand" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_expand_ast(args));
     }
+    "TrigReduce" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::trig_reduce_ast(args));
+    }
     _ => {}
   }
   None
