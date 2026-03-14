@@ -389,6 +389,35 @@ pub fn dispatch_linear_algebra_functions(
     "LUDecomposition" if args.len() == 1 => {
       return Some(lu_decomposition_ast(&args[0]));
     }
+    // TranslationTransform[{v1, v2, ...}] → TransformationFunction[augmented identity + translation]
+    "TranslationTransform" if args.len() == 1 => {
+      if let Expr::List(v) = &args[0] {
+        let n = v.len();
+        // Build (n+1)x(n+1) augmented identity matrix with translation in last column
+        let mut rows = Vec::with_capacity(n + 1);
+        for i in 0..n {
+          let mut row = vec![Expr::Integer(0); n + 1];
+          row[i] = Expr::Integer(1);
+          row[n] = v[i].clone();
+          rows.push(Expr::List(row));
+        }
+        // Last row: all zeros except 1 in bottom-right
+        let mut last_row = vec![Expr::Integer(0); n + 1];
+        last_row[n] = Expr::Integer(1);
+        rows.push(Expr::List(last_row));
+        let matrix = Expr::List(rows);
+        let evaluated =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "TransformationFunction".to_string(),
+            args: vec![matrix],
+          });
+        return Some(evaluated);
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "TranslationTransform".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     "RotationTransform" if args.len() == 1 => {
       let theta = &args[0];

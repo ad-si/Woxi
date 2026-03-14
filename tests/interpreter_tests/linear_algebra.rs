@@ -1263,3 +1263,75 @@ mod linear_model_fit {
     assert!((val - 3.0).abs() < 1e-10);
   }
 }
+
+mod translation_transform {
+  use super::*;
+
+  #[test]
+  fn creates_transformation_function_2d() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}]").unwrap(),
+      "TransformationFunction[{{1, 0, 1}, {0, 1, 2}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn creates_transformation_function_3d() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2, 3}]").unwrap(),
+      "TransformationFunction[{{1, 0, 0, 1}, {0, 1, 0, 2}, {0, 0, 1, 3}, {0, 0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn apply_2d() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}][{3, 4}]").unwrap(),
+      "{4, 6}"
+    );
+  }
+
+  #[test]
+  fn apply_3d() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2, 3}][{0, 0, 0}]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn apply_symbolic() {
+    assert_eq!(
+      interpret("TranslationTransform[{a, b}][{x, y}]").unwrap(),
+      "{a + x, b + y}"
+    );
+  }
+
+  #[test]
+  fn apply_origin() {
+    assert_eq!(
+      interpret("TranslationTransform[{5, -3}][{0, 0}]").unwrap(),
+      "{5, -3}"
+    );
+  }
+}
+
+mod transformation_function_apply {
+  use super::*;
+
+  #[test]
+  fn rotation_apply() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2][{1, 0}]").unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  #[test]
+  fn rotation_apply_diagonal() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2][{0, 1}]").unwrap(),
+      "{-1, 0}"
+    );
+  }
+}

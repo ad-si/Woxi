@@ -379,6 +379,13 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "TransformationFunction" && func_args.len() == 1 => {
+      // TransformationFunction[matrix][{x, y, ...}] — apply affine transformation
+      apply_transformation_function(&func_args[0], args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "CompiledFunction" && func_args.len() == 2 => {
       // CompiledFunction[{x, y, ...}, body][args...] — substitute and evaluate numerically
       let params: Vec<String> = match &func_args[0] {
@@ -554,4 +561,86 @@ pub fn apply_curried_call(
       }
     }
   }
+}
+
+/// Apply TransformationFunction[matrix] to a point vector.
+/// The matrix is an (n+1)x(n+1) augmented matrix for affine transformation.
+/// Given point {x1, ..., xn}, computes matrix . {x1, ..., xn, 1} and returns
+/// the first n components.
+fn apply_transformation_function(
+  matrix: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::CurriedCall {
+      func: Box::new(Expr::FunctionCall {
+        name: "TransformationFunction".to_string(),
+        args: vec![matrix.clone()],
+      }),
+      args: args.to_vec(),
+    });
+  }
+  let point = &args[0];
+  let coords = match point {
+    Expr::List(items) => items,
+    _ => {
+      return Ok(Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![matrix.clone()],
+        }),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let rows = match matrix {
+    Expr::List(rows) => rows,
+    _ => {
+      return Ok(Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "TransformationFunction".to_string(),
+          args: vec![matrix.clone()],
+        }),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let n = coords.len();
+  // Build homogeneous coordinate vector: {x1, ..., xn, 1}
+  let mut hom = coords.clone();
+  hom.push(Expr::Integer(1));
+
+  // Multiply: take first n rows, dot with homogeneous vector
+  let mut result = Vec::with_capacity(n);
+  for i in 0..n {
+    let row = match &rows[i] {
+      Expr::List(r) => r,
+      _ => {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(Expr::FunctionCall {
+            name: "TransformationFunction".to_string(),
+            args: vec![matrix.clone()],
+          }),
+          args: args.to_vec(),
+        });
+      }
+    };
+    // Dot product of row with homogeneous vector
+    let dot = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: row
+        .iter()
+        .zip(hom.iter())
+        .map(|(a, b)| Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![a.clone(), b.clone()],
+        })
+        .collect(),
+    };
+    result.push(evaluate_expr_to_expr(&dot)?);
+  }
+
+  Ok(Expr::List(result))
 }

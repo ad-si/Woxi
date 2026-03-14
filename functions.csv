@@ -13,7 +13,7 @@ AbsoluteCorrelationFunction,,,,9,3048
 AbsoluteCurrentValue,,,,6,2299
 AbsoluteDashing,,,,2,1455
 AbsoluteFileName,,,,7,3031
-AbsoluteOptions,,,,4,888
+AbsoluteOptions,,🚫,,4,888
 AbsolutePointSize,Graphics primitive for setting point size in absolute units,✅,none,2,392
 AbsoluteThickness,Sets absolute line thickness in graphics,✅,pure,2,187
 AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2,562
@@ -159,7 +159,7 @@ Apart,Decomposes a rational expression into partial fractions,✅,pure,1,683
 ApartSquareFree,,,,6,3755
 APIFunction,,,,10,1379
 Appearance,Option symbol for specifying visual appearance,✅,pure,6,197
-AppearanceElements,,,,6,1031
+AppearanceElements,,🚫,,6,1031
 AppearanceRules,,,,10,2243
 AppellF1,,,,4,1168
 AppellF2,,,,13.3,
@@ -402,7 +402,7 @@ BaringhausHenzeTest,,,,10.2,4173
 BarLegend,Color bar legend for plots,✅,none,9,805
 BarlowProschanImportance,,,,9,4707
 BarnesG,,,,7,1727
-BarOrigin,,,,7,1058
+BarOrigin,,🚫,,7,1058
 BarSpacing,,,,7,1077
 BartlettHannWindow,,,,9,4356
 BartlettWindow,,,,9,3916
@@ -768,11 +768,11 @@ CharacterNormalize,,,,12.1,
 CharacterRange,Returns a list of characters in a range,✅,pure,3,796
 Characters,Converts a string into a list of single-character strings,✅,pure,1,474
 ChartBaseStyle,,,,7,1675
-ChartElementFunction,,,,7,937
+ChartElementFunction,,🚫,,7,937
 ChartElements,,,,7,2421
 ChartLabels,Option for labeling elements in charts,✅,none,7,661
 ChartLayout,,,,7,1223
-ChartLegends,,,,7,1006
+ChartLegends,,🚫,,7,1006
 ChartStyle,Style specification for chart elements,✅,pure,7,634
 ChatEvaluate,,,,13.3,
 ChatObject,,,,13.3,
@@ -835,7 +835,7 @@ ClickPane,,,,6,2236
 ClickToCopy,,,,12.2,
 ClickToCopyEnabled,,,,12.3,5013
 Clip,Constrains a value to a range,✅,pure,5.1,834
-ClippingStyle,,,,6,1046
+ClippingStyle,,🚫,,6,1046
 ClipPlanes,,,,10,2338
 ClipPlanesStyle,,,,10,3353
 ClipRange,,,,9,3344
@@ -1162,7 +1162,7 @@ CreateDataStructure,,,,12.1,3008
 CreateDataSystemModel,,,,11.3,5184
 CreateDialog,,,,6,1427
 CreateDirectory,,,,2,1569
-CreateDocument,,,,6,1071
+CreateDocument,,🚫,,6,1071
 CreateFile,Creates a file with a name or a random file in the default area for temporary files,🚧,effectful,10.4,2786
 CreateForeignCallback,,,,13.3,
 CreateIntermediateDirectories,,,,6,3823
@@ -1453,7 +1453,7 @@ Dimensions,Returns the dimensions of a nested list,✅,pure,1,288
 DiracComb,,,,7,3843
 DiracDelta,Dirac delta generalized function,✅,pure,4,624
 DirectedEdge,Represents a directed edge between two vertices,✅,pure,8,400
-DirectedEdges,,,,6,986
+DirectedEdges,,🚫,,6,986
 DirectedGraph,,,,8,2246
 DirectedGraphQ,,,,8,3191
 DirectedInfinity,Represents a directed infinity,✅,pure,1,1270
@@ -1633,7 +1633,7 @@ EdgeDelete,,,,8,2172
 EdgeDetect,Detects edges in an image with Gaussian smoothing and Sobel operator,✅,pure,8,962
 EdgeForm,Specifies edge styling for filled graphics,✅,pure,1,120
 EdgeIndex,,,,8,3242
-EdgeLabels,,,,8,1057
+EdgeLabels,,🚫,,8,1057
 EdgeLabelStyle,,,,8,2519
 EdgeList,List of edges in a graph,✅,none,8,763
 EdgeQ,,,,8,3094
@@ -1646,7 +1646,7 @@ EdgeTags,,,,12.1,5079
 EdgeTransitiveGraphQ,,,,12.3,
 EdgeValueRange,,,,13,
 EdgeValueSizes,,,,13,
-EdgeWeight,,,,8,942
+EdgeWeight,,🚫,,8,942
 EdgeWeightedGraphQ,,,,12,
 Editable,,,,3,1233
 EditDistance,Returns the edit distance between two strings,✅,pure,6,1921
@@ -1769,7 +1769,7 @@ EvaluationCell,,,,9,1384
 EvaluationData,,🚫,,10,3636
 EvaluationElements,,,,8,3972
 EvaluationEnvironment,,,,11.2,4947
-EvaluationMonitor,,,,5,1067
+EvaluationMonitor,,🚫,,5,1067
 EvaluationNotebook,Return the current evaluation notebook,✅,none,3,621
 EvaluationObject,,,,7,5013
 EvaluationPrivileges,,,,12.2,5587
@@ -2078,7 +2078,7 @@ FontFamily,Option specifying the font family for text rendering,✅,none,3,103
 FontSize,Option specifying the default font size in printer's points,✅,none,3,96
 FontSlant,Option for font slant style,✅,none,3,856
 FontSubstitutions,,,,3,5013
-FontTracking,,,,3,935
+FontTracking,,🚫,,3,935
 FontVariations,,,,3,2851
 FontWeight,Option for specifying font weight (Bold etc),✅,pure,3,377
 For,Executes a loop with initialization and increment,✅,pure,1,146
@@ -2091,7 +2091,7 @@ ForeignFunctionLoad,,,,13.3,
 ForeignPointerLookup,,,,13.3,
 Format,Display wrapper that formats an expression in a given form,✅,pure,1,1864
 FormatType,Option for output format type,✅,pure,1,1227
-FormBox,,,,3,991
+FormBox,,🚫,,3,991
 FormBoxOptions,,,,4,
 FormControl,,🚫,,11,4225
 FormFunction,,,,10,1303
@@ -2419,7 +2419,7 @@ GraphIntersection,,,,8,3191
 GraphJoin,,,,13.1,
 GraphLayers,,,,12.3,
 GraphLayerStyle,,,,12.3,
-GraphLayout,,,,8,888
+GraphLayout,,🚫,,8,888
 GraphLinkEfficiency,,,,9,4660
 GraphPeriphery,,,,8,2889
 GraphPlot,Requires external services or GUI infrastructure,🚫,io,6,849
@@ -2919,7 +2919,7 @@ InverseWaveletTransform,,,,8,1806
 InverseWeierstrassP,,,,3,2528
 InverseWishartMatrixDistribution,,,,10.3,4081
 InverseZTransform,,,,4,1880
-Invisible,,,,6,907
+Invisible,,🚫,,6,907
 IPAddress,,,,10.3,4262
 IrreduciblePolynomialQ,,,,7,2374
 IslandData,,🚫,,10,4947
@@ -3437,7 +3437,7 @@ MatrixRank,Returns the rank of a matrix,✅,pure,5,523
 MatrixSymbol,,,,14.1,
 MatrixTDistribution,,,,10.3,3803
 Max,Returns the maximum value from a set of arguments or a list,✅,pure,1,144
-MaxCellMeasure,,,,10,921
+MaxCellMeasure,,🚫,,10,921
 MaxColorDistance,,,,12,
 MaxDate,,,,12.1,
 MaxDetect,,,,8,1743
@@ -3737,7 +3737,7 @@ NetUnfold,,,,13,
 NetworkPacketCapture,,,,11.3,
 NetworkPacketRecording,,,,11.3,
 NetworkPacketTrace,,,,12,
-NeumannValue,,,,10,996
+NeumannValue,,🚫,,10,996
 NevilleThetaC,,,,3,3491
 NevilleThetaD,,,,3,3612
 NevilleThetaN,,,,3,3612
@@ -3915,7 +3915,7 @@ NumberFormat,,,,2,1960
 NumberLinePlot,Requires external services or GUI infrastructure,🚫,io,10,913
 NumberMarks,,,,3,2734
 NumberMultiplier,,,,3,3737
-NumberPadding,,,,2,1035
+NumberPadding,,🚫,,2,1035
 NumberPoint,Symbol specifying the decimal point character in NumberForm,✅,pure,1,2541
 NumberQ,Checks if a value is a number,✅,pure,1,340
 NumberSeparator,Option specifying the digit separator in NumberForm,✅,pure,1,2960
@@ -3996,7 +3996,7 @@ OutputStream,Output stream object,✅,effectful,2,3298
 OverBar,Display form with an overbar accent,✅,none,6,717
 OverDot,,,,6,1547
 Overflow,Symbol representing arithmetic overflow,✅,pure,1,1926
-OverHat,,,,6,970
+OverHat,,🚫,,6,970
 Overlaps,,,,5.1,1658
 Overlay,,,,8,1156
 OverlayVideo,,,,13,
@@ -4069,7 +4069,7 @@ ParallelCombine,,,,7,2807
 ParallelDo,,,,7,1725
 Parallelepiped,,,,10,2324
 ParallelEvaluate,,,,7,1118
-Parallelization,,,,8,1009
+Parallelization,,🚫,,8,1009
 Parallelize,,,,7,1745
 ParallelKernels,,,,13.1,
 ParallelMap,,,,7,1204
@@ -4753,14 +4753,14 @@ Roots,Finds roots of polynomial equations as Or conditions,✅,pure,1,924
 RootSum,,,,3,2141
 RootTree,,,,13.1,
 Rotate,Rotates a graphics object,✅,pure,6,315
-RotateLabel,,,,2,890
+RotateLabel,,🚫,,2,890
 RotateLeft,Rotates list elements to the left,✅,pure,1,637
 RotateRight,Rotates list elements to the right,✅,pure,1,786
 RotationAction,,,,6,1661
 RotationMatrix,Compute a rotation matrix,✅,none,6,674
 RotationTransform,Represent a rotation transformation,✅,none,6,676
 Round,Returns the nearest integer to a number,✅,pure,1,279
-RoundingRadius,,,,7,988
+RoundingRadius,,🚫,,7,988
 Row,Displays elements in a row,✅,pure,6,87
 RowAlignments,,,,3,3566
 RowBox,Represents a horizontal row of boxes for typesetting,✅,pure,3,277
@@ -4782,12 +4782,12 @@ RulesTree,,,,12.3,
 Run,Runs an external command,✅,effectful,1,1367
 RunProcess,,,,10,1760
 RunThrough,Symbol for running external commands,✅,effectful,1,3215
-RuntimeAttributes,,,,8,914
-RuntimeOptions,,,,8,922
+RuntimeAttributes,,🚫,,8,914
+RuntimeOptions,,🚫,,8,922
 RussellRaoDissimilarity,,,,6,4387
 SameAs,,,,13.1,
 SameQ,Tests if expressions are identical,✅,pure,1,107
-SameTest,,,,2,1024
+SameTest,,🚫,,2,1024
 SameTestProperties,,,,12.1,
 SampledEntityClass,,,,12,4947
 SampleDepth,,,,2,3656
@@ -4816,7 +4816,7 @@ ScaleOrigin,,,,9,3440
 ScalePadding,,,,9,3636
 ScaleRanges,,,,9,3566
 ScaleRangeStyle,,,,9,3785
-ScalingFunctions,,,,8,936
+ScalingFunctions,,🚫,,8,936
 ScalingMatrix,,,,6,3427
 ScalingTransform,,,,6,1442
 Scan,Applies a function to each element for side effects,✅,pure,1,740
@@ -4928,7 +4928,7 @@ SetStreamPosition,,,,2,2184
 SetSystemModel,,,,11.3,
 SetSystemOptions,,,,6,1189
 Setter,,,,6,1237
-SetterBar,,,,6,895
+SetterBar,,🚫,,6,895
 Setting,,,,6,1891
 SetUsers,,,,10,5486
 Shallow,,,,2,2008
@@ -5073,7 +5073,7 @@ Spacings,Spacing specification for grids and layouts,✅,none,6,261
 Span,Extract a span of elements using ;; notation in Part,✅,pure,6,109
 SpanFromAbove,,,,6,1687
 SpanFromBoth,,,,6,2495
-SpanFromLeft,,,,6,946
+SpanFromLeft,,🚫,,6,946
 SpanMaxSize,,,,3,3048
 SparseArray,Creates a sparse array representation,✅,pure,5,334
 SparseArrayQ,,,,13,
@@ -5135,7 +5135,7 @@ Splice,,,,12.1,2650
 SplicedDistribution,,,,9,3566
 SplineClosed,Option for closing B-spline curves,✅,pure,7,215
 SplineDegree,Option for the degree of spline interpolation,✅,none,7,774
-SplineKnots,,,,7,1064
+SplineKnots,,🚫,,7,1064
 SplineWeights,,,,7,1094
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3,615
 SplitBy,Splits list at boundaries where a function changes value,✅,pure,7,1000
@@ -5275,9 +5275,9 @@ StruveL,,,,4,1437
 Stub,,,,2,
 StudentTDistribution,,,,6,1030
 Style,Applies styling to an expression for display,✅,pure,6,61
-StyleBox,,,,3,896
+StyleBox,,🚫,,3,896
 StyleData,,🚫,,3,908
-StyleDefinitions,,,,3,987
+StyleDefinitions,,🚫,,3,987
 StyleHints,,,,13,
 Subdivide,Divides a range into equal parts,✅,pure,10.1,837
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6,1960
@@ -5288,7 +5288,7 @@ SubresultantPolynomialRemainders,,,,9,4612
 SubresultantPolynomials,,,,9,4479
 Subresultants,,,,4,3889
 Subscript,Represents a subscripted expression for display,✅,pure,1,30
-SubscriptBox,,,,3,964
+SubscriptBox,,🚫,,3,964
 SubscriptBoxOptions,,,,4,5390
 Subsequences,Returns all contiguous subsequences of a list,✅,pure,10.4,2632
 Subset,,,,3,2688
@@ -5329,11 +5329,11 @@ SuperMinus,,,,6,2087
 SupernovaData,,🚫,,10,4881
 SuperPlus,,,,6,1982
 Superscript,Inert superscript display form,✅,pure,1,292
-SuperscriptBox,,,,3,994
+SuperscriptBox,,🚫,,3,994
 SuperscriptBoxOptions,,,,4,
 Superset,,,,3,5079
 SupersetEqual,,,,3,5079
-SuperStar,,,,6,979
+SuperStar,,🚫,,6,979
 Surd,Returns the real-valued nth root,✅,pure,9,1116
 SurdForm,,,,9,5486
 SurfaceArea,,,,12,2361
@@ -5369,7 +5369,7 @@ SymmetrizedDependentComponents,,,,9,4479
 SymmetrizedIndependentComponents,,,,9,3566
 SymmetrizedReplacePart,,,,9,4881
 SynchronousInitialization,,,,6,1429
-SynchronousUpdating,,,,6,931
+SynchronousUpdating,,🚫,,6,931
 Synonyms,,,,12,4052
 SyntaxForm,,,,3,2276
 SyntaxInformation,,,,6,1520
@@ -5430,7 +5430,7 @@ TableView,,,,12.1,2792
 Tabular,Represents a data frame or table of structured data,✅,pure,14.2,2792
 ToTabular,Converts data into a Tabular object with specified orientation,✅,pure,14.2,
 TabView,,,,6,1308
-TagBox,,,,3,1012
+TagBox,,🚫,,3,1012
 TagBoxOptions,,,,6,4052
 TaggingRules,,,,4,1459
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1,812
@@ -5464,7 +5464,7 @@ TaskWait,,,,11.2,4881
 TautologyQ,,,,7,1986
 TelegraphProcess,,,,9,3566
 TemplateApply,,,,10,1949
-TemplateBox,,,,7,1020
+TemplateBox,,🚫,,7,1020
 TemplateBoxOptions,,,,6,3755
 TemplateExpression,,,,10,3947
 TemplateIf,,,,10,3862
@@ -5497,7 +5497,7 @@ TestReportObject,,,,10,4881
 Tetrahedron,,,,10,1424
 TeXForm,Convert expressions to LaTeX notation,✅,pure,1,782
 Text,Represents a text graphics primitive,✅,pure,1,122
-TextAlignment,,,,3,1051
+TextAlignment,,🚫,,3,1051
 TextCases,,,,10.2,1644
 TextCell,A text cell in a notebook,✅,none,6,663
 TextClipboardType,,,,7,3785
@@ -5583,7 +5583,7 @@ TimeSystem,,,,13,
 TimeSystemConvert,,,,13,
 TimeUsed,,,,2,2097
 TimeValue,,,,8,1524
-TimeZone,,,,2,892
+TimeZone,,🚫,,2,892
 TimeZoneConvert,,,,10,2999
 TimeZoneOffset,,,,10.3,3947
 Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1,276
@@ -5633,7 +5633,7 @@ ToUpperCase,Converts a string to uppercase,✅,pure,2,1005
 Tour3DVideo,,,,14,
 TourVideo,,,,13,
 Tr,Computes the trace of a matrix,✅,pure,4,505
-Trace,,,,2,863
+Trace,,🚫,,2,863
 TraceAbove,,,,2,4204
 TraceBackward,,,,2,5013
 TraceDepth,,,,2,2729
@@ -5680,7 +5680,7 @@ TransitiveClosureGraph,,,,10,2999
 TransitiveReductionGraph,,,,10,3522
 Translate,Translates a graphics object,✅,pure,6,448
 TranslationOptions,,,,10.2,4809
-TranslationTransform,,,,6,1011
+TranslationTransform,Creates an affine translation transformation,✅,none,6,1011
 Transliterate,,,,10.3,2591
 Transparent,,,,7,1256
 Transpose,Transposes a matrix (list of lists),✅,pure,1,73
@@ -5912,7 +5912,7 @@ VectorLessEqual,,,,12,4612
 VectorMarkers,,,,11.3,2214
 VectorPlot,Creates a vector field plot,✅,pure,7,445
 VectorPlot3D,Requires external services or GUI infrastructure,🚫,io,7,1018
-VectorPoints,,,,7,1039
+VectorPoints,,🚫,,7,1039
 VectorQ,Tests if an expression is a vector,✅,pure,1,468
 VectorRange,,,,12.1,4747
 Vectors,,,,9,1604
@@ -5966,8 +5966,8 @@ VertexReplace,,,,8,2404
 VertexShape,,,,8,2184
 VertexShapeFunction,,,,8,1177
 VertexSize,Option for vertex size in graphs,✅,none,8,748
-VertexStyle,,,,8,969
-VertexTextureCoordinates,,,,8,1076
+VertexStyle,,🚫,,8,969
+VertexTextureCoordinates,,🚫,,8,1076
 VertexTransitiveGraphQ,,,,12.3,
 VertexWeight,,,,8,1895
 VertexWeightedGraphQ,,,,12,
@@ -6011,14 +6011,14 @@ VideoTranscode,,,,12.2,5486
 VideoTranscribe,,,,14.1,
 VideoTransparency,,,,13.1,
 VideoTrim,,,,12.1,4612
-ViewAngle,,,,6,1005
+ViewAngle,,🚫,,6,1005
 ViewCenter,,,,2,1838
 ViewMatrix,,,,6,2679
 ViewPoint,Option for 3D viewing position,✅,pure,1,360
 ViewProjection,,,,11.2,2605
 ViewRange,,,,6,3083
 ViewVector,,,,6,1956
-ViewVertical,,,,2,986
+ViewVertical,,🚫,,2,986
 Visible,,,,3,1563
 VoiceStyleData,,🚫,,12,5587
 VoigtDistribution,,,,9,3474
