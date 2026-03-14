@@ -3128,4 +3128,37 @@ mod area {
   fn symbolic_radius() {
     assert_eq!(interpret("Area[Disk[{0, 0}, r]]").unwrap(), "Pi*r^2");
   }
+
+  #[test]
+  fn default_triangle() {
+    assert_eq!(interpret("Area[Triangle[]]").unwrap(), "1/2");
+  }
+}
+
+mod triangle {
+  use super::*;
+
+  #[test]
+  fn default_form() {
+    assert_eq!(
+      interpret("Triangle[]").unwrap(),
+      "Triangle[{{0, 0}, {1, 0}, {0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn explicit_vertices() {
+    assert_eq!(
+      interpret("Triangle[{{0, 0}, {3, 0}, {0, 4}}]").unwrap(),
+      "Triangle[{{0, 0}, {3, 0}, {0, 4}}]"
+    );
+  }
+
+  #[test]
+  fn area() {
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0}, {3, 0}, {0, 4}}]]").unwrap(),
+      "6"
+    );
+  }
 }
