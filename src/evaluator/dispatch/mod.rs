@@ -1201,7 +1201,8 @@ pub fn evaluate_function_call_ast_inner(
     | "PlusMinus"
     | "CircleTimes"
     | "Wedge"
-    | "Del" => {
+    | "Del"
+    | "Dispatch" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
