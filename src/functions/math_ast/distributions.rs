@@ -132,6 +132,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
+    "GammaDistribution" => pdf_gamma(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -299,6 +300,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => cdf_exponential(dargs, x),
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
+    "GammaDistribution" => cdf_gamma(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -462,6 +464,57 @@ fn cdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     vec![(int(0), cond_neg), (one_minus_p, cond_middle)],
     int(1),
   ))
+}
+
+/// PDF[GammaDistribution[alpha, beta], x] = Piecewise[{{x^(alpha-1) E^(-x/beta) / (beta^alpha Gamma[alpha]), x > 0}}, 0]
+fn pdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "GammaDistribution expects 2 arguments".into(),
+    ));
+  }
+  let alpha = dargs[0].clone();
+  let beta = dargs[1].clone();
+
+  // x^(alpha-1)
+  let x_part = power(x.clone(), minus(alpha.clone(), int(1)));
+  // E^(-x/beta)
+  let exp_part = power(
+    e(),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(divide(x.clone(), beta.clone())),
+    },
+  );
+  // beta^alpha * Gamma[alpha]
+  let denom = times(
+    power(beta, alpha.clone()),
+    Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![alpha],
+    },
+  );
+  let value = eval(divide(times(x_part, exp_part), denom))?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[GammaDistribution[alpha, beta], x] = Piecewise[{{GammaRegularized[alpha, 0, x/beta], x > 0}}, 0]
+fn cdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "GammaDistribution expects 2 arguments".into(),
+    ));
+  }
+  let alpha = dargs[0].clone();
+  let beta = dargs[1].clone();
+
+  let value = Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![alpha, int(0), divide(x.clone(), beta)],
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 // ─── Probability ─────────────────────────────────────────────────────
@@ -840,6 +893,19 @@ fn distribution_mean_variance(
       // Mean = p, Var = p(1-p)
       let var = times(p.clone(), minus(int(1), p.clone()));
       Ok((p, var))
+    }
+    "GammaDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "GammaDistribution expects 2 arguments".into(),
+        ));
+      }
+      let alpha = dargs[0].clone();
+      let beta = dargs[1].clone();
+      // Mean = alpha*beta, Var = alpha*beta^2
+      let mean = times(alpha.clone(), beta.clone());
+      let var = times(alpha, power(beta, int(2)));
+      Ok((mean, var))
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"

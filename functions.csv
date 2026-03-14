@@ -2224,7 +2224,7 @@ GainPhaseMargins,,,,8,4291
 GalaxyData,,🚫,,10,1338
 GalleryView,,,,11,4660
 Gamma,Returns the gamma function value,✅,pure,1,130
-GammaDistribution,,,,6,981
+GammaDistribution,Gamma probability distribution,✅,pure,6,981
 GammaRegularized,,,,2,1279
 GapPenalty,,,,7,4747
 GARCHProcess,,,,10,3413

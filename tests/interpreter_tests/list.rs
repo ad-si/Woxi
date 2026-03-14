@@ -1657,6 +1657,52 @@ mod distributions {
       "NormalDistribution[5, 2]"
     );
   }
+
+  #[test]
+  fn gamma_distribution_inert() {
+    assert_eq!(
+      interpret("GammaDistribution[2, 3]").unwrap(),
+      "GammaDistribution[2, 3]"
+    );
+  }
+
+  #[test]
+  fn gamma_distribution_pdf() {
+    let result = interpret("PDF[GammaDistribution[2, 3], x]").unwrap();
+    // Should contain x and be a Piecewise
+    assert!(
+      result.contains("Piecewise") && result.contains("x > 0"),
+      "Expected Piecewise PDF: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn gamma_distribution_pdf_at_value() {
+    assert_eq!(
+      interpret("PDF[GammaDistribution[1, 1], 1]").unwrap(),
+      "E^(-1)"
+    );
+  }
+
+  #[test]
+  fn gamma_distribution_expectation() {
+    // E[x] for Gamma[2,3] = alpha*beta = 6
+    assert_eq!(
+      interpret("Expectation[x, Distributed[x, GammaDistribution[2, 3]]]")
+        .unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn gamma_distribution_expectation_symbolic() {
+    assert_eq!(
+      interpret("Expectation[x, Distributed[x, GammaDistribution[a, b]]]")
+        .unwrap(),
+      "a*b"
+    );
+  }
 }
 
 mod random_variate {
