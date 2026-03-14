@@ -3162,3 +3162,39 @@ mod triangle {
     );
   }
 }
+
+mod adjacency_matrix {
+  use super::*;
+
+  #[test]
+  fn directed_cycle() {
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn directed_chain() {
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{a -> b, b -> c}]]").unwrap(),
+      "{{0, 1, 0}, {0, 0, 1}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn single_edge() {
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{1 -> 2}]]").unwrap(),
+      "{{0, 1}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn self_loop() {
+    assert_eq!(
+      interpret("AdjacencyMatrix[Graph[{1 -> 1, 1 -> 2}]]").unwrap(),
+      "{{1, 1}, {0, 0}}"
+    );
+  }
+}
