@@ -1705,3 +1705,102 @@ mod fortran_form {
     assert_eq!(interpret("ToString[2.5, FortranForm]").unwrap(), "2.5");
   }
 }
+
+mod to_boxes {
+  use super::*;
+
+  #[test]
+  fn integer() {
+    assert_eq!(interpret("ToBoxes[42]").unwrap(), "42");
+  }
+
+  #[test]
+  fn symbol() {
+    assert_eq!(interpret("ToBoxes[x]").unwrap(), "x");
+  }
+
+  #[test]
+  fn string_literal() {
+    assert_eq!(interpret("ToBoxes[\"hello\"]").unwrap(), "\"hello\"");
+  }
+
+  #[test]
+  fn plus() {
+    assert_eq!(interpret("ToBoxes[x + y]").unwrap(), "RowBox[{x, +, y}]");
+  }
+
+  #[test]
+  fn subtraction() {
+    assert_eq!(interpret("ToBoxes[x - y]").unwrap(), "RowBox[{x, -, y}]");
+  }
+
+  #[test]
+  fn negation() {
+    assert_eq!(interpret("ToBoxes[-x]").unwrap(), "RowBox[{-, x}]");
+  }
+
+  #[test]
+  fn times() {
+    assert_eq!(interpret("ToBoxes[x * y]").unwrap(), "RowBox[{x,  , y}]");
+  }
+
+  #[test]
+  fn division() {
+    assert_eq!(interpret("ToBoxes[x / y]").unwrap(), "FractionBox[x, y]");
+  }
+
+  #[test]
+  fn power() {
+    assert_eq!(
+      interpret("ToBoxes[a + b^2]").unwrap(),
+      "RowBox[{a, +, SuperscriptBox[b, 2]}]"
+    );
+  }
+
+  #[test]
+  fn sqrt() {
+    assert_eq!(interpret("ToBoxes[Sqrt[x]]").unwrap(), "SqrtBox[x]");
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("ToBoxes[2/3]").unwrap(), "FractionBox[2, 3]");
+  }
+
+  #[test]
+  fn list() {
+    assert_eq!(
+      interpret("ToBoxes[{1, 2, 3}]").unwrap(),
+      "RowBox[{{, RowBox[{1, ,, 2, ,, 3}], }}]"
+    );
+  }
+
+  #[test]
+  fn function_call() {
+    assert_eq!(
+      interpret("ToBoxes[f[x, y]]").unwrap(),
+      "RowBox[{f, [, RowBox[{x, ,, y}], ]}]"
+    );
+  }
+
+  #[test]
+  fn function_call_single_arg() {
+    assert_eq!(interpret("ToBoxes[f[x]]").unwrap(), "RowBox[{f, [, x, ]}]");
+  }
+
+  #[test]
+  fn function_call_no_args() {
+    assert_eq!(interpret("ToBoxes[f[]]").unwrap(), "RowBox[{f, [, ]}]");
+  }
+
+  #[test]
+  fn boolean() {
+    assert_eq!(interpret("ToBoxes[True]").unwrap(), "True");
+  }
+
+  #[test]
+  fn evaluated_expression() {
+    // ToBoxes evaluates its argument first
+    assert_eq!(interpret("ToBoxes[1 + 2]").unwrap(), "3");
+  }
+}

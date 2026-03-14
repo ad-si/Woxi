@@ -5589,7 +5589,7 @@ TimeZoneOffset,,,,10.3,3947
 Timing,Returns the CPU time taken to evaluate an expression,✅,contextual,1,276
 Tiny,Tiny size specification,✅,none,6,304
 TitsGroupT,,,,8,5013
-ToBoxes,,,,3,737
+ToBoxes,Converts an expression to its box form representation for typesetting,✅,pure,3,737
 ToCharacterCode,Converts characters to their character codes,✅,pure,2,846
 ToContinuousTimeModel,,,,8,3972
 Today,Returns a DateObject representing the current date,✅,contextual,10,1044

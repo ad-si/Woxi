@@ -995,6 +995,10 @@ pub fn dispatch_complex_and_special(
       let rendered = crate::syntax::expr_to_output_form_2d(&args[0]);
       return Some(Ok(Expr::Raw(rendered)));
     }
+    // ToBoxes[expr] — convert expression to box form
+    "ToBoxes" if args.len() == 1 => {
+      return Some(Ok(expr_to_box_form(&args[0])));
+    }
     // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
     "MathMLForm" | "StandardForm" | "InputForm" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
@@ -1098,21 +1102,43 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     | Expr::Real(_)
     | Expr::Identifier(_)
     | Expr::Constant(_) => expr.clone(),
-    Expr::String(s) => Expr::String(s.clone()),
+    Expr::String(s) => Expr::String(format!("\"{}\"", s)),
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
       // Plus[a, b, c] → RowBox[{box(a), "+", box(b), "+", box(c)}]
-      // Handle negative terms: Times[-1, x] → "-", box(x)
+      // Handle negative terms: Times[-1, x] → "x", "-", box(x)
       let mut parts = Vec::new();
       for (i, arg) in args.iter().enumerate() {
         if i > 0 {
-          // Check for negative term: Times[-1, x] or Times[Integer(n<0), ...]
-          let is_neg = matches!(arg,
-            Expr::FunctionCall { name: tn, args: ta }
-            if tn == "Times" && !ta.is_empty() && matches!(&ta[0], Expr::Integer(n) if *n < 0)
-          );
-          if !is_neg {
-            parts.push(Expr::String("+".to_string()));
+          // Check for negative term: Times[-1, x]
+          if let Expr::FunctionCall { name: tn, args: ta } = arg
+            && tn == "Times"
+            && ta.len() == 2
+            && matches!(&ta[0], Expr::Integer(-1))
+          {
+            parts.push(Expr::String("-".to_string()));
+            parts.push(expr_to_box_form(&ta[1]));
+            continue;
           }
+          // Check for negative coefficient: Times[-n, x]
+          if let Expr::FunctionCall { name: tn, args: ta } = arg
+            && tn == "Times"
+            && ta.len() >= 2
+            && matches!(&ta[0], Expr::Integer(n) if *n < 0)
+          {
+            parts.push(Expr::String("-".to_string()));
+            // Negate the coefficient and box the positive term
+            let mut pos_args = ta.clone();
+            if let Expr::Integer(n) = &ta[0] {
+              pos_args[0] = Expr::Integer(-n);
+            }
+            let pos_term = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: pos_args,
+            };
+            parts.push(expr_to_box_form(&pos_term));
+            continue;
+          }
+          parts.push(Expr::String("+".to_string()));
         }
         parts.push(expr_to_box_form(arg));
       }
@@ -1271,6 +1297,61 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       Expr::FunctionCall {
         name: "SuperscriptBox".to_string(),
         args: vec![expr_to_box_form(left), expr_to_box_form(right)],
+      }
+    }
+    // List → RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}]
+    Expr::List(items) => {
+      let mut parts = Vec::new();
+      parts.push(Expr::String("{".to_string()));
+      if !items.is_empty() {
+        if items.len() == 1 {
+          parts.push(expr_to_box_form(&items[0]));
+        } else {
+          let mut inner = Vec::new();
+          for (i, item) in items.iter().enumerate() {
+            if i > 0 {
+              inner.push(Expr::String(",".to_string()));
+            }
+            inner.push(expr_to_box_form(item));
+          }
+          parts.push(Expr::FunctionCall {
+            name: "RowBox".to_string(),
+            args: vec![Expr::List(inner)],
+          });
+        }
+      }
+      parts.push(Expr::String("}".to_string()));
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
+      }
+    }
+    // General function call f[x, y] → RowBox[{f, "[", RowBox[{x, ",", y}], "]"}]
+    Expr::FunctionCall { name, args } => {
+      let mut parts = Vec::new();
+      parts.push(Expr::String(name.clone()));
+      parts.push(Expr::String("[".to_string()));
+      if !args.is_empty() {
+        if args.len() == 1 {
+          parts.push(expr_to_box_form(&args[0]));
+        } else {
+          let mut inner = Vec::new();
+          for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+              inner.push(Expr::String(",".to_string()));
+            }
+            inner.push(expr_to_box_form(arg));
+          }
+          parts.push(Expr::FunctionCall {
+            name: "RowBox".to_string(),
+            args: vec![Expr::List(inner)],
+          });
+        }
+      }
+      parts.push(Expr::String("]".to_string()));
+      Expr::FunctionCall {
+        name: "RowBox".to_string(),
+        args: vec![Expr::List(parts)],
       }
     }
     // Default: use the string representation
