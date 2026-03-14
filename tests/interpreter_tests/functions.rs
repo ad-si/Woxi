@@ -3074,3 +3074,58 @@ mod activate {
     );
   }
 }
+
+mod area {
+  use super::*;
+
+  #[test]
+  fn unit_disk() {
+    assert_eq!(interpret("Area[Disk[]]").unwrap(), "Pi");
+  }
+
+  #[test]
+  fn disk_with_radius() {
+    assert_eq!(interpret("Area[Disk[{0, 0}, 5]]").unwrap(), "25*Pi");
+  }
+
+  #[test]
+  fn elliptical_disk() {
+    assert_eq!(interpret("Area[Disk[{0, 0}, {3, 2}]]").unwrap(), "6*Pi");
+  }
+
+  #[test]
+  fn unit_rectangle() {
+    assert_eq!(interpret("Area[Rectangle[]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn rectangle_with_bounds() {
+    assert_eq!(interpret("Area[Rectangle[{0, 0}, {3, 4}]]").unwrap(), "12");
+  }
+
+  #[test]
+  fn triangle() {
+    assert_eq!(
+      interpret("Area[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn polygon() {
+    assert_eq!(
+      interpret("Area[Polygon[{{0, 0}, {4, 0}, {4, 3}, {0, 3}}]]").unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
+  fn circle_undefined() {
+    assert_eq!(interpret("Area[Circle[]]").unwrap(), "Undefined");
+  }
+
+  #[test]
+  fn symbolic_radius() {
+    assert_eq!(interpret("Area[Disk[{0, 0}, r]]").unwrap(), "Pi*r^2");
+  }
+}

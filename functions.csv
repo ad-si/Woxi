@@ -195,7 +195,7 @@ ArcSinh,Returns the inverse hyperbolic sine,✅,pure,1,349
 ArcTan,Returns the arc tangent of a number,✅,pure,1,153
 ArcTanDegrees,,,,14.1,
 ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1,297
-Area,,,,10,834
+Area,Computes the area of geometric regions like Disk Rectangle Triangle and Polygon,✅,pure,10,834
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1,135
 ArgMax,,,,7,1721
 ArgMin,,,,7,2144

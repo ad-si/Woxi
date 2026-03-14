@@ -999,6 +999,10 @@ pub fn dispatch_complex_and_special(
     "ToBoxes" if args.len() == 1 => {
       return Some(Ok(expr_to_box_form(&args[0])));
     }
+    // Area[region] — compute the area of a geometric region
+    "Area" if args.len() == 1 => {
+      return Some(compute_area(&args[0]));
+    }
     // FindSequenceFunction[list, var] — find a formula for an integer sequence
     "FindSequenceFunction" if args.len() == 2 => {
       return Some(find_sequence_function(&args[0], &args[1]));
@@ -1467,6 +1471,289 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
     // Atoms: return as-is
     _ => expr.clone(),
   }
+}
+
+// ─── Area ──────────────────────────────────────────────────────────────
+
+/// Compute the area of a geometric region.
+fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // Disk[] = Pi, Disk[center, r] = Pi*r^2, Disk[center, {a, b}] = Pi*a*b
+      "Disk" => {
+        if args.is_empty() || (args.len() == 1) {
+          // Unit disk
+          Ok(Expr::Constant("Pi".to_string()))
+        } else if args.len() == 2 {
+          match &args[1] {
+            Expr::List(radii) if radii.len() == 2 => {
+              // Elliptical disk: Pi * a * b
+              let area = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::Constant("Pi".to_string()),
+                  radii[0].clone(),
+                  radii[1].clone(),
+                ],
+              };
+              crate::evaluator::evaluate_expr_to_expr(&area)
+            }
+            r => {
+              // Circular disk: Pi * r^2
+              let area = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::Constant("Pi".to_string()),
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![r.clone(), Expr::Integer(2)],
+                  },
+                ],
+              };
+              crate::evaluator::evaluate_expr_to_expr(&area)
+            }
+          }
+        } else {
+          Ok(Expr::FunctionCall {
+            name: "Area".to_string(),
+            args: vec![expr.clone()],
+          })
+        }
+      }
+      // Rectangle[] = 1, Rectangle[{x1,y1}, {x2,y2}] = |x2-x1| * |y2-y1|
+      "Rectangle" => {
+        if args.is_empty() {
+          Ok(Expr::Integer(1))
+        } else if args.len() == 2 {
+          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) {
+            if p1.len() == 2 && p2.len() == 2 {
+              let width = Expr::FunctionCall {
+                name: "Abs".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![
+                    p2[0].clone(),
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![Expr::Integer(-1), p1[0].clone()],
+                    },
+                  ],
+                }],
+              };
+              let height = Expr::FunctionCall {
+                name: "Abs".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![
+                    p2[1].clone(),
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![Expr::Integer(-1), p1[1].clone()],
+                    },
+                  ],
+                }],
+              };
+              let area = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![width, height],
+              };
+              return crate::evaluator::evaluate_expr_to_expr(&area);
+            }
+          }
+          Ok(Expr::FunctionCall {
+            name: "Area".to_string(),
+            args: vec![expr.clone()],
+          })
+        } else {
+          Ok(Expr::FunctionCall {
+            name: "Area".to_string(),
+            args: vec![expr.clone()],
+          })
+        }
+      }
+      // Triangle[{{x1,y1},{x2,y2},{x3,y3}}] = |det| / 2
+      "Triangle" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() == 3 {
+              if let (Expr::List(p1), Expr::List(p2), Expr::List(p3)) =
+                (&pts[0], &pts[1], &pts[2])
+              {
+                if p1.len() == 2 && p2.len() == 2 && p3.len() == 2 {
+                  // Area = |x1(y2-y3) + x2(y3-y1) + x3(y1-y2)| / 2
+                  let area_expr = Expr::FunctionCall {
+                    name: "Times".to_string(),
+                    args: vec![
+                      Expr::FunctionCall {
+                        name: "Rational".to_string(),
+                        args: vec![Expr::Integer(1), Expr::Integer(2)],
+                      },
+                      Expr::FunctionCall {
+                        name: "Abs".to_string(),
+                        args: vec![Expr::FunctionCall {
+                          name: "Plus".to_string(),
+                          args: vec![
+                            Expr::FunctionCall {
+                              name: "Times".to_string(),
+                              args: vec![
+                                p1[0].clone(),
+                                Expr::FunctionCall {
+                                  name: "Plus".to_string(),
+                                  args: vec![
+                                    p2[1].clone(),
+                                    Expr::FunctionCall {
+                                      name: "Times".to_string(),
+                                      args: vec![
+                                        Expr::Integer(-1),
+                                        p3[1].clone(),
+                                      ],
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                            Expr::FunctionCall {
+                              name: "Times".to_string(),
+                              args: vec![
+                                p2[0].clone(),
+                                Expr::FunctionCall {
+                                  name: "Plus".to_string(),
+                                  args: vec![
+                                    p3[1].clone(),
+                                    Expr::FunctionCall {
+                                      name: "Times".to_string(),
+                                      args: vec![
+                                        Expr::Integer(-1),
+                                        p1[1].clone(),
+                                      ],
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                            Expr::FunctionCall {
+                              name: "Times".to_string(),
+                              args: vec![
+                                p3[0].clone(),
+                                Expr::FunctionCall {
+                                  name: "Plus".to_string(),
+                                  args: vec![
+                                    p1[1].clone(),
+                                    Expr::FunctionCall {
+                                      name: "Times".to_string(),
+                                      args: vec![
+                                        Expr::Integer(-1),
+                                        p2[1].clone(),
+                                      ],
+                                    },
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
+                        }],
+                      },
+                    ],
+                  };
+                  return crate::evaluator::evaluate_expr_to_expr(&area_expr);
+                }
+              }
+            }
+          }
+        }
+        Ok(Expr::FunctionCall {
+          name: "Area".to_string(),
+          args: vec![expr.clone()],
+        })
+      }
+      // Polygon[{{x1,y1},{x2,y2},...}] — Shoelace formula
+      "Polygon" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() >= 3 {
+              return compute_polygon_area(pts);
+            }
+          }
+        }
+        Ok(Expr::FunctionCall {
+          name: "Area".to_string(),
+          args: vec![expr.clone()],
+        })
+      }
+      // Circle has no area (it's 1D)
+      "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
+      _ => Ok(Expr::FunctionCall {
+        name: "Area".to_string(),
+        args: vec![expr.clone()],
+      }),
+    },
+    _ => Ok(Expr::FunctionCall {
+      name: "Area".to_string(),
+      args: vec![expr.clone()],
+    }),
+  }
+}
+
+/// Compute the area of a polygon using the Shoelace formula.
+fn compute_polygon_area(pts: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Extract 2D coordinates
+  let coords: Vec<(&Expr, &Expr)> = pts
+    .iter()
+    .filter_map(|p| {
+      if let Expr::List(xy) = p {
+        if xy.len() == 2 {
+          return Some((&xy[0], &xy[1]));
+        }
+      }
+      None
+    })
+    .collect();
+
+  if coords.len() != pts.len() {
+    return Ok(Expr::FunctionCall {
+      name: "Area".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Polygon".to_string(),
+        args: vec![Expr::List(pts.to_vec())],
+      }],
+    });
+  }
+
+  let n = coords.len();
+  // Shoelace: 2*A = sum_{i=0}^{n-1} (x_i * y_{i+1} - x_{i+1} * y_i)
+  let mut sum_terms = Vec::new();
+  for i in 0..n {
+    let j = (i + 1) % n;
+    // x_i * y_j
+    sum_terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![coords[i].0.clone(), coords[j].1.clone()],
+    });
+    // -x_j * y_i
+    sum_terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), coords[j].0.clone(), coords[i].1.clone()],
+    });
+  }
+
+  let area_expr = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)],
+      },
+      Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: sum_terms,
+        }],
+      },
+    ],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&area_expr)
 }
 
 // ─── FindSequenceFunction ──────────────────────────────────────────────
