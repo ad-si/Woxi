@@ -117,7 +117,7 @@ And,Checks if all conditions are true,✅,pure,1,50
 AndersonDarlingTest,,,,8,3427
 AngerJ,,,,7,2525
 AngleBisector,,,,12,4204
-AngleBracket,,,,3,1329
+AngleBracket,Symbolic representation of angle brackets,✅,,3,1329
 AnglePath,Generate 2D points by successively turning and stepping,✅,pure,10.1,1543
 AnglePath3D,,,,11.1,4052
 AngleVector,,,,10.1,2074
@@ -1352,7 +1352,7 @@ DeleteDuplicates,Removes duplicate elements from a list,✅,pure,7,373
 DeleteDuplicatesBy,Deletes duplicates based on a function criterion,✅,pure,10,1472
 DeleteElements,,,,13.1,
 DeleteFile,,,,2,1359
-DeleteMissing,,,,10,1338
+DeleteMissing,Delete Missing elements from a list,✅,,10,1338
 DeleteObject,,,,11.2,2421
 DeletePermissionsKey,,,,11,5587
 DeleteSearchIndex,,,,10.2,4881
@@ -6071,7 +6071,7 @@ WebSessions,,,,12,
 WebWindowObject,,,,12,
 Wedge,Symbolic wedge product operator with Unicode display,✅,none,3,1049
 Wednesday,,,,9,2045
-WeibullDistribution,,,,6,1322
+WeibullDistribution,Weibull probability distribution,✅,,6,1322
 WeierstrassE1,,,,11.2,
 WeierstrassE2,,,,11.2,
 WeierstrassE3,,,,11.2,

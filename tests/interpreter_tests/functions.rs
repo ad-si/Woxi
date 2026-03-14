@@ -3694,3 +3694,50 @@ mod file_exists_q {
     );
   }
 }
+
+mod delete_missing {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("DeleteMissing[{1, Missing[], 3, Missing[\"x\"], 5}]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn no_missing() {
+    assert_eq!(interpret("DeleteMissing[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn all_missing() {
+    assert_eq!(
+      interpret("DeleteMissing[{Missing[], Missing[]}]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    assert_eq!(interpret("DeleteMissing[{}]").unwrap(), "{}");
+  }
+}
+
+mod angle_bracket {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("AngleBracket[a, b, c]").unwrap(),
+      "\u{2329} a, b, c \u{232A}"
+    );
+  }
+
+  #[test]
+  fn single() {
+    assert_eq!(interpret("AngleBracket[x]").unwrap(), "\u{2329} x \u{232A}");
+  }
+}
