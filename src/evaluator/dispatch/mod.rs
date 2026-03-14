@@ -1223,7 +1223,10 @@ pub fn evaluate_function_call_ast_inner(
     | "Longest"
     | "BetaRegularized"
     | "GammaRegularized"
-    | "GenerateConditions" => {
+    | "GenerateConditions"
+    | "OverTilde"
+    | "SinhIntegral"
+    | "CoshIntegral" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -1551,6 +1554,62 @@ pub fn evaluate_function_call_ast_inner(
           return Ok(Expr::Integer(edges.len() as i128));
         }
       }
+    }
+  }
+
+  // VertexDegree[graph] or VertexDegree[graph, vertex] — vertex degree(s)
+  if name == "VertexDegree" && (args.len() == 1 || args.len() == 2) {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && gargs.len() >= 2 {
+        if let (Expr::List(verts), Expr::List(edges)) = (&gargs[0], &gargs[1]) {
+          // Count degree for each vertex
+          let mut degrees = vec![0i128; verts.len()];
+          for edge in edges {
+            if let Expr::FunctionCall {
+              name: ename,
+              args: eargs,
+            } = edge
+            {
+              if eargs.len() == 2 {
+                for (idx, v) in verts.iter().enumerate() {
+                  if expr_to_string(&eargs[0]) == expr_to_string(v)
+                    || expr_to_string(&eargs[1]) == expr_to_string(v)
+                  {
+                    degrees[idx] += 1;
+                  }
+                }
+              }
+            }
+          }
+          if args.len() == 2 {
+            // Single vertex
+            let target = expr_to_string(&args[1]);
+            for (idx, v) in verts.iter().enumerate() {
+              if expr_to_string(v) == target {
+                return Ok(Expr::Integer(degrees[idx]));
+              }
+            }
+          } else {
+            return Ok(Expr::List(
+              degrees.into_iter().map(Expr::Integer).collect(),
+            ));
+          }
+        }
+      }
+    }
+  }
+
+  // FileExistsQ[path] — check if file/directory exists
+  if name == "FileExistsQ" && args.len() == 1 {
+    if let Expr::String(path) = &args[0] {
+      let exists = std::path::Path::new(path).exists();
+      return Ok(Expr::Identifier(
+        if exists { "True" } else { "False" }.to_string(),
+      ));
     }
   }
 

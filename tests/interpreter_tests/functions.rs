@@ -3652,3 +3652,45 @@ mod edge_count {
     );
   }
 }
+
+mod vertex_degree {
+  use super::*;
+
+  #[test]
+  fn all_degrees() {
+    assert_eq!(
+      interpret("VertexDegree[CompleteGraph[4]]").unwrap(),
+      "{3, 3, 3, 3}"
+    );
+  }
+
+  #[test]
+  fn single_vertex() {
+    assert_eq!(interpret("VertexDegree[CompleteGraph[5], 1]").unwrap(), "4");
+  }
+
+  #[test]
+  fn path_graph_degrees() {
+    assert_eq!(
+      interpret("VertexDegree[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{1, 2, 2, 1}"
+    );
+  }
+}
+
+mod file_exists_q {
+  use super::*;
+
+  #[test]
+  fn existing_path() {
+    assert_eq!(interpret("FileExistsQ[\"/tmp\"]").unwrap(), "True");
+  }
+
+  #[test]
+  fn nonexistent_path() {
+    assert_eq!(
+      interpret("FileExistsQ[\"/nonexistent_path_xyz\"]").unwrap(),
+      "False"
+    );
+  }
+}

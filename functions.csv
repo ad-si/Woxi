@@ -619,7 +619,7 @@ ButterflyGraph,,,,8,2798
 ButterworthFilterModel,,,,9,2854
 Button,Interactive button element,🚫,effectful,6,280
 ButtonBar,,,,7,2570
-ButtonBox,,,,3,1313
+ButtonBox,,🚫,,3,1313
 ButtonBoxOptions,,,,4,3474
 ButtonData,,🚫,,3,1205
 ButtonFunction,,,,3,1866
@@ -651,7 +651,7 @@ CanonicalGraph,,,,10,3462
 CanonicalizePolygon,,,,12,4006
 CanonicalizePolyhedron,,,,12,4660
 CanonicalizeRegion,,,,12.3,
-CanonicalName,,,,10,1286
+CanonicalName,,🚫,,10,1286
 CanonicalWarpingCorrespondence,,,,11,4315
 CanonicalWarpingDistance,,,,11,4052
 CantorMesh,,,,11.1,2650
@@ -856,7 +856,7 @@ CloudExport,Export to the Wolfram Cloud,✅,none,10,691
 CloudExpression,,,,10.4,3916
 CloudExpressions,,,,10.4,4204
 CloudFunction,,,,10,5013
-CloudGet,,,,10,1284
+CloudGet,,🚫,,10,1284
 CloudImport,,,,10,1912
 CloudLoggingData,,🚫,,10.2,3697
 CloudObject,Requires external services or GUI infrastructure,🚫,io,10,928
@@ -970,7 +970,7 @@ ComplexInfinity,Complex infinity constant,✅,pure,,
 ComplexityFunction,,,,3,1451
 ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12,999
 ComplexPlot,,,,12,1377
-ComplexPlot3D,,,,12,1311
+ComplexPlot3D,,🚫,,12,1311
 ComplexRegionPlot,,,,12.1,1468
 ComplexStreamPlot,,,,12.1,3020
 ComplexVectorPlot,,,,12.1,3094
@@ -1068,7 +1068,7 @@ ContourStyle,Option specifying the style of contour lines,✅,none,2,424
 ContraharmonicMean,,,,7,4527
 ContrastiveLossLayer,,,,11.1,4567
 Control,,🚫,,7,411
-ControlActive,,,,6,1312
+ControlActive,,🚫,,6,1312
 ControllabilityGramian,,,,8,4204
 ControllabilityMatrix,,,,8,3889
 ControllableDecomposition,,,,8,4291
@@ -1125,7 +1125,7 @@ CorrelationTest,,,,9,3317
 Cos,Returns the cosine of a number,✅,pure,1,31
 CosDegrees,,,,14.1,
 Cosh,Returns the hyperbolic cosine,✅,pure,1,259
-CoshIntegral,,,,3,1347
+CoshIntegral,Hyperbolic cosine integral function,✅,1,3,1347
 CosineDistance,,,,6,2911
 CosineWindow,,,,9,3862
 CosIntegral,Cosine integral Ci(z),✅,pure,2,1178
@@ -1209,7 +1209,7 @@ CupCap,,,,3,5390
 Curl,Computes the curl of a vector field,✅,pure,9,847
 CurrencyConvert,,,,10,2807
 CurrentDate,,,,11.1,3083
-CurrentImage,,,,8,1298
+CurrentImage,,🚫,,8,1298
 CurrentNotebookImage,,,,11.2,5079
 CurrentScreenImage,,,,11.2,4387
 CurrentValue,Returns current values of frontend settings,✅,effectful,6,442
@@ -1443,7 +1443,7 @@ DigitQ,Tests if a string consists entirely of digits,✅,pure,2,1827
 DigitSum,Returns the sum of digits of a number,✅,pure,14,
 DihedralAngle,,,,12,5486
 DihedralGroup,,,,8,2662
-Dilation,,,,7,1299
+Dilation,,🚫,,7,1299
 DimensionalCombinations,,,,10,4567
 DimensionalMeshComponents,,,,10,4881
 DimensionReduce,,,,10.1,3121
@@ -1907,7 +1907,7 @@ FileBaseName,,,,7,1796
 FileByteCount,,,,2,2018
 FileConvert,,,,12,5486
 FileDate,,,,2,2121
-FileExistsQ,,,,7,1293
+FileExistsQ,Tests whether a file or directory exists,✅,2,7,1293
 FileExtension,,,,7,2742
 FileFormat,,,,6,3889
 FileFormatProperties,,,,13,
@@ -1955,7 +1955,7 @@ FindCycle,,,,10,1815
 FindDevices,,,,10,4291
 FindDistribution,,,,10.3,1643
 FindDistributionParameters,,,,8,1528
-FindDivisions,,,,7,1291
+FindDivisions,,🚫,,7,1291
 FindEdgeColoring,,,,13,
 FindEdgeCover,,,,8,4081
 FindEdgeCut,,,,9,4138
@@ -2094,7 +2094,7 @@ FormatType,Option for output format type,✅,pure,1,1227
 FormBox,,🚫,,3,991
 FormBoxOptions,,,,4,
 FormControl,,🚫,,11,4225
-FormFunction,,,,10,1303
+FormFunction,,🚫,,10,1303
 FormLayoutFunction,,,,10,4315
 FormObject,,,,10,2837
 FormPage,,,,10.3,1672
@@ -2179,7 +2179,7 @@ Front,,,,6,1324
 FrontEndDynamicExpression,,,,8,4660
 FrontEndEventActions,,,,6,4138
 FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3,982
-FrontEndToken,,,,3,1293
+FrontEndToken,,🚫,,3,1293
 FrontEndTokenExecute,,🚫,,4,1280
 Full,Full-size image specification,✅,none,6,294
 FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1,4173
@@ -2254,7 +2254,7 @@ GenerateAsymmetricKeyPair,,,,10.1,3326
 GenerateConditions,Option for generating conditions in results,✅,1,3,1282
 GeneratedAssetFormat,,,,12.3,
 GeneratedAssetLocation,,,,12.2,5390
-GeneratedCell,,,,3,1303
+GeneratedCell,,🚫,,3,1303
 GeneratedDocumentBinding,,,,10,5486
 GenerateDerivedKey,,,,12,
 GenerateDigitalSignature,,,,12,4660
@@ -2986,8 +2986,8 @@ KEdgeConnectedGraphQ,,,,10,4527
 KeepExistingVersion,,,,12.1,
 KelvinBei,,🚫,,6,1153
 KelvinBer,,🚫,,6,1146
-KelvinKei,,,,6,1307
-KelvinKer,,,,6,1310
+KelvinKei,,🚫,,6,1307
+KelvinKer,,🚫,,6,1310
 KendallTau,,,,9,3785
 KendallTauTest,,,,9,4138
 KernelConfiguration,,,,13.1,
@@ -3464,7 +3464,7 @@ MaxStepFraction,,,,4,2112
 MaxSteps,Option specifying the maximum number of steps,✅,none,2,705
 MaxStepSize,,,,3,1482
 MaxTrainingRounds,,,,11,1607
-MaxValue,,,,7,1305
+MaxValue,,🚫,,7,1305
 MaxwellDistribution,,,,6,3191
 MaxWordGap,,,,11,5079
 McLaughlinGroupMcL,,,,8,5079
@@ -4003,7 +4003,7 @@ OverlayVideo,,,,13,
 Overscript,,,,3,1704
 OverscriptBox,,,,3,2223
 OverscriptBoxOptions,,,,4,5390
-OverTilde,,,,6,1288
+OverTilde,Displays expression with tilde above,✅,1,6,1288
 OverVector,Display form with a vector arrow accent,✅,none,6,777
 OverwriteTarget,,,,11,2170
 OwenT,,,,8,4567
@@ -4558,7 +4558,7 @@ Refresh,,🚫,,6,1145
 RefreshRate,,,,6,2880
 Region,,🚫,,11.1,959
 RegionBinarize,,,,8,3008
-RegionBoundary,,,,10,1301
+RegionBoundary,,🚫,,10,1301
 RegionBoundaryStyle,,,,12.1,4612
 RegionBounds,,,,10,1480
 RegionCentroid,,,,10,1377
@@ -4610,7 +4610,7 @@ RelationGraph,,,,10.2,1617
 ReleaseHold,Removes Hold wrappers from an expression,✅,pure,2,612
 ReliabilityDistribution,,,,9,2411
 ReliefImage,,,,8,3656
-ReliefPlot,,,,6,1289
+ReliefPlot,,🚫,,6,1289
 RemoteAuthorizationCaching,,,,11.3,
 RemoteBatchJobAbort,,,,12.2,
 RemoteBatchJobObject,,,,12.2,
@@ -4993,7 +4993,7 @@ SingularValueDecomposition,,🚫,,5,1283
 SingularValueList,,,,5,1892
 SingularValuePlot,,,,8,3755
 Sinh,Returns the hyperbolic sine,✅,pure,1,278
-SinhIntegral,,,,3,1309
+SinhIntegral,Hyperbolic sine integral function,✅,1,3,1309
 SinIntegral,Sine integral Si(z),✅,pure,2,1148
 SixJSymbol,,🚫,,2,1217
 Skeleton,Represents omitted elements in output display as <<n>>,✅,none,1,4479
@@ -5220,7 +5220,7 @@ StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7,864
 StreamPosition,,,,2,2570
 Streams,,,,2,2960
 StreamScale,,🚫,,7,1278
-StreamStyle,,,,7,1304
+StreamStyle,,🚫,,7,1304
 StrictInequalities,,,,12.2,
 String,Head type for string values,✅,pure,1,182
 StringApply,,,,14.1,
@@ -5425,11 +5425,11 @@ TableDepth,,,,2,1986
 TableDirections,,,,2,1977
 TableForm,Formats data as a table,✅,pure,1,255
 TableHeadings,Option specifying headings for table rows and columns,✅,none,2,517
-TableSpacing,,,,2,1290
+TableSpacing,,🚫,,2,1290
 TableView,,,,12.1,2792
 Tabular,Represents a data frame or table of structured data,✅,pure,14.2,2792
 ToTabular,Converts data into a Tabular object with specified orientation,✅,pure,14.2,
-TabView,,,,6,1308
+TabView,,🚫,,6,1308
 TagBox,,🚫,,3,1012
 TagBoxOptions,,,,6,4052
 TaggingRules,,,,4,1459
@@ -5520,7 +5520,7 @@ Texture,Apply a texture to a surface in graphics,✅,none,8,849
 TextureCoordinateFunction,,,,8,1643
 TextureCoordinateScaling,,,,8,2720
 TextureMapping,,,,14,
-TextWords,,,,10.1,1295
+TextWords,,🚫,,10.1,1295
 Therefore,Represents a therefore logical relation,✅,pure,3,3972
 ThermodynamicData,,🚫,,10,1368
 ThermometerGauge,,,,9,2867
@@ -5945,7 +5945,7 @@ VertexCosineSimilarity,,,,9,4947
 VertexCount,Returns the number of vertices in a graph,✅,1,8,1225
 VertexCoverQ,,,,8,4437
 VertexDataCoordinates,,,,9,5587
-VertexDegree,,,,8,1287
+VertexDegree,Returns the degree of vertices in a graph,✅,1,8,1287
 VertexDelete,,,,8,1935
 VertexDiceSimilarity,,,,9,4947
 VertexEccentricity,,,,8,2871
@@ -6127,7 +6127,7 @@ WindowMargins,,,,3,1632
 WindowOpacity,,,,6,3737
 WindowSize,,🚫,,3,1164
 WindowStatusArea,,,,6,4027
-WindowTitle,,,,3,1296
+WindowTitle,,🚫,,3,1296
 WindowToolbars,,,,3,3413
 WindSpeedData,,🚫,,10,3491
 WindVectorData,,🚫,,10,3636
