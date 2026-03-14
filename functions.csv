@@ -639,7 +639,7 @@ CalendarConvert,,,,10,3378
 CalendarData,,🚫,,9,4262
 CalendarType,,,,9,3200
 CalibratedSystemModel,,,,13.3,
-Callout,,,,11,1015
+Callout,,🚫,,11,1015
 CalloutMarker,,,,11,3298
 CalloutStyle,,,,11,3636
 CallPacket,,,,3,3862
@@ -897,7 +897,7 @@ ColorDistance,,,,10,2071
 ColorFunction,Option specifying the color function for visualization,✅,none,2,152
 ColorFunctionBinning,,,,12.2,5184
 ColorFunctionScaling,Option to scale color function input,✅,none,4,559
-Colorize,,,,8,1035
+Colorize,,🚫,,8,1035
 ColorNegate,Negates colors in an image,✅,pure,7,658
 ColorProfileData,,🚫,,9,2487
 ColorQ,,,,10,2162
@@ -1219,7 +1219,7 @@ CurveClosed,,,,8,2084
 Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 CycleGraph,,,,8,1547
 CycleIndexPolynomial,,,,9,3124
-Cycles,,,,8,941
+Cycles,Permutation cycle notation wrapper,✅,none,8,941
 CyclicGroup,,,,8,3121
 Cyclotomic,n-th cyclotomic polynomial,✅,pure,1,2399
 Cylinder,3D cylinder graphics primitive,✅,none,6,302
@@ -1512,7 +1512,7 @@ Dispatch,Optimized rule dispatch for pattern matching,✅,none,2,1010
 DispersionEstimatorFunction,,,,7,4809
 DisplayAllSteps,,,,6,2431
 DisplayEndPacket,,,,3,5390
-DisplayForm,,,,3,956
+DisplayForm,,🚫,,3,956
 DisplayFunction,Option controlling display output,✅,pure,1,375
 DisplayPacket,,,,3,5390
 DistanceFunction,,,,6,1171
@@ -4027,7 +4027,7 @@ PacletSiteUnregister,,,,12.1,
 PacletSiteUpdate,,,,12.1,3440
 PacletSymbol,,,,13,
 PacletUninstall,,,,12.1,4081
-PaddedForm,,,,2,900
+PaddedForm,,🚫,,2,900
 Padding,,,,7,1357
 PaddingLayer,,,,11.1,4437
 PaddingSize,,,,11,4567
@@ -4085,7 +4085,7 @@ ParameterMixtureDistribution,,,,8,1519
 ParametricConvexOptimization,,,,12.2,5184
 ParametricFunction,,,,9,4138
 ParametricNDSolve,,,,9,1231
-ParametricNDSolveValue,,,,9,977
+ParametricNDSolveValue,,🚫,,9,977
 ParametricPlot,Creates a parametric plot,✅,pure,1,118
 ParametricPlot3D,3D parametric plot,🚫,none,2,210
 ParametricRampLayer,,,,12.1,4291
@@ -4159,7 +4159,7 @@ PermutationCycles,,,,8,1550
 PermutationCyclesQ,,,,8,3280
 PermutationGroup,,,,8,1979
 PermutationLength,,,,8,3176
-PermutationList,,,,8,2223
+PermutationList,Converts cycle notation to permutation list,✅,none,8,2223
 PermutationListQ,,,,8,3862
 PermutationMatrix,,,,13.1,
 PermutationMax,,,,8,4315
@@ -4202,7 +4202,7 @@ PitchRecognize,,,,12,5390
 PixelValue,,,,8,2005
 PixelValuePositions,,,,9,1536
 Placed,Inert positional wrapper for label and legend placement (used with ChartLabels etc.),✅,pure,7,391
-Placeholder,,,,7,1029
+Placeholder,,🚫,,7,1029
 PlaceholderLayer,,,,12.2,4707
 PlaceholderReplace,,,,8,
 Plain,Font style symbol for plain (non-bold non-italic) text,✅,pure,6,361
@@ -4477,7 +4477,7 @@ RandomImage,Generates a random image with given dimensions,✅,pure,8,1723
 RandomInstance,,,,12,1736
 RandomInteger,Generate random integers,✅,contextual,6,156
 RandomPermutation,,,,8,1833
-RandomPoint,,,,10.2,1020
+RandomPoint,,🚫,,10.2,1020
 RandomPointConfiguration,,,,12.2,4006
 RandomPolygon,,,,12,3566
 RandomPolyhedron,,,,12,2971
@@ -4556,7 +4556,7 @@ ReflectionMatrix,,,,6,2203
 ReflectionTransform,,,,6,1536
 Refresh,,,,6,1145
 RefreshRate,,,,6,2880
-Region,,,,11.1,959
+Region,,🚫,,11.1,959
 RegionBinarize,,,,8,3008
 RegionBoundary,,,,10,1301
 RegionBoundaryStyle,,,,12.1,4612
@@ -4908,7 +4908,7 @@ ServiceSubmit,,,,12,
 SessionSubmit,,,,11.2,2900
 SessionTime,,,,2,1444
 Set,Assigns a value to a symbol,✅,stateful,1,5
-SetAccuracy,,,,2,972
+SetAccuracy,,🚫,,2,972
 SetAlphaChannel,,,,8,1426
 SetAttributes,Sets attributes for a symbol,✅,stateful,1,333
 SetCloudDirectory,,,,10,3522
@@ -4945,7 +4945,7 @@ ShiftedGompertzDistribution,,,,10.3,3785
 ShiftRegisterSequence,,,,11,4104
 Short,Short output format,✅,pure,1,743
 ShortDownArrow,,,,3,5390
-Shortest,,,,6,958
+Shortest,,🚫,,6,958
 ShortestPathFunction,,,,8,5587
 ShortLeftArrow,,,,3,5390
 ShortRightArrow,,,,3,2911
@@ -5565,7 +5565,7 @@ TimeObjectQ,,,,10.2,4567
 TimeRemaining,Returns the time remaining in a TimeConstrained evaluation,✅,contextual,12.1,
 Times,Multiply numbers,✅,pure,1,3
 TimesBy,Multiplies a variable by a value,✅,stateful,1,1032
-TimeSeries,,,,10,1038
+TimeSeries,,🚫,,10,1038
 TimeSeriesAggregate,,,,10,2786
 TimeSeriesForecast,,,,9,1815
 TimeSeriesInsert,,,,10,3678

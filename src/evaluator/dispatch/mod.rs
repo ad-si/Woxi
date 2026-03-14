@@ -1202,13 +1202,80 @@ pub fn evaluate_function_call_ast_inner(
     | "CircleTimes"
     | "Wedge"
     | "Del"
-    | "Dispatch" => {
+    | "Dispatch"
+    | "Cycles" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
       });
     }
     _ => {}
+  }
+
+  // PermutationList[Cycles[{cycle1, cycle2, ...}]] — convert cycle notation to list form
+  if name == "PermutationList" && (args.len() == 1 || args.len() == 2) {
+    if let Expr::FunctionCall {
+      name: cname,
+      args: cargs,
+    } = &args[0]
+    {
+      if cname == "Cycles" && cargs.len() == 1 {
+        if let Expr::List(cycle_list) = &cargs[0] {
+          // Find the maximum element to determine list length
+          let mut max_elem: usize = 0;
+          for cycle in cycle_list {
+            if let Expr::List(c) = cycle {
+              for elem in c {
+                if let Expr::Integer(n) = elem {
+                  if *n as usize > max_elem {
+                    max_elem = *n as usize;
+                  }
+                }
+              }
+            }
+          }
+          // Allow explicit length via second argument
+          if args.len() == 2 {
+            if let Expr::Integer(n) = &args[1] {
+              max_elem = *n as usize;
+            }
+          }
+          // Build identity permutation
+          let mut perm: Vec<usize> = (0..=max_elem).collect();
+          // Apply each cycle
+          for cycle in cycle_list {
+            if let Expr::List(c) = cycle {
+              let indices: Vec<usize> = c
+                .iter()
+                .filter_map(|e| {
+                  if let Expr::Integer(n) = e {
+                    Some(*n as usize)
+                  } else {
+                    None
+                  }
+                })
+                .collect();
+              if indices.len() >= 2 {
+                // Cycle (a, b, c) means a->b, b->c, c->a
+                let first = indices[0];
+                for i in 0..indices.len() - 1 {
+                  perm[indices[i]] = indices[i + 1];
+                }
+                perm[indices[indices.len() - 1]] = first;
+              }
+            }
+          }
+          let result: Vec<Expr> = (1..=max_elem)
+            .map(|i| Expr::Integer(perm[i] as i128))
+            .collect();
+          return Ok(Expr::List(result));
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
   }
 
   // CompleteGraph[n] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}]
