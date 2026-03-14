@@ -3498,6 +3498,58 @@ mod circle_plus {
   }
 }
 
+mod piecewise_expand {
+  use super::*;
+
+  #[test]
+  fn min_two_args() {
+    assert_eq!(
+      interpret("PiecewiseExpand[Min[x, y]]").unwrap(),
+      "Piecewise[{{x, x - y <= 0}}, y]"
+    );
+  }
+
+  #[test]
+  fn max_two_args() {
+    assert_eq!(
+      interpret("PiecewiseExpand[Max[x, y]]").unwrap(),
+      "Piecewise[{{x, x - y >= 0}}, y]"
+    );
+  }
+
+  #[test]
+  fn unit_step() {
+    assert_eq!(
+      interpret("PiecewiseExpand[UnitStep[x]]").unwrap(),
+      "Piecewise[{{1, x >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn clip_default() {
+    assert_eq!(
+      interpret("PiecewiseExpand[Clip[x]]").unwrap(),
+      "Piecewise[{{-1, x < -1}, {1, x > 1}}, x]"
+    );
+  }
+
+  #[test]
+  fn clip_custom_bounds() {
+    assert_eq!(
+      interpret("PiecewiseExpand[Clip[x, {0, 10}]]").unwrap(),
+      "Piecewise[{{0, x < 0}, {10, x > 10}}, x]"
+    );
+  }
+
+  #[test]
+  fn unsupported_returns_unevaluated() {
+    assert_eq!(
+      interpret("PiecewiseExpand[Sin[x]]").unwrap(),
+      "PiecewiseExpand[Sin[x]]"
+    );
+  }
+}
+
 mod circle_points {
   use super::*;
 

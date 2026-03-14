@@ -136,6 +136,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaDistribution" => pdf_beta(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
+    "ChiSquareDistribution" => pdf_chi_square(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -306,6 +307,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
+    "ChiSquareDistribution" => cdf_chi_square(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -980,6 +982,18 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "ChiSquareDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "ChiSquareDistribution expects 1 argument".into(),
+        ));
+      }
+      let k = dargs[0].clone();
+      // Mean = k, Var = 2*k
+      let mean = k.clone();
+      let var = times(int(2), k);
+      Ok((mean, var))
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"
     ))),
@@ -1382,6 +1396,51 @@ fn cdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
 
   // Piecewise[{{cdf_val, x > 0}}, 0]
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(cdf_val, cond)], int(0)))
+}
+
+/// PDF[ChiSquareDistribution[k], x] = Piecewise[{{x^(k/2-1) / (2^(k/2) * E^(x/2) * Gamma[k/2]), x > 0}}, 0]
+fn pdf_chi_square(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ChiSquareDistribution expects 1 argument".into(),
+    ));
+  }
+  let k = dargs[0].clone();
+
+  // x^(k/2 - 1)
+  let x_power = power(x.clone(), minus(divide(k.clone(), int(2)), int(1)));
+  // 2^(k/2)
+  let two_power = power(int(2), divide(k.clone(), int(2)));
+  // E^(x/2)
+  let exp_part = power(e(), divide(x.clone(), int(2)));
+  // Gamma[k/2]
+  let gamma_part = Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![divide(k, int(2))],
+  };
+  let denom = times(times(two_power, exp_part), gamma_part);
+  let pdf_val = divide(x_power, denom);
+
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[ChiSquareDistribution[k], x] = Piecewise[{{GammaRegularized[k/2, 0, x/2], x > 0}}, 0]
+fn cdf_chi_square(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ChiSquareDistribution expects 1 argument".into(),
+    ));
+  }
+  let k = dargs[0].clone();
+
+  let cdf_val = Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![divide(k, int(2)), int(0), divide(x.clone(), int(2))],
+  };
+
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }
