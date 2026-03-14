@@ -1317,6 +1317,14 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // Key[k] is an operator form — return unevaluated (applied via CurriedCall)
+  if name == "Key" {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // Darker/Lighter fallback: return unevaluated if color couldn't be resolved
   if name == "Darker" || name == "Lighter" {
     return Ok(Expr::FunctionCall {

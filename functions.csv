@@ -2997,7 +2997,7 @@ KernelFunction,,,,12,4881
 KernelMixtureDistribution,,,,8,2413
 KernelObject,,,,7,2625
 Ket,,,,13.3,1665
-Key,,,,10,966
+Key,Operator form for extracting values from associations by key,✅,none,10,966
 KeyCollisionFunction,,,,10.3,5013
 KeyComplement,,,,10.1,5486
 KeyDrop,Drops specified keys from an association,✅,pure,10,1986

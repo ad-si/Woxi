@@ -473,3 +473,66 @@ mod multiline_association {
     );
   }
 }
+
+mod key {
+  use super::*;
+
+  #[test]
+  fn basic_string_key() {
+    assert_eq!(
+      interpret("Key[\"a\"][<|\"a\" -> 1, \"b\" -> 2|>]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn integer_key() {
+    assert_eq!(
+      interpret("Key[2][<|1 -> \"a\", 2 -> \"b\"|>]").unwrap(),
+      "b"
+    );
+  }
+
+  #[test]
+  fn missing_key() {
+    assert_eq!(
+      interpret("Key[\"missing\"][<|\"a\" -> 1|>]").unwrap(),
+      "Missing[KeyAbsent, missing]"
+    );
+  }
+
+  #[test]
+  fn symbol_key() {
+    assert_eq!(interpret("Key[x][<|x -> 42, y -> 99|>]").unwrap(), "42");
+  }
+
+  #[test]
+  fn unevaluated_without_arg() {
+    assert_eq!(interpret("Key[\"a\"]").unwrap(), "Key[a]");
+  }
+
+  #[test]
+  fn non_association_arg() {
+    assert_eq!(
+      interpret("Key[\"a\"][{1, 2, 3}]").unwrap(),
+      "Key[a][{1, 2, 3}]"
+    );
+  }
+
+  #[test]
+  fn last_key_in_association() {
+    assert_eq!(
+      interpret("Key[\"c\"][<|\"a\" -> 1, \"b\" -> 2, \"c\" -> 3|>]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn with_variable() {
+    assert_eq!(
+      interpret("assoc = <|\"x\" -> 10, \"y\" -> 20|>; Key[\"y\"][assoc]")
+        .unwrap(),
+      "20"
+    );
+  }
+}

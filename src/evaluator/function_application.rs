@@ -476,6 +476,34 @@ pub fn apply_curried_call(
         let new_args =
           vec![func_args[0].clone(), args[0].clone(), func_args[1].clone()];
         evaluate_function_call_ast(name, &new_args)
+      } else if name == "Key" && func_args.len() == 1 && args.len() == 1 {
+        // Key[k][assoc] — extract value for key k from association
+        let key = &func_args[0];
+        let key_str = expr_to_string(key);
+        match &args[0] {
+          Expr::Association(pairs) => {
+            for (k, v) in pairs {
+              if expr_to_string(k) == key_str {
+                return Ok(v.clone());
+              }
+            }
+            // Key not found: return Missing[KeyAbsent, k]
+            Ok(Expr::FunctionCall {
+              name: "Missing".to_string(),
+              args: vec![
+                Expr::Identifier("KeyAbsent".to_string()),
+                key.clone(),
+              ],
+            })
+          }
+          _ => {
+            // Not an association: return unevaluated
+            Ok(Expr::CurriedCall {
+              func: Box::new(func.clone()),
+              args: args.to_vec(),
+            })
+          }
+        }
       } else if matches!(
         name.as_str(),
         "Derivative"
