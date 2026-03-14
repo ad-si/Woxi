@@ -2301,7 +2301,7 @@ GeoDistance,,,,7,1351
 GeoDistanceList,,,,10.4,3537
 GeoElevationData,,🚫,,10,1717
 GeoEntities,,,,10,2094
-GeoGraphics,,,,10,741
+GeoGraphics,Creates geographic maps and visualizations,🚫,io,10,741
 GeoGraphPlot,,,,12.3,
 GeoGraphValuePlot,,,,13,
 GeogravityModelData,,🚫,,10.1,3972
@@ -3185,7 +3185,7 @@ LinearGradientFilling,,,,12.2,2712
 LinearGradientImage,,,,10,2742
 LinearizingTransformationData,,🚫,,10,
 LinearLayer,,,,11,1218
-LinearModelFit,,,,7,768
+LinearModelFit,Fits a linear model to data and returns a FittedModel object,✅,pure,7,768
 LinearOffsetFunction,,,,7,3916
 LinearOptimization,,,,12,3803
 LinearRecurrence,Generates a linear recurrence sequence,✅,pure,7,1632
@@ -6148,7 +6148,7 @@ WordData,,🚫,,6,92
 WordDefinition,,,,10.3,2867
 WordFrequency,,,,10.4,4291
 WordFrequencyData,,🚫,,10.4,1815
-WordList,,,,10.3,762
+WordList,Returns a list of common English words,🚫,io,10.3,762
 WordOrientation,,,,10.1,4006
 WordSearch,,,,2,4437
 WordSelectionFunction,,,,11.2,5390

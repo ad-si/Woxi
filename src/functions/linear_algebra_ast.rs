@@ -3083,3 +3083,283 @@ fn triangularize_ast(
 
   Ok(Expr::List(result_rows))
 }
+
+// ─── LinearModelFit ────────────────────────────────────────────────────
+
+/// LinearModelFit[data, funs, var] — fits a linear model and returns a FittedModel object.
+///
+/// The FittedModel can be:
+/// - Called as a function: `lm[x]` evaluates the model at x
+/// - Queried for properties: `lm["BestFitParameters"]`, `lm["FitResiduals"]`, `lm["RSquared"]`
+/// - Converted with Normal: `Normal[lm]` returns the fitted expression
+pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "LinearModelFit expects exactly 3 arguments".into(),
+    ));
+  }
+
+  // Extract basis functions
+  let basis = match &args[1] {
+    Expr::List(items) => items.clone(),
+    // Single basis function (e.g., just x) - add constant term
+    other => vec![Expr::Integer(1), other.clone()],
+  };
+
+  // Extract variable name
+  let var_name = match &args[2] {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LinearModelFit: third argument must be a variable".into(),
+      ));
+    }
+  };
+
+  // Extract data points
+  let data_list = match &args[0] {
+    Expr::List(items) if !items.is_empty() => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LinearModelFit: first argument must be a non-empty list".into(),
+      ));
+    }
+  };
+
+  let (x_vals, y_vals) = extract_fit_data(data_list)?;
+  let n = x_vals.len();
+  let m = basis.len();
+
+  // Build design matrix A (n×m)
+  let mut a_matrix = vec![vec![0.0f64; m]; n];
+  for i in 0..n {
+    let x_expr = Expr::Real(x_vals[i]);
+    for j in 0..m {
+      let substituted =
+        crate::syntax::substitute_variable(&basis[j], &var_name, &x_expr);
+      let evaluated = evaluate_expr_to_expr(&substituted)?;
+      match try_eval_to_f64(&evaluated) {
+        Some(v) => a_matrix[i][j] = v,
+        None => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "LinearModelFit: could not evaluate basis function {:?} at x = {}",
+            basis[j], x_vals[i]
+          )));
+        }
+      }
+    }
+  }
+
+  // Solve via QR decomposition
+  let coeffs = solve_least_squares_qr(&a_matrix, &y_vals)?;
+
+  // Compute fitted values and residuals
+  let mut fitted_values = Vec::with_capacity(n);
+  let mut residuals = Vec::with_capacity(n);
+  for i in 0..n {
+    let y_hat: f64 = (0..m).map(|j| coeffs[j] * a_matrix[i][j]).sum();
+    fitted_values.push(y_hat);
+    residuals.push(y_vals[i] - y_hat);
+  }
+
+  // Compute R-squared
+  let y_mean: f64 = y_vals.iter().sum::<f64>() / n as f64;
+  let ss_tot: f64 = y_vals.iter().map(|y| (y - y_mean).powi(2)).sum();
+  let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
+  let r_squared = if ss_tot.abs() < 1e-30 {
+    1.0
+  } else {
+    1.0 - ss_res / ss_tot
+  };
+
+  // Compute adjusted R-squared
+  let adjusted_r_squared = if n > m && ss_tot.abs() > 1e-30 {
+    1.0 - (ss_res / (n - m) as f64) / (ss_tot / (n - 1) as f64)
+  } else {
+    r_squared
+  };
+
+  // Build the fitted expression: c[0]*basis[0] + c[1]*basis[1] + ...
+  let mut terms = Vec::new();
+  for (j, c) in coeffs.iter().enumerate() {
+    let coeff_expr = Expr::Real(*c);
+    if matches!(&basis[j], Expr::Integer(1)) {
+      terms.push(coeff_expr);
+    } else {
+      terms.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![coeff_expr, basis[j].clone()],
+      });
+    }
+  }
+  let fitted_expr = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    }
+  };
+
+  // Build input data as list of {x, y} pairs
+  let input_data = Expr::List(
+    x_vals
+      .iter()
+      .zip(y_vals.iter())
+      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)]))
+      .collect(),
+  );
+
+  // Build design matrix as Expr
+  let design_matrix = Expr::List(
+    a_matrix
+      .iter()
+      .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
+      .collect(),
+  );
+
+  // Build FittedModel association
+  let assoc = Expr::Association(vec![
+    (
+      Expr::String("Type".to_string()),
+      Expr::Identifier("Linear".to_string()),
+    ),
+    (Expr::String("FittedExpression".to_string()), fitted_expr),
+    (
+      Expr::String("BestFitParameters".to_string()),
+      Expr::List(coeffs.iter().map(|c| Expr::Real(*c)).collect()),
+    ),
+    (
+      Expr::String("IndependentVariables".to_string()),
+      Expr::List(vec![Expr::Identifier(var_name.clone())]),
+    ),
+    (
+      Expr::String("BasisFunctions".to_string()),
+      Expr::List(basis),
+    ),
+    (
+      Expr::String("FitResiduals".to_string()),
+      Expr::List(residuals.iter().map(|r| Expr::Real(*r)).collect()),
+    ),
+    (
+      Expr::String("PredictedResponse".to_string()),
+      Expr::List(fitted_values.iter().map(|v| Expr::Real(*v)).collect()),
+    ),
+    (Expr::String("RSquared".to_string()), Expr::Real(r_squared)),
+    (
+      Expr::String("AdjustedRSquared".to_string()),
+      Expr::Real(adjusted_r_squared),
+    ),
+    (Expr::String("InputData".to_string()), input_data),
+    (Expr::String("DesignMatrix".to_string()), design_matrix),
+    (
+      Expr::String("VariableName".to_string()),
+      Expr::String(var_name),
+    ),
+  ]);
+
+  Ok(Expr::FunctionCall {
+    name: "FittedModel".to_string(),
+    args: vec![assoc],
+  })
+}
+
+/// Evaluate a FittedModel at a point or query a property.
+/// Called when FittedModel[assoc][arg] is encountered.
+pub fn evaluate_fitted_model(
+  model_args: &[Expr],
+  call_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if model_args.len() != 1 || call_args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FittedModel: invalid call".into(),
+    ));
+  }
+
+  let assoc = match &model_args[0] {
+    Expr::Association(pairs) => pairs,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FittedModel: expected association argument".into(),
+      ));
+    }
+  };
+
+  // Check if the argument is a string (property query)
+  if let Expr::String(prop) = &call_args[0] {
+    // Look up the property in the association
+    for (key, val) in assoc {
+      if let Expr::String(k) = key {
+        if k == prop {
+          return Ok(val.clone());
+        }
+      }
+    }
+    return Err(InterpreterError::EvaluationError(format!(
+      "FittedModel: unknown property \"{}\"",
+      prop
+    )));
+  }
+
+  // Otherwise, evaluate the model at the given point
+  let mut fitted_expr = None;
+  let mut var_name = None;
+  for (key, val) in assoc {
+    if let Expr::String(k) = key {
+      if k == "FittedExpression" {
+        fitted_expr = Some(val.clone());
+      } else if k == "VariableName" {
+        if let Expr::String(v) = val {
+          var_name = Some(v.clone());
+        }
+      }
+    }
+  }
+
+  let fitted_expr = fitted_expr.ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "FittedModel: missing FittedExpression".into(),
+    )
+  })?;
+  let var_name = var_name.ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "FittedModel: missing VariableName".into(),
+    )
+  })?;
+
+  let substituted =
+    crate::syntax::substitute_variable(&fitted_expr, &var_name, &call_args[0]);
+  evaluate_expr_to_expr(&substituted)
+}
+
+/// Extract the fitted expression from a FittedModel (for Normal[]).
+pub fn fitted_model_normal(
+  model_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if model_args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "FittedModel: invalid structure".into(),
+    ));
+  }
+
+  let assoc = match &model_args[0] {
+    Expr::Association(pairs) => pairs,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FittedModel: expected association argument".into(),
+      ));
+    }
+  };
+
+  for (key, val) in assoc {
+    if let Expr::String(k) = key {
+      if k == "FittedExpression" {
+        return Ok(val.clone());
+      }
+    }
+  }
+
+  Err(InterpreterError::EvaluationError(
+    "FittedModel: missing FittedExpression".into(),
+  ))
+}

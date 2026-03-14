@@ -250,6 +250,17 @@ pub fn dispatch_list_operations(
       }));
     }
     "Normal" if args.len() == 1 => {
+      // Normal[FittedModel[...]] extracts the fitted expression
+      if let Expr::FunctionCall {
+        name,
+        args: fm_args,
+      } = &args[0]
+        && name == "FittedModel"
+      {
+        return Some(
+          crate::functions::linear_algebra_ast::fitted_model_normal(fm_args),
+        );
+      }
       // Normal[SparseArray[...]] expands to a regular list
       if let Expr::FunctionCall {
         name,
