@@ -453,7 +453,7 @@ BetaBinomialDistribution,,,,6,3048
 BetaDistribution,Represents a beta probability distribution with parameters a and b,✅,1,6,1061
 BetaNegativeBinomialDistribution,,,,6,3947
 BetaPrimeDistribution,,,,8,3059
-BetaRegularized,,,,2,1263
+BetaRegularized,Regularized incomplete beta function,✅,1,2,1263
 Between,Tests if a value is between bounds,✅,pure,10.3,1728
 BetweennessCentrality,,,,8,2742
 BeveledPolyhedron,,,,12,5587
@@ -575,7 +575,7 @@ BorelTannerDistribution,,,,8,3697
 Bottom,Symbol for bottom alignment,✅,pure,1,394
 BottomHatTransform,,,,7,4138
 BoundaryDiscretizeGraphics,,,,10,1665
-BoundaryDiscretizeRegion,,,,10,1240
+BoundaryDiscretizeRegion,,🚫,,10,1240
 BoundaryMesh,,,,10,2344
 BoundaryMeshRegion,,,,10,1586
 BoundaryMeshRegionQ,,,,10,3636
@@ -839,7 +839,7 @@ ClippingStyle,,🚫,,6,1046
 ClipPlanes,,,,10,2338
 ClipPlanesStyle,,,,10,3353
 ClipRange,,,,9,3344
-Clock,,,,6,1244
+Clock,,🚫,,6,1244
 ClockGauge,,,,9,2311
 Close,Closes an open stream and returns its name,✅,effectful,1,863
 CloseKernels,,,,7,2371
@@ -2017,7 +2017,7 @@ FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,
 FindSequenceFunction,Finds a formula for an integer sequence using polynomials exponentials and factorials,✅,pure,7,839
 FindSettings,,,,4,4262
 FindShortestPath,,🚫,,8,1187
-FindShortestTour,,,,6,1269
+FindShortestTour,,🚫,,6,1269
 FindSpanningTree,,,,10,2944
 FindSubgraphIsomorphism,,,,13,
 FindSystemModelEquilibrium,,,,11.3,
@@ -2180,7 +2180,7 @@ FrontEndDynamicExpression,,,,8,4660
 FrontEndEventActions,,,,6,4138
 FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3,982
 FrontEndToken,,,,3,1293
-FrontEndTokenExecute,,,,4,1280
+FrontEndTokenExecute,,🚫,,4,1280
 Full,Full-size image specification,✅,none,6,294
 FullDefinition,Shows the definition of a symbol and all its dependencies,✅,pure,1,4173
 FullForm,Returns the full internal form of an expression,✅,pure,1,491
@@ -2225,7 +2225,7 @@ GalaxyData,,🚫,,10,1338
 GalleryView,,,,11,4660
 Gamma,Returns the gamma function value,✅,pure,1,130
 GammaDistribution,Gamma probability distribution,✅,pure,6,981
-GammaRegularized,,,,2,1279
+GammaRegularized,Regularized incomplete gamma function,✅,1,2,1279
 GapPenalty,,,,7,4747
 GARCHProcess,,,,10,3413
 GatedRecurrentLayer,,,,11.1,3257
@@ -2251,7 +2251,7 @@ GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x),✅,pure,1,894
 General,Default message group symbol,✅,pure,1,690
 GeneralizedLinearModelFit,,,,7,2187
 GenerateAsymmetricKeyPair,,,,10.1,3326
-GenerateConditions,,,,3,1282
+GenerateConditions,Option for generating conditions in results,✅,1,3,1282
 GeneratedAssetFormat,,,,12.3,
 GeneratedAssetLocation,,,,12.2,5390
 GeneratedCell,,,,3,1303
@@ -2340,7 +2340,7 @@ GeometricStylingRules,,,,13.1,
 GeometricTest,,,,12.3,
 GeometricTransformation,Apply a geometric transformation,✅,none,6,692
 GeoModel,,,,10,3413
-GeoNearest,,,,10,1281
+GeoNearest,,🚫,,10,1281
 GeoOrientationData,,🚫,,12.3,
 GeoPath,,,,10,1330
 GeoPolygon,,,,12.2,5079
@@ -2449,7 +2449,7 @@ GreaterTilde,,,,3,5013
 Green,Named color evaluating to RGBColor[0 1 0],✅,pure,5.1,119
 GreenFunction,,,,10.4,2210
 Grid,Displays data in a grid layout,✅,pure,6,167
-GridBox,,,,3,1245
+GridBox,,🚫,,3,1245
 GridDefaultElement,,,,3,5587
 GridGraph,Requires external services or GUI infrastructure,🚫,io,8,1005
 GridLines,Option specifying grid lines in a plot,✅,none,2,211
@@ -2596,8 +2596,8 @@ Hue,Specifies a color by hue saturation and brightness,✅,pure,2,145
 HumanGrowthData,,🚫,,10.1,3803
 HumpDownHump,,,,3,4947
 HumpEqual,,,,3,5390
-HurwitzLerchPhi,,,,7,1267
-HurwitzZeta,,,,7,1242
+HurwitzLerchPhi,,🚫,,7,1267
+HurwitzZeta,,🚫,,7,1242
 HyperbolicDistribution,,,,8,2812
 HypercubeGraph,,,,8,2952
 HyperexponentialDistribution,,,,9,3522
@@ -2872,7 +2872,7 @@ Inverse,Computes the inverse of a matrix,✅,pure,1,214
 InverseBetaRegularized,,,,3,4006
 InverseBilateralLaplaceTransform,,,,12.3,
 InverseBilateralZTransform,,,,13,
-InverseCDF,,,,6,1251
+InverseCDF,,🚫,,6,1251
 InverseChiSquareDistribution,,,,7,2656
 InverseContinuousWaveletTransform,,,,8,3353
 InverseDistanceTransform,,,,8,4052
@@ -3312,7 +3312,7 @@ LogNormalDistribution,Represents a log-normal distribution,✅,1,6,1102
 LogPlot,Plots with logarithmic y-axis,✅,pure,6,859
 LogRankTest,,,,9,3474
 LogSeriesDistribution,,,,6,3474
-Longest,,,,6,1261
+Longest,Pattern wrapper for longest matching,✅,1,6,1261
 LongestCommonSequence,,,,7,3612
 LongestCommonSequencePositions,,,,10.2,4747
 LongestCommonSubsequence,Returns the longest common subsequence of two lists,✅,pure,7,3048
@@ -3723,7 +3723,7 @@ NetMeasurements,,,,12,3031
 NetModel,,,,11.1,1660
 NetNestOperator,,,,11.1,4660
 NetPairEmbeddingOperator,,,,11.1,4138
-NetPort,,,,11,1278
+NetPort,,🚫,,11,1278
 NetPortGradient,,,,11.1,3823
 NetPrepend,,,,11.3,5390
 NetRename,,,,11.3,
@@ -3990,7 +3990,7 @@ OutputControllableModelQ,,,,8,4881
 OutputForm,Converts expression to output form,✅,pure,1,1833
 OutputNamePacket,,,,3,4291
 OutputPorts,,,,12.2,4947
-OutputResponse,,,,8,1257
+OutputResponse,,🚫,,8,1257
 OutputSizeLimit,,,,6,4527
 OutputStream,Output stream object,✅,effectful,2,3298
 OverBar,Display form with an overbar accent,✅,none,6,717
@@ -4100,7 +4100,7 @@ ParentEdgeShapeFunction,,,,13.1,
 ParentEdgeStyle,,,,13.1,
 ParentEdgeStyleFunction,,,,13.1,
 ParentNotebook,,,,10,3636
-ParetoDistribution,,,,6,1254
+ParetoDistribution,Represents a Pareto distribution,✅,1,6,1254
 ParetoPickandsDistribution,,,,12,
 ParkData,,🚫,,10,4881
 Part,Returns the nth element of a list,✅,pure,1,12
@@ -4237,7 +4237,7 @@ Pluralize,,,,10,4527
 Plus,Adds numbers together,✅,pure,1,6
 PlusMinus,Symbolic plus-or-minus operator with Unicode display,✅,none,3,1014
 Pochhammer,Returns the Pochhammer symbol (rising factorial),✅,pure,1,274
-PodStates,,,,8,1274
+PodStates,,🚫,,8,1274
 PodWidth,,,,8,5486
 Point,Represents a point graphics primitive,✅,pure,1,94
 PointCountDistribution,,,,12.2,5486
@@ -4466,7 +4466,7 @@ Ramp,Returns the ramp function (max of 0 and x),✅,pure,11,976
 RandomArrayLayer,,,,12.2,4947
 RandomChoice,Random selection with replacement,✅,contextual,6,338
 RandomColor,Generate a random color,✅,none,10,756
-RandomComplex,,,,6,1258
+RandomComplex,,🚫,,6,1258
 RandomDate,,,,13.2,
 RandomEntity,,,,10.2,2807
 RandomFunction,Simulates random processes like Wiener and Poisson processes,🚫,io,9,773
@@ -4989,7 +4989,7 @@ Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6,798
 SinDegrees,,,,14.1,
 SinghMaddalaDistribution,,,,8,3326
 SingleLetterItalics,,,,3,1897
-SingularValueDecomposition,,,,5,1283
+SingularValueDecomposition,,🚫,,5,1283
 SingularValueList,,,,5,1892
 SingularValuePlot,,,,8,3755
 Sinh,Returns the hyperbolic sine,✅,pure,1,278
@@ -5023,7 +5023,7 @@ SmithWatermanSimilarity,,,,7,3636
 SmoothDensityHistogram,,,,8,1907
 SmoothHistogram,,🚫,,8,1200
 SmoothHistogram3D,,,,8,2360
-SmoothKernelDistribution,,,,8,1247
+SmoothKernelDistribution,,🚫,,8,1247
 SmoothPointDensity,,,,12.2,
 SnDispersion,,,,11.1,4262
 Snippet,,,,10.2,3656
@@ -5219,7 +5219,7 @@ StreamPlot3D,,,,12.3,
 StreamPoints,Option for number of stream lines in StreamPlot,✅,none,7,864
 StreamPosition,,,,2,2570
 Streams,,,,2,2960
-StreamScale,,,,7,1278
+StreamScale,,🚫,,7,1278
 StreamStyle,,,,7,1304
 StrictInequalities,,,,12.2,
 String,Head type for string values,✅,pure,1,182
@@ -5259,7 +5259,7 @@ StringSplit,Splits a string into a list of substrings,✅,pure,5.1,525
 StringStartsQ,Checks if a string starts with a specific substring,✅,pure,10.1,2168
 StringTake,Returns a substring of a string,✅,pure,2,456
 StringTakeDrop,Returns the taken and dropped parts of a string as a list,✅,pure,12.3,
-StringTemplate,,,,10,1251
+StringTemplate,,🚫,,10,1251
 StringToByteArray,,,,11.2,3578
 StringToStream,Creates an input stream from a string,✅,pure,2,1562
 StringTrim,Removes whitespace from the beginning and end of a string,✅,pure,7,1098
@@ -5560,7 +5560,7 @@ TimeDistribution,,,,14.1,
 TimeFormat,,,,10,5390
 TimeGoal,,,,11.2,4315
 TimelinePlot,,,,10.1,1770
-TimeObject,,,,10,1252
+TimeObject,,🚫,,10,1252
 TimeObjectQ,,,,10.2,4567
 TimeRemaining,Returns the time remaining in a TimeConstrained evaluation,✅,contextual,12.1,
 Times,Multiply numbers,✅,pure,1,3
@@ -5682,7 +5682,7 @@ Translate,Translates a graphics object,✅,pure,6,448
 TranslationOptions,,,,10.2,4809
 TranslationTransform,Creates an affine translation transformation,✅,none,6,1011
 Transliterate,,,,10.3,2591
-Transparent,,,,7,1256
+Transparent,,🚫,,7,1256
 Transpose,Transposes a matrix (list of lists),✅,pure,1,73
 TransposeLayer,,,,11.1,2828
 TravelDirections,,,,10.3,3656
@@ -6107,7 +6107,7 @@ WhitespaceCharacter,,,,5.1,1539
 WhittakerM,,,,6,1651
 WhittakerW,,,,6,1741
 WienerFilter,,,,8,4315
-WienerProcess,,,,9,1268
+WienerProcess,,🚫,,9,1268
 WignerD,,,,8,2587
 WignerSemicircleDistribution,,,,8,3280
 WikidataData,,🚫,,12.1,4006

@@ -932,3 +932,47 @@ mod chi_square_distribution {
     );
   }
 }
+
+mod pareto_distribution {
+  use super::*;
+
+  #[test]
+  fn inert_form() {
+    assert_eq!(
+      interpret("ParetoDistribution[1, 2]").unwrap(),
+      "ParetoDistribution[1, 2]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[ParetoDistribution[k, a], x]").unwrap(),
+      "Piecewise[{{(a*k^a)/x^(1 + a), x >= k}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[ParetoDistribution[k, a], x]").unwrap(),
+      "Piecewise[{{1 - (k/x)^a, x >= k}}, 0]"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[ParetoDistribution[k, a]]").unwrap(),
+      "(a*k)/(-1 + a)"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[ParetoDistribution[1, 3]]").unwrap(),
+      "3/4"
+    );
+  }
+}
