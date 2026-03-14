@@ -176,6 +176,9 @@ pub fn dispatch_calculus_functions(
     "InverseFourierTransform" if args.len() == 3 => {
       return Some(inverse_fourier_transform(&args[0], &args[1], &args[2]));
     }
+    "FunctionDomain" if args.len() >= 2 && args.len() <= 3 => {
+      return Some(function_domain_ast(args));
+    }
     _ => {}
   }
   None
@@ -1527,4 +1530,176 @@ fn extract_value_from_solve_result(expr: &Expr) -> Option<Expr> {
     }
   }
   None
+}
+
+// ── FunctionDomain implementation ────────────────────────────────────
+
+/// FunctionDomain[f, x] or FunctionDomain[f, x, domain]
+/// Finds the domain of f as a function of x.
+fn function_domain_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let f = &args[0];
+  let var = match &args[1] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "FunctionDomain".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Collect constraints on var for f to be defined
+  let mut constraints = Vec::new();
+  collect_domain_constraints(f, var, &mut constraints);
+
+  if constraints.is_empty() {
+    // No restrictions → domain is all reals
+    return Ok(Expr::Identifier("True".to_string()));
+  }
+
+  // Simplify: combine constraints with And
+  let result = if constraints.len() == 1 {
+    constraints.pop().unwrap()
+  } else {
+    // Join with &&
+    let mut combined = constraints[0].clone();
+    for c in &constraints[1..] {
+      combined = Expr::FunctionCall {
+        name: "And".to_string(),
+        args: vec![combined, c.clone()],
+      };
+    }
+    combined
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Collect constraints that must hold for expr to be defined.
+fn collect_domain_constraints(
+  expr: &Expr,
+  var: &str,
+  constraints: &mut Vec<Expr>,
+) {
+  match expr {
+    // Division: denominator != 0
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      collect_domain_constraints(left, var, constraints);
+      collect_domain_constraints(right, var, constraints);
+      // Add constraint: right != 0
+      if contains_variable(right, var) {
+        constraints.push(Expr::Comparison {
+          operands: vec![right.as_ref().clone(), Expr::Integer(0)],
+          operators: vec![crate::syntax::ComparisonOp::NotEqual],
+        });
+      }
+    }
+    // Power with negative exponent: base != 0
+    // Power with fractional exponent (sqrt): base >= 0
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      collect_domain_constraints(left, var, constraints);
+      collect_domain_constraints(right, var, constraints);
+
+      if contains_variable(left, var) {
+        // Check for x^(-n) → x != 0
+        let is_negative_power = match right.as_ref() {
+          Expr::Integer(n) => *n < 0,
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            ..
+          } => true,
+          _ => false,
+        };
+        if is_negative_power {
+          constraints.push(Expr::Comparison {
+            operands: vec![left.as_ref().clone(), Expr::Integer(0)],
+            operators: vec![crate::syntax::ComparisonOp::NotEqual],
+          });
+        }
+
+        // Check for x^(1/2) i.e. Sqrt → x >= 0
+        let is_half_power = match right.as_ref() {
+          Expr::FunctionCall { name, args }
+            if name == "Rational" && args.len() == 2 =>
+          {
+            matches!((&args[0], &args[1]), (Expr::Integer(1), Expr::Integer(2)))
+          }
+          _ => false,
+        };
+        if is_half_power {
+          constraints.push(Expr::Comparison {
+            operands: vec![left.as_ref().clone(), Expr::Integer(0)],
+            operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+          });
+        }
+      }
+    }
+    // Log[x] → x > 0
+    Expr::FunctionCall { name, args }
+      if (name == "Log" || name == "Log2" || name == "Log10")
+        && args.len() >= 1 =>
+    {
+      let arg = args.last().unwrap();
+      for a in args {
+        collect_domain_constraints(a, var, constraints);
+      }
+      if contains_variable(arg, var) {
+        constraints.push(Expr::Comparison {
+          operands: vec![arg.clone(), Expr::Integer(0)],
+          operators: vec![crate::syntax::ComparisonOp::Greater],
+        });
+      }
+    }
+    // Sqrt[x] → x >= 0
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      collect_domain_constraints(&args[0], var, constraints);
+      if contains_variable(&args[0], var) {
+        constraints.push(Expr::Comparison {
+          operands: vec![args[0].clone(), Expr::Integer(0)],
+          operators: vec![crate::syntax::ComparisonOp::GreaterEqual],
+        });
+      }
+    }
+    // Recurse into other structures
+    Expr::BinaryOp { left, right, .. } => {
+      collect_domain_constraints(left, var, constraints);
+      collect_domain_constraints(right, var, constraints);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_domain_constraints(operand, var, constraints);
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_domain_constraints(a, var, constraints);
+      }
+    }
+    _ => {}
+  }
+}
+
+fn contains_variable(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::Identifier(name) => name == var,
+    Expr::Integer(_) | Expr::Real(_) | Expr::String(_) => false,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_variable(left, var) || contains_variable(right, var)
+    }
+    Expr::UnaryOp { operand, .. } => contains_variable(operand, var),
+    Expr::FunctionCall { name, args } => {
+      if name == "Rational" {
+        return false;
+      }
+      args.iter().any(|a| contains_variable(a, var))
+    }
+    Expr::List(items) => items.iter().any(|a| contains_variable(a, var)),
+    _ => false,
+  }
 }
