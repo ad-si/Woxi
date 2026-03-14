@@ -976,3 +976,60 @@ mod pareto_distribution {
     );
   }
 }
+
+mod weibull_distribution {
+  use super::*;
+
+  #[test]
+  fn constructor() {
+    assert_eq!(
+      interpret("WeibullDistribution[2, 3]").unwrap(),
+      "WeibullDistribution[2, 3]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[WeibullDistribution[2, 3], 1]").unwrap(),
+      "2/3/(3*E^(1/9))"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[WeibullDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{(a*(x/b)^(a - 1))/(b*E^(x/b)^a), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[WeibullDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{1 - E^(-(x/b)^a), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[WeibullDistribution[a, b]]").unwrap(),
+      "b*Gamma[1 + a^(-1)]"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[WeibullDistribution[2, 3]]").unwrap(),
+      "9*(1 - Gamma[3/2]^2)"
+    );
+  }
+
+  #[test]
+  fn pdf_at_zero() {
+    assert_eq!(interpret("PDF[WeibullDistribution[2, 3], 0]").unwrap(), "0");
+  }
+}

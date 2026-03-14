@@ -1226,7 +1226,8 @@ pub fn evaluate_function_call_ast_inner(
     | "GenerateConditions"
     | "OverTilde"
     | "SinhIntegral"
-    | "CoshIntegral" => {
+    | "CoshIntegral"
+    | "AngleBracket" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -1610,6 +1611,20 @@ pub fn evaluate_function_call_ast_inner(
       return Ok(Expr::Identifier(
         if exists { "True" } else { "False" }.to_string(),
       ));
+    }
+  }
+
+  // DeleteMissing[list] — remove Missing[] elements from a list
+  if name == "DeleteMissing" && args.len() == 1 {
+    if let Expr::List(items) = &args[0] {
+      let filtered: Vec<Expr> = items
+        .iter()
+        .filter(|item| {
+          !matches!(item, Expr::FunctionCall { name, .. } if name == "Missing")
+        })
+        .cloned()
+        .collect();
+      return Ok(Expr::List(filtered));
     }
   }
 

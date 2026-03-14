@@ -138,6 +138,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
     "ParetoDistribution" => pdf_pareto(dargs, x),
+    "WeibullDistribution" => pdf_weibull(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -310,6 +311,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
     "ChiSquareDistribution" => cdf_chi_square(dargs, x),
     "ParetoDistribution" => cdf_pareto(dargs, x),
+    "WeibullDistribution" => cdf_weibull(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -1014,6 +1016,41 @@ fn distribution_mean_variance(
       );
       Ok((mean, var))
     }
+    "WeibullDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "WeibullDistribution expects 2 arguments".into(),
+        ));
+      }
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      // Mean = b * Gamma[1 + 1/a]
+      let mean = times(
+        b.clone(),
+        Expr::FunctionCall {
+          name: "Gamma".to_string(),
+          args: vec![plus(int(1), divide(int(1), a.clone()))],
+        },
+      );
+      // Var = b^2 * (Gamma[1 + 2/a] - Gamma[1 + 1/a]^2)
+      let var = times(
+        power(b, int(2)),
+        minus(
+          Expr::FunctionCall {
+            name: "Gamma".to_string(),
+            args: vec![plus(int(1), divide(int(2), a.clone()))],
+          },
+          power(
+            Expr::FunctionCall {
+              name: "Gamma".to_string(),
+              args: vec![plus(int(1), divide(int(1), a))],
+            },
+            int(2),
+          ),
+        ),
+      );
+      Ok((mean, var))
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"
     ))),
@@ -1502,5 +1539,51 @@ fn cdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let cdf_val = minus(int(1), power(divide(k.clone(), x.clone()), a));
   let cond = comparison(x, ComparisonOp::GreaterEqual, k);
+  eval(piecewise(vec![(cdf_val, cond)], int(0)))
+}
+
+/// PDF[WeibullDistribution[a, b], x] = Piecewise[{{a*(x/b)^(a-1) / (b * E^((x/b)^a)), x > 0}}, 0]
+fn pdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WeibullDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  // a * (x/b)^(a-1) / (b * E^((x/b)^a))
+  let xb = divide(x.clone(), b.clone());
+  let numerator = times(a.clone(), power(xb.clone(), minus(a.clone(), int(1))));
+  let denom = times(b, power(e(), power(xb, a)));
+  let pdf_val = divide(numerator, denom);
+
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[WeibullDistribution[a, b], x] = Piecewise[{{1 - E^(-(x/b)^a), x > 0}}, 0]
+fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "WeibullDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let xb = divide(x.clone(), b);
+  let cdf_val = minus(
+    int(1),
+    power(
+      e(),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(power(xb, a)),
+      },
+    ),
+  );
+
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }

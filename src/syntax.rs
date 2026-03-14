@@ -4080,6 +4080,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{2295} ");
       }
+      // AngleBracket[a, b, ...] displays as 〈a, b, ...〉
+      if name == "AngleBracket" && !args.is_empty() {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return format!("\u{2329} {} \u{232A}", parts.join(", "));
+      }
       // Special case: Or[a, b, ...] displays as a || b || ...
       // Wolfram wraps And subterms in parens: (a && b) || (c && d)
       if name == "Or" && args.len() >= 2 {
@@ -5943,6 +5948,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "CirclePlus" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2295} ");
+      }
+      // AngleBracket[a, b, ...] displays as 〈a, b, ...〉
+      if name == "AngleBracket" && !args.is_empty() {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return format!("\u{2329} {} \u{232A}", parts.join(", "));
       }
       // Special case: Or[a, b, ...] displays as a || b || ...
       // Wolfram wraps And subterms in parens: (a && b) || (c && d)
