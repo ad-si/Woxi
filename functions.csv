@@ -58,7 +58,7 @@ AffineHalfSpace,,,,10.2,4204
 AffineSpace,,,,10.2,3862
 AffineStateSpaceModel,,,,10,1687
 AffineTransform,,,,6,1633
-After,,,,3,1130
+After,,🚫,,3,1130
 AggregatedEntityClass,,,,12,4479
 AggregationLayer,,,,11.1,3306
 AircraftData,,🚫,,10,883
@@ -125,7 +125,7 @@ AngularGauge,,,,9,1860
 Animate,,🚫,,6,417
 AnimatedImage,,🚫,,12.2,4027
 AnimationDirection,,,,3,2338
-AnimationRate,,,,6,1122
+AnimationRate,,🚫,,6,1122
 AnimationRepetitions,,,,6,1552
 AnimationRunning,Option controlling whether an animation is running,✅,none,6,686
 AnimationRunTime,,,,10,4479
@@ -403,7 +403,7 @@ BarLegend,Color bar legend for plots,✅,none,9,805
 BarlowProschanImportance,,,,9,4707
 BarnesG,,,,7,1727
 BarOrigin,,🚫,,7,1058
-BarSpacing,,,,7,1077
+BarSpacing,,🚫,,7,1077
 BartlettHannWindow,,,,9,4356
 BartlettWindow,,,,9,3916
 BaseDecode,,,,11.3,5390
@@ -479,7 +479,7 @@ Binomial,Returns the binomial coefficient,✅,pure,1,225
 BinomialDistribution,Binomial probability distribution,✅,none,6,729
 BinomialPointProcess,,,,12.2,5390
 BinomialProcess,,,,9,2503
-BinormalDistribution,,,,8,1056
+BinormalDistribution,,🚫,,8,1056
 BioMolecule,,,,14.1,
 BioMoleculeFoldingMethod,,,,14.1,
 BioMoleculePlot3D,,,,14.1,
@@ -538,7 +538,7 @@ BlockchainTransactionSubmit,,,,12,5587
 BlockDiagonalMatrix,,,,13.1,
 BlockLowerTriangularMatrix,,,,13.1,
 BlockMap,,,,10.2,2002
-BlockRandom,,,,6,1134
+BlockRandom,,🚫,,6,1134
 BlockUpperTriangularMatrix,,,,13.1,
 BlomqvistBeta,,,,9,3947
 BlomqvistBetaTest,,,,9,4225
@@ -731,7 +731,7 @@ CellProlog,,,,6,3121
 Cells,,,,9,1364
 CellStyle,,,,9,1625
 CellStyleImportRules,,,,14,
-CellTags,,,,3,1142
+CellTags,,🚫,,3,1142
 CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
 CensoredDistribution,,,,8,2587
 Censoring,,,,8,4809
@@ -805,7 +805,7 @@ Circle,Represents a circle graphics primitive,✅,pure,2,256
 CircleDot,,,,3,1776
 CircleMinus,,,,3,2152
 CirclePlus,,,,3,1158
-CirclePoints,,,,10.1,1126
+CirclePoints,Gives equally spaced points on a unit circle,✅,1,10.1,1126
 CircleThrough,,,,12,2399
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3,1017
 CirculantGraph,,,,8,2671
@@ -821,7 +821,7 @@ CityData,,🚫,,6,69
 ClassifierFunction,,,,10,4567
 ClassifierMeasurements,,,,10,1569
 ClassifierMeasurementsObject,,,,10.1,
-Classify,,,,10,1087
+Classify,,🚫,,10,1087
 ClassPriors,,,,10,4052
 Clear,Clears values and definitions of symbols but preserves attributes,✅,stateful,1,82
 ClearAll,Clears all values and definitions for symbols,✅,stateful,1,133
@@ -830,7 +830,7 @@ ClearCookies,,,,11,4262
 ClearDistributedDefinitions,,,,14.1,
 ClearPermissions,,,,10.2,5079
 ClearSystemCache,,,,6,1489
-ClebschGordan,,,,2,1066
+ClebschGordan,,🚫,,2,1066
 ClickPane,,,,6,2236
 ClickToCopy,,,,12.2,
 ClickToCopyEnabled,,,,12.3,5013
@@ -879,7 +879,7 @@ ClusteringTree,,,,10.4,3843
 CMYKColor,,,,2,1446
 CodeAssistOptions,,,,10,4437
 Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1,369
-CoefficientArrays,,,,5,964
+CoefficientArrays,,🚫,,5,964
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1,513
 CoefficientRules,,,,7,1578
 CoifletWavelet,,,,8,4006
@@ -1051,7 +1051,7 @@ ContextToFileName,,,,3,5079
 Continue,Continues to next loop iteration,✅,pure,1,1072
 ContinuedFraction,Returns the continued fraction representation,✅,pure,4,1381
 ContinuedFractionK,,,,7,2212
-ContinuousAction,,,,6,1155
+ContinuousAction,,🚫,,6,1155
 ContinuousMarkovProcess,,,,9,3162
 ContinuousTask,,,,10.2,4947
 ContinuousTimeModelQ,,,,8,5390
@@ -1092,7 +1092,7 @@ ConvexPolygonQ,,,,12,
 ConvexPolyhedronQ,,,,12,
 ConvexRegionQ,,,,12.2,4479
 ConvolutionLayer,,,,11,1393
-Convolve,,,,7,882
+Convolve,,🚫,,7,882
 ConwayGroupCo1,,,,8,5184
 ConwayGroupCo2,,,,8,4947
 ConwayGroupCo3,,,,8,4881
@@ -1500,7 +1500,7 @@ DiscreteVariables,,,,9,1819
 DiscreteWaveletData,,🚫,,8,2748
 DiscreteWaveletPacketTransform,,,,8,2533
 DiscreteWaveletTransform,,,,8,1614
-DiscretizeGraphics,,,,10,1149
+DiscretizeGraphics,,🚫,,10,1149
 DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10,841
 Discriminant,,,,6,1410
 DisjointQ,,,,10,2837
@@ -1685,7 +1685,7 @@ EmbeddedSQLEntityClass,,,,12.2,
 EmbeddedSQLExpression,,,,12.2,
 EmbeddingLayer,,,,11,2698
 EmitSound,,,,6,1394
-EmpiricalDistribution,,,,8,1139
+EmpiricalDistribution,,🚫,,8,1139
 EmptyGraphQ,,,,8,3785
 EmptyRegion,,,,10,2108
 EmptySpaceF,,,,12.2,5486
@@ -1700,7 +1700,7 @@ EndDialogPacket,,,,3,
 EndOfBuffer,,,,10,3059
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1,1852
 EndOfLine,,,,5.1,2545
-EndOfString,,,,5.1,1202
+EndOfString,Represents the end of a string in string patterns,✅,1,5.1,1202
 EndPackage,Ends a package context (no-op in Woxi),✅,effectful,1,599
 EngineeringForm,Display wrapper for engineering notation formatting,✅,pure,1,2079
 English,,,,,
@@ -1713,7 +1713,7 @@ EntityCopies,,,,10.3,4612
 EntityFunction,,,,12,2911
 EntityGroup,,,,10.3,4809
 EntityInstance,,,,10.3,4027
-EntityList,,,,10,1100
+EntityList,,🚫,,10,1100
 EntityPrefetch,,,,11.3,5390
 EntityProperties,,,,10,2147
 EntityProperty,Represents a property of an entity class,✅,pure,10,366
@@ -1746,7 +1746,7 @@ Erosion,,,,7,1582
 ErrorBox,,,,3,4612
 EscapeRadius,,,,10,4006
 EstimatedBackground,,,,10,3257
-EstimatedDistribution,,,,8,1093
+EstimatedDistribution,,🚫,,8,1093
 EstimatedPointNormals,,,,13.1,
 EstimatedPointProcess,,,,12.2,5079
 EstimatedProcess,,,,9,1571
@@ -1791,7 +1791,7 @@ ExcludedPhysicalQuantities,,,,10,5486
 ExcludePods,,,,8,5486
 Exclusions,Option for specifying points or curves to exclude from plots,✅,pure,6,464
 ExclusionsStyle,Option for styling exclusion lines in plots,✅,none,6,769
-Exists,,,,5,948
+Exists,Represents the existential quantifier,✅,1,5,948
 Exit,Terminates the kernel session with optional exit code,✅,effectful,1,1692
 ExoplanetData,,🚫,,10,4660
 Exp,Returns the exponential function e^x,✅,pure,1,52
@@ -1901,7 +1901,7 @@ FieldCompletionFunction,,,,11.1,4527
 FieldHint,,,,8,2015
 FieldHintStyle,,,,8,3083
 FieldMasked,,,,8,4612
-FieldSize,,,,6,1102
+FieldSize,,🚫,,6,1102
 File,,,,11,1469
 FileBaseName,,,,7,1796
 FileByteCount,,,,2,2018
@@ -2123,14 +2123,14 @@ FourierSinCoefficient,,,,7,2329
 FourierSinSeries,,,,7,1842
 FourierSinTransform,,,,4,2553
 FourierTransform,computes the symbolic Fourier transform of an expression,implemented,pure,4,639
-FourierTrigSeries,,,,7,1085
+FourierTrigSeries,,🚫,,7,1085
 FoxH,,,,12.3,
 FoxHReduce,,,,13,
 FractionalBrownianMotionProcess,,,,9,2425
 FractionalD,,,,13.1,
 FractionalGaussianNoiseProcess,,,,10,4204
 FractionalPart,Returns the fractional part of a number,✅,pure,3,820
-FractionBox,,,,3,1143
+FractionBox,,🚫,,3,1143
 FractionBoxOptions,,,,4,4138
 Frame,Option specifying whether a frame is drawn around a plot,✅,none,2,97
 FrameBox,,,,3,2374
@@ -2202,7 +2202,7 @@ FunctionConvexity,,,,12.2,4291
 FunctionDeclaration,,,,12.3,
 FunctionDiscontinuities,,,,12.2,4437
 FunctionDomain,Find the domain of a function,✅,pure,10,878
-FunctionExpand,,,,3,874
+FunctionExpand,,🚫,,3,874
 FunctionInjective,,,,12.2,3578
 FunctionInterpolation,,,,3,1447
 FunctionLayer,,,,12.2,3755
@@ -2455,7 +2455,7 @@ GridGraph,Requires external services or GUI infrastructure,🚫,io,8,1005
 GridLines,Option specifying grid lines in a plot,✅,none,2,211
 GridLinesStyle,Option for specifying the style of grid lines in graphics,✅,none,6,247
 GridVideo,,,,13,
-GroebnerBasis,,,,2,1150
+GroebnerBasis,,🚫,,2,1150
 GroupActionBase,,,,8,4747
 GroupBy,Groups elements of a list by a criterion,✅,pure,10,647
 GroupCentralizer,,,,8,4291
@@ -2559,7 +2559,7 @@ HilbertCurve,,,,11.1,3612
 HilbertFilter,,,,9,3656
 HilbertMatrix,,,,6,2503
 Histogram,Creates a histogram from data,✅,pure,7,347
-Histogram3D,,,,7,1096
+Histogram3D,,🚫,,7,1096
 HistogramDistribution,,,,8,1776
 HistogramList,Returns bin edges and counts for histogram data,✅,pure,8,1322
 HistogramPointDensity,,,,12.2,4006
@@ -2964,7 +2964,7 @@ JoinAcross,,,,10,2292
 Joined,Option for joining points in list plots,✅,none,6,285
 JoinedCurve,,,,8,1754
 JoinForm,,,,7,1420
-JordanDecomposition,,,,3,844
+JordanDecomposition,,🚫,,3,844
 JordanModelDecomposition,,,,8,4138
 JulianDate,,,,10.2,3048
 JuliaSetBoettcher,,,,10,4387
@@ -2984,8 +2984,8 @@ KDistribution,,,,8,3862
 KEdgeConnectedComponents,,,,10,4707
 KEdgeConnectedGraphQ,,,,10,4527
 KeepExistingVersion,,,,12.1,
-KelvinBei,,,,6,1153
-KelvinBer,,,,6,1146
+KelvinBei,,🚫,,6,1153
+KelvinBer,,🚫,,6,1146
 KelvinKei,,,,6,1307
 KelvinKer,,,,6,1310
 KendallTau,,,,9,3785
@@ -3041,7 +3041,7 @@ KVertexConnectedGraphQ,,,,10,4612
 LABColor,,,,10,1926
 Label,Label for Goto targets,✅,pure,1,1059
 Labeled,Wrapper that attaches a label to an expression for display,✅,pure,6,397
-LabelingFunction,,,,7,1085
+LabelingFunction,,🚫,,7,1085
 LabelingSize,,,,11.3,3257
 LabelStyle,Option for specifying the style of labels in graphics,✅,none,6,269
 LabelVisibility,,,,12,
@@ -3120,7 +3120,7 @@ LegendLabel,,,,9,1371
 LegendLayout,,,,9,1348
 LegendMargins,,,,9,2034
 LegendMarkers,,,,9,1637
-LegendMarkerSize,,,,9,1151
+LegendMarkerSize,,🚫,,9,1151
 LegendreP,Legendre polynomial of the first kind,✅,pure,1,515
 LegendreQ,Legendre function of the second kind Q_n(x),✅,pure,1,943
 Length,Returns the number of elements in a list,✅,pure,1,44
@@ -3308,7 +3308,7 @@ LogLinearPlot,Plots with logarithmic x-axis,✅,pure,6,912
 LogLogisticDistribution,,,,8,3612
 LogLogPlot,Plots with logarithmic x and y axes,✅,pure,6,754
 LogMultinormalDistribution,,,,9,3785
-LogNormalDistribution,,,,6,1102
+LogNormalDistribution,Represents a log-normal distribution,✅,1,6,1102
 LogPlot,Plots with logarithmic y-axis,✅,pure,6,859
 LogRankTest,,,,9,3474
 LogSeriesDistribution,,,,6,3474
@@ -3350,7 +3350,7 @@ M,,,,,
 MachineNumberQ,,,,2,2059
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5,886
 Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
-Magnification,,,,3,1145
+Magnification,,🚫,,3,1145
 Magnify,,,,6,1599
 MailAddressValidation,,,,11.2,5587
 MailExecute,,,,11.3,
@@ -3622,7 +3622,7 @@ MoonPosition,,,,10,3162
 MorletWavelet,,,,8,3578
 MorphologicalBinarize,,,,8,1895
 MorphologicalBranchPoints,,,,8,3491
-MorphologicalComponents,,,,7,1048
+MorphologicalComponents,,🚫,,7,1048
 MorphologicalEulerNumber,,,,7,3717
 MorphologicalGraph,,,,8,2777
 MorphologicalPerimeter,,,,7,2503
@@ -3645,7 +3645,7 @@ MultiedgeStyle,,,,6,2005
 MultigraphQ,,,,10,4479
 Multinomial,Returns the multinomial coefficient,✅,pure,1,1707
 MultinomialDistribution,,,,8,1954
-MultinormalDistribution,,,,8,1042
+MultinormalDistribution,,🚫,,8,1042
 MultiplicativeOrder,,,,4,1760
 MultiplySides,,,,11.3,2611
 Multiselection,,,,9,4809
@@ -3701,7 +3701,7 @@ NetAppend,,,,11.3,4437
 NetArray,,,,12.2,5079
 NetArrayLayer,,,,12.2,3803
 NetBidirectionalOperator,,,,11.3,4707
-NetChain,,,,11,1126
+NetChain,,🚫,,11,1126
 NetDecoder,,,,11,1582
 NetDelete,,,,11.3,5486
 NetDrop,,,,11.3,4612
@@ -3731,7 +3731,7 @@ NetReplace,,,,11.3,5184
 NetReplacePart,,,,11,3020
 NetStateObject,,,,11.3,4707
 NetTake,,,,11.3,4081
-NetTrain,,,,11,1147
+NetTrain,,🚫,,11,1147
 NetTrainResultsObject,,,,11.3,
 NetUnfold,,,,13,
 NetworkPacketCapture,,,,11.3,
@@ -3826,7 +3826,7 @@ NotebookPut,,,,3,1597
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3,948
 Notebooks,,,,3,1883
 NotebookSave,,,,3,1857
-NotebookSelection,,,,3,1141
+NotebookSelection,,🚫,,3,1141
 NotebooksMenu,,,,4,4052
 NotebookTemplate,,,,10,4479
 NotebookWrite,Requires external services or GUI infrastructure,🚫,io,3,974
@@ -3998,7 +3998,7 @@ OverDot,,,,6,1547
 Overflow,Symbol representing arithmetic overflow,✅,pure,1,1926
 OverHat,,🚫,,6,970
 Overlaps,,,,5.1,1658
-Overlay,,,,8,1156
+Overlay,,🚫,,8,1156
 OverlayVideo,,,,13,
 Overscript,,,,3,1704
 OverscriptBox,,,,3,2223
@@ -4068,7 +4068,7 @@ ParallelAxisPlot,,,,12.2,4204
 ParallelCombine,,,,7,2807
 ParallelDo,,,,7,1725
 Parallelepiped,,,,10,2324
-ParallelEvaluate,,,,7,1118
+ParallelEvaluate,,🚫,,7,1118
 Parallelization,,🚫,,8,1009
 Parallelize,,,,7,1745
 ParallelKernels,,,,13.1,
@@ -4128,7 +4128,7 @@ PathGraphQ,,,,8,3765
 Pattern,Names a pattern object for use in transformation rules,✅,pure,1,9
 PatternFilling,,,,12.1,2993
 PatternReaction,,,,13.1,
-PatternSequence,,,,6,1089
+PatternSequence,Represents a sequence of patterns in pattern matching,✅,1,6,1089
 PatternTest,Tests whether a pattern matches using a predicate function (pattern?test),✅,pure,1,91
 PauliMatrix,Returns a Pauli spin matrix,✅,pure,7,672
 PaulWavelet,,,,8,4006
@@ -4326,7 +4326,7 @@ PrecedesTilde,,,,3,4527
 Precision,Returns the number of significant decimal digits,✅,pure,1,726
 PrecisionGoal,Option specifying the precision goal for numeric computation,✅,none,2,653
 PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1,1041
-Predict,,,,10,1081
+Predict,,🚫,,10,1081
 PredictorFunction,,,,10,4387
 PredictorMeasurements,,,,10,1388
 PredictorMeasurementsObject,,,,10.1,
@@ -4367,7 +4367,7 @@ PrivateFontOptions,,,,3,2617
 PrivateKey,,,,10.1,4612
 PrivateNotebookOptions,,,,4,4173
 Probability,Compute probability of an event given a distribution,✅,pure,8,671
-ProbabilityDistribution,,,,8,967
+ProbabilityDistribution,Defines a custom probability distribution,✅,1,8,967
 ProbabilityPlot,,,,8,2198
 ProbabilityScalePlot,,,,8,2278
 ProbitModelFit,,,,7,3344
@@ -4554,7 +4554,7 @@ ReferenceLineStyle,,,,8,4225
 Refine,Simplifies expressions using assumptions,✅,pure,5,764
 ReflectionMatrix,,,,6,2203
 ReflectionTransform,,,,6,1536
-Refresh,,,,6,1145
+Refresh,,🚫,,6,1145
 RefreshRate,,,,6,2880
 Region,,🚫,,11.1,959
 RegionBinarize,,,,8,3008
@@ -4564,7 +4564,7 @@ RegionBounds,,,,10,1480
 RegionCentroid,,,,10,1377
 RegionCongruent,,,,13,
 RegionConvert,,,,12.3,
-RegionDifference,,,,10,991
+RegionDifference,,🚫,,10,991
 RegionDilation,,,,12.3,
 RegionDimension,,,,10,1716
 RegionDisjoint,,,,11.1,3134
@@ -4579,9 +4579,9 @@ RegionFit,,,,13,
 RegionFunction,Option to restrict plotting to a region,✅,none,6,558
 RegionHausdorffDistance,,,,13.3,
 RegionImage,,,,11.2,3462
-RegionIntersection,,,,10,853
+RegionIntersection,,🚫,,10,853
 RegionMeasure,,,,10,1320
-RegionMember,,,,10,940
+RegionMember,,🚫,,10,940
 RegionMemberFunction,,,,10,5184
 RegionMoment,,,,10.4,3200
 RegionNearest,,,,10,1507
@@ -4594,7 +4594,7 @@ RegionResize,,,,11,3765
 RegionSimilar,,,,13,
 RegionSize,,,,11,5079
 RegionSymmetricDifference,,,,10,3717
-RegionUnion,,,,10,927
+RegionUnion,,🚫,,10,927
 RegionWithin,,,,11.1,2944
 RegisterExternalEvaluator,,,,11.2,4173
 RegularExpression,Represents a regular expression pattern for string matching,✅,pure,5.1,617
@@ -4668,7 +4668,7 @@ ReshapeLayer,,,,11,2399
 Residue,Computes the residue of an expression at a point,✅,pure,2,585
 ResidueSum,,,,13.1,
 ResizeLayer,,,,11.1,4567
-Resolve,,,,5,1047
+Resolve,,🚫,,5,1047
 ResolveContextAliases,,,,13,
 ResourceData,,🚫,,11,836
 ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12,519
@@ -5136,7 +5136,7 @@ SplicedDistribution,,,,9,3566
 SplineClosed,Option for closing B-spline curves,✅,pure,7,215
 SplineDegree,Option for the degree of spline interpolation,✅,none,7,774
 SplineKnots,,🚫,,7,1064
-SplineWeights,,,,7,1094
+SplineWeights,,🚫,,7,1094
 Split,Splits list at boundaries where consecutive elements differ,✅,pure,3,615
 SplitBy,Splits list at boundaries where a function changes value,✅,pure,7,1000
 SpokenString,,,,7,3474
@@ -5184,13 +5184,13 @@ StarGraph,,,,8,2617
 StartExternalSession,,,,11.2,3162
 StartingStepSize,,,,4,1760
 StartOfLine,,,,5.1,2786
-StartOfString,,,,5.1,1022
+StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 StartProcess,,,,10,2514
 StartWebSession,,,,12,3678
 StateFeedbackGains,,,,8,2650
 StateOutputEstimator,,,,8,3737
 StateResponse,,,,8,2254
-StateSpaceModel,,,,8,1079
+StateSpaceModel,,🚫,,8,1079
 StateSpaceRealization,,,,8,3803
 StateSpaceTransform,,,,8,2952
 StateTransformationLinearize,,,,10,4356
@@ -5302,7 +5302,7 @@ SubsetReplace,,,,12.1,4809
 Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SubStar,,,,6,3537
 SubstitutionSystem,,,,10.2,2578
-Subsuperscript,,,,3,1152
+Subsuperscript,,🚫,,3,1152
 SubsuperscriptBox,,,,3,1921
 SubsuperscriptBoxOptions,,,,4,
 SubtitleEncoding,,,,12.1,
@@ -5318,7 +5318,7 @@ SucceedsTilde,,,,3,5390
 Success,,,,11.3,4612
 SuchThat,,,,3,5390
 Sum,Computes a sum over a range,✅,pure,1,77
-SumConvergence,,,,7,1050
+SumConvergence,,🚫,,7,1050
 SummationLayer,,,,11,3108
 Sunday,,,,9,1869
 SunPosition,,,,10,2179
@@ -5345,7 +5345,7 @@ SurvivalModel,,,,9,5184
 SurvivalModelFit,,,,9,3344
 SuzukiDistribution,,,,8,3737
 SuzukiGroupSuz,,,,8,5013
-SwatchLegend,,,,9,1136
+SwatchLegend,,🚫,,9,1136
 Switch,Evaluates an expression and matches it against patterns,✅,pure,1,356
 Symbol,Creates a symbol from a string,✅,pure,1,267
 SymbolicDeltaProductArray,,,,14.1,
@@ -5449,7 +5449,7 @@ Tan,Returns the tangent of a number,✅,pure,1,171
 TanDegrees,,,,14.1,
 Tanh,Returns the hyperbolic tangent,✅,pure,1,350
 TargetDevice,,,,11,2986
-TargetFunctions,,,,3,1113
+TargetFunctions,,🚫,,3,1113
 TargetStructure,,,,13.3,
 TargetSystem,,,,12,
 TargetUnits,,,,9,2693
@@ -5669,7 +5669,7 @@ TransformationClass,,,,10,2867
 TransformationFunction,,,,6,2656
 TransformationFunctions,,,,4,1422
 TransformationMatrix,,,,6,2344
-TransformedDistribution,,,,8,851
+TransformedDistribution,,🚫,,8,851
 TransformedField,,,,9,1499
 TransformedProcess,,,,10,2389
 TransformedRegion,,,,10,1477
@@ -5838,7 +5838,7 @@ UpArrow,,,,3,3070
 UpArrowBar,,,,3,5390
 UpArrowDownArrow,,,,3,5390
 Update,Symbol for updating objects,✅,pure,1,2688
-UpdateInterval,,,,6,1138
+UpdateInterval,,🚫,,6,1138
 UpdatePacletSites,,,,12.1,
 UpdateSearchIndex,,,,10.2,5079
 UpdateSemanticSearchIndex,,,,14.1,
@@ -6102,7 +6102,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1,22
 White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
 WhiteNoiseProcess,,,,10,2487
 WhitePoint,,,,10,5390
-Whitespace,,,,5.1,1088
+Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
 WhitespaceCharacter,,,,5.1,1539
 WhittakerM,,,,6,1651
 WhittakerW,,,,6,1741
