@@ -1216,7 +1216,10 @@ pub fn evaluate_function_call_ast_inner(
     | "CirclePlus"
     | "Glow"
     | "AppellF1"
-    | "PrincipalValue" => {
+    | "PrincipalValue"
+    | "UpTo"
+    | "LetterCharacter"
+    | "ToRadicals" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -1496,6 +1499,55 @@ pub fn evaluate_function_call_ast_inner(
       name: name.to_string(),
       args: args.to_vec(),
     });
+  }
+
+  // PathGraph[{v1, v2, ...}] — create a path graph connecting sequential vertices
+  if name == "PathGraph" && args.len() == 1 {
+    if let Expr::List(verts) = &args[0] {
+      if verts.len() >= 2 {
+        let mut edges = Vec::new();
+        for i in 0..verts.len() - 1 {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![verts[i].clone(), verts[i + 1].clone()],
+          });
+        }
+        return Ok(Expr::FunctionCall {
+          name: "Graph".to_string(),
+          args: vec![Expr::List(verts.clone()), Expr::List(edges)],
+        });
+      }
+    }
+  }
+
+  // VertexCount[Graph[verts, edges]] — number of vertices
+  if name == "VertexCount" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && !gargs.is_empty() {
+        if let Expr::List(verts) = &gargs[0] {
+          return Ok(Expr::Integer(verts.len() as i128));
+        }
+      }
+    }
+  }
+
+  // EdgeCount[Graph[verts, edges]] — number of edges
+  if name == "EdgeCount" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && gargs.len() >= 2 {
+        if let Expr::List(edges) = &gargs[1] {
+          return Ok(Expr::Integer(edges.len() as i128));
+        }
+      }
+    }
   }
 
   // PiecewiseExpand — expand certain functions into Piecewise form

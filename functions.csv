@@ -723,7 +723,7 @@ CellLabel,,,,3,2449
 CellLabelAutoDelete,,,,3,3215
 CellLabelStyle,,,,11.3,5486
 CellLabelTemplate,,,,13.1,
-CellMargins,,,,3,1219
+CellMargins,,🚫,,3,1219
 CellObject,,,,9,2632
 CellOpen,,,,3,2698
 CellPrint,Requires external services or GUI infrastructure,🚫,io,3,918
@@ -771,7 +771,7 @@ ChartBaseStyle,,,,7,1675
 ChartElementFunction,,🚫,,7,937
 ChartElements,,,,7,2421
 ChartLabels,Option for labeling elements in charts,✅,none,7,661
-ChartLayout,,,,7,1223
+ChartLayout,,🚫,,7,1223
 ChartLegends,,🚫,,7,1006
 ChartStyle,Style specification for chart elements,✅,pure,7,634
 ChatEvaluate,,,,13.3,
@@ -1266,7 +1266,7 @@ DateObjectQ,,,,10,3224
 DateOverlapsQ,,,,11.1,4747
 DatePattern,,,,6,3108
 DatePlus,Adds a time increment to a date,✅,pure,6,832
-DateRange,,,,9,1210
+DateRange,,🚫,,9,1210
 DateReduction,,,,10.2,3755
 DateScale,,,,13,
 DateSelect,,,,12.2,4809
@@ -1626,7 +1626,7 @@ EdgeChromaticNumber,,,,13,
 EdgeConnectivity,,,,9,3537
 EdgeContract,,,,10,3972
 EdgeCost,,,,9,3440
-EdgeCount,,,,8,1256
+EdgeCount,Returns the number of edges in a graph,✅,1,8,1256
 EdgeCoverQ,,,,8,4612
 EdgeCycleMatrix,,,,10,4479
 EdgeDelete,,,,8,2172
@@ -1648,7 +1648,7 @@ EdgeValueRange,,,,13,
 EdgeValueSizes,,,,13,
 EdgeWeight,,🚫,,8,942
 EdgeWeightedGraphQ,,,,12,
-Editable,,,,3,1233
+Editable,,🚫,,3,1233
 EditDistance,Returns the edit distance between two strings,✅,pure,6,1921
 EffectiveInterest,,,,8,2276
 Eigensystem,Eigenvalues and eigenvectors of a matrix,✅,pure,1,590
@@ -1773,7 +1773,7 @@ EvaluationMonitor,,🚫,,5,1067
 EvaluationNotebook,Return the current evaluation notebook,✅,none,3,621
 EvaluationObject,,,,7,5013
 EvaluationPrivileges,,,,12.2,5587
-Evaluator,,,,3,1206
+Evaluator,,🚫,,3,1206
 EvaluatorNames,,,,4,3233
 EvenQ,Checks if a number is even,✅,pure,1,510
 EventData,,🚫,,9,2167
@@ -1940,7 +1940,7 @@ FilteredEntityClass,,,,12,3224
 FilterRules,Filters a list of rules by allowed keys,✅,pure,6,682
 FinancialBond,,,,8,2519
 FinancialData,,🚫,,6,43
-FinancialDerivative,,,,8,1236
+FinancialDerivative,,🚫,,8,1236
 FinancialIndicator,,,,8,2338
 Find,Finds a file on the search path,🚧,effectful,2,1793
 FindAnomalies,,,,12,4809
@@ -2149,7 +2149,7 @@ FreeformEvaluate,,,,14.1,
 FreeQ,Tests if expression is free of a specified form,✅,pure,1,286
 FrenetSerretSystem,,,,10,2591
 FrequencySamplingFilterKernel,,,,9,4612
-FresnelC,,,,3,1208
+FresnelC,,🚫,,3,1208
 FresnelF,,,,10,4356
 FresnelG,,,,10,4356
 FresnelS,,🚫,,3,1193
@@ -3136,7 +3136,7 @@ LessLess,,,,3,3537
 LessSlantEqual,,,,3,5486
 LessThan,,,,10.3,3059
 LessTilde,,,,3,5390
-LetterCharacter,,,,5.1,1226
+LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
 LetterCounts,,,,10.1,2605
 LetterNumber,,,,10.1,1524
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2,2144
@@ -3184,7 +3184,7 @@ LinearFractionalTransform,,,,6,3578
 LinearGradientFilling,,,,12.2,2712
 LinearGradientImage,,,,10,2742
 LinearizingTransformationData,,🚫,,10,
-LinearLayer,,,,11,1218
+LinearLayer,,🚫,,11,1218
 LinearModelFit,Fits a linear model to data and returns a FittedModel object,✅,pure,7,768
 LinearOffsetFunction,,,,7,3916
 LinearOptimization,,,,12,3803
@@ -3364,7 +3364,7 @@ MailServerConnection,,,,11.3,
 MailSettings,,,,11.2,4660
 Majority,,,,7,3291
 MakeBoxes,Construct box form of an expression,🚫,pure,3,516
-MakeExpression,,,,3,1239
+MakeExpression,,🚫,,3,1239
 ManagedLibraryExpressionID,,,,10,3737
 ManagedLibraryExpressionQ,,,,10,4479
 ManagedObject,,,,13.3,
@@ -4072,7 +4072,7 @@ ParallelEvaluate,,🚫,,7,1118
 Parallelization,,🚫,,8,1009
 Parallelize,,,,7,1745
 ParallelKernels,,,,13.1,
-ParallelMap,,,,7,1204
+ParallelMap,Applies a function in parallel to each element,✅,1,7,1204
 ParallelNeeds,,,,7,3257
 Parallelogram,,,,10,2138
 ParallelProduct,,,,7,4660
@@ -4084,7 +4084,7 @@ ParameterEstimator,,,,8,2344
 ParameterMixtureDistribution,,,,8,1519
 ParametricConvexOptimization,,,,12.2,5184
 ParametricFunction,,,,9,4138
-ParametricNDSolve,,,,9,1231
+ParametricNDSolve,,🚫,,9,1231
 ParametricNDSolveValue,,🚫,,9,977
 ParametricPlot,Creates a parametric plot,✅,pure,1,118
 ParametricPlot3D,3D parametric plot,🚫,none,2,210
@@ -4123,7 +4123,7 @@ PassEventsUp,,,,6,2777
 Paste,,,,8,2553
 PasteButton,,,,6,2174
 Path,,,,4,2260
-PathGraph,,,,8,1209
+PathGraph,Creates a path graph from a list of vertices,✅,1,8,1209
 PathGraphQ,,,,8,3765
 Pattern,Names a pattern object for use in transformation rules,✅,pure,1,9
 PatternFilling,,,,12.1,2993
@@ -4652,7 +4652,7 @@ Replace,Applies transformation rules to an expression,✅,pure,1,227
 ReplaceAll,Applies replacement rules to an expression,✅,pure,1,20
 ReplaceAt,,,,13.1,
 ReplaceImageValue,,,,9,2960
-ReplaceList,,,,3,1216
+ReplaceList,,🚫,,3,1216
 ReplacePart,Replaces element at a specific position,✅,pure,2,447
 ReplacePixelValue,,,,9,2777
 ReplaceRepeated,Applies replacement rules repeatedly until fixed point,✅,pure,1,238
@@ -4927,7 +4927,7 @@ SetSharedVariable,,,,7,1808
 SetStreamPosition,,,,2,2184
 SetSystemModel,,,,11.3,
 SetSystemOptions,,🚫,,6,1189
-Setter,,,,6,1237
+Setter,,🚫,,6,1237
 SetterBar,,🚫,,6,895
 Setting,,,,6,1891
 SetUsers,,,,10,5486
@@ -4995,7 +4995,7 @@ SingularValuePlot,,,,8,3755
 Sinh,Returns the hyperbolic sine,✅,pure,1,278
 SinhIntegral,,,,3,1309
 SinIntegral,Sine integral Si(z),✅,pure,2,1148
-SixJSymbol,,,,2,1217
+SixJSymbol,,🚫,,2,1217
 Skeleton,Represents omitted elements in output display as <<n>>,✅,none,1,4479
 SkeletonTransform,,,,8,3522
 SkellamDistribution,,,,8,3862
@@ -5615,7 +5615,7 @@ Top,Symbol for top alignment,✅,pure,1,385
 TopHatTransform,,,,7,3636
 ToPolarCoordinates,,,,10.1,2374
 TopologicalSort,,,,8,3224
-ToRadicals,,,,3,1211
+ToRadicals,Attempts to express in terms of radicals,✅,1,3,1211
 ToRawPointer,,,,13.1,
 ToRules,Convert logical equation combinations to lists of rules,✅,pure,1,1027
 Torus,,,,13,
@@ -5855,7 +5855,7 @@ UpSet,Assign upvalues to symbols appearing in the LHS,✅,side_effect,1,454
 UpSetDelayed,Assign delayed upvalues to symbols appearing in the LHS,✅,side_effect,1,992
 UpTee,,,,3,4567
 UpTeeArrow,,,,3,5390
-UpTo,,,,10.3,1222
+UpTo,Represents a limit specification,✅,1,10.3,1222
 UpValues,Returns the up values of a symbol,✅,pure,2,1704
 URL,,,,11,1727
 URLBuild,,,,10,1951
@@ -5942,7 +5942,7 @@ VertexContract,,,,10,3378
 VertexCoordinates,Option for vertex coordinates in graphs,✅,none,8,713
 VertexCorrelationSimilarity,,,,9,4947
 VertexCosineSimilarity,,,,9,4947
-VertexCount,,,,8,1225
+VertexCount,Returns the number of vertices in a graph,✅,1,8,1225
 VertexCoverQ,,,,8,4437
 VertexDataCoordinates,,,,9,5587
 VertexDegree,,,,8,1287
@@ -6026,7 +6026,7 @@ VolcanoData,,🚫,,10,4291
 Volume,,🚫,,10,1180
 VonMisesDistribution,,,,8,3566
 VonMisesStress,,,,14.1,
-VoronoiMesh,,,,10,1221
+VoronoiMesh,,🚫,,10,1221
 W,,,,,
 WaitAll,,,,7,2233
 WaitNext,,,,7,4006
