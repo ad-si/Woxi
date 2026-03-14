@@ -999,6 +999,17 @@ pub fn dispatch_complex_and_special(
     "ToBoxes" if args.len() == 1 => {
       return Some(Ok(expr_to_box_form(&args[0])));
     }
+    // Activate[expr] — replace Inactive[f][args...] with f[args...] and evaluate
+    "Activate" if args.len() == 1 || args.len() == 2 => {
+      let filter: Option<Vec<String>> = if args.len() == 2 {
+        // Activate[expr, f] or Activate[expr, f1 | f2 | ...]
+        Some(extract_activate_filter(&args[1]))
+      } else {
+        None
+      };
+      let activated = activate_expr(&args[0], &filter);
+      return Some(crate::evaluator::evaluate_expr_to_expr(&activated));
+    }
     // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
     "MathMLForm" | "StandardForm" | "InputForm" if !args.is_empty() => {
       return Some(Ok(Expr::FunctionCall {
@@ -1371,5 +1382,85 @@ fn box_as_output_string(expr: &Expr) -> Expr {
     Expr::Identifier(s)
   } else {
     Expr::String(s)
+  }
+}
+
+/// Extract function names from an Activate filter (second argument).
+/// Handles: single identifier, or Alternatives (f1 | f2 | ...).
+fn extract_activate_filter(filter: &Expr) -> Vec<String> {
+  match filter {
+    Expr::Identifier(name) => vec![name.clone()],
+    Expr::FunctionCall { name, args } if name == "Alternatives" => args
+      .iter()
+      .filter_map(|a| {
+        if let Expr::Identifier(n) = a {
+          Some(n.clone())
+        } else {
+          None
+        }
+      })
+      .collect(),
+    _ => vec![],
+  }
+}
+
+/// Recursively replace Inactive[f][args...] with f[args...] in an expression.
+/// If `filter` is Some, only activate the specified functions.
+fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
+  match expr {
+    // CurriedCall where func is Inactive[f] → f[args...]
+    Expr::CurriedCall { func, args } => {
+      if let Expr::FunctionCall {
+        name,
+        args: inactive_args,
+      } = func.as_ref()
+        && name == "Inactive"
+        && inactive_args.len() == 1
+      {
+        if let Expr::Identifier(func_name) = &inactive_args[0] {
+          // Check filter
+          let should_activate = match filter {
+            Some(allowed) => allowed.contains(func_name),
+            None => true,
+          };
+          if should_activate {
+            // Activate: replace with f[args...], recursing into args
+            let activated_args: Vec<Expr> =
+              args.iter().map(|a| activate_expr(a, filter)).collect();
+            return Expr::FunctionCall {
+              name: func_name.clone(),
+              args: activated_args,
+            };
+          }
+        }
+      }
+      // Recurse into both func and args
+      Expr::CurriedCall {
+        func: Box::new(activate_expr(func, filter)),
+        args: args.iter().map(|a| activate_expr(a, filter)).collect(),
+      }
+    }
+    // Recurse into function call args
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(|a| activate_expr(a, filter)).collect(),
+    },
+    // Recurse into lists
+    Expr::List(items) => {
+      Expr::List(items.iter().map(|a| activate_expr(a, filter)).collect())
+    }
+    // Recurse into binary ops
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(activate_expr(left, filter)),
+      right: Box::new(activate_expr(right, filter)),
+    },
+    // Recurse into unary ops
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(activate_expr(operand, filter)),
+    },
+    // Atoms: return as-is
+    _ => expr.clone(),
   }
 }

@@ -3026,3 +3026,51 @@ mod base_style {
     );
   }
 }
+
+mod activate {
+  use super::*;
+
+  #[test]
+  fn basic_plus() {
+    assert_eq!(interpret("Activate[Inactive[Plus][1, 2, 3]]").unwrap(), "6");
+  }
+
+  #[test]
+  fn with_sin() {
+    assert_eq!(interpret("Activate[Inactive[Sin][Pi/2]]").unwrap(), "1");
+  }
+
+  #[test]
+  fn nested_in_expression() {
+    assert_eq!(
+      interpret("Activate[a + Inactive[Plus][1, 2]]").unwrap(),
+      "3 + a"
+    );
+  }
+
+  #[test]
+  fn with_filter() {
+    // Only activate Plus, not Times
+    assert_eq!(
+      interpret("Activate[Inactive[Plus][1, 2] + Inactive[Times][3, 4], Plus]")
+        .unwrap(),
+      "3 + Inactive[Times][3, 4]"
+    );
+  }
+
+  #[test]
+  fn inactive_preserved_without_activate() {
+    assert_eq!(
+      interpret("Inactive[Plus][1, 2]").unwrap(),
+      "Inactive[Plus][1, 2]"
+    );
+  }
+
+  #[test]
+  fn with_integrate() {
+    assert_eq!(
+      interpret("Activate[Inactive[Integrate][x^2, x]]").unwrap(),
+      "x^3/3"
+    );
+  }
+}

@@ -32,7 +32,7 @@ AcousticRadiationValue,,,,12.2,5587
 AcousticSoundHardValue,,,,12.2,
 AcousticSoundSoftCondition,,,,12.2,
 ActionMenu,,,,6,2116
-Activate,,,,10,997
+Activate,Replaces Inactive[f] wrappers with the active function f and evaluates,✅,pure,10,997
 ActivateResult,,,,14,
 ActiveClassification,,,,11.1,4291
 ActiveClassificationObject,,,,11.1,
@@ -4469,7 +4469,7 @@ RandomColor,Generate a random color,✅,none,10,756
 RandomComplex,,,,6,1258
 RandomDate,,,,13.2,
 RandomEntity,,,,10.2,2807
-RandomFunction,,,,9,773
+RandomFunction,Simulates random processes like Wiener and Poisson processes,🚫,io,9,773
 RandomGeneratorState,,,,12.2,
 RandomGeoPosition,,,,12,
 RandomGraph,Generate a random graph,✅,none,8,810
