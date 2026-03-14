@@ -389,7 +389,7 @@ Back,,,,6,2074
 Background,Option specifying the background color or style,✅,none,2,108
 Backslash,,,,3,3291
 Backward,,,,6,3242
-Ball,,,,10,989
+Ball,Geometric primitive representing a ball (filled sphere),✅,none,10,989
 Band,Specify a band of a matrix,✅,none,6,732
 BandpassFilter,,,,9,2952
 BandstopFilter,,,,9,3612
@@ -2777,7 +2777,7 @@ InertEvaluate,,,,13.1,
 InertExpression,,,,13.1,
 InexactNumberQ,Tests if an expression is an inexact real number,✅,pure,4,2141
 InfiniteFuture,,,,12.1,
-InfiniteLine,,,,10,893
+InfiniteLine,Geometric primitive representing an infinite line,✅,none,10,893
 InfiniteLineThrough,,,,13.1,
 InfinitePast,,,,12.1,
 InfinitePlane,,,,10,1434
@@ -5733,7 +5733,7 @@ TreeSelect,,,,12.3,
 TreeSize,,,,12.3,
 TreeTraversalOrder,,,,13,
 TrendStyle,,,,8,4437
-Triangle,,,,10,901
+Triangle,Geometric primitive representing a triangle,✅,none,10,901
 TriangleCenter,,,,12,4809
 TriangleConstruct,,,,12,3317
 TriangleMeasurement,,,,12,3843

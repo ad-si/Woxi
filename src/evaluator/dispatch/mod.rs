@@ -1195,7 +1195,9 @@ pub fn evaluate_function_call_ast_inner(
     | "RowBox"
     | "DirectedEdge"
     | "UndirectedEdge"
-    | "Entity" => {
+    | "Entity"
+    | "InfiniteLine"
+    | "Ball" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -1310,6 +1312,24 @@ pub fn evaluate_function_call_ast_inner(
         })
         .collect();
       return Ok(Expr::String(concatenated));
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // Triangle[] defaults to Triangle[{{0,0},{1,0},{0,1}}]
+  if name == "Triangle" {
+    if args.is_empty() {
+      return Ok(Expr::FunctionCall {
+        name: "Triangle".to_string(),
+        args: vec![Expr::List(vec![
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(0)]),
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(1)]),
+        ])],
+      });
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
