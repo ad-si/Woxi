@@ -3581,3 +3581,74 @@ mod circle_points {
     assert!(result.contains("{1, 0}") && result.contains("{-1, 0}"));
   }
 }
+
+mod parallel_map {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("ParallelMap[f, {1, 2, 3}]").unwrap(),
+      "{f[1], f[2], f[3]}"
+    );
+  }
+
+  #[test]
+  fn with_function() {
+    assert_eq!(
+      interpret("ParallelMap[#^2 &, {1, 2, 3}]").unwrap(),
+      "{1, 4, 9}"
+    );
+  }
+}
+
+mod path_graph {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("PathGraph[{1, 2, 3, 4}]").unwrap(),
+      "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 4]}]"
+    );
+  }
+
+  #[test]
+  fn with_symbols() {
+    assert_eq!(
+      interpret("PathGraph[{a, b, c}]").unwrap(),
+      "Graph[{a, b, c}, {UndirectedEdge[a, b], UndirectedEdge[b, c]}]"
+    );
+  }
+}
+
+mod vertex_count {
+  use super::*;
+
+  #[test]
+  fn complete_graph() {
+    assert_eq!(interpret("VertexCount[CompleteGraph[5]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn path_graph() {
+    assert_eq!(interpret("VertexCount[PathGraph[{1, 2, 3}]]").unwrap(), "3");
+  }
+}
+
+mod edge_count {
+  use super::*;
+
+  #[test]
+  fn complete_graph() {
+    assert_eq!(interpret("EdgeCount[CompleteGraph[5]]").unwrap(), "10");
+  }
+
+  #[test]
+  fn path_graph() {
+    assert_eq!(
+      interpret("EdgeCount[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "3"
+    );
+  }
+}

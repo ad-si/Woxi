@@ -7,7 +7,7 @@ pub fn dispatch_list_operations(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
-    "Map" if args.len() == 2 => {
+    "Map" | "ParallelMap" if args.len() == 2 => {
       return Some(list_helpers_ast::map_ast(&args[0], &args[1]));
     }
     "Map" if args.len() == 3 => {
