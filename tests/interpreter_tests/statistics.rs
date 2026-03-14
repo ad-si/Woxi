@@ -878,3 +878,57 @@ mod lognormal_distribution {
     );
   }
 }
+
+mod chi_square_distribution {
+  use super::*;
+
+  #[test]
+  fn inert_form() {
+    assert_eq!(
+      interpret("ChiSquareDistribution[5]").unwrap(),
+      "ChiSquareDistribution[5]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[ChiSquareDistribution[k], x]").unwrap(),
+      "Piecewise[{{x^(k/2 - 1)/(2^(k/2)*E^(x/2)*Gamma[k/2]), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    assert_eq!(
+      interpret("CDF[ChiSquareDistribution[k], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[k/2, 0, x/2], x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn mean() {
+    assert_eq!(interpret("Mean[ChiSquareDistribution[k]]").unwrap(), "k");
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(interpret("Mean[ChiSquareDistribution[5]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn variance() {
+    assert_eq!(
+      interpret("Variance[ChiSquareDistribution[k]]").unwrap(),
+      "2*k"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[ChiSquareDistribution[5]]").unwrap(),
+      "10"
+    );
+  }
+}

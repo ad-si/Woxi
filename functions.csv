@@ -604,7 +604,7 @@ BrownForsytheTest,,,,8,3972
 BrownianBridgeProcess,,,,9,3280
 BSplineBasis,,,,7,1466
 BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7,192
-BSplineFunction,,,,7,1176
+BSplineFunction,,🚫,,7,1176
 BSplineSurface,,,,7,1891
 BubbleChart,Creates a bubble chart from data,✅,pure,7,1679
 BubbleChart3D,,,,7,2170
@@ -793,7 +793,7 @@ ChemicalReaction,,,,13,
 ChessboardDistance,,,,6,2549
 ChiDistribution,,,,6,2509
 ChineseRemainder,Solves a system of modular congruences,✅,pure,6,2389
-ChiSquareDistribution,,,,6,1186
+ChiSquareDistribution,Represents a chi-square distribution,✅,1,6,1186
 ChoiceButtons,,,,7,3326
 ChoiceDialog,,,,6,2442
 CholeskyDecomposition,,,,5,2067
@@ -1638,7 +1638,7 @@ EdgeLabelStyle,,,,8,2519
 EdgeList,List of edges in a graph,✅,none,8,763
 EdgeQ,,,,8,3094
 EdgeRules,,,,8,3678
-EdgeShapeFunction,,,,8,1175
+EdgeShapeFunction,,🚫,,8,1175
 EdgeStyle,Option for styling edges in graphs,✅,none,8,873
 EdgeTaggedGraph,,,,12.1,4138
 EdgeTaggedGraphQ,,,,12.1,5184
@@ -1948,7 +1948,7 @@ FindArgMax,,,,7,2632
 FindArgMin,,,,7,2462
 FindChannels,,,,11,4387
 FindClique,,,,8,2317
-FindClusters,,,,6,1198
+FindClusters,,🚫,,6,1198
 FindCookies,,,,11,5184
 FindCurvePath,,,,7,2008
 FindCycle,,,,10,1815
@@ -2016,7 +2016,7 @@ FindRepeat,,,,11.2,3889
 FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,1,222
 FindSequenceFunction,Finds a formula for an integer sequence using polynomials exponentials and factorials,✅,pure,7,839
 FindSettings,,,,4,4262
-FindShortestPath,,,,8,1187
+FindShortestPath,,🚫,,8,1187
 FindShortestTour,,,,6,1269
 FindSpanningTree,,,,10,2944
 FindSubgraphIsomorphism,,,,13,
@@ -2152,7 +2152,7 @@ FrequencySamplingFilterKernel,,,,9,4612
 FresnelC,,,,3,1208
 FresnelF,,,,10,4356
 FresnelG,,,,10,4356
-FresnelS,,,,3,1193
+FresnelS,,🚫,,3,1193
 Friday,,,,9,1910
 FrobeniusAutomorphism,,,,13.3,
 FrobeniusNumber,Returns the Frobenius number for a set of integers,✅,pure,6,3843
@@ -2239,7 +2239,7 @@ GaugeFrameStyle,,,,9,3233
 GaugeLabels,,,,9,2473
 GaugeMarkers,,,,9,2707
 GaugeStyle,,,,9,2921
-GaussianFilter,,,,7,1173
+GaussianFilter,,🚫,,7,1173
 GaussianIntegers,,,,2,2468
 GaussianMatrix,,,,7,1779
 GaussianOrthogonalMatrixDistribution,,,,10.3,3656
@@ -2322,7 +2322,7 @@ GeoIdentify,,,,10,2503
 GeoImage,,,,11.2,3737
 GeoLabels,,,,10,2867
 GeoLength,,,,10.4,2952
-GeoListPlot,,,,10,1180
+GeoListPlot,,🚫,,10,1180
 GeoLocation,,,,10,3083
 GeologicalPeriodData,,🚫,,10,3083
 GeomagneticModelData,,🚫,,10.1,3440
@@ -2349,7 +2349,7 @@ GeoPositionENU,,,,7,3755
 GeoPositionXYZ,,,,7,2394
 GeoProjection,,,,10,1503
 GeoProjectionData,,🚫,,7,2282
-GeoRange,,,,10,1190
+GeoRange,,🚫,,10,1190
 GeoRangePadding,,,,10,2734
 GeoRegionValuePlot,,,,10,1789
 GeoResolution,,,,12,5486
@@ -2551,7 +2551,7 @@ HiddenItems,,,,12.1,
 HiddenMarkovProcess,,,,10,3265
 Highlighted,,,,10.4,1800
 HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8,822
-HighlightImage,,,,9,1195
+HighlightImage,,🚫,,9,1195
 HighlightMesh,,,,10,1573
 HighpassFilter,,,,9,2978
 HigmanSimsGroupHS,,,,8,5079
@@ -2695,7 +2695,7 @@ ImageMarker,,,,10.4,4104
 ImageMeasurements,,,,9,2031
 ImageMesh,,,,11,2411
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7,1038
-ImagePad,,,,7,1184
+ImagePad,,🚫,,7,1184
 ImagePadding,Option for specifying padding around plotted images,✅,pure,6,422
 ImagePartition,,,,7,1617
 ImagePeriodogram,,,,9,4052
@@ -3613,7 +3613,7 @@ MomentEvaluate,,,,8,3737
 MomentGeneratingFunction,,,,8,2094
 MomentOfInertia,,,,10.4,3031
 Monday,,,,9,1970
-Monitor,,,,6,1183
+Monitor,,🚫,,6,1183
 MonomialList,,,,7,1375
 MonsterGroupM,,,,8,4809
 MoonPhase,,,,10,1676
@@ -3978,7 +3978,7 @@ Orderless,Attribute for commutative functions,✅,pure,1,1325
 OrderlessPatternSequence,,,,10.1,1992
 OrdinalScale,,,,13.1,
 OrnsteinUhlenbeckProcess,,,,9,2157
-Orthogonalize,,,,6,1191
+Orthogonalize,,🚫,,6,1191
 OrthogonalMatrix,,,,14,
 OrthogonalMatrixQ,,,,10,2807
 Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1,63
@@ -4191,7 +4191,7 @@ PIDDerivativeFilter,,,,9,5486
 PIDFeedforward,,,,9,5184
 PIDTune,,,,9,2880
 Piecewise,Represents a piecewise function,✅,pure,5.1,239
-PiecewiseExpand,,,,5.1,1090
+PiecewiseExpand,Expands functions to explicit Piecewise form,✅,1,5.1,1090
 PieChart,Creates a pie chart from data,✅,pure,7,586
 PieChart3D,,,,7,2048
 PillaiTrace,,,,9,4612
@@ -4926,7 +4926,7 @@ SetSharedFunction,,,,7,2587
 SetSharedVariable,,,,7,1808
 SetStreamPosition,,,,2,2184
 SetSystemModel,,,,11.3,
-SetSystemOptions,,,,6,1189
+SetSystemOptions,,🚫,,6,1189
 Setter,,,,6,1237
 SetterBar,,🚫,,6,895
 Setting,,,,6,1891
@@ -5021,7 +5021,7 @@ SmithDecomposition,,,,10.2,2535
 SmithDelayCompensator,,,,9,4612
 SmithWatermanSimilarity,,,,7,3636
 SmoothDensityHistogram,,,,8,1907
-SmoothHistogram,,,,8,1200
+SmoothHistogram,,🚫,,8,1200
 SmoothHistogram3D,,,,8,2360
 SmoothKernelDistribution,,,,8,1247
 SmoothPointDensity,,,,12.2,
@@ -5281,7 +5281,7 @@ StyleDefinitions,,🚫,,3,987
 StyleHints,,,,13,
 Subdivide,Divides a range into equal parts,✅,pure,10.1,837
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6,1960
-Subgraph,,,,8,1197
+Subgraph,,🚫,,8,1197
 SubMinus,,,,6,1822
 SubPlus,,,,6,1692
 SubresultantPolynomialRemainders,,,,9,4612
@@ -5918,7 +5918,7 @@ VectorRange,,,,12.1,4747
 Vectors,,,,9,1604
 VectorScaling,,,,12.1,1776
 VectorSizes,,,,12.1,1940
-VectorStyle,,,,7,1182
+VectorStyle,,🚫,,7,1182
 VectorSymbol,,,,14.1,
 Vee,,,,3,3094
 Verbatim,Inert wrapper to prevent interpretation,✅,none,3,723
@@ -5964,7 +5964,7 @@ VertexOutDegree,,,,8,2031
 VertexQ,,,,8,3427
 VertexReplace,,,,8,2404
 VertexShape,,,,8,2184
-VertexShapeFunction,,,,8,1177
+VertexShapeFunction,,🚫,,8,1177
 VertexSize,Option for vertex size in graphs,✅,none,8,748
 VertexStyle,,🚫,,8,969
 VertexTextureCoordinates,,🚫,,8,1076
@@ -6023,7 +6023,7 @@ Visible,,,,3,1563
 VoiceStyleData,,🚫,,12,5587
 VoigtDistribution,,,,9,3474
 VolcanoData,,🚫,,10,4291
-Volume,,,,10,1180
+Volume,,🚫,,10,1180
 VonMisesDistribution,,,,8,3566
 VonMisesStress,,,,14.1,
 VoronoiMesh,,,,10,1221

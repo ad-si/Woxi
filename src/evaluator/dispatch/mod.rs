@@ -1498,6 +1498,158 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // PiecewiseExpand — expand certain functions into Piecewise form
+  if name == "PiecewiseExpand" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: fname,
+      args: fargs,
+    } = &args[0]
+    {
+      match fname.as_str() {
+        "Min" if fargs.len() >= 2 => {
+          let n = fargs.len();
+          let mut cases = Vec::new();
+          for i in 0..n - 1 {
+            let mut conds = Vec::new();
+            for j in 0..n {
+              if i != j {
+                conds.push(Expr::Comparison {
+                  operands: vec![
+                    Expr::BinaryOp {
+                      op: crate::syntax::BinaryOperator::Minus,
+                      left: Box::new(fargs[i].clone()),
+                      right: Box::new(fargs[j].clone()),
+                    },
+                    Expr::Integer(0),
+                  ],
+                  operators: vec![ComparisonOp::LessEqual],
+                });
+              }
+            }
+            let cond = if conds.len() == 1 {
+              conds.pop().unwrap()
+            } else {
+              Expr::FunctionCall {
+                name: "And".to_string(),
+                args: conds,
+              }
+            };
+            cases.push((fargs[i].clone(), cond));
+          }
+          let default = fargs[n - 1].clone();
+          let pw_cases = Expr::List(
+            cases
+              .into_iter()
+              .map(|(val, cond)| Expr::List(vec![val, cond]))
+              .collect(),
+          );
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![pw_cases, default],
+          };
+          return evaluate_expr_to_expr(&pw);
+        }
+        "Max" if fargs.len() >= 2 => {
+          let n = fargs.len();
+          let mut cases = Vec::new();
+          for i in 0..n - 1 {
+            let mut conds = Vec::new();
+            for j in 0..n {
+              if i != j {
+                conds.push(Expr::Comparison {
+                  operands: vec![
+                    Expr::BinaryOp {
+                      op: crate::syntax::BinaryOperator::Minus,
+                      left: Box::new(fargs[i].clone()),
+                      right: Box::new(fargs[j].clone()),
+                    },
+                    Expr::Integer(0),
+                  ],
+                  operators: vec![ComparisonOp::GreaterEqual],
+                });
+              }
+            }
+            let cond = if conds.len() == 1 {
+              conds.pop().unwrap()
+            } else {
+              Expr::FunctionCall {
+                name: "And".to_string(),
+                args: conds,
+              }
+            };
+            cases.push((fargs[i].clone(), cond));
+          }
+          let default = fargs[n - 1].clone();
+          let pw_cases = Expr::List(
+            cases
+              .into_iter()
+              .map(|(val, cond)| Expr::List(vec![val, cond]))
+              .collect(),
+          );
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![pw_cases, default],
+          };
+          return evaluate_expr_to_expr(&pw);
+        }
+        "UnitStep" if fargs.len() == 1 => {
+          let cond = Expr::Comparison {
+            operands: vec![fargs[0].clone(), Expr::Integer(0)],
+            operators: vec![ComparisonOp::GreaterEqual],
+          };
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(vec![Expr::List(vec![Expr::Integer(1), cond])]),
+              Expr::Integer(0),
+            ],
+          };
+          return evaluate_expr_to_expr(&pw);
+        }
+        "Clip" if fargs.len() >= 1 => {
+          let x = fargs[0].clone();
+          let (lo, hi) = if fargs.len() >= 2 {
+            if let Expr::List(bounds) = &fargs[1] {
+              if bounds.len() == 2 {
+                (bounds[0].clone(), bounds[1].clone())
+              } else {
+                (Expr::Integer(-1), Expr::Integer(1))
+              }
+            } else {
+              (Expr::Integer(-1), Expr::Integer(1))
+            }
+          } else {
+            (Expr::Integer(-1), Expr::Integer(1))
+          };
+          let cond_lo = Expr::Comparison {
+            operands: vec![x.clone(), lo.clone()],
+            operators: vec![ComparisonOp::Less],
+          };
+          let cond_hi = Expr::Comparison {
+            operands: vec![x.clone(), hi.clone()],
+            operators: vec![ComparisonOp::Greater],
+          };
+          let pw = Expr::FunctionCall {
+            name: "Piecewise".to_string(),
+            args: vec![
+              Expr::List(vec![
+                Expr::List(vec![lo, cond_lo]),
+                Expr::List(vec![hi, cond_hi]),
+              ]),
+              x,
+            ],
+          };
+          return evaluate_expr_to_expr(&pw);
+        }
+        _ => {}
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // AdjacencyGraph[matrix] or AdjacencyGraph[vertices, matrix] — create graph from adjacency matrix
   if name == "AdjacencyGraph" && (args.len() == 1 || args.len() == 2) {
     let (vertices, matrix) = if args.len() == 2 {
