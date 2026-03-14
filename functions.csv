@@ -957,7 +957,7 @@ CompilerOptions,,,,12,5486
 CompilerRuntimeErrorAction,,,,14.1,
 Complement,Returns elements in first list but not in others,✅,pure,1,414
 ComplementedEntityClass,,,,12.1,
-CompleteGraph,,,,8,1062
+CompleteGraph,Generates a complete graph with n vertices,✅,none,8,1062
 CompleteGraphQ,,,,8,3566
 CompleteIntegral,,,,13,
 CompleteKaryTree,,,,8,2162

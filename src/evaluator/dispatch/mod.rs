@@ -1210,6 +1210,32 @@ pub fn evaluate_function_call_ast_inner(
     _ => {}
   }
 
+  // CompleteGraph[n] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}]
+  if name == "CompleteGraph" && args.len() == 1 {
+    if let Expr::Integer(n) = &args[0] {
+      let n = *n as usize;
+      let vertices: Vec<Expr> =
+        (1..=n).map(|i| Expr::Integer(i as i128)).collect();
+      let mut edges = Vec::new();
+      for i in 1..=n {
+        for j in (i + 1)..=n {
+          edges.push(Expr::FunctionCall {
+            name: "UndirectedEdge".to_string(),
+            args: vec![Expr::Integer(i as i128), Expr::Integer(j as i128)],
+          });
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(vertices), Expr::List(edges)],
+      });
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // Graph[{rule1, rule2, ...}] → Graph[{sorted vertices}, {DirectedEdge[...], ...}]
   if name == "Graph" {
     if args.len() == 1
