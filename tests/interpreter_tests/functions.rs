@@ -3212,6 +3212,42 @@ mod del {
   }
 }
 
+mod complete_graph {
+  use super::*;
+
+  #[test]
+  fn vertices() {
+    assert_eq!(
+      interpret("VertexList[CompleteGraph[4]]").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn edge_count_3() {
+    assert_eq!(
+      interpret("Length[EdgeList[CompleteGraph[3]]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn edge_count_4() {
+    assert_eq!(
+      interpret("Length[EdgeList[CompleteGraph[4]]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn adjacency_matrix() {
+    assert_eq!(
+      interpret("AdjacencyMatrix[CompleteGraph[3]]").unwrap(),
+      "{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}}"
+    );
+  }
+}
+
 mod adjacency_matrix {
   use super::*;
 
