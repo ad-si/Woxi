@@ -3611,6 +3611,15 @@ fn is_denominator_factor(expr: &Expr) -> bool {
     {
       true
     }
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && !ta.is_empty()
+        && matches!(&ta[0], Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational" && ra.len() == 2
+          && matches!(&ra[0], Expr::Integer(n) if *n < 0)) =>
+    {
+      true
+    }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       ..
@@ -3665,6 +3674,34 @@ fn denominator_form(expr: &Expr) -> Expr {
           name: "Times".to_string(),
           args: ta[1..].to_vec(),
         }
+      }
+    }
+    Expr::FunctionCall { name: tn, args: ta }
+      if tn == "Times"
+        && ta.len() >= 2
+        && matches!(&ta[0], Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational" && ra.len() == 2
+          && matches!(&ra[0], Expr::Integer(n) if *n < 0)) =>
+    {
+      // Negate the leading Rational coefficient: Rational[-n, d] → Rational[n, d]
+      let negated_rational = if let Expr::FunctionCall { args: ra, .. } = &ta[0]
+      {
+        if let Expr::Integer(n) = &ra[0] {
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-n), ra[1].clone()],
+          }
+        } else {
+          unreachable!()
+        }
+      } else {
+        unreachable!()
+      };
+      let mut new_args = vec![negated_rational];
+      new_args.extend_from_slice(&ta[1..]);
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: new_args,
       }
     }
     Expr::UnaryOp {
@@ -3834,40 +3871,8 @@ pub fn expr_to_string(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
-      // Special case: Inequality[a, Op, b, Op, c] — render as infix when all ops are the same
+      // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
       if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
-        let ops: Vec<&str> = args
-          .iter()
-          .skip(1)
-          .step_by(2)
-          .filter_map(|a| {
-            if let Expr::Identifier(s) = a {
-              Some(s.as_str())
-            } else {
-              None
-            }
-          })
-          .collect();
-        let all_same =
-          ops.len() == args.len() / 2 && ops.windows(2).all(|w| w[0] == w[1]);
-        if all_same {
-          if let Some(op_str) = match ops[0] {
-            "Equal" => Some(" == "),
-            "Unequal" => Some(" != "),
-            "Less" => Some(" < "),
-            "LessEqual" => Some(" <= "),
-            "Greater" => Some(" > "),
-            "GreaterEqual" => Some(" >= "),
-            "SameQ" => Some(" === "),
-            "UnsameQ" => Some(" =!= "),
-            _ => None,
-          } {
-            let operands: Vec<String> =
-              args.iter().step_by(2).map(expr_to_string).collect();
-            return operands.join(op_str);
-          }
-        }
-        // Mixed operators or unknown — use Inequality[] head form
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return format!("Inequality[{}]", parts.join(", "));
       }
@@ -4500,7 +4505,7 @@ pub fn expr_to_string(expr: &Expr) -> String {
               ..
             }
           )
-          || matches!(&args[1], Expr::FunctionCall { name: tname, args: targs } if tname == "Times" && !targs.is_empty() && matches!(&targs[0], Expr::Integer(n) if *n < 0))
+          || matches!(&args[1], Expr::FunctionCall { name: tname, .. } if tname == "Times")
           || matches!(&args[1], Expr::FunctionCall { name: rname, .. } if rname == "Rational")
           || matches!(
             &args[1],
@@ -5248,40 +5253,8 @@ pub fn expr_to_output(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::FunctionCall { name, args } => {
-      // Inequality[a, Op, b, Op, c] — render as infix when all ops are the same
+      // Inequality[a, Op, b, Op, c] — always use head form (Wolfram keeps Inequality[] as-is)
       if name == "Inequality" && args.len() >= 5 && args.len() % 2 == 1 {
-        let ops: Vec<&str> = args
-          .iter()
-          .skip(1)
-          .step_by(2)
-          .filter_map(|a| {
-            if let Expr::Identifier(s) = a {
-              Some(s.as_str())
-            } else {
-              None
-            }
-          })
-          .collect();
-        let all_same =
-          ops.len() == args.len() / 2 && ops.windows(2).all(|w| w[0] == w[1]);
-        if all_same {
-          if let Some(op_str) = match ops[0] {
-            "Equal" => Some(" == "),
-            "Unequal" => Some(" != "),
-            "Less" => Some(" < "),
-            "LessEqual" => Some(" <= "),
-            "Greater" => Some(" > "),
-            "GreaterEqual" => Some(" >= "),
-            "SameQ" => Some(" === "),
-            "UnsameQ" => Some(" =!= "),
-            _ => None,
-          } {
-            let operands: Vec<String> =
-              args.iter().step_by(2).map(expr_to_output).collect();
-            return operands.join(op_str);
-          }
-        }
-        // Mixed operators — use Inequality[] head form
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return format!("Inequality[{}]", parts.join(", "));
       }
@@ -5811,7 +5784,7 @@ pub fn expr_to_output(expr: &Expr) -> String {
               ..
             }
           )
-          || matches!(&args[1], Expr::FunctionCall { name: tname, args: targs } if tname == "Times" && !targs.is_empty() && matches!(&targs[0], Expr::Integer(n) if *n < 0))
+          || matches!(&args[1], Expr::FunctionCall { name: tname, .. } if tname == "Times")
           || matches!(&args[1], Expr::FunctionCall { name: rname, .. } if rname == "Rational")
           || matches!(
             &args[1],

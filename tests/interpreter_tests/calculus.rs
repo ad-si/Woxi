@@ -2695,7 +2695,7 @@ mod fourier_transform {
   fn gaussian() {
     assert_eq!(
       interpret("FourierTransform[Exp[-t^2], t, w]").unwrap(),
-      "E^(-1/4*w^2)/Sqrt[2]"
+      "1/(Sqrt[2]*E^(w^2/4))"
     );
   }
 
@@ -2743,7 +2743,7 @@ mod fourier_transform {
   fn reciprocal_t() {
     assert_eq!(
       interpret("FourierTransform[1/t, t, w]").unwrap(),
-      "I*Sqrt[Pi/2]*Sign[w]"
+      "(I*Pi*Sign[w])/Sqrt[2*Pi]"
     );
   }
 
@@ -2751,7 +2751,7 @@ mod fourier_transform {
   fn linearity_constant_factor() {
     assert_eq!(
       interpret("FourierTransform[3*Exp[-t^2], t, w]").unwrap(),
-      "(3*E^(-1/4*w^2))/Sqrt[2]"
+      "3/(Sqrt[2]*E^(w^2/4))"
     );
   }
 
@@ -2759,7 +2759,7 @@ mod fourier_transform {
   fn linearity_sum() {
     assert_eq!(
       interpret("FourierTransform[Sin[t] + Cos[t], t, w]").unwrap(),
-      "I*Sqrt[Pi/2]*DiracDelta[-1 + w] - I*Sqrt[Pi/2]*DiracDelta[1 + w] + Sqrt[Pi/2]*DiracDelta[-1 + w] + Sqrt[Pi/2]*DiracDelta[1 + w]"
+      "(1 + I)*Sqrt[Pi/2]*DiracDelta[-1 + w] + (1 - I)*Sqrt[Pi/2]*DiracDelta[1 + w]"
     );
   }
 
@@ -2781,7 +2781,7 @@ mod inverse_fourier_transform {
   fn gaussian() {
     assert_eq!(
       interpret("InverseFourierTransform[Exp[-w^2], w, t]").unwrap(),
-      "E^(-1/4*t^2)/Sqrt[2]"
+      "1/(Sqrt[2]*E^(t^2/4))"
     );
   }
 
@@ -2819,7 +2819,7 @@ mod trig_reduce {
   fn sin_squared() {
     assert_eq!(
       interpret("TrigReduce[Sin[x]^2]").unwrap(),
-      "1/2 - Cos[2*x]/2"
+      "(1 - Cos[2*x])/2"
     );
   }
 
@@ -2827,7 +2827,7 @@ mod trig_reduce {
   fn cos_squared() {
     assert_eq!(
       interpret("TrigReduce[Cos[x]^2]").unwrap(),
-      "1/2 + Cos[2*x]/2"
+      "(1 + Cos[2*x])/2"
     );
   }
 
@@ -2843,7 +2843,7 @@ mod trig_reduce {
   fn sin_cubed() {
     assert_eq!(
       interpret("TrigReduce[Sin[x]^3]").unwrap(),
-      "(3*Sin[x])/4 - Sin[3*x]/4"
+      "(3*Sin[x] - Sin[3*x])/4"
     );
   }
 
@@ -2851,7 +2851,7 @@ mod trig_reduce {
   fn cos_cubed() {
     assert_eq!(
       interpret("TrigReduce[Cos[x]^3]").unwrap(),
-      "(3*Cos[x])/4 + Cos[3*x]/4"
+      "(3*Cos[x] + Cos[3*x])/4"
     );
   }
 
@@ -2890,8 +2890,11 @@ mod function_domain {
 
   #[test]
   fn reciprocal() {
-    // FunctionDomain[1/x, x] = x != 0
-    assert_eq!(interpret("FunctionDomain[1/x, x]").unwrap(), "x != 0");
+    // FunctionDomain[1/x, x] = x < 0 || x > 0
+    assert_eq!(
+      interpret("FunctionDomain[1/x, x]").unwrap(),
+      "x < 0 || x > 0"
+    );
   }
 
   #[test]
@@ -2914,16 +2917,16 @@ mod function_domain {
   fn sqrt_x_minus_1() {
     assert_eq!(
       interpret("FunctionDomain[Sqrt[x - 1], x]").unwrap(),
-      "-1 + x >= 0"
+      "x >= 1"
     );
   }
 
   #[test]
   fn reciprocal_square() {
-    // 1/(x^2 - 1) → x^2 - 1 != 0
+    // 1/(x^2 - 1) → interval complement of {-1, 1}
     assert_eq!(
       interpret("FunctionDomain[1/(x^2 - 1), x]").unwrap(),
-      "-1 + x^2 != 0"
+      "x < -1 || Inequality[-1, Less, x, Less, 1] || x > 1"
     );
   }
 

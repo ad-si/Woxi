@@ -5272,8 +5272,13 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![]));
   }
 
-  // Take at most n solutions
-  let result: Vec<Expr> = filtered.into_iter().take(n).collect();
+  // Take at most n solutions from the end (Wolfram picks the largest solutions first)
+  let len = filtered.len();
+  let result: Vec<Expr> = if len <= n {
+    filtered
+  } else {
+    filtered.into_iter().skip(len - n).collect()
+  };
   Ok(Expr::List(result))
 }
 

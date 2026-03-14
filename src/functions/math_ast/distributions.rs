@@ -561,7 +561,12 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   // Parse the event condition and compute probability
-  probability_from_event(event, var_name, dist, is_discrete)
+  let result = probability_from_event(event, var_name, dist, is_discrete)?;
+  // Apply Together to normalize fractions (e.g. 1 - E^(-2) → (-1 + E^2)/E^2)
+  eval(Expr::FunctionCall {
+    name: "Together".to_string(),
+    args: vec![result],
+  })
 }
 
 fn probability_from_event(

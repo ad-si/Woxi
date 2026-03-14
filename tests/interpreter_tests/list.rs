@@ -3801,7 +3801,7 @@ mod probability {
         "Probability[x < 2, Distributed[x, ExponentialDistribution[1]]]"
       )
       .unwrap(),
-      "1 - E^(-2)"
+      "(-1 + E^2)/E^2"
     );
   }
 

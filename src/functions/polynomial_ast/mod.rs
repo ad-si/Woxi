@@ -20,7 +20,7 @@ mod polynomial_q;
 mod reduce;
 mod resultant;
 mod simplify;
-mod solve;
+pub mod solve;
 mod together;
 
 pub use apart::*;
