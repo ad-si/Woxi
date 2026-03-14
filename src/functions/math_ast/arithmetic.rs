@@ -1025,6 +1025,17 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
+      // For Times terms with complex-number-literal coefficients (e.g. (1+I)*f[x]),
+      // compare by the non-coefficient part first, matching Wolfram's behavior.
+      if let (Some(stripped_a), Some(stripped_b)) = (
+        strip_complex_literal_coeff(&base_a),
+        strip_complex_literal_coeff(&base_b),
+      ) {
+        let cmp = compare_expr_canonical(&stripped_a, &stripped_b);
+        if cmp != std::cmp::Ordering::Equal {
+          return cmp;
+        }
+      }
       // Fall back: try structural comparison of function call arguments,
       // then string comparison for non-polynomial terms.
       // This ensures e.g. Log[1 - x] sorts before Log[1 + x] to match Wolfram.
@@ -1044,6 +1055,45 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       coeff_a.is_negative().cmp(&coeff_b.is_negative())
     }
   }
+}
+
+/// Strip a leading complex-number-literal factor from a Times expression.
+/// E.g. Times[(1+I), Sqrt[Pi/2], DiracDelta[w]] → Times[Sqrt[Pi/2], DiracDelta[w]]
+/// Returns None if no complex literal is found.
+fn strip_complex_literal_coeff(e: &Expr) -> Option<Expr> {
+  fn is_complex_literal(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        args.iter().all(|a| match a {
+          Expr::Integer(_) | Expr::Real(_) => true,
+          Expr::Constant(s) if s == "I" => true,
+          Expr::FunctionCall { name: tn, args: ta } if tn == "Times" => {
+            ta.iter().all(|t| {
+              matches!(t, Expr::Integer(_) | Expr::Real(_))
+                || matches!(t, Expr::Constant(s) if s == "I")
+            })
+          }
+          _ => false,
+        })
+      }
+      _ => false,
+    }
+  }
+
+  if let Expr::FunctionCall { name, args } = e {
+    if name == "Times" && args.len() >= 2 && is_complex_literal(&args[0]) {
+      let rest = &args[1..];
+      return Some(if rest.len() == 1 {
+        rest[0].clone()
+      } else {
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: rest.to_vec(),
+        }
+      });
+    }
+  }
+  None
 }
 
 /// Extract the primary transcendental function name from a term.
@@ -1497,6 +1547,22 @@ pub fn times_factor_subpriority(e: &Expr) -> i32 {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Times" => args.iter().map(times_factor_subpriority).max().unwrap_or(0),
       "Rational" => 0,
+      // Complex number literals (1 + I, 1 - I, etc.) sort like numeric constants
+      "Plus"
+        if args.iter().all(|a| match a {
+          Expr::Integer(_) | Expr::Real(_) => true,
+          Expr::Constant(s) if s == "I" => true,
+          Expr::FunctionCall { name: tn, args: ta } if tn == "Times" => {
+            ta.iter().all(|t| {
+              matches!(t, Expr::Integer(_) | Expr::Real(_))
+                || matches!(t, Expr::Constant(s) if s == "I")
+            })
+          }
+          _ => false,
+        }) =>
+      {
+        -1
+      }
       "Plus" => 1,
       // Power[base, exp] and Sqrt[base] sort like their base (same as BinaryOp::Power)
       "Sqrt" if args.len() == 1 => times_factor_subpriority(&args[0]),

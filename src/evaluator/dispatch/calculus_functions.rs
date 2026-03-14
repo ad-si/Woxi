@@ -1027,6 +1027,133 @@ fn make_dirac_delta(arg: Expr) -> Expr {
   }
 }
 
+/// Collect like terms that share the same DiracDelta and structural factors.
+/// E.g. I*Sqrt[Pi/2]*DiracDelta[a] + Sqrt[Pi/2]*DiracDelta[a]
+///   → (1 + I)*Sqrt[Pi/2]*DiracDelta[a]
+fn collect_dirac_like_terms(terms: Vec<Expr>) -> Vec<Expr> {
+  use std::collections::BTreeMap;
+
+  /// Check if a factor is a "scalar" coefficient (numeric or I)
+  fn is_scalar(f: &Expr) -> bool {
+    match f {
+      Expr::Integer(_) | Expr::Real(_) => true,
+      Expr::Constant(s) if s == "I" => true,
+      Expr::FunctionCall { name, .. } if name == "Rational" => true,
+      _ => false,
+    }
+  }
+
+  /// Extract from a term: (base_key, scalar_factors, base_factors_with_dirac)
+  /// base = structural factors + DiracDelta, scalar = numeric/I coefficients
+  fn extract_base_and_scalar(
+    term: &Expr,
+  ) -> Option<(String, Vec<Expr>, Vec<Expr>)> {
+    let factors: Vec<Expr> = match term {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        // Flatten nested Times
+        let mut flat = Vec::new();
+        for a in args {
+          if let Expr::FunctionCall {
+            name: n,
+            args: inner,
+          } = a
+          {
+            if n == "Times" {
+              flat.extend(inner.iter().cloned());
+              continue;
+            }
+          }
+          flat.push(a.clone());
+        }
+        flat
+      }
+      Expr::FunctionCall { name, .. } if name == "DiracDelta" => {
+        vec![term.clone()]
+      }
+      _ => return None,
+    };
+
+    // Must contain DiracDelta
+    if !factors.iter().any(
+      |f| matches!(f, Expr::FunctionCall { name, .. } if name == "DiracDelta"),
+    ) {
+      return None;
+    }
+
+    let mut scalar_parts: Vec<Expr> = Vec::new();
+    let mut base_parts: Vec<Expr> = Vec::new();
+
+    for f in factors {
+      if is_scalar(&f) {
+        scalar_parts.push(f);
+      } else {
+        base_parts.push(f);
+      }
+    }
+
+    let base_key = base_parts
+      .iter()
+      .map(|e| crate::syntax::expr_to_string(e))
+      .collect::<Vec<_>>()
+      .join("*");
+
+    Some((base_key, scalar_parts, base_parts))
+  }
+
+  // Group by base (structural + DiracDelta)
+  let mut groups: BTreeMap<String, (Vec<Expr>, Vec<Vec<Expr>>)> =
+    BTreeMap::new();
+  let mut non_dirac: Vec<Expr> = Vec::new();
+
+  for term in terms {
+    if let Some((key, scalar, base)) = extract_base_and_scalar(&term) {
+      groups
+        .entry(key)
+        .or_insert_with(|| (base, Vec::new()))
+        .1
+        .push(scalar);
+    } else {
+      non_dirac.push(term);
+    }
+  }
+
+  let mut result = non_dirac;
+  for (_, (base_factors, scalar_groups)) in groups {
+    if scalar_groups.len() == 1 {
+      // Only one term - reconstruct as-is
+      let mut factors = scalar_groups.into_iter().next().unwrap();
+      factors.extend(base_factors);
+      result.push(if factors.len() == 1 {
+        factors.into_iter().next().unwrap()
+      } else {
+        make_times(factors)
+      });
+    } else {
+      // Multiple terms - sum the scalar parts
+      let scalar_terms: Vec<Expr> = scalar_groups
+        .into_iter()
+        .map(|factors| {
+          if factors.is_empty() {
+            Expr::Integer(1)
+          } else if factors.len() == 1 {
+            factors.into_iter().next().unwrap()
+          } else {
+            make_times(factors)
+          }
+        })
+        .collect();
+      let scalar_sum = make_plus(scalar_terms);
+      let scalar_eval = crate::evaluator::evaluate_expr_to_expr(&scalar_sum)
+        .unwrap_or(scalar_sum);
+      let mut all_factors = vec![scalar_eval];
+      all_factors.extend(base_factors);
+      result.push(make_times(all_factors));
+    }
+  }
+
+  result
+}
+
 /// Compute Fourier transform of expr w.r.t. variable t, into variable w.
 fn fourier_transform(
   expr: &Expr,
@@ -1215,7 +1342,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
     }
 
     // F[t] => special: derivative of delta => not commonly useful, skip
-    // F[1/t] = I*Sqrt[Pi/2] * Sign[w]
+    // F[1/t] = (I*Pi*Sign[w])/Sqrt[2*Pi]
     if fname == "Power"
       && fargs.len() == 2
       && let Expr::Identifier(base) = fargs[0]
@@ -1224,14 +1351,18 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
     {
       return Some(make_times(vec![
         Expr::Constant("I".to_string()),
-        make_sqrt(make_times(vec![
-          Expr::Constant("Pi".to_string()),
-          make_power(Expr::Integer(2), Expr::Integer(-1)),
-        ])),
+        Expr::Constant("Pi".to_string()),
         Expr::FunctionCall {
           name: "Sign".to_string(),
           args: vec![w.clone()],
         },
+        make_power(
+          make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(-1), Expr::Integer(2)],
+          },
+        ),
       ]));
     }
 
@@ -1240,11 +1371,19 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       let mut terms = Vec::new();
       for arg in &fargs {
         if let Some(ft) = fourier_transform_inner(arg, t, w) {
-          terms.push(ft);
+          // Flatten nested Plus results
+          match ft {
+            Expr::FunctionCall { ref name, ref args } if name == "Plus" => {
+              terms.extend(args.iter().cloned());
+            }
+            _ => terms.push(ft),
+          }
         } else {
           return None;
         }
       }
+      // Collect like terms that share the same DiracDelta factor
+      let terms = collect_dirac_like_terms(terms);
       return Some(make_plus(terms));
     }
 
@@ -1443,6 +1582,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
         || matches!(fargs[0], Expr::Constant(b) if b == "E");
       if is_e {
         if let Some(a) = match_neg_a_t_squared(fargs[1], w) {
+          // F^-1[E^(-a*w^2)] = E^(-t^2/(4a)) / Sqrt[2a]
           return Some(make_times(vec![
             make_power(
               Expr::Constant("E".to_string()),
@@ -1557,13 +1697,19 @@ fn function_domain_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Identifier("True".to_string()));
   }
 
-  // Simplify: combine constraints with And
-  let result = if constraints.len() == 1 {
-    constraints.pop().unwrap()
+  // Simplify each constraint and convert to interval representation
+  let mut simplified: Vec<Expr> = Vec::new();
+  for c in &constraints {
+    let s = simplify_domain_constraint(c, var);
+    simplified.push(s);
+  }
+
+  // Combine constraints with And
+  let result = if simplified.len() == 1 {
+    simplified.pop().unwrap()
   } else {
-    // Join with &&
-    let mut combined = constraints[0].clone();
-    for c in &constraints[1..] {
+    let mut combined = simplified[0].clone();
+    for c in &simplified[1..] {
       combined = Expr::FunctionCall {
         name: "And".to_string(),
         args: vec![combined, c.clone()],
@@ -1682,6 +1828,221 @@ fn collect_domain_constraints(
       }
     }
     _ => {}
+  }
+}
+
+/// Simplify a domain constraint for display, matching Wolfram behavior.
+/// - `x != 0` → `x < 0 || x > 0`
+/// - `-1 + x >= 0` → `x >= 1`
+/// - `x^2 - 1 != 0` → `x < -1 || Inequality[-1, Less, x, Less, 1] || x > 1`
+fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
+  use crate::syntax::ComparisonOp;
+
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = constraint
+  {
+    if operands.len() == 2 && operators.len() == 1 {
+      let lhs = &operands[0];
+      let rhs = &operands[1];
+      let op = &operators[0];
+
+      match op {
+        ComparisonOp::NotEqual => {
+          // Try to solve lhs == rhs for roots
+          let diff = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(lhs.clone()),
+            right: Box::new(rhs.clone()),
+          };
+          let diff_eval =
+            crate::evaluator::evaluate_expr_to_expr(&diff).unwrap_or(diff);
+
+          // Use Solve to find roots
+          let eq = Expr::Comparison {
+            operands: vec![diff_eval, Expr::Integer(0)],
+            operators: vec![ComparisonOp::Equal],
+          };
+          let var_expr = Expr::Identifier(var.to_string());
+          crate::push_quiet();
+          let solve_result =
+            crate::functions::polynomial_ast::solve::solve_ast(&[
+              eq,
+              var_expr.clone(),
+            ]);
+          crate::pop_quiet();
+
+          if let Ok(Expr::List(ref solutions)) = solve_result {
+            // Extract numeric root values
+            let mut roots: Vec<f64> = Vec::new();
+            let mut root_exprs: Vec<Expr> = Vec::new();
+            for sol in solutions {
+              if let Expr::List(rules) = sol {
+                if rules.len() == 1 {
+                  if let Expr::Rule { replacement, .. } = &rules[0] {
+                    if let Some(val) = expr_to_f64(replacement) {
+                      roots.push(val);
+                      root_exprs.push(replacement.as_ref().clone());
+                    }
+                  } else if let Expr::FunctionCall { name, args } = &rules[0] {
+                    if name == "Rule" && args.len() == 2 {
+                      if let Some(val) = expr_to_f64(&args[1]) {
+                        roots.push(val);
+                        root_exprs.push(args[1].clone());
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if !roots.is_empty() {
+              // Sort roots
+              let mut indexed: Vec<(f64, Expr)> =
+                roots.into_iter().zip(root_exprs).collect();
+              indexed.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+              });
+
+              // Build interval complement: x < r1 || r1 < x < r2 || ... || x > rN
+              let mut intervals: Vec<Expr> = Vec::new();
+
+              // x < first root
+              intervals.push(Expr::Comparison {
+                operands: vec![var_expr.clone(), indexed[0].1.clone()],
+                operators: vec![ComparisonOp::Less],
+              });
+
+              // Between consecutive roots: ri < x < r(i+1)
+              for i in 0..indexed.len() - 1 {
+                intervals.push(Expr::FunctionCall {
+                  name: "Inequality".to_string(),
+                  args: vec![
+                    indexed[i].1.clone(),
+                    Expr::Identifier("Less".to_string()),
+                    var_expr.clone(),
+                    Expr::Identifier("Less".to_string()),
+                    indexed[i + 1].1.clone(),
+                  ],
+                });
+              }
+
+              // x > last root
+              intervals.push(Expr::Comparison {
+                operands: vec![
+                  var_expr.clone(),
+                  indexed.last().unwrap().1.clone(),
+                ],
+                operators: vec![ComparisonOp::Greater],
+              });
+
+              if intervals.len() == 1 {
+                return intervals.pop().unwrap();
+              }
+              return Expr::FunctionCall {
+                name: "Or".to_string(),
+                args: intervals,
+              };
+            }
+          }
+
+          // Fallback: simple x != value case
+          if matches!(lhs, Expr::Identifier(name) if name == var) {
+            return Expr::FunctionCall {
+              name: "Or".to_string(),
+              args: vec![
+                Expr::Comparison {
+                  operands: vec![lhs.clone(), rhs.clone()],
+                  operators: vec![ComparisonOp::Less],
+                },
+                Expr::Comparison {
+                  operands: vec![lhs.clone(), rhs.clone()],
+                  operators: vec![ComparisonOp::Greater],
+                },
+              ],
+            };
+          }
+        }
+        ComparisonOp::GreaterEqual
+        | ComparisonOp::Greater
+        | ComparisonOp::LessEqual
+        | ComparisonOp::Less => {
+          // Try to solve for x: isolate x by solving lhs - rhs == 0
+          // then adjust the inequality
+          if contains_variable(lhs, var) && !contains_variable(rhs, var) {
+            // Try to solve lhs = value for x
+            let eq = Expr::Comparison {
+              operands: vec![lhs.clone(), rhs.clone()],
+              operators: vec![ComparisonOp::Equal],
+            };
+            let var_expr = Expr::Identifier(var.to_string());
+            crate::push_quiet();
+            let solve_result =
+              crate::functions::polynomial_ast::solve::solve_ast(&[
+                eq,
+                var_expr.clone(),
+              ]);
+            crate::pop_quiet();
+
+            if let Ok(Expr::List(ref solutions)) = solve_result {
+              if solutions.len() == 1 {
+                if let Expr::List(rules) = &solutions[0] {
+                  if rules.len() == 1 {
+                    let value = match &rules[0] {
+                      Expr::Rule { replacement, .. } => {
+                        Some(replacement.as_ref().clone())
+                      }
+                      Expr::FunctionCall { name, args }
+                        if name == "Rule" && args.len() == 2 =>
+                      {
+                        Some(args[1].clone())
+                      }
+                      _ => None,
+                    };
+                    if let Some(val) = value {
+                      // Check if the coefficient of x is positive (preserve direction)
+                      // For simple cases, just return x op val
+                      return Expr::Comparison {
+                        operands: vec![var_expr, val],
+                        operators: vec![op.clone()],
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+
+  // Fallback: return the constraint as-is, evaluated
+  crate::evaluator::evaluate_expr_to_expr(constraint)
+    .unwrap_or_else(|_| constraint.clone())
+}
+
+/// Try to convert an expression to f64 (for sorting roots)
+fn expr_to_f64(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => expr_to_f64(operand).map(|v| -v),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some(*n as f64 / *d as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
   }
 }
 

@@ -3228,17 +3228,15 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
     }
   };
 
-  let mut terms: Vec<Expr> = Vec::new();
+  // Collect (numerator_coeff, trig_expr_or_None_for_constant) pairs
+  let mut num_terms: Vec<(i128, Option<Expr>)> = Vec::new();
 
   if nu % 2 == 0 {
     // Even power
     let half_n = nu / 2;
-    // Constant term: C(n, n/2) / 2^n
+    // Constant term: C(n, n/2)
     let const_binom = binomial(n, half_n as i128);
-    terms.push(Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![Expr::Integer(const_binom), Expr::Integer(denom)],
-    });
+    num_terms.push((const_binom, None));
 
     // Sum terms
     for k in 0..half_n {
@@ -3255,15 +3253,7 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
         name: "Cos".to_string(),
         args: vec![trig_arg],
       };
-      let term = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(sign * coeff), Expr::Integer(denom)],
-      };
-      terms.push(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
-        left: Box::new(term),
-        right: Box::new(trig_call),
-      });
+      num_terms.push((sign * coeff, Some(trig_call)));
     }
   } else {
     // Odd power
@@ -3283,24 +3273,73 @@ fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
         name: trig_fn.to_string(),
         args: vec![trig_arg],
       };
-      let term = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(sign * coeff), Expr::Integer(denom)],
-      };
-      terms.push(Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Times,
-        left: Box::new(term),
-        right: Box::new(trig_call),
-      });
+      num_terms.push((sign * coeff, Some(trig_call)));
     }
   }
 
-  if terms.len() == 1 {
-    Some(terms.pop().unwrap())
+  // Compute GCD of all numerator coefficients and denom to simplify the fraction
+  fn gcd(mut a: i128, mut b: i128) -> i128 {
+    a = a.abs();
+    b = b.abs();
+    while b != 0 {
+      let t = b;
+      b = a % b;
+      a = t;
+    }
+    a
+  }
+
+  let mut g = denom;
+  for (c, _) in &num_terms {
+    g = gcd(g, *c);
+  }
+  let reduced_denom = denom / g;
+
+  // Build numerator terms with reduced coefficients
+  let mut terms: Vec<Expr> = Vec::new();
+  for (c, trig_opt) in num_terms {
+    let reduced_c = c / g;
+    match trig_opt {
+      None => {
+        // Constant term
+        terms.push(Expr::Integer(reduced_c));
+      }
+      Some(trig_call) => {
+        if reduced_c == 1 {
+          terms.push(trig_call);
+        } else if reduced_c == -1 {
+          terms.push(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(-1)),
+            right: Box::new(trig_call),
+          });
+        } else {
+          terms.push(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Times,
+            left: Box::new(Expr::Integer(reduced_c)),
+            right: Box::new(trig_call),
+          });
+        }
+      }
+    }
+  }
+
+  let numerator = if terms.len() == 1 {
+    terms.pop().unwrap()
   } else {
-    Some(Expr::FunctionCall {
+    Expr::FunctionCall {
       name: "Plus".to_string(),
       args: terms,
+    }
+  };
+
+  if reduced_denom == 1 {
+    Some(numerator)
+  } else {
+    Some(Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(numerator),
+      right: Box::new(Expr::Integer(reduced_denom)),
     })
   }
 }
