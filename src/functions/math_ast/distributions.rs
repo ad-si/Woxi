@@ -137,6 +137,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "StudentTDistribution" => pdf_student_t(dargs, x),
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
+    "ParetoDistribution" => pdf_pareto(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -308,6 +309,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaDistribution" => cdf_beta(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
     "ChiSquareDistribution" => cdf_chi_square(dargs, x),
+    "ParetoDistribution" => cdf_pareto(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -994,6 +996,24 @@ fn distribution_mean_variance(
       let var = times(int(2), k);
       Ok((mean, var))
     }
+    "ParetoDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "ParetoDistribution expects 2 arguments".into(),
+        ));
+      }
+      let k = dargs[0].clone();
+      let a = dargs[1].clone();
+      // Mean = a*k/(a-1) for a > 1, otherwise Indeterminate
+      // We return the symbolic formula without the condition
+      let mean = divide(times(a.clone(), k.clone()), minus(a.clone(), int(1)));
+      // Var = a*k^2 / ((a-2)*(a-1)^2) for a > 2
+      let var = divide(
+        times(a.clone(), power(k, int(2))),
+        times(minus(a.clone(), int(2)), power(minus(a, int(1)), int(2))),
+      );
+      Ok((mean, var))
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"
     ))),
@@ -1442,5 +1462,45 @@ fn cdf_chi_square(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
 
   let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(cdf_val, cond)], int(0)))
+}
+
+/// PDF[ParetoDistribution[k, a], x] = Piecewise[{{a*k^a*x^(-1-a), x >= k}}, 0]
+fn pdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ParetoDistribution expects 2 arguments".into(),
+    ));
+  }
+  let k = dargs[0].clone();
+  let a = dargs[1].clone();
+
+  // a * k^a * x^(-1-a)
+  let pdf_val = times(
+    times(a.clone(), power(k.clone(), a.clone())),
+    power(
+      x.clone(),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(plus(int(1), a)),
+      },
+    ),
+  );
+  let cond = comparison(x, ComparisonOp::GreaterEqual, k);
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[ParetoDistribution[k, a], x] = Piecewise[{{1 - (k/x)^a, x >= k}}, 0]
+fn cdf_pareto(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ParetoDistribution expects 2 arguments".into(),
+    ));
+  }
+  let k = dargs[0].clone();
+  let a = dargs[1].clone();
+
+  let cdf_val = minus(int(1), power(divide(k.clone(), x.clone()), a));
+  let cond = comparison(x, ComparisonOp::GreaterEqual, k);
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }
