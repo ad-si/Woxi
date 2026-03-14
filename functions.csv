@@ -807,7 +807,7 @@ CircleMinus,,,,3,2152
 CirclePlus,,,,3,1158
 CirclePoints,,,,10.1,1126
 CircleThrough,,,,12,2399
-CircleTimes,,,,3,1017
+CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3,1017
 CirculantGraph,,,,8,2671
 CircularArcThrough,,,,13.1,
 CircularOrthogonalMatrixDistribution,,,,10.3,4104
@@ -1335,7 +1335,7 @@ DegreeGraphDistribution,,,,8,2039
 DEigensystem,,,,10.3,2533
 DEigenvalues,,,,10.3,3678
 Deinitialization,,,,6,3506
-Del,,,,3,1046
+Del,Symbolic nabla operator with Unicode display,✅,none,3,1046
 DelaunayMesh,,,,10,1459
 Delayed,,,,10,2138
 Deletable,,,,3,3823
@@ -4235,7 +4235,7 @@ PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1,4
 PlotTheme,Option for specifying the visual theme for plots,✅,pure,10,459
 Pluralize,,,,10,4527
 Plus,Adds numbers together,✅,pure,1,6
-PlusMinus,,,,3,1014
+PlusMinus,Symbolic plus-or-minus operator with Unicode display,✅,none,3,1014
 Pochhammer,Returns the Pochhammer symbol (rising factorial),✅,pure,1,274
 PodStates,,,,8,1274
 PodWidth,,,,8,5486
@@ -6069,7 +6069,7 @@ WebSearch,,,,11.1,3578
 WebSessionObject,,,,12,5184
 WebSessions,,,,12,
 WebWindowObject,,,,12,
-Wedge,,,,3,1049
+Wedge,Symbolic wedge product operator with Unicode display,✅,none,3,1049
 Wednesday,,,,9,2045
 WeibullDistribution,,,,6,1322
 WeierstrassE1,,,,11.2,
