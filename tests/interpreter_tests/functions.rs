@@ -3163,6 +3163,55 @@ mod triangle {
   }
 }
 
+mod plus_minus {
+  use super::*;
+
+  #[test]
+  fn unary() {
+    assert_eq!(interpret("PlusMinus[3]").unwrap(), "\u{00B1}3");
+  }
+
+  #[test]
+  fn binary() {
+    assert_eq!(interpret("PlusMinus[a, b]").unwrap(), "a \u{00B1} b");
+  }
+}
+
+mod circle_times {
+  use super::*;
+
+  #[test]
+  fn binary() {
+    assert_eq!(interpret("CircleTimes[a, b]").unwrap(), "a \u{2297} b");
+  }
+
+  #[test]
+  fn ternary() {
+    assert_eq!(
+      interpret("CircleTimes[a, b, c]").unwrap(),
+      "a \u{2297} b \u{2297} c"
+    );
+  }
+}
+
+mod wedge {
+  use super::*;
+
+  #[test]
+  fn binary() {
+    assert_eq!(interpret("Wedge[a, b]").unwrap(), "a \u{22C0} b");
+  }
+}
+
+mod del {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("Del[f]").unwrap(), "\u{2207}f");
+  }
+}
+
 mod adjacency_matrix {
   use super::*;
 

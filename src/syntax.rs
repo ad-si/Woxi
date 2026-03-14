@@ -4051,6 +4051,30 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{2235} ");
       }
+      // PlusMinus[x] displays as ±x, PlusMinus[a, b] displays as a ± b
+      if name == "PlusMinus" {
+        if args.len() == 1 {
+          return format!("\u{00B1}{}", expr_to_string(&args[0]));
+        }
+        if args.len() >= 2 {
+          let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+          return parts.join(" \u{00B1} ");
+        }
+      }
+      // CircleTimes[a, b, ...] displays as a ⊗ b ⊗ ...
+      if name == "CircleTimes" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{2297} ");
+      }
+      // Wedge[a, b, ...] displays as a ∧ b ∧ ...
+      if name == "Wedge" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{22C0} ");
+      }
+      // Del[f] displays as ∇f
+      if name == "Del" && args.len() == 1 {
+        return format!("\u{2207}{}", expr_to_string(&args[0]));
+      }
       // Special case: Or[a, b, ...] displays as a || b || ...
       // Wolfram wraps And subterms in parens: (a && b) || (c && d)
       if name == "Or" && args.len() >= 2 {
@@ -5885,6 +5909,30 @@ pub fn expr_to_output(expr: &Expr) -> String {
       if name == "Because" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{2235} ");
+      }
+      // PlusMinus[x] displays as ±x, PlusMinus[a, b] displays as a ± b
+      if name == "PlusMinus" {
+        if args.len() == 1 {
+          return format!("\u{00B1}{}", expr_to_output(&args[0]));
+        }
+        if args.len() >= 2 {
+          let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+          return parts.join(" \u{00B1} ");
+        }
+      }
+      // CircleTimes[a, b, ...] displays as a ⊗ b ⊗ ...
+      if name == "CircleTimes" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \u{2297} ");
+      }
+      // Wedge[a, b, ...] displays as a ∧ b ∧ ...
+      if name == "Wedge" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \u{22C0} ");
+      }
+      // Del[f] displays as ∇f
+      if name == "Del" && args.len() == 1 {
+        return format!("\u{2207}{}", expr_to_output(&args[0]));
       }
       // Special case: Or[a, b, ...] displays as a || b || ...
       // Wolfram wraps And subterms in parens: (a && b) || (c && d)
