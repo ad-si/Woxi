@@ -1508,7 +1508,7 @@ Disjunction,,,,7,4567
 Disk,Represents a filled disk or sector graphics primitive,✅,pure,2,89
 DiskMatrix,Creates a disk-shaped matrix of ones,✅,pure,7,1345
 DiskSegment,,,,10.2,3020
-Dispatch,,,,2,1010
+Dispatch,Optimized rule dispatch for pattern matching,✅,none,2,1010
 DispersionEstimatorFunction,,,,7,4809
 DisplayAllSteps,,,,6,2431
 DisplayEndPacket,,,,3,5390

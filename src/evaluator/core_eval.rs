@@ -1286,13 +1286,35 @@ pub fn evaluate_expr_to_expr_inner(
     Expr::ReplaceAll { expr: e, rules } => {
       let evaluated_expr = evaluate_expr_to_expr(e)?;
       let evaluated_rules = evaluate_expr_to_expr(rules)?;
-      let result = apply_replace_all_ast(&evaluated_expr, &evaluated_rules)?;
+      // Unwrap Dispatch[rules] → use inner rules
+      let unwrapped =
+        if let Expr::FunctionCall { name, args } = &evaluated_rules {
+          if name == "Dispatch" && args.len() == 1 {
+            &args[0]
+          } else {
+            &evaluated_rules
+          }
+        } else {
+          &evaluated_rules
+        };
+      let result = apply_replace_all_ast(&evaluated_expr, unwrapped)?;
       Err(InterpreterError::TailCall(Box::new(result)))
     }
     Expr::ReplaceRepeated { expr: e, rules } => {
       let evaluated_expr = evaluate_expr_to_expr(e)?;
       let evaluated_rules = evaluate_expr_to_expr(rules)?;
-      apply_replace_repeated_ast(&evaluated_expr, &evaluated_rules)
+      // Unwrap Dispatch[rules] → use inner rules
+      let unwrapped =
+        if let Expr::FunctionCall { name, args } = &evaluated_rules {
+          if name == "Dispatch" && args.len() == 1 {
+            &args[0]
+          } else {
+            &evaluated_rules
+          }
+        } else {
+          &evaluated_rules
+        };
+      apply_replace_repeated_ast(&evaluated_expr, unwrapped)
     }
     Expr::Map { func, list } => {
       let evaluated_list = evaluate_expr_to_expr(list)?;

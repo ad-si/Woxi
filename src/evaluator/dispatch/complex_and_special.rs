@@ -974,10 +974,29 @@ pub fn dispatch_complex_and_special(
 
     // ReplaceAll and ReplaceRepeated function call forms
     "ReplaceAll" if args.len() == 2 => {
-      return Some(apply_replace_all_ast(&args[0], &args[1]));
+      // Unwrap Dispatch[rules] → just use rules
+      let rules = if let Expr::FunctionCall { name: dn, args: da } = &args[1] {
+        if dn == "Dispatch" && da.len() == 1 {
+          &da[0]
+        } else {
+          &args[1]
+        }
+      } else {
+        &args[1]
+      };
+      return Some(apply_replace_all_ast(&args[0], rules));
     }
     "ReplaceRepeated" if args.len() == 2 => {
-      return Some(apply_replace_repeated_ast(&args[0], &args[1]));
+      let rules = if let Expr::FunctionCall { name: dn, args: da } = &args[1] {
+        if dn == "Dispatch" && da.len() == 1 {
+          &da[0]
+        } else {
+          &args[1]
+        }
+      } else {
+        &args[1]
+      };
+      return Some(apply_replace_repeated_ast(&args[0], rules));
     }
     "Replace" if args.len() == 2 => {
       return Some(apply_replace_ast(&args[0], &args[1]));

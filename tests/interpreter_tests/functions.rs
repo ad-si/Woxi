@@ -3283,3 +3283,28 @@ mod adjacency_matrix {
     );
   }
 }
+
+mod dispatch {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("Dispatch[{a -> 1, b -> 2}]").unwrap(),
+      "Dispatch[{a -> 1, b -> 2}]"
+    );
+  }
+
+  #[test]
+  fn replace_all() {
+    assert_eq!(
+      interpret("{a, b, c} /. Dispatch[{a -> 1, b -> 2}]").unwrap(),
+      "{1, 2, c}"
+    );
+  }
+
+  #[test]
+  fn replace_repeated() {
+    assert_eq!(interpret("a /. Dispatch[{a -> b, b -> c}]").unwrap(), "b");
+  }
+}
