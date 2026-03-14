@@ -6052,6 +6052,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
       let base_str = expr_to_output(left);
       format!("1/Sqrt[{}]", base_str)
     }
+    // CurriedCall: display as nested calls f[a][b, c] using output form
+    Expr::CurriedCall { func, args } => {
+      let args_str: Vec<String> = args.iter().map(expr_to_output).collect();
+      format!("{}[{}]", expr_to_output(func), args_str.join(", "))
+    }
     // For all other cases, delegate to expr_to_string
     _ => expr_to_string(expr),
   }
