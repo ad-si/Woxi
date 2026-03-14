@@ -123,6 +123,18 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
+    "BetaDistribution" if args.len() == 2 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "BetaDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
+    "StudentTDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "StudentTDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "Names" if args.len() <= 1 => {
       let all_names = crate::get_defined_names();
       if args.is_empty() {

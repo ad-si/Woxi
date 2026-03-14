@@ -238,6 +238,25 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       }
     }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if matches!(
+      dist_name.as_str(),
+      "NormalDistribution"
+        | "UniformDistribution"
+        | "ExponentialDistribution"
+        | "PoissonDistribution"
+        | "BernoulliDistribution"
+        | "GammaDistribution"
+        | "BetaDistribution"
+        | "StudentTDistribution"
+    ) =>
+    {
+      let (mean, _) =
+        super::distributions::distribution_mean_variance_pub(dist_name, dargs)?;
+      crate::evaluator::evaluate_expr_to_expr(&mean)
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Mean".to_string(),
       args: args.to_vec(),
@@ -358,6 +377,25 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Variance".to_string(),
         args: args.to_vec(),
       })
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if matches!(
+      dist_name.as_str(),
+      "NormalDistribution"
+        | "UniformDistribution"
+        | "ExponentialDistribution"
+        | "PoissonDistribution"
+        | "BernoulliDistribution"
+        | "GammaDistribution"
+        | "BetaDistribution"
+        | "StudentTDistribution"
+    ) =>
+    {
+      let (_, variance) =
+        super::distributions::distribution_mean_variance_pub(dist_name, dargs)?;
+      crate::evaluator::evaluate_expr_to_expr(&variance)
     }
     _ => Ok(Expr::FunctionCall {
       name: "Variance".to_string(),

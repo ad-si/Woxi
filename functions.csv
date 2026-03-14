@@ -450,7 +450,7 @@ BesselY,Bessel function of the second kind Y_n(z),✅,pure,1,752
 BesselYZero,,,,6,4387
 Beta,Euler beta function,✅,pure,1,702
 BetaBinomialDistribution,,,,6,3048
-BetaDistribution,,,,6,1061
+BetaDistribution,Represents a beta probability distribution with parameters a and b,✅,1,6,1061
 BetaNegativeBinomialDistribution,,,,6,3947
 BetaPrimeDistribution,,,,8,3059
 BetaRegularized,,,,2,1263
@@ -5273,7 +5273,7 @@ StructuredSelection,,,,3,5486
 StruveH,,,,4,1360
 StruveL,,,,4,1437
 Stub,,,,2,
-StudentTDistribution,,,,6,1030
+StudentTDistribution,Represents a Student t-distribution with nu degrees of freedom,✅,1,6,1030
 Style,Applies styling to an expression for display,✅,pure,6,61
 StyleBox,,🚫,,3,896
 StyleData,,🚫,,3,908

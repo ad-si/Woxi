@@ -133,6 +133,8 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
     "GammaDistribution" => pdf_gamma(dargs, x),
+    "BetaDistribution" => pdf_beta(dargs, x),
+    "StudentTDistribution" => pdf_student_t(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -301,6 +303,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "GammaDistribution" => cdf_gamma(dargs, x),
+    "BetaDistribution" => cdf_beta(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -818,6 +821,14 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   expectation_numerical(expr, &var_name, dist_name, dargs)
 }
 
+/// Public wrapper for distribution_mean_variance for use by Mean/Variance
+pub fn distribution_mean_variance_pub(
+  dist_name: &str,
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  distribution_mean_variance(dist_name, dargs)
+}
+
 /// Returns (Mean, Variance) as symbolic expressions for known distributions.
 fn distribution_mean_variance(
   dist_name: &str,
@@ -910,6 +921,35 @@ fn distribution_mean_variance(
       // Mean = alpha*beta, Var = alpha*beta^2
       let mean = times(alpha.clone(), beta.clone());
       let var = times(alpha, power(beta, int(2)));
+      Ok((mean, var))
+    }
+    "BetaDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "BetaDistribution expects 2 arguments".into(),
+        ));
+      }
+      let a = dargs[0].clone();
+      let b = dargs[1].clone();
+      // Mean = a/(a+b), Var = a*b / ((a+b)^2 * (a+b+1))
+      let ab = plus(a.clone(), b.clone());
+      let mean = divide(a.clone(), ab.clone());
+      let var = divide(
+        times(a, b),
+        times(power(ab.clone(), int(2)), plus(ab, int(1))),
+      );
+      Ok((mean, var))
+    }
+    "StudentTDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "StudentTDistribution expects 1 argument".into(),
+        ));
+      }
+      let nu = dargs[0].clone();
+      // Mean = 0 (for nu > 1), Var = nu/(nu-2) (for nu > 2)
+      let mean = int(0);
+      let var = divide(nu.clone(), minus(nu, int(2)));
       Ok((mean, var))
     }
     _ => Err(InterpreterError::EvaluationError(format!(
@@ -1170,4 +1210,85 @@ fn expectation_numerical(
   } else {
     Ok(Expr::Real(result))
   }
+}
+
+/// PDF[BetaDistribution[a, b], x] = Piecewise[{{x^(a-1) * (1-x)^(b-1) / Beta[a,b], 0 < x < 1}}, 0]
+fn pdf_beta(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BetaDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  // x^(a-1)
+  let x_part = power(x.clone(), minus(a.clone(), int(1)));
+  // (1-x)^(b-1)
+  let one_minus_x_part =
+    power(minus(int(1), x.clone()), minus(b.clone(), int(1)));
+  // Beta[a, b]
+  let beta_fn = Expr::FunctionCall {
+    name: "Beta".to_string(),
+    args: vec![a, b],
+  };
+  let value = eval(divide(times(x_part, one_minus_x_part), beta_fn))?;
+  let cond =
+    comparison3(int(0), ComparisonOp::Less, x, ComparisonOp::Less, int(1));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[BetaDistribution[a, b], x] = Piecewise[{{BetaRegularized[x, a, b], 0 < x < 1}, {1, x >= 1}}, 0]
+fn cdf_beta(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BetaDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let value = Expr::FunctionCall {
+    name: "BetaRegularized".to_string(),
+    args: vec![x.clone(), a, b],
+  };
+  let cond1 = comparison3(
+    int(0),
+    ComparisonOp::Less,
+    x.clone(),
+    ComparisonOp::Less,
+    int(1),
+  );
+  let cond2 = comparison(x, ComparisonOp::GreaterEqual, int(1));
+  eval(piecewise(vec![(value, cond1), (int(1), cond2)], int(0)))
+}
+
+/// PDF[StudentTDistribution[nu], x] = (1 + x^2/nu)^(-(1+nu)/2) / (Sqrt[nu] * Beta[nu/2, 1/2])
+fn pdf_student_t(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "StudentTDistribution expects 1 argument".into(),
+    ));
+  }
+  let nu = dargs[0].clone();
+
+  // (1 + x^2/nu)^(-(1+nu)/2)
+  let inner = plus(int(1), divide(power(x, int(2)), nu.clone()));
+  let exponent = divide(
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(plus(int(1), nu.clone())),
+    },
+    int(2),
+  );
+  let numerator = power(inner, exponent);
+  // Sqrt[nu] * Beta[nu/2, 1/2]
+  let denominator = times(
+    sqrt(nu.clone()),
+    Expr::FunctionCall {
+      name: "Beta".to_string(),
+      args: vec![divide(nu, int(2)), divide(int(1), int(2))],
+    },
+  );
+  eval(divide(numerator, denominator))
 }
