@@ -1298,6 +1298,56 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // AdjacencyMatrix[Graph[{vertices}, {edges}]] — build adjacency matrix
+  if name == "AdjacencyMatrix" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && gargs.len() == 2 {
+        if let (Expr::List(vertices), Expr::List(edges)) =
+          (&gargs[0], &gargs[1])
+        {
+          let n = vertices.len();
+          // Build vertex-to-index mapping
+          let vertex_index: std::collections::HashMap<String, usize> = vertices
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (expr_to_string(v), i))
+            .collect();
+          // Initialize n×n zero matrix
+          let mut matrix = vec![vec![Expr::Integer(0); n]; n];
+          for edge in edges {
+            if let Expr::FunctionCall {
+              name: ename,
+              args: eargs,
+            } = edge
+            {
+              if eargs.len() == 2 {
+                let from_str = expr_to_string(&eargs[0]);
+                let to_str = expr_to_string(&eargs[1]);
+                if let (Some(&fi), Some(&ti)) =
+                  (vertex_index.get(&from_str), vertex_index.get(&to_str))
+                {
+                  matrix[fi][ti] = Expr::Integer(1);
+                  if ename == "UndirectedEdge" {
+                    matrix[ti][fi] = Expr::Integer(1);
+                  }
+                }
+              }
+            }
+          }
+          return Ok(Expr::List(matrix.into_iter().map(Expr::List).collect()));
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // StringExpression[...]: when all args are string literals, concatenate them
   if name == "StringExpression" {
     if args.iter().all(|a| matches!(a, Expr::String(_))) {

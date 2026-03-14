@@ -47,7 +47,7 @@ AddToVectorDatabase,,,,14.1,
 AddUsers,,,,10,5486
 AdjacencyGraph,,,,8,1107
 AdjacencyList,,,,9,2276
-AdjacencyMatrix,,,,8,1055
+AdjacencyMatrix,Builds adjacency matrix from a graph,✅,none,8,1055
 AdjacentMeshCells,,,,12.1,4225
 Adjugate,,,,13,
 AdjustmentBox,,,,3,2570
@@ -3920,7 +3920,7 @@ NumberPoint,Symbol specifying the decimal point character in NumberForm,✅,pure
 NumberQ,Checks if a value is a number,✅,pure,1,340
 NumberSeparator,Option specifying the digit separator in NumberForm,✅,pure,1,2960
 NumberSigns,,,,2,1779
-NumberString,,,,5.1,1068
+NumberString,String pattern matching numeric strings,✅,none,5.1,1068
 Numerator,Returns the numerator of a rational expression,✅,pure,1,628
 NumeratorDenominator,,,,12,3215
 NumericalOrder,,,,11.1,3491
