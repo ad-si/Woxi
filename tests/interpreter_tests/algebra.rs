@@ -3208,3 +3208,82 @@ mod find_instance {
     );
   }
 }
+
+mod find_sequence_function {
+  use super::*;
+
+  #[test]
+  fn linear_sequence() {
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 2, 3, 4, 5}, n]").unwrap(),
+      "n"
+    );
+  }
+
+  #[test]
+  fn squares() {
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 4, 9, 16, 25}, n]").unwrap(),
+      "n^2"
+    );
+  }
+
+  #[test]
+  fn cubes() {
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 8, 27, 64, 125}, n]").unwrap(),
+      "n^3"
+    );
+  }
+
+  #[test]
+  fn constant() {
+    assert_eq!(
+      interpret("FindSequenceFunction[{5, 5, 5, 5}, n]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn powers_of_2() {
+    assert_eq!(
+      interpret("FindSequenceFunction[{2, 4, 8, 16, 32}, n]").unwrap(),
+      "2^n"
+    );
+  }
+
+  #[test]
+  fn powers_of_3() {
+    assert_eq!(
+      interpret("FindSequenceFunction[{3, 9, 27, 81, 243}, n]").unwrap(),
+      "3^n"
+    );
+  }
+
+  #[test]
+  fn factorial() {
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 2, 6, 24, 120}, n]").unwrap(),
+      "n!"
+    );
+  }
+
+  #[test]
+  fn triangular_numbers() {
+    // (n*(1+n))/2 expanded form
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 3, 6, 10, 15}, n]").unwrap(),
+      "n/2 + n^2/2"
+    );
+  }
+
+  #[test]
+  fn formula_is_correct() {
+    // Verify the found formula gives correct values by substitution
+    assert_eq!(
+      interpret("FindSequenceFunction[{1, 4, 9, 16, 25}, n] /. n -> 6")
+        .unwrap(),
+      "36"
+    );
+  }
+}

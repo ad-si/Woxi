@@ -726,7 +726,7 @@ CellLabelTemplate,,,,13.1,
 CellMargins,,,,3,1219
 CellObject,,,,9,2632
 CellOpen,,,,3,2698
-CellPrint,,,,3,918
+CellPrint,Requires external services or GUI infrastructure,🚫,io,3,918
 CellProlog,,,,6,3121
 Cells,,,,9,1364
 CellStyle,,,,9,1625
@@ -848,7 +848,7 @@ Closing,,,,7,1916
 CloudAccountData,,🚫,,10,3612
 CloudBase,,,,10,5013
 CloudConnect,,,,10,3612
-CloudDeploy,,,,10,821
+CloudDeploy,Requires external services or GUI infrastructure,🚫,io,10,821
 CloudDirectory,,,,10,3215
 CloudDisconnect,,,,10,4881
 CloudEvaluate,,,,10,2742
@@ -859,7 +859,7 @@ CloudFunction,,,,10,5013
 CloudGet,,,,10,1284
 CloudImport,,,,10,1912
 CloudLoggingData,,🚫,,10.2,3697
-CloudObject,,,,10,928
+CloudObject,Requires external services or GUI infrastructure,🚫,io,10,928
 CloudObjectNameFormat,,,,12,4479
 CloudObjects,,,,10,2828
 CloudObjectURLType,,,,12,3257
@@ -968,13 +968,13 @@ Complexes,Domain of complex numbers,✅,none,4,790
 ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
 ComplexInfinity,Complex infinity constant,✅,pure,,
 ComplexityFunction,,,,3,1451
-ComplexListPlot,,,,12,999
+ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12,999
 ComplexPlot,,,,12,1377
 ComplexPlot3D,,,,12,1311
 ComplexRegionPlot,,,,12.1,1468
 ComplexStreamPlot,,,,12.1,3020
 ComplexVectorPlot,,,,12.1,3094
-ComponentMeasurements,,,,8,938
+ComponentMeasurements,Requires external services or GUI infrastructure,🚫,io,8,938
 ComposeList,Returns list of successive function compositions,✅,pure,2,2333
 ComposeSeries,,,,3,3462
 CompositeQ,Tests if a number is composite,✅,pure,10,2854
@@ -1085,7 +1085,7 @@ ControlType,Option for specifying the type of control in Manipulate,✅,pure,6,3
 ConvectionPDETerm,,,,12.2,3462
 Convergents,,,,6,2031
 ConversionRules,,,,3,4660
-ConvexHullMesh,,,,10,814
+ConvexHullMesh,Requires external services or GUI infrastructure,🚫,io,10,814
 ConvexHullRegion,,,,12.2,3889
 ConvexOptimization,,,,12.2,2971
 ConvexPolygonQ,,,,12,
@@ -1411,7 +1411,7 @@ DialogSymbols,,,,2,5079
 Diamond,,,,3,3889
 DiamondMatrix,Creates a diamond-shaped matrix of ones,✅,pure,7,2236
 DiceDissimilarity,,,,6,4204
-DictionaryLookup,,,,6,872
+DictionaryLookup,Requires external services or GUI infrastructure,🚫,io,6,872
 DictionaryWordQ,,,,10.4,2712
 Diff,,,,14.1,
 Diff3,,,,14.1,
@@ -1437,7 +1437,7 @@ DiggleGatesPointProcess,,,,12.2,5587
 DiggleGrattonPointProcess,,,,12.2,5486
 DigitalSignature,,,,12,
 DigitBlock,Option for digit grouping in NumberForm,✅,pure,1,1481
-DigitCharacter,,,,5.1,870
+DigitCharacter,Represents a digit character in string patterns,✅,pure,5.1,870
 DigitCount,Counts occurrences of each digit in a number,✅,pure,4,1877
 DigitQ,Tests if a string consists entirely of digits,✅,pure,2,1827
 DigitSum,Returns the sum of digits of a number,✅,pure,14,
@@ -1501,7 +1501,7 @@ DiscreteWaveletData,,🚫,,8,2748
 DiscreteWaveletPacketTransform,,,,8,2533
 DiscreteWaveletTransform,,,,8,1614
 DiscretizeGraphics,,,,10,1149
-DiscretizeRegion,,,,10,841
+DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10,841
 Discriminant,,,,6,1410
 DisjointQ,,,,10,2837
 Disjunction,,,,7,4567
@@ -1818,7 +1818,7 @@ ExportByteArray,,,,11.2,4138
 ExportForm,,,,10,1763
 ExportString,Exports an expression to a string in a given format, ✅,pure,4,787
 Expression,Type specifier for reading expressions,✅,pure,1,765
-ExpressionCell,,,,6,1021
+ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6,1021
 ExpressionGraph,,,,12.1,2605
 ExpressionTree,,,,12.3,
 ExpressionUUID,,,,13,
@@ -2014,7 +2014,7 @@ FindProcessParameters,,,,9,2360
 FindRegionTransform,,,,13,
 FindRepeat,,,,11.2,3889
 FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,1,222
-FindSequenceFunction,,,,7,839
+FindSequenceFunction,Finds a formula for an integer sequence using polynomials exponentials and factorials,✅,pure,7,839
 FindSettings,,,,4,4262
 FindShortestPath,,,,8,1187
 FindShortestTour,,,,6,1269
@@ -2178,7 +2178,7 @@ FromUnixTime,,,,10.1,3326
 Front,,,,6,1324
 FrontEndDynamicExpression,,,,8,4660
 FrontEndEventActions,,,,6,4138
-FrontEndExecute,,,,3,982
+FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3,982
 FrontEndToken,,,,3,1293
 FrontEndTokenExecute,,,,4,1280
 Full,Full-size image specification,✅,none,6,294
@@ -2422,7 +2422,7 @@ GraphLayerStyle,,,,12.3,
 GraphLayout,,,,8,888
 GraphLinkEfficiency,,,,9,4660
 GraphPeriphery,,,,8,2889
-GraphPlot,,,,6,849
+GraphPlot,Requires external services or GUI infrastructure,🚫,io,6,849
 GraphPlot3D,,,,6,1864
 GraphPower,,,,8,3506
 GraphProduct,,,,13.1,
@@ -2451,7 +2451,7 @@ GreenFunction,,,,10.4,2210
 Grid,Displays data in a grid layout,✅,pure,6,167
 GridBox,,,,3,1245
 GridDefaultElement,,,,3,5587
-GridGraph,,,,8,1005
+GridGraph,Requires external services or GUI infrastructure,🚫,io,8,1005
 GridLines,Option specifying grid lines in a plot,✅,none,2,211
 GridLinesStyle,Option for specifying the style of grid lines in graphics,✅,none,6,247
 GridVideo,,,,13,
@@ -2550,7 +2550,7 @@ Hexahedron,,,,10,2233
 HiddenItems,,,,12.1,
 HiddenMarkovProcess,,,,10,3265
 Highlighted,,,,10.4,1800
-HighlightGraph,,,,8,822
+HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8,822
 HighlightImage,,,,9,1195
 HighlightMesh,,,,10,1573
 HighpassFilter,,,,9,2978
@@ -2634,7 +2634,7 @@ IgnoreStereochemistry,,,,13,
 IgnoringInactive,,,,10,3566
 Im,Returns the imaginary part of a complex number,✅,pure,1,143
 Image,Constructs an image from pixel data,✅,pure,7,223
-Image3D,,,,9,819
+Image3D,Requires external services or GUI infrastructure,🚫,io,9,819
 Image3DProjection,,,,11.1,4262
 Image3DSlices,,,,9,2821
 ImageAccumulate,,,,9,5079
@@ -2809,7 +2809,7 @@ InputAutoReplacements,,,,4,3317
 InputField,Input field for interactive interfaces,✅,none,6,556
 InputForm,Converts expression to input form,✅,pure,1,354
 InputNamePacket,,,,3,4567
-InputNotebook,,,,3,926
+InputNotebook,Requires external services or GUI infrastructure,🚫,io,3,926
 InputOutputResponse,,,,14,
 InputOutputResponseData,,🚫,,14,
 InputPacket,,,,3,
@@ -2855,7 +2855,7 @@ Interpretation,,,,6,1905
 InterpretationBox,,,,3,1652
 InterpretationBoxOptions,,,,4,5587
 InterpretationFunction,,,,12.2,2561
-Interpreter,,,,10,813
+Interpreter,Requires external services or GUI infrastructure,🚫,io,10,813
 InterquartileRange,,,,6,2431
 Interrupt,Interrupts evaluation,✅,effectful,2,3972
 IntersectedEntityClass,,,,12.1,
@@ -3289,7 +3289,7 @@ LocationEquivalenceTest,,,,8,3656
 LocationTest,,,,8,2675
 Locator,Interactive locator object,✅,none,6,549
 LocatorAutoCreate,,,,6,1490
-LocatorPane,,,,6,984
+LocatorPane,Requires external services or GUI infrastructure,🚫,io,6,984
 LocatorRegion,,,,6,3803
 Locked,Attribute preventing modification of a symbol,✅,pure,1,2786
 Log,Returns the natural logarithm of a number,✅,pure,1,58
@@ -3515,16 +3515,16 @@ MeshCellLabel,,,,10,2786
 MeshCellMarker,,,,10,4173
 MeshCellMeasure,,,,10,2292
 MeshCellQuality,,,,10,4527
-MeshCells,,,,10,968
+MeshCells,Requires external services or GUI infrastructure,🚫,io,10,968
 MeshCellShapeFunction,,,,10.2,3697
 MeshCellStyle,,,,10,1593
 MeshConnectivityGraph,,,,12.1,3153
-MeshCoordinates,,,,10,951
+MeshCoordinates,Requires external services or GUI infrastructure,🚫,io,10,951
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6,506
-MeshPrimitives,,,,10,1016
+MeshPrimitives,Requires external services or GUI infrastructure,🚫,io,10,1016
 MeshQualityGoal,,,,10,2742
 MeshRefinementFunction,,,,10,2263
-MeshRegion,,,,10,935
+MeshRegion,Requires external services or GUI infrastructure,🚫,io,10,935
 MeshRegionQ,,,,10,3291
 MeshShading,Option for alternating shading between mesh lines,✅,none,6,779
 MeshStyle,Option specifying the style of mesh lines,✅,none,2,527
@@ -3633,7 +3633,7 @@ MountainData,,🚫,,10,5079
 MouseAnnotation,,,,6,3200
 MouseAppearance,,,,8,2082
 Mouseover,,,,6,1683
-MousePosition,,,,6,952
+MousePosition,Requires external services or GUI infrastructure,🚫,io,6,952
 MovieData,,🚫,,10,4527
 MovingAverage,,,,6,1166
 MovingMap,,,,10,1593
@@ -3803,7 +3803,7 @@ Not,Checks if a condition is false,✅,pure,1,139
 NotCongruent,,,,3,4881
 NotCupCap,,,,3,5184
 NotDoubleVerticalBar,,,,3,5390
-Notebook,,,,3,915
+Notebook,Requires external services or GUI infrastructure,🚫,io,3,915
 NotebookApply,,,,3,3491
 NotebookAutoSave,,,,3,3755
 NotebookCellData,,🚫,,14.1,
@@ -3823,13 +3823,13 @@ NotebookObject,,,,3,2162
 NotebookOpen,,,,3,1418
 NotebookPrint,,,,3,3389
 NotebookPut,,,,3,1597
-NotebookRead,,,,3,948
+NotebookRead,Requires external services or GUI infrastructure,🚫,io,3,948
 Notebooks,,,,3,1883
 NotebookSave,,,,3,1857
 NotebookSelection,,,,3,1141
 NotebooksMenu,,,,4,4052
 NotebookTemplate,,,,10,4479
-NotebookWrite,,,,3,974
+NotebookWrite,Requires external services or GUI infrastructure,🚫,io,3,974
 NotElement,Test non-membership of an expression in a mathematical domain,✅,pure,6,1921
 NotEqualTilde,,,,3,5390
 NotExists,,,,3,5486
@@ -3912,7 +3912,7 @@ NumberFieldRootsOfUnity,,,,6,4707
 NumberFieldSignature,,,,6,4315
 NumberForm,Displays a number with specified formatting,✅,pure,1,336
 NumberFormat,,,,2,1960
-NumberLinePlot,,,,10,913
+NumberLinePlot,Requires external services or GUI infrastructure,🚫,io,10,913
 NumberMarks,,,,3,2734
 NumberMultiplier,,,,3,3737
 NumberPadding,,,,2,1035
@@ -4215,7 +4215,7 @@ PlaneCurveData,,🚫,,10,3389
 PlanetaryMoonData,,🚫,,10,1026
 PlanetData,,🚫,,10,877
 PlantData,,🚫,,10,4527
-Play,,,,2,840
+Play,Requires external services or GUI infrastructure,🚫,io,2,840
 PlaybackSettings,,,,13.1,
 PlayRange,,,,2,3108
 Plot,Plots a function over a range,✅,effectful,1,21
@@ -4435,7 +4435,7 @@ Quartics,Option for Solve controlling whether quartic formulas are used,✅,pure
 QuartileDeviation,,,,6,3803
 Quartiles,Returns the quartiles of a list,✅,pure,6,1495
 QuartileSkewness,,,,6,4262
-Query,,,,10,831
+Query,Requires external services or GUI infrastructure,🚫,io,10,831
 QuestionGenerator,,,,13.1,
 QuestionInterface,,,,13,
 QuestionObject,,,,12.3,
@@ -5399,7 +5399,7 @@ SystemModelSimulate,,,,11.3,4437
 SystemModelSimulateSensitivity,,,,11.3,
 SystemModelSimulationData,,🚫,,11.3,
 SystemModelUncertaintyPlot,,,,14,
-SystemOpen,,,,7,1007
+SystemOpen,Requires external services or GUI infrastructure,🚫,io,7,1007
 SystemOptions,,,,6,1867
 SystemProcessData,,🚫,,11.3,
 SystemProcesses,,,,11.3,
@@ -5661,7 +5661,7 @@ TrainTextContentDetector,,,,13,
 TransferFunctionCancel,,,,8,4225
 TransferFunctionExpand,,,,8,2944
 TransferFunctionFactor,,,,8,5013
-TransferFunctionModel,,,,8,957
+TransferFunctionModel,Requires external services or GUI infrastructure,🚫,io,8,957
 TransferFunctionPoles,,,,8,2487
 TransferFunctionTransform,,,,9,4027
 TransferFunctionZeros,,,,8,3678
@@ -5911,7 +5911,7 @@ VectorLess,,,,12,
 VectorLessEqual,,,,12,4612
 VectorMarkers,,,,11.3,2214
 VectorPlot,Creates a vector field plot,✅,pure,7,445
-VectorPlot3D,,,,7,1018
+VectorPlot3D,Requires external services or GUI infrastructure,🚫,io,7,1018
 VectorPoints,,,,7,1039
 VectorQ,Tests if an expression is a vector,✅,pure,1,468
 VectorRange,,,,12.1,4747

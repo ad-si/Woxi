@@ -999,6 +999,10 @@ pub fn dispatch_complex_and_special(
     "ToBoxes" if args.len() == 1 => {
       return Some(Ok(expr_to_box_form(&args[0])));
     }
+    // FindSequenceFunction[list, var] — find a formula for an integer sequence
+    "FindSequenceFunction" if args.len() == 2 => {
+      return Some(find_sequence_function(&args[0], &args[1]));
+    }
     // Activate[expr] — replace Inactive[f][args...] with f[args...] and evaluate
     "Activate" if args.len() == 1 || args.len() == 2 => {
       let filter: Option<Vec<String>> = if args.len() == 2 {
@@ -1463,4 +1467,320 @@ fn activate_expr(expr: &Expr, filter: &Option<Vec<String>>) -> Expr {
     // Atoms: return as-is
     _ => expr.clone(),
   }
+}
+
+// ─── FindSequenceFunction ──────────────────────────────────────────────
+
+/// Find a formula for an integer sequence.
+/// Tries: polynomial fit, exponential fit, factorial detection.
+fn find_sequence_function(
+  data_expr: &Expr,
+  var_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items = match data_expr {
+    Expr::List(items) if items.len() >= 2 => items,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FindSequenceFunction: first argument must be a list with at least 2 elements".into(),
+      ));
+    }
+  };
+
+  let var_name = match var_expr {
+    Expr::Identifier(name) => name.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "FindSequenceFunction: second argument must be a variable".into(),
+      ));
+    }
+  };
+
+  // Convert items to rational numbers (as i128 numerator/denominator pairs)
+  let vals: Vec<(i128, i128)> = items
+    .iter()
+    .map(|item| expr_to_rational(item))
+    .collect::<Option<Vec<_>>>()
+    .ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "FindSequenceFunction: could not convert all elements to numbers"
+          .into(),
+      )
+    })?;
+
+  let n = vals.len();
+  let var = Expr::Identifier(var_name.clone());
+
+  // Try factorial: a(n) = n!
+  if try_factorial(&vals) {
+    return Ok(Expr::FunctionCall {
+      name: "Factorial".to_string(),
+      args: vec![var],
+    });
+  }
+
+  // Try exponential: a(n) = base^n
+  if let Some(base) = try_exponential(&vals) {
+    return Ok(Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![rational_to_expr(base.0, base.1), var],
+    });
+  }
+
+  // Try polynomial via finite differences
+  if let Some(expr) = try_polynomial(&vals, &var_name) {
+    return Ok(expr);
+  }
+
+  // If nothing works, return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "FindSequenceFunction".to_string(),
+    args: vec![data_expr.clone(), var_expr.clone()],
+  })
+}
+
+/// Convert an Expr to a rational number (numerator, denominator).
+fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::Integer(n) => Some((*n, 1)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+        Some((*n, *d))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Convert a rational (n, d) back to an Expr.
+fn rational_to_expr(n: i128, d: i128) -> Expr {
+  if d == 1 {
+    Expr::Integer(n)
+  } else {
+    let g = gcd_i128(n.abs(), d.abs());
+    let (n, d) = (n / g, d / g);
+    if d < 0 {
+      rational_to_expr(-n, -d)
+    } else if d == 1 {
+      Expr::Integer(n)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(n), Expr::Integer(d)],
+      }
+    }
+  }
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  if b == 0 { a } else { gcd_i128(b, a % b) }
+}
+
+/// Rational arithmetic helpers
+fn rat_sub(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let n = a.0 * b.1 - b.0 * a.1;
+  let d = a.1 * b.1;
+  let g = gcd_i128(n.abs(), d.abs());
+  (n / g, d / g)
+}
+
+fn rat_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let n = a.0 * b.0;
+  let d = a.1 * b.1;
+  let g = gcd_i128(n.abs(), d.abs());
+  (n / g, d / g)
+}
+
+fn rat_div(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+  if b.0 == 0 {
+    return None;
+  }
+  Some(rat_mul(a, (b.1, b.0)))
+}
+
+fn rat_add(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
+  let n = a.0 * b.1 + b.0 * a.1;
+  let d = a.1 * b.1;
+  let g = gcd_i128(n.abs(), d.abs());
+  (n / g, d / g)
+}
+
+/// Check if the sequence is n! (starting from n=1)
+fn try_factorial(vals: &[(i128, i128)]) -> bool {
+  let mut fact: i128 = 1;
+  for (i, val) in vals.iter().enumerate() {
+    fact *= (i + 1) as i128;
+    if val.1 != 1 || val.0 != fact {
+      return false;
+    }
+  }
+  true
+}
+
+/// Check if the sequence is base^n (starting from n=1).
+/// Returns the base if successful.
+fn try_exponential(vals: &[(i128, i128)]) -> Option<(i128, i128)> {
+  if vals.len() < 2 {
+    return None;
+  }
+  // Check constant ratio between consecutive terms
+  let ratio = rat_div(vals[1], vals[0])?;
+  // ratio must not be 1 (that would be constant, handled by polynomial)
+  if ratio == (1, 1) {
+    return None;
+  }
+  // Verify all consecutive ratios are the same
+  for i in 2..vals.len() {
+    let r = rat_div(vals[i], vals[i - 1])?;
+    if r != ratio {
+      return None;
+    }
+  }
+  // vals[0] = base^1 = base, vals[1] = base^2, so base = vals[0]
+  // But we need to verify vals[0] == ratio (since a(1) = base^1 = base)
+  if vals[0] == ratio { Some(ratio) } else { None }
+}
+
+/// Try to fit a polynomial using finite differences method.
+/// The sequence is assumed to be indexed starting at n=1.
+fn try_polynomial(vals: &[(i128, i128)], var_name: &str) -> Option<Expr> {
+  let n = vals.len();
+
+  // Build the difference table
+  // diffs[k] = k-th order forward differences at position 0
+  let mut current: Vec<(i128, i128)> = vals.to_vec();
+  let mut diffs: Vec<(i128, i128)> = vec![current[0]]; // 0th diff = first value
+
+  for _order in 1..n {
+    let mut next = Vec::with_capacity(current.len() - 1);
+    for j in 0..current.len() - 1 {
+      next.push(rat_sub(current[j + 1], current[j]));
+    }
+    diffs.push(next[0]);
+    current = next;
+    if current.is_empty() {
+      break;
+    }
+  }
+
+  // Find the degree: the last non-zero difference
+  let mut degree = diffs.len() - 1;
+  while degree > 0 && diffs[degree] == (0, 1) {
+    degree -= 1;
+  }
+
+  // Verify: all differences of order > degree should be zero
+  // (this is already guaranteed by the finite difference method for polynomial sequences)
+
+  // Construct the Newton forward difference formula:
+  // p(n) = sum_{k=0}^{degree} diffs[k] * C(n-1, k)
+  // where C(n-1, k) = (n-1)(n-2)...(n-k) / k!
+  // Note: our sequence is 1-indexed, so we use (n-1) in place of x in the formula
+
+  // Build symbolic expression
+  let var = Expr::Identifier(var_name.to_string());
+  let mut terms: Vec<Expr> = Vec::new();
+
+  for k in 0..=degree {
+    if diffs[k] == (0, 1) {
+      continue;
+    }
+
+    // Build C(n-1, k) = product_{j=0}^{k-1} (n - 1 - j) / k!
+    if k == 0 {
+      terms.push(rational_to_expr(diffs[k].0, diffs[k].1));
+    } else {
+      // Compute coefficient: diffs[k] / k!
+      let mut factorial: i128 = 1;
+      for j in 1..=k as i128 {
+        factorial *= j;
+      }
+      let coeff = rat_div(diffs[k], (factorial, 1))?;
+
+      // Build product (n-1)(n-2)...(n-k) as a polynomial
+      // Expand symbolically: multiply (n - j) for j = 1..k
+      // Start with [1] (constant polynomial), multiply by (n - j) each time
+      // Polynomial coefficients: poly[i] = coefficient of n^i
+      let mut poly: Vec<(i128, i128)> = vec![(1, 1)]; // start with 1
+      for j in 1..=k {
+        // Multiply poly by (n - j)
+        let j_val = j as i128;
+        let mut new_poly = vec![(0, 1); poly.len() + 1];
+        for (i, &p) in poly.iter().enumerate() {
+          // p * n term -> goes to i+1
+          new_poly[i + 1] = rat_add(new_poly[i + 1], p);
+          // p * (-j) term -> goes to i
+          new_poly[i] = rat_sub(new_poly[i], rat_mul(p, (j_val, 1)));
+        }
+        poly = new_poly;
+      }
+
+      // Multiply polynomial coefficients by coeff
+      for p in &mut poly {
+        *p = rat_mul(*p, coeff);
+      }
+
+      // Add each term: poly[i] * n^i
+      for (i, &c) in poly.iter().enumerate() {
+        if c == (0, 1) {
+          continue;
+        }
+        let c_expr = rational_to_expr(c.0, c.1);
+        if i == 0 {
+          terms.push(c_expr);
+        } else {
+          let n_power = if i == 1 {
+            var.clone()
+          } else {
+            Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![var.clone(), Expr::Integer(i as i128)],
+            }
+          };
+          if c == (1, 1) {
+            terms.push(n_power);
+          } else {
+            terms.push(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![c_expr, n_power],
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if terms.is_empty() {
+    return Some(Expr::Integer(0));
+  }
+
+  // Combine terms with Plus, then simplify via evaluation
+  let expr = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms,
+    }
+  };
+
+  // Evaluate to simplify
+  let simplified = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+
+  // Verify: check that the formula produces the correct values
+  for (i, val) in vals.iter().enumerate() {
+    let n_val = Expr::Integer((i + 1) as i128);
+    let substituted =
+      crate::syntax::substitute_variable(&simplified, var_name, &n_val);
+    let result = crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+    let result_rat = expr_to_rational(&result)?;
+    if result_rat != *val {
+      return None;
+    }
+  }
+
+  Some(simplified)
 }
