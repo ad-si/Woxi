@@ -3357,3 +3357,95 @@ mod cycles {
     );
   }
 }
+
+mod exists {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("Exists[x, x > 0]").unwrap(), "Exists[x, x > 0]");
+  }
+
+  #[test]
+  fn with_list_vars() {
+    assert_eq!(
+      interpret("Exists[{x, y}, x + y > 0]").unwrap(),
+      "Exists[{x, y}, x + y > 0]"
+    );
+  }
+
+  #[test]
+  fn with_condition() {
+    assert_eq!(
+      interpret("Exists[x, x > 0 && x < 1, x^2 < 1]").unwrap(),
+      "Exists[x, x > 0 && x < 1, x^2 < 1]"
+    );
+  }
+
+  #[test]
+  fn for_all() {
+    assert_eq!(
+      interpret("ForAll[x, x^2 >= 0]").unwrap(),
+      "ForAll[x, x^2 >= 0]"
+    );
+  }
+}
+
+mod pattern_constructs {
+  use super::*;
+
+  #[test]
+  fn pattern_sequence() {
+    assert_eq!(
+      interpret("PatternSequence[a, b]").unwrap(),
+      "PatternSequence[a, b]"
+    );
+  }
+
+  #[test]
+  fn start_of_string() {
+    assert_eq!(interpret("StartOfString").unwrap(), "StartOfString");
+  }
+
+  #[test]
+  fn end_of_string() {
+    assert_eq!(interpret("EndOfString").unwrap(), "EndOfString");
+  }
+
+  #[test]
+  fn whitespace() {
+    assert_eq!(interpret("Whitespace").unwrap(), "Whitespace");
+  }
+}
+
+mod circle_points {
+  use super::*;
+
+  #[test]
+  fn single_point() {
+    assert_eq!(interpret("CirclePoints[1]").unwrap(), "{{0, 1}}");
+  }
+
+  #[test]
+  fn two_points() {
+    assert_eq!(interpret("CirclePoints[2]").unwrap(), "{{1, 0}, {-1, 0}}");
+  }
+
+  #[test]
+  fn three_points() {
+    let result = interpret("CirclePoints[3]").unwrap();
+    assert!(result.contains("Sqrt[3]/2") && result.contains("-1/2"));
+  }
+
+  #[test]
+  fn four_points() {
+    let result = interpret("CirclePoints[4]").unwrap();
+    assert!(result.contains("1/Sqrt[2]"));
+  }
+
+  #[test]
+  fn six_points() {
+    let result = interpret("CirclePoints[6]").unwrap();
+    assert!(result.contains("{1, 0}") && result.contains("{-1, 0}"));
+  }
+}

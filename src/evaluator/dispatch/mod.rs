@@ -1203,7 +1203,14 @@ pub fn evaluate_function_call_ast_inner(
     | "Wedge"
     | "Del"
     | "Dispatch"
-    | "Cycles" => {
+    | "Cycles"
+    | "Exists"
+    | "ForAll"
+    | "ProbabilityDistribution"
+    | "PatternSequence"
+    | "StartOfString"
+    | "EndOfString"
+    | "Whitespace" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -1478,6 +1485,64 @@ pub fn evaluate_function_call_ast_inner(
           Expr::List(vec![Expr::Integer(0), Expr::Integer(1)]),
         ])],
       });
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // CirclePoints[n] — n equally spaced points on the unit circle
+  if name == "CirclePoints" && args.len() == 1 {
+    if let Some(n) = match &args[0] {
+      Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+      _ => None,
+    } {
+      let mut points = Vec::with_capacity(n);
+      for k in 0..n {
+        // angle_k = Pi/2 - (n-1)*Pi/n + k*2*Pi/n
+        let angle = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus,
+          left: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(Expr::Identifier("Pi".to_string())),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Divide,
+              left: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(Expr::Integer((n - 1) as i128)),
+                right: Box::new(Expr::Identifier("Pi".to_string())),
+              }),
+              right: Box::new(Expr::Integer(n as i128)),
+            }),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(Expr::Integer(k as i128 * 2)),
+              right: Box::new(Expr::Identifier("Pi".to_string())),
+            }),
+            right: Box::new(Expr::Integer(n as i128)),
+          }),
+        };
+        let cos_expr = Expr::FunctionCall {
+          name: "Cos".to_string(),
+          args: vec![angle.clone()],
+        };
+        let sin_expr = Expr::FunctionCall {
+          name: "Sin".to_string(),
+          args: vec![angle],
+        };
+        let cos_val = evaluate_expr_to_expr(&cos_expr)?;
+        let sin_val = evaluate_expr_to_expr(&sin_expr)?;
+        points.push(Expr::List(vec![cos_val, sin_val]));
+      }
+      return Ok(Expr::List(points));
     }
     return Ok(Expr::FunctionCall {
       name: name.to_string(),

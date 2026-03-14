@@ -814,3 +814,67 @@ mod student_t_distribution {
     );
   }
 }
+
+mod lognormal_distribution {
+  use super::*;
+
+  #[test]
+  fn inert_form() {
+    assert_eq!(
+      interpret("LogNormalDistribution[0, 1]").unwrap(),
+      "LogNormalDistribution[0, 1]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    let result = interpret("PDF[LogNormalDistribution[mu, sigma], x]").unwrap();
+    assert!(
+      result.contains("Piecewise") && result.contains("Log[x]"),
+      "Expected Piecewise with Log[x], got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    let result = interpret("CDF[LogNormalDistribution[mu, sigma], x]").unwrap();
+    assert!(
+      result.contains("Erfc"),
+      "Expected Erfc expression, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(
+      interpret("Mean[LogNormalDistribution[0, 1]]").unwrap(),
+      "Sqrt[E]"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[LogNormalDistribution[mu, sigma]]").unwrap(),
+      "E^(mu + sigma^2/2)"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[LogNormalDistribution[0, 1]]").unwrap(),
+      "E*(-1 + E)"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[LogNormalDistribution[mu, sigma]]").unwrap(),
+      "E^(2*mu + sigma^2)*(-1 + E^sigma^2)"
+    );
+  }
+}

@@ -135,6 +135,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GammaDistribution" => pdf_gamma(dargs, x),
     "BetaDistribution" => pdf_beta(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
+    "LogNormalDistribution" => pdf_lognormal(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -304,6 +305,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
+    "LogNormalDistribution" => cdf_lognormal(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -952,6 +954,32 @@ fn distribution_mean_variance(
       let var = divide(nu.clone(), minus(nu, int(2)));
       Ok((mean, var))
     }
+    "LogNormalDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "LogNormalDistribution expects 2 arguments".into(),
+        ));
+      }
+      let mu = dargs[0].clone();
+      let sigma = dargs[1].clone();
+      // Mean = E^(mu + sigma^2/2)
+      let mean = power(
+        Expr::Identifier("E".to_string()),
+        plus(mu.clone(), divide(power(sigma.clone(), int(2)), int(2))),
+      );
+      // Var = E^(2*mu + sigma^2) * (E^(sigma^2) - 1)
+      let var = times(
+        power(
+          Expr::Identifier("E".to_string()),
+          plus(times(int(2), mu), power(sigma.clone(), int(2))),
+        ),
+        minus(
+          power(Expr::Identifier("E".to_string()), power(sigma, int(2))),
+          int(1),
+        ),
+      );
+      Ok((mean, var))
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"
     ))),
@@ -1291,4 +1319,69 @@ fn pdf_student_t(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     },
   );
   eval(divide(numerator, denominator))
+}
+
+/// PDF[LogNormalDistribution[mu, sigma], x] = Piecewise[{{1/(E^((Log[x]-mu)^2/(2*sigma^2))*Sqrt[2*Pi]*sigma*x), x > 0}}, 0]
+fn pdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LogNormalDistribution expects 2 arguments".into(),
+    ));
+  }
+  let mu = dargs[0].clone();
+  let sigma = dargs[1].clone();
+
+  // 1 / (E^((Log[x] - mu)^2 / (2*sigma^2)) * Sqrt[2*Pi] * sigma * x)
+  let log_x = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![x.clone()],
+  };
+  let exponent = divide(
+    power(minus(log_x, mu), int(2)),
+    times(int(2), power(sigma.clone(), int(2))),
+  );
+  let denom = times(
+    times(
+      power(Expr::Identifier("E".to_string()), exponent),
+      sqrt(times(int(2), Expr::Identifier("Pi".to_string()))),
+    ),
+    times(sigma, x.clone()),
+  );
+  let pdf_val = divide(int(1), denom);
+
+  // Piecewise[{{pdf_val, x > 0}}, 0]
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[LogNormalDistribution[mu, sigma], x] = Piecewise[{{Erfc[-(Log[x]-mu)/(Sqrt[2]*sigma)]/2, x > 0}}, 0]
+fn cdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LogNormalDistribution expects 2 arguments".into(),
+    ));
+  }
+  let mu = dargs[0].clone();
+  let sigma = dargs[1].clone();
+
+  // Erfc[-(Log[x] - mu) / (Sqrt[2] * sigma)] / 2
+  let log_x = Expr::FunctionCall {
+    name: "Log".to_string(),
+    args: vec![x.clone()],
+  };
+  let arg = Expr::UnaryOp {
+    op: crate::syntax::UnaryOperator::Minus,
+    operand: Box::new(divide(minus(log_x, mu), times(sqrt(int(2)), sigma))),
+  };
+  let cdf_val = divide(
+    Expr::FunctionCall {
+      name: "Erfc".to_string(),
+      args: vec![arg],
+    },
+    int(2),
+  );
+
+  // Piecewise[{{cdf_val, x > 0}}, 0]
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }
