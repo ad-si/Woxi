@@ -3308,3 +3308,52 @@ mod dispatch {
     assert_eq!(interpret("a /. Dispatch[{a -> b, b -> c}]").unwrap(), "b");
   }
 }
+
+mod cycles {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("Cycles[{{1, 2, 3}}]").unwrap(),
+      "Cycles[{{1, 2, 3}}]"
+    );
+  }
+
+  #[test]
+  fn permutation_list_single_cycle() {
+    assert_eq!(
+      interpret("PermutationList[Cycles[{{1, 3, 2}}]]").unwrap(),
+      "{3, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn permutation_list_transposition() {
+    assert_eq!(
+      interpret("PermutationList[Cycles[{{1, 2}}]]").unwrap(),
+      "{2, 1}"
+    );
+  }
+
+  #[test]
+  fn permutation_list_identity() {
+    assert_eq!(interpret("PermutationList[Cycles[{}]]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn permutation_list_two_cycles() {
+    assert_eq!(
+      interpret("PermutationList[Cycles[{{1, 2}, {3, 4}}]]").unwrap(),
+      "{2, 1, 4, 3}"
+    );
+  }
+
+  #[test]
+  fn permutation_list_with_length() {
+    assert_eq!(
+      interpret("PermutationList[Cycles[{{1, 2}}], 4]").unwrap(),
+      "{2, 1, 3, 4}"
+    );
+  }
+}
