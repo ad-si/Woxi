@@ -690,3 +690,127 @@ mod moment {
     assert_eq!(interpret("Moment[{a,b,c}, 1]").unwrap(), "(a + b + c)/3");
   }
 }
+
+mod beta_distribution {
+  use super::*;
+
+  #[test]
+  fn inert_form() {
+    assert_eq!(
+      interpret("BetaDistribution[2, 3]").unwrap(),
+      "BetaDistribution[2, 3]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    let result = interpret("PDF[BetaDistribution[a, b], x]").unwrap();
+    assert!(
+      result.contains("Piecewise") && result.contains("Beta[a, b]"),
+      "Expected Piecewise with Beta, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[BetaDistribution[2, 3], 0.5]").unwrap(),
+      "1.5"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic() {
+    let result = interpret("CDF[BetaDistribution[2, 3], x]").unwrap();
+    assert!(
+      result.contains("BetaRegularized"),
+      "Expected BetaRegularized, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(interpret("Mean[BetaDistribution[2, 3]]").unwrap(), "2/5");
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[BetaDistribution[a, b]]").unwrap(),
+      "a/(a + b)"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[BetaDistribution[2, 3]]").unwrap(),
+      "1/25"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[BetaDistribution[a, b]]").unwrap(),
+      "(a*b)/((a + b)^2*(1 + a + b))"
+    );
+  }
+}
+
+mod student_t_distribution {
+  use super::*;
+
+  #[test]
+  fn inert_form() {
+    assert_eq!(
+      interpret("StudentTDistribution[5]").unwrap(),
+      "StudentTDistribution[5]"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    let result = interpret("PDF[StudentTDistribution[nu], x]").unwrap();
+    assert!(
+      result.contains("Beta[nu/2, 1/2]"),
+      "Expected Beta in denominator, got: {}",
+      result
+    );
+  }
+
+  #[test]
+  fn pdf_at_zero() {
+    // PDF at x=0 simplifies: (1+0)^(-...) / denom
+    let result = interpret("PDF[StudentTDistribution[5], 0]").unwrap();
+    assert!(!result.is_empty(), "Expected non-empty result");
+  }
+
+  #[test]
+  fn mean() {
+    assert_eq!(interpret("Mean[StudentTDistribution[5]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(interpret("Mean[StudentTDistribution[nu]]").unwrap(), "0");
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[StudentTDistribution[5]]").unwrap(),
+      "5/3"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[StudentTDistribution[nu]]").unwrap(),
+      "nu/(-2 + nu)"
+    );
+  }
+}
