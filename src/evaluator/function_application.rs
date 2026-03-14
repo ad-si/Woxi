@@ -370,6 +370,15 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "FittedModel" && func_args.len() == 1 => {
+      // FittedModel[assoc][x] — evaluate model or query property
+      crate::functions::linear_algebra_ast::evaluate_fitted_model(
+        func_args, args,
+      )
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "CompiledFunction" && func_args.len() == 2 => {
       // CompiledFunction[{x, y, ...}, body][args...] — substitute and evaluate numerically
       let params: Vec<String> = match &func_args[0] {

@@ -1187,3 +1187,79 @@ mod lower_triangularize {
     );
   }
 }
+
+mod linear_model_fit {
+  use super::*;
+
+  #[test]
+  fn normal_returns_fitted_expression() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; Normal[lm]",
+    )
+    .unwrap();
+    // Should return something like 0.186... + 0.694...*x
+    assert!(result.contains("+"));
+    assert!(result.contains("x"));
+  }
+
+  #[test]
+  fn evaluate_at_point() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[2.3]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.7847457627118644).abs() < 1e-10);
+  }
+
+  #[test]
+  fn best_fit_parameters() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"BestFitParameters\"]",
+    )
+    .unwrap();
+    assert!(result.starts_with("{"));
+    assert!(result.contains("0.186"));
+    assert!(result.contains("0.694"));
+  }
+
+  #[test]
+  fn fit_residuals() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"FitResiduals\"]",
+    )
+    .unwrap();
+    assert!(result.starts_with("{"));
+    assert!(result.contains("0.813"));
+    assert!(result.contains("-0.881"));
+  }
+
+  #[test]
+  fn r_squared() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"RSquared\"]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.814043583535109).abs() < 1e-10);
+  }
+
+  #[test]
+  fn with_basis_list() {
+    // LinearModelFit with explicit basis {1, x, x^2}
+    let result = interpret(
+      "lm = LinearModelFit[{{1, 1}, {2, 4}, {3, 9}}, {1, x, x^2}, x]; Normal[lm]",
+    )
+    .unwrap();
+    assert!(result.contains("x"));
+  }
+
+  #[test]
+  fn simple_data() {
+    // LinearModelFit with y-only data (implicit x = 1, 2, ...)
+    let result =
+      interpret("lm = LinearModelFit[{1, 2, 3, 4, 5}, x, x]; lm[3]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 3.0).abs() < 1e-10);
+  }
+}
