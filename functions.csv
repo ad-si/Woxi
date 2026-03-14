@@ -45,7 +45,7 @@ AddTo,Adds a value to a variable,✅,stateful,1,550
 AddToSearchIndex,,,,12,
 AddToVectorDatabase,,,,14.1,
 AddUsers,,,,10,5486
-AdjacencyGraph,,,,8,1107
+AdjacencyGraph,Creates a graph from an adjacency matrix,✅,1,8,1107
 AdjacencyList,,,,9,2276
 AdjacencyMatrix,Builds adjacency matrix from a graph,✅,none,8,1055
 AdjacentMeshCells,,,,12.1,4225
@@ -161,7 +161,7 @@ APIFunction,,,,10,1379
 Appearance,Option symbol for specifying visual appearance,✅,pure,6,197
 AppearanceElements,,🚫,,6,1031
 AppearanceRules,,,,10,2243
-AppellF1,,,,4,1168
+AppellF1,Appell hypergeometric function F1,✅,1,4,1168
 AppellF2,,,,13.3,
 AppellF3,,,,13.3,
 AppellF4,,,,13.3,
@@ -804,7 +804,7 @@ ChromaticPolynomial,,,,10,2545
 Circle,Represents a circle graphics primitive,✅,pure,2,256
 CircleDot,,,,3,1776
 CircleMinus,,,,3,2152
-CirclePlus,,,,3,1158
+CirclePlus,Represents the direct sum or XOR operator,✅,1,3,1158
 CirclePoints,Gives equally spaced points on a unit circle,✅,1,10.1,1126
 CircleThrough,,,,12,2399
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3,1017
@@ -1515,7 +1515,7 @@ DisplayEndPacket,,,,3,5390
 DisplayForm,,🚫,,3,956
 DisplayFunction,Option controlling display output,✅,pure,1,375
 DisplayPacket,,,,3,5390
-DistanceFunction,,,,6,1171
+DistanceFunction,,🚫,,6,1171
 DistanceMatrix,,,,10.3,1806
 DistanceTransform,,,,7,1768
 Distribute,Distribute one operator over another,✅,pure,1,1074
@@ -1540,7 +1540,7 @@ DMSList,,,,7,3378
 DMSString,,,,7,3566
 Do,Evaluates an expression repeatedly,✅,pure,1,147
 DockedCell,,,,13.2,
-DockedCells,,,,6,1164
+DockedCells,,🚫,,6,1164
 DocumentGenerator,,,,10,3191
 DocumentGeneratorInformation,,,,10,4527
 DocumentGenerators,,,,10,4437
@@ -2374,7 +2374,7 @@ GetEnvironment,,,,9,3717
 GibbsPointProcess,,,,12.2,5587
 Glaisher,,,,4,2509
 GlobalClusteringCoefficient,,,,9,3233
-Glow,,,,6,1169
+Glow,Graphics directive for glow effect,✅,1,6,1169
 GoldenAngle,,,,10.2,3344
 GoldenRatio,The golden ratio constant,✅,pure,1,469
 GompertzMakehamDistribution,,,,8,2712
@@ -2574,7 +2574,7 @@ HoeffdingD,,,,9,3402
 HoeffdingDTest,,,,9,3947
 Hold,Holds its arguments unevaluated,✅,pure,1,326
 HoldAll,Attribute specifying all args are held,✅,pure,1,502
-HoldAllComplete,,,,3,1122
+HoldAllComplete,Attribute that prevents all evaluation,✅,1,3,1122
 HoldComplete,Holds arguments completely unevaluated,✅,pure,3,78
 HolderModel,,,,14,
 HoldFirst,Attribute specifying first arg is held,✅,pure,1,570
@@ -2626,7 +2626,7 @@ Identity,Returns its argument unchanged,✅,pure,1,322
 IdentityMatrix,Creates an identity matrix of given size,✅,pure,1,295
 If,Checks if a condition is true and returns one of two values,✅,pure,1,34
 IfCompiled,,,,13.2,
-IgnoreCase,,,,2,1172
+IgnoreCase,,🚫,,2,1172
 IgnoreDiacritics,,,,10.1,5184
 IgnoreIsotopes,,,,13,
 IgnorePunctuation,,,,10.3,5390
@@ -3635,7 +3635,7 @@ MouseAppearance,,,,8,2082
 Mouseover,,,,6,1683
 MousePosition,Requires external services or GUI infrastructure,🚫,io,6,952
 MovieData,,🚫,,10,4527
-MovingAverage,,,,6,1166
+MovingAverage,Computes the moving average of a list,✅,1,6,1166
 MovingMap,,,,10,1593
 MovingMedian,,,,6,3578
 MoyalDistribution,,,,8,3765
@@ -4149,7 +4149,7 @@ PeriodicBoundaryCondition,,,,11,1991
 Periodogram,,,,9,2108
 PeriodogramArray,,,,9,3537
 Permanent,,,,10.2,3389
-Permissions,,,,10,1157
+Permissions,,🚫,,10,1157
 PermissionsGroup,,,,10,3522
 PermissionsGroupMemberQ,,,,12.2,5486
 PermissionsGroups,,,,10,5587
@@ -4354,7 +4354,7 @@ PrimitivePolynomialQ,,,,11.1,4437
 PrimitiveRoot,,,,6,2798
 PrimitiveRootList,,,,10,2880
 PrincipalComponents,,,,8,2473
-PrincipalValue,,,,3,1160
+PrincipalValue,Represents Cauchy principal value,✅,1,3,1160
 Print,Outputs a string to the console,✅,effectful,1,55
 PrintableASCIIQ,,,,10.1,3737
 PrintingStyleEnvironment,,,,3,2707
@@ -5111,7 +5111,7 @@ SpellingOptions,,,,4,5587
 Sphere,3D sphere graphics primitive,✅,none,6,282
 SpherePoints,,,,11.1,3083
 SphericalAngle,,,,14,
-SphericalBesselJ,,,,6,1001
+SphericalBesselJ,Spherical Bessel function of the first kind,✅,1,6,1001
 SphericalBesselY,,,,6,2054
 SphericalDistance,,,,13.3,
 SphericalHankelH1,,,,6,2219
@@ -5420,7 +5420,7 @@ SystemsModelSeriesConnect,,,,8,2462
 SystemsModelStateFeedbackConnect,,,,8,2491
 SystemsModelVectorRelativeOrders,,,,10,4204
 Table,Generates a list by evaluating an expression,✅,pure,1,32
-TableAlignments,,,,2,1159
+TableAlignments,,🚫,,2,1159
 TableDepth,,,,2,1986
 TableDirections,,,,2,1977
 TableForm,Formats data as a table,✅,pure,1,255
@@ -6125,7 +6125,7 @@ WindowFrame,,,,3,2355
 WindowFrameElements,,,,4,2541
 WindowMargins,,,,3,1632
 WindowOpacity,,,,6,3737
-WindowSize,,,,3,1164
+WindowSize,,🚫,,3,1164
 WindowStatusArea,,,,6,4027
 WindowTitle,,,,3,1296
 WindowToolbars,,,,3,3413

@@ -3418,6 +3418,86 @@ mod pattern_constructs {
   }
 }
 
+mod moving_average {
+  use super::*;
+
+  #[test]
+  fn basic_integers() {
+    assert_eq!(
+      interpret("MovingAverage[{1, 2, 3, 4, 5}, 3]").unwrap(),
+      "{2, 3, 4}"
+    );
+  }
+
+  #[test]
+  fn window_two() {
+    assert_eq!(
+      interpret("MovingAverage[{1, 2, 3, 4, 5, 6}, 2]").unwrap(),
+      "{3/2, 5/2, 7/2, 9/2, 11/2}"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("MovingAverage[{a, b, c, d}, 2]").unwrap(),
+      "{(a + b)/2, (b + c)/2, (c + d)/2}"
+    );
+  }
+
+  #[test]
+  fn window_equals_length() {
+    assert_eq!(interpret("MovingAverage[{1, 2, 3}, 3]").unwrap(), "{2}");
+  }
+}
+
+mod adjacency_graph_from_matrix {
+  use super::*;
+
+  #[test]
+  fn undirected_symmetric() {
+    assert_eq!(
+      interpret("AdjacencyGraph[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}]").unwrap(),
+      "Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[1, 3]}]"
+    );
+  }
+
+  #[test]
+  fn directed_asymmetric() {
+    assert_eq!(
+      interpret("AdjacencyGraph[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]").unwrap(),
+      "Graph[{1, 2, 3}, {DirectedEdge[1, 2], DirectedEdge[2, 3], DirectedEdge[3, 1]}]"
+    );
+  }
+
+  #[test]
+  fn with_named_vertices() {
+    let result = interpret(
+      "AdjacencyGraph[{\"a\", \"b\", \"c\"}, {{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}]",
+    )
+    .unwrap();
+    assert!(result.contains("UndirectedEdge[a, b]"));
+    assert!(result.contains("UndirectedEdge[b, c]"));
+  }
+}
+
+mod circle_plus {
+  use super::*;
+
+  #[test]
+  fn binary() {
+    assert_eq!(interpret("CirclePlus[a, b]").unwrap(), "a \u{2295} b");
+  }
+
+  #[test]
+  fn ternary() {
+    assert_eq!(
+      interpret("CirclePlus[a, b, c]").unwrap(),
+      "a \u{2295} b \u{2295} c"
+    );
+  }
+}
+
 mod circle_points {
   use super::*;
 

@@ -4075,6 +4075,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "Del" && args.len() == 1 {
         return format!("\u{2207}{}", expr_to_string(&args[0]));
       }
+      // CirclePlus[a, b, ...] displays as a ⊕ b ⊕ ...
+      if name == "CirclePlus" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{2295} ");
+      }
       // Special case: Or[a, b, ...] displays as a || b || ...
       // Wolfram wraps And subterms in parens: (a && b) || (c && d)
       if name == "Or" && args.len() >= 2 {
@@ -5933,6 +5938,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // Del[f] displays as ∇f
       if name == "Del" && args.len() == 1 {
         return format!("\u{2207}{}", expr_to_output(&args[0]));
+      }
+      // CirclePlus[a, b, ...] displays as a ⊕ b ⊕ ...
+      if name == "CirclePlus" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \u{2295} ");
       }
       // Special case: Or[a, b, ...] displays as a || b || ...
       // Wolfram wraps And subterms in parens: (a && b) || (c && d)

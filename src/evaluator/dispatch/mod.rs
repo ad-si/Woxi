@@ -1210,7 +1210,13 @@ pub fn evaluate_function_call_ast_inner(
     | "PatternSequence"
     | "StartOfString"
     | "EndOfString"
-    | "Whitespace" => {
+    | "Whitespace"
+    | "SphericalBesselJ"
+    | "HoldAllComplete"
+    | "CirclePlus"
+    | "Glow"
+    | "AppellF1"
+    | "PrincipalValue" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
@@ -1490,6 +1496,121 @@ pub fn evaluate_function_call_ast_inner(
       name: name.to_string(),
       args: args.to_vec(),
     });
+  }
+
+  // AdjacencyGraph[matrix] or AdjacencyGraph[vertices, matrix] — create graph from adjacency matrix
+  if name == "AdjacencyGraph" && (args.len() == 1 || args.len() == 2) {
+    let (vertices, matrix) = if args.len() == 2 {
+      if let Expr::List(verts) = &args[0] {
+        (Some(verts.clone()), &args[1])
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec(),
+        });
+      }
+    } else {
+      (None, &args[0])
+    };
+
+    if let Expr::List(rows) = matrix {
+      let n = rows.len();
+      let verts: Vec<Expr> = vertices
+        .unwrap_or_else(|| (1..=n).map(|i| Expr::Integer(i as i128)).collect());
+
+      // Check if symmetric (undirected)
+      let mut is_symmetric = true;
+      let mut matrix_vals: Vec<Vec<i128>> = Vec::new();
+      for row in rows {
+        if let Expr::List(cols) = row {
+          let vals: Vec<i128> = cols
+            .iter()
+            .map(|c| match c {
+              Expr::Integer(v) => *v,
+              _ => 0,
+            })
+            .collect();
+          matrix_vals.push(vals);
+        }
+      }
+      for i in 0..n {
+        for j in 0..n {
+          if i < matrix_vals.len()
+            && j < matrix_vals[i].len()
+            && j < matrix_vals.len()
+            && i < matrix_vals[j].len()
+          {
+            if matrix_vals[i][j] != matrix_vals[j][i] {
+              is_symmetric = false;
+            }
+          }
+        }
+      }
+
+      let mut edges = Vec::new();
+      let edge_name = if is_symmetric {
+        "UndirectedEdge"
+      } else {
+        "DirectedEdge"
+      };
+      for i in 0..n {
+        let start = if is_symmetric { i + 1 } else { 0 };
+        for j in start..n {
+          if i < matrix_vals.len()
+            && j < matrix_vals[i].len()
+            && matrix_vals[i][j] != 0
+          {
+            edges.push(Expr::FunctionCall {
+              name: edge_name.to_string(),
+              args: vec![verts[i].clone(), verts[j].clone()],
+            });
+          }
+        }
+      }
+
+      return Ok(Expr::FunctionCall {
+        name: "Graph".to_string(),
+        args: vec![Expr::List(verts), Expr::List(edges)],
+      });
+    }
+  }
+
+  // MovingAverage[list, r] — simple moving average with window size r
+  if name == "MovingAverage" && args.len() == 2 {
+    if let (Expr::List(items), Some(r)) = (
+      &args[0],
+      match &args[1] {
+        Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+        _ => None,
+      },
+    ) {
+      let n = items.len();
+      if r > n {
+        crate::emit_message(&format!(
+          "MovingAverage::arg2: The second argument {} must be a positive integer less than or equal to the length {} of the first argument, or a vector of length less than or equal to the length of the first argument.",
+          r, n
+        ));
+        return Ok(Expr::FunctionCall {
+          name: name.to_string(),
+          args: args.to_vec(),
+        });
+      }
+      let mut result = Vec::with_capacity(n - r + 1);
+      for i in 0..=(n - r) {
+        let window: Vec<Expr> = items[i..i + r].to_vec();
+        let sum = Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: window,
+        };
+        let avg = Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(sum),
+          right: Box::new(Expr::Integer(r as i128)),
+        };
+        result.push(evaluate_expr_to_expr(&avg)?);
+      }
+      return Ok(Expr::List(result));
+    }
   }
 
   // CirclePoints[n] — n equally spaced points on the unit circle
