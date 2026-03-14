@@ -2884,3 +2884,62 @@ mod trig_reduce {
     assert_eq!(interpret("TrigReduce[]").unwrap(), "TrigReduce[]");
   }
 }
+
+mod function_domain {
+  use super::*;
+
+  #[test]
+  fn reciprocal() {
+    // FunctionDomain[1/x, x] = x != 0
+    assert_eq!(interpret("FunctionDomain[1/x, x]").unwrap(), "x != 0");
+  }
+
+  #[test]
+  fn sqrt_x() {
+    assert_eq!(interpret("FunctionDomain[Sqrt[x], x]").unwrap(), "x >= 0");
+  }
+
+  #[test]
+  fn log_x() {
+    assert_eq!(interpret("FunctionDomain[Log[x], x]").unwrap(), "x > 0");
+  }
+
+  #[test]
+  fn polynomial() {
+    // No domain restrictions for a polynomial
+    assert_eq!(interpret("FunctionDomain[x^2 + 1, x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn sqrt_x_minus_1() {
+    assert_eq!(
+      interpret("FunctionDomain[Sqrt[x - 1], x]").unwrap(),
+      "-1 + x >= 0"
+    );
+  }
+
+  #[test]
+  fn reciprocal_square() {
+    // 1/(x^2 - 1) → x^2 - 1 != 0
+    assert_eq!(
+      interpret("FunctionDomain[1/(x^2 - 1), x]").unwrap(),
+      "-1 + x^2 != 0"
+    );
+  }
+
+  #[test]
+  fn constant_function() {
+    assert_eq!(interpret("FunctionDomain[5, x]").unwrap(), "True");
+  }
+
+  #[test]
+  fn log_of_sqrt() {
+    // Log[Sqrt[x]] → x > 0 && x >= 0 → simplifies to x > 0
+    let result = interpret("FunctionDomain[Log[Sqrt[x]], x]").unwrap();
+    assert!(
+      result.contains("x") && result.contains("0"),
+      "Should contain domain constraint: {}",
+      result
+    );
+  }
+}
