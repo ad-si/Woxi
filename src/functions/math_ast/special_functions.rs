@@ -6463,3 +6463,67 @@ pub fn struve_h(n: f64, z: f64) -> f64 {
 
   sum
 }
+
+/// SquareWave[t] - square wave with period 1: +1 for frac(t) in [0,1/2), -1 for [1/2,1)
+/// SquareWave[{d1, d2, ...}, t] - generalized multi-level square wave
+pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match args.len() {
+    1 => {
+      // SquareWave[t]
+      if let Some(t) = expr_to_f64(&args[0]) {
+        let frac = t - t.floor();
+        if frac < 0.5 {
+          return Ok(Expr::Integer(1));
+        } else {
+          return Ok(Expr::Integer(-1));
+        }
+      }
+      // Exact rational input
+      if let Expr::FunctionCall {
+        name,
+        args: rat_args,
+      } = &args[0]
+      {
+        if name == "Rational" && rat_args.len() == 2 {
+          if let (Expr::Integer(n), Expr::Integer(d)) =
+            (&rat_args[0], &rat_args[1])
+          {
+            let rem = n.rem_euclid(*d);
+            // frac = rem/d, compare with 1/2 => 2*rem < d
+            if 2 * rem < *d {
+              return Ok(Expr::Integer(1));
+            } else {
+              return Ok(Expr::Integer(-1));
+            }
+          }
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "SquareWave".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    2 => {
+      // SquareWave[{d1, d2, ...}, t]
+      if let Expr::List(levels) = &args[0] {
+        if let Some(t) = expr_to_f64(&args[1]) {
+          let n = levels.len();
+          if n == 0 {
+            return Ok(Expr::Integer(0));
+          }
+          let frac = t - t.floor();
+          let idx_raw = (frac * n as f64).floor() as usize;
+          let idx = (n - 1).saturating_sub(idx_raw.min(n - 1));
+          return Ok(levels[idx].clone());
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "SquareWave".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "SquareWave expects 1 or 2 arguments".into(),
+    )),
+  }
+}

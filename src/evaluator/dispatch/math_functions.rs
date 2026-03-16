@@ -966,6 +966,9 @@ pub fn dispatch_math_functions(
     "TrigReduce" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_reduce_ast(args));
     }
+    "SquareWave" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::square_wave_ast(args));
+    }
     _ => {}
   }
   None

@@ -5156,7 +5156,7 @@ SquareSubsetEqual,,,,3,5390
 SquareSuperset,,,,3,5390
 SquareSupersetEqual,,,,3,5390
 SquareUnion,,,,3,4881
-SquareWave,,,,7,1384
+SquareWave,Periodic square wave function with period 1,✅,pure,7,1384
 Squiggled,,,,13.3,
 SSSTriangle,,,,10,2239
 StabilityMargins,,,,8,4138
