@@ -1351,12 +1351,12 @@ DeleteDirectory,,,,2,2311
 DeleteDuplicates,Removes duplicate elements from a list,✅,pure,7,373
 DeleteDuplicatesBy,Deletes duplicates based on a function criterion,✅,pure,10,1472
 DeleteElements,,,,13.1,
-DeleteFile,,,,2,1359
+DeleteFile,Delete a file from the filesystem,✅,effectful,2,1359
 DeleteMissing,Delete Missing elements from a list,✅,,10,1338
 DeleteObject,,,,11.2,2421
 DeletePermissionsKey,,,,11,5587
 DeleteSearchIndex,,,,10.2,4881
-DeleteSmallComponents,,,,8,1334
+DeleteSmallComponents,,🚫,,8,1334
 DeleteStopwords,,,,10.1,2012
 DelimitedSequence,,,,10,2693
 Delimiter,Separator element in menus and palettes,✅,none,6,698
@@ -1370,7 +1370,7 @@ DensityHistogram,,,,8,1877
 DensityPlot,Creates a density plot of a function,✅,pure,1,440
 DensityPlot3D,,,,10.2,1788
 DependentVariables,,,,5,3737
-Deploy,,,,6,1320
+Deploy,,🚫,,6,1320
 Deployed,,,,6,1730
 Depth,Returns the depth of an expression,✅,pure,1,911
 DepthFirstScan,,,,8,2792
@@ -1523,7 +1523,7 @@ Distributed,Represents a variable distributed according to a given distribution,
 DistributedContexts,,,,8,2662
 DistributeDefinitions,,,,7,1672
 DistributionChart,,,,8,1880
-DistributionFitTest,,,,8,1343
+DistributionFitTest,,🚫,,8,1343
 DistributionParameterAssumptions,,,,8,2286
 DistributionParameterQ,,,,8,2617
 Dithering,,,,8,3121
@@ -1828,7 +1828,7 @@ ExtendedGCD,Extended greatest common divisor with Bezout coefficients,✅,pure,1
 Extension,,,,3,1693
 ExtentElementFunction,,,,8,2671
 ExtentMarkers,,,,8,3162
-ExtentSize,,,,8,1345
+ExtentSize,,🚫,,8,1345
 ExternalBundle,,,,10,5184
 ExternalEvaluate,,,,11.2,2431
 ExternalFunction,,,,12,5013
@@ -1854,8 +1854,8 @@ ExtremeValueDistribution,,,,6,2671
 F,,,,,
 FaceAlign,,,,12.1,5587
 FaceForm,Specifies face styling for filled graphics,✅,pure,1,344
-FaceGrids,,,,2,1351
-FaceGridsStyle,,,,6,2911
+FaceGrids,Option for Graphics3D specifying grid lines on bounding box faces,✅,pure,2,1351
+FaceGridsStyle,Option for Graphics3D specifying the style of face grids,✅,pure,6,2911
 FaceRecognize,,,,12.2,5184
 FacialFeatures,,,,11.3,3059
 Factor,Factors a polynomial over the integers,✅,pure,1,307
@@ -2042,7 +2042,7 @@ FiniteGroupData,,🚫,,7,1127
 First,Returns the first element of a list,✅,pure,1,80
 FirstCase,,,,10,1849
 FirstPassageTimeDistribution,,,,9,3020
-FirstPosition,,,,10,1317
+FirstPosition,Find the position of the first element matching a pattern,✅,,10,1317
 FischerGroupFi22,,,,8,5013
 FischerGroupFi23,,,,8,4881
 FischerGroupFi24Prime,,,,8,5184
@@ -2118,7 +2118,7 @@ FourierDSTMatrix,,,,9,4881
 FourierMatrix,,,,9,2642
 FourierParameters,Option for Fourier transform conventions,✅,none,4,803
 FourierSequenceTransform,,,,7,2880
-FourierSeries,,,,7,1317
+FourierSeries,,🚫,,7,1317
 FourierSinCoefficient,,,,7,2329
 FourierSinSeries,,,,7,1842
 FourierSinTransform,,,,4,2553
@@ -2175,7 +2175,7 @@ FromRawPointer,,,,13.1,
 FromRomanNumeral,,,,10.2,3823
 FromSphericalCoordinates,,,,10.1,2389
 FromUnixTime,,,,10.1,3326
-Front,,,,6,1324
+Front,,🚫,,6,1324
 FrontEndDynamicExpression,,,,8,4660
 FrontEndEventActions,,,,6,4138
 FrontEndExecute,Requires external services or GUI infrastructure,🚫,io,3,982
@@ -2295,9 +2295,9 @@ GeodesicPolyhedron,,,,13.1,
 GeoDestination,,,,7,2421
 GeodesyData,,🚫,,7,1930
 GeoDirection,,,,7,2367
-GeoDisk,,,,10,1324
+GeoDisk,,🚫,,10,1324
 GeoDisplacement,,,,10,2656
-GeoDistance,,,,7,1351
+GeoDistance,,🚫,,7,1351
 GeoDistanceList,,,,10.4,3537
 GeoElevationData,,🚫,,10,1717
 GeoEntities,,,,10,2094
@@ -2342,7 +2342,7 @@ GeometricTransformation,Apply a geometric transformation,✅,none,6,692
 GeoModel,,,,10,3413
 GeoNearest,,🚫,,10,1281
 GeoOrientationData,,🚫,,12.3,
-GeoPath,,,,10,1330
+GeoPath,,🚫,,10,1330
 GeoPolygon,,,,12.2,5079
 GeoPosition,Geographic position specification,✅,none,7,618
 GeoPositionENU,,,,7,3755
@@ -2605,7 +2605,7 @@ Hyperfactorial,,,,7,4612
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1,1259
 Hypergeometric0F1Regularized,,,,3,1363
 Hypergeometric1F1,Kummer confluent hypergeometric function 1F1(a; b; z),✅,pure,1,993
-Hypergeometric1F1Regularized,,,,3,1342
+Hypergeometric1F1Regularized,,✅,,3,1342
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1,413
 Hypergeometric2F1Regularized,Regularized hypergeometric 2F1 function,✅,pure,3,850
 HypergeometricDistribution,,,,6,2289
@@ -2741,7 +2741,7 @@ ImportOptions,,,,10.2,
 ImportString,Imports data from a string (CSV),✅,pure,4,809
 ImprovementImportance,,,,9,4081
 In,Returns a previous input expression,✅,pure,1,248
-Inactivate,,,,10,1317
+Inactivate,,✅,,10,1317
 Inactive,Wrapper to prevent evaluation,✅,none,10,606
 IncidenceGraph,,,,8,3317
 IncidenceList,,,,9,3280
@@ -2969,7 +2969,7 @@ JordanModelDecomposition,,,,8,4138
 JulianDate,,,,10.2,3048
 JuliaSetBoettcher,,,,10,4387
 JuliaSetIterationCount,,,,10,3947
-JuliaSetPlot,,,,10,1326
+JuliaSetPlot,,🚫,,10,1326
 JuliaSetPoints,,,,10,3678
 KagiChart,,,,8,3491
 KaiserBesselWindow,,,,9,4387
@@ -3068,7 +3068,7 @@ LaplacianFilter,,,,7,3070
 LaplacianGaussianFilter,,,,7,2421
 LaplacianPDETerm,,,,12.2,4567
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6,159
-Larger,,,,6,1328
+Larger,,✅,,6,1328
 Last,Returns the last element of a list,✅,pure,1,140
 Latitude,,,,7,3191
 LatitudeLongitude,,,,7,2729
@@ -3117,7 +3117,7 @@ LegendAppearance,,,,7,3566
 Legended,Wrapper to attach a legend to a graphic,✅,none,7,785
 LegendFunction,,,,9,1499
 LegendLabel,,,,9,1371
-LegendLayout,,,,9,1348
+LegendLayout,,🚫,,9,1348
 LegendMargins,,,,9,2034
 LegendMarkers,,,,9,1637
 LegendMarkerSize,,🚫,,9,1151
@@ -3580,7 +3580,7 @@ MixedMagnitude,,,,10.4,2867
 MixedRadix,,,,10.2,2748
 MixedRadixQuantity,,,,9,4881
 MixedUnit,,,,10.4,2355
-MixtureDistribution,,,,8,1331
+MixtureDistribution,,✅,,8,1331
 Mod,Returns the remainder of integer division,✅,pure,1,134
 Modal,,,,6,2821
 ModelPredictiveController,,,,13.1,
@@ -4170,7 +4170,7 @@ PermutationProduct,,,,8,1507
 PermutationReplace,,,,8,1819
 Permutations,Returns all permutations of a list,✅,pure,1,533
 PermutationSupport,,,,8,3947
-Permute,,,,8,1355
+Permute,Permute elements of a list,✅,pure,8,1355
 PeronaMalikFilter,,,,8,3823
 PerpendicularBisector,,,,12,4707
 PersistenceLocation,,,,11.1,4173
@@ -4568,7 +4568,7 @@ RegionDifference,,🚫,,10,991
 RegionDilation,,,,12.3,
 RegionDimension,,,,10,1716
 RegionDisjoint,,,,11.1,3134
-RegionDistance,,,,10,1314
+RegionDistance,,🚫,,10,1314
 RegionDistanceFunction,,,,10,5587
 RegionEmbeddingDimension,,,,10,2367
 RegionEqual,,,,11.1,2561
@@ -4580,7 +4580,7 @@ RegionFunction,Option to restrict plotting to a region,✅,none,6,558
 RegionHausdorffDistance,,,,13.3,
 RegionImage,,,,11.2,3462
 RegionIntersection,,🚫,,10,853
-RegionMeasure,,,,10,1320
+RegionMeasure,,🚫,,10,1320
 RegionMember,,🚫,,10,940
 RegionMemberFunction,,,,10,5184
 RegionMoment,,,,10.4,3200
@@ -4630,7 +4630,7 @@ RemovalConditions,,,,12.2,
 Remove,Removes a symbol (no-op in Woxi),✅,effectful,1,514
 RemoveAlphaChannel,,,,8,2197
 RemoveAudioStream,,,,11.2,5486
-RemoveBackground,,,,10,1332
+RemoveBackground,,🚫,,10,1332
 RemoveChannelListener,,,,11,4567
 RemoveChannelSubscribers,,,,12,
 RemoveDiacritics,Removes diacritical marks from a string,✅,pure,10.1,2999
@@ -4793,7 +4793,7 @@ SampledEntityClass,,,,12,4947
 SampleDepth,,,,2,3656
 SampledSoundFunction,,,,2,3265
 SampledSoundList,,,,2,2082
-SampleRate,,,,2,1347
+SampleRate,,🚫,,2,1347
 SamplerModel,,,,14,
 SamplingPeriod,,,,8,1811
 SARIMAProcess,,,,9,2762
@@ -5819,7 +5819,7 @@ UnitSimplify,,,,9,2020
 UnitStep,Returns the unit step function value,✅,pure,4,273
 UnitSystem,Option for specifying the unit system for computations,✅,pure,10,398
 UnitTriangle,Unit triangle function (1-|x| for |x| <= 1),✅,pure,7,1944
-UnitVector,,,,6,1357
+UnitVector,Generate a unit vector with a 1 at a specified position,✅,pure,6,1357
 UnitVectorLayer,,,,11.1,3413
 UnityDimensions,,,,10,4747
 UniverseModelData,,🚫,,10.4,4006
@@ -6175,7 +6175,7 @@ ZernikeR,,,,6,2333
 ZeroSymmetric,,,,9,4881
 ZeroTest,Option for testing zero equivalence,✅,pure,1,3215
 Zeta,Riemann zeta function,✅,pure,1,482
-ZetaZero,,,,6,1338
+ZetaZero,,✅,,6,1338
 ZIPCodeData,,🚫,,10,408
 ZipfDistribution,,,,6,2350
 ZoomCenter,,,,10.4,4809

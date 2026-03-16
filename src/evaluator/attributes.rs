@@ -529,6 +529,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ImageSize"
     | "FontSize"
     | "FontFamily"
+    | "FaceGrids"
+    | "FaceGridsStyle"
     | "BaseStyle" => {
       vec!["Protected"]
     }
