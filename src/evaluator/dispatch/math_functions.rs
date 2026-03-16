@@ -359,6 +359,9 @@ pub fn dispatch_math_functions(
     "BesselY" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_y_ast(args));
     }
+    "BesselJZero" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::bessel_j_zero_ast(args));
+    }
     "AiryAi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::airy_ai_ast(args));
     }

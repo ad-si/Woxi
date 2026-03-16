@@ -162,6 +162,112 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// BesselJZero[n, k] — k-th positive zero of the Bessel function J_n
+pub fn bessel_j_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "BesselJZero expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // Extract numeric values
+  let n_val = match &args[0] {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let k_val = match &args[1] {
+    Expr::Integer(k) => Some(*k as i128),
+    Expr::Real(f) if *f == f.floor() && *f > 0.0 => Some(*f as i128),
+    _ => None,
+  };
+
+  // Numeric evaluation when n is Real or k is Real
+  let has_real =
+    matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_));
+  if has_real {
+    if let (Some(n), Some(k)) = (n_val, k_val) {
+      if k >= 1 {
+        let result = bessel_j_zero(n, k as usize);
+        return Ok(Expr::Real(result));
+      }
+    }
+  }
+
+  // Return unevaluated (symbolic)
+  Ok(Expr::FunctionCall {
+    name: "BesselJZero".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Find the k-th positive zero of J_n(x) using bisection + Newton's method
+fn bessel_j_zero(n: f64, k: usize) -> f64 {
+  // Find zeros by scanning for sign changes, then refining with bisection
+  let step = 0.5;
+  let start = if n > 0.0 { n * 0.5 } else { step };
+  let mut x = start;
+  let mut prev_val = bessel_j(n, x);
+  let mut zeros_found = 0;
+
+  loop {
+    let next_x = x + step;
+    let next_val = bessel_j(n, next_x);
+
+    if prev_val * next_val < 0.0 {
+      // Sign change: there's a zero in [x, next_x]
+      zeros_found += 1;
+      if zeros_found == k {
+        // Refine using bisection then Newton
+        let mut lo = x;
+        let mut hi = next_x;
+
+        // Bisection to get close
+        for _ in 0..60 {
+          let mid = (lo + hi) / 2.0;
+          let mid_val = bessel_j(n, mid);
+          if mid_val == 0.0 {
+            return mid;
+          }
+          if bessel_j(n, lo) * mid_val < 0.0 {
+            hi = mid;
+          } else {
+            lo = mid;
+          }
+        }
+
+        // Newton's method to polish
+        let mut root = (lo + hi) / 2.0;
+        for _ in 0..20 {
+          let jn = bessel_j(n, root);
+          // J'_n(x) = n/x * J_n(x) - J_{n+1}(x)
+          let jn1 = bessel_j(n + 1.0, root);
+          let deriv = (n / root) * jn - jn1;
+          if deriv.abs() < 1e-300 {
+            break;
+          }
+          let delta = jn / deriv;
+          root -= delta;
+          if delta.abs() < 1e-15 * root.abs() {
+            break;
+          }
+        }
+        return root;
+      }
+    }
+
+    prev_val = next_val;
+    x = next_x;
+
+    // Safety: if we've searched very far, give up
+    if x > n + (k as f64) * std::f64::consts::PI + 100.0 {
+      break;
+    }
+  }
+
+  f64::NAN
+}
+
 /// Compute Bessel J_n(z) using series expansion
 pub fn bessel_j(n: f64, z: f64) -> f64 {
   // Handle negative integer orders: J_{-n}(z) = (-1)^n * J_n(z)
