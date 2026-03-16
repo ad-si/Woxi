@@ -4383,3 +4383,58 @@ mod struve_h {
     );
   }
 }
+
+#[cfg(test)]
+mod monomial_list {
+  use super::*;
+
+  #[test]
+  fn basic_two_variables() {
+    assert_eq!(
+      interpret("MonomialList[x^2 + 3*x*y + y^3, {x, y}]").unwrap(),
+      "{x^2, 3*x*y, y^3}"
+    );
+  }
+
+  #[test]
+  fn three_terms_two_variables() {
+    assert_eq!(
+      interpret("MonomialList[x^3 + 2*x^2*y + y^2, {x, y}]").unwrap(),
+      "{x^3, 2*x^2*y, y^2}"
+    );
+  }
+
+  #[test]
+  fn three_variables() {
+    assert_eq!(
+      interpret("MonomialList[a + b + c, {a, b, c}]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn constant_polynomial() {
+    assert_eq!(interpret("MonomialList[5, {x}]").unwrap(), "{5}");
+  }
+
+  #[test]
+  fn expansion_needed() {
+    assert_eq!(
+      interpret("MonomialList[(x + y)^3, {x, y}]").unwrap(),
+      "{x^3, 3*x^2*y, 3*x*y^2, y^3}"
+    );
+  }
+
+  #[test]
+  fn single_variable() {
+    assert_eq!(interpret("MonomialList[x, {x}]").unwrap(), "{x}");
+  }
+
+  #[test]
+  fn single_variable_polynomial() {
+    assert_eq!(
+      interpret("MonomialList[x^3 + 2*x + 1, {x}]").unwrap(),
+      "{x^3, 2*x, 1}"
+    );
+  }
+}

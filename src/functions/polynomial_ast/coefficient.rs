@@ -298,3 +298,110 @@ pub fn add_exprs(a: &Expr, b: &Expr) -> Expr {
     },
   }
 }
+
+// ─── MonomialList ────────────────────────────────────────────────────
+
+/// MonomialList[poly, {x, y, ...}] — list of monomials sorted by degree
+pub fn monomial_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MonomialList expects 2 arguments".into(),
+    ));
+  }
+
+  // Extract variable names
+  let vars: Vec<String> = match &args[1] {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|item| {
+        if let Expr::Identifier(name) = item {
+          Some(name.clone())
+        } else {
+          None
+        }
+      })
+      .collect(),
+    Expr::Identifier(name) => vec![name.clone()],
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "MonomialList".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Expand the polynomial
+  let expanded = super::expand::expand_and_combine(&args[0]);
+  let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+
+  // Collect additive terms
+  let terms = collect_additive_terms(&expanded);
+
+  // For each term, compute the exponent vector
+  let mut term_info: Vec<(Vec<i128>, Expr)> = Vec::new();
+  for term in &terms {
+    let evaled = crate::evaluator::evaluate_expr_to_expr(term)?;
+    let mut exponents = Vec::new();
+    for var in &vars {
+      exponents.push(term_power_of_var(&evaled, var));
+    }
+    term_info.push((exponents, evaled));
+  }
+
+  // Sort by lexicographic order of exponent vectors (descending)
+  term_info.sort_by(|a, b| {
+    for (ea, eb) in a.0.iter().zip(b.0.iter()) {
+      match eb.cmp(ea) {
+        std::cmp::Ordering::Equal => continue,
+        other => return other,
+      }
+    }
+    std::cmp::Ordering::Equal
+  });
+
+  Ok(Expr::List(term_info.into_iter().map(|(_, t)| t).collect()))
+}
+
+/// Get the power of a single variable in a term
+fn term_power_of_var(term: &Expr, var: &str) -> i128 {
+  match term {
+    Expr::Identifier(name) if name == var => 1,
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      if let Expr::Identifier(name) = left.as_ref() {
+        if name == var {
+          if let Expr::Integer(n) = right.as_ref() {
+            return *n;
+          }
+        }
+      }
+      0
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let lp = term_power_of_var(left, var);
+      let rp = term_power_of_var(right, var);
+      lp + rp
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().map(|a| term_power_of_var(a, var)).sum()
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Expr::Identifier(n) = &args[0] {
+        if n == var {
+          if let Expr::Integer(p) = &args[1] {
+            return *p;
+          }
+        }
+      }
+      0
+    }
+    _ => 0,
+  }
+}
