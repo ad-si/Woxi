@@ -3886,6 +3886,103 @@ mod library_function_load {
   }
 }
 
+mod hypergeometric_0f1_regularized {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("Hypergeometric0F1Regularized[a, z]").unwrap(),
+      "Hypergeometric0F1Regularized[a, z]"
+    );
+  }
+
+  #[test]
+  fn zero_at_a_zero_z_zero() {
+    // 1/Gamma(0) = 0
+    assert_eq!(
+      interpret("Hypergeometric0F1Regularized[0, 0]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn one_at_positive_integer_z_zero() {
+    assert_eq!(
+      interpret("Hypergeometric0F1Regularized[1, 0]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Hypergeometric0F1Regularized[2, 0]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn numeric_a1() {
+    // Hypergeometric0F1Regularized[1, 1.0] ≈ 2.279585302336067
+    let result = interpret("Hypergeometric0F1Regularized[1, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.279585302336067).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_a2() {
+    // Hypergeometric0F1Regularized[2, 1.0] ≈ 1.5906368546373288
+    let result = interpret("Hypergeometric0F1Regularized[2, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.5906368546373288).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_a3() {
+    // Hypergeometric0F1Regularized[3, 2.0] ≈ 0.9287588901146092
+    let result = interpret("Hypergeometric0F1Regularized[3, 2.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.9287588901146092).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_a_half() {
+    // Hypergeometric0F1Regularized[0.5, 1.0] ≈ 2.122591620177637
+    let result = interpret("Hypergeometric0F1Regularized[0.5, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 2.122591620177637).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_z() {
+    // Hypergeometric0F1Regularized[3, -2.0] ≈ 0.2397640410755054
+    let result = interpret("Hypergeometric0F1Regularized[3, -2.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.2397640410755054).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_a_zero_z_nonzero() {
+    // Hypergeometric0F1Regularized[0, 1.0] ≈ 1.5906368546373288
+    let result = interpret("Hypergeometric0F1Regularized[0, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.5906368546373288).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_large_z() {
+    // Hypergeometric0F1Regularized[1, 5.0] ≈ 17.05777785336906
+    let result = interpret("Hypergeometric0F1Regularized[1, 5.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 17.05777785336906).abs() < 1e-8);
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[Hypergeometric0F1Regularized]").unwrap(),
+      "{Listable, NumericFunction, Protected}"
+    );
+  }
+}
+
 mod struve_h {
   use super::*;
 
