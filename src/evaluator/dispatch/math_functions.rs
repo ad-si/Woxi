@@ -561,6 +561,9 @@ pub fn dispatch_math_functions(
     "HermiteH" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hermite_h_ast(args));
     }
+    "StruveH" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::struve_h_ast(args));
+    }
     "N" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::n_ast(args));
     }

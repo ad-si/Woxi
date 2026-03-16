@@ -6038,3 +6038,92 @@ fn meijer_g_numerical_residue(
     diff[center] / factorial(target_deriv)
   }
 }
+
+/// StruveH[n, z] — Struve function H_n(z).
+///
+/// Series: H_n(z) = sum_{m=0}^{inf} (-1)^m / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
+pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "StruveH expects exactly 2 arguments".into(),
+    ));
+  }
+  let n_expr = &args[0];
+  let z_expr = &args[1];
+
+  // Extract numeric values
+  let n_val = match n_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let z_val = match z_expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+
+  // Special case: StruveH[n, 0] for non-negative integer n => 0
+  if matches!(z_expr, Expr::Integer(0)) {
+    if let Expr::Integer(n) = n_expr {
+      if *n >= 0 {
+        return Ok(Expr::Integer(0));
+      }
+    }
+  }
+
+  // Numeric evaluation when both args are numeric and at least one is Real
+  let is_numeric_eval = n_val.is_some()
+    && z_val.is_some()
+    && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let n = n_val.unwrap();
+    let z = z_val.unwrap();
+    let result = struve_h(n, z);
+    return Ok(Expr::Real(result));
+  }
+
+  // Return unevaluated
+  Ok(Expr::FunctionCall {
+    name: "StruveH".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Struve H_n(z) using series expansion.
+///
+/// H_n(z) = sum_{m=0}^{inf} (-1)^m / (Gamma(m + 3/2) * Gamma(m + n + 3/2)) * (z/2)^(2m+n+1)
+pub fn struve_h(n: f64, z: f64) -> f64 {
+  // Special case: z = 0
+  if z == 0.0 {
+    if n >= -1.0 {
+      return 0.0;
+    }
+    // For n < -1 with z=0, it may be divergent
+    return f64::NAN;
+  }
+
+  let half_z = z / 2.0;
+
+  // Series expansion
+  let mut sum = 0.0;
+  let gamma_3_2 = gamma_fn(1.5); // Gamma(3/2) = sqrt(pi)/2
+  let first_gamma_denom = gamma_fn(n + 1.5);
+
+  // First term (m=0): (z/2)^(n+1) / (Gamma(3/2) * Gamma(n + 3/2))
+  let mut term = half_z.powf(n + 1.0) / (gamma_3_2 * first_gamma_denom);
+  sum += term;
+
+  for m in 1..300 {
+    // Ratio of consecutive terms:
+    // term_m / term_{m-1} = -half_z^2 / ((m + 0.5) * (m + n + 0.5))
+    term *= -half_z * half_z / ((m as f64 + 0.5) * (m as f64 + n + 0.5));
+    sum += term;
+    if term.abs() < 1e-17 * sum.abs().max(1e-300) {
+      break;
+    }
+  }
+
+  sum
+}

@@ -3857,3 +3857,99 @@ mod padding {
     );
   }
 }
+
+mod struve_h {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("StruveH[n, z]").unwrap(), "StruveH[n, z]");
+  }
+
+  #[test]
+  fn zero_arg_integer_order() {
+    assert_eq!(interpret("StruveH[0, 0]").unwrap(), "0");
+    assert_eq!(interpret("StruveH[1, 0]").unwrap(), "0");
+    assert_eq!(interpret("StruveH[2, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn numeric_order_0() {
+    // StruveH[0, 1.0] ≈ 0.5686566270482879
+    let result = interpret("StruveH[0, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.5686566270482879).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_1() {
+    // StruveH[1, 1.0] ≈ 0.1984573362019444
+    let result = interpret("StruveH[1, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.1984573362019444).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_2() {
+    // StruveH[2, 1.0] ≈ 0.040464636144794626
+    let result = interpret("StruveH[2, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.040464636144794626).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_large_z() {
+    // StruveH[0, 10.0] ≈ 0.11874368368750424
+    let result = interpret("StruveH[0, 10.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.11874368368750424).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_large_z_order_1() {
+    // StruveH[1, 10.0] ≈ 0.8918324920945468
+    let result = interpret("StruveH[1, 10.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.8918324920945468).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_fractional_order() {
+    // StruveH[0.5, 3.0] ≈ 0.9167076867564138
+    let result = interpret("StruveH[0.5, 3.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.9167076867564138).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_fractional_order() {
+    // StruveH[-0.5, 3.0] ≈ 0.06500818287737578
+    let result = interpret("StruveH[-0.5, 3.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.06500818287737578).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_integer_order() {
+    // StruveH[-1, 1.0] ≈ 0.43816243616563694
+    let result = interpret("N[StruveH[-1, 1.0]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.43816243616563694).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_high_order() {
+    // StruveH[5, 10.0] ≈ 7.644815648083951
+    let result = interpret("StruveH[5, 10.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 7.644815648083951).abs() < 1e-8);
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[StruveH]").unwrap(),
+      "{Listable, NumericFunction, Protected, ReadProtected}"
+    );
+  }
+}
