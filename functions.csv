@@ -3151,7 +3151,7 @@ LibraryFunction,,,,8,3153
 LibraryFunctionDeclaration,,,,13.1,
 LibraryFunctionError,,,,8,4567
 LibraryFunctionInformation,,,,8,5486
-LibraryFunctionLoad,,,,8,1362
+LibraryFunctionLoad,Load a compiled library function for use in the Wolfram Language,✅,io,8,1362
 LibraryFunctionUnload,,,,8,3972
 LibraryLoad,,,,8,4027
 LibraryUnload,,,,8,3636
