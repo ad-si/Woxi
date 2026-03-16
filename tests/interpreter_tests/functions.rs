@@ -3823,6 +3823,56 @@ mod bezier_function {
   }
 }
 
+mod bessel_j_zero {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("BesselJZero[0, 1]").unwrap(), "BesselJZero[0, 1]");
+  }
+
+  #[test]
+  fn numeric_j0_1() {
+    assert_eq!(
+      interpret("N[BesselJZero[0, 1]]").unwrap(),
+      "2.404825557695773"
+    );
+  }
+
+  #[test]
+  fn numeric_j0_2() {
+    assert_eq!(
+      interpret("N[BesselJZero[0, 2]]").unwrap(),
+      "5.520078110286309"
+    );
+  }
+
+  #[test]
+  fn numeric_j0_3() {
+    assert_eq!(
+      interpret("N[BesselJZero[0, 3]]").unwrap(),
+      "8.653727912911014"
+    );
+  }
+
+  #[test]
+  fn numeric_j1_1() {
+    assert_eq!(
+      interpret("N[BesselJZero[1, 1]]").unwrap(),
+      "3.8317059702075125"
+    );
+  }
+
+  #[test]
+  fn is_actual_zero() {
+    // BesselJ at the zero should be approximately 0
+    assert_eq!(
+      interpret("Chop[BesselJ[0, N[BesselJZero[0, 1]]]]").unwrap(),
+      "0"
+    );
+  }
+}
+
 mod file_exists_q {
   use super::*;
 
