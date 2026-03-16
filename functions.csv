@@ -3116,7 +3116,7 @@ LeftVectorBar,,,,3,5390
 LegendAppearance,,,,7,3566
 Legended,Wrapper to attach a legend to a graphic,✅,none,7,785
 LegendFunction,,,,9,1499
-LegendLabel,,,,9,1371
+LegendLabel,Option for specifying legend labels in plots,✅,none,9,1371
 LegendLayout,,🚫,,9,1348
 LegendMargins,,,,9,2034
 LegendMarkers,,,,9,1637

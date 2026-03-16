@@ -4053,6 +4053,28 @@ mod point_legend {
   }
 }
 
+mod legend_label {
+  use super::*;
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(
+      interpret("LegendLabel[\"test\"]").unwrap(),
+      "LegendLabel[test]"
+    );
+  }
+
+  #[test]
+  fn with_none() {
+    assert_eq!(interpret("LegendLabel[None]").unwrap(), "LegendLabel[None]");
+  }
+
+  #[test]
+  fn bare_symbol() {
+    assert_eq!(interpret("LegendLabel").unwrap(), "LegendLabel");
+  }
+}
+
 mod cells {
   use super::*;
 

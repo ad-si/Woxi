@@ -1233,7 +1233,8 @@ pub fn evaluate_function_call_ast_inner(
     | "ZetaZero"
     | "Hypergeometric1F1Regularized"
     | "MixtureDistribution"
-    | "Inactivate" => {
+    | "Inactivate"
+    | "LegendLabel" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
