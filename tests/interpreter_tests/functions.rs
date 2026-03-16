@@ -3695,6 +3695,73 @@ mod file_exists_q {
   }
 }
 
+mod unit_vector {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("UnitVector[3, 2]").unwrap(), "{0, 1, 0}");
+  }
+
+  #[test]
+  fn first_element() {
+    assert_eq!(interpret("UnitVector[5, 1]").unwrap(), "{1, 0, 0, 0, 0}");
+  }
+
+  #[test]
+  fn shorthand() {
+    assert_eq!(interpret("UnitVector[2]").unwrap(), "{0, 1}");
+  }
+
+  #[test]
+  fn shorthand_first() {
+    assert_eq!(interpret("UnitVector[1]").unwrap(), "{1, 0}");
+  }
+}
+
+mod permute {
+  use super::*;
+
+  #[test]
+  fn list_form() {
+    assert_eq!(
+      interpret("Permute[{a, b, c, d}, {3, 1, 4, 2}]").unwrap(),
+      "{b, d, a, c}"
+    );
+  }
+
+  #[test]
+  fn cycles_form() {
+    assert_eq!(
+      interpret("Permute[{a, b, c}, Cycles[{{1, 3, 2}}]]").unwrap(),
+      "{b, c, a}"
+    );
+  }
+
+  #[test]
+  fn identity() {
+    assert_eq!(
+      interpret("Permute[{a, b, c}, {1, 2, 3}]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+}
+
+mod delete_file {
+  use super::*;
+
+  #[test]
+  fn delete_existing() {
+    assert_eq!(
+      interpret(
+        "WriteString[\"/tmp/test_delete_woxi.txt\", \"hello\"]; DeleteFile[\"/tmp/test_delete_woxi.txt\"]; FileExistsQ[\"/tmp/test_delete_woxi.txt\"]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+}
+
 mod delete_missing {
   use super::*;
 
@@ -3739,5 +3806,32 @@ mod angle_bracket {
   #[test]
   fn single() {
     assert_eq!(interpret("AngleBracket[x]").unwrap(), "\u{2329} x \u{232A}");
+  }
+}
+
+mod face_grids {
+  use super::*;
+
+  #[test]
+  fn symbol() {
+    assert_eq!(interpret("FaceGrids").unwrap(), "FaceGrids");
+  }
+
+  #[test]
+  fn with_args() {
+    assert_eq!(
+      interpret("FaceGrids[1, 2, 3]").unwrap(),
+      "FaceGrids[1, 2, 3]"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(interpret("Attributes[FaceGrids]").unwrap(), "{Protected}");
+  }
+
+  #[test]
+  fn face_grids_style_symbol() {
+    assert_eq!(interpret("FaceGridsStyle").unwrap(), "FaceGridsStyle");
   }
 }
