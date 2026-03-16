@@ -72,6 +72,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "Zeta"
     | "PolyGamma"
     | "AiryAi"
+    | "AiryBi"
     | "Hypergeometric0F1"
     | "Hypergeometric0F1Regularized"
     | "Hypergeometric1F1"

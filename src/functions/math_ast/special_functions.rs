@@ -4972,13 +4972,15 @@ pub fn airy_ai(x: f64) -> f64 {
   let c1 = 0.3550280538878172; // Ai(0)
   let c2 = 0.2588194037928068; // -Ai'(0)
 
-  if x.abs() < 6.0 {
+  // For Ai: use power series for moderate/negative x, asymptotic for large positive x
+  // The threshold is lower than Bi because Ai decays exponentially, causing cancellation
+  if x < 6.0 {
     let mut f = 1.0;
     let mut g = x;
     let mut f_term = 1.0;
     let mut g_term = x;
 
-    for k in 1..200 {
+    for k in 1..1000 {
       let k3 = 3 * k;
       f_term *= x * x * x / ((k3 as f64 - 1.0) * k3 as f64);
       g_term *= x * x * x / (k3 as f64 * (k3 as f64 + 1.0));
@@ -4992,31 +4994,68 @@ pub fn airy_ai(x: f64) -> f64 {
     }
 
     c1 * f - c2 * g
-  } else if x > 0.0 {
+  } else {
     // Asymptotic for large positive x
     let zeta = 2.0 / 3.0 * x.powf(1.5);
     let prefactor =
       (-zeta).exp() / (2.0 * std::f64::consts::PI.sqrt() * x.powf(0.25));
     let mut sum = 1.0;
     let mut term = 1.0;
+    let mut prev_term = f64::MAX;
     for k in 1..30 {
       let kf = k as f64;
       let num = (6.0 * kf - 5.0) * (6.0 * kf - 3.0) * (6.0 * kf - 1.0);
       term *= -num / (216.0 * kf * zeta);
+      if term.abs() > prev_term {
+        break;
+      }
+      prev_term = term.abs();
       sum += term;
       if term.abs() < 1e-16 {
         break;
       }
     }
     prefactor * sum
-  } else {
-    // Large negative x: use series (extend range)
+  }
+}
+
+/// AiryBi[x] - Airy function of the second kind
+pub fn airy_bi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "AiryBi expects exactly 1 argument".into(),
+    ));
+  }
+
+  // Numeric evaluation
+  if let Some(x_f) = expr_to_f64(&args[0])
+    && matches!(&args[0], Expr::Real(_))
+  {
+    return Ok(Expr::Real(airy_bi(x_f)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "AiryBi".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute Bi(x) using the two power series
+/// Bi(x) = sqrt(3) * (c1 * f(x) + c2 * g(x))
+/// where f and g are the same series as for Ai(x)
+/// c1 = Ai(0), c2 = -Ai'(0)
+pub fn airy_bi(x: f64) -> f64 {
+  let c1 = 0.3550280538878172; // Ai(0)
+  let c2 = 0.2588194037928068; // -Ai'(0)
+  let sqrt3 = 3.0_f64.sqrt();
+
+  if x < 15.0 {
     let mut f = 1.0;
     let mut g = x;
     let mut f_term = 1.0;
     let mut g_term = x;
 
-    for k in 1..500 {
+    for k in 1..1000 {
       let k3 = 3 * k;
       f_term *= x * x * x / ((k3 as f64 - 1.0) * k3 as f64);
       g_term *= x * x * x / (k3 as f64 * (k3 as f64 + 1.0));
@@ -5029,7 +5068,28 @@ pub fn airy_ai(x: f64) -> f64 {
       }
     }
 
-    c1 * f - c2 * g
+    sqrt3 * (c1 * f + c2 * g)
+  } else {
+    // Asymptotic for large positive x
+    let zeta = 2.0 / 3.0 * x.powf(1.5);
+    let prefactor = zeta.exp() / (std::f64::consts::PI.sqrt() * x.powf(0.25));
+    let mut sum = 1.0;
+    let mut term = 1.0;
+    let mut prev_term = f64::MAX;
+    for k in 1..30 {
+      let kf = k as f64;
+      let num = (6.0 * kf - 5.0) * (6.0 * kf - 3.0) * (6.0 * kf - 1.0);
+      term *= num / (216.0 * kf * zeta);
+      if term.abs() > prev_term {
+        break;
+      }
+      prev_term = term.abs();
+      sum += term;
+      if term.abs() < 1e-16 {
+        break;
+      }
+    }
+    prefactor * sum
   }
 }
 
