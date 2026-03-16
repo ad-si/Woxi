@@ -3756,6 +3756,73 @@ mod graph_embedding {
   }
 }
 
+mod bezier_function {
+  use super::*;
+
+  #[test]
+  fn quadratic_at_half() {
+    assert_eq!(
+      interpret("BezierFunction[{{0,0},{1,1},{2,0}}][0.5]").unwrap(),
+      "{1., 0.5}"
+    );
+  }
+
+  #[test]
+  fn at_zero() {
+    assert_eq!(
+      interpret("BezierFunction[{{0,0},{1,1},{2,0}}][0]").unwrap(),
+      "{0., 0.}"
+    );
+  }
+
+  #[test]
+  fn at_one() {
+    assert_eq!(
+      interpret("BezierFunction[{{0,0},{1,1},{2,0}}][1]").unwrap(),
+      "{2., 0.}"
+    );
+  }
+
+  #[test]
+  fn cubic() {
+    assert_eq!(
+      interpret("BezierFunction[{{0,0},{1,1},{2,0},{3,2}}][0.25]").unwrap(),
+      "{0.75, 0.453125}"
+    );
+  }
+
+  #[test]
+  fn one_dimensional() {
+    assert_eq!(
+      interpret("BezierFunction[{{0},{1},{4}}][0.5]").unwrap(),
+      "{1.5}"
+    );
+  }
+
+  #[test]
+  fn with_rational_parameter() {
+    assert_eq!(
+      interpret("BezierFunction[{{0,0},{1,1},{2,0}}][1/3]").unwrap(),
+      "{0.6666666666666667, 0.4444444444444445}"
+    );
+  }
+
+  #[test]
+  fn unevaluated_symbolic() {
+    assert_eq!(
+      interpret("BezierFunction[{{0,0},{1,1},{2,0}}]").unwrap(),
+      "BezierFunction[{{0, 0}, {1, 1}, {2, 0}}]"
+    );
+  }
+
+  #[test]
+  fn non_numeric_argument() {
+    // With symbolic argument, returns unevaluated
+    let result = interpret("BezierFunction[{{0,0},{1,1},{2,0}}][t]").unwrap();
+    assert!(result.contains("BezierFunction"));
+  }
+}
+
 mod file_exists_q {
   use super::*;
 
