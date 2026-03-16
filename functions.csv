@@ -1502,7 +1502,7 @@ DiscreteWaveletPacketTransform,,,,8,2533
 DiscreteWaveletTransform,,,,8,1614
 DiscretizeGraphics,,🚫,,10,1149
 DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10,841
-Discriminant,,,,6,1410
+Discriminant,Polynomial discriminant via resultant,✅,pure,6,1410
 DisjointQ,,,,10,2837
 Disjunction,,,,7,4567
 Disk,Represents a filled disk or sector graphics primitive,✅,pure,2,89
