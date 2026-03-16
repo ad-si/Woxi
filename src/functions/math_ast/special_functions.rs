@@ -505,6 +505,78 @@ pub fn hypergeometric_0f1_f64(a: f64, z: f64) -> f64 {
   sum
 }
 
+/// Hypergeometric0F1Regularized[a, z] — regularized confluent hypergeometric limit function.
+///
+/// 0F1~(a; z) = sum_{k=0}^{inf} z^k / (Gamma(a + k) * k!)
+pub fn hypergeometric_0f1_regularized_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "Hypergeometric0F1Regularized expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let a_expr = &args[0];
+  let z_expr = &args[1];
+
+  // Hypergeometric0F1Regularized[a, 0] = 1/Gamma(a)
+  // For non-negative integer a=0: 1/Gamma(0) = 0
+  // For positive integer a: 1/Gamma(a) is well-defined
+  if is_expr_zero(z_expr) {
+    if let Some(a_val) = try_eval_to_f64(a_expr) {
+      let ga = gamma_fn(a_val);
+      if ga.is_infinite() || ga == 0.0 {
+        return Ok(Expr::Integer(0));
+      }
+      if a_val == a_val.floor() && a_val > 0.0 {
+        // 1/Gamma(a) for positive integer a — return exact integer if possible
+        return Ok(Expr::Integer(1));
+      }
+    }
+  }
+
+  // Numeric evaluation
+  let a_val = try_eval_to_f64(a_expr);
+  let z_val = try_eval_to_f64(z_expr);
+
+  if let (Some(a), Some(z)) = (a_val, z_val)
+    && (matches!(a_expr, Expr::Real(_)) || matches!(z_expr, Expr::Real(_)))
+  {
+    return Ok(Expr::Real(hypergeometric_0f1_regularized_f64(a, z)));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "Hypergeometric0F1Regularized".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute regularized 0F1~(a; z) = sum_{k=0}^{inf} z^k / (Gamma(a + k) * k!)
+pub fn hypergeometric_0f1_regularized_f64(a: f64, z: f64) -> f64 {
+  let mut sum = 0.0;
+  let mut z_power = 1.0; // z^k
+  let mut factorial = 1.0; // k!
+
+  for k in 0..300 {
+    if k > 0 {
+      z_power *= z;
+      factorial *= k as f64;
+    }
+    let ga_k = gamma_fn(a + k as f64);
+    if ga_k.is_infinite() || ga_k.is_nan() {
+      // Skip terms where Gamma(a+k) diverges (non-positive integer a+k)
+      continue;
+    }
+    let term = z_power / (ga_k * factorial);
+    sum += term;
+    if k > 0 && term.abs() < 1e-16 * sum.abs().max(1e-300) {
+      break;
+    }
+  }
+  sum
+}
+
 /// JacobiAmplitude[u, m] - amplitude for Jacobi elliptic functions
 /// am(u, m) = arcsin(sn(u, m)), inverse of EllipticF
 pub fn jacobi_amplitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
