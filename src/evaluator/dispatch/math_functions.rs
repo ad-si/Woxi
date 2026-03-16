@@ -431,6 +431,9 @@ pub fn dispatch_math_functions(
     "BesselK" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_k_ast(args));
     }
+    "EllipticThetaPrime" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::elliptic_theta_prime_ast(args));
+    }
     "EllipticTheta" if args.len() == 3 => {
       return Some(crate::functions::math_ast::elliptic_theta_ast(args));
     }

@@ -3823,6 +3823,50 @@ mod bezier_function {
   }
 }
 
+mod elliptic_theta_prime {
+  use super::*;
+
+  #[test]
+  fn theta1() {
+    assert_eq!(
+      interpret("EllipticThetaPrime[1, 0.5, 0.1]").unwrap(),
+      "0.9846106693769313"
+    );
+  }
+
+  #[test]
+  fn theta2() {
+    assert_eq!(
+      interpret("EllipticThetaPrime[2, 0.5, 0.1]").unwrap(),
+      "-0.5728609100292524"
+    );
+  }
+
+  #[test]
+  fn theta3() {
+    assert_eq!(
+      interpret("EllipticThetaPrime[3, 0.5, 0.1]").unwrap(),
+      "-0.33731583355805805"
+    );
+  }
+
+  #[test]
+  fn theta4() {
+    assert_eq!(
+      interpret("EllipticThetaPrime[4, 0.5, 0.1]").unwrap(),
+      "0.33586095767513946"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("EllipticThetaPrime[1, z, q]").unwrap(),
+      "EllipticThetaPrime[1, z, q]"
+    );
+  }
+}
+
 mod bessel_j_zero {
   use super::*;
 
