@@ -137,7 +137,8 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "Exp" | "InverseJacobiCN" | "InverseJacobiSN" | "InverseJacobiDN"
     | "InverseJacobiCD" | "InverseJacobiSC" | "InverseJacobiCS"
     | "InverseJacobiSD" | "InverseJacobiDS" | "InverseJacobiNS"
-    | "InverseJacobiNC" | "InverseJacobiND" | "InverseJacobiDC" | "StruveH" => {
+    | "InverseJacobiNC" | "InverseJacobiND" | "InverseJacobiDC" | "StruveH"
+    | "ParabolicCylinderD" => {
       vec!["Listable", "NumericFunction", "Protected", "ReadProtected"]
     }
     "ArithmeticGeometricMean" => vec![

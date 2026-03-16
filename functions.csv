@@ -4060,7 +4060,7 @@ Pane,Fixed-size display pane,✅,none,6,594
 Panel,Display content in a panel frame,✅,none,6,717
 Paneled,,,,6,2147
 PaneSelector,,,,6,1793
-ParabolicCylinderD,,,,6,1392
+ParabolicCylinderD,Parabolic cylinder function D_nu(z),✅,pure,6,1392
 ParagraphIndent,,,,3,4081
 ParagraphSpacing,,,,3,2993
 ParallelArray,,,,7,4104

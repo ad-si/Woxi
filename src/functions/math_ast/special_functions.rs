@@ -6527,3 +6527,55 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )),
   }
 }
+
+/// ParabolicCylinderD[ν, z] - parabolic cylinder function D_ν(z)
+pub fn parabolic_cylinder_d_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ParabolicCylinderD expects exactly 2 arguments".into(),
+    ));
+  }
+
+  // Numeric evaluation when both arguments are numeric
+  if let (Some(nu), Some(z)) = (expr_to_f64(&args[0]), expr_to_f64(&args[1])) {
+    if matches!(&args[0], Expr::Real(_)) || matches!(&args[1], Expr::Real(_)) {
+      return Ok(Expr::Real(parabolic_cylinder_d(nu, z)));
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "ParabolicCylinderD".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute D_ν(z) using the relation to confluent hypergeometric functions:
+/// D_ν(z) = 2^(ν/2) * exp(-z²/4) * [
+///   √π / Γ((1-ν)/2) * 1F1(-ν/2, 1/2, z²/2)
+///   - √2 * z / Γ(-ν/2) * 1F1((1-ν)/2, 3/2, z²/2)
+/// ]
+pub fn parabolic_cylinder_d(nu: f64, z: f64) -> f64 {
+  use std::f64::consts::PI;
+  let z2_half = z * z / 2.0;
+  let prefactor = 2.0_f64.powf(nu / 2.0) * PI.sqrt() * (-z * z / 4.0).exp();
+
+  let gamma_1 = gamma_fn((1.0 - nu) / 2.0);
+  let gamma_2 = gamma_fn(-nu / 2.0);
+
+  let term1 = if gamma_1.is_finite() && gamma_1.abs() > 1e-300 {
+    hypergeometric_1f1(-nu / 2.0, 0.5, z2_half) / gamma_1
+  } else {
+    0.0
+  };
+
+  let term2 = if gamma_2.is_finite() && gamma_2.abs() > 1e-300 {
+    -2.0_f64.sqrt() * z / gamma_2
+      * hypergeometric_1f1((1.0 - nu) / 2.0, 1.5, z2_half)
+  } else {
+    0.0
+  };
+
+  prefactor * (term1 + term2)
+}

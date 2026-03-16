@@ -4559,3 +4559,59 @@ mod square_wave {
     );
   }
 }
+
+#[cfg(test)]
+mod parabolic_cylinder_d {
+  use super::*;
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(
+      interpret("ParabolicCylinderD[n, x]").unwrap(),
+      "ParabolicCylinderD[n, x]"
+    );
+  }
+
+  #[test]
+  fn numeric_d0_0() {
+    let result = interpret("N[ParabolicCylinderD[0, 0]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.0).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_d1_0() {
+    let result = interpret("N[ParabolicCylinderD[1, 0]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(val.abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_d2_1_5() {
+    let result = interpret("ParabolicCylinderD[2, 1.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.7122285309136538).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_negative_order() {
+    let result = interpret("ParabolicCylinderD[-1, 2.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.15501307659733082).abs() < 1e-8);
+  }
+
+  #[test]
+  fn numeric_half_integer_order() {
+    let result = interpret("ParabolicCylinderD[0.5, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.8422032440698396).abs() < 1e-10);
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[ParabolicCylinderD]").unwrap(),
+      "{Listable, NumericFunction, Protected, ReadProtected}"
+    );
+  }
+}
