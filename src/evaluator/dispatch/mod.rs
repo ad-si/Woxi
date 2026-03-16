@@ -1227,13 +1227,92 @@ pub fn evaluate_function_call_ast_inner(
     | "OverTilde"
     | "SinhIntegral"
     | "CoshIntegral"
-    | "AngleBracket" => {
+    | "AngleBracket"
+    | "Larger"
+    | "ZetaZero"
+    | "Hypergeometric1F1Regularized"
+    | "MixtureDistribution"
+    | "Inactivate" => {
       return Ok(Expr::FunctionCall {
         name: name.to_string(),
         args: args.to_vec(),
       });
     }
     _ => {}
+  }
+
+  // Permute[list, perm] — permute list elements
+  if name == "Permute" && args.len() == 2 {
+    if let Expr::List(list) = &args[0] {
+      // Permute[list, {p1, p2, ...}] — permutation list form
+      // Element at position i goes to position perm[i]
+      if let Expr::List(perm) = &args[1] {
+        if perm.len() != list.len() {
+          return Ok(Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec(),
+          });
+        }
+        let mut result = vec![Expr::Integer(0); list.len()];
+        for (i, p) in perm.iter().enumerate() {
+          if let Some(idx) = expr_to_i128(p) {
+            if idx >= 1 && (idx as usize) <= list.len() {
+              result[(idx - 1) as usize] = list[i].clone();
+            } else {
+              return Ok(Expr::FunctionCall {
+                name: name.to_string(),
+                args: args.to_vec(),
+              });
+            }
+          } else {
+            return Ok(Expr::FunctionCall {
+              name: name.to_string(),
+              args: args.to_vec(),
+            });
+          }
+        }
+        return Ok(Expr::List(result));
+      }
+      // Permute[list, Cycles[{...}]] — cycle notation
+      if let Expr::FunctionCall {
+        name: cname,
+        args: cargs,
+      } = &args[1]
+      {
+        if cname == "Cycles" && cargs.len() == 1 {
+          if let Expr::List(cycle_list) = &cargs[0] {
+            let mut result = list.clone();
+            for cycle in cycle_list {
+              if let Expr::List(c) = cycle {
+                let indices: Vec<usize> = c
+                  .iter()
+                  .filter_map(|e| {
+                    if let Expr::Integer(n) = e {
+                      Some(*n as usize)
+                    } else {
+                      None
+                    }
+                  })
+                  .collect();
+                if indices.len() >= 2 {
+                  // Cycle (a,b,c): position a gets value from c, b from a, c from b
+                  let last_val = list[indices[indices.len() - 1] - 1].clone();
+                  for i in (1..indices.len()).rev() {
+                    result[indices[i] - 1] = list[indices[i - 1] - 1].clone();
+                  }
+                  result[indices[0] - 1] = last_val;
+                }
+              }
+            }
+            return Ok(Expr::List(result));
+          }
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
   }
 
   // PermutationList[Cycles[{cycle1, cycle2, ...}]] — convert cycle notation to list form
@@ -1571,7 +1650,7 @@ pub fn evaluate_function_call_ast_inner(
           let mut degrees = vec![0i128; verts.len()];
           for edge in edges {
             if let Expr::FunctionCall {
-              name: ename,
+              name: _ename,
               args: eargs,
             } = edge
             {
@@ -1604,6 +1683,38 @@ pub fn evaluate_function_call_ast_inner(
     }
   }
 
+  // GraphEmbedding[graph] or GraphEmbedding[graph, method] — vertex coordinates
+  if name == "GraphEmbedding" && (args.len() == 1 || args.len() == 2) {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && gargs.len() >= 2 {
+        if let Expr::List(verts) = &gargs[0] {
+          let n = verts.len();
+          if n == 0 {
+            return Ok(Expr::List(vec![]));
+          }
+          // Circular embedding: angle_k = π/2 + k * 2π/n for k = 1..n
+          let coords: Vec<Expr> = (1..=n)
+            .map(|k| {
+              let angle = std::f64::consts::FRAC_PI_2
+                + (k as f64) * 2.0 * std::f64::consts::PI / (n as f64);
+              Expr::List(vec![Expr::Real(angle.cos()), Expr::Real(angle.sin())])
+            })
+            .collect();
+          return Ok(Expr::List(coords));
+        }
+      }
+    }
+    // Return unevaluated for non-graph input
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // FileExistsQ[path] — check if file/directory exists
   if name == "FileExistsQ" && args.len() == 1 {
     if let Expr::String(path) = &args[0] {
@@ -1611,6 +1722,25 @@ pub fn evaluate_function_call_ast_inner(
       return Ok(Expr::Identifier(
         if exists { "True" } else { "False" }.to_string(),
       ));
+    }
+  }
+
+  // DeleteFile[path] — delete a file
+  if name == "DeleteFile" && args.len() == 1 {
+    if let Expr::String(path) = &args[0] {
+      match std::fs::remove_file(path) {
+        Ok(()) => return Ok(Expr::Identifier("Null".to_string())),
+        Err(e) => {
+          crate::emit_message(&format!(
+            "DeleteFile::nffil: File not found during DeleteFile[{}]. {}",
+            path, e
+          ));
+          return Ok(Expr::FunctionCall {
+            name: "$Failed".to_string(),
+            args: vec![],
+          });
+        }
+      }
     }
   }
 

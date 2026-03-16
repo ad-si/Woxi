@@ -3678,6 +3678,84 @@ mod vertex_degree {
   }
 }
 
+mod graph_embedding {
+  use super::*;
+
+  #[test]
+  fn complete_graph_3() {
+    assert_eq!(
+      interpret("GraphEmbedding[CompleteGraph[3]]").unwrap(),
+      "{{-0.8660254037844388, -0.4999999999999997}, {0.8660254037844384, -0.5000000000000004}, {3.061616997868383*^-16, 1.}}"
+    );
+  }
+
+  #[test]
+  fn complete_graph_4() {
+    assert_eq!(
+      interpret("GraphEmbedding[CompleteGraph[4]]").unwrap(),
+      "{{-1., 1.2246467991473532*^-16}, {-1.8369701987210297*^-16, -1.}, {1., -2.4492935982947064*^-16}, {3.061616997868383*^-16, 1.}}"
+    );
+  }
+
+  #[test]
+  fn directed_graph() {
+    assert_eq!(
+      interpret("GraphEmbedding[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
+      "{{-0.8660254037844388, -0.4999999999999997}, {0.8660254037844384, -0.5000000000000004}, {3.061616997868383*^-16, 1.}}"
+    );
+  }
+
+  #[test]
+  fn single_edge() {
+    assert_eq!(
+      interpret("GraphEmbedding[Graph[{1 -> 2}]]").unwrap(),
+      "{{-1.8369701987210297*^-16, -1.}, {3.061616997868383*^-16, 1.}}"
+    );
+  }
+
+  #[test]
+  fn path_graph() {
+    assert_eq!(
+      interpret("GraphEmbedding[PathGraph[{1, 2, 3, 4}]]").unwrap(),
+      "{{-1., 1.2246467991473532*^-16}, {-1.8369701987210297*^-16, -1.}, {1., -2.4492935982947064*^-16}, {3.061616997868383*^-16, 1.}}"
+    );
+  }
+
+  #[test]
+  fn non_graph_unevaluated() {
+    assert_eq!(
+      interpret("GraphEmbedding[42]").unwrap(),
+      "GraphEmbedding[42]"
+    );
+  }
+
+  #[test]
+  fn with_method_argument() {
+    // With explicit "CircularEmbedding" method, same result
+    assert_eq!(
+      interpret("GraphEmbedding[CompleteGraph[3], \"CircularEmbedding\"]")
+        .unwrap(),
+      "{{-0.8660254037844388, -0.4999999999999997}, {0.8660254037844384, -0.5000000000000004}, {3.061616997868383*^-16, 1.}}"
+    );
+  }
+
+  #[test]
+  fn length_matches_vertex_count() {
+    assert_eq!(
+      interpret("Length[GraphEmbedding[CompleteGraph[5]]]").unwrap(),
+      "5"
+    );
+  }
+
+  #[test]
+  fn each_coordinate_is_pair() {
+    assert_eq!(
+      interpret("Length[GraphEmbedding[CompleteGraph[3]][[1]]]").unwrap(),
+      "2"
+    );
+  }
+}
+
 mod file_exists_q {
   use super::*;
 
