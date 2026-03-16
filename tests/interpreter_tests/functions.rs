@@ -3886,6 +3886,28 @@ mod library_function_load {
   }
 }
 
+mod cells {
+  use super::*;
+
+  #[test]
+  fn symbol() {
+    assert_eq!(interpret("Cells").unwrap(), "Cells");
+  }
+
+  #[test]
+  fn with_args() {
+    assert_eq!(interpret("Cells[a, b]").unwrap(), "Cells[a, b]");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[Cells]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
 mod hypergeometric_0f1_regularized {
   use super::*;
 

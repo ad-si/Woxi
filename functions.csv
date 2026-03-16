@@ -728,7 +728,7 @@ CellObject,,,,9,2632
 CellOpen,,,,3,2698
 CellPrint,Requires external services or GUI infrastructure,🚫,io,3,918
 CellProlog,,,,6,3121
-Cells,,,,9,1364
+Cells,Represent cells in a notebook,✅,pure,9,1364
 CellStyle,,,,9,1625
 CellStyleImportRules,,,,14,
 CellTags,,🚫,,3,1142
