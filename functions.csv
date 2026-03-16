@@ -3680,12 +3680,12 @@ Needs,Loads a package (no-op in Woxi),✅,effectful,1,198
 Negative,Tests if a number is negative,✅,pure,1,825
 NegativeBinomialDistribution,,,,6,2018
 NegativeDefiniteMatrixQ,,,,10,3134
-NegativeIntegers,,,,12,5013
+NegativeIntegers,Domain of negative integers,✅,pure,12,5013
 NegativelyOrientedPoints,,,,12.2,5079
 NegativeMultinomialDistribution,,,,8,3215
 NegativeQ,Tests if a number is negative,✅,pure,,
 NegativeRationals,,,,12,
-NegativeReals,,,,12,5486
+NegativeReals,Domain of negative real numbers,✅,pure,12,5486
 NegativeSemidefiniteMatrixQ,,,,10,3785
 NeighborhoodData,,🚫,,10,
 NeighborhoodGraph,,,,8,2079
@@ -3777,10 +3777,10 @@ NonlinearModelFit,Construct a nonlinear model fit,🚫,stateful,7,496
 NonlinearStateSpaceModel,,,,10,1914
 NonlocalMeansFilter,,,,9,4881
 NonNegative,Tests if a number is non-negative,✅,pure,1,1036
-NonNegativeIntegers,,,,12,2867
+NonNegativeIntegers,Domain of non-negative integers,✅,pure,12,2867
 NonNegativeQ,Tests if a number is non-negative,✅,pure,,
 NonNegativeRationals,,,,12,
-NonNegativeReals,,,,12,3242
+NonNegativeReals,Domain of non-negative real numbers,✅,pure,12,3242
 NonPositive,Tests if a number is non-positive,✅,pure,3,2097
 NonPositiveIntegers,,,,12,5184
 NonPositiveQ,Tests if a number is non-positive,✅,pure,,
@@ -4301,11 +4301,11 @@ PositionLargest,,,,13.2,
 PositionSmallest,,,,13.2,
 Positive,Tests if a number is positive,✅,pure,1,389
 PositiveDefiniteMatrixQ,,,,6,1597
-PositiveIntegers,,,,12,1391
+PositiveIntegers,Domain of positive integers,✅,pure,12,1391
 PositivelyOrientedPoints,,,,12.2,
 PositiveQ,Tests if a number is positive,✅,pure,,
 PositiveRationals,,,,12,4479
-PositiveReals,,,,12,1388
+PositiveReals,Domain of positive real numbers,✅,pure,12,1388
 PositiveSemidefiniteMatrixQ,,,,10,2837
 PossibleZeroQ,Tests if an expression is possibly zero,✅,pure,6,1369
 Postfix,Symbol for postfix display formatting,✅,pure,1,3070
