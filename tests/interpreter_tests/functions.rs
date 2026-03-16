@@ -3835,3 +3835,25 @@ mod face_grids {
     assert_eq!(interpret("FaceGridsStyle").unwrap(), "FaceGridsStyle");
   }
 }
+
+mod padding {
+  use super::*;
+
+  #[test]
+  fn symbol() {
+    assert_eq!(interpret("Padding").unwrap(), "Padding");
+  }
+
+  #[test]
+  fn with_args() {
+    assert_eq!(interpret("Padding[1, 2, 3]").unwrap(), "Padding[1, 2, 3]");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[Padding]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}

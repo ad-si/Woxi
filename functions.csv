@@ -4028,7 +4028,7 @@ PacletSiteUpdate,,,,12.1,3440
 PacletSymbol,,,,13,
 PacletUninstall,,,,12.1,4081
 PaddedForm,,🚫,,2,900
-Padding,,,,7,1357
+Padding,Option specifying padding scheme for array and image operations,✅,pure,7,1357
 PaddingLayer,,,,11.1,4437
 PaddingSize,,,,11,4567
 PadeApproximant,,,,6,1809
