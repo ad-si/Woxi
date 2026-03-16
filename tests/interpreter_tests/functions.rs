@@ -3886,6 +3886,28 @@ mod library_function_load {
   }
 }
 
+mod point_legend {
+  use super::*;
+
+  #[test]
+  fn symbol() {
+    assert_eq!(interpret("PointLegend").unwrap(), "PointLegend");
+  }
+
+  #[test]
+  fn with_args() {
+    assert_eq!(interpret("PointLegend[x, y]").unwrap(), "PointLegend[x, y]");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[PointLegend]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
 mod cells {
   use super::*;
 
