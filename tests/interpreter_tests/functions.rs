@@ -4438,3 +4438,63 @@ mod monomial_list {
     );
   }
 }
+
+#[cfg(test)]
+mod airy_bi {
+  use super::*;
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("AiryBi[x]").unwrap(), "AiryBi[x]");
+  }
+
+  #[test]
+  fn numeric_zero() {
+    let result = interpret("N[AiryBi[0]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.6149266274460007).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_positive() {
+    let result = interpret("N[AiryBi[1]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 1.2074235949528715).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative() {
+    let result = interpret("N[AiryBi[-1]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.10399738949694468).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_large_positive() {
+    let result = interpret("N[AiryBi[10]]").unwrap();
+    let val: f64 = result.replace("*^", "e").parse().unwrap();
+    assert!((val - 4.556411535482249e8).abs() / 4.556411535482249e8 < 1e-6);
+  }
+
+  #[test]
+  fn numeric_large_negative() {
+    let result = interpret("N[AiryBi[-10]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-0.3146798296438386)).abs() < 1e-6);
+  }
+
+  #[test]
+  fn direct_real_input() {
+    let result = interpret("AiryBi[0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.8542770431031554).abs() < 1e-10);
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[AiryBi]").unwrap(),
+      "{Listable, NumericFunction, Protected}"
+    );
+  }
+}
