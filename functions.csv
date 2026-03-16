@@ -458,7 +458,7 @@ Between,Tests if a value is between bounds,✅,pure,10.3,1728
 BetweennessCentrality,,,,8,2742
 BeveledPolyhedron,,,,12,5587
 BezierCurve,Represents a Bezier curve graphics primitive,✅,pure,7,778
-BezierFunction,,,,7,1371
+BezierFunction,Evaluate Bezier curves from control points using de Casteljau algorithm,✅,pure,7,1371
 BilateralFilter,,,,8,3191
 BilateralHypergeometricPFQ,,,,14,
 BilateralLaplaceTransform,,,,12.3,

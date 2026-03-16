@@ -379,6 +379,13 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "BezierFunction" && func_args.len() == 1 => {
+      // BezierFunction[{{p1}, {p2}, ...}][t] — evaluate Bezier curve at t
+      evaluate_bezier_function(func_args, args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "TransformationFunction" && func_args.len() == 1 => {
       // TransformationFunction[matrix][{x, y, ...}] — apply affine transformation
       apply_transformation_function(&func_args[0], args)
@@ -561,6 +568,117 @@ pub fn apply_curried_call(
       }
     }
   }
+}
+
+/// Evaluate BezierFunction[{control_points}][t] using de Casteljau's algorithm.
+fn evaluate_bezier_function(
+  func_args: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "BezierFunction".to_string(),
+      args: func_args.to_vec(),
+    });
+  }
+
+  // Extract the parameter t as f64
+  let t = match &args[0] {
+    Expr::Real(f) => *f,
+    Expr::Integer(n) => *n as f64,
+    Expr::FunctionCall { name: rn, args: ra }
+      if rn == "Rational" && ra.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
+        *n as f64 / *d as f64
+      } else {
+        return Ok(Expr::FunctionCall {
+          name: "BezierFunction".to_string(),
+          args: func_args.to_vec(),
+        });
+      }
+    }
+    _ => {
+      // Symbolic t: return unevaluated
+      return Ok(Expr::FunctionCall {
+        name: "BezierFunction".to_string(),
+        args: func_args.to_vec(),
+      });
+    }
+  };
+
+  // Extract control points from func_args[0] which should be a list of points
+  let points = match &func_args[0] {
+    Expr::List(pts) => pts,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BezierFunction".to_string(),
+        args: func_args.to_vec(),
+      });
+    }
+  };
+
+  if points.is_empty() {
+    return Ok(Expr::FunctionCall {
+      name: "BezierFunction".to_string(),
+      args: func_args.to_vec(),
+    });
+  }
+
+  // Convert control points to Vec<Vec<f64>>
+  let mut ctrl_pts: Vec<Vec<f64>> = Vec::new();
+  for pt in points {
+    match pt {
+      Expr::List(coords) => {
+        let mut fcoords = Vec::new();
+        for c in coords {
+          match c {
+            Expr::Real(f) => fcoords.push(*f),
+            Expr::Integer(n) => fcoords.push(*n as f64),
+            Expr::FunctionCall { name: rn, args: ra }
+              if rn == "Rational" && ra.len() == 2 =>
+            {
+              if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
+                fcoords.push(*n as f64 / *d as f64);
+              } else {
+                return Ok(Expr::FunctionCall {
+                  name: "BezierFunction".to_string(),
+                  args: func_args.to_vec(),
+                });
+              }
+            }
+            _ => {
+              return Ok(Expr::FunctionCall {
+                name: "BezierFunction".to_string(),
+                args: func_args.to_vec(),
+              });
+            }
+          }
+        }
+        ctrl_pts.push(fcoords);
+      }
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "BezierFunction".to_string(),
+          args: func_args.to_vec(),
+        });
+      }
+    }
+  }
+
+  // De Casteljau's algorithm
+  let n = ctrl_pts.len();
+  let dim = ctrl_pts[0].len();
+  let mut work = ctrl_pts;
+  for r in 1..n {
+    for i in 0..n - r {
+      for d in 0..dim {
+        work[i][d] = (1.0 - t) * work[i][d] + t * work[i + 1][d];
+      }
+    }
+  }
+
+  Ok(Expr::List(work[0].iter().map(|&v| Expr::Real(v)).collect()))
 }
 
 /// Apply TransformationFunction[matrix] to a point vector.
