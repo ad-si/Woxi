@@ -4705,3 +4705,45 @@ mod positive_integers {
     assert_eq!(interpret("Element[1, NegativeReals]").unwrap(), "False");
   }
 }
+
+#[cfg(test)]
+mod discriminant {
+  use super::*;
+
+  #[test]
+  fn quadratic_monic() {
+    assert_eq!(
+      interpret("Discriminant[x^2 + b*x + c, x]").unwrap(),
+      "b^2 - 4*c"
+    );
+  }
+
+  #[test]
+  fn quadratic_general() {
+    assert_eq!(
+      interpret("Discriminant[a*x^2 + b*x + c, x]").unwrap(),
+      "b^2 - 4*a*c"
+    );
+  }
+
+  #[test]
+  fn cubic() {
+    assert_eq!(
+      interpret("Discriminant[x^3 + p*x + q, x]").unwrap(),
+      "-4*p^3 - 27*q^2"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(interpret("Discriminant[x^2 - 4, x]").unwrap(), "16");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[Discriminant]").unwrap(),
+      "{Listable, Protected}"
+    );
+  }
+}
