@@ -3858,6 +3858,34 @@ mod padding {
   }
 }
 
+mod library_function_load {
+  use super::*;
+
+  #[test]
+  fn symbol() {
+    assert_eq!(
+      interpret("LibraryFunctionLoad").unwrap(),
+      "LibraryFunctionLoad"
+    );
+  }
+
+  #[test]
+  fn with_args() {
+    assert_eq!(
+      interpret("LibraryFunctionLoad[a, b, c, d]").unwrap(),
+      "LibraryFunctionLoad[a, b, c, d]"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[LibraryFunctionLoad]").unwrap(),
+      "{Protected}"
+    );
+  }
+}
+
 mod struve_h {
   use super::*;
 

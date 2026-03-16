@@ -531,6 +531,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "FontFamily"
     | "FaceGrids"
     | "FaceGridsStyle"
+    | "LibraryFunctionLoad"
     | "BaseStyle" => {
       vec!["Protected"]
     }
