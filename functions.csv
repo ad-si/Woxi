@@ -4244,7 +4244,7 @@ PointCountDistribution,,,,12.2,5486
 PointDensity,,,,12.2,5013
 PointDensityFunction,,,,12.2,
 PointFigureChart,,,,8,3427
-PointLegend,,,,9,1365
+PointLegend,Legend showing labeled points for plots,✅,pure,9,1365
 PointLight,,,,13,
 PointProcessEstimator,,,,12.2,5486
 PointProcessFitTest,,,,12.2,5486
