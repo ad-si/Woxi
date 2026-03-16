@@ -2404,7 +2404,7 @@ GraphDifference,,,,8,3506
 GraphDisjointUnion,,,,8,3491
 GraphDistance,,,,8,1625
 GraphDistanceMatrix,,,,8,2157
-GraphEmbedding,,,,9,1367
+GraphEmbedding,Compute vertex coordinates for graph layouts using circular embedding,✅,pure,9,1367
 GraphHighlight,,,,8,2317
 GraphHighlightStyle,,,,8,1889
 GraphHub,,,,9,4567
