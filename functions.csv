@@ -3614,7 +3614,7 @@ MomentGeneratingFunction,,,,8,2094
 MomentOfInertia,,,,10.4,3031
 Monday,,,,9,1970
 Monitor,,🚫,,6,1183
-MonomialList,,,,7,1375
+MonomialList,List of monomials sorted by lexicographic order of exponent vectors,✅,none,7,1375
 MonsterGroupM,,,,8,4809
 MoonPhase,,,,10,1676
 MoonPhaseDate,,,,14,
