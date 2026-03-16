@@ -4615,3 +4615,93 @@ mod parabolic_cylinder_d {
     );
   }
 }
+
+#[cfg(test)]
+mod positive_reals {
+  use super::*;
+
+  #[test]
+  fn symbol_passthrough() {
+    assert_eq!(interpret("PositiveReals").unwrap(), "PositiveReals");
+  }
+
+  #[test]
+  fn element_positive_integer() {
+    assert_eq!(interpret("Element[3, PositiveReals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_negative_integer() {
+    assert_eq!(interpret("Element[-3, PositiveReals]").unwrap(), "False");
+  }
+
+  #[test]
+  fn element_zero() {
+    assert_eq!(interpret("Element[0, PositiveReals]").unwrap(), "False");
+  }
+
+  #[test]
+  fn element_positive_real() {
+    assert_eq!(interpret("Element[2.5, PositiveReals]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_positive_rational() {
+    assert_eq!(interpret("Element[1/3, PositiveReals]").unwrap(), "True");
+  }
+}
+
+#[cfg(test)]
+mod positive_integers {
+  use super::*;
+
+  #[test]
+  fn symbol_passthrough() {
+    assert_eq!(interpret("PositiveIntegers").unwrap(), "PositiveIntegers");
+  }
+
+  #[test]
+  fn element_positive() {
+    assert_eq!(interpret("Element[3, PositiveIntegers]").unwrap(), "True");
+  }
+
+  #[test]
+  fn element_negative() {
+    assert_eq!(interpret("Element[-3, PositiveIntegers]").unwrap(), "False");
+  }
+
+  #[test]
+  fn element_zero() {
+    assert_eq!(interpret("Element[0, PositiveIntegers]").unwrap(), "False");
+  }
+
+  #[test]
+  fn element_real_not_integer() {
+    assert_eq!(
+      interpret("Element[3.5, PositiveIntegers]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn element_non_negative_integers() {
+    assert_eq!(
+      interpret("Element[0, NonNegativeIntegers]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Element[5, NonNegativeIntegers]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Element[-1, NonNegativeIntegers]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn element_negative_reals() {
+    assert_eq!(interpret("Element[-2.5, NegativeReals]").unwrap(), "True");
+    assert_eq!(interpret("Element[1, NegativeReals]").unwrap(), "False");
+  }
+}

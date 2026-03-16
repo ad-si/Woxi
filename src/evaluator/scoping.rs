@@ -258,6 +258,12 @@ const VALID_DOMAINS: &[&str] = &[
   "Reals",
   "Complexes",
   "Booleans",
+  "PositiveReals",
+  "PositiveIntegers",
+  "NonNegativeReals",
+  "NonNegativeIntegers",
+  "NegativeReals",
+  "NegativeIntegers",
 ];
 
 /// Known real-valued constants (parsed as Constant or Identifier)
@@ -370,6 +376,71 @@ pub fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
       {
         Some(true)
       }
+      _ => None,
+    },
+    "PositiveReals" => match expr {
+      Expr::Integer(n) => Some(*n > 0),
+      Expr::Real(f) => Some(*f > 0.0 && f.is_finite()),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some((*n > 0 && *d > 0) || (*n < 0 && *d < 0))
+        } else {
+          None
+        }
+      }
+      Expr::Constant(c) if REAL_CONSTANTS.contains(&c.as_str()) => Some(true),
+      Expr::Identifier(name) if REAL_CONSTANTS.contains(&name.as_str()) => {
+        Some(true)
+      }
+      _ => None,
+    },
+    "PositiveIntegers" => match expr {
+      Expr::Integer(n) => Some(*n > 0),
+      Expr::Real(f) => Some(*f > 0.0 && *f == f.floor() && f.is_finite()),
+      _ => None,
+    },
+    "NonNegativeReals" => match expr {
+      Expr::Integer(n) => Some(*n >= 0),
+      Expr::Real(f) => Some(*f >= 0.0 && f.is_finite()),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some((*n >= 0 && *d > 0) || (*n <= 0 && *d < 0))
+        } else {
+          None
+        }
+      }
+      Expr::Constant(c) if REAL_CONSTANTS.contains(&c.as_str()) => Some(true),
+      Expr::Identifier(name) if REAL_CONSTANTS.contains(&name.as_str()) => {
+        Some(true)
+      }
+      _ => None,
+    },
+    "NonNegativeIntegers" => match expr {
+      Expr::Integer(n) => Some(*n >= 0),
+      Expr::Real(f) => Some(*f >= 0.0 && *f == f.floor() && f.is_finite()),
+      _ => None,
+    },
+    "NegativeReals" => match expr {
+      Expr::Integer(n) => Some(*n < 0),
+      Expr::Real(f) => Some(*f < 0.0 && f.is_finite()),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
+          Some((*n < 0 && *d > 0) || (*n > 0 && *d < 0))
+        } else {
+          None
+        }
+      }
+      _ => None,
+    },
+    "NegativeIntegers" => match expr {
+      Expr::Integer(n) => Some(*n < 0),
+      Expr::Real(f) => Some(*f < 0.0 && *f == f.floor() && f.is_finite()),
       _ => None,
     },
     _ => None,
