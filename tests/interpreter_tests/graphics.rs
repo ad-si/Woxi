@@ -3756,3 +3756,28 @@ mod vertex_list {
     );
   }
 }
+
+mod discrete_plot_3d {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    insta::assert_snapshot!(export_svg(
+      "DiscretePlot3D[x + y, {x, 0, 5}, {y, 0, 5}]"
+    ));
+  }
+
+  #[test]
+  fn multiplicative() {
+    insta::assert_snapshot!(export_svg(
+      "DiscretePlot3D[x * y, {x, 1, 4}, {y, 1, 4}]"
+    ));
+  }
+
+  #[test]
+  fn returns_graphics3d() {
+    let result =
+      interpret("DiscretePlot3D[x + y, {x, 0, 3}, {y, 0, 3}]").unwrap();
+    assert_eq!(result, "-Graphics3D-");
+  }
+}
