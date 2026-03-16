@@ -77,6 +77,9 @@ pub fn dispatch_plotting(
     "DiscretePlot" if args.len() >= 2 => {
       Some(crate::functions::list_plot::discrete_plot_ast(args))
     }
+    "DiscretePlot3D" if args.len() >= 3 => {
+      Some(crate::functions::plot3d::discrete_plot3d_ast(args))
+    }
     "ListLinePlot" if !args.is_empty() => {
       Some(crate::functions::list_plot::list_line_plot_ast(args))
     }

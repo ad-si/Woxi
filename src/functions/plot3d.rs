@@ -3108,3 +3108,226 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(crate::graphics3d_result(svg))
 }
+
+/// DiscretePlot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]
+/// Plots a function at discrete integer points in 3D
+pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 3 {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot3D requires at least 3 arguments: DiscretePlot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]".into(),
+    ));
+  }
+
+  let body = &args[0];
+  let (xvar, x_min, x_max) = parse_iterator(&args[1], "first")?;
+  let (yvar, y_min, y_max) = parse_iterator(&args[2], "second")?;
+
+  // Parse options
+  let mut svg_width = DEFAULT_SIZE;
+  let mut svg_height = DEFAULT_SIZE;
+  let mut full_width = false;
+  let show_mesh = true;
+  let show_axes = true;
+
+  for opt in &args[3..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    {
+      if let Expr::Identifier(name) = pattern.as_ref() {
+        if name == "ImageSize" {
+          if let Some((w, h, fw)) = parse_image_size(replacement) {
+            svg_width = w;
+            svg_height = h;
+            full_width = fw;
+          }
+        }
+      }
+    }
+  }
+
+  // Generate grid at integer points
+  let x_start = x_min.ceil() as i64;
+  let x_end = x_max.floor() as i64;
+  let y_start = y_min.ceil() as i64;
+  let y_end = y_max.floor() as i64;
+
+  let nx = (x_end - x_start + 1) as usize;
+  let ny = (y_end - y_start + 1) as usize;
+
+  if nx < 2 || ny < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot3D: range must contain at least 2 integer points in each dimension".into(),
+    ));
+  }
+
+  // Sample at integer points
+  let mut grid = vec![vec![f64::NAN; ny]; nx];
+  let mut z_lo = f64::INFINITY;
+  let mut z_hi = f64::NEG_INFINITY;
+
+  for (i, xi) in (x_start..=x_end).enumerate() {
+    for (j, yj) in (y_start..=y_end).enumerate() {
+      let sub1 = substitute_var(body, &xvar, &Expr::Integer(xi as i128));
+      let sub2 = substitute_var(&sub1, &yvar, &Expr::Integer(yj as i128));
+      if let Ok(result) = evaluate_expr_to_expr(&sub2) {
+        if let Some(z) = try_eval_to_f64(&result) {
+          if z.is_finite() {
+            grid[i][j] = z;
+            z_lo = z_lo.min(z);
+            z_hi = z_hi.max(z);
+          }
+        }
+      }
+    }
+  }
+
+  if !z_lo.is_finite() || !z_hi.is_finite() {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot3D: could not compute any finite values".into(),
+    ));
+  }
+
+  if (z_hi - z_lo).abs() < 1e-15 {
+    z_hi = z_lo + 1.0;
+  }
+
+  let z_range_val = z_hi - z_lo;
+  let camera = Camera::default();
+
+  // Build triangles from the grid
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+
+  for i in 0..nx - 1 {
+    for j in 0..ny - 1 {
+      let z00 = grid[i][j];
+      let z10 = grid[i + 1][j];
+      let z01 = grid[i][j + 1];
+      let z11 = grid[i + 1][j + 1];
+
+      let nx_fn =
+        |ii: usize| -> f64 { (ii as f64 / (nx - 1) as f64) * 2.0 - 1.0 };
+      let ny_fn =
+        |jj: usize| -> f64 { (jj as f64 / (ny - 1) as f64) * 2.0 - 1.0 };
+      let nz = |z: f64| -> f64 {
+        ((z - z_lo) / z_range_val) * 2.0 * Z_SCALE - Z_SCALE
+      };
+
+      // Triangle 1: (i,j), (i+1,j), (i,j+1)
+      if z00.is_finite() && z10.is_finite() && z01.is_finite() {
+        let cz00 = z00.clamp(z_lo, z_hi);
+        let cz10 = z10.clamp(z_lo, z_hi);
+        let cz01 = z01.clamp(z_lo, z_hi);
+
+        let v0 = Point3D {
+          x: nx_fn(i),
+          y: ny_fn(j),
+          z: nz(cz00),
+        };
+        let v1 = Point3D {
+          x: nx_fn(i + 1),
+          y: ny_fn(j),
+          z: nz(cz10),
+        };
+        let v2 = Point3D {
+          x: nx_fn(i),
+          y: ny_fn(j + 1),
+          z: nz(cz01),
+        };
+
+        let avg_z_norm = ((cz00 - z_lo) / z_range_val
+          + (cz10 - z_lo) / z_range_val
+          + (cz01 - z_lo) / z_range_val)
+          / 3.0;
+        let base_color = height_color(avg_z_norm);
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+        let p0 = project(v0, &camera);
+        let p1 = project(v1, &camera);
+        let p2 = project(v2, &camera);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+        all_triangles.push(Triangle {
+          projected: [p0, p1, p2],
+          color,
+          depth: depth(center, &camera),
+        });
+      }
+
+      // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
+      if z11.is_finite() && z01.is_finite() && z10.is_finite() {
+        let cz11 = z11.clamp(z_lo, z_hi);
+        let cz01 = z01.clamp(z_lo, z_hi);
+        let cz10 = z10.clamp(z_lo, z_hi);
+
+        let v0 = Point3D {
+          x: nx_fn(i + 1),
+          y: ny_fn(j + 1),
+          z: nz(cz11),
+        };
+        let v1 = Point3D {
+          x: nx_fn(i),
+          y: ny_fn(j + 1),
+          z: nz(cz01),
+        };
+        let v2 = Point3D {
+          x: nx_fn(i + 1),
+          y: ny_fn(j),
+          z: nz(cz10),
+        };
+
+        let avg_z_norm = ((cz11 - z_lo) / z_range_val
+          + (cz01 - z_lo) / z_range_val
+          + (cz10 - z_lo) / z_range_val)
+          / 3.0;
+        let base_color = height_color(avg_z_norm);
+        let normal = triangle_normal(v0, v1, v2);
+        let color = apply_lighting(base_color, normal);
+        let p0 = project(v0, &camera);
+        let p1 = project(v1, &camera);
+        let p2 = project(v2, &camera);
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+        all_triangles.push(Triangle {
+          projected: [p0, p1, p2],
+          color,
+          depth: depth(center, &camera),
+        });
+      }
+    }
+  }
+
+  if all_triangles.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot3D: no renderable triangles".into(),
+    ));
+  }
+
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg = generate_svg(
+    &all_triangles,
+    &camera,
+    (x_min, x_max),
+    (y_min, y_max),
+    (z_lo, z_hi),
+    svg_width,
+    svg_height,
+    full_width,
+    show_mesh,
+    show_axes,
+  )?;
+
+  Ok(crate::graphics3d_result(svg))
+}
