@@ -4498,3 +4498,64 @@ mod airy_bi {
     );
   }
 }
+
+#[cfg(test)]
+mod square_wave {
+  use super::*;
+
+  #[test]
+  fn positive_first_half() {
+    assert_eq!(interpret("SquareWave[0.1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn positive_at_zero() {
+    assert_eq!(interpret("SquareWave[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative_second_half() {
+    assert_eq!(interpret("SquareWave[0.5]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn negative_at_0_7() {
+    assert_eq!(interpret("SquareWave[0.7]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn periodic_wrapping() {
+    assert_eq!(interpret("SquareWave[1.3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative_argument() {
+    assert_eq!(interpret("SquareWave[-0.3]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn exact_rational_input() {
+    assert_eq!(interpret("SquareWave[1/4]").unwrap(), "1");
+    assert_eq!(interpret("SquareWave[1/2]").unwrap(), "-1");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("SquareWave[x]").unwrap(), "SquareWave[x]");
+  }
+
+  #[test]
+  fn multi_level_two_values() {
+    assert_eq!(interpret("SquareWave[{1/3, 2/3}, 0.2]").unwrap(), "2/3");
+    assert_eq!(interpret("SquareWave[{1/3, 2/3}, 0.5]").unwrap(), "1/3");
+    assert_eq!(interpret("SquareWave[{1/3, 2/3}, 0.8]").unwrap(), "1/3");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[SquareWave]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
