@@ -5270,7 +5270,7 @@ StripWrapperBoxes,,,,6,5079
 Struckthrough,,,,13.1,
 StructuralImportance,,,,9,4204
 StructuredSelection,,,,3,5486
-StruveH,,,,4,1360
+StruveH,Struve function H_n(z),✅,pure,4,1360
 StruveL,,,,4,1437
 Stub,,,,2,
 StudentTDistribution,Represents a Student t-distribution with nu degrees of freedom,✅,1,6,1030
