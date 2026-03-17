@@ -1,6 +1,9 @@
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
+use crate::functions::math_ast::{
+  build_complex_float_expr, try_extract_complex_f64,
+};
 use crate::functions::plot::{
   DEFAULT_WIDTH, generate_axes_only, parse_image_size, substitute_var,
 };
@@ -1536,6 +1539,152 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
         cell_w + 0.5, cell_h + 0.5
       ));
+    }
+  }
+
+  svg.push_str("</svg>");
+  Ok(crate::graphics_result(svg))
+}
+
+/// Parse a complex iterator: {z, zmin, zmax} where zmin/zmax are complex numbers.
+/// Returns (var_name, re_min, re_max, im_min, im_max).
+fn parse_complex_iterator(
+  spec: &Expr,
+  label: &str,
+) -> Result<(String, f64, f64, f64, f64), InterpreterError> {
+  match spec {
+    Expr::List(items) if items.len() == 3 => {
+      let var = match &items[0] {
+        Expr::Identifier(name) => name.clone(),
+        _ => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "{label}: iterator variable must be a symbol"
+          )));
+        }
+      };
+      let zmin_expr = evaluate_expr_to_expr(&items[1])?;
+      let zmax_expr = evaluate_expr_to_expr(&items[2])?;
+      let (re_min, im_min) =
+        try_extract_complex_f64(&zmin_expr).ok_or_else(|| {
+          InterpreterError::EvaluationError(format!(
+            "{label}: cannot evaluate iterator min to a complex number"
+          ))
+        })?;
+      let (re_max, im_max) =
+        try_extract_complex_f64(&zmax_expr).ok_or_else(|| {
+          InterpreterError::EvaluationError(format!(
+            "{label}: cannot evaluate iterator max to a complex number"
+          ))
+        })?;
+      Ok((var, re_min, re_max, im_min, im_max))
+    }
+    _ => Err(InterpreterError::EvaluationError(format!(
+      "{label}: iterator must be {{var, zmin, zmax}}"
+    ))),
+  }
+}
+
+/// Evaluate a complex function f(z) at the point (re, im).
+/// Substitutes z with the complex value and extracts (re, im) of the result.
+fn evaluate_complex_at(
+  body: &Expr,
+  zvar: &str,
+  re: f64,
+  im: f64,
+) -> Option<(f64, f64)> {
+  let z_val = build_complex_float_expr(re, im);
+  let sub = substitute_var(body, zvar, &z_val);
+  let result = evaluate_expr_to_expr(&sub).ok()?;
+  try_extract_complex_f64(&result)
+}
+
+/// Convert complex value to domain coloring HSB color.
+/// Hue is determined by Arg(z), brightness by Abs(z).
+fn complex_to_rgb(re: f64, im: f64) -> (u8, u8, u8) {
+  let arg = im.atan2(re); // -PI to PI
+  let abs = (re * re + im * im).sqrt();
+
+  // Hue: map argument from [-PI, PI] to [0, 1]
+  let hue = (arg + std::f64::consts::PI) / (2.0 * std::f64::consts::PI);
+
+  // Brightness: use a smooth function that maps [0, inf) to [0, 1)
+  // Following Mathematica's approach: brightness varies with magnitude
+  let brightness = 1.0 - 1.0 / (1.0 + abs.powf(0.3));
+
+  // Saturation: high saturation, slightly reduced for very large/small magnitudes
+  let saturation = 0.8 + 0.2 * (1.0 - (2.0 * brightness - 1.0).abs());
+
+  hsb_to_rgb(hue, saturation, brightness)
+}
+
+/// Convert HSB (all in [0,1]) to RGB.
+fn hsb_to_rgb(h: f64, s: f64, b: f64) -> (u8, u8, u8) {
+  let h = h.fract();
+  let h = if h < 0.0 { h + 1.0 } else { h };
+  let hi = (h * 6.0).floor() as u32 % 6;
+  let f = h * 6.0 - hi as f64;
+  let p = b * (1.0 - s);
+  let q = b * (1.0 - f * s);
+  let t = b * (1.0 - (1.0 - f) * s);
+  let (r, g, bl) = match hi {
+    0 => (b, t, p),
+    1 => (q, b, p),
+    2 => (p, b, t),
+    3 => (p, q, b),
+    4 => (t, p, b),
+    _ => (b, p, q),
+  };
+  (
+    (r * 255.0).round() as u8,
+    (g * 255.0).round() as u8,
+    (bl * 255.0).round() as u8,
+  )
+}
+
+/// ComplexPlot[f, {z, zmin, zmax}]
+/// Domain coloring visualization of a complex function.
+pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let body = &args[0];
+  let (zvar, re_min, re_max, im_min, im_max) =
+    parse_complex_iterator(&args[1], "ComplexPlot")?;
+  let (svg_width, svg_height, full_width) = parse_field_options(args, 2);
+
+  let grid_size = FIELD_GRID;
+
+  // Use plotters for axes (Re on x-axis, Im on y-axis)
+  let area = generate_axes_only(
+    (re_min, re_max),
+    (im_min, im_max),
+    svg_width,
+    svg_height,
+    full_width,
+  )?;
+
+  let mut svg = area.svg;
+  // Remove closing </svg> to append custom elements
+  if let Some(pos) = svg.rfind("</svg>") {
+    svg.truncate(pos);
+  }
+
+  let cell_w = area.plot_w / grid_size as f64;
+  let cell_h = area.plot_h / grid_size as f64;
+
+  for i in 0..grid_size {
+    let re = re_min + (i as f64 + 0.5) / grid_size as f64 * (re_max - re_min);
+    for j in 0..grid_size {
+      let im = im_min + (j as f64 + 0.5) / grid_size as f64 * (im_max - im_min);
+      if let Some((fre, fim)) = evaluate_complex_at(body, &zvar, re, im) {
+        if fre.is_finite() && fim.is_finite() {
+          let (r, g, b) = complex_to_rgb(fre, fim);
+          let sx = area.plot_x0 + i as f64 * cell_w;
+          // Flip y: higher im values at top
+          let sy = area.plot_y0 + (grid_size - 1 - j) as f64 * cell_h;
+          svg.push_str(&format!(
+            "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
+            cell_w + 0.5, cell_h + 0.5
+          ));
+        }
+      }
     }
   }
 

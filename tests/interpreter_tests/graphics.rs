@@ -1950,6 +1950,59 @@ mod plot3d {
     }
   }
 
+  mod complex_plot {
+    use super::*;
+
+    #[test]
+    fn complex_plot_identity() {
+      insta::assert_snapshot!(export_svg(
+        "ComplexPlot[z, {z, -2 - 2 I, 2 + 2 I}]"
+      ));
+    }
+
+    #[test]
+    fn complex_plot_z_squared() {
+      insta::assert_snapshot!(export_svg(
+        "ComplexPlot[z^2, {z, -2 - 2 I, 2 + 2 I}]"
+      ));
+    }
+
+    #[test]
+    fn complex_plot_rational_function() {
+      insta::assert_snapshot!(export_svg(
+        "ComplexPlot[(z^2 + 1)/(z^2 - 1), {z, -2 - 2 I, 2 + 2 I}]"
+      ));
+    }
+
+    #[test]
+    fn complex_plot_sin() {
+      insta::assert_snapshot!(export_svg(
+        "ComplexPlot[Sin[z], {z, -Pi - Pi I, Pi + Pi I}]"
+      ));
+    }
+
+    #[test]
+    fn complex_plot_custom_image_size() {
+      insta::assert_snapshot!(export_svg(
+        "ComplexPlot[z^2, {z, -1 - I, 1 + I}, ImageSize -> 200]"
+      ));
+    }
+
+    #[test]
+    fn complex_plot_exp() {
+      insta::assert_snapshot!(export_svg(
+        "ComplexPlot[Exp[z], {z, -2 - 2 I, 2 + 2 I}]"
+      ));
+    }
+
+    #[test]
+    fn complex_plot_sqrt() {
+      insta::assert_snapshot!(export_svg(
+        "ComplexPlot[Sqrt[z], {z, -2 - 2 I, 2 + 2 I}]"
+      ));
+    }
+  }
+
   mod list_contour_plots {
     use super::*;
 
