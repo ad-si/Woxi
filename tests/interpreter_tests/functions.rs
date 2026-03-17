@@ -3135,6 +3135,109 @@ mod area {
   }
 }
 
+mod arc_length {
+  use super::*;
+
+  #[test]
+  fn unit_circle() {
+    assert_eq!(interpret("ArcLength[Circle[]]").unwrap(), "2*Pi");
+  }
+
+  #[test]
+  fn circle_with_radius() {
+    assert_eq!(interpret("ArcLength[Circle[{0, 0}, r]]").unwrap(), "2*Pi*r");
+  }
+
+  #[test]
+  fn circle_numeric_radius() {
+    assert_eq!(interpret("ArcLength[Circle[{0, 0}, 5]]").unwrap(), "10*Pi");
+  }
+
+  #[test]
+  fn line_two_points() {
+    assert_eq!(interpret("ArcLength[Line[{{0, 0}, {3, 4}}]]").unwrap(), "5");
+  }
+
+  #[test]
+  fn line_multi_segment() {
+    assert_eq!(
+      interpret("ArcLength[Line[{{0, 0}, {1, 0}, {1, 1}}]]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn polygon_undefined() {
+    assert_eq!(
+      interpret("ArcLength[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]")
+        .unwrap(),
+      "Undefined"
+    );
+  }
+
+  #[test]
+  fn disk_undefined() {
+    assert_eq!(interpret("ArcLength[Disk[]]").unwrap(), "Undefined");
+  }
+
+  #[test]
+  fn triangle_undefined() {
+    assert_eq!(
+      interpret("ArcLength[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "Undefined"
+    );
+  }
+}
+
+mod perimeter {
+  use super::*;
+
+  #[test]
+  fn unit_square_polygon() {
+    assert_eq!(
+      interpret("Perimeter[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]")
+        .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn rectangle() {
+    assert_eq!(
+      interpret("Perimeter[Rectangle[{0, 0}, {3, 4}]]").unwrap(),
+      "14"
+    );
+  }
+
+  #[test]
+  fn unit_rectangle() {
+    assert_eq!(interpret("Perimeter[Rectangle[]]").unwrap(), "4");
+  }
+
+  #[test]
+  fn triangle() {
+    assert_eq!(
+      interpret("Perimeter[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "2 + Sqrt[2]"
+    );
+  }
+
+  #[test]
+  fn disk() {
+    assert_eq!(interpret("Perimeter[Disk[{0, 0}, r]]").unwrap(), "2*Pi*r");
+  }
+
+  #[test]
+  fn unit_disk() {
+    assert_eq!(interpret("Perimeter[Disk[]]").unwrap(), "2*Pi");
+  }
+
+  #[test]
+  fn circle() {
+    assert_eq!(interpret("Perimeter[Circle[{0, 0}, 3]]").unwrap(), "6*Pi");
+  }
+}
+
 mod region_centroid {
   use super::*;
 
