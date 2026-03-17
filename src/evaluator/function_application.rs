@@ -501,13 +501,10 @@ pub fn apply_curried_call(
                 return Ok(v.clone());
               }
             }
-            // Key not found: return Missing[KeyAbsent, k]
+            // Key not found: return Missing["KeyAbsent", k]
             Ok(Expr::FunctionCall {
               name: "Missing".to_string(),
-              args: vec![
-                Expr::Identifier("KeyAbsent".to_string()),
-                key.clone(),
-              ],
+              args: vec![Expr::String("KeyAbsent".to_string()), key.clone()],
             })
           }
           _ => {

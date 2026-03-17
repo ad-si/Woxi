@@ -1699,11 +1699,24 @@ pub fn evaluate_function_call_ast_inner(
             return Ok(Expr::List(vec![]));
           }
           // Circular embedding: angle_k = π/2 + k * 2π/n for k = 1..n
+          // Snap coordinates near simple rational values (0, ±0.5, ±1) to
+          // eliminate platform-dependent ULP differences in f64 trig.
+          fn snap_coord(v: f64) -> f64 {
+            for &target in &[0.0, 0.5, -0.5, 1.0, -1.0] {
+              if (v - target).abs() < 1e-14 {
+                return target;
+              }
+            }
+            v
+          }
           let coords: Vec<Expr> = (1..=n)
             .map(|k| {
               let angle = std::f64::consts::FRAC_PI_2
                 + (k as f64) * 2.0 * std::f64::consts::PI / (n as f64);
-              Expr::List(vec![Expr::Real(angle.cos()), Expr::Real(angle.sin())])
+              Expr::List(vec![
+                Expr::Real(snap_coord(angle.cos())),
+                Expr::Real(snap_coord(angle.sin())),
+              ])
             })
             .collect();
           return Ok(Expr::List(coords));
@@ -1906,10 +1919,9 @@ pub fn evaluate_function_call_ast_inner(
         _ => {}
       }
     }
-    return Ok(Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.to_vec(),
-    });
+    // For functions that can't be expanded into Piecewise form,
+    // return the argument unchanged (not wrapped in PiecewiseExpand).
+    return Ok(args[0].clone());
   }
 
   // AdjacencyGraph[matrix] or AdjacencyGraph[vertices, matrix] — create graph from adjacency matrix

@@ -795,7 +795,10 @@ mod student_t_distribution {
 
   #[test]
   fn mean_symbolic() {
-    assert_eq!(interpret("Mean[StudentTDistribution[nu]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Mean[StudentTDistribution[nu]]").unwrap(),
+      "Piecewise[{{0, nu > 1}}, Indeterminate]"
+    );
   }
 
   #[test]
@@ -810,7 +813,7 @@ mod student_t_distribution {
   fn variance_symbolic() {
     assert_eq!(
       interpret("Variance[StudentTDistribution[nu]]").unwrap(),
-      "nu/(-2 + nu)"
+      "Piecewise[{{nu/(-2 + nu), nu > 2}}, Indeterminate]"
     );
   }
 }
@@ -964,7 +967,7 @@ mod pareto_distribution {
   fn mean_symbolic() {
     assert_eq!(
       interpret("Mean[ParetoDistribution[k, a]]").unwrap(),
-      "(a*k)/(-1 + a)"
+      "Piecewise[{{(a*k)/(-1 + a), a > 1}}, Indeterminate]"
     );
   }
 
@@ -973,6 +976,14 @@ mod pareto_distribution {
     assert_eq!(
       interpret("Variance[ParetoDistribution[1, 3]]").unwrap(),
       "3/4"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[ParetoDistribution[k, a]]").unwrap(),
+      "Piecewise[{{(a*k^2)/((-2 + a)*(-1 + a)^2), a > 2}}, Indeterminate]"
     );
   }
 }
@@ -1024,7 +1035,7 @@ mod weibull_distribution {
   fn variance_numeric() {
     assert_eq!(
       interpret("Variance[WeibullDistribution[2, 3]]").unwrap(),
-      "9*(1 - Gamma[3/2]^2)"
+      "9*(1 - Pi/4)"
     );
   }
 

@@ -955,9 +955,22 @@ fn distribution_mean_variance(
         ));
       }
       let nu = dargs[0].clone();
-      // Mean = 0 (for nu > 1), Var = nu/(nu-2) (for nu > 2)
-      let mean = int(0);
-      let var = divide(nu.clone(), minus(nu, int(2)));
+      // Mean = Piecewise[{{0, nu > 1}}, Indeterminate]
+      let mean = piecewise(
+        vec![(
+          int(0),
+          comparison(nu.clone(), ComparisonOp::Greater, int(1)),
+        )],
+        Expr::Identifier("Indeterminate".to_string()),
+      );
+      // Var = Piecewise[{{nu/(-2+nu), nu > 2}}, Indeterminate]
+      let var = piecewise(
+        vec![(
+          divide(nu.clone(), plus(int(-2), nu.clone())),
+          comparison(nu, ComparisonOp::Greater, int(2)),
+        )],
+        Expr::Identifier("Indeterminate".to_string()),
+      );
       Ok((mean, var))
     }
     "LogNormalDistribution" => {
@@ -1006,13 +1019,27 @@ fn distribution_mean_variance(
       }
       let k = dargs[0].clone();
       let a = dargs[1].clone();
-      // Mean = a*k/(a-1) for a > 1, otherwise Indeterminate
-      // We return the symbolic formula without the condition
-      let mean = divide(times(a.clone(), k.clone()), minus(a.clone(), int(1)));
-      // Var = a*k^2 / ((a-2)*(a-1)^2) for a > 2
-      let var = divide(
-        times(a.clone(), power(k, int(2))),
-        times(minus(a.clone(), int(2)), power(minus(a, int(1)), int(2))),
+      // Mean = Piecewise[{{a*k/(-1+a), a > 1}}, Indeterminate]
+      let mean = piecewise(
+        vec![(
+          divide(times(a.clone(), k.clone()), plus(int(-1), a.clone())),
+          comparison(a.clone(), ComparisonOp::Greater, int(1)),
+        )],
+        Expr::Identifier("Indeterminate".to_string()),
+      );
+      // Var = Piecewise[{{a*k^2 / ((-2+a)*(-1+a)^2), a > 2}}, Indeterminate]
+      let var = piecewise(
+        vec![(
+          divide(
+            times(a.clone(), power(k, int(2))),
+            times(
+              plus(int(-2), a.clone()),
+              power(plus(int(-1), a.clone()), int(2)),
+            ),
+          ),
+          comparison(a, ComparisonOp::Greater, int(2)),
+        )],
+        Expr::Identifier("Indeterminate".to_string()),
       );
       Ok((mean, var))
     }

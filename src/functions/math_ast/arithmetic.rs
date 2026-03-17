@@ -2737,9 +2737,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  // (a * b * ...)^(-1) → Times[a^(-1), b^(-1), ...]
-  // This matches Wolfram's normalization: Power[Times[...], -1] distributes
-  if matches!(exp, Expr::Integer(-1)) {
+  // (a * b * ...)^n → Times[a^n, b^n, ...] for integer n
+  // This matches Wolfram's normalization: Power[Times[...], n] distributes
+  if let Expr::Integer(n) = exp {
     let factors: Option<Vec<&Expr>> = match base {
       Expr::FunctionCall { name, args: targs }
         if name == "Times" && targs.len() >= 2 =>
@@ -2754,11 +2754,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(factors) = factors {
-      let inv_factors: Result<Vec<Expr>, InterpreterError> = factors
+      let pow_factors: Result<Vec<Expr>, InterpreterError> = factors
         .into_iter()
-        .map(|f| power_two(f, &Expr::Integer(-1)))
+        .map(|f| power_two(f, &Expr::Integer(*n)))
         .collect();
-      return times_ast(&inv_factors?);
+      return times_ast(&pow_factors?);
     }
   }
 
@@ -2775,16 +2775,44 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return power_two(&fargs[0], &make_rational(*n, 2));
   }
 
-  // (base^exp1)^exp2 -> base^(exp1*exp2) when both exponents are integers
-  if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
-    left: inner_base,
-    right: inner_exp,
-  } = base
-    && let (Expr::Integer(e1), Expr::Integer(e2)) = (inner_exp.as_ref(), exp)
-  {
-    let combined = *e1 * *e2;
-    return power_two(inner_base, &Expr::Integer(combined));
+  // (base^exp1)^exp2 -> base^(exp1*exp2) when outer exponent is integer
+  // Handles both BinaryOp::Power and FunctionCall Power forms
+  if let Expr::Integer(e2) = exp {
+    let inner = match base {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      Expr::FunctionCall { name, args: fargs }
+        if name == "Power" && fargs.len() == 2 =>
+      {
+        Some((&fargs[0], &fargs[1]))
+      }
+      _ => None,
+    };
+    if let Some((inner_base, inner_exp)) = inner {
+      match inner_exp {
+        Expr::Integer(e1) => {
+          let combined = *e1 * *e2;
+          return power_two(inner_base, &Expr::Integer(combined));
+        }
+        // (base^(p/q))^n → base^(p*n/q)
+        Expr::FunctionCall { name, args: ra }
+          if name == "Rational"
+            && ra.len() == 2
+            && matches!(&ra[0], Expr::Integer(_))
+            && matches!(&ra[1], Expr::Integer(_)) =>
+        {
+          if let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1]) {
+            let new_p = p * e2;
+            let new_exp = make_rational(new_p, *q);
+            return power_two(inner_base, &new_exp);
+          }
+        }
+        _ => {}
+      }
+    }
   }
 
   // (Power[-1, Rational[p,q]])^n → simplify (-1)^(p*n/q)
@@ -3099,6 +3127,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let result = (*b as f64).powf(*numer as f64 / *denom as f64);
     if result.fract() == 0.0 && result.is_finite() {
       return Ok(Expr::Integer(result as i128));
+    }
+    // (-1)^(p/q) → simplify via simplify_neg1_rational_power
+    if *b == -1 {
+      return simplify_neg1_rational_power(*numer, *denom);
     }
     // Simplify n^(p/q) by prime factorization
     // n = p1^k1 * p2^k2 * ...
