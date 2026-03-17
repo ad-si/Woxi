@@ -36,6 +36,22 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "UnitVector" if args.len() == 1 || args.len() == 2 => {
+      let (n, k) = if args.len() == 1 {
+        // UnitVector[k] is shorthand for UnitVector[2, k]
+        (2i128, expr_to_i128(&args[0]).unwrap_or(0))
+      } else {
+        (
+          expr_to_i128(&args[0]).unwrap_or(0),
+          expr_to_i128(&args[1]).unwrap_or(0),
+        )
+      };
+      if n > 0 && k >= 1 && k <= n {
+        let mut vec = vec![Expr::Integer(0); n as usize];
+        vec[(k - 1) as usize] = Expr::Integer(1);
+        return Some(Ok(Expr::List(vec)));
+      }
+    }
     "BoxMatrix" if args.len() == 1 => {
       if let Some(n) = expr_to_i128(&args[0])
         && n >= 0

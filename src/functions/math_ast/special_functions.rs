@@ -74,11 +74,155 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(Expr::Real(result))
       }
     }
+    // Gamma[n/2] for odd n — half-integer values
+    // Gamma[1/2] = Sqrt[Pi], Gamma[3/2] = Sqrt[Pi]/2,
+    // Gamma[(2k+1)/2] = (2k)! * Sqrt[Pi] / (4^k * k!)
+    // Gamma[(-2k+1)/2] uses reflection: Gamma[-n+1/2] = (-1)^n * Pi / (Gamma[n+1/2] * Sin(Pi*(n+1/2)))
+    //   simplified: Gamma[1/2 - n] = (-4)^n * n! * Sqrt[Pi] / (2n)!
+    _ if matches!(&args[0], Expr::FunctionCall { name, args: ra }
+      if name == "Rational" && ra.len() == 2
+        && matches!(&ra[1], Expr::Integer(2))
+        && matches!(&ra[0], Expr::Integer(n) if n % 2 != 0)
+    ) =>
+    {
+      if let Expr::FunctionCall { args: ra, .. } = &args[0] {
+        if let Expr::Integer(num) = &ra[0] {
+          let num = *num;
+          // num is odd, denominator is 2, so argument is num/2
+          // For positive half-integers: Gamma[(2k+1)/2] where k = (num-1)/2
+          if num > 0 {
+            let k = (num - 1) / 2;
+            // Gamma[(2k+1)/2] = (2k)! * Sqrt[Pi] / (4^k * k!)
+            let mut factorial_2k = BigInt::from(1);
+            for i in 2..=(2 * k) {
+              factorial_2k *= i;
+            }
+            let mut factorial_k = BigInt::from(1);
+            for i in 2..=k {
+              factorial_k *= i;
+            }
+            let four_k = BigInt::from(4).pow(k as u32);
+            let denom = four_k * factorial_k;
+            // Result = factorial_2k / denom * Sqrt[Pi]
+            // Simplify the rational part
+            let g = gcd_bigint(&factorial_2k, &denom);
+            let num_simplified = &factorial_2k / &g;
+            let den_simplified = &denom / &g;
+            let sqrt_pi = Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                Expr::Identifier("Pi".to_string()),
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+              ],
+            };
+            if den_simplified == BigInt::from(1) {
+              if num_simplified == BigInt::from(1) {
+                return Ok(sqrt_pi);
+              }
+              return Ok(Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![bigint_to_expr(num_simplified), sqrt_pi],
+              });
+            }
+            let coeff = Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![
+                bigint_to_expr(num_simplified),
+                bigint_to_expr(den_simplified),
+              ],
+            };
+            return Ok(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![coeff, sqrt_pi],
+            });
+          } else if num < 0 {
+            // Negative half-integers: Gamma[(1-2n)/2] = Gamma[1/2 - n]
+            // = (-4)^n * n! * Sqrt[Pi] / (2n)!  where n = (1 - num) / 2
+            let n = (1 - num) / 2;
+            let sign = if n % 2 == 0 {
+              BigInt::from(1)
+            } else {
+              BigInt::from(-1)
+            };
+            let four_n = BigInt::from(4).pow(n as u32);
+            let mut factorial_n = BigInt::from(1);
+            for i in 2..=n {
+              factorial_n *= i;
+            }
+            let mut factorial_2n = BigInt::from(1);
+            for i in 2..=(2 * n) {
+              factorial_2n *= i;
+            }
+            let numerator = &sign * &four_n * &factorial_n;
+            let denominator = factorial_2n;
+            let num_abs: BigInt = numerator.magnitude().clone().into();
+            let g = gcd_bigint(&num_abs, &denominator);
+            let num_simplified = &num_abs / &g;
+            let den_simplified = &denominator / &g;
+            let is_neg = numerator < BigInt::from(0);
+            let sqrt_pi = Expr::FunctionCall {
+              name: "Power".to_string(),
+              args: vec![
+                Expr::Identifier("Pi".to_string()),
+                Expr::FunctionCall {
+                  name: "Rational".to_string(),
+                  args: vec![Expr::Integer(1), Expr::Integer(2)],
+                },
+              ],
+            };
+            let coeff_num = if is_neg {
+              -num_simplified.clone()
+            } else {
+              num_simplified.clone()
+            };
+            if den_simplified == BigInt::from(1) {
+              if coeff_num == BigInt::from(1) {
+                return Ok(sqrt_pi);
+              }
+              return Ok(Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![bigint_to_expr(coeff_num), sqrt_pi],
+              });
+            }
+            let coeff = Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![
+                bigint_to_expr(coeff_num),
+                bigint_to_expr(den_simplified),
+              ],
+            };
+            return Ok(Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![coeff, sqrt_pi],
+            });
+          }
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "Gamma".to_string(),
+        args: args.to_vec(),
+      })
+    }
     _ => Ok(Expr::FunctionCall {
       name: "Gamma".to_string(),
       args: args.to_vec(),
     }),
   }
+}
+
+fn gcd_bigint(a: &BigInt, b: &BigInt) -> BigInt {
+  use num_traits::Zero;
+  let mut a = a.magnitude().clone();
+  let mut b = b.magnitude().clone();
+  while !b.is_zero() {
+    let t = b.clone();
+    b = &a % &b;
+    a = t;
+  }
+  a.into()
 }
 
 /// Lanczos approximation for the Gamma function

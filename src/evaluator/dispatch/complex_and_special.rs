@@ -1136,10 +1136,13 @@ fn builtin_default_value_str(sym: &str) -> Option<&'static str> {
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   match expr {
-    Expr::Integer(_)
-    | Expr::Real(_)
-    | Expr::Identifier(_)
-    | Expr::Constant(_) => expr.clone(),
+    Expr::Integer(n) => Expr::String(n.to_string()),
+    Expr::BigInteger(n) => Expr::String(n.to_string()),
+    Expr::Real(f) => Expr::String(crate::syntax::format_real(*f)),
+    Expr::BigFloat(digits, prec) => {
+      Expr::String(crate::syntax::format_bigfloat(digits, *prec))
+    }
+    Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
     Expr::String(s) => Expr::String(format!("\"{}\"", s)),
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
       // Plus[a, b, c] → RowBox[{box(a), "+", box(b), "+", box(c)}]
@@ -1813,7 +1816,7 @@ fn find_sequence_function(
       )
     })?;
 
-  let n = vals.len();
+  let _n = vals.len();
   let var = Expr::Identifier(var_name.clone());
 
   // Try factorial: a(n) = n!

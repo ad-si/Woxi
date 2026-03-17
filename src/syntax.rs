@@ -6373,6 +6373,42 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       format!("Inequality[{}]", parts.join(", "))
     }
+    // Unicode operator functions: use same Unicode formatting as OutputForm
+    Expr::FunctionCall { name, args } if name == "PlusMinus" => {
+      if args.len() == 1 {
+        format!("\u{00B1}{}", expr_to_input_form(&args[0]))
+      } else if args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+        parts.join(" \u{00B1} ")
+      } else {
+        "PlusMinus[]".to_string()
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CircleTimes" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{2297} ")
+    }
+    Expr::FunctionCall { name, args } if name == "Wedge" && args.len() >= 2 => {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{22C0} ")
+    }
+    Expr::FunctionCall { name, args } if name == "Del" && args.len() == 1 => {
+      format!("\u{2207}{}", expr_to_input_form(&args[0]))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CirclePlus" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{2295} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "AngleBracket" && !args.is_empty() =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      format!("\u{2329} {} \u{232A}", parts.join(", "))
+    }
     // Generic FunctionCall: render as name[arg1, arg2, ...] with InputForm for args.
     // Known infix operators (Plus, Times, Power, etc.) fall through to expr_to_output
     // since they rarely contain string literals and need infix rendering.
@@ -6690,6 +6726,11 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       )
     }
 
+    // CurriedCall: display as nested calls f[a][b, c] using InputForm
+    Expr::CurriedCall { func, args } => {
+      let args_str: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      format!("{}[{}]", expr_to_input_form(func), args_str.join(", "))
+    }
     // For all other cases (infix operators, simple literals), delegate to expr_to_output
     _ => expr_to_output(expr),
   }

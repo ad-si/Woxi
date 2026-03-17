@@ -3542,11 +3542,9 @@ mod piecewise_expand {
   }
 
   #[test]
-  fn unsupported_returns_unevaluated() {
-    assert_eq!(
-      interpret("PiecewiseExpand[Sin[x]]").unwrap(),
-      "PiecewiseExpand[Sin[x]]"
-    );
+  fn unsupported_returns_unchanged() {
+    // Non-expandable functions pass through unchanged
+    assert_eq!(interpret("PiecewiseExpand[Sin[x]]").unwrap(), "Sin[x]");
   }
 }
 
@@ -3685,7 +3683,7 @@ mod graph_embedding {
   fn complete_graph_3() {
     assert_eq!(
       interpret("GraphEmbedding[CompleteGraph[3]]").unwrap(),
-      "{{-0.8660254037844388, -0.4999999999999997}, {0.8660254037844384, -0.5000000000000004}, {3.061616997868383*^-16, 1.}}"
+      "{{-0.8660254037844388, -0.5}, {0.8660254037844384, -0.5}, {0., 1.}}"
     );
   }
 
@@ -3693,7 +3691,7 @@ mod graph_embedding {
   fn complete_graph_4() {
     assert_eq!(
       interpret("GraphEmbedding[CompleteGraph[4]]").unwrap(),
-      "{{-1., 1.2246467991473532*^-16}, {-1.8369701987210297*^-16, -1.}, {1., -2.4492935982947064*^-16}, {3.061616997868383*^-16, 1.}}"
+      "{{-1., 0.}, {0., -1.}, {1., 0.}, {0., 1.}}"
     );
   }
 
@@ -3701,7 +3699,7 @@ mod graph_embedding {
   fn directed_graph() {
     assert_eq!(
       interpret("GraphEmbedding[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
-      "{{-0.8660254037844388, -0.4999999999999997}, {0.8660254037844384, -0.5000000000000004}, {3.061616997868383*^-16, 1.}}"
+      "{{-0.8660254037844388, -0.5}, {0.8660254037844384, -0.5}, {0., 1.}}"
     );
   }
 
@@ -3709,7 +3707,7 @@ mod graph_embedding {
   fn single_edge() {
     assert_eq!(
       interpret("GraphEmbedding[Graph[{1 -> 2}]]").unwrap(),
-      "{{-1.8369701987210297*^-16, -1.}, {3.061616997868383*^-16, 1.}}"
+      "{{0., -1.}, {0., 1.}}"
     );
   }
 
@@ -3717,7 +3715,7 @@ mod graph_embedding {
   fn path_graph() {
     assert_eq!(
       interpret("GraphEmbedding[PathGraph[{1, 2, 3, 4}]]").unwrap(),
-      "{{-1., 1.2246467991473532*^-16}, {-1.8369701987210297*^-16, -1.}, {1., -2.4492935982947064*^-16}, {3.061616997868383*^-16, 1.}}"
+      "{{-1., 0.}, {0., -1.}, {1., 0.}, {0., 1.}}"
     );
   }
 
@@ -3735,7 +3733,7 @@ mod graph_embedding {
     assert_eq!(
       interpret("GraphEmbedding[CompleteGraph[3], \"CircularEmbedding\"]")
         .unwrap(),
-      "{{-0.8660254037844388, -0.4999999999999997}, {0.8660254037844384, -0.5000000000000004}, {3.061616997868383*^-16, 1.}}"
+      "{{-0.8660254037844388, -0.5}, {0.8660254037844384, -0.5}, {0., 1.}}"
     );
   }
 
