@@ -157,7 +157,7 @@ AnySubset,,,,10.1,4707
 AnyTrue,Checks if any element in a list is true,✅,pure,10,2031
 Apart,Decomposes a rational expression into partial fractions,✅,pure,1,683
 ApartSquareFree,,,,6,3755
-APIFunction,,,,10,1379
+APIFunction,Create a web API from a function,🚫,io,10,1379
 Appearance,Option symbol for specifying visual appearance,✅,pure,6,197
 AppearanceElements,,🚫,,6,1031
 AppearanceRules,,,,10,2243
@@ -266,7 +266,7 @@ AstroStyling,,,,13.2,
 AstroSubpoint,,,,14,
 AstroZoomLevel,,,,13.2,
 Asymptotic,,,,12.1,1629
-AsymptoticDSolveValue,,,,11.3,1386
+AsymptoticDSolveValue,Asymptotic solutions to differential equations,🚫,pure,11.3,1386
 AsymptoticEqual,,,,11.3,4104
 AsymptoticEquivalent,,,,11.3,4809
 AsymptoticExpectation,,,,12.2,4527
@@ -294,7 +294,7 @@ AttachCell,,,,12.2,4138
 AttachedCell,,,,13,
 AttentionLayer,,,,12,5079
 Attributes,Returns the attributes of a symbol,✅,pure,1,684
-Audio,,,,11,1406
+Audio,Create an audio object,🚫,io,11,1406
 AudioAmplify,,,,11,4527
 AudioAnnotate,,,,12,
 AudioAnnotationLookup,,,,12,
@@ -697,7 +697,7 @@ CDFWavelet,,,,8,3344
 Ceiling,Returns the smallest integer greater than or equal to a number,✅,pure,1,395
 CelestialSystem,,,,10,3765
 Cell,Represents a cell in a notebook with content and style information,✅,pure,3,325
-CellAutoOverwrite,,,,3,1417
+CellAutoOverwrite,Cell auto-overwrite option,🚫,io,3,1417
 CellBaseline,Option for cell baseline alignment,✅,none,3,685
 CellBracketOptions,,,,4,3889
 CellChangeTimes,,,,6,1975
@@ -904,7 +904,7 @@ ColorQ,,,,10,2162
 ColorQuantize,,,,7,1827
 ColorReplace,,,,9,1864
 ColorRules,Option for color rules in visualizations,✅,none,5.1,858
-ColorSeparate,,,,7,1409
+ColorSeparate,Separate color channels of an image,🚫,io,7,1409
 ColorSetter,,,,6,1803
 ColorSlider,,,,6,1949
 ColorsNear,,,,12,3593
@@ -1091,7 +1091,7 @@ ConvexOptimization,,,,12.2,2971
 ConvexPolygonQ,,,,12,
 ConvexPolyhedronQ,,,,12,
 ConvexRegionQ,,,,12.2,4479
-ConvolutionLayer,,,,11,1393
+ConvolutionLayer,Neural network convolution layer,🚫,io,11,1393
 Convolve,,🚫,,7,882
 ConwayGroupCo1,,,,8,5184
 ConwayGroupCo2,,,,8,4947
@@ -1406,7 +1406,7 @@ Dialog,,,,2,3612
 DialogInput,,,,6,1770
 DialogNotebook,,,,6,2723
 DialogProlog,,,,2,5079
-DialogReturn,,,,6,1401
+DialogReturn,Return from a dialog,🚫,io,6,1401
 DialogSymbols,,,,2,5079
 Diamond,,,,3,3889
 DiamondMatrix,Creates a diamond-shaped matrix of ones,✅,pure,7,2236
@@ -1684,7 +1684,7 @@ EmbeddedService,,,,10,4707
 EmbeddedSQLEntityClass,,,,12.2,
 EmbeddedSQLExpression,,,,12.2,
 EmbeddingLayer,,,,11,2698
-EmitSound,,,,6,1394
+EmitSound,Emit a sound,🚫,io,6,1394
 EmpiricalDistribution,,🚫,,8,1139
 EmptyGraphQ,,,,8,3785
 EmptyRegion,,,,10,2108
@@ -1765,7 +1765,7 @@ Evaluatable,,,,3,1967
 Evaluate,Forces evaluation of an expression,✅,pure,2,86
 EvaluatePacket,,,,3,3094
 EvaluationBox,,,,10,3048
-EvaluationCell,,,,9,1384
+EvaluationCell,Return the cell being evaluated,🚫,io,9,1384
 EvaluationData,,🚫,,10,3636
 EvaluationElements,,,,8,3972
 EvaluationEnvironment,,,,11.2,4947
@@ -2168,7 +2168,7 @@ FromEntity,,,,10,3413
 FromFiniteField,,,,14,
 FromFiniteFieldIndex,,,,14,
 FromJulianDate,,,,10.2,4437
-FromLetterNumber,,,,10.1,1411
+FromLetterNumber,Get the nth letter of the English alphabet,✅,pure,10.1,1411
 FromLunationNumber,,,,14,
 FromPolarCoordinates,,,,10.1,2187
 FromRawPointer,,,,13.1,
@@ -2528,7 +2528,7 @@ HeavisidePi,,,,7,2094
 HeavisideTheta,Heaviside step function,✅,pure,6,705
 HeldGroupHe,,,,8,5013
 HelmholtzPDEComponent,,,,12.2,5486
-Here,,,,10,1413
+Here,Current geo location,🚫,io,10,1413
 HermiteDecomposition,,,,6,3291
 HermiteH,Physicist's Hermite polynomial H_n(x),✅,pure,1,734
 Hermitian,,,,12.2,4707
@@ -2723,7 +2723,7 @@ ImageStitch,,,,13,
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7,1569
 ImageSynthesize,,,,13.3,
 ImageTake,Takes a rectangular region from an image,✅,pure,7,1285
-ImageTransformation,,,,8,1413
+ImageTransformation,Apply geometric transformation to image,🚫,io,8,1413
 ImageTrim,,,,8,1889
 ImageType,Returns the data type of an image,✅,pure,7,2495
 ImageValue,,,,8,1873
@@ -3138,7 +3138,7 @@ LessThan,,,,10.3,3059
 LessTilde,,,,3,5390
 LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
 LetterCounts,,,,10.1,2605
-LetterNumber,,,,10.1,1524
+LetterNumber,Get the position of a letter in the English alphabet,✅,pure,10.1,1524
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2,2144
 Level,Extracts subexpressions at specified levels,✅,pure,1,950
 LeveneTest,,,,8,3843
@@ -3820,7 +3820,7 @@ NotebookImport,,,,10.1,2693
 NotebookInformation,,,,5,2217
 NotebookLocate,,,,3,2179
 NotebookObject,,,,3,2162
-NotebookOpen,,,,3,1418
+NotebookOpen,Open a notebook file,🚫,io,3,1418
 NotebookPrint,,,,3,3389
 NotebookPut,,,,3,1597
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3,948
@@ -4089,7 +4089,7 @@ ParametricNDSolveValue,,🚫,,9,977
 ParametricPlot,Creates a parametric plot,✅,pure,1,118
 ParametricPlot3D,3D parametric plot,🚫,none,2,210
 ParametricRampLayer,,,,12.1,4291
-ParametricRegion,,,,10,1400
+ParametricRegion,Represent a parametric region,🚫,pure,10,1400
 ParentBox,,,,10,5079
 ParentCell,,,,10,4356
 ParentDirectory,,,,2,2132
@@ -4328,7 +4328,7 @@ PrecisionGoal,Option specifying the precision goal for numeric computation,✅,n
 PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1,1041
 Predict,,🚫,,10,1081
 PredictorFunction,,,,10,4387
-PredictorMeasurements,,,,10,1388
+PredictorMeasurements,Measurements of predictor function performance,🚫,io,10,1388
 PredictorMeasurementsObject,,,,10.1,
 PreemptProtect,,,,7,3413
 Prefix,Prefix output form symbol,✅,pure,1,3153
@@ -4748,7 +4748,7 @@ RootIntervals,,,,6,3344
 RootLocusPlot,,,,8,2036
 RootMeanSquare,Returns the root mean square of a list,✅,pure,6,2065
 RootOfUnityQ,,,,6,3947
-RootReduce,,,,3,1397
+RootReduce,Reduce algebraic number to minimal polynomial root,🚫,pure,3,1397
 Roots,Finds roots of polynomial equations as Or conditions,✅,pure,1,924
 RootSum,,,,3,2141
 RootTree,,,,13.1,
@@ -5091,7 +5091,7 @@ SpatialPointSelect,,,,12.2,
 SpatialRandomnessTest,,,,12.2,
 SpatialTransformationLayer,,,,11.1,4747
 SpatialTrendFunction,,,,13,
-Speak,,,,7,1405
+Speak,Text-to-speech output,🚫,io,7,1405
 SpeakerMatchQ,,,,12.1,
 SpearmanRankTest,,,,9,3506
 SpearmanRho,,,,9,3593
@@ -5210,7 +5210,7 @@ StrataVariables,,,,9,5486
 StratonovichProcess,,,,9,3413
 StraussHardcorePointProcess,,,,12.2,
 StraussPointProcess,,,,12.2,
-StreamColorFunction,,,,7,1405
+StreamColorFunction,Color function for stream plots,🚫,pure,7,1405
 StreamColorFunctionScaling,,,,7,3306
 StreamDensityPlot,Creates a stream density plot of a vector field,✅,pure,7,1468
 StreamMarkers,,,,11.3,4006
@@ -5340,7 +5340,7 @@ SurfaceArea,,,,12,2361
 SurfaceData,,🚫,,10,4052
 SurfaceIntegrate,,,,13.3,
 SurvivalDistribution,,,,8,3737
-SurvivalFunction,,,,8,1395
+SurvivalFunction,Survival function for distributions,🚫,pure,8,1395
 SurvivalModel,,,,9,5184
 SurvivalModelFit,,,,9,3344
 SuzukiDistribution,,,,8,3737
@@ -5955,7 +5955,7 @@ VertexInDegree,,,,8,2042
 VertexIndex,,,,8,2149
 VertexJaccardSimilarity,,,,9,4947
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8,453
-VertexLabelStyle,,,,8,1419
+VertexLabelStyle,Style for vertex labels in graphs,🚫,pure,8,1419
 VertexList,List of vertices in a graph,✅,none,8,657
 VertexNormals,,,,6,1721
 VertexOutComponent,,,,8,2605

@@ -2626,6 +2626,91 @@ pub fn alphabet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(letters))
 }
 
+// ─── FromLetterNumber / LetterNumber ──────────────────────────────
+
+/// FromLetterNumber[n] - give the nth letter of the English alphabet.
+/// Out-of-range or 0 returns a space character.
+/// Negative numbers wrap cyclically (e.g., -1 -> z).
+/// Works with lists of integers too.
+pub fn from_letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  fn letter_from_int(n: i128) -> Expr {
+    // Valid range: 1..=26 for positive, -26..=-1 for negative
+    // Everything else (0, >26, <-26) returns space
+    let pos = if n >= 1 && n <= 26 {
+      n as u8 // 1..=26
+    } else if n >= -26 && n <= -1 {
+      (26 + n + 1) as u8 // -1->26, -2->25, ..., -26->1
+    } else {
+      return Expr::String(" ".to_string());
+    };
+    let ch = (b'a' + pos - 1) as char;
+    Expr::String(ch.to_string())
+  }
+
+  match &args[0] {
+    Expr::Integer(n) => Ok(letter_from_int(*n)),
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|item| match item {
+          Expr::Integer(n) => Ok(letter_from_int(*n)),
+          _ => Ok(Expr::FunctionCall {
+            name: "FromLetterNumber".to_string(),
+            args: vec![item.clone()],
+          }),
+        })
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "FromLetterNumber".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// LetterNumber["c"] - give the position of a letter in the English alphabet.
+/// Returns 0 for non-letter characters.
+pub fn letter_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match &args[0] {
+    Expr::String(s) => {
+      if s.len() == 1 {
+        let ch = s.chars().next().unwrap().to_ascii_lowercase();
+        if ch.is_ascii_lowercase() {
+          Ok(Expr::Integer((ch as i128) - ('a' as i128) + 1))
+        } else {
+          Ok(Expr::Integer(0))
+        }
+      } else {
+        // For multi-character strings, return a list
+        let results: Vec<Expr> = s
+          .chars()
+          .map(|ch| {
+            let lower = ch.to_ascii_lowercase();
+            if lower.is_ascii_lowercase() {
+              Expr::Integer((lower as i128) - ('a' as i128) + 1)
+            } else {
+              Expr::Integer(0)
+            }
+          })
+          .collect();
+        Ok(Expr::List(results))
+      }
+    }
+    Expr::List(items) => {
+      let results: Result<Vec<Expr>, InterpreterError> = items
+        .iter()
+        .map(|item| letter_number_ast(&[item.clone()]))
+        .collect();
+      Ok(Expr::List(results?))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "LetterNumber".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 // ─── LetterQ ───────────────────────────────────────────────────────
 
 /// LetterQ[string] - True if string consists entirely of letters
