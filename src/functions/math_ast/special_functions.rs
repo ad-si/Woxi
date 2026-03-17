@@ -2040,6 +2040,74 @@ pub fn elliptic_k(m: f64) -> f64 {
   std::f64::consts::PI / (2.0 * a)
 }
 
+/// EllipticNomeQ[m] - Elliptic nome q(m) = exp(-Pi * K(1-m) / K(m))
+pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "EllipticNomeQ expects exactly 1 argument".into(),
+    ));
+  }
+
+  match &args[0] {
+    Expr::Integer(0) => Ok(Expr::Integer(0)),
+    Expr::Integer(1) => Ok(Expr::Integer(1)),
+    Expr::Real(f) => {
+      if *f == 0.0 {
+        Ok(Expr::Real(0.0))
+      } else if *f == 1.0 {
+        Ok(Expr::Real(1.0))
+      } else if *f > 0.0 && *f < 1.0 {
+        let k_m = elliptic_k(*f);
+        let k_1m = elliptic_k(1.0 - *f);
+        let q = (-std::f64::consts::PI * k_1m / k_m).exp();
+        Ok(Expr::Real(q))
+      } else {
+        // Outside [0, 1], return unevaluated
+        Ok(Expr::FunctionCall {
+          name: "EllipticNomeQ".to_string(),
+          args: args.to_vec(),
+        })
+      }
+    }
+    // Symbolic special case: EllipticNomeQ[1/2] = E^(-Pi) (since K(1/2)=K(1-1/2)=K(1/2))
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
+        if *n == 1 && *d == 2 {
+          // q(1/2) = exp(-Pi * K(1/2) / K(1/2)) = exp(-Pi)
+          return Ok(Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![
+              Expr::Constant("E".to_string()),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())],
+              },
+            ],
+          });
+        }
+        // For other rationals, compute numerically
+        let f = *n as f64 / *d as f64;
+        if f > 0.0 && f < 1.0 {
+          let k_m = elliptic_k(f);
+          let k_1m = elliptic_k(1.0 - f);
+          let q = (-std::f64::consts::PI * k_1m / k_m).exp();
+          return Ok(Expr::Real(q));
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "EllipticNomeQ".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "EllipticNomeQ".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// EllipticE[m] - Complete elliptic integral of the second kind
 pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {

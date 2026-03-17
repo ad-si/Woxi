@@ -392,6 +392,9 @@ pub fn dispatch_math_functions(
     "EllipticPi" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::elliptic_pi_ast(args));
     }
+    "EllipticNomeQ" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::elliptic_nome_q_ast(args));
+    }
     "Zeta" if args.len() == 1 => {
       return Some(crate::functions::math_ast::zeta_ast(args));
     }
