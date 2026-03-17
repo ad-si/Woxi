@@ -1160,7 +1160,7 @@ CreateCompilerEnvironment,,,,12.3,
 CreateDatabin,,,,10,3506
 CreateDataStructure,,,,12.1,3008
 CreateDataSystemModel,,,,11.3,5184
-CreateDialog,,,,6,1427
+CreateDialog,Create a dialog window,🚫,io,6,1427
 CreateDirectory,,,,2,1569
 CreateDocument,,🚫,,6,1071
 CreateFile,Creates a file with a name or a random file in the default area for temporary files,🚧,effectful,10.4,2786
@@ -1674,7 +1674,7 @@ EllipticF,Incomplete elliptic integral of the first kind F(phi m),✅,pure,1,111
 EllipticFilterModel,,,,9,4387
 EllipticK,Complete elliptic integral of the first kind,✅,pure,1,441
 EllipticLog,Symbol for elliptic logarithm function,✅,pure,1,2519
-EllipticNomeQ,,,,3,1415
+EllipticNomeQ,Elliptic nome function,✅,pure,3,1415
 EllipticPi,Elliptic integral of the third kind,✅,pure,1,1362
 EllipticTheta,Jacobi theta function,✅,pure,1,551
 EllipticThetaPrime,Derivative of Jacobi theta function with respect to z,✅,pure,3,1375
@@ -2462,7 +2462,7 @@ GroupCentralizer,,,,8,4291
 GroupElementFromWord,,,,9,4527
 GroupElementPosition,,,,8,4104
 GroupElementQ,,,,8,4173
-GroupElements,,,,8,1414
+GroupElements,Elements of a group,🚫,pure,8,1414
 GroupElementToWord,,,,9,3947
 GroupGenerators,,,,8,2707
 Groupings,,,,11,2777
@@ -2963,7 +2963,7 @@ Join,Concatenates multiple lists,✅,pure,1,105
 JoinAcross,,,,10,2292
 Joined,Option for joining points in list plots,✅,none,6,285
 JoinedCurve,,,,8,1754
-JoinForm,,,,7,1420
+JoinForm,Graphics join form directive,🚫,pure,7,1420
 JordanDecomposition,,🚫,,3,844
 JordanModelDecomposition,,,,8,4138
 JulianDate,,,,10.2,3048
@@ -4909,7 +4909,7 @@ SessionSubmit,,,,11.2,2900
 SessionTime,,,,2,1444
 Set,Assigns a value to a symbol,✅,stateful,1,5
 SetAccuracy,,🚫,,2,972
-SetAlphaChannel,,,,8,1426
+SetAlphaChannel,Set image alpha channel,🚫,io,8,1426
 SetAttributes,Sets attributes for a symbol,✅,stateful,1,333
 SetCloudDirectory,,,,10,3522
 SetCookies,,,,11,4947
@@ -5368,7 +5368,7 @@ SymmetrizedArrayRules,,,,9,3916
 SymmetrizedDependentComponents,,,,9,4479
 SymmetrizedIndependentComponents,,,,9,3566
 SymmetrizedReplacePart,,,,9,4881
-SynchronousInitialization,,,,6,1429
+SynchronousInitialization,Notebook synchronous initialization,🚫,io,6,1429
 SynchronousUpdating,,🚫,,6,931
 Synonyms,,,,12,4052
 SyntaxForm,,,,3,2276
@@ -5494,7 +5494,7 @@ TestID,Option symbol for specifying a test identifier in testing functions,✅,p
 TestObject,,,,13.3,
 TestReport,,,,10,3048
 TestReportObject,,,,10,4881
-Tetrahedron,,,,10,1424
+Tetrahedron,3D tetrahedron primitive,🚫,pure,10,1424
 TeXForm,Convert expressions to LaTeX notation,✅,pure,1,782
 Text,Represents a text graphics primitive,✅,pure,1,122
 TextAlignment,,🚫,,3,1051
@@ -5667,7 +5667,7 @@ TransferFunctionTransform,,,,9,4027
 TransferFunctionZeros,,,,8,3678
 TransformationClass,,,,10,2867
 TransformationFunction,,,,6,2656
-TransformationFunctions,,,,4,1422
+TransformationFunctions,Functions for Simplify transformations,🚫,pure,4,1422
 TransformationMatrix,,,,6,2344
 TransformedDistribution,,🚫,,8,851
 TransformedField,,,,9,1499
@@ -5723,7 +5723,7 @@ TreeLevel,,,,12.3,
 TreeMap,,,,12.3,
 TreeMapAt,,,,13,
 TreeOutline,,,,12.3,
-TreePlot,,,,6,1405
+TreePlot,Plot a tree graph,🚫,pure,6,1405
 TreePosition,,,,12.3,
 TreeQ,,,,12.3,
 TreeReplacePart,,,,12.3,

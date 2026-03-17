@@ -681,6 +681,49 @@ mod elliptic_pi {
   }
 }
 
+mod elliptic_nome_q {
+  use super::*;
+
+  #[test]
+  fn zero_arg() {
+    assert_eq!(interpret("EllipticNomeQ[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn one_arg() {
+    assert_eq!(interpret("EllipticNomeQ[1]").unwrap(), "1");
+  }
+
+  #[test]
+  fn half_symbolic() {
+    assert_eq!(interpret("EllipticNomeQ[1/2]").unwrap(), "E^(-Pi)");
+  }
+
+  #[test]
+  fn numeric_half() {
+    let result: f64 = interpret("EllipticNomeQ[0.5]").unwrap().parse().unwrap();
+    assert!((result - 0.04321391826377226).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_small() {
+    let result: f64 = interpret("EllipticNomeQ[0.3]").unwrap().parse().unwrap();
+    assert!((result - 0.02227743615715351).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_near_one() {
+    let result: f64 =
+      interpret("EllipticNomeQ[0.99]").unwrap().parse().unwrap();
+    assert!((result - 0.26219626791770934).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(interpret("EllipticNomeQ[m]").unwrap(), "EllipticNomeQ[m]");
+  }
+}
+
 mod elliptic_theta {
   use super::*;
 
