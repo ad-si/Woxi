@@ -221,7 +221,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     "EllipticExp" | "EllipticLog" | "Infinity" | "InputString"
     | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "ListPlot3D"
     | "Input" | "SeriesData" | "RunThrough" | "AbsolutePointSize"
-    | "Entity" | "SquareWave" => {
+    | "Entity" | "SquareWave" | "TriangleWave" => {
       vec!["Protected", "ReadProtected"]
     }
     "Plot3D" => vec!["HoldAll", "Protected", "ReadProtected"],
