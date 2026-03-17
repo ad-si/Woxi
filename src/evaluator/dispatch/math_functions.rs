@@ -972,6 +972,9 @@ pub fn dispatch_math_functions(
     "SquareWave" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::square_wave_ast(args));
     }
+    "TriangleWave" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::triangle_wave_ast(args));
+    }
     "ParabolicCylinderD" if args.len() == 2 => {
       return Some(crate::functions::math_ast::parabolic_cylinder_d_ast(args));
     }

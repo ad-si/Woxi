@@ -4962,3 +4962,91 @@ mod discriminant {
     );
   }
 }
+
+#[cfg(test)]
+mod triangle_wave {
+  use super::*;
+
+  #[test]
+  fn integer_zero() {
+    assert_eq!(interpret("TriangleWave[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_one() {
+    assert_eq!(interpret("TriangleWave[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_negative() {
+    assert_eq!(interpret("TriangleWave[-1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_large() {
+    assert_eq!(interpret("TriangleWave[100]").unwrap(), "0");
+  }
+
+  #[test]
+  fn float_quarter() {
+    assert_eq!(interpret("TriangleWave[0.25]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn float_half() {
+    assert_eq!(interpret("TriangleWave[0.5]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn float_three_quarter() {
+    assert_eq!(interpret("TriangleWave[0.75]").unwrap(), "-1.");
+  }
+
+  #[test]
+  fn float_negative() {
+    assert_eq!(interpret("TriangleWave[-0.25]").unwrap(), "-1.");
+  }
+
+  #[test]
+  fn rational_quarter() {
+    assert_eq!(interpret("TriangleWave[1/4]").unwrap(), "1");
+  }
+
+  #[test]
+  fn rational_third() {
+    assert_eq!(interpret("TriangleWave[1/3]").unwrap(), "2/3");
+  }
+
+  #[test]
+  fn rational_three_eighths() {
+    assert_eq!(interpret("TriangleWave[3/8]").unwrap(), "1/2");
+  }
+
+  #[test]
+  fn periodic_wrapping() {
+    assert_eq!(interpret("TriangleWave[2]").unwrap(), "0");
+  }
+
+  #[test]
+  fn two_arg_scaling() {
+    assert_eq!(interpret("TriangleWave[{2, 5}, 0.25]").unwrap(), "5.");
+  }
+
+  #[test]
+  fn two_arg_unit() {
+    assert_eq!(interpret("TriangleWave[{-1, 1}, 0.25]").unwrap(), "1.");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("TriangleWave[x]").unwrap(), "TriangleWave[x]");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[TriangleWave]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}

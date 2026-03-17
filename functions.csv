@@ -760,7 +760,7 @@ ChannelSubscribers,,,,11,4612
 ChanVeseBinarize,,,,8,2408
 Character,Symbol used in string patterns to represent a single character,✅,pure,1,1993
 CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
-CharacterEncoding,,,,3,1434
+CharacterEncoding,Character encoding specification,🚫,io,3,1434
 CharacteristicFunction,,,,6,1817
 CharacteristicPolynomial,Compute the characteristic polynomial of a matrix,✅,pure,5,793
 CharacterName,,,,10.2,3737
@@ -2276,7 +2276,7 @@ GenomeLookup,,,,7,4262
 GeoAntipode,,,,11.2,3717
 GeoArea,,,,10.3,3378
 GeoArraySize,,,,12,4881
-GeoBackground,,,,10,1430
+GeoBackground,Background for geographic plots,🚫,pure,10,1430
 GeoBoundary,,,,12.2,5486
 GeoBoundingBox,,,,10,3233
 GeoBounds,,,,10,3162
@@ -2357,7 +2357,7 @@ GeoScaleBar,,,,10,3656
 GeoServer,,,,10.1,3402
 GeoSmoothHistogram,,,,11.3,5390
 GeoStreamPlot,,,,12,5390
-GeoStyling,,,,10,1432
+GeoStyling,Styling for geographic regions,🚫,pure,10,1432
 GeoStylingImageFunction,,,,10,4204
 GeoVariant,,,,10,3108
 GeoVector,,,,12,
@@ -2780,7 +2780,7 @@ InfiniteFuture,,,,12.1,
 InfiniteLine,Geometric primitive representing an infinite line,✅,none,10,893
 InfiniteLineThrough,,,,13.1,
 InfinitePast,,,,12.1,
-InfinitePlane,,,,10,1434
+InfinitePlane,Infinite plane geometric region,🚫,pure,10,1434
 Infinity,Positive infinity constant,✅,pure,,
 Infix,Symbol for infix display formatting,✅,pure,1,2449
 InflationAdjust,,,,10,3317
@@ -2932,7 +2932,7 @@ Item,Wrapper for specifying individual item options in Grid and similar construc
 ItemAspectRatio,,,,6,4356
 ItemDisplayFunction,,,,12.1,
 ItemSize,Option for specifying sizes of items in Grid and similar,✅,pure,6,490
-ItemStyle,,,,6,1431
+ItemStyle,Style specification for items,🚫,pure,6,1431
 ItoProcess,,,,9,1659
 JaccardDissimilarity,,,,6,4104
 JacobiAmplitude,Amplitude for Jacobi elliptic functions,✅,pure,1,1300
@@ -4384,7 +4384,7 @@ ProcessStatus,,,,10,3755
 Product,Computes the product of an expression over a range,✅,pure,1,376
 ProductDistribution,,,,8,1713
 ProductLog,Returns the Lambert W function value,✅,pure,3,905
-ProgressIndicator,,,,6,1435
+ProgressIndicator,Dynamic progress indicator,🚫,io,6,1435
 ProgressReporting,,,,12.3,
 Projection,Returns the projection of a vector onto another,✅,pure,6,1381
 Prolog,Option specifying graphics primitives drawn before the main plot,✅,none,2,660
@@ -5144,7 +5144,7 @@ SpotLight,,,,13,
 Sqrt,Returns the square root of a number,✅,pure,1,18
 SqrtBox,,,,3,1999
 SqrtBoxOptions,,,,6,
-Square,,,,3,1437
+Square,Square geometric primitive,🚫,pure,3,1437
 SquaredEuclideanDistance,Squared Euclidean distance between two vectors,✅,pure,6,1946
 SquareFreeQ,Tests if a polynomial or integer is square-free,✅,pure,6,1944
 SquareIntersection,,,,3,4809
@@ -5737,7 +5737,7 @@ Triangle,Geometric primitive representing a triangle,✅,none,10,901
 TriangleCenter,,,,12,4809
 TriangleConstruct,,,,12,3317
 TriangleMeasurement,,,,12,3843
-TriangleWave,,,,7,1443
+TriangleWave,gives a triangle wave with period 1,✅,pure,7,1443
 TriangularDistribution,,,,6,1827
 TriangulateMesh,,,,10,2367
 Trig,,,,2,1658

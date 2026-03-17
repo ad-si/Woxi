@@ -6740,6 +6740,95 @@ pub fn square_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// TriangleWave[t] - triangle wave with period 1: linearly goes from 0 to 1 at t=1/4,
+/// back to 0 at t=1/2, down to -1 at t=3/4, and back to 0 at t=1.
+/// Formula: 4 * |frac(t + 3/4) - 1/2| - 1
+/// TriangleWave[{min, max}, t] - scales output from [-1,1] to [min,max]
+pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match args.len() {
+    1 => {
+      // Integer input: TriangleWave[n] = 0 for all integers
+      if let Expr::Integer(_) = &args[0] {
+        return Ok(Expr::Integer(0));
+      }
+      // Exact rational input
+      if let Expr::FunctionCall {
+        name,
+        args: rat_args,
+      } = &args[0]
+      {
+        if name == "Rational" && rat_args.len() == 2 {
+          if let (Expr::Integer(n), Expr::Integer(d)) =
+            (&rat_args[0], &rat_args[1])
+          {
+            // Compute triangle wave for n/d exactly
+            // shifted = n/d + 3/4 = (4n + 3d) / (4d)
+            let num = 4 * n + 3 * d;
+            let den = 4 * d;
+            // frac = num mod den / den (using Euclidean remainder)
+            let rem = num.rem_euclid(den);
+            // val = 4 * |rem/den - 1/2| - 1 = 4 * |rem - den/2| / den - 1
+            // = (4 * |2*rem - den|) / (2*den) - 1
+            // = (2 * |2*rem - den| - den) / den
+            let two_rem_minus_den = 2 * rem - den;
+            let abs_val = two_rem_minus_den.abs();
+            let result_num = 2 * abs_val - den;
+            let result_den = den;
+            // Simplify result_num / result_den
+            let g = gcd(result_num, result_den);
+            let sn = result_num / g;
+            let sd = result_den / g;
+            if sd == 1 {
+              return Ok(Expr::Integer(sn));
+            }
+            return Ok(Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(sn), Expr::Integer(sd)],
+            });
+          }
+        }
+      }
+      // Float input
+      if let Some(t) = expr_to_f64(&args[0]) {
+        let shifted = t + 0.75;
+        let frac = shifted - shifted.floor();
+        let val = 4.0 * (frac - 0.5).abs() - 1.0;
+        return Ok(Expr::Real(val));
+      }
+      Ok(Expr::FunctionCall {
+        name: "TriangleWave".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    2 => {
+      // TriangleWave[{min, max}, t]
+      if let Expr::List(bounds) = &args[0] {
+        if bounds.len() == 2 {
+          // First compute base triangle wave value
+          let base_args = [args[1].clone()];
+          let base = triangle_wave_ast(&base_args)?;
+          if let Some(v) = expr_to_f64(&base) {
+            if let (Some(lo), Some(hi)) =
+              (expr_to_f64(&bounds[0]), expr_to_f64(&bounds[1]))
+            {
+              // Scale from [-1,1] to [min,max]: result = min + (max-min)*(v+1)/2
+              let result = lo + (hi - lo) * (v + 1.0) / 2.0;
+              return Ok(Expr::Real(result));
+            }
+          }
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "TriangleWave".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "TriangleWave expects 1 or 2 arguments".into(),
+    )),
+  }
+}
+
 /// ParabolicCylinderD[ν, z] - parabolic cylinder function D_ν(z)
 pub fn parabolic_cylinder_d_ast(
   args: &[Expr],
