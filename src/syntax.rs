@@ -5572,7 +5572,19 @@ pub fn expr_to_output(expr: &Expr) -> String {
           && let Expr::Integer(d) = &rargs[1]
         {
           let inner = expr_to_output(&args[1]);
-          return format!("{}/{}", inner, d);
+          let inner_str = if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Plus")
+            || matches!(
+              &args[1],
+              Expr::BinaryOp {
+                op: BinaryOperator::Plus | BinaryOperator::Minus,
+                ..
+              }
+            ) {
+            format!("({})", inner)
+          } else {
+            inner
+          };
+          return format!("{}/{}", inner_str, d);
         }
         // Handle Times[Rational[n, d], expr] as "(n*expr)/d" (Wolfram convention)
         if args.len() == 2

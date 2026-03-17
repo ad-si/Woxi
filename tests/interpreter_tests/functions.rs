@@ -3135,6 +3135,120 @@ mod area {
   }
 }
 
+mod region_centroid {
+  use super::*;
+
+  #[test]
+  fn point() {
+    assert_eq!(
+      interpret("RegionCentroid[Point[{3, 4}]]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn unit_disk() {
+    assert_eq!(interpret("RegionCentroid[Disk[]]").unwrap(), "{0, 0}");
+  }
+
+  #[test]
+  fn disk_with_center() {
+    assert_eq!(
+      interpret("RegionCentroid[Disk[{3, 4}, 2]]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn disk_symbolic() {
+    assert_eq!(
+      interpret("RegionCentroid[Disk[{a, b}, r]]").unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  fn unit_rectangle() {
+    assert_eq!(
+      interpret("RegionCentroid[Rectangle[]]").unwrap(),
+      "{1/2, 1/2}"
+    );
+  }
+
+  #[test]
+  fn rectangle_with_bounds() {
+    assert_eq!(
+      interpret("RegionCentroid[Rectangle[{0, 0}, {2, 3}]]").unwrap(),
+      "{1, 3/2}"
+    );
+  }
+
+  #[test]
+  fn rectangle_symbolic() {
+    assert_eq!(
+      interpret("RegionCentroid[Rectangle[{a, b}, {c, d}]]").unwrap(),
+      "{(a + c)/2, (b + d)/2}"
+    );
+  }
+
+  #[test]
+  fn triangle_basic() {
+    assert_eq!(
+      interpret("RegionCentroid[Triangle[{{0, 0}, {1, 0}, {0, 1}}]]").unwrap(),
+      "{1/3, 1/3}"
+    );
+  }
+
+  #[test]
+  fn polygon_square() {
+    assert_eq!(
+      interpret("RegionCentroid[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]")
+        .unwrap(),
+      "{1/2, 1/2}"
+    );
+  }
+
+  #[test]
+  fn polygon_trapezoid() {
+    assert_eq!(
+      interpret("RegionCentroid[Polygon[{{0,0},{2,0},{3,1},{1,1}}]]").unwrap(),
+      "{3/2, 1/2}"
+    );
+  }
+
+  #[test]
+  fn line_two_points() {
+    assert_eq!(
+      interpret("RegionCentroid[Line[{{0, 0}, {1, 1}}]]").unwrap(),
+      "{1/2, 1/2}"
+    );
+  }
+
+  #[test]
+  fn ball_3d() {
+    assert_eq!(
+      interpret("RegionCentroid[Ball[{1, 2, 3}, 5]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn circle_center() {
+    assert_eq!(
+      interpret("RegionCentroid[Circle[{2, 3}, 1]]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn unevaluated_unknown() {
+    assert_eq!(
+      interpret("RegionCentroid[foo]").unwrap(),
+      "RegionCentroid[foo]"
+    );
+  }
+}
+
 mod triangle {
   use super::*;
 

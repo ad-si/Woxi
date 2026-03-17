@@ -4561,7 +4561,7 @@ RegionBinarize,,,,8,3008
 RegionBoundary,,🚫,,10,1301
 RegionBoundaryStyle,,,,12.1,4612
 RegionBounds,,,,10,1480
-RegionCentroid,,,,10,1377
+RegionCentroid,Compute the centroid of a geometric region,✅,pure,10,1377
 RegionCongruent,,,,13,
 RegionConvert,,,,12.3,
 RegionDifference,,🚫,,10,991

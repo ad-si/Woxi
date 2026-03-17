@@ -1022,6 +1022,9 @@ pub fn dispatch_complex_and_special(
     "Area" if args.len() == 1 => {
       return Some(compute_area(&args[0]));
     }
+    "RegionCentroid" if args.len() == 1 => {
+      return Some(compute_region_centroid(&args[0]));
+    }
     // FindSequenceFunction[list, var] — find a formula for an integer sequence
     "FindSequenceFunction" if args.len() == 2 => {
       return Some(find_sequence_function(&args[0], &args[1]));
@@ -1776,6 +1779,495 @@ fn compute_polygon_area(pts: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   crate::evaluator::evaluate_expr_to_expr(&area_expr)
+}
+
+/// Compute the centroid of a geometric region.
+fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionCentroid".to_string(),
+      args: vec![expr.clone()],
+    })
+  };
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // Point[{x, y, ...}] — centroid is the point itself
+      "Point" if args.len() == 1 => {
+        if let Expr::List(_) = &args[0] {
+          Ok(args[0].clone())
+        } else {
+          unevaluated()
+        }
+      }
+      // Disk[{x, y}, r] or Disk[] — centroid is the center
+      "Disk" => {
+        if args.is_empty() {
+          // Unit disk centered at origin
+          Ok(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]))
+        } else {
+          // Center is the first argument
+          Ok(args[0].clone())
+        }
+      }
+      // Ball[{x, y, z}, r] or Ball[] — centroid is the center
+      "Ball" => {
+        if args.is_empty() {
+          Ok(Expr::List(vec![
+            Expr::Integer(0),
+            Expr::Integer(0),
+            Expr::Integer(0),
+          ]))
+        } else {
+          Ok(args[0].clone())
+        }
+      }
+      // Circle[{x, y}, r] — centroid is the center
+      "Circle" => {
+        if args.is_empty() {
+          Ok(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]))
+        } else {
+          Ok(args[0].clone())
+        }
+      }
+      // Rectangle[{x1, y1}, {x2, y2}] — centroid is midpoint
+      "Rectangle" => {
+        if args.is_empty() {
+          // Rectangle[] = Rectangle[{0,0},{1,1}]
+          Ok(Expr::List(vec![
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)],
+            },
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)],
+            },
+          ]))
+        } else if args.len() == 1 {
+          // Rectangle[{x1,y1}] = Rectangle[{x1,y1},{x1+1,y1+1}]
+          if let Expr::List(p1) = &args[0] {
+            if p1.len() == 2 {
+              let cx = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  p1[0].clone(),
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), Expr::Integer(2)],
+                  },
+                ],
+              };
+              let cy = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  p1[1].clone(),
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), Expr::Integer(2)],
+                  },
+                ],
+              };
+              let result = Expr::List(vec![cx, cy]);
+              return crate::evaluator::evaluate_expr_to_expr(&result);
+            }
+          }
+          unevaluated()
+        } else if args.len() == 2 {
+          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) {
+            if p1.len() == 2 && p2.len() == 2 {
+              let cx = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), Expr::Integer(2)],
+                  },
+                  Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![p1[0].clone(), p2[0].clone()],
+                  },
+                ],
+              };
+              let cy = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(1), Expr::Integer(2)],
+                  },
+                  Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![p1[1].clone(), p2[1].clone()],
+                  },
+                ],
+              };
+              let result = Expr::List(vec![cx, cy]);
+              return crate::evaluator::evaluate_expr_to_expr(&result);
+            }
+          }
+          unevaluated()
+        } else {
+          unevaluated()
+        }
+      }
+      // Triangle[{{x1,y1},{x2,y2},{x3,y3}}] — centroid is average of vertices
+      "Triangle" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() == 3 {
+              return compute_triangle_centroid(pts);
+            }
+          }
+        }
+        unevaluated()
+      }
+      // Polygon[{{x1,y1},{x2,y2},...}] — centroid via shoelace-derived formula
+      "Polygon" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() >= 3 {
+              return compute_polygon_centroid(pts);
+            }
+          }
+        }
+        unevaluated()
+      }
+      // Line[{{x1,y1},{x2,y2},...}] — centroid is weighted average by segment length
+      "Line" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() >= 2 {
+              return compute_line_centroid(pts);
+            }
+          }
+        }
+        unevaluated()
+      }
+      _ => unevaluated(),
+    },
+    _ => unevaluated(),
+  }
+}
+
+/// Compute centroid of a triangle: average of the 3 vertices.
+fn compute_triangle_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Get the dimension from the first point
+  let coords: Vec<&Vec<Expr>> = pts
+    .iter()
+    .filter_map(|p| {
+      if let Expr::List(xy) = p {
+        Some(xy)
+      } else {
+        None
+      }
+    })
+    .collect();
+  if coords.len() != 3 {
+    return Ok(Expr::FunctionCall {
+      name: "RegionCentroid".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Triangle".to_string(),
+        args: vec![Expr::List(pts.to_vec())],
+      }],
+    });
+  }
+  let dim = coords[0].len();
+  if !coords.iter().all(|c| c.len() == dim) {
+    return Ok(Expr::FunctionCall {
+      name: "RegionCentroid".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Triangle".to_string(),
+        args: vec![Expr::List(pts.to_vec())],
+      }],
+    });
+  }
+  let mut result = Vec::new();
+  for d in 0..dim {
+    let avg = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(3)],
+        },
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![
+            coords[0][d].clone(),
+            coords[1][d].clone(),
+            coords[2][d].clone(),
+          ],
+        },
+      ],
+    };
+    result.push(avg);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&Expr::List(result))
+}
+
+/// Compute centroid of a polygon using the standard formula:
+/// Cx = 1/(6A) * sum((xi + xi+1)(xi*yi+1 - xi+1*yi))
+/// Cy = 1/(6A) * sum((yi + yi+1)(xi*yi+1 - xi+1*yi))
+/// where A is the signed area from the shoelace formula.
+fn compute_polygon_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionCentroid".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Polygon".to_string(),
+        args: vec![Expr::List(pts.to_vec())],
+      }],
+    })
+  };
+
+  let coords: Vec<(&Expr, &Expr)> = pts
+    .iter()
+    .filter_map(|p| {
+      if let Expr::List(xy) = p {
+        if xy.len() == 2 {
+          return Some((&xy[0], &xy[1]));
+        }
+      }
+      None
+    })
+    .collect();
+
+  if coords.len() != pts.len() {
+    return unevaluated();
+  }
+
+  let n = coords.len();
+
+  // Build signed area: 2A = sum(xi*yi+1 - xi+1*yi)
+  let mut area_terms = Vec::new();
+  let mut cx_terms = Vec::new();
+  let mut cy_terms = Vec::new();
+
+  for i in 0..n {
+    let j = (i + 1) % n;
+    // cross = xi*yj - xj*yi
+    let cross = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![coords[i].0.clone(), coords[j].1.clone()],
+        },
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![
+            Expr::Integer(-1),
+            coords[j].0.clone(),
+            coords[i].1.clone(),
+          ],
+        },
+      ],
+    };
+
+    area_terms.push(cross.clone());
+
+    // (xi + xj) * cross
+    cx_terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![coords[i].0.clone(), coords[j].0.clone()],
+        },
+        cross.clone(),
+      ],
+    });
+
+    // (yi + yj) * cross
+    cy_terms.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![coords[i].1.clone(), coords[j].1.clone()],
+        },
+        cross,
+      ],
+    });
+  }
+
+  // signed_area_2 = sum of area_terms
+  let signed_area_2 = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: area_terms,
+  };
+
+  // 1/(6A) = 1/(3 * signed_area_2)
+  let inv_6a = Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![Expr::Integer(3), signed_area_2],
+      },
+      Expr::Integer(-1),
+    ],
+  };
+
+  let cx = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      inv_6a.clone(),
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: cx_terms,
+      },
+    ],
+  };
+
+  let cy = Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: vec![
+      inv_6a,
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: cy_terms,
+      },
+    ],
+  };
+
+  crate::evaluator::evaluate_expr_to_expr(&Expr::List(vec![cx, cy]))
+}
+
+/// Compute centroid of a line (polyline): weighted average of segment midpoints.
+fn compute_line_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "RegionCentroid".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(pts.to_vec())],
+      }],
+    })
+  };
+
+  // Extract coordinates
+  let coords: Vec<&Vec<Expr>> = pts
+    .iter()
+    .filter_map(|p| {
+      if let Expr::List(xy) = p {
+        Some(xy)
+      } else {
+        None
+      }
+    })
+    .collect();
+
+  if coords.len() != pts.len() || coords.is_empty() {
+    return unevaluated();
+  }
+
+  let dim = coords[0].len();
+  if !coords.iter().all(|c| c.len() == dim) {
+    return unevaluated();
+  }
+
+  // For a 2-point line, centroid is simply the midpoint
+  if coords.len() == 2 {
+    let mut result = Vec::new();
+    for d in 0..dim {
+      result.push(Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)],
+          },
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![coords[0][d].clone(), coords[1][d].clone()],
+          },
+        ],
+      });
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::List(result));
+  }
+
+  // For multi-segment lines, weight midpoints by segment length
+  // Build symbolic expressions for: sum(length_i * midpoint_i) / sum(length_i)
+  let mut length_terms = Vec::new();
+  let mut weighted_midpoints: Vec<Vec<Expr>> = vec![Vec::new(); dim];
+
+  for i in 0..coords.len() - 1 {
+    let j = i + 1;
+    // length = Sqrt[sum of (xj_d - xi_d)^2]
+    let mut sq_terms = Vec::new();
+    for d in 0..dim {
+      sq_terms.push(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              coords[j][d].clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), coords[i][d].clone()],
+              },
+            ],
+          },
+          Expr::Integer(2),
+        ],
+      });
+    }
+    let seg_length = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: sq_terms,
+      }],
+    };
+
+    length_terms.push(seg_length.clone());
+
+    for d in 0..dim {
+      // midpoint_d * length
+      let mid = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)],
+          },
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![coords[i][d].clone(), coords[j][d].clone()],
+          },
+          seg_length.clone(),
+        ],
+      };
+      weighted_midpoints[d].push(mid);
+    }
+  }
+
+  let total_length = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: length_terms,
+  };
+
+  let mut result = Vec::new();
+  for d in 0..dim {
+    result.push(Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![total_length.clone(), Expr::Integer(-1)],
+        },
+        Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: weighted_midpoints[d].clone(),
+        },
+      ],
+    });
+  }
+
+  crate::evaluator::evaluate_expr_to_expr(&Expr::List(result))
 }
 
 // ─── FindSequenceFunction ──────────────────────────────────────────────
