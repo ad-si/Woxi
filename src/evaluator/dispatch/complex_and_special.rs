@@ -1025,6 +1025,12 @@ pub fn dispatch_complex_and_special(
     "RegionCentroid" if args.len() == 1 => {
       return Some(compute_region_centroid(&args[0]));
     }
+    "ArcLength" if args.len() == 1 => {
+      return Some(compute_arc_length(&args[0]));
+    }
+    "Perimeter" if args.len() == 1 => {
+      return Some(compute_perimeter(&args[0]));
+    }
     // FindSequenceFunction[list, var] — find a formula for an integer sequence
     "FindSequenceFunction" if args.len() == 2 => {
       return Some(find_sequence_function(&args[0], &args[1]));
@@ -2584,4 +2590,263 @@ fn try_polynomial(vals: &[(i128, i128)], var_name: &str) -> Option<Expr> {
   }
 
   Some(simplified)
+}
+
+/// Compute the arc length of a 1D curve.
+/// ArcLength works for Circle and Line. Other regions return Undefined.
+fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ArcLength".to_string(),
+      args: vec![expr.clone()],
+    })
+  };
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // Circle[{x, y}, r] -> 2*Pi*r, Circle[] -> 2*Pi
+      "Circle" => {
+        if args.is_empty() || args.len() == 1 {
+          // Unit circle: 2*Pi
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+          };
+          crate::evaluator::evaluate_expr_to_expr(&result)
+        } else if args.len() == 2 {
+          // Circle[center, r] -> 2*Pi*r
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(2),
+              Expr::Constant("Pi".to_string()),
+              args[1].clone(),
+            ],
+          };
+          crate::evaluator::evaluate_expr_to_expr(&result)
+        } else {
+          unevaluated()
+        }
+      }
+      // Line[{{x1,y1},{x2,y2},...}] -> sum of segment lengths
+      "Line" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() >= 2 {
+              return compute_polyline_length(pts, "ArcLength");
+            }
+          }
+        }
+        unevaluated()
+      }
+      // Other regions (Disk, Polygon, Triangle, Rectangle) -> Undefined
+      "Disk" | "Polygon" | "Triangle" | "Rectangle" | "Ball" => {
+        Ok(Expr::Identifier("Undefined".to_string()))
+      }
+      _ => unevaluated(),
+    },
+    _ => unevaluated(),
+  }
+}
+
+/// Compute the perimeter of a region.
+fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "Perimeter".to_string(),
+      args: vec![expr.clone()],
+    })
+  };
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      // Disk[{x, y}, r] -> 2*Pi*r, Disk[] -> 2*Pi
+      "Disk" => {
+        if args.is_empty() || args.len() == 1 {
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
+          };
+          crate::evaluator::evaluate_expr_to_expr(&result)
+        } else if args.len() == 2 {
+          let result = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::Integer(2),
+              Expr::Constant("Pi".to_string()),
+              args[1].clone(),
+            ],
+          };
+          crate::evaluator::evaluate_expr_to_expr(&result)
+        } else {
+          unevaluated()
+        }
+      }
+      // Circle -> same as ArcLength
+      "Circle" => compute_arc_length(expr),
+      // Rectangle[{x1,y1},{x2,y2}] -> 2*(|x2-x1| + |y2-y1|)
+      "Rectangle" => {
+        if args.is_empty() {
+          // Rectangle[] = Rectangle[{0,0},{1,1}], perimeter = 4
+          Ok(Expr::Integer(4))
+        } else if args.len() == 1 {
+          // Rectangle[{x1,y1}] = Rectangle[{x1,y1},{x1+1,y1+1}], perimeter = 4
+          Ok(Expr::Integer(4))
+        } else if args.len() == 2 {
+          if let (Expr::List(p1), Expr::List(p2)) = (&args[0], &args[1]) {
+            if p1.len() == 2 && p2.len() == 2 {
+              let width = Expr::FunctionCall {
+                name: "Abs".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![
+                    p2[0].clone(),
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![Expr::Integer(-1), p1[0].clone()],
+                    },
+                  ],
+                }],
+              };
+              let height = Expr::FunctionCall {
+                name: "Abs".to_string(),
+                args: vec![Expr::FunctionCall {
+                  name: "Plus".to_string(),
+                  args: vec![
+                    p2[1].clone(),
+                    Expr::FunctionCall {
+                      name: "Times".to_string(),
+                      args: vec![Expr::Integer(-1), p1[1].clone()],
+                    },
+                  ],
+                }],
+              };
+              let perimeter = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::Integer(2),
+                  Expr::FunctionCall {
+                    name: "Plus".to_string(),
+                    args: vec![width, height],
+                  },
+                ],
+              };
+              return crate::evaluator::evaluate_expr_to_expr(&perimeter);
+            }
+          }
+          unevaluated()
+        } else {
+          unevaluated()
+        }
+      }
+      // Triangle[{{x1,y1},{x2,y2},{x3,y3}}] -> sum of side lengths
+      "Triangle" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() == 3 {
+              // Close the polygon: add first point at end
+              let mut closed = pts.to_vec();
+              closed.push(pts[0].clone());
+              return compute_polyline_length(&closed, "Perimeter");
+            }
+          }
+        }
+        unevaluated()
+      }
+      // Polygon[{{x1,y1},...}] -> sum of side lengths (closed)
+      "Polygon" => {
+        if args.len() == 1 {
+          if let Expr::List(pts) = &args[0] {
+            if pts.len() >= 3 {
+              let mut closed = pts.to_vec();
+              closed.push(pts[0].clone());
+              return compute_polyline_length(&closed, "Perimeter");
+            }
+          }
+        }
+        unevaluated()
+      }
+      // Line -> same as ArcLength
+      "Line" => compute_arc_length(expr),
+      _ => unevaluated(),
+    },
+    _ => unevaluated(),
+  }
+}
+
+/// Compute the total length of a polyline (list of points).
+fn compute_polyline_length(
+  pts: &[Expr],
+  func_name: &str,
+) -> Result<Expr, InterpreterError> {
+  let coords: Vec<&Vec<Expr>> = pts
+    .iter()
+    .filter_map(|p| {
+      if let Expr::List(xy) = p {
+        Some(xy)
+      } else {
+        None
+      }
+    })
+    .collect();
+
+  if coords.len() != pts.len() {
+    return Ok(Expr::FunctionCall {
+      name: func_name.to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(pts.to_vec())],
+      }],
+    });
+  }
+
+  let dim = coords[0].len();
+  if !coords.iter().all(|c| c.len() == dim) {
+    return Ok(Expr::FunctionCall {
+      name: func_name.to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Line".to_string(),
+        args: vec![Expr::List(pts.to_vec())],
+      }],
+    });
+  }
+
+  let mut segment_lengths = Vec::new();
+  for i in 0..coords.len() - 1 {
+    let j = i + 1;
+    let mut sq_terms = Vec::new();
+    for d in 0..dim {
+      sq_terms.push(Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: vec![
+              coords[j][d].clone(),
+              Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![Expr::Integer(-1), coords[i][d].clone()],
+              },
+            ],
+          },
+          Expr::Integer(2),
+        ],
+      });
+    }
+    segment_lengths.push(Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: sq_terms,
+      }],
+    });
+  }
+
+  if segment_lengths.len() == 1 {
+    crate::evaluator::evaluate_expr_to_expr(&segment_lengths[0])
+  } else {
+    let total = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: segment_lengths,
+    };
+    crate::evaluator::evaluate_expr_to_expr(&total)
+  }
 }

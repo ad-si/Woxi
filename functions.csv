@@ -184,7 +184,7 @@ ArcCscDegrees,,,,14.1,
 ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1,348
 ArcCurvature,,,,10,2880
 ARCHProcess,,,,10,4173
-ArcLength,,,,10,1426
+ArcLength,Compute the arc length of a curve,✅,pure,10,1426
 ArcSec,Returns the arc secant,✅,pure,1,372
 ArcSecDegrees,,,,14.1,
 ArcSech,Returns the inverse hyperbolic secant,✅,pure,1,335
@@ -4144,7 +4144,7 @@ PercentForm,,,,12,2124
 PerfectNumber,,,,10.4,3947
 PerfectNumberQ,,,,10.4,4027
 PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6,656
-Perimeter,,,,11.1,3353
+Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
 PeriodicBoundaryCondition,,,,11,1991
 Periodogram,,,,9,2108
 PeriodogramArray,,,,9,3537
