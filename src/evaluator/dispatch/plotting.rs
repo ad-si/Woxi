@@ -113,6 +113,9 @@ pub fn dispatch_plotting(
     "PolarPlot" if args.len() >= 2 => {
       Some(crate::functions::parametric_plot::polar_plot_ast(args))
     }
+    "ComplexPlot" if args.len() >= 2 => {
+      Some(crate::functions::field_plot::complex_plot_ast(args))
+    }
     "DensityPlot" if args.len() >= 3 => {
       Some(crate::functions::field_plot::density_plot_ast(args))
     }

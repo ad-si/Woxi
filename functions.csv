@@ -969,7 +969,7 @@ ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
 ComplexInfinity,Complex infinity constant,✅,pure,,
 ComplexityFunction,,,,3,1451
 ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12,999
-ComplexPlot,,,,12,1377
+ComplexPlot,Domain coloring visualization of a complex function,✅,pure,12,1377
 ComplexPlot3D,,🚫,,12,1311
 ComplexRegionPlot,,,,12.1,1468
 ComplexStreamPlot,,,,12.1,3020
