@@ -409,6 +409,111 @@ mod alphabet {
   }
 }
 
+mod from_letter_number {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("FromLetterNumber[5]").unwrap(), "e");
+  }
+
+  #[test]
+  fn first_letter() {
+    assert_eq!(interpret("FromLetterNumber[1]").unwrap(), "a");
+  }
+
+  #[test]
+  fn last_letter() {
+    assert_eq!(interpret("FromLetterNumber[26]").unwrap(), "z");
+  }
+
+  #[test]
+  fn list_input() {
+    assert_eq!(
+      interpret("FromLetterNumber[{1, 2, 3}]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn zero_gives_space() {
+    assert_eq!(interpret("FromLetterNumber[0]").unwrap(), " ");
+  }
+
+  #[test]
+  fn out_of_range_gives_space() {
+    assert_eq!(interpret("FromLetterNumber[27]").unwrap(), " ");
+  }
+
+  #[test]
+  fn negative_wraps() {
+    assert_eq!(interpret("FromLetterNumber[-1]").unwrap(), "z");
+  }
+
+  #[test]
+  fn negative_first() {
+    assert_eq!(interpret("FromLetterNumber[-26]").unwrap(), "a");
+  }
+
+  #[test]
+  fn negative_out_of_range() {
+    assert_eq!(interpret("FromLetterNumber[-27]").unwrap(), " ");
+  }
+
+  #[test]
+  fn full_negative_range() {
+    assert_eq!(
+      interpret("Table[FromLetterNumber[i], {i, -5, -1}]").unwrap(),
+      "{v, w, x, y, z}"
+    );
+  }
+}
+
+mod letter_number {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("LetterNumber[\"e\"]").unwrap(), "5");
+  }
+
+  #[test]
+  fn first_letter() {
+    assert_eq!(interpret("LetterNumber[\"a\"]").unwrap(), "1");
+  }
+
+  #[test]
+  fn last_letter() {
+    assert_eq!(interpret("LetterNumber[\"z\"]").unwrap(), "26");
+  }
+
+  #[test]
+  fn uppercase() {
+    assert_eq!(interpret("LetterNumber[\"A\"]").unwrap(), "1");
+  }
+
+  #[test]
+  fn non_letter() {
+    assert_eq!(interpret("LetterNumber[\"1\"]").unwrap(), "0");
+  }
+
+  #[test]
+  fn multi_char_string() {
+    assert_eq!(
+      interpret("LetterNumber[\"hello\"]").unwrap(),
+      "{8, 5, 12, 12, 15}"
+    );
+  }
+
+  #[test]
+  fn list_input() {
+    assert_eq!(
+      interpret("LetterNumber[{\"a\", \"z\"}]").unwrap(),
+      "{1, 26}"
+    );
+  }
+}
+
 mod operator_form {
   use super::*;
 

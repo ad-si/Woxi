@@ -110,6 +110,12 @@ pub fn dispatch_string_functions(
     "Alphabet" if args.is_empty() => {
       return Some(crate::functions::string_ast::alphabet_ast(args));
     }
+    "FromLetterNumber" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::from_letter_number_ast(args));
+    }
+    "LetterNumber" if args.len() == 1 => {
+      return Some(crate::functions::string_ast::letter_number_ast(args));
+    }
     "LetterQ" if args.len() == 1 => {
       return Some(crate::functions::string_ast::letter_q_ast(args));
     }
