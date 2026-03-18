@@ -2204,7 +2204,7 @@ FunctionDiscontinuities,,,,12.2,4437
 FunctionDomain,Find the domain of a function,✅,pure,10,878
 FunctionExpand,,🚫,,3,874
 FunctionInjective,,,,12.2,3578
-FunctionInterpolation,,,,3,1447
+FunctionInterpolation,Create interpolating function by sampling an expression,✅,pure,3,1447
 FunctionLayer,,,,12.2,3755
 FunctionMeromorphic,,,,12.2,4262
 FunctionMonotonicity,,,,12.2,4291
