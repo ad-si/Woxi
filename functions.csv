@@ -967,7 +967,7 @@ ComplexContourPlot,,,,12.1,2210
 Complexes,Domain of complex numbers,✅,none,4,790
 ComplexExpand,Expands expressions assuming variables are real,✅,pure,2,309
 ComplexInfinity,Complex infinity constant,✅,pure,,
-ComplexityFunction,,,,3,1451
+ComplexityFunction,Option for specifying complexity measure in Simplify,✅,pure,3,1451
 ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12,999
 ComplexPlot,Domain coloring visualization of a complex function,✅,pure,12,1377
 ComplexPlot3D,,🚫,,12,1311
