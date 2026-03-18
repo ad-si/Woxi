@@ -6,7 +6,7 @@ AbortKernels,,,,7,3578
 AbortProtect,,,,2,2089
 Above,Placement symbol representing above position,✅,pure,1,816
 Abs,Returns the absolute value of a number,✅,pure,1,64
-AbsArg,,,,10.1,1901
+AbsArg,Absolute value and argument,✅,unevaluated,10.1,1901
 AbsArgPlot,,,,12,2762
 AbsoluteCorrelation,,,,9,3566
 AbsoluteCorrelationFunction,,,,9,3048
@@ -121,7 +121,7 @@ AngleBracket,Symbolic representation of angle brackets,✅,,3,1329
 AnglePath,Generate 2D points by successively turning and stepping,✅,pure,10.1,1543
 AnglePath3D,,,,11.1,4052
 AngleVector,,,,10.1,2074
-AngularGauge,,,,9,1860
+AngularGauge,Angular gauge,✅,unevaluated,9,1860
 Animate,,🚫,,6,417
 AnimatedImage,,🚫,,12.2,4027
 AnimationDirection,,,,3,2338
@@ -605,7 +605,7 @@ BrownianBridgeProcess,,,,9,3280
 BSplineBasis,B-spline basis function,✅,pure,7,1466
 BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7,192
 BSplineFunction,,🚫,,7,1176
-BSplineSurface,,,,7,1891
+BSplineSurface,B-spline surface,✅,unevaluated,7,1891
 BubbleChart,Creates a bubble chart from data,✅,pure,7,1679
 BubbleChart3D,,,,7,2170
 BubbleScale,,,,7,4081
@@ -622,7 +622,7 @@ ButtonBar,,,,7,2570
 ButtonBox,,🚫,,3,1313
 ButtonBoxOptions,,,,4,3474
 ButtonData,,🚫,,3,1205
-ButtonFunction,,,,3,1866
+ButtonFunction,Button function option,✅,unevaluated,3,1866
 ButtonMinHeight,,,,3,4052
 ButtonNotebook,,,,3,2116
 ButtonSource,,,,3,3636
@@ -844,7 +844,7 @@ ClockGauge,,,,9,2311
 Close,Closes an open stream and returns its name,✅,effectful,1,863
 CloseKernels,,,,7,2371
 ClosenessCentrality,,,,8,3008
-Closing,,,,7,1916
+Closing,Morphological closing,✅,unevaluated,7,1916
 CloudAccountData,,🚫,,10,3612
 CloudBase,,,,10,5013
 CloudConnect,,,,10,3612
@@ -857,7 +857,7 @@ CloudExpression,,,,10.4,3916
 CloudExpressions,,,,10.4,4204
 CloudFunction,,,,10,5013
 CloudGet,,🚫,,10,1284
-CloudImport,,,,10,1912
+CloudImport,Import from cloud,✅,unevaluated,10,1912
 CloudLoggingData,,🚫,,10.2,3697
 CloudObject,Requires external services or GUI infrastructure,🚫,io,10,928
 CloudObjectNameFormat,,,,12,4479
@@ -902,7 +902,7 @@ ColorNegate,Negates colors in an image,✅,pure,7,658
 ColorProfileData,,🚫,,9,2487
 ColorQ,,,,10,2162
 ColorQuantize,Quantize image colors,✅,unevaluated,7,1827
-ColorReplace,,,,9,1864
+ColorReplace,Replace colors in image,✅,unevaluated,9,1864
 ColorRules,Option for color rules in visualizations,✅,none,5.1,858
 ColorSeparate,Separate color channels of an image,🚫,io,7,1409
 ColorSetter,Color setter control,✅,unevaluated,6,1803
@@ -1114,7 +1114,7 @@ CopyDatabin,,,,10.1,4947
 CopyDirectory,,,,2,3402
 CopyFile,Copy a file,✅,unevaluated,2,1571
 CopyFunction,,,,12.2,5486
-CopyToClipboard,,,,8,1861
+CopyToClipboard,Copy to clipboard,✅,unevaluated,8,1861
 CoreNilpotentDecomposition,,,,13,
 CornerFilter,,,,8,3765
 CornerNeighbors,Corner neighbors option,✅,unevaluated,7,1827
@@ -1146,7 +1146,7 @@ Counts,Returns association of element counts,✅,pure,10,898
 CountsBy,,,,10,2268
 Covariance,Computes the covariance of two lists,✅,pure,6,1534
 CovarianceEstimatorFunction,,,,7,5587
-CovarianceFunction,,,,9,1887
+CovarianceFunction,Covariance function,✅,unevaluated,9,1887
 CoxianDistribution,,,,9,3257
 CoxIngersollRossProcess,,,,9,3389
 CoxModel,,,,9,4881
@@ -1235,7 +1235,7 @@ Dashing,Sets line dashing in graphics,✅,pure,1,416
 DatabaseConnect,,,,12,5390
 DatabaseDisconnect,,,,12,
 DatabaseReference,,,,12,4612
-Databin,,,,10,1905
+Databin,Databin cloud storage,✅,unevaluated,10,1905
 DatabinAdd,,,,10,2662
 Databins,,,,10,3737
 DatabinSubmit,,,,12.2,5184
@@ -1307,7 +1307,7 @@ DefaultBoxStyle,,,,7,4612
 DefaultButton,Default button control,✅,unevaluated,6,1760
 DefaultDiffStyle,,,,14.1,
 DefaultDuplicateCellStyle,,,,3,4809
-DefaultDuration,,,,6,1916
+DefaultDuration,Default duration option,✅,unevaluated,6,1916
 DefaultElement,,,,6,5587
 DefaultFaceGridsStyle,,,,7,5587
 DefaultFieldHintStyle,,,,8,5184
@@ -1366,7 +1366,7 @@ Delimiters,Option symbol specifying what delimiters to use or look for,✅,none,
 DeliveryFunction,,,,10.1,5079
 Dendrogram,,,,10.4,3143
 Denominator,Returns the denominator of a rational expression,✅,pure,1,512
-DensityHistogram,,,,8,1877
+DensityHistogram,Density histogram,✅,unevaluated,8,1877
 DensityPlot,Creates a density plot of a function,✅,pure,1,440
 DensityPlot3D,3D density plot,✅,unevaluated,10.2,1788
 DependentVariables,,,,5,3737
@@ -1522,7 +1522,7 @@ Distribute,Distribute one operator over another,✅,pure,1,1074
 Distributed,Represents a variable distributed according to a given distribution,✅,pure,8,365
 DistributedContexts,,,,8,2662
 DistributeDefinitions,Distribute definitions to kernels,✅,unevaluated,7,1672
-DistributionChart,,,,8,1880
+DistributionChart,Distribution chart,✅,unevaluated,8,1880
 DistributionFitTest,,🚫,,8,1343
 DistributionParameterAssumptions,,,,8,2286
 DistributionParameterQ,,,,8,2617
@@ -1887,7 +1887,7 @@ FeatureNames,,,,10.1,4081
 FeatureNearest,,,,11.1,4707
 FeatureSpacePlot,,,,11.1,2438
 FeatureSpacePlot3D,,,,11.3,5013
-FeatureTypes,,,,10.1,1885
+FeatureTypes,Feature types option,✅,unevaluated,10.1,1885
 FeatureValueDependencyPlot,,,,13.1,
 FeatureValueImpactPlot,,,,13.1,
 FeedbackLinearize,,,,10,3578
@@ -2153,10 +2153,10 @@ FresnelC,,🚫,,3,1208
 FresnelF,,,,10,4356
 FresnelG,,,,10,4356
 FresnelS,,🚫,,3,1193
-Friday,,,,9,1910
+Friday,Friday day name,✅,unevaluated,9,1910
 FrobeniusAutomorphism,,,,13.3,
 FrobeniusNumber,Returns the Frobenius number for a set of integers,✅,pure,6,3843
-FrobeniusSolve,,,,6,1869
+FrobeniusSolve,Frobenius equation solver,✅,unevaluated,6,1869
 FromAbsoluteTime,,,,11.1,4356
 FromCharacterCode,Converts character codes to a string,✅,pure,2,735
 FromCoefficientRules,,,,7,2411
@@ -2259,7 +2259,7 @@ GeneratedDocumentBinding,,,,10,5486
 GenerateDerivedKey,,,,12,
 GenerateDigitalSignature,,,,12,4660
 GenerateDocument,,,,10,4006
-GeneratedParameters,,,,5,1873
+GeneratedParameters,Generated parameters option,✅,unevaluated,5,1873
 GeneratedQuantityMagnitudes,,,,11.3,
 GenerateFileSignature,,,,12.1,
 GenerateHTTPResponse,,,,10.3,4104
@@ -2406,7 +2406,7 @@ GraphDistance,Distance between graph vertices,✅,unevaluated,8,1625
 GraphDistanceMatrix,,,,8,2157
 GraphEmbedding,Compute vertex coordinates for graph layouts using circular embedding,✅,pure,9,1367
 GraphHighlight,,,,8,2317
-GraphHighlightStyle,,,,8,1889
+GraphHighlightStyle,Graph highlight style,✅,unevaluated,8,1889
 GraphHub,,,,9,4567
 Graphics,Creates a 2D graphics object,✅,pure,1,72
 Graphics3D,Creates a 3D graphics object,✅,pure,1,170
@@ -2423,7 +2423,7 @@ GraphLayout,,🚫,,8,888
 GraphLinkEfficiency,,,,9,4660
 GraphPeriphery,,,,8,2889
 GraphPlot,Requires external services or GUI infrastructure,🚫,io,6,849
-GraphPlot3D,,,,6,1864
+GraphPlot3D,3D graph plot,✅,unevaluated,6,1864
 GraphPower,,,,8,3506
 GraphProduct,,,,13.1,
 GraphPropertyDistribution,,,,9,2635
@@ -2490,7 +2490,7 @@ HammingDistance,Returns the number of positions where two equal-length strings d
 HammingWindow,,,,9,3020
 HandlerFunctions,,,,11,3474
 HandlerFunctionsKeys,,,,11,3889
-HankelH1,,,,6,1910
+HankelH1,Hankel function H1,✅,unevaluated,6,1910
 HankelH2,,,,6,2197
 HankelMatrix,,,,6,2889
 HankelTransform,,,,11.1,2867
@@ -2505,7 +2505,7 @@ HarmonicNumber,Returns the n-th harmonic number,✅,pure,4,929
 Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512,✅,pure,1,1333
 HatchFilling,,,,12.1,2635
 HatchShading,,,,12.1,3737
-Haversine,,,,7,1901
+Haversine,Haversine function,✅,computation,7,1901
 HazardFunction,Hazard function,✅,unevaluated,8,1679
 Head,Returns the head of an expression,✅,pure,1,229
 HeaderAlignment,,,,12.1,
@@ -2724,9 +2724,9 @@ ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7,1569
 ImageSynthesize,,,,13.3,
 ImageTake,Takes a rectangular region from an image,✅,pure,7,1285
 ImageTransformation,Apply geometric transformation to image,🚫,io,8,1413
-ImageTrim,,,,8,1889
+ImageTrim,Trim image,✅,unevaluated,8,1889
 ImageType,Returns the data type of an image,✅,pure,7,2495
-ImageValue,,,,8,1873
+ImageValue,Image pixel value,✅,unevaluated,8,1873
 ImageValuePositions,,,,9,2172
 ImageVectorscopePlot,,,,12.2,4947
 ImageWaveformPlot,,,,12.2,4947
@@ -2745,7 +2745,7 @@ Inactivate,,✅,,10,1317
 Inactive,Wrapper to prevent evaluation,✅,none,10,606
 IncidenceGraph,,,,8,3317
 IncidenceList,,,,9,3280
-IncidenceMatrix,,,,8,1880
+IncidenceMatrix,Graph incidence matrix,✅,unevaluated,8,1880
 IncludeAromaticBonds,,,,12,
 IncludeConstantBasis,,,,7,2632
 IncludedContexts,,,,12.3,
@@ -2851,7 +2851,7 @@ InterpolatingPolynomial,Polynomial that interpolates given data points,✅,pure,
 Interpolation,Constructs an interpolation of data,✅,pure,2,383
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3,435
 InterpolationPoints,,,,8,3265
-Interpretation,,,,6,1905
+Interpretation,Interpretation wrapper,✅,unevaluated,6,1905
 InterpretationBox,Interpretation box,✅,unevaluated,3,1652
 InterpretationBoxOptions,,,,4,5587
 InterpretationFunction,,,,12.2,2561
@@ -2877,7 +2877,7 @@ InverseChiSquareDistribution,,,,7,2656
 InverseContinuousWaveletTransform,,,,8,3353
 InverseDistanceTransform,,,,8,4052
 InverseEllipticNomeQ,,,,3,2212
-InverseErf,,,,3,1906
+InverseErf,Inverse error function,✅,unevaluated,3,1906
 InverseErfc,,,,3,2203
 InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1,1260
 InverseFourierCosTransform,,,,4,3537
@@ -2891,7 +2891,7 @@ InverseGammaRegularized,,,,3,2380
 InverseGaussianDistribution,,,,6,2671
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7,2108
 InverseHankelTransform,,,,11.1,4527
-InverseHaversine,,,,7,3593
+InverseHaversine,Inverse haversine function,✅,computation,7,3593
 InverseImagePyramid,,,,12,
 InverseJacobiCD,Inverse Jacobi elliptic function cd,✅,pure,1,4006
 InverseJacobiCN,Inverse Jacobi elliptic function cn,✅,pure,1,1865
@@ -2918,7 +2918,7 @@ InverseTransformedRegion,,,,10,4104
 InverseWaveletTransform,Inverse wavelet transform,✅,unevaluated,8,1806
 InverseWeierstrassP,,,,3,2528
 InverseWishartMatrixDistribution,,,,10.3,4081
-InverseZTransform,,,,4,1880
+InverseZTransform,Inverse Z-transform,✅,unevaluated,4,1880
 Invisible,,🚫,,6,907
 IPAddress,,,,10.3,4262
 IrreduciblePolynomialQ,,,,7,2374
@@ -3090,7 +3090,7 @@ LearnDistribution,,,,12,4881
 LearnedDistribution,,,,12,
 LearningRate,,,,12,4809
 LearningRateMultipliers,,,,11.1,3440
-LeastSquares,,,,6,1885
+LeastSquares,Least squares solution,✅,unevaluated,6,1885
 LeastSquaresFilterKernel,,,,9,3717
 Left,Symbol for left alignment,✅,pure,1,241
 LeftArrow,,,,3,2762
@@ -3427,7 +3427,7 @@ Matrices,Matrix domain,✅,unevaluated,9,1753
 MatrixExp,Computes the matrix exponential,✅,pure,2,807
 MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1,53
 MatrixFunction,,,,9,2134
-MatrixLog,,,,9,1875
+MatrixLog,Matrix logarithm,✅,unevaluated,9,1875
 MatrixNormalDistribution,,,,10.3,3317
 MatrixPlot,Plots a matrix as a colored grid,✅,pure,6,552
 MatrixPower,Computes integer powers of a square matrix,✅,pure,2,399
@@ -3620,7 +3620,7 @@ MoonPhase,Phase of the moon,✅,unevaluated,10,1676
 MoonPhaseDate,,,,14,
 MoonPosition,,,,10,3162
 MorletWavelet,,,,8,3578
-MorphologicalBinarize,,,,8,1895
+MorphologicalBinarize,Morphological binarize,✅,unevaluated,8,1895
 MorphologicalBranchPoints,,,,8,3491
 MorphologicalComponents,,🚫,,7,1048
 MorphologicalEulerNumber,,,,7,3717
@@ -3708,7 +3708,7 @@ NetDrop,,,,11.3,4612
 NetEncoder,Neural network encoder,✅,pure,11,1528
 NetEvaluationMode,,,,11.1,4527
 NetExternalObject,,,,13.2,
-NetExtract,,,,11,1908
+NetExtract,Extract net components,✅,unevaluated,11,1908
 NetFlatten,,,,11.3,4527
 NetFoldOperator,,,,11.1,4612
 NetGANOperator,,,,12.1,4527
@@ -3774,7 +3774,7 @@ None,Symbol representing no value or absence of an option,✅,pure,1,23
 NoneMatch,,,,14.1,
 NoneTrue,Checks if no element in a list is true,✅,pure,10,3491
 NonlinearModelFit,Construct a nonlinear model fit,🚫,stateful,7,496
-NonlinearStateSpaceModel,,,,10,1914
+NonlinearStateSpaceModel,Nonlinear state-space model,✅,unevaluated,10,1914
 NonlocalMeansFilter,,,,9,4881
 NonNegative,Tests if a number is non-negative,✅,pure,1,1036
 NonNegativeIntegers,Domain of non-negative integers,✅,pure,12,2867
@@ -3824,7 +3824,7 @@ NotebookOpen,Open a notebook file,🚫,io,3,1418
 NotebookPrint,,,,3,3389
 NotebookPut,Create notebook from expression,✅,unevaluated,3,1597
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3,948
-Notebooks,,,,3,1883
+Notebooks,List open notebooks,✅,unevaluated,3,1883
 NotebookSave,Save notebook,✅,unevaluated,3,1857
 NotebookSelection,,🚫,,3,1141
 NotebooksMenu,,,,4,4052
@@ -4230,7 +4230,7 @@ PlotPoints,Option for number of sample points in plots,✅,pure,1,193
 PlotRange,Option specifying the range of values to include in a plot,✅,pure,1,39
 PlotRangeClipping,Option for whether to clip plot elements at the plot range,✅,none,6,674
 PlotRangePadding,Option for specifying padding around plot ranges,✅,pure,6,359
-PlotRegion,,,,2,1875
+PlotRegion,Plot region option,✅,unevaluated,2,1875
 PlotStyle,Option specifying the style of lines and points in a plot,✅,pure,1,45
 PlotTheme,Option for specifying the visual theme for plots,✅,pure,10,459
 Pluralize,,,,10,4527
@@ -4262,7 +4262,7 @@ PoissonWindow,,,,9,4262
 PolarAxes,Polar axes option,✅,unevaluated,7,1611
 PolarAxesOrigin,,,,7,2816
 PolarCurve,,,,14.1,
-PolarGridLines,,,,7,1901
+PolarGridLines,Polar grid lines option,✅,unevaluated,7,1901
 PolarPlot,Creates a polar plot of a function,✅,pure,6,403
 PolarTicks,Polar ticks option,✅,unevaluated,7,1846
 PoleZeroMarkers,,,,8,3537
@@ -4360,7 +4360,7 @@ PrintableASCIIQ,,,,10.1,3737
 PrintingStyleEnvironment,,,,3,2707
 Printout3D,,,,11,3176
 Printout3DPreviewer,,,,11,5486
-PrintTemporary,,,,6,1870
+PrintTemporary,Print temporary expression,✅,unevaluated,6,1870
 Prism,,,,10,2971
 PrivateCellOptions,,,,10,4479
 PrivateFontOptions,,,,3,2617
@@ -4660,7 +4660,7 @@ ReplicateLayer,,,,11.1,2762
 RequiredPhysicalQuantities,,,,10,5079
 Resampling,,,,8,1930
 ResamplingAlgorithmData,,🚫,,10.1,4947
-ResamplingMethod,,,,10,1859
+ResamplingMethod,Resampling method option,✅,unevaluated,10,1859
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
 RescalingTransform,,,,6,2045
 ResetDirectory,,,,2,2495
@@ -4743,7 +4743,7 @@ RollPitchYawAngles,,,,10.2,4809
 RollPitchYawMatrix,,,,10.2,3717
 RomanNumeral,Converts an integer to a Roman numeral string,✅,pure,10.2,1082
 Root,Represents the k-th root of a polynomial,✅,pure,3,396
-RootApproximant,,,,6,1901
+RootApproximant,Root approximant,✅,unevaluated,6,1901
 RootIntervals,,,,6,3344
 RootLocusPlot,,,,8,2036
 RootMeanSquare,Returns the root mean square of a list,✅,pure,6,2065
@@ -4897,7 +4897,7 @@ Series,Computes a power series expansion,✅,pure,1,195
 SeriesCoefficient,Extract the nth coefficient from a power series,✅,pure,3,680
 SeriesData,Represents a power series expansion,✅,pure,1,1244
 SeriesTermGoal,,,,12.1,3070
-ServiceConnect,,,,10,1914
+ServiceConnect,Connect to service,✅,unevaluated,10,1914
 ServiceDeploy,,,,12.3,
 ServiceDeployment,,,,12.3,
 ServiceDisconnect,,,,10,5079
@@ -4929,7 +4929,7 @@ SetSystemModel,,,,11.3,
 SetSystemOptions,,🚫,,6,1189
 Setter,,🚫,,6,1237
 SetterBar,,🚫,,6,895
-Setting,,,,6,1891
+Setting,Setting wrapper,✅,unevaluated,6,1891
 SetUsers,,,,10,5486
 Shallow,,,,2,2008
 ShannonWavelet,,,,8,3916
@@ -4988,9 +4988,9 @@ Sin,Returns the sine,✅,pure,1,22
 Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6,798
 SinDegrees,,,,14.1,
 SinghMaddalaDistribution,,,,8,3326
-SingleLetterItalics,,,,3,1897
+SingleLetterItalics,Single letter italics option,✅,unevaluated,3,1897
 SingularValueDecomposition,,🚫,,5,1283
-SingularValueList,,,,5,1892
+SingularValueList,Singular value list,✅,unevaluated,5,1892
 SingularValuePlot,,,,8,3755
 Sinh,Returns the hyperbolic sine,✅,pure,1,278
 SinhIntegral,Hyperbolic sine integral function,✅,1,3,1309
@@ -5020,7 +5020,7 @@ Smaller,Font size directive for making text smaller,✅,none,6,266
 SmithDecomposition,,,,10.2,2535
 SmithDelayCompensator,,,,9,4612
 SmithWatermanSimilarity,,,,7,3636
-SmoothDensityHistogram,,,,8,1907
+SmoothDensityHistogram,Smooth density histogram,✅,unevaluated,8,1907
 SmoothHistogram,,🚫,,8,1200
 SmoothHistogram3D,,,,8,2360
 SmoothKernelDistribution,,🚫,,8,1247
@@ -5320,7 +5320,7 @@ SuchThat,,,,3,5390
 Sum,Computes a sum over a range,✅,pure,1,77
 SumConvergence,,🚫,,7,1050
 SummationLayer,,,,11,3108
-Sunday,,,,9,1869
+Sunday,Sunday day name,✅,unevaluated,9,1869
 SunPosition,,,,10,2179
 Sunrise,,,,10,1999
 Sunset,,,,10,2193
@@ -5356,7 +5356,7 @@ SymbolName,Returns the name of a symbol as a string,✅,pure,3,1105
 SymletWavelet,,,,8,2986
 Symmetric,,,,9,2087
 SymmetricDifference,,,,13.1,
-SymmetricGroup,,,,8,1905
+SymmetricGroup,Symmetric group,✅,unevaluated,8,1905
 SymmetricKey,,,,10.1,5013
 SymmetricMatrix,,,,14,
 SymmetricMatrixQ,,,,7,1940
@@ -5400,7 +5400,7 @@ SystemModelSimulateSensitivity,,,,11.3,
 SystemModelSimulationData,,🚫,,11.3,
 SystemModelUncertaintyPlot,,,,14,
 SystemOpen,Requires external services or GUI infrastructure,🚫,io,7,1007
-SystemOptions,,,,6,1867
+SystemOptions,System options,✅,unevaluated,6,1867
 SystemProcessData,,🚫,,11.3,
 SystemProcesses,,,,11.3,
 SystemsConnectionsModel,,,,12,4527
@@ -5474,7 +5474,7 @@ TemplateSlot,,,,10,2720
 TemplateWith,,,,10,4809
 TemporalData,,🚫,,9,1008
 TemporalRegularity,,,,10,3462
-Temporary,,,,2,1912
+Temporary,Temporary option,✅,unevaluated,2,1912
 TensorContract,Contract tensor indices,✅,pure,9,1484
 TensorDimensions,,,,9,3008
 TensorExpand,,,,9,2167
@@ -5969,7 +5969,7 @@ VertexSize,Option for vertex size in graphs,✅,none,8,748
 VertexStyle,,🚫,,8,969
 VertexTextureCoordinates,,🚫,,8,1076
 VertexTransitiveGraphQ,,,,12.3,
-VertexWeight,,,,8,1895
+VertexWeight,Vertex weight option,✅,unevaluated,8,1895
 VertexWeightedGraphQ,,,,12,
 VerticalBar,,,,3,5013
 VerticalGauge,,,,9,2462
@@ -6167,7 +6167,7 @@ XMLObject,,,,4.2,2755
 XMLTemplate,,,,10,2578
 Xnor,,,,7,3031
 Xor,Checks if exactly one condition is true,✅,pure,1,1197
-XYZColor,,,,10,1887
+XYZColor,XYZ color specification,✅,unevaluated,10,1887
 Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Yesterday,Returns a DateObject representing the previous calendar day,✅,contextual,10,2762
 YuleDissimilarity,,,,6,4947
@@ -6181,4 +6181,4 @@ ZipfDistribution,,,,6,2350
 ZoomCenter,,,,10.4,4809
 ZoomFactor,,,,10.4,4747
 ZTest,,,,8,3059
-ZTransform,,,,4,1883
+ZTransform,Z-transform,✅,unevaluated,4,1883

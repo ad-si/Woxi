@@ -670,6 +670,40 @@ pub fn dispatch_math_functions(
         Err(e) => return Some(Err(e)),
       }
     }
+    "Haversine" if args.len() == 1 => {
+      // Haversine[x] = (1 - Cos[x]) / 2
+      let cos_expr = Expr::FunctionCall {
+        name: "Cos".to_string(),
+        args: args.to_vec(),
+      };
+      let expr = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(cos_expr),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      };
+      return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
+    }
+    "InverseHaversine" if args.len() == 1 => {
+      // InverseHaversine[x] = 2 * ArcSin[Sqrt[x]]
+      let sqrt_expr = Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: args.to_vec(),
+      };
+      let asin_expr = Expr::FunctionCall {
+        name: "ArcSin".to_string(),
+        args: vec![sqrt_expr],
+      };
+      let expr = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left: Box::new(Expr::Integer(2)),
+        right: Box::new(asin_expr),
+      };
+      return Some(crate::evaluator::evaluate_expr_to_expr(&expr));
+    }
     "Exp" if args.len() == 1 => {
       return Some(crate::functions::math_ast::exp_ast(args));
     }
