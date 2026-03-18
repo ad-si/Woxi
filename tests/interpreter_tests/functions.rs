@@ -4841,6 +4841,26 @@ mod generating_function {
 }
 
 #[cfg(test)]
+mod before {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("Before[3]").unwrap(), "Before[3]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Before[3]]").unwrap(), "Before");
+  }
+
+  #[test]
+  fn string_arg() {
+    assert_eq!(interpret("Before[\"cat\"]").unwrap(), "Before[cat]");
+  }
+}
+
+#[cfg(test)]
 mod accounting_form {
   use super::*;
 

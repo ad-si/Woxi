@@ -424,7 +424,7 @@ BayesianMinimizationObject,,,,11,5184
 Because,Represents a because logical relation,✅,pure,3,5486
 BeckmannDistribution,,,,8,1849
 Beep,,,,6,2468
-Before,,,,3,1451
+Before,Symbolic temporal ordering wrapper,✅,pure,3,1451
 Begin,Begins a private context (no-op in Woxi),✅,effectful,1,578
 BeginDialogPacket,,,,3,
 BeginPackage,Begins a package context (no-op in Woxi),✅,effectful,1,588
