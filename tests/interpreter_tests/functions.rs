@@ -6557,3 +6557,40 @@ mod region_nearest {
     assert_eq!(interpret("Head[RegionNearest]").unwrap(), "Symbol");
   }
 }
+
+#[cfg(test)]
+mod take_drop {
+  use super::*;
+
+  #[test]
+  fn positive_n() {
+    assert_eq!(
+      interpret("TakeDrop[{a, b, c, d, e}, 3]").unwrap(),
+      "{{a, b, c}, {d, e}}"
+    );
+  }
+
+  #[test]
+  fn negative_n() {
+    assert_eq!(
+      interpret("TakeDrop[{a, b, c, d, e}, -2]").unwrap(),
+      "{{d, e}, {a, b, c}}"
+    );
+  }
+
+  #[test]
+  fn range_spec() {
+    assert_eq!(
+      interpret("TakeDrop[{a, b, c, d, e}, {2, 4}]").unwrap(),
+      "{{b, c, d}, {a, e}}"
+    );
+  }
+
+  #[test]
+  fn zero() {
+    assert_eq!(
+      interpret("TakeDrop[{a, b, c, d, e}, 0]").unwrap(),
+      "{{}, {a, b, c, d, e}}"
+    );
+  }
+}
