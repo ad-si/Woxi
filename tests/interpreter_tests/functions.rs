@@ -4841,6 +4841,35 @@ mod generating_function {
 }
 
 #[cfg(test)]
+mod proportional {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("Proportional[a, b]").unwrap(),
+      "Proportional[a, b]"
+    );
+  }
+
+  #[test]
+  fn multiple_args() {
+    assert_eq!(
+      interpret("Proportional[1, 2, 3]").unwrap(),
+      "Proportional[1, 2, 3]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[Proportional[a, b]]").unwrap(),
+      "Proportional"
+    );
+  }
+}
+
+#[cfg(test)]
 mod decimal_form {
   use super::*;
 

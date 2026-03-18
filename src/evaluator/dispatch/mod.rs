@@ -2113,8 +2113,8 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
-  // DecimalForm is a formatting wrapper that stays unevaluated
-  if name == "DecimalForm" {
+  // Formatting wrappers and symbolic heads that stay unevaluated
+  if name == "DecimalForm" || name == "Proportional" {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: args.to_vec(),
