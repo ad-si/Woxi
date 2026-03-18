@@ -4818,7 +4818,7 @@ ScaleRanges,,,,9,3566
 ScaleRangeStyle,,,,9,3785
 ScalingFunctions,,🚫,,8,936
 ScalingMatrix,,,,6,3427
-ScalingTransform,,,,6,1442
+ScalingTransform,Create a scaling transformation matrix,✅,pure,6,1442
 Scan,Applies a function to each element for side effects,✅,pure,1,740
 ScheduledTask,,,,10,2421
 SchrodingerPDEComponent,,,,14,

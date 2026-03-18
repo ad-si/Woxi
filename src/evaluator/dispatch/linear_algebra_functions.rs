@@ -464,6 +464,56 @@ pub fn dispatch_linear_algebra_functions(
         });
       return Some(evaluated);
     }
+    // ScalingTransform[{s1, s2, ...}] or ScalingTransform[{s1, s2, ...}, {c1, c2, ...}]
+    "ScalingTransform" if args.len() == 1 || args.len() == 2 => {
+      if let Expr::List(scales) = &args[0] {
+        let n = scales.len();
+        let center = if args.len() == 2 {
+          if let Expr::List(c) = &args[1] {
+            if c.len() == n { Some(c) } else { None }
+          } else {
+            None
+          }
+        } else {
+          None
+        };
+
+        // Build (n+1)x(n+1) homogeneous scaling matrix
+        let mut rows = Vec::with_capacity(n + 1);
+        for i in 0..n {
+          let mut row = vec![Expr::Integer(0); n + 1];
+          row[i] = scales[i].clone();
+          // Translation column: ci - si*ci = ci*(1 - si)
+          if let Some(c) = center {
+            let translation = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Minus,
+              left: Box::new(c[i].clone()),
+              right: Box::new(Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Times,
+                left: Box::new(scales[i].clone()),
+                right: Box::new(c[i].clone()),
+              }),
+            };
+            row[n] = translation;
+          }
+          rows.push(Expr::List(row));
+        }
+        let mut last_row = vec![Expr::Integer(0); n + 1];
+        last_row[n] = Expr::Integer(1);
+        rows.push(Expr::List(last_row));
+        let matrix = Expr::List(rows);
+        let evaluated =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+            name: "TransformationFunction".to_string(),
+            args: vec![matrix],
+          });
+        return Some(evaluated);
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "ScalingTransform".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     _ => {}
   }
   None

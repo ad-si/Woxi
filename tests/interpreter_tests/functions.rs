@@ -4841,6 +4841,80 @@ mod generating_function {
 }
 
 #[cfg(test)]
+mod scaling_transform {
+  use super::*;
+
+  #[test]
+  fn basic_2d() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}]").unwrap(),
+      "TransformationFunction[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn basic_1d() {
+    assert_eq!(
+      interpret("ScalingTransform[{2}]").unwrap(),
+      "TransformationFunction[{{2, 0}, {0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn basic_3d() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3, 4}]").unwrap(),
+      "TransformationFunction[{{2, 0, 0, 0}, {0, 3, 0, 0}, {0, 0, 4, 0}, {0, 0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn with_center() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}, {1, 1}]").unwrap(),
+      "TransformationFunction[{{2, 0, -1}, {0, 3, -2}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn apply_basic() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}][{1, 1}]").unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn apply_1d() {
+    assert_eq!(interpret("ScalingTransform[{2}][{5}]").unwrap(), "{10}");
+  }
+
+  #[test]
+  fn apply_with_center() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}, {1, 1}][{2, 2}]").unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("ScalingTransform[{sx, sy}]").unwrap(),
+      "TransformationFunction[{{sx, 0, 0}, {0, sy, 0}, {0, 0, 1}}]"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[ScalingTransform]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod connected_components {
   use super::*;
 
