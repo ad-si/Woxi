@@ -4861,6 +4861,32 @@ mod before {
 }
 
 #[cfg(test)]
+mod complexity_function {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("ComplexityFunction[3]").unwrap(),
+      "ComplexityFunction[3]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[ComplexityFunction]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn multiple_args() {
+    assert_eq!(
+      interpret("ComplexityFunction[x, y]").unwrap(),
+      "ComplexityFunction[x, y]"
+    );
+  }
+}
+
+#[cfg(test)]
 mod accounting_form {
   use super::*;
 
