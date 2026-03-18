@@ -168,7 +168,7 @@ AppellF4,,,,13.3,
 Append,Adds an element to the end of a list,✅,pure,1,217
 AppendLayer,,,,11.3,
 AppendTo,Appends an element to a list stored in a variable,✅,stateful,1,230
-Application,,,,12.2,1766
+Application,Application wrapper,✅,unevaluated,12.2,1766
 Apply,Applies a function to list elements as arguments,✅,pure,1,60
 ApplyReaction,,,,13.1,
 ApplySides,,,,11.3,3265
@@ -240,7 +240,7 @@ AspectRatio,Option specifying the height-to-width ratio for a plot,✅,pure,1,12
 Assert,,,,8,2483
 AssessmentFunction,,,,12.2,3678
 AssessmentResultObject,,,,12.2,
-AssociateTo,,,,10,1776
+AssociateTo,Append to association,✅,unevaluated,10,1776
 Association,Key-value data structure with <| |> syntax,✅,pure,10,185
 AssociationFormat,,,,10,4747
 AssociationMap,Maps a function over an association,✅,pure,10,1530
@@ -802,7 +802,7 @@ ChromaticityPlot,,,,10,2394
 ChromaticityPlot3D,,,,10,3059
 ChromaticPolynomial,,,,10,2545
 Circle,Represents a circle graphics primitive,✅,pure,2,256
-CircleDot,,,,3,1776
+CircleDot,Circle dot operator,✅,unevaluated,3,1776
 CircleMinus,,,,3,2152
 CirclePlus,Represents the direct sum or XOR operator,✅,1,3,1158
 CirclePoints,Gives equally spaced points on a unit circle,✅,1,10.1,1126
@@ -887,7 +887,7 @@ Collect,Collects terms with the same powers of a variable,✅,pure,1,339
 CollinearPoints,,,,12.2,5184
 Colon,,,,3,2952
 ColorBalance,,,,10.2,3636
-ColorCombine,,,,7,1800
+ColorCombine,Combine color channels,✅,unevaluated,7,1800
 ColorConvert,Convert between color spaces,✅,pure,7,766
 ColorCoverage,,,,10,4707
 ColorData,,🚫,,6,224
@@ -905,7 +905,7 @@ ColorQuantize,,,,7,1827
 ColorReplace,,,,9,1864
 ColorRules,Option for color rules in visualizations,✅,none,5.1,858
 ColorSeparate,Separate color channels of an image,🚫,io,7,1409
-ColorSetter,,,,6,1803
+ColorSetter,Color setter control,✅,unevaluated,6,1803
 ColorSlider,,,,6,1949
 ColorsNear,,,,12,3593
 ColorSpace,Option for specifying the color space of images,✅,pure,7,419
@@ -1102,7 +1102,7 @@ CoordinateBoundingBoxArray,,,,10.1,3402
 CoordinateBounds,,,,10.1,2483
 CoordinateBoundsArray,,,,10.1,2880
 CoordinateChartData,,🚫,,9,2837
-CoordinatesToolOptions,,,,7,1800
+CoordinatesToolOptions,Coordinates tool options,✅,unevaluated,7,1800
 CoordinateTransform,Coordinate system transformation,✅,unevaluated,9,1629
 CoordinateTransformData,,🚫,,9,1849
 CoplanarPoints,,,,12.2,4612
@@ -1272,7 +1272,7 @@ DateScale,,,,13,
 DateSelect,,,,12.2,4809
 DateString,Returns a string representing the current local date and time,✅,contextual,6,802
 DateTicksFormat,,,,6,2036
-DateValue,,,,10,1788
+DateValue,Date value extraction,✅,unevaluated,10,1788
 DateWithinQ,,,,11.1,3823
 DaubechiesWavelet,,,,8,2299
 DavisDistribution,,,,8,3823
@@ -1368,7 +1368,7 @@ Dendrogram,,,,10.4,3143
 Denominator,Returns the denominator of a rational expression,✅,pure,1,512
 DensityHistogram,,,,8,1877
 DensityPlot,Creates a density plot of a function,✅,pure,1,440
-DensityPlot3D,,,,10.2,1788
+DensityPlot3D,3D density plot,✅,unevaluated,10.2,1788
 DependentVariables,,,,5,3737
 Deploy,,🚫,,6,1320
 Deployed,Deployed option,✅,unevaluated,6,1730
@@ -1403,7 +1403,7 @@ DiagonalizableMatrixQ,,,,10,2570
 DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure,1,493
 DiagonalMatrixQ,,,,12,3737
 Dialog,,,,2,3612
-DialogInput,,,,6,1770
+DialogInput,Dialog input,✅,unevaluated,6,1770
 DialogNotebook,,,,6,2723
 DialogProlog,,,,2,5079
 DialogReturn,Return from a dialog,🚫,io,6,1401
@@ -1516,8 +1516,8 @@ DisplayForm,,🚫,,3,956
 DisplayFunction,Option controlling display output,✅,pure,1,375
 DisplayPacket,,,,3,5390
 DistanceFunction,,🚫,,6,1171
-DistanceMatrix,,,,10.3,1806
-DistanceTransform,,,,7,1768
+DistanceMatrix,Distance matrix,✅,unevaluated,10.3,1806
+DistanceTransform,Distance transform,✅,unevaluated,7,1768
 Distribute,Distribute one operator over another,✅,pure,1,1074
 Distributed,Represents a variable distributed according to a given distribution,✅,pure,8,365
 DistributedContexts,,,,8,2662
@@ -1815,7 +1815,7 @@ ExponentialPowerDistribution,,,,8,3048
 ExponentStep,,,,3,3537
 Export,Exports data to a file,✅,effectful,4,357
 ExportByteArray,,,,11.2,4138
-ExportForm,,,,10,1763
+ExportForm,Export form wrapper,✅,unevaluated,10,1763
 ExportString,Exports an expression to a string in a given format, ✅,pure,4,787
 Expression,Type specifier for reading expressions,✅,pure,1,765
 ExpressionCell,Requires external services or GUI infrastructure,🚫,io,6,1021
@@ -1903,7 +1903,7 @@ FieldHintStyle,,,,8,3083
 FieldMasked,,,,8,4612
 FieldSize,,🚫,,6,1102
 File,Symbolic file reference wrapper,✅,pure,11,1469
-FileBaseName,,,,7,1796
+FileBaseName,File base name,✅,unevaluated,7,1796
 FileByteCount,,,,2,2018
 FileConvert,,,,12,5486
 FileDate,,,,2,2121
@@ -1964,11 +1964,11 @@ FindEquationalProof,,,,11.3,3094
 FindEulerianCycle,,,,8,2816
 FindExternalEvaluators,,,,,
 FindFaces,,,,9,2217
-FindFile,,,,7,1766
+FindFile,Find file,✅,unevaluated,7,1766
 FindFit,Finds a least-squares fit of a model to data,✅,pure,5,535
 FindFormula,Find formula fitting data,✅,unevaluated,10.2,1740
 FindFundamentalCycles,,,,10,4027
-FindGeneratingFunction,,,,7,1776
+FindGeneratingFunction,Find generating function,✅,unevaluated,7,1776
 FindGeoLocation,,,,7,2900
 FindGeometricConjectures,,,,12,3697
 FindGeometricTransform,Find geometric transformation,✅,unevaluated,8,1730
@@ -2143,7 +2143,7 @@ FrameRate,,,,11.2,4527
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2,173
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2,337
 FrameTicksStyle,Option for specifying the style of frame ticks,✅,pure,6,540
-FRatioDistribution,,,,6,1788
+FRatioDistribution,F-ratio distribution,✅,unevaluated,6,1788
 FrechetDistribution,,,,8,2671
 FreeformEvaluate,,,,14.1,
 FreeQ,Tests if expression is free of a specified form,✅,pure,1,286
@@ -2241,7 +2241,7 @@ GaugeMarkers,,,,9,2707
 GaugeStyle,,,,9,2921
 GaussianFilter,,🚫,,7,1173
 GaussianIntegers,,,,2,2468
-GaussianMatrix,,,,7,1779
+GaussianMatrix,Gaussian matrix,✅,unevaluated,7,1779
 GaussianOrthogonalMatrixDistribution,,,,10.3,3656
 GaussianSymplecticMatrixDistribution,,,,10.3,4356
 GaussianUnitaryMatrixDistribution,,,,10.3,3462
@@ -2351,7 +2351,7 @@ GeoProjection,Geographic projection specification,✅,pure,10,1503
 GeoProjectionData,,🚫,,7,2282
 GeoRange,,🚫,,10,1190
 GeoRangePadding,,,,10,2734
-GeoRegionValuePlot,,,,10,1789
+GeoRegionValuePlot,Geographic region value plot,✅,unevaluated,10,1789
 GeoResolution,,,,12,5486
 GeoScaleBar,,,,10,3656
 GeoServer,,,,10.1,3402
@@ -2549,7 +2549,7 @@ HexadecimalCharacter,,,,7,3947
 Hexahedron,,,,10,2233
 HiddenItems,,,,12.1,
 HiddenMarkovProcess,,,,10,3265
-Highlighted,,,,10.4,1800
+Highlighted,Highlighted display,✅,unevaluated,10.4,1800
 HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8,822
 HighlightImage,,🚫,,9,1195
 HighlightMesh,Highlight mesh elements,✅,unevaluated,10,1573
@@ -2560,7 +2560,7 @@ HilbertFilter,,,,9,3656
 HilbertMatrix,,,,6,2503
 Histogram,Creates a histogram from data,✅,pure,7,347
 Histogram3D,,🚫,,7,1096
-HistogramDistribution,,,,8,1776
+HistogramDistribution,Histogram distribution,✅,unevaluated,8,1776
 HistogramList,Returns bin edges and counts for histogram data,✅,pure,8,1322
 HistogramPointDensity,,,,12.2,4006
 HistogramTransform,,,,9,2821
@@ -2915,7 +2915,7 @@ InverseShortTimeFourier,,,,12,
 InverseSpectrogram,,,,12,3862
 InverseSurvivalFunction,,,,8,2350
 InverseTransformedRegion,,,,10,4104
-InverseWaveletTransform,,,,8,1806
+InverseWaveletTransform,Inverse wavelet transform,✅,unevaluated,8,1806
 InverseWeierstrassP,,,,3,2528
 InverseWishartMatrixDistribution,,,,10.3,4081
 InverseZTransform,,,,4,1880
@@ -3061,7 +3061,7 @@ Language,Language option,✅,unevaluated,3,1749
 LanguageCategory,,,,4,3153
 LanguageData,,🚫,,10,364
 LanguageIdentify,,,,10.1,3224
-LaplaceDistribution,,,,6,1788
+LaplaceDistribution,Laplace distribution,✅,computation,6,1788
 LaplaceTransform,Compute the Laplace transform of an expression,✅,none,4,458
 Laplacian,Compute the Laplacian (sum of second partial derivatives),✅,pure,9,718
 LaplacianFilter,,,,7,3070
@@ -3252,7 +3252,7 @@ ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 ListStreamDensityPlot,,,,7,3291
 ListStreamPlot,,,,7,2305
 ListStreamPlot3D,,,,12.3,
-ListSurfacePlot3D,,,,6,1788
+ListSurfacePlot3D,3D surface plot from points,✅,unevaluated,6,1788
 ListVectorDensityPlot,,,,7,3462
 ListVectorDisplacementPlot,,,,13,
 ListVectorDisplacementPlot3D,,,,13,
@@ -3444,7 +3444,7 @@ MaxDetect,Detect local maxima,✅,unevaluated,8,1743
 MaxDisplayedChildren,,,,13.2,
 MaxDuration,,,,11.2,4225
 MaxExtraBandwidths,,,,8,4262
-MaxExtraConditions,,,,8,1791
+MaxExtraConditions,Max extra conditions option,✅,unevaluated,8,1791
 MaxFeatureDisplacement,,,,10.1,5079
 MaxFeatures,,,,9,2671
 MaxFilter,,,,7,2525
@@ -3919,7 +3919,7 @@ NumberPadding,,🚫,,2,1035
 NumberPoint,Symbol specifying the decimal point character in NumberForm,✅,pure,1,2541
 NumberQ,Checks if a value is a number,✅,pure,1,340
 NumberSeparator,Option specifying the digit separator in NumberForm,✅,pure,1,2960
-NumberSigns,,,,2,1779
+NumberSigns,Number sign display,✅,unevaluated,2,1779
 NumberString,String pattern matching numeric strings,✅,none,5.1,1068
 Numerator,Returns the numerator of a rational expression,✅,pure,1,628
 NumeratorDenominator,,,,12,3215
@@ -3928,7 +3928,7 @@ NumericalSort,,,,11.1,2591
 NumericArray,,,,12,4291
 NumericArrayQ,,,,12,5390
 NumericArrayType,,,,12,
-NumericFunction,,,,3,1801
+NumericFunction,Numeric function attribute,✅,unevaluated,3,1801
 NumericQ,Tests if expression has a numeric value,✅,pure,3,172
 NuttallWindow,,,,9,4291
 NyquistGridLines,,,,8,5079
@@ -4059,7 +4059,7 @@ PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
 Pane,Fixed-size display pane,✅,none,6,594
 Panel,Display content in a panel frame,✅,none,6,717
 Paneled,,,,6,2147
-PaneSelector,,,,6,1793
+PaneSelector,Pane selector control,✅,unevaluated,6,1793
 ParabolicCylinderD,Parabolic cylinder function D_nu(z),✅,pure,6,1392
 ParagraphIndent,,,,3,4081
 ParagraphSpacing,,,,3,2993
@@ -4076,7 +4076,7 @@ ParallelMap,Applies a function in parallel to each element,✅,1,7,1204
 ParallelNeeds,,,,7,3257
 Parallelogram,,,,10,2138
 ParallelProduct,,,,7,4660
-ParallelSubmit,,,,7,1764
+ParallelSubmit,Submit parallel task,✅,unevaluated,7,1764
 ParallelSum,,,,7,2462
 ParallelTable,Parallel version of Table (evaluated sequentially),✅,pure,7,835
 ParallelTry,,,,7,3298
@@ -4118,7 +4118,7 @@ PartProtection,,,,10.4,4660
 ParzenWindow,,,,9,4356
 PascalBinomial,,,,14.1,
 PascalDistribution,,,,8,3008
-PassEventsDown,,,,6,1771
+PassEventsDown,Pass events down option,✅,unevaluated,6,1771
 PassEventsUp,,,,6,2777
 Paste,,,,8,2553
 PasteButton,,,,6,2174
@@ -4513,7 +4513,7 @@ RawMemoryImport,,,,13.3,
 RawMemoryRead,,,,13.3,
 RawMemoryWrite,,,,13.3,
 RawPointer,,,,13.3,
-RayleighDistribution,,,,6,1806
+RayleighDistribution,Rayleigh distribution,✅,computation,6,1806
 Re,Returns the real part of a complex number,✅,pure,1,129
 ReactionBalance,,,,13,
 ReactionBalancedQ,,,,13,
@@ -4833,7 +4833,7 @@ ScreenStyleEnvironment,,,,3,2475
 ScriptBaselineShifts,Script baseline shift option,✅,unevaluated,3,1599
 ScriptMinSize,Minimum size for sub/superscripts,✅,none,3,626
 ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3,614
-Scrollbars,,,,7,1803
+Scrollbars,Scrollbars option,✅,unevaluated,7,1803
 ScrollingOptions,,,,4,4809
 ScrollPosition,,,,7,2729
 SearchAdjustment,,,,11,4947
@@ -4885,7 +4885,7 @@ SequenceHold,,,,3,2338
 SequenceIndicesLayer,,,,13,
 SequenceLastLayer,,,,11.1,2625
 SequenceMostLayer,,,,11.1,4387
-SequencePosition,,,,10.1,1796
+SequencePosition,Position of sequence pattern,✅,unevaluated,10.1,1796
 SequencePredict,,,,11.1,4262
 SequencePredictorFunction,,,,11.1,
 SequenceReplace,,,,11.3,2116
@@ -5504,11 +5504,11 @@ TextClipboardType,,,,7,3785
 TextContents,,,,12,4612
 TextData,,🚫,,8,1086
 TextElement,,,,10.3,4027
-TextGrid,,,,10.3,1800
+TextGrid,Text grid layout,✅,unevaluated,10.3,1800
 TextJustification,,,,3,2108
 TextPacket,,,,3,5079
 TextPosition,,,,10.2,4387
-TextRecognize,,,,8,1779
+TextRecognize,Recognize text in image,✅,unevaluated,8,1779
 TextSearch,,,,10.2,2971
 TextSearchReport,,,,10.2,4747
 TextSentences,Extract sentences from text,✅,unevaluated,10.1,1578
@@ -5559,7 +5559,7 @@ TimeDirection,,,,10,4881
 TimeDistribution,,,,14.1,
 TimeFormat,,,,10,5390
 TimeGoal,,,,11.2,4315
-TimelinePlot,,,,10.1,1770
+TimelinePlot,Timeline plot,✅,unevaluated,10.1,1770
 TimeObject,,🚫,,10,1252
 TimeObjectQ,,,,10.2,4567
 TimeRemaining,Returns the time remaining in a TimeConstrained evaluation,✅,contextual,12.1,
@@ -5573,7 +5573,7 @@ TimeSeriesInvertibility,,,,9,3947
 TimeSeriesMap,,,,10,2587
 TimeSeriesMapThread,,,,10,3678
 TimeSeriesModel,,,,10,
-TimeSeriesModelFit,,,,10,1791
+TimeSeriesModelFit,Time series model fit,✅,unevaluated,10,1791
 TimeSeriesResample,,,,10,2449
 TimeSeriesRescale,,,,10,2748
 TimeSeriesShift,,,,10,2233
@@ -5712,7 +5712,7 @@ TreeExpression,,,,12.3,
 TreeExtract,,,,12.3,
 TreeFold,,,,12.3,
 TreeForm,Display an expression as a tree structure,✅,pure,1,1138
-TreeGraph,,,,8,1808
+TreeGraph,Tree graph,✅,unevaluated,8,1808
 TreeGraphQ,,,,8,2807
 TreeInsert,,,,12.3,
 TreeLayout,,,,13,
@@ -5864,7 +5864,7 @@ URLDispatcher,,,,10.4,4567
 URLDownload,,,,11,2993
 URLDownloadSubmit,,,,11.2,4081
 URLEncode,,,,10,3031
-URLExecute,,,,10,1794
+URLExecute,Execute URL request,✅,unevaluated,10,1794
 URLExpand,,,,10,4947
 URLParse,,,,10,3280
 URLQueryDecode,,,,10,4660
@@ -5916,7 +5916,7 @@ VectorPoints,,🚫,,7,1039
 VectorQ,Tests if an expression is a vector,✅,pure,1,468
 VectorRange,,,,12.1,4747
 Vectors,Vector space domain,✅,unevaluated,9,1604
-VectorScaling,,,,12.1,1776
+VectorScaling,Vector scaling option,✅,unevaluated,12.1,1776
 VectorSizes,,,,12.1,1940
 VectorStyle,,🚫,,7,1182
 VectorSymbol,,,,14.1,
@@ -6088,7 +6088,7 @@ WeierstrassInvariants,,,,3,2350
 WeierstrassP,Weierstrass elliptic function,✅,pure,1,1078
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1,1718
 WeierstrassSigma,,,,3,1852
-WeierstrassZeta,,,,3,1781
+WeierstrassZeta,Weierstrass zeta function,✅,unevaluated,3,1781
 WeightedAdjacencyGraph,Weighted adjacency graph,✅,unevaluated,8,1695
 WeightedAdjacencyMatrix,,,,8,1979
 WeightedData,,🚫,,9,1493

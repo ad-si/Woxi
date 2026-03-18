@@ -142,6 +142,8 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GeometricDistribution" => pdf_geometric(dargs, x),
     "CauchyDistribution" => pdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => pdf_discrete_uniform(dargs, x),
+    "LaplaceDistribution" => pdf_laplace(dargs, x),
+    "RayleighDistribution" => pdf_rayleigh(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -350,6 +352,8 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GeometricDistribution" => cdf_geometric(dargs, x),
     "CauchyDistribution" => cdf_cauchy(dargs, x),
     "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
+    "LaplaceDistribution" => cdf_laplace(dargs, x),
+    "RayleighDistribution" => cdf_rayleigh(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -1180,6 +1184,31 @@ fn distribution_mean_variance(
       let indet = Expr::Identifier("Indeterminate".to_string());
       Ok((indet.clone(), indet))
     }
+    "LaplaceDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "LaplaceDistribution expects 2 arguments".into(),
+        ));
+      }
+      let mu = dargs[0].clone();
+      let b = dargs[1].clone();
+      // Mean = mu, Var = 2*b^2
+      let var = times(int(2), power(b, int(2)));
+      Ok((mu, var))
+    }
+    "RayleighDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "RayleighDistribution expects 1 argument".into(),
+        ));
+      }
+      let s = dargs[0].clone();
+      // Mean = Sqrt[Pi/2] * s
+      let mean = times(sqrt(divide(pi(), int(2))), s.clone());
+      // Var = (2 - Pi/2) * s^2
+      let var = times(minus(int(2), divide(pi(), int(2))), power(s, int(2)));
+      Ok((mean, var))
+    }
     "DiscreteUniformDistribution" => {
       if dargs.len() != 1 {
         return Err(InterpreterError::EvaluationError(
@@ -1811,4 +1840,104 @@ fn cdf_discrete_uniform(
     vec![(int(0), cond_low), (cdf_val, cond_mid), (int(1), cond_high)],
     int(0),
   ))
+}
+
+/// PDF[LaplaceDistribution[mu, b], x] = E^(-Abs[x-mu]/b) / (2*b)
+fn pdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LaplaceDistribution expects 2 arguments".into(),
+    ));
+  }
+  let mu = dargs[0].clone();
+  let b = dargs[1].clone();
+  let abs_diff = Expr::FunctionCall {
+    name: "Abs".to_string(),
+    args: vec![minus(x, mu)],
+  };
+  let pdf_val = divide(
+    power(
+      e(),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(divide(abs_diff, b.clone())),
+      },
+    ),
+    times(int(2), b),
+  );
+  eval(pdf_val)
+}
+
+/// CDF[LaplaceDistribution[mu, b], x] = Piecewise[{{E^((x-mu)/b)/2, x < mu}}, 1 - E^(-(x-mu)/b)/2]
+fn cdf_laplace(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LaplaceDistribution expects 2 arguments".into(),
+    ));
+  }
+  let mu = dargs[0].clone();
+  let b = dargs[1].clone();
+  let diff = minus(x.clone(), mu.clone());
+  let low_val = divide(power(e(), divide(diff.clone(), b.clone())), int(2));
+  let high_val = minus(
+    int(1),
+    divide(
+      power(
+        e(),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(divide(diff, b)),
+        },
+      ),
+      int(2),
+    ),
+  );
+  let cond = comparison(x, ComparisonOp::Less, mu);
+  eval(piecewise(vec![(low_val, cond)], high_val))
+}
+
+/// PDF[RayleighDistribution[sigma], x] = (x/sigma^2) * E^(-x^2/(2*sigma^2)), x > 0
+fn pdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RayleighDistribution expects 1 argument".into(),
+    ));
+  }
+  let sigma = dargs[0].clone();
+  let s2 = power(sigma, int(2));
+  let pdf_val = times(
+    divide(x.clone(), s2.clone()),
+    power(
+      e(),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
+      },
+    ),
+  );
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[RayleighDistribution[sigma], x] = 1 - E^(-x^2/(2*sigma^2)), x > 0
+fn cdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "RayleighDistribution expects 1 argument".into(),
+    ));
+  }
+  let sigma = dargs[0].clone();
+  let s2 = power(sigma, int(2));
+  let cdf_val = minus(
+    int(1),
+    power(
+      e(),
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(divide(power(x.clone(), int(2)), times(int(2), s2))),
+      },
+    ),
+  );
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(cdf_val, cond)], int(0)))
 }
