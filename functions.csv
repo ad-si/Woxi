@@ -2329,7 +2329,7 @@ GeomagneticModelData,,🚫,,10.1,3440
 GeoMarker,,,,10,1760
 GeometricAssertion,,,,12,2054
 GeometricBrownianMotionProcess,,,,9,1588
-GeometricDistribution,,,,6,1474
+GeometricDistribution,Geometric probability distribution,✅,pure,6,1474
 GeometricMean,Returns the geometric mean of a list,✅,pure,6,1294
 GeometricMeanFilter,,,,7,4173
 GeometricOptimization,,,,12.1,

@@ -6192,3 +6192,69 @@ mod formula_lookup {
     assert_eq!(interpret("Head[FormulaLookup]").unwrap(), "Symbol");
   }
 }
+
+#[cfg(test)]
+mod geometric_distribution {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("GeometricDistribution[1/3]").unwrap(),
+      "GeometricDistribution[1/3]"
+    );
+  }
+
+  #[test]
+  fn mean() {
+    assert_eq!(interpret("Mean[GeometricDistribution[1/3]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn variance() {
+    assert_eq!(
+      interpret("Variance[GeometricDistribution[1/3]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn pdf_at_5() {
+    assert_eq!(
+      interpret("PDF[GeometricDistribution[1/3], 5]").unwrap(),
+      "32/729"
+    );
+  }
+
+  #[test]
+  fn cdf_at_5() {
+    assert_eq!(
+      interpret("CDF[GeometricDistribution[1/3], 5]").unwrap(),
+      "665/729"
+    );
+  }
+
+  #[test]
+  fn pdf_at_0() {
+    assert_eq!(
+      interpret("PDF[GeometricDistribution[1/3], 0]").unwrap(),
+      "1/3"
+    );
+  }
+
+  #[test]
+  fn cdf_at_0() {
+    assert_eq!(
+      interpret("CDF[GeometricDistribution[1/3], 0]").unwrap(),
+      "1/3"
+    );
+  }
+
+  #[test]
+  fn standard_deviation() {
+    assert_eq!(
+      interpret("StandardDeviation[GeometricDistribution[1/3]]").unwrap(),
+      "Sqrt[6]"
+    );
+  }
+}
