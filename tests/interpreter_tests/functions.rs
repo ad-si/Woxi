@@ -5910,3 +5910,81 @@ mod triangle_wave {
     );
   }
 }
+
+#[cfg(test)]
+mod sawtooth_wave {
+  use super::*;
+
+  #[test]
+  fn integer_zero() {
+    assert_eq!(interpret("SawtoothWave[0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_one() {
+    assert_eq!(interpret("SawtoothWave[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn integer_negative() {
+    assert_eq!(interpret("SawtoothWave[-3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn rational_quarter() {
+    assert_eq!(interpret("SawtoothWave[1/4]").unwrap(), "1/4");
+  }
+
+  #[test]
+  fn rational_third() {
+    assert_eq!(interpret("SawtoothWave[1/3]").unwrap(), "1/3");
+  }
+
+  #[test]
+  fn rational_three_quarters() {
+    assert_eq!(interpret("SawtoothWave[3/4]").unwrap(), "3/4");
+  }
+
+  #[test]
+  fn float_quarter() {
+    assert_eq!(interpret("SawtoothWave[0.25]").unwrap(), "0.25");
+  }
+
+  #[test]
+  fn float_half() {
+    assert_eq!(interpret("SawtoothWave[0.5]").unwrap(), "0.5");
+  }
+
+  #[test]
+  fn float_periodic() {
+    assert_eq!(interpret("SawtoothWave[1.5]").unwrap(), "0.5");
+  }
+
+  #[test]
+  fn float_negative() {
+    assert_eq!(interpret("SawtoothWave[-0.3]").unwrap(), "0.7");
+  }
+
+  #[test]
+  fn two_arg_scaled() {
+    assert_eq!(interpret("SawtoothWave[{0, 10}, 0.3]").unwrap(), "3.");
+  }
+
+  #[test]
+  fn two_arg_negative_range() {
+    assert_eq!(interpret("SawtoothWave[{-1, 1}, 0.25]").unwrap(), "-0.5");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("SawtoothWave[x]").unwrap(), "SawtoothWave[x]");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[SawtoothWave]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
