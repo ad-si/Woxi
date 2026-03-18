@@ -2110,12 +2110,45 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// EllipticE[m] - Complete elliptic integral of the second kind
 pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "EllipticE expects exactly 1 argument".into(),
+      "EllipticE expects 1 or 2 arguments".into(),
     ));
   }
 
+  // Two-argument form: EllipticE[phi, m] - incomplete elliptic integral of the second kind
+  if args.len() == 2 {
+    let phi_expr = &args[0];
+    let m_expr = &args[1];
+
+    // EllipticE[0, m] = 0
+    if is_expr_zero(phi_expr) {
+      if matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)) {
+        return Ok(Expr::Real(0.0));
+      }
+      return Ok(Expr::Integer(0));
+    }
+
+    // Numeric evaluation
+    let phi_val = expr_to_f64(phi_expr);
+    let m_val = expr_to_f64(m_expr);
+    let is_numeric_eval = phi_val.is_some()
+      && m_val.is_some()
+      && (matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)));
+
+    if is_numeric_eval {
+      let phi = phi_val.unwrap();
+      let m = m_val.unwrap();
+      return Ok(Expr::Real(elliptic_e_incomplete(phi, m)));
+    }
+
+    return Ok(Expr::FunctionCall {
+      name: "EllipticE".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // One-argument form: EllipticE[m] - complete elliptic integral
   match &args[0] {
     Expr::Integer(0) => {
       // EllipticE[0] = Pi/2
@@ -2177,6 +2210,78 @@ pub fn elliptic_e(m: f64) -> f64 {
   }
 
   std::f64::consts::FRAC_PI_2 * sum
+}
+
+/// JacobiZeta[phi, m] - Jacobi zeta function
+/// Z(phi, m) = E(phi, m) - (E(m)/K(m)) * F(phi, m)
+pub fn jacobi_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "JacobiZeta expects exactly 2 arguments".into(),
+    ));
+  }
+
+  let phi_expr = &args[0];
+  let m_expr = &args[1];
+
+  // JacobiZeta[0, m] = 0
+  if is_expr_zero(phi_expr) {
+    if matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)) {
+      return Ok(Expr::Real(0.0));
+    }
+    return Ok(Expr::Integer(0));
+  }
+
+  // JacobiZeta[phi, 0] = 0
+  if is_expr_zero(m_expr) {
+    if matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)) {
+      return Ok(Expr::Real(0.0));
+    }
+    return Ok(Expr::Integer(0));
+  }
+
+  // Numeric evaluation
+  let phi_val = expr_to_f64(phi_expr);
+  let m_val = expr_to_f64(m_expr);
+  let is_numeric_eval = phi_val.is_some()
+    && m_val.is_some()
+    && (matches!(phi_expr, Expr::Real(_)) || matches!(m_expr, Expr::Real(_)));
+
+  if is_numeric_eval {
+    let phi = phi_val.unwrap();
+    let m = m_val.unwrap();
+    let e_phi_m = elliptic_e_incomplete(phi, m);
+    let e_m = elliptic_e(m);
+    let k_m = elliptic_k(m);
+    let f_phi_m = elliptic_f(phi, m);
+    return Ok(Expr::Real(e_phi_m - (e_m / k_m) * f_phi_m));
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "JacobiZeta".to_string(),
+    args: args.to_vec(),
+  })
+}
+
+/// Compute incomplete elliptic integral E(phi, m) via Simpson's rule
+/// E(phi, m) = integral from 0 to phi of sqrt(1 - m*sin^2(theta)) dtheta
+pub fn elliptic_e_incomplete(phi: f64, m: f64) -> f64 {
+  if phi == 0.0 {
+    return 0.0;
+  }
+  let n = 1000;
+  let h = phi / n as f64;
+  let f = |theta: f64| (1.0 - m * theta.sin().powi(2)).sqrt();
+  let mut sum = f(0.0) + f(phi);
+  for i in 1..n {
+    let theta = i as f64 * h;
+    if i % 2 == 0 {
+      sum += 2.0 * f(theta);
+    } else {
+      sum += 4.0 * f(theta);
+    }
+  }
+  sum * h / 3.0
 }
 
 /// EllipticF[phi, m] - Incomplete elliptic integral of the first kind
