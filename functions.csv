@@ -126,7 +126,7 @@ Animate,,🚫,,6,417
 AnimatedImage,,🚫,,12.2,4027
 AnimationDirection,,,,3,2338
 AnimationRate,,🚫,,6,1122
-AnimationRepetitions,,,,6,1552
+AnimationRepetitions,Animation repetition option,✅,pure,6,1552
 AnimationRunning,Option controlling whether an animation is running,✅,none,6,686
 AnimationRunTime,,,,10,4479
 AnimationTimeIndex,,,,10,4660
@@ -202,7 +202,7 @@ ArgMin,,,,7,2144
 ArgumentsOptions,,,,12.2,3363
 ARIMAProcess,,,,9,2442
 ArithmeticGeometricMean,Arithmetic-geometric mean of two numbers,✅,pure,1,2449
-ARMAProcess,,,,9,1553
+ARMAProcess,Autoregressive moving average process,✅,pure,9,1553
 Around,Represent a value with uncertainty,✅,none,12,573
 AroundReplace,,,,12,3678
 ARProcess,,,,9,1614
@@ -395,7 +395,7 @@ BandpassFilter,,,,9,2952
 BandstopFilter,,,,9,3612
 BarabasiAlbertGraphDistribution,,,,8,2777
 BarChart,Creates a bar chart from data,✅,pure,7,449
-BarChart3D,,,,7,1539
+BarChart3D,3D bar chart,✅,pure,7,1539
 BarcodeImage,,,,10,2263
 BarcodeRecognize,,,,10,2268
 BaringhausHenzeTest,,,,10.2,4173
@@ -686,7 +686,7 @@ Catch,Catches a value thrown by Throw,✅,pure,1,353
 CategoricalDistribution,,,,12.1,5486
 Catenate,Flattens one level of lists,✅,pure,10,1063
 CatenateLayer,,,,11,2084
-CauchyDistribution,,,,6,1543
+CauchyDistribution,Cauchy probability distribution,✅,pure,6,1543
 CauchyMatrix,,,,13.2,
 CauchyPointProcess,,,,12.2,5184
 CauchyWindow,,,,9,4262
@@ -1217,7 +1217,7 @@ CurryApplied,,,,12.1,5184
 CurvatureFlowFilter,,,,8,3121
 CurveClosed,,,,8,2084
 Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
-CycleGraph,,,,8,1547
+CycleGraph,Cycle graph on n vertices,✅,pure,8,1547
 CycleIndexPolynomial,,,,9,3124
 Cycles,Permutation cycle notation wrapper,✅,none,8,941
 CyclicGroup,,,,8,3121
@@ -1298,7 +1298,7 @@ DeconvolutionLayer,,,,11,3162
 Decrement,Decrements a variable by 1 and returns the old value,✅,stateful,1,536
 Decrypt,,,,10.1,2596
 DecryptFile,,,,11.1,4387
-DedekindEta,,,,3,1525
+DedekindEta,Dedekind eta modular function,✅,pure,3,1525
 DeepSpaceProbeData,,🚫,,10,4006
 Default,Default value for optional arguments,✅,pure,1,701
 DefaultAxesStyle,,,,7,5390
@@ -1920,7 +1920,7 @@ FileNameJoin,Join file path components,✅,pure,7,582
 FileNames,Lists file names matching a pattern,✅,effectful,2,707
 FileNameSetter,,,,6,2254
 FileNameSplit,,,,7,1938
-FileNameTake,,,,7,1557
+FileNameTake,Extract file name from path,✅,pure,7,1557
 FileNameToFormatList,,,,13,
 FilePrint,,,,6,1672
 FileSize,,,,11.2,3462
@@ -3074,7 +3074,7 @@ Latitude,,,,7,3191
 LatitudeLongitude,,,,7,2729
 LatticeData,,🚫,,6,1451
 LatticeReduce,LLL lattice basis reduction,✅,pure,1,2650
-LaunchKernels,,,,7,1549
+LaunchKernels,Launch parallel computation kernels,✅,pure,7,1549
 LayeredGraph,,,,14,
 LayeredGraph3D,,,,14,
 LayeredGraphPlot,Layered graph plot,✅,pure,6,1529
@@ -3456,7 +3456,7 @@ MaxLimit,,,,11.2,2889
 MaxMemoryUsed,Peak memory usage in the current session,✅,pure,1,1085
 MaxMixtureKernels,,,,8,4225
 MaxOverlapFraction,,,,12,
-MaxPlotPoints,,,,5.1,1548
+MaxPlotPoints,Maximum number of plot points option,✅,pure,5.1,1548
 MaxRecursion,Option specifying the maximum recursion depth,✅,none,2,420
 MaxRoots,,,,14,
 MaxStableDistribution,,,,8,3108
@@ -3815,7 +3815,7 @@ NotebookEvaluate,,,,8,2112
 NotebookEventActions,,,,6,2045
 NotebookFileName,,,,7,2240
 NotebookFind,,,,3,1565
-NotebookGet,,,,3,1562
+NotebookGet,Get notebook expression,✅,pure,3,1562
 NotebookImport,,,,10.1,2693
 NotebookInformation,,,,5,2217
 NotebookLocate,,,,3,2179
@@ -3994,7 +3994,7 @@ OutputResponse,,🚫,,8,1257
 OutputSizeLimit,,,,6,4527
 OutputStream,Output stream object,✅,effectful,2,3298
 OverBar,Display form with an overbar accent,✅,none,6,717
-OverDot,,,,6,1547
+OverDot,Overdot notation,✅,pure,6,1547
 Overflow,Symbol representing arithmetic overflow,✅,pure,1,1926
 OverHat,,🚫,,6,970
 Overlaps,,,,5.1,1658
@@ -4155,7 +4155,7 @@ PermissionsGroupMemberQ,,,,12.2,5486
 PermissionsGroups,,,,10,5587
 PermissionsKey,,,,11,3413
 PermissionsKeys,,,,11,5587
-PermutationCycles,,,,8,1550
+PermutationCycles,Cycle decomposition of a permutation,✅,pure,8,1550
 PermutationCyclesQ,,,,8,3280
 PermutationGroup,,,,8,1979
 PermutationLength,,,,8,3176
@@ -4200,7 +4200,7 @@ PingTime,,,,11,4567
 Pink,Named color evaluating to RGBColor[1 0.5 0.5],✅,pure,5.1,306
 PitchRecognize,,,,12,5390
 PixelValue,,,,8,2005
-PixelValuePositions,,,,9,1536
+PixelValuePositions,Pixel positions matching a value,✅,pure,9,1536
 Placed,Inert positional wrapper for label and legend placement (used with ChartLabels etc.),✅,pure,7,391
 Placeholder,,🚫,,7,1029
 PlaceholderLayer,,,,12.2,4707
@@ -5752,7 +5752,7 @@ TrimmedVariance,,,,11.1,4081
 TropicalStormData,,🚫,,10,4567
 True,Boolean constant representing logical truth,✅,pure,1,27
 TrueQ,Returns True only for the symbol True,✅,pure,1,404
-TruncatedDistribution,,,,8,1564
+TruncatedDistribution,Truncated probability distribution,✅,pure,8,1564
 TruncatedPolyhedron,,,,12,5486
 TruncateSum,,,,14,
 TsallisQExponentialDistribution,,,,9,3947
@@ -5792,7 +5792,7 @@ UndirectedEdge,Undirected graph edge,✅,pure,8,201
 UndirectedGraph,,,,8,2038
 UndirectedGraphQ,,,,8,2867
 UndoOptions,,,,10,5013
-UndoTrackedVariables,,,,10,1559
+UndoTrackedVariables,Variables tracked for undo,✅,pure,10,1559
 Unequal,Checks if two values are not equal,✅,pure,1,200
 UnequalTo,,,,10.4,3678
 Unevaluated,Wrapper that prevents evaluation of its argument,✅,pure,2,407
@@ -5897,7 +5897,7 @@ VariogramModel,,,,13,
 VectorAngle,Angle between two vectors,✅,pure,6,962
 VectorAround,,,,12,5587
 VectorAspectRatio,,,,12.1,2344
-VectorColorFunction,,,,7,1559
+VectorColorFunction,Color function for vector plots,✅,pure,7,1559
 VectorColorFunctionScaling,,,,7,3083
 VectorDatabaseObject,,,,14.1,
 VectorDatabaseObjects,,,,14.1,
@@ -5974,7 +5974,7 @@ VertexWeightedGraphQ,,,,12,
 VerticalBar,,,,3,5013
 VerticalGauge,,,,9,2462
 VerticalSeparator,,,,3,3233
-VerticalSlider,,,,6,1547
+VerticalSlider,Vertical slider control,✅,pure,6,1547
 VerticalTilde,,,,3,5184
 Video,,,,12.1,2999
 VideoCapture,,,,13.1,
@@ -6019,7 +6019,7 @@ ViewProjection,,,,11.2,2605
 ViewRange,,,,6,3083
 ViewVector,,,,6,1956
 ViewVertical,,🚫,,2,986
-Visible,,,,3,1563
+Visible,Visibility option,✅,pure,3,1563
 VoiceStyleData,,🚫,,12,5587
 VoigtDistribution,,,,9,3474
 VolcanoData,,🚫,,10,4291
@@ -6093,7 +6093,7 @@ WeightedAdjacencyGraph,,,,8,1695
 WeightedAdjacencyMatrix,,,,8,1979
 WeightedData,,🚫,,9,1493
 WeightedGraphQ,,,,8,3916
-Weights,,,,7,1537
+Weights,Weights specification for statistical functions,✅,pure,7,1537
 WelchWindow,,,,9,4262
 WheelGraph,,,,8,2286
 WhenEvent,Specify events in differential equations,✅,none,9,780
@@ -6103,7 +6103,7 @@ White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
 WhiteNoiseProcess,,,,10,2487
 WhitePoint,,,,10,5390
 Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
-WhitespaceCharacter,,,,5.1,1539
+WhitespaceCharacter,String pattern for whitespace,✅,pure,5.1,1539
 WhittakerM,,,,6,1651
 WhittakerW,,,,6,1741
 WienerFilter,,,,8,4315

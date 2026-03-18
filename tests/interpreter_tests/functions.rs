@@ -6738,3 +6738,166 @@ mod batch_unevaluated_wrappers {
     );
   }
 }
+
+#[cfg(test)]
+mod cauchy_distribution {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("CauchyDistribution[0, 1]").unwrap(),
+      "CauchyDistribution[0, 1]"
+    );
+  }
+
+  #[test]
+  fn pdf_at_zero() {
+    assert_eq!(
+      interpret("PDF[CauchyDistribution[0, 1], 0]").unwrap(),
+      "1/Pi"
+    );
+  }
+
+  #[test]
+  fn cdf_at_zero() {
+    assert_eq!(
+      interpret("CDF[CauchyDistribution[0, 1], 0]").unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn cdf_at_one_numeric() {
+    let result = interpret("N[CDF[CauchyDistribution[0, 1], 1]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.75).abs() < 1e-10);
+  }
+
+  #[test]
+  fn mean_indeterminate() {
+    assert_eq!(
+      interpret("Mean[CauchyDistribution[0, 1]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn variance_indeterminate() {
+    assert_eq!(
+      interpret("Variance[CauchyDistribution[0, 1]]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  #[test]
+  fn pdf_with_params_numeric() {
+    let result = interpret("N[PDF[CauchyDistribution[2, 3], 0]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    let expected = 3.0 / (13.0 * std::f64::consts::PI);
+    assert!((val - expected).abs() < 1e-10);
+  }
+}
+
+#[cfg(test)]
+mod batch_unevaluated_wrappers_2 {
+  use super::*;
+
+  #[test]
+  fn dedekind_eta() {
+    assert_eq!(interpret("DedekindEta[x]").unwrap(), "DedekindEta[x]");
+  }
+  #[test]
+  fn pixel_value_positions() {
+    assert_eq!(
+      interpret("PixelValuePositions[x, y]").unwrap(),
+      "PixelValuePositions[x, y]"
+    );
+  }
+  #[test]
+  fn weights() {
+    assert_eq!(interpret("Weights[x]").unwrap(), "Weights[x]");
+  }
+  #[test]
+  fn whitespace_character() {
+    assert_eq!(
+      interpret("WhitespaceCharacter[x]").unwrap(),
+      "WhitespaceCharacter[x]"
+    );
+  }
+  #[test]
+  fn bar_chart_3d() {
+    assert_eq!(interpret("BarChart3D[x]").unwrap(), "BarChart3D[x]");
+  }
+  #[test]
+  fn vertical_slider() {
+    assert_eq!(interpret("VerticalSlider[x]").unwrap(), "VerticalSlider[x]");
+  }
+  #[test]
+  fn cycle_graph() {
+    assert_eq!(interpret("CycleGraph[x]").unwrap(), "CycleGraph[x]");
+  }
+  #[test]
+  fn over_dot() {
+    assert_eq!(interpret("OverDot[x]").unwrap(), "OverDot[x]");
+  }
+  #[test]
+  fn max_plot_points() {
+    assert_eq!(interpret("MaxPlotPoints[x]").unwrap(), "MaxPlotPoints[x]");
+  }
+  #[test]
+  fn launch_kernels() {
+    assert_eq!(interpret("LaunchKernels[x]").unwrap(), "LaunchKernels[x]");
+  }
+  #[test]
+  fn permutation_cycles() {
+    assert_eq!(
+      interpret("PermutationCycles[x]").unwrap(),
+      "PermutationCycles[x]"
+    );
+  }
+  #[test]
+  fn animation_repetitions() {
+    assert_eq!(
+      interpret("AnimationRepetitions[x]").unwrap(),
+      "AnimationRepetitions[x]"
+    );
+  }
+  #[test]
+  fn arma_process() {
+    assert_eq!(interpret("ARMAProcess[x]").unwrap(), "ARMAProcess[x]");
+  }
+  #[test]
+  fn file_name_take() {
+    assert_eq!(interpret("FileNameTake[x]").unwrap(), "FileNameTake[x]");
+  }
+  #[test]
+  fn undo_tracked_variables() {
+    assert_eq!(
+      interpret("UndoTrackedVariables[x]").unwrap(),
+      "UndoTrackedVariables[x]"
+    );
+  }
+  #[test]
+  fn vector_color_function() {
+    assert_eq!(
+      interpret("VectorColorFunction[x]").unwrap(),
+      "VectorColorFunction[x]"
+    );
+  }
+  #[test]
+  fn notebook_get() {
+    assert_eq!(interpret("NotebookGet[x]").unwrap(), "NotebookGet[x]");
+  }
+  #[test]
+  fn visible() {
+    assert_eq!(interpret("Visible[x]").unwrap(), "Visible[x]");
+  }
+  #[test]
+  fn truncated_distribution() {
+    assert_eq!(
+      interpret("TruncatedDistribution[x, y]").unwrap(),
+      "TruncatedDistribution[x, y]"
+    );
+  }
+}
