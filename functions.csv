@@ -829,7 +829,7 @@ ClearAttributes,Removes attributes from a symbol,✅,stateful,1,1665
 ClearCookies,,,,11,4262
 ClearDistributedDefinitions,,,,14.1,
 ClearPermissions,,,,10.2,5079
-ClearSystemCache,,,,6,1489
+ClearSystemCache,Clear internal system caches,✅,pure,6,1489
 ClebschGordan,,🚫,,2,1066
 ClickPane,,,,6,2236
 ClickToCopy,,,,12.2,
@@ -2467,7 +2467,7 @@ GroupElementToWord,,,,9,3947
 GroupGenerators,,,,8,2707
 Groupings,,,,11,2777
 GroupMultiplicationTable,,,,8,3378
-GroupOrbits,,,,8,1480
+GroupOrbits,Orbits of a group action,✅,pure,8,1480
 GroupOrder,,,,8,2129
 GroupPageBreakWithin,,,,3,3947
 GroupSetwiseStabilizer,,,,8,4527
@@ -3115,7 +3115,7 @@ LeftVector,,,,3,4356
 LeftVectorBar,,,,3,5390
 LegendAppearance,,,,7,3566
 Legended,Wrapper to attach a legend to a graphic,✅,none,7,785
-LegendFunction,,,,9,1499
+LegendFunction,Option for legend formatting function,✅,pure,9,1499
 LegendLabel,Option for specifying legend labels in plots,✅,none,9,1371
 LegendLayout,,🚫,,9,1348
 LegendMargins,,,,9,2034
@@ -3288,7 +3288,7 @@ LocalTimeZone,,,,10,4052
 LocationEquivalenceTest,,,,8,3656
 LocationTest,,,,8,2675
 Locator,Interactive locator object,✅,none,6,549
-LocatorAutoCreate,,,,6,1490
+LocatorAutoCreate,Option for automatic locator creation,✅,pure,6,1490
 LocatorPane,Requires external services or GUI infrastructure,🚫,io,6,984
 LocatorRegion,,,,6,3803
 Locked,Attribute preventing modification of a symbol,✅,pure,1,2786
@@ -4498,7 +4498,7 @@ RarerProbability,,,,12,
 Raster,Graphics primitive representing raster image data,✅,none,2,747
 Raster3D,,,,9,2317
 Rasterize,Converts expression to raster image,✅,pure,6,539
-RasterSize,,,,6,1499
+RasterSize,Option for raster resolution,✅,pure,6,1499
 Rational,Head type for rational numbers,✅,pure,1,206
 RationalExpressionQ,,,,12.2,5486
 Rationalize,Converts a real number to a nearby rational,✅,pure,1,537
@@ -4560,7 +4560,7 @@ Region,,🚫,,11.1,959
 RegionBinarize,,,,8,3008
 RegionBoundary,,🚫,,10,1301
 RegionBoundaryStyle,,,,12.1,4612
-RegionBounds,,,,10,1480
+RegionBounds,Bounding box of a region,✅,pure,10,1480
 RegionCentroid,Compute the centroid of a geometric region,✅,pure,10,1377
 RegionCongruent,,,,13,
 RegionConvert,,,,12.3,
@@ -5475,7 +5475,7 @@ TemplateWith,,,,10,4809
 TemporalData,,🚫,,9,1008
 TemporalRegularity,,,,10,3462
 Temporary,,,,2,1912
-TensorContract,,,,9,1484
+TensorContract,Contract tensor indices,✅,pure,9,1484
 TensorDimensions,,,,9,3008
 TensorExpand,,,,9,2167
 TensorProduct,Tensor product of arrays,✅,none,9,797
@@ -5670,7 +5670,7 @@ TransformationFunction,,,,6,2656
 TransformationFunctions,Functions for Simplify transformations,🚫,pure,4,1422
 TransformationMatrix,,,,6,2344
 TransformedDistribution,,🚫,,8,851
-TransformedField,,,,9,1499
+TransformedField,Transform vector or scalar field,✅,pure,9,1499
 TransformedProcess,,,,10,2389
 TransformedRegion,Apply transformation to a geometric region,✅,pure,10,1477
 TransitionDirection,,,,9,4809

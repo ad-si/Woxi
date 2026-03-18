@@ -2351,11 +2351,23 @@ pub fn evaluate_function_call_ast_inner(
       | "TransformedRegion"
       | "HypoexponentialDistribution"
       | "FormulaLookup"
+      | "GroupOrbits"
+      | "RegionBounds"
+      | "TensorContract"
+      | "LocatorAutoCreate"
+      | "LegendFunction"
+      | "RasterSize"
+      | "TransformedField"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: args.to_vec(),
     });
+  }
+
+  // ClearSystemCache[] - no-op, returns Null
+  if name == "ClearSystemCache" {
+    return Ok(Expr::Identifier("Null".to_string()));
   }
 
   // Check if the function is a known but unimplemented Wolfram Language function

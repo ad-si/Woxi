@@ -6258,3 +6258,135 @@ mod geometric_distribution {
     );
   }
 }
+
+#[cfg(test)]
+mod group_orbits {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("GroupOrbits[x, y]").unwrap(), "GroupOrbits[x, y]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[GroupOrbits]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod region_bounds {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("RegionBounds[x]").unwrap(), "RegionBounds[x]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[RegionBounds]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod tensor_contract {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("TensorContract[1, 2]").unwrap(),
+      "TensorContract[1, 2]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[TensorContract]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod clear_system_cache {
+  use super::*;
+
+  #[test]
+  fn returns_null() {
+    assert_eq!(interpret("ClearSystemCache[]").unwrap(), "Null");
+  }
+
+  #[test]
+  fn with_arg_returns_null() {
+    assert_eq!(interpret("ClearSystemCache[\"Numeric\"]").unwrap(), "Null");
+  }
+}
+
+#[cfg(test)]
+mod locator_auto_create {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("LocatorAutoCreate[1, 2]").unwrap(),
+      "LocatorAutoCreate[1, 2]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[LocatorAutoCreate]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod legend_function {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("LegendFunction[1, 2]").unwrap(),
+      "LegendFunction[1, 2]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[LegendFunction]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod raster_size {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("RasterSize[1, 2]").unwrap(), "RasterSize[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[RasterSize]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod transformed_field {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("TransformedField[x, y, z]").unwrap(),
+      "TransformedField[x, y, z]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[TransformedField]").unwrap(), "Symbol");
+  }
+}
