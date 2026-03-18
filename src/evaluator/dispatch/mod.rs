@@ -1409,7 +1409,8 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
-  // Graph[{rule1, rule2, ...}] → Graph[{sorted vertices}, {DirectedEdge[...], ...}]
+  // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
+  // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
   if name == "Graph" {
     if args.len() == 1
       && let Expr::List(edges) = &args[0]
@@ -1417,7 +1418,6 @@ pub fn evaluate_function_call_ast_inner(
       // Check if all elements are Rule expressions
       let all_rules = edges.iter().all(|e| matches!(e, Expr::Rule { .. }));
       if all_rules && !edges.is_empty() {
-        // Extract unique vertices
         let mut vertex_set: Vec<Expr> = Vec::new();
         let mut directed_edges: Vec<Expr> = Vec::new();
         for e in edges {
@@ -1428,7 +1428,6 @@ pub fn evaluate_function_call_ast_inner(
           {
             let src = (**pattern).clone();
             let dst = (**replacement).clone();
-            // Add to vertex set if not already present
             if !vertex_set
               .iter()
               .any(|v| crate::evaluator::pattern_matching::expr_equal(v, &src))
@@ -1447,11 +1446,34 @@ pub fn evaluate_function_call_ast_inner(
             });
           }
         }
-        // Sort vertices canonically
         vertex_set.sort_by(crate::functions::canonical_cmp);
         return Ok(Expr::FunctionCall {
           name: "Graph".to_string(),
           args: vec![Expr::List(vertex_set), Expr::List(directed_edges)],
+        });
+      }
+
+      // Check if all elements are UndirectedEdge/DirectedEdge
+      let all_edges = edges.iter().all(|e| {
+        matches!(e, Expr::FunctionCall { name, args } if (name == "UndirectedEdge" || name == "DirectedEdge") && args.len() == 2)
+      });
+      if all_edges && !edges.is_empty() {
+        let mut vertex_set: Vec<Expr> = Vec::new();
+        for e in edges {
+          if let Expr::FunctionCall { args: eargs, .. } = e {
+            for v in eargs {
+              if !vertex_set.iter().any(|existing| {
+                crate::evaluator::pattern_matching::expr_equal(existing, v)
+              }) {
+                vertex_set.push(v.clone());
+              }
+            }
+          }
+        }
+        vertex_set.sort_by(crate::functions::canonical_cmp);
+        return Ok(Expr::FunctionCall {
+          name: "Graph".to_string(),
+          args: vec![Expr::List(vertex_set), Expr::List(edges.clone())],
         });
       }
     }
@@ -1542,6 +1564,186 @@ pub fn evaluate_function_call_ast_inner(
             }
           }
           return Ok(Expr::List(matrix.into_iter().map(Expr::List).collect()));
+        }
+      }
+    }
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  // ConnectedComponents[Graph[{vertices}, {edges}]]
+  // For undirected graphs: finds connected components (union-find)
+  // For directed graphs: finds strongly connected components (Tarjan's)
+  if name == "ConnectedComponents" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    {
+      if gname == "Graph" && gargs.len() == 2 {
+        if let (Expr::List(vertices), Expr::List(edges)) =
+          (&gargs[0], &gargs[1])
+        {
+          let n = vertices.len();
+          let vertex_index: std::collections::HashMap<String, usize> = vertices
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (expr_to_string(v), i))
+            .collect();
+
+          // Check if graph is directed or undirected
+          let is_directed = edges.iter().any(|e| {
+            matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
+          });
+
+          let comp_list = if is_directed {
+            // Strongly connected components via Kosaraju's algorithm
+            let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+            let mut radj: Vec<Vec<usize>> = vec![Vec::new(); n];
+            for edge in edges {
+              if let Expr::FunctionCall { args: eargs, .. } = edge {
+                if eargs.len() == 2 {
+                  let from_str = expr_to_string(&eargs[0]);
+                  let to_str = expr_to_string(&eargs[1]);
+                  if let (Some(&fi), Some(&ti)) =
+                    (vertex_index.get(&from_str), vertex_index.get(&to_str))
+                  {
+                    adj[fi].push(ti);
+                    radj[ti].push(fi);
+                  }
+                }
+              }
+            }
+
+            // Pass 1: DFS on original graph to get finish order
+            let mut visited = vec![false; n];
+            let mut order: Vec<usize> = Vec::new();
+            for i in 0..n {
+              if !visited[i] {
+                let mut stack = vec![(i, false)];
+                while let Some((node, processed)) = stack.pop() {
+                  if processed {
+                    order.push(node);
+                    continue;
+                  }
+                  if visited[node] {
+                    continue;
+                  }
+                  visited[node] = true;
+                  stack.push((node, true));
+                  for &next in &adj[node] {
+                    if !visited[next] {
+                      stack.push((next, false));
+                    }
+                  }
+                }
+              }
+            }
+
+            // Pass 2: DFS on reverse graph in reverse finish order
+            let mut comp_id = vec![usize::MAX; n];
+            let mut components: Vec<Vec<usize>> = Vec::new();
+            for &node in order.iter().rev() {
+              if comp_id[node] != usize::MAX {
+                continue;
+              }
+              let cid = components.len();
+              let mut component = Vec::new();
+              let mut stack = vec![node];
+              while let Some(v) = stack.pop() {
+                if comp_id[v] != usize::MAX {
+                  continue;
+                }
+                comp_id[v] = cid;
+                component.push(v);
+                for &prev in &radj[v] {
+                  if comp_id[prev] == usize::MAX {
+                    stack.push(prev);
+                  }
+                }
+              }
+              components.push(component);
+            }
+
+            // Convert to Expr lists
+            components
+              .into_iter()
+              .map(|comp| {
+                comp.into_iter().map(|i| vertices[i].clone()).collect()
+              })
+              .collect::<Vec<Vec<Expr>>>()
+          } else {
+            // Undirected: Union-Find
+            let mut parent: Vec<usize> = (0..n).collect();
+            let mut uf_rank = vec![0usize; n];
+
+            fn find(parent: &mut Vec<usize>, i: usize) -> usize {
+              if parent[i] != i {
+                parent[i] = find(parent, parent[i]);
+              }
+              parent[i]
+            }
+
+            fn union(
+              parent: &mut Vec<usize>,
+              uf_rank: &mut Vec<usize>,
+              a: usize,
+              b: usize,
+            ) {
+              let ra = find(parent, a);
+              let rb = find(parent, b);
+              if ra == rb {
+                return;
+              }
+              if uf_rank[ra] < uf_rank[rb] {
+                parent[ra] = rb;
+              } else if uf_rank[ra] > uf_rank[rb] {
+                parent[rb] = ra;
+              } else {
+                parent[rb] = ra;
+                uf_rank[ra] += 1;
+              }
+            }
+
+            for edge in edges {
+              if let Expr::FunctionCall { args: eargs, .. } = edge {
+                if eargs.len() == 2 {
+                  let from_str = expr_to_string(&eargs[0]);
+                  let to_str = expr_to_string(&eargs[1]);
+                  if let (Some(&fi), Some(&ti)) =
+                    (vertex_index.get(&from_str), vertex_index.get(&to_str))
+                  {
+                    union(&mut parent, &mut uf_rank, fi, ti);
+                  }
+                }
+              }
+            }
+
+            // Group vertices by their root, preserving insertion order
+            let mut components: Vec<Vec<Expr>> = Vec::new();
+            let mut root_to_idx: std::collections::HashMap<usize, usize> =
+              std::collections::HashMap::new();
+            for (i, v) in vertices.iter().enumerate() {
+              let root = find(&mut parent, i);
+              if let Some(&idx) = root_to_idx.get(&root) {
+                components[idx].push(v.clone());
+              } else {
+                let idx = components.len();
+                root_to_idx.insert(root, idx);
+                components.push(vec![v.clone()]);
+              }
+            }
+
+            // Sort components by size (largest first)
+            components.sort_by(|a, b| b.len().cmp(&a.len()));
+            components
+          };
+
+          return Ok(Expr::List(
+            comp_list.into_iter().map(Expr::List).collect(),
+          ));
         }
       }
     }
