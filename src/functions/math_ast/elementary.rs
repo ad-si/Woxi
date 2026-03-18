@@ -1501,6 +1501,40 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// DiscreteDelta[n1, n2, ...] - returns 1 if all ni are 0, 0 otherwise
+/// DiscreteDelta[] - returns 1
+pub fn discrete_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Ok(Expr::Integer(1));
+  }
+  let mut has_symbolic = false;
+  for arg in args {
+    match arg {
+      Expr::Integer(n) => {
+        if *n != 0 {
+          return Ok(Expr::Integer(0));
+        }
+      }
+      Expr::Real(f) => {
+        if *f != 0.0 {
+          return Ok(Expr::Integer(0));
+        }
+      }
+      _ => {
+        has_symbolic = true;
+      }
+    }
+  }
+  if has_symbolic {
+    Ok(Expr::FunctionCall {
+      name: "DiscreteDelta".to_string(),
+      args: args.to_vec(),
+    })
+  } else {
+    Ok(Expr::Integer(1))
+  }
+}
+
 /// UnitStep[x] - returns 0 for x < 0, 1 for x >= 0
 /// UnitStep[x1, x2, ...] - returns 1 if all xi >= 0, 0 if any xi < 0
 /// UnitStep[list] - maps over lists (single arg only)

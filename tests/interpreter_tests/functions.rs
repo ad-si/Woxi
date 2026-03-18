@@ -7153,4 +7153,187 @@ mod batch_unevaluated_wrappers_2 {
       "CreateDirectory[x]"
     );
   }
+
+  // ─── DiscreteDelta ─────────────────────────────────────────────────
+  #[test]
+  fn discrete_delta_zero() {
+    assert_eq!(interpret("DiscreteDelta[0]").unwrap(), "1");
+  }
+  #[test]
+  fn discrete_delta_nonzero() {
+    assert_eq!(interpret("DiscreteDelta[1]").unwrap(), "0");
+  }
+  #[test]
+  fn discrete_delta_multiple_zeros() {
+    assert_eq!(interpret("DiscreteDelta[0, 0]").unwrap(), "1");
+  }
+  #[test]
+  fn discrete_delta_mixed() {
+    assert_eq!(interpret("DiscreteDelta[0, 1]").unwrap(), "0");
+  }
+  #[test]
+  fn discrete_delta_no_args() {
+    assert_eq!(interpret("DiscreteDelta[]").unwrap(), "1");
+  }
+  #[test]
+  fn discrete_delta_symbolic() {
+    assert_eq!(interpret("DiscreteDelta[x]").unwrap(), "DiscreteDelta[x]");
+  }
+
+  // ─── Unevaluated batch 5 ──────────────────────────────────────────
+  #[test]
+  fn magnify() {
+    assert_eq!(interpret("Magnify[x]").unwrap(), "Magnify[x]");
+  }
+  #[test]
+  fn script_baseline_shifts() {
+    assert_eq!(
+      interpret("ScriptBaselineShifts[x]").unwrap(),
+      "ScriptBaselineShifts[x]"
+    );
+  }
+  #[test]
+  fn line_spacing() {
+    assert_eq!(interpret("LineSpacing[x]").unwrap(), "LineSpacing[x]");
+  }
+  #[test]
+  fn function_range() {
+    assert_eq!(
+      interpret("FunctionRange[x, y]").unwrap(),
+      "FunctionRange[x, y]"
+    );
+  }
+  #[test]
+  fn vectors() {
+    assert_eq!(interpret("Vectors[x]").unwrap(), "Vectors[x]");
+  }
+  #[test]
+  fn sector_origin() {
+    assert_eq!(interpret("SectorOrigin[x]").unwrap(), "SectorOrigin[x]");
+  }
+  #[test]
+  fn max_training_rounds() {
+    assert_eq!(
+      interpret("MaxTrainingRounds[x]").unwrap(),
+      "MaxTrainingRounds[x]"
+    );
+  }
+  #[test]
+  fn polar_axes() {
+    assert_eq!(interpret("PolarAxes[x]").unwrap(), "PolarAxes[x]");
+  }
+  #[test]
+  fn polynomial_gcd() {
+    assert_eq!(
+      interpret("PolynomialGCD[x, y]").unwrap(),
+      "PolynomialGCD[x, y]"
+    );
+  }
+  #[test]
+  fn system_dialog_input() {
+    assert_eq!(
+      interpret("SystemDialogInput[x]").unwrap(),
+      "SystemDialogInput[x]"
+    );
+  }
+  #[test]
+  fn ar_process() {
+    assert_eq!(interpret("ARProcess[x]").unwrap(), "ARProcess[x]");
+  }
+  #[test]
+  fn discrete_wavelet_transform() {
+    assert_eq!(
+      interpret("DiscreteWaveletTransform[x]").unwrap(),
+      "DiscreteWaveletTransform[x]"
+    );
+  }
+  #[test]
+  fn relation_graph() {
+    assert_eq!(interpret("RelationGraph[x]").unwrap(), "RelationGraph[x]");
+  }
+  #[test]
+  fn image_partition() {
+    assert_eq!(interpret("ImagePartition[x]").unwrap(), "ImagePartition[x]");
+  }
+  #[test]
+  fn petersen_graph() {
+    assert_eq!(interpret("PetersenGraph[x]").unwrap(), "PetersenGraph[x]");
+  }
+  #[test]
+  fn r_solve_value() {
+    assert_eq!(
+      interpret("RSolveValue[x, y, z]").unwrap(),
+      "RSolveValue[x, y, z]"
+    );
+  }
+  #[test]
+  fn feature_extraction() {
+    assert_eq!(
+      interpret("FeatureExtraction[x]").unwrap(),
+      "FeatureExtraction[x]"
+    );
+  }
+  #[test]
+  fn graph_distance() {
+    assert_eq!(
+      interpret("GraphDistance[x, y]").unwrap(),
+      "GraphDistance[x, y]"
+    );
+  }
+  #[test]
+  fn cell_style() {
+    assert_eq!(interpret("CellStyle[x]").unwrap(), "CellStyle[x]");
+  }
+  #[test]
+  fn directory_q() {
+    assert_eq!(interpret("DirectoryQ[x]").unwrap(), "DirectoryQ[x]");
+  }
+  #[test]
+  fn image_identify() {
+    assert_eq!(interpret("ImageIdentify[x]").unwrap(), "ImageIdentify[x]");
+  }
+  #[test]
+  fn asymptotic() {
+    assert_eq!(interpret("Asymptotic[x, y]").unwrap(), "Asymptotic[x, y]");
+  }
+  #[test]
+  fn coordinate_transform() {
+    assert_eq!(
+      interpret("CoordinateTransform[x, y]").unwrap(),
+      "CoordinateTransform[x, y]"
+    );
+  }
+  #[test]
+  fn window_margins() {
+    assert_eq!(interpret("WindowMargins[x]").unwrap(), "WindowMargins[x]");
+  }
+  #[test]
+  fn affine_transform() {
+    assert_eq!(
+      interpret("AffineTransform[x]").unwrap(),
+      "AffineTransform[x]"
+    );
+  }
+  #[test]
+  fn radio_button() {
+    assert_eq!(interpret("RadioButton[x]").unwrap(), "RadioButton[x]");
+  }
+  #[test]
+  fn legend_markers() {
+    assert_eq!(interpret("LegendMarkers[x]").unwrap(), "LegendMarkers[x]");
+  }
+  #[test]
+  fn powers_representations() {
+    assert_eq!(
+      interpret("PowersRepresentations[x, y, z]").unwrap(),
+      "PowersRepresentations[x, y, z]"
+    );
+  }
+  #[test]
+  fn show_string_characters() {
+    assert_eq!(
+      interpret("ShowStringCharacters[x]").unwrap(),
+      "ShowStringCharacters[x]"
+    );
+  }
 }
