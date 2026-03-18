@@ -3149,6 +3149,100 @@ mod interpolating_polynomial {
   }
 }
 
+mod minimal_polynomial {
+  use super::*;
+
+  #[test]
+  fn integer() {
+    assert_eq!(interpret("MinimalPolynomial[3, x]").unwrap(), "-3 + x");
+  }
+
+  #[test]
+  fn rational() {
+    assert_eq!(interpret("MinimalPolynomial[1/3, x]").unwrap(), "-1 + 3*x");
+  }
+
+  #[test]
+  fn sqrt_2() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2], x]").unwrap(),
+      "-2 + x^2"
+    );
+  }
+
+  #[test]
+  fn sqrt_3() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[3], x]").unwrap(),
+      "-3 + x^2"
+    );
+  }
+
+  #[test]
+  fn cube_root_2() {
+    assert_eq!(
+      interpret("MinimalPolynomial[2^(1/3), x]").unwrap(),
+      "-2 + x^3"
+    );
+  }
+
+  #[test]
+  fn golden_ratio() {
+    assert_eq!(
+      interpret("MinimalPolynomial[GoldenRatio, x]").unwrap(),
+      "-1 - x + x^2"
+    );
+  }
+
+  #[test]
+  fn imaginary_unit() {
+    assert_eq!(interpret("MinimalPolynomial[I, x]").unwrap(), "1 + x^2");
+  }
+
+  #[test]
+  fn sum_of_square_roots() {
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2] + Sqrt[3], x]").unwrap(),
+      "1 - 10*x^2 + x^4"
+    );
+  }
+
+  #[test]
+  fn scaled_sqrt() {
+    assert_eq!(
+      interpret("MinimalPolynomial[2*Sqrt[3], x]").unwrap(),
+      "-12 + x^2"
+    );
+  }
+
+  #[test]
+  fn one_plus_sqrt_2() {
+    assert_eq!(
+      interpret("MinimalPolynomial[1 + Sqrt[2], x]").unwrap(),
+      "-1 - 2*x + x^2"
+    );
+  }
+
+  #[test]
+  fn wrong_arg_count() {
+    // Single argument returns unevaluated or error
+    assert!(
+      interpret("MinimalPolynomial[Sqrt[2]]").is_err()
+        || interpret("MinimalPolynomial[Sqrt[2]]")
+          .unwrap()
+          .contains("MinimalPolynomial")
+    );
+  }
+
+  #[test]
+  fn negative_sqrt() {
+    assert_eq!(
+      interpret("MinimalPolynomial[-Sqrt[2], x]").unwrap(),
+      "-2 + x^2"
+    );
+  }
+}
+
 mod find_instance {
   use super::*;
 

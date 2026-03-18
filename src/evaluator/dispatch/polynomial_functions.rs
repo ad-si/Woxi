@@ -169,6 +169,11 @@ pub fn dispatch_polynomial_functions(
         crate::functions::polynomial_ast::interpolating_polynomial_ast(args),
       );
     }
+    "MinimalPolynomial" if args.len() == 2 => {
+      return Some(crate::functions::polynomial_ast::minimal_polynomial_ast(
+        args,
+      ));
+    }
     _ => {}
   }
   None

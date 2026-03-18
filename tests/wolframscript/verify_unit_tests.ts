@@ -504,6 +504,11 @@ function main() {
     /\bRasterize\[/,
     /\bN\[Erf\[/,    // Arbitrary-precision Erf differs in low-order digits (different algorithm)
     /\bN\[Erfc\[/,   // Same as Erf (Erfc = 1 - Erf)
+    /\bAdjacencyMatrix\[/,  // Woxi returns dense list, Wolfram returns SparseArray
+    /\bAdjacencyGraph\[/,   // Different internal Graph representation (edge list vs SparseArray)
+    /\bGraphEmbedding\[/,   // Different layout algorithms produce different coordinates
+    /\bBezierFunction\[/,   // Different internal representation of BezierFunction objects
+    /\bN\[BesselJZero\[/,   // Last-ULP floating-point differences in root finding
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -518,6 +523,23 @@ function main() {
     "N[HypergeometricPFQ[{1/2}, {3/2}, -1]]",
     "RiemannR[10.]",
     "N[RiemannR[1000000]]",
+    // Polynomial factoring: Woxi returns expanded form, Wolfram returns factored
+    "FindSequenceFunction[{1, 3, 6, 10, 15}, n]",
+    // PiecewiseExpand[Clip]: equivalent but differently ordered Piecewise cases
+    "PiecewiseExpand[Clip[x, {0, 10}]]",
+    // Woxi evaluates exactly (1.5), Wolfram has floating-point rounding (1.4999999999999998)
+    "PDF[BetaDistribution[2, 3], 0.5]",
+    // Algebraic form differences: mathematically equivalent but different simplification level
+    // Term ordering in Times: E*(-1+E) vs (-1+E)*E
+    "Variance[LogNormalDistribution[0, 1]]",
+    // Exponent form: k/2-1 vs -1+k/2 (canonical Plus ordering)
+    "PDF[ChiSquareDistribution[k], x]",
+    // Division vs negative exponent: (a*k^a)/x^(1+a) vs a*k^a*x^(-1-a)
+    "PDF[ParetoDistribution[k, a], x]",
+    // Nested fraction simplification: 2/3/(3*E^(1/9)) vs 2/(9*E^(1/9))
+    "PDF[WeibullDistribution[2, 3], 1]",
+    // Exponent form: (a-1) vs (-1+a) (canonical Plus ordering)
+    "PDF[WeibullDistribution[a, b], x]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).

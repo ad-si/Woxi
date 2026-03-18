@@ -3548,7 +3548,7 @@ MinDetect,,,,8,2952
 MineralData,,🚫,,10,4881
 MinFilter,,,,7,3153
 MinimalBy,Returns elements that minimize a criterion,✅,pure,10,1534
-MinimalPolynomial,,,,6,1428
+MinimalPolynomial,Computes the minimal polynomial of an algebraic number over the rationals,✅,pure,6,1428
 MinimalStateSpaceModel,,,,8,4567
 Minimize,Global symbolic minimization of a function over variables with optional constraints,✅,pure,5,577
 MinimumTimeIncrement,,,,10,4567
