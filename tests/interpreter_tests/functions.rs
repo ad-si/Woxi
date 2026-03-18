@@ -7336,4 +7336,193 @@ mod batch_unevaluated_wrappers_2 {
       "ShowStringCharacters[x]"
     );
   }
+
+  // ─── FlattenAt ─────────────────────────────────────────────────────
+  #[test]
+  fn flatten_at_single() {
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, d}, 2]").unwrap(),
+      "{a, b, c, d}"
+    );
+  }
+  #[test]
+  fn flatten_at_negative() {
+    assert_eq!(
+      interpret("FlattenAt[{a, {b, c}, d}, -2]").unwrap(),
+      "{a, b, c, d}"
+    );
+  }
+  #[test]
+  fn flatten_at_first() {
+    assert_eq!(
+      interpret("FlattenAt[{{a, b}, {c, d}, {e, f}}, 2]").unwrap(),
+      "{{a, b}, c, d, {e, f}}"
+    );
+  }
+
+  // ─── InversePermutation ────────────────────────────────────────────
+  #[test]
+  fn inverse_permutation_basic() {
+    assert_eq!(
+      interpret("InversePermutation[{3, 1, 2}]").unwrap(),
+      "{2, 3, 1}"
+    );
+  }
+  #[test]
+  fn inverse_permutation_4() {
+    assert_eq!(
+      interpret("InversePermutation[{2, 4, 1, 3}]").unwrap(),
+      "{3, 1, 4, 2}"
+    );
+  }
+
+  // ─── Unevaluated batch 6 ──────────────────────────────────────────
+  #[test]
+  fn nd_eigensystem() {
+    assert_eq!(
+      interpret("NDEigensystem[x, y]").unwrap(),
+      "NDEigensystem[x, y]"
+    );
+  }
+  #[test]
+  fn texture_coordinate_function() {
+    assert_eq!(
+      interpret("TextureCoordinateFunction[x]").unwrap(),
+      "TextureCoordinateFunction[x]"
+    );
+  }
+  #[test]
+  fn find_distribution() {
+    assert_eq!(
+      interpret("FindDistribution[x]").unwrap(),
+      "FindDistribution[x]"
+    );
+  }
+  #[test]
+  fn text_cases() {
+    assert_eq!(interpret("TextCases[x, y]").unwrap(), "TextCases[x, y]");
+  }
+  #[test]
+  fn multicolumn() {
+    assert_eq!(interpret("Multicolumn[x]").unwrap(), "Multicolumn[x]");
+  }
+  #[test]
+  fn record() {
+    assert_eq!(interpret("Record[x]").unwrap(), "Record[x]");
+  }
+  #[test]
+  fn whittaker_m() {
+    assert_eq!(
+      interpret("WhittakerM[x, y, z]").unwrap(),
+      "WhittakerM[x, y, z]"
+    );
+  }
+  #[test]
+  fn interpretation_box() {
+    assert_eq!(
+      interpret("InterpretationBox[x]").unwrap(),
+      "InterpretationBox[x]"
+    );
+  }
+  #[test]
+  fn include_pods() {
+    assert_eq!(interpret("IncludePods[x]").unwrap(), "IncludePods[x]");
+  }
+  #[test]
+  fn rule_plot() {
+    assert_eq!(interpret("RulePlot[x]").unwrap(), "RulePlot[x]");
+  }
+  #[test]
+  fn mathieu_group_m11() {
+    assert_eq!(
+      interpret("MathieuGroupM11[x]").unwrap(),
+      "MathieuGroupM11[x]"
+    );
+  }
+  #[test]
+  fn trig() {
+    assert_eq!(interpret("Trig[x]").unwrap(), "Trig[x]");
+  }
+  #[test]
+  fn overlaps() {
+    assert_eq!(interpret("Overlaps[x]").unwrap(), "Overlaps[x]");
+  }
+  #[test]
+  fn ito_process() {
+    assert_eq!(interpret("ItoProcess[x]").unwrap(), "ItoProcess[x]");
+  }
+  #[test]
+  fn net_model() {
+    assert_eq!(interpret("NetModel[x]").unwrap(), "NetModel[x]");
+  }
+  #[test]
+  fn rotation_action() {
+    assert_eq!(interpret("RotationAction[x]").unwrap(), "RotationAction[x]");
+  }
+  #[test]
+  fn ket() {
+    assert_eq!(interpret("Ket[x]").unwrap(), "Ket[x]");
+  }
+  #[test]
+  fn discrete_markov_process() {
+    assert_eq!(
+      interpret("DiscreteMarkovProcess[x, y]").unwrap(),
+      "DiscreteMarkovProcess[x, y]"
+    );
+  }
+  #[test]
+  fn boundary_discretize_graphics() {
+    assert_eq!(
+      interpret("BoundaryDiscretizeGraphics[x]").unwrap(),
+      "BoundaryDiscretizeGraphics[x]"
+    );
+  }
+  #[test]
+  fn trading_chart() {
+    assert_eq!(interpret("TradingChart[x]").unwrap(), "TradingChart[x]");
+  }
+  #[test]
+  fn find_max_value() {
+    assert_eq!(
+      interpret("FindMaxValue[x, y]").unwrap(),
+      "FindMaxValue[x, y]"
+    );
+  }
+  #[test]
+  fn form_page() {
+    assert_eq!(interpret("FormPage[x]").unwrap(), "FormPage[x]");
+  }
+  #[test]
+  fn nearest_neighbor_graph() {
+    assert_eq!(
+      interpret("NearestNeighborGraph[x]").unwrap(),
+      "NearestNeighborGraph[x]"
+    );
+  }
+  #[test]
+  fn file_print() {
+    assert_eq!(interpret("FilePrint[x]").unwrap(), "FilePrint[x]");
+  }
+  #[test]
+  fn distribute_definitions() {
+    assert_eq!(
+      interpret("DistributeDefinitions[x]").unwrap(),
+      "DistributeDefinitions[x]"
+    );
+  }
+  #[test]
+  fn riemann_siegel_z() {
+    assert_eq!(interpret("RiemannSiegelZ[x]").unwrap(), "RiemannSiegelZ[x]");
+  }
+  #[test]
+  fn batch_normalization_layer() {
+    assert_eq!(
+      interpret("BatchNormalizationLayer[x]").unwrap(),
+      "BatchNormalizationLayer[x]"
+    );
+  }
+  #[test]
+  fn chart_base_style() {
+    assert_eq!(interpret("ChartBaseStyle[x]").unwrap(), "ChartBaseStyle[x]");
+  }
 }

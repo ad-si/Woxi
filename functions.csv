@@ -413,7 +413,7 @@ Baseline,Option for specifying baseline alignment,✅,pure,3,509
 BaselinePosition,Option for baseline alignment,✅,none,6,619
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6,137
 BasicRecurrentLayer,,,,11.1,3566
-BatchNormalizationLayer,,,,11,1675
+BatchNormalizationLayer,Batch normalization layer,✅,unevaluated,11,1675
 BatchSize,,,,11,2299
 BatesDistribution,,,,8,2383
 BattleLemarieWavelet,,,,8,3843
@@ -574,7 +574,7 @@ BorderDimensions,,,,8,2587
 BorelTannerDistribution,,,,8,3697
 Bottom,Symbol for bottom alignment,✅,pure,1,394
 BottomHatTransform,,,,7,4138
-BoundaryDiscretizeGraphics,,,,10,1665
+BoundaryDiscretizeGraphics,Boundary discretize graphics,✅,unevaluated,10,1665
 BoundaryDiscretizeRegion,,🚫,,10,1240
 BoundaryMesh,,,,10,2344
 BoundaryMeshRegion,Boundary mesh region,✅,unevaluated,10,1586
@@ -767,7 +767,7 @@ CharacterName,,,,10.2,3737
 CharacterNormalize,,,,12.1,
 CharacterRange,Returns a list of characters in a range,✅,pure,3,796
 Characters,Converts a string into a list of single-character strings,✅,pure,1,474
-ChartBaseStyle,,,,7,1675
+ChartBaseStyle,Chart base style,✅,unevaluated,7,1675
 ChartElementFunction,,🚫,,7,937
 ChartElements,,,,7,2421
 ChartLabels,Option for labeling elements in charts,✅,none,7,661
@@ -1486,7 +1486,7 @@ DiscreteLimit,,,,11.2,2152
 DiscreteLQEstimatorGains,,,,8,4947
 DiscreteLQRegulatorGains,,,,8,4612
 DiscreteLyapunovSolve,,,,8,4138
-DiscreteMarkovProcess,,,,9,1665
+DiscreteMarkovProcess,Discrete Markov process,✅,unevaluated,9,1665
 DiscreteMaxLimit,,,,11.2,3326
 DiscreteMinLimit,,,,11.2,3402
 DiscretePlot,Plots discrete values of a function,✅,none,7,487
@@ -1521,7 +1521,7 @@ DistanceTransform,,,,7,1768
 Distribute,Distribute one operator over another,✅,pure,1,1074
 Distributed,Represents a variable distributed according to a given distribution,✅,pure,8,365
 DistributedContexts,,,,8,2662
-DistributeDefinitions,,,,7,1672
+DistributeDefinitions,Distribute definitions to kernels,✅,unevaluated,7,1672
 DistributionChart,,,,8,1880
 DistributionFitTest,,🚫,,8,1343
 DistributionParameterAssumptions,,,,8,2286
@@ -1922,7 +1922,7 @@ FileNameSetter,,,,6,2254
 FileNameSplit,,,,7,1938
 FileNameTake,Extract file name from path,✅,pure,7,1557
 FileNameToFormatList,,,,13,
-FilePrint,,,,6,1672
+FilePrint,Print file contents,✅,unevaluated,6,1672
 FileSize,,,,11.2,3462
 FileSystemMap,,,,11,3593
 FileSystemScan,,,,11,4387
@@ -1953,7 +1953,7 @@ FindCookies,,,,11,5184
 FindCurvePath,,,,7,2008
 FindCycle,,,,10,1815
 FindDevices,,,,10,4291
-FindDistribution,,,,10.3,1643
+FindDistribution,Find matching distribution,✅,unevaluated,10.3,1643
 FindDistributionParameters,Estimate distribution parameters,✅,pure,8,1528
 FindDivisions,,🚫,,7,1291
 FindEdgeColoring,,,,13,
@@ -1997,7 +1997,7 @@ FindMatchingColor,,,,12,5390
 FindMaximum,Finds a local maximum of a function numerically,✅,pure,5,557
 FindMaximumCut,,,,12.1,5486
 FindMaximumFlow,,,,9,2911
-FindMaxValue,,,,7,1668
+FindMaxValue,Find maximum value,✅,unevaluated,7,1668
 FindMeshDefects,,,,11,3363
 FindMinimum,Finds a local minimum of a function numerically,✅,pure,1,436
 FindMinimumCostFlow,,,,9,2986
@@ -2058,7 +2058,7 @@ FixedPointList,Returns the list of results from applying a function repeatedly u
 Flat,Attribute for associative functions,✅,pure,1,1379
 FlatShading,,,,13.1,
 Flatten,Flattens nested lists,✅,pure,1,83
-FlattenAt,,,,2,1649
+FlattenAt,Flatten at specific positions,✅,computation,2,1649
 FlattenLayer,,,,11,2042
 FlatTopWindow,,,,9,4387
 FlightData,,🚫,,13,
@@ -2097,7 +2097,7 @@ FormControl,,🚫,,11,4225
 FormFunction,,🚫,,10,1303
 FormLayoutFunction,,,,10,4315
 FormObject,,,,10,2837
-FormPage,,,,10.3,1672
+FormPage,Form page interface,✅,unevaluated,10.3,1672
 FormProtectionMethod,,,,12.3,
 FormulaData,,🚫,,10,2473
 FormulaLookup,Look up formulas by name or description,✅,pure,10,1488
@@ -2755,7 +2755,7 @@ IncludeGeneratorTasks,,,,10.1,5587
 IncludeHydrogens,,,,12,4809
 IncludeInflections,,,,10.3,5013
 IncludeMetaInformation,,,,11,4660
-IncludePods,,,,8,1653
+IncludePods,Include pods in computation,✅,unevaluated,8,1653
 IncludeQuantities,,,,10,5486
 IncludeRelatedTables,,,,12,
 IncludeSingularSolutions,,,,13.1,
@@ -2852,7 +2852,7 @@ Interpolation,Constructs an interpolation of data,✅,pure,2,383
 InterpolationOrder,Option for specifying the order of interpolation,✅,pure,3,435
 InterpolationPoints,,,,8,3265
 Interpretation,,,,6,1905
-InterpretationBox,,,,3,1652
+InterpretationBox,Interpretation box,✅,unevaluated,3,1652
 InterpretationBoxOptions,,,,4,5587
 InterpretationFunction,,,,12.2,2561
 Interpreter,Requires external services or GUI infrastructure,🚫,io,10,813
@@ -2907,7 +2907,7 @@ InverseJacobiSD,Inverse Jacobi elliptic function sd,✅,pure,1,4173
 InverseJacobiSN,Inverse Jacobi elliptic function sn,✅,pure,1,1905
 InverseLaplaceTransform,Compute the inverse Laplace transform,✅,none,4,583
 InverseMellinTransform,,,,11,3972
-InversePermutation,,,,8,1650
+InversePermutation,Inverse of a permutation,✅,computation,8,1650
 InverseRadon,,,,8,3636
 InverseRadonTransform,,,,11.2,5390
 InverseSeries,Symbol for computing inverse of a power series,✅,pure,1,2065
@@ -2933,7 +2933,7 @@ ItemAspectRatio,,,,6,4356
 ItemDisplayFunction,,,,12.1,
 ItemSize,Option for specifying sizes of items in Grid and similar,✅,pure,6,490
 ItemStyle,Style specification for items,🚫,pure,6,1431
-ItoProcess,,,,9,1659
+ItoProcess,Ito stochastic process,✅,unevaluated,9,1659
 JaccardDissimilarity,,,,6,4104
 JacobiAmplitude,Amplitude for Jacobi elliptic functions,✅,pure,1,1300
 JacobiCD,Jacobi elliptic function cd (cn/dn),✅,pure,1,919
@@ -2996,7 +2996,7 @@ KernelEvaluate,,,,13.3,
 KernelFunction,,,,12,4881
 KernelMixtureDistribution,,,,8,2413
 KernelObject,,,,7,2625
-Ket,,,,13.3,1665
+Ket,Dirac ket notation,✅,unevaluated,13.3,1665
 Key,Operator form for extracting values from associations by key,✅,none,10,966
 KeyCollisionFunction,,,,10.3,5013
 KeyComplement,,,,10.1,5486
@@ -3415,7 +3415,7 @@ MathieuCharacteristicA,,,,3,1842
 MathieuCharacteristicB,,,,3,2131
 MathieuCharacteristicExponent,,,,3,3785
 MathieuCPrime,,,,3,2311
-MathieuGroupM11,,,,8,1656
+MathieuGroupM11,Mathieu group M11,✅,unevaluated,8,1656
 MathieuGroupM12,,,,8,4527
 MathieuGroupM22,,,,8,5079
 MathieuGroupM23,,,,8,4947
@@ -3640,7 +3640,7 @@ MovingMap,Apply a function to a sliding window,✅,computation,10,1593
 MovingMedian,,,,6,3578
 MoyalDistribution,,,,8,3765
 MultiaxisArrangement,,,,13,
-Multicolumn,,,,10,1648
+Multicolumn,Multi-column layout,✅,unevaluated,10,1648
 MultiedgeStyle,,,,6,2005
 MultigraphQ,,,,10,4479
 Multinomial,Returns the multinomial coefficient,✅,pure,1,1707
@@ -3664,7 +3664,7 @@ NBodySimulationData,,🚫,,12,
 NCache,,,,6,4356
 NCaputoD,,,,13.2,
 NContourIntegrate,,,,14,
-NDEigensystem,,,,10.2,1641
+NDEigensystem,Numerical eigensystem,✅,unevaluated,10.2,1641
 NDEigenvalues,,,,10.2,2329
 NDSolve,Solves ordinary differential equations numerically,✅,contextual,2,157
 NDSolveValue,Numerically solve a differential equation and return the solution,✅,pure,9,439
@@ -3672,7 +3672,7 @@ Nearest,Find the nearest elements in a list to a given value,✅,none,6,602
 NearestFunction,,,,6,3656
 NearestMeshCells,,,,12.1,4315
 NearestNeighborG,,,,12.2,4809
-NearestNeighborGraph,,,,10.2,1672
+NearestNeighborGraph,Nearest neighbor graph,✅,unevaluated,10.2,1672
 NearestTo,,,,11.3,4356
 NebulaData,,🚫,,10,4660
 NeedlemanWunschSimilarity,,,,7,4006
@@ -3720,7 +3720,7 @@ NetJoin,,,,11.3,
 NetMapOperator,,,,11.1,2596
 NetMapThreadOperator,,,,12,
 NetMeasurements,,,,12,3031
-NetModel,,,,11.1,1660
+NetModel,Neural net model,✅,unevaluated,11.1,1660
 NetNestOperator,,,,11.1,4660
 NetPairEmbeddingOperator,,,,11.1,4138
 NetPort,,🚫,,11,1278
@@ -3997,7 +3997,7 @@ OverBar,Display form with an overbar accent,✅,none,6,717
 OverDot,Overdot notation,✅,pure,6,1547
 Overflow,Symbol representing arithmetic overflow,✅,pure,1,1926
 OverHat,,🚫,,6,970
-Overlaps,,,,5.1,1658
+Overlaps,Overlap specification,✅,unevaluated,5.1,1658
 Overlay,,🚫,,8,1156
 OverlayVideo,,,,13,
 Overscript,,,,3,1704
@@ -4538,7 +4538,7 @@ ReapVideo,,,,14.1,
 RecalibrationFunction,,,,12.3,
 RecognitionPrior,,,,10.1,4027
 ReconstructionMesh,,,,13.1,
-Record,,,,2,1648
+Record,Record data structure,✅,unevaluated,2,1648
 RecordLists,,,,2,1932
 RecordSeparators,,,,2,2119
 Rectangle,Represents a rectangle graphics primitive,✅,pure,1,117
@@ -4709,7 +4709,7 @@ RiceDistribution,,,,8,2986
 RidgeFilter,,,,8,3257
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7,331
 RiemannSiegelTheta,,,,2,1734
-RiemannSiegelZ,,,,2,1675
+RiemannSiegelZ,Riemann-Siegel Z function,✅,unevaluated,2,1675
 RiemannXi,,,,10,4479
 Riffle,Inserts an element between each pair of elements,✅,pure,6,473
 Right,Symbol for right alignment,✅,pure,1,378
@@ -4756,7 +4756,7 @@ Rotate,Rotates a graphics object,✅,pure,6,315
 RotateLabel,,🚫,,2,890
 RotateLeft,Rotates list elements to the left,✅,pure,1,637
 RotateRight,Rotates list elements to the right,✅,pure,1,786
-RotationAction,,,,6,1661
+RotationAction,Rotation action option,✅,unevaluated,6,1661
 RotationMatrix,Compute a rotation matrix,✅,none,6,674
 RotationTransform,Represent a rotation transformation,✅,none,6,676
 Round,Returns the nearest integer to a number,✅,pure,1,279
@@ -4776,7 +4776,7 @@ RudinShapiro,,,,10.2,4291
 RudvalisGroupRu,,,,8,5013
 Rule,Represents a transformation rule lhs -> rhs,✅,pure,1,2
 RuleDelayed,Represents a delayed transformation rule lhs :> rhs where rhs is held unevaluated,✅,pure,1,35
-RulePlot,,,,11,1656
+RulePlot,Plot rules,✅,unevaluated,11,1656
 RulerUnits,,,,4,4612
 RulesTree,,,,12.3,
 Run,Runs an external command,✅,effectful,1,1367
@@ -5498,7 +5498,7 @@ Tetrahedron,3D tetrahedron primitive,🚫,pure,10,1424
 TeXForm,Convert expressions to LaTeX notation,✅,pure,1,782
 Text,Represents a text graphics primitive,✅,pure,1,122
 TextAlignment,,🚫,,3,1051
-TextCases,,,,10.2,1644
+TextCases,Extract text patterns,✅,unevaluated,10.2,1644
 TextCell,A text cell in a notebook,✅,none,6,663
 TextClipboardType,,,,7,3785
 TextContents,,,,12,4612
@@ -5517,7 +5517,7 @@ TextStructure,,,,10.3,2545
 TextSummarize,,,,14,
 TextTranslation,,,,11.1,2971
 Texture,Apply a texture to a surface in graphics,✅,none,8,849
-TextureCoordinateFunction,,,,8,1643
+TextureCoordinateFunction,Texture coordinate function,✅,unevaluated,8,1643
 TextureCoordinateScaling,,,,8,2720
 TextureMapping,,,,14,
 TextWords,,🚫,,10.1,1295
@@ -5648,7 +5648,7 @@ TrackCellChangeTimes,,,,13.3,
 TrackedSymbols,Option for specifying which symbols trigger dynamic updates,✅,pure,6,495
 TrackingFunction,,,,10,2129
 TracyWidomDistribution,,,,10.3,3862
-TradingChart,,,,8,1666
+TradingChart,Financial trading chart,✅,unevaluated,8,1666
 TraditionalForm,Displays expressions in traditional mathematical notation,✅,pure,3,317
 TrainImageContentDetector,,,,13,
 TrainingProgressCheckpointing,,,,11.1,4707
@@ -5740,7 +5740,7 @@ TriangleMeasurement,,,,12,3843
 TriangleWave,gives a triangle wave with period 1,✅,pure,7,1443
 TriangularDistribution,,,,6,1827
 TriangulateMesh,,,,10,2367
-Trig,,,,2,1658
+Trig,Trigonometric functions option,✅,unevaluated,2,1658
 TrigExpand,Expand trigonometric functions of sums and multiples,✅,pure,3,852
 TrigFactor,,,,3,1736
 TrigFactorList,,,,3,4567
@@ -6104,7 +6104,7 @@ WhiteNoiseProcess,,,,10,2487
 WhitePoint,,,,10,5390
 Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
 WhitespaceCharacter,String pattern for whitespace,✅,pure,5.1,1539
-WhittakerM,,,,6,1651
+WhittakerM,Whittaker M function,✅,unevaluated,6,1651
 WhittakerW,,,,6,1741
 WienerFilter,,,,8,4315
 WienerProcess,,🚫,,9,1268
