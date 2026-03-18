@@ -422,7 +422,7 @@ BayesianMaximizationObject,,,,11,5184
 BayesianMinimization,,,,11,3785
 BayesianMinimizationObject,,,,11,5184
 Because,Represents a because logical relation,✅,pure,3,5486
-BeckmannDistribution,,,,8,1849
+BeckmannDistribution,Beckmann distribution,✅,unevaluated,8,1849
 Beep,,,,6,2468
 Before,Symbolic temporal ordering wrapper,✅,pure,3,1451
 Begin,Begins a private context (no-op in Woxi),✅,effectful,1,578
@@ -471,7 +471,7 @@ BinaryImageQ,,,,7,4660
 BinaryRead,,,,5.1,1926
 BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
 BinarySerialize,,,,11.1,3108
-BinaryWrite,,,,5.1,1833
+BinaryWrite,Write binary data,✅,unevaluated,5.1,1833
 BinCounts,Counts data points in equal-width bins,✅,pure,6,1225
 BinLists,,,,6,2149
 BinnedVariogramList,,,,13,
@@ -761,7 +761,7 @@ ChanVeseBinarize,,,,8,2408
 Character,Symbol used in string patterns to represent a single character,✅,pure,1,1993
 CharacterCounts,Returns an association of character frequencies in a string,✅,pure,10.1,3134
 CharacterEncoding,Character encoding specification,🚫,io,3,1434
-CharacteristicFunction,,,,6,1817
+CharacteristicFunction,Characteristic function,✅,unevaluated,6,1817
 CharacteristicPolynomial,Compute the characteristic polynomial of a matrix,✅,pure,5,793
 CharacterName,,,,10.2,3737
 CharacterNormalize,,,,12.1,
@@ -784,7 +784,7 @@ Check,Evaluates an expression and returns a fallback if messages are generated,�
 CheckAbort,Evaluate expression and catch aborts,✅,pure,2,1991
 CheckArguments,,,,12.2,5079
 Checkbox,Interactive checkbox control,✅,none,6,730
-CheckboxBar,,,,6,1833
+CheckboxBar,Checkbox bar control,✅,unevaluated,6,1833
 ChemicalConvert,,,,13.1,
 ChemicalData,,🚫,,6,300
 ChemicalFormula,,,,13,
@@ -901,7 +901,7 @@ Colorize,,🚫,,8,1035
 ColorNegate,Negates colors in an image,✅,pure,7,658
 ColorProfileData,,🚫,,9,2487
 ColorQ,,,,10,2162
-ColorQuantize,,,,7,1827
+ColorQuantize,Quantize image colors,✅,unevaluated,7,1827
 ColorReplace,,,,9,1864
 ColorRules,Option for color rules in visualizations,✅,none,5.1,858
 ColorSeparate,Separate color channels of an image,🚫,io,7,1409
@@ -1117,7 +1117,7 @@ CopyFunction,,,,12.2,5486
 CopyToClipboard,,,,8,1861
 CoreNilpotentDecomposition,,,,13,
 CornerFilter,,,,8,3765
-CornerNeighbors,,,,7,1827
+CornerNeighbors,Corner neighbors option,✅,unevaluated,7,1827
 Correlation,Computes the Pearson correlation of two lists,✅,pure,6,1135
 CorrelationDistance,,,,6,3070
 CorrelationFunction,Correlation function,✅,unevaluated,9,1723
@@ -1197,7 +1197,7 @@ CSGRegion,,,,13,
 CSGRegionQ,,,,13,
 CSGRegionTree,,,,13,
 CTCLossLayer,,,,11.3,5390
-Cube,,,,12,1815
+Cube,Cube primitive,✅,unevaluated,12,1815
 CubeRoot,Returns the real-valued cube root,✅,pure,9,1154
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1,1688
 Cuboid,3D graphics primitive representing a cuboid,✅,none,2,561
@@ -1496,7 +1496,7 @@ DiscreteRiccatiSolve,,,,8,4225
 DiscreteShift,,,,7,3612
 DiscreteTimeModelQ,,,,8,5390
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6,1593
-DiscreteVariables,,,,9,1819
+DiscreteVariables,Discrete variables option,✅,unevaluated,9,1819
 DiscreteWaveletData,,🚫,,8,2748
 DiscreteWaveletPacketTransform,,,,8,2533
 DiscreteWaveletTransform,Discrete wavelet transform,✅,unevaluated,8,1614
@@ -1596,7 +1596,7 @@ DualPlanarGraph,,,,13,
 DualPolyhedron,,,,12,4204
 DualSystemsModel,,,,8,4356
 DumpSave,,,,3,1932
-DuplicateFreeQ,,,,10,1833
+DuplicateFreeQ,Test if list has no duplicates,✅,computation,10,1833
 Duration,,,,11,3094
 Dynamic,,🚫,,6,138
 DynamicEvaluationTimeout,,🚫,,8,3462
@@ -1861,7 +1861,7 @@ FacialFeatures,,,,11.3,3059
 Factor,Factors a polynomial over the integers,✅,pure,1,307
 Factorial,Returns the factorial of a non-negative integer,✅,pure,1,128
 Factorial2,Returns the double factorial,✅,pure,1,1128
-FactorialMoment,,,,8,1836
+FactorialMoment,Factorial moment,✅,unevaluated,8,1836
 FactorialMomentGeneratingFunction,,,,8,3176
 FactorialPower,,,,7,2085
 FactorInteger,Returns prime factorization as {prime exponent} pairs,✅,pure,1,528
@@ -1929,13 +1929,13 @@ FileSystemScan,,,,11,4387
 FileSystemTree,,,,13.2,
 FileTemplate,,,,10,4204
 FileTemplateApply,,,,10,3889
-FileType,,,,2,1842
+FileType,File type,✅,unevaluated,2,1842
 FilledCurve,Filled curve graphics primitive,✅,none,8,775
 FilledPolarCurve,,,,14.1,
 FilledTorus,,,,13,
 Filling,Option for filling areas under curves in plots,✅,pure,6,202
 FillingStyle,Option for specifying the style of plot filling,✅,pure,6,410
-FillingTransform,,,,8,1810
+FillingTransform,Morphological filling,✅,unevaluated,8,1810
 FilteredEntityClass,,,,12,3224
 FilterRules,Filters a list of rules by allowed keys,✅,pure,6,682
 FinancialBond,,,,8,2519
@@ -1951,7 +1951,7 @@ FindClique,,,,8,2317
 FindClusters,,🚫,,6,1198
 FindCookies,,,,11,5184
 FindCurvePath,,,,7,2008
-FindCycle,,,,10,1815
+FindCycle,Find graph cycles,✅,unevaluated,10,1815
 FindDevices,,,,10,4291
 FindDistribution,Find matching distribution,✅,unevaluated,10.3,1643
 FindDistributionParameters,Estimate distribution parameters,✅,pure,8,1528
@@ -2040,7 +2040,7 @@ FiniteFieldIndex,,,,14,
 FiniteGroupCount,,,,7,4479
 FiniteGroupData,,🚫,,7,1127
 First,Returns the first element of a list,✅,pure,1,80
-FirstCase,,,,10,1849
+FirstCase,First matching case,✅,unevaluated,10,1849
 FirstPassageTimeDistribution,,,,9,3020
 FirstPosition,Find the position of the first element matching a pattern,✅,,10,1317
 FischerGroupFi22,,,,8,5013
@@ -2120,7 +2120,7 @@ FourierParameters,Option for Fourier transform conventions,✅,none,4,803
 FourierSequenceTransform,,,,7,2880
 FourierSeries,,🚫,,7,1317
 FourierSinCoefficient,,,,7,2329
-FourierSinSeries,,,,7,1842
+FourierSinSeries,Fourier sine series,✅,unevaluated,7,1842
 FourierSinTransform,,,,4,2553
 FourierTransform,computes the symbolic Fourier transform of an expression,implemented,pure,4,639
 FourierTrigSeries,,🚫,,7,1085
@@ -3220,7 +3220,7 @@ List,Represents a list of elements,✅,pure,1,1
 Listable,Attribute for automatic threading over lists,✅,pure,1,568
 ListAnimate,,🚫,,6,926
 ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,✅,pure,1,902
-ListContourPlot3D,,,,6,1858
+ListContourPlot3D,3D contour plot from data,✅,unevaluated,6,1858
 ListConvolve,Computes discrete convolution of two lists,✅,pure,4,1110
 ListCorrelate,Computes discrete cross-correlation of two lists,✅,pure,4,1129
 ListCurvePathPlot,,,,7,2509
@@ -3410,8 +3410,8 @@ MatchQ,Tests if an expression matches a pattern,✅,pure,1,203
 MaterialShading,,,,12.3,
 MaternPointProcess,,,,12.2,4809
 MathematicalFunctionData,,🚫,,10.3,2851
-MathieuC,,,,3,1852
-MathieuCharacteristicA,,,,3,1842
+MathieuC,Mathieu C function,✅,unevaluated,3,1852
+MathieuCharacteristicA,Mathieu characteristic A,✅,unevaluated,3,1842
 MathieuCharacteristicB,,,,3,2131
 MathieuCharacteristicExponent,,,,3,3785
 MathieuCPrime,,,,3,2311
@@ -3534,7 +3534,7 @@ MessageList,,,,2,4006
 MessageName,Accesses a message associated with a symbol (sym::tag),✅,pure,1,111
 MessagePacket,,,,3,3823
 Messages,Returns the messages associated with a symbol,✅,pure,1,2503
-MetaInformation,,,,9,1855
+MetaInformation,Meta information option,✅,unevaluated,9,1855
 MeteorShowerData,,🚫,,10,5390
 Method,Option symbol for specifying computational methods,✅,pure,4,212
 MexicanHatWavelet,,,,8,3257
@@ -3825,7 +3825,7 @@ NotebookPrint,,,,3,3389
 NotebookPut,Create notebook from expression,✅,unevaluated,3,1597
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3,948
 Notebooks,,,,3,1883
-NotebookSave,,,,3,1857
+NotebookSave,Save notebook,✅,unevaluated,3,1857
 NotebookSelection,,🚫,,3,1141
 NotebooksMenu,,,,4,4052
 NotebookTemplate,,,,10,4479
@@ -4031,7 +4031,7 @@ PaddedForm,,🚫,,2,900
 Padding,Option specifying padding scheme for array and image operations,✅,pure,7,1357
 PaddingLayer,,,,11.1,4437
 PaddingSize,,,,11,4567
-PadeApproximant,,,,6,1809
+PadeApproximant,Pade approximant,✅,unevaluated,6,1809
 PadLeft,Pads a list on the left to a specified length,✅,pure,4,897
 PadRight,Pads a list on the right to a specified length,✅,pure,4,638
 PageBreakAbove,,,,3,3785
@@ -4167,7 +4167,7 @@ PermutationMin,,,,8,5013
 PermutationOrder,,,,8,2986
 PermutationPower,,,,8,2944
 PermutationProduct,Product of permutations,✅,pure,8,1507
-PermutationReplace,,,,8,1819
+PermutationReplace,Replace by permutation,✅,unevaluated,8,1819
 Permutations,Returns all permutations of a list,✅,pure,1,533
 PermutationSupport,,,,8,3947
 Permute,Permute elements of a list,✅,pure,8,1355
@@ -4264,7 +4264,7 @@ PolarAxesOrigin,,,,7,2816
 PolarCurve,,,,14.1,
 PolarGridLines,,,,7,1901
 PolarPlot,Creates a polar plot of a function,✅,pure,6,403
-PolarTicks,,,,7,1846
+PolarTicks,Polar ticks option,✅,unevaluated,7,1846
 PoleZeroMarkers,,,,8,3537
 PolyaAeppliDistribution,,,,8,3317
 PolyGamma,Polygamma function (n-th derivative of digamma),✅,pure,1,489
@@ -4418,7 +4418,7 @@ QRDecomposition,,,,2,2181
 QuadraticIrrationalQ,,,,6,4747
 QuadraticOptimization,,,,12,3265
 Quantile,Compute quantiles of a dataset,✅,pure,5,739
-QuantilePlot,,,,8,1842
+QuantilePlot,Quantile plot,✅,unevaluated,8,1842
 Quantity,Represents a physical quantity with a unit,✅,pure,9,47
 QuantityArray,,,,10.1,2184
 QuantityDistribution,,,,10.4,2921
@@ -4476,7 +4476,7 @@ RandomGraph,Generate a random graph,✅,none,8,810
 RandomImage,Generates a random image with given dimensions,✅,pure,8,1723
 RandomInstance,Random geometric instance,✅,unevaluated,12,1736
 RandomInteger,Generate random integers,✅,contextual,6,156
-RandomPermutation,,,,8,1833
+RandomPermutation,Random permutation,✅,unevaluated,8,1833
 RandomPoint,,🚫,,10.2,1020
 RandomPointConfiguration,,,,12.2,4006
 RandomPolygon,,,,12,3566
@@ -4528,7 +4528,7 @@ Real,Head type for real (floating-point) numbers,✅,pure,1,263
 RealAbs,Returns the absolute value assuming real input,✅,pure,11.1,1318
 RealBlockDiagonalForm,,,,7,5486
 RealDigits,Returns the digits of a real number,✅,pure,2,866
-RealExponent,,,,6,1827
+RealExponent,Real exponent,✅,unevaluated,6,1827
 Reals,The domain of real numbers used with Element and related functions,✅,none,4,102
 RealSign,Returns the sign assuming real input,✅,pure,11.1,3242
 RealValuedNumberQ,Tests if an expression is a real-valued number,✅,pure,13.3,
@@ -4672,7 +4672,7 @@ Resolve,,🚫,,5,1047
 ResolveContextAliases,,,,13,
 ResourceData,,🚫,,11,836
 ResourceFunction,Accesses a function from the Wolfram Function Repository,✅,pure,12,519
-ResourceObject,,,,11,1844
+ResourceObject,Resource object,✅,unevaluated,11,1844
 ResourceRegister,,,,11.2,4947
 ResourceRemove,,,,11,4707
 ResourceSearch,,,,11,3215
@@ -4795,7 +4795,7 @@ SampledSoundFunction,,,,2,3265
 SampledSoundList,,,,2,2082
 SampleRate,,🚫,,2,1347
 SamplerModel,,,,14,
-SamplingPeriod,,,,8,1811
+SamplingPeriod,Sampling period option,✅,unevaluated,8,1811
 SARIMAProcess,,,,9,2762
 SARMAProcess,,,,9,2867
 SASTriangle,,,,10,4173
@@ -4923,7 +4923,7 @@ SetPermissions,,,,10.2,3378
 SetPrecision,Sets the precision of a number to a specified number of digits,✅,pure,2,548
 SetSelectedNotebook,,,,3,2383
 SetSharedFunction,,,,7,2587
-SetSharedVariable,,,,7,1808
+SetSharedVariable,Set shared variable,✅,unevaluated,7,1808
 SetStreamPosition,,,,2,2184
 SetSystemModel,,,,11.3,
 SetSystemOptions,,🚫,,6,1189
@@ -5173,7 +5173,7 @@ StandardAtmosphereData,,🚫,,10,4204
 StandardDeviation,Returns the standard deviation of a list,✅,pure,5,645
 StandardDeviationFilter,,,,7,3522
 StandardForm,Converts expression to standard form,✅,pure,3,689
-Standardize,,,,7,1822
+Standardize,Standardize data,✅,unevaluated,7,1822
 Standardized,,,,10.1,4479
 StandardOceanData,,🚫,,10.3,4947
 StandbyDistribution,,,,9,3108
@@ -5201,7 +5201,7 @@ StatusArea,Display status text on mouseover,✅,none,6,593
 StatusCentrality,,,,9,4809
 StepMonitor,Option for monitoring integration steps,✅,pure,5,1486
 StereochemistryElements,,,,12,5184
-StieltjesGamma,,,,3,1844
+StieltjesGamma,Stieltjes gamma constant,✅,unevaluated,3,1844
 StippleShading,,,,12.1,4479
 StirlingS1,Returns the Stirling number of the first kind,✅,pure,1,1065
 StirlingS2,Returns the Stirling number of the second kind,✅,pure,1,1133
@@ -5249,7 +5249,7 @@ StringQ,Tests if expression is a string,✅,pure,2,724
 StringRepeat,Repeats a string a specified number of times,✅,pure,10.1,2512
 StringReplace,Replaces occurrences of substrings in a string,✅,pure,2,380
 StringReplaceList,,,,5.1,2525
-StringReplacePart,,,,3,1853
+StringReplacePart,Replace part of string,✅,unevaluated,3,1853
 StringReverse,Reverses the characters in a string,✅,pure,2,1109
 StringRiffle,Joins a list of strings with a separator,✅,pure,10.1,1241
 StringRotateLeft,Rotates characters in a string to the left,✅,pure,9,4612
@@ -5265,7 +5265,7 @@ StringToStream,Creates an input stream from a string,✅,pure,2,1562
 StringTrim,Removes whitespace from the beginning and end of a string,✅,pure,7,1098
 StripBoxes,,,,6,4052
 StripCellGrouping,,,,14,
-StripOnInput,,,,6,1822
+StripOnInput,Strip on input option,✅,unevaluated,6,1822
 StripWrapperBoxes,,,,6,5079
 Struckthrough,,,,13.1,
 StructuralImportance,,,,9,4204
@@ -5282,7 +5282,7 @@ StyleHints,,,,13,
 Subdivide,Divides a range into equal parts,✅,pure,10.1,837
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6,1960
 Subgraph,,🚫,,8,1197
-SubMinus,,,,6,1822
+SubMinus,Subscript minus,✅,unevaluated,6,1822
 SubPlus,Subscript plus notation,✅,unevaluated,6,1692
 SubresultantPolynomialRemainders,,,,9,4612
 SubresultantPolynomials,,,,9,4479
@@ -5567,7 +5567,7 @@ Times,Multiply numbers,✅,pure,1,3
 TimesBy,Multiplies a variable by a value,✅,stateful,1,1032
 TimeSeries,,🚫,,10,1038
 TimeSeriesAggregate,,,,10,2786
-TimeSeriesForecast,,,,9,1815
+TimeSeriesForecast,Time series forecast,✅,unevaluated,9,1815
 TimeSeriesInsert,,,,10,3678
 TimeSeriesInvertibility,,,,9,3947
 TimeSeriesMap,,,,10,2587
@@ -5608,7 +5608,7 @@ ToLowerCase,Converts a string to lowercase,✅,pure,2,827
 Tomorrow,Returns a DateObject representing the next calendar day,✅,contextual,10,2688
 ToNumberField,,,,6,2219
 Tooltip,Interactive tooltip element,🚫,effectful,6,260
-TooltipDelay,,,,7,1833
+TooltipDelay,Tooltip delay option,✅,unevaluated,7,1833
 TooltipStyle,,,,8,2002
 ToonShading,,,,12.1,
 Top,Symbol for top alignment,✅,pure,1,385
@@ -5738,7 +5738,7 @@ TriangleCenter,,,,12,4809
 TriangleConstruct,,,,12,3317
 TriangleMeasurement,,,,12,3843
 TriangleWave,gives a triangle wave with period 1,✅,pure,7,1443
-TriangularDistribution,,,,6,1827
+TriangularDistribution,Triangular distribution,✅,unevaluated,6,1827
 TriangulateMesh,,,,10,2367
 Trig,Trigonometric functions option,✅,unevaluated,2,1658
 TrigExpand,Expand trigonometric functions of sums and multiples,✅,pure,3,852
@@ -6012,7 +6012,7 @@ VideoTranscribe,,,,14.1,
 VideoTransparency,,,,13.1,
 VideoTrim,,,,12.1,4612
 ViewAngle,,🚫,,6,1005
-ViewCenter,,,,2,1838
+ViewCenter,View center option,✅,unevaluated,2,1838
 ViewMatrix,,,,6,2679
 ViewPoint,Option for 3D viewing position,✅,pure,1,360
 ViewProjection,,,,11.2,2605
@@ -6035,7 +6035,7 @@ WalleniusHypergeometricDistribution,,,,8,4006
 WaringYuleDistribution,,,,8,3889
 WarpingCorrespondence,,,,11,3636
 WarpingDistance,,,,11,3697
-WatershedComponents,,,,8,1836
+WatershedComponents,Watershed components,✅,unevaluated,8,1836
 WatsonUSquareTest,,,,8,3717
 WattsStrogatzGraphDistribution,,,,8,2707
 WaveletBestBasis,,,,8,3389
@@ -6087,7 +6087,7 @@ WeierstrassInvariantG3,,,,11.2,4947
 WeierstrassInvariants,,,,3,2350
 WeierstrassP,Weierstrass elliptic function,✅,pure,1,1078
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1,1718
-WeierstrassSigma,,,,3,1852
+WeierstrassSigma,Weierstrass sigma function,✅,unevaluated,3,1852
 WeierstrassZeta,Weierstrass zeta function,✅,unevaluated,3,1781
 WeightedAdjacencyGraph,Weighted adjacency graph,✅,unevaluated,8,1695
 WeightedAdjacencyMatrix,,,,8,1979

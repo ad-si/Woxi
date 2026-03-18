@@ -8150,4 +8150,233 @@ mod batch_unevaluated_wrappers_2 {
   fn tree_graph() {
     assert_eq!(interpret("TreeGraph[x]").unwrap(), "TreeGraph[x]");
   }
+
+  // ─── DuplicateFreeQ ───────────────────────────────────────────────
+  #[test]
+  fn duplicate_free_q_true() {
+    assert_eq!(interpret("DuplicateFreeQ[{1, 2, 3}]").unwrap(), "True");
+  }
+  #[test]
+  fn duplicate_free_q_false() {
+    assert_eq!(interpret("DuplicateFreeQ[{1, 2, 1}]").unwrap(), "False");
+  }
+  #[test]
+  fn duplicate_free_q_empty() {
+    assert_eq!(interpret("DuplicateFreeQ[{}]").unwrap(), "True");
+  }
+
+  // ─── Unevaluated batch 10 ─────────────────────────────────────────
+  #[test]
+  fn set_shared_variable() {
+    assert_eq!(
+      interpret("SetSharedVariable[x]").unwrap(),
+      "SetSharedVariable[x]"
+    );
+  }
+  #[test]
+  fn pade_approximant() {
+    assert_eq!(
+      interpret("PadeApproximant[x, y]").unwrap(),
+      "PadeApproximant[x, y]"
+    );
+  }
+  #[test]
+  fn filling_transform() {
+    assert_eq!(
+      interpret("FillingTransform[x]").unwrap(),
+      "FillingTransform[x]"
+    );
+  }
+  #[test]
+  fn sampling_period() {
+    assert_eq!(interpret("SamplingPeriod[x]").unwrap(), "SamplingPeriod[x]");
+  }
+  #[test]
+  fn find_cycle() {
+    assert_eq!(interpret("FindCycle[x]").unwrap(), "FindCycle[x]");
+  }
+  #[test]
+  fn time_series_forecast() {
+    assert_eq!(
+      interpret("TimeSeriesForecast[x]").unwrap(),
+      "TimeSeriesForecast[x]"
+    );
+  }
+  #[test]
+  fn cube() {
+    assert_eq!(interpret("Cube[x]").unwrap(), "Cube[x]");
+  }
+  #[test]
+  fn characteristic_function() {
+    assert_eq!(
+      interpret("CharacteristicFunction[x]").unwrap(),
+      "CharacteristicFunction[x]"
+    );
+  }
+  #[test]
+  fn permutation_replace() {
+    assert_eq!(
+      interpret("PermutationReplace[x, y]").unwrap(),
+      "PermutationReplace[x, y]"
+    );
+  }
+  #[test]
+  fn discrete_variables() {
+    assert_eq!(
+      interpret("DiscreteVariables[x]").unwrap(),
+      "DiscreteVariables[x]"
+    );
+  }
+  #[test]
+  fn strip_on_input() {
+    assert_eq!(interpret("StripOnInput[x]").unwrap(), "StripOnInput[x]");
+  }
+  #[test]
+  fn standardize() {
+    assert_eq!(interpret("Standardize[x]").unwrap(), "Standardize[x]");
+  }
+  #[test]
+  fn sub_minus() {
+    assert_eq!(interpret("SubMinus[x]").unwrap(), "SubMinus[x]");
+  }
+  #[test]
+  fn corner_neighbors() {
+    assert_eq!(
+      interpret("CornerNeighbors[x]").unwrap(),
+      "CornerNeighbors[x]"
+    );
+  }
+  #[test]
+  fn triangular_distribution() {
+    assert_eq!(
+      interpret("TriangularDistribution[x]").unwrap(),
+      "TriangularDistribution[x]"
+    );
+  }
+  #[test]
+  fn real_exponent() {
+    assert_eq!(interpret("RealExponent[x]").unwrap(), "RealExponent[x]");
+  }
+  #[test]
+  fn color_quantize() {
+    assert_eq!(interpret("ColorQuantize[x]").unwrap(), "ColorQuantize[x]");
+  }
+  #[test]
+  fn binary_write() {
+    assert_eq!(interpret("BinaryWrite[x]").unwrap(), "BinaryWrite[x]");
+  }
+  #[test]
+  fn checkbox_bar() {
+    assert_eq!(interpret("CheckboxBar[x]").unwrap(), "CheckboxBar[x]");
+  }
+  #[test]
+  fn tooltip_delay() {
+    assert_eq!(interpret("TooltipDelay[x]").unwrap(), "TooltipDelay[x]");
+  }
+  #[test]
+  fn random_permutation() {
+    assert_eq!(
+      interpret("RandomPermutation[x]").unwrap(),
+      "RandomPermutation[x]"
+    );
+  }
+  #[test]
+  fn watershed_components() {
+    assert_eq!(
+      interpret("WatershedComponents[x]").unwrap(),
+      "WatershedComponents[x]"
+    );
+  }
+  #[test]
+  fn factorial_moment() {
+    assert_eq!(
+      interpret("FactorialMoment[x]").unwrap(),
+      "FactorialMoment[x]"
+    );
+  }
+  #[test]
+  fn view_center() {
+    assert_eq!(interpret("ViewCenter[x]").unwrap(), "ViewCenter[x]");
+  }
+  #[test]
+  fn quantile_plot() {
+    assert_eq!(interpret("QuantilePlot[x]").unwrap(), "QuantilePlot[x]");
+  }
+  #[test]
+  fn fourier_sin_series() {
+    assert_eq!(
+      interpret("FourierSinSeries[x, y, z]").unwrap(),
+      "FourierSinSeries[x, y, z]"
+    );
+  }
+  #[test]
+  fn mathieu_characteristic_a() {
+    assert_eq!(
+      interpret("MathieuCharacteristicA[x, y]").unwrap(),
+      "MathieuCharacteristicA[x, y]"
+    );
+  }
+  #[test]
+  fn file_type() {
+    assert_eq!(interpret("FileType[x]").unwrap(), "FileType[x]");
+  }
+  #[test]
+  fn resource_object() {
+    assert_eq!(interpret("ResourceObject[x]").unwrap(), "ResourceObject[x]");
+  }
+  #[test]
+  fn stieltjes_gamma() {
+    assert_eq!(interpret("StieltjesGamma[x]").unwrap(), "StieltjesGamma[x]");
+  }
+  #[test]
+  fn polar_ticks() {
+    assert_eq!(interpret("PolarTicks[x]").unwrap(), "PolarTicks[x]");
+  }
+  #[test]
+  fn beckmann_distribution() {
+    assert_eq!(
+      interpret("BeckmannDistribution[x]").unwrap(),
+      "BeckmannDistribution[x]"
+    );
+  }
+  #[test]
+  fn first_case() {
+    assert_eq!(interpret("FirstCase[x, y]").unwrap(), "FirstCase[x, y]");
+  }
+  #[test]
+  fn weierstrass_sigma() {
+    assert_eq!(
+      interpret("WeierstrassSigma[x, y]").unwrap(),
+      "WeierstrassSigma[x, y]"
+    );
+  }
+  #[test]
+  fn mathieu_c() {
+    assert_eq!(interpret("MathieuC[x, y, z]").unwrap(), "MathieuC[x, y, z]");
+  }
+  #[test]
+  fn string_replace_part() {
+    assert_eq!(
+      interpret("StringReplacePart[x, y, z]").unwrap(),
+      "StringReplacePart[x, y, z]"
+    );
+  }
+  #[test]
+  fn meta_information() {
+    assert_eq!(
+      interpret("MetaInformation[x]").unwrap(),
+      "MetaInformation[x]"
+    );
+  }
+  #[test]
+  fn notebook_save() {
+    assert_eq!(interpret("NotebookSave[x]").unwrap(), "NotebookSave[x]");
+  }
+  #[test]
+  fn list_contour_plot_3d() {
+    assert_eq!(
+      interpret("ListContourPlot3D[x]").unwrap(),
+      "ListContourPlot3D[x]"
+    );
+  }
 }
