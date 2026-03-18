@@ -165,6 +165,17 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
+    "CauchyDistribution" => {
+      let cauchy_args = if args.is_empty() {
+        vec![Expr::Integer(0), Expr::Integer(1)]
+      } else {
+        args.to_vec()
+      };
+      return Some(Ok(Expr::FunctionCall {
+        name: "CauchyDistribution".to_string(),
+        args: cauchy_args,
+      }));
+    }
     "Names" if args.len() <= 1 => {
       let all_names = crate::get_defined_names();
       if args.is_empty() {

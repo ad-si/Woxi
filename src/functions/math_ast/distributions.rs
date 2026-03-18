@@ -140,6 +140,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ParetoDistribution" => pdf_pareto(dargs, x),
     "WeibullDistribution" => pdf_weibull(dargs, x),
     "GeometricDistribution" => pdf_geometric(dargs, x),
+    "CauchyDistribution" => pdf_cauchy(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -268,6 +269,24 @@ fn pdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   eval(piecewise(vec![(one_minus_p, cond0), (p, cond1)], int(0)))
 }
 
+/// PDF[CauchyDistribution[a, b], x] = 1/(Pi*b*(1+((x-a)/b)^2))
+fn pdf_cauchy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let (a, b) = match dargs.len() {
+    0 => (int(0), int(1)),
+    2 => (dargs[0].clone(), dargs[1].clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "CauchyDistribution expects 0 or 2 arguments".into(),
+      ));
+    }
+  };
+  // 1 / (Pi * b * (1 + ((x - a) / b)^2))
+  let diff = minus(x, a);
+  let ratio = divide(diff, b.clone());
+  let denom = times(times(pi(), b), plus(int(1), power(ratio, int(2))));
+  eval(divide(int(1), denom))
+}
+
 /// PDF[GeometricDistribution[p], k] = Piecewise[{{(1-p)^k * p, k >= 0}}, 0]
 fn pdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   if dargs.len() != 1 {
@@ -328,6 +347,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ParetoDistribution" => cdf_pareto(dargs, x),
     "WeibullDistribution" => cdf_weibull(dargs, x),
     "GeometricDistribution" => cdf_geometric(dargs, x),
+    "CauchyDistribution" => cdf_cauchy(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -512,6 +532,31 @@ fn cdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let value = minus(int(1), power(one_minus_p, floor_k_plus_1));
   let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+/// CDF[CauchyDistribution[a, b], x] = 1/2 + ArcTan[(x-a)/b]/Pi
+fn cdf_cauchy(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let (a, b) = match dargs.len() {
+    0 => (int(0), int(1)),
+    2 => (dargs[0].clone(), dargs[1].clone()),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "CauchyDistribution expects 0 or 2 arguments".into(),
+      ));
+    }
+  };
+  // 1/2 + ArcTan[(x - a) / b] / Pi
+  let arctan = Expr::FunctionCall {
+    name: "ArcTan".to_string(),
+    args: vec![divide(minus(x, a), b)],
+  };
+  eval(plus(
+    Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![int(1), int(2)],
+    },
+    divide(arctan, pi()),
+  ))
 }
 
 /// PDF[GammaDistribution[alpha, beta], x] = Piecewise[{{x^(alpha-1) E^(-x/beta) / (beta^alpha Gamma[alpha]), x > 0}}, 0]
@@ -1127,6 +1172,11 @@ fn distribution_mean_variance(
       let mean = divide(one_minus_p.clone(), p.clone());
       let var = divide(one_minus_p, power(p, int(2)));
       Ok((mean, var))
+    }
+    "CauchyDistribution" => {
+      // Mean and Variance are both Indeterminate for Cauchy
+      let indet = Expr::Identifier("Indeterminate".to_string());
+      Ok((indet.clone(), indet))
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"
