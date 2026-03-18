@@ -139,6 +139,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
     "ParetoDistribution" => pdf_pareto(dargs, x),
     "WeibullDistribution" => pdf_weibull(dargs, x),
+    "GeometricDistribution" => pdf_geometric(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -267,6 +268,20 @@ fn pdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   eval(piecewise(vec![(one_minus_p, cond0), (p, cond1)], int(0)))
 }
 
+/// PDF[GeometricDistribution[p], k] = Piecewise[{{(1-p)^k * p, k >= 0}}, 0]
+fn pdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "GeometricDistribution expects 1 argument".into(),
+    ));
+  }
+  let p = dargs[0].clone();
+  let one_minus_p = minus(int(1), p.clone());
+  let density = eval(times(power(one_minus_p, x.clone()), p))?;
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(density, cond)], int(0)))
+}
+
 // ─── CDF ──────────────────────────────────────────────────────────────
 
 /// CDF[dist, x] - Cumulative distribution function
@@ -312,6 +327,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ChiSquareDistribution" => cdf_chi_square(dargs, x),
     "ParetoDistribution" => cdf_pareto(dargs, x),
     "WeibullDistribution" => cdf_weibull(dargs, x),
+    "GeometricDistribution" => cdf_geometric(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -475,6 +491,27 @@ fn cdf_bernoulli(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     vec![(int(0), cond_neg), (one_minus_p, cond_middle)],
     int(1),
   ))
+}
+
+/// CDF[GeometricDistribution[p], k] = Piecewise[{{1 - (1-p)^(Floor[k]+1), k >= 0}}, 0]
+fn cdf_geometric(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "GeometricDistribution expects 1 argument".into(),
+    ));
+  }
+  let p = dargs[0].clone();
+  let one_minus_p = minus(int(1), p);
+  let floor_k_plus_1 = plus(
+    Expr::FunctionCall {
+      name: "Floor".to_string(),
+      args: vec![x.clone()],
+    },
+    int(1),
+  );
+  let value = minus(int(1), power(one_minus_p, floor_k_plus_1));
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
 }
 
 /// PDF[GammaDistribution[alpha, beta], x] = Piecewise[{{x^(alpha-1) E^(-x/beta) / (beta^alpha Gamma[alpha]), x > 0}}, 0]
@@ -1076,6 +1113,19 @@ fn distribution_mean_variance(
           ),
         ),
       );
+      Ok((mean, var))
+    }
+    "GeometricDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "GeometricDistribution expects 1 argument".into(),
+        ));
+      }
+      let p = dargs[0].clone();
+      // Mean = (1-p)/p, Var = (1-p)/p^2
+      let one_minus_p = minus(int(1), p.clone());
+      let mean = divide(one_minus_p.clone(), p.clone());
+      let var = divide(one_minus_p, power(p, int(2)));
       Ok((mean, var))
     }
     _ => Err(InterpreterError::EvaluationError(format!(
