@@ -6439,3 +6439,121 @@ mod elliptic_e_incomplete {
     assert_eq!(interpret("EllipticE[x, m]").unwrap(), "EllipticE[x, m]");
   }
 }
+
+#[cfg(test)]
+mod select_first {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("SelectFirst[{1, 2, 3, 4, 5}, EvenQ]").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn not_found() {
+    assert_eq!(
+      interpret("SelectFirst[{1, 3, 5}, EvenQ]").unwrap(),
+      "Missing[NotFound]"
+    );
+  }
+
+  #[test]
+  fn with_default() {
+    assert_eq!(
+      interpret("SelectFirst[{1, 3, 5}, EvenQ, \"none\"]").unwrap(),
+      "none"
+    );
+  }
+
+  #[test]
+  fn with_pure_function() {
+    assert_eq!(interpret("SelectFirst[{1, 2, 3, 4}, (#>2&)]").unwrap(), "3");
+  }
+}
+
+#[cfg(test)]
+mod conditioned {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("Conditioned[1, 2]").unwrap(), "Conditioned[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Conditioned]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod geo_projection {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("GeoProjection[x, y]").unwrap(),
+      "GeoProjection[x, y]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[GeoProjection]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod sound_volume {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("SoundVolume[x, y]").unwrap(), "SoundVolume[x, y]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[SoundVolume]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod gradient_filter {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("GradientFilter[x, y]").unwrap(),
+      "GradientFilter[x, y]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[GradientFilter]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod region_nearest {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("RegionNearest[x, y]").unwrap(),
+      "RegionNearest[x, y]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[RegionNearest]").unwrap(), "Symbol");
+  }
+}

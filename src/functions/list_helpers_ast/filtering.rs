@@ -55,6 +55,48 @@ pub fn select_ast(
   }
 }
 
+/// AST-based SelectFirst: first element where predicate returns True.
+/// SelectFirst[list, pred] -> first matching element or Missing["NotFound"]
+/// SelectFirst[list, pred, default] -> first matching element or default
+pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "SelectFirst expects 2 or 3 arguments".into(),
+    ));
+  }
+
+  let list = &args[0];
+  let pred = &args[1];
+  let default = args.get(2);
+
+  let items: &[Expr] = match list {
+    Expr::List(items) => items.as_slice(),
+    Expr::FunctionCall { args, .. } => args.as_slice(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "SelectFirst".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  for item in items {
+    let result = apply_func_ast(pred, item)?;
+    if expr_to_bool(&result) == Some(true) {
+      return Ok(item.clone());
+    }
+  }
+
+  // No match found
+  match default {
+    Some(d) => Ok(d.clone()),
+    None => Ok(Expr::FunctionCall {
+      name: "Missing".to_string(),
+      args: vec![Expr::String("NotFound".to_string())],
+    }),
+  }
+}
+
 /// AST-based Cases: select elements matching a pattern.
 pub fn cases_ast(
   list: &Expr,
