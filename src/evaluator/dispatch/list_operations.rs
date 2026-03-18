@@ -24,6 +24,76 @@ pub fn dispatch_list_operations(
     "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
       return Some(list_helpers_ast::select_first_ast(args));
     }
+    "FlattenAt" if args.len() == 2 => {
+      if let Expr::List(items) = &args[0] {
+        let len = items.len() as i128;
+        let positions: Vec<usize> = match &args[1] {
+          Expr::Integer(n) => {
+            let idx = if *n < 0 { len + n + 1 } else { *n };
+            if idx >= 1 && idx <= len {
+              vec![idx as usize]
+            } else {
+              return Some(Ok(Expr::FunctionCall {
+                name: "FlattenAt".to_string(),
+                args: args.to_vec(),
+              }));
+            }
+          }
+          Expr::List(pos_list) => {
+            let mut idxs = Vec::new();
+            for p in pos_list {
+              if let Expr::Integer(n) = p {
+                let idx = if *n < 0 { len + n + 1 } else { *n };
+                if idx >= 1 && idx <= len {
+                  idxs.push(idx as usize);
+                }
+              }
+            }
+            idxs
+          }
+          _ => vec![],
+        };
+        let pos_set: std::collections::HashSet<usize> =
+          positions.into_iter().collect();
+        let mut result = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+          if pos_set.contains(&(i + 1)) {
+            if let Expr::List(sub) = item {
+              result.extend(sub.iter().cloned());
+            } else {
+              result.push(item.clone());
+            }
+          } else {
+            result.push(item.clone());
+          }
+        }
+        return Some(Ok(Expr::List(result)));
+      }
+    }
+    "InversePermutation" if args.len() == 1 => {
+      if let Expr::List(perm) = &args[0] {
+        let n = perm.len();
+        let mut inv = vec![Expr::Integer(0); n];
+        let mut valid = true;
+        for (i, p) in perm.iter().enumerate() {
+          if let Expr::Integer(val) = p {
+            let idx = *val as usize;
+            if idx >= 1 && idx <= n {
+              inv[idx - 1] = Expr::Integer((i + 1) as i128);
+            } else {
+              valid = false;
+              break;
+            }
+          } else {
+            valid = false;
+            break;
+          }
+        }
+        if valid {
+          return Some(Ok(Expr::List(inv)));
+        }
+      }
+    }
     "MovingMap" if args.len() == 3 => {
       // MovingMap[f, list, n] - apply f to sublists of length n+1
       if let Expr::List(items) = &args[1] {
