@@ -4887,6 +4887,32 @@ mod complexity_function {
 }
 
 #[cfg(test)]
+mod compilation_options {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("CompilationOptions[1, 2, 3]").unwrap(),
+      "CompilationOptions[1, 2, 3]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[CompilationOptions]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn no_args() {
+    assert_eq!(
+      interpret("CompilationOptions[]").unwrap(),
+      "CompilationOptions[]"
+    );
+  }
+}
+
+#[cfg(test)]
 mod accounting_form {
   use super::*;
 

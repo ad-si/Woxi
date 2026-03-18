@@ -2330,6 +2330,7 @@ pub fn evaluate_function_call_ast_inner(
       | "AccountingForm"
       | "Before"
       | "ComplexityFunction"
+      | "CompilationOptions"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
