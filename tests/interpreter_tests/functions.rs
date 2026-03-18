@@ -4603,6 +4603,111 @@ mod struve_h {
 }
 
 #[cfg(test)]
+mod struve_l {
+  use super::*;
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("StruveL[n, z]").unwrap(), "StruveL[n, z]");
+  }
+
+  #[test]
+  fn zero_arg_integer_order() {
+    assert_eq!(interpret("StruveL[0, 0]").unwrap(), "0");
+    assert_eq!(interpret("StruveL[1, 0]").unwrap(), "0");
+    assert_eq!(interpret("StruveL[2, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn numeric_order_0() {
+    // StruveL[0, 1.0] ≈ 0.7102431859378909
+    let result = interpret("StruveL[0, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.7102431859378909).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_1() {
+    // StruveL[1, 1.0] ≈ 0.22676438105580865
+    let result = interpret("StruveL[1, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.22676438105580865).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_order_2() {
+    // StruveL[2, 1.0] ≈ 0.044507833037079836
+    let result = interpret("StruveL[2, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.044507833037079836).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_large_z() {
+    // StruveL[0, 2.5] ≈ 3.0112116937373057
+    let result = interpret("StruveL[0, 2.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 3.0112116937373057).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_half_order() {
+    // StruveL[1/2, 1.0] ≈ 0.4333156537901021
+    let result = interpret("StruveL[0.5, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.4333156537901021).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_neg_half_order() {
+    // StruveL[-1/2, 1.0] ≈ 0.9376748882454876
+    let result = interpret("StruveL[-0.5, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.9376748882454876).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_z() {
+    // StruveL[0, -1.0] ≈ -0.7102431859378909
+    let result = interpret("StruveL[0, -1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - (-0.7102431859378909)).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_integer_order() {
+    // StruveL[-1, 1.0] ≈ 0.86338415342339
+    let result = interpret("StruveL[-1.0, 1.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.86338415342339).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_small_z() {
+    // StruveL[0, 0.5] ≈ 0.32724069939418077
+    let result = interpret("StruveL[0, 0.5]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.32724069939418077).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_n_pi() {
+    // N[StruveL[0, Pi]] ≈ 5.256595137877723
+    let result = interpret("N[StruveL[0, Pi]]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 5.256595137877723).abs() < 1e-8);
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[StruveL]").unwrap(),
+      "{Listable, NumericFunction, Protected, ReadProtected}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod monomial_list {
   use super::*;
 
