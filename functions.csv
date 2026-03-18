@@ -938,7 +938,7 @@ CommunityLabels,,,,9,3972
 CommunityRegionStyle,,,,9,3344
 CompanyData,,🚫,,10,746
 CompatibleUnitQ,Tests if two quantities have compatible units,✅,pure,9,3656
-CompilationOptions,,,,8,1452
+CompilationOptions,Option for specifying compilation settings,✅,pure,8,1452
 CompilationTarget,Option for compilation target,✅,none,8,738
 Compile,Compiles a function for numerical evaluation,✅,pure,2,393
 Compiled,,,,2,1697
