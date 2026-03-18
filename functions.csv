@@ -4391,7 +4391,7 @@ Prolog,Option specifying graphics primitives drawn before the main plot,✅,none
 ProofObject,,,,11.3,5486
 PropagateAborts,,,,13.2,
 Proportion,,,,3,5390
-Proportional,,,,3,1440
+Proportional,Symbolic proportional relation,✅,pure,3,1440
 Protect,Protects symbols from modification,✅,stateful,1,721
 Protected,Attribute preventing modification,✅,pure,1,1544
 ProteinData,,🚫,,7,745
