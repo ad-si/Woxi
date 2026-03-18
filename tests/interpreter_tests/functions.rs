@@ -6628,3 +6628,113 @@ mod array_rules {
     );
   }
 }
+
+// Batch tests for unevaluated wrappers
+#[cfg(test)]
+mod batch_unevaluated_wrappers {
+  use super::*;
+
+  #[test]
+  fn tilde_tilde() {
+    assert_eq!(interpret("TildeTilde[x]").unwrap(), "TildeTilde[x]");
+  }
+  #[test]
+  fn notebook_close() {
+    assert_eq!(interpret("NotebookClose[x]").unwrap(), "NotebookClose[x]");
+  }
+  #[test]
+  fn failure() {
+    assert_eq!(interpret("Failure[x]").unwrap(), "Failure[x]");
+  }
+  #[test]
+  fn time_value() {
+    assert_eq!(interpret("TimeValue[x]").unwrap(), "TimeValue[x]");
+  }
+  #[test]
+  fn line_indent() {
+    assert_eq!(interpret("LineIndent[x]").unwrap(), "LineIndent[x]");
+  }
+  #[test]
+  fn layered_graph_plot() {
+    assert_eq!(
+      interpret("LayeredGraphPlot[x]").unwrap(),
+      "LayeredGraphPlot[x]"
+    );
+  }
+  #[test]
+  fn word_character() {
+    assert_eq!(interpret("WordCharacter[x]").unwrap(), "WordCharacter[x]");
+  }
+  #[test]
+  fn reflection_transform() {
+    assert_eq!(
+      interpret("ReflectionTransform[x]").unwrap(),
+      "ReflectionTransform[x]"
+    );
+  }
+  #[test]
+  fn bspline_basis() {
+    assert_eq!(
+      interpret("BSplineBasis[x, y]").unwrap(),
+      "BSplineBasis[x, y]"
+    );
+  }
+  #[test]
+  fn parameter_mixture_distribution() {
+    assert_eq!(
+      interpret("ParameterMixtureDistribution[x, y]").unwrap(),
+      "ParameterMixtureDistribution[x, y]"
+    );
+  }
+  #[test]
+  fn binary_read_list() {
+    assert_eq!(
+      interpret("BinaryReadList[x, y]").unwrap(),
+      "BinaryReadList[x, y]"
+    );
+  }
+  #[test]
+  fn total_layer() {
+    assert_eq!(interpret("TotalLayer[x]").unwrap(), "TotalLayer[x]");
+  }
+  #[test]
+  fn find_distribution_parameters() {
+    assert_eq!(
+      interpret("FindDistributionParameters[x, y]").unwrap(),
+      "FindDistributionParameters[x, y]"
+    );
+  }
+  #[test]
+  fn find_path() {
+    assert_eq!(interpret("FindPath[x, y, z]").unwrap(), "FindPath[x, y, z]");
+  }
+  #[test]
+  fn find_peaks() {
+    assert_eq!(interpret("FindPeaks[x]").unwrap(), "FindPeaks[x]");
+  }
+  #[test]
+  fn nprobability() {
+    assert_eq!(
+      interpret("NProbability[x, y]").unwrap(),
+      "NProbability[x, y]"
+    );
+  }
+  #[test]
+  fn net_encoder() {
+    assert_eq!(interpret("NetEncoder[x]").unwrap(), "NetEncoder[x]");
+  }
+  #[test]
+  fn permutation_product() {
+    assert_eq!(
+      interpret("PermutationProduct[x]").unwrap(),
+      "PermutationProduct[x]"
+    );
+  }
+  #[test]
+  fn syntax_information() {
+    assert_eq!(
+      interpret("SyntaxInformation[x]").unwrap(),
+      "SyntaxInformation[x]"
+    );
+  }
+}

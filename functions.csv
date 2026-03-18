@@ -469,7 +469,7 @@ BinaryDistance,,,,10.2,4479
 BinaryFormat,,,,3,1962
 BinaryImageQ,,,,7,4660
 BinaryRead,,,,5.1,1926
-BinaryReadList,,,,5.1,1509
+BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
 BinarySerialize,,,,11.1,3108
 BinaryWrite,,,,5.1,1833
 BinCounts,Counts data points in equal-width bins,✅,pure,6,1225
@@ -602,7 +602,7 @@ BroadcastStationData,,🚫,,10,4881
 Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
 BrownForsytheTest,,,,8,3972
 BrownianBridgeProcess,,,,9,3280
-BSplineBasis,,,,7,1466
+BSplineBasis,B-spline basis function,✅,pure,7,1466
 BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7,192
 BSplineFunction,,🚫,,7,1176
 BSplineSurface,,,,7,1891
@@ -1870,7 +1870,7 @@ FactorSquareFree,Square-free factorization of a polynomial,✅,pure,1,3143
 FactorSquareFreeList,Returns the square-free factorization of a polynomial as a list of factor-multiplicity pairs,✅,pure,1,3697
 FactorTerms,Pulls out the greatest common numerical factor from terms,✅,pure,1,1817
 FactorTermsList,factors out a common numerical factor from a polynomial,✅,none,1,3265
-Failure,,,,10,1522
+Failure,Symbolic failure object,✅,pure,10,1522
 FailureAction,,,,10,3491
 FailureDistribution,,,,9,3020
 FailureQ,,,,10.2,3636
@@ -1954,7 +1954,7 @@ FindCurvePath,,,,7,2008
 FindCycle,,,,10,1815
 FindDevices,,,,10,4291
 FindDistribution,,,,10.3,1643
-FindDistributionParameters,,,,8,1528
+FindDistributionParameters,Estimate distribution parameters,✅,pure,8,1528
 FindDivisions,,🚫,,7,1291
 FindEdgeColoring,,,,13,
 FindEdgeCover,,,,8,4081
@@ -2004,8 +2004,8 @@ FindMinimumCostFlow,,,,9,2986
 FindMinimumCut,,,,9,4437
 FindMinValue,,,,7,2350
 FindMoleculeSubstructure,,,,12,4660
-FindPath,,,,10,1510
-FindPeaks,,,,10,1517
+FindPath,Find paths in a graph,✅,pure,10,1510
+FindPeaks,Find peaks in data,✅,pure,10,1517
 FindPermutation,,,,8,2679
 FindPlanarColoring,,,,13,
 FindPointProcessParameters,,,,12.2,5587
@@ -3077,7 +3077,7 @@ LatticeReduce,LLL lattice basis reduction,✅,pure,1,2650
 LaunchKernels,,,,7,1549
 LayeredGraph,,,,14,
 LayeredGraph3D,,,,14,
-LayeredGraphPlot,,,,6,1529
+LayeredGraphPlot,Layered graph plot,✅,pure,6,1529
 LayeredGraphPlot3D,,,,12.3,
 LayerSizeFunction,,,,6,3566
 LCHColor,,,,10,3656
@@ -3193,7 +3193,7 @@ LinearSolve,Solves a linear system of equations using Gaussian elimination,✅,p
 LinearSolveFunction,,,,5,4356
 LineBreakChart,,,,8,3566
 LineGraph,,,,8,2525
-LineIndent,,,,3,1526
+LineIndent,Line indentation option,✅,pure,3,1526
 LineIndentMaxFraction,,,,3,4809
 LineIntegralConvolutionPlot,,,,7,2404
 LineIntegralConvolutionScale,,,,7,3306
@@ -3705,7 +3705,7 @@ NetChain,,🚫,,11,1126
 NetDecoder,,,,11,1582
 NetDelete,,,,11.3,5486
 NetDrop,,,,11.3,4612
-NetEncoder,,,,11,1528
+NetEncoder,Neural network encoder,✅,pure,11,1528
 NetEvaluationMode,,,,11.1,4527
 NetExternalObject,,,,13.2,
 NetExtract,,,,11,1908
@@ -3807,7 +3807,7 @@ Notebook,Requires external services or GUI infrastructure,🚫,io,3,915
 NotebookApply,,,,3,3491
 NotebookAutoSave,,,,3,3755
 NotebookCellData,,🚫,,14.1,
-NotebookClose,,,,3,1517
+NotebookClose,Close a notebook,✅,pure,3,1517
 NotebookDelete,,,,3,1740
 NotebookDirectory,Directory of the current notebook,✅,none,6,719
 NotebookDynamicExpression,,,,8,3048
@@ -3883,7 +3883,7 @@ NotTildeTilde,,,,3,5390
 NotVerticalBar,,,,3,4881
 Now,Returns the current date and time,✅,contextual,10,1071
 NoWhitespace,,,,10.3,5587
-NProbability,,,,8,1534
+NProbability,Numerical probability,✅,pure,8,1534
 NProduct,Numerical product of a sequence,implemented,none,1,2229
 NRoots,Symbol for numerical root counting,✅,pure,1,2462
 NSolve,Solves equations numerically,✅,pure,2,252
@@ -4081,7 +4081,7 @@ ParallelSum,,,,7,2462
 ParallelTable,Parallel version of Table (evaluated sequentially),✅,pure,7,835
 ParallelTry,,,,7,3298
 ParameterEstimator,,,,8,2344
-ParameterMixtureDistribution,,,,8,1519
+ParameterMixtureDistribution,Mixture distribution with parameterized components,✅,pure,8,1519
 ParametricConvexOptimization,,,,12.2,5184
 ParametricFunction,,,,9,4138
 ParametricNDSolve,,🚫,,9,1231
@@ -4166,7 +4166,7 @@ PermutationMax,,,,8,4315
 PermutationMin,,,,8,5013
 PermutationOrder,,,,8,2986
 PermutationPower,,,,8,2944
-PermutationProduct,,,,8,1507
+PermutationProduct,Product of permutations,✅,pure,8,1507
 PermutationReplace,,,,8,1819
 Permutations,Returns all permutations of a list,✅,pure,1,533
 PermutationSupport,,,,8,3947
@@ -4553,7 +4553,7 @@ ReferenceAltitude,,,,14.1,
 ReferenceLineStyle,,,,8,4225
 Refine,Simplifies expressions using assumptions,✅,pure,5,764
 ReflectionMatrix,,,,6,2203
-ReflectionTransform,,,,6,1536
+ReflectionTransform,Reflection transformation matrix,✅,pure,6,1536
 Refresh,,🚫,,6,1145
 RefreshRate,,,,6,2880
 Region,,🚫,,11.1,959
@@ -5372,7 +5372,7 @@ SynchronousInitialization,Notebook synchronous initialization,🚫,io,6,1429
 SynchronousUpdating,,🚫,,6,931
 Synonyms,,,,12,4052
 SyntaxForm,,,,3,2276
-SyntaxInformation,,,,6,1520
+SyntaxInformation,Syntax information for a symbol,✅,pure,6,1520
 SyntaxLength,,,,2,4527
 SyntaxPacket,,,,3,
 SyntaxQ,,,,2,2360
@@ -5552,7 +5552,7 @@ TideData,,🚫,,11.2,4052
 Tilde,,,,3,3265
 TildeEqual,,,,3,4612
 TildeFullEqual,,,,3,5390
-TildeTilde,,,,3,1509
+TildeTilde,Approximate equality relation,✅,pure,3,1509
 TimeConstrained,Runs computation with time limit (no-op in Woxi),✅,effectful,1,1182
 TimeConstraint,,,,3,1751
 TimeDirection,,,,10,4881
@@ -5582,7 +5582,7 @@ TimeSeriesWindow,,,,10,2329
 TimeSystem,,,,13,
 TimeSystemConvert,,,,13,
 TimeUsed,,,,2,2097
-TimeValue,,,,8,1524
+TimeValue,Time value of money computation,✅,pure,8,1524
 TimeZone,,🚫,,2,892
 TimeZoneConvert,,,,10,2999
 TimeZoneOffset,,,,10.3,3947
@@ -5623,7 +5623,7 @@ TorusGraph,,,,13.1,
 ToSphericalCoordinates,,,,10.1,3083
 ToString,Converts an expression to a string,✅,pure,1,148
 Total,Sums the elements of a list,✅,pure,5,151
-TotalLayer,,,,11,1518
+TotalLayer,Neural network total layer,✅,pure,11,1518
 TotalVariationFilter,,,,8,3020
 TotalWidth,Option specifying the total width for formatted output,✅,none,1,5184
 TouchPosition,,,,10,5486
@@ -6140,7 +6140,7 @@ WithLock,,,,12.3,
 WolframLanguageData,,🚫,,10.2,830
 Word,Symbol representing a word in string patterns,✅,none,2,79
 WordBoundary,,,,5.1,1682
-WordCharacter,,,,5.1,1534
+WordCharacter,String pattern for word characters,✅,pure,5.1,1534
 WordCloud,Creates a word cloud from a list of words,✅,pure,10.1,917
 WordCount,,,,10.1,3257
 WordCounts,,,,10.1,2413
