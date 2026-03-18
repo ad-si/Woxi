@@ -179,6 +179,9 @@ pub fn dispatch_calculus_functions(
     "FunctionDomain" if args.len() >= 2 && args.len() <= 3 => {
       return Some(function_domain_ast(args));
     }
+    "GeneratingFunction" if args.len() == 3 => {
+      return Some(generating_function(&args[0], &args[1], &args[2]));
+    }
     _ => {}
   }
   None
@@ -2063,4 +2066,784 @@ fn contains_variable(expr: &Expr, var: &str) -> bool {
     Expr::List(items) => items.iter().any(|a| contains_variable(a, var)),
     _ => false,
   }
+}
+
+/// GeneratingFunction[a_n, n, x] = Sum[a_n * x^n, {n, 0, Infinity}]
+fn generating_function(
+  expr: &Expr,
+  n_expr: &Expr,
+  x_expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let n = match n_expr {
+    Expr::Identifier(name) => name.as_str(),
+    // Multivariate: GeneratingFunction[a, {n, m}, {x, y}]
+    Expr::List(ns) => {
+      if let Expr::List(xs) = x_expr {
+        if ns.len() == xs.len() && ns.len() >= 2 {
+          return generating_function_multivariate(expr, ns, xs);
+        }
+      }
+      return Ok(Expr::FunctionCall {
+        name: "GeneratingFunction".to_string(),
+        args: vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+      });
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "GeneratingFunction".to_string(),
+        args: vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+      });
+    }
+  };
+
+  if let Some(result) = gf_inner(expr, n, x_expr)? {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "GeneratingFunction".to_string(),
+      args: vec![expr.clone(), n_expr.clone(), x_expr.clone()],
+    })
+  }
+}
+
+/// Multivariate generating function: reduce from right to left
+fn generating_function_multivariate(
+  expr: &Expr,
+  ns: &[Expr],
+  xs: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  // Process innermost variable first (rightmost), then work outward
+  let mut result = expr.clone();
+  for i in (0..ns.len()).rev() {
+    let n_var = &ns[i];
+    let x_var = &xs[i];
+    result = generating_function(&result, n_var, x_var)?;
+    // If it came back unevaluated, we can't continue
+    if let Expr::FunctionCall { ref name, .. } = result {
+      if name == "GeneratingFunction" {
+        return Ok(Expr::FunctionCall {
+          name: "GeneratingFunction".to_string(),
+          args: vec![
+            expr.clone(),
+            Expr::List(ns.to_vec()),
+            Expr::List(xs.to_vec()),
+          ],
+        });
+      }
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// Core pattern matching for generating functions.
+/// Returns Some(result) if a closed form is found, None otherwise.
+fn gf_inner(
+  expr: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Case 0: expr doesn't depend on n => constant * 1/(1-x)
+  if !depends_on(expr, n) {
+    // c/(1-x)
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(expr.clone()),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(x.clone()),
+      }),
+    }));
+  }
+
+  // Case 1: expr = n (just the variable)
+  if matches!(expr, Expr::Identifier(name) if name == n) {
+    // x/(1-x)^2
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(x.clone()),
+      right: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::Integer(1)),
+          right: Box::new(x.clone()),
+        }),
+        right: Box::new(Expr::Integer(2)),
+      }),
+    }));
+  }
+
+  // Handle Divide explicitly (before as_func_args normalizes it)
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left,
+    right,
+  } = expr
+  {
+    if let Some(result) = gf_divide(left, right, n, x)? {
+      return Ok(Some(result));
+    }
+  }
+
+  // Handle Minus: a - b => a + (-b)
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left,
+    right,
+  } = expr
+  {
+    let neg_right = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(Expr::Integer(-1)),
+      right: right.clone(),
+    };
+    let as_plus = Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: left.clone(),
+      right: Box::new(neg_right),
+    };
+    return gf_inner(&as_plus, n, x);
+  }
+
+  // Check for function call / binary op patterns
+  if let Some((fname, fargs)) = as_func_args(expr) {
+    match fname {
+      "Power" if fargs.len() == 2 => {
+        return gf_power(fargs[0], fargs[1], n, x);
+      }
+      "Plus" => {
+        return gf_plus(expr, n, x);
+      }
+      "Times" => {
+        return gf_times(expr, n, x);
+      }
+      "Factorial" if fargs.len() == 1 => {
+        // 1/n! case is handled in gf_times via Power[Factorial[n], -1]
+      }
+      "Binomial" if fargs.len() == 2 => {
+        return gf_binomial(fargs[0], fargs[1], n, x);
+      }
+      _ => {}
+    }
+  }
+
+  // Case: f[n+k] — shifted sequence
+  if let Expr::FunctionCall {
+    name: fname,
+    args: fargs,
+  } = expr
+  {
+    if fargs.len() == 1 {
+      if let Some((shift, inner_var)) = extract_shift(&fargs[0], n) {
+        if shift > 0 {
+          // GeneratingFunction[f[n+k], n, x] = (1/x^k) * (GF[f[n],n,x] - Sum[f[i]*x^i, {i,0,k-1}])
+          let base_expr = Expr::FunctionCall {
+            name: fname.clone(),
+            args: vec![Expr::Identifier(inner_var.to_string())],
+          };
+          let gf_base = Expr::FunctionCall {
+            name: "GeneratingFunction".to_string(),
+            args: vec![base_expr, Expr::Identifier(n.to_string()), x.clone()],
+          };
+          // Subtract the first k terms
+          let mut subtract_terms = Vec::new();
+          for i in 0..shift {
+            let fi = Expr::FunctionCall {
+              name: fname.clone(),
+              args: vec![Expr::Integer(i as i128)],
+            };
+            let term = Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(fi),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(x.clone()),
+                right: Box::new(Expr::Integer(i as i128)),
+              }),
+            };
+            subtract_terms.push(term);
+          }
+          let subtracted =
+            subtract_terms.into_iter().reduce(|acc, t| Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(acc),
+              right: Box::new(t),
+            });
+          let numerator = if let Some(sub) = subtracted {
+            Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(gf_base),
+              right: Box::new(sub),
+            }
+          } else {
+            gf_base
+          };
+          let result = Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(numerator),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(x.clone()),
+              right: Box::new(Expr::Integer(shift as i128)),
+            }),
+          };
+          return Ok(Some(result));
+        }
+      }
+    }
+  }
+
+  Ok(None)
+}
+
+/// Extract shift from expression like n+1, n+2, etc.
+/// Returns (shift, variable_name) if the expression is var + constant.
+fn extract_shift<'a>(expr: &'a Expr, var: &str) -> Option<(i64, &'a str)> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      if let Expr::Identifier(name) = left.as_ref() {
+        if name == var {
+          if let Expr::Integer(k) = right.as_ref() {
+            return Some((*k as i64, name.as_str()));
+          }
+        }
+      }
+      if let Expr::Identifier(name) = right.as_ref() {
+        if name == var {
+          if let Expr::Integer(k) = left.as_ref() {
+            return Some((*k as i64, name.as_str()));
+          }
+        }
+      }
+      None
+    }
+    // Handle FunctionCall Plus[k, n] form
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
+      if let Expr::Identifier(id) = &args[0] {
+        if id == var {
+          if let Expr::Integer(k) = &args[1] {
+            return Some((*k as i64, id.as_str()));
+          }
+        }
+      }
+      if let Expr::Identifier(id) = &args[1] {
+        if id == var {
+          if let Expr::Integer(k) = &args[0] {
+            return Some((*k as i64, id.as_str()));
+          }
+        }
+      }
+      None
+    }
+    _ => None,
+  }
+}
+
+/// Handle Power[base, exp] in generating function context
+fn gf_power(
+  base: &Expr,
+  exp: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Case: a^n where a doesn't depend on n => 1/(1 - a*x)
+  if matches!(exp, Expr::Identifier(name) if name == n) && !depends_on(base, n)
+  {
+    return Ok(Some(Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left: Box::new(Expr::Integer(1)),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(base.clone()),
+          right: Box::new(x.clone()),
+        }),
+      }),
+      right: Box::new(Expr::Integer(-1)),
+    }));
+  }
+
+  // Case: n^k where k is a positive integer => Eulerian number formula
+  if matches!(base, Expr::Identifier(name) if name == n) && !depends_on(exp, n)
+  {
+    if let Expr::Integer(k) = exp {
+      let k = *k;
+      if k >= 2 {
+        return gf_n_power_k(k, x);
+      }
+    }
+  }
+
+  // Case: Power[Factorial[n], -1] => 1/n! => E^x
+  if let Expr::Integer(-1) = exp {
+    if let Expr::FunctionCall { name, args } = base {
+      if name == "Factorial" && args.len() == 1 {
+        if matches!(&args[0], Expr::Identifier(var) if var == n) {
+          return Ok(Some(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(Expr::Constant("E".to_string())),
+            right: Box::new(x.clone()),
+          }));
+        }
+      }
+    }
+  }
+
+  // Case: Power[Factorial[n], -2] => 1/(n!)^2 => BesselI[0, 2*Sqrt[x]]
+  if let Expr::Integer(-2) = exp {
+    if let Expr::FunctionCall { name, args } = base {
+      if name == "Factorial" && args.len() == 1 {
+        if matches!(&args[0], Expr::Identifier(var) if var == n) {
+          return Ok(Some(Expr::FunctionCall {
+            name: "BesselI".to_string(),
+            args: vec![
+              Expr::Integer(0),
+              Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(Expr::Integer(2)),
+                right: Box::new(Expr::FunctionCall {
+                  name: "Sqrt".to_string(),
+                  args: vec![x.clone()],
+                }),
+              },
+            ],
+          }));
+        }
+      }
+    }
+  }
+
+  Ok(None)
+}
+
+/// Generating function for n^k: Sum[n^k * x^n, {n, 0, inf}]
+/// Uses the formula involving Eulerian numbers: result = Sum[A(k,j) * x^(j+1), j=0..k-1] / (1-x)^(k+1)
+/// where A(k,j) are the Eulerian numbers.
+fn gf_n_power_k(k: i128, x: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Compute Eulerian numbers A(k, j) for j = 0..k-1
+  let k_usize = k as usize;
+  let eulerian = compute_eulerian_numbers(k_usize);
+
+  // Build numerator polynomial: (-1)^(k+1) * Sum[A(k,j) * x^(j+1), j=0..k-1]
+  // The (-1)^(k+1) factor is needed because denominator is (-1+x)^(k+1) = (-1)^(k+1)*(1-x)^(k+1)
+  let sign = if (k + 1) % 2 == 0 { 1i128 } else { -1 };
+  let mut num_terms: Vec<Expr> = Vec::new();
+  for (j, &coeff) in eulerian.iter().enumerate() {
+    let signed_coeff = sign * coeff;
+    if signed_coeff == 0 {
+      continue;
+    }
+    let power = (j + 1) as i128;
+    let x_pow = if power == 1 {
+      x.clone()
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left: Box::new(x.clone()),
+        right: Box::new(Expr::Integer(power)),
+      }
+    };
+    if signed_coeff == 1 {
+      num_terms.push(x_pow);
+    } else if signed_coeff == -1 {
+      num_terms.push(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(-1)),
+        right: Box::new(x_pow),
+      });
+    } else {
+      num_terms.push(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(Expr::Integer(signed_coeff)),
+        right: Box::new(x_pow),
+      });
+    }
+  }
+
+  let numerator = if num_terms.len() == 1 {
+    num_terms.into_iter().next().unwrap()
+  } else {
+    num_terms
+      .into_iter()
+      .reduce(|acc, t| Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(acc),
+        right: Box::new(t),
+      })
+      .unwrap()
+  };
+
+  // Denominator: (1-x)^(k+1)  — but Wolfram uses (-1+x)^(k+1) form
+  let denominator = Expr::BinaryOp {
+    op: BinaryOperator::Power,
+    left: Box::new(Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(Expr::Integer(-1)),
+      right: Box::new(x.clone()),
+    }),
+    right: Box::new(Expr::Integer(k + 1)),
+  };
+
+  Ok(Some(Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left: Box::new(numerator),
+    right: Box::new(denominator),
+  }))
+}
+
+/// Compute Eulerian numbers A(k, j) for j = 0..k-1
+fn compute_eulerian_numbers(k: usize) -> Vec<i128> {
+  // A(k, j) = sum_{i=0}^{j} (-1)^i * C(k+1, i) * (j+1-i)^k
+  let mut result = Vec::with_capacity(k);
+  for j in 0..k {
+    let mut val: i128 = 0;
+    for i in 0..=j {
+      let sign = if i % 2 == 0 { 1i128 } else { -1 };
+      let binom = binomial_coeff(k as i128 + 1, i as i128);
+      let base = (j + 1 - i) as i128;
+      let power = base.pow(k as u32);
+      val += sign * binom * power;
+    }
+    result.push(val);
+  }
+  result
+}
+
+/// Compute binomial coefficient C(n, k)
+fn binomial_coeff(n: i128, k: i128) -> i128 {
+  if k < 0 || k > n {
+    return 0;
+  }
+  if k == 0 || k == n {
+    return 1;
+  }
+  let k = k.min(n - k);
+  let mut result: i128 = 1;
+  for i in 0..k {
+    result = result * (n - i) / (i + 1);
+  }
+  result
+}
+
+/// Handle Plus (sum) in generating function — linearity
+fn gf_plus(
+  expr: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Collect all terms
+  let terms = collect_plus_terms(expr);
+
+  let mut result_terms = Vec::new();
+  for term in &terms {
+    if let Some(gf) = gf_inner(term, n, x)? {
+      result_terms.push(gf);
+    } else {
+      return Ok(None); // Can't evaluate one term, give up
+    }
+  }
+
+  let result = result_terms
+    .into_iter()
+    .reduce(|acc, t| Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left: Box::new(acc),
+      right: Box::new(t),
+    })
+    .unwrap();
+
+  Ok(Some(result))
+}
+
+/// Collect all additive terms from a Plus expression tree
+fn collect_plus_terms(expr: &Expr) -> Vec<&Expr> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut terms = collect_plus_terms(left);
+      terms.extend(collect_plus_terms(right));
+      terms
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().collect()
+    }
+    _ => vec![expr],
+  }
+}
+
+/// Handle Times (product) in generating function
+fn gf_times(
+  expr: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Collect all multiplicative factors
+  let factors = collect_times_factors(expr);
+
+  // Separate factors into n-dependent and constant
+  let mut constants: Vec<&Expr> = Vec::new();
+  let mut n_dependent: Vec<&Expr> = Vec::new();
+
+  for factor in &factors {
+    if depends_on(factor, n) {
+      n_dependent.push(factor);
+    } else {
+      constants.push(factor);
+    }
+  }
+
+  // If there's a constant factor, factor it out
+  if !constants.is_empty() && !n_dependent.is_empty() {
+    let const_product = if constants.len() == 1 {
+      (*constants[0]).clone()
+    } else {
+      constants
+        .iter()
+        .cloned()
+        .cloned()
+        .reduce(|acc, t| Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(acc),
+          right: Box::new(t),
+        })
+        .unwrap()
+    };
+
+    let n_product = if n_dependent.len() == 1 {
+      (*n_dependent[0]).clone()
+    } else {
+      n_dependent
+        .iter()
+        .cloned()
+        .cloned()
+        .reduce(|acc, t| Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(acc),
+          right: Box::new(t),
+        })
+        .unwrap()
+    };
+
+    if let Some(inner_gf) = gf_inner(&n_product, n, x)? {
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(const_product),
+        right: Box::new(inner_gf),
+      }));
+    }
+  }
+
+  // All factors depend on n: recombine and try as a single expression
+  // Handle common combined patterns:
+
+  // c * a^n pattern (all together)
+  let recombined = if n_dependent.len() >= 2 {
+    n_dependent
+      .iter()
+      .cloned()
+      .cloned()
+      .reduce(|acc, t| Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(acc),
+        right: Box::new(t),
+      })
+      .unwrap()
+  } else if n_dependent.len() == 1 {
+    (*n_dependent[0]).clone()
+  } else {
+    return Ok(None);
+  };
+
+  // Try specific combined patterns like (-1)^n which is Power[-1, n]
+  if let Some((fname, fargs)) = as_func_args(&recombined) {
+    if fname == "Power" && fargs.len() == 2 {
+      return gf_power(fargs[0], fargs[1], n, x);
+    }
+  }
+
+  Ok(None)
+}
+
+/// Collect all multiplicative factors from a Times expression tree
+fn collect_times_factors(expr: &Expr) -> Vec<&Expr> {
+  use crate::syntax::BinaryOperator;
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut factors = collect_times_factors(left);
+      factors.extend(collect_times_factors(right));
+      factors
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
+    _ => vec![expr],
+  }
+}
+
+/// Handle Binomial[expr1, expr2] patterns
+fn gf_binomial(
+  top: &Expr,
+  bottom: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // Binomial[n, k] where k is constant: x^k/(1-x)^(k+1)
+  if matches!(top, Expr::Identifier(name) if name == n)
+    && !depends_on(bottom, n)
+  {
+    if let Expr::Integer(k) = bottom {
+      // x^k / (1-x)^(k+1)
+      return Ok(Some(Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(x.clone()),
+          right: Box::new(Expr::Integer(*k)),
+        }),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(x.clone()),
+          }),
+          right: Box::new(Expr::Integer(k + 1)),
+        }),
+      }));
+    }
+  }
+
+  // Binomial[2n, n] => 1/Sqrt[1-4x]
+  if !depends_on(bottom, n) {
+    return Ok(None);
+  }
+  if matches!(bottom, Expr::Identifier(name) if name == n) {
+    // Check if top is 2*n
+    if let Some((fname, fargs)) = as_func_args(top) {
+      if fname == "Times" && fargs.len() == 2 {
+        let is_2n = (matches!(fargs[0], Expr::Integer(2))
+          && matches!(fargs[1], Expr::Identifier(name) if name == n))
+          || (matches!(fargs[1], Expr::Integer(2))
+            && matches!(fargs[0], Expr::Identifier(name) if name == n));
+        if is_2n {
+          // 1/Sqrt[1 - 4*x]
+          return Ok(Some(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              left: Box::new(Expr::Integer(1)),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(Expr::Integer(4)),
+                right: Box::new(x.clone()),
+              }),
+            }),
+            right: Box::new(Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(-1), Expr::Integer(2)],
+            }),
+          }));
+        }
+      }
+    }
+  }
+
+  Ok(None)
+}
+
+/// Handle Divide in generating function context
+fn gf_divide(
+  num: &Expr,
+  den: &Expr,
+  n: &str,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::syntax::BinaryOperator;
+
+  // 1/(n+1) => -Log[1-x]/x
+  if matches!(num, Expr::Integer(1)) {
+    if let Some((fname, fargs)) = as_func_args(den) {
+      if fname == "Plus" && fargs.len() == 2 {
+        let is_n_plus_1 = (matches!(fargs[0], Expr::Identifier(name) if name == n)
+          && matches!(fargs[1], Expr::Integer(1)))
+          || (matches!(fargs[1], Expr::Identifier(name) if name == n)
+            && matches!(fargs[0], Expr::Integer(1)));
+        if is_n_plus_1 {
+          return Ok(Some(Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: Box::new(Expr::UnaryOp {
+              op: crate::syntax::UnaryOperator::Minus,
+              operand: Box::new(Expr::FunctionCall {
+                name: "Log".to_string(),
+                args: vec![Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  left: Box::new(Expr::Integer(1)),
+                  right: Box::new(x.clone()),
+                }],
+              }),
+            }),
+            right: Box::new(x.clone()),
+          }));
+        }
+      }
+    }
+
+    // 1/Factorial[n] => E^x
+    if let Expr::FunctionCall { name, args } = den {
+      if name == "Factorial" && args.len() == 1 {
+        if matches!(&args[0], Expr::Identifier(var) if var == n) {
+          return Ok(Some(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(Expr::Constant("E".to_string())),
+            right: Box::new(x.clone()),
+          }));
+        }
+      }
+    }
+  }
+
+  // General: numerator / denominator — try to handle as num * den^(-1)
+  if !depends_on(num, n) && depends_on(den, n) {
+    // const / f(n) — rewrite as const * f(n)^(-1) and try
+    let inv_den = Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left: Box::new(den.clone()),
+      right: Box::new(Expr::Integer(-1)),
+    };
+    let product = Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left: Box::new(num.clone()),
+      right: Box::new(inv_den),
+    };
+    return gf_inner(&product, n, x);
+  }
+
+  Ok(None)
 }

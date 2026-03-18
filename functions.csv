@@ -2266,7 +2266,7 @@ GenerateHTTPResponse,,,,10.3,4104
 GenerateLLMToolResponse,,,,13.3,
 GenerateSecuredAuthenticationKey,,,,11.3,4437
 GenerateSymmetricKey,,,,10.1,3916
-GeneratingFunction,,,,7,1440
+GeneratingFunction,Compute generating function of a sequence,✅,pure,7,1440
 GeneratorDescription,,,,10.1,5184
 GeneratorHistoryLength,,,,10.1,5390
 GeneratorOutputType,,,,10.1,5184
