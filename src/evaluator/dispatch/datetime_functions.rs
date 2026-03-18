@@ -21,6 +21,9 @@ pub fn dispatch_datetime_functions(
     "DateString" => {
       return Some(crate::functions::datetime_ast::date_string_ast(args));
     }
+    "SessionTime" if args.is_empty() => {
+      return Some(Ok(Expr::Real(crate::session_time())));
+    }
     // DateObject is a data container — return as-is
     "DateObject" => {
       return Some(Ok(Expr::FunctionCall {
