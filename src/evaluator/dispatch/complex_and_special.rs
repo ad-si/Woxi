@@ -2680,8 +2680,8 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
           unevaluated()
         }
       }
-      // Circle -> same as ArcLength
-      "Circle" => compute_arc_length(expr),
+      // Circle is a 1D curve, Perimeter is Undefined
+      "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
       // Rectangle[{x1,y1},{x2,y2}] -> 2*(|x2-x1| + |y2-y1|)
       "Rectangle" => {
         if args.is_empty() {
@@ -2764,8 +2764,8 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
         }
         unevaluated()
       }
-      // Line -> same as ArcLength
-      "Line" => compute_arc_length(expr),
+      // Line is a 1D curve, Perimeter is Undefined
+      "Line" => Ok(Expr::Identifier("Undefined".to_string())),
       _ => unevaluated(),
     },
     _ => unevaluated(),
