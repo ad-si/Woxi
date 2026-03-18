@@ -4864,6 +4864,51 @@ mod session_time {
 }
 
 #[cfg(test)]
+mod function_interpolation {
+  use super::*;
+
+  #[test]
+  fn returns_interpolating_function() {
+    assert_eq!(
+      interpret("Head[FunctionInterpolation[Sin[x], {x, 0, 6.28}]]").unwrap(),
+      "InterpolatingFunction"
+    );
+  }
+
+  #[test]
+  fn evaluate_at_zero() {
+    let result =
+      interpret("FunctionInterpolation[Sin[x], {x, 0, 6.28}][0.0]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!(val.abs() < 0.01, "Expected ~0 at x=0, got {}", val);
+  }
+
+  #[test]
+  fn evaluate_accuracy() {
+    let result =
+      interpret("Abs[FunctionInterpolation[Sin[x], {x, 0, 2*Pi}][1.0] - Sin[1.0]] < 0.001")
+        .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn evaluate_polynomial() {
+    let result =
+      interpret("Abs[FunctionInterpolation[x^2, {x, 0, 5}][3.0] - 9.0] < 0.01")
+        .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[FunctionInterpolation]").unwrap(),
+      "{HoldAll, Protected, ReadProtected}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod cmyk_color {
   use super::*;
 

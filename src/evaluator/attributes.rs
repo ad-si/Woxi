@@ -225,7 +225,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "ScalingTransform" | "NetGraph" | "CMYKColor" => {
       vec!["Protected", "ReadProtected"]
     }
-    "Plot3D" => vec!["HoldAll", "Protected", "ReadProtected"],
+    "Plot3D" | "FunctionInterpolation" => {
+      vec!["HoldAll", "Protected", "ReadProtected"]
+    }
 
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],

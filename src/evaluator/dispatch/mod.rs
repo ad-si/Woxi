@@ -2316,6 +2316,11 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // FunctionInterpolation[expr, {x, xmin, xmax}]
+  if name == "FunctionInterpolation" && args.len() >= 2 {
+    return function_interpolation_ast(args);
+  }
+
   // Formatting wrappers and symbolic heads that stay unevaluated
   if name == "DecimalForm" || name == "Proportional" || name == "NetGraph" {
     return Ok(Expr::FunctionCall {
@@ -2587,4 +2592,79 @@ fn blend_two_rational(
       args: (0..3).map(build_channel).collect(),
     })
   }
+}
+
+/// FunctionInterpolation[expr, {x, xmin, xmax}] — sample a function and build
+/// an InterpolatingFunction with cubic spline interpolation.
+fn function_interpolation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Expr::List(spec) = &args[1] {
+    if spec.len() == 3 {
+      if let Expr::Identifier(var_name) = &spec[0] {
+        // Force numeric evaluation of bounds
+        let xmin_n = Expr::FunctionCall {
+          name: "N".to_string(),
+          args: vec![spec[1].clone()],
+        };
+        let xmax_n = Expr::FunctionCall {
+          name: "N".to_string(),
+          args: vec![spec[2].clone()],
+        };
+        let xmin_expr = crate::evaluator::evaluate_expr_to_expr(&xmin_n);
+        let xmax_expr = crate::evaluator::evaluate_expr_to_expr(&xmax_n);
+        if let (Ok(xmin_e), Ok(xmax_e)) = (&xmin_expr, &xmax_expr) {
+          let xmin = match xmin_e {
+            Expr::Integer(n) => Some(*n as f64),
+            Expr::Real(f) => Some(*f),
+            _ => None,
+          };
+          let xmax = match xmax_e {
+            Expr::Integer(n) => Some(*n as f64),
+            Expr::Real(f) => Some(*f),
+            _ => None,
+          };
+          if let (Some(xmin), Some(xmax)) = (xmin, xmax) {
+            let n_points = 65;
+            let dx = (xmax - xmin) / (n_points - 1) as f64;
+            let mut data_points = Vec::with_capacity(n_points);
+            let body = &args[0];
+
+            for i in 0..n_points {
+              let x_val = xmin + i as f64 * dx;
+              let x_expr = Expr::Real(x_val);
+              let substituted =
+                crate::syntax::substitute_variable(body, var_name, &x_expr);
+              if let Ok(y_expr) =
+                crate::evaluator::evaluate_expr_to_expr(&substituted)
+              {
+                let y_val = match &y_expr {
+                  Expr::Integer(n) => Some(*n as f64),
+                  Expr::Real(f) => Some(*f),
+                  _ => None,
+                };
+                if let Some(y) = y_val {
+                  data_points
+                    .push(Expr::List(vec![Expr::Real(x_val), Expr::Real(y)]));
+                }
+              }
+            }
+
+            if data_points.len() >= 2 {
+              let domain = Expr::List(vec![Expr::List(vec![
+                Expr::Real(xmin),
+                Expr::Real(xmax),
+              ])]);
+              return Ok(Expr::FunctionCall {
+                name: "InterpolatingFunction".to_string(),
+                args: vec![domain, Expr::List(data_points), Expr::Integer(3)],
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  Ok(Expr::FunctionCall {
+    name: "FunctionInterpolation".to_string(),
+    args: args.to_vec(),
+  })
 }
