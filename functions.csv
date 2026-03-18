@@ -56,7 +56,7 @@ AdjustTimeSeriesForecast,,,,9,4809
 AdministrativeDivisionData,,🚫,,10,141
 AffineHalfSpace,,,,10.2,4204
 AffineSpace,,,,10.2,3862
-AffineStateSpaceModel,,,,10,1687
+AffineStateSpaceModel,Affine state-space model,✅,unevaluated,10,1687
 AffineTransform,Affine geometric transformation,✅,unevaluated,6,1633
 After,,🚫,,3,1130
 AggregatedEntityClass,,,,12,4479
@@ -312,7 +312,7 @@ AudioDistance,,,,11.3,
 AudioEncoding,,,,12.1,5587
 AudioFade,,,,11,3697
 AudioFrequencyShift,,,,11,4173
-AudioGenerator,,,,11,1698
+AudioGenerator,Audio generator,✅,unevaluated,11,1698
 AudioIdentify,,,,12,5079
 AudioInputDevice,,,,11.1,5184
 AudioInsert,,,,11.1,5184
@@ -710,7 +710,7 @@ CellEpilog,,,,6,2723
 CellEvaluationDuplicate,,,,3,5587
 CellEvaluationFunction,,,,6,2807
 CellEventActions,,,,6,3134
-CellFrame,,,,3,1696
+CellFrame,Cell frame option,✅,unevaluated,3,1696
 CellFrameColor,,,,4,2707
 CellFrameLabelMargins,,,,4,3916
 CellFrameLabels,,,,4,2565
@@ -933,7 +933,7 @@ CommonestFilter,,,,7,3020
 CommonName,,,,10,1986
 CommonUnits,,,,9,5079
 CommunityBoundaryStyle,,,,9,4809
-CommunityGraphPlot,,,,9,1707
+CommunityGraphPlot,Community graph plot,✅,unevaluated,9,1707
 CommunityLabels,,,,9,3972
 CommunityRegionStyle,,,,9,3344
 CompanyData,,🚫,,10,746
@@ -941,7 +941,7 @@ CompatibleUnitQ,Tests if two quantities have compatible units,✅,pure,9,3656
 CompilationOptions,Option for specifying compilation settings,✅,pure,8,1452
 CompilationTarget,Option for compilation target,✅,none,8,738
 Compile,Compiles a function for numerical evaluation,✅,pure,2,393
-Compiled,,,,2,1697
+Compiled,Compiled option,✅,unevaluated,2,1697
 CompiledCodeFunction,,,,12,
 CompiledComponent,,,,13.2,
 CompiledComponentRawInterface,,,,14.1,
@@ -1044,7 +1044,7 @@ ContentLocationFunction,,,,11,5184
 ContentObject,,,,10.2,3947
 ContentPadding,,,,8,2389
 ContentSelectable,,,,6,1761
-ContentSize,,,,7,1679
+ContentSize,Content size option,✅,unevaluated,7,1679
 Context,Return the context (namespace) of a symbol,✅,pure,1,1029
 Contexts,,,,2,3402
 ContextToFileName,,,,3,5079
@@ -1806,7 +1806,7 @@ ExpIntegralE,Generalized exponential integral E_n(z),✅,pure,1,1397
 ExpIntegralEi,Exponential integral Ei,✅,pure,1,569
 ExpirationDate,,,,11.1,5184
 Exponent,Returns the maximum power of a variable in a polynomial,✅,pure,1,829
-ExponentFunction,,,,2,1712
+ExponentFunction,Exponent display function,✅,unevaluated,2,1712
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6,806
 ExponentialFamily,,,,7,3134
 ExponentialGeneratingFunction,,,,7,2503
@@ -1825,7 +1825,7 @@ ExpressionUUID,,,,13,
 ExpToTrig,Convert exponentials to trigonometric and hyperbolic functions,✅,pure,3,749
 ExtendedEntityClass,,,,12,4356
 ExtendedGCD,Extended greatest common divisor with Bezout coefficients,✅,pure,1,1557
-Extension,,,,3,1693
+Extension,Extension option,✅,unevaluated,3,1693
 ExtentElementFunction,,,,8,2671
 ExtentMarkers,,,,8,3162
 ExtentSize,,🚫,,8,1345
@@ -2106,7 +2106,7 @@ Forward,,,,6,2986
 ForwardBackward,,,,6,2611
 ForwardCloudCredentials,,,,12.2,
 Fourier,Discrete Fourier transform of a list,✅,pure,1,712
-FourierCoefficient,,,,7,1701
+FourierCoefficient,Fourier coefficient,✅,unevaluated,7,1701
 FourierCosCoefficient,,,,7,2338
 FourierCosSeries,,,,7,1995
 FourierCosTransform,,,,4,2190
@@ -2506,7 +2506,7 @@ Hash,Computes a hash of a string using MD5/SHA/SHA256/SHA384/SHA512,✅,pure,1,1
 HatchFilling,,,,12.1,2635
 HatchShading,,,,12.1,3737
 Haversine,,,,7,1901
-HazardFunction,,,,8,1679
+HazardFunction,Hazard function,✅,unevaluated,8,1679
 Head,Returns the head of an expression,✅,pure,1,229
 HeaderAlignment,,,,12.1,
 HeaderBackground,,,,12.1,
@@ -2583,7 +2583,7 @@ HoldPattern,Hold pattern from evaluation,✅,pure,3,384
 HoldRest,Attribute holding all but first argument,✅,pure,1,1600
 HolidayCalendar,,,,9,3462
 HorizontalGauge,,,,9,2108
-HornerForm,,,,6,1682
+HornerForm,Horner polynomial form,✅,unevaluated,6,1682
 HostLookup,,,,10.3,3889
 HotellingTSquareDistribution,,,,8,3462
 HoytDistribution,,,,8,3656
@@ -3303,7 +3303,7 @@ LogIntegral,Logarithmic integral function Li(x) = Ei(ln(x)),✅,pure,1,727
 LogisticDistribution,,,,6,2611
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10,1409
 LogitModelFit,,,,7,2541
-LogLikelihood,,,,8,1687
+LogLikelihood,Log-likelihood function,✅,unevaluated,8,1687
 LogLinearPlot,Plots with logarithmic x-axis,✅,pure,6,912
 LogLogisticDistribution,,,,8,3612
 LogLogPlot,Plots with logarithmic x and y axes,✅,pure,6,754
@@ -3563,7 +3563,7 @@ MinPointSeparation,,,,13,
 MinStableDistribution,,,,8,3094
 Minus,Subtracts numbers,✅,pure,1,800
 MinusPlus,,,,3,4437
-MinValue,,,,7,1690
+MinValue,Minimum value,✅,unevaluated,7,1690
 Missing,Represents missing data or keys,✅,pure,,
 MissingBehavior,,,,10,4027
 MissingDataMethod,,,,9,3059
@@ -3616,7 +3616,7 @@ Monday,,,,9,1970
 Monitor,,🚫,,6,1183
 MonomialList,List of monomials sorted by lexicographic order of exponent vectors,✅,none,7,1375
 MonsterGroupM,,,,8,4809
-MoonPhase,,,,10,1676
+MoonPhase,Phase of the moon,✅,unevaluated,10,1676
 MoonPhaseDate,,,,14,
 MoonPosition,,,,10,3162
 MorletWavelet,,,,8,3578
@@ -3632,7 +3632,7 @@ Most,Returns the list without its last element,✅,pure,5,379
 MountainData,,🚫,,10,5079
 MouseAnnotation,,,,6,3200
 MouseAppearance,,,,8,2082
-Mouseover,,,,6,1683
+Mouseover,Mouseover display,✅,unevaluated,6,1683
 MousePosition,Requires external services or GUI infrastructure,🚫,io,6,952
 MovieData,,🚫,,10,4527
 MovingAverage,Computes the moving average of a list,✅,1,6,1166
@@ -3743,7 +3743,7 @@ NevilleThetaD,,,,3,3612
 NevilleThetaN,,,,3,3612
 NevilleThetaS,,,,3,3427
 NewMoon,,,,14,
-NExpectation,,,,8,1682
+NExpectation,Numerical expectation,✅,unevaluated,8,1682
 NextCell,,,,10,3427
 NextDate,,,,11.1,4204
 NextPrime,Returns the smallest prime greater than n,✅,pure,6,1040
@@ -4000,7 +4000,7 @@ OverHat,,🚫,,6,970
 Overlaps,Overlap specification,✅,unevaluated,5.1,1658
 Overlay,,🚫,,8,1156
 OverlayVideo,,,,13,
-Overscript,,,,3,1704
+Overscript,Overscript notation,✅,unevaluated,3,1704
 OverscriptBox,,,,3,2223
 OverscriptBoxOptions,,,,4,5390
 OverTilde,Displays expression with tilde above,✅,1,6,1288
@@ -4348,7 +4348,7 @@ PrimeOmega,,,,7,2251
 PrimePi,Counts the number of primes less than or equal to n,✅,pure,2,688
 PrimePowerQ,Tests if a number is a prime power,✅,pure,6,2320
 PrimeQ,Tests if a number is prime,✅,pure,1,462
-Primes,,,,4,1707
+Primes,Domain of primes,✅,unevaluated,4,1707
 PrimeZetaP,,,,7,2971
 PrimitivePolynomialQ,,,,11.1,4437
 PrimitiveRoot,,,,6,2798
@@ -4382,7 +4382,7 @@ ProcessParameterAssumptions,,,,9,4527
 ProcessParameterQ,,,,9,4387
 ProcessStatus,,,,10,3755
 Product,Computes the product of an expression over a range,✅,pure,1,376
-ProductDistribution,,,,8,1713
+ProductDistribution,Product of distributions,✅,unevaluated,8,1713
 ProductLog,Returns the Lambert W function value,✅,pure,3,905
 ProgressIndicator,Dynamic progress indicator,🚫,io,6,1435
 ProgressReporting,,,,12.3,
@@ -4481,7 +4481,7 @@ RandomPoint,,🚫,,10.2,1020
 RandomPointConfiguration,,,,12.2,4006
 RandomPolygon,,,,12,3566
 RandomPolyhedron,,,,12,2971
-RandomPrime,,,,6,1709
+RandomPrime,Random prime number,✅,unevaluated,6,1709
 RandomReal,Generates a pseudorandom real number,✅,contextual,6,132
 RandomSample,Random selection without replacement,✅,contextual,6,444
 RandomSeeding,,,,11.2,2305
@@ -4542,7 +4542,7 @@ Record,Record data structure,✅,unevaluated,2,1648
 RecordLists,,,,2,1932
 RecordSeparators,,,,2,2119
 Rectangle,Represents a rectangle graphics primitive,✅,pure,1,117
-RectangleChart,,,,7,1687
+RectangleChart,Rectangle chart,✅,unevaluated,7,1687
 RectangleChart3D,,,,7,3200
 RectangularRepeatingElement,,,,11.1,5486
 RecurrenceFilter,,,,9,2642
@@ -4603,7 +4603,7 @@ RegularlySampledQ,,,,10,3843
 RegularPolygon,Regular polygon graphics primitive,✅,none,10.2,710
 ReIm,Real and imaginary parts of a complex number,✅,pure,10.1,800
 ReImLabels,,,,12,5013
-ReImPlot,,,,12,1710
+ReImPlot,Real and imaginary plot,✅,unevaluated,12,1710
 ReImStyle,,,,12,5486
 RelationalDatabase,,,,12,3843
 RelationGraph,Graph from a relation,✅,unevaluated,10.2,1617
@@ -5039,7 +5039,7 @@ SocketReadyQ,,,,11.2,4612
 Sockets,,,,11.2,5079
 SocketWaitAll,,,,11.2,5390
 SocketWaitNext,,,,11.2,5184
-SoftmaxLayer,,,,11,1712
+SoftmaxLayer,Softmax neural layer,✅,unevaluated,11,1712
 SokalSneathDissimilarity,,,,6,4262
 SolarEclipse,,,,10,4081
 SolarSystemFeatureData,,🚫,,10,4138
@@ -5071,7 +5071,7 @@ SpaceCurveData,,🚫,,10,4747
 Spacer,Creates empty space of a specified size for layout,✅,pure,6,471
 Spacings,Spacing specification for grids and layouts,✅,none,6,261
 Span,Extract a span of elements using ;; notation in Part,✅,pure,6,109
-SpanFromAbove,,,,6,1687
+SpanFromAbove,Span from above,✅,unevaluated,6,1687
 SpanFromBoth,,,,6,2495
 SpanFromLeft,,🚫,,6,946
 SpanMaxSize,,,,3,3048
@@ -5283,7 +5283,7 @@ Subdivide,Divides a range into equal parts,✅,pure,10.1,837
 Subfactorial,Returns the subfactorial (number of derangements),✅,pure,6,1960
 Subgraph,,🚫,,8,1197
 SubMinus,,,,6,1822
-SubPlus,,,,6,1692
+SubPlus,Subscript plus notation,✅,unevaluated,6,1692
 SubresultantPolynomialRemainders,,,,9,4612
 SubresultantPolynomials,,,,9,4479
 Subresultants,,,,4,3889
@@ -5324,7 +5324,7 @@ Sunday,,,,9,1869
 SunPosition,,,,10,2179
 Sunrise,,,,10,1999
 Sunset,,,,10,2193
-SuperDagger,,,,6,1709
+SuperDagger,Dagger superscript,✅,unevaluated,6,1709
 SuperMinus,,,,6,2087
 SupernovaData,,🚫,,10,4881
 SuperPlus,,,,6,1982
@@ -5600,7 +5600,7 @@ ToExpression,Converts a string to an evaluated expression,✅,pure,1,321
 ToFiniteField,,,,14,
 Together,Puts terms over a common denominator,✅,pure,1,455
 Toggler,,,,6,2617
-TogglerBar,,,,6,1716
+TogglerBar,Toggler bar control,✅,unevaluated,6,1716
 ToInvertibleTimeSeries,,,,9,4138
 TokenWords,,,,2,4881
 Tolerance,Tolerance specification,✅,unevaluated,2,1583
@@ -5780,7 +5780,7 @@ UnconstrainedParameters,,,,12,4291
 Undefined,Undefined mathematical result,✅,pure,,
 UnderBar,,,,6,3785
 Underflow,Symbol representing arithmetic underflow,✅,pure,1,2557
-Underlined,,,,6,1701
+Underlined,Underlined text,✅,unevaluated,6,1701
 Underoverscript,,,,3,3803
 UnderoverscriptBox,,,,3,2777
 UnderoverscriptBoxOptions,,,,4,2842
@@ -6089,7 +6089,7 @@ WeierstrassP,Weierstrass elliptic function,✅,pure,1,1078
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1,1718
 WeierstrassSigma,,,,3,1852
 WeierstrassZeta,,,,3,1781
-WeightedAdjacencyGraph,,,,8,1695
+WeightedAdjacencyGraph,Weighted adjacency graph,✅,unevaluated,8,1695
 WeightedAdjacencyMatrix,,,,8,1979
 WeightedData,,🚫,,9,1493
 WeightedGraphQ,,,,8,3916
@@ -6139,7 +6139,7 @@ WithCleanup,,,,12.2,5013
 WithLock,,,,12.3,
 WolframLanguageData,,🚫,,10.2,830
 Word,Symbol representing a word in string patterns,✅,none,2,79
-WordBoundary,,,,5.1,1682
+WordBoundary,Word boundary pattern,✅,unevaluated,5.1,1682
 WordCharacter,String pattern for word characters,✅,pure,5.1,1534
 WordCloud,Creates a word cloud from a list of words,✅,pure,10.1,917
 WordCount,,,,10.1,3257
