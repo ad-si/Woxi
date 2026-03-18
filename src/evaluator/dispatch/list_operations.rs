@@ -24,6 +24,44 @@ pub fn dispatch_list_operations(
     "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
       return Some(list_helpers_ast::select_first_ast(args));
     }
+    "MovingMap" if args.len() == 3 => {
+      // MovingMap[f, list, n] - apply f to sublists of length n+1
+      if let Expr::List(items) = &args[1] {
+        if let Some(n) = match &args[2] {
+          Expr::Integer(n) => Some(*n as usize),
+          _ => None,
+        } {
+          let window_size = n + 1;
+          if window_size > items.len() {
+            return Some(Ok(Expr::List(vec![])));
+          }
+          let f = &args[0];
+          let mut results = Vec::new();
+          for i in 0..=(items.len() - window_size) {
+            let sublist = Expr::List(items[i..i + window_size].to_vec());
+            // Construct f[sublist] using Map-like application
+            let applied = match f {
+              Expr::Identifier(fname) => Expr::FunctionCall {
+                name: fname.clone(),
+                args: vec![sublist],
+              },
+              _ => {
+                // For pure functions etc, use general application
+                Expr::FunctionCall {
+                  name: expr_to_string(f),
+                  args: vec![sublist],
+                }
+              }
+            };
+            match crate::evaluator::evaluate_expr_to_expr(&applied) {
+              Ok(val) => results.push(val),
+              Err(e) => return Some(Err(e)),
+            }
+          }
+          return Some(Ok(Expr::List(results)));
+        }
+      }
+    }
     "Select" if args.len() == 2 => {
       return Some(list_helpers_ast::select_ast(&args[0], &args[1], None));
     }
