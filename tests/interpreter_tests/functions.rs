@@ -4864,6 +4864,35 @@ mod session_time {
 }
 
 #[cfg(test)]
+mod net_graph {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("NetGraph[{1, 2}, {1 -> 2}]").unwrap(),
+      "NetGraph[{1, 2}, {1 -> 2}]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[NetGraph[{1, 2}, {1 -> 2}]]").unwrap(),
+      "NetGraph"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[NetGraph]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod scaling_transform {
   use super::*;
 
