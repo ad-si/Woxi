@@ -4939,6 +4939,135 @@ mod absolute_dashing {
 }
 
 #[cfg(test)]
+mod data_reversed {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("DataReversed[1, 2]").unwrap(),
+      "DataReversed[1, 2]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[DataReversed]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod axes_edge {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("AxesEdge[1, 2]").unwrap(), "AxesEdge[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[AxesEdge]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod tagging_rules {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("TaggingRules[1, 2]").unwrap(),
+      "TaggingRules[1, 2]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[TaggingRules]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod rationals {
+  use super::*;
+
+  #[test]
+  fn unevaluated_with_args() {
+    assert_eq!(interpret("Rationals[1, 2]").unwrap(), "Rationals[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Rationals]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod file_function {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("File[1, 2]").unwrap(), "File[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[File]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod bode_plot {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("BodePlot[x]").unwrap(), "BodePlot[x]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[BodePlot]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod delaunay_mesh {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("DelaunayMesh[x]").unwrap(), "DelaunayMesh[x]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[DelaunayMesh]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod complex_region_plot {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("ComplexRegionPlot[x]").unwrap(),
+      "ComplexRegionPlot[x]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[ComplexRegionPlot]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
 mod accounting_form {
   use super::*;
 

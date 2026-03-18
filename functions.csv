@@ -374,7 +374,7 @@ AutoScroll,,,,3,1578
 AutoSpacing,,,,3,4081
 AutoSubmitting,,,,10.2,5184
 Axes,Option specifying whether axes should be drawn in a plot,✅,pure,1,116
-AxesEdge,,,,2,1459
+AxesEdge,Option for specifying axes edge positions,✅,pure,2,1459
 AxesLabel,Option specifying labels for the axes of a plot,✅,pure,1,71
 AxesOrigin,Option specifying the origin point for plot axes,✅,none,2,166
 AxesStyle,Option specifying the style of plot axes,✅,none,2,124
@@ -545,7 +545,7 @@ BlomqvistBetaTest,,,,9,4225
 Blue,Named color evaluating to RGBColor[0 0 1],✅,pure,5.1,90
 Blur,Applies Gaussian blur to an image,✅,pure,7,1124
 Blurring,,,,13.2,
-BodePlot,,,,8,1456
+BodePlot,Bode magnitude and phase plot,✅,pure,8,1456
 BohmanWindow,,,,9,4387
 Bold,Style directive for bold text,✅,pure,6,207
 Bond,,,,12,2960
@@ -971,7 +971,7 @@ ComplexityFunction,Option for specifying complexity measure in Simplify,✅,pure
 ComplexListPlot,Requires external services or GUI infrastructure,🚫,io,12,999
 ComplexPlot,Domain coloring visualization of a complex function,✅,pure,12,1377
 ComplexPlot3D,,🚫,,12,1311
-ComplexRegionPlot,,,,12.1,1468
+ComplexRegionPlot,Plot regions in the complex plane,✅,pure,12.1,1468
 ComplexStreamPlot,,,,12.1,3020
 ComplexVectorPlot,,,,12.1,3094
 ComponentMeasurements,Requires external services or GUI infrastructure,🚫,io,8,938
@@ -1242,7 +1242,7 @@ DatabinSubmit,,,,12.2,5184
 DatabinUpload,,,,10.1,4612
 DataDistribution,,,,8,3578
 DataRange,Option specifying the range of data,✅,none,5.1,678
-DataReversed,,,,6,1455
+DataReversed,Option for reversing data in plots,✅,pure,6,1455
 Dataset,Wraps data with type information for structured data handling,✅,pure,10,610
 DatasetTheme,,,,12.3,
 DataStructure,,,,12.1,3947
@@ -1336,7 +1336,7 @@ DEigensystem,,,,10.3,2533
 DEigenvalues,,,,10.3,3678
 Deinitialization,,,,6,3506
 Del,Symbolic nabla operator with Unicode display,✅,none,3,1046
-DelaunayMesh,,,,10,1459
+DelaunayMesh,Delaunay triangulation mesh,✅,pure,10,1459
 Delayed,,,,10,2138
 Deletable,,,,3,3823
 Delete,Deletes an element at a given position,✅,pure,2,542
@@ -1902,7 +1902,7 @@ FieldHint,,,,8,2015
 FieldHintStyle,,,,8,3083
 FieldMasked,,,,8,4612
 FieldSize,,🚫,,6,1102
-File,,,,11,1469
+File,Symbolic file reference wrapper,✅,pure,11,1469
 FileBaseName,,,,7,1796
 FileByteCount,,,,2,2018
 FileConvert,,,,12,5486
@@ -4502,7 +4502,7 @@ RasterSize,,,,6,1499
 Rational,Head type for rational numbers,✅,pure,1,206
 RationalExpressionQ,,,,12.2,5486
 Rationalize,Converts a real number to a nearby rational,✅,pure,1,537
-Rationals,,,,4,1463
+Rationals,Symbol representing the set of rational numbers,✅,pure,4,1463
 Ratios,Returns successive ratios of list elements,✅,pure,7,1492
 RawBoxes,Wrapper for raw box expressions in typesetting,✅,pure,6,461
 RawData,,🚫,,8,4881
@@ -5432,7 +5432,7 @@ ToTabular,Converts data into a Tabular object with specified orientation,✅,pur
 TabView,,🚫,,6,1308
 TagBox,,🚫,,3,1012
 TagBoxOptions,,,,6,4052
-TaggingRules,,,,4,1459
+TaggingRules,Option for attaching metadata tags,✅,pure,4,1459
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1,812
 TagSetDelayed,Defines a delayed upvalue assignment associated with a tag symbol,✅,stateful,1,431
 TagUnset,Symbol for removing tagged definitions,✅,pure,1,2635
