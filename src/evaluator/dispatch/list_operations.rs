@@ -24,6 +24,18 @@ pub fn dispatch_list_operations(
     "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
       return Some(list_helpers_ast::select_first_ast(args));
     }
+    "DuplicateFreeQ" if args.len() == 1 => {
+      if let Expr::List(items) = &args[0] {
+        let mut seen = std::collections::HashSet::new();
+        for item in items {
+          let s = expr_to_string(item);
+          if !seen.insert(s) {
+            return Some(Ok(Expr::Identifier("False".to_string())));
+          }
+        }
+        return Some(Ok(Expr::Identifier("True".to_string())));
+      }
+    }
     "TakeList" if args.len() == 2 => {
       if let (Expr::List(items), Expr::List(lengths)) = (&args[0], &args[1]) {
         let mut result = Vec::new();
