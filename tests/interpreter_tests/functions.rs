@@ -4841,6 +4841,80 @@ mod generating_function {
 }
 
 #[cfg(test)]
+mod connected_components {
+  use super::*;
+
+  #[test]
+  fn undirected_two_components() {
+    let result =
+      interpret("ConnectedComponents[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[4, 5]}]]")
+        .unwrap();
+    assert_eq!(result, "{{1, 2, 3}, {4, 5}}");
+  }
+
+  #[test]
+  fn undirected_single_component() {
+    let result = interpret(
+      "ConnectedComponents[Graph[{UndirectedEdge[a, b], UndirectedEdge[c, d], UndirectedEdge[b, c]}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{{a, b, c, d}}");
+  }
+
+  #[test]
+  fn directed_no_cycles() {
+    // Each vertex is its own SCC when there are no cycles
+    let result =
+      interpret("ConnectedComponents[Graph[{1 -> 2, 2 -> 3, 4 -> 5}]]")
+        .unwrap();
+    // Should have 5 singleton components
+    assert!(result.contains("{1}"));
+    assert!(result.contains("{2}"));
+    assert!(result.contains("{3}"));
+    assert!(result.contains("{4}"));
+    assert!(result.contains("{5}"));
+  }
+
+  #[test]
+  fn directed_cycle() {
+    let result =
+      interpret("ConnectedComponents[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]")
+        .unwrap();
+    // All three vertices form one SCC
+    assert!(
+      result.contains("1") && result.contains("2") && result.contains("3")
+    );
+    // Should be a single component
+    assert_eq!(result.matches('{').count(), 2); // outer { + one inner {
+  }
+
+  #[test]
+  fn directed_mixed() {
+    let result = interpret(
+      "ConnectedComponents[Graph[{1 -> 2, 2 -> 1, 3 -> 4, 4 -> 3, 1 -> 3}]]",
+    )
+    .unwrap();
+    // {1,2} and {3,4} are separate SCCs (1->3 doesn't create a cycle between them)
+    assert!(result.contains("1") && result.contains("2"));
+    assert!(result.contains("3") && result.contains("4"));
+  }
+
+  #[test]
+  fn complete_graph() {
+    let result = interpret("ConnectedComponents[CompleteGraph[4]]").unwrap();
+    assert_eq!(result, "{{1, 2, 3, 4}}");
+  }
+
+  #[test]
+  fn unevaluated_non_graph() {
+    assert_eq!(
+      interpret("ConnectedComponents[foo]").unwrap(),
+      "ConnectedComponents[foo]"
+    );
+  }
+}
+
+#[cfg(test)]
 mod proportional {
   use super::*;
 

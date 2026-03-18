@@ -1011,7 +1011,7 @@ ConicOptimization,,,,12,
 Conjugate,Returns the complex conjugate,✅,pure,1,293
 ConjugateTranspose,Returns the conjugate transpose of a matrix,✅,pure,5.1,770
 Conjunction,,,,7,4437
-ConnectedComponents,,,,8,1441
+ConnectedComponents,Find connected components of a graph,✅,pure,8,1441
 ConnectedGraphComponents,,,,10.4,3121
 ConnectedGraphQ,,,,8,2089
 ConnectedMeshComponents,,,,10,3215
