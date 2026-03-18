@@ -11,7 +11,7 @@ AbsArgPlot,,,,12,2762
 AbsoluteCorrelation,,,,9,3566
 AbsoluteCorrelationFunction,,,,9,3048
 AbsoluteCurrentValue,,,,6,2299
-AbsoluteDashing,,,,2,1455
+AbsoluteDashing,Graphics directive for absolute dash pattern,✅,pure,2,1455
 AbsoluteFileName,,,,7,3031
 AbsoluteOptions,,🚫,,4,888
 AbsolutePointSize,Graphics primitive for setting point size in absolute units,✅,none,2,392

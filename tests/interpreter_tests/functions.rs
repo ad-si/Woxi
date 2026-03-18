@@ -4913,6 +4913,32 @@ mod compilation_options {
 }
 
 #[cfg(test)]
+mod absolute_dashing {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("AbsoluteDashing[{1, 2}]").unwrap(),
+      "AbsoluteDashing[{1, 2}]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[AbsoluteDashing]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn three_element_list() {
+    assert_eq!(
+      interpret("AbsoluteDashing[{1, 2, 3}]").unwrap(),
+      "AbsoluteDashing[{1, 2, 3}]"
+    );
+  }
+}
+
+#[cfg(test)]
 mod accounting_form {
   use super::*;
 
