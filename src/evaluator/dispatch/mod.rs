@@ -2332,6 +2332,14 @@ pub fn evaluate_function_call_ast_inner(
       | "ComplexityFunction"
       | "CompilationOptions"
       | "AbsoluteDashing"
+      | "DataReversed"
+      | "AxesEdge"
+      | "TaggingRules"
+      | "Rationals"
+      | "File"
+      | "BodePlot"
+      | "DelaunayMesh"
+      | "ComplexRegionPlot"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
