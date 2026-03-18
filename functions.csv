@@ -2951,7 +2951,7 @@ JacobiSC,Jacobi elliptic function sc (sn/cn),✅,pure,1,819
 JacobiSD,Jacobi elliptic function sd (sn/dn),✅,pure,1,3257
 JacobiSN,Jacobi elliptic function sn,✅,pure,1,544
 JacobiSymbol,Compute the Jacobi symbol for quadratic residue testing,✅,pure,1,1606
-JacobiZeta,,,,2,1494
+JacobiZeta,Jacobi zeta function,✅,pure,2,1494
 JacobiZN,,,,12.2,4881
 JankoGroupJ1,,,,8,5079
 JankoGroupJ2,,,,8,4947

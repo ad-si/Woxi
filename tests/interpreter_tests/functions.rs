@@ -6390,3 +6390,52 @@ mod transformed_field {
     assert_eq!(interpret("Head[TransformedField]").unwrap(), "Symbol");
   }
 }
+
+#[cfg(test)]
+mod jacobi_zeta {
+  use super::*;
+
+  #[test]
+  fn zero_phi() {
+    assert_eq!(interpret("JacobiZeta[0, 0.5]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn zero_m() {
+    assert_eq!(interpret("JacobiZeta[0.5, 0]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn numeric() {
+    let result = interpret("JacobiZeta[0.5, 0.3]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.06715126391766499).abs() < 1e-10);
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("JacobiZeta[x, m]").unwrap(), "JacobiZeta[x, m]");
+  }
+}
+
+#[cfg(test)]
+mod elliptic_e_incomplete {
+  use super::*;
+
+  #[test]
+  fn two_arg_numeric() {
+    let result = interpret("EllipticE[0.5, 0.3]").unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.49399114472896827).abs() < 1e-10);
+  }
+
+  #[test]
+  fn two_arg_zero_phi() {
+    assert_eq!(interpret("EllipticE[0, 0.5]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn symbolic_passthrough() {
+    assert_eq!(interpret("EllipticE[x, m]").unwrap(), "EllipticE[x, m]");
+  }
+}

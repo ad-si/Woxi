@@ -383,7 +383,7 @@ pub fn dispatch_math_functions(
     "EllipticK" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_k_ast(args));
     }
-    "EllipticE" if args.len() == 1 => {
+    "EllipticE" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::elliptic_e_ast(args));
     }
     "EllipticF" if args.len() == 2 => {
@@ -391,6 +391,9 @@ pub fn dispatch_math_functions(
     }
     "EllipticPi" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::elliptic_pi_ast(args));
+    }
+    "JacobiZeta" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::jacobi_zeta_ast(args));
     }
     "EllipticNomeQ" if args.len() == 1 => {
       return Some(crate::functions::math_ast::elliptic_nome_q_ast(args));
