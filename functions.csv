@@ -876,7 +876,7 @@ ClusterDissimilarityFunction,,,,10.4,4707
 ClusteringComponents,,,,8,1748
 ClusteringMeasurements,,,,13.2,
 ClusteringTree,,,,10.4,3843
-CMYKColor,,,,2,1446
+CMYKColor,CMYK color specification,✅,pure,2,1446
 CodeAssistOptions,,,,10,4437
 Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1,369
 CoefficientArrays,,🚫,,5,964

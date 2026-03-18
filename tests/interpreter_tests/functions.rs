@@ -4864,6 +4864,43 @@ mod session_time {
 }
 
 #[cfg(test)]
+mod cmyk_color {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("CMYKColor[0.5, 0.2, 0.8, 0.1]").unwrap(),
+      "CMYKColor[0.5, 0.2, 0.8, 0.1]"
+    );
+  }
+
+  #[test]
+  fn integer_args() {
+    assert_eq!(
+      interpret("CMYKColor[1, 0, 0, 0]").unwrap(),
+      "CMYKColor[1, 0, 0, 0]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[CMYKColor[0.5, 0.2, 0.8, 0.1]]").unwrap(),
+      "CMYKColor"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[CMYKColor]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod net_graph {
   use super::*;
 

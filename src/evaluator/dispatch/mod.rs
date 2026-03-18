@@ -1144,6 +1144,7 @@ pub fn evaluate_function_call_ast_inner(
     "RGBColor"
     | "Hue"
     | "GrayLevel"
+    | "CMYKColor"
     | "Opacity"
     | "Thickness"
     | "PointSize"
