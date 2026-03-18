@@ -3321,7 +3321,7 @@ LongestOrderedSequence,,,,10.2,3474
 Longitude,,,,7,2707
 LongLeftArrow,,,,3,5390
 LongLeftRightArrow,,,,3,3737
-LongRightArrow,,,,3,1463
+LongRightArrow,Long right arrow notation for infix display,✅,pure,3,1463
 LongShortTermMemoryLayer,,,,11.1,2121
 Lookup,Looks up a key in an association,✅,pure,10,998
 LoopFreeGraphQ,,,,8,3678

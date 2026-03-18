@@ -5988,3 +5988,39 @@ mod sawtooth_wave {
     );
   }
 }
+
+#[cfg(test)]
+mod long_right_arrow {
+  use super::*;
+
+  #[test]
+  fn two_args() {
+    assert_eq!(interpret("LongRightArrow[x, y]").unwrap(), "x \u{27F6} y");
+  }
+
+  #[test]
+  fn three_args() {
+    assert_eq!(
+      interpret("LongRightArrow[1, 2, 3]").unwrap(),
+      "1 \u{27F6} 2 \u{27F6} 3"
+    );
+  }
+
+  #[test]
+  fn single_arg_unevaluated() {
+    assert_eq!(interpret("LongRightArrow[x]").unwrap(), "LongRightArrow[x]");
+  }
+
+  #[test]
+  fn no_args_unevaluated() {
+    assert_eq!(interpret("LongRightArrow[]").unwrap(), "LongRightArrow[]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[LongRightArrow[x, y]]").unwrap(),
+      "LongRightArrow"
+    );
+  }
+}

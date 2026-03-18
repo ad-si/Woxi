@@ -3906,6 +3906,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
       if name == "RepeatedNull" && args.len() == 1 {
         return format!("{}...", expr_to_string(&args[0]));
       }
+      // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
+      if name == "LongRightArrow" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{27F6} ");
+      }
       // BlankSequence[] → __, BlankSequence[h] → __h
       if name == "BlankSequence" {
         if args.is_empty() {
@@ -5342,6 +5347,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
       // Special case: RepeatedNull[x] displays as x...
       if name == "RepeatedNull" && args.len() == 1 {
         return format!("{}...", expr_to_output(&args[0]));
+      }
+      // Special case: LongRightArrow[a, b, ...] displays as a ⟶ b ⟶ ...
+      if name == "LongRightArrow" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \u{27F6} ");
       }
       // BlankSequence[] → __, BlankSequence[h] → __h
       if name == "BlankSequence" {
