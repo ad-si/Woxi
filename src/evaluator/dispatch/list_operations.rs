@@ -475,6 +475,14 @@ pub fn dispatch_list_operations(
     "Drop" if args.len() == 2 => {
       return Some(list_helpers_ast::drop_ast(&args[0], &args[1]));
     }
+    "TakeDrop" if args.len() == 2 => {
+      let taken = list_helpers_ast::take_multi_ast(&args[0], &args[1..]);
+      let dropped = list_helpers_ast::drop_ast(&args[0], &args[1]);
+      return Some(match (taken, dropped) {
+        (Ok(t), Ok(d)) => Ok(Expr::List(vec![t, d])),
+        (Err(e), _) | (_, Err(e)) => Err(e),
+      });
+    }
     "ArrayFlatten" if args.len() == 1 => {
       return Some(array_flatten_ast(&args[0]));
     }
