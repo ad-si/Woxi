@@ -3712,7 +3712,7 @@ NetExtract,,,,11,1908
 NetFlatten,,,,11.3,4527
 NetFoldOperator,,,,11.1,4612
 NetGANOperator,,,,12.1,4527
-NetGraph,,,,11,1445
+NetGraph,Neural network graph structure,✅,pure,11,1445
 NetInitialize,,,,11,1584
 NetInsert,,,,11.3,
 NetInsertSharedArrays,,,,11.3,5390

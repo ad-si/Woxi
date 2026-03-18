@@ -222,7 +222,7 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "InverseSeries" | "PlotRange" | "MatrixForm" | "Show" | "ListPlot3D"
     | "Input" | "SeriesData" | "RunThrough" | "AbsolutePointSize"
     | "Entity" | "SquareWave" | "TriangleWave" | "GeneratingFunction"
-    | "ScalingTransform" => {
+    | "ScalingTransform" | "NetGraph" => {
       vec!["Protected", "ReadProtected"]
     }
     "Plot3D" => vec!["HoldAll", "Protected", "ReadProtected"],
