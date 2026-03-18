@@ -6024,3 +6024,171 @@ mod long_right_arrow {
     );
   }
 }
+
+#[cfg(test)]
+mod geo_grid_position {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("GeoGridPosition[1, 2]").unwrap(),
+      "GeoGridPosition[1, 2]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[GeoGridPosition]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod opener_view {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("OpenerView[1, 2]").unwrap(), "OpenerView[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[OpenerView]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod ellipsoid_function {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("Ellipsoid[{0, 0}, {1, 2}]").unwrap(),
+      "Ellipsoid[{0, 0}, {1, 2}]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Ellipsoid]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod max_step_size {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("MaxStepSize[1, 2]").unwrap(), "MaxStepSize[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[MaxStepSize]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod radio_button_bar {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("RadioButtonBar[1, 2]").unwrap(),
+      "RadioButtonBar[1, 2]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[RadioButtonBar]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod step_monitor {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("StepMonitor[1, 2]").unwrap(), "StepMonitor[1, 2]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[StepMonitor]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod thumbnail {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("Thumbnail[x]").unwrap(), "Thumbnail[x]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[Thumbnail]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod transformed_region {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("TransformedRegion[x, y]").unwrap(),
+      "TransformedRegion[x, y]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[TransformedRegion]").unwrap(), "Symbol");
+  }
+}
+
+#[cfg(test)]
+mod hypoexponential_distribution {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(
+      interpret("HypoexponentialDistribution[{1, 2, 3}]").unwrap(),
+      "HypoexponentialDistribution[{1, 2, 3}]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[HypoexponentialDistribution]").unwrap(),
+      "Symbol"
+    );
+  }
+}
+
+#[cfg(test)]
+mod formula_lookup {
+  use super::*;
+
+  #[test]
+  fn unevaluated() {
+    assert_eq!(interpret("FormulaLookup[x]").unwrap(), "FormulaLookup[x]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[FormulaLookup]").unwrap(), "Symbol");
+  }
+}

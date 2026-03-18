@@ -2341,6 +2341,16 @@ pub fn evaluate_function_call_ast_inner(
       | "DelaunayMesh"
       | "ComplexRegionPlot"
       | "LongRightArrow"
+      | "GeoGridPosition"
+      | "OpenerView"
+      | "Ellipsoid"
+      | "MaxStepSize"
+      | "RadioButtonBar"
+      | "StepMonitor"
+      | "Thumbnail"
+      | "TransformedRegion"
+      | "HypoexponentialDistribution"
+      | "FormulaLookup"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
