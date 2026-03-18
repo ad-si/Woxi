@@ -24,6 +24,9 @@ pub fn dispatch_complex_and_special(
     "DiracDelta" if !args.is_empty() => {
       return Some(crate::functions::math_ast::dirac_delta_ast(args));
     }
+    "DiscreteDelta" => {
+      return Some(crate::functions::math_ast::discrete_delta_ast(args));
+    }
     "UnitBox" if args.len() == 1 => {
       return Some(crate::functions::math_ast::unit_box_ast(args));
     }

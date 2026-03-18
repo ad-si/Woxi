@@ -57,7 +57,7 @@ AdministrativeDivisionData,,🚫,,10,141
 AffineHalfSpace,,,,10.2,4204
 AffineSpace,,,,10.2,3862
 AffineStateSpaceModel,,,,10,1687
-AffineTransform,,,,6,1633
+AffineTransform,Affine geometric transformation,✅,unevaluated,6,1633
 After,,🚫,,3,1130
 AggregatedEntityClass,,,,12,4479
 AggregationLayer,,,,11.1,3306
@@ -205,7 +205,7 @@ ArithmeticGeometricMean,Arithmetic-geometric mean of two numbers,✅,pure,1,2449
 ARMAProcess,Autoregressive moving average process,✅,pure,9,1553
 Around,Represent a value with uncertainty,✅,none,12,573
 AroundReplace,,,,12,3678
-ARProcess,,,,9,1614
+ARProcess,Autoregressive process,✅,unevaluated,9,1614
 ARPublish,,,,13.3,
 Array,Generates a list by applying a function to successive indices,✅,pure,1,233
 ArrayComponents,,,,8,2165
@@ -265,7 +265,7 @@ AstroRiseSet,,,,14.1,
 AstroStyling,,,,13.2,
 AstroSubpoint,,,,14,
 AstroZoomLevel,,,,13.2,
-Asymptotic,,,,12.1,1629
+Asymptotic,Asymptotic approximation,✅,unevaluated,12.1,1629
 AsymptoticDSolveValue,Asymptotic solutions to differential equations,🚫,pure,11.3,1386
 AsymptoticEqual,,,,11.3,4104
 AsymptoticEquivalent,,,,11.3,4809
@@ -729,7 +729,7 @@ CellOpen,,,,3,2698
 CellPrint,Requires external services or GUI infrastructure,🚫,io,3,918
 CellProlog,,,,6,3121
 Cells,Represent cells in a notebook,✅,pure,9,1364
-CellStyle,,,,9,1625
+CellStyle,Cell style specification,✅,unevaluated,9,1625
 CellStyleImportRules,,,,14,
 CellTags,,🚫,,3,1142
 CellularAutomaton,Generates a cellular automaton evolution,✅,pure,4.2,472
@@ -1103,7 +1103,7 @@ CoordinateBounds,,,,10.1,2483
 CoordinateBoundsArray,,,,10.1,2880
 CoordinateChartData,,🚫,,9,2837
 CoordinatesToolOptions,,,,7,1800
-CoordinateTransform,,,,9,1629
+CoordinateTransform,Coordinate system transformation,✅,unevaluated,9,1629
 CoordinateTransformData,,🚫,,9,1849
 CoplanarPoints,,,,12.2,4612
 CoprimeQ,Tests if two integers are coprime,✅,pure,6,1597
@@ -1462,7 +1462,7 @@ DirectionalLight,,,,13,
 Directive,Combines graphics directives,✅,pure,6,33
 Directory,Current working directory,✅,effectful,2,1342
 DirectoryName,Extract the directory name from a file path,✅,pure,3,1646
-DirectoryQ,,,,7,1629
+DirectoryQ,Test if path is a directory,✅,unevaluated,7,1629
 DirectoryStack,,,,2,4527
 DirichletBeta,,,,10,5390
 DirichletCharacter,,,,7,2986
@@ -1478,7 +1478,7 @@ DisableFormatting,,,,11,4081
 DiscreteAsymptotic,,,,12.1,2688
 DiscreteChirpZTransform,,,,9,4052
 DiscreteConvolve,,,,7,2549
-DiscreteDelta,,,,4,1632
+DiscreteDelta,Discrete delta function,✅,computation,4,1632
 DiscreteHadamardTransform,,,,9,4315
 DiscreteIndicator,,,,7,3972
 DiscreteInputOutputModel,,,,13.1,
@@ -1499,7 +1499,7 @@ DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,comp
 DiscreteVariables,,,,9,1819
 DiscreteWaveletData,,🚫,,8,2748
 DiscreteWaveletPacketTransform,,,,8,2533
-DiscreteWaveletTransform,,,,8,1614
+DiscreteWaveletTransform,Discrete wavelet transform,✅,unevaluated,8,1614
 DiscretizeGraphics,,🚫,,10,1149
 DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10,841
 Discriminant,Polynomial discriminant via resultant,✅,pure,6,1410
@@ -1879,7 +1879,7 @@ FareySequence,,,,10,3506
 FARIMAProcess,,,,9,3121
 FeatureDistance,,,,11,4387
 FeatureExtract,,,,11,3280
-FeatureExtraction,,,,11,1623
+FeatureExtraction,Extract features from data,✅,unevaluated,11,1623
 FeatureExtractor,,,,11,1719
 FeatureExtractorFunction,,,,11,5184
 FeatureImpactPlot,,,,13.1,
@@ -2210,7 +2210,7 @@ FunctionMeromorphic,,,,12.2,4262
 FunctionMonotonicity,,,,12.2,4291
 FunctionPeriod,,,,10,2311
 FunctionPoles,,,,13,
-FunctionRange,,,,10,1604
+FunctionRange,Range of a function,✅,unevaluated,10,1604
 FunctionSign,,,,12.2,4707
 FunctionSingularities,,,,12.2,3765
 FunctionSpace,,,,7,4479
@@ -2402,7 +2402,7 @@ GraphDensity,,,,9,4006
 GraphDiameter,,,,8,2625
 GraphDifference,,,,8,3506
 GraphDisjointUnion,,,,8,3491
-GraphDistance,,,,8,1625
+GraphDistance,Distance between graph vertices,✅,unevaluated,8,1625
 GraphDistanceMatrix,,,,8,2157
 GraphEmbedding,Compute vertex coordinates for graph layouts using circular embedding,✅,pure,9,1367
 GraphHighlight,,,,8,2317
@@ -2683,7 +2683,7 @@ ImageFormattingWidth,,,,10,3947
 ImageForwardTransformation,,,,8,2596
 ImageGraphics,,,,11.1,3593
 ImageHistogram,,,,7,2174
-ImageIdentify,,,,10.1,1629
+ImageIdentify,Identify objects in images,✅,unevaluated,10.1,1629
 ImageInstanceQ,,,,10.1,3697
 ImageKeypoints,,,,8,2812
 ImageLabels,,,,12.1,
@@ -2697,7 +2697,7 @@ ImageMesh,,,,11,2411
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7,1038
 ImagePad,,🚫,,7,1184
 ImagePadding,Option for specifying padding around plotted images,✅,pure,6,422
-ImagePartition,,,,7,1617
+ImagePartition,Partition an image,✅,unevaluated,7,1617
 ImagePeriodogram,,,,9,4052
 ImagePerspectiveTransformation,,,,8,2061
 ImagePosition,,,,12,5587
@@ -3119,7 +3119,7 @@ LegendFunction,Option for legend formatting function,✅,pure,9,1499
 LegendLabel,Option for specifying legend labels in plots,✅,none,9,1371
 LegendLayout,,🚫,,9,1348
 LegendMargins,,,,9,2034
-LegendMarkers,,,,9,1637
+LegendMarkers,Legend marker specification,✅,unevaluated,9,1637
 LegendMarkerSize,,🚫,,9,1151
 LegendreP,Legendre polynomial of the first kind,✅,pure,1,515
 LegendreQ,Legendre function of the second kind Q_n(x),✅,pure,1,943
@@ -3199,7 +3199,7 @@ LineIntegralConvolutionPlot,,,,7,2404
 LineIntegralConvolutionScale,,,,7,3306
 LineIntegrate,,,,13.3,
 LineLegend,Legend with line samples,✅,none,9,760
-LineSpacing,,,,3,1601
+LineSpacing,Line spacing specification,✅,unevaluated,3,1601
 LinkActivate,,,,3,4052
 LinkClose,,,,3,2786
 LinkConnect,,,,3,2929
@@ -3351,7 +3351,7 @@ MachineNumberQ,,,,2,2059
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5,886
 Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
 Magnification,,🚫,,3,1145
-Magnify,,,,6,1599
+Magnify,Magnify a display object,✅,unevaluated,6,1599
 MailAddressValidation,,,,11.2,5587
 MailExecute,,,,11.3,
 MailFolder,,,,11.3,
@@ -3463,7 +3463,7 @@ MaxStableDistribution,,,,8,3108
 MaxStepFraction,,,,4,2112
 MaxSteps,Option specifying the maximum number of steps,✅,none,2,705
 MaxStepSize,Option for maximum step size in numerical methods,✅,pure,3,1482
-MaxTrainingRounds,,,,11,1607
+MaxTrainingRounds,Max training iterations,✅,unevaluated,11,1607
 MaxValue,,🚫,,7,1305
 MaxwellDistribution,,,,6,3191
 MaxWordGap,,,,11,5079
@@ -4180,7 +4180,7 @@ PersistentObjects,,,,11.1,3717
 PersistentSymbol,,,,12.3,
 PersonData,,🚫,,10,3803
 PERTDistribution,,,,8,3191
-PetersenGraph,,,,8,1620
+PetersenGraph,Petersen graph,✅,unevaluated,8,1620
 PhaseMargins,,,,8,4747
 PhaseRange,,,,10,4527
 PhongShading,,,,13.1,
@@ -4259,7 +4259,7 @@ PoissonPDEComponent,,,,12.2,
 PoissonPointProcess,,,,12.2,4479
 PoissonProcess,,,,9,2260
 PoissonWindow,,,,9,4262
-PolarAxes,,,,7,1611
+PolarAxes,Polar axes option,✅,unevaluated,7,1611
 PolarAxesOrigin,,,,7,2816
 PolarCurve,,,,14.1,
 PolarGridLines,,,,7,1901
@@ -4282,7 +4282,7 @@ PolyhedronGenus,,,,12,5587
 PolyLog,Polylogarithm function,✅,pure,1,529
 PolynomialExpressionQ,,,,12.2,
 PolynomialExtendedGCD,,,,6,2404
-PolynomialGCD,,,,2,1611
+PolynomialGCD,Greatest common divisor of polynomials,✅,unevaluated,2,1611
 PolynomialLCM,,,,2,2533
 PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2,939
 PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1,1167
@@ -4316,7 +4316,7 @@ PowerMod,Computes modular exponentiation a^b mod m,✅,pure,1,607
 PowerModList,,,,6,3306
 PowerRange,,,,10,2131
 PowerSpectralDensity,,,,9,2091
-PowersRepresentations,,,,6,1637
+PowersRepresentations,Representations as sums of powers,✅,unevaluated,6,1637
 PowerSymmetricPolynomial,,,,8,4707
 PrecedenceForm,Formatting wrapper that specifies precedence for output display,✅,none,1,4006
 Precedes,,,,3,4947
@@ -4454,7 +4454,7 @@ RadialGradientImage,,,,10,3593
 RadialityCentrality,,,,9,4660
 RadicalBox,,,,3,3593
 RadicalBoxOptions,,,,4,
-RadioButton,,,,6,1635
+RadioButton,Radio button control,✅,unevaluated,6,1635
 RadioButtonBar,Radio button selection bar,✅,pure,6,1486
 Radon,,,,8,2999
 RadonTransform,,,,11.2,4437
@@ -4606,7 +4606,7 @@ ReImLabels,,,,12,5013
 ReImPlot,,,,12,1710
 ReImStyle,,,,12,5486
 RelationalDatabase,,,,12,3843
-RelationGraph,,,,10.2,1617
+RelationGraph,Graph from a relation,✅,unevaluated,10.2,1617
 ReleaseHold,Removes Hold wrappers from an expression,✅,pure,2,612
 ReliabilityDistribution,,,,9,2411
 ReliefImage,,,,8,3656
@@ -4770,7 +4770,7 @@ RowReduce,Returns the row echelon form of a matrix,✅,pure,1,483
 RowsEqual,,,,3,5486
 RowSpacings,,,,3,2742
 RSolve,Solve recurrence equations,✅,pure,5,695
-RSolveValue,,,,10,1621
+RSolveValue,Solution value of recurrence,✅,unevaluated,10,1621
 RStabilityConditions,,,,14.1,
 RudinShapiro,,,,10.2,4291
 RudvalisGroupRu,,,,8,5013
@@ -4830,7 +4830,7 @@ ScorerGiPrime,,,,10,4881
 ScorerHi,,,,10,4660
 ScorerHiPrime,,,,10,4881
 ScreenStyleEnvironment,,,,3,2475
-ScriptBaselineShifts,,,,3,1599
+ScriptBaselineShifts,Script baseline shift option,✅,unevaluated,3,1599
 ScriptMinSize,Minimum size for sub/superscripts,✅,none,3,626
 ScriptSizeMultipliers,Option for subscript and superscript sizing,✅,none,3,614
 Scrollbars,,,,7,1803
@@ -4848,7 +4848,7 @@ SechDistribution,,,,8,3678
 SecondOrderConeOptimization,,,,12,
 SectorChart,Creates a sector chart from data,✅,pure,7,2138
 SectorChart3D,,,,7,3048
-SectorOrigin,,,,7,1605
+SectorOrigin,Sector origin in pie charts,✅,unevaluated,7,1605
 SectorSpacing,,,,7,2812
 SecuredAuthenticationKey,,,,11.2,4809
 SecuredAuthenticationKeys,,,,11.3,
@@ -4963,7 +4963,7 @@ ShowGroupOpener,,,,6,3070
 ShowPageBreaks,,,,3,4387
 ShowSelection,,,,4,4204
 ShowSpecialCharacters,,,,3,4881
-ShowStringCharacters,,,,3,1639
+ShowStringCharacters,Show string quote characters,✅,unevaluated,3,1639
 ShrinkingDelay,,,,6,3823
 SiderealTime,,,,10,3280
 SiegelTheta,,,,6,2871
@@ -5382,7 +5382,7 @@ SystemCredentialData,,🚫,,12.1,
 SystemCredentialKey,,,,12.1,
 SystemCredentialKeys,,,,12.1,
 SystemCredentialStoreObject,,,,12.1,5587
-SystemDialogInput,,,,6,1614
+SystemDialogInput,System dialog input,✅,unevaluated,6,1614
 SystemInformation,,,,6,2698
 SystemInstall,,,,,
 SystemModel,,,,11.3,4881
@@ -5915,7 +5915,7 @@ VectorPlot3D,Requires external services or GUI infrastructure,🚫,io,7,1018
 VectorPoints,,🚫,,7,1039
 VectorQ,Tests if an expression is a vector,✅,pure,1,468
 VectorRange,,,,12.1,4747
-Vectors,,,,9,1604
+Vectors,Vector space domain,✅,unevaluated,9,1604
 VectorScaling,,,,12.1,1776
 VectorSizes,,,,12.1,1940
 VectorStyle,,🚫,,7,1182
@@ -6123,7 +6123,7 @@ WindowClickSelect,,,,3,3378
 WindowElements,,,,3,2048
 WindowFrame,,,,3,2355
 WindowFrameElements,,,,4,2541
-WindowMargins,,,,3,1632
+WindowMargins,Window margin specification,✅,unevaluated,3,1632
 WindowOpacity,,,,6,3737
 WindowSize,,🚫,,3,1164
 WindowStatusArea,,,,6,4027
