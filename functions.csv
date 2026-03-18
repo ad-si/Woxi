@@ -1666,7 +1666,7 @@ ElementData,,🚫,,6,546
 ElementwiseLayer,,,,11,1566
 ElidedForms,,,,10,5184
 Eliminate,Eliminates variables from a system of equations,✅,pure,1,891
-Ellipsoid,,,,10,1476
+Ellipsoid,Ellipsoid geometric region,✅,pure,10,1476
 EllipticE,Complete elliptic integral of the second kind E(m),✅,pure,1,879
 EllipticExp,Symbol for elliptic exponential function,✅,pure,1,3048
 EllipticExpPrime,,,,2,4660
@@ -2100,7 +2100,7 @@ FormObject,,,,10,2837
 FormPage,,,,10.3,1672
 FormProtectionMethod,,,,12.3,
 FormulaData,,🚫,,10,2473
-FormulaLookup,,,,10,1488
+FormulaLookup,Look up formulas by name or description,✅,pure,10,1488
 FortranForm,Format expression as Fortran code,✅,pure,1,2807
 Forward,,,,6,2986
 ForwardBackward,,,,6,2611
@@ -2308,7 +2308,7 @@ GeogravityModelData,,🚫,,10.1,3972
 GeoGridDirectionDifference,,,,12,
 GeoGridLines,,,,10,2320
 GeoGridLinesStyle,,,,10,3143
-GeoGridPosition,,,,7,1471
+GeoGridPosition,Geographic grid coordinate position,✅,pure,7,1471
 GeoGridRange,,,,12,
 GeoGridRangePadding,,,,12,
 GeoGridUnitArea,,,,12,
@@ -2616,7 +2616,7 @@ Hyperlink,Interactive hyperlink element,🚫,effectful,6,209
 HyperlinkAction,,,,12.1,5486
 Hyperplane,,,,10.2,2688
 Hyphenation,,,,4,2425
-HypoexponentialDistribution,,,,9,1473
+HypoexponentialDistribution,Hypoexponential distribution,✅,pure,9,1473
 HypothesisTestData,,🚫,,8,5184
 IconData,,🚫,,10,3191
 Iconize,,,,11.3,3803
@@ -3462,7 +3462,7 @@ MaxRoots,,,,14,
 MaxStableDistribution,,,,8,3108
 MaxStepFraction,,,,4,2112
 MaxSteps,Option specifying the maximum number of steps,✅,none,2,705
-MaxStepSize,,,,3,1482
+MaxStepSize,Option for maximum step size in numerical methods,✅,pure,3,1482
 MaxTrainingRounds,,,,11,1607
 MaxValue,,🚫,,7,1305
 MaxwellDistribution,,,,6,3191
@@ -3952,7 +3952,7 @@ OpacityFunctionScaling,,,,10.2,4315
 OpaqueRawPointer,,,,13.3,
 OpenAppend,Opens a file for appending,✅,effectful,1,2188
 Opener,,,,6,2851
-OpenerView,,,,6,1471
+OpenerView,Expandable view widget,✅,pure,6,1471
 Opening,,,,7,2632
 OpenRead,Opens a file for reading,✅,effectful,1,1278
 OpenWrite,Opens a file for writing,✅,effectful,1,1199
@@ -4455,7 +4455,7 @@ RadialityCentrality,,,,9,4660
 RadicalBox,,,,3,3593
 RadicalBoxOptions,,,,4,
 RadioButton,,,,6,1635
-RadioButtonBar,,,,6,1486
+RadioButtonBar,Radio button selection bar,✅,pure,6,1486
 Radon,,,,8,2999
 RadonTransform,,,,11.2,4437
 RamanujanTau,,,,6,3803
@@ -5199,7 +5199,7 @@ StationaryWaveletPacketTransform,,,,8,3059
 StationaryWaveletTransform,,,,8,2243
 StatusArea,Display status text on mouseover,✅,none,6,593
 StatusCentrality,,,,9,4809
-StepMonitor,,,,5,1486
+StepMonitor,Option for monitoring integration steps,✅,pure,5,1486
 StereochemistryElements,,,,12,5184
 StieltjesGamma,,,,3,1844
 StippleShading,,,,12.1,4479
@@ -5538,7 +5538,7 @@ Threshold,,,,8,2229
 Through,Distributes a list of functions over arguments,✅,pure,1,501
 Throw,Throws a value to be caught by Catch,✅,pure,1,589
 ThueMorse,,,,10.2,3427
-Thumbnail,,,,7,1475
+Thumbnail,Thumbnail image wrapper,✅,pure,7,1475
 Thursday,,,,9,2091
 TickDirection,,,,12.3,
 TickLabelOrientation,,,,12.3,
@@ -5672,7 +5672,7 @@ TransformationMatrix,,,,6,2344
 TransformedDistribution,,🚫,,8,851
 TransformedField,,,,9,1499
 TransformedProcess,,,,10,2389
-TransformedRegion,,,,10,1477
+TransformedRegion,Apply transformation to a geometric region,✅,pure,10,1477
 TransitionDirection,,,,9,4809
 TransitionDuration,,,,9,4809
 TransitionEffect,,,,9,4387
