@@ -475,6 +475,9 @@ pub fn dispatch_list_operations(
     "Drop" if args.len() == 2 => {
       return Some(list_helpers_ast::drop_ast(&args[0], &args[1]));
     }
+    "ArrayRules" if args.len() == 1 || args.len() == 2 => {
+      return Some(array_rules_ast(args));
+    }
     "TakeDrop" if args.len() == 2 => {
       let taken = list_helpers_ast::take_multi_ast(&args[0], &args[1..]);
       let dropped = list_helpers_ast::drop_ast(&args[0], &args[1]);
@@ -1765,4 +1768,74 @@ fn list_correlate_ast(
   }
 
   Ok(Expr::List(result))
+}
+
+/// ArrayRules[array] - returns non-default elements as position -> value rules
+fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let default_val = if args.len() == 2 {
+    args[1].clone()
+  } else {
+    Expr::Integer(0)
+  };
+
+  let mut rules: Vec<Expr> = Vec::new();
+
+  fn collect_rules(
+    expr: &Expr,
+    indices: &mut Vec<i128>,
+    rules: &mut Vec<Expr>,
+    default_val: &Expr,
+  ) {
+    match expr {
+      Expr::List(items) => {
+        for (i, item) in items.iter().enumerate() {
+          indices.push((i + 1) as i128);
+          collect_rules(item, indices, rules, default_val);
+          indices.pop();
+        }
+      }
+      _ => {
+        if expr_to_string(expr) != expr_to_string(default_val) {
+          let pos =
+            Expr::List(indices.iter().map(|&i| Expr::Integer(i)).collect());
+          rules.push(Expr::Rule {
+            pattern: Box::new(pos),
+            replacement: Box::new(expr.clone()),
+          });
+        }
+      }
+    }
+  }
+
+  let mut indices = Vec::new();
+  collect_rules(&args[0], &mut indices, &mut rules, &default_val);
+
+  // Add the default pattern rule: {_, _, ...} -> default
+  let depth = array_depth(&args[0]);
+  let blanks: Vec<Expr> = (0..depth)
+    .map(|_| Expr::Pattern {
+      name: String::new(),
+      head: None,
+      blank_type: 1,
+    })
+    .collect();
+  rules.push(Expr::Rule {
+    pattern: Box::new(Expr::List(blanks)),
+    replacement: Box::new(default_val),
+  });
+
+  Ok(Expr::List(rules))
+}
+
+fn array_depth(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => {
+      if items.is_empty() {
+        1
+      } else {
+        1 + array_depth(&items[0])
+      }
+    }
+    _ => 0,
+  }
 }

@@ -6594,3 +6594,37 @@ mod take_drop {
     );
   }
 }
+
+#[cfg(test)]
+mod array_rules {
+  use super::*;
+
+  #[test]
+  fn matrix() {
+    assert_eq!(
+      interpret("ArrayRules[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]").unwrap(),
+      "{{1, 1} -> 1, {2, 2} -> 2, {3, 3} -> 3, {_, _} -> 0}"
+    );
+  }
+
+  #[test]
+  fn vector() {
+    assert_eq!(
+      interpret("ArrayRules[{5, 0, 3, 0, 1}]").unwrap(),
+      "{{1} -> 5, {3} -> 3, {5} -> 1, {_} -> 0}"
+    );
+  }
+
+  #[test]
+  fn all_zeros() {
+    assert_eq!(interpret("ArrayRules[{0, 0, 0}]").unwrap(), "{{_} -> 0}");
+  }
+
+  #[test]
+  fn custom_default() {
+    assert_eq!(
+      interpret("ArrayRules[{1, x, 1}, 1]").unwrap(),
+      "{{2} -> x, {_} -> 1}"
+    );
+  }
+}

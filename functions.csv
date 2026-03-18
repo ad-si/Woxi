@@ -221,7 +221,7 @@ ArrayQ,Tests if an expression is a full array,✅,pure,5,1668
 ArrayReduce,,,,12.2,5079
 ArrayResample,,,,10,2557
 ArrayReshape,Reshapes a list into specified dimensions,✅,pure,9,965
-ArrayRules,,,,5,1517
+ArrayRules,Extract non-default elements as position rules,✅,pure,5,1517
 Arrays,,,,9,2435
 ArraySymbol,,,,14.1,
 Arrow,Represents an arrow graphics primitive,✅,pure,6,181
