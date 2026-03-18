@@ -8379,4 +8379,281 @@ mod batch_unevaluated_wrappers_2 {
       "ListContourPlot3D[x]"
     );
   }
+
+  // ─── Haversine ─────────────────────────────────────────────────────
+  #[test]
+  fn haversine_zero() {
+    assert_eq!(interpret("Haversine[0]").unwrap(), "0");
+  }
+  #[test]
+  fn haversine_pi() {
+    assert_eq!(interpret("Haversine[Pi]").unwrap(), "1");
+  }
+  #[test]
+  fn haversine_half_pi() {
+    assert_eq!(interpret("Haversine[Pi/2]").unwrap(), "1/2");
+  }
+  #[test]
+  fn inverse_haversine_zero() {
+    assert_eq!(interpret("InverseHaversine[0]").unwrap(), "0");
+  }
+  #[test]
+  fn inverse_haversine_one() {
+    assert_eq!(interpret("InverseHaversine[1]").unwrap(), "Pi");
+  }
+
+  // ─── Unevaluated batch 11 ─────────────────────────────────────────
+  #[test]
+  fn resampling_method() {
+    assert_eq!(
+      interpret("ResamplingMethod[x]").unwrap(),
+      "ResamplingMethod[x]"
+    );
+  }
+  #[test]
+  fn angular_gauge() {
+    assert_eq!(interpret("AngularGauge[x]").unwrap(), "AngularGauge[x]");
+  }
+  #[test]
+  fn copy_to_clipboard() {
+    assert_eq!(
+      interpret("CopyToClipboard[x]").unwrap(),
+      "CopyToClipboard[x]"
+    );
+  }
+  #[test]
+  fn color_replace() {
+    assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");
+  }
+  #[test]
+  fn graph_plot_3d() {
+    assert_eq!(interpret("GraphPlot3D[x]").unwrap(), "GraphPlot3D[x]");
+  }
+  #[test]
+  fn button_function() {
+    assert_eq!(interpret("ButtonFunction[x]").unwrap(), "ButtonFunction[x]");
+  }
+  #[test]
+  fn system_options() {
+    assert_eq!(interpret("SystemOptions[x]").unwrap(), "SystemOptions[x]");
+  }
+  #[test]
+  fn sunday() {
+    assert_eq!(interpret("Sunday[x]").unwrap(), "Sunday[x]");
+  }
+  #[test]
+  fn frobenius_solve() {
+    assert_eq!(
+      interpret("FrobeniusSolve[x, y]").unwrap(),
+      "FrobeniusSolve[x, y]"
+    );
+  }
+  #[test]
+  fn print_temporary() {
+    assert_eq!(interpret("PrintTemporary[x]").unwrap(), "PrintTemporary[x]");
+  }
+  #[test]
+  fn image_value() {
+    assert_eq!(interpret("ImageValue[x]").unwrap(), "ImageValue[x]");
+  }
+  #[test]
+  fn generated_parameters() {
+    assert_eq!(
+      interpret("GeneratedParameters[x]").unwrap(),
+      "GeneratedParameters[x]"
+    );
+  }
+  #[test]
+  fn plot_region() {
+    assert_eq!(interpret("PlotRegion[x]").unwrap(), "PlotRegion[x]");
+  }
+  #[test]
+  fn matrix_log() {
+    assert_eq!(interpret("MatrixLog[x]").unwrap(), "MatrixLog[x]");
+  }
+  #[test]
+  fn density_histogram() {
+    assert_eq!(
+      interpret("DensityHistogram[x]").unwrap(),
+      "DensityHistogram[x]"
+    );
+  }
+  #[test]
+  fn distribution_chart() {
+    assert_eq!(
+      interpret("DistributionChart[x]").unwrap(),
+      "DistributionChart[x]"
+    );
+  }
+  #[test]
+  fn inverse_z_transform() {
+    assert_eq!(
+      interpret("InverseZTransform[x, y, z]").unwrap(),
+      "InverseZTransform[x, y, z]"
+    );
+  }
+  #[test]
+  fn incidence_matrix() {
+    assert_eq!(
+      interpret("IncidenceMatrix[x]").unwrap(),
+      "IncidenceMatrix[x]"
+    );
+  }
+  #[test]
+  fn notebooks() {
+    assert_eq!(interpret("Notebooks[x]").unwrap(), "Notebooks[x]");
+  }
+  #[test]
+  fn z_transform() {
+    assert_eq!(
+      interpret("ZTransform[x, y, z]").unwrap(),
+      "ZTransform[x, y, z]"
+    );
+  }
+  #[test]
+  fn least_squares() {
+    assert_eq!(
+      interpret("LeastSquares[x, y]").unwrap(),
+      "LeastSquares[x, y]"
+    );
+  }
+  #[test]
+  fn feature_types() {
+    assert_eq!(interpret("FeatureTypes[x]").unwrap(), "FeatureTypes[x]");
+  }
+  #[test]
+  fn covariance_function() {
+    assert_eq!(
+      interpret("CovarianceFunction[x, y]").unwrap(),
+      "CovarianceFunction[x, y]"
+    );
+  }
+  #[test]
+  fn xyz_color() {
+    assert_eq!(interpret("XYZColor[x]").unwrap(), "XYZColor[x]");
+  }
+  #[test]
+  fn graph_highlight_style() {
+    assert_eq!(
+      interpret("GraphHighlightStyle[x]").unwrap(),
+      "GraphHighlightStyle[x]"
+    );
+  }
+  #[test]
+  fn image_trim() {
+    assert_eq!(interpret("ImageTrim[x]").unwrap(), "ImageTrim[x]");
+  }
+  #[test]
+  fn setting() {
+    assert_eq!(interpret("Setting[x]").unwrap(), "Setting[x]");
+  }
+  #[test]
+  fn b_spline_surface() {
+    assert_eq!(interpret("BSplineSurface[x]").unwrap(), "BSplineSurface[x]");
+  }
+  #[test]
+  fn singular_value_list() {
+    assert_eq!(
+      interpret("SingularValueList[x]").unwrap(),
+      "SingularValueList[x]"
+    );
+  }
+  #[test]
+  fn morphological_binarize() {
+    assert_eq!(
+      interpret("MorphologicalBinarize[x]").unwrap(),
+      "MorphologicalBinarize[x]"
+    );
+  }
+  #[test]
+  fn vertex_weight() {
+    assert_eq!(interpret("VertexWeight[x]").unwrap(), "VertexWeight[x]");
+  }
+  #[test]
+  fn single_letter_italics() {
+    assert_eq!(
+      interpret("SingleLetterItalics[x]").unwrap(),
+      "SingleLetterItalics[x]"
+    );
+  }
+  #[test]
+  fn polar_grid_lines() {
+    assert_eq!(interpret("PolarGridLines[x]").unwrap(), "PolarGridLines[x]");
+  }
+  #[test]
+  fn root_approximant() {
+    assert_eq!(
+      interpret("RootApproximant[x]").unwrap(),
+      "RootApproximant[x]"
+    );
+  }
+  #[test]
+  fn abs_arg() {
+    assert_eq!(interpret("AbsArg[x]").unwrap(), "AbsArg[x]");
+  }
+  #[test]
+  fn interpretation() {
+    assert_eq!(interpret("Interpretation[x]").unwrap(), "Interpretation[x]");
+  }
+  #[test]
+  fn symmetric_group() {
+    assert_eq!(interpret("SymmetricGroup[x]").unwrap(), "SymmetricGroup[x]");
+  }
+  #[test]
+  fn databin() {
+    assert_eq!(interpret("Databin[x]").unwrap(), "Databin[x]");
+  }
+  #[test]
+  fn inverse_erf() {
+    assert_eq!(interpret("InverseErf[x]").unwrap(), "InverseErf[x]");
+  }
+  #[test]
+  fn smooth_density_histogram() {
+    assert_eq!(
+      interpret("SmoothDensityHistogram[x]").unwrap(),
+      "SmoothDensityHistogram[x]"
+    );
+  }
+  #[test]
+  fn net_extract() {
+    assert_eq!(interpret("NetExtract[x]").unwrap(), "NetExtract[x]");
+  }
+  #[test]
+  fn hankel_h1() {
+    assert_eq!(interpret("HankelH1[x, y]").unwrap(), "HankelH1[x, y]");
+  }
+  #[test]
+  fn friday() {
+    assert_eq!(interpret("Friday[x]").unwrap(), "Friday[x]");
+  }
+  #[test]
+  fn cloud_import() {
+    assert_eq!(interpret("CloudImport[x]").unwrap(), "CloudImport[x]");
+  }
+  #[test]
+  fn temporary() {
+    assert_eq!(interpret("Temporary[x]").unwrap(), "Temporary[x]");
+  }
+  #[test]
+  fn service_connect() {
+    assert_eq!(interpret("ServiceConnect[x]").unwrap(), "ServiceConnect[x]");
+  }
+  #[test]
+  fn nonlinear_state_space_model() {
+    assert_eq!(
+      interpret("NonlinearStateSpaceModel[x]").unwrap(),
+      "NonlinearStateSpaceModel[x]"
+    );
+  }
+  #[test]
+  fn closing() {
+    assert_eq!(interpret("Closing[x]").unwrap(), "Closing[x]");
+  }
+  #[test]
+  fn default_duration() {
+    assert_eq!(
+      interpret("DefaultDuration[x]").unwrap(),
+      "DefaultDuration[x]"
+    );
+  }
 }
