@@ -4708,6 +4708,139 @@ mod struve_l {
 }
 
 #[cfg(test)]
+mod generating_function {
+  use super::*;
+
+  #[test]
+  fn constant_sequence() {
+    assert_eq!(
+      interpret("GeneratingFunction[1, n, x]").unwrap(),
+      "(1 - x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn constant_a() {
+    assert_eq!(
+      interpret("GeneratingFunction[a, n, x]").unwrap(),
+      "a/(1 - x)"
+    );
+  }
+
+  #[test]
+  fn identity_sequence() {
+    assert_eq!(
+      interpret("GeneratingFunction[n, n, x]").unwrap(),
+      "x/(1 - x)^2"
+    );
+  }
+
+  #[test]
+  fn n_squared() {
+    assert_eq!(
+      interpret("GeneratingFunction[n^2, n, x]").unwrap(),
+      "(-x - x^2)/(-1 + x)^3"
+    );
+  }
+
+  #[test]
+  fn n_cubed() {
+    assert_eq!(
+      interpret("GeneratingFunction[n^3, n, x]").unwrap(),
+      "(x + 4*x^2 + x^3)/(-1 + x)^4"
+    );
+  }
+
+  #[test]
+  fn n_to_4() {
+    assert_eq!(
+      interpret("GeneratingFunction[n^4, n, x]").unwrap(),
+      "(-x - 11*x^2 - 11*x^3 - x^4)/(-1 + x)^5"
+    );
+  }
+
+  #[test]
+  fn exponential_2n() {
+    assert_eq!(
+      interpret("GeneratingFunction[2^n, n, x]").unwrap(),
+      "(1 - 2*x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn alternating() {
+    assert_eq!(
+      interpret("GeneratingFunction[(-1)^n, n, x]").unwrap(),
+      "(1 + x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn exponential_a_n() {
+    assert_eq!(
+      interpret("GeneratingFunction[a^n, n, x]").unwrap(),
+      "(1 - a*x)^(-1)"
+    );
+  }
+
+  #[test]
+  fn reciprocal_factorial() {
+    assert_eq!(
+      interpret("GeneratingFunction[1/Factorial[n], n, x]").unwrap(),
+      "E^x"
+    );
+  }
+
+  #[test]
+  fn reciprocal_n_plus_1() {
+    assert_eq!(
+      interpret("GeneratingFunction[1/(n+1), n, x]").unwrap(),
+      "-(Log[1 - x]/x)"
+    );
+  }
+
+  #[test]
+  fn binomial_n_2() {
+    assert_eq!(
+      interpret("GeneratingFunction[Binomial[n, 2], n, x]").unwrap(),
+      "x^2/(1 - x)^3"
+    );
+  }
+
+  #[test]
+  fn binomial_2n_n() {
+    assert_eq!(
+      interpret("GeneratingFunction[Binomial[2*n, n], n, x]").unwrap(),
+      "1/Sqrt[1 - 4*x]"
+    );
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("GeneratingFunction[f[n], n, x]").unwrap(),
+      "GeneratingFunction[f[n], n, x]"
+    );
+  }
+
+  #[test]
+  fn shifted_sequence() {
+    assert_eq!(
+      interpret("GeneratingFunction[f[n + 1], n, x]").unwrap(),
+      "(GeneratingFunction[f[n], n, x] - f[0])/x"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[GeneratingFunction]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod decimal_form {
   use super::*;
 
