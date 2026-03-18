@@ -19,7 +19,7 @@ AbsoluteThickness,Sets absolute line thickness in graphics,✅,pure,2,187
 AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2,562
 AbsoluteTiming,Returns the time taken to evaluate an expression,✅,contextual,5,257
 AcceptanceThreshold,,,,12,3947
-AccountingForm,,,,2,1451
+AccountingForm,Display numbers in accounting notation,✅,pure,2,1451
 Accumulate,Returns cumulative sums of a list,✅,pure,6,480
 Accuracy,Returns the number of accurate decimal digits,✅,pure,1,1422
 AccuracyGoal,Option for accuracy goals,✅,pure,1,668

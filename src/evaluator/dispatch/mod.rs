@@ -2322,7 +2322,10 @@ pub fn evaluate_function_call_ast_inner(
   }
 
   // Formatting wrappers and symbolic heads that stay unevaluated
-  if name == "DecimalForm" || name == "Proportional" || name == "NetGraph" {
+  if matches!(
+    name,
+    "DecimalForm" | "Proportional" | "NetGraph" | "AccountingForm"
+  ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
       args: args.to_vec(),
