@@ -2358,6 +2358,11 @@ pub fn evaluate_function_call_ast_inner(
       | "LegendFunction"
       | "RasterSize"
       | "TransformedField"
+      | "Conditioned"
+      | "GeoProjection"
+      | "SoundVolume"
+      | "GradientFilter"
+      | "RegionNearest"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),

@@ -21,6 +21,9 @@ pub fn dispatch_list_operations(
     "MapAt" if args.len() == 3 => {
       return Some(list_helpers_ast::map_at_ast(&args[0], &args[1], &args[2]));
     }
+    "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
+      return Some(list_helpers_ast::select_first_ast(args));
+    }
     "Select" if args.len() == 2 => {
       return Some(list_helpers_ast::select_ast(&args[0], &args[1], None));
     }

@@ -990,7 +990,7 @@ ComputeUncertainty,,,,12,
 ConcaveHullMesh,,,,13,
 Condition,Represents a pattern with a condition test (pattern /; test),✅,pure,1,66
 ConditionalExpression,Represents an expression valid under a condition,✅,pure,8,715
-Conditioned,,,,8,1501
+Conditioned,Symbolic conditional wrapper,✅,pure,8,1501
 Cone,3D cone graphics primitive,✅,none,7,1170
 ConfidenceLevel,,,,7,1578
 ConfidenceRange,,,,9,5486
@@ -2347,7 +2347,7 @@ GeoPolygon,,,,12.2,5079
 GeoPosition,Geographic position specification,✅,none,7,618
 GeoPositionENU,,,,7,3755
 GeoPositionXYZ,,,,7,2394
-GeoProjection,,,,10,1503
+GeoProjection,Geographic projection specification,✅,pure,10,1503
 GeoProjectionData,,🚫,,7,2282
 GeoRange,,🚫,,10,1190
 GeoRangePadding,,,,10,2734
@@ -2385,7 +2385,7 @@ Goto,Jumps to a Label,✅,pure,1,1106
 GouraudShading,,,,13.1,
 Grad,Compute the gradient of a scalar function,✅,none,9,461
 Gradient,,,,2.2,2203
-GradientFilter,,,,7,1507
+GradientFilter,Image gradient filter,✅,pure,7,1507
 GradientFittedMesh,,,,13,
 GradientOrientationFilter,,,,9,3143
 GrammarApply,,,,10,3947
@@ -4584,7 +4584,7 @@ RegionMeasure,,🚫,,10,1320
 RegionMember,,🚫,,10,940
 RegionMemberFunction,,,,10,5184
 RegionMoment,,,,10.4,3200
-RegionNearest,,,,10,1507
+RegionNearest,Nearest point in a region,✅,pure,10,1507
 RegionNearestFunction,,,,10,4947
 RegionPlot,Creates a plot of a region satisfying inequalities,✅,pure,6,406
 RegionPlot3D,plots the 3D region where a condition is true,implemented,pure,6,603
@@ -4859,7 +4859,7 @@ Selectable,,,,3,1977
 SelectComponents,,,,8,1593
 SelectedCells,,,,10,2468
 SelectedNotebook,Return the currently selected notebook,✅,none,3,687
-SelectFirst,,,,10,1514
+SelectFirst,Select first element matching a criterion,✅,pure,10,1514
 SelectionCreateCell,,,,3,5079
 SelectionEvaluate,,,,3,2051
 SelectionEvaluateCreateCell,,,,3,3755
@@ -5062,7 +5062,7 @@ SortedBy,,,,12,5013
 SortedEntityClass,,,,12,4262
 Sound,Represents a sound object,✅,none,2,629
 SoundNote,Represents a musical note for sound generation,✅,pure,6,479
-SoundVolume,,,,6,1503
+SoundVolume,Sound volume specification,✅,pure,6,1503
 SourceLink,,,,10.4,4315
 SourcePDETerm,,,,12.2,
 Sow,Sows an expression for collection by Reap,✅,stateful,5,355
