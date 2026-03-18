@@ -7897,4 +7897,257 @@ mod batch_unevaluated_wrappers_2 {
       "ContentSelectable[x]"
     );
   }
+
+  // ─── LaplaceDistribution ──────────────────────────────────────────
+  #[test]
+  fn laplace_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[LaplaceDistribution[0, 1], 0]").unwrap(),
+      "1/2"
+    );
+  }
+  #[test]
+  fn laplace_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[LaplaceDistribution[0, 1], 0]").unwrap(),
+      "1/2"
+    );
+  }
+  #[test]
+  fn laplace_distribution_mean() {
+    assert_eq!(interpret("Mean[LaplaceDistribution[2, 3]]").unwrap(), "2");
+  }
+  #[test]
+  fn laplace_distribution_variance() {
+    assert_eq!(
+      interpret("Variance[LaplaceDistribution[2, 3]]").unwrap(),
+      "18"
+    );
+  }
+
+  // ─── RayleighDistribution ─────────────────────────────────────────
+  #[test]
+  fn rayleigh_distribution_pdf() {
+    assert_eq!(
+      interpret("N[PDF[RayleighDistribution[1], 1]]").unwrap(),
+      interpret("N[1/Sqrt[E]]").unwrap()
+    );
+  }
+  #[test]
+  fn rayleigh_distribution_cdf() {
+    assert_eq!(
+      interpret("N[CDF[RayleighDistribution[1], 1]]").unwrap(),
+      interpret("N[1 - 1/Sqrt[E]]").unwrap()
+    );
+  }
+  #[test]
+  fn rayleigh_distribution_mean() {
+    assert_eq!(
+      interpret("Mean[RayleighDistribution[s]]").unwrap(),
+      "Sqrt[Pi/2]*s"
+    );
+  }
+  #[test]
+  fn rayleigh_distribution_variance() {
+    assert_eq!(
+      interpret("Variance[RayleighDistribution[s]]").unwrap(),
+      "s^2*(2 - Pi/2)"
+    );
+  }
+
+  // ─── Unevaluated batch 9 ──────────────────────────────────────────
+  #[test]
+  fn export_form() {
+    assert_eq!(interpret("ExportForm[x, y]").unwrap(), "ExportForm[x, y]");
+  }
+  #[test]
+  fn parallel_submit() {
+    assert_eq!(interpret("ParallelSubmit[x]").unwrap(), "ParallelSubmit[x]");
+  }
+  #[test]
+  fn application() {
+    assert_eq!(interpret("Application[x]").unwrap(), "Application[x]");
+  }
+  #[test]
+  fn find_file() {
+    assert_eq!(interpret("FindFile[x]").unwrap(), "FindFile[x]");
+  }
+  #[test]
+  fn distance_transform() {
+    assert_eq!(
+      interpret("DistanceTransform[x]").unwrap(),
+      "DistanceTransform[x]"
+    );
+  }
+  #[test]
+  fn timeline_plot() {
+    assert_eq!(interpret("TimelinePlot[x]").unwrap(), "TimelinePlot[x]");
+  }
+  #[test]
+  fn dialog_input() {
+    assert_eq!(interpret("DialogInput[x]").unwrap(), "DialogInput[x]");
+  }
+  #[test]
+  fn pass_events_down() {
+    assert_eq!(interpret("PassEventsDown[x]").unwrap(), "PassEventsDown[x]");
+  }
+  #[test]
+  fn circle_dot() {
+    assert_eq!(interpret("CircleDot[x]").unwrap(), "CircleDot[x]");
+  }
+  #[test]
+  fn vector_scaling() {
+    assert_eq!(interpret("VectorScaling[x]").unwrap(), "VectorScaling[x]");
+  }
+  #[test]
+  fn find_generating_function() {
+    assert_eq!(
+      interpret("FindGeneratingFunction[x, y]").unwrap(),
+      "FindGeneratingFunction[x, y]"
+    );
+  }
+  #[test]
+  fn associate_to() {
+    assert_eq!(interpret("AssociateTo[x, y]").unwrap(), "AssociateTo[x, y]");
+  }
+  #[test]
+  fn histogram_distribution() {
+    assert_eq!(
+      interpret("HistogramDistribution[x]").unwrap(),
+      "HistogramDistribution[x]"
+    );
+  }
+  #[test]
+  fn gaussian_matrix() {
+    assert_eq!(interpret("GaussianMatrix[x]").unwrap(), "GaussianMatrix[x]");
+  }
+  #[test]
+  fn text_recognize() {
+    assert_eq!(interpret("TextRecognize[x]").unwrap(), "TextRecognize[x]");
+  }
+  #[test]
+  fn number_signs() {
+    assert_eq!(interpret("NumberSigns[x]").unwrap(), "NumberSigns[x]");
+  }
+  #[test]
+  fn weierstrass_zeta() {
+    assert_eq!(
+      interpret("WeierstrassZeta[x, y]").unwrap(),
+      "WeierstrassZeta[x, y]"
+    );
+  }
+  #[test]
+  fn list_surface_plot_3d() {
+    assert_eq!(
+      interpret("ListSurfacePlot3D[x]").unwrap(),
+      "ListSurfacePlot3D[x]"
+    );
+  }
+  #[test]
+  fn f_ratio_distribution() {
+    assert_eq!(
+      interpret("FRatioDistribution[x, y]").unwrap(),
+      "FRatioDistribution[x, y]"
+    );
+  }
+  #[test]
+  fn date_value() {
+    assert_eq!(interpret("DateValue[x]").unwrap(), "DateValue[x]");
+  }
+  #[test]
+  fn density_plot_3d() {
+    assert_eq!(
+      interpret("DensityPlot3D[x, y]").unwrap(),
+      "DensityPlot3D[x, y]"
+    );
+  }
+  #[test]
+  fn geo_region_value_plot() {
+    assert_eq!(
+      interpret("GeoRegionValuePlot[x]").unwrap(),
+      "GeoRegionValuePlot[x]"
+    );
+  }
+  #[test]
+  fn max_extra_conditions() {
+    assert_eq!(
+      interpret("MaxExtraConditions[x]").unwrap(),
+      "MaxExtraConditions[x]"
+    );
+  }
+  #[test]
+  fn time_series_model_fit() {
+    assert_eq!(
+      interpret("TimeSeriesModelFit[x]").unwrap(),
+      "TimeSeriesModelFit[x]"
+    );
+  }
+  #[test]
+  fn pane_selector() {
+    assert_eq!(interpret("PaneSelector[x]").unwrap(), "PaneSelector[x]");
+  }
+  #[test]
+  fn url_execute() {
+    assert_eq!(interpret("URLExecute[x]").unwrap(), "URLExecute[x]");
+  }
+  #[test]
+  fn sequence_position() {
+    assert_eq!(
+      interpret("SequencePosition[x, y]").unwrap(),
+      "SequencePosition[x, y]"
+    );
+  }
+  #[test]
+  fn file_base_name() {
+    assert_eq!(interpret("FileBaseName[x]").unwrap(), "FileBaseName[x]");
+  }
+  #[test]
+  fn coordinates_tool_options() {
+    assert_eq!(
+      interpret("CoordinatesToolOptions[x]").unwrap(),
+      "CoordinatesToolOptions[x]"
+    );
+  }
+  #[test]
+  fn color_combine() {
+    assert_eq!(interpret("ColorCombine[x]").unwrap(), "ColorCombine[x]");
+  }
+  #[test]
+  fn highlighted() {
+    assert_eq!(interpret("Highlighted[x]").unwrap(), "Highlighted[x]");
+  }
+  #[test]
+  fn text_grid() {
+    assert_eq!(interpret("TextGrid[x]").unwrap(), "TextGrid[x]");
+  }
+  #[test]
+  fn numeric_function() {
+    assert_eq!(
+      interpret("NumericFunction[x]").unwrap(),
+      "NumericFunction[x]"
+    );
+  }
+  #[test]
+  fn scrollbars() {
+    assert_eq!(interpret("Scrollbars[x]").unwrap(), "Scrollbars[x]");
+  }
+  #[test]
+  fn color_setter() {
+    assert_eq!(interpret("ColorSetter[x]").unwrap(), "ColorSetter[x]");
+  }
+  #[test]
+  fn distance_matrix() {
+    assert_eq!(interpret("DistanceMatrix[x]").unwrap(), "DistanceMatrix[x]");
+  }
+  #[test]
+  fn inverse_wavelet_transform() {
+    assert_eq!(
+      interpret("InverseWaveletTransform[x]").unwrap(),
+      "InverseWaveletTransform[x]"
+    );
+  }
+  #[test]
+  fn tree_graph() {
+    assert_eq!(interpret("TreeGraph[x]").unwrap(), "TreeGraph[x]");
+  }
 }
