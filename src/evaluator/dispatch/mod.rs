@@ -2331,6 +2331,7 @@ pub fn evaluate_function_call_ast_inner(
       | "Before"
       | "ComplexityFunction"
       | "CompilationOptions"
+      | "AbsoluteDashing"
   ) {
     return Ok(Expr::FunctionCall {
       name: name.to_string(),
