@@ -1290,7 +1290,7 @@ DayRound,,,,9,3363
 DeBruijnGraph,,,,8,3031
 DeBruijnSequence,,,,11.3,5013
 Decapitalize,Lowercases the first letter of a string,✅,pure,10.1,4660
-DecimalForm,,,,11.2,1438
+DecimalForm,Display a number in decimal notation without scientific notation,✅,pure,11.2,1438
 DeclareCompiledComponent,,,,13.2,
 DeclarePackage,,,,2,1997
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1,3522

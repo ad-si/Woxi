@@ -4708,6 +4708,50 @@ mod struve_l {
 }
 
 #[cfg(test)]
+mod decimal_form {
+  use super::*;
+
+  #[test]
+  fn unevaluated_real() {
+    assert_eq!(
+      interpret("DecimalForm[1234567.89]").unwrap(),
+      "DecimalForm[1.23456789*^6]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_with_digits() {
+    assert_eq!(
+      interpret("DecimalForm[1234567.89, 9]").unwrap(),
+      "DecimalForm[1.23456789*^6, 9]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_small_real() {
+    assert_eq!(
+      interpret("DecimalForm[0.000004]").unwrap(),
+      "DecimalForm[4.*^-6]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_integer() {
+    assert_eq!(interpret("DecimalForm[42]").unwrap(), "DecimalForm[42]");
+  }
+
+  #[test]
+  fn unevaluated_rational() {
+    assert_eq!(interpret("DecimalForm[1/3]").unwrap(), "DecimalForm[1/3]");
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(interpret("Head[DecimalForm[3.14]]").unwrap(), "DecimalForm");
+  }
+}
+
+#[cfg(test)]
 mod monomial_list {
   use super::*;
 

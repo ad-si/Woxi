@@ -2113,6 +2113,14 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // DecimalForm is a formatting wrapper that stays unevaluated
+  if name == "DecimalForm" {
+    return Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec(),
+    });
+  }
+
   // Check if the function is a known but unimplemented Wolfram Language function
   if is_known_wolfram_function(name) {
     let args_str = args
