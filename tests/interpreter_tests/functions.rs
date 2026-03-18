@@ -7525,4 +7525,153 @@ mod batch_unevaluated_wrappers_2 {
   fn chart_base_style() {
     assert_eq!(interpret("ChartBaseStyle[x]").unwrap(), "ChartBaseStyle[x]");
   }
+
+  // ─── Unevaluated batch 7 ──────────────────────────────────────────
+  #[test]
+  fn moon_phase() {
+    assert_eq!(interpret("MoonPhase[x]").unwrap(), "MoonPhase[x]");
+  }
+  #[test]
+  fn hazard_function() {
+    assert_eq!(
+      interpret("HazardFunction[x, y]").unwrap(),
+      "HazardFunction[x, y]"
+    );
+  }
+  #[test]
+  fn content_size() {
+    assert_eq!(interpret("ContentSize[x]").unwrap(), "ContentSize[x]");
+  }
+  #[test]
+  fn horner_form() {
+    assert_eq!(interpret("HornerForm[x]").unwrap(), "HornerForm[x]");
+  }
+  #[test]
+  fn word_boundary() {
+    assert_eq!(interpret("WordBoundary[x]").unwrap(), "WordBoundary[x]");
+  }
+  #[test]
+  fn n_expectation() {
+    assert_eq!(
+      interpret("NExpectation[x, y]").unwrap(),
+      "NExpectation[x, y]"
+    );
+  }
+  #[test]
+  fn mouseover() {
+    assert_eq!(interpret("Mouseover[x, y]").unwrap(), "Mouseover[x, y]");
+  }
+  #[test]
+  fn rectangle_chart() {
+    assert_eq!(interpret("RectangleChart[x]").unwrap(), "RectangleChart[x]");
+  }
+  #[test]
+  fn affine_state_space_model() {
+    assert_eq!(
+      interpret("AffineStateSpaceModel[x]").unwrap(),
+      "AffineStateSpaceModel[x]"
+    );
+  }
+  #[test]
+  fn log_likelihood() {
+    assert_eq!(
+      interpret("LogLikelihood[x, y]").unwrap(),
+      "LogLikelihood[x, y]"
+    );
+  }
+  #[test]
+  fn span_from_above() {
+    assert_eq!(interpret("SpanFromAbove[x]").unwrap(), "SpanFromAbove[x]");
+  }
+  #[test]
+  fn min_value() {
+    assert_eq!(interpret("MinValue[x, y]").unwrap(), "MinValue[x, y]");
+  }
+  #[test]
+  fn sub_plus() {
+    assert_eq!(interpret("SubPlus[x]").unwrap(), "SubPlus[x]");
+  }
+  #[test]
+  fn extension() {
+    assert_eq!(interpret("Extension[x]").unwrap(), "Extension[x]");
+  }
+  #[test]
+  fn weighted_adjacency_graph() {
+    assert_eq!(
+      interpret("WeightedAdjacencyGraph[x]").unwrap(),
+      "WeightedAdjacencyGraph[x]"
+    );
+  }
+  #[test]
+  fn cell_frame() {
+    assert_eq!(interpret("CellFrame[x]").unwrap(), "CellFrame[x]");
+  }
+  #[test]
+  fn compiled() {
+    assert_eq!(interpret("Compiled[x]").unwrap(), "Compiled[x]");
+  }
+  #[test]
+  fn audio_generator() {
+    assert_eq!(interpret("AudioGenerator[x]").unwrap(), "AudioGenerator[x]");
+  }
+  #[test]
+  fn underlined() {
+    assert_eq!(interpret("Underlined[x]").unwrap(), "Underlined[x]");
+  }
+  #[test]
+  fn fourier_coefficient() {
+    assert_eq!(
+      interpret("FourierCoefficient[x, y, z]").unwrap(),
+      "FourierCoefficient[x, y, z]"
+    );
+  }
+  #[test]
+  fn overscript() {
+    assert_eq!(interpret("Overscript[x, y]").unwrap(), "Overscript[x, y]");
+  }
+  #[test]
+  fn primes() {
+    assert_eq!(interpret("Primes[x]").unwrap(), "Primes[x]");
+  }
+  #[test]
+  fn community_graph_plot() {
+    assert_eq!(
+      interpret("CommunityGraphPlot[x]").unwrap(),
+      "CommunityGraphPlot[x]"
+    );
+  }
+  #[test]
+  fn random_prime() {
+    assert_eq!(interpret("RandomPrime[x]").unwrap(), "RandomPrime[x]");
+  }
+  #[test]
+  fn super_dagger() {
+    assert_eq!(interpret("SuperDagger[x]").unwrap(), "SuperDagger[x]");
+  }
+  #[test]
+  fn re_im_plot() {
+    assert_eq!(interpret("ReImPlot[x, y]").unwrap(), "ReImPlot[x, y]");
+  }
+  #[test]
+  fn exponent_function() {
+    assert_eq!(
+      interpret("ExponentFunction[x]").unwrap(),
+      "ExponentFunction[x]"
+    );
+  }
+  #[test]
+  fn softmax_layer() {
+    assert_eq!(interpret("SoftmaxLayer[x]").unwrap(), "SoftmaxLayer[x]");
+  }
+  #[test]
+  fn product_distribution() {
+    assert_eq!(
+      interpret("ProductDistribution[x]").unwrap(),
+      "ProductDistribution[x]"
+    );
+  }
+  #[test]
+  fn toggler_bar() {
+    assert_eq!(interpret("TogglerBar[x]").unwrap(), "TogglerBar[x]");
+  }
 }
