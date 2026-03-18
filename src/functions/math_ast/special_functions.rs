@@ -6918,6 +6918,80 @@ pub fn triangle_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// SawtoothWave[x] - periodic sawtooth wave, fractional part of x
+pub fn sawtooth_wave_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match args.len() {
+    1 => {
+      // Integer input: SawtoothWave[n] = 0 for all integers
+      if let Expr::Integer(_) = &args[0] {
+        return Ok(Expr::Integer(0));
+      }
+      // Exact rational input: fractional part of n/d
+      if let Expr::FunctionCall {
+        name,
+        args: rat_args,
+      } = &args[0]
+      {
+        if name == "Rational" && rat_args.len() == 2 {
+          if let (Expr::Integer(n), Expr::Integer(d)) =
+            (&rat_args[0], &rat_args[1])
+          {
+            // frac(n/d) = (n mod d) / d using Euclidean remainder
+            let rem = n.rem_euclid(*d);
+            if rem == 0 {
+              return Ok(Expr::Integer(0));
+            }
+            let g = gcd(rem, *d);
+            let sn = rem / g;
+            let sd = d / g;
+            if sd == 1 {
+              return Ok(Expr::Integer(sn));
+            }
+            return Ok(Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(sn), Expr::Integer(sd)],
+            });
+          }
+        }
+      }
+      // Float input
+      if let Some(t) = expr_to_f64(&args[0]) {
+        let frac = t - t.floor();
+        return Ok(Expr::Real(frac));
+      }
+      Ok(Expr::FunctionCall {
+        name: "SawtoothWave".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    2 => {
+      // SawtoothWave[{min, max}, t]
+      if let Expr::List(bounds) = &args[0] {
+        if bounds.len() == 2 {
+          let base_args = [args[1].clone()];
+          let base = sawtooth_wave_ast(&base_args)?;
+          if let Some(v) = expr_to_f64(&base) {
+            if let (Some(lo), Some(hi)) =
+              (expr_to_f64(&bounds[0]), expr_to_f64(&bounds[1]))
+            {
+              // Scale from [0,1] to [min,max]: result = min + (max-min)*v
+              let result = lo + (hi - lo) * v;
+              return Ok(Expr::Real(result));
+            }
+          }
+        }
+      }
+      Ok(Expr::FunctionCall {
+        name: "SawtoothWave".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "SawtoothWave expects 1 or 2 arguments".into(),
+    )),
+  }
+}
+
 /// ParabolicCylinderD[ν, z] - parabolic cylinder function D_ν(z)
 pub fn parabolic_cylinder_d_ast(
   args: &[Expr],

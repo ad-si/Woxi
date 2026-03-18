@@ -4808,7 +4808,7 @@ Save,Saves definitions associated with symbols to a file,✅,effectful,1,1714
 SaveConnection,,,,12,3593
 SaveDefinitions,Option to save definitions with output,✅,none,6,574
 SavitzkyGolayMatrix,,,,10,3506
-SawtoothWave,,,,7,1480
+SawtoothWave,Periodic sawtooth wave function,✅,pure,7,1480
 Scale,Scales a graphics object,✅,pure,6,597
 Scaled,Represents a scaled position or size,✅,pure,1,183
 ScaleDivisions,,,,9,2662
