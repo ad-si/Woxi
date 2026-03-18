@@ -232,7 +232,9 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     // NHoldRest
     "Subscript" => vec!["NHoldRest"],
     "Superscript" => vec!["NHoldRest", "ReadProtected"],
-    "EngineeringForm" | "NumberForm" => vec!["NHoldRest", "Protected"],
+    "EngineeringForm" | "NumberForm" | "AccountingForm" => {
+      vec!["NHoldRest", "Protected"]
+    }
 
     // NHoldAll + Protected
     "SlotSequence" => vec!["NHoldAll", "Protected"],

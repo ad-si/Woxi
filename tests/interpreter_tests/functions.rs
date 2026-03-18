@@ -4841,6 +4841,43 @@ mod generating_function {
 }
 
 #[cfg(test)]
+mod accounting_form {
+  use super::*;
+
+  #[test]
+  fn unevaluated_real() {
+    assert_eq!(
+      interpret("AccountingForm[123.45]").unwrap(),
+      "AccountingForm[123.45]"
+    );
+  }
+
+  #[test]
+  fn unevaluated_integer() {
+    assert_eq!(
+      interpret("AccountingForm[42]").unwrap(),
+      "AccountingForm[42]"
+    );
+  }
+
+  #[test]
+  fn head() {
+    assert_eq!(
+      interpret("Head[AccountingForm[123.45]]").unwrap(),
+      "AccountingForm"
+    );
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[AccountingForm]").unwrap(),
+      "{NHoldRest, Protected}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod session_time {
   use super::*;
 
