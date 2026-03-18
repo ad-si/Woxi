@@ -257,6 +257,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "WeibullDistribution"
         | "GeometricDistribution"
         | "CauchyDistribution"
+        | "DiscreteUniformDistribution"
     ) =>
     {
       let (mean, _) =
@@ -403,6 +404,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "WeibullDistribution"
         | "GeometricDistribution"
         | "CauchyDistribution"
+        | "DiscreteUniformDistribution"
     ) =>
     {
       let (_, variance) =

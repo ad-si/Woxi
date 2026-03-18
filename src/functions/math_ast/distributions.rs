@@ -141,6 +141,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WeibullDistribution" => pdf_weibull(dargs, x),
     "GeometricDistribution" => pdf_geometric(dargs, x),
     "CauchyDistribution" => pdf_cauchy(dargs, x),
+    "DiscreteUniformDistribution" => pdf_discrete_uniform(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -348,6 +349,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WeibullDistribution" => cdf_weibull(dargs, x),
     "GeometricDistribution" => cdf_geometric(dargs, x),
     "CauchyDistribution" => cdf_cauchy(dargs, x),
+    "DiscreteUniformDistribution" => cdf_discrete_uniform(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -1178,6 +1180,29 @@ fn distribution_mean_variance(
       let indet = Expr::Identifier("Indeterminate".to_string());
       Ok((indet.clone(), indet))
     }
+    "DiscreteUniformDistribution" => {
+      if dargs.len() != 1 {
+        return Err(InterpreterError::EvaluationError(
+          "DiscreteUniformDistribution expects 1 argument".into(),
+        ));
+      }
+      let (imin, imax) = match &dargs[0] {
+        Expr::List(bounds) if bounds.len() == 2 => {
+          (bounds[0].clone(), bounds[1].clone())
+        }
+        _ => {
+          return Err(InterpreterError::EvaluationError(
+            "DiscreteUniformDistribution expects a list {imin, imax}".into(),
+          ));
+        }
+      };
+      // Mean = (imin + imax) / 2
+      let mean = divide(plus(imin.clone(), imax.clone()), int(2));
+      // Variance = ((imax - imin) * (imax - imin + 2)) / 12
+      let diff = minus(imax, imin);
+      let var = divide(times(diff.clone(), plus(diff, int(2))), int(12));
+      Ok((mean, var))
+    }
     _ => Err(InterpreterError::EvaluationError(format!(
       "Expectation: unsupported distribution {dist_name}"
     ))),
@@ -1713,4 +1738,77 @@ fn cdf_weibull(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
 
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
+}
+
+/// PDF[DiscreteUniformDistribution[{imin, imax}], x] = Piecewise[{{1/(imax-imin+1), imin <= x <= imax}}, 0]
+fn pdf_discrete_uniform(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DiscreteUniformDistribution expects 1 argument".into(),
+    ));
+  }
+  let (imin, imax) = match &dargs[0] {
+    Expr::List(bounds) if bounds.len() == 2 => {
+      (bounds[0].clone(), bounds[1].clone())
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "DiscreteUniformDistribution expects a list {imin, imax}".into(),
+      ));
+    }
+  };
+  let n = eval(plus(minus(imax.clone(), imin.clone()), int(1)))?;
+  let pdf_val = divide(int(1), n);
+  let cond = comparison3(
+    imin,
+    ComparisonOp::LessEqual,
+    x.clone(),
+    ComparisonOp::LessEqual,
+    imax,
+  );
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[DiscreteUniformDistribution[{imin, imax}], x]
+fn cdf_discrete_uniform(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "DiscreteUniformDistribution expects 1 argument".into(),
+    ));
+  }
+  let (imin, imax) = match &dargs[0] {
+    Expr::List(bounds) if bounds.len() == 2 => {
+      (bounds[0].clone(), bounds[1].clone())
+    }
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "DiscreteUniformDistribution expects a list {imin, imax}".into(),
+      ));
+    }
+  };
+  let n = eval(plus(minus(imax.clone(), imin.clone()), int(1)))?;
+  let floor_x = Expr::FunctionCall {
+    name: "Floor".to_string(),
+    args: vec![x.clone()],
+  };
+  let cdf_val = divide(plus(minus(floor_x, imin.clone()), int(1)), n);
+  let cond_low = comparison(x.clone(), ComparisonOp::Less, imin.clone());
+  let cond_mid = comparison3(
+    imin,
+    ComparisonOp::LessEqual,
+    x.clone(),
+    ComparisonOp::Less,
+    imax.clone(),
+  );
+  let cond_high = comparison(x, ComparisonOp::GreaterEqual, imax);
+  eval(piecewise(
+    vec![(int(0), cond_low), (cdf_val, cond_mid), (int(1), cond_high)],
+    int(0),
+  ))
 }

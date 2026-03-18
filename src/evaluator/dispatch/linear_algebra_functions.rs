@@ -86,6 +86,29 @@ pub fn dispatch_linear_algebra_functions(
     "Eigenvalues" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigenvalues_ast(args));
     }
+    "PositiveDefiniteMatrixQ" if args.len() == 1 => {
+      // Compute eigenvalues and check all are strictly positive
+      let eigenvals_result =
+        crate::functions::linear_algebra_ast::eigenvalues_ast(args);
+      if let Ok(list_expr) = eigenvals_result {
+        if let Expr::List(eigenvals) = &list_expr {
+          for ev in eigenvals {
+            let n_val =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "N".to_string(),
+                args: vec![ev.clone()],
+              });
+            match n_val {
+              Ok(Expr::Real(f)) if f > 0.0 => continue,
+              Ok(Expr::Integer(n)) if n > 0 => continue,
+              _ => return Some(Ok(Expr::Identifier("False".to_string()))),
+            }
+          }
+          return Some(Ok(Expr::Identifier("True".to_string())));
+        }
+      }
+      return Some(Ok(Expr::Identifier("False".to_string())));
+    }
     "Eigenvectors" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigenvectors_ast(
         args,

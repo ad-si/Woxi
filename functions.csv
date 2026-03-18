@@ -131,7 +131,7 @@ AnimationRunning,Option controlling whether an animation is running,✅,none,6,6
 AnimationRunTime,,,,10,4479
 AnimationTimeIndex,,,,10,4660
 AnimationVideo,,,,12.3,
-Animator,,,,6,1573
+Animator,Animated control element,✅,unevaluated,6,1573
 Annotate,,,,12.1,4881
 Annotation,Attach an annotation to an expression,✅,none,6,742
 AnnotationDelete,,,,12,
@@ -370,7 +370,7 @@ AutoOperatorRenderings,,,,12.3,
 AutoRefreshed,,,,10.2,5079
 AutoRemove,,,,10,4881
 AutorunSequencing,Option controlling autorun sequence of manipulate,✅,none,6,826
-AutoScroll,,,,3,1578
+AutoScroll,Auto-scrolling option,✅,unevaluated,3,1578
 AutoSpacing,,,,3,4081
 AutoSubmitting,,,,10.2,5184
 Axes,Option specifying whether axes should be drawn in a plot,✅,pure,1,116
@@ -557,7 +557,7 @@ BondQ,,,,12,
 Bookmarks,,,,7,2512
 Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
 BooleanConsecutiveFunction,,,,9,5587
-BooleanConvert,,,,7,1588
+BooleanConvert,Convert Boolean expressions,✅,unevaluated,7,1588
 BooleanCountingFunction,,,,7,2012
 BooleanFunction,,,,7,1956
 BooleanGraph,,,,8,3737
@@ -577,7 +577,7 @@ BottomHatTransform,,,,7,4138
 BoundaryDiscretizeGraphics,,,,10,1665
 BoundaryDiscretizeRegion,,🚫,,10,1240
 BoundaryMesh,,,,10,2344
-BoundaryMeshRegion,,,,10,1586
+BoundaryMeshRegion,Boundary mesh region,✅,unevaluated,10,1586
 BoundaryMeshRegionQ,,,,10,3636
 BoundaryStyle,Option for boundary styling in plots,✅,none,6,644
 BoundedRegionQ,,,,10,2828
@@ -819,7 +819,7 @@ CircumscribedBall,,,,13.3,
 Circumsphere,,,,10,2026
 CityData,,🚫,,6,69
 ClassifierFunction,,,,10,4567
-ClassifierMeasurements,,,,10,1569
+ClassifierMeasurements,Classifier performance measurements,✅,unevaluated,10,1569
 ClassifierMeasurementsObject,,,,10.1,
 Classify,,🚫,,10,1087
 ClassPriors,,,,10,4052
@@ -881,7 +881,7 @@ CodeAssistOptions,,,,10,4437
 Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1,369
 CoefficientArrays,,🚫,,5,964
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1,513
-CoefficientRules,,,,7,1578
+CoefficientRules,Coefficient rules for polynomials,✅,unevaluated,7,1578
 CoifletWavelet,,,,8,4006
 Collect,Collects terms with the same powers of a variable,✅,pure,1,339
 CollinearPoints,,,,12.2,5184
@@ -992,7 +992,7 @@ Condition,Represents a pattern with a condition test (pattern /; test),✅,pure,
 ConditionalExpression,Represents an expression valid under a condition,✅,pure,8,715
 Conditioned,Symbolic conditional wrapper,✅,pure,8,1501
 Cone,3D cone graphics primitive,✅,none,7,1170
-ConfidenceLevel,,,,7,1578
+ConfidenceLevel,Confidence level specification,✅,unevaluated,7,1578
 ConfidenceRange,,,,9,5486
 ConfidenceTransform,,,,9,5587
 Confirm,,,,12.2,4707
@@ -1112,7 +1112,7 @@ CopulaDistribution,,,,8,2408
 Copyable,,,,3,4809
 CopyDatabin,,,,10.1,4947
 CopyDirectory,,,,2,3402
-CopyFile,,,,2,1571
+CopyFile,Copy a file,✅,unevaluated,2,1571
 CopyFunction,,,,12.2,5486
 CopyToClipboard,,,,8,1861
 CoreNilpotentDecomposition,,,,13,
@@ -1161,7 +1161,7 @@ CreateDatabin,,,,10,3506
 CreateDataStructure,,,,12.1,3008
 CreateDataSystemModel,,,,11.3,5184
 CreateDialog,Create a dialog window,🚫,io,6,1427
-CreateDirectory,,,,2,1569
+CreateDirectory,Create a directory,✅,unevaluated,2,1569
 CreateDocument,,🚫,,6,1071
 CreateFile,Creates a file with a name or a random file in the default area for temporary files,🚧,effectful,10.4,2786
 CreateForeignCallback,,,,13.3,
@@ -1171,7 +1171,7 @@ CreateManagedLibraryExpression,,,,10,4204
 CreateManagedObject,,,,13.3,
 CreateNotebook,,,,10,3612
 CreatePacletArchive,,,,12.1,
-CreatePalette,,,,6,1579
+CreatePalette,Create a palette notebook,✅,unevaluated,6,1579
 CreatePermissionsGroup,,,,10,4291
 CreateSearchIndex,,,,10.2,3353
 CreateSemanticSearchIndex,,,,14.1,
@@ -1201,7 +1201,7 @@ Cube,,,,12,1815
 CubeRoot,Returns the real-valued cube root,✅,pure,9,1154
 Cubics,Option for solving cubic equations using radical formulas,✅,pure,1,1688
 Cuboid,3D graphics primitive representing a cuboid,✅,none,2,561
-Cumulant,,,,8,1586
+Cumulant,Statistical cumulant,✅,unevaluated,8,1586
 CumulantGeneratingFunction,,,,8,3176
 CumulativeFeatureImpactPlot,,,,13.1,
 Cup,,,,3,4081
@@ -1495,7 +1495,7 @@ DiscreteRatio,,,,7,4809
 DiscreteRiccatiSolve,,,,8,4225
 DiscreteShift,,,,7,3612
 DiscreteTimeModelQ,,,,8,5390
-DiscreteUniformDistribution,,,,6,1593
+DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6,1593
 DiscreteVariables,,,,9,1819
 DiscreteWaveletData,,🚫,,8,2748
 DiscreteWaveletPacketTransform,,,,8,2533
@@ -1663,7 +1663,7 @@ ElectricSymmetryValue,,,,14,
 ElectrostaticPDEComponent,,,,14,
 Element,Test or assert membership of an expression in a mathematical domain,✅,pure,4,84
 ElementData,,🚫,,6,546
-ElementwiseLayer,,,,11,1566
+ElementwiseLayer,Neural net elementwise layer,✅,unevaluated,11,1566
 ElidedForms,,,,10,5184
 Eliminate,Eliminates variables from a system of equations,✅,pure,1,891
 Ellipsoid,Ellipsoid geometric region,✅,pure,10,1476
@@ -1742,14 +1742,14 @@ Erfi,Returns the imaginary error function value,✅,pure,1,995
 ErlangB,,,,9,4387
 ErlangC,,,,9,4262
 ErlangDistribution,,,,8,2190
-Erosion,,,,7,1582
+Erosion,Morphological erosion,✅,unevaluated,7,1582
 ErrorBox,,,,3,4612
 EscapeRadius,,,,10,4006
 EstimatedBackground,,,,10,3257
 EstimatedDistribution,,🚫,,8,1093
 EstimatedPointNormals,,,,13.1,
 EstimatedPointProcess,,,,12.2,5079
-EstimatedProcess,,,,9,1571
+EstimatedProcess,Estimated stochastic process,✅,unevaluated,9,1571
 EstimatedVariogramModel,,,,13,
 EstimatorGains,,,,8,3280
 EstimatorRegulator,,,,8,4138
@@ -2328,7 +2328,7 @@ GeologicalPeriodData,,🚫,,10,3083
 GeomagneticModelData,,🚫,,10.1,3440
 GeoMarker,,,,10,1760
 GeometricAssertion,,,,12,2054
-GeometricBrownianMotionProcess,,,,9,1588
+GeometricBrownianMotionProcess,Geometric Brownian motion,✅,unevaluated,9,1588
 GeometricDistribution,Geometric probability distribution,✅,pure,6,1474
 GeometricMean,Returns the geometric mean of a list,✅,pure,6,1294
 GeometricMeanFilter,,,,7,4173
@@ -2552,7 +2552,7 @@ HiddenMarkovProcess,,,,10,3265
 Highlighted,,,,10.4,1800
 HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8,822
 HighlightImage,,🚫,,9,1195
-HighlightMesh,,,,10,1573
+HighlightMesh,Highlight mesh elements,✅,unevaluated,10,1573
 HighpassFilter,,,,9,2978
 HigmanSimsGroupHS,,,,8,5079
 HilbertCurve,,,,11.1,3612
@@ -3517,7 +3517,7 @@ MeshCellMeasure,,,,10,2292
 MeshCellQuality,,,,10,4527
 MeshCells,Requires external services or GUI infrastructure,🚫,io,10,968
 MeshCellShapeFunction,,,,10.2,3697
-MeshCellStyle,,,,10,1593
+MeshCellStyle,Style mesh cells,✅,unevaluated,10,1593
 MeshConnectivityGraph,,,,12.1,3153
 MeshCoordinates,Requires external services or GUI infrastructure,🚫,io,10,951
 MeshFunctions,Option for specifying mesh line functions in plots,✅,pure,6,506
@@ -3636,7 +3636,7 @@ Mouseover,,,,6,1683
 MousePosition,Requires external services or GUI infrastructure,🚫,io,6,952
 MovieData,,🚫,,10,4527
 MovingAverage,Computes the moving average of a list,✅,1,6,1166
-MovingMap,,,,10,1593
+MovingMap,Apply a function to a sliding window,✅,computation,10,1593
 MovingMedian,,,,6,3578
 MoyalDistribution,,,,8,3765
 MultiaxisArrangement,,,,13,
@@ -3702,7 +3702,7 @@ NetArray,,,,12.2,5079
 NetArrayLayer,,,,12.2,3803
 NetBidirectionalOperator,,,,11.3,4707
 NetChain,,🚫,,11,1126
-NetDecoder,,,,11,1582
+NetDecoder,Neural net decoder,✅,unevaluated,11,1582
 NetDelete,,,,11.3,5486
 NetDrop,,,,11.3,4612
 NetEncoder,Neural network encoder,✅,pure,11,1528
@@ -3713,7 +3713,7 @@ NetFlatten,,,,11.3,4527
 NetFoldOperator,,,,11.1,4612
 NetGANOperator,,,,12.1,4527
 NetGraph,Neural network graph structure,✅,pure,11,1445
-NetInitialize,,,,11,1584
+NetInitialize,Initialize a neural net,✅,unevaluated,11,1584
 NetInsert,,,,11.3,
 NetInsertSharedArrays,,,,11.3,5390
 NetJoin,,,,11.3,
@@ -3814,7 +3814,7 @@ NotebookDynamicExpression,,,,8,3048
 NotebookEvaluate,,,,8,2112
 NotebookEventActions,,,,6,2045
 NotebookFileName,,,,7,2240
-NotebookFind,,,,3,1565
+NotebookFind,Search in a notebook,✅,unevaluated,3,1565
 NotebookGet,Get notebook expression,✅,pure,3,1562
 NotebookImport,,,,10.1,2693
 NotebookInformation,,,,5,2217
@@ -3822,7 +3822,7 @@ NotebookLocate,,,,3,2179
 NotebookObject,,,,3,2162
 NotebookOpen,Open a notebook file,🚫,io,3,1418
 NotebookPrint,,,,3,3389
-NotebookPut,,,,3,1597
+NotebookPut,Create notebook from expression,✅,unevaluated,3,1597
 NotebookRead,Requires external services or GUI infrastructure,🚫,io,3,948
 Notebooks,,,,3,1883
 NotebookSave,,,,3,1857
@@ -4288,7 +4288,7 @@ PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2,939
 PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1,1167
 PolynomialQuotient,Quotient of polynomial division,✅,pure,1,1460
 PolynomialQuotientRemainder,,,,6,2157
-PolynomialReduce,,,,3,1574
+PolynomialReduce,Reduce polynomial modulo ideal,✅,unevaluated,3,1574
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1,1353
 PolynomialSumOfSquaresList,,,,13,
 PoolingLayer,,,,11,1737
@@ -4300,7 +4300,7 @@ PositionIndex,Maps each value to its list positions,✅,pure,10,1120
 PositionLargest,,,,13.2,
 PositionSmallest,,,,13.2,
 Positive,Tests if a number is positive,✅,pure,1,389
-PositiveDefiniteMatrixQ,,,,6,1597
+PositiveDefiniteMatrixQ,Test if a matrix is positive definite,✅,computation,6,1597
 PositiveIntegers,Domain of positive integers,✅,pure,12,1391
 PositivelyOrientedPoints,,,,12.2,
 PositiveQ,Tests if a number is positive,✅,pure,,
@@ -4856,7 +4856,7 @@ SecurityCertificate,,,,12.2,
 SeedRandom,Seeds the random number generator,✅,stateful,1,351
 Select,Picks elements of a list that satisfy a criterion,✅,pure,1,149
 Selectable,,,,3,1977
-SelectComponents,,,,8,1593
+SelectComponents,Select image components,✅,unevaluated,8,1593
 SelectedCells,,,,10,2468
 SelectedNotebook,Return the currently selected notebook,✅,none,3,687
 SelectFirst,Select first element matching a criterion,✅,pure,10,1514
@@ -5511,7 +5511,7 @@ TextPosition,,,,10.2,4387
 TextRecognize,,,,8,1779
 TextSearch,,,,10.2,2971
 TextSearchReport,,,,10.2,4747
-TextSentences,,,,10.1,1578
+TextSentences,Extract sentences from text,✅,unevaluated,10.1,1578
 TextString,,,,10,2059
 TextStructure,,,,10.3,2545
 TextSummarize,,,,14,
@@ -5527,13 +5527,13 @@ ThermometerGauge,,,,9,2867
 Thick,Graphics directive equivalent to AbsoluteThickness[2],✅,none,6,112
 Thickness,Sets relative line thickness in graphics,✅,pure,1,85
 Thin,Graphics directive equivalent to Thickness[Tiny],✅,pure,6,443
-Thinning,,,,8,1582
+Thinning,Morphological thinning,✅,unevaluated,8,1582
 ThomasPointProcess,,,,12.2,5486
 ThompsonGroupTh,,,,8,5184
 Thread,Threads a function over corresponding list elements,✅,pure,1,179
 Threaded,,,,13.1,
 ThreadingLayer,,,,11.1,2239
-ThreeJSymbol,,,,2,1597
+ThreeJSymbol,Wigner 3-j symbol,✅,unevaluated,2,1597
 Threshold,,,,8,2229
 Through,Distributes a list of functions over arguments,✅,pure,1,501
 Throw,Throws a value to be caught by Catch,✅,pure,1,589
@@ -5603,7 +5603,7 @@ Toggler,,,,6,2617
 TogglerBar,,,,6,1716
 ToInvertibleTimeSeries,,,,9,4138
 TokenWords,,,,2,4881
-Tolerance,,,,2,1583
+Tolerance,Tolerance specification,✅,unevaluated,2,1583
 ToLowerCase,Converts a string to lowercase,✅,pure,2,827
 Tomorrow,Returns a DateObject representing the next calendar day,✅,contextual,10,2688
 ToNumberField,,,,6,2219

@@ -6900,4 +6900,257 @@ mod batch_unevaluated_wrappers_2 {
       "TruncatedDistribution[x, y]"
     );
   }
+
+  // ─── DiscreteUniformDistribution ───────────────────────────────────
+  #[test]
+  fn discrete_uniform_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[DiscreteUniformDistribution[{1, 10}], 5]").unwrap(),
+      "1/10"
+    );
+  }
+  #[test]
+  fn discrete_uniform_distribution_pdf_outside() {
+    assert_eq!(
+      interpret("PDF[DiscreteUniformDistribution[{1, 10}], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("PDF[DiscreteUniformDistribution[{1, 10}], 11]").unwrap(),
+      "0"
+    );
+  }
+  #[test]
+  fn discrete_uniform_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[DiscreteUniformDistribution[{1, 10}], 5]").unwrap(),
+      "1/2"
+    );
+  }
+  #[test]
+  fn discrete_uniform_distribution_cdf_edges() {
+    assert_eq!(
+      interpret("CDF[DiscreteUniformDistribution[{1, 10}], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("CDF[DiscreteUniformDistribution[{1, 10}], 10]").unwrap(),
+      "1"
+    );
+  }
+  #[test]
+  fn discrete_uniform_distribution_mean() {
+    assert_eq!(
+      interpret("Mean[DiscreteUniformDistribution[{1, 10}]]").unwrap(),
+      "11/2"
+    );
+  }
+  #[test]
+  fn discrete_uniform_distribution_variance() {
+    assert_eq!(
+      interpret("Variance[DiscreteUniformDistribution[{1, 10}]]").unwrap(),
+      "33/4"
+    );
+  }
+
+  // ─── PositiveDefiniteMatrixQ ───────────────────────────────────────
+  #[test]
+  fn positive_definite_matrix_q_true() {
+    assert_eq!(
+      interpret("PositiveDefiniteMatrixQ[{{2, -1}, {-1, 2}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn positive_definite_matrix_q_false() {
+    assert_eq!(
+      interpret("PositiveDefiniteMatrixQ[{{1, 2}, {2, 1}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn positive_definite_matrix_q_identity() {
+    assert_eq!(
+      interpret("PositiveDefiniteMatrixQ[IdentityMatrix[3]]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn positive_definite_matrix_q_zero() {
+    assert_eq!(
+      interpret("PositiveDefiniteMatrixQ[{{0}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn positive_definite_matrix_q_scalar() {
+    assert_eq!(interpret("PositiveDefiniteMatrixQ[{{5}}]").unwrap(), "True");
+  }
+  #[test]
+  fn positive_definite_matrix_q_diagonal() {
+    assert_eq!(
+      interpret("PositiveDefiniteMatrixQ[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // ─── MovingMap ─────────────────────────────────────────────────────
+  #[test]
+  fn moving_map_total() {
+    assert_eq!(
+      interpret("MovingMap[Total, {1, 2, 3, 4, 5}, 2]").unwrap(),
+      "{6, 9, 12}"
+    );
+  }
+  #[test]
+  fn moving_map_mean() {
+    assert_eq!(
+      interpret("MovingMap[Mean, {1, 2, 3, 4, 5}, 3]").unwrap(),
+      "{5/2, 7/2}"
+    );
+  }
+
+  // ─── Unevaluated batch ────────────────────────────────────────────
+  #[test]
+  fn notebook_find() {
+    assert_eq!(interpret("NotebookFind[x]").unwrap(), "NotebookFind[x]");
+  }
+  #[test]
+  fn elementwise_layer() {
+    assert_eq!(
+      interpret("ElementwiseLayer[x]").unwrap(),
+      "ElementwiseLayer[x]"
+    );
+  }
+  #[test]
+  fn classifier_measurements() {
+    assert_eq!(
+      interpret("ClassifierMeasurements[x, y]").unwrap(),
+      "ClassifierMeasurements[x, y]"
+    );
+  }
+  #[test]
+  fn estimated_process() {
+    assert_eq!(
+      interpret("EstimatedProcess[x]").unwrap(),
+      "EstimatedProcess[x]"
+    );
+  }
+  #[test]
+  fn highlight_mesh() {
+    assert_eq!(interpret("HighlightMesh[x]").unwrap(), "HighlightMesh[x]");
+  }
+  #[test]
+  fn animator() {
+    assert_eq!(interpret("Animator[x]").unwrap(), "Animator[x]");
+  }
+  #[test]
+  fn auto_scroll() {
+    assert_eq!(interpret("AutoScroll[x]").unwrap(), "AutoScroll[x]");
+  }
+  #[test]
+  fn confidence_level() {
+    assert_eq!(
+      interpret("ConfidenceLevel[x]").unwrap(),
+      "ConfidenceLevel[x]"
+    );
+  }
+  #[test]
+  fn coefficient_rules() {
+    assert_eq!(
+      interpret("CoefficientRules[x, y]").unwrap(),
+      "CoefficientRules[x, y]"
+    );
+  }
+  #[test]
+  fn create_palette() {
+    assert_eq!(interpret("CreatePalette[x]").unwrap(), "CreatePalette[x]");
+  }
+  #[test]
+  fn thinning() {
+    assert_eq!(interpret("Thinning[x]").unwrap(), "Thinning[x]");
+  }
+  #[test]
+  fn net_decoder() {
+    assert_eq!(interpret("NetDecoder[x]").unwrap(), "NetDecoder[x]");
+  }
+  #[test]
+  fn erosion() {
+    assert_eq!(interpret("Erosion[x]").unwrap(), "Erosion[x]");
+  }
+  #[test]
+  fn tolerance() {
+    assert_eq!(interpret("Tolerance[x]").unwrap(), "Tolerance[x]");
+  }
+  #[test]
+  fn net_initialize() {
+    assert_eq!(interpret("NetInitialize[x]").unwrap(), "NetInitialize[x]");
+  }
+  #[test]
+  fn boundary_mesh_region() {
+    assert_eq!(
+      interpret("BoundaryMeshRegion[x]").unwrap(),
+      "BoundaryMeshRegion[x]"
+    );
+  }
+  #[test]
+  fn geometric_brownian_motion_process() {
+    assert_eq!(
+      interpret("GeometricBrownianMotionProcess[x]").unwrap(),
+      "GeometricBrownianMotionProcess[x]"
+    );
+  }
+  #[test]
+  fn boolean_convert() {
+    assert_eq!(interpret("BooleanConvert[x]").unwrap(), "BooleanConvert[x]");
+  }
+  #[test]
+  fn select_components() {
+    assert_eq!(
+      interpret("SelectComponents[x]").unwrap(),
+      "SelectComponents[x]"
+    );
+  }
+  #[test]
+  fn mesh_cell_style() {
+    assert_eq!(interpret("MeshCellStyle[x]").unwrap(), "MeshCellStyle[x]");
+  }
+  #[test]
+  fn notebook_put() {
+    assert_eq!(interpret("NotebookPut[x]").unwrap(), "NotebookPut[x]");
+  }
+  #[test]
+  fn text_sentences() {
+    assert_eq!(interpret("TextSentences[x]").unwrap(), "TextSentences[x]");
+  }
+  #[test]
+  fn polynomial_reduce() {
+    assert_eq!(
+      interpret("PolynomialReduce[x, y]").unwrap(),
+      "PolynomialReduce[x, y]"
+    );
+  }
+  #[test]
+  fn cumulant_unevaluated() {
+    assert_eq!(interpret("Cumulant[x]").unwrap(), "Cumulant[x]");
+  }
+  #[test]
+  fn three_j_symbol() {
+    assert_eq!(
+      interpret("ThreeJSymbol[x, y]").unwrap(),
+      "ThreeJSymbol[x, y]"
+    );
+  }
+  #[test]
+  fn copy_file() {
+    assert_eq!(interpret("CopyFile[x]").unwrap(), "CopyFile[x]");
+  }
+  #[test]
+  fn create_directory() {
+    assert_eq!(
+      interpret("CreateDirectory[x]").unwrap(),
+      "CreateDirectory[x]"
+    );
+  }
 }

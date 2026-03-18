@@ -176,6 +176,12 @@ pub fn dispatch_evaluation_control(
         args: cauchy_args,
       }));
     }
+    "DiscreteUniformDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "DiscreteUniformDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "Names" if args.len() <= 1 => {
       let all_names = crate::get_defined_names();
       if args.is_empty() {
