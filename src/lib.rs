@@ -192,6 +192,15 @@ thread_local! {
     static CAPTURED_OUTPUT_SVG: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
+// Session start time for SessionTime[]
+static SESSION_START: std::sync::LazyLock<std::time::Instant> =
+  std::sync::LazyLock::new(std::time::Instant::now);
+
+/// Returns the elapsed time in seconds since the session started.
+pub fn session_time() -> f64 {
+  SESSION_START.elapsed().as_secs_f64()
+}
+
 // Captured unimplemented function calls (e.g. "Quantity[13.77, \"BillionYears\"]")
 thread_local! {
     static UNIMPLEMENTED_CALLS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };

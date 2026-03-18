@@ -4841,6 +4841,29 @@ mod generating_function {
 }
 
 #[cfg(test)]
+mod session_time {
+  use super::*;
+
+  #[test]
+  fn returns_real() {
+    assert_eq!(interpret("Head[SessionTime[]]").unwrap(), "Real");
+  }
+
+  #[test]
+  fn non_negative() {
+    let result = interpret("SessionTime[] >= 0").unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn monotonically_increasing() {
+    let result =
+      interpret("t1 = SessionTime[]; t2 = SessionTime[]; t2 >= t1").unwrap();
+    assert_eq!(result, "True");
+  }
+}
+
+#[cfg(test)]
 mod scaling_transform {
   use super::*;
 

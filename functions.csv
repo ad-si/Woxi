@@ -4906,7 +4906,7 @@ ServiceObject,,,,10,4387
 ServiceRequest,,,,12,
 ServiceSubmit,,,,12,
 SessionSubmit,,,,11.2,2900
-SessionTime,,,,2,1444
+SessionTime,Elapsed time in seconds since session start,✅,pure,2,1444
 Set,Assigns a value to a symbol,✅,stateful,1,5
 SetAccuracy,,🚫,,2,972
 SetAlphaChannel,Set image alpha channel,🚫,io,8,1426
