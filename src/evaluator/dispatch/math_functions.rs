@@ -802,6 +802,23 @@ pub fn dispatch_math_functions(
     "JacobiSymbol" if args.len() == 2 => {
       return Some(crate::functions::math_ast::jacobi_symbol_ast(args));
     }
+    "MultiplicativeOrder" if args.len() == 2 => {
+      if let (Expr::Integer(a), Expr::Integer(n)) = (&args[0], &args[1]) {
+        if *n > 0 {
+          let a_mod = ((*a % *n) + *n) % *n;
+          if a_mod != 0 && crate::functions::math_ast::gcd_i128(a_mod, *n) == 1
+          {
+            let mut power = a_mod;
+            for k in 1..=*n {
+              if power == 1 {
+                return Some(Ok(Expr::Integer(k)));
+              }
+              power = (power * a_mod) % *n;
+            }
+          }
+        }
+      }
+    }
     "CoprimeQ" if args.len() >= 2 => {
       return Some(crate::functions::math_ast::coprime_q_ast(args));
     }

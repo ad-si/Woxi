@@ -24,6 +24,30 @@ pub fn dispatch_list_operations(
     "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
       return Some(list_helpers_ast::select_first_ast(args));
     }
+    "TakeList" if args.len() == 2 => {
+      if let (Expr::List(items), Expr::List(lengths)) = (&args[0], &args[1]) {
+        let mut result = Vec::new();
+        let mut pos = 0;
+        let mut valid = true;
+        for len_expr in lengths {
+          if let Expr::Integer(n) = len_expr {
+            let n = *n as usize;
+            if pos + n > items.len() {
+              valid = false;
+              break;
+            }
+            result.push(Expr::List(items[pos..pos + n].to_vec()));
+            pos += n;
+          } else {
+            valid = false;
+            break;
+          }
+        }
+        if valid {
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
     "FlattenAt" if args.len() == 2 => {
       if let Expr::List(items) = &args[0] {
         let len = items.len() as i128;

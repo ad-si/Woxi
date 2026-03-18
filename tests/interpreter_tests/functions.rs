@@ -7674,4 +7674,227 @@ mod batch_unevaluated_wrappers_2 {
   fn toggler_bar() {
     assert_eq!(interpret("TogglerBar[x]").unwrap(), "TogglerBar[x]");
   }
+
+  // ─── TakeList ──────────────────────────────────────────────────────
+  #[test]
+  fn take_list_basic() {
+    assert_eq!(
+      interpret("TakeList[{a, b, c, d, e, f}, {2, 3, 1}]").unwrap(),
+      "{{a, b}, {c, d, e}, {f}}"
+    );
+  }
+  #[test]
+  fn take_list_equal_parts() {
+    assert_eq!(
+      interpret("TakeList[{1, 2, 3, 4}, {2, 2}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  // ─── MultiplicativeOrder ───────────────────────────────────────────
+  #[test]
+  fn multiplicative_order_basic() {
+    assert_eq!(interpret("MultiplicativeOrder[2, 7]").unwrap(), "3");
+  }
+  #[test]
+  fn multiplicative_order_3_10() {
+    assert_eq!(interpret("MultiplicativeOrder[3, 10]").unwrap(), "4");
+  }
+  #[test]
+  fn multiplicative_order_10_7() {
+    assert_eq!(interpret("MultiplicativeOrder[10, 7]").unwrap(), "6");
+  }
+
+  // ─── Unevaluated batch 8 ──────────────────────────────────────────
+  #[test]
+  fn region_dimension() {
+    assert_eq!(
+      interpret("RegionDimension[x]").unwrap(),
+      "RegionDimension[x]"
+    );
+  }
+  #[test]
+  fn feature_extractor() {
+    assert_eq!(
+      interpret("FeatureExtractor[x]").unwrap(),
+      "FeatureExtractor[x]"
+    );
+  }
+  #[test]
+  fn arg_max() {
+    assert_eq!(interpret("ArgMax[x, y]").unwrap(), "ArgMax[x, y]");
+  }
+  #[test]
+  fn vertex_normals() {
+    assert_eq!(interpret("VertexNormals[x]").unwrap(), "VertexNormals[x]");
+  }
+  #[test]
+  fn correlation_function() {
+    assert_eq!(
+      interpret("CorrelationFunction[x, y]").unwrap(),
+      "CorrelationFunction[x, y]"
+    );
+  }
+  #[test]
+  fn bell_y() {
+    assert_eq!(interpret("BellY[x, y, z]").unwrap(), "BellY[x, y, z]");
+  }
+  #[test]
+  fn parallel_do() {
+    assert_eq!(interpret("ParallelDo[x]").unwrap(), "ParallelDo[x]");
+  }
+  #[test]
+  fn barnes_g() {
+    assert_eq!(interpret("BarnesG[x]").unwrap(), "BarnesG[x]");
+  }
+  #[test]
+  fn url() {
+    assert_eq!(interpret("URL[x]").unwrap(), "URL[x]");
+  }
+  #[test]
+  fn find_geometric_transform() {
+    assert_eq!(
+      interpret("FindGeometricTransform[x, y]").unwrap(),
+      "FindGeometricTransform[x, y]"
+    );
+  }
+  #[test]
+  fn deployed() {
+    assert_eq!(interpret("Deployed[x]").unwrap(), "Deployed[x]");
+  }
+  #[test]
+  fn dirichlet_distribution() {
+    assert_eq!(
+      interpret("DirichletDistribution[x]").unwrap(),
+      "DirichletDistribution[x]"
+    );
+  }
+  #[test]
+  fn riemann_siegel_theta() {
+    assert_eq!(
+      interpret("RiemannSiegelTheta[x]").unwrap(),
+      "RiemannSiegelTheta[x]"
+    );
+  }
+  #[test]
+  fn random_instance() {
+    assert_eq!(interpret("RandomInstance[x]").unwrap(), "RandomInstance[x]");
+  }
+  #[test]
+  fn trig_factor() {
+    assert_eq!(interpret("TrigFactor[x]").unwrap(), "TrigFactor[x]");
+  }
+  #[test]
+  fn pooling_layer() {
+    assert_eq!(interpret("PoolingLayer[x]").unwrap(), "PoolingLayer[x]");
+  }
+  #[test]
+  fn notebook_delete() {
+    assert_eq!(interpret("NotebookDelete[x]").unwrap(), "NotebookDelete[x]");
+  }
+  #[test]
+  fn find_formula() {
+    assert_eq!(interpret("FindFormula[x, y]").unwrap(), "FindFormula[x, y]");
+  }
+  #[test]
+  fn graph_3d() {
+    assert_eq!(interpret("Graph3D[x]").unwrap(), "Graph3D[x]");
+  }
+  #[test]
+  fn whittaker_w() {
+    assert_eq!(
+      interpret("WhittakerW[x, y, z]").unwrap(),
+      "WhittakerW[x, y, z]"
+    );
+  }
+  #[test]
+  fn max_detect() {
+    assert_eq!(interpret("MaxDetect[x]").unwrap(), "MaxDetect[x]");
+  }
+  #[test]
+  fn geometric_scene() {
+    assert_eq!(interpret("GeometricScene[x]").unwrap(), "GeometricScene[x]");
+  }
+  #[test]
+  fn parallelize() {
+    assert_eq!(interpret("Parallelize[x]").unwrap(), "Parallelize[x]");
+  }
+  #[test]
+  fn clustering_components() {
+    assert_eq!(
+      interpret("ClusteringComponents[x]").unwrap(),
+      "ClusteringComponents[x]"
+    );
+  }
+  #[test]
+  fn bernoulli_graph_distribution() {
+    assert_eq!(
+      interpret("BernoulliGraphDistribution[x, y]").unwrap(),
+      "BernoulliGraphDistribution[x, y]"
+    );
+  }
+  #[test]
+  fn mandelbrot_set_plot() {
+    assert_eq!(
+      interpret("MandelbrotSetPlot[x]").unwrap(),
+      "MandelbrotSetPlot[x]"
+    );
+  }
+  #[test]
+  fn language() {
+    assert_eq!(interpret("Language[x]").unwrap(), "Language[x]");
+  }
+  #[test]
+  fn sequence_cases() {
+    assert_eq!(
+      interpret("SequenceCases[x, y]").unwrap(),
+      "SequenceCases[x, y]"
+    );
+  }
+  #[test]
+  fn time_constraint() {
+    assert_eq!(interpret("TimeConstraint[x]").unwrap(), "TimeConstraint[x]");
+  }
+  #[test]
+  fn double_right_tee() {
+    assert_eq!(interpret("DoubleRightTee[x]").unwrap(), "DoubleRightTee[x]");
+  }
+  #[test]
+  fn matrices() {
+    assert_eq!(interpret("Matrices[x]").unwrap(), "Matrices[x]");
+  }
+  #[test]
+  fn joined_curve() {
+    assert_eq!(interpret("JoinedCurve[x]").unwrap(), "JoinedCurve[x]");
+  }
+  #[test]
+  fn run_process() {
+    assert_eq!(interpret("RunProcess[x]").unwrap(), "RunProcess[x]");
+  }
+  #[test]
+  fn starting_step_size() {
+    assert_eq!(
+      interpret("StartingStepSize[x]").unwrap(),
+      "StartingStepSize[x]"
+    );
+  }
+  #[test]
+  fn default_button() {
+    assert_eq!(interpret("DefaultButton[x]").unwrap(), "DefaultButton[x]");
+  }
+  #[test]
+  fn trigger() {
+    assert_eq!(interpret("Trigger[x]").unwrap(), "Trigger[x]");
+  }
+  #[test]
+  fn geo_marker() {
+    assert_eq!(interpret("GeoMarker[x]").unwrap(), "GeoMarker[x]");
+  }
+  #[test]
+  fn content_selectable() {
+    assert_eq!(
+      interpret("ContentSelectable[x]").unwrap(),
+      "ContentSelectable[x]"
+    );
+  }
 }

@@ -197,7 +197,7 @@ ArcTanDegrees,,,,14.1,
 ArcTanh,Returns the inverse hyperbolic tangent,✅,pure,1,297
 Area,Computes the area of geometric regions like Disk Rectangle Triangle and Polygon,✅,pure,10,834
 Arg,Returns the argument (phase angle) of a complex number,✅,pure,1,135
-ArgMax,,,,7,1721
+ArgMax,Position of maximum,✅,unevaluated,7,1721
 ArgMin,,,,7,2144
 ArgumentsOptions,,,,12.2,3363
 ARIMAProcess,,,,9,2442
@@ -401,7 +401,7 @@ BarcodeRecognize,,,,10,2268
 BaringhausHenzeTest,,,,10.2,4173
 BarLegend,Color bar legend for plots,✅,none,9,805
 BarlowProschanImportance,,,,9,4707
-BarnesG,,,,7,1727
+BarnesG,Barnes G function,✅,unevaluated,7,1727
 BarOrigin,,🚫,,7,1058
 BarSpacing,,🚫,,7,1077
 BartlettHannWindow,,,,9,4356
@@ -429,7 +429,7 @@ Begin,Begins a private context (no-op in Woxi),✅,effectful,1,578
 BeginDialogPacket,,,,3,
 BeginPackage,Begins a package context (no-op in Woxi),✅,effectful,1,588
 BellB,Returns the Bell number or Bell polynomial,✅,pure,6,1463
-BellY,,,,8,1725
+BellY,Bell Y polynomial,✅,unevaluated,8,1725
 Below,Symbol for below alignment,✅,pure,1,1025
 BenfordDistribution,,,,8,3916
 BeniniDistribution,,,,8,3537
@@ -437,7 +437,7 @@ BenktanderGibratDistribution,,,,8,3803
 BenktanderWeibullDistribution,,,,8,3765
 BernoulliB,Returns the nth Bernoulli number,✅,pure,1,876
 BernoulliDistribution,Represents a Bernoulli distribution,✅,pure,6,1274
-BernoulliGraphDistribution,,,,8,1748
+BernoulliGraphDistribution,Bernoulli random graph,✅,unevaluated,8,1748
 BernoulliProcess,,,,9,3636
 BernsteinBasis,,,,7,2034
 BesagL,,,,12.2,5184
@@ -873,7 +873,7 @@ CloudSymbol,,,,10,3578
 CloudUnshare,,,,11.3,
 ClusterClassify,,,,10.4,3153
 ClusterDissimilarityFunction,,,,10.4,4707
-ClusteringComponents,,,,8,1748
+ClusteringComponents,Clustering components,✅,unevaluated,8,1748
 ClusteringMeasurements,,,,13.2,
 ClusteringTree,,,,10.4,3843
 CMYKColor,CMYK color specification,✅,pure,2,1446
@@ -1043,7 +1043,7 @@ ContentFieldOptions,,,,11,4881
 ContentLocationFunction,,,,11,5184
 ContentObject,,,,10.2,3947
 ContentPadding,,,,8,2389
-ContentSelectable,,,,6,1761
+ContentSelectable,Content selectable option,✅,unevaluated,6,1761
 ContentSize,Content size option,✅,unevaluated,7,1679
 Context,Return the context (namespace) of a symbol,✅,pure,1,1029
 Contexts,,,,2,3402
@@ -1120,7 +1120,7 @@ CornerFilter,,,,8,3765
 CornerNeighbors,,,,7,1827
 Correlation,Computes the Pearson correlation of two lists,✅,pure,6,1135
 CorrelationDistance,,,,6,3070
-CorrelationFunction,,,,9,1723
+CorrelationFunction,Correlation function,✅,unevaluated,9,1723
 CorrelationTest,,,,9,3317
 Cos,Returns the cosine of a number,✅,pure,1,31
 CosDegrees,,,,14.1,
@@ -1304,7 +1304,7 @@ Default,Default value for optional arguments,✅,pure,1,701
 DefaultAxesStyle,,,,7,5390
 DefaultBaseStyle,,,,7,2371
 DefaultBoxStyle,,,,7,4612
-DefaultButton,,,,6,1760
+DefaultButton,Default button control,✅,unevaluated,6,1760
 DefaultDiffStyle,,,,14.1,
 DefaultDuplicateCellStyle,,,,3,4809
 DefaultDuration,,,,6,1916
@@ -1371,7 +1371,7 @@ DensityPlot,Creates a density plot of a function,✅,pure,1,440
 DensityPlot3D,,,,10.2,1788
 DependentVariables,,,,5,3737
 Deploy,,🚫,,6,1320
-Deployed,,,,6,1730
+Deployed,Deployed option,✅,unevaluated,6,1730
 Depth,Returns the depth of an expression,✅,pure,1,911
 DepthFirstScan,,,,8,2792
 Derivative,Represents the derivative of a function,✅,pure,1,26
@@ -1468,7 +1468,7 @@ DirichletBeta,,,,10,5390
 DirichletCharacter,,,,7,2986
 DirichletCondition,Dirichlet boundary condition for PDEs,✅,none,10,632
 DirichletConvolve,,,,7,3153
-DirichletDistribution,,,,8,1733
+DirichletDistribution,Dirichlet distribution,✅,unevaluated,8,1733
 DirichletEta,,,,10,3059
 DirichletL,,,,7,3737
 DirichletLambda,,,,10,5390
@@ -1564,7 +1564,7 @@ DoubleLongLeftArrow,,,,3,3291
 DoubleLongLeftRightArrow,,,,3,2380
 DoubleLongRightArrow,,,,3,2214
 DoubleRightArrow,,,,3,3578
-DoubleRightTee,,,,3,1752
+DoubleRightTee,Double right tee symbol,✅,unevaluated,3,1752
 DoubleUpArrow,,,,3,5390
 DoubleUpDownArrow,,,,3,5390
 DoubleVerticalBar,,,,3,4356
@@ -1880,7 +1880,7 @@ FARIMAProcess,,,,9,3121
 FeatureDistance,,,,11,4387
 FeatureExtract,,,,11,3280
 FeatureExtraction,Extract features from data,✅,unevaluated,11,1623
-FeatureExtractor,,,,11,1719
+FeatureExtractor,Feature extractor,✅,unevaluated,11,1719
 FeatureExtractorFunction,,,,11,5184
 FeatureImpactPlot,,,,13.1,
 FeatureNames,,,,10.1,4081
@@ -1966,12 +1966,12 @@ FindExternalEvaluators,,,,,
 FindFaces,,,,9,2217
 FindFile,,,,7,1766
 FindFit,Finds a least-squares fit of a model to data,✅,pure,5,535
-FindFormula,,,,10.2,1740
+FindFormula,Find formula fitting data,✅,unevaluated,10.2,1740
 FindFundamentalCycles,,,,10,4027
 FindGeneratingFunction,,,,7,1776
 FindGeoLocation,,,,7,2900
 FindGeometricConjectures,,,,12,3697
-FindGeometricTransform,,,,8,1730
+FindGeometricTransform,Find geometric transformation,✅,unevaluated,8,1730
 FindGraphCommunities,,,,9,2179
 FindGraphIsomorphism,,,,8,2944
 FindGraphPartition,,,,9,3317
@@ -2326,14 +2326,14 @@ GeoListPlot,,🚫,,10,1180
 GeoLocation,,,,10,3083
 GeologicalPeriodData,,🚫,,10,3083
 GeomagneticModelData,,🚫,,10.1,3440
-GeoMarker,,,,10,1760
+GeoMarker,Geographic marker,✅,unevaluated,10,1760
 GeometricAssertion,,,,12,2054
 GeometricBrownianMotionProcess,Geometric Brownian motion,✅,unevaluated,9,1588
 GeometricDistribution,Geometric probability distribution,✅,pure,6,1474
 GeometricMean,Returns the geometric mean of a list,✅,pure,6,1294
 GeometricMeanFilter,,,,7,4173
 GeometricOptimization,,,,12.1,
-GeometricScene,,,,12,1743
+GeometricScene,Geometric scene,✅,unevaluated,12,1743
 GeometricSolveValues,,,,14,
 GeometricStep,,,,12.2,3755
 GeometricStylingRules,,,,13.1,
@@ -2392,7 +2392,7 @@ GrammarApply,,,,10,3947
 GrammarRules,,,,10,3862
 GrammarToken,,,,10,3717
 Graph,Represents a graph with vertices and edges,✅,pure,8,303
-Graph3D,,,,10,1740
+Graph3D,3D graph visualization,✅,unevaluated,10,1740
 GraphAssortativity,,,,9,3440
 GraphAutomorphismGroup,,,,10,3862
 GraphCenter,,,,8,2971
@@ -2962,7 +2962,7 @@ JohnsonDistribution,,,,8,2911
 Join,Concatenates multiple lists,✅,pure,1,105
 JoinAcross,,,,10,2292
 Joined,Option for joining points in list plots,✅,none,6,285
-JoinedCurve,,,,8,1754
+JoinedCurve,Joined curve primitive,✅,unevaluated,8,1754
 JoinForm,Graphics join form directive,🚫,pure,7,1420
 JordanDecomposition,,🚫,,3,844
 JordanModelDecomposition,,,,8,4138
@@ -3057,7 +3057,7 @@ LameSPrime,,,,12.2,5013
 LaminaData,,🚫,,10,3506
 LanczosWindow,,,,9,4387
 LandauDistribution,,,,8,3803
-Language,,,,3,1749
+Language,Language option,✅,unevaluated,3,1749
 LanguageCategory,,,,4,3153
 LanguageData,,🚫,,10,364
 LanguageIdentify,,,,10.1,3224
@@ -3372,7 +3372,7 @@ MandelbrotSetBoettcher,,,,10,4479
 MandelbrotSetDistance,,,,10,3843
 MandelbrotSetIterationCount,,,,10,4006
 MandelbrotSetMemberQ,,,,10,3153
-MandelbrotSetPlot,,,,10,1748
+MandelbrotSetPlot,Mandelbrot set plot,✅,unevaluated,10,1748
 MangoldtLambda,,,,7,2900
 ManhattanDistance,Manhattan (L1) distance between two vectors,✅,pure,6,2462
 Manipulate,,🚫,,6,95
@@ -3423,7 +3423,7 @@ MathieuGroupM24,,,,8,4387
 MathieuS,,,,3,1960
 MathieuSPrime,,,,3,2477
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
-Matrices,,,,9,1753
+Matrices,Matrix domain,✅,unevaluated,9,1753
 MatrixExp,Computes the matrix exponential,✅,pure,2,807
 MatrixForm,Displays a matrix or list in a two-dimensional grid format,✅,pure,1,53
 MatrixFunction,,,,9,2134
@@ -3440,7 +3440,7 @@ Max,Returns the maximum value from a set of arguments or a list,✅,pure,1,144
 MaxCellMeasure,,🚫,,10,921
 MaxColorDistance,,,,12,
 MaxDate,,,,12.1,
-MaxDetect,,,,8,1743
+MaxDetect,Detect local maxima,✅,unevaluated,8,1743
 MaxDisplayedChildren,,,,13.2,
 MaxDuration,,,,11.2,4225
 MaxExtraBandwidths,,,,8,4262
@@ -3646,7 +3646,7 @@ MultigraphQ,,,,10,4479
 Multinomial,Returns the multinomial coefficient,✅,pure,1,1707
 MultinomialDistribution,,,,8,1954
 MultinormalDistribution,,🚫,,8,1042
-MultiplicativeOrder,,,,4,1760
+MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4,1760
 MultiplySides,,,,11.3,2611
 Multiselection,,,,9,4809
 MultivariateHypergeometricDistribution,,,,8,2816
@@ -3808,7 +3808,7 @@ NotebookApply,,,,3,3491
 NotebookAutoSave,,,,3,3755
 NotebookCellData,,🚫,,14.1,
 NotebookClose,Close a notebook,✅,pure,3,1517
-NotebookDelete,,,,3,1740
+NotebookDelete,Delete notebook cells,✅,unevaluated,3,1740
 NotebookDirectory,Directory of the current notebook,✅,none,6,719
 NotebookDynamicExpression,,,,8,3048
 NotebookEvaluate,,,,8,2112
@@ -4066,11 +4066,11 @@ ParagraphSpacing,,,,3,2993
 ParallelArray,,,,7,4104
 ParallelAxisPlot,,,,12.2,4204
 ParallelCombine,,,,7,2807
-ParallelDo,,,,7,1725
+ParallelDo,Parallel Do loop,✅,unevaluated,7,1725
 Parallelepiped,,,,10,2324
 ParallelEvaluate,,🚫,,7,1118
 Parallelization,,🚫,,8,1009
-Parallelize,,,,7,1745
+Parallelize,Parallelize computation,✅,unevaluated,7,1745
 ParallelKernels,,,,13.1,
 ParallelMap,Applies a function in parallel to each element,✅,1,7,1204
 ParallelNeeds,,,,7,3257
@@ -4291,7 +4291,7 @@ PolynomialQuotientRemainder,,,,6,2157
 PolynomialReduce,Reduce polynomial modulo ideal,✅,unevaluated,3,1574
 PolynomialRemainder,Remainder of polynomial division,✅,pure,1,1353
 PolynomialSumOfSquaresList,,,,13,
-PoolingLayer,,,,11,1737
+PoolingLayer,Neural net pooling layer,✅,unevaluated,11,1737
 PopupMenu,Interactive popup menu control,✅,none,6,792
 PopupView,,,,6,3522
 PopupWindow,,,,6,1975
@@ -4474,7 +4474,7 @@ RandomGeneratorState,,,,12.2,
 RandomGeoPosition,,,,12,
 RandomGraph,Generate a random graph,✅,none,8,810
 RandomImage,Generates a random image with given dimensions,✅,pure,8,1723
-RandomInstance,,,,12,1736
+RandomInstance,Random geometric instance,✅,unevaluated,12,1736
 RandomInteger,Generate random integers,✅,contextual,6,156
 RandomPermutation,,,,8,1833
 RandomPoint,,🚫,,10.2,1020
@@ -4566,7 +4566,7 @@ RegionCongruent,,,,13,
 RegionConvert,,,,12.3,
 RegionDifference,,🚫,,10,991
 RegionDilation,,,,12.3,
-RegionDimension,,,,10,1716
+RegionDimension,Dimension of a region,✅,unevaluated,10,1716
 RegionDisjoint,,,,11.1,3134
 RegionDistance,,🚫,,10,1314
 RegionDistanceFunction,,,,10,5587
@@ -4708,7 +4708,7 @@ RiccatiSolve,,,,8,3823
 RiceDistribution,,,,8,2986
 RidgeFilter,,,,8,3257
 RiemannR,Riemann prime counting function R(x) approximating PrimePi,✅,pure,7,331
-RiemannSiegelTheta,,,,2,1734
+RiemannSiegelTheta,Riemann-Siegel theta function,✅,unevaluated,2,1734
 RiemannSiegelZ,Riemann-Siegel Z function,✅,unevaluated,2,1675
 RiemannXi,,,,10,4479
 Riffle,Inserts an element between each pair of elements,✅,pure,6,473
@@ -4780,7 +4780,7 @@ RulePlot,Plot rules,✅,unevaluated,11,1656
 RulerUnits,,,,4,4612
 RulesTree,,,,12.3,
 Run,Runs an external command,✅,effectful,1,1367
-RunProcess,,,,10,1760
+RunProcess,Run external process,✅,unevaluated,10,1760
 RunThrough,Symbol for running external commands,✅,effectful,1,3215
 RuntimeAttributes,,🚫,,8,914
 RuntimeOptions,,🚫,,8,922
@@ -4877,7 +4877,7 @@ SendMail,,,,7,2324
 SendMessage,,,,10,4173
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3,162
 SequenceAlignment,,,,7,2944
-SequenceCases,,,,10.1,1751
+SequenceCases,Find sequence patterns,✅,unevaluated,10.1,1751
 SequenceCount,,,,10.1,2921
 SequenceFold,,,,10.2,4225
 SequenceFoldList,,,,10.2,3593
@@ -5182,7 +5182,7 @@ StarClusterData,,🚫,,10,4881
 StarData,,🚫,,10,722
 StarGraph,,,,8,2617
 StartExternalSession,,,,11.2,3162
-StartingStepSize,,,,4,1760
+StartingStepSize,Starting step size option,✅,unevaluated,4,1760
 StartOfLine,,,,5.1,2786
 StartOfString,Represents the start of a string in string patterns,✅,1,5.1,1022
 StartProcess,,,,10,2514
@@ -5440,7 +5440,7 @@ Take,Returns the first n elements of a list,✅,pure,1,231
 TakeDrop,Simultaneously take and drop elements from a list,✅,pure,10.2,1507
 TakeLargest,Takes the n largest elements from a list,✅,pure,10.1,1926
 TakeLargestBy,Takes the n largest elements by a criterion,✅,pure,10.1,1921
-TakeList,,,,11.2,1762
+TakeList,Take successive sublists of given lengths,✅,computation,11.2,1762
 TakeSmallest,Takes the n smallest elements from a list,✅,pure,10.1,2438
 TakeSmallestBy,Takes the n smallest elements by a criterion,✅,pure,10.1,2767
 TakeWhile,Takes elements from start while predicate is true,✅,pure,6,1639
@@ -5554,7 +5554,7 @@ TildeEqual,,,,3,4612
 TildeFullEqual,,,,3,5390
 TildeTilde,Approximate equality relation,✅,pure,3,1509
 TimeConstrained,Runs computation with time limit (no-op in Woxi),✅,effectful,1,1182
-TimeConstraint,,,,3,1751
+TimeConstraint,Time constraint option,✅,unevaluated,3,1751
 TimeDirection,,,,10,4881
 TimeDistribution,,,,14.1,
 TimeFormat,,,,10,5390
@@ -5742,9 +5742,9 @@ TriangularDistribution,,,,6,1827
 TriangulateMesh,,,,10,2367
 Trig,Trigonometric functions option,✅,unevaluated,2,1658
 TrigExpand,Expand trigonometric functions of sums and multiples,✅,pure,3,852
-TrigFactor,,,,3,1736
+TrigFactor,Factor trigonometric expressions,✅,unevaluated,3,1736
 TrigFactorList,,,,3,4567
-Trigger,,,,6,1760
+Trigger,Trigger control,✅,unevaluated,6,1760
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3,954
 TrigToExp,Convert trigonometric and hyperbolic functions to exponentials,✅,pure,3,900
 TrimmedMean,,,,6,2693
@@ -5857,7 +5857,7 @@ UpTee,,,,3,4567
 UpTeeArrow,,,,3,5390
 UpTo,Represents a limit specification,✅,1,10.3,1222
 UpValues,Returns the up values of a symbol,✅,pure,2,1704
-URL,,,,11,1727
+URL,URL wrapper,✅,unevaluated,11,1727
 URLBuild,,,,10,1951
 URLDecode,,,,10,4027
 URLDispatcher,,,,10.4,4567
@@ -5957,7 +5957,7 @@ VertexJaccardSimilarity,,,,9,4947
 VertexLabels,Option for specifying labels on graph vertices,✅,pure,8,453
 VertexLabelStyle,Style for vertex labels in graphs,🚫,pure,8,1419
 VertexList,List of vertices in a graph,✅,none,8,657
-VertexNormals,,,,6,1721
+VertexNormals,Vertex normal vectors,✅,unevaluated,6,1721
 VertexOutComponent,,,,8,2605
 VertexOutComponentGraph,,,,12.3,
 VertexOutDegree,,,,8,2031
@@ -6105,7 +6105,7 @@ WhitePoint,,,,10,5390
 Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
 WhitespaceCharacter,String pattern for whitespace,✅,pure,5.1,1539
 WhittakerM,Whittaker M function,✅,unevaluated,6,1651
-WhittakerW,,,,6,1741
+WhittakerW,Whittaker W function,✅,unevaluated,6,1741
 WienerFilter,,,,8,4315
 WienerProcess,,🚫,,9,1268
 WignerD,,,,8,2587
