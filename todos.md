@@ -1,5 +1,6 @@
 # Ideas
 
+- https://github.com/vanbaalon/wolfbook
 - Integrate data
     - E.g. via https://worlddataapi.com
     - https://github.com/Zitronenjoghurt/world-data

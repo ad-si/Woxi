@@ -138,6 +138,43 @@ pub fn matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// SymmetricMatrixQ[m] - True if m is a symmetric square matrix (m[i][j] == m[j][i]).
+pub fn symmetric_matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::List(rows) => {
+      let n = rows.len();
+      if n == 0 {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+      // All rows must be lists of length n (square matrix)
+      let mut grid: Vec<&Vec<Expr>> = Vec::with_capacity(n);
+      for row in rows {
+        match row {
+          Expr::List(cols) => {
+            if cols.len() != n {
+              return Ok(Expr::Identifier("False".to_string()));
+            }
+            grid.push(cols);
+          }
+          _ => return Ok(Expr::Identifier("False".to_string())),
+        }
+      }
+      // Check symmetry: m[i][j] == m[j][i]
+      for i in 0..n {
+        for j in (i + 1)..n {
+          let a = crate::syntax::expr_to_string(&grid[i][j]);
+          let b = crate::syntax::expr_to_string(&grid[j][i]);
+          if a != b {
+            return Ok(Expr::Identifier("False".to_string()));
+          }
+        }
+      }
+      Ok(Expr::Identifier("True".to_string()))
+    }
+    _ => Ok(Expr::Identifier("False".to_string())),
+  }
+}
+
 pub fn list_depth(expr: &Expr) -> usize {
   match expr {
     Expr::List(items) => {
