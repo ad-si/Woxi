@@ -1578,7 +1578,7 @@ DownLeftVectorBar,,,,3,5390
 DownRightTeeVector,,,,3,5390
 DownRightVector,,,,3,5390
 DownRightVectorBar,,,,3,5390
-Downsample,,,,9,2012
+Downsample,Take every n-th element from a list,✅,none,9,2012
 DownTee,,,,3,5486
 DownTeeArrow,,,,3,5390
 DownValues,Returns the downvalues of a symbol,✅,pure,2,627
