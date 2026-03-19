@@ -438,6 +438,26 @@ pub fn dispatch_io_functions(
         args: args.to_vec(),
       }));
     }
+    "FileNameSplit" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        if s.is_empty() {
+          return Some(Ok(Expr::List(vec![])));
+        }
+        let parts: Vec<Expr> = s
+          .split('/')
+          .collect::<Vec<&str>>()
+          .into_iter()
+          .enumerate()
+          .filter(|(i, part)| !(*i > 0 && part.is_empty()))
+          .map(|(_, part)| Expr::String(part.to_string()))
+          .collect();
+        return Some(Ok(Expr::List(parts)));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "FileNameSplit".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     // OpenRead[file] — open a file for reading, return InputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
     "OpenRead" if args.len() == 1 => {

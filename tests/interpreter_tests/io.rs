@@ -1669,6 +1669,54 @@ mod file_name_join {
   }
 }
 
+mod file_name_split {
+  use super::*;
+
+  #[test]
+  fn absolute_path() {
+    assert_eq!(
+      interpret(r#"FileNameSplit["/a/b/c.txt"]"#).unwrap(),
+      "{, a, b, c.txt}"
+    );
+  }
+
+  #[test]
+  fn relative_path() {
+    assert_eq!(interpret(r#"FileNameSplit["a/b/c"]"#).unwrap(), "{a, b, c}");
+  }
+
+  #[test]
+  fn root_path() {
+    assert_eq!(interpret(r#"FileNameSplit["/"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn empty_string() {
+    assert_eq!(interpret(r#"FileNameSplit[""]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn single_filename() {
+    assert_eq!(
+      interpret(r#"FileNameSplit["abc.txt"]"#).unwrap(),
+      "{abc.txt}"
+    );
+  }
+
+  #[test]
+  fn trailing_slash() {
+    assert_eq!(
+      interpret(r#"FileNameSplit["a/b/c/"]"#).unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn non_string_arg() {
+    assert_eq!(interpret("FileNameSplit[42]").unwrap(), "FileNameSplit[42]");
+  }
+}
+
 mod csv_import {
   use super::*;
 
