@@ -3038,7 +3038,7 @@ Kurtosis,Computes the kurtosis of a list,✅,pure,6,1416
 KuwaharaFilter,,,,8,4173
 KVertexConnectedComponents,,,,10,3862
 KVertexConnectedGraphQ,,,,10,4612
-LABColor,,,,10,1926
+LABColor,Represents a color in the LAB color space,🚫,pure,10,1926
 Label,Label for Goto targets,✅,pure,1,1059
 Labeled,Wrapper that attaches a label to an expression for display,✅,pure,6,397
 LabelingFunction,,🚫,,7,1085
@@ -5461,7 +5461,7 @@ TaskResume,,,,11.2,5390
 Tasks,,,,11.2,4707
 TaskSuspend,,,,11.2,4947
 TaskWait,,,,11.2,4881
-TautologyQ,,,,7,1986
+TautologyQ,Tests whether a boolean expression is a tautology,✅,pure,7,1986
 TelegraphProcess,,,,9,3566
 TemplateApply,,,,10,1949
 TemplateBox,,🚫,,7,1020

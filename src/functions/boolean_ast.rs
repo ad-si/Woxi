@@ -2,6 +2,8 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
+use std::collections::BTreeSet;
+
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::syntax::Expr;
@@ -1135,4 +1137,83 @@ fn distribute_and_over_or(expr: &Expr) -> Expr {
     }
     _ => expr.clone(),
   }
+}
+
+/// Extract free boolean variables (identifiers) from a boolean expression.
+fn collect_boolean_variables(expr: &Expr, vars: &mut BTreeSet<String>) {
+  match expr {
+    Expr::Identifier(name) if name != "True" && name != "False" => {
+      vars.insert(name.clone());
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "And"
+          | "Or"
+          | "Not"
+          | "Xor"
+          | "Nand"
+          | "Nor"
+          | "Implies"
+          | "Equivalent"
+      ) =>
+    {
+      for arg in args {
+        collect_boolean_variables(arg, vars);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_boolean_variables(left, vars);
+      collect_boolean_variables(right, vars);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_boolean_variables(operand, vars);
+    }
+    _ => {}
+  }
+}
+
+/// TautologyQ[expr] - True if the boolean expression is true for all variable assignments.
+pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "TautologyQ".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let expr = &args[0];
+
+  // Collect all boolean variables
+  let mut vars = BTreeSet::new();
+  collect_boolean_variables(expr, &mut vars);
+  let var_list: Vec<String> = vars.into_iter().collect();
+  let n = var_list.len();
+
+  // Limit to 20 variables to prevent combinatorial explosion
+  if n > 20 {
+    return Ok(Expr::FunctionCall {
+      name: "TautologyQ".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  for bits in 0..(1u64 << n) {
+    let mut substituted = expr.clone();
+    for (i, var_name) in var_list.iter().enumerate() {
+      let val = if (bits >> i) & 1 == 1 {
+        Expr::Identifier("True".to_string())
+      } else {
+        Expr::Identifier("False".to_string())
+      };
+      substituted =
+        crate::syntax::substitute_variable(&substituted, var_name, &val);
+    }
+    let result = evaluate_expr_to_expr(&substituted)?;
+    if !matches!(&result, Expr::Identifier(s) if s == "True") {
+      return Ok(Expr::Identifier("False".to_string()));
+    }
+  }
+
+  Ok(Expr::Identifier("True".to_string()))
 }

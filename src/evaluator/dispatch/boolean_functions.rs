@@ -28,6 +28,9 @@ pub fn dispatch_boolean_functions(
     "Equivalent" if args.len() >= 2 => {
       return Some(crate::functions::boolean_ast::equivalent_ast(args));
     }
+    "TautologyQ" if args.len() == 1 => {
+      return Some(crate::functions::boolean_ast::tautology_q_ast(args));
+    }
     "Return" => {
       let val = if args.is_empty() {
         Expr::Identifier("Null".to_string())
