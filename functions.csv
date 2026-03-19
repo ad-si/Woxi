@@ -3911,7 +3911,7 @@ NumberFieldRegulator,,,,6,4809
 NumberFieldRootsOfUnity,,,,6,4707
 NumberFieldSignature,,,,6,4315
 NumberForm,Displays a number with specified formatting,✅,pure,1,336
-NumberFormat,,,,2,1960
+NumberFormat,Option for NumberForm specifying how mantissa/base/exponent are assembled,🚫,,2,1960
 NumberLinePlot,Requires external services or GUI infrastructure,🚫,io,10,913
 NumberMarks,,,,3,2734
 NumberMultiplier,,,,3,3737
