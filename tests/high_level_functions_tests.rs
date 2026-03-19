@@ -477,6 +477,55 @@ mod high_level_functions_tests {
     }
   }
 
+  mod convergents_tests {
+    use super::*;
+
+    #[test]
+    fn from_list() {
+      assert_eq!(
+        interpret("Convergents[{1, 2, 3, 4}]").unwrap(),
+        "{1, 3/2, 10/7, 43/30}"
+      );
+    }
+
+    #[test]
+    fn pi_approximations() {
+      assert_eq!(
+        interpret("Convergents[{3, 7, 15, 1}]").unwrap(),
+        "{3, 22/7, 333/106, 355/113}"
+      );
+    }
+
+    #[test]
+    fn five_terms() {
+      assert_eq!(
+        interpret("Convergents[{1, 2, 3, 4, 5}]").unwrap(),
+        "{1, 3/2, 10/7, 43/30, 225/157}"
+      );
+    }
+
+    #[test]
+    fn from_number() {
+      assert_eq!(
+        interpret("Convergents[Pi, 5]").unwrap(),
+        "{3, 22/7, 333/106, 355/113, 103993/33102}"
+      );
+    }
+
+    #[test]
+    fn single_element() {
+      assert_eq!(interpret("Convergents[{5}]").unwrap(), "{5}");
+    }
+
+    #[test]
+    fn sqrt2() {
+      assert_eq!(
+        interpret("Convergents[Sqrt[2], 5]").unwrap(),
+        "{1, 3/2, 7/5, 17/12, 41/29}"
+      );
+    }
+  }
+
   mod lucas_l_tests {
     use super::*;
     #[test]
