@@ -260,6 +260,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "DiscreteUniformDistribution"
         | "LaplaceDistribution"
         | "RayleighDistribution"
+        | "NegativeBinomialDistribution"
     ) =>
     {
       let (mean, _) =
@@ -416,6 +417,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "DiscreteUniformDistribution"
         | "LaplaceDistribution"
         | "RayleighDistribution"
+        | "NegativeBinomialDistribution"
     ) =>
     {
       let (_, variance) =
@@ -548,9 +550,10 @@ pub fn standard_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(Expr::List(results))
     }
-    Expr::Integer(_) | Expr::Real(_) | Expr::FunctionCall { .. } => {
-      sqrt_ast(&[var.clone()])
-    }
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::FunctionCall { .. }
+    | Expr::BinaryOp { .. } => sqrt_ast(&[var.clone()]),
     _ => Ok(Expr::FunctionCall {
       name: "StandardDeviation".to_string(),
       args: args.to_vec(),

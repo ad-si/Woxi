@@ -1158,3 +1158,72 @@ mod multinomial_distribution {
     );
   }
 }
+
+mod negative_binomial_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("NegativeBinomialDistribution[3, 1/2]").unwrap(),
+      "NegativeBinomialDistribution[3, 1/2]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert_eq!(
+      interpret("PDF[NegativeBinomialDistribution[3, 1/2], 5]").unwrap(),
+      "21/256"
+    );
+  }
+
+  #[test]
+  fn pdf_symbolic() {
+    assert_eq!(
+      interpret("PDF[NegativeBinomialDistribution[n, p], k]").unwrap(),
+      "Piecewise[{{(1 - p)^k*p^n*Binomial[k + n - 1, n - 1], k >= 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn mean_numeric() {
+    assert_eq!(
+      interpret("Mean[NegativeBinomialDistribution[3, 1/2]]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[NegativeBinomialDistribution[n, p]]").unwrap(),
+      "(n*(1 - p))/p"
+    );
+  }
+
+  #[test]
+  fn variance_numeric() {
+    assert_eq!(
+      interpret("Variance[NegativeBinomialDistribution[3, 1/2]]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[NegativeBinomialDistribution[n, p]]").unwrap(),
+      "(n*(1 - p))/p^2"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_symbolic() {
+    assert_eq!(
+      interpret("StandardDeviation[NegativeBinomialDistribution[n, p]]")
+        .unwrap(),
+      "Sqrt[(n*(1 - p))/p^2]"
+    );
+  }
+}

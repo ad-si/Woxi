@@ -145,6 +145,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LaplaceDistribution" => pdf_laplace(dargs, x),
     "RayleighDistribution" => pdf_rayleigh(dargs, x),
     "MultinomialDistribution" => pdf_multinomial(dargs, x),
+    "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -657,7 +658,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_discrete = matches!(
     dist,
     Expr::FunctionCall { name, .. }
-    if matches!(name.as_str(), "PoissonDistribution" | "BernoulliDistribution" | "BinomialDistribution" | "GeometricDistribution")
+    if matches!(name.as_str(), "PoissonDistribution" | "BernoulliDistribution" | "BinomialDistribution" | "GeometricDistribution" | "NegativeBinomialDistribution" | "DiscreteUniformDistribution")
   );
 
   // Parse the event condition and compute probability
@@ -1231,6 +1232,20 @@ fn distribution_mean_variance(
       // Variance = ((imax - imin) * (imax - imin + 2)) / 12
       let diff = minus(imax, imin);
       let var = divide(times(diff.clone(), plus(diff, int(2))), int(12));
+      Ok((mean, var))
+    }
+    "NegativeBinomialDistribution" => {
+      if dargs.len() != 2 {
+        return Err(InterpreterError::EvaluationError(
+          "NegativeBinomialDistribution expects 2 arguments".into(),
+        ));
+      }
+      let n = dargs[0].clone();
+      let p = dargs[1].clone();
+      // Mean = n*(1-p)/p, Var = n*(1-p)/p^2
+      let one_minus_p = minus(int(1), p.clone());
+      let mean = divide(times(n.clone(), one_minus_p.clone()), p.clone());
+      let var = divide(times(n, one_minus_p), power(p, int(2)));
       Ok((mean, var))
     }
     _ => Err(InterpreterError::EvaluationError(format!(
@@ -2058,4 +2073,31 @@ pub fn multinomial_mean_variance(
   }
 
   Ok((Expr::List(means), Expr::List(variances)))
+}
+
+/// PDF[NegativeBinomialDistribution[n, p], k]
+/// = (1-p)^k * p^n * Binomial[k+n-1, n-1] for k >= 0
+fn pdf_negative_binomial(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "NegativeBinomialDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let p = dargs[1].clone();
+  // (1-p)^k * p^n * Binomial[k+n-1, n-1]
+  let one_minus_p = minus(int(1), p.clone());
+  let binom = Expr::FunctionCall {
+    name: "Binomial".to_string(),
+    args: vec![
+      plus(x.clone(), minus(n.clone(), int(1))),
+      minus(n.clone(), int(1)),
+    ],
+  };
+  let pdf_val = times(times(power(one_minus_p, x.clone()), power(p, n)), binom);
+  let cond = comparison(x, ComparisonOp::GreaterEqual, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
 }
