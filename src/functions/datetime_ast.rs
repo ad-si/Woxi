@@ -1089,3 +1089,41 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::String(result))
 }
+
+/// DayName[{year, month, day}] - return the name of the day of the week
+/// DayName[DateObject[{year, month, day}]] - also accepted
+pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Ok(Expr::FunctionCall {
+      name: "DayName".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let arg = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+
+  // Handle DateObject[{y,m,d,...}]
+  let date_expr = match &arg {
+    Expr::FunctionCall { name, args: dargs }
+      if name == "DateObject" && !dargs.is_empty() =>
+    {
+      &dargs[0]
+    }
+    _ => &arg,
+  };
+
+  if let Some(components) = extract_date_components(date_expr) {
+    if components.len() >= 3 {
+      let year = components[0] as i64;
+      let month = components[1] as i64;
+      let day = components[2] as i64;
+      let dow = day_of_week(year, month, day);
+      return Ok(Expr::Identifier(day_name(dow).to_string()));
+    }
+  }
+
+  Ok(Expr::FunctionCall {
+    name: "DayName".to_string(),
+    args: args.to_vec(),
+  })
+}

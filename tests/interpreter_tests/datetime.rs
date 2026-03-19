@@ -431,3 +431,40 @@ mod yesterday {
     );
   }
 }
+
+mod day_name {
+  use super::*;
+
+  #[test]
+  fn monday() {
+    assert_eq!(interpret("DayName[{2024, 1, 1}]").unwrap(), "Monday");
+  }
+
+  #[test]
+  fn thursday() {
+    assert_eq!(interpret("DayName[{2026, 3, 19}]").unwrap(), "Thursday");
+  }
+
+  #[test]
+  fn saturday() {
+    assert_eq!(interpret("DayName[{2000, 1, 1}]").unwrap(), "Saturday");
+  }
+
+  #[test]
+  fn unix_epoch() {
+    assert_eq!(interpret("DayName[{1970, 1, 1}]").unwrap(), "Thursday");
+  }
+
+  #[test]
+  fn with_date_object() {
+    assert_eq!(
+      interpret("DayName[DateObject[{2024, 6, 15}]]").unwrap(),
+      "Saturday"
+    );
+  }
+
+  #[test]
+  fn sunday() {
+    assert_eq!(interpret("DayName[{2024, 3, 3}]").unwrap(), "Sunday");
+  }
+}
