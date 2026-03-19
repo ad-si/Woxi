@@ -559,7 +559,7 @@ Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
 BooleanConsecutiveFunction,,,,9,5587
 BooleanConvert,Convert Boolean expressions,✅,unevaluated,7,1588
 BooleanCountingFunction,,,,7,2012
-BooleanFunction,,,,7,1956
+BooleanFunction,Represents a Boolean function using Binary Decision Diagrams,🚫,,7,1956
 BooleanGraph,,,,8,3737
 BooleanMaxterms,,,,7,4262
 BooleanMinimize,,,,7,2509
