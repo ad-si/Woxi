@@ -508,8 +508,8 @@ BitNot,Returns the bitwise NOT of an integer,✅,pure,4,2748
 BitOr,Returns the bitwise OR of integers,✅,pure,4,1968
 BitRate,,,,12.3,
 BitSet,,,,6,3031
-BitShiftLeft,,,,6,2116
-BitShiftRight,,,,6,2003
+BitShiftLeft,Shifts integer bits to the left,✅,pure,6,2116
+BitShiftRight,Shifts integer bits to the right,✅,pure,6,2003
 BitXor,Returns the bitwise XOR of integers,✅,pure,4,1228
 BiweightLocation,,,,11.1,4081
 BiweightMidvariance,,,,11.1,4437

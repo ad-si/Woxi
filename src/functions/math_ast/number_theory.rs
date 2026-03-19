@@ -2706,6 +2706,98 @@ pub fn bit_not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// BitShiftRight[n, k] - shift n right by k bits (default k=1)
+pub fn bit_shift_right_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (n_expr, k) = match args.len() {
+    1 => (&args[0], 1i64),
+    2 => {
+      let k_val = match expr_to_bigint(&args[1]) {
+        Some(b) => match b.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            return Ok(Expr::FunctionCall {
+              name: "BitShiftRight".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        },
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "BitShiftRight".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (&args[0], k_val)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BitShiftRight".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  match expr_to_bigint(n_expr) {
+    Some(n) => {
+      if k >= 0 {
+        Ok(bigint_to_expr(n >> k as usize))
+      } else {
+        Ok(bigint_to_expr(n << (-k) as usize))
+      }
+    }
+    None => Ok(Expr::FunctionCall {
+      name: "BitShiftRight".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
+/// BitShiftLeft[n, k] - shift n left by k bits (default k=1)
+pub fn bit_shift_left_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (n_expr, k) = match args.len() {
+    1 => (&args[0], 1i64),
+    2 => {
+      let k_val = match expr_to_bigint(&args[1]) {
+        Some(b) => match b.try_into() {
+          Ok(v) => v,
+          Err(_) => {
+            return Ok(Expr::FunctionCall {
+              name: "BitShiftLeft".to_string(),
+              args: args.to_vec(),
+            });
+          }
+        },
+        None => {
+          return Ok(Expr::FunctionCall {
+            name: "BitShiftLeft".to_string(),
+            args: args.to_vec(),
+          });
+        }
+      };
+      (&args[0], k_val)
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "BitShiftLeft".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+  match expr_to_bigint(n_expr) {
+    Some(n) => {
+      if k >= 0 {
+        Ok(bigint_to_expr(n << k as usize))
+      } else {
+        Ok(bigint_to_expr(n >> (-k) as usize))
+      }
+    }
+    None => Ok(Expr::FunctionCall {
+      name: "BitShiftLeft".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 // ─── IntegerExponent ──────────────────────────────────────────────
 
 /// FrobeniusNumber[{a1, a2, ...}] - Largest integer that cannot be represented

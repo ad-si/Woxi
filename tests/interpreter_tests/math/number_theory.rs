@@ -708,6 +708,25 @@ mod bitwise_ops {
     assert_eq!(interpret("BitNot[5]").unwrap(), "-6");
     assert_eq!(interpret("BitNot[0]").unwrap(), "-1");
   }
+
+  #[test]
+  fn bit_shift_right() {
+    assert_eq!(interpret("BitShiftRight[8, 2]").unwrap(), "2");
+    assert_eq!(interpret("BitShiftRight[255, 4]").unwrap(), "15");
+    assert_eq!(interpret("BitShiftRight[1024]").unwrap(), "512");
+    assert_eq!(interpret("BitShiftRight[-8, 2]").unwrap(), "-2");
+    assert_eq!(
+      interpret("BitShiftRight[x, 2]").unwrap(),
+      "BitShiftRight[x, 2]"
+    );
+  }
+
+  #[test]
+  fn bit_shift_left() {
+    assert_eq!(interpret("BitShiftLeft[1, 4]").unwrap(), "16");
+    assert_eq!(interpret("BitShiftLeft[3]").unwrap(), "6");
+    assert_eq!(interpret("BitShiftLeft[5, 0]").unwrap(), "5");
+  }
 }
 
 mod gcd {
