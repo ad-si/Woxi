@@ -466,7 +466,7 @@ BilateralZTransform,,,,13,
 Binarize,Converts an image to black and white using a threshold,✅,pure,7,630
 BinaryDeserialize,,,,11.1,3636
 BinaryDistance,,,,10.2,4479
-BinaryFormat,,,,3,1962
+BinaryFormat,Option for opening streams in binary format,🚫,3,1962
 BinaryImageQ,,,,7,4660
 BinaryRead,Reads a single binary object from a file or stream,🚫,io,5.1,1926
 BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
