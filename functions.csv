@@ -3678,7 +3678,7 @@ NebulaData,,🚫,,10,4660
 NeedlemanWunschSimilarity,,,,7,4006
 Needs,Loads a package (no-op in Woxi),✅,effectful,1,198
 Negative,Tests if a number is negative,✅,pure,1,825
-NegativeBinomialDistribution,,,,6,2018
+NegativeBinomialDistribution,Discrete distribution for number of failures before n successes,✅,none,6,2018
 NegativeDefiniteMatrixQ,,,,10,3134
 NegativeIntegers,Domain of negative integers,✅,pure,12,5013
 NegativelyOrientedPoints,,,,12.2,5079
