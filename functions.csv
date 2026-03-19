@@ -537,7 +537,7 @@ BlockchainTransactionSign,,,,12,5587
 BlockchainTransactionSubmit,,,,12,5587
 BlockDiagonalMatrix,,,,13.1,
 BlockLowerTriangularMatrix,,,,13.1,
-BlockMap,Apply a function to non-overlapping or sliding blocks of a list,implemented,none,10.2,2002
+BlockMap,Apply a function to non-overlapping or sliding blocks of a list,✅,none,10.2,2002
 BlockRandom,,🚫,,6,1134
 BlockUpperTriangularMatrix,,,,13.1,
 BlomqvistBeta,,,,9,3947
@@ -1282,7 +1282,7 @@ DayCountConvention,,,,9,5184
 DayHemisphere,,,,10,4104
 DaylightQ,,,,10,4527
 DayMatchQ,,,,9,3134
-DayName,,,,9,1981
+DayName,Return the name of the day of the week for a given date,✅,none,9,1981
 DayNightTerminator,,,,10,4104
 DayPlus,,,,9,2867
 DayRange,,,,9,1991
@@ -1982,7 +1982,7 @@ FindImageShapes,,,,13.3,
 FindImageText,,,,12.1,5013
 FindIndependentEdgeSet,,,,8,3344
 FindIndependentVertexSet,,,,8,2978
-FindInstance,finds instances of variables that satisfy constraints,implemented,pure,5,650
+FindInstance,finds instances of variables that satisfy constraints,✅,pure,5,650
 FindIntegerNullVector,,,,8,2929
 FindIsomers,,,,13,
 FindIsomorphicSubgraph,,,,13,
@@ -2122,7 +2122,7 @@ FourierSeries,,🚫,,7,1317
 FourierSinCoefficient,,,,7,2329
 FourierSinSeries,Fourier sine series,✅,unevaluated,7,1842
 FourierSinTransform,,,,4,2553
-FourierTransform,computes the symbolic Fourier transform of an expression,implemented,pure,4,639
+FourierTransform,computes the symbolic Fourier transform of an expression,✅,pure,4,639
 FourierTrigSeries,,🚫,,7,1085
 FoxH,,,,12.3,
 FoxHReduce,,,,13,
@@ -2883,7 +2883,7 @@ InverseFourier,Inverse discrete Fourier transform of a list,✅,pure,1,1260
 InverseFourierCosTransform,,,,4,3537
 InverseFourierSequenceTransform,,,,7,3257
 InverseFourierSinTransform,,,,4,3121
-InverseFourierTransform,computes the symbolic inverse Fourier transform,implemented,pure,4,1124
+InverseFourierTransform,computes the symbolic inverse Fourier transform,✅,pure,4,1124
 InverseFunction,Represents the inverse of a function,✅,none,2,584
 InverseFunctions,,,,2,2431
 InverseGammaDistribution,,,,7,2605
@@ -3644,7 +3644,7 @@ Multicolumn,Multi-column layout,✅,unevaluated,10,1648
 MultiedgeStyle,,,,6,2005
 MultigraphQ,,,,10,4479
 Multinomial,Returns the multinomial coefficient,✅,pure,1,1707
-MultinomialDistribution,Multivariate discrete distribution for modeling outcomes of n independent trials with m categories,implemented,none,8,1954
+MultinomialDistribution,Multivariate discrete distribution for modeling outcomes of n independent trials with m categories,✅,none,8,1954
 MultinormalDistribution,,🚫,,8,1042
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4,1760
 MultiplySides,,,,11.3,2611
@@ -3884,7 +3884,7 @@ NotVerticalBar,,,,3,4881
 Now,Returns the current date and time,✅,contextual,10,1071
 NoWhitespace,,,,10.3,5587
 NProbability,Numerical probability,✅,pure,8,1534
-NProduct,Numerical product of a sequence,implemented,none,1,2229
+NProduct,Numerical product of a sequence,✅,none,1,2229
 NRoots,Symbol for numerical root counting,✅,pure,1,2462
 NSolve,Solves equations numerically,✅,pure,2,252
 NSolveValues,,,,12.3,
@@ -4587,7 +4587,7 @@ RegionMoment,,,,10.4,3200
 RegionNearest,Nearest point in a region,✅,pure,10,1507
 RegionNearestFunction,,,,10,4947
 RegionPlot,Creates a plot of a region satisfying inequalities,✅,pure,6,406
-RegionPlot3D,plots the 3D region where a condition is true,implemented,pure,6,603
+RegionPlot3D,plots the 3D region where a condition is true,✅,pure,6,603
 RegionProduct,,,,10,2129
 RegionQ,,,,10,2208
 RegionResize,,,,11,3765
@@ -4701,7 +4701,7 @@ ReverseSort,Sorts a list in reverse order,✅,pure,11.1,2449
 ReverseSortBy,,,,12,3215
 ReverseUpEquilibrium,,,,3,5390
 RevolutionAxis,Option for axis of revolution,✅,none,7,815
-RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,implemented,pure,6,518
+RevolutionPlot3D,creates a surface of revolution by rotating a curve around the z-axis,✅,pure,6,518
 RFixedPoints,,,,14.1,
 RGBColor,Specifies a color by RGB values,✅,pure,1,24
 RiccatiSolve,,,,8,3823
