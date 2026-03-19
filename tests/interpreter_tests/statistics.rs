@@ -1044,3 +1044,117 @@ mod weibull_distribution {
     assert_eq!(interpret("PDF[WeibullDistribution[2, 3], 0]").unwrap(), "0");
   }
 }
+
+mod multinomial_distribution {
+  use super::*;
+
+  #[test]
+  fn displays_unevaluated() {
+    assert_eq!(
+      interpret("MultinomialDistribution[3, {1/3, 1/3, 1/3}]").unwrap(),
+      "MultinomialDistribution[3, {1/3, 1/3, 1/3}]"
+    );
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    // PDF[MultinomialDistribution[3, {1/3, 1/3, 1/3}], {1, 1, 1}] = 2/9
+    assert_eq!(
+      interpret("PDF[MultinomialDistribution[3, {1/3, 1/3, 1/3}], {1, 1, 1}]")
+        .unwrap(),
+      "2/9"
+    );
+  }
+
+  #[test]
+  fn pdf_two_categories() {
+    // PDF[MultinomialDistribution[10, {1/2, 1/2}], {5, 5}] = 63/256
+    assert_eq!(
+      interpret("PDF[MultinomialDistribution[10, {1/2, 1/2}], {5, 5}]")
+        .unwrap(),
+      "63/256"
+    );
+  }
+
+  #[test]
+  fn pdf_three_categories() {
+    // PDF[MultinomialDistribution[5, {1/2, 1/3, 1/6}], {2, 2, 1}] = 5/36
+    assert_eq!(
+      interpret("PDF[MultinomialDistribution[5, {1/2, 1/3, 1/6}], {2, 2, 1}]")
+        .unwrap(),
+      "5/36"
+    );
+  }
+
+  #[test]
+  fn pdf_sum_not_equal_n() {
+    // When sum of xi != n, PDF is 0
+    assert_eq!(
+      interpret("PDF[MultinomialDistribution[5, {1/2, 1/3, 1/6}], {2, 2, 2}]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn pdf_negative_value() {
+    assert_eq!(
+      interpret("PDF[MultinomialDistribution[3, {1/3, 1/3, 1/3}], {-1, 2, 2}]")
+        .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn mean_exact() {
+    assert_eq!(
+      interpret("Mean[MultinomialDistribution[5, {1/2, 1/3, 1/6}]]").unwrap(),
+      "{5/2, 5/3, 5/6}"
+    );
+  }
+
+  #[test]
+  fn mean_symbolic() {
+    assert_eq!(
+      interpret("Mean[MultinomialDistribution[n, {p1, p2, p3}]]").unwrap(),
+      "{n*p1, n*p2, n*p3}"
+    );
+  }
+
+  #[test]
+  fn variance_exact() {
+    assert_eq!(
+      interpret("Variance[MultinomialDistribution[5, {1/2, 1/3, 1/6}]]")
+        .unwrap(),
+      "{5/4, 10/9, 25/36}"
+    );
+  }
+
+  #[test]
+  fn variance_symbolic() {
+    assert_eq!(
+      interpret("Variance[MultinomialDistribution[n, {p1, p2, p3}]]").unwrap(),
+      "{n*(1 - p1)*p1, n*(1 - p2)*p2, n*(1 - p3)*p3}"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_exact() {
+    assert_eq!(
+      interpret(
+        "StandardDeviation[MultinomialDistribution[5, {1/2, 1/3, 1/6}]]"
+      )
+      .unwrap(),
+      "{Sqrt[5]/2, Sqrt[10]/3, 5/6}"
+    );
+  }
+
+  #[test]
+  fn standard_deviation_symbolic() {
+    assert_eq!(
+      interpret("StandardDeviation[MultinomialDistribution[n, {p1, p2, p3}]]")
+        .unwrap(),
+      "{Sqrt[n*(1 - p1)*p1], Sqrt[n*(1 - p2)*p2], Sqrt[n*(1 - p3)*p3]}"
+    );
+  }
+}
