@@ -2062,6 +2062,58 @@ mod partition_extended {
   }
 }
 
+mod block_map {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("BlockMap[g, {a, b, c, d, e, h}, 2]").unwrap(),
+      "{g[{a, b}], g[{c, d}], g[{e, h}]}"
+    );
+  }
+
+  #[test]
+  fn with_total() {
+    assert_eq!(
+      interpret("BlockMap[Total, {1, 2, 3, 4, 5, 6}, 2]").unwrap(),
+      "{3, 7, 11}"
+    );
+  }
+
+  #[test]
+  fn block_size_3() {
+    assert_eq!(
+      interpret("BlockMap[g, {a, b, c, d, e, h}, 3]").unwrap(),
+      "{g[{a, b, c}], g[{d, e, h}]}"
+    );
+  }
+
+  #[test]
+  fn drops_remainder() {
+    assert_eq!(
+      interpret("BlockMap[g, {a, b, c, d, e}, 3]").unwrap(),
+      "{g[{a, b, c}]}"
+    );
+  }
+
+  #[test]
+  fn with_offset_1() {
+    assert_eq!(
+      interpret("BlockMap[g, {a, b, c, d, e}, 3, 1]").unwrap(),
+      "{g[{a, b, c}], g[{b, c, d}], g[{c, d, e}]}"
+    );
+  }
+
+  #[test]
+  fn with_offset_2() {
+    assert_eq!(
+      interpret("BlockMap[g, {a, b, c, d, e, h, i}, 3, 2]").unwrap(),
+      "{g[{a, b, c}], g[{c, d, e}], g[{e, h, i}]}"
+    );
+  }
+}
+
 mod reverse_extended {
   use super::*;
 
