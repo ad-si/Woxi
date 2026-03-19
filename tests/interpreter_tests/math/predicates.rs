@@ -843,3 +843,46 @@ mod possible_zero_q {
     );
   }
 }
+
+mod tautology_q {
+  use super::*;
+
+  #[test]
+  fn simple_tautology() {
+    assert_eq!(interpret("TautologyQ[Or[a, Not[a]]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn not_a_tautology() {
+    assert_eq!(interpret("TautologyQ[Or[a, b]]").unwrap(), "False");
+    assert_eq!(interpret("TautologyQ[And[a, b]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn implies_tautology() {
+    assert_eq!(
+      interpret("TautologyQ[Implies[And[a, b], a]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("TautologyQ[Implies[a, Or[a, b]]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn constant_values() {
+    assert_eq!(interpret("TautologyQ[True]").unwrap(), "True");
+    assert_eq!(interpret("TautologyQ[False]").unwrap(), "False");
+  }
+
+  #[test]
+  fn de_morgan() {
+    // Not[And[a, b]] <=> Or[Not[a], Not[b]]
+    assert_eq!(
+      interpret("TautologyQ[Equivalent[Not[And[a, b]], Or[Not[a], Not[b]]]]")
+        .unwrap(),
+      "True"
+    );
+  }
+}
