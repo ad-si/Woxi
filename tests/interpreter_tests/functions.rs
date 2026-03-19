@@ -2150,6 +2150,116 @@ mod downsample {
   }
 }
 
+mod square_matrix_q {
+  use super::*;
+
+  #[test]
+  fn square() {
+    assert_eq!(
+      interpret("SquareMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn rectangular() {
+    assert_eq!(
+      interpret("SquareMatrixQ[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn vector() {
+    assert_eq!(interpret("SquareMatrixQ[{1, 2, 3}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn three_by_three() {
+    assert_eq!(
+      interpret("SquareMatrixQ[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),
+      "True"
+    );
+  }
+}
+
+mod contains_any {
+  use super::*;
+
+  #[test]
+  fn has_common() {
+    assert_eq!(interpret("ContainsAny[{a, b, c}, {b, d}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn no_common() {
+    assert_eq!(
+      interpret("ContainsAny[{a, b, c}, {d, e}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("ContainsAny[{1, 2, 3}, {3, 4, 5}]").unwrap(),
+      "True"
+    );
+  }
+}
+
+mod contains_none {
+  use super::*;
+
+  #[test]
+  fn no_common() {
+    assert_eq!(
+      interpret("ContainsNone[{a, b, c}, {d, e}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn has_common() {
+    assert_eq!(
+      interpret("ContainsNone[{a, b, c}, {b, d}]").unwrap(),
+      "False"
+    );
+  }
+}
+
+mod factorial_power {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(interpret("FactorialPower[10, 3]").unwrap(), "720");
+  }
+
+  #[test]
+  fn zero_power() {
+    assert_eq!(interpret("FactorialPower[5, 0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn one_power() {
+    assert_eq!(interpret("FactorialPower[5, 1]").unwrap(), "5");
+  }
+
+  #[test]
+  fn with_step() {
+    assert_eq!(interpret("FactorialPower[10, 3, 2]").unwrap(), "480");
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(
+      interpret("FactorialPower[n, 3]").unwrap(),
+      "FactorialPower[n, 3]"
+    );
+  }
+}
+
 mod reverse_extended {
   use super::*;
 

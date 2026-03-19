@@ -1034,9 +1034,9 @@ ConstellationData,,🚫,,10,1342
 Construct,Constructs an expression from a head and arguments,✅,pure,11.3,2071
 Containing,,,,10.2,4527
 ContainsAll,,,,10.2,2289
-ContainsAny,,,,10.2,2061
+ContainsAny,Test if any elements of the second list appear in the first,✅,none,10.2,2061
 ContainsExactly,,,,10.2,4138
-ContainsNone,,,,10.2,2921
+ContainsNone,Test if none of the elements of the second list appear in the first,✅,none,10.2,2921
 ContainsOnly,Tests if a list contains only specified elements,✅,pure,10.2,2837
 ContentDetectorFunction,,,,13,
 ContentFieldOptions,,,,11,4881
@@ -1863,7 +1863,7 @@ Factorial,Returns the factorial of a non-negative integer,✅,pure,1,128
 Factorial2,Returns the double factorial,✅,pure,1,1128
 FactorialMoment,Factorial moment,✅,unevaluated,8,1836
 FactorialMomentGeneratingFunction,,,,8,3176
-FactorialPower,,,,7,2085
+FactorialPower,Falling factorial n*(n-1)*...*(n-k+1),✅,none,7,2085
 FactorInteger,Returns prime factorization as {prime exponent} pairs,✅,pure,1,528
 FactorList,List irreducible factors of a polynomial with exponents,✅,pure,1,1745
 FactorSquareFree,Square-free factorization of a polynomial,✅,pure,1,3143
@@ -5148,7 +5148,7 @@ Square,Square geometric primitive,🚫,pure,3,1437
 SquaredEuclideanDistance,Squared Euclidean distance between two vectors,✅,pure,6,1946
 SquareFreeQ,Tests if a polynomial or integer is square-free,✅,pure,6,1944
 SquareIntersection,,,,3,4809
-SquareMatrixQ,,,,10,2065
+SquareMatrixQ,Test if an expression is a square matrix,✅,none,10,2065
 SquareRepeatingElement,,,,11.1,5013
 SquaresR,,,,6,2625
 SquareSubset,,,,3,5390

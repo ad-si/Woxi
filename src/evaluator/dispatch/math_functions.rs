@@ -350,6 +350,9 @@ pub fn dispatch_math_functions(
     "Pochhammer" if args.len() == 2 => {
       return Some(crate::functions::math_ast::pochhammer_ast(args));
     }
+    "FactorialPower" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::math_ast::factorial_power_ast(args));
+    }
     "Gamma" if args.len() == 1 => {
       return Some(crate::functions::math_ast::gamma_ast(args));
     }

@@ -35,6 +35,44 @@ pub fn pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// FactorialPower[n, k] - falling factorial: n*(n-1)*...*(n-k+1)
+/// FactorialPower[n, k, h] - generalized: n*(n-h)*(n-2h)*... (k terms)
+pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "FactorialPower expects 2 or 3 arguments".into(),
+    ));
+  }
+  let h = if args.len() == 3 {
+    expr_to_i128(&args[2])
+  } else {
+    Some(1)
+  };
+  if let (Some(n), Some(k), Some(h)) =
+    (expr_to_i128(&args[0]), expr_to_i128(&args[1]), h)
+  {
+    if k == 0 {
+      return Ok(Expr::Integer(1));
+    }
+    if k < 0 {
+      return Ok(Expr::FunctionCall {
+        name: "FactorialPower".to_string(),
+        args: args.to_vec(),
+      });
+    }
+    let mut result = BigInt::from(1);
+    for i in 0..k {
+      result *= BigInt::from(n - i * h);
+    }
+    Ok(bigint_to_expr(result))
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "FactorialPower".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
 /// Gamma[n] - Gamma function: Gamma[n] = (n-1)! for positive integers
 pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
