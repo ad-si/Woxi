@@ -1390,3 +1390,101 @@ pub fn roman_numeral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::String(result))
 }
+
+/// Convergents[{a0, a1, a2, ...}] - list of convergents of a continued fraction
+/// Convergents[x, n] - convergents of the continued fraction of x, up to n terms
+pub fn convergents_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // If first arg is a number (not a list), compute ContinuedFraction first
+  let cf_list = match &args[0] {
+    Expr::List(_) => args[0].clone(),
+    _ => continued_fraction_ast(args)?,
+  };
+
+  let elements = match &cf_list {
+    Expr::List(elems) => elems,
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "Convergents".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  if elements.is_empty() {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Collect all integers
+  let mut ints: Vec<i128> = Vec::new();
+  for elem in elements {
+    match elem {
+      Expr::Integer(n) => ints.push(*n),
+      _ => {
+        return Ok(Expr::FunctionCall {
+          name: "Convergents".to_string(),
+          args: args.to_vec(),
+        });
+      }
+    }
+  }
+
+  // Use the recurrence relation:
+  // h[-1] = 1, h[0] = a0
+  // k[-1] = 0, k[0] = 1
+  // h[n] = a[n] * h[n-1] + h[n-2]
+  // k[n] = a[n] * k[n-1] + k[n-2]
+  let mut result = Vec::new();
+  let mut h_prev2: i128 = 1;
+  let mut h_prev1: i128 = ints[0];
+  let mut k_prev2: i128 = 0;
+  let mut k_prev1: i128 = 1;
+
+  result.push(make_rational_expr(h_prev1, k_prev1));
+
+  for i in 1..ints.len() {
+    let a = ints[i];
+    let h = a * h_prev1 + h_prev2;
+    let k = a * k_prev1 + k_prev2;
+    result.push(make_rational_expr(h, k));
+    h_prev2 = h_prev1;
+    h_prev1 = h;
+    k_prev2 = k_prev1;
+    k_prev1 = k;
+  }
+
+  Ok(Expr::List(result))
+}
+
+fn make_rational_expr(num: i128, den: i128) -> Expr {
+  if den == 1 {
+    Expr::Integer(num)
+  } else if den == -1 {
+    Expr::Integer(-num)
+  } else {
+    let g = gcd_convergents(num.abs(), den.abs());
+    let (n, d) = (num / g, den / g);
+    if d < 0 {
+      if -d == 1 {
+        Expr::Integer(-n)
+      } else {
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::Integer(-n)),
+          right: Box::new(Expr::Integer(-d)),
+        }
+      }
+    } else if d == 1 {
+      Expr::Integer(n)
+    } else {
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Divide,
+        left: Box::new(Expr::Integer(n)),
+        right: Box::new(Expr::Integer(d)),
+      }
+    }
+  }
+}
+
+fn gcd_convergents(a: i128, b: i128) -> i128 {
+  if b == 0 { a } else { gcd_convergents(b, a % b) }
+}

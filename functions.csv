@@ -1083,7 +1083,7 @@ ControlPlacement,Option for specifying placement of interactive controls,✅,pur
 ControlsRendering,,,,6,4081
 ControlType,Option for specifying the type of control in Manipulate,✅,pure,6,381
 ConvectionPDETerm,,,,12.2,3462
-Convergents,,,,6,2031
+Convergents,List of convergents of a continued fraction representation,✅,none,6,2031
 ConversionRules,,,,3,4660
 ConvexHullMesh,Requires external services or GUI infrastructure,🚫,io,10,814
 ConvexHullRegion,,,,12.2,3889
