@@ -21,6 +21,32 @@ pub fn array_depth_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::Integer(compute_depth(list)))
 }
 
+/// TensorRank[expr] - rank of a tensor (same as ArrayDepth for concrete lists,
+/// but stays unevaluated for non-list expressions like symbols).
+pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  match expr {
+    Expr::List(_) => array_depth_ast(expr),
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => Ok(Expr::Integer(0)),
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      Ok(Expr::Integer(0))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      Ok(Expr::Integer(0))
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "TensorRank".to_string(),
+      args: vec![expr.clone()],
+    }),
+  }
+}
+
 /// ArrayQ[expr] - True if expr is a full array (rectangular at all levels).
 pub fn array_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   fn is_full_array(expr: &Expr) -> bool {

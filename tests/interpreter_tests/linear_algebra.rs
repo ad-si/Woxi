@@ -1335,3 +1335,40 @@ mod transformation_function_apply {
     );
   }
 }
+
+mod tensor_rank {
+  use super::*;
+
+  #[test]
+  fn scalar() {
+    assert_eq!(interpret("TensorRank[42]").unwrap(), "0");
+    assert_eq!(interpret("TensorRank[3.14]").unwrap(), "0");
+    assert_eq!(interpret("TensorRank[2/3]").unwrap(), "0");
+  }
+
+  #[test]
+  fn vector() {
+    assert_eq!(interpret("TensorRank[{1, 2, 3}]").unwrap(), "1");
+    assert_eq!(interpret("TensorRank[{}]").unwrap(), "1");
+  }
+
+  #[test]
+  fn matrix() {
+    assert_eq!(interpret("TensorRank[{{1, 2}, {3, 4}}]").unwrap(), "2");
+    assert_eq!(interpret("TensorRank[{{}}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn higher() {
+    assert_eq!(
+      interpret("TensorRank[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]").unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn symbolic() {
+    assert_eq!(interpret("TensorRank[x]").unwrap(), "TensorRank[x]");
+    assert_eq!(interpret("TensorRank[f[x]]").unwrap(), "TensorRank[f[x]]");
+  }
+}
