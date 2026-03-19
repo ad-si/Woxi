@@ -1956,3 +1956,55 @@ mod to_boxes {
     );
   }
 }
+
+mod template_apply {
+  use super::*;
+
+  #[test]
+  fn basic_list() {
+    assert_eq!(
+      interpret(r#"TemplateApply["Hello `1`", {"World"}]"#).unwrap(),
+      "Hello World"
+    );
+  }
+
+  #[test]
+  fn multiple_slots() {
+    assert_eq!(
+      interpret(r#"TemplateApply["`1` + `2` = `3`", {1, 2, 3}]"#).unwrap(),
+      "1 + 2 = 3"
+    );
+  }
+
+  #[test]
+  fn repeated_slot() {
+    assert_eq!(
+      interpret(r#"TemplateApply["`1` and `1`", {"x"}]"#).unwrap(),
+      "x and x"
+    );
+  }
+
+  #[test]
+  fn no_slots() {
+    assert_eq!(
+      interpret(r#"TemplateApply["no slots here", {}]"#).unwrap(),
+      "no slots here"
+    );
+  }
+
+  #[test]
+  fn association_args() {
+    assert_eq!(
+      interpret(
+        r#"TemplateApply["Hi `name`, you are `age`", <|"name" -> "Alice", "age" -> 30|>]"#
+      )
+      .unwrap(),
+      "Hi Alice, you are 30"
+    );
+  }
+
+  #[test]
+  fn non_string_template() {
+    assert_eq!(interpret(r#"TemplateApply[42, {1}]"#).unwrap(), "42");
+  }
+}

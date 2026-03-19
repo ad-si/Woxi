@@ -24,6 +24,9 @@ pub fn dispatch_string_functions(
     "StringJoin" => {
       return Some(crate::functions::string_ast::string_join_ast(args));
     }
+    "TemplateApply" if args.len() == 2 => {
+      return Some(crate::functions::string_ast::template_apply_ast(args));
+    }
     "StringSplit" if !args.is_empty() => {
       return Some(crate::functions::string_ast::string_split_ast(args));
     }

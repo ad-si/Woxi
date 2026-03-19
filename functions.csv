@@ -715,7 +715,7 @@ CellFrameColor,,,,4,2707
 CellFrameLabelMargins,,,,4,3916
 CellFrameLabels,,,,4,2565
 CellFrameMargins,,,,3,2394
-CellGroup,,,,6,1954
+CellGroup,Notebook structure element for grouping cells,🚫,,6,1954
 CellGroupData,,🚫,,3,1635
 CellGrouping,,,,3,2755
 CellID,,,,6,2469
@@ -906,7 +906,7 @@ ColorReplace,Replace colors in image,✅,unevaluated,9,1864
 ColorRules,Option for color rules in visualizations,✅,none,5.1,858
 ColorSeparate,Separate color channels of an image,🚫,io,7,1409
 ColorSetter,Color setter control,✅,unevaluated,6,1803
-ColorSlider,,,,6,1949
+ColorSlider,GUI widget for interactive color selection,🚫,,6,1949
 ColorsNear,,,,12,3593
 ColorSpace,Option for specifying the color space of images,✅,pure,7,419
 ColorToneMapping,,,,10.2,4356
@@ -1595,7 +1595,7 @@ Dt,Total derivative treating all variables as potentially dependent,✅,pure,1,4
 DualPlanarGraph,,,,13,
 DualPolyhedron,,,,12,4204
 DualSystemsModel,,,,8,4356
-DumpSave,,,,3,1932
+DumpSave,Serialization of definitions to a binary file,🚫,,3,1932
 DuplicateFreeQ,Test if list has no duplicates,✅,computation,10,1833
 Duration,,,,11,3094
 Dynamic,,🚫,,6,138
@@ -2670,7 +2670,7 @@ ImageDifference,,,,8,2605
 ImageDimensions,Returns the dimensions of an image,✅,pure,7,555
 ImageDisplacements,,,,11,4479
 ImageDistance,,,,9,2821
-ImageEffect,,,,7,1935
+ImageEffect,Image processing effects and transformations,🚫,,7,1935
 ImageExposureCombine,,,,10.2,4612
 ImageFeatureTrack,,,,9,3785
 ImageFileApply,,,,9,4707
@@ -2803,7 +2803,7 @@ InnerPolygon,,,,12,4204
 InnerPolyhedron,,,,12,
 Inpaint,,,,8,2625
 Input,Reads user input (inert in Woxi),✅,effectful,1,642
-InputAliases,,,,4,1930
+InputAliases,Notebook interface option for input alias definitions,🚫,,4,1930
 InputAssumptions,,,,8,4356
 InputAutoReplacements,,,,4,3317
 InputField,Input field for interactive interfaces,✅,none,6,556
@@ -2824,7 +2824,7 @@ InsertLinebreaks,,,,10.1,4479
 InsertResults,,,,8,3143
 Inset,Places an inset in graphics,✅,pure,6,271
 Insphere,,,,10.2,2894
-Install,,,,2,1941
+Install,WSTP link installation for external programs,🚫,,2,1941
 InstallService,,,,6,2688
 InString,,,,2,3153
 Integer,Head type for integer numbers,✅,pure,1,131
@@ -2924,7 +2924,7 @@ IPAddress,,,,10.3,4262
 IrreduciblePolynomialQ,,,,7,2374
 IslandData,,🚫,,10,4947
 IsolatingInterval,,,,6,4262
-IsomorphicGraphQ,,,,8,1930
+IsomorphicGraphQ,Test whether two graphs are isomorphic (requires graph isomorphism algorithm),🚫,,8,1930
 IsomorphicSubgraphQ,,,,13,
 IsotopeData,,🚫,,6,795
 Italic,Style directive for italic text,✅,pure,6,186
@@ -3529,7 +3529,7 @@ MeshRegionQ,,,,10,3291
 MeshShading,Option for alternating shading between mesh lines,✅,none,6,779
 MeshStyle,Option specifying the style of mesh lines,✅,none,2,527
 Message,Issues a message (no-op in Woxi),✅,effectful,1,362
-MessageDialog,,,,6,1946
+MessageDialog,GUI dialog for displaying messages,🚫,,6,1946
 MessageList,,,,2,4006
 MessageName,Accesses a message associated with a symbol (sym::tag),✅,pure,1,111
 MessagePacket,,,,3,3823
@@ -4539,7 +4539,7 @@ RecalibrationFunction,,,,12.3,
 RecognitionPrior,,,,10.1,4027
 ReconstructionMesh,,,,13.1,
 Record,Record data structure,✅,unevaluated,2,1648
-RecordLists,,,,2,1932
+RecordLists,Data import option for structuring records as lists,🚫,,2,1932
 RecordSeparators,,,,2,2119
 Rectangle,Represents a rectangle graphics primitive,✅,pure,1,117
 RectangleChart,Rectangle chart,✅,unevaluated,7,1687
@@ -4658,7 +4658,7 @@ ReplacePixelValue,,,,9,2777
 ReplaceRepeated,Applies replacement rules repeatedly until fixed point,✅,pure,1,238
 ReplicateLayer,,,,11.1,2762
 RequiredPhysicalQuantities,,,,10,5079
-Resampling,,,,8,1930
+Resampling,Signal processing option for resampling methods,🚫,,8,1930
 ResamplingAlgorithmData,,🚫,,10.1,4947
 ResamplingMethod,Resampling method option,✅,unevaluated,10,1859
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
@@ -4803,7 +4803,7 @@ SatelliteData,,🚫,,10,4027
 SatisfiabilityCount,,,,7,3612
 SatisfiabilityInstances,,,,7,3108
 SatisfiableQ,,,,7,4052
-Saturday,,,,9,1949
+Saturday,Day name constant (unevaluated symbol),🚫,,9,1949
 Save,Saves definitions associated with symbols to a file,✅,effectful,1,1714
 SaveConnection,,,,12,3593
 SaveDefinitions,Option to save definitions with output,✅,none,6,574
@@ -4973,7 +4973,7 @@ SierpinskiMesh,,,,11.1,2755
 Sign,Returns the sign of a number,✅,pure,1,313
 Signature,Signature of a permutation,✅,pure,1,1353
 SignedRankTest,,,,8,3427
-SignedRegionDistance,,,,10,1926
+SignedRegionDistance,Computational geometry function for signed distance to a region,🚫,,10,1926
 SignificanceLevel,,,,8,2157
 SignPadding,,,,2,2828
 SignTest,,,,8,3317
@@ -5015,7 +5015,7 @@ SlideView,,,,6,3048
 Slot,Represents the nth argument in a pure function,✅,pure,1,17
 SlotSequence,Represents a sequence of arguments in a pure function,✅,pure,1,216
 Small,Small size specification,✅,none,6,368
-SmallCircle,,,,3,1938
+SmallCircle,Composition operator (formatting only),🚫,,3,1938
 Smaller,Font size directive for making text smaller,✅,none,6,266
 SmithDecomposition,,,,10.2,2535
 SmithDelayCompensator,,,,9,4612
@@ -5463,7 +5463,7 @@ TaskSuspend,,,,11.2,4947
 TaskWait,,,,11.2,4881
 TautologyQ,Tests whether a boolean expression is a tautology,✅,pure,7,1986
 TelegraphProcess,,,,9,3566
-TemplateApply,,,,10,1949
+TemplateApply,Applies arguments to a string template with backtick slots,✅,pure,10,1949
 TemplateBox,,🚫,,7,1020
 TemplateBoxOptions,,,,6,3755
 TemplateExpression,,,,10,3947
@@ -5917,7 +5917,7 @@ VectorQ,Tests if an expression is a vector,✅,pure,1,468
 VectorRange,,,,12.1,4747
 Vectors,Vector space domain,✅,unevaluated,9,1604
 VectorScaling,Vector scaling option,✅,unevaluated,12.1,1776
-VectorSizes,,,,12.1,1940
+VectorSizes,Internal developer function for vector size handling,🚫,,12.1,1940
 VectorStyle,,🚫,,7,1182
 VectorSymbol,,,,14.1,
 Vee,,,,3,3094
@@ -5946,7 +5946,7 @@ VertexCount,Returns the number of vertices in a graph,✅,1,8,1225
 VertexCoverQ,,,,8,4437
 VertexDataCoordinates,,,,9,5587
 VertexDegree,Returns the degree of vertices in a graph,✅,1,8,1287
-VertexDelete,,,,8,1935
+VertexDelete,Graph manipulation for deleting vertices,🚫,,8,1935
 VertexDiceSimilarity,,,,9,4947
 VertexEccentricity,,,,8,2871
 VertexInComponent,,,,8,3326
@@ -6017,7 +6017,7 @@ ViewMatrix,,,,6,2679
 ViewPoint,Option for 3D viewing position,✅,pure,1,360
 ViewProjection,,,,11.2,2605
 ViewRange,,,,6,3083
-ViewVector,,,,6,1956
+ViewVector,3D graphics option for specifying the view direction,🚫,,6,1956
 ViewVertical,,🚫,,2,986
 Visible,Visibility option,✅,pure,3,1563
 VoiceStyleData,,🚫,,12,5587

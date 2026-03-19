@@ -3891,3 +3891,131 @@ fn fortran_args(args: &[Expr]) -> String {
     .collect::<Vec<_>>()
     .join(",")
 }
+
+/// TemplateApply[template, args] - Apply arguments to a string template.
+/// Replaces `n` with the nth argument (1-indexed) from a list,
+/// or `key` with the value from an association.
+pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 2 {
+    return Ok(Expr::FunctionCall {
+      name: "TemplateApply".to_string(),
+      args: args.to_vec(),
+    });
+  }
+
+  let template = match &args[0] {
+    Expr::String(s) => s.clone(),
+    // Non-string template: if second arg is a list, apply like TemplateApply[expr, {args}]
+    other => {
+      // For non-string first arg, return as-is (like wolframscript returns 42 for TemplateApply[42, {1}])
+      return Ok(other.clone());
+    }
+  };
+
+  // Build replacement map
+  let replacements: std::collections::HashMap<String, String> = match &args[1] {
+    Expr::List(items) => {
+      let mut map = std::collections::HashMap::new();
+      for (i, item) in items.iter().enumerate() {
+        let value_str = match item {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        map.insert((i + 1).to_string(), value_str);
+      }
+      map
+    }
+    Expr::Association(pairs) => {
+      let mut map = std::collections::HashMap::new();
+      for (k, v) in pairs {
+        let key = match k {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        let value = match v {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        map.insert(key, value);
+      }
+      map
+    }
+    Expr::FunctionCall {
+      name,
+      args: assoc_args,
+    } if name == "Association" => {
+      let mut map = std::collections::HashMap::new();
+      for arg in assoc_args {
+        let (key_expr, val_expr): (&Expr, &Expr) = match arg {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => (pattern.as_ref(), replacement.as_ref()),
+          Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => (pattern.as_ref(), replacement.as_ref()),
+          Expr::FunctionCall {
+            name: rule_name,
+            args: rule_args,
+          } if (rule_name == "Rule" || rule_name == "RuleDelayed")
+            && rule_args.len() == 2 =>
+          {
+            (&rule_args[0], &rule_args[1])
+          }
+          _ => continue,
+        };
+        let key = match key_expr {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        let value = match val_expr {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        map.insert(key, value);
+      }
+      map
+    }
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "TemplateApply".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  // Replace `key` patterns in the template
+  let mut result = String::new();
+  let mut chars = template.chars().peekable();
+  while let Some(ch) = chars.next() {
+    if ch == '`' {
+      // Read until closing backtick
+      let mut key = String::new();
+      loop {
+        match chars.next() {
+          Some('`') => break,
+          Some(c) => key.push(c),
+          None => {
+            // No closing backtick - include literally
+            result.push('`');
+            result.push_str(&key);
+            return Ok(Expr::String(result));
+          }
+        }
+      }
+      if let Some(replacement) = replacements.get(&key) {
+        result.push_str(replacement);
+      } else {
+        // No replacement found - keep the slot
+        result.push('`');
+        result.push_str(&key);
+        result.push('`');
+      }
+    } else {
+      result.push(ch);
+    }
+  }
+
+  Ok(Expr::String(result))
+}
