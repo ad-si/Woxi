@@ -458,6 +458,93 @@ pub fn dispatch_io_functions(
         args: args.to_vec(),
       }));
     }
+    "URLBuild" if args.len() == 1 || args.len() == 2 => {
+      // URLBuild["url"] => "url"
+      // URLBuild[{"base", "path1", ...}] => "base/path1/..."
+      // URLBuild[{"base", ...}, {"key" -> "val", ...}] => "base/...?key=val&..."
+      let parts = match &args[0] {
+        Expr::String(s) => vec![s.clone()],
+        Expr::List(items) => {
+          let mut strs = Vec::new();
+          for item in items {
+            match item {
+              Expr::String(s) => strs.push(s.clone()),
+              other => strs.push(crate::syntax::expr_to_string(other)),
+            }
+          }
+          strs
+        }
+        _ => {
+          return Some(Ok(Expr::FunctionCall {
+            name: "URLBuild".to_string(),
+            args: args.to_vec(),
+          }));
+        }
+      };
+
+      // Build base URL from parts
+      let mut url = if parts.is_empty() {
+        String::new()
+      } else {
+        let base = parts[0].trim_end_matches('/').to_string();
+        let mut result = base;
+        for part in &parts[1..] {
+          let segment = part.trim_matches('/');
+          if !segment.is_empty() {
+            result.push('/');
+            result.push_str(segment);
+          }
+        }
+        result
+      };
+
+      // Add query parameters
+      if args.len() == 2 {
+        let query_pairs: Vec<(String, String)> = match &args[1] {
+          Expr::List(items) => {
+            let mut pairs = Vec::new();
+            for item in items {
+              match item {
+                Expr::Rule {
+                  pattern,
+                  replacement,
+                }
+                | Expr::RuleDelayed {
+                  pattern,
+                  replacement,
+                } => {
+                  let key = match pattern.as_ref() {
+                    Expr::String(s) => s.clone(),
+                    other => crate::syntax::expr_to_string(other),
+                  };
+                  let val = match replacement.as_ref() {
+                    Expr::String(s) => s.clone(),
+                    other => crate::syntax::expr_to_string(other),
+                  };
+                  pairs.push((key, val));
+                }
+                _ => {}
+              }
+            }
+            pairs
+          }
+          _ => vec![],
+        };
+        if !query_pairs.is_empty() {
+          url.push('?');
+          for (i, (key, val)) in query_pairs.iter().enumerate() {
+            if i > 0 {
+              url.push('&');
+            }
+            url.push_str(key);
+            url.push('=');
+            url.push_str(val);
+          }
+        }
+      }
+
+      return Some(Ok(Expr::String(url)));
+    }
     // OpenRead[file] — open a file for reading, return InputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
     "OpenRead" if args.len() == 1 => {

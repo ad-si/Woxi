@@ -5858,7 +5858,7 @@ UpTeeArrow,,,,3,5390
 UpTo,Represents a limit specification,✅,1,10.3,1222
 UpValues,Returns the up values of a symbol,✅,pure,2,1704
 URL,URL wrapper,✅,unevaluated,11,1727
-URLBuild,,,,10,1951
+URLBuild,Builds a URL from components and query parameters,✅,pure,10,1951
 URLDecode,,,,10,4027
 URLDispatcher,,,,10.4,4567
 URLDownload,,,,11,2993
