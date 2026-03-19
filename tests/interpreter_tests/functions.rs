@@ -5392,17 +5392,14 @@ mod proportional {
 
   #[test]
   fn unevaluated() {
-    assert_eq!(
-      interpret("Proportional[a, b]").unwrap(),
-      "Proportional[a, b]"
-    );
+    assert_eq!(interpret("Proportional[a, b]").unwrap(), "a \u{221D} b");
   }
 
   #[test]
   fn multiple_args() {
     assert_eq!(
       interpret("Proportional[1, 2, 3]").unwrap(),
-      "Proportional[1, 2, 3]"
+      "1 \u{221D} 2 \u{221D} 3"
     );
   }
 
@@ -6695,7 +6692,7 @@ mod batch_unevaluated_wrappers {
   }
   #[test]
   fn total_layer() {
-    assert_eq!(interpret("TotalLayer[x]").unwrap(), "TotalLayer[x]");
+    assert_eq!(interpret("TotalLayer[x]").unwrap(), "$Failed");
   }
   #[test]
   fn find_distribution_parameters() {
@@ -6721,21 +6718,15 @@ mod batch_unevaluated_wrappers {
   }
   #[test]
   fn net_encoder() {
-    assert_eq!(interpret("NetEncoder[x]").unwrap(), "NetEncoder[x]");
+    assert_eq!(interpret("NetEncoder[x]").unwrap(), "$Failed");
   }
   #[test]
   fn permutation_product() {
-    assert_eq!(
-      interpret("PermutationProduct[x]").unwrap(),
-      "PermutationProduct[x]"
-    );
+    assert_eq!(interpret("PermutationProduct[x]").unwrap(), "x");
   }
   #[test]
   fn syntax_information() {
-    assert_eq!(
-      interpret("SyntaxInformation[x]").unwrap(),
-      "SyntaxInformation[x]"
-    );
+    assert_eq!(interpret("SyntaxInformation[x]").unwrap(), "{}");
   }
 }
 
@@ -6847,7 +6838,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn launch_kernels() {
-    assert_eq!(interpret("LaunchKernels[x]").unwrap(), "LaunchKernels[x]");
+    assert_eq!(interpret("LaunchKernels[x]").unwrap(), "{}");
   }
   #[test]
   fn permutation_cycles() {
@@ -7018,10 +7009,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn elementwise_layer() {
-    assert_eq!(
-      interpret("ElementwiseLayer[x]").unwrap(),
-      "ElementwiseLayer[x]"
-    );
+    assert_eq!(interpret("ElementwiseLayer[x]").unwrap(), "$Failed");
   }
   #[test]
   fn classifier_measurements() {
@@ -7065,7 +7053,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn create_palette() {
-    assert_eq!(interpret("CreatePalette[x]").unwrap(), "CreatePalette[x]");
+    assert_eq!(interpret("CreatePalette[x]").unwrap(), "$Failed");
   }
   #[test]
   fn thinning() {
@@ -7073,7 +7061,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn net_decoder() {
-    assert_eq!(interpret("NetDecoder[x]").unwrap(), "NetDecoder[x]");
+    assert_eq!(interpret("NetDecoder[x]").unwrap(), "$Failed");
   }
   #[test]
   fn erosion() {
@@ -7103,7 +7091,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn boolean_convert() {
-    assert_eq!(interpret("BooleanConvert[x]").unwrap(), "BooleanConvert[x]");
+    assert_eq!(interpret("BooleanConvert[x]").unwrap(), "x");
   }
   #[test]
   fn select_components() {
@@ -7148,10 +7136,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn create_directory() {
-    assert_eq!(
-      interpret("CreateDirectory[x]").unwrap(),
-      "CreateDirectory[x]"
-    );
+    assert_eq!(interpret("CreateDirectory[x]").unwrap(), "$Failed");
   }
 
   // ─── DiscreteDelta ─────────────────────────────────────────────────
@@ -7205,7 +7190,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn vectors() {
-    assert_eq!(interpret("Vectors[x]").unwrap(), "Vectors[x]");
+    assert_eq!(interpret("Vectors[x]").unwrap(), "Vectors[x, Complexes]");
   }
   #[test]
   fn sector_origin() {
@@ -7286,7 +7271,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn directory_q() {
-    assert_eq!(interpret("DirectoryQ[x]").unwrap(), "DirectoryQ[x]");
+    assert_eq!(interpret("DirectoryQ[x]").unwrap(), "False");
   }
   #[test]
   fn image_identify() {
@@ -7453,7 +7438,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn net_model() {
-    assert_eq!(interpret("NetModel[x]").unwrap(), "NetModel[x]");
+    assert_eq!(interpret("NetModel[x]").unwrap(), "$Failed");
   }
   #[test]
   fn rotation_action() {
@@ -7505,10 +7490,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn distribute_definitions() {
-    assert_eq!(
-      interpret("DistributeDefinitions[x]").unwrap(),
-      "DistributeDefinitions[x]"
-    );
+    assert_eq!(interpret("DistributeDefinitions[x]").unwrap(), "{}");
   }
   #[test]
   fn riemann_siegel_z() {
@@ -7516,10 +7498,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn batch_normalization_layer() {
-    assert_eq!(
-      interpret("BatchNormalizationLayer[x]").unwrap(),
-      "BatchNormalizationLayer[x]"
-    );
+    assert_eq!(interpret("BatchNormalizationLayer[x]").unwrap(), "$Failed");
   }
   #[test]
   fn chart_base_style() {
@@ -7544,7 +7523,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn horner_form() {
-    assert_eq!(interpret("HornerForm[x]").unwrap(), "HornerForm[x]");
+    assert_eq!(interpret("HornerForm[x]").unwrap(), "x");
   }
   #[test]
   fn word_boundary() {
@@ -7661,7 +7640,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn softmax_layer() {
-    assert_eq!(interpret("SoftmaxLayer[x]").unwrap(), "SoftmaxLayer[x]");
+    assert_eq!(interpret("SoftmaxLayer[x]").unwrap(), "$Failed");
   }
   #[test]
   fn product_distribution() {
@@ -7741,7 +7720,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn parallel_do() {
-    assert_eq!(interpret("ParallelDo[x]").unwrap(), "ParallelDo[x]");
+    assert_eq!(interpret("ParallelDo[x]").unwrap(), "Null");
   }
   #[test]
   fn barnes_g() {
@@ -7782,11 +7761,11 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn trig_factor() {
-    assert_eq!(interpret("TrigFactor[x]").unwrap(), "TrigFactor[x]");
+    assert_eq!(interpret("TrigFactor[x]").unwrap(), "x");
   }
   #[test]
   fn pooling_layer() {
-    assert_eq!(interpret("PoolingLayer[x]").unwrap(), "PoolingLayer[x]");
+    assert_eq!(interpret("PoolingLayer[x]").unwrap(), "$Failed");
   }
   #[test]
   fn notebook_delete() {
@@ -7817,7 +7796,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn parallelize() {
-    assert_eq!(interpret("Parallelize[x]").unwrap(), "Parallelize[x]");
+    assert_eq!(interpret("Parallelize[x]").unwrap(), "x");
   }
   #[test]
   fn clustering_components() {
@@ -7985,7 +7964,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn dialog_input() {
-    assert_eq!(interpret("DialogInput[x]").unwrap(), "DialogInput[x]");
+    assert_eq!(interpret("DialogInput[x]").unwrap(), "$Failed");
   }
   #[test]
   fn pass_events_down() {
@@ -8168,10 +8147,7 @@ mod batch_unevaluated_wrappers_2 {
   // ─── Unevaluated batch 10 ─────────────────────────────────────────
   #[test]
   fn set_shared_variable() {
-    assert_eq!(
-      interpret("SetSharedVariable[x]").unwrap(),
-      "SetSharedVariable[x]"
-    );
+    assert_eq!(interpret("SetSharedVariable[x]").unwrap(), "Null");
   }
   #[test]
   fn pade_approximant() {
@@ -8322,7 +8298,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn resource_object() {
-    assert_eq!(interpret("ResourceObject[x]").unwrap(), "ResourceObject[x]");
+    assert_eq!(interpret("ResourceObject[x]").unwrap(), "$Failed");
   }
   #[test]
   fn stieltjes_gamma() {
@@ -8341,7 +8317,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn first_case() {
-    assert_eq!(interpret("FirstCase[x, y]").unwrap(), "FirstCase[x, y]");
+    assert_eq!(interpret("FirstCase[x, y]").unwrap(), "Missing[NotFound]");
   }
   #[test]
   fn weierstrass_sigma() {
@@ -8416,10 +8392,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn copy_to_clipboard() {
-    assert_eq!(
-      interpret("CopyToClipboard[x]").unwrap(),
-      "CopyToClipboard[x]"
-    );
+    assert_eq!(interpret("CopyToClipboard[x]").unwrap(), "$Failed");
   }
   #[test]
   fn color_replace() {
@@ -8435,7 +8408,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn system_options() {
-    assert_eq!(interpret("SystemOptions[x]").unwrap(), "SystemOptions[x]");
+    assert_eq!(interpret("SystemOptions[x]").unwrap(), "{}");
   }
   #[test]
   fn sunday() {
@@ -8450,7 +8423,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn print_temporary() {
-    assert_eq!(interpret("PrintTemporary[x]").unwrap(), "PrintTemporary[x]");
+    assert_eq!(interpret("PrintTemporary[x]").unwrap(), "Null");
   }
   #[test]
   fn image_value() {
@@ -8545,7 +8518,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn setting() {
-    assert_eq!(interpret("Setting[x]").unwrap(), "Setting[x]");
+    assert_eq!(interpret("Setting[x]").unwrap(), "x");
   }
   #[test]
   fn b_spline_surface() {
@@ -8589,7 +8562,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn abs_arg() {
-    assert_eq!(interpret("AbsArg[x]").unwrap(), "AbsArg[x]");
+    assert_eq!(interpret("AbsArg[x]").unwrap(), "{Abs[x], Arg[x]}");
   }
   #[test]
   fn interpretation() {

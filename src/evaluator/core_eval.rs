@@ -278,6 +278,38 @@ pub fn evaluate_expr(expr: &Expr) -> Result<String, InterpreterError> {
 /// Evaluate an Expr AST and return a new Expr (not a string).
 /// This is the core function for AST-based evaluation without string round-trips.
 pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // Dynamically grow the stack when running low. This prevents stack
+  // overflows in debug builds where the massive evaluate_function_call_ast_inner
+  // function uses large stack frames.  The 256 KB red zone triggers a 2 MB
+  // growth so that even deep user-defined recursion (e.g. naive Fibonacci)
+  // succeeds regardless of the initial thread stack size.
+  stacker::maybe_grow(256 * 1024, 2 * 1024 * 1024, || {
+    evaluate_expr_to_expr_impl(expr)
+  })
+}
+
+fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // $RecursionLimit enforcement: prevent infinite recursion from
+  // user-defined functions.  When the limit is exceeded, return the
+  // expression unevaluated (matching Wolfram behavior).
+  let depth = crate::RECURSION_DEPTH.with(|d| {
+    let cur = d.get();
+    d.set(cur + 1);
+    cur
+  });
+  struct DepthGuard;
+  impl Drop for DepthGuard {
+    fn drop(&mut self) {
+      crate::RECURSION_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+  }
+  let _guard = DepthGuard;
+
+  const RECURSION_LIMIT: usize = 1024;
+  if depth > RECURSION_LIMIT {
+    return Ok(expr.clone());
+  }
+
   // Trampoline loop: tail-recursive calls return TailCall instead of
   // recursing, so the call stack stays flat regardless of recursion depth.
   let mut current = expr.clone();

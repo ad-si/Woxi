@@ -225,7 +225,10 @@ pub fn get_builtin_attributes(name: &str) -> Vec<&'static str> {
     | "GeneratingFunction" | "ScalingTransform" | "NetGraph" | "CMYKColor" => {
       vec!["Protected", "ReadProtected"]
     }
-    "Plot3D" | "FunctionInterpolation" => {
+    "Plot3D" => {
+      vec!["HoldAll", "Protected", "ReadProtected"]
+    }
+    "FunctionInterpolation" => {
       vec!["HoldAll", "Protected", "ReadProtected"]
     }
 
