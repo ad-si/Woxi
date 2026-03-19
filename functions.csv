@@ -5288,7 +5288,7 @@ SubresultantPolynomialRemainders,,,,9,4612
 SubresultantPolynomials,,,,9,4479
 Subresultants,,,,4,3889
 Subscript,Represents a subscripted expression for display,✅,pure,1,30
-SubscriptBox,,🚫,,3,964
+SubscriptBox,Represents a subscript box for typesetting,✅,pure,3,964
 SubscriptBoxOptions,,,,4,5390
 Subsequences,Returns all contiguous subsequences of a list,✅,pure,10.4,2632
 Subset,,,,3,2688
@@ -5303,7 +5303,7 @@ Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SubStar,,,,6,3537
 SubstitutionSystem,,,,10.2,2578
 Subsuperscript,,🚫,,3,1152
-SubsuperscriptBox,,,,3,1921
+SubsuperscriptBox,Represents a box with both subscript and superscript for typesetting,✅,pure,3,1921
 SubsuperscriptBoxOptions,,,,4,
 SubtitleEncoding,,,,12.1,
 SubtitleTrackSelection,,,,12.2,
