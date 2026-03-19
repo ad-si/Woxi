@@ -338,6 +338,24 @@ pub fn dispatch_list_operations(
       };
       return Some(list_helpers_ast::map_thread_ast(&args[0], &args[1], level));
     }
+    "Downsample" if args.len() == 2 || args.len() == 3 => {
+      if let Expr::List(items) = &args[0] {
+        if let Some(n) = expr_to_i128(&args[1]) {
+          if n >= 1 {
+            let offset = if args.len() == 3 {
+              expr_to_i128(&args[2]).unwrap_or(1)
+            } else {
+              1
+            };
+            let n = n as usize;
+            let offset = (offset - 1).max(0) as usize;
+            let result: Vec<Expr> =
+              items.iter().skip(offset).step_by(n).cloned().collect();
+            return Some(Ok(Expr::List(result)));
+          }
+        }
+      }
+    }
     "BlockMap" if args.len() == 3 || args.len() == 4 => {
       // BlockMap[f, list, n] or BlockMap[f, list, n, offset]
       if let Some(n) = expr_to_i128(&args[2]) {

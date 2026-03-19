@@ -2114,6 +2114,42 @@ mod block_map {
   }
 }
 
+mod downsample {
+  use super::*;
+
+  #[test]
+  fn by_two() {
+    assert_eq!(
+      interpret("Downsample[{a, b, c, d, e, f, g, h}, 2]").unwrap(),
+      "{a, c, e, g}"
+    );
+  }
+
+  #[test]
+  fn by_three() {
+    assert_eq!(
+      interpret("Downsample[{a, b, c, d, e, f, g, h}, 3]").unwrap(),
+      "{a, d, g}"
+    );
+  }
+
+  #[test]
+  fn with_offset() {
+    assert_eq!(
+      interpret("Downsample[{a, b, c, d, e, f, g, h}, 2, 2]").unwrap(),
+      "{b, d, f, h}"
+    );
+  }
+
+  #[test]
+  fn numeric() {
+    assert_eq!(
+      interpret("Downsample[{1, 2, 3, 4, 5, 6}, 2]").unwrap(),
+      "{1, 3, 5}"
+    );
+  }
+}
+
 mod reverse_extended {
   use super::*;
 
