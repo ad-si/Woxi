@@ -1717,6 +1717,39 @@ mod file_name_split {
   }
 }
 
+mod url_build {
+  use super::*;
+
+  #[test]
+  fn passthrough_string() {
+    assert_eq!(
+      interpret(r#"URLBuild["https://example.com"]"#).unwrap(),
+      "https://example.com"
+    );
+  }
+
+  #[test]
+  fn path_segments() {
+    assert_eq!(
+      interpret(r#"URLBuild[{"https://example.com", "path"}]"#).unwrap(),
+      "https://example.com/path"
+    );
+    assert_eq!(
+      interpret(r#"URLBuild[{"https://example.com", "a", "b"}]"#).unwrap(),
+      "https://example.com/a/b"
+    );
+  }
+
+  #[test]
+  fn with_query_params() {
+    assert_eq!(
+      interpret(r#"URLBuild[{"https://example.com", "a", "b"}, {"x" -> "1", "y" -> "2"}]"#)
+        .unwrap(),
+      "https://example.com/a/b?x=1&y=2"
+    );
+  }
+}
+
 mod csv_import {
   use super::*;
 
