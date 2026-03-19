@@ -144,6 +144,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "DiscreteUniformDistribution" => pdf_discrete_uniform(dargs, x),
     "LaplaceDistribution" => pdf_laplace(dargs, x),
     "RayleighDistribution" => pdf_rayleigh(dargs, x),
+    "MultinomialDistribution" => pdf_multinomial(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -1940,4 +1941,121 @@ fn cdf_rayleigh(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(cdf_val, cond)], int(0)))
+}
+
+/// PDF[MultinomialDistribution[n, {p1, ..., pm}], {x1, ..., xm}]
+/// = n! / (x1! * ... * xm!) * p1^x1 * ... * pm^xm when sum(xi) == n and all xi >= 0
+/// = 0 otherwise
+/// Expressed via products of Binomial coefficients:
+/// Binomial[x1+x2, x2] * Binomial[x1+x2+x3, x3] * ... * p1^x1 * ... * pm^xm
+fn pdf_multinomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MultinomialDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let probs = match &dargs[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "MultinomialDistribution: second argument must be a list".into(),
+      ));
+    }
+  };
+  let xs = match &x {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "PDF[MultinomialDistribution[...], x]: x must be a list".into(),
+      ));
+    }
+  };
+  let m = probs.len();
+  if xs.len() != m {
+    return Err(InterpreterError::EvaluationError(
+      "PDF[MultinomialDistribution[...]]: length of x must match length of probabilities".into(),
+    ));
+  }
+
+  // Build the multinomial coefficient as product of binomials:
+  // Binomial[x1+x2, x2] * Binomial[x1+x2+x3, x3] * ...
+  // which equals (x1+...+xm)! / (x1! * x2! * ... * xm!)
+  let mut coeff: Expr = int(1);
+  let mut partial_sum = xs[0].clone();
+  for j in 1..m {
+    partial_sum = plus(partial_sum, xs[j].clone());
+    let binom = Expr::FunctionCall {
+      name: "Binomial".to_string(),
+      args: vec![partial_sum.clone(), xs[j].clone()],
+    };
+    coeff = times(coeff, binom);
+  }
+
+  // Build product: p1^x1 * p2^x2 * ... * pm^xm
+  let mut prob_product = power(probs[0].clone(), xs[0].clone());
+  for j in 1..m {
+    prob_product = times(prob_product, power(probs[j].clone(), xs[j].clone()));
+  }
+
+  let pdf_val = times(coeff, prob_product);
+
+  // Conditions: sum(xi) == n and all xi >= 0
+  let sum_xs = {
+    let mut s = xs[0].clone();
+    for j in 1..m {
+      s = plus(s, xs[j].clone());
+    }
+    s
+  };
+  let sum_eq_n = comparison(sum_xs, ComparisonOp::Equal, n);
+
+  let mut conditions = vec![sum_eq_n];
+  for xi in &xs {
+    conditions.push(comparison(xi.clone(), ComparisonOp::GreaterEqual, int(0)));
+  }
+
+  // Combine conditions with And
+  let combined_cond = if conditions.len() == 1 {
+    conditions.remove(0)
+  } else {
+    Expr::FunctionCall {
+      name: "And".to_string(),
+      args: conditions,
+    }
+  };
+
+  eval(piecewise(vec![(pdf_val, combined_cond)], int(0)))
+}
+
+/// Returns (Mean list, Variance list) for MultinomialDistribution
+/// Mean_i = n * p_i, Variance_i = n * p_i * (1 - p_i)
+pub fn multinomial_mean_variance(
+  dargs: &[Expr],
+) -> Result<(Expr, Expr), InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "MultinomialDistribution expects 2 arguments".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let probs = match &dargs[1] {
+    Expr::List(items) => items.clone(),
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "MultinomialDistribution: second argument must be a list".into(),
+      ));
+    }
+  };
+
+  let mut means = Vec::new();
+  let mut variances = Vec::new();
+  for p in &probs {
+    let mean_i = times(n.clone(), p.clone());
+    let var_i = times(times(n.clone(), p.clone()), minus(int(1), p.clone()));
+    means.push(eval(mean_i)?);
+    variances.push(eval(var_i)?);
+  }
+
+  Ok((Expr::List(means), Expr::List(variances)))
 }

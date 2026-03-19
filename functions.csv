@@ -3644,7 +3644,7 @@ Multicolumn,Multi-column layout,✅,unevaluated,10,1648
 MultiedgeStyle,,,,6,2005
 MultigraphQ,,,,10,4479
 Multinomial,Returns the multinomial coefficient,✅,pure,1,1707
-MultinomialDistribution,,,,8,1954
+MultinomialDistribution,Multivariate discrete distribution for modeling outcomes of n independent trials with m categories,implemented,none,8,1954
 MultinormalDistribution,,🚫,,8,1042
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4,1760
 MultiplySides,,,,11.3,2611
