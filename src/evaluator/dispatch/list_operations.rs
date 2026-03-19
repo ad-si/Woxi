@@ -1149,6 +1149,9 @@ pub fn dispatch_list_operations(
     "ArrayDepth" if args.len() == 1 => {
       return Some(list_helpers_ast::array_depth_ast(&args[0]));
     }
+    "TensorRank" if args.len() == 1 => {
+      return Some(list_helpers_ast::tensor_rank_ast(&args[0]));
+    }
     "ArrayQ" if args.len() == 1 => {
       return Some(list_helpers_ast::array_q_ast(&args[0]));
     }

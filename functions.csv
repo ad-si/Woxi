@@ -468,7 +468,7 @@ BinaryDeserialize,,,,11.1,3636
 BinaryDistance,,,,10.2,4479
 BinaryFormat,,,,3,1962
 BinaryImageQ,,,,7,4660
-BinaryRead,,,,5.1,1926
+BinaryRead,Reads a single binary object from a file or stream,🚫,io,5.1,1926
 BinaryReadList,Read binary data from a file,✅,pure,5.1,1509
 BinarySerialize,,,,11.1,3108
 BinaryWrite,Write binary data,✅,unevaluated,5.1,1833
@@ -5479,7 +5479,7 @@ TensorContract,Contract tensor indices,✅,pure,9,1484
 TensorDimensions,,,,9,3008
 TensorExpand,,,,9,2167
 TensorProduct,Tensor product of arrays,✅,none,9,797
-TensorRank,,,,9,1938
+TensorRank,Gives the rank (number of indices) of a tensor,✅,pure,9,1938
 TensorReduce,,,,9,2108
 TensorSymmetry,,,,9,2993
 TensorTranspose,,,,9,2394
@@ -6041,7 +6041,7 @@ WattsStrogatzGraphDistribution,,,,8,2707
 WaveletBestBasis,,,,8,3389
 WaveletFilterCoefficients,,,,8,2239
 WaveletImagePlot,,,,8,3031
-WaveletListPlot,,,,8,1921
+WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8,1921
 WaveletMapIndexed,,,,8,2383
 WaveletMatrixPlot,,,,8,3176
 WaveletPhi,,,,8,2371
