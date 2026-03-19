@@ -1908,4 +1908,51 @@ mod to_boxes {
     // ToBoxes evaluates its argument first
     assert_eq!(interpret("ToBoxes[1 + 2]").unwrap(), "3");
   }
+
+  #[test]
+  fn subscript_box() {
+    assert_eq!(
+      interpret("ToBoxes[Subscript[x, 0]]").unwrap(),
+      "SubscriptBox[x, 0]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Subscript[a, b]]").unwrap(),
+      "SubscriptBox[a, b]"
+    );
+  }
+
+  #[test]
+  fn subsuperscript_box() {
+    // Power[Subscript[x, sub], exp] → SubsuperscriptBox
+    assert_eq!(
+      interpret("ToBoxes[Subscript[a, b]^c]").unwrap(),
+      "SubsuperscriptBox[a, b, c]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Subscript[x, 0]^n]").unwrap(),
+      "SubsuperscriptBox[x, 0, n]"
+    );
+    // Special rational exponents still use SqrtBox/FractionBox with SubscriptBox
+    assert_eq!(
+      interpret("ToBoxes[Subscript[a, b]^(1/2)]").unwrap(),
+      "SqrtBox[SubscriptBox[a, b]]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Subscript[a, b]^(-1/2)]").unwrap(),
+      "FractionBox[1, SqrtBox[SubscriptBox[a, b]]]"
+    );
+  }
+
+  #[test]
+  fn subsuperscript_box_unevaluated() {
+    // SubsuperscriptBox stays unevaluated as a symbolic head
+    assert_eq!(
+      interpret("SubsuperscriptBox[\"x\", \"0\", \"n\"]").unwrap(),
+      "SubsuperscriptBox[x, 0, n]"
+    );
+    assert_eq!(
+      interpret("Head[SubsuperscriptBox[\"x\", \"0\", \"n\"]]").unwrap(),
+      "SubsuperscriptBox"
+    );
+  }
 }

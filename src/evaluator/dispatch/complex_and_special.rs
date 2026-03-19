@@ -1284,9 +1284,31 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           };
         }
       }
+      // Power[Subscript[x, sub], exp] → SubsuperscriptBox[box(x), box(sub), box(exp)]
+      if let Expr::FunctionCall { name: bn, args: ba } = &args[0]
+        && bn == "Subscript"
+        && ba.len() == 2
+      {
+        return Expr::FunctionCall {
+          name: "SubsuperscriptBox".to_string(),
+          args: vec![
+            expr_to_box_form(&ba[0]),
+            expr_to_box_form(&ba[1]),
+            expr_to_box_form(&args[1]),
+          ],
+        };
+      }
       // General power: SuperscriptBox[box(base), box(exp)]
       Expr::FunctionCall {
         name: "SuperscriptBox".to_string(),
+        args: vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Subscript" && args.len() == 2 =>
+    {
+      Expr::FunctionCall {
+        name: "SubscriptBox".to_string(),
         args: vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       }
     }
@@ -1346,6 +1368,20 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             ],
           };
         }
+      }
+      // BinaryOp::Power with Subscript base → SubsuperscriptBox
+      if let Expr::FunctionCall { name: bn, args: ba } = left.as_ref()
+        && bn == "Subscript"
+        && ba.len() == 2
+      {
+        return Expr::FunctionCall {
+          name: "SubsuperscriptBox".to_string(),
+          args: vec![
+            expr_to_box_form(&ba[0]),
+            expr_to_box_form(&ba[1]),
+            expr_to_box_form(right),
+          ],
+        };
       }
       Expr::FunctionCall {
         name: "SuperscriptBox".to_string(),
