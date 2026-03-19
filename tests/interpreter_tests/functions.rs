@@ -2260,6 +2260,49 @@ mod factorial_power {
   }
 }
 
+mod machine_number_q {
+  use super::*;
+
+  #[test]
+  fn real_is_true() {
+    assert_eq!(interpret("MachineNumberQ[1.5]").unwrap(), "True");
+  }
+
+  #[test]
+  fn integer_is_false() {
+    assert_eq!(interpret("MachineNumberQ[1]").unwrap(), "False");
+  }
+
+  #[test]
+  fn rational_is_false() {
+    assert_eq!(interpret("MachineNumberQ[1/3]").unwrap(), "False");
+  }
+
+  #[test]
+  fn string_is_false() {
+    assert_eq!(interpret("MachineNumberQ[\"hello\"]").unwrap(), "False");
+  }
+}
+
+mod text_string {
+  use super::*;
+
+  #[test]
+  fn integer() {
+    assert_eq!(interpret("TextString[42]").unwrap(), "42");
+  }
+
+  #[test]
+  fn list() {
+    assert_eq!(interpret("TextString[{1, 2, 3}]").unwrap(), "{1, 2, 3}");
+  }
+
+  #[test]
+  fn string_passthrough() {
+    assert_eq!(interpret("TextString[\"hello\"]").unwrap(), "hello");
+  }
+}
+
 mod reverse_extended {
   use super::*;
 

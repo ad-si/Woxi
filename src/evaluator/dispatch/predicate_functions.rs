@@ -23,6 +23,16 @@ pub fn dispatch_predicate_functions(
     "IntegerQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::integer_q_ast(args));
     }
+    "MachineNumberQ" if args.len() == 1 => {
+      return Some(Ok(Expr::Identifier(
+        if matches!(&args[0], Expr::Real(_)) {
+          "True"
+        } else {
+          "False"
+        }
+        .to_string(),
+      )));
+    }
     "BooleanQ" if args.len() == 1 => {
       return Some(Ok(match &args[0] {
         Expr::Identifier(name) if name == "True" || name == "False" => {
