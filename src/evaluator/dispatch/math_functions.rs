@@ -932,6 +932,12 @@ pub fn dispatch_math_functions(
     "BitNot" if args.len() == 1 => {
       return Some(crate::functions::math_ast::bit_not_ast(args));
     }
+    "BitShiftRight" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::bit_shift_right_ast(args));
+    }
+    "BitShiftLeft" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::math_ast::bit_shift_left_ast(args));
+    }
     "IntegerExponent" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::integer_exponent_ast(args));
     }
