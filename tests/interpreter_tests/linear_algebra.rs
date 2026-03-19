@@ -1372,3 +1372,60 @@ mod tensor_rank {
     assert_eq!(interpret("TensorRank[f[x]]").unwrap(), "TensorRank[f[x]]");
   }
 }
+
+mod symmetric_matrix_q {
+  use super::*;
+
+  #[test]
+  fn symmetric_true() {
+    assert_eq!(
+      interpret("SymmetricMatrixQ[{{1, 2}, {2, 3}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SymmetricMatrixQ[{{1, 2, 3}, {2, 5, 6}, {3, 6, 9}}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn symmetric_false() {
+    assert_eq!(
+      interpret("SymmetricMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn non_square() {
+    assert_eq!(
+      interpret("SymmetricMatrixQ[{{1, 2, 3}, {4, 5, 6}}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn not_a_matrix() {
+    assert_eq!(interpret("SymmetricMatrixQ[42]").unwrap(), "False");
+    assert_eq!(interpret("SymmetricMatrixQ[x]").unwrap(), "False");
+    assert_eq!(interpret("SymmetricMatrixQ[{1, 2, 3}]").unwrap(), "False");
+    assert_eq!(interpret("SymmetricMatrixQ[{}]").unwrap(), "False");
+  }
+
+  #[test]
+  fn single_element() {
+    assert_eq!(interpret("SymmetricMatrixQ[{{1}}]").unwrap(), "True");
+  }
+
+  #[test]
+  fn symbolic_entries() {
+    assert_eq!(
+      interpret("SymmetricMatrixQ[{{a, b}, {b, c}}]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("SymmetricMatrixQ[{{a, b}, {c, d}}]").unwrap(),
+      "False"
+    );
+  }
+}

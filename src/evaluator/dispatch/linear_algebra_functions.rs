@@ -86,6 +86,11 @@ pub fn dispatch_linear_algebra_functions(
     "Eigenvalues" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::eigenvalues_ast(args));
     }
+    "SymmetricMatrixQ" if args.len() == 1 => {
+      return Some(crate::functions::list_helpers_ast::symmetric_matrix_q_ast(
+        &args[0],
+      ));
+    }
     "PositiveDefiniteMatrixQ" if args.len() == 1 => {
       // Compute eigenvalues and check all are strictly positive
       let eigenvals_result =

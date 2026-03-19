@@ -5359,7 +5359,7 @@ SymmetricDifference,,,,13.1,
 SymmetricGroup,Symmetric group,✅,unevaluated,8,1905
 SymmetricKey,,,,10.1,5013
 SymmetricMatrix,,,,14,
-SymmetricMatrixQ,,,,7,1940
+SymmetricMatrixQ,Tests whether a matrix is symmetric,✅,pure,7,1940
 SymmetricPolynomial,,,,6,2561
 SymmetricReduction,,,,6,2112
 Symmetrize,,,,9,2679
