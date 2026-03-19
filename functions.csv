@@ -3347,7 +3347,7 @@ LUVColor,,,,10,3717
 LyapunovSolve,,,,8,3389
 LyonsGroupLy,,,,8,5184
 M,,,,,
-MachineNumberQ,,,,2,2059
+MachineNumberQ,Test whether an expression is a machine-precision real number,✅,1,2,2059
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5,886
 Magenta,Named color evaluating to RGBColor[1 0 1],✅,pure,5.1,432
 Magnification,,🚫,,3,1145
@@ -5512,7 +5512,7 @@ TextRecognize,Recognize text in image,✅,unevaluated,8,1779
 TextSearch,,,,10.2,2971
 TextSearchReport,,,,10.2,4747
 TextSentences,Extract sentences from text,✅,unevaluated,10.1,1578
-TextString,,,,10,2059
+TextString,Convert any expression to a human-readable string,✅,1,10,2059
 TextStructure,,,,10.3,2545
 TextSummarize,,,,14,
 TextTranslation,,,,11.1,2971
