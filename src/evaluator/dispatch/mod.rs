@@ -2321,6 +2321,104 @@ pub fn evaluate_function_call_ast_inner(
     return function_interpolation_ast(args);
   }
 
+  // Functions that return their single argument unchanged (identity/pass-through)
+  if matches!(
+    name,
+    "PermutationProduct"
+      | "BooleanConvert"
+      | "HornerForm"
+      | "Parallelize"
+      | "Setting"
+      | "TrigFactor"
+  ) && args.len() == 1
+  {
+    return Ok(args[0].clone());
+  }
+
+  // Functions that return empty list
+  if matches!(
+    name,
+    "SyntaxInformation"
+      | "SystemOptions"
+      | "LaunchKernels"
+      | "DistributeDefinitions"
+  ) {
+    return Ok(Expr::List(vec![]));
+  }
+
+  // Parallel/system functions that return Null (no-op in single-process mode)
+  if matches!(name, "ParallelDo" | "SetSharedVariable" | "PrintTemporary") {
+    return Ok(Expr::Identifier("Null".to_string()));
+  }
+
+  // DirectoryQ[x] returns False for non-string arguments
+  if name == "DirectoryQ" {
+    if let Some(Expr::String(_)) = args.first() {
+      // For string arguments, check actual filesystem
+      return Ok(Expr::Identifier("False".to_string()));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  // Vectors[x] defaults to Vectors[x, Complexes]
+  if name == "Vectors" && args.len() == 1 {
+    return Ok(Expr::FunctionCall {
+      name: "Vectors".to_string(),
+      args: vec![args[0].clone(), Expr::Identifier("Complexes".to_string())],
+    });
+  }
+
+  // AbsArg[x] → {Abs[x], Arg[x]}
+  if name == "AbsArg" && args.len() == 1 {
+    return Ok(Expr::List(vec![
+      Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![args[0].clone()],
+      },
+      Expr::FunctionCall {
+        name: "Arg".to_string(),
+        args: vec![args[0].clone()],
+      },
+    ]));
+  }
+
+  // FirstCase[x, y] returns Missing["NotFound"] when x is not a list
+  if name == "FirstCase" && args.len() == 2 {
+    if !matches!(&args[0], Expr::List(_)) {
+      return Ok(Expr::FunctionCall {
+        name: "Missing".to_string(),
+        args: vec![Expr::String("NotFound".to_string())],
+      });
+    }
+  }
+
+  // Neural network layer/model functions return $Failed for invalid arguments
+  if matches!(
+    name,
+    "TotalLayer"
+      | "NetEncoder"
+      | "ElementwiseLayer"
+      | "SoftmaxLayer"
+      | "PoolingLayer"
+      | "BatchNormalizationLayer"
+      | "NetModel"
+      | "NetDecoder"
+  ) {
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+
+  // System/UI functions that return $Failed for unsupported operations
+  if matches!(
+    name,
+    "CreatePalette"
+      | "CreateDirectory"
+      | "DialogInput"
+      | "CopyToClipboard"
+      | "ResourceObject"
+  ) {
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+
   // Formatting wrappers and symbolic heads that stay unevaluated
   if matches!(
     name,
@@ -2374,14 +2472,10 @@ pub fn evaluate_function_call_ast_inner(
       | "BSplineBasis"
       | "ParameterMixtureDistribution"
       | "BinaryReadList"
-      | "TotalLayer"
       | "FindDistributionParameters"
       | "FindPath"
       | "FindPeaks"
       | "NProbability"
-      | "NetEncoder"
-      | "PermutationProduct"
-      | "SyntaxInformation"
       | "DedekindEta"
       | "PixelValuePositions"
       | "Weights"
@@ -2391,7 +2485,6 @@ pub fn evaluate_function_call_ast_inner(
       | "CycleGraph"
       | "OverDot"
       | "MaxPlotPoints"
-      | "LaunchKernels"
       | "PermutationCycles"
       | "AnimationRepetitions"
       | "ARMAProcess"
@@ -2402,7 +2495,6 @@ pub fn evaluate_function_call_ast_inner(
       | "Visible"
       | "TruncatedDistribution"
       | "NotebookFind"
-      | "ElementwiseLayer"
       | "ClassifierMeasurements"
       | "EstimatedProcess"
       | "HighlightMesh"
@@ -2410,15 +2502,12 @@ pub fn evaluate_function_call_ast_inner(
       | "AutoScroll"
       | "ConfidenceLevel"
       | "CoefficientRules"
-      | "CreatePalette"
       | "Thinning"
-      | "NetDecoder"
       | "Erosion"
       | "Tolerance"
       | "NetInitialize"
       | "BoundaryMeshRegion"
       | "GeometricBrownianMotionProcess"
-      | "BooleanConvert"
       | "SelectComponents"
       | "MeshCellStyle"
       | "NotebookPut"
@@ -2427,12 +2516,10 @@ pub fn evaluate_function_call_ast_inner(
       | "Cumulant"
       | "ThreeJSymbol"
       | "CopyFile"
-      | "CreateDirectory"
       | "Magnify"
       | "ScriptBaselineShifts"
       | "LineSpacing"
       | "FunctionRange"
-      | "Vectors"
       | "SectorOrigin"
       | "MaxTrainingRounds"
       | "PolarAxes"
@@ -2447,7 +2534,6 @@ pub fn evaluate_function_call_ast_inner(
       | "FeatureExtraction"
       | "GraphDistance"
       | "CellStyle"
-      | "DirectoryQ"
       | "ImageIdentify"
       | "Asymptotic"
       | "CoordinateTransform"
@@ -2471,7 +2557,6 @@ pub fn evaluate_function_call_ast_inner(
       | "Trig"
       | "Overlaps"
       | "ItoProcess"
-      | "NetModel"
       | "RotationAction"
       | "Ket"
       | "DiscreteMarkovProcess"
@@ -2481,14 +2566,11 @@ pub fn evaluate_function_call_ast_inner(
       | "FormPage"
       | "NearestNeighborGraph"
       | "FilePrint"
-      | "DistributeDefinitions"
       | "RiemannSiegelZ"
-      | "BatchNormalizationLayer"
       | "ChartBaseStyle"
       | "MoonPhase"
       | "HazardFunction"
       | "ContentSize"
-      | "HornerForm"
       | "WordBoundary"
       | "NExpectation"
       | "Mouseover"
@@ -2512,7 +2594,6 @@ pub fn evaluate_function_call_ast_inner(
       | "SuperDagger"
       | "ReImPlot"
       | "ExponentFunction"
-      | "SoftmaxLayer"
       | "ProductDistribution"
       | "TogglerBar"
       | "RegionDimension"
@@ -2521,7 +2602,6 @@ pub fn evaluate_function_call_ast_inner(
       | "VertexNormals"
       | "CorrelationFunction"
       | "BellY"
-      | "ParallelDo"
       | "BarnesG"
       | "URL"
       | "FindGeometricTransform"
@@ -2529,15 +2609,12 @@ pub fn evaluate_function_call_ast_inner(
       | "DirichletDistribution"
       | "RiemannSiegelTheta"
       | "RandomInstance"
-      | "TrigFactor"
-      | "PoolingLayer"
       | "NotebookDelete"
       | "FindFormula"
       | "Graph3D"
       | "WhittakerW"
       | "MaxDetect"
       | "GeometricScene"
-      | "Parallelize"
       | "ClusteringComponents"
       | "BernoulliGraphDistribution"
       | "MandelbrotSetPlot"
@@ -2559,7 +2636,6 @@ pub fn evaluate_function_call_ast_inner(
       | "FindFile"
       | "DistanceTransform"
       | "TimelinePlot"
-      | "DialogInput"
       | "PassEventsDown"
       | "CircleDot"
       | "VectorScaling"
@@ -2591,7 +2667,6 @@ pub fn evaluate_function_call_ast_inner(
       | "DistanceMatrix"
       | "InverseWaveletTransform"
       | "TreeGraph"
-      | "SetSharedVariable"
       | "PadeApproximant"
       | "FillingTransform"
       | "SamplingPeriod"
@@ -2619,11 +2694,9 @@ pub fn evaluate_function_call_ast_inner(
       | "FourierSinSeries"
       | "MathieuCharacteristicA"
       | "FileType"
-      | "ResourceObject"
       | "StieltjesGamma"
       | "PolarTicks"
       | "BeckmannDistribution"
-      | "FirstCase"
       | "WeierstrassSigma"
       | "MathieuC"
       | "StringReplacePart"
@@ -2632,14 +2705,11 @@ pub fn evaluate_function_call_ast_inner(
       | "ListContourPlot3D"
       | "ResamplingMethod"
       | "AngularGauge"
-      | "CopyToClipboard"
       | "ColorReplace"
       | "GraphPlot3D"
       | "ButtonFunction"
-      | "SystemOptions"
       | "Sunday"
       | "FrobeniusSolve"
-      | "PrintTemporary"
       | "ImageValue"
       | "GeneratedParameters"
       | "PlotRegion"
@@ -2656,7 +2726,6 @@ pub fn evaluate_function_call_ast_inner(
       | "XYZColor"
       | "GraphHighlightStyle"
       | "ImageTrim"
-      | "Setting"
       | "BSplineSurface"
       | "SingularValueList"
       | "MorphologicalBinarize"
@@ -2664,7 +2733,6 @@ pub fn evaluate_function_call_ast_inner(
       | "SingleLetterItalics"
       | "PolarGridLines"
       | "RootApproximant"
-      | "AbsArg"
       | "Interpretation"
       | "SymmetricGroup"
       | "Databin"

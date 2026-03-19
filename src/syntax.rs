@@ -3911,6 +3911,11 @@ pub fn expr_to_string(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_string).collect();
         return parts.join(" \u{27F6} ");
       }
+      // Special case: Proportional[a, b, ...] displays as a ∝ b ∝ ...
+      if name == "Proportional" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_string).collect();
+        return parts.join(" \u{221D} ");
+      }
       // BlankSequence[] → __, BlankSequence[h] → __h
       if name == "BlankSequence" {
         if args.is_empty() {
@@ -5353,6 +5358,11 @@ pub fn expr_to_output(expr: &Expr) -> String {
         let parts: Vec<String> = args.iter().map(expr_to_output).collect();
         return parts.join(" \u{27F6} ");
       }
+      // Special case: Proportional[a, b, ...] displays as a ∝ b ∝ ...
+      if name == "Proportional" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(expr_to_output).collect();
+        return parts.join(" \u{221D} ");
+      }
       // BlankSequence[] → __, BlankSequence[h] → __h
       if name == "BlankSequence" {
         if args.is_empty() {
@@ -6396,6 +6406,18 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
       format!("Inequality[{}]", parts.join(", "))
     }
     // Unicode operator functions: use same Unicode formatting as OutputForm
+    Expr::FunctionCall { name, args }
+      if name == "LongRightArrow" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{27F6} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Proportional" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{221D} ")
+    }
     Expr::FunctionCall { name, args } if name == "PlusMinus" => {
       if args.len() == 1 {
         format!("\u{00B1}{}", expr_to_input_form(&args[0]))

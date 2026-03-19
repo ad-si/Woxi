@@ -3,7 +3,7 @@ use pest::iterators::Pair;
 use pest_derive::Parser;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -38,6 +38,8 @@ thread_local! {
     pub static UPVALUES: RefCell<HashMap<String, Vec<(String, Vec<String>, Vec<Option<syntax::Expr>>, Vec<Option<syntax::Expr>>, Vec<Option<String>>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Track Part evaluation nesting depth for Part::partd warnings
     static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
+    // Track evaluation recursion depth for $RecursionLimit enforcement
+    pub static RECURSION_DEPTH: Cell<usize> = const { Cell::new(0) };
     // Reap/Sow stack: each Reap call pushes a Vec to collect (value, tag) pairs
     pub static SOW_STACK: RefCell<Vec<Vec<(syntax::Expr, syntax::Expr)>>> = const { RefCell::new(Vec::new()) };
     // Context stack for Begin/End: stores the context strings pushed by Begin[]
@@ -598,6 +600,7 @@ pub fn clear_state() {
   UPVALUES.with(|m| m.borrow_mut().clear());
   SOW_STACK.with(|s| s.borrow_mut().clear());
   CONTEXT_STACK.with(|s| s.borrow_mut().clear());
+  RECURSION_DEPTH.with(|d| d.set(0));
   unseed_rng();
   clear_captured_stdout();
   clear_captured_graphics();

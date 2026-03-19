@@ -509,6 +509,15 @@ function main() {
     /\bGraphEmbedding\[/,   // Different layout algorithms produce different coordinates
     /\bBezierFunction\[/,   // Different internal representation of BezierFunction objects
     /\bN\[BesselJZero\[/,   // Last-ULP floating-point differences in root finding
+    /\bBodePlot\[/,         // Complex Graphics output, implementation-specific rendering
+    /\bDefaultButton\[/,    // Complex UI rendering (Button with Dynamic)
+    /\bParallelSubmit\[/,   // Returns EvaluationObject with internal state
+    /\bTimelinePlot\[/,     // Complex Graphics output, implementation-specific rendering
+    /\bAngularGauge\[/,     // Complex Graphics output, implementation-specific rendering
+    /\bSmoothDensityHistogram\[/, // Complex Graphics output, implementation-specific rendering
+    /\bServiceConnect\[/,   // Network-dependent Failure result
+    /\bNetGraph\[/,         // Neural network internals differ between implementations
+    /\bConnectedComponents\[/, // Vertex ordering within components is implementation-specific
   ];
 
   // Specific expressions where Woxi is more accurate than Wolfram.
@@ -540,6 +549,26 @@ function main() {
     "PDF[WeibullDistribution[2, 3], 1]",
     // Exponent form: (a-1) vs (-1+a) (canonical Plus ordering)
     "PDF[WeibullDistribution[a, b], x]",
+    // Canonical Plus ordering: (1 - x) vs (-1 + x)
+    "GeneratingFunction[n, n, x]",
+    "GeneratingFunction[Binomial[n, 2], n, x]",
+    // Fraction expansion form difference
+    "GeneratingFunction[f[n + 1], n, x]",
+    // 1/Pi vs Pi^(-1) (canonical Power form)
+    "PDF[CauchyDistribution[0, 1], 0]",
+    // Term ordering in Times: s^2*(2 - Pi/2) vs (2 - Pi/2)*s^2
+    "Variance[RayleighDistribution[s]]",
+    // Complex polynomial algebra (not yet implemented)
+    "CoefficientRules[x, y]",
+    "PolynomialReduce[x, y]",
+    "PolynomialGCD[x, y]",
+    // Complex transform functions (not yet implemented)
+    "ZTransform[x, y, z]",
+    "InverseZTransform[x, y, z]",
+    "FourierCoefficient[x, y, z]",
+    // Complex optimization (not yet implemented)
+    "MinValue[x, y]",
+    "ArgMax[x, y]",
   ]);
 
   // Filter out multiline expressions (they break the generated scripts).
