@@ -1268,14 +1268,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             args: vec![expr_to_box_form(&args[0])],
           };
         }
-        // Power[base, -1/2] → FractionBox[1, SqrtBox[box(base)]]
+        // Power[base, -1/2] → FractionBox["1", SqrtBox[box(base)]]
         if matches!(&ra[0], Expr::Integer(-1))
           && matches!(&ra[1], Expr::Integer(2))
         {
           return Expr::FunctionCall {
             name: "FractionBox".to_string(),
             args: vec![
-              Expr::Integer(1),
+              Expr::String("1".to_string()),
               Expr::FunctionCall {
                 name: "SqrtBox".to_string(),
                 args: vec![expr_to_box_form(&args[0])],
@@ -1360,7 +1360,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           return Expr::FunctionCall {
             name: "FractionBox".to_string(),
             args: vec![
-              Expr::Integer(1),
+              Expr::String("1".to_string()),
               Expr::FunctionCall {
                 name: "SqrtBox".to_string(),
                 args: vec![expr_to_box_form(left)],
