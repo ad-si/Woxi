@@ -537,7 +537,7 @@ BlockchainTransactionSign,,,,12,5587
 BlockchainTransactionSubmit,,,,12,5587
 BlockDiagonalMatrix,,,,13.1,
 BlockLowerTriangularMatrix,,,,13.1,
-BlockMap,,,,10.2,2002
+BlockMap,Apply a function to non-overlapping or sliding blocks of a list,implemented,none,10.2,2002
 BlockRandom,,🚫,,6,1134
 BlockUpperTriangularMatrix,,,,13.1,
 BlomqvistBeta,,,,9,3947

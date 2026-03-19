@@ -338,6 +338,19 @@ pub fn dispatch_list_operations(
       };
       return Some(list_helpers_ast::map_thread_ast(&args[0], &args[1], level));
     }
+    "BlockMap" if args.len() == 3 || args.len() == 4 => {
+      // BlockMap[f, list, n] or BlockMap[f, list, n, offset]
+      if let Some(n) = expr_to_i128(&args[2]) {
+        let d = if args.len() == 4 {
+          expr_to_i128(&args[3])
+        } else {
+          None
+        };
+        return Some(list_helpers_ast::partition_ast(&args[1], n, d).and_then(
+          |partitioned| list_helpers_ast::map_ast(&args[0], &partitioned),
+        ));
+      }
+    }
     "Partition" if args.len() == 2 || args.len() == 3 => {
       if let Some(n) = expr_to_i128(&args[1]) {
         let d = if args.len() == 3 {
