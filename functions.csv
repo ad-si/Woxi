@@ -3,7 +3,7 @@ AASTriangle,,,,10,3522
 AbelianGroup,,,,8,2693
 Abort,Aborts evaluation,✅,effectful,2,980
 AbortKernels,,,,7,3578
-AbortProtect,,,,2,2089
+AbortProtect,Protect computation from abort,🚫,,2,2089
 Above,Placement symbol representing above position,✅,pure,1,816
 Abs,Returns the absolute value of a number,✅,pure,1,64
 AbsArg,Absolute value and argument,✅,unevaluated,10.1,1901
@@ -120,7 +120,7 @@ AngleBisector,,,,12,4204
 AngleBracket,Symbolic representation of angle brackets,✅,,3,1329
 AnglePath,Generate 2D points by successively turning and stepping,✅,pure,10.1,1543
 AnglePath3D,,,,11.1,4052
-AngleVector,,,,10.1,2074
+AngleVector,Direction vector from angle,🚫,,10.1,2074
 AngularGauge,Angular gauge,✅,unevaluated,9,1860
 Animate,,🚫,,6,417
 AnimatedImage,,🚫,,12.2,4027
@@ -333,7 +333,7 @@ AudioPartition,,,,11,3916
 AudioPause,,,,11.2,5486
 AudioPitchShift,,,,11,4052
 AudioPlay,,,,11.2,3916
-AudioPlot,,,,11,2102
+AudioPlot,Plot audio waveform,🚫,,11,2102
 AudioQ,,,,11,4947
 AudioRecord,,,,11.3,5079
 AudioReplace,,,,11.1,4947
@@ -439,7 +439,7 @@ BernoulliB,Returns the nth Bernoulli number,✅,pure,1,876
 BernoulliDistribution,Represents a Bernoulli distribution,✅,pure,6,1274
 BernoulliGraphDistribution,Bernoulli random graph,✅,unevaluated,8,1748
 BernoulliProcess,,,,9,3636
-BernsteinBasis,,,,7,2034
+BernsteinBasis,Bernstein basis polynomial,🚫,,7,2034
 BesagL,,,,12.2,5184
 BesselFilterModel,,,,9,4660
 BesselI,Modified Bessel function of the first kind,✅,pure,1,664
@@ -685,7 +685,7 @@ CatalanNumber,Returns the nth Catalan number,✅,pure,6,1788
 Catch,Catches a value thrown by Throw,✅,pure,1,353
 CategoricalDistribution,,,,12.1,5486
 Catenate,Flattens one level of lists,✅,pure,10,1063
-CatenateLayer,,,,11,2084
+CatenateLayer,Neural network concatenation layer,🚫,,11,2084
 CauchyDistribution,Cauchy probability distribution,✅,pure,6,1543
 CauchyMatrix,,,,13.2,
 CauchyPointProcess,,,,12.2,5184
@@ -796,7 +796,7 @@ ChineseRemainder,Solves a system of modular congruences,✅,pure,6,2389
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6,1186
 ChoiceButtons,,,,7,3326
 ChoiceDialog,,,,6,2442
-CholeskyDecomposition,,,,5,2067
+CholeskyDecomposition,Cholesky factorization of positive-definite matrix,🚫,,5,2067
 Chop,Replaces approximate real numbers close to zero by exact 0,✅,pure,1,328
 ChromaticityPlot,,,,10,2394
 ChromaticityPlot3D,,,,10,3059
@@ -1013,7 +1013,7 @@ ConjugateTranspose,Returns the conjugate transpose of a matrix,✅,pure,5.1,770
 Conjunction,,,,7,4437
 ConnectedComponents,Find connected components of a graph,✅,pure,8,1441
 ConnectedGraphComponents,,,,10.4,3121
-ConnectedGraphQ,,,,8,2089
+ConnectedGraphQ,Test if graph is connected,🚫,,8,2089
 ConnectedMeshComponents,,,,10,3215
 ConnectedMoleculeComponents,,,,12,5587
 ConnectedMoleculeQ,,,,12,
@@ -1179,7 +1179,7 @@ CreateSystemModel,,,,11.3,4660
 CreateTypeInstance,,,,13.1,
 CreateUUID,,,,10,3280
 CreateVectorDatabase,,,,14.1,
-CreateWindow,,,,6,2079
+CreateWindow,Create GUI window,🚫,,6,2079
 CriterionFunction,,,,10.4,2578
 CriticalityFailureImportance,,,,9,4138
 CriticalitySuccessImportance,,,,9,4479
@@ -1215,7 +1215,7 @@ CurrentScreenImage,,,,11.2,4387
 CurrentValue,Returns current values of frontend settings,✅,effectful,6,442
 CurryApplied,,,,12.1,5184
 CurvatureFlowFilter,,,,8,3121
-CurveClosed,,,,8,2084
+CurveClosed,Check if curve is closed,🚫,,8,2084
 Cyan,Named color evaluating to RGBColor[0 1 1],✅,pure,5.1,507
 CycleGraph,Cycle graph on n vertices,✅,pure,8,1547
 CycleIndexPolynomial,,,,9,3124
@@ -1678,7 +1678,7 @@ EllipticNomeQ,Elliptic nome function,✅,pure,3,1415
 EllipticPi,Elliptic integral of the third kind,✅,pure,1,1362
 EllipticTheta,Jacobi theta function,✅,pure,1,551
 EllipticThetaPrime,Derivative of Jacobi theta function with respect to z,✅,pure,3,1375
-EmbedCode,,,,10,2079
+EmbedCode,Embed code for deployment,🚫,,10,2079
 EmbeddedHTML,,,,10,2225
 EmbeddedService,,,,10,4707
 EmbeddedSQLEntityClass,,,,12.2,
@@ -1687,7 +1687,7 @@ EmbeddingLayer,,,,11,2698
 EmitSound,Emit a sound,🚫,io,6,1394
 EmpiricalDistribution,,🚫,,8,1139
 EmptyGraphQ,,,,8,3785
-EmptyRegion,,,,10,2108
+EmptyRegion,Empty geometric region,🚫,,10,2108
 EmptySpaceF,,,,12.2,5486
 Enabled,Option for whether a control is enabled,✅,none,6,750
 Enclose,,,,12.2,3593
@@ -1759,7 +1759,7 @@ EulerCharacteristic,,,,12,5486
 EulerE,Returns the nth Euler number or nth Euler polynomial,✅,pure,1,3298
 EulerGamma,Euler-Mascheroni constant,✅,pure,1,868
 EulerianGraphQ,,,,8,3124
-EulerMatrix,,,,10.2,2082
+EulerMatrix,Rotation matrix from Euler angles,🚫,,10.2,2082
 EulerPhi,Returns Euler's totient function,✅,pure,1,1073
 Evaluatable,Option for Cell specifying if it should be evaluated,🚫,3,1967
 Evaluate,Forces evaluation of an expression,✅,pure,2,86
@@ -2062,7 +2062,7 @@ FlattenAt,Flatten at specific positions,✅,computation,2,1649
 FlattenLayer,Neural network flatten layer,🚫,,11,2042
 FlatTopWindow,,,,9,4387
 FlightData,,🚫,,13,
-FlipView,,,,6,2102
+FlipView,Flippable GUI view,🚫,,6,2102
 Floor,Returns the largest integer less than or equal to a number,✅,pure,1,121
 FlowPolynomial,,,,10,4527
 FluidFlowPDEComponent,,,,14,
@@ -2300,7 +2300,7 @@ GeoDisplacement,,,,10,2656
 GeoDistance,,🚫,,7,1351
 GeoDistanceList,,,,10.4,3537
 GeoElevationData,,🚫,,10,1717
-GeoEntities,,,,10,2094
+GeoEntities,Geographic entities lookup,🚫,,10,2094
 GeoGraphics,Creates geographic maps and visualizations,🚫,io,10,741
 GeoGraphPlot,,,,12.3,
 GeoGraphValuePlot,,,,13,
@@ -2523,7 +2523,7 @@ HeatSymmetryValue,,,,12.2,5486
 HeatTemperatureCondition,,,,12.2,4356
 HeatTransferPDEComponent,,,,12.2,3378
 HeatTransferValue,,,,12.2,3972
-HeavisideLambda,,,,7,2329
+HeavisideLambda,Triangular pulse function: 1 - |x| for |x| < 1,✅,1,7,2329
 HeavisidePi,Rectangular pulse function: 1 for |x| < 1/2,✅,1,7,2094
 HeavisideTheta,Heaviside step function,✅,pure,6,705
 HeldGroupHe,,,,8,5013
@@ -2582,14 +2582,14 @@ HoldForm,Holds an expression unevaluated for display,✅,pure,1,311
 HoldPattern,Hold pattern from evaluation,✅,pure,3,384
 HoldRest,Attribute holding all but first argument,✅,pure,1,1600
 HolidayCalendar,,,,9,3462
-HorizontalGauge,,,,9,2108
+HorizontalGauge,Horizontal gauge display,🚫,,9,2108
 HornerForm,Horner polynomial form,✅,unevaluated,6,1682
 HostLookup,,,,10.3,3889
 HotellingTSquareDistribution,,,,8,3462
 HoytDistribution,,,,8,3656
 HTTPErrorResponse,,,,10.3,4747
 HTTPRedirect,,,,10,4104
-HTTPRequest,,,,11,2100
+HTTPRequest,HTTP request object,🚫,,11,2100
 HTTPRequestData,,🚫,,10,4081
 HTTPResponse,,,,10,3656
 Hue,Specifies a color by hue saturation and brightness,✅,pure,2,145
@@ -2657,7 +2657,7 @@ ImageColorSpace,Returns the color space of an image,✅,pure,8,2755
 ImageCompose,Overlays one image on another,✅,pure,7,1214
 ImageContainsQ,,,,12,5587
 ImageContents,,,,12,4387
-ImageConvolve,,,,7,2100
+ImageConvolve,Convolve image with kernel,🚫,,7,2100
 ImageCooccurrence,,,,8,3889
 ImageCorners,,,,9,2625
 ImageCorrelate,,,,7,2344
@@ -3473,7 +3473,7 @@ MeanAbsoluteLossLayer,,,,11,3427
 MeanAround,,,,12,2798
 MeanClusteringCoefficient,,,,9,3843
 MeanDegreeConnectivity,,,,9,4947
-MeanDeviation,,,,6,2367
+MeanDeviation,Mean absolute deviation from the mean,✅,1,6,2367
 MeanFilter,Signal processing mean filter,🚫,,7,1991
 MeanGraphDistance,,,,9,4204
 MeanNeighborDegree,,,,9,4660
@@ -3610,7 +3610,7 @@ MoleculeValue,,,,12,4225
 Moment,Raw statistical moment,✅,pure,8,1104
 MomentConvert,,,,8,3678
 MomentEvaluate,,,,8,3737
-MomentGeneratingFunction,,,,8,2094
+MomentGeneratingFunction,MGF of distribution,🚫,,8,2094
 MomentOfInertia,,,,10.4,3031
 Monday,Day of the week symbol (just a constant symbol),🚫,,9,1970
 Monitor,,🚫,,6,1183
@@ -3631,7 +3631,7 @@ MortalityData,,🚫,,10.3,387
 Most,Returns the list without its last element,✅,pure,5,379
 MountainData,,🚫,,10,5079
 MouseAnnotation,,,,6,3200
-MouseAppearance,,,,8,2082
+MouseAppearance,Custom mouse cursor appearance,🚫,,8,2082
 Mouseover,Mouseover display,✅,unevaluated,6,1683
 MousePosition,Requires external services or GUI infrastructure,🚫,io,6,952
 MovieData,,🚫,,10,4527
@@ -3688,7 +3688,7 @@ NegativeRationals,,,,12,
 NegativeReals,Domain of negative real numbers,✅,pure,12,5486
 NegativeSemidefiniteMatrixQ,,,,10,3785
 NeighborhoodData,,🚫,,10,
-NeighborhoodGraph,,,,8,2079
+NeighborhoodGraph,Neighborhood subgraph,🚫,,8,2079
 Nest,Applies a function n times to an expression,✅,pure,1,451
 NestedGreaterGreater,,,,3,4881
 NestedLessLess,,,,3,5390
@@ -4146,7 +4146,7 @@ PerfectNumberQ,,,,10.4,4027
 PerformanceGoal,Option for performance vs quality tradeoff,✅,none,6,656
 Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
 PeriodicBoundaryCondition,PDE boundary condition specification,🚫,,11,1991
-Periodogram,,,,9,2108
+Periodogram,Signal periodogram,🚫,,9,2108
 PeriodogramArray,,,,9,3537
 Permanent,,,,10.2,3389
 Permissions,,🚫,,10,1157
@@ -4315,7 +4315,7 @@ PowerExpand,Expands powers and logarithms assuming positive reals,✅,pure,2,640
 PowerMod,Computes modular exponentiation a^b mod m,✅,pure,1,607
 PowerModList,,,,6,3306
 PowerRange,Generate a list of values by successive multiplication,✅,1,10,2131
-PowerSpectralDensity,,,,9,2091
+PowerSpectralDensity,Power spectral density of signal,🚫,,9,2091
 PowersRepresentations,Representations as sums of powers,✅,unevaluated,6,1637
 PowerSymmetricPolynomial,,,,8,4707
 PrecedenceForm,Formatting wrapper that specifies precedence for output display,✅,none,1,4006
@@ -4792,7 +4792,7 @@ SameTestProperties,,,,12.1,
 SampledEntityClass,,,,12,4947
 SampleDepth,,,,2,3656
 SampledSoundFunction,,,,2,3265
-SampledSoundList,,,,2,2082
+SampledSoundList,Sampled sound representation,🚫,,2,2082
 SampleRate,,🚫,,2,1347
 SamplerModel,,,,14,
 SamplingPeriod,Sampling period option,✅,unevaluated,8,1811
@@ -4865,7 +4865,7 @@ SelectionEvaluate,Evaluate selected notebook content,🚫,,3,2051
 SelectionEvaluateCreateCell,,,,3,3755
 SelectionMove,Move the selection in a notebook,✅,none,3,636
 SelfLoopStyle,,,,6,2656
-SemanticImport,,,,10,2100
+SemanticImport,Import with semantic interpretation,🚫,,10,2100
 SemanticImportString,,,,10,2491
 SemanticInterpretation,,,,10,2305
 SemanticSearch,,,,14.1,
@@ -5325,7 +5325,7 @@ SunPosition,,,,10,2179
 Sunrise,Compute sunrise time for location (astronomical computation),🚫,,10,1999
 Sunset,,,,10,2193
 SuperDagger,Dagger superscript,✅,unevaluated,6,1709
-SuperMinus,,,,6,2087
+SuperMinus,Typesetting notation for superscript minus,🚫,,6,2087
 SupernovaData,,🚫,,10,4881
 SuperPlus,Typesetting notation for superscript plus,🚫,,6,1982
 Superscript,Inert superscript display form,✅,pure,1,292
@@ -5354,7 +5354,7 @@ SymbolicOnesArray,,,,14.1,
 SymbolicZerosArray,,,,14.1,
 SymbolName,Returns the name of a symbol as a string,✅,pure,3,1105
 SymletWavelet,,,,8,2986
-Symmetric,,,,9,2087
+Symmetric,Symmetric tensor symmetry,🚫,,9,2087
 SymmetricDifference,,,,13.1,
 SymmetricGroup,Symmetric group,✅,unevaluated,8,1905
 SymmetricKey,,,,10.1,5013
@@ -5480,7 +5480,7 @@ TensorDimensions,,,,9,3008
 TensorExpand,,,,9,2167
 TensorProduct,Tensor product of arrays,✅,none,9,797
 TensorRank,Gives the rank (number of indices) of a tensor,✅,pure,9,1938
-TensorReduce,,,,9,2108
+TensorReduce,Reduce tensor expressions,🚫,,9,2108
 TensorSymmetry,,,,9,2993
 TensorTranspose,,,,9,2394
 TensorWedge,,,,9,2533
@@ -5505,7 +5505,7 @@ TextContents,,,,12,4612
 TextData,,🚫,,8,1086
 TextElement,,,,10.3,4027
 TextGrid,Text grid layout,✅,unevaluated,10.3,1800
-TextJustification,,,,3,2108
+TextJustification,Text justification option,🚫,,3,2108
 TextPacket,,,,3,5079
 TextPosition,,,,10.2,4387
 TextRecognize,Recognize text in image,✅,unevaluated,8,1779
@@ -5581,7 +5581,7 @@ TimeSeriesThread,,,,10,2442
 TimeSeriesWindow,,,,10,2329
 TimeSystem,,,,13,
 TimeSystemConvert,,,,13,
-TimeUsed,,,,2,2097
+TimeUsed,CPU time used,🚫,,2,2097
 TimeValue,Time value of money computation,✅,pure,8,1524
 TimeZone,,🚫,,2,892
 TimeZoneConvert,,,,10,2999
@@ -5879,7 +5879,7 @@ UtilityFunction,,,,10,3522
 ValenceErrorHandling,,,,12,
 ValenceFilling,,,,12.2,5390
 ValidationLength,,,,7,5013
-ValidationSet,,,,10,2079
+ValidationSet,Validation dataset for ML,🚫,,10,2079
 ValueDimensions,,,,10,2565
 ValuePreprocessingFunction,,,,11.2,5013
 ValueQ,Tests if a symbol has a value assigned,✅,pure,1,1165

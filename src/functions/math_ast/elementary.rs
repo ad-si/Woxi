@@ -1912,3 +1912,51 @@ pub fn unit_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }),
   }
 }
+
+/// HeavisideLambda[x] = 1 - |x| for |x| < 1, 0 for |x| >= 1
+pub fn heaviside_lambda_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let x = &args[0];
+  match x {
+    Expr::Integer(n) => {
+      let v = (*n).abs();
+      Ok(if v < 1 {
+        Expr::Integer(1 - v)
+      } else {
+        Expr::Integer(0)
+      })
+    }
+    Expr::Real(f) => {
+      let v = f.abs();
+      Ok(if v < 1.0 {
+        Expr::Real(1.0 - v)
+      } else {
+        Expr::Real(0.0)
+      })
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Rational" && fargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&fargs[0], &fargs[1])
+        && *d != 0
+      {
+        let abs_n = n.abs();
+        let abs_d = d.abs();
+        // Compare |n/d| with 1: |n| vs |d|
+        if abs_n >= abs_d {
+          return Ok(Expr::Integer(0));
+        }
+        // 1 - |n/d| = (|d| - |n|) / |d|
+        let num = abs_d - abs_n;
+        return Ok(crate::functions::math_ast::make_rational_pub(num, abs_d));
+      }
+      Ok(Expr::FunctionCall {
+        name: "HeavisideLambda".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "HeavisideLambda".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}

@@ -288,6 +288,9 @@ pub fn dispatch_math_functions(
     "StandardDeviation" if args.len() == 1 => {
       return Some(crate::functions::math_ast::standard_deviation_ast(args));
     }
+    "MeanDeviation" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::mean_deviation_ast(args));
+    }
     "GeometricMean" if args.len() == 1 => {
       return Some(crate::functions::math_ast::geometric_mean_ast(args));
     }
