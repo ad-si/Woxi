@@ -181,6 +181,51 @@ pub fn dispatch_string_functions(
         )));
       }
     }
+    "LetterCounts" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        // Count letters (alphabetic only), sorted by count descending then last position descending
+        let mut counts: Vec<(char, i128, usize)> = Vec::new();
+        for (pos, ch) in s.chars().enumerate() {
+          if ch.is_alphabetic() {
+            if let Some(entry) = counts.iter_mut().find(|(c, _, _)| *c == ch) {
+              entry.1 += 1;
+              entry.2 = pos;
+            } else {
+              counts.push((ch, 1, pos));
+            }
+          }
+        }
+        // Sort by count descending, then by last position descending
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+        let pairs: Vec<(Expr, Expr)> = counts
+          .into_iter()
+          .map(|(ch, count, _)| {
+            (Expr::String(ch.to_string()), Expr::Integer(count))
+          })
+          .collect();
+        return Some(Ok(Expr::Association(pairs)));
+      }
+    }
+    "WordCounts" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        let mut counts: Vec<(String, i128, usize)> = Vec::new();
+        for (pos, word) in s.split_whitespace().enumerate() {
+          if let Some(entry) = counts.iter_mut().find(|(w, _, _)| w == word) {
+            entry.1 += 1;
+            entry.2 = pos;
+          } else {
+            counts.push((word.to_string(), 1, pos));
+          }
+        }
+        // Sort by count descending, then by last position descending
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+        let pairs: Vec<(Expr, Expr)> = counts
+          .into_iter()
+          .map(|(word, count, _)| (Expr::String(word), Expr::Integer(count)))
+          .collect();
+        return Some(Ok(Expr::Association(pairs)));
+      }
+    }
     _ => {}
   }
   None

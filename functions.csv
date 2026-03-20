@@ -10,7 +10,7 @@ AbsArg,Absolute value and argument,✅,unevaluated,10.1,1901
 AbsArgPlot,,,,12,2762
 AbsoluteCorrelation,,,,9,3566
 AbsoluteCorrelationFunction,,,,9,3048
-AbsoluteCurrentValue,,,,6,2299
+AbsoluteCurrentValue,dynamic content,🚫,None,6,2299
 AbsoluteDashing,Graphics directive for absolute dash pattern,✅,pure,2,1455
 AbsoluteFileName,,,,7,3031
 AbsoluteOptions,,🚫,,4,888
@@ -81,7 +81,7 @@ AlgebraicNumberTrace,,,,6,3491
 Algebraics,,,,4,2468
 AlgebraicUnitQ,,,,6,4527
 Alignment,Option symbol for specifying alignment in layouts,✅,pure,6,189
-AlignmentPoint,,,,6,2294
+AlignmentPoint,typesetting option,🚫,None,6,2294
 All,Symbol used as an option value meaning all elements or the entire range,✅,pure,1,40
 AllMatch,,,,14.1,
 AllowedCloudExtraParameters,,,,11.1,5390
@@ -414,7 +414,7 @@ BaselinePosition,Option for baseline alignment,✅,none,6,619
 BaseStyle,Option specifying the base style for elements in a graphic or other output,✅,none,6,137
 BasicRecurrentLayer,,,,11.1,3566
 BatchNormalizationLayer,Batch normalization layer,✅,unevaluated,11,1675
-BatchSize,,,,11,2299
+BatchSize,machine learning option,🚫,None,11,2299
 BatesDistribution,,,,8,2383
 BattleLemarieWavelet,,,,8,3843
 BayesianMaximization,,,,11,3972
@@ -840,7 +840,7 @@ ClipPlanes,,,,10,2338
 ClipPlanesStyle,,,,10,3353
 ClipRange,,,,9,3344
 Clock,,🚫,,6,1244
-ClockGauge,,,,9,2311
+ClockGauge,dynamic gauge display,🚫,None,9,2311
 Close,Closes an open stream and returns its name,✅,effectful,1,863
 CloseKernels,,,,7,2371
 ClosenessCentrality,,,,8,3008
@@ -1074,7 +1074,7 @@ ControllabilityMatrix,,,,8,3889
 ControllableDecomposition,,,,8,4291
 ControllableModelQ,,,,8,2842
 ControllerInformation,,,,6,4527
-ControllerLinking,,,,6,2321
+ControllerLinking,dynamic interaction,🚫,None,6,2321
 ControllerManipulate,,🚫,,6,3823
 ControllerMethod,,,,6,4138
 ControllerPath,,,,6,3947
@@ -1258,7 +1258,7 @@ DateGranularity,,,,13.2,
 DateHistogram,Date visualization,🚫,None,10.2,2246
 DateInterval,,,,12.1,2578
 DateList,Converts to date list,✅,pure,6,709
-DateListLogPlot,,,,7,2294
+DateListLogPlot,date visualization,🚫,None,7,2294
 DateListPlot,Plots data with date-valued x-axis,✅,pure,6,508
 DateListStepPlot,,,,10.3,2929
 DateObject,Represents a date or date-time object,✅,pure,10,341
@@ -1274,7 +1274,7 @@ DateString,Returns a string representing the current local date and time,✅,con
 DateTicksFormat,Date format for plot tick labels,🚫,,6,2036
 DateValue,Date value extraction,✅,unevaluated,10,1788
 DateWithinQ,,,,11.1,3823
-DaubechiesWavelet,,,,8,2299
+DaubechiesWavelet,wavelet function,🚫,None,8,2299
 DavisDistribution,,,,8,3823
 DawsonF,Dawson integral special function,🚫,None,7,2187
 DayCount,,,,9,2605
@@ -1347,7 +1347,7 @@ DeleteCases,Deletes elements matching a pattern,✅,pure,2,272
 DeleteChannel,,,,11,4356
 DeleteCloudExpression,,,,10.4,4527
 DeleteContents,,,,2,2565
-DeleteDirectory,,,,2,2311
+DeleteDirectory,file system operation,🚫,None,2,2311
 DeleteDuplicates,Removes duplicate elements from a list,✅,pure,7,373
 DeleteDuplicatesBy,Deletes duplicates based on a function criterion,✅,pure,10,1472
 DeleteElements,,,,13.1,
@@ -1544,7 +1544,7 @@ DockedCells,,🚫,,6,1164
 DocumentGenerator,,,,10,3191
 DocumentGeneratorInformation,,,,10,4527
 DocumentGenerators,,,,10,4437
-DocumentNotebook,,,,6,2317
+DocumentNotebook,notebook creation,🚫,None,6,2317
 DocumentWeightingRules,,,,11.1,5184
 Dodecahedron,,,,12,3124
 DominantColors,Finds dominant colors in an image using k-means clustering,✅,pure,9,1646
@@ -1810,7 +1810,7 @@ ExponentFunction,Exponent display function,✅,unevaluated,2,1712
 ExponentialDistribution,Represents an exponential distribution,✅,pure,6,806
 ExponentialFamily,,,,7,3134
 ExponentialGeneratingFunction,,,,7,2503
-ExponentialMovingAverage,,,,6,2367
+ExponentialMovingAverage,Computes exponential moving average of a list,✅,None,6,2367
 ExponentialPowerDistribution,,,,8,3048
 ExponentStep,,,,3,3537
 Export,Exports data to a file,✅,effectful,4,357
@@ -1947,7 +1947,7 @@ FindAnomalies,,,,12,4809
 FindArgMax,,,,7,2632
 FindArgMin,,,,7,2462
 FindChannels,,,,11,4387
-FindClique,,,,8,2317
+FindClique,graph algorithm,🚫,None,8,2317
 FindClusters,,🚫,,6,1198
 FindCookies,,,,11,5184
 FindCurvePath,Find smooth path through points (computational geometry),🚫,,7,2008
@@ -2208,7 +2208,7 @@ FunctionInterpolation,Create interpolating function by sampling an expression,�
 FunctionLayer,,,,12.2,3755
 FunctionMeromorphic,,,,12.2,4262
 FunctionMonotonicity,,,,12.2,4291
-FunctionPeriod,,,,10,2311
+FunctionPeriod,symbolic period analysis (complex),🚫,None,10,2311
 FunctionPoles,,,,13,
 FunctionRange,Range of a function,✅,unevaluated,10,1604
 FunctionSign,,,,12.2,4707
@@ -2306,7 +2306,7 @@ GeoGraphPlot,,,,12.3,
 GeoGraphValuePlot,,,,13,
 GeogravityModelData,,🚫,,10.1,3972
 GeoGridDirectionDifference,,,,12,
-GeoGridLines,,,,10,2320
+GeoGridLines,geographic visualization,🚫,None,10,2320
 GeoGridLinesStyle,,,,10,3143
 GeoGridPosition,Geographic grid coordinate position,✅,pure,7,1471
 GeoGridRange,,,,12,
@@ -2405,7 +2405,7 @@ GraphDisjointUnion,,,,8,3491
 GraphDistance,Distance between graph vertices,✅,unevaluated,8,1625
 GraphDistanceMatrix,Distance matrix of graph,🚫,,8,2157
 GraphEmbedding,Compute vertex coordinates for graph layouts using circular embedding,✅,pure,9,1367
-GraphHighlight,,,,8,2317
+GraphHighlight,graph visualization,🚫,None,8,2317
 GraphHighlightStyle,Graph highlight style,✅,unevaluated,8,1889
 GraphHub,,,,9,4567
 Graphics,Creates a 2D graphics object,✅,pure,1,72
@@ -2427,7 +2427,7 @@ GraphPlot3D,3D graph plot,✅,unevaluated,6,1864
 GraphPower,,,,8,3506
 GraphProduct,,,,13.1,
 GraphPropertyDistribution,,,,9,2635
-GraphQ,,,,8,2305
+GraphQ,graph predicate (no graph framework),🚫,None,8,2305
 GraphRadius,,,,8,3378
 GraphReciprocity,,,,9,4809
 GraphSum,,,,13.1,
@@ -2479,7 +2479,7 @@ GuidedFilter,,,,10.2,3916
 GumbelDistribution,Probability distribution,🚫,None,6,2276
 HaarWavelet,,,,8,2404
 HadamardMatrix,,,,9,3176
-HalfLine,,,,10,2299
+HalfLine,geometric primitive,🚫,None,10,2299
 HalfNormalDistribution,,,,6,2462
 HalfPlane,,,,10,2468
 HalfSpace,,,,10.2,3215
@@ -3016,7 +3016,7 @@ KeySortBy,,,,10,3522
 KeyTake,Takes specified keys from an association,✅,pure,10,2147
 KeyUnion,,,,10,2842
 KeyValueMap,Maps a function over key-value pairs,✅,pure,10.1,1306
-KeyValuePattern,,,,10.4,2324
+KeyValuePattern,pattern matching extension,🚫,None,10.4,2324
 Khinchin,,,,4,2698
 KillProcess,,,,10,3389
 KirchhoffGraph,,,,8,3843
@@ -3137,7 +3137,7 @@ LessSlantEqual,,,,3,5486
 LessThan,,,,10.3,3059
 LessTilde,,,,3,5390
 LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
-LetterCounts,,,,10.1,2605
+LetterCounts,Counts letter occurrences in a string,✅,None,10.1,2605
 LetterNumber,Get the position of a letter in the English alphabet,✅,pure,10.1,1524
 LetterQ,Tests if a string consists entirely of letters,✅,pure,2,2144
 Level,Extracts subexpressions at specified levels,✅,pure,1,950
@@ -3250,7 +3250,7 @@ ListSliceDensityPlot3D,,,,10.2,3048
 ListSliceVectorPlot3D,,,,10.2,3678
 ListStepPlot,Plots data as a step function,✅,pure,10.2,1327
 ListStreamDensityPlot,,,,7,3291
-ListStreamPlot,,,,7,2305
+ListStreamPlot,stream visualization,🚫,None,7,2305
 ListStreamPlot3D,,,,12.3,
 ListSurfacePlot3D,3D surface plot from points,✅,unevaluated,6,1788
 ListVectorDensityPlot,,,,7,3462
@@ -3414,7 +3414,7 @@ MathieuC,Mathieu C function,✅,unevaluated,3,1852
 MathieuCharacteristicA,Mathieu characteristic A,✅,unevaluated,3,1842
 MathieuCharacteristicB,Mathieu characteristic value,🚫,,3,2131
 MathieuCharacteristicExponent,,,,3,3785
-MathieuCPrime,,,,3,2311
+MathieuCPrime,Mathieu function derivative (special function),🚫,None,3,2311
 MathieuGroupM11,Mathieu group M11,✅,unevaluated,8,1656
 MathieuGroupM12,,,,8,4527
 MathieuGroupM22,,,,8,5079
@@ -3513,7 +3513,7 @@ MeshCellHighlight,,,,10.2,3031
 MeshCellIndex,,,,10,3031
 MeshCellLabel,,,,10,2786
 MeshCellMarker,,,,10,4173
-MeshCellMeasure,,,,10,2292
+MeshCellMeasure,mesh computation option,🚫,None,10,2292
 MeshCellQuality,,,,10,4527
 MeshCells,Requires external services or GUI infrastructure,🚫,io,10,968
 MeshCellShapeFunction,,,,10.2,3697
@@ -3657,7 +3657,7 @@ NakagamiDistribution,,,,8,3363
 NameQ,Test if a string is a defined symbol name,✅,pure,1,3280
 Names,Lists symbol names matching a string pattern with wildcards,✅,pure,1,889
 Nand,Logical NAND,✅,pure,4.1,2233
-NArgMax,,,,7,2320
+NArgMax,numeric optimization,🚫,None,7,2320
 NArgMin,,,,7,2605
 NBodySimulation,,,,12,3697
 NBodySimulationData,,🚫,,12,
@@ -3980,7 +3980,7 @@ OrdinalScale,,,,13.1,
 OrnsteinUhlenbeckProcess,OU stochastic process,🚫,,9,2157
 Orthogonalize,,🚫,,6,1191
 OrthogonalMatrix,,,,14,
-OrthogonalMatrixQ,,,,10,2807
+OrthogonalMatrixQ,Tests whether a matrix is orthogonal,✅,None,10,2807
 Out,Gives the expression on the nth output line in an interactive session,✅,contextual,1,63
 Outer,Generalized outer product,✅,pure,1,434
 OuterPolygon,,,,12,3636
@@ -4067,7 +4067,7 @@ ParallelArray,,,,7,4104
 ParallelAxisPlot,,,,12.2,4204
 ParallelCombine,,,,7,2807
 ParallelDo,Parallel Do loop,✅,unevaluated,7,1725
-Parallelepiped,,,,10,2324
+Parallelepiped,3D geometric primitive,🚫,None,10,2324
 ParallelEvaluate,,🚫,,7,1118
 Parallelization,,🚫,,8,1009
 Parallelize,Parallelize computation,✅,unevaluated,7,1745
@@ -4105,7 +4105,7 @@ ParetoPickandsDistribution,,,,12,
 ParkData,,🚫,,10,4881
 Part,Returns the nth element of a list,✅,pure,1,12
 PartBehavior,,,,10,4437
-PartialCorrelationFunction,,,,9,2311
+PartialCorrelationFunction,time series,🚫,None,9,2311
 ParticleAcceleratorData,,🚫,,10,4947
 ParticleData,,🚫,,6,3280
 Partition,Partitions a list into sublists of a given length,✅,pure,1,190
@@ -4210,7 +4210,7 @@ PlanarAngle,,,,12,2617
 PlanarFaceList,,,,13,
 PlanarGraph,,,,10.4,2952
 PlanarGraphQ,,,,9,3440
-PlanckRadiationLaw,,,,10,2317
+PlanckRadiationLaw,physics formula (external data),🚫,None,10,2317
 PlaneCurveData,,🚫,,10,3389
 PlanetaryMoonData,,🚫,,10,1026
 PlanetData,,🚫,,10,877
@@ -4484,7 +4484,7 @@ RandomPolyhedron,,,,12,2971
 RandomPrime,Random prime number,✅,unevaluated,6,1709
 RandomReal,Generates a pseudorandom real number,✅,contextual,6,132
 RandomSample,Random selection without replacement,✅,contextual,6,444
-RandomSeeding,,,,11.2,2305
+RandomSeeding,random options,🚫,None,11.2,2305
 RandomTime,,,,13.2,
 RandomTree,,,,12.3,
 RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual,8,301
@@ -4496,7 +4496,7 @@ RankedMax,k-th largest element,✅,pure,8,2355
 RankedMin,k-th smallest element,✅,pure,8,2263
 RarerProbability,,,,12,
 Raster,Graphics primitive representing raster image data,✅,none,2,747
-Raster3D,,,,9,2317
+Raster3D,3D graphics primitive,🚫,None,9,2317
 Rasterize,Converts expression to raster image,✅,pure,6,539
 RasterSize,Option for raster resolution,✅,pure,6,1499
 Rational,Head type for rational numbers,✅,pure,1,206
@@ -4867,13 +4867,13 @@ SelectionMove,Move the selection in a notebook,✅,none,3,636
 SelfLoopStyle,,,,6,2656
 SemanticImport,Import with semantic interpretation,🚫,,10,2100
 SemanticImportString,,,,10,2491
-SemanticInterpretation,,,,10,2305
+SemanticInterpretation,natural language processing,🚫,None,10,2305
 SemanticSearch,,,,14.1,
 SemanticSearchIndex,,,,14.1,
 SemanticSearchIndices,,,,14.1,
 SemialgebraicComponentInstances,,,,6,3537
 SemidefiniteOptimization,,,,12,4527
-SendMail,,,,7,2324
+SendMail,email sending,🚫,None,7,2324
 SendMessage,,,,10,4173
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3,162
 SequenceAlignment,,,,7,2944
@@ -4956,7 +4956,7 @@ Show,Combines multiple graphics objects into a single display,✅,pure,1,75
 ShowAutoSpellCheck,,,,11,4173
 ShowAutoStyles,,,,4,2707
 ShowCellBracket,Notebook cell bracket display option (GUI),🚫,,3,2015
-ShowCellLabel,,,,3,2305
+ShowCellLabel,notebook UI option,🚫,None,3,2305
 ShowCellTags,,,,3,3402
 ShowCursorTracker,,,,4,4660
 ShowGroupOpener,,,,6,3070
@@ -5001,7 +5001,7 @@ SkeletonTransform,,,,8,3522
 SkellamDistribution,,,,8,3862
 Skewness,Computes the skewness of a list,✅,pure,6,1402
 SkewNormalDistribution,Probability distribution,🚫,None,8,2193
-Skip,,,,2,2311
+Skip,stream operation,🚫,None,2,2311
 SliceContourPlot3D,3D contour slice plot (plotting),🚫,,10.2,2012
 SliceDensityPlot3D,,,,10.2,2512
 SliceDistribution,,,,9,2978
@@ -6143,7 +6143,7 @@ WordBoundary,Word boundary pattern,✅,unevaluated,5.1,1682
 WordCharacter,String pattern for word characters,✅,pure,5.1,1534
 WordCloud,Creates a word cloud from a list of words,✅,pure,10.1,917
 WordCount,,,,10.1,3257
-WordCounts,,,,10.1,2413
+WordCounts,Counts word occurrences in a string,✅,None,10.1,2413
 WordData,,🚫,,6,92
 WordDefinition,,,,10.3,2867
 WordFrequency,,,,10.4,4291
@@ -6152,7 +6152,7 @@ WordList,Returns a list of common English words,🚫,io,10.3,762
 WordOrientation,,,,10.1,4006
 WordSearch,,,,2,4437
 WordSelectionFunction,,,,11.2,5390
-WordSeparators,,,,2,2305
+WordSeparators,text processing option,🚫,None,2,2305
 WordSpacings,,,,10.1,4204
 WordStem,,,,10.1,4138
 WordTranslation,,,,10.3,2712

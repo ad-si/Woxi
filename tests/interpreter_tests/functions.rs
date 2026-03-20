@@ -9467,4 +9467,53 @@ mod batch_unevaluated_wrappers_2 {
       "{<|a -> 1, b -> 2, c -> 10|>, <|a -> 2, b -> 3, c -> 20|>}"
     );
   }
+  #[test]
+  fn exponential_moving_average_real() {
+    assert_eq!(
+      interpret("ExponentialMovingAverage[{1, 2, 3, 4, 5}, 0.5]").unwrap(),
+      "{1, 1.5, 2.25, 3.125, 4.0625}"
+    );
+  }
+  #[test]
+  fn exponential_moving_average_rational() {
+    assert_eq!(
+      interpret("ExponentialMovingAverage[{1, 2, 3, 4, 5}, 1/3]").unwrap(),
+      "{1, 4/3, 17/9, 70/27, 275/81}"
+    );
+  }
+  #[test]
+  fn letter_counts_basic() {
+    assert_eq!(
+      interpret("LetterCounts[\"hello world\"]").unwrap(),
+      "<|l -> 3, o -> 2, d -> 1, r -> 1, w -> 1, e -> 1, h -> 1|>"
+    );
+  }
+  #[test]
+  fn word_counts_basic() {
+    assert_eq!(
+      interpret("WordCounts[\"the cat sat on the mat\"]").unwrap(),
+      "<|the -> 2, mat -> 1, on -> 1, sat -> 1, cat -> 1|>"
+    );
+  }
+  #[test]
+  fn orthogonal_matrix_q_identity() {
+    assert_eq!(
+      interpret("OrthogonalMatrixQ[{{1, 0}, {0, 1}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn orthogonal_matrix_q_rotation() {
+    assert_eq!(
+      interpret("OrthogonalMatrixQ[{{0, -1}, {1, 0}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn orthogonal_matrix_q_non_orthogonal() {
+    assert_eq!(
+      interpret("OrthogonalMatrixQ[{{1, 1}, {0, 1}}]").unwrap(),
+      "False"
+    );
+  }
 }
