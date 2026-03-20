@@ -3477,3 +3477,148 @@ fn eval_dot_product(a: &[Expr], b: &[Expr]) -> Result<Expr, InterpreterError> {
 fn eval_expr(e: &Expr) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(e)
 }
+
+// ─── PrincipalComponents ───────────────────────────────────────────────
+
+/// PrincipalComponents[matrix] - principal component scores of a data matrix.
+/// Each row is an observation, each column is a variable.
+/// Returns centered data projected onto eigenvectors of the covariance matrix,
+/// sorted by descending eigenvalue.
+pub fn principal_components_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "PrincipalComponents expects exactly 1 argument".into(),
+    ));
+  }
+  let data = match expr_to_matrix(&args[0]) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "PrincipalComponents".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let nrows = data.len();
+  if nrows == 0 {
+    return Ok(Expr::List(vec![]));
+  }
+  let ncols = data[0].len();
+  if ncols == 0 || data.iter().any(|r| r.len() != ncols) {
+    return Err(InterpreterError::EvaluationError(
+      "PrincipalComponents: argument must be a rectangular matrix".into(),
+    ));
+  }
+
+  // Single row: centered data is all zeros
+  if nrows == 1 {
+    return Ok(Expr::List(vec![Expr::List(vec![Expr::Integer(0); ncols])]));
+  }
+
+  // 1. Compute column means
+  let nrows_expr = Expr::Integer(nrows as i128);
+  let mut col_means = Vec::with_capacity(ncols);
+  for j in 0..ncols {
+    let mut sum = Expr::Integer(0);
+    for i in 0..nrows {
+      sum = eval_add(&sum, &data[i][j]);
+    }
+    col_means.push(eval_divide(&sum, &nrows_expr));
+  }
+
+  // 2. Center the data
+  let mut centered = vec![vec![Expr::Integer(0); ncols]; nrows];
+  for i in 0..nrows {
+    for j in 0..ncols {
+      centered[i][j] = eval_sub(&data[i][j], &col_means[j]);
+    }
+  }
+
+  // 3. Compute covariance matrix: Transpose[centered] . centered / (nrows - 1)
+  let ct = transpose_matrix(&centered);
+  let cov_unnorm = mat_mul(&ct, &centered);
+  let denom = Expr::Integer((nrows as i128) - 1);
+  let mut cov = vec![vec![Expr::Integer(0); ncols]; ncols];
+  for i in 0..ncols {
+    for j in 0..ncols {
+      cov[i][j] = eval_divide(&cov_unnorm[i][j], &denom);
+    }
+  }
+
+  // 4. Get eigenvectors of covariance matrix (sorted by descending eigenvalue)
+  let cov_expr = matrix_to_expr(cov);
+  let eigvecs = eigenvectors_ast(&[cov_expr])?;
+
+  // 5. Normalize eigenvectors to unit length
+  let eigvec_matrix = match expr_to_matrix(&eigvecs) {
+    Some(m) => m,
+    None => {
+      return Ok(Expr::FunctionCall {
+        name: "PrincipalComponents".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let mut normalized_eigvecs = Vec::with_capacity(eigvec_matrix.len());
+  for vec in &eigvec_matrix {
+    // Compute norm = Sqrt[sum of squares]
+    let mut norm_sq = Expr::Integer(0);
+    for entry in vec {
+      norm_sq = eval_add(&norm_sq, &eval_mul(entry, entry));
+    }
+    let norm_sq = simplify_expr(&norm_sq);
+    // Normalize: divide each component by Sqrt[norm_sq]
+    let norm = if matches!(&norm_sq, Expr::Integer(1)) {
+      Expr::Integer(1)
+    } else {
+      eval_expr(&Expr::FunctionCall {
+        name: "Sqrt".to_string(),
+        args: vec![norm_sq],
+      })?
+    };
+    let mut normalized: Vec<Expr> = vec
+      .iter()
+      .map(|e| simplify_expr(&eval_divide(e, &norm)))
+      .collect();
+
+    // Sign convention: negate eigenvector if dot product with first
+    // centered observation is negative (matches Wolfram's convention)
+    let mut dot = Expr::Integer(0);
+    for (c, v) in centered[0].iter().zip(normalized.iter()) {
+      dot = eval_add(&dot, &eval_mul(c, v));
+    }
+    let dot = simplify_expr(&dot);
+    let should_negate = crate::functions::math_ast::try_eval_to_f64(&dot)
+      .map(|v| v < 0.0)
+      .unwrap_or(false);
+    if should_negate {
+      normalized = normalized
+        .into_iter()
+        .map(|e| eval_mul(&Expr::Integer(-1), &e))
+        .collect();
+    }
+
+    normalized_eigvecs.push(normalized);
+  }
+
+  // 6. Project centered data onto normalized eigenvectors: centered . Transpose[eigvecs]
+  let eigvecs_t = transpose_matrix(&normalized_eigvecs);
+  let projected = mat_mul(&centered, &eigvecs_t);
+
+  // Simplify each entry through the evaluator
+  let mut result = Vec::with_capacity(nrows);
+  for row in projected {
+    let mut simplified_row = Vec::with_capacity(ncols);
+    for entry in row {
+      let simplified = eval_expr(&entry).unwrap_or(entry);
+      simplified_row.push(simplified);
+    }
+    result.push(Expr::List(simplified_row));
+  }
+
+  Ok(Expr::List(result))
+}
