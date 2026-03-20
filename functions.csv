@@ -566,7 +566,7 @@ BooleanMinimize,,,,7,2509
 BooleanMinterms,,,,7,3224
 BooleanQ,Tests if an expression is True or False,✅,pure,10,2845
 BooleanRegion,Geometric region construction,🚫,None,10,2251
-Booleans,,,,4,3008
+Booleans,Domain of booleans,✅,1,4,3008
 BooleanStrings,,,,10,5184
 BooleanTable,Truth table for a boolean expression over all variable combinations,✅,pure,7,1464
 BooleanVariables,,,,7,3566
@@ -808,7 +808,7 @@ CirclePlus,Represents the direct sum or XOR operator,✅,1,3,1158
 CirclePoints,Gives equally spaced points on a unit circle,✅,1,10.1,1126
 CircleThrough,Finds the circumscribed circle through given points,✅,None,12,2399
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3,1017
-CirculantGraph,,,,8,2671
+CirculantGraph,Circulant graph,✅,1,8,2671
 CircularArcThrough,,,,13.1,
 CircularOrthogonalMatrixDistribution,,,,10.3,4104
 CircularQuaternionMatrixDistribution,,,,10.3,4947
@@ -1636,7 +1636,7 @@ EdgeIndex,,,,8,3242
 EdgeLabels,,🚫,,8,1057
 EdgeLabelStyle,,🚫,,8,2519
 EdgeList,List of edges in a graph,✅,none,8,763
-EdgeQ,,,,8,3094
+EdgeQ,True if edge exists in graph,✅,1,8,3094
 EdgeRules,,,,8,3678
 EdgeShapeFunction,,🚫,,8,1175
 EdgeStyle,Option for styling edges in graphs,✅,none,8,873
@@ -2599,7 +2599,7 @@ HumpEqual,,,,3,5390
 HurwitzLerchPhi,,🚫,,7,1267
 HurwitzZeta,,🚫,,7,1242
 HyperbolicDistribution,,,,8,2812
-HypercubeGraph,,,,8,2952
+HypercubeGraph,N-dimensional hypercube graph,✅,1,8,2952
 HyperexponentialDistribution,,,,9,3522
 Hyperfactorial,,,,7,4612
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1,1259
@@ -2977,7 +2977,7 @@ KaiserWindow,,,,9,3462
 KalmanEstimator,,,,8,3843
 KalmanFilter,,,,9,3765
 KarhunenLoeveDecomposition,,,,8,3717
-KaryTree,,,,8,2611
+KaryTree,K-ary tree graph,✅,1,8,2611
 KatzCentrality,,,,8,3916
 KCoreComponents,,,,8,3108
 KDistribution,,,,8,3862
