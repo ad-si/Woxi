@@ -9516,4 +9516,41 @@ mod batch_unevaluated_wrappers_2 {
       "False"
     );
   }
+  #[test]
+  fn circle_through_basic() {
+    assert_eq!(
+      interpret("CircleThrough[{{0, 0}, {1, 0}, {0, 1}}]").unwrap(),
+      "Circle[{1/2, 1/2}, 1/Sqrt[2]]"
+    );
+  }
+  #[test]
+  fn circle_through_unit() {
+    assert_eq!(
+      interpret("CircleThrough[{{1, 0}, {-1, 0}, {0, 1}}]").unwrap(),
+      "Circle[{0, 0}, 1]"
+    );
+  }
+  #[test]
+  fn numerical_sort_basic() {
+    assert_eq!(
+      interpret("NumericalSort[{\"b3\", \"a1\", \"c2\", \"a10\"}]").unwrap(),
+      "{a1, a10, b3, c2}"
+    );
+  }
+  #[test]
+  fn numerical_sort_numbers() {
+    assert_eq!(
+      interpret("NumericalSort[{\"file10\", \"file2\", \"file1\"}]").unwrap(),
+      "{file1, file2, file10}"
+    );
+  }
+  #[test]
+  fn from_coefficient_rules_basic() {
+    assert_eq!(
+      interpret("FromCoefficientRules[{{0} -> 1, {1} -> 3, {2} -> 5}, x]")
+        .unwrap(),
+      "1 + 3*x + 5*x^2"
+    );
+  }
+  // PolynomialExtendedGCD skipped - requires polynomial GCD infrastructure
 }

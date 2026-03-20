@@ -226,7 +226,69 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::Association(pairs)));
       }
     }
+    "NumericalSort" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0] {
+        let mut items: Vec<Expr> = elems.clone();
+        items.sort_by(|a, b| {
+          let sa = crate::syntax::expr_to_string(a);
+          let sb = crate::syntax::expr_to_string(b);
+          natural_cmp(&sa, &sb)
+        });
+        return Some(Ok(Expr::List(items)));
+      }
+    }
     _ => {}
   }
   None
+}
+
+/// Natural comparison: compare strings with embedded numbers sorted numerically
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+  let mut ai = a.chars().peekable();
+  let mut bi = b.chars().peekable();
+
+  loop {
+    match (ai.peek(), bi.peek()) {
+      (None, None) => return std::cmp::Ordering::Equal,
+      (None, Some(_)) => return std::cmp::Ordering::Less,
+      (Some(_), None) => return std::cmp::Ordering::Greater,
+      (Some(&ac), Some(&bc)) => {
+        if ac.is_ascii_digit() && bc.is_ascii_digit() {
+          // Extract full numbers
+          let mut an = String::new();
+          while let Some(&c) = ai.peek() {
+            if c.is_ascii_digit() {
+              an.push(c);
+              ai.next();
+            } else {
+              break;
+            }
+          }
+          let mut bn = String::new();
+          while let Some(&c) = bi.peek() {
+            if c.is_ascii_digit() {
+              bn.push(c);
+              bi.next();
+            } else {
+              break;
+            }
+          }
+          let na: u64 = an.parse().unwrap_or(0);
+          let nb: u64 = bn.parse().unwrap_or(0);
+          match na.cmp(&nb) {
+            std::cmp::Ordering::Equal => {}
+            other => return other,
+          }
+        } else {
+          match ac.cmp(&bc) {
+            std::cmp::Ordering::Equal => {
+              ai.next();
+              bi.next();
+            }
+            other => return other,
+          }
+        }
+      }
+    }
+  }
 }
