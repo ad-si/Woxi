@@ -5301,7 +5301,7 @@ SubsetQ,Tests if one list is a subset of another,✅,pure,10,1562
 SubsetReplace,,,,12.1,4809
 Subsets,Returns all subsets of a list,✅,pure,5.1,478
 SubStar,,,,6,3537
-SubstitutionSystem,,,,10.2,2578
+SubstitutionSystem,applies substitution rules iteratively to generate sequences,✅,Computation,10.2,2578
 Subsuperscript,,🚫,,3,1152
 SubsuperscriptBox,Represents a box with both subscript and superscript for typesetting,✅,pure,3,1921
 SubsuperscriptBoxOptions,,🚫,,4,

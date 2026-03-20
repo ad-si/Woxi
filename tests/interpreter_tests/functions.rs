@@ -11084,4 +11084,48 @@ mod batch_unevaluated_wrappers_2 {
         .unwrap();
     assert_eq!(result, "$Failed[]");
   }
+
+  #[test]
+  fn substitution_system_list_mode() {
+    assert_eq!(
+      interpret("SubstitutionSystem[{0 -> {0, 1}, 1 -> {1, 0}}, {0}, 3]")
+        .unwrap(),
+      "{{0}, {0, 1}, {0, 1, 1, 0}, {0, 1, 1, 0, 1, 0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn substitution_system_list_mode_step0() {
+    assert_eq!(
+      interpret("SubstitutionSystem[{0 -> {0, 1}, 1 -> {1, 0}}, {0}, 0]")
+        .unwrap(),
+      "{{0}}"
+    );
+  }
+
+  #[test]
+  fn substitution_system_string_mode() {
+    assert_eq!(
+      interpret(r#"SubstitutionSystem[{"A" -> "AB", "B" -> "A"}, "A", 4]"#)
+        .unwrap(),
+      "{A, AB, ABA, ABAAB, ABAABABA}"
+    );
+  }
+
+  #[test]
+  fn substitution_system_string_multi_char_init() {
+    assert_eq!(
+      interpret(r#"SubstitutionSystem[{"A" -> "AB", "B" -> "A"}, "AB", 2]"#)
+        .unwrap(),
+      "{AB, ABA, ABAAB}"
+    );
+  }
+
+  #[test]
+  fn substitution_system_symbols() {
+    assert_eq!(
+      interpret("SubstitutionSystem[{a -> {a, b}, b -> {a}}, {a}, 3]").unwrap(),
+      "{{a}, {a, b}, {a, b, a}, {a, b, a, a, b}}"
+    );
+  }
 }
