@@ -148,7 +148,7 @@ Anonymous,,,,11,5390
 Antialiasing,Option for antialiasing in graphics,✅,none,6,855
 Antihermitian,,,,12.2,5486
 AntihermitianMatrixQ,Test whether a matrix is anti-Hermitian,✅,none,10,3947
-Antisymmetric,,,,9,2452
+Antisymmetric,represents the symmetry of a tensor that is antisymmetric in the specified slots,y,none,9,2452
 AntisymmetricMatrixQ,Test if matrix is antisymmetric,✅,none,10,3972
 Antonyms,,🚫,,12,4567
 AnyMatch,,,,14.1,
