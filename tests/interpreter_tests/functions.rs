@@ -10917,6 +10917,24 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // ResetDirectory
+  #[test]
+  fn reset_directory_restores_previous() {
+    let result = interpret(
+      "old = Directory[]; SetDirectory[\"/tmp\"]; ResetDirectory[]; Directory[] == old",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+  #[test]
+  fn reset_directory_returns_restored_dir() {
+    let result = interpret(
+      "old = Directory[]; SetDirectory[\"/tmp\"]; restored = ResetDirectory[]; restored == old",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
   // MatrixPropertyDistribution
   #[test]
   fn matrix_property_distribution_basic() {

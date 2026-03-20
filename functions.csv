@@ -4663,7 +4663,7 @@ ResamplingAlgorithmData,,🚫,,10.1,4947
 ResamplingMethod,Resampling method option,✅,unevaluated,10,1859
 Rescale,Rescales values to a specified range,✅,pure,5.1,523
 RescalingTransform,Rescaling transformation for coordinates,🚫,,6,2045
-ResetDirectory,,,,2,2495
+ResetDirectory,resets the current directory to the previous one set by SetDirectory,✅,io,2,2495
 ReshapeLayer,neural network,🚫,None,11,2399
 Residue,Computes the residue of an expression at a point,✅,pure,2,585
 ResidueSum,,,,13.1,

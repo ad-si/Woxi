@@ -1,6 +1,11 @@
 #[allow(unused_imports)]
 use super::*;
 
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+  static DIRECTORY_STACK: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 pub fn dispatch_io_functions(
   name: &str,
   args: &[Expr],
@@ -1163,8 +1168,13 @@ pub fn dispatch_io_functions(
           }));
         }
       };
+      // Save current directory to stack before changing
+      let old_dir = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
       match std::env::set_current_dir(&dir) {
         Ok(_) => {
+          DIRECTORY_STACK.with(|s| s.borrow_mut().push(old_dir));
           let new_dir = std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or(dir);
@@ -1175,6 +1185,32 @@ pub fn dispatch_io_functions(
             "SetDirectory: {}",
             e
           ))));
+        }
+      }
+    }
+    // ResetDirectory[] — restore the previous working directory
+    #[cfg(not(target_arch = "wasm32"))]
+    "ResetDirectory" if args.is_empty() => {
+      let prev = DIRECTORY_STACK.with(|s| s.borrow_mut().pop());
+      match prev {
+        Some(dir) => match std::env::set_current_dir(&dir) {
+          Ok(_) => {
+            let restored = std::env::current_dir()
+              .map(|p| p.to_string_lossy().to_string())
+              .unwrap_or(dir);
+            return Some(Ok(Expr::String(restored)));
+          }
+          Err(e) => {
+            return Some(Err(InterpreterError::EvaluationError(format!(
+              "ResetDirectory: {}",
+              e
+            ))));
+          }
+        },
+        None => {
+          return Some(Err(InterpreterError::EvaluationError(
+            "ResetDirectory: directory stack is empty.".into(),
+          )));
         }
       }
     }
