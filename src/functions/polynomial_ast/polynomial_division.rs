@@ -49,6 +49,31 @@ pub fn polynomial_quotient_ast(
   crate::evaluator::evaluate_expr_to_expr(&quotient)
 }
 
+/// PolynomialQuotientRemainder[p, q, x] - {quotient, remainder} of polynomial division
+pub fn polynomial_quotient_remainder_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "PolynomialQuotientRemainder expects 3 arguments".into(),
+    ));
+  }
+  let var = match &args[2] {
+    Expr::Identifier(name) => name.as_str(),
+    _ => {
+      return Ok(Expr::FunctionCall {
+        name: "PolynomialQuotientRemainder".to_string(),
+        args: args.to_vec(),
+      });
+    }
+  };
+
+  let (quotient, remainder) = poly_divide_symbolic(&args[0], &args[1], var)?;
+  let q = crate::evaluator::evaluate_expr_to_expr(&quotient)?;
+  let r = crate::evaluator::evaluate_expr_to_expr(&remainder)?;
+  Ok(Expr::List(vec![q, r]))
+}
+
 /// Perform polynomial long division p / q in variable var.
 /// Returns (quotient, remainder) as expressions.
 pub fn poly_divide_symbolic(

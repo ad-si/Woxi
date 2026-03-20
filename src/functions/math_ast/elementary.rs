@@ -1803,6 +1803,61 @@ pub fn unit_box_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// HeavisidePi[x] = 1 for |x| < 1/2, 0 for |x| > 1/2, unevaluated at |x| = 1/2
+pub fn heaviside_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let x = &args[0];
+  match x {
+    Expr::Integer(n) => {
+      // |n| < 1/2 only if n == 0
+      Ok(Expr::Integer(if *n == 0 { 1 } else { 0 }))
+    }
+    Expr::Real(f) => {
+      let v = f.abs();
+      if (v - 0.5).abs() < f64::EPSILON {
+        // At boundary, return unevaluated
+        Ok(Expr::FunctionCall {
+          name: "HeavisidePi".to_string(),
+          args: args.to_vec(),
+        })
+      } else if v < 0.5 {
+        Ok(Expr::Integer(1))
+      } else {
+        Ok(Expr::Integer(0))
+      }
+    }
+    Expr::FunctionCall { name, args: fargs }
+      if name == "Rational" && fargs.len() == 2 =>
+    {
+      if let (Expr::Integer(n), Expr::Integer(d)) = (&fargs[0], &fargs[1])
+        && *d != 0
+      {
+        // Compare |n/d| with 1/2: |2*n| vs |d|
+        let two_n_abs = (2 * *n).unsigned_abs();
+        let d_abs = d.unsigned_abs();
+        return if two_n_abs == d_abs {
+          // At boundary, return unevaluated
+          Ok(Expr::FunctionCall {
+            name: "HeavisidePi".to_string(),
+            args: args.to_vec(),
+          })
+        } else if two_n_abs < d_abs {
+          Ok(Expr::Integer(1))
+        } else {
+          Ok(Expr::Integer(0))
+        };
+      }
+      Ok(Expr::FunctionCall {
+        name: "HeavisidePi".to_string(),
+        args: args.to_vec(),
+      })
+    }
+    _ => Ok(Expr::FunctionCall {
+      name: "HeavisidePi".to_string(),
+      args: args.to_vec(),
+    }),
+  }
+}
+
 /// UnitTriangle[x] = 1 - |x| for |x| <= 1, 0 otherwise
 pub fn unit_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x = &args[0];
