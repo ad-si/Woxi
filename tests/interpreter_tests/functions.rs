@@ -9419,4 +9419,52 @@ mod batch_unevaluated_wrappers_2 {
       "{2}"
     );
   }
+  #[test]
+  fn sss_triangle_345() {
+    assert_eq!(
+      interpret("SSSTriangle[3, 4, 5]").unwrap(),
+      "Triangle[{{0, 0}, {5, 0}, {16/5, 12/5}}]"
+    );
+  }
+  #[test]
+  fn sss_triangle_equilateral() {
+    assert_eq!(
+      interpret("SSSTriangle[1, 1, 1]").unwrap(),
+      "Triangle[{{0, 0}, {1, 0}, {1/2, Sqrt[3]/2}}]"
+    );
+  }
+  #[test]
+  fn fold_pair_list_add_mul() {
+    assert_eq!(
+      interpret("FoldPairList[{#1 + #2, #1*#2}&, 1, {1, 2, 3}]").unwrap(),
+      "{2, 3, 5}"
+    );
+  }
+  #[test]
+  fn fold_pair_list_sub() {
+    assert_eq!(
+      interpret("FoldPairList[{#1 + #2, #1 - #2}&, 0, {1, 2, 3}]").unwrap(),
+      "{1, 1, 0}"
+    );
+  }
+  #[test]
+  fn join_across_basic() {
+    assert_eq!(
+      interpret(
+        "JoinAcross[{<|\"a\" -> 1, \"b\" -> 2|>}, {<|\"a\" -> 1, \"c\" -> 3|>}, \"a\"]"
+      )
+      .unwrap(),
+      "{<|a -> 1, b -> 2, c -> 3|>}"
+    );
+  }
+  #[test]
+  fn join_across_multi() {
+    assert_eq!(
+      interpret(
+        "JoinAcross[{<|\"a\" -> 1, \"b\" -> 2|>, <|\"a\" -> 2, \"b\" -> 3|>}, {<|\"a\" -> 1, \"c\" -> 10|>, <|\"a\" -> 2, \"c\" -> 20|>}, \"a\"]"
+      )
+      .unwrap(),
+      "{<|a -> 1, b -> 2, c -> 10|>, <|a -> 2, b -> 3, c -> 20|>}"
+    );
+  }
 }

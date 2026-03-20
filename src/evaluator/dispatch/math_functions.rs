@@ -1314,6 +1314,83 @@ pub fn dispatch_math_functions(
         return Some(find_linear_recurrence_impl(elems));
       }
     }
+    // SSSTriangle[a, b, c] — triangle from three side lengths
+    "SSSTriangle" if args.len() == 3 => {
+      // Place A at origin, B at (c, 0), find C via law of cosines
+      let a = &args[0];
+      let b = &args[1];
+      let c = &args[2];
+      // cos(A) = (b^2 + c^2 - a^2) / (2*b*c)
+      let cos_a = Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Plus,
+            left: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(b.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(c.clone()),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          }),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left: Box::new(a.clone()),
+            right: Box::new(Expr::Integer(2)),
+          }),
+        }),
+        right: Box::new(Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(Expr::Integer(2)),
+          right: Box::new(Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(b.clone()),
+            right: Box::new(c.clone()),
+          }),
+        }),
+      };
+      // cx = b * cos(A)
+      let cx = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(b.clone()),
+        right: Box::new(cos_a.clone()),
+      };
+      // cy = b * sin(A) = b * sqrt(1 - cos(A)^2)
+      let cy = Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(b.clone()),
+        right: Box::new(Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![Expr::BinaryOp {
+            op: BinaryOperator::Minus,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: Box::new(cos_a),
+              right: Box::new(Expr::Integer(2)),
+            }),
+          }],
+        }),
+      };
+      let cx_eval = crate::evaluator::evaluate_expr_to_expr(&cx).unwrap_or(cx);
+      let cy_eval = crate::evaluator::evaluate_expr_to_expr(&cy).unwrap_or(cy);
+      let c_eval = crate::evaluator::evaluate_expr_to_expr(c)
+        .unwrap_or_else(|_| c.clone());
+      let triangle = Expr::FunctionCall {
+        name: "Triangle".to_string(),
+        args: vec![Expr::List(vec![
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)]),
+          Expr::List(vec![c_eval, Expr::Integer(0)]),
+          Expr::List(vec![cx_eval, cy_eval]),
+        ])],
+      };
+      return Some(Ok(triangle));
+    }
     _ => {}
   }
   None
