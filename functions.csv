@@ -2886,7 +2886,7 @@ InverseFourierSinTransform,,,,4,3121
 InverseFourierTransform,computes the symbolic inverse Fourier transform,✅,pure,4,1124
 InverseFunction,Represents the inverse of a function,✅,none,2,584
 InverseFunctions,option for inverse computation,🚫,None,2,2431
-InverseGammaDistribution,,,,7,2605
+InverseGammaDistribution,represents an inverse gamma distribution,✅,Computation,7,2605
 InverseGammaRegularized,special function,🚫,None,3,2380
 InverseGaussianDistribution,,,,6,2671
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7,2108

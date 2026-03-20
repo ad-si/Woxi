@@ -11128,4 +11128,28 @@ mod batch_unevaluated_wrappers_2 {
       "{{a}, {a, b}, {a, b, a}, {a, b, a, a, b}}"
     );
   }
+
+  #[test]
+  fn inverse_gamma_distribution_head() {
+    assert_eq!(
+      interpret("InverseGammaDistribution[2, 3]").unwrap(),
+      "InverseGammaDistribution[2, 3]"
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[InverseGammaDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{(b/x)^a/(E^(b/x)*x*Gamma[a]), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn inverse_gamma_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[InverseGammaDistribution[a, b], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[a, b/x], x > 0}}, 0]"
+    );
+  }
 }

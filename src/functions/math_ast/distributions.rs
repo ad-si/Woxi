@@ -132,6 +132,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => pdf_exponential(dargs, x),
     "PoissonDistribution" => pdf_poisson(dargs, x),
     "BernoulliDistribution" => pdf_bernoulli(dargs, x),
+    "InverseGammaDistribution" => pdf_inverse_gamma(dargs, x),
     "GammaDistribution" => pdf_gamma(dargs, x),
     "BetaDistribution" => pdf_beta(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
@@ -347,6 +348,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ExponentialDistribution" => cdf_exponential(dargs, x),
     "PoissonDistribution" => cdf_poisson(dargs, x),
     "BernoulliDistribution" => cdf_bernoulli(dargs, x),
+    "InverseGammaDistribution" => cdf_inverse_gamma(dargs, x),
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
     "LogNormalDistribution" => cdf_lognormal(dargs, x),
@@ -617,6 +619,57 @@ fn cdf_gamma(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let value = Expr::FunctionCall {
     name: "GammaRegularized".to_string(),
     args: vec![alpha, int(0), divide(x.clone(), beta)],
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// PDF[InverseGammaDistribution[a, b], x] = Piecewise[{{(b/x)^a/(E^(b/x)*x*Gamma[a]), x > 0}}, 0]
+fn pdf_inverse_gamma(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseGammaDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  // (b/x)^a
+  let bx_a = power(divide(b.clone(), x.clone()), a.clone());
+  // E^(b/x)
+  let exp_part = power(e(), divide(b, x.clone()));
+  // x * Gamma[a]
+  let denom = times(
+    x.clone(),
+    Expr::FunctionCall {
+      name: "Gamma".to_string(),
+      args: vec![a],
+    },
+  );
+  let value = eval(divide(bx_a, times(exp_part, denom)))?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// CDF[InverseGammaDistribution[a, b], x] = Piecewise[{{GammaRegularized[a, b/x], x > 0}}, 0]
+fn cdf_inverse_gamma(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseGammaDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let value = Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![a, divide(b, x.clone())],
   };
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
