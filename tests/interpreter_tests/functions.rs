@@ -10295,6 +10295,37 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("PowerModList[3, 4, 5]").unwrap(), "{3, 4, 2, 1}");
   }
 
+  // Antisymmetric
+  #[test]
+  fn antisymmetric_basic() {
+    assert_eq!(
+      interpret("Antisymmetric[{1, 2}]").unwrap(),
+      "Antisymmetric[{1, 2}]"
+    );
+  }
+  #[test]
+  fn antisymmetric_three_indices() {
+    assert_eq!(
+      interpret("Antisymmetric[{1, 2, 3}]").unwrap(),
+      "Antisymmetric[{1, 2, 3}]"
+    );
+  }
+  #[test]
+  fn antisymmetric_no_args() {
+    assert_eq!(interpret("Antisymmetric[]").unwrap(), "Antisymmetric[]");
+  }
+  #[test]
+  fn antisymmetric_single_arg() {
+    assert_eq!(interpret("Antisymmetric[1]").unwrap(), "Antisymmetric[1]");
+  }
+  #[test]
+  fn antisymmetric_two_args() {
+    assert_eq!(
+      interpret("Antisymmetric[{1, 2}, x]").unwrap(),
+      "Antisymmetric[{1, 2}, x]"
+    );
+  }
+
   // AntisymmetricMatrixQ
   #[test]
   fn antisymmetric_matrix_q_true() {
