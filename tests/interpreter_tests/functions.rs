@@ -10916,4 +10916,27 @@ mod batch_unevaluated_wrappers_2 {
       "2*MathieuSPrime[a, q, z]"
     );
   }
+
+  // MatrixPropertyDistribution
+  #[test]
+  fn matrix_property_distribution_basic() {
+    assert_eq!(
+      interpret("MatrixPropertyDistribution[x, y]").unwrap(),
+      "MatrixPropertyDistribution[x, y]"
+    );
+  }
+  #[test]
+  fn matrix_property_distribution_no_args() {
+    assert_eq!(
+      interpret("MatrixPropertyDistribution[]").unwrap(),
+      "MatrixPropertyDistribution[]"
+    );
+  }
+  #[test]
+  fn matrix_property_distribution_single_arg() {
+    assert_eq!(
+      interpret("MatrixPropertyDistribution[x]").unwrap(),
+      "MatrixPropertyDistribution[x]"
+    );
+  }
 }
