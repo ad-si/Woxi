@@ -3431,7 +3431,7 @@ MatrixLog,Matrix logarithm,✅,unevaluated,9,1875
 MatrixNormalDistribution,,,,10.3,3317
 MatrixPlot,Plots a matrix as a colored grid,✅,pure,6,552
 MatrixPower,Computes integer powers of a square matrix,✅,pure,2,399
-MatrixPropertyDistribution,,,,10.3,2483
+MatrixPropertyDistribution,represents the distribution of a matrix property for a matrix distribution,✅,none,10.3,2483
 MatrixQ,Tests if an expression is a matrix,✅,pure,1,524
 MatrixRank,Returns the rank of a matrix,✅,pure,5,523
 MatrixSymbol,,,,14.1,
