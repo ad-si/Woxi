@@ -2446,6 +2446,87 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // WeaklyConnectedComponents[graph] — connected components ignoring edge direction
+  if name == "WeaklyConnectedComponents"
+    && args.len() == 1
+    && let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+    && gname == "Graph"
+    && gargs.len() == 2
+    && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+  {
+    let n = vertices.len();
+    let vertex_index: std::collections::HashMap<String, usize> = vertices
+      .iter()
+      .enumerate()
+      .map(|(i, v)| (expr_to_string(v), i))
+      .collect();
+
+    // Union-Find (treat all edges as undirected)
+    let mut parent: Vec<usize> = (0..n).collect();
+    let mut uf_rank = vec![0usize; n];
+
+    fn find_wcc(parent: &mut Vec<usize>, i: usize) -> usize {
+      if parent[i] != i {
+        parent[i] = find_wcc(parent, parent[i]);
+      }
+      parent[i]
+    }
+    fn union_wcc(
+      parent: &mut Vec<usize>,
+      rank: &mut Vec<usize>,
+      a: usize,
+      b: usize,
+    ) {
+      let ra = find_wcc(parent, a);
+      let rb = find_wcc(parent, b);
+      if ra == rb {
+        return;
+      }
+      if rank[ra] < rank[rb] {
+        parent[ra] = rb;
+      } else if rank[ra] > rank[rb] {
+        parent[rb] = ra;
+      } else {
+        parent[rb] = ra;
+        rank[ra] += 1;
+      }
+    }
+
+    for edge in edges {
+      if let Expr::FunctionCall { args: eargs, .. } = edge
+        && eargs.len() == 2
+      {
+        let from_str = expr_to_string(&eargs[0]);
+        let to_str = expr_to_string(&eargs[1]);
+        if let (Some(&fi), Some(&ti)) =
+          (vertex_index.get(&from_str), vertex_index.get(&to_str))
+        {
+          union_wcc(&mut parent, &mut uf_rank, fi, ti);
+        }
+      }
+    }
+
+    let mut components: Vec<Vec<Expr>> = Vec::new();
+    let mut root_to_idx: std::collections::HashMap<usize, usize> =
+      std::collections::HashMap::new();
+    for (i, v) in vertices.iter().enumerate() {
+      let root = find_wcc(&mut parent, i);
+      if let Some(&idx) = root_to_idx.get(&root) {
+        components[idx].push(v.clone());
+      } else {
+        let idx = components.len();
+        root_to_idx.insert(root, idx);
+        components.push(vec![v.clone()]);
+      }
+    }
+
+    components.sort_by(|a, b| b.len().cmp(&a.len()));
+    return Ok(Expr::List(components.into_iter().map(Expr::List).collect()));
+  }
+
   // StringExpression[...]: when all args are string literals, concatenate them
   if name == "StringExpression" {
     if args.iter().all(|a| matches!(a, Expr::String(_))) {
