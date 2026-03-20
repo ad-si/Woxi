@@ -10272,4 +10272,52 @@ mod batch_unevaluated_wrappers_2 {
       "{5, 4, 3, 2, 1}"
     );
   }
+
+  // CorrelationDistance
+  #[test]
+  fn correlation_distance_perfect() {
+    assert_eq!(
+      interpret("CorrelationDistance[{1, 2, 3}, {2, 4, 6}]").unwrap(),
+      "0"
+    );
+  }
+
+  // PowerModList
+  #[test]
+  fn power_mod_list_basic() {
+    assert_eq!(
+      interpret("PowerModList[2, 5, 7]").unwrap(),
+      "{2, 4, 1, 2, 4}"
+    );
+  }
+  #[test]
+  fn power_mod_list_3() {
+    assert_eq!(interpret("PowerModList[3, 4, 5]").unwrap(), "{3, 4, 2, 1}");
+  }
+
+  // AntisymmetricMatrixQ
+  #[test]
+  fn antisymmetric_matrix_q_true() {
+    assert_eq!(
+      interpret("AntisymmetricMatrixQ[{{0, 1, -2}, {-1, 0, 3}, {2, -3, 0}}]")
+        .unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn antisymmetric_matrix_q_false() {
+    assert_eq!(
+      interpret("AntisymmetricMatrixQ[{{1, 2}, {3, 4}}]").unwrap(),
+      "False"
+    );
+  }
+
+  // ShearingMatrix
+  #[test]
+  fn shearing_matrix_2d() {
+    assert_eq!(
+      interpret("ShearingMatrix[2, {1, 0}, {0, 1}]").unwrap(),
+      "{{1, 2}, {0, 1}}"
+    );
+  }
 }

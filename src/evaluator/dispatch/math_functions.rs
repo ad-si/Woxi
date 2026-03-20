@@ -2104,6 +2104,85 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // CorrelationDistance[u, v] — 1 - Correlation[u, v]
+    "CorrelationDistance" if args.len() == 2 => {
+      // Build 1 - Correlation[u, v] and evaluate
+      let corr_expr = Expr::FunctionCall {
+        name: "Correlation".to_string(),
+        args: vec![args[0].clone(), args[1].clone()],
+      };
+      let result_expr = Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![
+          Expr::Integer(1),
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), corr_expr],
+          },
+        ],
+      };
+      return Some(evaluate_expr_to_expr(&result_expr));
+    }
+    // PowerModList[a, n, m] — {a^1 mod m, a^2 mod m, ..., a^n mod m}
+    "PowerModList" if args.len() == 3 => {
+      if let (Some(a), Some(n), Some(m)) = (
+        expr_to_i128(&args[0]),
+        expr_to_i128(&args[1]),
+        expr_to_i128(&args[2]),
+      ) {
+        if m <= 0 || n < 0 {
+          return None;
+        }
+        let mut result = Vec::with_capacity(n as usize);
+        let mut current = a % m;
+        if current < 0 {
+          current += m;
+        }
+        for _ in 0..n {
+          result.push(Expr::Integer(current));
+          current = (current * (a % m)) % m;
+          if current < 0 {
+            current += m;
+          }
+        }
+        return Some(Ok(Expr::List(result)));
+      }
+    }
+    // ShearingMatrix[theta, v, n] — shearing transformation matrix
+    // ShearingMatrix[s, {v1,...}, {n1,...}] = I + s * outer(v, n)
+    "ShearingMatrix" if args.len() == 3 => {
+      if let (Expr::List(v), Expr::List(n_vec)) = (&args[1], &args[2]) {
+        let dim = v.len();
+        if dim != n_vec.len() {
+          return None;
+        }
+        // Build identity + s * outer(v, n)
+        let s = &args[0];
+        let mut rows = Vec::with_capacity(dim);
+        for i in 0..dim {
+          let mut row = Vec::with_capacity(dim);
+          for j in 0..dim {
+            let identity_val = if i == j {
+              Expr::Integer(1)
+            } else {
+              Expr::Integer(0)
+            };
+            // s * v[i] * n[j]
+            let shear = Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![s.clone(), v[i].clone(), n_vec[j].clone()],
+            };
+            let entry = Expr::FunctionCall {
+              name: "Plus".to_string(),
+              args: vec![identity_val, shear],
+            };
+            row.push(evaluate_expr_to_expr(&entry).unwrap_or(entry));
+          }
+          rows.push(Expr::List(row));
+        }
+        return Some(Ok(Expr::List(rows)));
+      }
+    }
     // PrimitiveRootList[n] — list of primitive roots modulo n
     "PrimitiveRootList" if args.len() == 1 => {
       if let Some(n) = expr_to_i128(&args[0]) {
