@@ -607,7 +607,7 @@ BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7,192
 BSplineFunction,,🚫,,7,1176
 BSplineSurface,B-spline surface,✅,unevaluated,7,1891
 BubbleChart,Creates a bubble chart from data,✅,pure,7,1679
-BubbleChart3D,,,,7,2170
+BubbleChart3D,Creates a 3D bubble chart visualization,🚫,None,7,2170
 BubbleScale,,,,7,4081
 BubbleSizes,,,,7,2380
 BuckyballGraph,,,,13.1,
@@ -1585,7 +1585,7 @@ DownValues,Returns the downvalues of a symbol,✅,pure,2,627
 DownValuesFunction,,,,13.2,
 DrazinInverse,,,,13,
 Drop,Returns the list without its first n elements,✅,pure,1,318
-DropoutLayer,,,,11,2208
+DropoutLayer,Represents a dropout layer in a neural network,🚫,None,11,2208
 DropShadowing,,,,13.1,
 DSolve,Solves ordinary differential equations symbolically,✅,pure,2,88
 DSolveChangeVariables,,,,13.1,
@@ -1972,7 +1972,7 @@ FindGeneratingFunction,Find generating function,✅,unevaluated,7,1776
 FindGeoLocation,,,,7,2900
 FindGeometricConjectures,,,,12,3697
 FindGeometricTransform,Find geometric transformation,✅,unevaluated,8,1730
-FindGraphCommunities,,,,9,2179
+FindGraphCommunities,Finds community structure in a graph,🚫,None,9,2179
 FindGraphIsomorphism,,,,8,2944
 FindGraphPartition,,,,9,3317
 FindHamiltonianCycle,,,,8,2276
@@ -2170,10 +2170,10 @@ FromFiniteFieldIndex,,,,14,
 FromJulianDate,,,,10.2,4437
 FromLetterNumber,Get the nth letter of the English alphabet,✅,pure,10.1,1411
 FromLunationNumber,,,,14,
-FromPolarCoordinates,,,,10.1,2187
+FromPolarCoordinates,Converts polar coordinates to Cartesian,✅,None,10.1,2187
 FromRawPointer,,,,13.1,
 FromRomanNumeral,,,,10.2,3823
-FromSphericalCoordinates,,,,10.1,2389
+FromSphericalCoordinates,Converts spherical coordinates to Cartesian,✅,None,10.1,2389
 FromUnixTime,,,,10.1,3326
 Front,,🚫,,6,1324
 FrontEndDynamicExpression,,,,8,4660
@@ -2249,7 +2249,7 @@ GaussianWindow,,,,9,4225
 GCD,Returns the greatest common divisor of integers,✅,pure,1,616
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x),✅,pure,1,894
 General,Default message group symbol,✅,pure,1,690
-GeneralizedLinearModelFit,,,,7,2187
+GeneralizedLinearModelFit,Fits a generalized linear model to data,🚫,None,7,2187
 GenerateAsymmetricKeyPair,,,,10.1,3326
 GenerateConditions,Option for generating conditions in results,✅,1,3,1282
 GeneratedAssetFormat,,,,12.3,
@@ -2676,13 +2676,13 @@ ImageFeatureTrack,,,,9,3785
 ImageFileApply,,,,9,4707
 ImageFileFilter,,,,9,4660
 ImageFileScan,,,,9,4437
-ImageFilter,,,,7,2205
+ImageFilter,Applies a filter function to an image,🚫,None,7,2205
 ImageFocusCombine,,,,10.2,4881
 ImageForestingComponents,,,,8,3717
 ImageFormattingWidth,,,,10,3947
 ImageForwardTransformation,,,,8,2596
 ImageGraphics,,,,11.1,3593
-ImageHistogram,,,,7,2174
+ImageHistogram,Plots the histogram of pixel values in an image,🚫,None,7,2174
 ImageIdentify,Identify objects in images,✅,unevaluated,10.1,1629
 ImageInstanceQ,,,,10.1,3697
 ImageKeypoints,,,,8,2812
@@ -2718,7 +2718,7 @@ ImageSegmentationComponents,,,,14,
 ImageSegmentationFilter,,,,14,
 ImageSize,Option specifying the display size of graphics and other objects,✅,none,3,70
 ImageSizeAction,Option controlling image size behavior,🚫,,6,1991
-ImageSizeMultipliers,,,,6,2179
+ImageSizeMultipliers,Option for scaling image display size,🚫,None,6,2179
 ImageStitch,,,,13,
 ImageSubtract,Subtracts pixel values of two images pointwise,✅,pure,7,1569
 ImageSynthesize,,,,13.3,
@@ -2727,7 +2727,7 @@ ImageTransformation,Apply geometric transformation to image,🚫,io,8,1413
 ImageTrim,Trim image,✅,unevaluated,8,1889
 ImageType,Returns the data type of an image,✅,pure,7,2495
 ImageValue,Image pixel value,✅,unevaluated,8,1873
-ImageValuePositions,,,,9,2172
+ImageValuePositions,Returns positions of pixels with a specified value in an image,🚫,None,9,2172
 ImageVectorscopePlot,,,,12.2,4947
 ImageWaveformPlot,,,,12.2,4947
 ImagingDevice,,,,10,5390
@@ -3207,7 +3207,7 @@ LinkCreate,,,,3,2675
 LinkFunction,,,,7,4437
 LinkInterrupt,,,,3,5390
 LinkLaunch,,,,3,2845
-LinkObject,,,,3,2197
+LinkObject,Represents a MathLink or WSTP connection to an external process,🚫,None,3,2197
 LinkPatterns,,,,3,5013
 LinkProtocol,,,,3,2842
 LinkRankCentrality,,,,10,4527
@@ -3387,7 +3387,7 @@ MapAll,Apply a function to every subexpression,✅,pure,1,1265
 MapApply,,,,13.1,
 MapAt,Applies a function at specific positions,✅,pure,1,498
 MapIndexed,Applies a function to each element along with its index,✅,pure,2,330
-MAProcess,,,,9,2181
+MAProcess,Represents a moving-average time series process,🚫,None,9,2181
 MapThread,Applies a function to corresponding elements of multiple lists,✅,pure,2,265
 MarchenkoPasturDistribution,,,,10.3,3916
 MarcumQ,,,,8,5486
@@ -3626,7 +3626,7 @@ MorphologicalComponents,,🚫,,7,1048
 MorphologicalEulerNumber,,,,7,3717
 MorphologicalGraph,,,,8,2777
 MorphologicalPerimeter,,,,7,2503
-MorphologicalTransform,,,,8,2165
+MorphologicalTransform,Applies morphological operations to binary images,🚫,None,8,2165
 MortalityData,,🚫,,10.3,387
 Most,Returns the list without its last element,✅,pure,5,379
 MountainData,,🚫,,10,5079
@@ -3818,8 +3818,8 @@ NotebookFind,Search in a notebook,✅,unevaluated,3,1565
 NotebookGet,Get notebook expression,✅,pure,3,1562
 NotebookImport,,,,10.1,2693
 NotebookInformation,,,,5,2217
-NotebookLocate,,,,3,2179
-NotebookObject,,,,3,2162
+NotebookLocate,Locates and selects a cell or object in an open notebook,🚫,None,3,2179
+NotebookObject,Symbolic representation of an open notebook in the front end,🚫,None,3,2162
 NotebookOpen,Open a notebook file,🚫,io,3,1418
 NotebookPrint,,,,3,3389
 NotebookPut,Create notebook from expression,✅,unevaluated,3,1597
@@ -4005,7 +4005,7 @@ OverscriptBox,,,,3,2223
 OverscriptBoxOptions,,,,4,5390
 OverTilde,Displays expression with tilde above,✅,1,6,1288
 OverVector,Display form with a vector arrow accent,✅,none,6,777
-OverwriteTarget,,,,11,2170
+OverwriteTarget,Option specifying whether to overwrite an existing target file,🚫,None,11,2170
 OwenT,,,,8,4567
 OwnValues,Returns the own values of a symbol,✅,pure,2,1092
 PacletDataRebuild,,,,12.1,
@@ -4121,7 +4121,7 @@ PascalDistribution,,,,8,3008
 PassEventsDown,Pass events down option,✅,unevaluated,6,1771
 PassEventsUp,,,,6,2777
 Paste,,,,8,2553
-PasteButton,,,,6,2174
+PasteButton,Represents a button that pastes content when clicked,🚫,None,6,2174
 Path,,,,4,2260
 PathGraph,Creates a path graph from a list of vertices,✅,1,8,1209
 PathGraphQ,,,,8,3765
@@ -4223,7 +4223,7 @@ Plot3D,Creates a three-dimensional surface plot of a function,✅,pure,1,115
 PlotHighlighting,,,,13.3,
 PlotLabel,Option specifying a label for a plot,✅,pure,1,104
 PlotLabels,Option for labeling plot curves,✅,none,10.4,597
-PlotLayout,,,,8,2203
+PlotLayout,Option specifying the layout arrangement of multiple plots,🚫,None,8,2203
 PlotLegends,Option for adding legends to plots identifying each series,✅,pure,9,100
 PlotMarkers,Option for specifying markers on plot points,✅,pure,6,500
 PlotPoints,Option for number of sample points in plots,✅,pure,1,193
@@ -4368,7 +4368,7 @@ PrivateKey,,,,10.1,4612
 PrivateNotebookOptions,,,,4,4173
 Probability,Compute probability of an event given a distribution,✅,pure,8,671
 ProbabilityDistribution,Defines a custom probability distribution,✅,1,8,967
-ProbabilityPlot,,,,8,2198
+ProbabilityPlot,Creates a probability plot for assessing data distribution fit,🚫,None,8,2198
 ProbabilityScalePlot,,,,8,2278
 ProbitModelFit,,,,7,3344
 ProcessConnection,,,,10,3378
@@ -4414,13 +4414,13 @@ QHypergeometricPFQ,,,,7,2729
 QnDispersion,,,,11.1,4387
 QPochhammer,q-Pochhammer symbol,✅,pure,7,871
 QPolyGamma,,,,7,3862
-QRDecomposition,,,,2,2181
+QRDecomposition,Computes the QR decomposition of a matrix,✅,None,2,2181
 QuadraticIrrationalQ,,,,6,4747
 QuadraticOptimization,,,,12,3265
 Quantile,Compute quantiles of a dataset,✅,pure,5,739
 QuantilePlot,Quantile plot,✅,unevaluated,8,1842
 Quantity,Represents a physical quantity with a unit,✅,pure,9,47
-QuantityArray,,,,10.1,2184
+QuantityArray,Represents an array of quantities with units,🚫,None,10.1,2184
 QuantityDistribution,,,,10.4,2921
 QuantityForm,,,,9,3566
 QuantityMagnitude,Returns the magnitude of a quantity,✅,pure,9,733
@@ -4628,7 +4628,7 @@ RemoteRun,,,,11.3,5184
 RemoteRunProcess,,,,11.3,4947
 RemovalConditions,,,,12.2,
 Remove,Removes a symbol (no-op in Woxi),✅,effectful,1,514
-RemoveAlphaChannel,,,,8,2197
+RemoveAlphaChannel,Removes the alpha transparency channel from an image,🚫,None,8,2197
 RemoveAudioStream,,,,11.2,5486
 RemoveBackground,,🚫,,10,1332
 RemoveChannelListener,,,,11,4567
@@ -4924,7 +4924,7 @@ SetPrecision,Sets the precision of a number to a specified number of digits,✅,
 SetSelectedNotebook,,,,3,2383
 SetSharedFunction,,,,7,2587
 SetSharedVariable,Set shared variable,✅,unevaluated,7,1808
-SetStreamPosition,,,,2,2184
+SetStreamPosition,Sets the current position in an open stream,🚫,None,2,2184
 SetSystemModel,,,,11.3,
 SetSystemOptions,,🚫,,6,1189
 Setter,,🚫,,6,1237
@@ -5321,9 +5321,9 @@ Sum,Computes a sum over a range,✅,pure,1,77
 SumConvergence,,🚫,,7,1050
 SummationLayer,,,,11,3108
 Sunday,Sunday day name,✅,unevaluated,9,1869
-SunPosition,,,,10,2179
+SunPosition,Gives the position of the Sun for a given location and time,🚫,None,10,2179
 Sunrise,Compute sunrise time for location (astronomical computation),🚫,,10,1999
-Sunset,,,,10,2193
+Sunset,Gives the time of sunset for a given location and date,🚫,None,10,2193
 SuperDagger,Dagger superscript,✅,unevaluated,6,1709
 SuperMinus,Typesetting notation for superscript minus,🚫,,6,2087
 SupernovaData,,🚫,,10,4881
@@ -5613,14 +5613,14 @@ TooltipStyle,Style option for tooltips (GUI),🚫,,8,2002
 ToonShading,,,,12.1,
 Top,Symbol for top alignment,✅,pure,1,385
 TopHatTransform,,,,7,3636
-ToPolarCoordinates,,,,10.1,2374
+ToPolarCoordinates,Converts Cartesian coordinates to polar,✅,None,10.1,2374
 TopologicalSort,,,,8,3224
 ToRadicals,Attempts to express in terms of radicals,✅,1,3,1211
 ToRawPointer,,,,13.1,
 ToRules,Convert logical equation combinations to lists of rules,✅,pure,1,1027
 Torus,,,,13,
 TorusGraph,,,,13.1,
-ToSphericalCoordinates,,,,10.1,3083
+ToSphericalCoordinates,Converts Cartesian coordinates to spherical,✅,None,10.1,3083
 ToString,Converts an expression to a string,✅,pure,1,148
 Total,Sums the elements of a list,✅,pure,5,151
 TotalLayer,Neural network total layer,✅,pure,11,1518
@@ -5757,7 +5757,7 @@ TruncatedPolyhedron,,,,12,5486
 TruncateSum,,,,14,
 TsallisQExponentialDistribution,,,,9,3947
 TsallisQGaussianDistribution,,,,9,3566
-TTest,,,,8,2203
+TTest,Performs a Student t-test for statistical hypothesis testing,🚫,None,8,2203
 Tube,3D tube around a curve,✅,none,7,720
 Tuesday,Day of the week symbol,🚫,,9,2048
 TukeyLambdaDistribution,,,,8,3402
@@ -5963,7 +5963,7 @@ VertexOutComponentGraph,,,,12.3,
 VertexOutDegree,Out-degree of a vertex in a directed graph,🚫,,8,2031
 VertexQ,,,,8,3427
 VertexReplace,,,,8,2404
-VertexShape,,,,8,2184
+VertexShape,Option specifying the shape used to render graph vertices,🚫,None,8,2184
 VertexShapeFunction,,🚫,,8,1177
 VertexSize,Option for vertex size in graphs,✅,none,8,748
 VertexStyle,,🚫,,8,969
@@ -6047,7 +6047,7 @@ WaveletMatrixPlot,,,,8,3176
 WaveletPhi,,,,8,2371
 WaveletPsi,Wavelet function (signal processing),🚫,,8,2006
 WaveletScale,,,,8,4291
-WaveletScalogram,,,,8,2197
+WaveletScalogram,Plots the wavelet scalogram of a signal,🚫,None,8,2197
 WaveletThreshold,,,,8,2723
 WavePDEComponent,,,,12.2,
 WeaklyConnectedComponents,,,,9,2767
@@ -6062,7 +6062,7 @@ WebElementObject,,,,12,4881
 WeberE,,,,7,2587
 WebExecute,,,,12,2944
 WebImage,,,,12,4660
-WebImageSearch,,,,11.1,2165
+WebImageSearch,Searches the web for images matching a query,🚫,None,11.1,2165
 WebItem,,,,13,
 WebRow,,,,13,
 WebSearch,,,,11.1,3578

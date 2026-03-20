@@ -664,6 +664,11 @@ pub fn dispatch_linear_algebra_functions(
         args: args.to_vec(),
       }));
     }
+    "QRDecomposition" if args.len() == 1 => {
+      return Some(crate::functions::linear_algebra_ast::qr_decomposition_ast(
+        args,
+      ));
+    }
     _ => {}
   }
   None
