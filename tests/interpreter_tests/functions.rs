@@ -11192,4 +11192,60 @@ mod batch_unevaluated_wrappers_2 {
       "IntervalMarkers[x]"
     );
   }
+
+  #[test]
+  fn logistic_distribution_head() {
+    assert_eq!(
+      interpret("LogisticDistribution[m, s]").unwrap(),
+      "LogisticDistribution[m, s]"
+    );
+  }
+
+  #[test]
+  fn logistic_distribution_default() {
+    assert_eq!(
+      interpret("LogisticDistribution[]").unwrap(),
+      "LogisticDistribution[0, 1]"
+    );
+  }
+
+  #[test]
+  fn logistic_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[LogisticDistribution[m, s], x]").unwrap(),
+      "E^((m - x)/s)/(s*(1 + E^((m - x)/s))^2)"
+    );
+  }
+
+  #[test]
+  fn logistic_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[LogisticDistribution[m, s], x]").unwrap(),
+      "(1 + E^((m - x)/s))^(-1)"
+    );
+  }
+
+  #[test]
+  fn inverse_chi_square_distribution_head() {
+    assert_eq!(
+      interpret("InverseChiSquareDistribution[5]").unwrap(),
+      "InverseChiSquareDistribution[5]"
+    );
+  }
+
+  #[test]
+  fn inverse_chi_square_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[InverseChiSquareDistribution[n], x]").unwrap(),
+      "Piecewise[{{x^(-1)^(1 + n/2)/(2^(n/2)*E^(1/(2*x))*Gamma[n/2]), x > 0}}, 0]"
+    );
+  }
+
+  #[test]
+  fn inverse_chi_square_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[InverseChiSquareDistribution[n], x]").unwrap(),
+      "Piecewise[{{GammaRegularized[n/2, 1/(2*x)], x > 0}}, 0]"
+    );
+  }
 }
