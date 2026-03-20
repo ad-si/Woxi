@@ -11152,4 +11152,44 @@ mod batch_unevaluated_wrappers_2 {
       "Piecewise[{{GammaRegularized[a, b/x], x > 0}}, 0]"
     );
   }
+
+  #[test]
+  fn end_of_line_inert() {
+    assert_eq!(interpret("EndOfLine[]").unwrap(), "EndOfLine[]");
+    assert_eq!(interpret("EndOfLine[x]").unwrap(), "EndOfLine[x]");
+  }
+
+  #[test]
+  fn row_lines_inert() {
+    assert_eq!(interpret("RowLines[True]").unwrap(), "RowLines[True]");
+  }
+
+  #[test]
+  fn delete_contents_inert() {
+    assert_eq!(
+      interpret("DeleteContents[True]").unwrap(),
+      "DeleteContents[True]"
+    );
+  }
+
+  #[test]
+  fn column_spacings_inert() {
+    assert_eq!(interpret("ColumnSpacings[1]").unwrap(), "ColumnSpacings[1]");
+  }
+
+  #[test]
+  fn criterion_function_inert() {
+    assert_eq!(
+      interpret("CriterionFunction[x]").unwrap(),
+      "CriterionFunction[x]"
+    );
+  }
+
+  #[test]
+  fn interval_markers_inert() {
+    assert_eq!(
+      interpret("IntervalMarkers[x]").unwrap(),
+      "IntervalMarkers[x]"
+    );
+  }
 }
