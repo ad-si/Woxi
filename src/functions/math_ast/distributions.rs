@@ -151,6 +151,8 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ChiDistribution" => pdf_chi(dargs, x),
     "LogisticDistribution" => pdf_logistic(dargs, x),
     "InverseChiSquareDistribution" => pdf_inverse_chi_square(dargs, x),
+    "FrechetDistribution" => pdf_frechet(dargs, x),
+    "ExtremeValueDistribution" => pdf_extreme_value(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -366,6 +368,8 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "ChiDistribution" => cdf_chi(dargs, x),
     "LogisticDistribution" => cdf_logistic(dargs, x),
     "InverseChiSquareDistribution" => cdf_inverse_chi_square(dargs, x),
+    "FrechetDistribution" => cdf_frechet(dargs, x),
+    "ExtremeValueDistribution" => cdf_extreme_value(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -777,6 +781,122 @@ fn cdf_inverse_chi_square(
   };
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// PDF[FrechetDistribution[a, b], x] = Piecewise[{{(a*(x/b)^(-1 - a))/(b*E^(x/b)^(-a)), x > 0}}, 0]
+fn pdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FrechetDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let xb = divide(x.clone(), b.clone());
+  // (x/b)^(-1 - a)
+  let xb_part = power(
+    xb.clone(),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        left: Box::new(int(1)),
+        right: Box::new(a.clone()),
+      }),
+    },
+  );
+  // E^(x/b)^(-a)
+  let exp_part = power(
+    e(),
+    power(
+      xb,
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand: Box::new(a.clone()),
+      },
+    ),
+  );
+  let value = eval(divide(times(a, xb_part), times(b, exp_part)))?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// CDF[FrechetDistribution[a, b], x] = Piecewise[{{E^(-(x/b)^(-a)), x > 0}}, 0]
+fn cdf_frechet(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "FrechetDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let value = power(
+    e(),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(power(
+        divide(x.clone(), b),
+        Expr::UnaryOp {
+          op: crate::syntax::UnaryOperator::Minus,
+          operand: Box::new(a),
+        },
+      )),
+    },
+  );
+  let value = eval(value)?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// PDF[ExtremeValueDistribution[a, b], x] = E^(-E^((a - x)/b) + (a - x)/b)/b
+fn pdf_extreme_value(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ExtremeValueDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let ab = divide(minus(a.clone(), x), b.clone());
+  // E^(-E^((a-x)/b) + (a-x)/b)
+  let exp_arg = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(power(e(), ab.clone())),
+    }),
+    right: Box::new(ab),
+  };
+  eval(divide(power(e(), exp_arg), b))
+}
+
+// CDF[ExtremeValueDistribution[a, b], x] = E^(-E^((a - x)/b))
+fn cdf_extreme_value(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ExtremeValueDistribution expects 2 arguments".into(),
+    ));
+  }
+  let a = dargs[0].clone();
+  let b = dargs[1].clone();
+
+  let ab = divide(minus(a, x), b);
+  eval(power(
+    e(),
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand: Box::new(power(e(), ab)),
+    },
+  ))
 }
 
 // ─── Probability ─────────────────────────────────────────────────────

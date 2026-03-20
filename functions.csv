@@ -1850,7 +1850,7 @@ Extract,Extracts parts at specified positions,✅,pure,3,463
 ExtractArchive,,,,8,3697
 ExtractLayer,,🚫,,12,5390
 ExtractPacletArchive,,,,12.1,5587
-ExtremeValueDistribution,,,,6,2671
+ExtremeValueDistribution,represents an extreme value distribution,✅,Computation,6,2671
 F,,,,,
 FaceAlign,,,,12.1,5587
 FaceForm,Specifies face styling for filled graphics,✅,pure,1,344
@@ -2144,7 +2144,7 @@ FrameStyle,Option specifying the style of the frame around a plot,✅,none,2,173
 FrameTicks,Option specifying tick marks on the frame of a plot,✅,none,2,337
 FrameTicksStyle,Option for specifying the style of frame ticks,✅,pure,6,540
 FRatioDistribution,F-ratio distribution,✅,unevaluated,6,1788
-FrechetDistribution,,,,8,2671
+FrechetDistribution,represents a Frechet distribution,✅,Computation,8,2671
 FreeformEvaluate,,🚫,,14.1,
 FreeQ,Tests if expression is free of a specified form,✅,pure,1,286
 FrenetSerretSystem,,,,10,2591
@@ -3023,7 +3023,7 @@ KirchhoffGraph,,,,8,3843
 KirchhoffMatrix,graph theory matrix,🚫,None,8,2360
 KleinInvariantJ,modular form (complex math),🚫,None,3,2435
 KnapsackSolve,,,,11,3427
-KnightTourGraph,,,,8,2675
+KnightTourGraph,graph of knight moves on a chessboard,✅,Computation,8,2675
 KnotData,,🚫,,6,906
 KnownUnitQ,,,,9,4356
 KochCurve,,,,11.1,2777

@@ -11248,4 +11248,82 @@ mod batch_unevaluated_wrappers_2 {
       "Piecewise[{{GammaRegularized[n/2, 1/(2*x)], x > 0}}, 0]"
     );
   }
+
+  #[test]
+  fn frechet_distribution_head() {
+    assert_eq!(
+      interpret("FrechetDistribution[2, 3]").unwrap(),
+      "FrechetDistribution[2, 3]"
+    );
+  }
+
+  #[test]
+  fn frechet_distribution_pdf() {
+    let result = interpret("PDF[FrechetDistribution[a, b], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x > 0"));
+  }
+
+  #[test]
+  fn frechet_distribution_cdf() {
+    let result = interpret("CDF[FrechetDistribution[a, b], x]").unwrap();
+    assert!(result.starts_with("Piecewise["));
+    assert!(result.contains("x > 0"));
+  }
+
+  #[test]
+  fn extreme_value_distribution_head() {
+    assert_eq!(
+      interpret("ExtremeValueDistribution[1, 2]").unwrap(),
+      "ExtremeValueDistribution[1, 2]"
+    );
+  }
+
+  #[test]
+  fn extreme_value_distribution_pdf() {
+    assert_eq!(
+      interpret("PDF[ExtremeValueDistribution[a, b], x]").unwrap(),
+      "E^((a - x)/b - E^((a - x)/b))/b"
+    );
+  }
+
+  #[test]
+  fn extreme_value_distribution_cdf() {
+    assert_eq!(
+      interpret("CDF[ExtremeValueDistribution[a, b], x]").unwrap(),
+      "E^(-E^((a - x)/b))"
+    );
+  }
+
+  #[test]
+  fn knight_tour_graph_vertex_count() {
+    assert_eq!(
+      interpret("Length[VertexList[KnightTourGraph[3, 3]]]").unwrap(),
+      "9"
+    );
+  }
+
+  #[test]
+  fn knight_tour_graph_edge_count() {
+    assert_eq!(
+      interpret("Length[EdgeList[KnightTourGraph[3, 3]]]").unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn knight_tour_graph_5x5() {
+    assert_eq!(
+      interpret("Length[VertexList[KnightTourGraph[5, 5]]]").unwrap(),
+      "25"
+    );
+  }
+
+  #[test]
+  fn knight_tour_graph_edges_2x3() {
+    assert_eq!(
+      interpret("EdgeList[KnightTourGraph[2, 3]]").unwrap(),
+      "{UndirectedEdge[1, 6], UndirectedEdge[3, 4]}"
+    );
+  }
 }
