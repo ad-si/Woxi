@@ -2513,6 +2513,112 @@ mod prime_nu {
   }
 }
 
+mod contains_all {
+  use super::*;
+
+  #[test]
+  fn all_present() {
+    assert_eq!(
+      interpret("ContainsAll[{1, 2, 3, 4, 5}, {2, 4}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn not_all_present() {
+    assert_eq!(
+      interpret("ContainsAll[{1, 2, 3}, {2, 4}]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn empty_subset() {
+    assert_eq!(interpret("ContainsAll[{1, 2, 3}, {}]").unwrap(), "True");
+  }
+}
+
+mod missing_q {
+  use super::*;
+
+  #[test]
+  fn missing_is_true() {
+    assert_eq!(interpret("MissingQ[Missing[]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn missing_with_reason_is_true() {
+    assert_eq!(interpret("MissingQ[Missing[\"reason\"]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn integer_is_false() {
+    assert_eq!(interpret("MissingQ[42]").unwrap(), "False");
+  }
+}
+
+mod hilbert_matrix {
+  use super::*;
+
+  #[test]
+  fn two_by_two() {
+    assert_eq!(
+      interpret("HilbertMatrix[2]").unwrap(),
+      "{{1, 1/2}, {1/2, 1/3}}"
+    );
+  }
+
+  #[test]
+  fn three_by_three() {
+    assert_eq!(
+      interpret("HilbertMatrix[3]").unwrap(),
+      "{{1, 1/2, 1/3}, {1/2, 1/3, 1/4}, {1/3, 1/4, 1/5}}"
+    );
+  }
+}
+
+mod toeplitz_matrix {
+  use super::*;
+
+  #[test]
+  fn basic() {
+    assert_eq!(
+      interpret("ToeplitzMatrix[{1, 2, 3}]").unwrap(),
+      "{{1, 2, 3}, {2, 1, 2}, {3, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn two_by_two() {
+    assert_eq!(
+      interpret("ToeplitzMatrix[{a, b}]").unwrap(),
+      "{{a, b}, {b, a}}"
+    );
+  }
+}
+
+mod mantissa_exponent {
+  use super::*;
+
+  #[test]
+  fn real_value() {
+    assert_eq!(
+      interpret("MantissaExponent[350.12]").unwrap(),
+      "{0.35012, 3}"
+    );
+  }
+
+  #[test]
+  fn integer_value() {
+    assert_eq!(interpret("MantissaExponent[100]").unwrap(), "{1/10, 3}");
+  }
+
+  #[test]
+  fn negative_real() {
+    assert_eq!(interpret("MantissaExponent[-42.5]").unwrap(), "{-0.425, 2}");
+  }
+}
+
 mod reverse_extended {
   use super::*;
 

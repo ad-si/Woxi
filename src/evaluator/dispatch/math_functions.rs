@@ -827,6 +827,31 @@ pub fn dispatch_math_functions(
     "PrimeNu" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_nu_ast(args));
     }
+    "MantissaExponent" if args.len() == 1 => match &args[0] {
+      Expr::Real(f) => {
+        if *f == 0.0 {
+          return Some(Ok(Expr::List(vec![Expr::Real(0.0), Expr::Integer(0)])));
+        }
+        let abs_f = f.abs();
+        let e = abs_f.log10().floor() as i128 + 1;
+        let m = f / 10.0_f64.powi(e as i32);
+        return Some(Ok(Expr::List(vec![Expr::Real(m), Expr::Integer(e)])));
+      }
+      Expr::Integer(n) => {
+        if *n == 0 {
+          return Some(Ok(Expr::List(vec![
+            Expr::Integer(0),
+            Expr::Integer(0),
+          ])));
+        }
+        let abs_n = n.unsigned_abs();
+        let e = (abs_n as f64).log10().floor() as i128 + 1;
+        let denom = 10_i128.pow(e as u32);
+        let mantissa = crate::functions::math_ast::make_rational_pub(*n, denom);
+        return Some(Ok(Expr::List(vec![mantissa, Expr::Integer(e)])));
+      }
+      _ => {}
+    },
     "IntegerPartitions" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }

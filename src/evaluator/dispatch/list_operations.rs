@@ -1205,6 +1205,16 @@ pub fn dispatch_list_operations(
         )));
       }
     }
+    "ContainsAll" if args.len() == 2 => {
+      if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
+        let set1: std::collections::HashSet<String> =
+          list1.iter().map(expr_to_string).collect();
+        let result = list2.iter().all(|x| set1.contains(&expr_to_string(x)));
+        return Some(Ok(Expr::Identifier(
+          if result { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
     "ContainsNone" if args.len() == 2 => {
       if let (Expr::List(list1), Expr::List(list2)) = (&args[0], &args[1]) {
         let set1: std::collections::HashSet<String> =

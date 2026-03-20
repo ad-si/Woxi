@@ -33,6 +33,15 @@ pub fn dispatch_predicate_functions(
         .to_string(),
       )));
     }
+    "MissingQ" if args.len() == 1 => {
+      let is_missing = matches!(
+        &args[0],
+        Expr::FunctionCall { name, .. } if name == "Missing"
+      );
+      return Some(Ok(Expr::Identifier(
+        if is_missing { "True" } else { "False" }.to_string(),
+      )));
+    }
     "ColorQ" if args.len() == 1 => {
       let is_color = match &args[0] {
         Expr::FunctionCall { name, .. } => matches!(

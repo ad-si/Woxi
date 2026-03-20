@@ -74,6 +74,38 @@ pub fn dispatch_linear_algebra_functions(
     "DiskMatrix" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::disk_matrix_ast(args));
     }
+    "HilbertMatrix" if args.len() == 1 => {
+      if let Some(n) = expr_to_i128(&args[0]) {
+        if n >= 0 {
+          let n = n as usize;
+          let mut rows = Vec::with_capacity(n);
+          for i in 0..n {
+            let mut row = Vec::with_capacity(n);
+            for j in 0..n {
+              let denom = (i + j + 1) as i128;
+              row.push(crate::functions::math_ast::make_rational_pub(1, denom));
+            }
+            rows.push(Expr::List(row));
+          }
+          return Some(Ok(Expr::List(rows)));
+        }
+      }
+    }
+    "ToeplitzMatrix" if args.len() == 1 => {
+      if let Expr::List(elems) = &args[0] {
+        let n = elems.len();
+        let mut rows = Vec::with_capacity(n);
+        for i in 0..n {
+          let mut row = Vec::with_capacity(n);
+          for j in 0..n {
+            let idx = if i > j { i - j } else { j - i };
+            row.push(elems[idx].clone());
+          }
+          rows.push(Expr::List(row));
+        }
+        return Some(Ok(Expr::List(rows)));
+      }
+    }
     "LeviCivitaTensor" if args.len() == 2 => {
       if matches!(&args[1], Expr::Identifier(h) if h == "List") {
         return Some(
