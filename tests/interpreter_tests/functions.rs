@@ -10813,4 +10813,28 @@ mod batch_unevaluated_wrappers_2 {
     // ButterflyGraph[2] has 5 vertices
     assert!(result.starts_with("Graph[{1, 2, 3, 4, 5}"));
   }
+
+  // UnderscriptBox
+  #[test]
+  fn underscript_box_basic() {
+    assert_eq!(
+      interpret("UnderscriptBox[x, y]").unwrap(),
+      "UnderscriptBox[x, y]"
+    );
+  }
+  #[test]
+  fn underscript_box_no_args() {
+    assert_eq!(interpret("UnderscriptBox[]").unwrap(), "UnderscriptBox[]");
+  }
+  #[test]
+  fn underscript_box_single_arg() {
+    assert_eq!(interpret("UnderscriptBox[x]").unwrap(), "UnderscriptBox[x]");
+  }
+  #[test]
+  fn underscript_box_three_args() {
+    assert_eq!(
+      interpret("UnderscriptBox[x, y, z]").unwrap(),
+      "UnderscriptBox[x, y, z]"
+    );
+  }
 }

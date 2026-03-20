@@ -5785,7 +5785,7 @@ Underoverscript,,,,3,3803
 UnderoverscriptBox,,,,3,2777
 UnderoverscriptBoxOptions,,🚫,,4,2842
 Underscript,Typesetting subscript,🚫,,6,2144
-UnderscriptBox,,,,3,2452
+UnderscriptBox,a low-level typesetting box representing an expression with an underscript,y,none,3,2452
 UnderscriptBoxOptions,,🚫,,4,2944
 UnderseaFeatureData,,🚫,,10,
 UndirectedEdge,Undirected graph edge,✅,pure,8,201
