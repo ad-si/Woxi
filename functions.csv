@@ -5017,7 +5017,7 @@ SlotSequence,Represents a sequence of arguments in a pure function,✅,pure,1,21
 Small,Small size specification,✅,none,6,368
 SmallCircle,Composition operator (formatting only),🚫,,3,1938
 Smaller,Font size directive for making text smaller,✅,none,6,266
-SmithDecomposition,,,,10.2,2535
+SmithDecomposition,gives the Smith normal form decomposition of an integer matrix,✅,none,10.2,2535
 SmithDelayCompensator,,,,9,4612
 SmithWatermanSimilarity,,,,7,3636
 SmoothDensityHistogram,Smooth density histogram,✅,unevaluated,8,1907

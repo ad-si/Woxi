@@ -212,6 +212,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::principal_components_ast(args),
       );
     }
+    "SmithDecomposition" if args.len() == 1 => {
+      return Some(
+        crate::functions::linear_algebra_ast::smith_decomposition_ast(args),
+      );
+    }
     "SymmetricMatrixQ" if args.len() == 1 => {
       return Some(crate::functions::list_helpers_ast::symmetric_matrix_q_ast(
         &args[0],
