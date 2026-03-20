@@ -2659,6 +2659,77 @@ pub fn dispatch_math_functions(
         return Some(Ok(Expr::List(result)));
       }
     }
+    // PolynomialLCM[p1, p2, ...] — least common multiple of polynomials
+    "PolynomialLCM" if args.len() >= 2 => {
+      // Build: Cancel[p1 * p2 / PolynomialGCD[p1, p2]]
+      // For more than 2 args, fold pairwise
+      let mut result = args[0].clone();
+      for arg in &args[1..] {
+        let gcd = Expr::FunctionCall {
+          name: "PolynomialGCD".to_string(),
+          args: vec![result.clone(), arg.clone()],
+        };
+        let product = Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![result, arg.clone()],
+        };
+        let lcm = Expr::FunctionCall {
+          name: "Cancel".to_string(),
+          args: vec![Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              product,
+              Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![gcd, Expr::Integer(-1)],
+              },
+            ],
+          }],
+        };
+        result = evaluate_expr_to_expr(&lcm).unwrap_or(lcm);
+      }
+      return Some(Ok(result));
+    }
+    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}] — array of coordinate bounds
+    // CoordinateBoundsArray[{{xmin,xmax},{ymin,ymax},...}, d] — with padding d
+    "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 2 => {
+      if let Expr::List(bounds) = &args[0] {
+        // Parse bounds pairs
+        let mut ranges: Vec<(Expr, Expr)> = Vec::new();
+        for b in bounds {
+          if let Expr::List(pair) = b
+            && pair.len() == 2
+          {
+            ranges.push((pair[0].clone(), pair[1].clone()));
+          }
+        }
+        if !ranges.is_empty() {
+          // With optional padding
+          if args.len() == 2
+            && let Some(d) = expr_to_i128(&args[1])
+          {
+            // Expand each range by d
+            for range in &mut ranges {
+              let min_expr = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![range.0.clone(), Expr::Integer(-d)],
+              };
+              let max_expr = Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![range.1.clone(), Expr::Integer(d)],
+              };
+              range.0 = evaluate_expr_to_expr(&min_expr).unwrap_or(min_expr);
+              range.1 = evaluate_expr_to_expr(&max_expr).unwrap_or(max_expr);
+            }
+          }
+          let result: Vec<Expr> = ranges
+            .into_iter()
+            .map(|(lo, hi)| Expr::List(vec![lo, hi]))
+            .collect();
+          return Some(Ok(Expr::List(result)));
+        }
+      }
+    }
     _ => {}
   }
   None

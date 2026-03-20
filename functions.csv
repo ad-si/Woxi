@@ -1100,7 +1100,7 @@ CookieFunction,,🚫,,11,4809
 CoordinateBoundingBox,,,,10.1,3755
 CoordinateBoundingBoxArray,,,,10.1,3402
 CoordinateBounds,Coordinate bounds of a list of points,✅,none,10.1,2483
-CoordinateBoundsArray,,,,10.1,2880
+CoordinateBoundsArray,Array of coordinate bounds with optional padding,✅,1,10.1,2880
 CoordinateChartData,,🚫,,9,2837
 CoordinatesToolOptions,Coordinates tool options,✅,unevaluated,7,1800
 CoordinateTransform,Coordinate system transformation,✅,unevaluated,9,1629
@@ -1189,7 +1189,7 @@ CrossEntropyLossLayer,,🚫,,11,2921
 CrossingCount,,,,12,
 CrossingDetect,,,,8,3224
 CrossingPolygon,,,,12,
-CrossMatrix,,,,7,2578
+CrossMatrix,Skew-symmetric matrix for cross product,✅,1,7,2578
 Csc,Returns the cosecant,✅,pure,1,374
 CscDegrees,,,,14.1,
 Csch,Returns the hyperbolic cosecant,✅,pure,1,703
@@ -1503,7 +1503,7 @@ DiscreteWaveletTransform,Discrete wavelet transform,✅,unevaluated,8,1614
 DiscretizeGraphics,,🚫,,10,1149
 DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10,841
 Discriminant,Polynomial discriminant via resultant,✅,pure,6,1410
-DisjointQ,,,,10,2837
+DisjointQ,True if lists share no common elements,✅,1,10,2837
 Disjunction,,,,7,4567
 Disk,Represents a filled disk or sector graphics primitive,✅,pure,2,89
 DiskMatrix,Creates a disk-shaped matrix of ones,✅,pure,7,1345
@@ -2115,7 +2115,7 @@ FourierDCTFilter,,,,9,4809
 FourierDCTMatrix,,,,9,3889
 FourierDST,,,,6,3048
 FourierDSTMatrix,,,,9,4881
-FourierMatrix,,,,9,2642
+FourierMatrix,Discrete Fourier transform matrix,✅,1,9,2642
 FourierParameters,Option for Fourier transform conventions,✅,none,4,803
 FourierSequenceTransform,,,,7,2880
 FourierSeries,,🚫,,7,1317
@@ -4283,7 +4283,7 @@ PolyLog,Polylogarithm function,✅,pure,1,529
 PolynomialExpressionQ,,,,12.2,
 PolynomialExtendedGCD,Extended GCD for polynomials,🚫,None,6,2404
 PolynomialGCD,Greatest common divisor of polynomials,✅,unevaluated,2,1611
-PolynomialLCM,,,,2,2533
+PolynomialLCM,Least common multiple of polynomials,✅,1,2,2533
 PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2,939
 PolynomialQ,Tests whether an expression is a polynomial,✅,pure,1,1167
 PolynomialQuotient,Quotient of polynomial division,✅,pure,1,1460
@@ -5362,7 +5362,7 @@ SymmetricMatrix,,,,14,
 SymmetricMatrixQ,Tests whether a matrix is symmetric,✅,pure,7,1940
 SymmetricPolynomial,Compute elementary symmetric polynomial,✅,none,6,2561
 SymmetricReduction,Symmetric polynomial reduction,🚫,,6,2112
-Symmetrize,,,,9,2679
+Symmetrize,Symmetrize a matrix,✅,1,9,2679
 SymmetrizedArray,Array with symmetry constraints,🚫,,9,2112
 SymmetrizedArrayRules,,,,9,3916
 SymmetrizedDependentComponents,,,,9,4479
