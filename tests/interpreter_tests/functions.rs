@@ -9553,4 +9553,64 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   // PolynomialExtendedGCD skipped - requires polynomial GCD infrastructure
+  #[test]
+  fn count_distinct_basic() {
+    assert_eq!(interpret("CountDistinct[{1, 2, 3, 2, 1, 4}]").unwrap(), "4");
+  }
+  #[test]
+  fn count_distinct_strings() {
+    assert_eq!(
+      interpret("CountDistinct[{\"a\", \"b\", \"a\", \"c\"}]").unwrap(),
+      "3"
+    );
+  }
+  #[test]
+  fn diagonalizable_matrix_q_true() {
+    assert_eq!(
+      interpret("DiagonalizableMatrixQ[{{1, 0}, {0, 2}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn diagonalizable_matrix_q_false() {
+    assert_eq!(
+      interpret("DiagonalizableMatrixQ[{{1, 1}, {0, 1}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn positive_semidefinite_matrix_q_true() {
+    assert_eq!(
+      interpret("PositiveSemidefiniteMatrixQ[{{1, 0}, {0, 1}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn positive_semidefinite_matrix_q_false() {
+    assert_eq!(
+      interpret("PositiveSemidefiniteMatrixQ[{{1, 2}, {2, 1}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn symmetric_polynomial_1() {
+    assert_eq!(
+      interpret("SymmetricPolynomial[1, {a, b, c}]").unwrap(),
+      "a + b + c"
+    );
+  }
+  #[test]
+  fn symmetric_polynomial_2() {
+    assert_eq!(
+      interpret("SymmetricPolynomial[2, {a, b, c}]").unwrap(),
+      "a*b + a*c + b*c"
+    );
+  }
+  #[test]
+  fn symmetric_polynomial_3() {
+    assert_eq!(
+      interpret("SymmetricPolynomial[3, {a, b, c}]").unwrap(),
+      "a*b*c"
+    );
+  }
 }

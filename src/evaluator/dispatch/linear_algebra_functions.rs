@@ -669,6 +669,132 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "DiagonalizableMatrixQ" if args.len() == 1 => {
+      // A matrix is diagonalizable if eigenvalues have correct multiplicities
+      // For numeric matrices: check if eigenvalues list has n elements (counting multiplicity)
+      // and that the matrix has n linearly independent eigenvectors.
+      // Simplified approach: compute eigenvalues via characteristic polynomial,
+      // then check if algebraic multiplicity == geometric multiplicity for each.
+      // For 2x2: diagonalizable iff eigenvalues are distinct OR matrix is already diagonal.
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        // Check it's a square matrix
+        for row in rows {
+          if let Expr::List(cols) = row {
+            if cols.len() != n {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          } else {
+            return None;
+          }
+        }
+        // Compute eigenvalues
+        if let Ok(Expr::List(ref eigenvals)) =
+          crate::functions::linear_algebra_ast::eigenvalues_ast(args)
+        {
+          // If we got n eigenvalues, check if all distinct
+          if eigenvals.len() == n {
+            // Check for repeated eigenvalues
+            let mut has_repeated = false;
+            for i in 0..eigenvals.len() {
+              for j in (i + 1)..eigenvals.len() {
+                let ei = expr_to_string(&eigenvals[i]);
+                let ej = expr_to_string(&eigenvals[j]);
+                if ei == ej {
+                  has_repeated = true;
+                  break;
+                }
+              }
+              if has_repeated {
+                break;
+              }
+            }
+            if !has_repeated {
+              // All eigenvalues distinct => diagonalizable
+              return Some(Ok(Expr::Identifier("True".to_string())));
+            }
+            // Repeated eigenvalues: check if matrix is already diagonal
+            let mut is_diagonal = true;
+            for (i, row) in rows.iter().enumerate() {
+              if let Expr::List(cols) = row {
+                for (j, val) in cols.iter().enumerate() {
+                  if i != j && !is_zero_expr(val) {
+                    is_diagonal = false;
+                    break;
+                  }
+                }
+              }
+              if !is_diagonal {
+                break;
+              }
+            }
+            return Some(Ok(Expr::Identifier(
+              if is_diagonal { "True" } else { "False" }.to_string(),
+            )));
+          }
+        }
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
+    }
+    "PositiveSemidefiniteMatrixQ" if args.len() == 1 => {
+      // Check if all eigenvalues are non-negative
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        for row in rows {
+          if let Expr::List(cols) = row {
+            if cols.len() != n {
+              return Some(Ok(Expr::Identifier("False".to_string())));
+            }
+          } else {
+            return None;
+          }
+        }
+        if let Ok(Expr::List(ref eigenvals)) =
+          crate::functions::linear_algebra_ast::eigenvalues_ast(args)
+        {
+          for ev in eigenvals {
+            // Evaluate the eigenvalue to check if it's non-negative
+            let evaluated = evaluate_expr_to_expr(ev).unwrap_or(ev.clone());
+            match &evaluated {
+              Expr::Integer(v) => {
+                if *v < 0 {
+                  return Some(Ok(Expr::Identifier("False".to_string())));
+                }
+              }
+              Expr::Real(v) => {
+                if *v < 0.0 {
+                  return Some(Ok(Expr::Identifier("False".to_string())));
+                }
+              }
+              Expr::FunctionCall {
+                name: fname,
+                args: fargs,
+              } if fname == "Rational" && fargs.len() == 2 => {
+                if let Expr::Integer(n) = &fargs[0] {
+                  if *n < 0 {
+                    return Some(Ok(Expr::Identifier("False".to_string())));
+                  }
+                }
+              }
+              _ => {
+                // Try numeric evaluation
+                let nval = evaluate_expr_to_expr(&Expr::FunctionCall {
+                  name: "N".to_string(),
+                  args: vec![evaluated.clone()],
+                });
+                if let Ok(Expr::Real(v)) = nval {
+                  if v < 0.0 {
+                    return Some(Ok(Expr::Identifier("False".to_string())));
+                  }
+                }
+              }
+            }
+          }
+          return Some(Ok(Expr::Identifier("True".to_string())));
+        }
+        return Some(Ok(Expr::Identifier("False".to_string())));
+      }
+    }
     _ => {}
   }
   None

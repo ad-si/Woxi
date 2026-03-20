@@ -1534,6 +1534,16 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::List(results)));
       }
     }
+    // CountDistinct[list] — count unique elements
+    "CountDistinct" if args.len() == 1 => {
+      if let Expr::List(ref elems) = args[0] {
+        let mut seen = std::collections::HashSet::new();
+        for e in elems {
+          seen.insert(expr_to_string(e));
+        }
+        return Some(Ok(Expr::Integer(seen.len() as i128)));
+      }
+    }
 
     _ => {}
   }
