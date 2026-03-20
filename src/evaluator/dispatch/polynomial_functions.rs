@@ -181,6 +181,61 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    "SymmetricPolynomial" if args.len() == 2 => {
+      // SymmetricPolynomial[k, {x1, x2, ..., xn}] = e_k(x1,...,xn)
+      // The k-th elementary symmetric polynomial
+      if let (Some(k), Expr::List(vars)) = (expr_to_i128(&args[0]), &args[1]) {
+        let k = k as usize;
+        let n = vars.len();
+        if k == 0 {
+          return Some(Ok(Expr::Integer(1)));
+        }
+        if k > n {
+          return Some(Ok(Expr::Integer(0)));
+        }
+        // Generate all k-element subsets of vars and multiply elements in each
+        let mut terms: Vec<Expr> = Vec::new();
+        let mut indices: Vec<usize> = (0..k).collect();
+        loop {
+          // Build product of vars[indices[0]] * vars[indices[1]] * ...
+          let mut product = vars[indices[0]].clone();
+          for &idx in &indices[1..] {
+            product = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Times,
+              left: Box::new(product),
+              right: Box::new(vars[idx].clone()),
+            };
+          }
+          terms.push(product);
+          // Next k-combination
+          let mut i = k;
+          loop {
+            if i == 0 {
+              // All combinations exhausted
+              // Build sum of all terms
+              let mut result = terms[0].clone();
+              for term in &terms[1..] {
+                result = Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Plus,
+                  left: Box::new(result),
+                  right: Box::new(term.clone()),
+                };
+              }
+              return Some(evaluate_expr_to_expr(&result));
+            }
+            i -= 1;
+            indices[i] += 1;
+            if indices[i] <= n - k + i {
+              // Fill remaining indices
+              for j in (i + 1)..k {
+                indices[j] = indices[j - 1] + 1;
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
     // FromCoefficientRules[{{exp} -> coeff, ...}, var]
     "FromCoefficientRules" if args.len() == 2 => {
       if let (Expr::List(rules), Expr::Identifier(var)) = (&args[0], &args[1]) {
