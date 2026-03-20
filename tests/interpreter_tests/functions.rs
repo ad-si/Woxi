@@ -11457,4 +11457,28 @@ mod batch_unevaluated_wrappers_2 {
     assert!(result.starts_with("Piecewise["));
     assert!(result.contains("x >= 0"));
   }
+
+  #[test]
+  fn mixed_radix_inert() {
+    assert_eq!(
+      interpret("MixedRadix[{24, 60, 60}]").unwrap(),
+      "MixedRadix[{24, 60, 60}]"
+    );
+  }
+
+  #[test]
+  fn xml_object_inert() {
+    assert_eq!(
+      interpret(r#"XMLObject["Document"][x]"#).unwrap(),
+      "XMLObject[Document][x]"
+    );
+  }
+
+  #[test]
+  fn underoverscript_box_inert() {
+    assert_eq!(
+      interpret("UnderoverscriptBox[x, y, z]").unwrap(),
+      "UnderoverscriptBox[x, y, z]"
+    );
+  }
 }
