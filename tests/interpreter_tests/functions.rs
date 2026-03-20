@@ -2619,6 +2619,62 @@ mod mantissa_exponent {
   }
 }
 
+mod heaviside_lambda {
+  use super::*;
+
+  #[test]
+  fn zero_is_one() {
+    assert_eq!(interpret("HeavisideLambda[0]").unwrap(), "1");
+  }
+
+  #[test]
+  fn inside_is_value() {
+    assert_eq!(interpret("HeavisideLambda[1/3]").unwrap(), "2/3");
+  }
+
+  #[test]
+  fn at_boundary_is_zero() {
+    assert_eq!(interpret("HeavisideLambda[1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn outside_real_is_zero() {
+    assert_eq!(interpret("HeavisideLambda[1.5]").unwrap(), "0.");
+  }
+
+  #[test]
+  fn negative_inside() {
+    assert_eq!(interpret("HeavisideLambda[-0.5]").unwrap(), "0.5");
+  }
+
+  #[test]
+  fn symbolic_unevaluated() {
+    assert_eq!(
+      interpret("HeavisideLambda[x]").unwrap(),
+      "HeavisideLambda[x]"
+    );
+  }
+}
+
+mod mean_deviation {
+  use super::*;
+
+  #[test]
+  fn basic_list() {
+    assert_eq!(interpret("MeanDeviation[{1, 2, 3, 4, 5}]").unwrap(), "6/5");
+  }
+
+  #[test]
+  fn even_list() {
+    assert_eq!(interpret("MeanDeviation[{2, 4, 6, 8}]").unwrap(), "2");
+  }
+
+  #[test]
+  fn identical_values() {
+    assert_eq!(interpret("MeanDeviation[{5, 5, 5}]").unwrap(), "0");
+  }
+}
+
 mod reverse_extended {
   use super::*;
 

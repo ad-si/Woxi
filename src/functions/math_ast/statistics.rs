@@ -1159,4 +1159,47 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   mean_ast(&[powered_list])
 }
 
+/// MeanDeviation[list] - mean absolute deviation from the mean
+pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = &args[0] {
+    if items.is_empty() {
+      return Err(InterpreterError::EvaluationError(
+        "MeanDeviation: list must not be empty".into(),
+      ));
+    }
+    // Compute mean
+    let mean_expr = mean_ast(&[args[0].clone()])?;
+    // Compute sum of |xi - mean|
+    let n = items.len() as i128;
+    let mut abs_devs = Vec::new();
+    for item in items {
+      let diff = Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(item.clone()),
+        right: Box::new(mean_expr.clone()),
+      };
+      let abs_diff = Expr::FunctionCall {
+        name: "Abs".to_string(),
+        args: vec![diff],
+      };
+      abs_devs.push(abs_diff);
+    }
+    let sum = Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: abs_devs,
+    };
+    let result = Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Divide,
+      left: Box::new(sum),
+      right: Box::new(Expr::Integer(n)),
+    };
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(Expr::FunctionCall {
+      name: "MeanDeviation".to_string(),
+      args: args.to_vec(),
+    })
+  }
+}
+
 // ─── PowerExpand ──────────────────────────────────────────────────────

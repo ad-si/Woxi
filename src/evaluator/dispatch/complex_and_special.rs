@@ -36,6 +36,9 @@ pub fn dispatch_complex_and_special(
     "UnitTriangle" if args.len() == 1 => {
       return Some(crate::functions::math_ast::unit_triangle_ast(args));
     }
+    "HeavisideLambda" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::heaviside_lambda_ast(args));
+    }
     "Complex" if args.len() == 2 => {
       // Complex[a, b] -> a + b*I, evaluated to simplify iterated Complex
       let real = &args[0];
