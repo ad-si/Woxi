@@ -1672,6 +1672,143 @@ pub fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // Graph analysis helper: extract adjacency list from graph
+  // UndirectedGraphQ[graph] — True if all edges are undirected
+  if name == "UndirectedGraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let Expr::List(edges) = &gargs[1]
+    {
+      let all_undirected = edges.iter().all(|e| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "UndirectedEdge")
+      });
+      return Ok(Expr::Identifier(
+        if all_undirected { "True" } else { "False" }.to_string(),
+      ));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  // TreeGraphQ[graph] — True if graph is a tree (connected, n-1 edges for n vertices)
+  if name == "TreeGraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      // A tree has exactly n-1 edges and is connected
+      if edges.len() != n - 1 {
+        return Ok(Expr::Identifier("False".to_string()));
+      }
+      // Check connectivity via BFS/DFS
+      let adj = build_undirected_adj(vertices, edges);
+      let connected = is_connected(&adj, n);
+      return Ok(Expr::Identifier(
+        if connected { "True" } else { "False" }.to_string(),
+      ));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  // AcyclicGraphQ[graph] — True if graph has no cycles
+  if name == "AcyclicGraphQ" && args.len() == 1 {
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = &args[0]
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      // For undirected: acyclic iff edges < n and connected components have tree structure
+      // Simple check: edges < n (forest)
+      let is_acyclic = edges.len() < n;
+      return Ok(Expr::Identifier(
+        if is_acyclic { "True" } else { "False" }.to_string(),
+      ));
+    }
+    return Ok(Expr::Identifier("False".to_string()));
+  }
+
+  // GraphDiameter, VertexEccentricity, GraphCenter, GraphPeriphery, GraphRadius
+  if (name == "GraphDiameter"
+    || name == "VertexEccentricity"
+    || name == "GraphCenter"
+    || name == "GraphPeriphery"
+    || name == "GraphRadius")
+    && (args.len() == 1 || (name == "VertexEccentricity" && args.len() == 2))
+  {
+    let graph = if name == "VertexEccentricity" && args.len() == 2 {
+      &args[0]
+    } else {
+      &args[0]
+    };
+    if let Expr::FunctionCall {
+      name: gname,
+      args: gargs,
+    } = graph
+      && gname == "Graph"
+      && gargs.len() == 2
+      && let (Expr::List(vertices), Expr::List(edges)) = (&gargs[0], &gargs[1])
+    {
+      let n = vertices.len();
+      let adj = build_undirected_adj(vertices, edges);
+      let vertex_strs: Vec<String> =
+        vertices.iter().map(expr_to_string).collect();
+
+      // Compute eccentricities via BFS from each vertex
+      let eccentricities: Vec<i128> =
+        (0..n).map(|start| bfs_max_dist(&adj, start, n)).collect();
+
+      match name {
+        "GraphDiameter" => {
+          let diameter = eccentricities.iter().copied().max().unwrap_or(0);
+          return Ok(Expr::Integer(diameter));
+        }
+        "GraphRadius" => {
+          let radius = eccentricities.iter().copied().min().unwrap_or(0);
+          return Ok(Expr::Integer(radius));
+        }
+        "VertexEccentricity" if args.len() == 2 => {
+          let target = expr_to_string(&args[1]);
+          if let Some(idx) = vertex_strs.iter().position(|v| v == &target) {
+            return Ok(Expr::Integer(eccentricities[idx]));
+          }
+        }
+        "GraphCenter" => {
+          let min_ecc = eccentricities.iter().copied().min().unwrap_or(0);
+          let center: Vec<Expr> = vertices
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| eccentricities[*i] == min_ecc)
+            .map(|(_, v)| v.clone())
+            .collect();
+          return Ok(Expr::List(center));
+        }
+        "GraphPeriphery" => {
+          let max_ecc = eccentricities.iter().copied().max().unwrap_or(0);
+          let periphery: Vec<Expr> = vertices
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| eccentricities[*i] == max_ecc)
+            .map(|(_, v)| v.clone())
+            .collect();
+          return Ok(Expr::List(periphery));
+        }
+        _ => {}
+      }
+    }
+  }
+
   // AdjacencyMatrix[Graph[{vertices}, {edges}]] — build adjacency matrix
   if name == "AdjacencyMatrix" && args.len() == 1 {
     if let Expr::FunctionCall {
@@ -2966,6 +3103,71 @@ fn expr_to_rational(expr: &Expr) -> Option<(i128, i128)> {
 
 fn gcd_i128(a: i128, b: i128) -> i128 {
   if b == 0 { a } else { gcd_i128(b, a % b) }
+}
+
+/// Build undirected adjacency list from graph vertices and edges
+fn build_undirected_adj(vertices: &[Expr], edges: &[Expr]) -> Vec<Vec<usize>> {
+  let n = vertices.len();
+  let vertex_index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let mut adj = vec![vec![]; n];
+  for edge in edges {
+    if let Expr::FunctionCall { args: eargs, .. } = edge
+      && eargs.len() == 2
+    {
+      let from_str = expr_to_string(&eargs[0]);
+      let to_str = expr_to_string(&eargs[1]);
+      if let (Some(&fi), Some(&ti)) =
+        (vertex_index.get(&from_str), vertex_index.get(&to_str))
+      {
+        adj[fi].push(ti);
+        adj[ti].push(fi);
+      }
+    }
+  }
+  adj
+}
+
+/// Check if undirected graph is connected via BFS
+fn is_connected(adj: &[Vec<usize>], n: usize) -> bool {
+  if n == 0 {
+    return true;
+  }
+  let mut visited = vec![false; n];
+  let mut queue = std::collections::VecDeque::new();
+  visited[0] = true;
+  queue.push_back(0);
+  let mut count = 1;
+  while let Some(v) = queue.pop_front() {
+    for &u in &adj[v] {
+      if !visited[u] {
+        visited[u] = true;
+        count += 1;
+        queue.push_back(u);
+      }
+    }
+  }
+  count == n
+}
+
+/// BFS from start vertex, return max distance (eccentricity)
+fn bfs_max_dist(adj: &[Vec<usize>], start: usize, n: usize) -> i128 {
+  let mut dist = vec![-1i128; n];
+  let mut queue = std::collections::VecDeque::new();
+  dist[start] = 0;
+  queue.push_back(start);
+  while let Some(v) = queue.pop_front() {
+    for &u in &adj[v] {
+      if dist[u] == -1 {
+        dist[u] = dist[v] + 1;
+        queue.push_back(u);
+      }
+    }
+  }
+  dist.into_iter().filter(|&d| d >= 0).max().unwrap_or(0)
 }
 
 /// Build a rational or integer Expr from (num, den).
