@@ -147,6 +147,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MultinomialDistribution" => pdf_multinomial(dargs, x),
     "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
     "HalfNormalDistribution" => pdf_half_normal(dargs, x),
+    "ChiDistribution" => pdf_chi(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -358,6 +359,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LaplaceDistribution" => cdf_laplace(dargs, x),
     "RayleighDistribution" => cdf_rayleigh(dargs, x),
     "HalfNormalDistribution" => cdf_half_normal(dargs, x),
+    "ChiDistribution" => cdf_chi(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -2138,4 +2140,48 @@ fn cdf_half_normal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   };
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(erf_val, cond)], int(0)))
+}
+
+/// PDF[ChiDistribution[n], x] = Piecewise[{{2^(1-n/2) * x^(n-1) / (E^(x^2/2) * Gamma[n/2]), x > 0}}, 0]
+fn pdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ChiDistribution expects 1 argument".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  // 2^(1 - n/2)
+  let pow2 = power(int(2), minus(int(1), divide(n.clone(), int(2))));
+  // x^(n-1)
+  let x_pow = power(x.clone(), minus(n.clone(), int(1)));
+  // E^(x^2/2)
+  let exp_part = power(e(), divide(power(x.clone(), int(2)), int(2)));
+  // Gamma[n/2]
+  let gamma_part = Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![divide(n, int(2))],
+  };
+  let pdf_val = divide(times(pow2, x_pow), times(exp_part, gamma_part));
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(pdf_val, cond)], int(0)))
+}
+
+/// CDF[ChiDistribution[n], x] = Piecewise[{{GammaRegularized[n/2, 0, x^2/2], x > 0}}, 0]
+fn cdf_chi(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "ChiDistribution expects 1 argument".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+  let gamma_reg = Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![
+      divide(n, int(2)),
+      int(0),
+      divide(power(x.clone(), int(2)), int(2)),
+    ],
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(gamma_reg, cond)], int(0)))
 }
