@@ -9367,4 +9367,56 @@ mod batch_unevaluated_wrappers_2 {
       "{{{6/7, 3/7, -2/7}, {-69/175, 158/175, 6/35}, {-58/175, 6/175, -33/35}}, {{14, 21, -14}, {0, 175, -70}, {0, 0, 35}}}"
     );
   }
+  #[test]
+  fn continued_fraction_k_basic() {
+    assert_eq!(
+      interpret("ContinuedFractionK[k, {k, 1, 3}]").unwrap(),
+      "7/10"
+    );
+  }
+  #[test]
+  fn continued_fraction_k_constant() {
+    assert_eq!(
+      interpret("ContinuedFractionK[1, {i, 1, 10}]").unwrap(),
+      "55/89"
+    );
+  }
+  #[test]
+  fn continued_fraction_k_five() {
+    assert_eq!(
+      interpret("ContinuedFractionK[k, {k, 1, 5}]").unwrap(),
+      "157/225"
+    );
+  }
+  #[test]
+  fn counts_by_odd_q() {
+    assert_eq!(
+      interpret("CountsBy[{1, 2, 3, 4, 5}, OddQ]").unwrap(),
+      "<|True -> 3, False -> 2|>"
+    );
+  }
+  #[test]
+  fn counts_by_string_length() {
+    assert_eq!(
+      interpret(
+        "CountsBy[{\"a\", \"bb\", \"c\", \"dd\", \"eee\"}, StringLength]"
+      )
+      .unwrap(),
+      "<|1 -> 2, 2 -> 2, 3 -> 1|>"
+    );
+  }
+  #[test]
+  fn find_linear_recurrence_fibonacci() {
+    assert_eq!(
+      interpret("FindLinearRecurrence[{1, 1, 2, 3, 5, 8, 13}]").unwrap(),
+      "{1, 1}"
+    );
+  }
+  #[test]
+  fn find_linear_recurrence_powers_of_2() {
+    assert_eq!(
+      interpret("FindLinearRecurrence[{1, 2, 4, 8, 16, 32}]").unwrap(),
+      "{2}"
+    );
+  }
 }
