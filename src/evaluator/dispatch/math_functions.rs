@@ -159,6 +159,22 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    "InterquartileRange" if args.len() == 1 => {
+      // InterquartileRange = Q3 - Q1
+      // Call the Quartiles logic by dispatching
+      if let Some(Ok(Expr::List(ref qs))) =
+        dispatch_math_functions("Quartiles", args)
+      {
+        if qs.len() == 3 {
+          let diff = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(qs[2].clone()),
+            right: Box::new(qs[0].clone()),
+          };
+          return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
+        }
+      }
+    }
     "Abs" if args.len() == 1 => {
       return Some(crate::functions::math_ast::abs_ast(args));
     }

@@ -173,6 +173,14 @@ pub fn dispatch_string_functions(
     "Hash" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::string_ast::hash_ast(args));
     }
+    "SyntaxQ" if args.len() == 1 => {
+      if let Expr::String(s) = &args[0] {
+        let is_valid = crate::parse(s).is_ok();
+        return Some(Ok(Expr::Identifier(
+          if is_valid { "True" } else { "False" }.to_string(),
+        )));
+      }
+    }
     _ => {}
   }
   None
