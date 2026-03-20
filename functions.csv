@@ -78,7 +78,7 @@ AlgebraicNumberDenominator,,,,6,4707
 AlgebraicNumberNorm,,,,6,3306
 AlgebraicNumberPolynomial,,,,6,3363
 AlgebraicNumberTrace,,,,6,3491
-Algebraics,,,,4,2468
+Algebraics,,🚫,,4,2468
 AlgebraicUnitQ,,,,6,4527
 Alignment,Option symbol for specifying alignment in layouts,✅,pure,6,189
 AlignmentPoint,typesetting option,🚫,None,6,2294
@@ -183,7 +183,7 @@ ArcCsc,Returns the arc cosecant,✅,pure,1,370
 ArcCscDegrees,,,,14.1,
 ArcCsch,Returns the inverse hyperbolic cosecant,✅,pure,1,348
 ArcCurvature,,,,10,2880
-ARCHProcess,,,,10,4173
+ARCHProcess,,🚫,,10,4173
 ArcLength,Compute the arc length of a curve,✅,pure,10,1426
 ArcSec,Returns the arc secant,✅,pure,1,372
 ArcSecDegrees,,,,14.1,
@@ -416,7 +416,7 @@ BasicRecurrentLayer,,🚫,,11.1,3566
 BatchNormalizationLayer,Batch normalization layer,✅,unevaluated,11,1675
 BatchSize,machine learning option,🚫,None,11,2299
 BatesDistribution,probability distribution,🚫,None,8,2383
-BattleLemarieWavelet,,,,8,3843
+BattleLemarieWavelet,,🚫,,8,3843
 BayesianMaximization,,,,11,3972
 BayesianMaximizationObject,,,,11,5184
 BayesianMinimization,,,,11,3785
@@ -438,7 +438,7 @@ BenktanderWeibullDistribution,,,,8,3765
 BernoulliB,Returns the nth Bernoulli number,✅,pure,1,876
 BernoulliDistribution,Represents a Bernoulli distribution,✅,pure,6,1274
 BernoulliGraphDistribution,Bernoulli random graph,✅,unevaluated,8,1748
-BernoulliProcess,,,,9,3636
+BernoulliProcess,,🚫,,9,3636
 BernsteinBasis,Bernstein basis polynomial,🚫,,7,2034
 BesagL,,,,12.2,5184
 BesselFilterModel,,,,9,4660
@@ -477,14 +477,14 @@ BinLists,Bin data into lists,🚫,,6,2149
 BinnedVariogramList,,,,13,
 Binomial,Returns the binomial coefficient,✅,pure,1,225
 BinomialDistribution,Binomial probability distribution,✅,none,6,729
-BinomialPointProcess,,,,12.2,5390
-BinomialProcess,,,,9,2503
+BinomialPointProcess,,🚫,,12.2,5390
+BinomialProcess,,🚫,,9,2503
 BinormalDistribution,,🚫,,8,1056
 BioMolecule,,🚫,,14.1,
 BioMoleculeFoldingMethod,,🚫,,14.1,
 BioMoleculePlot3D,,🚫,,14.1,
 BioMoleculeValue,,🚫,,14.1,
-BiorthogonalSplineWavelet,,,,8,3462
+BiorthogonalSplineWavelet,,🚫,,8,3462
 BioSequence,,🚫,,12.2,3070
 BioSequenceBackTranslateList,,🚫,,12.2,
 BioSequenceComplement,,🚫,,12.2,4138
@@ -554,7 +554,7 @@ BondLabels,,,,13,
 BondLabelStyle,,,,13,
 BondList,,,,12,5390
 BondQ,,,,12,
-Bookmarks,,,,7,2512
+Bookmarks,,🚫,,7,2512
 Boole,Converts True to 1 and False to 0,✅,pure,5.1,433
 BooleanConsecutiveFunction,,,,9,5587
 BooleanConvert,Convert Boolean expressions,✅,unevaluated,7,1588
@@ -591,7 +591,7 @@ BoxRatios,Option for 3D box aspect ratios,✅,pure,1,363
 BoxStyle,Option specifying the style of 3D boxes in plots,✅,none,2,677
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8,1002
 Bra,quantum notation,🚫,None,13.3,2333
-BracketingBar,,,,3,2514
+BracketingBar,,🚫,,3,2514
 BraKet,,,,13.3,3474
 BrayCurtisDistance,Bray-Curtis distance between vectors,✅,none,6,3440
 BreadthFirstScan,,,,8,2755
@@ -601,7 +601,7 @@ BrightnessEqualize,,🚫,,11.1,4173
 BroadcastStationData,,🚫,,10,4881
 Brown,Named color evaluating to RGBColor[0.6 0.4 0.2],✅,pure,5.1,497
 BrownForsytheTest,,,,8,3972
-BrownianBridgeProcess,,,,9,3280
+BrownianBridgeProcess,,🚫,,9,3280
 BSplineBasis,B-spline basis function,✅,pure,7,1466
 BSplineCurve,B-spline curve through control points in Graphics,✅,pure,7,192
 BSplineFunction,,🚫,,7,1176
@@ -688,12 +688,12 @@ Catenate,Flattens one level of lists,✅,pure,10,1063
 CatenateLayer,Neural network concatenation layer,🚫,,11,2084
 CauchyDistribution,Cauchy probability distribution,✅,pure,6,1543
 CauchyMatrix,,,,13.2,
-CauchyPointProcess,,,,12.2,5184
+CauchyPointProcess,,🚫,,12.2,5184
 CauchyWindow,,,,9,4262
 CayleyGraph,group theory graph,🚫,None,8,2394
 CDF,Cumulative distribution function for a distribution,✅,pure,6,430
 CDFDeploy,,🚫,,8,2642
-CDFWavelet,,,,8,3344
+CDFWavelet,,🚫,,8,3344
 Ceiling,Returns the smallest integer greater than or equal to a number,✅,pure,1,395
 CelestialSystem,,,,10,3765
 Cell,Represents a cell in a notebook with content and style information,✅,pure,3,325
@@ -882,7 +882,7 @@ Coefficient,Extracts the coefficient of a term in a polynomial,✅,pure,1,369
 CoefficientArrays,,🚫,,5,964
 CoefficientList,Returns the list of coefficients of a polynomial,✅,pure,1,513
 CoefficientRules,Coefficient rules for polynomials,✅,unevaluated,7,1578
-CoifletWavelet,,,,8,4006
+CoifletWavelet,,🚫,,8,4006
 Collect,Collects terms with the same powers of a variable,✅,pure,1,339
 CollinearPoints,,,,12.2,5184
 Colon,,,,3,2952
@@ -982,8 +982,8 @@ Composition,Composes multiple functions,✅,pure,2,423
 CompoundElement,,,,10.1,3972
 CompoundExpression,Evaluates expressions sequentially and returns the last result,✅,pure,1,8
 CompoundPoissonDistribution,,,,9,3636
-CompoundPoissonProcess,,,,9,3474
-CompoundRenewalProcess,,,,9,4027
+CompoundPoissonProcess,,🚫,,9,3474
+CompoundRenewalProcess,,🚫,,9,4027
 Compress,Compresses an expression to a string,✅,pure,6,1611
 CompressionLevel,,,,12.1,5079
 ComputeUncertainty,,,,12,
@@ -1052,7 +1052,7 @@ Continue,Continues to next loop iteration,✅,pure,1,1072
 ContinuedFraction,Returns the continued fraction representation,✅,pure,4,1381
 ContinuedFractionK,Evaluates a generalized continued fraction,✅,None,7,2212
 ContinuousAction,,🚫,,6,1155
-ContinuousMarkovProcess,,,,9,3162
+ContinuousMarkovProcess,,🚫,,9,3162
 ContinuousTask,,,,10.2,4947
 ContinuousTimeModelQ,,,,8,5390
 ContinuousWaveletData,,🚫,,8,4262
@@ -1086,7 +1086,7 @@ ConvectionPDETerm,,,,12.2,3462
 Convergents,List of convergents of a continued fraction representation,✅,none,6,2031
 ConversionRules,,,,3,4660
 ConvexHullMesh,Requires external services or GUI infrastructure,🚫,io,10,814
-ConvexHullRegion,,,,12.2,3889
+ConvexHullRegion,,🚫,,12.2,3889
 ConvexOptimization,,,,12.2,2971
 ConvexPolygonQ,,,,12,
 ConvexPolyhedronQ,,,,12,
@@ -1148,7 +1148,7 @@ Covariance,Computes the covariance of two lists,✅,pure,6,1534
 CovarianceEstimatorFunction,,,,7,5587
 CovarianceFunction,Covariance function,✅,unevaluated,9,1887
 CoxianDistribution,,,,9,3257
-CoxIngersollRossProcess,,,,9,3389
+CoxIngersollRossProcess,,🚫,,9,3389
 CoxModel,,,,9,4881
 CoxModelFit,,,,9,3537
 CramerVonMisesTest,,,,8,3522
@@ -1332,7 +1332,7 @@ Definition,Display the definition of a symbol,✅,pure,1,2462
 Degree,Represents the number of radians in one degree,✅,pure,1,150
 DegreeCentrality,,,,8,2487
 DegreeGraphDistribution,Degree-based graph distribution,🚫,,8,2039
-DEigensystem,,,,10.3,2533
+DEigensystem,,🚫,,10.3,2533
 DEigenvalues,,,,10.3,3678
 Deinitialization,,,,6,3506
 Del,Symbolic nabla operator with Unicode display,✅,none,3,1046
@@ -1397,7 +1397,7 @@ DeviceStreams,,🚫,,10,5013
 DeviceWrite,,🚫,,10,3280
 DeviceWriteBuffer,,🚫,,10,4291
 DFixedPoints,,,,14.1,
-DGaussianWavelet,,,,8,3566
+DGaussianWavelet,,🚫,,8,3566
 Diagonal,Extract diagonal of a matrix,✅,pure,6,932
 DiagonalizableMatrixQ,Test whether a matrix is diagonalizable,✅,none,10,2570
 DiagonalMatrix,Creates a diagonal matrix from a list,✅,pure,1,493
@@ -1433,8 +1433,8 @@ DiffInputFunction,,🚫,,14.1,
 DiffObject,,,,14.1,
 DiffStyle,,,,14.1,
 DiffusionPDETerm,,,,12.2,2944
-DiggleGatesPointProcess,,,,12.2,5587
-DiggleGrattonPointProcess,,,,12.2,5486
+DiggleGatesPointProcess,,🚫,,12.2,5587
+DiggleGrattonPointProcess,,🚫,,12.2,5486
 DigitalSignature,,🚫,,12,
 DigitBlock,Option for digit grouping in NumberForm,✅,pure,1,1481
 DigitCharacter,Represents a digit character in string patterns,✅,pure,5.1,870
@@ -1498,7 +1498,7 @@ DiscreteTimeModelQ,,,,8,5390
 DiscreteUniformDistribution,Discrete uniform distribution over integers,✅,computation,6,1593
 DiscreteVariables,Discrete variables option,✅,unevaluated,9,1819
 DiscreteWaveletData,,🚫,,8,2748
-DiscreteWaveletPacketTransform,,,,8,2533
+DiscreteWaveletPacketTransform,,🚫,,8,2533
 DiscreteWaveletTransform,Discrete wavelet transform,✅,unevaluated,8,1614
 DiscretizeGraphics,,🚫,,10,1149
 DiscretizeRegion,Requires external services or GUI infrastructure,🚫,io,10,841
@@ -1634,7 +1634,7 @@ EdgeDetect,Detects edges in an image with Gaussian smoothing and Sobel operator,
 EdgeForm,Specifies edge styling for filled graphics,✅,pure,1,120
 EdgeIndex,,,,8,3242
 EdgeLabels,,🚫,,8,1057
-EdgeLabelStyle,,,,8,2519
+EdgeLabelStyle,,🚫,,8,2519
 EdgeList,List of edges in a graph,✅,none,8,763
 EdgeQ,,,,8,3094
 EdgeRules,,,,8,3678
@@ -1748,7 +1748,7 @@ EscapeRadius,,,,10,4006
 EstimatedBackground,,,,10,3257
 EstimatedDistribution,,🚫,,8,1093
 EstimatedPointNormals,,,,13.1,
-EstimatedPointProcess,,,,12.2,5079
+EstimatedPointProcess,,🚫,,12.2,5079
 EstimatedProcess,Estimated stochastic process,✅,unevaluated,9,1571
 EstimatedVariogramModel,,,,13,
 EstimatorGains,,,,8,3280
@@ -1876,7 +1876,7 @@ FailureDistribution,,,,9,3020
 FailureQ,,,,10.2,3636
 False,Boolean constant representing logical falsehood,✅,pure,1,38
 FareySequence,,,,10,3506
-FARIMAProcess,,,,9,3121
+FARIMAProcess,,🚫,,9,3121
 FeatureDistance,,🚫,,11,4387
 FeatureExtract,,🚫,,11,3280
 FeatureExtraction,Extract features from data,✅,unevaluated,11,1623
@@ -1890,10 +1890,10 @@ FeatureSpacePlot3D,,🚫,,11.3,5013
 FeatureTypes,Feature types option,✅,unevaluated,10.1,1885
 FeatureValueDependencyPlot,,🚫,,13.1,
 FeatureValueImpactPlot,,🚫,,13.1,
-FeedbackLinearize,,,,10,3578
-FeedbackSector,,,,9,5390
-FeedbackSectorStyle,,,,9,5486
-FeedbackType,,,,8,4006
+FeedbackLinearize,,🚫,,10,3578
+FeedbackSector,,🚫,,9,5390
+FeedbackSectorStyle,,🚫,,9,5486
+FeedbackType,,🚫,,8,4006
 FetalGrowthData,,🚫,,10.1,4081
 Fibonacci,Returns the nth Fibonacci number,✅,pure,3,520
 Fibonorial,,,,10,5184
@@ -2128,7 +2128,7 @@ FoxH,,,,12.3,
 FoxHReduce,,,,13,
 FractionalBrownianMotionProcess,stochastic process,🚫,None,9,2425
 FractionalD,,,,13.1,
-FractionalGaussianNoiseProcess,,,,10,4204
+FractionalGaussianNoiseProcess,,🚫,,10,4204
 FractionalPart,Returns the fractional part of a number,✅,pure,3,820
 FractionBox,,🚫,,3,1143
 FractionBoxOptions,,🚫,,4,4138
@@ -2218,7 +2218,7 @@ FunctionSurjective,,,,12.2,4387
 FussellVeselyImportance,,,,9,4437
 GaborFilter,,🚫,,9,3440
 GaborMatrix,,,,9,3947
-GaborWavelet,,,,8,2816
+GaborWavelet,,🚫,,8,2816
 GainMargins,,,,8,4809
 GainPhaseMargins,,,,8,4291
 GalaxyData,,🚫,,10,1338
@@ -2227,7 +2227,7 @@ Gamma,Returns the gamma function value,✅,pure,1,130
 GammaDistribution,Gamma probability distribution,✅,pure,6,981
 GammaRegularized,Regularized incomplete gamma function,✅,1,2,1279
 GapPenalty,,,,7,4747
-GARCHProcess,,,,10,3413
+GARCHProcess,,🚫,,10,3413
 GatedRecurrentLayer,,🚫,,11.1,3257
 Gather,Groups identical elements together,✅,pure,7,1264
 GatherBy,Groups elements by applying a function,✅,pure,7,532
@@ -2240,7 +2240,7 @@ GaugeLabels,,🚫,,9,2473
 GaugeMarkers,,🚫,,9,2707
 GaugeStyle,,🚫,,9,2921
 GaussianFilter,,🚫,,7,1173
-GaussianIntegers,,,,2,2468
+GaussianIntegers,,🚫,,2,2468
 GaussianMatrix,Gaussian matrix,✅,unevaluated,7,1779
 GaussianOrthogonalMatrixDistribution,,,,10.3,3656
 GaussianSymplecticMatrixDistribution,,,,10.3,4356
@@ -2371,7 +2371,7 @@ GeoZoomLevel,,🚫,,10,2698
 GestureHandler,,🚫,,9,4315
 Get,Reads and evaluates a file returning the last result,✅,effectful,1,283
 GetEnvironment,,,,9,3717
-GibbsPointProcess,,,,12.2,5587
+GibbsPointProcess,,🚫,,12.2,5587
 Glaisher,Glaisher-Kinkelin constant,✅,none,4,2509
 GlobalClusteringCoefficient,,,,9,3233
 Glow,Graphics directive for glow effect,✅,1,6,1169
@@ -2481,7 +2481,7 @@ HaarWavelet,wavelet function,🚫,None,8,2404
 HadamardMatrix,,,,9,3176
 HalfLine,geometric primitive,🚫,None,10,2299
 HalfNormalDistribution,,,,6,2462
-HalfPlane,,,,10,2468
+HalfPlane,,🚫,,10,2468
 HalfSpace,,,,10.2,3215
 HalftoneShading,,,,12.1,4027
 Haloing,,,,13.3,
@@ -2498,7 +2498,7 @@ HannPoissonWindow,,,,9,4138
 HannWindow,,,,9,3233
 HaradaNortonGroupHN,,,,8,5184
 HararyGraph,,,,8,3134
-HardcorePointProcess,,,,12.2,5184
+HardcorePointProcess,,🚫,,12.2,5184
 HarmonicMean,Returns the harmonic mean of a list,✅,pure,6,2223
 HarmonicMeanFilter,,,,7,4204
 HarmonicNumber,Returns the n-th harmonic number,✅,pure,4,929
@@ -2548,7 +2548,7 @@ HeunTPrime,,,,12.1,
 HexadecimalCharacter,,,,7,3947
 Hexahedron,3D geometric primitive,🚫,None,10,2233
 HiddenItems,,🚫,,12.1,
-HiddenMarkovProcess,,,,10,3265
+HiddenMarkovProcess,,🚫,,10,3265
 Highlighted,Highlighted display,✅,unevaluated,10.4,1800
 HighlightGraph,Requires external services or GUI infrastructure,🚫,io,8,822
 HighlightImage,,🚫,,9,1195
@@ -2788,8 +2788,8 @@ InflationMethod,,🚫,,10,5486
 Information,Displays information about a symbol,✅,pure,1,320
 Inherited,Symbol indicating a setting should be inherited from a higher level,✅,pure,6,310
 InheritScope,,,,10,3843
-InhomogeneousPoissonPointProcess,,,,12.2,5184
-InhomogeneousPoissonProcess,,,,10.1,4173
+InhomogeneousPoissonPointProcess,,🚫,,12.2,5184
+InhomogeneousPoissonProcess,,🚫,,10.1,4173
 InitialEvaluationHistory,,,,11,4707
 Initialization,Option for initialization code,✅,none,6,565
 InitializationCell,,🚫,,3,3134
@@ -2874,7 +2874,7 @@ InverseBilateralLaplaceTransform,,,,12.3,
 InverseBilateralZTransform,,,,13,
 InverseCDF,,🚫,,6,1251
 InverseChiSquareDistribution,,,,7,2656
-InverseContinuousWaveletTransform,,,,8,3353
+InverseContinuousWaveletTransform,,🚫,,8,3353
 InverseDistanceTransform,,,,8,4052
 InverseEllipticNomeQ,Elliptic function,🚫,None,3,2212
 InverseErf,Inverse error function,✅,unevaluated,3,1906
@@ -3159,7 +3159,7 @@ LicenseEntitlementObject,,,,12.2,5587
 LicenseEntitlements,,,,12.2,5587
 LicensingSettings,,,,12.2,
 LiftingFilterData,,🚫,,8,5184
-LiftingWaveletTransform,,,,8,2720
+LiftingWaveletTransform,,🚫,,8,2720
 LightBlue,Named light color evaluating to RGBColor[0.87 0.94 1],✅,pure,6,581
 LightBrown,Named light color evaluating to RGBColor[0.94 0.91 0.88],✅,pure,6,2205
 LightCyan,Named light color evaluating to RGBColor[0.9 1 1],✅,pure,6,2871
@@ -3192,7 +3192,7 @@ LinearRecurrence,Generates a linear recurrence sequence,✅,pure,7,1632
 LinearSolve,Solves a linear system of equations using Gaussian elimination,✅,pure,1,437
 LinearSolveFunction,,,,5,4356
 LineBreakChart,,🚫,,8,3566
-LineGraph,,,,8,2525
+LineGraph,,🚫,,8,2525
 LineIndent,Line indentation option,✅,pure,3,1526
 LineIndentMaxFraction,,,,3,4809
 LineIntegralConvolutionPlot,visualization,🚫,None,7,2404
@@ -3277,7 +3277,7 @@ LocalAdaptiveBinarize,,,,10,2671
 LocalCache,,,,11,4707
 LocalClusteringCoefficient,,,,9,2748
 LocalEvaluate,,,,13.1,
-LocalizeVariables,,,,6,2525
+LocalizeVariables,,🚫,,6,2525
 LocalObject,,,,10.2,2894
 LocalObjects,,,,10.4,4081
 LocalResponseNormalizationLayer,,🚫,,11.1,5013
@@ -3408,7 +3408,7 @@ MatchingDissimilarity,,,,6,3916
 MatchLocalNames,,,,2,4881
 MatchQ,Tests if an expression matches a pattern,✅,pure,1,203
 MaterialShading,,🚫,,12.3,
-MaternPointProcess,,,,12.2,4809
+MaternPointProcess,,🚫,,12.2,4809
 MathematicalFunctionData,,🚫,,10.3,2851
 MathieuC,Mathieu C function,✅,unevaluated,3,1852
 MathieuCharacteristicA,Mathieu characteristic A,✅,unevaluated,3,1842
@@ -3496,7 +3496,7 @@ MemoryAvailable,,,,11.2,4027
 MemoryConstrained,Symbol for memory-constrained evaluation,✅,pure,1,2473
 MemoryConstraint,,,,10,4262
 MemoryInUse,Current memory usage of the process,✅,pure,1,1117
-MengerMesh,,,,11.1,2533
+MengerMesh,,🚫,,11.1,2533
 MenuCommandKey,,🚫,,6,3506
 MenuPacket,,🚫,,3,
 MenuSortingValue,,🚫,,8,2503
@@ -3537,8 +3537,8 @@ Messages,Returns the messages associated with a symbol,✅,pure,1,2503
 MetaInformation,Meta information option,✅,unevaluated,9,1855
 MeteorShowerData,,🚫,,10,5390
 Method,Option symbol for specifying computational methods,✅,pure,4,212
-MexicanHatWavelet,,,,8,3257
-MeyerWavelet,,,,8,3916
+MexicanHatWavelet,,🚫,,8,3257
+MeyerWavelet,,🚫,,8,3916
 Midpoint,,,,12,2993
 MIMETypeToFormatList,,,,13,
 Min,Returns the minimum value from a set of arguments or a list,✅,pure,1,180
@@ -3619,7 +3619,7 @@ MonsterGroupM,,,,8,4809
 MoonPhase,Phase of the moon,✅,unevaluated,10,1676
 MoonPhaseDate,,🚫,,14,
 MoonPosition,,🚫,,10,3162
-MorletWavelet,,,,8,3578
+MorletWavelet,,🚫,,8,3578
 MorphologicalBinarize,Morphological binarize,✅,unevaluated,8,1895
 MorphologicalBranchPoints,,🚫,,8,3491
 MorphologicalComponents,,🚫,,7,1048
@@ -3747,7 +3747,7 @@ NExpectation,Numerical expectation,✅,unevaluated,8,1682
 NextCell,,,,10,3427
 NextDate,,,,11.1,4204
 NextPrime,Returns the smallest prime greater than n,✅,pure,6,1040
-NeymanScottPointProcess,,,,12.2,5184
+NeymanScottPointProcess,,🚫,,12.2,5184
 NFractionalD,,,,13.2,
 NHoldAll,,,,3,3094
 NHoldFirst,,,,3,3737
@@ -4131,7 +4131,7 @@ PatternReaction,,,,13.1,
 PatternSequence,Represents a sequence of patterns in pattern matching,✅,1,6,1089
 PatternTest,Tests whether a pattern matches using a predicate function (pattern?test),✅,pure,1,91
 PauliMatrix,Returns a Pauli spin matrix,✅,pure,7,672
-PaulWavelet,,,,8,4006
+PaulWavelet,,🚫,,8,4006
 Pause,Pauses evaluation for a specified number of seconds,✅,effectful,2,728
 PDF,Probability density function,✅,pure,6,254
 PeakDetect,,,,10,2798
@@ -4139,7 +4139,7 @@ PeanoCurve,,,,11.1,4437
 PearsonChiSquareTest,,,,8,2734
 PearsonCorrelationTest,,,,9,3697
 PearsonDistribution,Pearson family distribution,🚫,,8,2071
-PenttinenPointProcess,,,,12.2,5486
+PenttinenPointProcess,,🚫,,12.2,5486
 PercentForm,Format number as percentage,🚫,,12,2124
 PerfectNumber,,,,10.4,3947
 PerfectNumberQ,,,,10.4,4027
@@ -4256,7 +4256,7 @@ PointValuePlot,,🚫,,12.2,3191
 PoissonConsulDistribution,,,,8,3678
 PoissonDistribution,Represents a Poisson distribution,✅,pure,6,945
 PoissonPDEComponent,,,,12.2,
-PoissonPointProcess,,,,12.2,4479
+PoissonPointProcess,,🚫,,12.2,4479
 PoissonProcess,Stochastic process,🚫,None,9,2260
 PoissonWindow,,,,9,4262
 PolarAxes,Polar axes option,✅,unevaluated,7,1611
@@ -4273,12 +4273,12 @@ PolygonalNumber,,,,10.4,3656
 PolygonAngle,,,,12,4387
 PolygonCoordinates,,,,12,3593
 PolygonDecomposition,,,,12,4291
-Polyhedron,,,,12,3143
-PolyhedronAngle,,,,12,5184
-PolyhedronCoordinates,,,,12,4707
+Polyhedron,,🚫,,12,3143
+PolyhedronAngle,,🚫,,12,5184
+PolyhedronCoordinates,,🚫,,12,4707
 PolyhedronData,,🚫,,6,601
-PolyhedronDecomposition,,,,12,5390
-PolyhedronGenus,,,,12,5587
+PolyhedronDecomposition,,🚫,,12,5390
+PolyhedronGenus,,🚫,,12,5587
 PolyLog,Polylogarithm function,✅,pure,1,529
 PolynomialExpressionQ,,,,12.2,
 PolynomialExtendedGCD,Extended GCD for polynomials,🚫,None,6,2404
@@ -4361,7 +4361,7 @@ PrintingStyleEnvironment,,🚫,,3,2707
 Printout3D,,🚫,,11,3176
 Printout3DPreviewer,,🚫,,11,5486
 PrintTemporary,Print temporary expression,✅,unevaluated,6,1870
-Prism,,,,10,2971
+Prism,,🚫,,10,2971
 PrivateCellOptions,,🚫,,10,4479
 PrivateFontOptions,,🚫,,3,2617
 PrivateKey,,🚫,,10.1,4612
@@ -4405,7 +4405,7 @@ PunctuationCharacter,character class,🚫,None,10.3,2389
 Purple,Named color evaluating to RGBColor[0.5 0 0.5],✅,pure,5.1,314
 Put,Write expressions to a file,✅,effectful,1,1162
 PutAppend,Append expressions to a file,✅,effectful,1,1338
-Pyramid,,,,10,2545
+Pyramid,,🚫,,10,2545
 Q,,,,,
 QBinomial,,,,7,2734
 QFactorial,,,,7,3008
@@ -4440,7 +4440,7 @@ QuestionGenerator,,🚫,,13.1,
 QuestionInterface,,🚫,,13,
 QuestionObject,,🚫,,12.3,
 QuestionSelector,,🚫,,13.1,
-QueueingNetworkProcess,,,,9,2889
+QueueingNetworkProcess,,🚫,,9,2889
 QueueingProcess,Queueing theory process,🚫,,9,2129
 QueueProperties,queueing theory,🚫,None,9,2435
 Quiet,Evaluate expression suppressing messages,✅,contextual,6,284
@@ -4488,7 +4488,7 @@ RandomSeeding,random options,🚫,None,11.2,2305
 RandomTime,,,,13.2,
 RandomTree,,,,12.3,
 RandomVariate,Generates pseudorandom variates from a distribution,✅,contextual,8,301
-RandomWalkProcess,,,,9,2561
+RandomWalkProcess,,🚫,,9,2561
 RandomWord,Generate random words (requires dictionary),🚫,,10.3,2018
 Range,Generates a sequence of numbers,✅,pure,1,67
 RangeFilter,,🚫,,8,3048
@@ -4598,7 +4598,7 @@ RegionUnion,,🚫,,10,927
 RegionWithin,,,,11.1,2944
 RegisterExternalEvaluator,,🚫,,11.2,4173
 RegularExpression,Represents a regular expression pattern for string matching,✅,pure,5.1,617
-Regularization,,,,7,2483
+Regularization,,🚫,,7,2483
 RegularlySampledQ,,,,10,3843
 RegularPolygon,Regular polygon graphics primitive,✅,none,10.2,710
 ReIm,Real and imaginary parts of a complex number,✅,pure,10.1,800
@@ -4641,7 +4641,7 @@ RemoveVideoStream,,🚫,,12.1,
 RenameDirectory,,,,2,3843
 RenameFile,,,,2,2553
 RenderingOptions,,🚫,,4,2742
-RenewalProcess,,,,9,4052
+RenewalProcess,,🚫,,9,4052
 RenkoChart,,🚫,,8,3298
 RepairMesh,,,,11,3947
 Repeated,Pattern that matches one or more repetitions,✅,pure,1,299
@@ -4693,7 +4693,7 @@ ReturnReceiptFunction,,,,10.2,5587
 ReturnTextPacket,,🚫,,3,
 Reverse,Returns a list with elements in reverse order,✅,pure,1,204
 ReverseApplied,,,,12.1,
-ReverseBiorthogonalSplineWavelet,,,,8,3785
+ReverseBiorthogonalSplineWavelet,,🚫,,8,3785
 ReverseElement,Symbolic reverse element relation,✅,pure,3,5184
 ReverseEquilibrium,,,,3,5390
 ReverseGraph,,,,8,3537
@@ -4796,8 +4796,8 @@ SampledSoundList,Sampled sound representation,🚫,,2,2082
 SampleRate,,🚫,,2,1347
 SamplerModel,,🚫,,14,
 SamplingPeriod,Sampling period option,✅,unevaluated,8,1811
-SARIMAProcess,,,,9,2762
-SARMAProcess,,,,9,2867
+SARIMAProcess,,🚫,,9,2762
+SARMAProcess,,🚫,,9,2867
 SASTriangle,,,,10,4173
 SatelliteData,,🚫,,10,4027
 SatisfiabilityCount,,,,7,3612
@@ -4932,7 +4932,7 @@ SetterBar,,🚫,,6,895
 Setting,Setting wrapper,✅,unevaluated,6,1891
 SetUsers,,🚫,,10,5486
 Shallow,Control output depth display (notebook display),🚫,,2,2008
-ShannonWavelet,,,,8,3916
+ShannonWavelet,,🚫,,8,3916
 ShapiroWilkTest,,,,8,3593
 Share,Memory sharing optimization (no-op),✅,none,1,3233
 SharingList,,,,11.3,5587
@@ -5072,7 +5072,7 @@ Spacer,Creates empty space of a specified size for layout,✅,pure,6,471
 Spacings,Spacing specification for grids and layouts,✅,none,6,261
 Span,Extract a span of elements using ;; notation in Part,✅,pure,6,109
 SpanFromAbove,Span from above,✅,unevaluated,6,1687
-SpanFromBoth,,,,6,2495
+SpanFromBoth,,🚫,,6,2495
 SpanFromLeft,,🚫,,6,946
 SpanMaxSize,,,,3,3048
 SparseArray,Creates a sparse array representation,✅,pure,5,334
@@ -5120,17 +5120,17 @@ SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1,811
 SphericalPlot3D,3D plot in spherical coordinates,✅,pure,6,744
 SphericalRegion,Option specifying spherical region in 3D plots,✅,none,2,802
 SphericalShell,,,,10.2,3070
-SpheroidalEigenvalue,,,,6,2707
-SpheroidalJoiningFactor,,,,6,4612
-SpheroidalPS,,,,6,2535
-SpheroidalPSPrime,,,,6,2851
-SpheroidalQS,,,,6,2720
-SpheroidalQSPrime,,,,6,2944
-SpheroidalRadialFactor,,,,6,
-SpheroidalS1,,,,6,2549
-SpheroidalS1Prime,,,,6,2929
-SpheroidalS2,,,,6,2642
-SpheroidalS2Prime,,,,6,2921
+SpheroidalEigenvalue,,🚫,,6,2707
+SpheroidalJoiningFactor,,🚫,,6,4612
+SpheroidalPS,,🚫,,6,2535
+SpheroidalPSPrime,,🚫,,6,2851
+SpheroidalQS,,🚫,,6,2720
+SpheroidalQSPrime,,🚫,,6,2944
+SpheroidalRadialFactor,,🚫,,6,
+SpheroidalS1,,🚫,,6,2549
+SpheroidalS1Prime,,🚫,,6,2929
+SpheroidalS2,,🚫,,6,2642
+SpheroidalS2Prime,,🚫,,6,2921
 Splice,,,,12.1,2650
 SplicedDistribution,,,,9,3566
 SplineClosed,Option for closing B-spline curves,✅,pure,7,215
@@ -5191,11 +5191,11 @@ StateFeedbackGains,,,,8,2650
 StateOutputEstimator,,,,8,3737
 StateResponse,Control systems,🚫,None,8,2254
 StateSpaceModel,,🚫,,8,1079
-StateSpaceRealization,,,,8,3803
-StateSpaceTransform,,,,8,2952
+StateSpaceRealization,,🚫,,8,3803
+StateSpaceTransform,,🚫,,8,2952
 StateTransformationLinearize,,,,10,4356
 StationaryDistribution,,,,9,2944
-StationaryWaveletPacketTransform,,,,8,3059
+StationaryWaveletPacketTransform,,🚫,,8,3059
 StationaryWaveletTransform,Signal processing,🚫,None,8,2243
 StatusArea,Display status text on mouseover,✅,none,6,593
 StatusCentrality,,,,9,4809
@@ -5207,9 +5207,9 @@ StirlingS1,Returns the Stirling number of the first kind,✅,pure,1,1065
 StirlingS2,Returns the Stirling number of the second kind,✅,pure,1,1133
 StoppingPowerData,,🚫,,10.1,4052
 StrataVariables,,,,9,5486
-StratonovichProcess,,,,9,3413
-StraussHardcorePointProcess,,,,12.2,
-StraussPointProcess,,,,12.2,
+StratonovichProcess,,🚫,,9,3413
+StraussHardcorePointProcess,,🚫,,12.2,
+StraussPointProcess,,🚫,,12.2,
 StreamColorFunction,Color function for stream plots,🚫,pure,7,1405
 StreamColorFunctionScaling,,,,7,3306
 StreamDensityPlot,Creates a stream density plot of a vector field,✅,pure,7,1468
@@ -5353,7 +5353,7 @@ SymbolicIdentityArray,,,,14.1,
 SymbolicOnesArray,,,,14.1,
 SymbolicZerosArray,,,,14.1,
 SymbolName,Returns the name of a symbol as a string,✅,pure,3,1105
-SymletWavelet,,,,8,2986
+SymletWavelet,,🚫,,8,2986
 Symmetric,Symmetric tensor symmetry,🚫,,9,2087
 SymmetricDifference,,,,13.1,
 SymmetricGroup,Symmetric group,✅,unevaluated,8,1905
@@ -5405,20 +5405,20 @@ SystemProcessData,,🚫,,11.3,
 SystemProcesses,,🚫,,11.3,
 SystemsConnectionsModel,,,,12,4527
 SystemsModelControllerData,,🚫,,12.3,
-SystemsModelDelay,,,,9,3257
-SystemsModelDelayApproximate,,,,9,4173
-SystemsModelDelete,,,,8,3363
-SystemsModelDimensions,,,,8,4081
+SystemsModelDelay,,🚫,,9,3257
+SystemsModelDelayApproximate,,🚫,,9,4173
+SystemsModelDelete,,🚫,,8,3363
+SystemsModelDimensions,,🚫,,8,4081
 SystemsModelExtract,control systems,🚫,None,8,2425
-SystemsModelFeedbackConnect,,,,8,2442
+SystemsModelFeedbackConnect,,🚫,,8,2442
 SystemsModelLabels,Control systems,🚫,None,8,2289
-SystemsModelLinearity,,,,10,4809
-SystemsModelMerge,,,,10,4138
-SystemsModelOrder,,,,8,3947
-SystemsModelParallelConnect,,,,8,3440
-SystemsModelSeriesConnect,,,,8,2462
-SystemsModelStateFeedbackConnect,,,,8,2491
-SystemsModelVectorRelativeOrders,,,,10,4204
+SystemsModelLinearity,,🚫,,10,4809
+SystemsModelMerge,,🚫,,10,4138
+SystemsModelOrder,,🚫,,8,3947
+SystemsModelParallelConnect,,🚫,,8,3440
+SystemsModelSeriesConnect,,🚫,,8,2462
+SystemsModelStateFeedbackConnect,,🚫,,8,2491
+SystemsModelVectorRelativeOrders,,🚫,,10,4204
 Table,Generates a list by evaluating an expression,✅,pure,1,32
 TableAlignments,,🚫,,2,1159
 TableDepth,Option for TableForm display depth,🚫,,2,1986
@@ -5462,7 +5462,7 @@ Tasks,,🚫,,11.2,4707
 TaskSuspend,,🚫,,11.2,4947
 TaskWait,,🚫,,11.2,4881
 TautologyQ,Tests whether a boolean expression is a tautology,✅,pure,7,1986
-TelegraphProcess,,,,9,3566
+TelegraphProcess,,🚫,,9,3566
 TemplateApply,Applies arguments to a string template with backtick slots,✅,pure,10,1949
 TemplateBox,,🚫,,7,1020
 TemplateBoxOptions,,🚫,,6,3755
@@ -5528,7 +5528,7 @@ Thick,Graphics directive equivalent to AbsoluteThickness[2],✅,none,6,112
 Thickness,Sets relative line thickness in graphics,✅,pure,1,85
 Thin,Graphics directive equivalent to Thickness[Tiny],✅,pure,6,443
 Thinning,Morphological thinning,✅,unevaluated,8,1582
-ThomasPointProcess,,,,12.2,5486
+ThomasPointProcess,,🚫,,12.2,5486
 ThompsonGroupTh,,,,8,5184
 Thread,Threads a function over corresponding list elements,✅,pure,1,179
 Threaded,,,,13.1,
@@ -5658,13 +5658,13 @@ TrainingProgressReporting,,🚫,,11.1,3697
 TrainingStoppingCriterion,,🚫,,12,5486
 TrainingUpdateSchedule,,🚫,,12.1,4707
 TrainTextContentDetector,,🚫,,13,
-TransferFunctionCancel,,,,8,4225
-TransferFunctionExpand,,,,8,2944
-TransferFunctionFactor,,,,8,5013
+TransferFunctionCancel,,🚫,,8,4225
+TransferFunctionExpand,,🚫,,8,2944
+TransferFunctionFactor,,🚫,,8,5013
 TransferFunctionModel,Requires external services or GUI infrastructure,🚫,io,8,957
-TransferFunctionPoles,,,,8,2487
-TransferFunctionTransform,,,,9,4027
-TransferFunctionZeros,,,,8,3678
+TransferFunctionPoles,,🚫,,8,2487
+TransferFunctionTransform,,🚫,,9,4027
+TransferFunctionZeros,,🚫,,8,3678
 TransformationClass,,,,10,2867
 TransformationFunction,,,,6,2656
 TransformationFunctions,Functions for Simplify transformations,🚫,pure,4,1422
@@ -5747,8 +5747,8 @@ TrigFactorList,,,,3,4567
 Trigger,Trigger control,✅,unevaluated,6,1760
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3,954
 TrigToExp,Convert trigonometric and hyperbolic functions to exponentials,✅,pure,3,900
-TrimmedMean,,,,6,2693
-TrimmedVariance,,,,11.1,4081
+TrimmedMean,Mean after trimming extreme values,✅,none,6,2693
+TrimmedVariance,Variance after trimming extreme values,✅,none,11.1,4081
 TropicalStormData,,🚫,,10,4567
 True,Boolean constant representing logical truth,✅,pure,1,27
 TrueQ,Returns True only for the symbol True,✅,pure,1,404
@@ -5888,9 +5888,9 @@ VandermondeMatrix,,,,13.2,
 Variables,Returns the variables in a polynomial expression,✅,pure,1,854
 Variance,Returns the variance of a list,✅,pure,5,758
 VarianceEquivalenceTest,,,,8,4006
-VarianceEstimatorFunction,,,,7,2525
+VarianceEstimatorFunction,,🚫,,7,2525
 VarianceGammaDistribution,,,,9,3363
-VarianceGammaPointProcess,,,,12.2,
+VarianceGammaPointProcess,,🚫,,12.2,
 VarianceTest,,,,8,3257
 VariogramFunction,,,,13,
 VariogramModel,,,,13,
@@ -6038,7 +6038,7 @@ WarpingDistance,,,,11,3697
 WatershedComponents,Watershed components,✅,unevaluated,8,1836
 WatsonUSquareTest,,,,8,3717
 WattsStrogatzGraphDistribution,,,,8,2707
-WaveletBestBasis,,,,8,3389
+WaveletBestBasis,,🚫,,8,3389
 WaveletFilterCoefficients,Signal processing,🚫,None,8,2239
 WaveletImagePlot,,🚫,,8,3031
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8,1921
@@ -6100,7 +6100,7 @@ WhenEvent,Specify events in differential equations,✅,none,9,780
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1,226
 While,Evaluates an expression repeatedly while a condition is true,✅,pure,1,220
 White,Named color evaluating to GrayLevel[1],✅,pure,5.1,163
-WhiteNoiseProcess,,,,10,2487
+WhiteNoiseProcess,,🚫,,10,2487
 WhitePoint,,🚫,,10,5390
 Whitespace,Represents whitespace characters in string patterns,✅,1,5.1,1088
 WhitespaceCharacter,String pattern for whitespace,✅,pure,5.1,1539
@@ -6131,8 +6131,8 @@ WindowTitle,,🚫,,3,1296
 WindowToolbars,,🚫,,3,3413
 WindSpeedData,,🚫,,10,3491
 WindVectorData,,🚫,,10,3636
-WinsorizedMean,,,,11.1,4027
-WinsorizedVariance,,,,11.1,4052
+WinsorizedMean,Mean after winsorizing extreme values,✅,none,11.1,4027
+WinsorizedVariance,Variance after winsorizing extreme values,✅,none,11.1,4052
 WishartMatrixDistribution,,,,10.3,3176
 With,Substitutes local constants into an expression,✅,pure,2,99
 WithCleanup,,,,12.2,5013

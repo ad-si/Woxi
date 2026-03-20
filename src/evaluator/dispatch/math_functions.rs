@@ -303,6 +303,122 @@ pub fn dispatch_math_functions(
     "StandardDeviation" if args.len() == 1 => {
       return Some(crate::functions::math_ast::standard_deviation_ast(args));
     }
+    "TrimmedMean" if args.len() == 2 => {
+      // TrimmedMean[list, frac] — mean after removing frac fraction from each end
+      if let Expr::List(elems) = &args[0]
+        && let Some(frac) = expr_to_f64(&args[1])
+      {
+        let n = elems.len();
+        let trim = (n as f64 * frac).round() as usize;
+        if 2 * trim < n {
+          // Sort elements
+          let mut sorted: Vec<Expr> = elems.clone();
+          sorted.sort_by(|a, b| {
+            let fa = expr_to_f64(a).unwrap_or(0.0);
+            let fb = expr_to_f64(b).unwrap_or(0.0);
+            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          let trimmed = &sorted[trim..n - trim];
+          let sum_expr = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: trimmed.to_vec(),
+          };
+          let result = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(sum_expr),
+            right: Box::new(Expr::Integer(trimmed.len() as i128)),
+          };
+          return Some(evaluate_expr_to_expr(&result));
+        }
+      }
+    }
+    "WinsorizedMean" if args.len() == 2 => {
+      // WinsorizedMean[list, frac] — replace extremes with boundary values then mean
+      if let Expr::List(elems) = &args[0]
+        && let Some(frac) = expr_to_f64(&args[1])
+      {
+        let n = elems.len();
+        let trim = (n as f64 * frac).round() as usize;
+        if 2 * trim < n {
+          let mut sorted: Vec<Expr> = elems.clone();
+          sorted.sort_by(|a, b| {
+            let fa = expr_to_f64(a).unwrap_or(0.0);
+            let fb = expr_to_f64(b).unwrap_or(0.0);
+            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          // Replace bottom trim with sorted[trim], top trim with sorted[n-trim-1]
+          let low = sorted[trim].clone();
+          let high = sorted[n - trim - 1].clone();
+          let mut winsorized = sorted.clone();
+          for item in winsorized.iter_mut().take(trim) {
+            *item = low.clone();
+          }
+          for item in winsorized.iter_mut().skip(n - trim) {
+            *item = high.clone();
+          }
+          let sum_expr = Expr::FunctionCall {
+            name: "Plus".to_string(),
+            args: winsorized,
+          };
+          let result = Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Divide,
+            left: Box::new(sum_expr),
+            right: Box::new(Expr::Integer(n as i128)),
+          };
+          return Some(evaluate_expr_to_expr(&result));
+        }
+      }
+    }
+    "TrimmedVariance" if args.len() == 2 => {
+      // TrimmedVariance[list, frac] — variance of trimmed data
+      if let Expr::List(elems) = &args[0]
+        && let Some(frac) = expr_to_f64(&args[1])
+      {
+        let n = elems.len();
+        let trim = (n as f64 * frac).round() as usize;
+        if 2 * trim < n {
+          let mut sorted: Vec<Expr> = elems.clone();
+          sorted.sort_by(|a, b| {
+            let fa = expr_to_f64(a).unwrap_or(0.0);
+            let fb = expr_to_f64(b).unwrap_or(0.0);
+            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          let trimmed: Vec<Expr> = sorted[trim..n - trim].to_vec();
+          return Some(crate::functions::math_ast::variance_ast(&[
+            Expr::List(trimmed),
+          ]));
+        }
+      }
+    }
+    "WinsorizedVariance" if args.len() == 2 => {
+      // WinsorizedVariance[list, frac] — variance of winsorized data
+      if let Expr::List(elems) = &args[0]
+        && let Some(frac) = expr_to_f64(&args[1])
+      {
+        let n = elems.len();
+        let trim = (n as f64 * frac).round() as usize;
+        if 2 * trim < n {
+          let mut sorted: Vec<Expr> = elems.clone();
+          sorted.sort_by(|a, b| {
+            let fa = expr_to_f64(a).unwrap_or(0.0);
+            let fb = expr_to_f64(b).unwrap_or(0.0);
+            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          let low = sorted[trim].clone();
+          let high = sorted[n - trim - 1].clone();
+          let mut winsorized = sorted;
+          for item in winsorized.iter_mut().take(trim) {
+            *item = low.clone();
+          }
+          for item in winsorized.iter_mut().skip(n - trim) {
+            *item = high.clone();
+          }
+          return Some(crate::functions::math_ast::variance_ast(&[
+            Expr::List(winsorized),
+          ]));
+        }
+      }
+    }
     "MeanDeviation" if args.len() == 1 => {
       return Some(crate::functions::math_ast::mean_deviation_ast(args));
     }
@@ -2435,5 +2551,22 @@ fn power(base: Expr, exp: Expr) -> Expr {
   Expr::FunctionCall {
     name: "Power".to_string(),
     args: vec![base, exp],
+  }
+}
+
+fn expr_to_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if let (Expr::Integer(a), Expr::Integer(b)) = (&args[0], &args[1]) {
+        Some(*a as f64 / *b as f64)
+      } else {
+        None
+      }
+    }
+    _ => None,
   }
 }
