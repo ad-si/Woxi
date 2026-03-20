@@ -2456,6 +2456,96 @@ pub fn evaluate_function_call_ast_inner(
     });
   }
 
+  // SubstitutionSystem[rules, init, n] — apply substitution rules iteratively
+  if name == "SubstitutionSystem"
+    && args.len() == 3
+    && let Expr::Integer(n_steps) = &args[2]
+  {
+    let n = *n_steps as usize;
+    // Extract rules from either Expr::Rule or Expr::FunctionCall{name:"Rule",...}
+    let extract_rules = |rule_list: &[Expr]| -> Vec<(Expr, Expr)> {
+      let mut rules = Vec::new();
+      for rule in rule_list {
+        match rule {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
+            rules.push((*pattern.clone(), *replacement.clone()));
+          }
+          Expr::FunctionCall {
+            name: rn,
+            args: rargs,
+          } if rn == "Rule" && rargs.len() == 2 => {
+            rules.push((rargs[0].clone(), rargs[1].clone()));
+          }
+          _ => {}
+        }
+      }
+      rules
+    };
+
+    // Check if string mode or list mode
+    if let Expr::String(init_str) = &args[1] {
+      // String mode: rules map single chars to strings
+      if let Expr::List(rule_list) = &args[0] {
+        let raw_rules = extract_rules(rule_list);
+        let mut rules: Vec<(char, String)> = Vec::new();
+        for (from, to) in &raw_rules {
+          if let (Expr::String(from_s), Expr::String(to_s)) = (from, to)
+            && let Some(ch) = from_s.chars().next()
+          {
+            rules.push((ch, to_s.clone()));
+          }
+        }
+        let mut history: Vec<Expr> = vec![Expr::String(init_str.clone())];
+        let mut current = init_str.clone();
+        for _ in 0..n {
+          let mut next = String::new();
+          for ch in current.chars() {
+            if let Some((_from, to)) = rules.iter().find(|(f, _)| *f == ch) {
+              next.push_str(to);
+            } else {
+              next.push(ch);
+            }
+          }
+          current = next;
+          history.push(Expr::String(current.clone()));
+        }
+        return Ok(Expr::List(history));
+      }
+    } else if let Expr::List(init_list) = &args[1] {
+      // List mode: rules map elements to lists
+      if let Expr::List(rule_list) = &args[0] {
+        let raw_rules = extract_rules(rule_list);
+        let mut rules: Vec<(String, Vec<Expr>)> = Vec::new();
+        for (from, to) in &raw_rules {
+          if let Expr::List(to_list) = to {
+            rules.push((expr_to_string(from), to_list.clone()));
+          }
+        }
+        let mut history: Vec<Expr> = vec![Expr::List(init_list.clone())];
+        let mut current = init_list.clone();
+        for _ in 0..n {
+          let mut next: Vec<Expr> = Vec::new();
+          for elem in &current {
+            let elem_str = expr_to_string(elem);
+            if let Some((_from, to)) =
+              rules.iter().find(|(f, _)| *f == elem_str)
+            {
+              next.extend(to.clone());
+            } else {
+              next.push(elem.clone());
+            }
+          }
+          current = next;
+          history.push(Expr::List(current.clone()));
+        }
+        return Ok(Expr::List(history));
+      }
+    }
+  }
+
   // FileExistsQ[path] — check if file/directory exists
   if name == "FileExistsQ"
     && args.len() == 1
