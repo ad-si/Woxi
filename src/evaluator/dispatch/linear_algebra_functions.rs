@@ -1263,6 +1263,124 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(Expr::List(rows)));
       }
     }
+    // CrossMatrix[{a, b, c}] — skew-symmetric matrix for cross product
+    "CrossMatrix" if args.len() == 1 => {
+      if let Expr::List(v) = &args[0]
+        && v.len() == 3
+      {
+        let a = v[0].clone();
+        let b = v[1].clone();
+        let c = v[2].clone();
+        let neg = |e: Expr| -> Expr {
+          Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![Expr::Integer(-1), e],
+          }
+        };
+        let row0 =
+          Expr::List(vec![Expr::Integer(0), neg(c.clone()), b.clone()]);
+        let row1 = Expr::List(vec![c, Expr::Integer(0), neg(a.clone())]);
+        let row2 = Expr::List(vec![neg(b), a, Expr::Integer(0)]);
+        let result = Expr::List(vec![row0, row1, row2]);
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
+    // FourierMatrix[n] — discrete Fourier transform matrix
+    "FourierMatrix" if args.len() == 1 => {
+      if let Some(n) = expr_to_i128(&args[0])
+        && n > 0
+      {
+        let n = n as usize;
+        let mut rows = Vec::with_capacity(n);
+        // Entry (j,k) = omega^((j-1)*(k-1)) / sqrt(n), omega = e^(2*pi*i/n)
+        let sqrt_n = Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::Integer(n as i128),
+            Expr::FunctionCall {
+              name: "Rational".to_string(),
+              args: vec![Expr::Integer(1), Expr::Integer(2)],
+            },
+          ],
+        };
+        for j in 0..n {
+          let mut row = Vec::with_capacity(n);
+          for k in 0..n {
+            let exp = ((j * k) % n) as i128;
+            if exp == 0 {
+              // entry = 1/sqrt(n)
+              row.push(Expr::FunctionCall {
+                name: "Power".to_string(),
+                args: vec![sqrt_n.clone(), Expr::Integer(-1)],
+              });
+            } else {
+              // entry = e^(2*pi*i*exp/n) / sqrt(n)
+              let phase = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::Integer(2),
+                  Expr::Identifier("Pi".to_string()),
+                  Expr::Identifier("I".to_string()),
+                  Expr::FunctionCall {
+                    name: "Rational".to_string(),
+                    args: vec![Expr::Integer(exp), Expr::Integer(n as i128)],
+                  },
+                ],
+              };
+              let entry = Expr::FunctionCall {
+                name: "Times".to_string(),
+                args: vec![
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![Expr::Identifier("E".to_string()), phase],
+                  },
+                  Expr::FunctionCall {
+                    name: "Power".to_string(),
+                    args: vec![sqrt_n.clone(), Expr::Integer(-1)],
+                  },
+                ],
+              };
+              row.push(entry);
+            }
+          }
+          rows.push(Expr::List(row));
+        }
+        let result = Expr::List(rows);
+        return Some(evaluate_expr_to_expr(&result));
+      }
+    }
+    // Symmetrize[m] — symmetrize a matrix: (m + Transpose[m]) / 2
+    "Symmetrize" if args.len() == 1 => {
+      if let Expr::List(rows) = &args[0] {
+        let n = rows.len();
+        // Check it's a square matrix
+        let is_square = rows
+          .iter()
+          .all(|r| matches!(r, Expr::List(row) if row.len() == n));
+        if is_square {
+          let expr = Expr::FunctionCall {
+            name: "Times".to_string(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)],
+              },
+              Expr::FunctionCall {
+                name: "Plus".to_string(),
+                args: vec![
+                  args[0].clone(),
+                  Expr::FunctionCall {
+                    name: "Transpose".to_string(),
+                    args: vec![args[0].clone()],
+                  },
+                ],
+              },
+            ],
+          };
+          return Some(evaluate_expr_to_expr(&expr));
+        }
+      }
+    }
     _ => {}
   }
   None

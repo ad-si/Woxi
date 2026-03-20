@@ -10394,4 +10394,82 @@ mod batch_unevaluated_wrappers_2 {
       "0"
     );
   }
+
+  // CrossMatrix
+  #[test]
+  fn cross_matrix_basic() {
+    assert_eq!(
+      interpret("CrossMatrix[{1, 0, 0}]").unwrap(),
+      "{{0, 0, 0}, {0, 0, -1}, {0, 1, 0}}"
+    );
+  }
+  #[test]
+  fn cross_matrix_general() {
+    assert_eq!(
+      interpret("CrossMatrix[{a, b, c}]").unwrap(),
+      "{{0, -c, b}, {c, 0, -a}, {-b, a, 0}}"
+    );
+  }
+
+  // FourierMatrix
+  #[test]
+  fn fourier_matrix_1() {
+    assert_eq!(interpret("FourierMatrix[1]").unwrap(), "{{1}}");
+  }
+  #[test]
+  fn fourier_matrix_2() {
+    // FourierMatrix[2] entry (2,2) = E^(I*Pi)/Sqrt[2]
+    assert_eq!(
+      interpret("FourierMatrix[2]").unwrap(),
+      "{{1/Sqrt[2], 1/Sqrt[2]}, {1/Sqrt[2], E^(I*Pi)/Sqrt[2]}}"
+    );
+  }
+
+  // Symmetrize
+  #[test]
+  fn symmetrize_symmetric() {
+    assert_eq!(
+      interpret("Symmetrize[{{1, 2}, {2, 3}}]").unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+  #[test]
+  fn symmetrize_asymmetric() {
+    assert_eq!(
+      interpret("Symmetrize[{{1, 2}, {4, 3}}]").unwrap(),
+      "{{1, 3}, {3, 3}}"
+    );
+  }
+
+  // DisjointQ
+  #[test]
+  fn disjoint_q_true() {
+    assert_eq!(
+      interpret("DisjointQ[{1, 2, 3}, {4, 5, 6}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn disjoint_q_false() {
+    assert_eq!(
+      interpret("DisjointQ[{1, 2, 3}, {3, 4, 5}]").unwrap(),
+      "False"
+    );
+  }
+
+  // CoordinateBoundsArray
+  #[test]
+  fn coordinate_bounds_array_basic() {
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 1}, {0, 2}}]").unwrap(),
+      "{{0, 1}, {0, 2}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_array_padded() {
+    assert_eq!(
+      interpret("CoordinateBoundsArray[{{0, 10}, {0, 20}}, 1]").unwrap(),
+      "{{-1, 11}, {-1, 21}}"
+    );
+  }
 }
