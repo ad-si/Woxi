@@ -9658,4 +9658,71 @@ mod batch_unevaluated_wrappers_2 {
   fn find_arg_max_basic() {
     assert_eq!(interpret("FindArgMax[-x^2 + 3*x + 2, x]").unwrap(), "{1.5}");
   }
+  #[test]
+  fn string_replace_list_basic() {
+    assert_eq!(
+      interpret("StringReplaceList[\"abcabc\", \"a\" -> \"X\"]").unwrap(),
+      "{Xbcabc, abcXbc}"
+    );
+  }
+  #[test]
+  fn string_replace_list_overlap() {
+    assert_eq!(
+      interpret("StringReplaceList[\"aaa\", \"aa\" -> \"X\"]").unwrap(),
+      "{Xa, aX}"
+    );
+  }
+  #[test]
+  fn chessboard_distance_basic() {
+    assert_eq!(
+      interpret("ChessboardDistance[{1, 2}, {3, 5}]").unwrap(),
+      "3"
+    );
+  }
+  #[test]
+  fn chessboard_distance_3d() {
+    assert_eq!(
+      interpret("ChessboardDistance[{1, 2, 3}, {4, 6, 5}]").unwrap(),
+      "4"
+    );
+  }
+  #[test]
+  fn negative_definite_matrix_q_true() {
+    assert_eq!(
+      interpret("NegativeDefiniteMatrixQ[{{-2, 0}, {0, -3}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn negative_definite_matrix_q_false() {
+    assert_eq!(
+      interpret("NegativeDefiniteMatrixQ[{{-1, 0}, {0, 0}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn negative_semidefinite_matrix_q_true() {
+    assert_eq!(
+      interpret("NegativeSemidefiniteMatrixQ[{{-1, 0}, {0, 0}}]").unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn negative_semidefinite_matrix_q_false() {
+    assert_eq!(
+      interpret("NegativeSemidefiniteMatrixQ[{{1, 0}, {0, -1}}]").unwrap(),
+      "False"
+    );
+  }
+  #[test]
+  fn sequence_count_basic() {
+    assert_eq!(
+      interpret("SequenceCount[{1, 2, 3, 1, 2, 3, 1}, {1, 2}]").unwrap(),
+      "2"
+    );
+  }
+  #[test]
+  fn sequence_count_no_match() {
+    assert_eq!(interpret("SequenceCount[{1, 2, 3}, {4, 5}]").unwrap(), "0");
+  }
 }

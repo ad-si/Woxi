@@ -237,6 +237,38 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::List(items)));
       }
     }
+    "StringReplaceList" if args.len() == 2 => {
+      // StringReplaceList["string", "pattern" -> "replacement"]
+      // Returns list of strings, each with one occurrence replaced
+      if let Expr::String(s) = &args[0] {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+        {
+          if let (Expr::String(pat), Expr::String(rep)) =
+            (pattern.as_ref(), replacement.as_ref())
+          {
+            let mut results = Vec::new();
+            let pat_len = pat.len();
+            if pat_len > 0 {
+              let s_bytes = s.as_bytes();
+              let pat_bytes = pat.as_bytes();
+              for i in 0..=s.len().saturating_sub(pat_len) {
+                if &s_bytes[i..i + pat_len] == pat_bytes {
+                  let mut result = String::new();
+                  result.push_str(&s[..i]);
+                  result.push_str(rep);
+                  result.push_str(&s[i + pat_len..]);
+                  results.push(Expr::String(result));
+                }
+              }
+            }
+            return Some(Ok(Expr::List(results)));
+          }
+        }
+      }
+    }
     _ => {}
   }
   None

@@ -790,7 +790,7 @@ ChemicalData,,🚫,,6,300
 ChemicalFormula,,,,13,
 ChemicalInstance,,,,13.1,
 ChemicalReaction,,,,13,
-ChessboardDistance,,,,6,2549
+ChessboardDistance,Chessboard (Chebyshev) distance between points,✅,none,6,2549
 ChiDistribution,,,,6,2509
 ChineseRemainder,Solves a system of modular congruences,✅,pure,6,2389
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6,1186
@@ -3679,14 +3679,14 @@ NeedlemanWunschSimilarity,,,,7,4006
 Needs,Loads a package (no-op in Woxi),✅,effectful,1,198
 Negative,Tests if a number is negative,✅,pure,1,825
 NegativeBinomialDistribution,Discrete distribution for number of failures before n successes,✅,none,6,2018
-NegativeDefiniteMatrixQ,,,,10,3134
+NegativeDefiniteMatrixQ,Test whether a matrix is negative definite,✅,none,10,3134
 NegativeIntegers,Domain of negative integers,✅,pure,12,5013
 NegativelyOrientedPoints,,,,12.2,5079
 NegativeMultinomialDistribution,,,,8,3215
 NegativeQ,Tests if a number is negative,✅,pure,,
 NegativeRationals,,,,12,
 NegativeReals,Domain of negative real numbers,✅,pure,12,5486
-NegativeSemidefiniteMatrixQ,,,,10,3785
+NegativeSemidefiniteMatrixQ,Test whether a matrix is negative semidefinite,✅,none,10,3785
 NeighborhoodData,,🚫,,10,
 NeighborhoodGraph,Neighborhood subgraph,🚫,,8,2079
 Nest,Applies a function n times to an expression,✅,pure,1,451
@@ -4878,7 +4878,7 @@ SendMessage,,,,10,4173
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3,162
 SequenceAlignment,,,,7,2944
 SequenceCases,Find sequence patterns,✅,unevaluated,10.1,1751
-SequenceCount,,,,10.1,2921
+SequenceCount,Count non-overlapping occurrences of a subsequence,✅,none,10.1,2921
 SequenceFold,,,,10.2,4225
 SequenceFoldList,,,,10.2,3593
 SequenceHold,evaluation control (complex),🚫,None,3,2338
@@ -5248,7 +5248,7 @@ StringPosition,Finds all positions of a substring,✅,pure,2,923
 StringQ,Tests if expression is a string,✅,pure,2,724
 StringRepeat,Repeats a string a specified number of times,✅,pure,10.1,2512
 StringReplace,Replaces occurrences of substrings in a string,✅,pure,2,380
-StringReplaceList,,,,5.1,2525
+StringReplaceList,List of all single replacements in a string,✅,none,5.1,2525
 StringReplacePart,Replace part of string,✅,unevaluated,3,1853
 StringReverse,Reverses the characters in a string,✅,pure,2,1109
 StringRiffle,Joins a list of strings with a separator,✅,pure,10.1,1241

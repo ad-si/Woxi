@@ -1663,6 +1663,34 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    "ChessboardDistance" if args.len() == 2 => {
+      // ChessboardDistance[{a1,...,an}, {b1,...,bn}] = Max[Abs[a1-b1], ..., Abs[an-bn]]
+      if let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1]) {
+        if a.len() == b.len() && !a.is_empty() {
+          let diffs: Vec<Expr> = a
+            .iter()
+            .zip(b.iter())
+            .map(|(ai, bi)| Expr::FunctionCall {
+              name: "Abs".to_string(),
+              args: vec![Expr::BinaryOp {
+                op: crate::syntax::BinaryOperator::Plus,
+                left: Box::new(ai.clone()),
+                right: Box::new(Expr::BinaryOp {
+                  op: crate::syntax::BinaryOperator::Times,
+                  left: Box::new(Expr::Integer(-1)),
+                  right: Box::new(bi.clone()),
+                }),
+              }],
+            })
+            .collect();
+          let max_expr = Expr::FunctionCall {
+            name: "Max".to_string(),
+            args: diffs,
+          };
+          return Some(evaluate_expr_to_expr(&max_expr));
+        }
+      }
+    }
     _ => {}
   }
   None
