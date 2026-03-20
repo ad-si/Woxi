@@ -124,7 +124,7 @@ AngleVector,Direction vector from angle,🚫,,10.1,2074
 AngularGauge,Angular gauge,✅,unevaluated,9,1860
 Animate,,🚫,,6,417
 AnimatedImage,,🚫,,12.2,4027
-AnimationDirection,,,,3,2338
+AnimationDirection,animation option,🚫,None,3,2338
 AnimationRate,,🚫,,6,1122
 AnimationRepetitions,Animation repetition option,✅,pure,6,1552
 AnimationRunning,Option controlling whether an animation is running,✅,none,6,686
@@ -576,7 +576,7 @@ Bottom,Symbol for bottom alignment,✅,pure,1,394
 BottomHatTransform,,,,7,4138
 BoundaryDiscretizeGraphics,Boundary discretize graphics,✅,unevaluated,10,1665
 BoundaryDiscretizeRegion,,🚫,,10,1240
-BoundaryMesh,,,,10,2344
+BoundaryMesh,mesh generation,🚫,None,10,2344
 BoundaryMeshRegion,Boundary mesh region,✅,unevaluated,10,1586
 BoundaryMeshRegionQ,,,,10,3636
 BoundaryStyle,Option for boundary styling in plots,✅,none,6,644
@@ -590,7 +590,7 @@ BoxObject,,,,10,4204
 BoxRatios,Option for 3D box aspect ratios,✅,pure,1,363
 BoxStyle,Option specifying the style of 3D boxes in plots,✅,none,2,677
 BoxWhiskerChart,Creates a box-and-whisker chart from data,✅,pure,8,1002
-Bra,,,,13.3,2333
+Bra,quantum notation,🚫,None,13.3,2333
 BracketingBar,,,,3,2514
 BraKet,,,,13.3,3474
 BrayCurtisDistance,,,,6,3440
@@ -701,7 +701,7 @@ CellAutoOverwrite,Cell auto-overwrite option,🚫,io,3,1417
 CellBaseline,Option for cell baseline alignment,✅,none,3,685
 CellBracketOptions,,,,4,3889
 CellChangeTimes,Notebook cell option for tracking changes,🚫,,6,1975
-CellContext,,,,6,2333
+CellContext,notebook UI,🚫,None,6,2333
 CellDingbat,Notebook UI,🚫,None,3,2286
 CellDingbatMargin,,,,13.1,
 CellDynamicExpression,,,,8,3389
@@ -806,7 +806,7 @@ CircleDot,Circle dot operator,✅,unevaluated,3,1776
 CircleMinus,Circle minus operator,🚫,,3,2152
 CirclePlus,Represents the direct sum or XOR operator,✅,1,3,1158
 CirclePoints,Gives equally spaced points on a unit circle,✅,1,10.1,1126
-CircleThrough,,,,12,2399
+CircleThrough,Finds the circumscribed circle through given points,✅,None,12,2399
 CircleTimes,Symbolic tensor product operator with Unicode display,✅,none,3,1017
 CirculantGraph,,,,8,2671
 CircularArcThrough,,,,13.1,
@@ -836,13 +836,13 @@ ClickToCopy,,,,12.2,
 ClickToCopyEnabled,,,,12.3,5013
 Clip,Constrains a value to a range,✅,pure,5.1,834
 ClippingStyle,,🚫,,6,1046
-ClipPlanes,,,,10,2338
+ClipPlanes,3D graphics option,🚫,None,10,2338
 ClipPlanesStyle,,,,10,3353
 ClipRange,,,,9,3344
 Clock,,🚫,,6,1244
 ClockGauge,dynamic gauge display,🚫,None,9,2311
 Close,Closes an open stream and returns its name,✅,effectful,1,863
-CloseKernels,,,,7,2371
+CloseKernels,parallel computing,🚫,None,7,2371
 ClosenessCentrality,,,,8,3008
 Closing,Morphological closing,✅,unevaluated,7,1916
 CloudAccountData,,🚫,,10,3612
@@ -864,7 +864,7 @@ CloudObjectNameFormat,,,,12,4479
 CloudObjects,,,,10,2828
 CloudObjectURLType,,,,12,3257
 CloudPublish,,,,10.2,2509
-CloudPut,,,,10,2367
+CloudPut,cloud storage,🚫,None,10,2367
 CloudRenderingMethod,,,,12,4707
 CloudSave,,,,10,3506
 CloudShare,Cloud service,🚫,None,10.2,2276
@@ -1223,7 +1223,7 @@ Cycles,Permutation cycle notation wrapper,✅,none,8,941
 CyclicGroup,,,,8,3121
 Cyclotomic,n-th cyclotomic polynomial,✅,pure,1,2399
 Cylinder,3D cylinder graphics primitive,✅,none,6,302
-CylindricalDecomposition,,,,5,2350
+CylindricalDecomposition,algebraic geometry,🚫,None,5,2350
 CylindricalDecompositionFunction,,,,12.2,
 D,Computes the derivative of an expression,✅,pure,1,36
 DagumDistribution,,,,8,3020
@@ -1302,7 +1302,7 @@ DedekindEta,Dedekind eta modular function,✅,pure,3,1525
 DeepSpaceProbeData,,🚫,,10,4006
 Default,Default value for optional arguments,✅,pure,1,701
 DefaultAxesStyle,,,,7,5390
-DefaultBaseStyle,,,,7,2371
+DefaultBaseStyle,styling option,🚫,None,7,2371
 DefaultBoxStyle,,,,7,4612
 DefaultButton,Default button control,✅,unevaluated,6,1760
 DefaultDiffStyle,,,,14.1,
@@ -1941,7 +1941,7 @@ FilterRules,Filters a list of rules by allowed keys,✅,pure,6,682
 FinancialBond,,,,8,2519
 FinancialData,,🚫,,6,43
 FinancialDerivative,,🚫,,8,1236
-FinancialIndicator,,,,8,2338
+FinancialIndicator,financial data,🚫,None,8,2338
 Find,Finds a file on the search path,🚧,effectful,2,1793
 FindAnomalies,,,,12,4809
 FindArgMax,,,,7,2632
@@ -2002,7 +2002,7 @@ FindMeshDefects,,,,11,3363
 FindMinimum,Finds a local minimum of a function numerically,✅,pure,1,436
 FindMinimumCostFlow,,,,9,2986
 FindMinimumCut,,,,9,4437
-FindMinValue,,,,7,2350
+FindMinValue,numerical optimization,🚫,None,7,2350
 FindMoleculeSubstructure,,,,12,4660
 FindPath,Find paths in a graph,✅,pure,10,1510
 FindPeaks,Find peaks in data,✅,pure,10,1517
@@ -2010,7 +2010,7 @@ FindPermutation,,,,8,2679
 FindPlanarColoring,,,,13,
 FindPointProcessParameters,,,,12.2,5587
 FindPostmanTour,,,,9,3344
-FindProcessParameters,,,,9,2360
+FindProcessParameters,stochastic process fitting,🚫,None,9,2360
 FindRegionTransform,,,,13,
 FindRepeat,,,,11.2,3889
 FindRoot,Numerically finds a root of an equation using Newton's method,✅,pure,1,222
@@ -2107,7 +2107,7 @@ ForwardBackward,,,,6,2611
 ForwardCloudCredentials,,,,12.2,
 Fourier,Discrete Fourier transform of a list,✅,pure,1,712
 FourierCoefficient,Fourier coefficient,✅,unevaluated,7,1701
-FourierCosCoefficient,,,,7,2338
+FourierCosCoefficient,symbolic Fourier integral,🚫,None,7,2338
 FourierCosSeries,Fourier cosine series expansion (requires symbolic integration),🚫,,7,1995
 FourierCosTransform,Symbolic integral transforms,🚫,None,4,2190
 FourierDCT,Discrete cosine transform (numerical DSP),🚫,,6,1997
@@ -2119,7 +2119,7 @@ FourierMatrix,,,,9,2642
 FourierParameters,Option for Fourier transform conventions,✅,none,4,803
 FourierSequenceTransform,,,,7,2880
 FourierSeries,,🚫,,7,1317
-FourierSinCoefficient,,,,7,2329
+FourierSinCoefficient,symbolic Fourier integral,🚫,None,7,2329
 FourierSinSeries,Fourier sine series,✅,unevaluated,7,1842
 FourierSinTransform,,,,4,2553
 FourierTransform,computes the symbolic Fourier transform of an expression,✅,pure,4,639
@@ -2133,7 +2133,7 @@ FractionalPart,Returns the fractional part of a number,✅,pure,3,820
 FractionBox,,🚫,,3,1143
 FractionBoxOptions,,,,4,4138
 Frame,Option specifying whether a frame is drawn around a plot,✅,none,2,97
-FrameBox,,,,3,2374
+FrameBox,typesetting box,🚫,None,3,2374
 FrameBoxOptions,,,,4,4660
 Framed,Display wrapper that draws a frame around its argument,✅,pure,6,390
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2,221
@@ -2159,7 +2159,7 @@ FrobeniusNumber,Returns the Frobenius number for a set of integers,✅,pure,6,38
 FrobeniusSolve,Frobenius equation solver,✅,unevaluated,6,1869
 FromAbsoluteTime,,,,11.1,4356
 FromCharacterCode,Converts character codes to a string,✅,pure,2,735
-FromCoefficientRules,,,,7,2411
+FromCoefficientRules,Builds a polynomial from coefficient rules,✅,None,7,2411
 FromContinuedFraction,Converts a continued fraction to a number,✅,pure,4,2350
 FromDateString,,,,12.3,
 FromDigits,Constructs integer from list of digits,✅,pure,3,526
@@ -2282,7 +2282,7 @@ GeoBoundingBox,,,,10,3233
 GeoBounds,,,,10,3162
 GeoBoundsRegion,,,,10.2,3298
 GeoBoundsRegionBoundary,,,,12.2,5184
-GeoBubbleChart,,,,11.1,2355
+GeoBubbleChart,geographic visualization,🚫,None,11.1,2355
 GeoCenter,,,,10,2650
 GeoCircle,,,,10,2812
 GeoContourPlot,,,,12.1,4527
@@ -2294,7 +2294,7 @@ GeodesicOpening,,,,9,4707
 GeodesicPolyhedron,,,,13.1,
 GeoDestination,,,,7,2421
 GeodesyData,,🚫,,7,1930
-GeoDirection,,,,7,2367
+GeoDirection,geographic computation,🚫,None,7,2367
 GeoDisk,,🚫,,10,1324
 GeoDisplacement,,,,10,2656
 GeoDistance,,🚫,,7,1351
@@ -2660,11 +2660,11 @@ ImageContents,,,,12,4387
 ImageConvolve,Convolve image with kernel,🚫,,7,2100
 ImageCooccurrence,,,,8,3889
 ImageCorners,,,,9,2625
-ImageCorrelate,,,,7,2344
+ImageCorrelate,image processing,🚫,None,7,2344
 ImageCorrespondingPoints,,,,8,2837
 ImageCrop,Crops an image to a specified region,✅,pure,7,1097
 ImageData,Extracts pixel data from an image as nested lists,✅,pure,7,457
-ImageDeconvolve,,,,8,2371
+ImageDeconvolve,image processing,🚫,None,8,2371
 ImageDemosaic,,,,9,4567
 ImageDifference,,,,8,2605
 ImageDimensions,Returns the dimensions of an image,✅,pure,7,555
@@ -2913,7 +2913,7 @@ InverseRadonTransform,,,,11.2,5390
 InverseSeries,Symbol for computing inverse of a power series,✅,pure,1,2065
 InverseShortTimeFourier,,,,12,
 InverseSpectrogram,,,,12,3862
-InverseSurvivalFunction,,,,8,2350
+InverseSurvivalFunction,probability distribution,🚫,None,8,2350
 InverseTransformedRegion,,,,10,4104
 InverseWaveletTransform,Inverse wavelet transform,✅,unevaluated,8,1806
 InverseWeierstrassP,,,,3,2528
@@ -3020,7 +3020,7 @@ KeyValuePattern,pattern matching extension,🚫,None,10.4,2324
 Khinchin,,,,4,2698
 KillProcess,,,,10,3389
 KirchhoffGraph,,,,8,3843
-KirchhoffMatrix,,,,8,2360
+KirchhoffMatrix,graph theory matrix,🚫,None,8,2360
 KleinInvariantJ,,,,3,2435
 KnapsackSolve,,,,11,3427
 KnightTourGraph,,,,8,2675
@@ -3239,7 +3239,7 @@ ListLogPlot,Plots data with logarithmic y-axis,✅,pure,6,828
 ListPicker,,,,9,2798
 ListPickerBox,,,,6,
 ListPickerBoxOptions,,,,9,
-ListPlay,,,,2,2360
+ListPlay,audio playback,🚫,None,2,2360
 ListPlot,Plots data as a scatter plot,✅,pure,1,93
 ListPlot3D,Creates a 3D plot from data,✅,pure,1,622
 ListPointPlot3D,3D scatter plot of points,✅,pure,6,694
@@ -3579,7 +3579,7 @@ MixedGraphQ,,,,10,4437
 MixedMagnitude,,,,10.4,2867
 MixedRadix,,,,10.2,2748
 MixedRadixQuantity,,,,9,4881
-MixedUnit,,,,10.4,2355
+MixedUnit,unit system,🚫,None,10.4,2355
 MixtureDistribution,,✅,,8,1331
 Mod,Returns the remainder of integer division,✅,pure,1,134
 Modal,,,,6,2821
@@ -3665,7 +3665,7 @@ NCache,,,,6,4356
 NCaputoD,,,,13.2,
 NContourIntegrate,,,,14,
 NDEigensystem,Numerical eigensystem,✅,unevaluated,10.2,1641
-NDEigenvalues,,,,10.2,2329
+NDEigenvalues,numerical PDE eigenvalues,🚫,None,10.2,2329
 NDSolve,Solves ordinary differential equations numerically,✅,contextual,2,157
 NDSolveValue,Numerically solve a differential equation and return the solution,✅,pure,9,439
 Nearest,Find the nearest elements in a list to a given value,✅,none,6,602
@@ -3924,7 +3924,7 @@ NumberString,String pattern matching numeric strings,✅,none,5.1,1068
 Numerator,Returns the numerator of a rational expression,✅,pure,1,628
 NumeratorDenominator,,,,12,3215
 NumericalOrder,,,,11.1,3491
-NumericalSort,,,,11.1,2591
+NumericalSort,Sorts strings with natural number ordering,✅,None,11.1,2591
 NumericArray,,,,12,4291
 NumericArrayQ,,,,12,5390
 NumericArrayType,,,,12,
@@ -4080,7 +4080,7 @@ ParallelSubmit,Submit parallel task,✅,unevaluated,7,1764
 ParallelSum,,,,7,2462
 ParallelTable,Parallel version of Table (evaluated sequentially),✅,pure,7,835
 ParallelTry,,,,7,3298
-ParameterEstimator,,,,8,2344
+ParameterEstimator,statistical estimation,🚫,None,8,2344
 ParameterMixtureDistribution,Mixture distribution with parameterized components,✅,pure,8,1519
 ParametricConvexOptimization,,,,12.2,5184
 ParametricFunction,,,,9,4138
@@ -4281,7 +4281,7 @@ PolyhedronDecomposition,,,,12,5390
 PolyhedronGenus,,,,12,5587
 PolyLog,Polylogarithm function,✅,pure,1,529
 PolynomialExpressionQ,,,,12.2,
-PolynomialExtendedGCD,,,,6,2404
+PolynomialExtendedGCD,Extended GCD for polynomials,🚫,None,6,2404
 PolynomialGCD,Greatest common divisor of polynomials,✅,unevaluated,2,1611
 PolynomialLCM,,,,2,2533
 PolynomialMod,Reduce polynomial coefficients modulo m,✅,pure,2,939
@@ -4570,7 +4570,7 @@ RegionDimension,Dimension of a region,✅,unevaluated,10,1716
 RegionDisjoint,,,,11.1,3134
 RegionDistance,,🚫,,10,1314
 RegionDistanceFunction,,,,10,5587
-RegionEmbeddingDimension,,,,10,2367
+RegionEmbeddingDimension,geometric region,🚫,None,10,2367
 RegionEqual,,,,11.1,2561
 RegionErosion,,,,12.3,
 RegionFarthestDistance,,,,13.3,
@@ -4881,7 +4881,7 @@ SequenceCases,Find sequence patterns,✅,unevaluated,10.1,1751
 SequenceCount,,,,10.1,2921
 SequenceFold,,,,10.2,4225
 SequenceFoldList,,,,10.2,3593
-SequenceHold,,,,3,2338
+SequenceHold,evaluation control (complex),🚫,None,3,2338
 SequenceIndicesLayer,,,,13,
 SequenceLastLayer,,,,11.1,2625
 SequenceMostLayer,,,,11.1,4387
@@ -5022,7 +5022,7 @@ SmithDelayCompensator,,,,9,4612
 SmithWatermanSimilarity,,,,7,3636
 SmoothDensityHistogram,Smooth density histogram,✅,unevaluated,8,1907
 SmoothHistogram,,🚫,,8,1200
-SmoothHistogram3D,,,,8,2360
+SmoothHistogram3D,3D visualization,🚫,None,8,2360
 SmoothKernelDistribution,,🚫,,8,1247
 SmoothPointDensity,,,,12.2,
 SnDispersion,,,,11.1,4262
@@ -5177,7 +5177,7 @@ Standardize,Standardize data,✅,unevaluated,7,1822
 Standardized,,,,10.1,4479
 StandardOceanData,,🚫,,10.3,4947
 StandbyDistribution,,,,9,3108
-Star,,,,3,2329
+Star,graphics primitive,🚫,None,3,2329
 StarClusterData,,🚫,,10,4881
 StarData,,🚫,,10,722
 StarGraph,,,,8,2617
@@ -5336,7 +5336,7 @@ SupersetEqual,,,,3,5079
 SuperStar,,🚫,,6,979
 Surd,Returns the real-valued nth root,✅,pure,9,1116
 SurdForm,,,,9,5486
-SurfaceArea,,,,12,2361
+SurfaceArea,geometric computation,🚫,None,12,2361
 SurfaceData,,🚫,,10,4052
 SurfaceIntegrate,,,,13.3,
 SurvivalDistribution,,,,8,3737
@@ -5578,7 +5578,7 @@ TimeSeriesResample,,,,10,2449
 TimeSeriesRescale,,,,10,2748
 TimeSeriesShift,Time series manipulation,🚫,None,10,2233
 TimeSeriesThread,,,,10,2442
-TimeSeriesWindow,,,,10,2329
+TimeSeriesWindow,time series,🚫,None,10,2329
 TimeSystem,,,,13,
 TimeSystemConvert,,,,13,
 TimeUsed,CPU time used,🚫,,2,2097
@@ -5668,7 +5668,7 @@ TransferFunctionZeros,,,,8,3678
 TransformationClass,,,,10,2867
 TransformationFunction,,,,6,2656
 TransformationFunctions,Functions for Simplify transformations,🚫,pure,4,1422
-TransformationMatrix,,,,6,2344
+TransformationMatrix,requires TransformationFunction framework,🚫,None,6,2344
 TransformedDistribution,,🚫,,8,851
 TransformedField,Transform vector or scalar field,✅,pure,9,1499
 TransformedProcess,,,,10,2389
@@ -5739,7 +5739,7 @@ TriangleConstruct,,,,12,3317
 TriangleMeasurement,,,,12,3843
 TriangleWave,gives a triangle wave with period 1,✅,pure,7,1443
 TriangularDistribution,Triangular distribution,✅,unevaluated,6,1827
-TriangulateMesh,,,,10,2367
+TriangulateMesh,mesh generation,🚫,None,10,2367
 Trig,Trigonometric functions option,✅,unevaluated,2,1658
 TrigExpand,Expand trigonometric functions of sums and multiples,✅,pure,3,852
 TrigFactor,Factor trigonometric expressions,✅,unevaluated,3,1736
@@ -5896,7 +5896,7 @@ VariogramFunction,,,,13,
 VariogramModel,,,,13,
 VectorAngle,Angle between two vectors,✅,pure,6,962
 VectorAround,,,,12,5587
-VectorAspectRatio,,,,12.1,2344
+VectorAspectRatio,visualization option,🚫,None,12.1,2344
 VectorColorFunction,Color function for vector plots,✅,pure,7,1559
 VectorColorFunctionScaling,,,,7,3083
 VectorDatabaseObject,,,,14.1,
@@ -6044,7 +6044,7 @@ WaveletImagePlot,,,,8,3031
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,🚫,graphics,8,1921
 WaveletMapIndexed,,,,8,2383
 WaveletMatrixPlot,,,,8,3176
-WaveletPhi,,,,8,2371
+WaveletPhi,wavelet function,🚫,None,8,2371
 WaveletPsi,Wavelet function (signal processing),🚫,,8,2006
 WaveletScale,,,,8,4291
 WaveletScalogram,Plots the wavelet scalogram of a signal,🚫,None,8,2197
@@ -6084,7 +6084,7 @@ WeierstrassHalfPeriodW2,,,,11.2,4660
 WeierstrassHalfPeriodW3,,,,11.2,4567
 WeierstrassInvariantG2,,,,11.2,4809
 WeierstrassInvariantG3,,,,11.2,4947
-WeierstrassInvariants,,,,3,2350
+WeierstrassInvariants,elliptic function theory,🚫,None,3,2350
 WeierstrassP,Weierstrass elliptic function,✅,pure,1,1078
 WeierstrassPPrime,Derivative of the Weierstrass elliptic function,✅,pure,1,1718
 WeierstrassSigma,Weierstrass sigma function,✅,unevaluated,3,1852
@@ -6121,7 +6121,7 @@ WindingCount,,,,12,
 WindingPolygon,,,,12,4881
 WindowClickSelect,,,,3,3378
 WindowElements,Window UI elements option,🚫,,3,2048
-WindowFrame,,,,3,2355
+WindowFrame,notebook UI,🚫,None,3,2355
 WindowFrameElements,,,,4,2541
 WindowMargins,Window margin specification,✅,unevaluated,3,1632
 WindowOpacity,,,,6,3737
@@ -6171,13 +6171,13 @@ XYZColor,XYZ color specification,✅,unevaluated,10,1887
 Yellow,Named color evaluating to RGBColor[1 1 0],✅,pure,5.1,240
 Yesterday,Returns a DateObject representing the previous calendar day,✅,contextual,10,2762
 YuleDissimilarity,,,,6,4947
-ZernikeR,,,,6,2333
+ZernikeR,Zernike polynomial (complex special function),🚫,None,6,2333
 ZeroSymmetric,,,,9,4881
 ZeroTest,Option for testing zero equivalence,✅,pure,1,3215
 Zeta,Riemann zeta function,✅,pure,1,482
 ZetaZero,,✅,,6,1338
 ZIPCodeData,,🚫,,10,408
-ZipfDistribution,,,,6,2350
+ZipfDistribution,probability distribution,🚫,None,6,2350
 ZoomCenter,,,,10.4,4809
 ZoomFactor,,,,10.4,4747
 ZTest,,,,8,3059

@@ -1429,6 +1429,196 @@ pub fn dispatch_math_functions(
         }
       }
     }
+    // CircleThrough[{p1, p2, p3}] — circumscribed circle through 3 points
+    "CircleThrough" if args.len() == 1 => {
+      if let Expr::List(ref pts) = args[0] {
+        if pts.len() == 3 {
+          // Extract coordinates
+          let coords: Vec<(&Expr, &Expr)> = pts
+            .iter()
+            .filter_map(|p| {
+              if let Expr::List(c) = p {
+                if c.len() == 2 {
+                  return Some((&c[0], &c[1]));
+                }
+              }
+              None
+            })
+            .collect();
+          if coords.len() == 3 {
+            let (x1, y1) = coords[0];
+            let (x2, y2) = coords[1];
+            let (x3, y3) = coords[2];
+            // Build the circumcenter formula as AST and evaluate
+            // D = 2*(x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2))
+            let d_expr = Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              left: Box::new(Expr::Integer(2)),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Plus,
+                  left: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(x1.clone()),
+                    right: Box::new(Expr::BinaryOp {
+                      op: BinaryOperator::Minus,
+                      left: Box::new(y2.clone()),
+                      right: Box::new(y3.clone()),
+                    }),
+                  }),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Times,
+                    left: Box::new(x2.clone()),
+                    right: Box::new(Expr::BinaryOp {
+                      op: BinaryOperator::Minus,
+                      left: Box::new(y3.clone()),
+                      right: Box::new(y1.clone()),
+                    }),
+                  }),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(x3.clone()),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Minus,
+                    left: Box::new(y1.clone()),
+                    right: Box::new(y2.clone()),
+                  }),
+                }),
+              }),
+            };
+            // sq(p) = x^2 + y^2
+            let sq = |x: &Expr, y: &Expr| Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(x.clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Power,
+                left: Box::new(y.clone()),
+                right: Box::new(Expr::Integer(2)),
+              }),
+            };
+            // h_num = sq1*(y2-y3) + sq2*(y3-y1) + sq3*(y1-y2)
+            let h_num = Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(sq(x1, y1)),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Minus,
+                    left: Box::new(y2.clone()),
+                    right: Box::new(y3.clone()),
+                  }),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(sq(x2, y2)),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Minus,
+                    left: Box::new(y3.clone()),
+                    right: Box::new(y1.clone()),
+                  }),
+                }),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(sq(x3, y3)),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  left: Box::new(y1.clone()),
+                  right: Box::new(y2.clone()),
+                }),
+              }),
+            };
+            // k_num = sq1*(x3-x2) + sq2*(x1-x3) + sq3*(x2-x1)
+            let k_num = Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              left: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(sq(x1, y1)),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Minus,
+                    left: Box::new(x3.clone()),
+                    right: Box::new(x2.clone()),
+                  }),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Times,
+                  left: Box::new(sq(x2, y2)),
+                  right: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Minus,
+                    left: Box::new(x1.clone()),
+                    right: Box::new(x3.clone()),
+                  }),
+                }),
+              }),
+              right: Box::new(Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                left: Box::new(sq(x3, y3)),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Minus,
+                  left: Box::new(x2.clone()),
+                  right: Box::new(x1.clone()),
+                }),
+              }),
+            };
+            let h = Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(h_num),
+              right: Box::new(d_expr.clone()),
+            };
+            let k = Expr::BinaryOp {
+              op: BinaryOperator::Divide,
+              left: Box::new(k_num),
+              right: Box::new(d_expr),
+            };
+            let h_eval =
+              crate::evaluator::evaluate_expr_to_expr(&h).unwrap_or(h);
+            let k_eval =
+              crate::evaluator::evaluate_expr_to_expr(&k).unwrap_or(k);
+            // r = sqrt((x1-h)^2 + (y1-k)^2)
+            let r = Expr::FunctionCall {
+              name: "Sqrt".to_string(),
+              args: vec![Expr::BinaryOp {
+                op: BinaryOperator::Plus,
+                left: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Minus,
+                    left: Box::new(x1.clone()),
+                    right: Box::new(h_eval.clone()),
+                  }),
+                  right: Box::new(Expr::Integer(2)),
+                }),
+                right: Box::new(Expr::BinaryOp {
+                  op: BinaryOperator::Power,
+                  left: Box::new(Expr::BinaryOp {
+                    op: BinaryOperator::Minus,
+                    left: Box::new(y1.clone()),
+                    right: Box::new(k_eval.clone()),
+                  }),
+                  right: Box::new(Expr::Integer(2)),
+                }),
+              }],
+            };
+            let r_eval =
+              crate::evaluator::evaluate_expr_to_expr(&r).unwrap_or(r);
+            return Some(Ok(Expr::FunctionCall {
+              name: "Circle".to_string(),
+              args: vec![Expr::List(vec![h_eval, k_eval]), r_eval],
+            }));
+          }
+        }
+      }
+    }
     _ => {}
   }
   None

@@ -181,6 +181,57 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    // FromCoefficientRules[{{exp} -> coeff, ...}, var]
+    "FromCoefficientRules" if args.len() == 2 => {
+      if let (Expr::List(rules), Expr::Identifier(var)) = (&args[0], &args[1]) {
+        let mut terms: Vec<Expr> = Vec::new();
+        for rule in rules {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = rule
+          {
+            {
+              if let Expr::List(exps) = pattern.as_ref() {
+                if exps.len() == 1 {
+                  let coeff = replacement.as_ref();
+                  let exp = &exps[0];
+                  let term = match exp {
+                    Expr::Integer(0) => coeff.clone(),
+                    Expr::Integer(1) => Expr::BinaryOp {
+                      op: crate::syntax::BinaryOperator::Times,
+                      left: Box::new(coeff.clone()),
+                      right: Box::new(Expr::Identifier(var.clone())),
+                    },
+                    _ => Expr::BinaryOp {
+                      op: crate::syntax::BinaryOperator::Times,
+                      left: Box::new(coeff.clone()),
+                      right: Box::new(Expr::BinaryOp {
+                        op: crate::syntax::BinaryOperator::Power,
+                        left: Box::new(Expr::Identifier(var.clone())),
+                        right: Box::new(exp.clone()),
+                      }),
+                    },
+                  };
+                  terms.push(term);
+                }
+              }
+            }
+          }
+        }
+        if !terms.is_empty() {
+          let mut result = terms[0].clone();
+          for term in &terms[1..] {
+            result = Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Plus,
+              left: Box::new(result),
+              right: Box::new(term.clone()),
+            };
+          }
+          return Some(crate::evaluator::evaluate_expr_to_expr(&result));
+        }
+      }
+    }
     _ => {}
   }
   None
