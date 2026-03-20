@@ -2873,7 +2873,7 @@ InverseBetaRegularized,,,,3,4006
 InverseBilateralLaplaceTransform,,,,12.3,
 InverseBilateralZTransform,,,,13,
 InverseCDF,,🚫,,6,1251
-InverseChiSquareDistribution,,,,7,2656
+InverseChiSquareDistribution,represents an inverse chi-square distribution,✅,Computation,7,2656
 InverseContinuousWaveletTransform,,🚫,,8,3353
 InverseDistanceTransform,,,,8,4052
 InverseEllipticNomeQ,Elliptic function,🚫,None,3,2212
@@ -3300,7 +3300,7 @@ LogGamma,Logarithm of the gamma function,✅,pure,2,1116
 LogGammaDistribution,,,,8,3678
 LogicalExpand,Expand logical expression to disjunctive normal form,✅,pure,1,1501
 LogIntegral,Logarithmic integral function Li(x) = Ei(ln(x)),✅,pure,1,727
-LogisticDistribution,,,,6,2611
+LogisticDistribution,represents a logistic distribution,✅,Computation,6,2611
 LogisticSigmoid,Returns the logistic sigmoid function value,✅,pure,10,1409
 LogitModelFit,,,,7,2541
 LogLikelihood,Log-likelihood function,✅,unevaluated,8,1687

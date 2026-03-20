@@ -147,6 +147,23 @@ pub fn dispatch_evaluation_control(
         args: args.to_vec(),
       }));
     }
+    "LogisticDistribution" => {
+      let logistic_args = if args.is_empty() {
+        vec![Expr::Integer(0), Expr::Integer(1)]
+      } else {
+        args.to_vec()
+      };
+      return Some(Ok(Expr::FunctionCall {
+        name: "LogisticDistribution".to_string(),
+        args: logistic_args,
+      }));
+    }
+    "InverseChiSquareDistribution" if args.len() == 1 => {
+      return Some(Ok(Expr::FunctionCall {
+        name: "InverseChiSquareDistribution".to_string(),
+        args: args.to_vec(),
+      }));
+    }
     "ChiSquareDistribution" if args.len() == 1 => {
       return Some(Ok(Expr::FunctionCall {
         name: "ChiSquareDistribution".to_string(),

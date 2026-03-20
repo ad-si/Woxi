@@ -149,6 +149,8 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "NegativeBinomialDistribution" => pdf_negative_binomial(dargs, x),
     "HalfNormalDistribution" => pdf_half_normal(dargs, x),
     "ChiDistribution" => pdf_chi(dargs, x),
+    "LogisticDistribution" => pdf_logistic(dargs, x),
+    "InverseChiSquareDistribution" => pdf_inverse_chi_square(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "PDF".to_string(),
       args: args.to_vec(),
@@ -362,6 +364,8 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "RayleighDistribution" => cdf_rayleigh(dargs, x),
     "HalfNormalDistribution" => cdf_half_normal(dargs, x),
     "ChiDistribution" => cdf_chi(dargs, x),
+    "LogisticDistribution" => cdf_logistic(dargs, x),
+    "InverseChiSquareDistribution" => cdf_inverse_chi_square(dargs, x),
     _ => Ok(Expr::FunctionCall {
       name: "CDF".to_string(),
       args: args.to_vec(),
@@ -670,6 +674,106 @@ fn cdf_inverse_gamma(
   let value = Expr::FunctionCall {
     name: "GammaRegularized".to_string(),
     args: vec![a, divide(b, x.clone())],
+  };
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// PDF[LogisticDistribution[m, s], x] = E^((m - x)/s)/((1 + E^((m - x)/s))^2*s)
+fn pdf_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LogisticDistribution expects 2 arguments".into(),
+    ));
+  }
+  let m = dargs[0].clone();
+  let s = dargs[1].clone();
+
+  // E^((m - x)/s)
+  let exp_val = power(e(), divide(minus(m, x), s.clone()));
+  // (1 + E^(...))^2
+  let denom_sq = power(
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(int(1)),
+      right: Box::new(exp_val.clone()),
+    },
+    int(2),
+  );
+  let value = divide(exp_val, times(denom_sq, s));
+  eval(value)
+}
+
+// CDF[LogisticDistribution[m, s], x] = 1/(1 + E^((m - x)/s))
+fn cdf_logistic(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 2 {
+    return Err(InterpreterError::EvaluationError(
+      "LogisticDistribution expects 2 arguments".into(),
+    ));
+  }
+  let m = dargs[0].clone();
+  let s = dargs[1].clone();
+
+  let exp_val = power(e(), divide(minus(m, x), s));
+  let denom = Expr::BinaryOp {
+    op: crate::syntax::BinaryOperator::Plus,
+    left: Box::new(int(1)),
+    right: Box::new(exp_val),
+  };
+  eval(power(denom, int(-1)))
+}
+
+// PDF[InverseChiSquareDistribution[n], x] = Piecewise[{{(x^(-1))^(1+n/2)/(2^(n/2)*E^(1/(2*x))*Gamma[n/2]), x > 0}}, 0]
+fn pdf_inverse_chi_square(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseChiSquareDistribution expects 1 argument".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+
+  // (x^(-1))^(1 + n/2) = x^(-(1 + n/2))
+  let x_part = power(
+    power(x.clone(), int(-1)),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Plus,
+      left: Box::new(int(1)),
+      right: Box::new(divide(n.clone(), int(2))),
+    },
+  );
+  // 2^(n/2)
+  let two_part = power(int(2), divide(n.clone(), int(2)));
+  // E^(1/(2*x))
+  let exp_part = power(e(), divide(int(1), times(int(2), x.clone())));
+  // Gamma[n/2]
+  let gamma_part = Expr::FunctionCall {
+    name: "Gamma".to_string(),
+    args: vec![divide(n, int(2))],
+  };
+  let value =
+    eval(divide(x_part, times(two_part, times(exp_part, gamma_part))))?;
+  let cond = comparison(x, ComparisonOp::Greater, int(0));
+  eval(piecewise(vec![(value, cond)], int(0)))
+}
+
+// CDF[InverseChiSquareDistribution[n], x] = Piecewise[{{GammaRegularized[n/2, 1/(2*x)], x > 0}}, 0]
+fn cdf_inverse_chi_square(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  if dargs.len() != 1 {
+    return Err(InterpreterError::EvaluationError(
+      "InverseChiSquareDistribution expects 1 argument".into(),
+    ));
+  }
+  let n = dargs[0].clone();
+
+  let value = Expr::FunctionCall {
+    name: "GammaRegularized".to_string(),
+    args: vec![divide(n, int(2)), divide(int(1), times(int(2), x.clone()))],
   };
   let cond = comparison(x, ComparisonOp::Greater, int(0));
   eval(piecewise(vec![(value, cond)], int(0)))
